@@ -246,3 +246,166 @@ Observation (pre-existing, NOT a P6-pre delta): the C written to stdout under `-
 1. **Residual application site at lowering (documented, by necessity):** `lowerExactIntArg`/`lowerFoldedIntConst` still *apply* `c89_plan.untypedIntCarrier` to type the materialization temp (the const's semantic width/signedness). The derivation RULE lives in the planner and lower.zig keeps zero carrier-rule code; but the *call* remains at lowering time because today's LIR records the untyped int as a two's-complement u64 whose sign is unrecoverable at the boundary (I.2 sign-collision evidence) — P6's explicit semantic width/signedness fields are what would allow the application site to move too. Pins 0/8 prove the relocation is carrier-identical.
 2. **Per-const keys vs per-temp:** the side table is keyed by inst ordinal (not result temp) because join copy coalescing can retarget two arm consts onto one temp with per-const carriers; the chosen encoding relies on the I.2 rewrite-stability properties of `lirOptRun` (observation O3).
 3. **Typedef-ordering residue (NOT ours):** the probe-vs-Task-0 ordering delta is the recorded P2 change; P12 (typedef ordering planning) is the designated owner of ordering state in `C89SpellPlan`.
+
+---
+
+## Fix round 1
+
+**Status:** DONE_WITH_CONCERNS (battery all green — pins 0/8, emitted-C byte-identical, hop1==hop2; one plan-internal verification-grep tension documented under Observations O5 — no edit-site deviation). Tree anchor `d0e5f451`; `sf/src/lir.zig:74` (plan §1.1) was already applied pre-dispatch and verified at start. Touch set: `sf/src/{lir,lower,c89_plan,c89_emit}.zig` + `sf/docs/tech_docs/` only. Tool channel: healthy after system reset — every source/doc change was one `edit` call at one site (read-before-edit; the 50 sibling rewrites bottom-to-top); **no shell fallback used, no bulk transforms**.
+
+### Applied-vs-plan (verbatim; deviations NONE at edit sites)
+
+| plan site | applied |
+|---|---|
+| §1.1 `lir.zig:74` `int_const: {value, result, width_bits, is_signed}` | pre-applied, verified (`sed -n '60,90p'`) |
+| §1.2 `lowerUntypedIntFacts` + §1.3 `emitIntConstFacts`/`emitIntConst` | inserted above `foldPrintArgIntExact` (insert = anchor line -> new + original) |
+| §1.3 50 sibling sites -> `emitIntConst(self, X, Y);` | 50 one-line rewrites (lines 678…8690 as planned; text-identical lines disambiguated by context, one site per `edit`) |
+| §1.3 Class B 2 sites (1670/3635) | fact recording `emitIntConstFacts(..., fw, fs)` (in the §3.1/§3.2 bodies) |
+| §3.1 `lowerExactIntArg` body + comment | replaced verbatim (§3.1 body; FB2 comment -> fact-recording wording) |
+| §3.2 `lowerFoldedIntConst` body + comment | replaced verbatim (§3.2 body; "Untyped slots record the exact value's semantic width/signedness on the int_const; the planner derives the C carrier at the boundary") |
+| §3.3 `foldPrintArgIntExact` comment + `c89_plan` import deletion | comment -> fact-recording wording (no rule names); `const c89_plan = @import(...)` deleted |
+| §2.1 `carrierFromFacts` + `deriveConstCarrier(..., width_bits, is_signed)` | verbatim (value-rule text `:45-47` preserved inside) |
+| §2.1 delete `untypedIntCarrier` + `ce_mod` import | deleted (0 callers remain) |
+| §2.2 fill call + `.int_const` arm reads `ic.width_bits`/`ic.is_signed`, other kinds 0/0 | verbatim |
+| §4.1 `d4_fcar` (field/init/alloc 4*max_temp sentinel 0xFFFFFFFF) + written-type `.int_const` arm fill gate (`width_bits != 0` ∧ `TYPE_INT_LIT` hoisted) | verbatim |
+| §4.2 `factCarrierOfTemp` + `nestScalarEffTid` fact-carrier read | verbatim (read AFTER the kind-whitelist attempt) |
+| §4.3 `.print_val` `route_tid` + Task-2 comment | verbatim (comment names the fact-carrier read) |
+| §6.1.5 tech docs | INDEX.md Table A: 5 rows updated (`deriveConstCarrier`, `lowerExactIntArg`, `lowerFoldedIntConst`, `spellPlanPlanFn`, `untypedIntCarrier` -> **deleted (P6-pre fix round 1)**) + 5 rows added alphabetically (`carrierFromFacts`, `emitIntConst`, `emitIntConstFacts`, `factCarrierOfTemp`, `lowerUntypedIntFacts`); `07_lir_lowering.md`/`08_c89_emission.md`/`09_pipeline_orchestration.md` title-line `[updated: 2026-10-12 — P6-pre fix round 1 …]` newest-first + fact-fields/derivation/route notes (08 carries the O3 sentence verbatim) |
+
+### Semantic-facts design + sign-collision resolution
+
+`int_const` = `{value: u64, result: u32, width_bits: u8, is_signed: u8}` (facts only; ruling (ii): no carrier fields). `width_bits == 0` = no untyped-materialization width chosen (typed const — its carried result type holds the semantics — or bare untyped literal whose carrier the planner's historical value rule picks); `width_bits != 0` = untyped exact-value materialization, the facts are the semantic width/signedness. Sign-collision disambiguation (report I.1/I.2 evidence, re-verified in the probe):
+
+| expression | ComptimeInt | u64 pattern | facts | carrier |
+|---|---|---|---|---|
+| `0 - 3000000000` | −3000000000 | `0xFFFFFFFF4D9F2FFF` | (64, 1) | i64 |
+| literal `18446744070697051616` | +18446744070697051616 | `0xFFFFFFFF4D9F2FFF` | (64, 0) | u64 |
+
+Recorded at lowering by `lowerUntypedIntFacts` (fit-query order I32/U32/I64/U64 = exactly `comptimeIntUntypedType`'s classes, queried through `comptimeIntFitsType`); the planner turns facts -> carrier at the boundary; the emitter applies from the side table / `d4_fcar`. After this fix: ZERO carrier-rule application in any lowering materialization site.
+
+### §2.3 Derivation-equivalence proof (every class -> exactly the previously chosen carrier)
+
+| class | hoisted type at the boundary | facts | old carrier (P6-pre) | new carrier |
+|---|---|---|---|---|
+| Class B: untyped exact materialization, neg `|v| ≤ 2^31` / nonneg `v < 2^31` | TYPE_I32 (carrier-typed temp) → identity | (32, 1) | TYPE_I32 | TYPE_I32 (`carrierFromFacts`) |
+| Class B: nonneg `2^31 ≤ v < 2^32` | TYPE_U32 → identity | (32, 0) | TYPE_U32 | TYPE_U32 |
+| Class B: neg `2^31 < |v| ≤ 2^63` / nonneg `2^32 ≤ v < 2^63` | TYPE_I64 → identity | (64, 1) | TYPE_I64 | TYPE_I64 |
+| Class B: nonneg `2^63 ≤ v < 2^64` | TYPE_U64 → identity | (64, 0) | TYPE_U64 | TYPE_U64 |
+| Class B: outside 64-bit | (no const; error[3000] dummy) | — | — | unchanged diagnostic |
+| Class A: bare untyped literal (`lower.zig:4228` path) / `@asyncFrameSize` | TYPE_INT_LIT | (0, 0) | value rule I32/U32/U64 | same value rule (text preserved) |
+| typed consts (all siblings, async, fold-produced) | concrete | (w,s) or indeterminate | identity | identity (facts NOT read — hoisted-kind gate) |
+| TYPE_UNDEFINED hoisted | TYPE_UNDEFINED | — | TYPE_USIZE | TYPE_USIZE (unchanged) |
+
+(Post-fix hoisted type of a Class B materialization is `TYPE_INT_LIT`; the table's middle column is the P6-pre class the rule was derived from. The i32-legacy gate becomes `fw == 32 and fs == 1` — identical class set.)
+
+### Verification greps (observed output)
+
+§3.4 invariant (plan expects EMPTY):
+
+```
+$ grep -n "untypedIntCarrier\|comptimeIntUntypedType\|deriveConstCarrier\|intConstTypeForValue\|c89_plan" sf/src/lower.zig
+1626:// exactly `ce_mod.comptimeIntUntypedType`'s (comptime_eval.zig:1382-1397),
+8351:                        if (ce_mod.comptimeIntUntypedType(iv.v)) |ut| { decl_type = ut; }
+```
+
+NOT empty — see observation O5. Both lines are non-application mentions: `:1626` is the plan's own §1.2 helper doc-comment text (inserted verbatim — it names the historical window function as documentation), `:8351` is S3 (semantic unannotated-binding slot typing; report I.1 explicitly blesses it on `ce_mod`, and the plan's edit lists never include it). Every carrier-rule APPLICATION is gone from lowering (`untypedIntCarrier`/`c89_plan`/`deriveConstCarrier`/`intConstTypeForValue`: 0 hits).
+
+§6.1.6 width_bits grep (observed): `lir.zig:74` (payload); `lower.zig:1638-1639` (`emitIntConstFacts`); `c89_plan.zig:31/33/34/42/48/129` (`carrierFromFacts`/`deriveConstCarrier`/fill); `c89_emit.zig:2618` (d4_fcar fill gate) + `:3211` (factCarrierOfTemp doc) — plus pre-existing unrelated `width_bits` locals in `writeIntConstRvalue`/sat-bound helpers.
+
+§5.2/§5.3 indeterminate-facts check (named; out-of-touch-set residue):
+
+```
+$ grep -c "int_const = \." sf/src/async_state_machine.zig sf/src/lir_opt_pass.zig
+sf/src/async_state_machine.zig:24
+sf/src/lir_opt_pass.zig:3
+$ grep -n "int_const = \." sf/src/lir_opt_pass.zig
+2021: ... LirInst{ .int_const = .{ .value = v, .result = b.result } };
+2034: ... LirInst{ .int_const = .{ .value = v, .result = u.result } };
+2042: ... LirInst{ .int_const = .{ .value = v, .result = ic.result } };
+$ grep -c "TYPE_INT_LIT" sf/src/async_state_machine.zig
+0
+```
+
+The 24 + 3 out-of-touch-set constructions leave `width_bits`/`is_signed` indeterminate (contract touch set excludes those files; §5.3). SAFE by the read gates: the planner reads facts only for `integer_literal_type`-hoisted consts with `width_bits != 0` (`c89_plan.zig:44/48` — fold gate `intKindWidth ≠ 0` keeps folded consts concrete-hoisted) and the emitter's `d4_fcar` fill requires `width_bits != 0` ∧ `TYPE_INT_LIT` (`c89_emit.zig:2618`); `async_state_machine.zig` has 0 `TYPE_INT_LIT` (all async result temps typed). Self-host safety: fields copied/serialized, never semantically consumed there → hop1==hop2 garbage-independent (proven by the battery). O3 (verbatim, kept for P12): "lirOptRun running inside emitFunctionSet (post-boundary) is what makes the boundary see pre-opt LIR; the I.2 population proof (in-place rewrites, fold gate intKindWidth != 0, retarget dt == st) is what makes the side table complete without moving the opt. If a future opt rewrite ever inserts/inst-moves instructions or relaxes those gates, the table must be re-evaluated (P12's move of related machinery should keep this invariant in mind)."
+
+### §6.3 Decision-identity probe (OLD = `a5e7c033…` P6-pre binary, NEW = fix binary)
+
+Probe = Finding-1 pairs `18446744073709551615` / `0 - 3000000000`; i64/u64 window `9223372036854775807` / `9223372036854775808` / `5000000000`; untyped fold `2000000000 + 1000000000`; unannotated/annotated decls; if-join arms (`/tmp/opencode_p6pre/probe/main.zig`).
+
+```
+$ /tmp/opencode_p6pre/s1/zig1_5_clean --dump-c89 probe/main.zig > probe/OLD.c   # rc=0
+$ /tmp/p6fix1/s1/zig1_5_clean   --dump-c89 probe/main.zig > probe/NEW.c   # rc=0
+$ diff <(grep -o 'z[a-zA-Z0-9_]* t[0-9]* = [^;]*;' OLD.c) <(grep -o 'z[a-zA-Z0-9_]* t[0-9]* = [^;]*;' NEW.c)
+→ empty (CONST SPELLINGS IDENTICAL)
+$ diff <(sort OLD.c) <(sort NEW.c)
+→ empty (LINES IDENTICAL UP TO ORDER)
+$ diff OLD.c NEW.c
+→ empty (WHOLE FILE BYTE-IDENTICAL — stronger than the required pair)
+```
+
+Sign-collision evidence lines (NEW.c == OLD.c): `printU32((unsigned int)(3000000000u))`, `printU64((zT_u64)(18446744073709551615ULL))`, `printI64((zT_i64)((zT_i64)-3000000000LL))` (64,1), `printI64((zT_i64)(9223372036854775807ULL))`, `printU64((zT_u64)(9223372036854775808ULL))`, `zT_8 = 5000000000ULL;` (Class A statement shape preserved) vs `zT_10 = 3000000000u;` (folded untyped u32).
+
+### Runtime battery (FULL; command + observed output per claim)
+
+Compiler: `/tmp/p6fix1/s1/zig1_5_clean` from
+`FIXED_POINT_MD5=a5e7c03341f014cba52936157f92fdfa bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/p6fix1/s1` (repo root).
+
+**1. Seed rebuild + two-hop closure** (frozen anchor `a5e7c03341f014cba52936157f92fdfa`):
+
+```
+[seed] hop2 binary md5: 0c2a83ebe85ff2e61216c966c2d537c5
+[seed] two-hop closure OK: hop1 == hop2 == 0c2a83ebe85ff2e61216c966c2d537c5
+error: fixed-point mismatch: got '0c2a83ebe85ff2e61216c966c2d537c5', want 'a5e7c03341f014cba52936157f92fdfa'
+```
+
+**hop1==hop2 proven**; fixed point `a5e7c033…` → **`0c2a83ebe85ff2e61216c966c2d537c5`** (new, recorded; compiler-moving — `FIXED_POINT_MD5` gate mismatch expected).
+
+**2. Corpus classify** (vs frozen Appendix A baseline `/tmp/task0_work/corpus_baseline.txt`):
+
+```
+$ bash scripts/corpus/classify /tmp/p6fix1/s1/zig1_5_clean /tmp/p6fix1/corpus_fix1.txt
+wrote /tmp/p6fix1/corpus_fix1.txt: 1124 dirs
+$ md5sum /tmp/p6fix1/corpus_fix1.txt /tmp/task0_work/corpus_baseline.txt
+518eca1a9b5d3e1cc5a48abce214abd8  /tmp/p6fix1/corpus_fix1.txt
+518eca1a9b5d3e1cc5a48abce214abd8  /tmp/task0_work/corpus_baseline.txt
+$ diff … → empty (DIFF EMPTY (byte-identical))
+$ awk '{print $2}' … | sort | uniq -c → 116 FAIL / 58 GREEN / 950 OK
+```
+
+**1124 = 950 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH — byte-identical class file, 0 movers.**
+
+**3. Runtime goldens (5 md5s):** dump+gcc per Task-0 §1.3 recipe (all dump rc=0, gcc rc=0, 0 `error:`; line counts 13924/19277/15596/14789 = record). gol `timeout 120 ./gol` rc=0 `fcbf7e7cead5082f0a8caadd5a8f0ff9`; lisp `printf '(+ 1 2)\n' | ./lisp` rc=0 `b3d9f8974da24ddbf9d389f3d7d97322`; json rc=0 `8bda3d5a1ec07d14a301bc343df32bf8`; mud `bash examples/z98/mud_server/demo/session.sh …` rc=0 srv `66c8f0abb926cca7baf9a0d1692ab318` / cli `93147d0f0bbd983a9d844fea8b7a6fa7`. **5/5 byte-identical.**
+
+**4. mi_matrix anchors 25 + oob:** `bash scripts/stdlib/run_fixtures.sh /tmp/p6fix1/s1/zig1_5_clean <the frozen 25 dirs (/tmp/opencode_p6pre/mi25.list)>` → `run_fixtures: 25 PASS / 0 FAIL over 25 dirs`. Trap fixture (`-fsafe`) `slice_index_field_store_oob_xmod`: dump rc=0, build rc=0, **run rc=133** (Trace/breakpoint trap), stdout 0 bytes, md5 `d41d8cd98f00b204e9800998ecf8427e` = `expected.txt` md5. **MATCH.**
+
+**5. examples/z98/*/ matrix:** build per dir (`-ffast -o`, `build_target.sh linux`) **26/26 dump=0 / ≥1 `.c` / build=0**, `.c` counts identical to §1.4 (7/6/6/7/6/7/9/9/9/14/15/15/15/8/6/9/6/6/21/20/6/6/7/7/25/38). Run per dir (CWD=example dir; `timeout 25`, mud 8; stdin `/dev/null`, rogue* `q\n`) **26/26 rc + stdout md5_16 IDENTICAL to the §1.4 table** (days_in_month `8c0d394cbc6e7f36` … mud_server rc=124 `9545fe1d245293ef` … z9play rc=1 `2016494de476fcb6`, z9torr rc=1 `f666af15cf2625b3` — full 26-row match).
+
+**6. Stdlib gate:** `bash scripts/stdlib/verify_stdlib.sh /tmp/p6fix1/s1/zig1_5_clean` → `run_fixtures: 285 PASS / 0 FAIL over 285 dirs` + `STDLIB GATE OK`.
+
+**7. The 8 `--dump-c89` pins (old → new; P6-pre values):**
+
+| entry | mode | old | new | delta |
+|---|---|---|---|---|
+| mud_server | `-fsafe` | `8b3c3d72ab59a9ae3c971c6a7759c7c0` | `8b3c3d72ab59a9ae3c971c6a7759c7c0` | 0 |
+| mud_server | `-ffast` | `fa346108ed00d03a037c2f9331d3bdf8` | `fa346108ed00d03a037c2f9331d3bdf8` | 0 |
+| game_of_life | `-fsafe` | `1b5d49b141ee9c664a82c270454bd75b` | `1b5d49b141ee9c664a82c270454bd75b` | 0 |
+| game_of_life | `-ffast` | `01a4e2265b33c97a8ca6ff3dfa551231` | `01a4e2265b33c97a8ca6ff3dfa551231` | 0 |
+| lisp_interpreter_curr | `-fsafe` | `8e5f2bc288d1dc75d7aee284cb35c291` | `8e5f2bc288d1dc75d7aee284cb35c291` | 0 |
+| lisp_interpreter_curr | `-ffast` | `e3970e33ac09c8dfaa316d2d69bf61ec` | `e3970e33ac09c8dfaa316d2d69bf61ec` | 0 |
+| json_parser | `-fsafe` | `2a12d0aac24d5bcdd694f05e04a4f029` | `2a12d0aac24d5bcdd694f05e04a4f029` | 0 |
+| json_parser | `-ffast` | `24e0e812e7dffa5a43750135405ffe3f` | `24e0e812e7dffa5a43750135405ffe3f` | 0 |
+
+**Pin delta: 0/8 — emitted C byte-identical.**
+
+**8. `--markers` telemetry:** `zig1_5_clean --markers --dump-c89 examples/z98/game_of_life/main.zig > mk_gol.c 2> mk_gol.bin` — dump rc=0; stderr **3,436 marker lines / 38,378 B** — identical to the P2-P6-pre record (planner step emits no markers).
+
+### Observations (fix round 1; report-only)
+
+- **O5 (plan-internal verification tension — NOT an edit-site deviation):** the §3.4 invariant greps `comptimeIntUntypedType` and expects EMPTY, but (a) the plan's own §1.2 helper doc-comment text names `ce_mod.comptimeIntUntypedType` (inserted verbatim per "execute VERBATIM"), and (b) S3 (`lower.zig:8351`, unannotated-binding slot typing) uses it and is explicitly blessed by I.1 ("S3 stays on the semantic primitive") with no edit-site anywhere in the plan. The expected EMPTY is unreachable without out-of-plan edits (self-censoring the plan's comment, or rewriting S3 — a semantic change outside the fix's adjudicated gap). Real output pasted above; every carrier-rule application is gone.
+- **O6 (stale call-site comments, left untouched by VERBATIM discipline):** `lower.zig:1814`/`:6946`-region call-site comments still say "value-chosen carrier (and a value-chosen int_const temp)" for `lowerExactIntArg`'s result; §3.3 enumerates exactly two comment-update sites (foldPrintArgIntExact + lowerFoldedIntConst) and these are not among them. Comment-only staleness; no grep-invariant token; flagged for a future doc sweep.
+- **O7:** the §5.4 Class B knock-ons (`materializeShiftLhs` untyped-LHS path under `-fsafe`; `materializeInto`/`lowerArrayElemTupleCoerce` `int_literal_coerce` cast firing) produced 0 pin deltas, 0 corpus movers, 0 golden deltas — consistent with "expected 0 battery impact (narrow shape)".
+
+## Concerns (fix round 1)
+
+1. **O5 above** — plan-invariant tension documented; not blocking (edit sites verbatim; battery decision-identity holds: probe byte-identical, pins 0/8).
+2. **Out-of-touch-set indeterminate facts** (§5.3 residue, by contract): a P6/follow-up sweep should fill `width_bits`/`is_signed` in `async_state_machine.zig`/`lir_opt_pass.zig` when those files are in scope (currently safe by the read gates; recorded in the §5.2/§5.3 grep check).
