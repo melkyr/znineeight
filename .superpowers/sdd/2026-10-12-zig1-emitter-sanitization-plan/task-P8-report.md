@@ -175,12 +175,14 @@ All in `/tmp/p8_repro/`; command `zig1_5_clean --dump-c89 /tmp/p8_repro/<f>.z98 
 | `r4_exit_2arg` | `@exit(0, 1);` | **rc=0 (wrong-accept, .c emitted)** | rc=2 `error[19]: @exit requires exactly 1 argument(s): @exit(code)` | new clean reject (D6-class) |
 | `r5_putchar_2arg` | `@putChar('a', 'b');` | **rc=0 (wrong-accept)** | rc=2 `error[19]: @putChar requires exactly 1 argument(s): @putChar(c)` | new clean reject |
 | `r6_iswindows_1arg` | `@isWindows(true)` | **rc=0 (wrong-accept)** | rc=2 `error[19]: @isWindows requires exactly 0 argument(s): @isWindows()` | new clean reject |
-| `r7_intcast_1arg` | `@intCast(i32)` | **rc=0 (wrong-accept)** | rc=2 `error[19]: @intCast requires exactly 2 argument(s): @intCast(T, expr)` | new reject — but see STOP: the 1-arg form is the mover class |
+| `r7_intcast_1arg` | `@intCast(i32)` | **rc=0 (wrong-accept)** | P8: rc=2 `error[19]: @intCast requires exactly 2 argument(s): @intCast(T, expr)` — **fix round 1 (Amendment 6 A): rc=0, arity-accepted BY DESIGN** (the 1-arg form `@intCast(expr)`; 393 B `.c`, 0 diagnostics) | the 1-arg form is the accepted surface |
 | `r9_getchar_1arg` | `@getChar('x')` | **rc=0 (wrong-accept)** | rc=2 `error[19]: @getChar requires exactly 0 argument(s): @getChar()` | new clean reject |
+| `r10_intcast_0arg` | `@intCast()` (the @intCast D6 reject shape post-fix) | n/a — fix round 1 reproducer | rc=2 `error[19]: @intCast requires 1 or 2 argument(s): @intCast(T, expr) or @intCast(expr)` | new clean reject (D6-class, 0-arg) |
+| `r11_intcast_3arg` | `@intCast(i32, 7, 8)` (the @intCast D6 reject shape post-fix) | n/a — fix round 1 reproducer | rc=2 same range message | new clean reject (D6-class, ≥3-arg) |
 
 Correct-arity controls: `c1_control` (`@putChar('x'); @exit(0);`), `c2_control` (`@sizeOf(u32)` + `@intCast(i32, 7)`), `c3_control` (`@isWindows()` + `@getChar()`) — **all rc=0 both compilers, .c byte counts unchanged** (581/592/712) — no false-positive rejects on the correct forms. The battery (items 3-7) is the wide no-false-positive proof: goldens/examples/pins all frozen.
 
-Note (established-shape consequence, same as pre-P8 `@ptrFromInt`/`@ptrCast` rejects): a wrong-arity call whose result feeds an inferred `var` (`var b = @isWindows(true);`) yields `TYPE_UNDEFINED`, so later uses of `b` add the pre-existing `error[20]: identifier 'b' is not declared` cascade (visible in r6/r7/r9); typed declarations (`var p: *u8 = …`) show only the arity diagnostic (r1 byte-identical).
+Note (established-shape consequence, same as pre-P8 `@ptrFromInt`/`@ptrCast` rejects): a wrong-arity call whose result feeds an inferred `var` (`var b = @isWindows(true);`) yields `TYPE_UNDEFINED`, so later uses of `b` add the pre-existing `error[20]: identifier 'b' is not declared` cascade (visible in r6/r9 — r7 pre-fix-round-1; r7 is arity-accepted as of fix round 1); typed declarations (`var p: *u8 = …`) show only the arity diagnostic (r1 byte-identical).
 
 ## STOP-present (class mover — program + builtin, operator judgment requested)
 
@@ -209,6 +211,31 @@ Note (established-shape consequence, same as pre-P8 `@ptrFromInt`/`@ptrCast` rej
 - **Ruling B (legitimate D6-class reject):** the strict-2 table stands; then the fixture, its Task 7 contract, its committed golden and the stdlib `expected_dirs.txt` pin must be re-baselined/reclassified by the operator (outside my touch set — cannot be executed within bounds).
 
 No other builtin in the 37-row table produced a mover or a gate break.
+
+### Operator ruling + fix round 1 (Amendment 6: "A + (i)", 2026-10-15)
+
+Operator ruled **A + (i)** on the STOP-present above. **(A)** the `@intCast` table row becomes an accepted-arity **range 1..2** — accept `@intCast(expr)` (1-arg; identity typing via the sema single-argument builtin fallback, the Task 7 lowering path) and `@intCast(T, expr)` (2-arg); reject 0 args and ≥3 args (the true D6 wrong-accept class). All other rows UNCHANGED — `@ptrCast` stays exactly 2 (byte-gated `ERR_3049` texts), all other type-value casts stay exactly 2, 1-arg plains stay exactly 1. Option A′ REJECTED (only `@intCast` has a 1-arg lowering path). **(i)** ONE-sentence Spec §4 truth-up documenting the accepted 1-arg form.
+
+**Fix (commit (a) `fix(semantic_analyzer): P8 fix round 1 — @intCast accepted arity range 1..2 (Amendment 6 A+i)`):**
+
+- `semantic_analyzer.zig` `BuiltinDesc`/`semanticAnalyzerBuiltinDesc`: the `@intCast` row is `arity = 2, arity_kind = 2` — `arity_kind` class 2 = accepted range `1..arity` (min 1, max `arity`); row message = the range wording `@intCast requires 1 or 2 argument(s): @intCast(T, expr) or @intCast(expr)` (the old "requires exactly 2" text was P8-new and NOT byte-gated).
+- `semanticAnalyzerCheckBuiltinArity`: class-2 rows enforce `min ≤ ec_n ≤ max` (`1 ≤ ec_n ≤ 2` for this row); every other row keeps exact equality. A range mismatch takes the row's established class-0 shape (row code + message, arg0-if-present resolved, `TYPE_UNDEFINED`).
+- `@ptrCast`/`@ptrFromInt`/introspection rows untouched — reproducers r1/r2/r3/r8 below prove the gated texts byte-identical.
+- Spec: `docs/reference/Language_Spec_Z98.md` §4 — one sentence under the cast/conversion table + the `@intCast(T, expr)` cell extended to `@intCast(T, expr)` / `@intCast(expr)`.
+- Tech docs: `sf/docs/tech_docs/05_semantic_analysis.md` §Builtin dispatch truth-up `[updated: 2026-10-15 — P8 fix round 1 …]` (the only doc line stating the `ec_n != arity` rule; `08_c89_emission.md`/`INDEX.md` do not name the per-row arity rule and are unchanged).
+
+**Fix round 1 runtime battery — full 8 items (commands + observed; compiler `/tmp/p8f1_build/zig1_5_clean`, two-hop build of the fixed tree):**
+
+1. **Seed two-hop.** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/p8f1_build` → `[seed] hop1 binary md5: 7d1529c68562d5b2b2e3548129f08856` / `[seed] hop2 binary md5: 7d1529c68562d5b2b2e3548129f08856` / `[seed] two-hop closure OK: hop1 == hop2 == 7d1529c68562d5b2b2e3548129f08856`. **hop1==hop2**; fixed point old `1501f571c5cd2fcaf2f291adacfc8965` → **new `7d1529c68562d5b2b2e3548129f08856`** (moved as expected — `sf/src` moved; seed NOT rotated — Task C).
+2. **Corpus classify — BYTE-IDENTICAL, 0 movers (load-bearing).** `bash scripts/corpus/classify /tmp/p8f1_build/zig1_5_clean /tmp/p8f1_run/corpus.txt` → `wrote /tmp/p8f1_run/corpus.txt: 1124 dirs`; `md5sum` = `518eca1a9b5d3e1cc5a48abce214abd8` == the frozen Appendix A anchor **exactly**; tally `1124 = 950 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH`; `repro/mi_matrix/stdlib_intcast_loop_capture_xmod OK` (the mover returns to OK — gate restored, not patched).
+3. **Goldens 5/5.** dump+gcc (§1.3 recipe) all rc=0 (0 `error:`); gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`; lisp `(+ 1 2)` `b3d9f8974da24ddbf9d389f3d7d97322`; json `8bda3d5a1ec07d14a301bc343df32bf8`; mud session rc=0, server `66c8f0abb926cca7baf9a0d1692ab318` / client `93147d0f0bbd983a9d844fea8b7a6fa7`, both `cmp`-IDENTICAL to `demo/canonical_expected.txt`/`demo/canonical_client_expected.txt`.
+4. **mi_matrix 25 + oob.** `bash scripts/stdlib/run_fixtures.sh /tmp/p8f1_build/zig1_5_clean <the 25 §1.8 anchor dirs>` → `run_fixtures: 25 PASS / 0 FAIL over 25 dirs`. Trap `slice_index_field_store_oob_xmod` (`-fsafe`): dump/build rc=0, run **rc=133** (Trace/breakpoint trap), stdout 0 B (md5 `d41d8cd98f00b204e9800998ecf8427e` == empty `expected.txt`), `expected.rc=133` — **MATCH**.
+5. **examples 26/26 build + 26/26 run.** Build (`-ffast -o`, `build_target.sh linux`): 26/26 dump=0 / `.c` counts identical to §1.4 (7/6/6/7/6/7/9/9/9/14/15/15/15/8/6/9/6/6/21/20/6/6/7/7/25/38) / build=0. Run (CWD = example dir; `timeout 25` except mud 8; stdin `/dev/null` except rogue* `q\n`): 26/26 rc + stdout md5_16 IDENTICAL to §1.4 (days_in_month `8c0d394cbc6e7f36` … mud rc=124 `9545fe1d245293ef` … z9play rc=1 `2016494de476fcb6`, z9torr rc=1 `f666af15cf2625b3`, rogue×2 `3fb6709e7bbd8964`).
+6. **stdlib — 285/0 RESTORED (load-bearing).** `bash scripts/stdlib/verify_stdlib.sh /tmp/p8f1_build/zig1_5_clean` → `run_fixtures: 285 PASS / 0 FAIL over 285 dirs` / `STDLIB GATE OK`.
+7. **The 8 `--dump-c89` pins (old = the P8/P9 record → new; sequential from repo root): all 8 identical → pin delta 0/8.** mud_server `-fsafe` `bbc02913a10af9b0b5ed0f292f4e3407` / `-ffast` `fa346108ed00d03a037c2f9331d3bdf8`; game_of_life `-fsafe` `93c5e3fdc5b80b2f3db020d995abbe3f` / `-ffast` `01a4e2265b33c97a8ca6ff3dfa551231`; lisp_interpreter_curr `-fsafe` `6da05d070acd414674b1b1ec947baa5c` / `-ffast` `e3970e33ac09c8dfaa316d2d69bf61ec`; json_parser `-fsafe` `af3823fae0b29fa4d4ca58932538d631` / `-ffast` `24e0e812e7dffa5a43750135405ffe3f`.
+8. **Markers telemetry.** `/tmp/p8f1_build/zig1_5_clean --markers --dump-c89 examples/z98/game_of_life/main.zig > /tmp/p8f1_run/mk_gol.c 2> /tmp/p8f1_run/mk_gol.bin` — dump rc=0; stderr **3,437 lines / 38,384 B** = record **3,437 / 38,384** (unchanged; telemetry).
+
+**Arity reproducers (fix round 1, `/tmp/p8f1_repro/`, same recipe `zig1_5_clean --dump-c89 /tmp/p8f1_repro/<f>.z98 > <f>.c 2> <f>.err`):** r1/r2/r3/r8 gated texts byte-identical to the §Arity-reproducers table; r4/r5/r6/r9 unchanged; `r7_intcast_1arg` (`@intCast(i32)`) now **rc=0, arity-accepted BY DESIGN** (the 1-arg form; 393 B `.c`, 0 diagnostics); the `@intCast` D6 reject reproducers are now `r10_intcast_0arg` (`@intCast()`) and `r11_intcast_3arg` (`@intCast(i32, 7, 8)`) — both rc=2 / 0 `.c` / `error[19]: @intCast requires 1 or 2 argument(s): @intCast(T, expr) or @intCast(expr)` (class-0 shape); `r12_intcast_1arg_value` (`var x: i32 = @intCast(7);`) rc=0 / 393 B `.c` (the 1-arg value form lowers via Task 7); controls c1/c2/c3 rc=0 (523/393/433 B `.c`) — no false-positive rejects.
 
 ## Concerns
 
