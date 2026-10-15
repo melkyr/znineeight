@@ -106,21 +106,21 @@ Allocates no heap memory in the struct itself. Interns the 34 builtin names and 
 
 `[inference: match name_id vs 8 cast builtins → return bool]`
 
-Checks if name_id matches `@ptrCast`, `@volatileCast`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, or `@as`. Used by builtin_call dispatch in ResolveExpr to short-circuit as type-value cast.
+Checks if name_id matches `@ptrCast`, `@volatileCast`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, or `@as`. Used by builtin_call dispatch in ResolveExpr to short-circuit as type-value cast. [updated: 2026-10-12 — P8: reads bit0 of the central descriptor `semanticAnalyzerBuiltinDesc`; exact set unchanged.]
 
 ### semanticAnalyzerIsBuiltinSupported / semanticAnalyzerBuiltinNameEq (`sf/src/semantic_analyzer.zig`)
 
-`[inference: name-id allow-list + string-equality fallbacks → bool]`
+`[inference: central descriptor's supported bit + string-equality fallbacks → bool]`
 
-`semanticAnalyzerIsBuiltinSupported` is the allow-list gating the builtin_call arm; `semanticAnalyzerBuiltinNameEq` compares an interned name against a literal for builtins without a dedicated name-id field (`@enumToInt`, `@cVaStart`, `@cVaArg`, `@cVaEnd`, `@panic`).
+`semanticAnalyzerIsBuiltinSupported` is the allow-list gating the builtin_call arm (a thin read of `semanticAnalyzerBuiltinDesc`'s bit1); `semanticAnalyzerBuiltinNameEq` compares an interned name against a literal for builtins without a dedicated name-id field (`@enumToInt`, `@cVaStart`, `@cVaArg`, `@cVaEnd`, `@panic`). [updated: 2026-10-12 — P8: both predicates and the arity check read the one central descriptor `semanticAnalyzerBuiltinDesc` (supersedes `semanticAnalyzerBuiltinFlags`) — the builtin name set + kind bits + expected arity live in ONE table; see §Builtin dispatch.]
 
 ### semanticAnalyzerCheckIntrospectionBuiltin / semanticAnalyzerRejectIntrospection / semanticAnalyzerIntrospectionTypeLabel (`sf/src/semantic_analyzer.zig`)  [added: 2026-09-26 — FF, Volume II D9]
 
-`[inference: arity gate → resolve type arg → kind/field validation → diagnostic]`
+`[inference: resolve type arg → kind/field validation → diagnostic]`
 
 Volume II D9's Zig-0.15.2-parity validation of the five introspection builtins, called from the `builtin_call` arm of `semanticAnalyzerResolveExpr` before lowering:
 
-- **Arity** (`semanticAnalyzerCheckIntrospectionBuiltin`): `@offsetOf`/`@bitOffsetOf` exactly 2 args, `@sizeOf`/`@alignOf`/`@bitSizeOf` exactly 1; otherwise `error[3074]` `ERR_3074_COMPTIME_BUILTIN_UNRESOLVED` with the house `expected N argument(s), found M` wording.
+- **Arity** [updated: 2026-10-12 — P8]: the expected count (`@offsetOf`/`@bitOffsetOf` exactly 2 args, `@sizeOf`/`@alignOf`/`@bitSizeOf` exactly 1) is decided by the central descriptor's arity row (`semanticAnalyzerBuiltinDesc`); `semanticAnalyzerCheckBuiltinArity` rejects a mismatch **before** this helper is reached, with the same `error[3074]` `ERR_3074_COMPTIME_BUILTIN_UNRESOLVED` + house `expected N argument(s), found M` wording (`semanticAnalyzerRejectIntrospectionArity` — the pre-P8 emission, moved verbatim) and the `TYPE_INT_LIT` result the arm always assigns. The helper's old `ib_want` derivation is subsumed (single decision source).
 - **Target resolution**: `resolveTypeExprFull`; `TYPE_UNDEFINED`/out-of-range → `error[3074]` (`unable to resolve type argument`); a resolved type with `state != 2` → `error[3074]` (`type argument is not complete`).
 - **Offset target kind**: `@offsetOf`/`@bitOffsetOf` require `struct_type` (packed structs included); every union kind and every scalar/pointer/enum/array/slice/optional/error-union/fn target emits `error[3072]` `ERR_3072_OFFSET_TARGET_NOT_STRUCT` (`expected struct type, found 'X'`; the label is the interned type name or a kind word for an unnamed composite).
 - **Field name**: must be an `AstKind.string_literal` naming an existing struct field; a non-literal name (including a resolvable string `const`, a documented Z98 divergence — Zig folds it) emits `error[3073]` `field name must be a string literal`, an unknown name emits `error[3073]` with Zig's `no field named 'x' in struct 'S'` wording.
@@ -369,7 +369,7 @@ After all arms: emit `STX:n<idx> STX:k<kind> STX:r<result> A4:N<idx> A4:K<kind> 
 
 #### Builtin dispatch
 
-`semanticAnalyzerIsBuiltinSupported` (name-id equality, with string-equality fallbacks for `@enumToInt`, `@cVaStart`, `@cVaArg`, `@cVaEnd`, `@panic`) gates the whole arm: any other `@name` reaching `resolveExpr` emits `error[3000]: unsupported builtin function` and resolves to `TYPE_VOID`. `semanticAnalyzerIsTypeValueCast` returns true for the eight type-value casts (`@ptrCast`, `@volatileCast`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@as`); those resolve their value arg first, then `resolveTypeExprFull` the type arg (child_0) and return that type.
+`semanticAnalyzerIsBuiltinSupported` (the central descriptor's supported bit — name-id equality, with string-equality fallbacks for `@enumToInt`, `@cVaStart`, `@cVaArg`, `@cVaEnd`, `@panic`) gates the whole arm: any other `@name` reaching `resolveExpr` emits `error[3000]: unsupported builtin function` and resolves to `TYPE_VOID`. **`semanticAnalyzerCheckBuiltinArity` runs before the dispatch ladder** (P8): every `builtin_call` consults the central per-builtin descriptor (`semanticAnalyzerBuiltinDesc` — kind bits + expected arity + arity-reject class + mismatch code/message); an `ec_n != arity` mismatch takes the established reject shape (`ERR_3000_TYPE_MISMATCH`'s enum expression, the row's message, arg0-if-present resolved for further diagnostics, `TYPE_UNDEFINED`) — rows `@ptrFromInt`/`@ptrCast` carry their exact pre-P8 message texts and the `@ptrCast` `ERR_3049` code so those rejects are byte-identical — while the introspection rows take their established `error[3074]` shape (`semanticAnalyzerRejectIntrospectionArity`, result `TYPE_INT_LIT`). `semanticAnalyzerIsTypeValueCast` reads the descriptor's type-value-cast bit for the eight type-value casts (`@ptrCast`, `@volatileCast`, `@intToPtr`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@as`); those resolve their value arg first, then `resolveTypeExprFull` the type arg (child_0) and return that type. [updated: 2026-10-12 — P8: the builtin arity/kind descriptor is a single central table consulted before the ladder; the two ad-hoc `ec_n != N` ladder arms and the introspection helper's `ib_want` derivation are subsumed (single decision source), closing the wrong-accept class of the ~30 previously-unchecked builtins (D6 root-cause).]
 
 **Core I/O builtins** — each resolves its value args via `semanticAnalyzerResolveExpr` and returns the signature type:
 

@@ -352,8 +352,181 @@ fn semanticAnalyzerFieldNameId(self: *SemanticAnalyzer, which: u8) u32 {
     return self.payload_name_id;
 }
 
+const BuiltinDesc = struct {
+    flags: u8,
+    arity: u8,
+    arity_kind: u8,
+    code: u16,
+    msg: []const u8,
+};
+
+// Task 6c (D3-4) + P8: the builtin-name set and its descriptor were spelled
+// in pieces -- the membership flags and, ad-hoc per arm, the expected arity.
+// This one central per-builtin table is the single authority: kind bits
+// (bit0 = a type-value cast, bit1 = supported), expected arity, and the
+// arity-reject class (0 = the established reject shape with this row's code
+// and message, 1 = the established introspection reject shape). Id compares
+// come first, then the string-compared names, exactly matching the original
+// membership and order; both predicates preserve their exact sets.
+fn semanticAnalyzerBuiltinDesc(self: *SemanticAnalyzer, name_id: u32) BuiltinDesc {
+    var d_e3000: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3000_TYPE_MISMATCH));
+    var d_e3074: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED));
+    var d_e3049: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3049_PTRCAST_REQUIRES_TWO_ARGS));
+    var d_empty: []const u8 = "";
+    if (name_id == self.ptrcast_name_id) {
+        var d_m: []const u8 = "@ptrCast requires exactly two arguments: @ptrCast(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3049, .msg = d_m };
+    }
+    if (name_id == self.volatilecast_name_id) {
+        var d_m: []const u8 = "@volatileCast requires exactly 2 argument(s): @volatileCast(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.inttoptr_name_id) {
+        var d_m: []const u8 = "@intToPtr requires exactly 2 argument(s): @intToPtr(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.intcast_name_id) {
+        var d_m: []const u8 = "@intCast requires exactly 2 argument(s): @intCast(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.floatcast_name_id) {
+        var d_m: []const u8 = "@floatCast requires exactly 2 argument(s): @floatCast(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.inttofloat_name_id) {
+        var d_m: []const u8 = "@intToFloat requires exactly 2 argument(s): @intToFloat(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.inttoenum_name_id) {
+        var d_m: []const u8 = "@intToEnum requires exactly 2 argument(s): @intToEnum(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.as_name_id) {
+        var d_m: []const u8 = "@as requires exactly 2 argument(s): @as(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.ptrtoint_name_id) {
+        var d_m: []const u8 = "@ptrToInt requires exactly 1 argument(s): @ptrToInt(expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.int_from_ptr_name_id) {
+        var d_m: []const u8 = "@intFromPtr requires exactly 1 argument(s): @intFromPtr(expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.ptr_from_int_name_id) {
+        var d_m: []const u8 = "@ptrFromInt requires exactly one argument: @ptrFromInt(expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.field_parent_ptr_name_id) {
+        var d_m: []const u8 = "@fieldParentPtr requires exactly 3 argument(s): @fieldParentPtr(T, \"field\", expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 3), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.bitcast_name_id) {
+        var d_m: []const u8 = "@bitCast requires exactly 2 argument(s): @bitCast(T, expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.size_of_name_id) {
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 1), .code = d_e3074, .msg = d_empty };
+    }
+    if (name_id == self.align_of_name_id) {
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 1), .code = d_e3074, .msg = d_empty };
+    }
+    if (name_id == self.offset_of_name_id) {
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 1), .code = d_e3074, .msg = d_empty };
+    }
+    if (name_id == self.bit_size_of_name_id) {
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 1), .code = d_e3074, .msg = d_empty };
+    }
+    if (name_id == self.bit_offset_of_name_id) {
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 1), .code = d_e3074, .msg = d_empty };
+    }
+    if (name_id == self.putchar_name_id) {
+        var d_m: []const u8 = "@putChar requires exactly 1 argument(s): @putChar(c)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.stdout_write_name_id) {
+        var d_m: []const u8 = "@stdoutWrite requires exactly 2 argument(s): @stdoutWrite(ptr, len)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.stderr_write_name_id) {
+        var d_m: []const u8 = "@stderrWrite requires exactly 2 argument(s): @stderrWrite(ptr, len)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.getchar_name_id) {
+        var d_m: []const u8 = "@getChar requires exactly 0 argument(s): @getChar()";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 0), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.exit_name_id) {
+        var d_m: []const u8 = "@exit requires exactly 1 argument(s): @exit(code)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.sleep_ms_name_id) {
+        var d_m: []const u8 = "@sleepMs requires exactly 1 argument(s): @sleepMs(ms)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.is_windows_name_id) {
+        var d_m: []const u8 = "@isWindows requires exactly 0 argument(s): @isWindows()";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 0), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.console_clear_name_id) {
+        var d_m: []const u8 = "@consoleClear requires exactly 0 argument(s): @consoleClear()";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 0), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.console_gotoxy_name_id) {
+        var d_m: []const u8 = "@consoleGotoxy requires exactly 2 argument(s): @consoleGotoxy(x, y)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.console_set_color_name_id) {
+        var d_m: []const u8 = "@consoleSetColor requires exactly 2 argument(s): @consoleSetColor(fg, bg)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.async_frame_size_name_id) {
+        var d_m: []const u8 = "@asyncFrameSize requires exactly 1 argument(s): @asyncFrameSize(fn)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.async_init_name_id) {
+        var d_m: []const u8 = "@asyncInit requires exactly 4 argument(s): @asyncInit(ctx, buf, fn, args)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 4), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.async_resume_name_id) {
+        var d_m: []const u8 = "@asyncResume requires exactly 2 argument(s): @asyncResume(frame, arg)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    if (name_id == self.async_suspend_name_id) {
+        var d_m: []const u8 = "@asyncSuspend requires exactly 1 argument(s): @asyncSuspend(data)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var l_e2i: []const u8 = "@enumToInt";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_e2i)) {
+        var d_m: []const u8 = "@enumToInt requires exactly 1 argument(s): @enumToInt(expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var l_cvs: []const u8 = "@cVaStart";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cvs)) {
+        var d_m: []const u8 = "@cVaStart requires exactly 1 argument(s): @cVaStart(&vl)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var l_cva: []const u8 = "@cVaArg";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cva)) {
+        var d_m: []const u8 = "@cVaArg requires exactly 2 argument(s): @cVaArg(&vl, T)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var l_cve: []const u8 = "@cVaEnd";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cve)) {
+        var d_m: []const u8 = "@cVaEnd requires exactly 1 argument(s): @cVaEnd(&vl)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var l_pan: []const u8 = "@panic";
+    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_pan)) {
+        var d_m: []const u8 = "@panic requires exactly 1 argument(s): @panic(msg)";
+        return BuiltinDesc{ .flags = @intCast(u8, 2), .arity = @intCast(u8, 1), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+    }
+    var d_none: BuiltinDesc = BuiltinDesc{ .flags = @intCast(u8, 0), .arity = @intCast(u8, 0), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_empty };
+    return d_none;
+}
+
 fn semanticAnalyzerIsTypeValueCast(self: *SemanticAnalyzer, name_id: u32) bool {
-    return (semanticAnalyzerBuiltinFlags(self, name_id) & @intCast(u8, 1)) != @intCast(u8, 0);
+    return (semanticAnalyzerBuiltinDesc(self, name_id).flags & @intCast(u8, 1)) != @intCast(u8, 0);
 }
 
 fn semanticAnalyzerBuiltinNameEq(self: *SemanticAnalyzer, name_id: u32, lit: []const u8) bool {
@@ -367,60 +540,41 @@ fn semanticAnalyzerBuiltinNameEq(self: *SemanticAnalyzer, name_id: u32, lit: []c
 }
 
 fn semanticAnalyzerIsBuiltinSupported(self: *SemanticAnalyzer, name_id: u32) bool {
-    return (semanticAnalyzerBuiltinFlags(self, name_id) & @intCast(u8, 2)) != @intCast(u8, 0);
+    return (semanticAnalyzerBuiltinDesc(self, name_id).flags & @intCast(u8, 2)) != @intCast(u8, 0);
 }
 
-// Task 6c (D3-4): the builtin-name set was spelled three times -- the dispatch
-// ladder in `semanticAnalyzerResolveExpr`, `semanticAnalyzerIsTypeValueCast`,
-// and `semanticAnalyzerIsBuiltinSupported`. This one membership descriptor
-// returns the bits: bit0 = a type-value cast, bit1 = supported. Id compares
-// come first, then the string-compared names, exactly matching the original
-// membership and order; both predicates preserve their exact sets.
-fn semanticAnalyzerBuiltinFlags(self: *SemanticAnalyzer, name_id: u32) u8 {
-    if (name_id == self.ptrcast_name_id) return @intCast(u8, 3);
-    if (name_id == self.volatilecast_name_id) return @intCast(u8, 3);
-    if (name_id == self.inttoptr_name_id) return @intCast(u8, 3);
-    if (name_id == self.intcast_name_id) return @intCast(u8, 3);
-    if (name_id == self.floatcast_name_id) return @intCast(u8, 3);
-    if (name_id == self.inttofloat_name_id) return @intCast(u8, 3);
-    if (name_id == self.inttoenum_name_id) return @intCast(u8, 3);
-    if (name_id == self.as_name_id) return @intCast(u8, 3);
-    if (name_id == self.ptrtoint_name_id) return @intCast(u8, 2);
-    if (name_id == self.int_from_ptr_name_id) return @intCast(u8, 2);
-    if (name_id == self.ptr_from_int_name_id) return @intCast(u8, 2);
-    if (name_id == self.field_parent_ptr_name_id) return @intCast(u8, 2);
-    if (name_id == self.bitcast_name_id) return @intCast(u8, 2);
-    if (name_id == self.size_of_name_id) return @intCast(u8, 2);
-    if (name_id == self.align_of_name_id) return @intCast(u8, 2);
-    if (name_id == self.offset_of_name_id) return @intCast(u8, 2);
-    if (name_id == self.bit_size_of_name_id) return @intCast(u8, 2);
-    if (name_id == self.bit_offset_of_name_id) return @intCast(u8, 2);
-    if (name_id == self.putchar_name_id) return @intCast(u8, 2);
-    if (name_id == self.stdout_write_name_id) return @intCast(u8, 2);
-    if (name_id == self.stderr_write_name_id) return @intCast(u8, 2);
-    if (name_id == self.getchar_name_id) return @intCast(u8, 2);
-    if (name_id == self.exit_name_id) return @intCast(u8, 2);
-    if (name_id == self.sleep_ms_name_id) return @intCast(u8, 2);
-    if (name_id == self.is_windows_name_id) return @intCast(u8, 2);
-    if (name_id == self.console_clear_name_id) return @intCast(u8, 2);
-    if (name_id == self.console_gotoxy_name_id) return @intCast(u8, 2);
-    if (name_id == self.console_set_color_name_id) return @intCast(u8, 2);
-    if (name_id == self.async_frame_size_name_id) return @intCast(u8, 2);
-    if (name_id == self.async_init_name_id) return @intCast(u8, 2);
-    if (name_id == self.async_resume_name_id) return @intCast(u8, 2);
-    if (name_id == self.async_suspend_name_id) return @intCast(u8, 2);
+fn semanticAnalyzerRejectIntrospectionArity(self: *SemanticAnalyzer, node_idx: u32, want: usize, found: usize) void {
+    var ib_wexp_buf: [10]u8 = undefined;
+    var ib_wexp_l = itoa_mod.itoa(@intCast(u32, want), ib_wexp_buf[0..]);
+    var ib_wfnd_buf: [10]u8 = undefined;
+    var ib_wfnd_l = itoa_mod.itoa(@intCast(u32, found), ib_wfnd_buf[0..]);
+    var ib_wexp_s: usize = @intCast(usize, 9) - @intCast(usize, ib_wexp_l);
+    var ib_wfnd_s: usize = @intCast(usize, 9) - @intCast(usize, ib_wfnd_l);
+    var ib_ap0: []const u8 = "expected ";
+    var ib_ap1: []const u8 = " argument(s), found ";
+    var ib_aparts: [4][]const u8 = [4][]const u8{ ib_ap0, ib_wexp_buf[ib_wexp_s..@intCast(usize, 9)], ib_ap1, ib_wfnd_buf[ib_wfnd_s..@intCast(usize, 9)] };
+    var ib_amsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ib_aparts[0], @intCast(u32, 4));
+    semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), ib_amsg);
+}
 
-    var l_e2i: []const u8 = "@enumToInt";
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_e2i)) return @intCast(u8, 2);
-    var l_cvs: []const u8 = "@cVaStart";
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cvs)) return @intCast(u8, 2);
-    var l_cva: []const u8 = "@cVaArg";
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cva)) return @intCast(u8, 2);
-    var l_cve: []const u8 = "@cVaEnd";
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_cve)) return @intCast(u8, 2);
-    var l_pan: []const u8 = "@panic";
-    if (semanticAnalyzerBuiltinNameEq(self, name_id, l_pan)) return @intCast(u8, 2);
-    return @intCast(u8, 0);
+// P8: the arity decision for every builtin_call, consulted before the dispatch
+// ladder. Returns 0 = arity ok (the ladder resolves as before), 1 = rejected
+// with the established reject shape (the row's code and message, arg0-if-present
+// resolved for further diagnostics, TYPE_UNDEFINED at the call), 2 = rejected
+// with the established introspection shape (the house dynamic wording,
+// TYPE_INT_LIT at the call).
+fn semanticAnalyzerCheckBuiltinArity(self: *SemanticAnalyzer, node_idx: u32, name_id: u32, ec_n: usize) u8 {
+    var ba_desc = semanticAnalyzerBuiltinDesc(self, name_id);
+    if ((ba_desc.flags & @intCast(u8, 2)) == @intCast(u8, 0)) return @intCast(u8, 0);
+    if (ec_n == @intCast(usize, ba_desc.arity)) return @intCast(u8, 0);
+    if (ba_desc.arity_kind == @intCast(u8, 1)) {
+        semanticAnalyzerRejectIntrospectionArity(self, node_idx, @intCast(usize, ba_desc.arity), ec_n);
+        return @intCast(u8, 2);
+    }
+    var ba_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), ba_desc.code, self.source_file_id, ba_node.span_start, ba_node.span_start + @intCast(u32, ba_node.span_len), ba_desc.msg);
+    if (ec_n >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0))); }
+    return @intCast(u8, 1);
 }
 
 // Task 6c (D3-4): resolve the first `n` extra children of a builtin call in
@@ -1454,25 +1608,9 @@ fn semanticAnalyzerIntrospectionTypeLabel(self: *SemanticAnalyzer, tid: u32) []c
 // count rejects with `error[3074]`. `@sizeOf`/`@alignOf`/`@bitSizeOf` keep
 // accepting every complete type (values unchanged, `@alignOf(void)` 0 residual
 // untouched). This removes every `error[3043]` ICE on the path.
-fn semanticAnalyzerCheckIntrospectionBuiltin(self: *SemanticAnalyzer, node_idx: u32, ec_n: usize) void {
+fn semanticAnalyzerCheckIntrospectionBuiltin(self: *SemanticAnalyzer, node_idx: u32) void {
     var ib_node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var ib_is_offset = ib_node.child_0 == self.offset_of_name_id or ib_node.child_0 == self.bit_offset_of_name_id;
-    var ib_want: usize = @intCast(usize, 1);
-    if (ib_is_offset) { ib_want = @intCast(usize, 2); }
-    if (ec_n != ib_want) {
-        var ib_wexp_buf: [10]u8 = undefined;
-        var ib_wexp_l = itoa_mod.itoa(@intCast(u32, ib_want), ib_wexp_buf[0..]);
-        var ib_wfnd_buf: [10]u8 = undefined;
-        var ib_wfnd_l = itoa_mod.itoa(@intCast(u32, ec_n), ib_wfnd_buf[0..]);
-        var ib_wexp_s: usize = @intCast(usize, 9) - @intCast(usize, ib_wexp_l);
-        var ib_wfnd_s: usize = @intCast(usize, 9) - @intCast(usize, ib_wfnd_l);
-        var ib_ap0: []const u8 = "expected ";
-        var ib_ap1: []const u8 = " argument(s), found ";
-        var ib_aparts: [4][]const u8 = [4][]const u8{ ib_ap0, ib_wexp_buf[ib_wexp_s..@intCast(usize, 9)], ib_ap1, ib_wfnd_buf[ib_wfnd_s..@intCast(usize, 9)] };
-        var ib_amsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ib_aparts[0], @intCast(u32, 4));
-        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), ib_amsg);
-        return;
-    }
     var ib_env = semanticAnalyzerTypeEnv(self, self.module_id);
     var ib_tid = type_resolver.resolveTypeExprFull(&ib_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
     if (ib_tid == type_mod.TYPE_UNDEFINED) {
@@ -4788,17 +4926,17 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.builtin_call) {
         var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
         var cva: []const u8 = "@cVaArg";
-        if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
-            semanticAnalyzerCheckIntrospectionBuiltin(self, node_idx, ec_n);
+        var ba_res = semanticAnalyzerCheckBuiltinArity(self, node_idx, node.child_0, ec_n);
+        if (ba_res == @intCast(u8, 1)) {
+            result = type_mod.TYPE_UNDEFINED;
+        } else if (ba_res == @intCast(u8, 2)) {
+            result = type_mod.TYPE_INT_LIT;
+        } else if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
+            semanticAnalyzerCheckIntrospectionBuiltin(self, node_idx);
             result = type_mod.TYPE_INT_LIT;
         } else if (node.child_0 == self.ptrtoint_name_id or node.child_0 == self.int_from_ptr_name_id) {
             semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 1);
             result = type_mod.TYPE_USIZE;
-        } else if (node.child_0 == self.ptr_from_int_name_id and ec_n != @intCast(usize, 1)) {
-            var pfi_arity_msg: []const u8 = "@ptrFromInt requires exactly one argument: @ptrFromInt(expr)";
-            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3000_TYPE_MISMATCH)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), pfi_arity_msg);
-            if (ec_n >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0))); }
-            result = type_mod.TYPE_UNDEFINED;
         } else if (node.child_0 == self.ptr_from_int_name_id) {
             var pfi_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
             if (ec_n >= @intCast(usize, 1)) {
@@ -4901,13 +5039,6 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             semanticAnalyzerDiagAsyncBuiltinInDefer(self, node_idx);
             semanticAnalyzerDiagAsyncOutsideSuspending(self, node_idx);
             result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false);
-        } else if (node.child_0 == self.ptrcast_name_id and ec_n != @intCast(usize, 2)) {
-            var pc3049: []const u8 = "@ptrCast requires exactly two arguments: @ptrCast(T, expr)";
-            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
-                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3049_PTRCAST_REQUIRES_TWO_ARGS)),
-                self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), pc3049);
-            if (ec_n >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0))); }
-            result = type_mod.TYPE_UNDEFINED;
         } else if (semanticAnalyzerBuiltinNameEq(self, node.child_0, cva)) {
             if (ec_n >= @intCast(usize, 2)) {
                 _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
