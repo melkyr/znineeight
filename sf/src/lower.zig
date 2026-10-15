@@ -2374,7 +2374,102 @@ fn lowerFindFieldOrdinal(self: *LirLowerer, container_tid: u32, field_name_id: u
     return @intCast(u32, 0xFFFFFFFF);
 }
 
-fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32, safe_check: u8) u32 {
+// P10: the ONE checked index-address computation for lvalue chains (the
+// scattered copies in `lowerLValueAddr`, `lowerAssignLValue` and
+// `lowerFieldStore` route through here). Sequence: FX5
+// `indexBaseAfterArrayDeref` -> `lowerExpr` base -> `maybeExtractSlicePtr`
+// (slice `.ptr` extract) -> `lowerExpr` index -> `emitSafeCheckIndex` (ALWAYS —
+// the checker self-gates on `ctx.safe_checks`; the old per-caller `safe_check`
+// opt-in is gone) -> element address when `want_addr != 0`, else nothing (the
+// `assign_index` consumer stores through `ptr`/`idx` directly).
+// Unified ptr-to-array rule (Task 2f-F + 2g-F(c), was two near-copies): the
+// element address of an index whose base temp is a pointer-to-array is
+// `load_index{decay=1}` (`&(*base)[idx]`) when the index denotes an ELEMENT of
+// the pointed-to array — a decayed multi-dimensional row (base node resolves
+// to the array value) or a genuine `*[N]T` (auto-deref indexing, spec §1.2;
+// base node resolves to the single pointer) — and `BIN_ADD` when the element
+// IS the row (slice/many-pointer of rows) or the base is not a pointer-to-array
+// (`ptr + idx` then scales by the element/row, correct).
+// FB/D4: the sem-folded tuple escape (`t[ord]`, `tuple_index_table`) is
+// detected between base lower and index lower (the folded index expression is
+// never lowered) and handed back — `is_tuple != 0` fills `tuple_bt`/
+// `tuple_ord` and `orig_base` (the tuple temp); `ptr`/`idx`/`addr` stay
+// TEMP_NONE and the caller emits its own `store_field`/`addr_of_field`
+// ordinal form.
+const IndexAddrResult = struct {
+    addr: u32,
+    orig_base: u32,
+    ptr: u32,
+    idx: u32,
+    tuple_bt: u32,
+    tuple_ord: u32,
+    is_tuple: u8,
+};
+
+fn lowerIndexElemAddr(self: *LirLowerer, lv_node_idx: u32, base_node: u32, idx_node: u32, result_type: u32, want_addr: u8) IndexAddrResult {
+    var res: IndexAddrResult = IndexAddrResult{
+        .addr = TEMP_NONE,
+        .orig_base = TEMP_NONE,
+        .ptr = TEMP_NONE,
+        .idx = TEMP_NONE,
+        .tuple_bt = type_mod.TYPE_UNDEFINED,
+        .tuple_ord = @intCast(u32, 0),
+        .is_tuple = @intCast(u8, 0),
+    };
+    var base_temp = lowerExpr(self, indexBaseAfterArrayDeref(self, base_node));
+    var bt = getTempType(self, base_temp);
+    if (bt != type_mod.TYPE_UNDEFINED and bt != type_mod.TYPE_VOID and @intCast(usize, bt) < self.ctx.registry.types_len) {
+        if (self.ctx.registry.types_items[@intCast(usize, bt)].kind == type_mod.TypeKind.tuple_type) {
+            if (hash_mod.u32ToU32MapGet(self.ctx.tuple_index_table, lv_node_idx)) |tord| {
+                res.is_tuple = @intCast(u8, 1);
+                res.tuple_bt = bt;
+                res.tuple_ord = tord;
+                res.orig_base = base_temp;
+                return res;
+            }
+        }
+    }
+    res.orig_base = base_temp;
+    var ptr_temp = maybeExtractSlicePtr(self, base_node, base_temp);
+    res.ptr = ptr_temp;
+    var idx_temp = lowerExpr(self, idx_node);
+    res.idx = idx_temp;
+    emitSafeCheckIndex(self, base_temp, base_node, idx_temp);
+    if (want_addr == @intCast(u8, 0)) return res;
+    // Unified ptr-to-array row rule (2f-F + 2g-F(c); never `ptr + idx`
+    // whole-row scale on a pointer-to-array element).
+    var use_li: u8 = @intCast(u8, 0);
+    if (tempTypeIsPtrToArray(self, ptr_temp) != @intCast(u8, 0)) {
+        var bn_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node);
+        if (bn_rt) |la_t| {
+            if (la_t != type_mod.TYPE_UNDEFINED and la_t != type_mod.TYPE_VOID and @intCast(usize, la_t) < self.ctx.registry.types_len) {
+                var bnty = self.ctx.registry.types_items[@intCast(usize, la_t)];
+                if (bnty.kind == type_mod.TypeKind.array_type) {
+                    use_li = @intCast(u8, 1);
+                } else if (bnty.kind == type_mod.TypeKind.ptr_type) {
+                    if (@intCast(usize, bnty.payload_idx) < self.ctx.registry.ptr_len) {
+                        var po = self.ctx.registry.ptr_items[@intCast(usize, bnty.payload_idx)].base;
+                        if (@intCast(usize, po) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, po)].kind == type_mod.TypeKind.array_type) {
+                            use_li = @intCast(u8, 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (use_li != @intCast(u8, 0)) {
+        var la_atid = nextTemp(self, result_type);
+        emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = la_atid, .decay = @intCast(u8, 1) } });
+        res.addr = la_atid;
+        return res;
+    }
+    var tid = nextTemp(self, result_type);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ptr_temp, .rhs = idx_temp, .result = tid } });
+    res.addr = tid;
+    return res;
+}
+
+fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
     var store = self.ctx.store;
     var lv_node = ast_mod.astStoreNodeAt(store, lv_node_idx);
     if (lv_node.kind == AstKind.index_access) {
@@ -2382,51 +2477,20 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32, safe_c
         // (one mechanism with `.0`/`._0`). The ordinal is the one sema folded
         // and recorded; an uninstrumented node (no table entry) keeps the
         // generic index path below.
-        // FX5: `&pa.*[i]` lowers the POINTER (see `indexBaseAfterArrayDeref`),
-        // so the array value is never materialised into a C temp.
-        var lv_ix_base = lowerExpr(self, indexBaseAfterArrayDeref(self, lv_node.child_0));
-        var lv_ix_bt = getTempType(self, lv_ix_base);
-        if (lv_ix_bt != type_mod.TYPE_UNDEFINED and lv_ix_bt != type_mod.TYPE_VOID and @intCast(usize, lv_ix_bt) < self.ctx.registry.types_len) {
-            if (self.ctx.registry.types_items[@intCast(usize, lv_ix_bt)].kind == type_mod.TypeKind.tuple_type) {
-                var lv_ix_ord = hash_mod.u32ToU32MapGet(self.ctx.tuple_index_table, lv_node_idx);
-                if (lv_ix_ord) |lv_io| {
-                    var lv_ix_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, lv_ix_bt, false);
-                    var lv_ix_addr = lowerLValueAddr(self, lv_node.child_0, lv_ix_ptr_ty, safe_check);
-                    var lv_ix_tid = nextTemp(self, result_type);
-                    emitInst(self, LirInst{ .addr_of_field = .{ .base = lv_ix_addr, .field_id = lv_io, .result = lv_ix_tid } });
-                    return lv_ix_tid;
-                }
-            }
+        // P10: the generic tail is the ONE checked index-addr path
+        // (`lowerIndexElemAddr`) — FX5 `&pa.*[i]` lowers the POINTER (see
+        // `indexBaseAfterArrayDeref`), the slice `.ptr` extract, the root-index
+        // check (always; self-gated on `safe_checks`) and the unified
+        // ptr-to-array rule all live there.
+        var lv_ia = lowerIndexElemAddr(self, lv_node_idx, lv_node.child_0, lv_node.child_1, result_type, @intCast(u8, 1));
+        if (lv_ia.is_tuple != @intCast(u8, 0)) {
+            var lv_ix_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, lv_ia.tuple_bt, false);
+            var lv_ix_addr = lowerLValueAddr(self, lv_node.child_0, lv_ix_ptr_ty);
+            var lv_ix_tid = nextTemp(self, result_type);
+            emitInst(self, LirInst{ .addr_of_field = .{ .base = lv_ix_addr, .field_id = lv_ia.tuple_ord, .result = lv_ix_tid } });
+            return lv_ix_tid;
         }
-        var base_temp = lv_ix_base;
-        base_temp = maybeExtractSlicePtr(self, lv_node.child_0, base_temp);
-        var idx_temp = lowerExpr(self, lv_node.child_1);
-        // D5/F6: restore the `-fsafe` bounds check for an index in an
-        // address-taken aggregate l-value chain. The D5 path bypasses the
-        // by-value element read (which used to carry the check), so
-        // `s[i].field[j] = x` lost the root-index trap under `-fsafe`. The
-        // caller opts in (`safe_check`); every other address-of path keeps its
-        // previous output.
-        if (safe_check != @intCast(u8, 0)) emitSafeCheckIndex(self, lv_ix_base, lv_node.child_0, idx_temp);
-        // Task 2f-F: `&g[i][j]` where the base expression `g[i]` is a fixed
-        // array (decayed to a row pointer) must take the element address
-        // `&(*base)[j]`; a plain `base + j` would scale by the whole row.
-        var la_c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, lv_node.child_0);
-        var la_c0_is_array: u8 = @intCast(u8, 0);
-        if (la_c0_rt) |la_t| {
-            if (la_t != type_mod.TYPE_UNDEFINED and la_t != type_mod.TYPE_VOID) {
-                var la_c0ty = self.ctx.registry.types_items[@intCast(usize, la_t)];
-                if (la_c0ty.kind == type_mod.TypeKind.array_type) la_c0_is_array = @intCast(u8, 1);
-            }
-        }
-        if (la_c0_is_array != @intCast(u8, 0) and tempTypeIsPtrToArray(self, base_temp) != @intCast(u8, 0)) {
-            var la_atid = nextTemp(self, result_type);
-            emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = base_temp, .index = idx_temp, .result = la_atid, .decay = @intCast(u8, 1) } });
-            return la_atid;
-        }
-        var tid = nextTemp(self, result_type);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = base_temp, .rhs = idx_temp, .result = tid } });
-        return tid;
+        return lv_ia.addr;
     }
     if (lv_node.kind == AstKind.ident_expr) {
         var name_id = ast_mod.astStoreIdentifier(store, lv_node_idx);
@@ -2454,7 +2518,7 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32, safe_c
         return lowerExpr(self, lv_node.child_0);
     }
     if (lv_node.kind == AstKind.paren_expr) {
-        return lowerLValueAddr(self, lv_node.child_0, result_type, safe_check);
+        return lowerLValueAddr(self, lv_node.child_0, result_type);
     }
     if (lv_node.kind == AstKind.field_access) {
         var field_name_id: u32 = ast_mod.astStoreNodePayload(store, lv_node_idx);
@@ -2497,7 +2561,7 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32, safe_c
             base_addr = lowerExpr(self, base_node_idx);
         } else if (base_ty != type_mod.TYPE_UNDEFINED and base_ty != type_mod.TYPE_VOID) {
             var ptr_to_base = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, base_ty, false);
-            base_addr = lowerLValueAddr(self, base_node_idx, ptr_to_base, safe_check);
+            base_addr = lowerLValueAddr(self, base_node_idx, ptr_to_base);
         }
         var pointee_ty = base_ty;
         if (base_is_ptr == @intCast(u8, 1)) {
@@ -2679,7 +2743,7 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
             if (d5BaseChainHasIndex(self, lv_node.child_0)) {
                 if (d5IndexAssignArrayType(self, lv_node.child_0)) |d5_t| {
                     var d5_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, d5_t, false);
-                    var d5_addr = lowerLValueAddr(self, lv_node.child_0, d5_ptr_ty, @intCast(u8, 1));
+                    var d5_addr = lowerLValueAddr(self, lv_node.child_0, d5_ptr_ty);
                     var d5_idx = lowerExpr(self, lv_node.child_1);
                     emitSafeCheckIndex(self, d5_addr, lv_node.child_0, d5_idx);
                     emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = d5_addr, .index = d5_idx, .src = value_temp } });
@@ -2687,33 +2751,33 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
                 }
             }
         }
-        var base_temp = lowerExpr(self, indexBaseAfterArrayDeref(self, lv_node.child_0));
+        // P10: the checked index computation (FX5 -> slice-ptr extract -> idx
+        // -> `emitSafeCheckIndex`) lives in the ONE shared path
+        // (`lowerIndexElemAddr`); this arm stores via `assign_index{ptr, idx}`
+        // and takes no element address (`want_addr = 0`).
+        var ai_res = lowerIndexElemAddr(self, lv_node_idx, lv_node.child_0, lv_node.child_1, @intCast(u32, 0), @intCast(u8, 0));
         // FB (D4): `t[ord] = value` is the field store `t._<ord> = value`
         // (same mechanism as `.0`/`._0`). A base that is itself an l-value
         // chain (field/index/deref/paren) must be taken by ADDRESS, exactly
         // like `lowerFieldStore`'s nested-base arm — `lowerExpr` on a field
         // access yields a copy, and the store would be lost.
-        var ait_bt = getTempType(self, base_temp);
-        if (ait_bt != type_mod.TYPE_UNDEFINED and ait_bt != type_mod.TYPE_VOID and @intCast(usize, ait_bt) < self.ctx.registry.types_len) {
-            if (self.ctx.registry.types_items[@intCast(usize, ait_bt)].kind == type_mod.TypeKind.tuple_type) {
-                if (hash_mod.u32ToU32MapGet(self.ctx.tuple_index_table, lv_node_idx)) |ait_ord| {
-                    var ait_base = base_temp;
-                    var ait_nid = nameMapGet(self, base_temp);
-                    var ait_bn = ast_mod.astStoreNodeAt(store, lv_node.child_0);
-                    if (ait_bn.kind == AstKind.field_access or ait_bn.kind == AstKind.index_access or ait_bn.kind == AstKind.deref or ait_bn.kind == AstKind.paren_expr) {
-                        var ait_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, ait_bt, false);
-                        ait_base = lowerLValueAddr(self, lv_node.child_0, ait_ptr_ty, @intCast(u8, 0));
-                        ait_nid = @intCast(u32, 0);
-                    }
-                    emitInst(self, LirInst{ .store_field = .{ .name_id = ait_nid, .base = ait_base, .field_id = ait_ord, .value = value_temp } });
-                    return;
-                }
+        if (ai_res.is_tuple != @intCast(u8, 0)) {
+            var ait_bt = ai_res.tuple_bt;
+            var ait_ord = ai_res.tuple_ord;
+            var ait_base = ai_res.orig_base;
+            var ait_nid = nameMapGet(self, ait_base);
+            var ait_bn = ast_mod.astStoreNodeAt(store, lv_node.child_0);
+            if (ait_bn.kind == AstKind.field_access or ait_bn.kind == AstKind.index_access or ait_bn.kind == AstKind.deref or ait_bn.kind == AstKind.paren_expr) {
+                var ait_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, ait_bt, false);
+                ait_base = lowerLValueAddr(self, lv_node.child_0, ait_ptr_ty);
+                ait_nid = @intCast(u32, 0);
             }
+            emitInst(self, LirInst{ .store_field = .{ .name_id = ait_nid, .base = ait_base, .field_id = ait_ord, .value = value_temp } });
+            return;
         }
-        var ai_orig_base = base_temp;
-        base_temp = maybeExtractSlicePtr(self, lv_node.child_0, base_temp);
-        var idx_temp = lowerExpr(self, lv_node.child_1);
-        emitSafeCheckIndex(self, ai_orig_base, lv_node.child_0, idx_temp);
+        var ai_orig_base = ai_res.orig_base;
+        var base_temp = ai_res.ptr;
+        var idx_temp = ai_res.idx;
         var ai_ni: u32 = @intCast(u32, 0);
         var src_ni = resolved_mod.resolvedSourceTableGet(self.ctx.resolved_types, lv_node.child_0);
         if (src_ni) |sn| {
@@ -3145,21 +3209,16 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
     var base_temp: u32 = undefined;
     var resolved_base: ?u32 = null;
     if (child_0_node.kind == AstKind.index_access) {
-        var slice_temp = lowerExpr(self, child_0_node.child_0);
-        var ptr_temp = maybeExtractSlicePtr(self, child_0_node.child_0, slice_temp);
-        var idx_temp = lowerExpr(self, child_0_node.child_1);
+        // P10: the indexed element address comes from the ONE checked
+        // address-taking path (`lowerLValueAddr` -> `lowerIndexElemAddr`): FX5
+        // base-after-array-deref, slice-ptr extract, the unified ptr-to-array
+        // rule (Task 2f-F/2g-F(c) `load_index{decay=1}`, never `ptr+idx`
+        // whole-row scale), and the root-index `-fsafe` check (deliverable (b)
+        // — this arm had none, so `s[i].field = v` was unguarded under
+        // `-fsafe`). The T0b pointer-elem load below is unchanged.
         var elem_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fa_node.child_0);
         var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, if (elem_type) |et| et else type_mod.TYPE_VOID, false);
-        base_temp = nextTemp(self, ptr_type);
-        // Task 2g-F (c): when the indexed base is a pointer-to-array (a decayed
-        // multi-dimensional row), `ptr + idx` scales by the WHOLE row (silent
-        // wrong code); take the element address `&(*ptr)[idx]` instead, reusing
-        // the 2f-F `load_index{decay=1}` mechanism.
-        if (tempTypeIsPtrToArray(self, ptr_temp) != @intCast(u8, 0)) {
-            emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = base_temp, .decay = @intCast(u8, 1) } });
-        } else {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ptr_temp, .rhs = idx_temp, .result = base_temp } });
-        }
+        base_temp = lowerLValueAddr(self, fa_node.child_0, ptr_type);
         resolved_base = ptr_type;
         // T0b: when the indexed element is itself a pointer (e.g. a `[*]*T`
         // field indexed as `s.tasks[i]`), `base_temp` is the address of the
@@ -3192,7 +3251,7 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
             resolved_base = nested_base_ty;
         } else {
             var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, if (nested_base_ty) |et| et else type_mod.TYPE_VOID, false);
-            base_temp = lowerLValueAddr(self, fa_node.child_0, ptr_type, @intCast(u8, 0));
+            base_temp = lowerLValueAddr(self, fa_node.child_0, ptr_type);
             resolved_base = ptr_type;
         }
     } else {
@@ -4838,7 +4897,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var rt_ao = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ao_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
         if (rt_ao) |t| { if (t != type_mod.TYPE_UNDEFINED) { ao_box[0] = t; } } else { var rtm_ao: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ao); var rtmb_ao: [10]u8 = undefined; var rtml_ao = itoa_mod.itoa(node_idx, rtmb_ao[0..]); var rtms_ao: usize = @intCast(usize, 9) - @intCast(usize, rtml_ao); pal.markerWrite(rtmb_ao[rtms_ao..@intCast(usize, 9)]); var rtmnl_ao: []const u8 = "\n"; pal.markerWrite(rtmnl_ao); }
-        return lowerLValueAddr(self, node.child_0, ao_box[0], @intCast(u8, 0));
+        return lowerLValueAddr(self, node.child_0, ao_box[0]);
     } else if (node.kind == AstKind.index_access) {
         // FX5: `pa.*[i]` indexes the dereferenced array; lower the POINTER so
         // the emitter renders `(*pa)[i]` instead of gcc-invalid `zT = *pa;`.

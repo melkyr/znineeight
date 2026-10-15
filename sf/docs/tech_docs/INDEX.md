@@ -672,7 +672,8 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `lowerFn` | lower.zig |
 | `lowerFoldedIntConst` | lower.zig (P6-pre fix round 1: untyped arm records the exact value's semantic width/signedness on the int_const (temp TYPE_INT_LIT, `emitIntConstFacts`); typed arm unchanged (fit check + typed facts via `emitIntConst`); planner derives the C carrier at the boundary) |
 | `lowerExactIntArg` | lower.zig (FB2: exact untyped integer expression -> fact-carrying materialization const; shared by the print-argument literal route and the inferred-tuple construction arm; i32/signed class returns TEMP_NONE, >64-bit reports `error[3000]`. P6-pre fix round 1: FACTS ONLY — records (width_bits, is_signed) via `lowerUntypedIntFacts`; the materialization temp is TYPE_INT_LIT and the C carrier is derived by the planner at the boundary) |
-| `lowerLValueAddr` | lower.zig |
+| `lowerIndexElemAddr` | lower.zig (P10: ONE checked index-addr computation for lvalue chains — FX5 `indexBaseAfterArrayDeref` → slice `.ptr` extract → index → `emitSafeCheckIndex` always-on (self-gated; F6 `safe_check` opt-in removed) → `BIN_ADD`/`load_index{decay=1}` under the unified ptr-to-array rule; FB/D4 tuple `t[ord]` escape returns the folded ordinal) |
+| `lowerLValueAddr` | lower.zig (P10: `index_access` arm routes through `lowerIndexElemAddr`; always `-fsafe`-checked chains) |
 | `lowerModuleInit` | lower.zig |
 | `lowerPackedChainAnalyze` | lower.zig |
 | `lowerPackedWholeCopy` | lower.zig (FX15-F: per-leaf whole-value nested packed move — recursive pk walk emitting one `load_bitfield`+`store_bitfield` per leaf; shared by literal/assignment/packed-union/read paths; recursion bounded at 32 levels, deeper whole moves are a clean site `error[3000]` reject since fix round 1) |
