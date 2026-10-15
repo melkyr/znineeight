@@ -1,4 +1,4 @@
-# 12 — Async / Coroutines (`@async*` + `std.async`) [updated: 2026-10-09 — D3/D4 FIXED (frame-save `load_global` alias); see §8]
+# 12 — Async / Coroutines (`@async*` + `std.async`) [updated: 2026-10-12 — P9 (structural frame-save rule, WHAT/HOW split): the save/restore SET is decided at the async-construction authorities and carried on the frame layout — `load_global` global aliases are never frame-save members (no by-value slot, no save/restore; `async_frame_layout.zig` `asyncTempIsGlobalAlias` + the `ASYNC_FIELD_LIVE` add skip; `saveAllFields`/`reloadAllFields` save/restore only declared temps); the emitter spells from the carried set; D3/D4 root cause closed — see §8] [updated: 2026-10-09 — D3/D4 FIXED (frame-save `load_global` alias); see §8]
 
 > Covers: `async_analysis.zig`, `async_frame_layout.zig`, `async_state_machine.zig`, `std_async.zig`
 
@@ -115,7 +115,7 @@ frame layout. The rows below are in **layout order** (offset order); the `Kind` 
 | 1 | 0 (`ASYNC_FIELD_CTX`) | `ctx` | Pointer-sized per-task pool pointer |
 | 2 | 1 (`ASYNC_FIELD_STATE`) | `state` | `u8` / `u16` / `u32` chosen from the suspension-point count |
 | 3 | 2 (`ASYNC_FIELD_PARAM`) | `param` | Each `LirParam`, in order |
-| 4 | 3 (`ASYNC_FIELD_LIVE`) | `live` | Hoisted temps live across ≥ 1 suspension, in temp-id order |
+| 4 | 3 (`ASYNC_FIELD_LIVE`) | `live` | Hoisted temps live across ≥ 1 suspension, in temp-id order (P9: `load_global` aliases excluded — no by-value slot; the global is their storage) |
 | 5 | 5 (`ASYNC_FIELD_CHILD`) | `child` | One `*void` child-frame slot (when the function awaits) |
 | 6 | 6 (`ASYNC_FIELD_RESULT`) | `result` | One `*void` slot for the value returned through an await |
 | 7 | 7 (`ASYNC_FIELD_PARENT_RESULT`) | `parent_result` | One slot per value-returning implicit await, in program order |
@@ -330,3 +330,17 @@ normal `(ctx, args)` signature.
   `repro/mi_matrix/async_frame_structret_xmod/` now classifies **OK** and prints `5` at runtime
   (its driver buffers were also sized to clear `@asyncFrameSize(caller)`); the `z9torr` `peerRun`
   in-example patch (module-global `MsgReader` + `&g_reader`) links clean.
+- **P9 root cause CLOSED (structural frame-save rule, 2026-10-12).** F3 was the site fix (name the
+  alias at the save site). The root cause is the save SET: a `load_global` alias was hoisted as an
+  `ASYNC_FIELD_LIVE` field and round-tripped **by value** through the frame — the global copied into
+  the frame at every yield and the (stale) frame copy written back into the global at every resume.
+  P9 moves the set decision to the async-construction authorities and carries it: a `load_global`
+  alias is NEVER a frame-save member (`async_frame_layout.zig` `asyncTempIsGlobalAlias` — the class
+  is the lowering-recorded `load_global` def; **no new `lir.zig` record field** needed), the
+  `ASYNC_FIELD_LIVE` add skips it (no by-value slot — the global is its storage), and
+  `saveAllFields`/`reloadAllFields` (`async_state_machine.zig`) save/restore only declared temps
+  (params + private-storage temps). The emitter SPELLS the save/restore from the carried set
+  (unchanged LIR spelling); F3's `temp_global_map` pre-walk stays for every other alias reference.
+  Expected delta: pins 0/8 (the pin programs carry no live-across alias — pre-edit dump census),
+  `z9torr` loses its 9× `SCAN_MAX` save + 9× reload round-trip pairs (its `peerRun` frame relayouts;
+  runtime frozen), D3/D4 repro shapes stop copying the global entirely.

@@ -7936,6 +7936,10 @@ fn dceTempIsArray(registry: *TypeRegistry, lir_fn: *LirFunction, temp: u32) bool
     return false;
 }
 
+// P9: the alias class is `load_global`-derived (lowering-recorded fact). The
+// async frame-save set never contains these temps (async_frame_layout.zig
+// `asyncTempIsGlobalAlias`) — here they only lose their C declaration, spelled
+// by the global's name via `temp_global_map` (F3).
 fn dceMarkLoadGlobalAliases(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, no_decl_arr: [*]u8) void {
     var bb_idx: usize = @intCast(usize, 0);
     while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {

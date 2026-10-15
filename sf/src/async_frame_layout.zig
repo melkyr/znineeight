@@ -519,6 +519,29 @@ fn emitLayoutMarker(module_id: u32, name_id: u32, size: u32) void {
     var m4: []const u8 = "\n"; pal.markerWrite(m4);
 }
 
+// P9 structural frame-save rule — the alias-class predicate. A `load_global`
+// result temp is an alias of the module global (lowering records the fact at
+// the `load_global` construction sites; the emitter spells the global's C name
+// for the temp and never declares it). Such a temp is NEVER a frame-save
+// member: the global is its storage, so a by-value frame slot would round-trip
+// the global's value through the frame (and write a stale copy back on resume).
+// Consumers: the `ASYNC_FIELD_LIVE` add in `asyncLayoutFrame` (carried save
+// set) and the save/restore generators in `async_state_machine.zig`.
+pub fn asyncTempIsGlobalAlias(lir_fn: *LirFunction, temp: u32) bool {
+    var bi: usize = @intCast(usize, 0);
+    while (bi < lir_fn.blocks.len) : (bi += @intCast(usize, 1)) {
+        var bb = &lir_fn.blocks.items[bi];
+        var ii: usize = @intCast(usize, 0);
+        while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+            switch (bb.insts.items[ii]) {
+                .load_global => |lg| { if (lg.result == temp) return true; },
+                else => {},
+            }
+        }
+    }
+    return false;
+}
+
 pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
     suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map,
     state_widths: *hash_mod.U64ToU32Map,
@@ -618,6 +641,10 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
     while (t < max_temp) : (t += @intCast(u32, 1)) {
         var tu = @intCast(usize, t);
         if (live[tu] != @intCast(u8, 0) and is_param[tu] == @intCast(u8, 0)) {
+            // P9 structural frame-save rule (remove the global by-value
+            // round-trip): a `load_global` alias's storage IS the module global,
+            // so it gets no by-value frame slot and is never a save-set member.
+            if (asyncTempIsGlobalAlias(lir_fn, t)) continue;
             addField(&fields, reg, ASYNC_FIELD_LIVE, @intCast(u32, 0), t, c.ttype[tu], &offset, &max_align);
         }
     }
