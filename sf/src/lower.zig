@@ -567,17 +567,125 @@ fn markTerminated(blocks: *lir_mod.BasicBlockArrayList, bb_id: u32) void {
 }
 
 pub fn emitInst(self: *LirLowerer, inst: LirInst) void {
-    lir_mod.lirInstArrayListAppend(&self.func.blocks.items[self.current_bb].insts, inst);
+    // P6 (Decision-vs-spelling): record the semantic facts on the inst at the
+    // OWNING phase (field identity, operation semantic type) before it joins
+    // the stream. The emitter spells from these records only.
+    var rec = lowerRecordFacts(self, inst);
+    lir_mod.lirInstArrayListAppend(&self.func.blocks.items[self.current_bb].insts, rec);
     // A18: arbitrary-width `binary`/`unary` results get the former emitter-side
     // in-place width normalization as a backend-neutral `width_wrap` op. This
     // mirrors exactly where the emitter used to call `emitWidthWrapStmt`
     // (the `.binary`/`.unary` arms), so `-ffast` bytes are unchanged.
-    switch (inst) {
+    switch (rec) {
         .binary => |b| { maybeEmitWidthWrap(self, b.result); },
         .unary => |u| { maybeEmitWidthWrap(self, u.result); },
         .int_cast => |c| { maybeEmitWidthWrap(self, c.result); },
         .int_cast_checked => |c| { maybeEmitWidthWrap(self, c.result); },
         else => {},
+    }
+}
+
+// P6: the recorded field identity (`field_name_id`/`field_type_id`) of the
+// field `field_id` on `base`'s container — resolved HERE (lowering owns the
+// decision; the emitter's `fe_items`-by-ordinal re-resolution is deleted).
+// 0/0 = synthetic (slice `.ptr`/`.len`, tagged-union `.tag`/payload, tuple
+// ordinals) or out-of-range/unresolved — those designators are spelled from
+// `field_id` + the base kind, exactly as before.
+const LowerFieldRecord = struct { name_id: u32, type_id: u32 };
+
+fn lowerFieldRecord(self: *LirLowerer, base: u32, field_id: u32) LowerFieldRecord {
+    var none: LowerFieldRecord = LowerFieldRecord{ .name_id = @intCast(u32, 0), .type_id = @intCast(u32, 0) };
+    if (@intCast(usize, base) >= self.hoisted_temps.len) return none;
+    var cid: u32 = self.hoisted_temps.items[@intCast(usize, base)].type_id;
+    var guard: usize = @intCast(usize, 0);
+    while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
+        if (cid == type_mod.TYPE_UNDEFINED or cid == type_mod.TYPE_VOID) return none;
+        if (@intCast(usize, cid) >= self.ctx.registry.types_len) return none;
+        var ty = self.ctx.registry.types_items[@intCast(usize, cid)];
+        if (ty.kind == type_mod.TypeKind.ptr_type or ty.kind == type_mod.TypeKind.many_ptr_type) {
+            cid = self.ctx.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+            continue;
+        }
+        if (ty.kind == type_mod.TypeKind.struct_type) {
+            var sp = self.ctx.registry.st_items[@intCast(usize, ty.payload_idx)];
+            if (@intCast(usize, field_id) >= @intCast(usize, sp.fields_count)) return none;
+            var fe = self.ctx.registry.fe_items[@intCast(usize, sp.fields_start) + @intCast(usize, field_id)];
+            return LowerFieldRecord{ .name_id = fe.name_id, .type_id = fe.type_id };
+        }
+        if (ty.kind == type_mod.TypeKind.union_type or ty.kind == type_mod.TypeKind.packed_union_type) {
+            var up = self.ctx.registry.un_items[@intCast(usize, ty.payload_idx)];
+            if (@intCast(usize, field_id) >= @intCast(usize, up.fields_count)) return none;
+            var fe2 = self.ctx.registry.fe_items[@intCast(usize, up.fields_start) + @intCast(usize, field_id)];
+            return LowerFieldRecord{ .name_id = fe2.name_id, .type_id = fe2.type_id };
+        }
+        return none;
+    }
+    return none;
+}
+
+// P6: the operation's semantic type — the former emit-time
+// `getTempTypeInfo` result→lhs→rhs re-derivation (plus the sat family's
+// void/int-lit re-check) runs HERE, at the owning phase. 0 = absent/undefined
+// record entry (mirrors `hoistedTypeOf`'s not-found).
+fn lowerTempSemanticType(self: *LirLowerer, temp: u32) u32 {
+    if (@intCast(usize, temp) >= self.hoisted_temps.len) return @intCast(u32, 0);
+    var t = self.hoisted_temps.items[@intCast(usize, temp)].type_id;
+    if (t == type_mod.TYPE_UNDEFINED) return @intCast(u32, 0);
+    return t;
+}
+
+fn lowerSemIsSigned(reg: *type_mod.TypeRegistry, tid: u32) u8 {
+    if (@intCast(usize, tid) >= reg.types_len) return @intCast(u8, 0);
+    return type_mod.typeKindIsSignedIntBase(reg.types_items[@intCast(usize, tid)].kind);
+}
+
+fn lowerBinSemType(self: *LirLowerer, result: u32, lhs: u32, rhs: u32, op: u8) u32 {
+    var st: u32 = lowerTempSemanticType(self, result);
+    if (st == @intCast(u32, 0)) { st = lowerTempSemanticType(self, lhs); }
+    if (st == @intCast(u32, 0)) { st = lowerTempSemanticType(self, rhs); }
+    if (st == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    if (op >= @intCast(u8, 19)) {
+        var k = self.ctx.registry.types_items[@intCast(usize, st)].kind;
+        if (k == type_mod.TypeKind.void_type or k == type_mod.TypeKind.integer_literal_type) {
+            st = lowerTempSemanticType(self, lhs);
+            if (st == @intCast(u32, 0)) { st = lowerTempSemanticType(self, rhs); }
+            if (st == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+        }
+    }
+    return st;
+}
+
+// P6: fill the recorded semantic facts (`field_name_id`/`field_type_id`,
+// `result_type`/`width`/`is_signed`) at the construction funnel. Everything
+// else passes through untouched.
+fn lowerRecordFacts(self: *LirLowerer, inst: LirInst) LirInst {
+    switch (inst) {
+        .binary => |b| {
+            var st = lowerBinSemType(self, b.result, b.lhs, b.rhs, b.op);
+            return LirInst{ .binary = .{
+                .op = b.op, .lhs = b.lhs, .rhs = b.rhs, .result = b.result,
+                .result_type = st,
+                .width = type_mod.typeRegistryIntWidthBits(self.ctx.registry, st),
+                .is_signed = lowerSemIsSigned(self.ctx.registry, st),
+            } };
+        },
+        .load_field => |lf| {
+            var fr = lowerFieldRecord(self, lf.base, lf.field_id);
+            return LirInst{ .load_field = .{ .base = lf.base, .field_id = lf.field_id, .result = lf.result, .name_id = lf.name_id, .field_name_id = fr.name_id, .field_type_id = fr.type_id } };
+        },
+        .store_field => |sf| {
+            var fr2 = lowerFieldRecord(self, sf.base, sf.field_id);
+            return LirInst{ .store_field = .{ .base = sf.base, .field_id = sf.field_id, .value = sf.value, .name_id = sf.name_id, .field_name_id = fr2.name_id, .field_type_id = fr2.type_id } };
+        },
+        .assign_field => |af| {
+            var fr3 = lowerFieldRecord(self, af.base, af.field_id);
+            return LirInst{ .assign_field = .{ .base = af.base, .field_id = af.field_id, .src = af.src, .name_id = af.name_id, .field_name_id = fr3.name_id, .field_type_id = fr3.type_id } };
+        },
+        .addr_of_field => |aof| {
+            var fr4 = lowerFieldRecord(self, aof.base, aof.field_id);
+            return LirInst{ .addr_of_field = .{ .base = aof.base, .field_id = aof.field_id, .result = aof.result, .field_name_id = fr4.name_id, .field_type_id = fr4.type_id } };
+        },
+        else => return inst,
     }
 }
 
@@ -5546,7 +5654,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                  var fnr_rm: []const u8 = "FNR:R"; pal.markerWriteInt(fnr_rm, fp.return_type);
                  var fnr_tm: []const u8 = "FNR:T"; pal.markerWriteInt(fnr_tm, result);
                   var call_name: u32 = fp.name_id;
-                 var cd_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = call_name, .module_id = fp.module_id, .args_start = args_start, .args_count = @intCast(u32, ec_n), .result = result, .return_type = fp.return_type, .is_extern = fp.is_extern, .call_conv = fp.flags_packed & type_mod.FN_FLAG_STDCALL });
+                 var cd_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = call_name, .module_id = fp.module_id, .args_start = args_start, .args_count = @intCast(u32, ec_n), .result = result, .return_type = fp.return_type, .is_extern = fp.is_extern, .call_conv = fp.flags_packed & type_mod.FN_FLAG_STDCALL, .fn_type_id = lowerCalleeFnTypeId(self, call_name, fp.module_id, fp.flags_packed & type_mod.FN_FLAG_STDCALL) });
                  emitInst(self, LirInst{ .call_direct = cd_slot });
                  return result;
                }
@@ -5676,7 +5784,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                     var adx1m: []const u8 = "m"; pal.markerWrite(adx1m);
                                     var adx1mb: [10]u8 = undefined; var adx1ml = itoa_mod.itoa(target_mod_id, adx1mb[0..]); var adx1ms: usize = @intCast(usize, 9) - @intCast(usize, adx1ml); pal.markerWrite(adx1mb[adx1ms..@intCast(usize, 9)]);
                                     var adx1nl: []const u8 = "\n"; pal.markerWrite(adx1nl);
-                                      var cd2_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = fs.name_id, .module_id = target_mod_id, .args_start = call_ns, .args_count = args_count, .result = result, .return_type = self._fn_ret_type, .is_extern = @intCast(u8, if ((fs.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)), .call_conv = lowerDeclCallConvFlag(store, fs.decl_node) });
+                                      var cd2_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = fs.name_id, .module_id = target_mod_id, .args_start = call_ns, .args_count = args_count, .result = result, .return_type = self._fn_ret_type, .is_extern = @intCast(u8, if ((fs.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)), .call_conv = lowerDeclCallConvFlag(store, fs.decl_node), .fn_type_id = lowerCalleeFnTypeId(self, fs.name_id, target_mod_id, lowerDeclCallConvFlag(store, fs.decl_node)) });
                                      emitInst(self, LirInst{ .call_direct = cd2_slot });
     var lex_rt_m: []const u8 = "r"; pal.markerWrite(lex_rt_m);
     var lex_rt_b: [10]u8 = undefined; var lex_rt_l = itoa_mod.itoa(result, lex_rt_b[0..]); var lex_rt_s: usize = @intCast(usize, 9) - @intCast(usize, lex_rt_l); pal.markerWrite(lex_rt_b[lex_rt_s..@intCast(usize, 9)]);
@@ -5747,7 +5855,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var adx2m: []const u8 = "m"; pal.markerWrite(adx2m);
                     var adx2mb: [10]u8 = undefined; var adx2ml = itoa_mod.itoa(sm.module_id, adx2mb[0..]); var adx2ms: usize = @intCast(usize, 9) - @intCast(usize, adx2ml); pal.markerWrite(adx2mb[adx2ms..@intCast(usize, 9)]);
                     var adx2nl: []const u8 = "\n"; pal.markerWrite(adx2nl);
-                     var cd3_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = sm.name_id, .module_id = sm.module_id, .args_start = args_start, .args_count = args_count, .result = result, .return_type = self._fn_ret_type, .is_extern = @intCast(u8, if ((sm.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)), .call_conv = lowerDeclCallConvFlag(store, sm.decl_node) });
+                     var cd3_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = sm.name_id, .module_id = sm.module_id, .args_start = args_start, .args_count = args_count, .result = result, .return_type = self._fn_ret_type, .is_extern = @intCast(u8, if ((sm.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0)), .call_conv = lowerDeclCallConvFlag(store, sm.decl_node), .fn_type_id = lowerCalleeFnTypeId(self, sm.name_id, sm.module_id, lowerDeclCallConvFlag(store, sm.decl_node)) });
                     emitInst(self, LirInst{ .call_direct = cd3_slot });
                     return result;
                 }
@@ -8214,7 +8322,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                                 if (ci.call_block_idx != saved_bb) {
                                     self.current_bb = ci.call_block_idx;
                                 }
-                                var tc_slot = lir_mod.lirSideAppendTailCall(self.func, .{ .callee = ci.callee, .module_id = ci.module_id, .args_start = ci.args_start, .args_count = ci.args_count, .result = ci.result, .return_type = ci.return_type, .is_indirect = ci.is_indirect, .is_extern = ci.is_extern, .call_conv = ci.call_conv });
+                                var tc_slot = lir_mod.lirSideAppendTailCall(self.func, .{ .callee = ci.callee, .module_id = ci.module_id, .args_start = ci.args_start, .args_count = ci.args_count, .result = ci.result, .return_type = ci.return_type, .is_indirect = ci.is_indirect, .is_extern = ci.is_extern, .call_conv = ci.call_conv, .fn_type_id = ci.fn_type_id });
                                 emitInst(self, LirInst{ .tail_call = tc_slot });
                                 self.current_bb = saved_bb;
                                 self.block_terminated = @intCast(u8, 1);
@@ -8775,9 +8883,37 @@ const CallInfo = struct {
     args_count: u32,
     result: u32,
     return_type: u32,
+    // P6: the callee's fn type id recorded for the tail-call side entry
+    // (0xFFFFFFFF for indirect callees — the emitter never convention-casts
+    // those, matching the old `findCalleeFnTypeId` call site's guard).
+    fn_type_id: u32,
     call_block_idx: u32,
     call_inst_idx: u32,
 };
+
+// P6 (Decision-vs-spelling): recover the callee's fn type id at the OWNING
+// phase (the former emit-time `findCalleeFnTypeId` registry scan is deleted;
+// this is the same resolution, recorded into `CallDirectData`/`TailCallData`).
+// Mirrors the emitter's historical scan exactly: no lookup when `call_conv` is
+// 0 (the use site never convention-casts those), else the first `fn_type` whose
+// `(name_id, module_id, FN_FLAG_STDCALL bit)` matches.
+fn lowerCalleeFnTypeId(self: *LirLowerer, name_id: u32, module_id: u32, call_conv: u8) u32 {
+    if (call_conv == @intCast(u8, 0)) return @intCast(u32, 0xFFFFFFFF);
+    var reg = self.ctx.registry;
+    var want: u8 = call_conv;
+    var i: usize = @intCast(usize, 0);
+    while (i < reg.types_len) : (i += @intCast(usize, 1)) {
+        var it = reg.types_items[i];
+        if (it.kind == type_mod.TypeKind.fn_type) {
+            var fp = reg.fn_items[@intCast(usize, it.payload_idx)];
+            if (fp.name_id == name_id and fp.module_id == module_id
+                and (fp.flags_packed & type_mod.FN_FLAG_STDCALL) == want) {
+                return @intCast(u32, i);
+            }
+        }
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
 
 fn findTailCall(self: *LirLowerer, ret_temp: u32) ?CallInfo {
     var cur = ret_temp;
@@ -8798,11 +8934,11 @@ fn findTailCall(self: *LirLowerer, ret_temp: u32) ?CallInfo {
                         if (cd.name_id == self.func.name_id and cd.module_id == self.func.module_id) {
                             is_self = @intCast(u8, 1);
                         }
-                        return CallInfo{ .is_self = is_self, .is_indirect = @intCast(u8, 0), .is_extern = cd.is_extern, .call_conv = cd.call_conv, .callee = cd.name_id, .module_id = cd.module_id, .args_start = cd.args_start, .args_count = cd.args_count, .result = cd.result, .return_type = cd.return_type, .call_block_idx = @intCast(u32, bi), .call_inst_idx = @intCast(u32, ii) };
+                        return CallInfo{ .is_self = is_self, .is_indirect = @intCast(u8, 0), .is_extern = cd.is_extern, .call_conv = cd.call_conv, .callee = cd.name_id, .module_id = cd.module_id, .args_start = cd.args_start, .args_count = cd.args_count, .result = cd.result, .return_type = cd.return_type, .fn_type_id = cd.fn_type_id, .call_block_idx = @intCast(u32, bi), .call_inst_idx = @intCast(u32, ii) };
                     }
                 } else if (tg == @enumToInt(LirInst.call)) {
                     if (inst.call.result == cur) {
-                        return CallInfo{ .is_self = @intCast(u8, 0), .is_indirect = @intCast(u8, 1), .is_extern = @intCast(u8, 0), .call_conv = @intCast(u8, 0), .callee = inst.call.callee, .module_id = @intCast(u32, 0), .args_start = inst.call.args_start, .args_count = inst.call.args_count, .result = inst.call.result, .return_type = type_mod.TYPE_UNDEFINED, .call_block_idx = @intCast(u32, bi), .call_inst_idx = @intCast(u32, ii) };
+                        return CallInfo{ .is_self = @intCast(u8, 0), .is_indirect = @intCast(u8, 1), .is_extern = @intCast(u8, 0), .call_conv = @intCast(u8, 0), .callee = inst.call.callee, .module_id = @intCast(u32, 0), .args_start = inst.call.args_start, .args_count = inst.call.args_count, .result = inst.call.result, .return_type = type_mod.TYPE_UNDEFINED, .fn_type_id = @intCast(u32, 0xFFFFFFFF), .call_block_idx = @intCast(u32, bi), .call_inst_idx = @intCast(u32, ii) };
                     }
                 } else if (tg == @enumToInt(LirInst.unwrap_error_payload)) {
                     if (inst.unwrap_error_payload.result == cur) {

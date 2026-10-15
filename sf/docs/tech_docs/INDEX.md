@@ -459,7 +459,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `emitSafeCheckShift` | lower.zig |
 | `emitSafeCheckSliceOpen` | lower.zig (FX5: `start <= len` for `base[start..]`; skipped only for a comptime start on a static-length base) |
 | `emitSafeCheckSliceRange` | lower.zig (FX5: `start <= end` + `end <= len` for `base[start..end]`; `len_static` marks the compile-time N of arrays/`*[N]T`/decayed array fields) |
-| `emitSatBinary` | c89_emit.zig |
+| `emitSatBinary` | c89_emit.zig (P6: spells ONLY from the carried `result_type`/`width`/`is_signed` — no emit-time type inspection) |
 | `emitSharedHeader` | c89_emit.zig |
 | `emitSliceType` | c89_emit.zig |
 | `emitSpecialTypes` | c89_emit.zig |
@@ -513,9 +513,13 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `fileOpen` | pal.zig |
 | `fileRead` | pal.zig |
 | `fileWrite` | pal.zig |
-| `findCalleeFnTypeId` | c89_emit.zig |
+| `findCalleeFnTypeId` | DELETED (P6: the callee fn type id is a lowering-recorded `CallDirectData`/`TailCallData` fact; see `lowerCalleeFnTypeId` in lower.zig) |
 | `findLocalTemp` | lower.zig |
 | `findTailCall` | lower.zig |
+| `lowerBinSemType` | lower.zig (P6: the operation's semantic type recorded at lowering — the former emit-time `getTempTypeInfo` chain) |
+| `lowerCalleeFnTypeId` | lower.zig (P6: callee fn type id resolution at the owning phase — replaces the deleted emitter `findCalleeFnTypeId`) |
+| `lowerFieldRecord` | lower.zig (P6: recorded field identity `field_name_id`/`field_type_id` for the emitter's designator spelling) |
+| `lowerRecordFacts` | lower.zig (P6: the construction-funnel record fill for `binary`/field-inst semantic facts) |
 | `floatNarrowDecl` | comptime_eval.zig (FX3: const/var reference probe — value + declared-type provenance) |
 | `floatNarrowProbe` | comptime_eval.zig (FX3: recursive value+provenance probe for the f32 narrowing) |
 | `fmtBnMulSmall` | util/format.zig |
@@ -548,7 +552,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `getInfixInfo` | parser.zig |
 | `getLevelName` | diagnostics.zig |
 | `getPrintFnName` | c89_emit.zig |
-| `getTempTypeByIndex` | c89_emit.zig |
+| `getTempTypeByIndex` | c89_emit.zig (P6: pure read of the recorded `TempDecl.type_id` — the re-derivation fallbacks are deleted) |
 | `getUnOpStr` | c89_emit.zig |
 | `growDep` | const_alias_prepass.zig |
 | `growLocalDecls` | lower.zig |

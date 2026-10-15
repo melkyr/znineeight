@@ -30,7 +30,7 @@ pub const LirInst = union(enum) {
     decl_temp: struct { temp: u32, type_id: TypeId },
     decl_local: struct { name_id: u32, type_id: TypeId, temp: u32 },
     assign: struct { dst: u32, src: u32, name_id: u32 },
-    assign_field: struct { base: u32, field_id: u32, src: u32, name_id: u32 },
+    assign_field: struct { base: u32, field_id: u32, src: u32, name_id: u32, field_name_id: u32, field_type_id: u32 },
     assign_index: struct { base: u32, index: u32, src: u32, name_id: u32 },
     jump: u32,
     branch: struct { cond: u32, then_bb: u32, else_bb: u32 },
@@ -39,16 +39,32 @@ pub const LirInst = union(enum) {
     ret: u32,
     ret_void: void,
     label: u32,
-    binary: struct { op: u8, lhs: u32, rhs: u32, result: u32 },
+    // P6 (Amendment 5 ruling 2, A15 pattern): `result_type`/`width`/`is_signed`
+    // are the lowering-recorded semantic facts of the operation's type (P5
+    // predicates at lowering; `width`/`is_signed` are semantic, never C
+    // carriers). Emitted for every `binary`; the emitter's sat family (op >=
+    // 19) and wrap family (op >= 16) spell ONLY from these fields (the old
+    // emit-time `getTempTypeInfo` re-derivation is deleted). 19 B payload keeps
+    // the folded `@sizeOf(LirInst)` at 32 B.
+    binary: struct { op: u8, lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
     unary: struct { op: u8, operand: u32, result: u32 },
     call: struct { callee: u32, args_start: u32, args_count: u32, result: u32 },
-    load_field: struct { base: u32, field_id: u32, result: u32, name_id: u32 },
-    store_field: struct { base: u32, field_id: u32, value: u32, name_id: u32 },
+    // P6 (Decision-vs-spelling): `field_name_id`/`field_type_id` are the
+    // lowering-recorded field identity (the field's source name id and declared
+    // type id; 0 = synthetic/unrecorded for slice `.ptr`/`.len`, tagged-union
+    // `.tag`/payload and tuple ordinal fields, whose designators are spelled
+    // from `field_id` + the base kind). The emitter spells the designator from
+    // this record and never re-resolves `fe_items` by ordinal. `name_id` (the
+    // pre-existing field) stays the BASE local's name id. The payloads stay
+    // within the 24 B union slot (load/store_field 24 B), so `@sizeOf(LirInst)`
+    // stays 32 B.
+    load_field: struct { base: u32, field_id: u32, result: u32, name_id: u32, field_name_id: u32, field_type_id: u32 },
+    store_field: struct { base: u32, field_id: u32, value: u32, name_id: u32, field_name_id: u32, field_type_id: u32 },
     load_index: struct { base: u32, index: u32, result: u32, name_id: u32, decay: u8 },
     load: struct { ptr: u32, result: u32 },
     store: struct { ptr: u32, value: u32 },
     addr_of: struct { operand: u32, result: u32 },
-    addr_of_field: struct { base: u32, field_id: u32, result: u32 },
+    addr_of_field: struct { base: u32, field_id: u32, result: u32, field_name_id: u32, field_type_id: u32 },
     wrap_optional: struct { value: u32, result: u32, type_id: TypeId },
     call_direct: u32, // side-table slot (see LirSideEntry / lirSideAppendCallDirect)
     va_start: struct { va_list_temp: u32, last_param_temp: u32 },
@@ -180,6 +196,11 @@ pub const CallDirectData = struct {
     // Applied at the use site as a cast to the convention-qualified fn-ptr
     // typedef; the extern's own prototype is no longer forced.
     call_conv: u8,
+    // P6 (Decision-vs-spelling): the callee's fn type id, recorded at lowering
+    // (the old emit-time `findCalleeFnTypeId` registry scan is deleted). The
+    // emitter spells the convention cast from this record only. 0xFFFFFFFF =
+    // no recorded fn type.
+    fn_type_id: u32,
 };
 
 pub const TailCallData = struct {
@@ -193,6 +214,11 @@ pub const TailCallData = struct {
     is_extern: u8,
     // Track1 Task 3R: callee calling-convention flag (0 or FN_FLAG_STDCALL).
     call_conv: u8,
+    // P6 (Decision-vs-spelling): the callee's fn type id, recorded at lowering
+    // (the old emit-time `findCalleeFnTypeId` registry scan is deleted). The
+    // emitter spells the convention cast from this record only. 0xFFFFFFFF =
+    // no recorded fn type (indirect callee / no convention lookup).
+    fn_type_id: u32,
 };
 
 // Per-fn side table for the 2 wide LirInst variants. LirInst holds the tag

@@ -238,7 +238,7 @@ fn emitBaseIdxAccess(emitter: *C89Emitter, base_temp: u32, idx_temp: u32, name_o
     }
 }
 
-fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegistry, mangler: *NameMangler, interner: *StringInterner, current_fn: *LirFunction, hoisted_temps_items: [*]lir_mod.TempDecl, hoisted_temps_len: usize, base: []const u8, base_temp: u32, field_id: u32, src: []const u8, src_temp: u32, emitter2: *C89Emitter) void {
+fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegistry, mangler: *NameMangler, interner: *StringInterner, current_fn: *LirFunction, hoisted_temps_items: [*]lir_mod.TempDecl, hoisted_temps_len: usize, base: []const u8, base_temp: u32, field_id: u32, src: []const u8, src_temp: u32, field_name_id: u32, field_type_id: u32, emitter2: *C89Emitter) void {
     var fn_prefix: []const u8 = ".f_";
     var found: u8 = @intCast(u8, 0);
     var is_arr: [1]u32 = [1]u32{@intCast(u32, 0)};
@@ -283,26 +283,25 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
             // D7-1: value named / slice / tagged / ptr->struct all resolve
             // through the shared helper (mode 45 = 1|4|8|32); emitFieldAssign's
             // tuple arm stays local because it also synthesizes `fld_name_val`.
-            var efa_name: u32 = @intCast(u32, 0);
-            var efa_tid: u32 = @intCast(u32, 0);
+            // P6: the field identity comes from the recorded inst facts.
             var efa_mode: u32 = @intCast(u32, 45);
-            if (resolveFieldAccess(writer, registry, interner, mangler, current_fn, base_ty, field_id, efa_mode, src_temp, &efa_name, &efa_tid) != @intCast(u8, 0)) {
+            if (resolveFieldAccess(writer, registry, interner, mangler, current_fn, base_ty, field_id, efa_mode, src_temp, field_name_id, field_type_id) != @intCast(u8, 0)) {
                 found = @intCast(u8, 1);
                 var efa_empty: []const u8 = ""; fn_prefix = efa_empty;
-                if (efa_name != @intCast(u32, 0) and (bty.kind == TypeKind.struct_type or bty.kind == TypeKind.union_type or bty.kind == TypeKind.packed_union_type)) { fld_name_val = if (bty.kind == TypeKind.struct_type) nm_mod.nameManglerMintField(mangler, efa_name, base_ty) else nm_mod.nameManglerMintMember(mangler, efa_name, base_ty); }
+                if (field_name_id != @intCast(u32, 0) and (bty.kind == TypeKind.struct_type or bty.kind == TypeKind.union_type or bty.kind == TypeKind.packed_union_type)) { fld_name_val = if (bty.kind == TypeKind.struct_type) nm_mod.nameManglerMintField(mangler, field_name_id, base_ty) else nm_mod.nameManglerMintMember(mangler, field_name_id, base_ty); }
                 if (bty.kind == TypeKind.slice_type) {
                     if (field_id == type_mod.SLICE_FIELD_PTR) {
                         var efa_el = registry.slice_items[@intCast(usize, bty.payload_idx)].elem;
                         cast_name = ptrCTypeNameFromElem(registry, mangler, efa_el);
                     }
-                } else if (efa_tid != @intCast(u32, 0) and (bty.kind == TypeKind.struct_type or bty.kind == TypeKind.union_type or bty.kind == TypeKind.packed_union_type)) {
-                    if (type_mod.typeRegistryIsPointer(registry, efa_tid)) { cast_name = getCTypeName(registry, mangler, efa_tid); }
-                    var efa_fety: type_mod.Type = registry.types_items[@intCast(usize, efa_tid)];
+                } else if (field_type_id != @intCast(u32, 0) and (bty.kind == TypeKind.struct_type or bty.kind == TypeKind.union_type or bty.kind == TypeKind.packed_union_type)) {
+                    if (type_mod.typeRegistryIsPointer(registry, field_type_id)) { cast_name = getCTypeName(registry, mangler, field_type_id); }
+                    var efa_fety: type_mod.Type = registry.types_items[@intCast(usize, field_type_id)];
                     if (efa_fety.kind == TypeKind.array_type) {
                         var efa_ap: type_mod.ArrayPayload = registry.array_items[@intCast(usize, efa_fety.payload_idx)];
                         is_arr[0] = @intCast(u32, 1);
                         arr_len[0] = efa_ap.length;
-                        field_arr_tid = efa_tid;
+                        field_arr_tid = field_type_id;
                         field_arr_elem = efa_ap.elem;
                     }
                 }
@@ -422,34 +421,29 @@ fn emitVariantFieldPayload(writer: *BufferedWriter, registry: *TypeRegistry, int
 // returning 1 when a designator was produced, 0 when the caller must emit its
 // own fallback (nothing is written on 0). `mode` selects the base kinds this
 // call site accepts and its fallback-visibility; `payload_temp` is scanned by
-// the tagged-union payload sub-helper. `name_out` / `fld_tid_out` receive the
-// named field's name id and declared type id (0 for synthetic fields). Mode
+// the tagged-union payload sub-helper. P6 (Decision-vs-spelling): the field's
+// identity is a lowering-RECORDED fact (`field_name_id`/`field_type_id` on the
+// inst) — the old `fe_items`-by-ordinal re-resolution is deleted; this helper
+// SPELLS the designator only (the base-kind/mode dispatch and the bounds
+// visibility policy are unchanged). Mode
 // bits: 1 value named (struct/union/packed -> ".name"); 2 value tuple ("._N");
 // 4 slice (".ptr"/".len"); 8 tagged union (".tag"/payload); 16 bounds-check the
 // named/tuple index; 32 ptr -> struct ("->name"); 64 ptr -> union/packed;
 // 128 ptr -> tuple ("->_N"); 256 ptr -> tagged tag ("->tag"); 512 arrow-only
 // (addr_of_field: a value struct/union/tuple base is an address temp -> "->").
-fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, current_fn: *LirFunction, base_ty: u32, field_id: u32, mode: u32, payload_temp: u32, name_out: *u32, fld_tid_out: *u32) u8 {
-    name_out.* = @intCast(u32, 0);
-    fld_tid_out.* = @intCast(u32, 0);
+fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, current_fn: *LirFunction, base_ty: u32, field_id: u32, mode: u32, payload_temp: u32, field_name_id: u32, field_type_id: u32) u8 {
     var rfa_bty = registry.types_items[@intCast(usize, base_ty)];
     if ((mode & @intCast(u32, 512)) != @intCast(u32, 0)) {
         if (rfa_bty.kind == type_mod.TypeKind.struct_type) {
-            var ar_st = registry.st_items[@intCast(usize, rfa_bty.payload_idx)];
-            var ar_fe = registry.fe_items[@intCast(usize, ar_st.fields_start) + @intCast(usize, field_id)];
             var ar_r: []const u8 = "->"; bufferedWriterWrite(writer, ar_r);
-            var ar_nm = nm_mod.nameManglerMintField(mangler, ar_fe.name_id, base_ty);
+            var ar_nm = nm_mod.nameManglerMintField(mangler, field_name_id, base_ty);
             bufferedWriterWrite(writer, ar_nm);
-            name_out.* = ar_fe.name_id; fld_tid_out.* = ar_fe.type_id;
             return @intCast(u8, 1);
         }
         if (rfa_bty.kind == type_mod.TypeKind.union_type) {
-            var au_up = registry.un_items[@intCast(usize, rfa_bty.payload_idx)];
-            var au_fe = registry.fe_items[@intCast(usize, au_up.fields_start) + @intCast(usize, field_id)];
             var au_r: []const u8 = "->"; bufferedWriterWrite(writer, au_r);
-            var au_nm = nm_mod.nameManglerMintMember(mangler, au_fe.name_id, base_ty);
+            var au_nm = nm_mod.nameManglerMintMember(mangler, field_name_id, base_ty);
             bufferedWriterWrite(writer, au_nm);
-            name_out.* = au_fe.name_id; fld_tid_out.* = au_fe.type_id;
             return @intCast(u8, 1);
         }
         if (rfa_bty.kind == type_mod.TypeKind.tuple_type) {
@@ -481,22 +475,18 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
         if ((mode & @intCast(u32, 32)) != @intCast(u32, 0) and rp_pty.kind == type_mod.TypeKind.struct_type) {
             var rp_st = registry.st_items[@intCast(usize, rp_pty.payload_idx)];
             if (rp_bounds == @intCast(u8, 0) or @intCast(usize, field_id) < @intCast(usize, rp_st.fields_count)) {
-                var rp_fe = registry.fe_items[@intCast(usize, rp_st.fields_start) + @intCast(usize, field_id)];
                 var rp_r: []const u8 = "->"; bufferedWriterWrite(writer, rp_r);
-                var rp_nm = nm_mod.nameManglerMintField(mangler, rp_fe.name_id, rp_pointee);
+                var rp_nm = nm_mod.nameManglerMintField(mangler, field_name_id, rp_pointee);
                 bufferedWriterWrite(writer, rp_nm);
-                name_out.* = rp_fe.name_id; fld_tid_out.* = rp_fe.type_id;
             }
             return @intCast(u8, 1);
         }
         if ((mode & @intCast(u32, 64)) != @intCast(u32, 0) and (rp_pty.kind == type_mod.TypeKind.union_type or rp_pty.kind == type_mod.TypeKind.packed_union_type)) {
             var rp_up = registry.un_items[@intCast(usize, rp_pty.payload_idx)];
             if (rp_bounds == @intCast(u8, 0) or @intCast(usize, field_id) < @intCast(usize, rp_up.fields_count)) {
-                var rp_fe = registry.fe_items[@intCast(usize, rp_up.fields_start) + @intCast(usize, field_id)];
                 var rp_r: []const u8 = "->"; bufferedWriterWrite(writer, rp_r);
-                var rp_nm = nm_mod.nameManglerMintMember(mangler, rp_fe.name_id, rp_pointee);
+                var rp_nm = nm_mod.nameManglerMintMember(mangler, field_name_id, rp_pointee);
                 bufferedWriterWrite(writer, rp_nm);
-                name_out.* = rp_fe.name_id; fld_tid_out.* = rp_fe.type_id;
             }
             return @intCast(u8, 1);
         }
@@ -514,23 +504,18 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
         return @intCast(u8, 0);
     }
     if ((mode & @intCast(u32, 1)) != @intCast(u32, 0) and (rfa_bty.kind == type_mod.TypeKind.struct_type or rfa_bty.kind == type_mod.TypeKind.union_type or rfa_bty.kind == type_mod.TypeKind.packed_union_type)) {
-        var vn_fstart: usize = @intCast(usize, 0);
         var vn_fcount: usize = @intCast(usize, 0);
         if (rfa_bty.kind == type_mod.TypeKind.struct_type) {
             var vn_st = registry.st_items[@intCast(usize, rfa_bty.payload_idx)];
-            vn_fstart = @intCast(usize, vn_st.fields_start);
             vn_fcount = @intCast(usize, vn_st.fields_count);
         } else {
             var vn_up = registry.un_items[@intCast(usize, rfa_bty.payload_idx)];
-            vn_fstart = @intCast(usize, vn_up.fields_start);
             vn_fcount = @intCast(usize, vn_up.fields_count);
         }
         if ((mode & @intCast(u32, 16)) == @intCast(u32, 0) or @intCast(usize, field_id) < vn_fcount) {
-            var vn_fe = registry.fe_items[vn_fstart + @intCast(usize, field_id)];
             var vn_d: []const u8 = "."; bufferedWriterWrite(writer, vn_d);
-            var vn_nm = if (rfa_bty.kind == type_mod.TypeKind.struct_type) nm_mod.nameManglerMintField(mangler, vn_fe.name_id, base_ty) else nm_mod.nameManglerMintMember(mangler, vn_fe.name_id, base_ty);
+            var vn_nm = if (rfa_bty.kind == type_mod.TypeKind.struct_type) nm_mod.nameManglerMintField(mangler, field_name_id, base_ty) else nm_mod.nameManglerMintMember(mangler, field_name_id, base_ty);
             bufferedWriterWrite(writer, vn_nm);
-            name_out.* = vn_fe.name_id; fld_tid_out.* = vn_fe.type_id;
             return @intCast(u8, 1);
         }
         return @intCast(u8, 0);
@@ -1669,27 +1654,10 @@ fn emitCallConv(emitter: *C89Emitter, call_conv: u8) void {
     }
 }
 
-// Track1 Task 3R: locate the function type of a direct callee from its
-// declaration name/module so the use site can cast to the convention-qualified
-// fn-pointer typedef (`FS_...`). Convention fn types are marked used when the
-// registry creates them (type_registry.zig), so the typedef is always emitted.
-fn findCalleeFnTypeId(emitter: *C89Emitter, name_id: u32, module_id: u32, call_conv: u8) u32 {
-    if (call_conv == @intCast(u8, 0)) return @intCast(u32, 0xFFFFFFFF);
-    var reg = emitter.registry;
-    var want: u8 = call_conv;
-    var i: usize = @intCast(usize, 0);
-    while (i < reg.types_len) : (i += @intCast(usize, 1)) {
-        var it = reg.types_items[i];
-        if (it.kind == TypeKind.fn_type) {
-            var fp = reg.fn_items[@intCast(usize, it.payload_idx)];
-            if (fp.name_id == name_id and fp.module_id == module_id
-                and (fp.flags_packed & type_mod.FN_FLAG_STDCALL) == want) {
-                return @intCast(u32, i);
-            }
-        }
-    }
-    return @intCast(u32, 0xFFFFFFFF);
-}
+// P6: the emit-time `findCalleeFnTypeId` registry scan is DELETED — the callee
+// fn type id is a lowering-recorded fact on `CallDirectData`/`TailCallData`
+// (`fn_type_id`; recorded by `lower.zig` `lowerCalleeFnTypeId`, the same
+// resolution at the owning phase).
 
 // Track1 Task 3R: unwrap a temp holding a fn-pointer value to its fn-type id.
 fn tempFnTypeId(emitter: *C89Emitter, temp_id: u32) u32 {
@@ -3450,7 +3418,7 @@ fn emitValueExpr(emitter: *C89Emitter, temp_id: u32, depth: u32) void {
 
 fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32, def_bb: u32, def_ii: u32) void {
     switch (inst) {
-        .binary => |b| { nestEmitBinExpr(emitter, b.op, b.lhs, b.rhs, b.result, depth); },
+        .binary => |b| { nestEmitBinExpr(emitter, b.op, b.lhs, b.rhs, b.result, b.result_type, b.is_signed, depth); },
         .unary => |u| { emitUnaryRvalue(emitter, u.op, u.operand, u.result, depth); },
         .int_cast => |c| {
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
@@ -3519,13 +3487,14 @@ fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32, de
 
 // Rvalue-only mirror of the .binary def arm (single `result = <rvalue>;`
 // statement shape). Width-wrap-needed results and sat ops are excluded at
-// decision time, so only the plain two paths are reached.
-fn nestEmitBinExpr(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, res_t: u32, depth: u32) void {
+// decision time, so only the plain two paths are reached. P6: the operation's
+// semantic type is carried on the inst (`res_type`/`res_signed`, recorded at
+// lowering) — the emit-time `getTempTypeInfo` re-derivation is gone.
+fn nestEmitBinExpr(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, res_t: u32, res_type: u32, res_signed: u8, depth: u32) void {
     var sp: []const u8 = " ";
     if (op >= @intCast(u8, 16)) {
-        var wty: u32 = @intCast(u32, 0);
-        var wsg: u8 = @intCast(u8, 0);
-        getTempTypeInfo(emitter, res_t, lhs_t, rhs_t, &wty, &wsg);
+        var wty: u32 = res_type;
+        var wsg: u8 = res_signed;
         if (wsg != @intCast(u8, 0)) {
             var o1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o1);
             var ct = getCTypeName(emitter.registry, emitter.mangler, wty);
@@ -3644,11 +3613,17 @@ fn emitBinRvalueText(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, lhs_n
 
 // Rvalue-only mirror of the .unary def arm (single `result = <rvalue>;`
 // statement shape; width-wrap-needed results excluded at decision time).
+// P6: the semantic type is the recorded result temp type (a pure record read —
+// the old `getTempTypeInfo` cross-temp re-derivation chain is deleted).
 fn emitUnaryRvalue(emitter: *C89Emitter, op: u8, operand_t: u32, res_t: u32, depth: u32) void {
     if (op == @intCast(u8, 3)) {
         var wty: u32 = @intCast(u32, 0);
         var wsg: u8 = @intCast(u8, 0);
-        getTempTypeInfo(emitter, res_t, operand_t, @intCast(u32, 0), &wty, &wsg);
+        var w_resolved = hoistedTypeOf(emitter, res_t);
+        if (w_resolved != @intCast(u32, 0)) {
+            wty = w_resolved;
+            wsg = type_mod.typeKindIsSignedIntBase(emitter.registry.types_items[@intCast(usize, w_resolved)].kind);
+        }
         if (wsg != @intCast(u8, 0)) {
             var o1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o1);
             var ct = getCTypeName(emitter.registry, emitter.mangler, wty);
@@ -4096,23 +4071,16 @@ fn ptrCTypeNameFromElem(reg: *TypeRegistry, mangler: *NameMangler, elem_tid: u32
     return interner_mod.stringInternerGet(mangler.interner, ptr_mid);
 }
 
+// P6 (Decision-vs-spelling): a pure READ of the recorded temp result type
+// (`TempDecl.type_id`). The old re-derivation fallbacks (the written-type
+// `d4_wtype` write-scan for UNDEFINED slots) are deleted — the emitter never
+// decides a temp's type; the record is authoritative.
 fn getTempEffType(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signed: *u8) u8 {
     var i: usize = @intCast(usize, 0);
     while (i < emitter.current_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
         var ht = emitter.current_fn.hoisted_temps.items[i];
         if (ht.temp_id == temp_id) {
             var eff: u32 = ht.type_id;
-            if (eff == type_mod.TYPE_UNDEFINED) {
-                if (temp_id < emitter.d4_max_temp) {
-                    var pos = emitter.d4_t2p[@intCast(usize, temp_id)];
-                    if (pos != @intCast(u32, 0xFFFFFFFF) and pos < @intCast(u32, emitter.current_fn.hoisted_temps.len)) {
-                        if (emitter.d4_wflag[@intCast(usize, pos)] == @intCast(u8, 1)) {
-                            var wt = emitter.d4_wtype[@intCast(usize, pos)];
-                            if (wt != @intCast(u32, 0xFFFFFFFF) and wt != type_mod.TYPE_VOID) { eff = wt; }
-                        }
-                    }
-                }
-            }
             if (eff != @intCast(u32, 0xFFFFFFFF) and eff != type_mod.TYPE_VOID) {
                 out_type.* = eff;
                 var bty = emitter.registry.types_items[@intCast(usize, eff)];
@@ -4129,42 +4097,12 @@ fn getTempEffType(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signed
     return @intCast(u8, 0);
 }
 
-fn getTempTypeInfoResolve(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signed: *u8) u8 {
-    var resolved = hoistedTypeOf(emitter, temp_id);
-    if (resolved != @intCast(u32, 0)) {
-        var bty = emitter.registry.types_items[@intCast(usize, resolved)];
-        out_type.* = resolved;
-        if (type_mod.typeKindIsSignedIntBase(bty.kind) != @intCast(u8, 0)) {
-            out_signed.* = @intCast(u8, 1);
-        } else {
-            out_signed.* = @intCast(u8, 0);
-        }
-        return @intCast(u8, 1);
-    }
-    return @intCast(u8, 0);
-}
-
-fn getTempTypeInfo(emitter: *C89Emitter, temp_id: u32, fb1: u32, fb2: u32, out_type: *u32, out_signed: *u8) void {
-    if (getTempTypeInfoResolve(emitter, temp_id, out_type, out_signed) == @intCast(u8, 1)) return;
-    if (fb1 != @intCast(u32, 0)) {
-        if (getTempTypeInfoResolve(emitter, fb1, out_type, out_signed) == @intCast(u8, 1)) return;
-    }
-    if (fb2 != @intCast(u32, 0)) {
-        if (getTempTypeInfoResolve(emitter, fb2, out_type, out_signed) == @intCast(u8, 1)) return;
-    }
-    var tmi_m: []const u8 = "internal: temp type resolution failed in getTempTypeInfo (temp ";
-    var tmi_b: [10]u8 = undefined;
-    var tmi_l = itoa_mod.itoa(temp_id, tmi_b[0..]);
-    var tmi_s: usize = @intCast(usize, 9) - @intCast(usize, tmi_l);
-    var tmi_e: []const u8 = ")";
-    var parts: [3][]const u8 = [3][]const u8{ tmi_m, tmi_b[tmi_s..@intCast(usize, 9)], tmi_e };
-    var msg = diag_mod.diagnosticBuilderMakeMsg(emitter.interner, &parts[0], @intCast(u32, 3));
-    diag_mod.diagnosticCollectorAdd(emitter.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
-    diag_mod.diagnosticCollectorFlushAndExit(emitter.diag, @intCast(u32, 3));
-}
-
-fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8, result: []const u8, tid: u32, is_signed: u8) void {
-    var width_bits: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(emitter.registry, tid));
+// P6 (Amendment 5 ruling 2): saturation semantics are carried on the inst
+// (`result_type`/`width`/`is_signed`, recorded at lowering via P5 predicates).
+// This helper SPELLS only — the old `typeRegistryIntWidthBits` derivation and
+// the emit-time type inspection are gone.
+fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8, result: []const u8, result_type: u32, width: u8, is_signed: u8) void {
+    var width_bits: u32 = @intCast(u32, width);
     var max_buf: [24]u8 = undefined;
     var min_buf: [24]u8 = undefined;
     var minmag_buf: [24]u8 = undefined;
@@ -4236,8 +4174,8 @@ fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8,
     bufferedWriterWrite(&emitter.writer, result);
     bufferedWriterWrite(&emitter.writer, eqs);
     if (is_signed != @intCast(u8, 0)) {
-        var stype = getCTypeName(emitter.registry, emitter.mangler, tid);
-        var utype = getUnsignedCTypeName(emitter.registry, emitter.mangler, tid);
+        var stype = getCTypeName(emitter.registry, emitter.mangler, result_type);
+        var utype = getUnsignedCTypeName(emitter.registry, emitter.mangler, result_type);
         if (op == @intCast(u8, 19)) {
             bufferedWriterWrite(&emitter.writer, lp);
             bufferedWriterWrite(&emitter.writer, lhs);
@@ -6325,12 +6263,12 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
               var base: []const u8 = if (a.name_id != @intCast(u32, 0)) nm_mod.nameManglerMintLocal(emitter.mangler, a.name_id, emitter.current_fn_scope) else resolveTempName(emitter, a.base);
               var src = resolveTempName(emitter, a.src);
               bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-              if (dceFieldIsArray(emitter.registry, emitter.current_fn, a.base, a.field_id)) {
+              if (dceFieldIsArray(emitter.registry, a.field_type_id)) {
                   var vp: []const u8 = "(void)";
                   bufferedWriterWrite(&emitter.writer, vp);
               }
               bufferedWriterWrite(&emitter.writer, base);
-              emitFieldAssign(&emitter.writer, emitter.indent, emitter.registry, emitter.mangler, emitter.interner, emitter.current_fn, emitter.current_fn.hoisted_temps.items, emitter.current_fn.hoisted_temps.len, base, a.base, a.field_id, src, a.src, emitter);
+              emitFieldAssign(&emitter.writer, emitter.indent, emitter.registry, emitter.mangler, emitter.interner, emitter.current_fn, emitter.current_fn.hoisted_temps.items, emitter.current_fn.hoisted_temps.len, base, a.base, a.field_id, src, a.src, a.field_name_id, a.field_type_id, emitter);
               var afe_m: []const u8 = "AFE:b"; pal.markerWrite(afe_m);
               var afe_bb: [10]u8 = undefined; var afe_bl = itoa_mod.itoa(a.base, afe_bb[0..]); var afe_bs: usize = @intCast(usize, 9) - @intCast(usize, afe_bl); pal.markerWrite(afe_bb[afe_bs..@intCast(usize, 9)]);
               var afe_fm: []const u8 = "f"; pal.markerWriteInt(afe_fm, a.field_id);
@@ -6597,10 +6535,8 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                       // pointee emits nothing rather than the LFU fallback.
                       field_name_resolved = @intCast(u8, 1);
                   }
-                  var lf_rname: u32 = @intCast(u32, 0);
-                  var lf_rtid: u32 = @intCast(u32, 0);
                   var lf_mode: u32 = @intCast(u32, 255);
-                  if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.mangler, emitter.current_fn, lf_base_ty, lf.field_id, lf_mode, lf.result, &lf_rname, &lf_rtid) != @intCast(u8, 0)) {
+                  if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.mangler, emitter.current_fn, lf_base_ty, lf.field_id, lf_mode, lf.result, lf.field_name_id, lf.field_type_id) != @intCast(u8, 0)) {
                       field_name_resolved = @intCast(u8, 1);
                   }
               }
@@ -6636,10 +6572,8 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
               var sf_base_ty = hoistedTypeOf(emitter, sf.base);
               if (sf_base_ty != type_mod.TYPE_UNDEFINED) {
                   var bty = emitter.registry.types_items[@intCast(usize, sf_base_ty)];
-                  var sf_rname: u32 = @intCast(u32, 0);
-                  var sf_rtid: u32 = @intCast(u32, 0);
                   var sf_mode: u32 = @intCast(u32, 495);
-                  if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.mangler, emitter.current_fn, sf_base_ty, sf.field_id, sf_mode, sf.value, &sf_rname, &sf_rtid) != @intCast(u8, 0)) {
+                  if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.mangler, emitter.current_fn, sf_base_ty, sf.field_id, sf_mode, sf.value, sf.field_name_id, sf.field_type_id) != @intCast(u8, 0)) {
                       found2 = @intCast(u8, 1);
                   }
                   if (bty.kind == type_mod.TypeKind.slice_type) {
@@ -6647,10 +6581,10 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                           var sf_el = emitter.registry.slice_items[@intCast(usize, bty.payload_idx)].elem;
                           sf_cast = ptrCTypeNameFromElem(emitter.registry, emitter.mangler, sf_el);
                       }
-                  } else if (sf_rtid != @intCast(u32, 0)) {
-                      if (type_mod.typeRegistryIsPointer(emitter.registry, sf_rtid)) { sf_cast = getCTypeName(emitter.registry, emitter.mangler, sf_rtid); }
+                  } else if (sf.field_type_id != @intCast(u32, 0)) {
+                      if (type_mod.typeRegistryIsPointer(emitter.registry, sf.field_type_id)) { sf_cast = getCTypeName(emitter.registry, emitter.mangler, sf.field_type_id); }
                       if (bty.kind == type_mod.TypeKind.struct_type) {
-                          var sf_fety = emitter.registry.types_items[@intCast(usize, sf_rtid)];
+                          var sf_fety = emitter.registry.types_items[@intCast(usize, sf.field_type_id)];
                           if (sf_fety.kind == type_mod.TypeKind.array_type) {
                               var sfap = emitter.registry.array_items[@intCast(usize, sf_fety.payload_idx)];
                               is_arr2 = @intCast(u8, 1);
@@ -6784,10 +6718,8 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                     // struct/union/tuple dereferences with `->` (mode 736 =
                     // 512|32|64|128); a non-struct/union/packed/tuple pointee
                     // stays unresolved -> ICE, matching the original.
-                    var af_rname: u32 = @intCast(u32, 0);
-                    var af_rtid: u32 = @intCast(u32, 0);
                     var af_mode: u32 = @intCast(u32, 736);
-                    if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.mangler, emitter.current_fn, pointee, af.field_id, af_mode, @intCast(u32, 0), &af_rname, &af_rtid) != @intCast(u8, 0)) {
+                    if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.mangler, emitter.current_fn, pointee, af.field_id, af_mode, @intCast(u32, 0), af.field_name_id, af.field_type_id) != @intCast(u8, 0)) {
                         af_found = @intCast(u8, 1);
                     }
             }
@@ -6818,15 +6750,14 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             }
             var rhs = resolveTempName(emitter, b.rhs);
             if (b.op >= @intCast(u8, 16)) {
-                var wty: u32 = @intCast(u32, 0);
-                var wsg: u8 = @intCast(u8, 0);
-                getTempTypeInfo(emitter, b.result, b.lhs, b.rhs, &wty, &wsg);
+                // P6 (Amendment 5 ruling 2): the operation's semantic type is a
+                // lowering-recorded fact (`result_type`/`width`/`is_signed` on
+                // the inst; the emit-time `getTempTypeInfo` re-derivation and
+                // the sat void/int-lit re-check are deleted).
+                var wty: u32 = b.result_type;
+                var wsg: u8 = b.is_signed;
                 if (b.op >= @intCast(u8, 19)) {
-                    var sfty = emitter.registry.types_items[@intCast(usize, wty)];
-                    if (sfty.kind == TypeKind.void_type or sfty.kind == TypeKind.integer_literal_type) {
-                        getTempTypeInfo(emitter, b.lhs, b.rhs, @intCast(u32, 0), &wty, &wsg);
-                    }
-                    emitSatBinary(emitter, b.op, lhs, rhs, result, wty, wsg);
+                    emitSatBinary(emitter, b.op, lhs, rhs, result, b.result_type, b.width, b.is_signed);
                 } else {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 bufferedWriterWrite(&emitter.writer, result);
@@ -7182,7 +7113,9 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
              var mangled_id = nm_mod.nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 0), c.module_id);
              var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
               if (c.is_extern == @intCast(u8, 1)) { var orig_c = interner_mod.stringInternerGet(emitter.interner, c.name_id); fn_name = orig_c; }
-              var cd_callee_tid = findCalleeFnTypeId(emitter, c.name_id, c.module_id, c.call_conv);
+              // P6: the callee fn type id is a lowering-recorded fact on the
+              // side entry (the emit-time `findCalleeFnTypeId` scan is gone).
+              var cd_callee_tid = c.fn_type_id;
               if (dceTempIsDead(emitter, c.result)) {
                  bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                  var vp: []const u8 = "(void)";
@@ -7322,7 +7255,9 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             }
             var tc_callee_tid: u32 = @intCast(u32, 0xFFFFFFFF);
             if (tc.is_indirect == @intCast(u8, 0)) {
-                tc_callee_tid = findCalleeFnTypeId(emitter, tc.callee, tc.module_id, tc.call_conv);
+                // P6: the callee fn type id is a lowering-recorded fact on the
+                // side entry (the emit-time `findCalleeFnTypeId` scan is gone).
+                tc_callee_tid = tc.fn_type_id;
             }
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             if (tc.return_type != type_mod.TYPE_VOID) {
@@ -7976,28 +7911,14 @@ fn dceNoDeclPos(max_temp: u32, tid_to_pos: [*]u32, no_decl_arr: [*]u8, t: u32) v
     }
 }
 
-fn dceFieldIsArray(registry: *TypeRegistry, lir_fn: *LirFunction, base_temp: u32, field_id: u32) bool {
-    var bty_tid = hoistedTypeOfInFn(lir_fn, base_temp);
-    if (bty_tid != @intCast(u32, 0)) {
-        var bty = registry.types_items[@intCast(usize, bty_tid)];
-        if (bty.kind == type_mod.TypeKind.struct_type) {
-            var bst = registry.st_items[@intCast(usize, bty.payload_idx)];
-            if (field_id < @intCast(u32, bst.fields_count)) {
-                var fe = registry.fe_items[@intCast(usize, bst.fields_start) + @intCast(usize, field_id)];
-                var fty = registry.types_items[@intCast(usize, fe.type_id)];
-                if (fty.kind == type_mod.TypeKind.array_type) { return true; }
-                if (fty.kind == type_mod.TypeKind.struct_type and (fty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { return true; }
-            }
-        } else if (bty.kind == type_mod.TypeKind.union_type) {
-            var bun = registry.un_items[@intCast(usize, bty.payload_idx)];
-            if (field_id < @intCast(u32, bun.fields_count)) {
-                var fe = registry.fe_items[@intCast(usize, bun.fields_start) + @intCast(usize, field_id)];
-                var fty = registry.types_items[@intCast(usize, fe.type_id)];
-                if (fty.kind == type_mod.TypeKind.array_type) { return true; }
-                if (fty.kind == type_mod.TypeKind.struct_type and (fty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { return true; }
-            }
-        }
-    }
+// P6: the field's recorded type id decides the array/packed-copy shape (the
+// old `fe_items`-by-ordinal re-resolution is gone).
+fn dceFieldIsArray(registry: *TypeRegistry, field_type_id: u32) bool {
+    if (field_type_id == @intCast(u32, 0) or field_type_id == @intCast(u32, 0xFFFFFFFF)) return false;
+    if (@intCast(usize, field_type_id) >= registry.types_len) return false;
+    var fty = registry.types_items[@intCast(usize, field_type_id)];
+    if (fty.kind == type_mod.TypeKind.array_type) { return true; }
+    if (fty.kind == type_mod.TypeKind.struct_type and (fty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { return true; }
     return false;
 }
 
