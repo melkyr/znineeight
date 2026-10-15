@@ -4,6 +4,10 @@ Branch `zig1_improvements`, BASE `acda68be`. Requirements: `task-P6-brief.md` (b
 
 ## Status
 
+**COMPLETE** — round 1 STOP-presented (statement kept verbatim below as the record); operator Amendment 5 (rulings 1a + 2) resolved it: touch set extended with `async_state_machine.zig` copier-only edits and the sat semantic op fixed to the A15-pattern. Implemented as one compiler-moving commit (a) `2ad2e2cb`; full 8-item battery green (corpus 0 movers, goldens 5/5, mi_matrix 25+oob, examples 26/26+26/26, stdlib 285/0, hop1==hop2, fixed point `1293d62d…` → `48564285501eff1029207fcfe9416a66`, pins 0/8, markers unchanged).
+
+### Round 1 STOP-present (record)
+
 **STOP-present** (brief Global Constraints format):
 
 > I found the intention is P6's LIR records for field ordinal/name and the saturation semantic op (and the matching emitter consumption in exactly `lower.zig` + `lir.zig` + `c89_emit.zig`), but this is impossible given `async_state_machine.zig:remapInst` (`.binary` :331, `.call` :333, `.load_field` :334, `.store_field` :335, `.addr_of_field` :337, `.func_ref` :347) reconstructs those LirInst payloads **field-by-field**, so any new record field is silently dropped for every instruction of a remapped (async user-body) instruction stream — and battery item 4's own anchor `repro/mi_matrix/async_frame_structret_xmod` exercises exactly that shape (suspending `suspA`/`suspB` at `main.zig:23-24`: `p.a = p.a + 1` — pointer-base `load_field`/`store_field` in a remapped body), so the mandated 8-item battery cannot pass with the records in place, while the binding touch set ("Touch set = `lower.zig` + `lir.zig` + `c89_emit.zig` … Nothing else") forbids the copier edits that would make the records survive. The same class of gap was already a review-found real bug once in this plan (P6-pre: `remapInst` dropped `int_const` `width_bits`/`is_signed` → fix `82ff0743`, which is precisely an `async_state_machine.zig` edit).
@@ -73,17 +77,71 @@ Line cites re-derived by NAME at `acda68be` (plan P5-era cites stale, per brief)
 4. **REQUIRED, OUT OF TOUCH SET:** `async_state_machine.zig` `remapInst` — copy the new fields in the `.binary`/`.load_field`/`.store_field`/`.addr_of_field`/`.call`/`.func_ref` cases (and default-fill or extend the fresh async literals). Mirrors `82ff0743`.
 5. Tech docs: `sf/docs/tech_docs/08_c89_emission.md` + INDEX stamps `[updated: 2026-10-12 — P6 …]` for the named-helper removals (duty only attaches to the compiler-moving commit, which does not exist here).
 
-## Implement
+## Implement (one compiler-moving commit (a) `2ad2e2cb`; rulings 1a/2 folded into the I.4 edit plan)
 
-Not started. Per the STOP-present rule ("STOP and present … No corner cuts") the run halts before any source edit; step 4 of the edit plan is impossible under the binding touch set.
+Touch set (Amendment 5): `sf/src/lower.zig` + `sf/src/lir.zig` (record) + `sf/src/c89_emit.zig` (named removals/consumption) + `sf/src/async_state_machine.zig` (copier-only) + `sf/docs/tech_docs/**`. Diffstat: 7 files, +270/−183. `lir_opt_pass.zig`/`coercion.zig` untouched (whole-struct copies already preserve the new fields; no P11 work). `progress.md` untouched. No push.
 
-## Runtime battery
+**1. `lir.zig` (record).** `binary` += `result_type: u32, width: u8, is_signed: u8` (Amendment 5 ruling 2, A15 pattern; 19 B payload — `@sizeOf(LirInst)` stays 32 B); `load_field`/`store_field`/`assign_field` += `field_name_id: u32, field_type_id: u32` (24 B each); `addr_of_field` += `field_name_id`/`field_type_id` (20 B); `CallDirectData`/`TailCallData` += `fn_type_id: u32`. Record semantics documented on each payload (`field_name_id` 0 = synthetic slice/TU/tuple designator; `width`/`is_signed` semantic, never C carriers; `fn_type_id` 0xFFFFFFFF = none).
 
-Not run (no compiler-moving commit). The eight-item battery would be run after an operator-ruled implementation.
+**2. `lower.zig` (record).** `emitInst` is the construction funnel (`lowerRecordFacts`): every `binary` records `result_type`/`width`/`is_signed` via `lowerBinSemType` (the exact former emit-time decision relocated: `result→lhs→rhs` type chain + the sat-family void/int-lit re-check; `typeKindIsSignedIntBase` + `typeRegistryIntWidthBits` P5 predicates at lowering) and every field inst records `field_name_id`/`field_type_id` via `lowerFieldRecord` (the old `fe_items`-by-ordinal resolution at the owning phase, ptr→pointee unwrapped; 0/0 for synthetic/OOB). `lowerCalleeFnTypeId` = the old `findCalleeFnTypeId` scan relocated (verbatim semantics incl. the `call_conv == 0` early-out → 0xFFFFFFFF) — recorded at the 3 `lirSideAppendCallDirect` sites and the `CallInfo`/`lirSideAppendTailCall` path (indirect tail calls record 0xFFFFFFFF, matching the old guard).
 
-## Observations (report-only)
+**3. `c89_emit.zig` (named removals/consumption only).** (a) `resolveFieldAccess` consumes the recorded identity (`fe_items` lookups deleted; `name_out`/`fld_tid_out` outputs deleted; `emitFieldAssign`/`dceFieldIsArray` read the recorded field type — `dceFieldIsArray`'s own `fe_items` re-resolution went with it); base-kind/mode-bit designator spelling + bounds-visibility policy unchanged. (b) `findCalleeFnTypeId` DELETED (zero callers); `.call_direct`/`.tail_call` arms read `c.fn_type_id`/`tc.fn_type_id`. (c) `getTempEffType`'s `d4_wtype` write-scan fallback DELETED and `getTempTypeInfo`/`getTempTypeInfoResolve` (the cross-temp chain + ICE) DELETED — all temp-type reads are pure `TempDecl.type_id` record reads (`getTempTypeByIndex`/`hoistedTypeOf*` kept as readers). (d) The `.binary` `op >= 16` arm reads `b.result_type`/`b.is_signed` (ruling 2); `emitSatBinary(op, …, result_type, width, is_signed)` spells ONLY from the carried fields (its `typeRegistryIntWidthBits` derivation deleted); `nestEmitBinExpr` takes the carried `result_type`/`is_signed` from the inst (`nestEmitDefRvalue` passes `b.*`); `emitUnaryRvalue`'s wrap-neg reads the recorded result temp type (pure read — ruling 2 covers the binary family; the old `res→operand` chain is gone).
 
-- The async-safe subset of P6 is real and small: `fn_type_id` on the two side-table structs (wholesale-copied) + `TempDecl.type_id` concretization + the emitter consumption of both. The field-name record and the sat domain record are the blocked parts — they are exactly two of the five deliverable items and two of the four named removals (`resolveFieldAccess` re-resolution cannot be removed without the recorded name; `emitSatBinary` semantics cannot be recorded without a payload the copier preserves).
-- Reading (b) of "saturation semantic op" — "op + the recorded temp result types constitute the semantic record; P5 predicates at spell time are consumption, not decision" — would make the sat item async-safe. The brief's A15-precedent wording ("Lowering computes `result_type`/`width`/`is_signed` … so the emitter performs no type inspection" / "which saturate: signed/unsigned/width from the operation's semantic types") reads as reading (a) (explicit fields). I did not improvise a variant (spec §4.1: "never improvise a variant") — this is part of what the operator should confirm.
-- `name_id` on `load_field`/`store_field`/`assign_field` is the base local's name, not the field's — the plan text's "field ordinal/name" is therefore NOT already recorded despite the superficially matching field name; any implementer should not repurpose `name_id` (it feeds `nameManglerMintLocal` base spelling, :6568/:6625).
-- Commit budget: only the report commit exists (the brief's (a) `refactor(lower)` and (b) battery do not apply to a stopped run). `progress.md` untouched. No push. `run.err` left untracked and alone.
+**4. `async_state_machine.zig` (copier-only, ruling 1a).** `remapInst` copies every new record field 4-field-style exactly like the `int_const` facts copier (`82ff0743`): `.binary` += `result_type`/`width`/`is_signed`; `.load_field`/`.store_field`/`.assign_field`/`.addr_of_field` += `field_name_id`/`field_type_id`. No other changes in the file (its own constructions never emit sat ops or field insts — frame fields go through `ptr_to_int`/`load`/`store`; `copyCallDirect`/`copyTailCall` are whole-struct copies (`var cd = …call_direct`) and already preserve `fn_type_id` — verified, no edit needed).
+
+**5. Tech docs.** `[updated: 2026-10-12 — P6 …]` stamps in `07_lir_lowering.md` (the record funnel + side-table fact) and `08_c89_emission.md` (the four named removals), plus `INDEX.md` truth-up (`findCalleeFnTypeId` deleted, `emitSatBinary`/`getTempTypeByIndex` rows updated, `lowerCalleeFnTypeId`/`lowerFieldRecord`/`lowerRecordFacts`/`lowerBinSemType` indexed).
+
+Pre-commit smoke (evidence before commit): gol golden built+run = `fcbf7e7cead5082f0a8caadd5a8f0ff9` (frozen); sat probe (`+|` on i32/u32, `*|` i32, `+%` u32) emits the correct carried-bounds C (`2147483647` / `(-2147483647 - 1)` signed bounds, `0xFFFFFFFFu` unsigned bound, the width-64 mul shape) and runs `2147483647 / -2147483648 / 2147483647 / 1 / 94` — saturate + wrap semantics exact.
+
+## Runtime battery (all 8 items; compiler `/tmp/p6_build/zig1_5_clean`, built from the committed source)
+
+### 1. Seed two-hop
+
+`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/p6_build` → `[seed] hop2 binary md5: 48564285501eff1029207fcfe9416a66` / `[seed] two-hop closure OK: hop1 == hop2 == 48564285501eff1029207fcfe9416a66`. **hop1==hop2**; fixed point `1293d62d71dceeb734dee837a7e10e8e` → **`48564285501eff1029207fcfe9416a66`** (moved as expected; recorded; seed NOT rotated — Task C).
+
+### 2. Corpus classify (class FILE vs frozen Appendix A)
+
+`bash scripts/corpus/classify /tmp/p6_build/zig1_5_clean /tmp/p6_battery/corpus.txt` → `wrote …: 1124 dirs`; `md5sum` = `518eca1a9b5d3e1cc5a48abce214abd8` = frozen `518eca1a…` (**byte-identical, 0 movers**); tally `950 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH`.
+
+### 3. Goldens 5/5
+
+dump+gcc all rc=0 (0 `error:`). gol `timeout 120 ./gol` = `fcbf7e7cead5082f0a8caadd5a8f0ff9`; lisp `printf '(+ 1 2)\n' | timeout 60 ./lisp` = `b3d9f8974da24ddbf9d389f3d7d97322`; json (CWD `examples/z98/json_parser`) = `8bda3d5a1ec07d14a301bc343df32bf8`; mud session (`session.sh`) rc=0, server `66c8f0abb926cca7baf9a0d1692ab318`, client `93147d0f0bbd983a9d844fea8b7a6fa7`. **5/5 = frozen.**
+
+### 4. mi_matrix 25 + oob
+
+SET enumerated from the progress.md load-bearing definition (non-stdlib ∧ non-empty `expected.txt` ∧ `expected.rc==0`) → 25 dirs (list in the transcript; includes `slice_index_field_store_xmod`/`field_store_continue*`/`tagged_*`/`packed_*` families). `bash scripts/stdlib/run_fixtures.sh /tmp/p6_build/zig1_5_clean repro/mi_matrix/<25>` → **`run_fixtures: 25 PASS / 0 FAIL over 25 dirs`**. Trap `slice_index_field_store_oob_xmod` (`-fsafe`): dump rc=0, build rc=0, run **rc=133** (Trace/breakpoint trap), stdout 0 B (md5 `d41d8cd98f00b204e9800998ecf8427e` = `expected.txt`). **MATCH.** Extra (non-anchor siblings, copier probe): `async_frame_structret_xmod` rc=0 `5` (suspending `p.a = p.a + 1` bodies through `remapInst` — the exact copier hazard of the Investigate STOP), `union_keyword_tag_xmod` rc=0 `P=.{ .int = 7 }`/`3`, `slice_of_slice_xmod` rc=0 `11` — all per NOTES.
+
+### 5. examples 26/26 build + 26/26 run
+
+Build (`-ffast -o` + `build_target.sh linux`): 26/26 dump=0 / `.c` counts identical to task-0 §1.4 (7/6/6/7/6/7/9/9/9/14/15/15/15/8/6/9/6/6/21/20/6/6/7/7/25/38) / build=0. Run (CWD = example dir; `timeout 25` except mud 8; stdin `/dev/null` except rogue* `q\n`): 26/26 rc + stdout md5_16 IDENTICAL to §1.4 — days_in_month `8c0d394cbc6e7f36`, fibonacci `b53b3a3d6ab90ce0`, func_ptr_return `f6a5477970a87a1c`, game_of_life `fcbf7e7cead5082f`, heapsort `8cf0a7844206319d`, hello `746308829575e17c`, json×2 `8bda3d5a1ec07d14`, json_parser_workaround `dc22fa473650bd3d`, lisp×4 `1c1f0a417d5e9434`, lzw `c3c7765e6faf7b70`, mandelbrot `d596677501e36537`, mud_server rc=124 `9545fe1d245293ef`, prime `d095a94d20dcaf7a`, quicksort `45d2f0fb6fc40654`, rogue×2 `3fb6709e7bbd8964`, sort_strings `c6c047cbc13cdd4f`, tco_defer `264ea6b106a51dde`, tco_factorial `3d70c50b5a37d549`, tco_return_try `7421137aa2d104b4`, z9play rc=1 `2016494de476fcb6`, z9torr rc=1 `f666af15cf2625b3`. (First pass ran the matrix with the wrong CWD and showed 3 json mismatches — harness error, re-run with CWD=example-dir per the recipe; the table above is the authoritative run.)
+
+### 6. stdlib
+
+`bash scripts/stdlib/verify_stdlib.sh /tmp/p6_build/zig1_5_clean` → `run_fixtures: 285 PASS / 0 FAIL over 285 dirs` / `STDLIB GATE OK`. (Includes the `stdlib_async_*` family — remapped bodies with the new records.)
+
+### 7. The 8 `--dump-c89` pins (old → new)
+
+| entry | mode | old (combined-fix record) | new | delta |
+|---|---|---|---|---|
+| mud_server | `-fsafe` | `8b3c3d72ab59a9ae3c971c6a7759c7c0` | `8b3c3d72ab59a9ae3c971c6a7759c7c0` | 0 |
+| mud_server | `-ffast` | `fa346108ed00d03a037c2f9331d3bdf8` | `fa346108ed00d03a037c2f9331d3bdf8` | 0 |
+| game_of_life | `-fsafe` | `1b5d49b141ee9c664a82c270454bd75b` | `1b5d49b141ee9c664a82c270454bd75b` | 0 |
+| game_of_life | `-ffast` | `01a4e2265b33c97a8ca6ff3dfa551231` | `01a4e2265b33c97a8ca6ff3dfa551231` | 0 |
+| lisp_interpreter_curr | `-fsafe` | `8e5f2bc288d1dc75d7aee284cb35c291` | `8e5f2bc288d1dc75d7aee284cb35c291` | 0 |
+| lisp_interpreter_curr | `-ffast` | `e3970e33ac09c8dfaa316d2d69bf61ec` | `e3970e33ac09c8dfaa316d2d69bf61ec` | 0 |
+| json_parser | `-fsafe` | `2a12d0aac24d5bcdd694f05e04a4f029` | `2a12d0aac24d5bcdd694f05e04a4f029` | 0 |
+| json_parser | `-ffast` | `24e0e812e7dffa5a43750135405ffe3f` | `24e0e812e7dffa5a43750135405ffe3f` | 0 |
+
+**Pin delta: 0/8 — byte-identical C emission on the 4 gate programs** (the recorded facts are decision-identical to the removed re-derivations wherever the gates reach; pins recorded old→new as required).
+
+### 8. Markers telemetry
+
+`zig1_5_clean --markers --dump-c89 examples/z98/game_of_life/main.zig > mk_gol.c 2> mk_gol.bin` — dump rc=0; stderr **3,436 lines / 38,378 B** — identical to the record (unchanged).
+
+## Observations (report-only; no fixes)
+
+- The battery is fully green AND byte-identical where the plan allows byte-identity (pins 0/8, markers unchanged) — the relocated decisions (`lowerBinSemType`/`lowerFieldRecord`/`lowerCalleeFnTypeId`) reproduce the removed emit-time derivations exactly, including the sat void/int-lit re-check and the `call_conv == 0` early-out. This is decision-identity evidence beyond the runtime gates.
+- Deferred-minor class (not fixed, report-only): (a) `emitUnaryRvalue`'s wrap-neg now reads the recorded result temp type with no operand fallback (ruling 2 names the binary family; `wrap_negate` results are never UNDEFINED-registered, so the old chain's operand arm was unreachable — but the chain is gone rather than relocated for `unary`); (b) the old `getTempTypeInfo` all-fail ICE is now a graceful `wsg=0` spelling — unreachable on the whole battery (0 ICE corpus) and only reachable on LIR the old code ICEd; (c) `tempFnTypeId` (`func_ref`'s ptr→fn unwrap over the recorded type) and the `hoistedTypeOf*` UNDEFINED-skip readers remain as pure record readers; (d) `resolveFieldAccess`'s bounds-visibility policy (mode 16) is kept verbatim — it is a spelling-visibility guard over the recorded identity, not an identity re-resolution; (e) `lir.zig` `LirInst` envelope verified at 32 B (largest payload `load_field`/`store_field`/`assign_field` 24 B).
+- Struct-literal note (mechanics): Z98 allows omitting struct-literal fields (no error; the omitted members are uninitialized payload bytes). All op>=16 `binary` and all field insts are filled at the `lower.zig` funnel, and `remapInst` copies every new field, so no record field is read from an unfilled construction; async's own `.binary` constructions (all `BIN_ADD`/`AND`/… < 16) never have their unused `result_type`/`width`/`is_signed` read.
+- Harness note (echo of the combined-fix process note): run the pin loop and the `--markers` dump sequentially from one CWD — parallel runs race on the compiler's spill files (first-pass empty md5s were this race in the examples matrix too: the wrong-CWD run was my harness error, not a compiler delta).
+- Commit budget: (a) `2ad2e2cb refactor(lower): P6 — lowerer records field identity/callee fn type/sat semantics; emitter spells only` (sf/src + tech docs); (b) this report. `progress.md` untouched (controller-owned). `run.err` left untracked and alone. No push.
