@@ -460,6 +460,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `emitSafeCheckSliceOpen` | lower.zig (FX5: `start <= len` for `base[start..]`; skipped only for a comptime start on a static-length base) |
 | `emitSafeCheckSliceRange` | lower.zig (FX5: `start <= end` + `end <= len` for `base[start..end]`; `len_static` marks the compile-time N of arrays/`*[N]T`/decayed array fields) |
 | `emitSatBinary` | c89_emit.zig (P6: spells ONLY from the carried `result_type`/`width`/`is_signed` — no emit-time type inspection) |
+| `emitVariantFieldPayload` | c89_emit.zig (P6 fix round 1: SPELLS the tagged-union payload designator from the records — `field_name_id` variant name + `temp_variant_sub_field` sub; the emit-time variant pick is gone) |
 | `emitSharedHeader` | c89_emit.zig |
 | `emitSliceType` | c89_emit.zig |
 | `emitSpecialTypes` | c89_emit.zig |

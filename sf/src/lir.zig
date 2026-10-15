@@ -51,13 +51,18 @@ pub const LirInst = union(enum) {
     call: struct { callee: u32, args_start: u32, args_count: u32, result: u32 },
     // P6 (Decision-vs-spelling): `field_name_id`/`field_type_id` are the
     // lowering-recorded field identity (the field's source name id and declared
-    // type id; 0 = synthetic/unrecorded for slice `.ptr`/`.len`, tagged-union
-    // `.tag`/payload and tuple ordinal fields, whose designators are spelled
-    // from `field_id` + the base kind). The emitter spells the designator from
-    // this record and never re-resolves `fe_items` by ordinal. `name_id` (the
-    // pre-existing field) stays the BASE local's name id. The payloads stay
-    // within the 24 B union slot (load/store_field 24 B), so `@sizeOf(LirInst)`
-    // stays 32 B.
+    // type id). Named struct/union/packed fields record `fe_items` name+type.
+    // Slice `.ptr`/`.len`, tagged-union `.tag` and tuple ordinal designators
+    // record 0/0 and are spelled from `field_id` + the base kind. A
+    // tagged-union PAYLOAD designator records the matched VARIANT MEMBER's name
+    // in `field_name_id` (the lowering-side variant pick; `field_type_id` stays
+    // 0 — the variant type is the match key, not a spelled fact); its
+    // `._<sub>` index is the lowering-recorded `temp_variant_sub_field` map, so
+    // `.payload.<variant>._<sub>` is spelled from RECORDS too (fix round 1).
+    // The emitter spells from these records and never re-resolves `fe_items` by
+    // ordinal. `name_id` (the pre-existing field) stays the BASE local's name
+    // id. The payloads stay within the 24 B union slot (load/store_field 24 B),
+    // so `@sizeOf(LirInst)` stays 32 B.
     load_field: struct { base: u32, field_id: u32, result: u32, name_id: u32, field_name_id: u32, field_type_id: u32 },
     store_field: struct { base: u32, field_id: u32, value: u32, name_id: u32, field_name_id: u32, field_type_id: u32 },
     load_index: struct { base: u32, index: u32, result: u32, name_id: u32, decay: u8 },

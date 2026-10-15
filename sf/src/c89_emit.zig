@@ -382,38 +382,27 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
     }
 }
 
-// D7-2/D2-3: emit the tagged-union payload designator for `src_temp`,
-// reproducing `.payload.<variant-name>._<sub-field>` when `src_temp`'s type
-// matches a variant field of the union whose type id is `tu_tid`,
-// else the bare `.payload`. Shared by emitFieldAssign / .load_field /
-// .store_field (each passes its own source/value/result temp).
-fn emitVariantFieldPayload(writer: *BufferedWriter, registry: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, current_fn: *LirFunction, tu_tid: u32, src_temp: u32) void {
-    var evp_src_ty: u32 = @intCast(u32, 0xFFFFFFFF);
-    var evp_stj: usize = @intCast(usize, 0);
-    while (evp_stj < current_fn.hoisted_temps.len) : (evp_stj += @intCast(usize, 1)) {
-        var evp_sht: lir_mod.TempDecl = current_fn.hoisted_temps.items[evp_stj];
-        if (evp_sht.temp_id == src_temp) { evp_src_ty = evp_sht.type_id; }
+// D7-2/D2-3: emit the tagged-union payload designator — SPELLS ONLY.
+// P6 fix round 1 (Important 1): the variant-member pick (the old
+// `hoisted_temps` scan for `src_temp`'s type + `fe_items` type-equality search)
+// is deleted — the matched variant's name is the lowering-recorded
+// `field_name_id` (recorded at the `lowerRecordFacts` funnel); the `._<sub>`
+// index is read from the lowering-recorded `temp_variant_sub_field` map (keyed
+// by the payload-side temp). `.payload.<variant-name>._<sub>` when the record
+// carries a variant name, else the bare `.payload`. Shared by emitFieldAssign /
+// .load_field / .store_field (each passes its own source/value/result temp).
+fn emitVariantFieldPayload(writer: *BufferedWriter, mangler: *NameMangler, current_fn: *LirFunction, tu_tid: u32, src_temp: u32, variant_name_id: u32) void {
+    if (variant_name_id != @intCast(u32, 0)) {
+        var evp_pld: []const u8 = ".payload."; bufferedWriterWrite(writer, evp_pld);
+        var evp_vname = nm_mod.nameManglerMintMember(mangler, variant_name_id, tu_tid);
+        bufferedWriterWrite(writer, evp_vname);
+        var evp_dot: []const u8 = "._"; bufferedWriterWrite(writer, evp_dot);
+        var evp_sfe_idx: u32 = @intCast(u32, 0);
+        if (hash_mod.u32ToU32MapGet(&current_fn.temp_variant_sub_field, src_temp)) |svi| { evp_sfe_idx = svi; }
+        bfWriteU32(writer, evp_sfe_idx);
+    } else {
+        var evp_pn: []const u8 = ".payload"; bufferedWriterWrite(writer, evp_pn);
     }
-    var evp_vfound: u8 = @intCast(u8, 0);
-    if (evp_src_ty != @intCast(u32, 0xFFFFFFFF) and evp_src_ty != type_mod.TYPE_VOID) {
-        var evp_ty = registry.types_items[@intCast(usize, tu_tid)];
-        var evp_tp = registry.tu_items[@intCast(usize, evp_ty.payload_idx)];
-        var evp_vfi: usize = @intCast(usize, 0);
-        while (evp_vfi < @intCast(usize, evp_tp.fields_count) and evp_vfound == @intCast(u8, 0)) : (evp_vfi += @intCast(usize, 1)) {
-            var evp_vfe = registry.fe_items[@intCast(usize, evp_tp.fields_start) + evp_vfi];
-            if (evp_vfe.type_id == evp_src_ty) {
-                evp_vfound = @intCast(u8, 1);
-                var evp_pld: []const u8 = ".payload."; bufferedWriterWrite(writer, evp_pld);
-                var evp_vname = nm_mod.nameManglerMintMember(mangler, evp_vfe.name_id, tu_tid);
-                bufferedWriterWrite(writer, evp_vname);
-                var evp_dot: []const u8 = "._"; bufferedWriterWrite(writer, evp_dot);
-                var evp_sfe_idx: u32 = @intCast(u32, 0);
-                if (hash_mod.u32ToU32MapGet(&current_fn.temp_variant_sub_field, src_temp)) |svi| { evp_sfe_idx = svi; }
-                bfWriteU32(writer, evp_sfe_idx);
-            }
-        }
-    }
-    if (evp_vfound == @intCast(u8, 0)) { var evp_pn: []const u8 = ".payload"; bufferedWriterWrite(writer, evp_pn); }
 }
 
 // D7-1: resolve the C field-access designator (everything after the base
@@ -463,7 +452,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
     if (rfa_bty.kind == type_mod.TypeKind.tagged_union_type) {
         if ((mode & @intCast(u32, 8)) != @intCast(u32, 0)) {
             if (field_id == type_mod.TU_FIELD_TAG) { var rfa_tt: []const u8 = ".tag"; bufferedWriterWrite(writer, rfa_tt); return @intCast(u8, 1); }
-            if (field_id == type_mod.TU_FIELD_PAYLOAD) { emitVariantFieldPayload(writer, registry, interner, mangler, current_fn, base_ty, payload_temp); return @intCast(u8, 1); }
+            if (field_id == type_mod.TU_FIELD_PAYLOAD) { emitVariantFieldPayload(writer, mangler, current_fn, base_ty, payload_temp, field_name_id); return @intCast(u8, 1); }
         }
         return @intCast(u8, 0);
     }

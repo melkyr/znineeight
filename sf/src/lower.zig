@@ -588,12 +588,24 @@ pub fn emitInst(self: *LirLowerer, inst: LirInst) void {
 // P6: the recorded field identity (`field_name_id`/`field_type_id`) of the
 // field `field_id` on `base`'s container — resolved HERE (lowering owns the
 // decision; the emitter's `fe_items`-by-ordinal re-resolution is deleted).
-// 0/0 = synthetic (slice `.ptr`/`.len`, tagged-union `.tag`/payload, tuple
-// ordinals) or out-of-range/unresolved — those designators are spelled from
-// `field_id` + the base kind, exactly as before.
+// Named struct/union/packed fields record `fe_items` name+type. Synthetic
+// designators record 0/0 (slice `.ptr`/`.len`, tagged-union `.tag`, tuple
+// ordinals — spelled from `field_id` + the base kind). Fix round 1: a
+// tagged-union PAYLOAD designator records the matched VARIANT MEMBER's name in
+// `field_name_id` (the old emit-time `emitVariantFieldPayload` variant pick —
+// first variant field whose declared type equals `payload_temp`'s type — is a
+// lowering-side match now; `field_type_id` stays 0: the variant type is the
+// match key, not a spelled fact; `._<sub>` still reads the lowering-recorded
+// `temp_variant_sub_field` map). `payload_temp` is the inst's payload-side
+// temp (load result / store value / assign src) — `lowerFieldRecordNone` for
+// designs without one.
 const LowerFieldRecord = struct { name_id: u32, type_id: u32 };
 
-fn lowerFieldRecord(self: *LirLowerer, base: u32, field_id: u32) LowerFieldRecord {
+fn lowerFieldRecordNone() u32 {
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
+fn lowerFieldRecord(self: *LirLowerer, base: u32, field_id: u32, payload_temp: u32) LowerFieldRecord {
     var none: LowerFieldRecord = LowerFieldRecord{ .name_id = @intCast(u32, 0), .type_id = @intCast(u32, 0) };
     if (@intCast(usize, base) >= self.hoisted_temps.len) return none;
     var cid: u32 = self.hoisted_temps.items[@intCast(usize, base)].type_id;
@@ -617,6 +629,27 @@ fn lowerFieldRecord(self: *LirLowerer, base: u32, field_id: u32) LowerFieldRecor
             if (@intCast(usize, field_id) >= @intCast(usize, up.fields_count)) return none;
             var fe2 = self.ctx.registry.fe_items[@intCast(usize, up.fields_start) + @intCast(usize, field_id)];
             return LowerFieldRecord{ .name_id = fe2.name_id, .type_id = fe2.type_id };
+        }
+        if (ty.kind == type_mod.TypeKind.tagged_union_type and field_id == type_mod.TU_FIELD_PAYLOAD and payload_temp != lowerFieldRecordNone()) {
+            // Fix round 1 (Important 1): the variant-member pick, exactly as
+            // the removed emit-time search — first variant field whose
+            // declared type equals the payload temp's type (raw hoisted type;
+            // absent/VOID never matches).
+            var src_ty: u32 = @intCast(u32, 0xFFFFFFFF);
+            if (@intCast(usize, payload_temp) < self.hoisted_temps.len) {
+                src_ty = self.hoisted_temps.items[@intCast(usize, payload_temp)].type_id;
+            }
+            if (src_ty != @intCast(u32, 0xFFFFFFFF) and src_ty != type_mod.TYPE_VOID) {
+                var tp = self.ctx.registry.tu_items[@intCast(usize, ty.payload_idx)];
+                var vfi: usize = @intCast(usize, 0);
+                while (vfi < @intCast(usize, tp.fields_count)) : (vfi += @intCast(usize, 1)) {
+                    var vfe = self.ctx.registry.fe_items[@intCast(usize, tp.fields_start) + vfi];
+                    if (vfe.type_id == src_ty) {
+                        return LowerFieldRecord{ .name_id = vfe.name_id, .type_id = @intCast(u32, 0) };
+                    }
+                }
+            }
+            return none;
         }
         return none;
     }
@@ -670,19 +703,19 @@ fn lowerRecordFacts(self: *LirLowerer, inst: LirInst) LirInst {
             } };
         },
         .load_field => |lf| {
-            var fr = lowerFieldRecord(self, lf.base, lf.field_id);
+            var fr = lowerFieldRecord(self, lf.base, lf.field_id, lf.result);
             return LirInst{ .load_field = .{ .base = lf.base, .field_id = lf.field_id, .result = lf.result, .name_id = lf.name_id, .field_name_id = fr.name_id, .field_type_id = fr.type_id } };
         },
         .store_field => |sf| {
-            var fr2 = lowerFieldRecord(self, sf.base, sf.field_id);
+            var fr2 = lowerFieldRecord(self, sf.base, sf.field_id, sf.value);
             return LirInst{ .store_field = .{ .base = sf.base, .field_id = sf.field_id, .value = sf.value, .name_id = sf.name_id, .field_name_id = fr2.name_id, .field_type_id = fr2.type_id } };
         },
         .assign_field => |af| {
-            var fr3 = lowerFieldRecord(self, af.base, af.field_id);
+            var fr3 = lowerFieldRecord(self, af.base, af.field_id, af.src);
             return LirInst{ .assign_field = .{ .base = af.base, .field_id = af.field_id, .src = af.src, .name_id = af.name_id, .field_name_id = fr3.name_id, .field_type_id = fr3.type_id } };
         },
         .addr_of_field => |aof| {
-            var fr4 = lowerFieldRecord(self, aof.base, aof.field_id);
+            var fr4 = lowerFieldRecord(self, aof.base, aof.field_id, lowerFieldRecordNone());
             return LirInst{ .addr_of_field = .{ .base = aof.base, .field_id = aof.field_id, .result = aof.result, .field_name_id = fr4.name_id, .field_type_id = fr4.type_id } };
         },
         else => return inst,
