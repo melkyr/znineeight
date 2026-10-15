@@ -267,10 +267,11 @@ fn saveAllFields(b: *Build, blk: u32, lay: *const AsyncFrameLayout) void {
     while (f < lay.fields.len) : (f += @intCast(usize, 1)) {
         var fld = lay.fields.items[f];
         if (fld.kind == async_frame_layout.ASYNC_FIELD_PARAM or fld.kind == async_frame_layout.ASYNC_FIELD_LIVE) {
-            // P9 structural frame-save rule: save only declared temps — a
-            // `load_global` alias is spelled by the global's name and holds no
-            // private state, so it must never round-trip through the frame.
-            if (async_frame_layout.asyncTempIsGlobalAlias(b.orig, fld.temp_id)) continue;
+            // P14 (Class A): the P9 alias filter is retired — redundancy proven.
+            // The layout's LIVE add already skips `load_global` aliases, and no
+            // alias temp can be a param id (lower.zig mints params 0..n-1 first;
+            // every `load_global` result is a later `nextTemp`), so the carried
+            // set never contains one and the filter could not fire.
             storeField(b, blk, fld.offset, fld.type_id, fld.temp_id + b.base);
         }
     }
@@ -284,10 +285,11 @@ fn reloadAllFields(b: *Build, blk: u32, lay: *const AsyncFrameLayout) void {
     while (f < lay.fields.len) : (f += @intCast(usize, 1)) {
         var fld = lay.fields.items[f];
         if (fld.kind == async_frame_layout.ASYNC_FIELD_PARAM or fld.kind == async_frame_layout.ASYNC_FIELD_LIVE) {
-            // P9 structural frame-save rule: restore only declared temps — a
-            // `load_global` alias is spelled by the global's name and holds no
-            // private state, so it must never round-trip through the frame.
-            if (async_frame_layout.asyncTempIsGlobalAlias(b.orig, fld.temp_id)) continue;
+            // P14 (Class A): the P9 alias filter is retired — redundancy proven.
+            // The layout's LIVE add already skips `load_global` aliases, and no
+            // alias temp can be a param id (lower.zig mints params 0..n-1 first;
+            // every `load_global` result is a later `nextTemp`), so the carried
+            // set never contains one and the filter could not fire.
             var v = loadField(b, blk, fld.offset, fld.type_id);
             emit(b, blk, LirInst{ .assign = .{ .dst = fld.temp_id + b.base, .src = v, .name_id = @intCast(u32, 0) } });
         }

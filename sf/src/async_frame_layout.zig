@@ -69,6 +69,11 @@ pub const AsyncFrameFieldArrayList = struct {
 pub const AsyncFrameLayout = struct {
     fields: AsyncFrameFieldArrayList,
     layout_size: u32,
+    // P14 (Class A): the per-fn global-alias set (dense byte per temp_id;
+    // 1 = the temp is a `load_global` alias), built ONCE in `asyncLayoutFrame`
+    // and carried with the layout.
+    alias_flags: [*]u8,
+    alias_len: u32,
 };
 
 fn fieldArrayListInit(alloc: *Sand, capacity: usize) AsyncFrameFieldArrayList {
@@ -525,21 +530,15 @@ fn emitLayoutMarker(module_id: u32, name_id: u32, size: u32) void {
 // for the temp and never declares it). Such a temp is NEVER a frame-save
 // member: the global is its storage, so a by-value frame slot would round-trip
 // the global's value through the frame (and write a stale copy back on resume).
-// Consumers: the `ASYNC_FIELD_LIVE` add in `asyncLayoutFrame` (carried save
-// set) and the save/restore generators in `async_state_machine.zig`.
-pub fn asyncTempIsGlobalAlias(lir_fn: *LirFunction, temp: u32) bool {
-    var bi: usize = @intCast(usize, 0);
-    while (bi < lir_fn.blocks.len) : (bi += @intCast(usize, 1)) {
-        var bb = &lir_fn.blocks.items[bi];
-        var ii: usize = @intCast(usize, 0);
-        while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
-            switch (bb.insts.items[ii]) {
-                .load_global => |lg| { if (lg.result == temp) return true; },
-                else => {},
-            }
-        }
-    }
-    return false;
+// P14 (Class A): the per-fn alias set is computed ONCE in `asyncLayoutFrame`
+// (one LIR pass) and carried on `AsyncFrameLayout` (`alias_flags`/`alias_len`);
+// this predicate is now a pure set read — same result per temp as the retired
+// full-LIR rescan. Consumer: the `ASYNC_FIELD_LIVE` add in `asyncLayoutFrame`
+// (the dual save/restore generator filters in `async_state_machine.zig` are
+// deleted as proven-redundant: no alias temp can be a param id).
+pub fn asyncTempIsGlobalAlias(alias_flags: [*]u8, alias_len: u32, temp: u32) bool {
+    if (temp >= alias_len) return false;
+    return alias_flags[@intCast(usize, temp)] != @intCast(u8, 0);
 }
 
 pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
@@ -637,6 +636,25 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
         var p = lir_fn.params.items[pi];
         addField(&fields, reg, ASYNC_FIELD_PARAM, p.name_id, p.temp_id, p.type_id, &offset, &max_align);
     }
+    // P14 (Class A): the per-fn global-alias set — ONE LIR pass here (the old
+    // `asyncTempIsGlobalAlias` re-scanned the full LIR per call), carried on
+    // the returned `AsyncFrameLayout`. Every `load_global` result has a
+    // `TempDecl` (lower.zig `nextTemp` mints it), so `lg.result < max_temp`
+    // always and the set covers the predicate's whole domain.
+    var alias_flags = allocU8With(alloc, max_temp, @intCast(u8, 0));
+    var abi: usize = @intCast(usize, 0);
+    while (abi < lir_fn.blocks.len) : (abi += @intCast(usize, 1)) {
+        var abb = &lir_fn.blocks.items[abi];
+        var aii: usize = @intCast(usize, 0);
+        while (aii < abb.insts.len) : (aii += @intCast(usize, 1)) {
+            switch (abb.insts.items[aii]) {
+                .load_global => |lg| {
+                    if (lg.result < max_temp) { alias_flags[@intCast(usize, lg.result)] = @intCast(u8, 1); }
+                },
+                else => {},
+            }
+        }
+    }
     t = @intCast(u32, 0);
     while (t < max_temp) : (t += @intCast(u32, 1)) {
         var tu = @intCast(usize, t);
@@ -644,7 +662,7 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
             // P9 structural frame-save rule (remove the global by-value
             // round-trip): a `load_global` alias's storage IS the module global,
             // so it gets no by-value frame slot and is never a save-set member.
-            if (asyncTempIsGlobalAlias(lir_fn, t)) continue;
+            if (asyncTempIsGlobalAlias(alias_flags, max_temp, t)) continue;
             addField(&fields, reg, ASYNC_FIELD_LIVE, @intCast(u32, 0), t, c.ttype[tu], &offset, &max_align);
         }
     }
@@ -690,7 +708,7 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
         @panic("async frame layout: missing authoritative frame size");
     }
     emitLayoutMarker(lir_fn.module_id, lir_fn.name_id, padded);
-    return AsyncFrameLayout{ .fields = fields, .layout_size = padded };
+    return AsyncFrameLayout{ .fields = fields, .layout_size = padded, .alias_flags = alias_flags, .alias_len = max_temp };
 }
 
 // Per-`asyncKey` `AsyncFrameLayout` side table (Amendment 9 phase A). Layouts

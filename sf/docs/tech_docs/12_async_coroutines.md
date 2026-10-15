@@ -1,4 +1,4 @@
-# 12 — Async / Coroutines (`@async*` + `std.async`) [updated: 2026-10-12 — P9 (structural frame-save rule, WHAT/HOW split): the save/restore SET is decided at the async-construction authorities and carried on the frame layout — `load_global` global aliases are never frame-save members (no by-value slot, no save/restore; `async_frame_layout.zig` `asyncTempIsGlobalAlias` + the `ASYNC_FIELD_LIVE` add skip; `saveAllFields`/`reloadAllFields` save/restore only declared temps); the emitter spells from the carried set; D3/D4 root cause closed — see §8] [updated: 2026-10-09 — D3/D4 FIXED (frame-save `load_global` alias); see §8]
+# 12 — Async / Coroutines (`@async*` + `std.async`) [updated: 2026-10-15 — P14 (lookup-index hygiene, Amendment 7): `asyncTempIsGlobalAlias` is a set read of the per-fn alias set built ONCE in `asyncLayoutFrame` and carried on `AsyncFrameLayout` (`alias_flags`/`alias_len`); the dual `saveAllFields`/`reloadAllFields` alias filters are deleted (proven-redundant — no alias temp is ever a param id; see §8). Lookup-only; pins 0/8.] [updated: 2026-10-12 — P9 (structural frame-save rule, WHAT/HOW split): the save/restore SET is decided at the async-construction authorities and carried on the frame layout — `load_global` global aliases are never frame-save members (no by-value slot, no save/restore; `async_frame_layout.zig` `asyncTempIsGlobalAlias` + the `ASYNC_FIELD_LIVE` add skip; `saveAllFields`/`reloadAllFields` save/restore only declared temps); the emitter spells from the carried set; D3/D4 root cause closed — see §8] [updated: 2026-10-09 — D3/D4 FIXED (frame-save `load_global` alias); see §8]
 
 > Covers: `async_analysis.zig`, `async_frame_layout.zig`, `async_state_machine.zig`, `std_async.zig`
 
@@ -344,3 +344,12 @@ normal `(ctx, args)` signature.
   Expected delta: pins 0/8 (the pin programs carry no live-across alias — pre-edit dump census),
   `z9torr` loses its 9× `SCAN_MAX` save + 9× reload round-trip pairs (its `peerRun` frame relayouts;
   runtime frozen), D3/D4 repro shapes stop copying the global entirely.
+- **P14 (lookup-index hygiene, 2026-10-15).** The alias predicate is now a pure **set read**: the
+  per-fn alias set (`alias_flags`/`alias_len`, dense byte per temp_id) is computed ONCE in
+  `asyncLayoutFrame` (one LIR pass over the `load_global` defs) and carried on `AsyncFrameLayout`;
+  `asyncTempIsGlobalAlias` reads it (same result per temp as the retired full-LIR rescan per call).
+  The dual `saveAllFields`/`reloadAllFields` generator filters (P9's defense-in-depth) are DELETED —
+  proven redundant: the layout's LIVE add already excludes aliases, and no alias temp is ever a
+  param id (lower.zig mints params `0..params_count-1` first, then resets `temp_counter` to
+  `params_count`; every `load_global` result is a later `nextTemp`, so `result >= params_count` and
+  the generators' PARAM+LIVE scope cannot contain one). Zero LIR/emitter-spelling change; pins 0/8.

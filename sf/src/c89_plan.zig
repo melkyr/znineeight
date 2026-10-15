@@ -39,6 +39,7 @@ pub const C89SpellPlan = struct {
     fn_cap: usize,
     typedef_order: [*]u32,
     typedef_order_len: usize,
+    fn_key_index: hash_mod.U32ToU32Map,
 };
 
 // THE derivation (facts -> carrier). width_bits == 0 is never passed here
@@ -107,6 +108,10 @@ pub fn spellPlanInit(plan: *C89SpellPlan, alloc: *Sand, fn_hint: usize) void {
     plan.fn_cap = @intCast(usize, 0);
     plan.typedef_order = undefined;
     plan.typedef_order_len = @intCast(usize, 0);
+    // P14 (Class C): the fn_key -> fn-index side map (keyed by the same
+    // `fn_keys` spill-offset keys; plan-global, parallel-array growth does not
+    // move it — indices recorded in it are `fn_count` ordinals, grow-stable).
+    plan.fn_key_index = hash_mod.u32ToU32MapInitCap(alloc, fn_hint + @intCast(usize, 8));
     if (fn_hint != @intCast(usize, 0)) {
         var raw_keys = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * fn_hint, @intCast(usize, 4)) catch unreachable;
         var raw_maps = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(hash_mod.U32ToU32Map)) * fn_hint, @intCast(usize, 4)) catch unreachable;
@@ -133,6 +138,32 @@ pub fn spellPlanPlanFn(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry, fn
     plan.fn_maps[fi] = hash_mod.u32ToU32MapInitCap(alloc, lir_fn.hoisted_temps.len + @intCast(usize, 16));
     plan.uac_maps[fi] = hash_mod.u32ToU32MapInitCap(alloc, lir_fn.hoisted_temps.len + @intCast(usize, 16));
     plan.fn_count = fi + @intCast(usize, 1);
+    // P14 (Class C): fn_key -> fn index (first-wins — the retired `fn_keys`
+    // scan returned the FIRST matching index; keep that under any input).
+    if (hash_mod.u32ToU32MapGet(&plan.fn_key_index, fn_key) == null) {
+        _ = hash_mod.u32ToU32MapPut(&plan.fn_key_index, fn_key, @intCast(u32, fi));
+    }
+    // P14 (Class B): the per-fn first-match hoisted map (`t2pos` semantics),
+    // built once at fn start — the carrier fill and `hoistedEffType` read it.
+    var t2pos_max: u32 = @intCast(u32, 1);
+    var tm_i: usize = @intCast(usize, 0);
+    while (tm_i < lir_fn.hoisted_temps.len) : (tm_i += @intCast(usize, 1)) {
+        var tm_td = lir_fn.hoisted_temps.items[tm_i];
+        if (tm_td.temp_id >= t2pos_max) { t2pos_max = tm_td.temp_id + @intCast(u32, 1); }
+    }
+    var t2pos_raw = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * @intCast(usize, t2pos_max), @intCast(usize, 4)) catch unreachable;
+    var t2pos = @ptrCast([*]u32, t2pos_raw);
+    var tpi: u32 = @intCast(u32, 0);
+    while (tpi < t2pos_max) : (tpi += @intCast(u32, 1)) {
+        t2pos[@intCast(usize, tpi)] = @intCast(u32, 0xFFFFFFFF);
+    }
+    tm_i = @intCast(usize, 0);
+    while (tm_i < lir_fn.hoisted_temps.len) : (tm_i += @intCast(usize, 1)) {
+        var tm_td = lir_fn.hoisted_temps.items[tm_i];
+        if (tm_td.temp_id < t2pos_max and t2pos[@intCast(usize, tm_td.temp_id)] == @intCast(u32, 0xFFFFFFFF)) {
+            t2pos[@intCast(usize, tm_td.temp_id)] = @intCast(u32, tm_i);
+        }
+    }
     var ord: usize = @intCast(usize, 0);
     var bi: usize = @intCast(usize, 0);
     while (bi < lir_fn.blocks.len) : (bi += @intCast(usize, 1)) {
@@ -170,12 +201,14 @@ pub fn spellPlanPlanFn(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry, fn
                 else => {},
             }
             if (plan_kind != @intCast(u8, 0) and result != @intCast(u32, 0xFFFFFFFF)) {
+                // P14 (Class B): first-match `hoisted_temps` search replaced by
+                // the `t2pos` map read (same first-match which-wins; a found
+                // `0xFFFFFFFF` type id still classifies as absent, verbatim).
                 var ht: u32 = @intCast(u32, 0xFFFFFFFF);
-                var hi: usize = @intCast(usize, 0);
-                while (hi < lir_fn.hoisted_temps.len) : (hi += @intCast(usize, 1)) {
-                    if (lir_fn.hoisted_temps.items[hi].temp_id == result) {
-                        ht = lir_fn.hoisted_temps.items[hi].type_id;
-                        break;
+                if (result < t2pos_max) {
+                    var hpos = t2pos[@intCast(usize, result)];
+                    if (hpos != @intCast(u32, 0xFFFFFFFF)) {
+                        ht = lir_fn.hoisted_temps.items[@intCast(usize, hpos)].type_id;
                     }
                 }
                 if (ht != @intCast(u32, 0xFFFFFFFF)) {
@@ -190,8 +223,8 @@ pub fn spellPlanPlanFn(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry, fn
             // cast-needed decisions are stored; a miss = no cast, the old
             // `return 2` arm.
             if (uac_kind != @intCast(u8, 0) and uac_op >= @intCast(u8, 10) and uac_op < @intCast(u8, 16)) {
-                var l_tyid = hoistedEffType(lir_fn, uac_lhs);
-                var r_tyid = hoistedEffType(lir_fn, uac_rhs);
+                var l_tyid = hoistedEffType(lir_fn, t2pos, t2pos_max, uac_lhs);
+                var r_tyid = hoistedEffType(lir_fn, t2pos, t2pos_max, uac_rhs);
                 var prom_side = uacPromoteSide(reg, l_tyid, r_tyid);
                 if (prom_side < @intCast(u8, 2)) {
                     hash_mod.u32ToU32MapPut(&plan.uac_maps[fi], @intCast(u32, ord), prom_side);
@@ -205,16 +238,16 @@ pub fn spellPlanPlanFn(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry, fn
 // P11: a carried hoisted temp type (the plan-time mirror of the emitter's
 // `getTempEffType` resolution — first `hoisted_temps` match; `0xFFFFFFFF`/
 // `TYPE_VOID` leave the operand unresolved, classified as `0`).
-fn hoistedEffType(lir_fn: *LirFunction, temp_id: u32) u32 {
-    var i: usize = @intCast(usize, 0);
-    while (i < lir_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
-        var ht = lir_fn.hoisted_temps.items[i];
-        if (ht.temp_id == temp_id) {
-            var eff: u32 = ht.type_id;
-            if (eff != @intCast(u32, 0xFFFFFFFF) and eff != type_mod.TYPE_VOID) { return eff; }
-            return @intCast(u32, 0);
-        }
-    }
+// P14 (Class B): the search is the per-fn `t2pos` map read (first-match,
+// built once at `spellPlanPlanFn` start); the FAILFAST filter is unchanged —
+// the FIRST match's `0xFFFFFFFF`/`TYPE_VOID` type fails fast to `0` (no
+// later-decl fall-through), and multi-decl first-match which-wins is kept.
+fn hoistedEffType(lir_fn: *LirFunction, t2pos: [*]u32, t2pos_max: u32, temp_id: u32) u32 {
+    if (temp_id >= t2pos_max) return @intCast(u32, 0);
+    var p = t2pos[@intCast(usize, temp_id)];
+    if (p == @intCast(u32, 0xFFFFFFFF)) return @intCast(u32, 0);
+    var eff: u32 = lir_fn.hoisted_temps.items[@intCast(usize, p)].type_id;
+    if (eff != @intCast(u32, 0xFFFFFFFF) and eff != type_mod.TYPE_VOID) { return eff; }
     return @intCast(u32, 0);
 }
 
@@ -252,25 +285,24 @@ fn uacPromoteSide(reg: *TypeRegistry, l_tyid: u32, r_tyid: u32) u8 {
 // Spell-time UAC-direction read (the emitter's only promotion source). Key =
 // the binary's `spellInstOrd`; returns the planned side 0/1, or null (no cast
 // — the old `return 2` arm). `fn_key` is the current fn's LIR spill slot
-// offset.
+// offset. P14 (Class C): the `fn_keys` scan is retired — `fn_key_index`
+// (first-wins, filled at plan time) resolves fn_key -> index; miss semantics
+// unchanged (fn miss = null = no cast).
 pub fn spellPlanUac(plan: *C89SpellPlan, fn_key: u32, inst_ord: u32) ?u32 {
-    var fi: usize = @intCast(usize, 0);
-    while (fi < plan.fn_count) : (fi += @intCast(usize, 1)) {
-        if (plan.fn_keys[fi] == fn_key) {
-            return hash_mod.u32ToU32MapGet(&plan.uac_maps[fi], inst_ord);
-        }
+    if (hash_mod.u32ToU32MapGet(&plan.fn_key_index, fn_key)) |fi_v| {
+        return hash_mod.u32ToU32MapGet(&plan.uac_maps[@intCast(usize, fi_v)], inst_ord);
     }
     return null;
 }
 
 // Spell-time read (the emitter's only carrier source). `fn_key` is the
 // current fn's LIR spill slot offset; `inst_ord` the const's `spellInstOrd`.
+// P14 (Class C): the `fn_keys` scan is retired — `fn_key_index` (first-wins,
+// filled at plan time) resolves fn_key -> index; miss semantics unchanged
+// (fn miss = null = the historical fallback).
 pub fn spellPlanCarrier(plan: *C89SpellPlan, fn_key: u32, inst_ord: u32) ?u32 {
-    var fi: usize = @intCast(usize, 0);
-    while (fi < plan.fn_count) : (fi += @intCast(usize, 1)) {
-        if (plan.fn_keys[fi] == fn_key) {
-            return hash_mod.u32ToU32MapGet(&plan.fn_maps[fi], inst_ord);
-        }
+    if (hash_mod.u32ToU32MapGet(&plan.fn_key_index, fn_key)) |fi_v| {
+        return hash_mod.u32ToU32MapGet(&plan.fn_maps[@intCast(usize, fi_v)], inst_ord);
     }
     return null;
 }

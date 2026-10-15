@@ -246,7 +246,7 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
     var field_arr_elem: u32 = @intCast(u32, 0xFFFFFFFF);
     var cast_name: []const u8 = "";
     var fld_name_val: []const u8 = fn_prefix;
-    var base_ty = hoistedTypeOfInFn(current_fn, base_temp);
+    var base_ty = hoistedTypeOfInFn(emitter2, base_temp);
     if (base_ty != type_mod.TYPE_UNDEFINED) {
         var bty: type_mod.Type = registry.types_items[@intCast(usize, base_ty)];
         if (bty.kind == TypeKind.tuple_type) {
@@ -325,7 +325,7 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
         // over-read `src`; that case falls back to the safe zero-fill below.
         var src_same_arr: u8 = @intCast(u8, 0);
         if (field_arr_tid != @intCast(u32, 0xFFFFFFFF)) {
-            var sa_src_ty = hoistedTypeOfInFn(current_fn, src_temp);
+            var sa_src_ty = hoistedTypeOfInFn(emitter2, src_temp);
             var sahty = registry.types_items[@intCast(usize, sa_src_ty)];
             if (sahty.kind == TypeKind.array_type) {
                 var saap = registry.array_items[@intCast(usize, sahty.payload_idx)];
@@ -543,6 +543,9 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
     d4_wflag: [*]u8,
     d4_fcar: [*]u32,
     d4_t2p: [*]u32,
+    t2pos: [*]u32,
+    t2pos_conc: [*]u32,
+    t2pos_max: u32,
       d4_dead: [*]u8,
       d4_max_temp: u32,
       d4_local: [*]u8,
@@ -627,6 +630,9 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .d4_wflag = undefined,
          .d4_fcar = undefined,
          .d4_t2p = undefined,
+         .t2pos = undefined,
+         .t2pos_conc = undefined,
+         .t2pos_max = @intCast(u32, 0),
          .d4_dead = undefined,
          .d4_max_temp = @intCast(u32, 0),
          .d4_local = undefined,
@@ -689,13 +695,15 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     return type_mod.typeCName(reg, mangler, tid);
 }
 
+// P14 (Class B): raw first-match `TempDecl.type_id` read — the search is the
+// per-fn `t2pos` map (first-match, built once at the fn's emission entry in
+// `emitHoistedDecls`); the filter is unchanged (no UNDEFINED gate; multi-decl
+// first-match which-wins kept); miss = 0xFFFFFFFF.
 fn getTempTypeByIndex(emitter: *C89Emitter, temp_id: u32) u32 {
-    var ti: usize = @intCast(usize, 0);
-    while (ti < emitter.current_fn.hoisted_temps.len) : (ti += @intCast(usize, 1)) {
-        var ht = emitter.current_fn.hoisted_temps.items[ti];
-        if (ht.temp_id == temp_id) { return ht.type_id; }
-    }
-    return @intCast(u32, 0xFFFFFFFF);
+    if (temp_id >= emitter.t2pos_max) return @intCast(u32, 0xFFFFFFFF);
+    var p = emitter.t2pos[@intCast(usize, temp_id)];
+    if (p == @intCast(u32, 0xFFFFFFFF)) return @intCast(u32, 0xFFFFFFFF);
+    return emitter.current_fn.hoisted_temps.items[@intCast(usize, p)].type_id;
 }
 
 // D1-1: the `first matching hoisted temp with a concrete (non-UNDEFINED) type`
@@ -703,28 +711,28 @@ fn getTempTypeByIndex(emitter: *C89Emitter, temp_id: u32) u32 {
 // the exact shape the int-const / addr-of-field / tagged-binop / temp-info
 // resolution sites share; the remaining hoisted-temp scans have different
 // defaults or last-match semantics and are intentionally not routed here.
-fn hoistedTypeOfInFn(lir_fn: *LirFunction, temp_id: u32) u32 {
-    var ti: usize = @intCast(usize, 0);
-    while (ti < lir_fn.hoisted_temps.len) : (ti += @intCast(usize, 1)) {
-        var ht = lir_fn.hoisted_temps.items[ti];
-        if (ht.temp_id == temp_id and ht.type_id != type_mod.TYPE_UNDEFINED) return ht.type_id;
-    }
-    return @intCast(u32, 0);
+// P14 (Class B): the search is the per-fn `t2pos_conc` map read (first match
+// with a non-UNDEFINED type id; multi-decl first-concrete which-wins kept).
+fn hoistedTypeOfInFn(emitter: *C89Emitter, temp_id: u32) u32 {
+    if (temp_id >= emitter.t2pos_max) return @intCast(u32, 0);
+    var p = emitter.t2pos_conc[@intCast(usize, temp_id)];
+    if (p == @intCast(u32, 0xFFFFFFFF)) return @intCast(u32, 0);
+    return emitter.current_fn.hoisted_temps.items[@intCast(usize, p)].type_id;
 }
 
 fn hoistedTypeOf(emitter: *C89Emitter, temp_id: u32) u32 {
-    return hoistedTypeOfInFn(emitter.current_fn, temp_id);
+    return hoistedTypeOfInFn(emitter, temp_id);
 }
 
 // D1-1: first matching hoisted temp's type_id (no UNDEFINED filter), or 0 when
 // absent. The exact shape the load/store-global id lookups share.
+// P14 (Class B): the search is the per-fn `t2pos` map read (raw first-match,
+// multi-decl first-match which-wins kept); miss = 0.
 fn hoistedTypeId(emitter: *C89Emitter, temp_id: u32) u32 {
-    var ti: usize = @intCast(usize, 0);
-    while (ti < emitter.current_fn.hoisted_temps.len) : (ti += @intCast(usize, 1)) {
-        var ht = emitter.current_fn.hoisted_temps.items[ti];
-        if (ht.temp_id == temp_id) return ht.type_id;
-    }
-    return @intCast(u32, 0);
+    if (temp_id >= emitter.t2pos_max) return @intCast(u32, 0);
+    var p = emitter.t2pos[@intCast(usize, temp_id)];
+    if (p == @intCast(u32, 0xFFFFFFFF)) return @intCast(u32, 0);
+    return emitter.current_fn.hoisted_temps.items[@intCast(usize, p)].type_id;
 }
 
 
@@ -2345,6 +2353,8 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         if (htd.temp_id >= max_temp) { max_temp = htd.temp_id + @intCast(u32, 1); }
     }
     var raw_t2p = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
+    var raw_tp = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
+    var raw_tc = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
     var raw_wt = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
     var raw_fc = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
     var raw_wf = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
@@ -2356,6 +2366,8 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var raw_wa = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
     var raw_pz = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
     var tid_to_pos = @ptrCast([*]u32, raw_t2p);
+    var t2pos = @ptrCast([*]u32, raw_tp);
+    var t2pos_conc = @ptrCast([*]u32, raw_tc);
     var written_type = @ptrCast([*]u32, raw_wt);
     var fact_carrier = @ptrCast([*]u32, raw_fc);
     var written_flag = @ptrCast([*]u8, raw_wf);
@@ -2369,6 +2381,8 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var tp: u32 = 0;
     while (tp < max_temp) : (tp += @intCast(u32, 1)) {
         tid_to_pos[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
+        t2pos[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
+        t2pos_conc[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
         written_type[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
         fact_carrier[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
         written_flag[@intCast(usize, tp)] = @intCast(u8, 0);
@@ -2388,12 +2402,21 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         var htt_ym: []const u8 = "Y"; pal.markerWriteInt(htt_ym, htd.type_id);
         if (htd.temp_id < max_temp) {
             tid_to_pos[@intCast(usize, htd.temp_id)] = @intCast(u32, hti);
+            if (t2pos[@intCast(usize, htd.temp_id)] == @intCast(u32, 0xFFFFFFFF)) {
+                t2pos[@intCast(usize, htd.temp_id)] = @intCast(u32, hti);
+            }
+            if (htd.type_id != type_mod.TYPE_UNDEFINED and t2pos_conc[@intCast(usize, htd.temp_id)] == @intCast(u32, 0xFFFFFFFF)) {
+                t2pos_conc[@intCast(usize, htd.temp_id)] = @intCast(u32, hti);
+            }
         }
     }
     emitter.d4_wtype = written_type;
     emitter.d4_wflag = written_flag;
     emitter.d4_fcar = fact_carrier;
     emitter.d4_t2p = tid_to_pos;
+    emitter.t2pos = t2pos;
+    emitter.t2pos_conc = t2pos_conc;
+    emitter.t2pos_max = max_temp;
     var local_name_ids = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
     var local_types = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
     var local_cap: u32 = @intCast(u32, 128);
@@ -2731,7 +2754,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         }
     }
     dceMarkLoadGlobalAliases(lir_fn, max_temp, tid_to_pos, no_decl_arr);
-    dceMarkAllReads(lir_fn, max_temp, tid_to_pos, read_count, protected_arr, no_decl_arr, emitter.registry);
+    dceMarkAllReads(lir_fn, max_temp, tid_to_pos, read_count, protected_arr, no_decl_arr, emitter);
     var raw_lr = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, local_count) * @intCast(usize, 1), @intCast(usize, 1)) catch unreachable;
     var local_read_arr = @ptrCast([*]u8, raw_lr);
     var lrz: u32 = @intCast(u32, 0);
@@ -4079,24 +4102,24 @@ fn ptrCTypeNameFromElem(reg: *TypeRegistry, mangler: *NameMangler, elem_tid: u32
 // (`TempDecl.type_id`). The old re-derivation fallbacks (the written-type
 // `d4_wtype` write-scan for UNDEFINED slots) are deleted — the emitter never
 // decides a temp's type; the record is authoritative.
+// P14 (Class B): the search is the per-fn `t2pos` map read (first-match,
+// built once at the fn's emission entry); the filter is unchanged — FAILFAST
+// on the FIRST match's `0xFFFFFFFF`/`TYPE_VOID` type (no later-decl
+// fall-through), multi-decl first-match which-wins kept.
 fn getTempEffType(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signed: *u8) u8 {
-    var i: usize = @intCast(usize, 0);
-    while (i < emitter.current_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
-        var ht = emitter.current_fn.hoisted_temps.items[i];
-        if (ht.temp_id == temp_id) {
-            var eff: u32 = ht.type_id;
-            if (eff != @intCast(u32, 0xFFFFFFFF) and eff != type_mod.TYPE_VOID) {
-                out_type.* = eff;
-                var bty = emitter.registry.types_items[@intCast(usize, eff)];
-                if (type_mod.typeKindIsSignedIntBase(bty.kind) != @intCast(u8, 0) or bty.kind == TypeKind.undefined_type or bty.kind == TypeKind.null_type) {
-                    out_signed.* = @intCast(u8, 1);
-                } else {
-                    out_signed.* = @intCast(u8, 0);
-                }
-                return @intCast(u8, 1);
-            }
-            return @intCast(u8, 0);
+    if (temp_id >= emitter.t2pos_max) return @intCast(u8, 0);
+    var p = emitter.t2pos[@intCast(usize, temp_id)];
+    if (p == @intCast(u32, 0xFFFFFFFF)) return @intCast(u8, 0);
+    var eff: u32 = emitter.current_fn.hoisted_temps.items[@intCast(usize, p)].type_id;
+    if (eff != @intCast(u32, 0xFFFFFFFF) and eff != type_mod.TYPE_VOID) {
+        out_type.* = eff;
+        var bty = emitter.registry.types_items[@intCast(usize, eff)];
+        if (type_mod.typeKindIsSignedIntBase(bty.kind) != @intCast(u8, 0) or bty.kind == TypeKind.undefined_type or bty.kind == TypeKind.null_type) {
+            out_signed.* = @intCast(u8, 1);
+        } else {
+            out_signed.* = @intCast(u8, 0);
         }
+        return @intCast(u8, 1);
     }
     return @intCast(u8, 0);
 }
@@ -7926,10 +7949,10 @@ fn dceFieldIsArray(registry: *TypeRegistry, field_type_id: u32) bool {
     return false;
 }
 
-fn dceTempIsArray(registry: *TypeRegistry, lir_fn: *LirFunction, temp: u32) bool {
-    var ty = hoistedTypeOfInFn(lir_fn, temp);
+fn dceTempIsArray(emitter: *C89Emitter, temp: u32) bool {
+    var ty = hoistedTypeOfInFn(emitter, temp);
     if (ty != @intCast(u32, 0)) {
-        var bty = registry.types_items[@intCast(usize, ty)];
+        var bty = emitter.registry.types_items[@intCast(usize, ty)];
         if (bty.kind == type_mod.TypeKind.array_type) { return true; }
         if (bty.kind == type_mod.TypeKind.struct_type and (bty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) { return true; }
     }
@@ -7957,8 +7980,8 @@ fn dceMarkLoadGlobalAliases(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]
     }
 }
 
-fn dceBaseEscapes(registry: *TypeRegistry, lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, no_decl_arr: [*]u8, temp: u32) bool {
-    if (!dceTempIsArray(registry, lir_fn, temp)) { return true; }
+fn dceBaseEscapes(emitter: *C89Emitter, max_temp: u32, tid_to_pos: [*]u32, no_decl_arr: [*]u8, temp: u32) bool {
+    if (!dceTempIsArray(emitter, temp)) { return true; }
     if (temp < max_temp) {
         var p = tid_to_pos[@intCast(usize, temp)];
         if (p != @intCast(u32, 0xFFFFFFFF)) {
@@ -7968,7 +7991,7 @@ fn dceBaseEscapes(registry: *TypeRegistry, lir_fn: *LirFunction, max_temp: u32, 
     return false;
 }
 
-fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, protected_arr: [*]u8, no_decl_arr: [*]u8, registry: *TypeRegistry) void {
+fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, protected_arr: [*]u8, no_decl_arr: [*]u8, emitter: *C89Emitter) void {
     var bb_idx: usize = @intCast(usize, 0);
     while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
         var bb = &lir_fn.blocks.items[bb_idx];
@@ -7978,7 +8001,7 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
             switch (inst) {
                 .assign => |a| { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); },
                 .assign_field => |a| { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.base); dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); },
-                .assign_index => |a| { if (dceBaseEscapes(registry, lir_fn, max_temp, tid_to_pos, no_decl_arr, a.base)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.base); } dceMarkReadPos(max_temp, tid_to_pos, read_count, a.index); dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); },
+                .assign_index => |a| { if (dceBaseEscapes(emitter, max_temp, tid_to_pos, no_decl_arr, a.base)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.base); } dceMarkReadPos(max_temp, tid_to_pos, read_count, a.index); dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); },
                 .branch => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.cond); },
                 .switch_br => |s| { dceMarkReadPos(max_temp, tid_to_pos, read_count, s.cond); },
                 .ret => |v| { dceMarkReadPos(max_temp, tid_to_pos, read_count, v); },
