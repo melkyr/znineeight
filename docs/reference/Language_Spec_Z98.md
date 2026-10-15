@@ -314,7 +314,7 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 | `@fieldParentPtr(T, "field", expr)` | Pointer to the containing struct from a pointer to one of its fields |
 | `@bitCast(T, expr)` | Same-size integer-to-integer bit reinterpretation |
 | `@volatileCast(T, expr)` | Remove the `volatile` qualifier; source must be a volatile pointer and target the same base type |
-| `@intCast(T, expr)` | Checked integer conversion / width change |
+| `@intCast(T, expr)` / `@intCast(expr)` | Checked integer conversion / width change |
 | `@floatCast(T, expr)` | Float conversion (not runtime-checked; narrowing may lose precision) |
 | `@intToFloat(T, expr)` | Integer to float |
 | `@intToEnum(T, expr)` | Integer to enum |
@@ -325,6 +325,8 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 | `@offsetOf(T, "field")` | Byte offset of a field; `T` must be a struct (packed included) — a union or non-struct target rejects `error[3072]` (Zig parity; no union "offset 0" fold) |
 | `@bitSizeOf(T)` | Bit size of type `T` |
 | `@bitOffsetOf(T, "field")` | Bit offset of a field; struct-only like `@offsetOf` (union/non-struct target rejects `error[3072]`) |
+
+The one-argument form `@intCast(expr)` is also accepted (accepted-arity range 1..2) — identity typing via the sema single-argument builtin fallback (the operand's own type), where official Zig 0.15.2 infers the target from context; that narrowing-context residual is the documented Task 7 divergence (EXPECTED_FAIL.md).
 
 **Runtime**
 - `@putChar(c)`: Writes a single character.

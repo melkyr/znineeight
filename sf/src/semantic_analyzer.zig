@@ -365,7 +365,9 @@ const BuiltinDesc = struct {
 // This one central per-builtin table is the single authority: kind bits
 // (bit0 = a type-value cast, bit1 = supported), expected arity, and the
 // arity-reject class (0 = the established reject shape with this row's code
-// and message, 1 = the established introspection reject shape). Id compares
+// and message, 1 = the established introspection reject shape, 2 = P8 fix
+// round 1's accepted range 1..arity -- min 1, max `arity`, reject shape A --
+// the `@intCast` row). Id compares
 // come first, then the string-compared names, exactly matching the original
 // membership and order; both predicates preserve their exact sets.
 fn semanticAnalyzerBuiltinDesc(self: *SemanticAnalyzer, name_id: u32) BuiltinDesc {
@@ -386,8 +388,8 @@ fn semanticAnalyzerBuiltinDesc(self: *SemanticAnalyzer, name_id: u32) BuiltinDes
         return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
     }
     if (name_id == self.intcast_name_id) {
-        var d_m: []const u8 = "@intCast requires exactly 2 argument(s): @intCast(T, expr)";
-        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 0), .code = d_e3000, .msg = d_m };
+        var d_m: []const u8 = "@intCast requires 1 or 2 argument(s): @intCast(T, expr) or @intCast(expr)";
+        return BuiltinDesc{ .flags = @intCast(u8, 3), .arity = @intCast(u8, 2), .arity_kind = @intCast(u8, 2), .code = d_e3000, .msg = d_m };
     }
     if (name_id == self.floatcast_name_id) {
         var d_m: []const u8 = "@floatCast requires exactly 2 argument(s): @floatCast(T, expr)";
@@ -566,7 +568,11 @@ fn semanticAnalyzerRejectIntrospectionArity(self: *SemanticAnalyzer, node_idx: u
 fn semanticAnalyzerCheckBuiltinArity(self: *SemanticAnalyzer, node_idx: u32, name_id: u32, ec_n: usize) u8 {
     var ba_desc = semanticAnalyzerBuiltinDesc(self, name_id);
     if ((ba_desc.flags & @intCast(u8, 2)) == @intCast(u8, 0)) return @intCast(u8, 0);
-    if (ec_n == @intCast(usize, ba_desc.arity)) return @intCast(u8, 0);
+    if (ba_desc.arity_kind == @intCast(u8, 2)) {
+        if (ec_n >= @intCast(usize, 1) and ec_n <= @intCast(usize, ba_desc.arity)) return @intCast(u8, 0);
+    } else if (ec_n == @intCast(usize, ba_desc.arity)) {
+        return @intCast(u8, 0);
+    }
     if (ba_desc.arity_kind == @intCast(u8, 1)) {
         semanticAnalyzerRejectIntrospectionArity(self, node_idx, @intCast(usize, ba_desc.arity), ec_n);
         return @intCast(u8, 2);
