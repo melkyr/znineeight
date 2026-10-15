@@ -1060,7 +1060,7 @@ Emits `COE:N/S/D/SK/DK/NK` markers. If src == dst or src is UNDEFINED → skip. 
 
 ---
 
-## coercion.zig (`sf/src/coercion.zig`, 257 lines)
+## coercion.zig (`sf/src/coercion.zig`, 225 lines)  [updated: 2026-10-12 — P11: `coercionUsualArithPromote` deleted (re-owned by `c89_plan.zig` `uacPromoteSide`, doc 08)]
 
 ### CoercionKind enum (`sf/src/coercion.zig`)
 
@@ -1115,18 +1115,9 @@ Deterministic check order:
 21. Fallback → `none`.
 
 
-### coercionUsualArithPromote (`sf/src/coercion.zig`)
+### coercionUsualArithPromote — RE-OWNED (P11; no longer in `coercion.zig`)
 
-`[inference: classify both operands via typeRegistryIntSignednessClass (TypeId 0 skipped → unclassified); when exactly one side is class 1 (signed) and the other class 0 (unsigned) and the unsigned side's typeRegistryIntByteWidth >= the signed side's, return which side takes the cast; else 2]`
-
-`[updated: 2026-10-12 — P5 (emitter sanitization): C usual-arithmetic conversions for a binary operator's two integer operands — verbatim relocation of `c89_emit.zig` `emitBinRvalueText`'s mixed-sign promotion block into `coercion` (the emitter truth tables are deleted; doc 08).]`
-
-`pub fn coercionUsualArithPromote(reg: *type_mod.TypeRegistry, l_tyid: TypeId, r_tyid: TypeId) u8` — same registry + TypeIds call shape as `classifyCoercion`. Contract:
-
-- A TypeId of `0` (operand has no resolved type) classifies as unclassified, matching the emitter's unresolved-temp path (`getTempEffType` leaves the out-type untouched on failure).
-- Exactly one side class `1` (signed: signed-base ∪ c_char ∪ integer_literal ∪ undefined ∪ null) and the other class `0` (unsigned: unsigned-base ∪ bool), with the unsigned side at least as wide as the signed one (`typeRegistryIntByteWidth`, `>=`) → the signed operand must be cast to the unsigned operand's C type.
-- Returns `0` = cast LHS to RHS's type; `1` = cast RHS to LHS's type; `2` = no explicit promotion (same signedness class, an unclassified operand, or the signed operand is wider).
-- The emitter keeps only glue: temp→type resolution (`getTempEffType`) and C-name minting (`getCTypeName`, at most once per op in the same branch as before — `D6:` marker count unchanged).
+`[updated: 2026-10-12 — P11 (emitter sanitization): the C usual-arithmetic cast-direction rule leaves `sf/src/coercion.zig` — it is a C-spelling decision (Decision-vs-spelling ruling (ii)), re-owned by `sf/src/c89_plan.zig` `uacPromoteSide` (same contract body verbatim: `typeRegistryIntSignednessClass`/`typeRegistryIntByteWidth` over the operands' carried types; `0`/`1` = cast LHS/RHS to the other operand's C type, `2` = no promotion) and planned ONCE at the `phase_EmissionClassification` boundary into `C89SpellPlan.uac_maps` (`spellPlanPlanFn`/`spellPlanUac`; contract: doc 08). The P5 verbatim relocation into `coercion` is undone; `coercion.zig` keeps `classifyCoercion`/`CoercionTable` (semantic-phase coercion) only.]`
 
 ### CoercionTable (`sf/src/coercion.zig`)
 

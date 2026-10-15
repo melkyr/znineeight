@@ -8,7 +8,9 @@
 // reads them at spell time (Decision-vs-spelling: the emitter spells, never
 // decides). P12 (typedef ordering — `typedef_order`, planned ONCE at the same
 // boundary; the emitter walks the carried order and never sorts) joins the
-// same `C89SpellPlan`; P11 (UAC cast direction) later adds its state here too.
+// same `C89SpellPlan`; P11 (UAC cast direction — `uac_maps`, the mixed-sign
+// promote decision moved out of `coercion.zig`, planned ONCE at the same
+// boundary from the operands' carried types) adds its state here too.
 const TypeRegistry = @import("type_registry.zig").TypeRegistry;
 const TypeKind = @import("type_registry.zig").TypeKind;
 const type_mod = @import("type_registry.zig");
@@ -20,14 +22,19 @@ const alloc_mod = @import("allocator.zig");
 // Per-fn const-carrier maps: `fn_keys[i]` identifies fn `i` by its LIR spill
 // slot offset (unique per fn; stable across the emission-time `lir_slots`
 // regrouping), `fn_maps[i]` maps the fn-local flattened inst ordinal (see
-// `spellInstOrd`) to the planned carrier type id. P12: `typedef_order` is the
-// typedef emission order (planned ONCE at the same boundary; see
-// `spellPlanPlanTypeOrder`); `typedef_order_len` is its plan-time snapshot
-// length (`reg.types_len` at planning) — every emitter `sorted` walker is
-// bounded on it (combined fix H2), never on live `types_len`.
+// `spellInstOrd`) to the planned carrier type id. P11: `uac_maps[i]` is the
+// per-fn UAC-direction map (same `spellInstOrd` keys, per binary inst; value
+// = planned side 0/1 — cast-LHS/cast-RHS; absent = no cast) — a separate map
+// because a `binary` inst also carries a const-carrier entry under the same
+// ordinal. P12: `typedef_order` is the typedef emission order (planned ONCE
+// at the same boundary; see `spellPlanPlanTypeOrder`); `typedef_order_len` is
+// its plan-time snapshot length (`reg.types_len` at planning) — every emitter
+// `sorted` walker is bounded on it (combined fix H2), never on live
+// `types_len`.
 pub const C89SpellPlan = struct {
     fn_keys: [*]u32,
     fn_maps: [*]hash_mod.U32ToU32Map,
+    uac_maps: [*]hash_mod.U32ToU32Map,
     fn_count: usize,
     fn_cap: usize,
     typedef_order: [*]u32,
@@ -79,19 +86,23 @@ fn spellPlanGrow(plan: *C89SpellPlan, alloc: *Sand) void {
     var new_cap: usize = if (plan.fn_cap < @intCast(usize, 8)) @intCast(usize, 8) else plan.fn_cap * @intCast(usize, 2);
     var raw_keys = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_maps = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(hash_mod.U32ToU32Map)) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_uac = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(hash_mod.U32ToU32Map)) * new_cap, @intCast(usize, 4)) catch unreachable;
     var ndi: usize = @intCast(usize, 0);
     while (ndi < plan.fn_count) : (ndi += @intCast(usize, 1)) {
         @ptrCast([*]u32, raw_keys)[ndi] = plan.fn_keys[ndi];
         @ptrCast([*]hash_mod.U32ToU32Map, raw_maps)[ndi] = plan.fn_maps[ndi];
+        @ptrCast([*]hash_mod.U32ToU32Map, raw_uac)[ndi] = plan.uac_maps[ndi];
     }
     plan.fn_keys = @ptrCast([*]u32, raw_keys);
     plan.fn_maps = @ptrCast([*]hash_mod.U32ToU32Map, raw_maps);
+    plan.uac_maps = @ptrCast([*]hash_mod.U32ToU32Map, raw_uac);
     plan.fn_cap = new_cap;
 }
 
 pub fn spellPlanInit(plan: *C89SpellPlan, alloc: *Sand, fn_hint: usize) void {
     plan.fn_keys = undefined;
     plan.fn_maps = undefined;
+    plan.uac_maps = undefined;
     plan.fn_count = @intCast(usize, 0);
     plan.fn_cap = @intCast(usize, 0);
     plan.typedef_order = undefined;
@@ -99,8 +110,10 @@ pub fn spellPlanInit(plan: *C89SpellPlan, alloc: *Sand, fn_hint: usize) void {
     if (fn_hint != @intCast(usize, 0)) {
         var raw_keys = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * fn_hint, @intCast(usize, 4)) catch unreachable;
         var raw_maps = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(hash_mod.U32ToU32Map)) * fn_hint, @intCast(usize, 4)) catch unreachable;
+        var raw_uac = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(hash_mod.U32ToU32Map)) * fn_hint, @intCast(usize, 4)) catch unreachable;
         plan.fn_keys = @ptrCast([*]u32, raw_keys);
         plan.fn_maps = @ptrCast([*]hash_mod.U32ToU32Map, raw_maps);
+        plan.uac_maps = @ptrCast([*]hash_mod.U32ToU32Map, raw_uac);
         plan.fn_cap = fn_hint;
     }
 }
@@ -111,12 +124,14 @@ pub fn spellPlanInit(plan: *C89SpellPlan, alloc: *Sand, fn_hint: usize) void {
 // emit-time `lirOptRun`, becomes — an `int_const` (`int_const`/`binary`/
 // `unary`/`int_cast`; the const-fold gate refuses untyped temps, so a folded
 // const's carrier is its semantic type and value-irrelevant — recorded with
-// value 0 for the non-const kinds).
+// value 0 for the non-const kinds). P11: also records the planned UAC cast
+// direction for every comparison `binary` (ops 10-15) into `uac_maps`.
 pub fn spellPlanPlanFn(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry, fn_key: u32, lir_fn: *LirFunction) void {
     if (plan.fn_count >= plan.fn_cap) { spellPlanGrow(plan, alloc); }
     var fi: usize = plan.fn_count;
     plan.fn_keys[fi] = fn_key;
     plan.fn_maps[fi] = hash_mod.u32ToU32MapInitCap(alloc, lir_fn.hoisted_temps.len + @intCast(usize, 16));
+    plan.uac_maps[fi] = hash_mod.u32ToU32MapInitCap(alloc, lir_fn.hoisted_temps.len + @intCast(usize, 16));
     plan.fn_count = fi + @intCast(usize, 1);
     var ord: usize = @intCast(usize, 0);
     var bi: usize = @intCast(usize, 0);
@@ -130,6 +145,10 @@ pub fn spellPlanPlanFn(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry, fn
             var ic_width: u8 = @intCast(u8, 0);
             var ic_signed: u8 = @intCast(u8, 0);
             var plan_kind: u8 = @intCast(u8, 0);
+            var uac_kind: u8 = @intCast(u8, 0);
+            var uac_op: u8 = @intCast(u8, 0);
+            var uac_lhs: u32 = @intCast(u32, 0);
+            var uac_rhs: u32 = @intCast(u32, 0);
             switch (inst) {
                 .int_const => |ic| {
                     result = ic.result;
@@ -138,7 +157,14 @@ pub fn spellPlanPlanFn(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry, fn
                     ic_signed = ic.is_signed;
                     plan_kind = @intCast(u8, 1);
                 },
-                .binary => |b| { result = b.result; plan_kind = @intCast(u8, 1); },
+                .binary => |b| {
+                    result = b.result;
+                    plan_kind = @intCast(u8, 1);
+                    uac_kind = @intCast(u8, 1);
+                    uac_op = b.op;
+                    uac_lhs = b.lhs;
+                    uac_rhs = b.rhs;
+                },
                 .unary => |u| { result = u.result; plan_kind = @intCast(u8, 1); },
                 .int_cast => |c| { result = c.result; plan_kind = @intCast(u8, 1); },
                 else => {},
@@ -157,9 +183,84 @@ pub fn spellPlanPlanFn(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry, fn
                     hash_mod.u32ToU32MapPut(&plan.fn_maps[fi], @intCast(u32, ord), carrier);
                 }
             }
+            // P11: the C usual-arithmetic cast direction for the comparison
+            // promote path (ops 10-15) is planned ONCE here from the operands'
+            // carried types (same `hoisted_temps` facts the old emit-time
+            // `getTempEffType` reads) and stored per inst ordinal. Only
+            // cast-needed decisions are stored; a miss = no cast, the old
+            // `return 2` arm.
+            if (uac_kind != @intCast(u8, 0) and uac_op >= @intCast(u8, 10) and uac_op < @intCast(u8, 16)) {
+                var l_tyid = hoistedEffType(lir_fn, uac_lhs);
+                var r_tyid = hoistedEffType(lir_fn, uac_rhs);
+                var prom_side = uacPromoteSide(reg, l_tyid, r_tyid);
+                if (prom_side < @intCast(u8, 2)) {
+                    hash_mod.u32ToU32MapPut(&plan.uac_maps[fi], @intCast(u32, ord), prom_side);
+                }
+            }
             ord += @intCast(usize, 1);
         }
     }
+}
+
+// P11: a carried hoisted temp type (the plan-time mirror of the emitter's
+// `getTempEffType` resolution — first `hoisted_temps` match; `0xFFFFFFFF`/
+// `TYPE_VOID` leave the operand unresolved, classified as `0`).
+fn hoistedEffType(lir_fn: *LirFunction, temp_id: u32) u32 {
+    var i: usize = @intCast(usize, 0);
+    while (i < lir_fn.hoisted_temps.len) : (i += @intCast(usize, 1)) {
+        var ht = lir_fn.hoisted_temps.items[i];
+        if (ht.temp_id == temp_id) {
+            var eff: u32 = ht.type_id;
+            if (eff != @intCast(u32, 0xFFFFFFFF) and eff != type_mod.TYPE_VOID) { return eff; }
+            return @intCast(u32, 0);
+        }
+    }
+    return @intCast(u32, 0);
+}
+
+// P11: the C usual-arithmetic conversions for a binary operator's two integer
+// operands (the P5 verbatim relocation, re-owned from `coercion.zig` into the
+// C-spelling planner). Each operand is classified with
+// `typeRegistryIntSignednessClass`; when exactly one operand is unsigned and
+// the unsigned operand is at least as wide (`typeRegistryIntByteWidth`) as the
+// signed one, the signed operand must be cast to the unsigned operand's C
+// type. A TypeId of 0 (operand has no resolved type) classifies as
+// unclassified. Returns which side takes the cast: 0 = cast LHS to RHS's
+// type; 1 = cast RHS to LHS's type; 2 = no explicit promotion (same
+// signedness class, an unclassified operand, or the signed operand is wider).
+fn uacPromoteSide(reg: *TypeRegistry, l_tyid: u32, r_tyid: u32) u8 {
+    var l_sgn: i8 = @intCast(i8, -1);
+    var r_sgn: i8 = @intCast(i8, -1);
+    if (l_tyid != @intCast(u32, 0)) {
+        l_sgn = type_mod.typeRegistryIntSignednessClass(reg, l_tyid);
+    }
+    if (r_tyid != @intCast(u32, 0)) {
+        r_sgn = type_mod.typeRegistryIntSignednessClass(reg, r_tyid);
+    }
+    if (l_sgn == @intCast(i8, 1) and r_sgn == @intCast(i8, 0)) {
+        if (type_mod.typeRegistryIntByteWidth(reg, r_tyid) >= type_mod.typeRegistryIntByteWidth(reg, l_tyid)) {
+            return @intCast(u8, 0);
+        }
+    } else if (l_sgn == @intCast(i8, 0) and r_sgn == @intCast(i8, 1)) {
+        if (type_mod.typeRegistryIntByteWidth(reg, l_tyid) >= type_mod.typeRegistryIntByteWidth(reg, r_tyid)) {
+            return @intCast(u8, 1);
+        }
+    }
+    return @intCast(u8, 2);
+}
+
+// Spell-time UAC-direction read (the emitter's only promotion source). Key =
+// the binary's `spellInstOrd`; returns the planned side 0/1, or null (no cast
+// — the old `return 2` arm). `fn_key` is the current fn's LIR spill slot
+// offset.
+pub fn spellPlanUac(plan: *C89SpellPlan, fn_key: u32, inst_ord: u32) ?u32 {
+    var fi: usize = @intCast(usize, 0);
+    while (fi < plan.fn_count) : (fi += @intCast(usize, 1)) {
+        if (plan.fn_keys[fi] == fn_key) {
+            return hash_mod.u32ToU32MapGet(&plan.uac_maps[fi], inst_ord);
+        }
+    }
+    return null;
 }
 
 // Spell-time read (the emitter's only carrier source). `fn_key` is the

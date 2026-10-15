@@ -287,7 +287,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `ciZeroInt` | comptime_eval.zig |
 | `coercionTableGet` | coercion.zig |
 | `coercionTableInit` | coercion.zig |
-| `coercionUsualArithPromote` | coercion.zig |
+| `coercionUsualArithPromote` | — (P11: **deleted** from `coercion.zig` — the C usual-arithmetic cast-direction rule is a C-spelling decision, re-owned verbatim as `c89_plan.zig` `uacPromoteSide`; doc 05 tombstone) |
 | `compareDiag` | diagnostics.zig |
 | `compareDiag` | util/diagnostic_sort.zig |
 | `compositeNameId` | analyzer.zig |
@@ -925,6 +925,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `pkUnSetFields` | type_registry.zig |
 | `pkUnStructAppend` | type_registry.zig |
 | `planConstCarrierAt` | c89_emit.zig (P6-pre: spell-time carrier READ — `C89SpellPlan` lookup by (fn, const-id); replaces the deleted emit-time deciding helper `intConstTypeForValue`) |
+| `planUacSideAt` | c89_emit.zig (P11: spell-time UAC-direction READ — `C89SpellPlan` lookup by (fn, inst-ordinal) via `spellPlanUac`; miss = 2 = no cast; replaces the deleted emit-time decision `coercionUsualArithPromote`) |
 | `pointerQualifiersMonotone` | type_registry.zig |
 | `poolPeak` | allocator.zig |
 | `poolPtr` | allocator.zig |
@@ -1156,8 +1157,9 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `spellInstOrd` | c89_plan.zig (P6-pre: const-id encoding — flattened (bb,ii) inst ordinal, stable across the emit-time `lirOptRun`) |
 | `spellPlanCarrier` | c89_plan.zig (P6-pre: spell-time side-table read (fn-key, inst-ordinal) -> planned carrier) |
 | `spellPlanInit` | c89_plan.zig (P6-pre: `C89SpellPlan` init at the `phase_EmissionClassification` boundary) |
-| `spellPlanPlanFn` | c89_plan.zig (P6-pre fix round 1: per-fn boundary fill — `deriveConstCarrier` for every inst kind that is/becomes an `int_const`; the `.int_const` arm passes the record's `width_bits`/`is_signed`, the fold-capable kinds pass 0/0) |
+| `spellPlanPlanFn` | c89_plan.zig (P6-pre fix round 1: per-fn boundary fill — `deriveConstCarrier` for every inst kind that is/becomes an `int_const`; the `.int_const` arm passes the record's `width_bits`/`is_signed`, the fold-capable kinds pass 0/0. P11: also fills `uac_maps` — the planned UAC cast direction for every comparison `binary` (ops 10-15) from the operands' carried `hoisted_temps` types via `uacPromoteSide`) |
 | `spellPlanPlanTypeOrder` | c89_plan.zig (P12: THE typedef-order boundary fill — `C89SpellPlan.typedef_order = tstTopologicalSort(reg)` + `typedef_order_len = reg.types_len` (the plan-time snapshot; combined fix H2 bounds every emitter `sorted` walker on it), called ONCE from `phase_EmissionClassification`; ordering is planned here, the emitter walks the carried order and never sorts) |
+| `spellPlanUac` | c89_plan.zig (P11: spell-time UAC-direction side-table read (fn-key, inst-ordinal) -> planned side 0/1; null = no cast — the emitter's only promotion source) |
 | `spillBackendFor` | spill_store.zig |
 | `spillReadAt` | spill_store.zig |
 | `spillSeek` | spill_store.zig |
@@ -1351,6 +1353,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `u64ToU32MapInit` | util/hash.zig |
 | `u64ToU32MapInitCap` | util/hash.zig |
 | `u64ToU32MapPut` | util/hash.zig |
+| `uacPromoteSide` | c89_plan.zig (P11: THE usual-arithmetic cast-direction rule — verbatim re-own of `coercion.zig` `coercionUsualArithPromote` (deleted); classify both operands via `typeRegistryIntSignednessClass` (TypeId 0 → unclassified), cast the signed side to the unsigned side's C type when the unsigned is >= as wide (`typeRegistryIntByteWidth`); 0 = cast LHS to RHS's type, 1 = cast RHS to LHS's, 2 = none; planned into `C89SpellPlan.uac_maps` by `spellPlanPlanFn`) |
 | `unAppend` | type_registry.zig |
 | `unrAppend` | type_registry.zig |
 | `untypedIntCarrier` | c89_plan.zig (P6-pre: the untyped-exact-int carrier derivation entry — **deleted (P6-pre fix round 1)**: replaced by fact recording (`lowerUntypedIntFacts`) + boundary derivation (`deriveConstCarrier`/`carrierFromFacts`)) |

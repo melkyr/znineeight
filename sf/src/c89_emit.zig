@@ -29,7 +29,6 @@ const LirFunction = @import("lir.zig").LirFunction;
 const LirParam = @import("lir.zig").LirParam;
 const lir_stream_mod = @import("lir_stream.zig");
 const lir_opt_mod = @import("lir_opt_pass.zig");
-const coercion_mod = @import("coercion.zig");
 const emit_support = @import("emit_support.zig");
 
 pub const BufferedWriter = struct {
@@ -3407,7 +3406,7 @@ fn emitValueExpr(emitter: *C89Emitter, temp_id: u32, depth: u32) void {
 
 fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32, def_bb: u32, def_ii: u32) void {
     switch (inst) {
-        .binary => |b| { nestEmitBinExpr(emitter, b.op, b.lhs, b.rhs, b.result, b.result_type, b.is_signed, depth); },
+        .binary => |b| { nestEmitBinExpr(emitter, b.op, b.lhs, b.rhs, b.result, b.result_type, b.is_signed, depth, def_bb, def_ii); },
         .unary => |u| { emitUnaryRvalue(emitter, u.op, u.operand, u.result, depth); },
         .int_cast => |c| {
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
@@ -3479,7 +3478,7 @@ fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32, de
 // decision time, so only the plain two paths are reached. P6: the operation's
 // semantic type is carried on the inst (`res_type`/`res_signed`, recorded at
 // lowering) — the emit-time `getTempTypeInfo` re-derivation is gone.
-fn nestEmitBinExpr(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, res_t: u32, res_type: u32, res_signed: u8, depth: u32) void {
+fn nestEmitBinExpr(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, res_t: u32, res_type: u32, res_signed: u8, depth: u32, def_bb: usize, def_ii: usize) void {
     var sp: []const u8 = " ";
     if (op >= @intCast(u8, 16)) {
         var wty: u32 = res_type;
@@ -3528,13 +3527,13 @@ fn nestEmitBinExpr(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, res_t: 
     }
     var lhs_name = resolveTempName(emitter, lhs_t);
     var rhs_name = resolveTempName(emitter, rhs_t);
-    emitBinRvalueText(emitter, op, lhs_t, rhs_t, lhs_name, rhs_name, depth, lhs_is_tag, rhs_is_tag);
+    emitBinRvalueText(emitter, op, lhs_t, rhs_t, lhs_name, rhs_name, depth, lhs_is_tag, rhs_is_tag, def_bb, def_ii);
 }
 
 // D7-7: the shared binary operand text (width casts, shift-operand
 // parenthesization, tagged-union `.tag` suffix). The def arm writes its
 // `result = ` lead first; the nested rvalue path writes the text alone.
-fn emitBinRvalueText(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, lhs_name: []const u8, rhs_name: []const u8, depth: u32, lhs_is_tag: u8, rhs_is_tag: u8) void {
+fn emitBinRvalueText(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, lhs_name: []const u8, rhs_name: []const u8, depth: u32, lhs_is_tag: u8, rhs_is_tag: u8, def_bb: usize, def_ii: usize) void {
     var sp: []const u8 = " ";
     var op_str = getBinOpStr(op);
     var is_shift_op: u8 = @intCast(u8, 0);
@@ -3546,13 +3545,16 @@ fn emitBinRvalueText(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, lhs_n
     var lhs_cast: []const u8 = "";
     var rhs_cast: []const u8 = "";
     if (op >= @intCast(u8, 10)) {
+        // P11: the direction is the PLANNED side-table state (`planUacSideAt`);
+        // the cast-name minting glue (`getTempEffType` temp→type resolution +
+        // `getCTypeName`) is unchanged spelling.
         var l_tyid: u32 = @intCast(u32, 0);
         var r_tyid: u32 = @intCast(u32, 0);
         var l_sg: u8 = @intCast(u8, 0);
         var r_sg: u8 = @intCast(u8, 0);
         _ = getTempEffType(emitter, lhs_t, &l_tyid, &l_sg);
         _ = getTempEffType(emitter, rhs_t, &r_tyid, &r_sg);
-        var prom_side = coercion_mod.coercionUsualArithPromote(emitter.registry, l_tyid, r_tyid);
+        var prom_side = planUacSideAt(emitter, def_bb, def_ii);
         if (prom_side == @intCast(u8, 0)) {
             lhs_cast = getCTypeName(emitter.registry, emitter.mangler, r_tyid);
         } else if (prom_side == @intCast(u8, 1)) {
@@ -3827,6 +3829,19 @@ fn planConstCarrierAt(emitter: *C89Emitter, bb_idx: usize, ii: usize, semantic_t
         return c;
     }
     return semantic_tid;
+}
+
+// P11: the usual-arithmetic cast direction is PLANNED at the pre-emit boundary
+// (`c89_plan.uacPromoteSide`, the P5 rule re-owned by the C-spelling planner)
+// and stored as `C89SpellPlan` side-table state keyed by (fn, inst-ordinal).
+// This is the spell-time READ — the emitter never derives the direction
+// (Decision-vs-spelling). A plan miss spells no cast (the old `return 2` arm).
+fn planUacSideAt(emitter: *C89Emitter, bb_idx: usize, ii: usize) u8 {
+    var ord = c89_plan.spellInstOrd(emitter.current_fn, bb_idx, ii);
+    if (c89_plan.spellPlanUac(emitter.plan, emitter.plan_fn_key, ord)) |ps| {
+        return @intCast(u8, ps);
+    }
+    return @intCast(u8, 2);
 }
 
 fn isAtomicCOperand(s: []const u8) bool {
@@ -6805,7 +6820,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s);
-            emitBinRvalueText(emitter, b.op, b.lhs, b.rhs, lhs, rhs, @intCast(u32, 0), lhs_is_tag, rhs_is_tag);
+            emitBinRvalueText(emitter, b.op, b.lhs, b.rhs, lhs, rhs, @intCast(u32, 0), lhs_is_tag, rhs_is_tag, inst_bb, inst_ii);
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
             }
