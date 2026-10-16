@@ -1805,6 +1805,7 @@ fn foldPrintArgIntExact(self: *LirLowerer, node_idx: u32) ?ce_mod.ComptimeVal {
         k == AstKind.bit_xor or k == AstKind.shl or k == AstKind.shr) is_expr = true;
     if (!is_expr) return null;
     var ce = ce_mod.comptimeEvalInit(self.ctx.registry, self.ctx.store, self.ctx.registry.interner, self.ctx.symbol_tables);
+    ce.module_id = self.module_id;
     ce.diag = null;
     if (ce_mod.comptimeEvalEvaluate(&ce, node_idx)) |pv| {
         if (pv.kind == ce_mod.KIND_INT) return pv;
@@ -3780,6 +3781,7 @@ fn foldNodeIntExact(self: *LirLowerer, node_idx: u32, mode: u8) ?ce_mod.Comptime
         k == AstKind.bit_xor or k == AstKind.shl or k == AstKind.shr) {
         if (mode != FITS_DECL) return null;
         var ce = ce_mod.comptimeEvalInit(self.ctx.registry, self.ctx.store, self.ctx.registry.interner, self.ctx.symbol_tables);
+        ce.module_id = self.module_id;
         ce.diag = null;
         if (ce_mod.comptimeEvalEvaluate(&ce, node_idx)) |pv| {
             if (pv.kind == ce_mod.KIND_INT) return pv;

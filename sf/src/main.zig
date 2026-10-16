@@ -644,11 +644,24 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
     var ce = ce_mod.comptimeEvalInit(ctx.typereg, ctx.store, ctx.interner, ctx.symbol_reg);
     ce.host_is_windows = ctx.cli.target_is_windows;
     ce.diag = ctx.diag;
+    var p7_mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     // Block-by-block sweep: fault in each 4096-node block, scan its slots, let
     // the resident ring evict it on the next fault. Node VALUES are identical to
     // the old contiguous scan (storage-location-only change).
     var ni: usize = 0;
     while (ni < ctx.store.nodes.len) : (ni += @intCast(usize, 1)) {
+        var p7_best_root: u32 = @intCast(u32, 0xFFFFFFFF);
+        var p7_best_id: u32 = type_resolver.MODULE_ID_NONE;
+        var p7_si: usize = 0;
+        while (p7_si < p7_mods.len) : (p7_si += 1) {
+            var p7_r: u32 = p7_mods[p7_si].ast_root;
+            if (p7_r == @intCast(u32, 0)) continue;
+            if (@intCast(usize, p7_r) >= ni and p7_r < p7_best_root) {
+                p7_best_root = p7_r;
+                p7_best_id = p7_mods[p7_si].id;
+            }
+        }
+        ce.module_id = p7_best_id;
         var node = ast_mod.astStoreNodeAt(ctx.store, @intCast(u32, ni));
         if (node.kind == AstKind.builtin_call) {
             var val = ce_mod.comptimeEvalEvaluate(&ce, @intCast(u32, ni));

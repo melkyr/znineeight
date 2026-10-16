@@ -1919,6 +1919,8 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             var ck_cur: u64 = @intCast(u64, env.module_id) * @intCast(u64, 4294967296) + @intCast(u64, canonical_id);
             var tc_cur = type_mod.nameCacheGet(env.typereg, ck_cur);
             if (tc_cur) |t| return t;
+            var sym_cur_tid = symbolTypeIdOfModule(env, env.module_id, name_id);
+            if (sym_cur_tid != @intCast(u32, 0)) return sym_cur_tid;
         }
         var tid = type_mod.nameCacheGet(env.typereg, @intCast(u64, canonical_id));
         var opnc_m: []const u8 = "OPTVOID:nc"; pal_mod.markerWriteInt(opnc_m, canonical_id);
@@ -1931,10 +1933,6 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             if (tc) |t| return t;
         }
         var n2: []const u8 = "N2"; pal_mod.markerWrite(n2);
-        if (env.module_id != MODULE_ID_NONE) {
-            var sym_cur_tid = symbolTypeIdOfModule(env, env.module_id, name_id);
-            if (sym_cur_tid != @intCast(u32, 0)) return sym_cur_tid;
-        }
         var all_tid = symbolLookupTypeAllModules(env, name_id);
         if (all_tid != @intCast(u32, 0)) {
             var ops_m: []const u8 = "OPTVOID:ids"; pal_mod.markerWriteInt(ops_m, all_tid);

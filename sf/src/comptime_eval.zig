@@ -214,6 +214,7 @@ pub const ComptimeEval = struct {
     store: *AstStore,
     interner: *StringInterner,
     symbol_reg: *SymbolRegistry,
+    module_id: u32,
     size_of_id: u32,
     align_of_id: u32,
     offset_of_id: u32,
@@ -258,6 +259,7 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
     var iw_id = interner_mod.stringInternerIntern(interner, s_iw);
     return ComptimeEval{
         .registry = registry, .store = store, .interner = interner, .symbol_reg = symbol_reg,
+        .module_id = type_resolver.MODULE_ID_NONE,
         .size_of_id = size_id, .align_of_id = align_id, .int_cast_id = intc_id, .as_id = as_id,
         .float_cast_id = fc_id, .int_to_float_id = itf_id,
         .offset_of_id = off_id, .bit_size_of_id = bitsz_id, .bit_offset_of_id = bitoff_id,
@@ -1326,7 +1328,7 @@ fn comptimeEvalWiderIntType(self: *ComptimeEval, lt: u32, rt: u32) u32 {
 
 fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
     if (node_idx == @intCast(u32, 0)) return null;
-    var env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbol_reg, .interner = self.interner, .module_id = type_resolver.MODULE_ID_NONE, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
+    var env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbol_reg, .interner = self.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
     var tid = type_resolver.resolveTypeExprFull(&env, node_idx, @intCast(u32, 0));
     if (tid == type_mod.TYPE_UNDEFINED) return null;
     return tid;

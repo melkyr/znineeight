@@ -98,7 +98,7 @@ zig0 is a C++98 bootstrap compiler. It emits valid C89 but:
 | 2 | `phase_SymbolRegistration` | symbol_registrator.zig, symbol_table.zig | `S`, `S0`, `Vi` | scratch |
 | 3 | `phase_TypeResolution` | type_resolver.zig, type_registry.zig, const_alias_prepass.zig | `T`, `T0` | scratch (prepass: permanent) |
 | 4 | `phase_FrontResolution` | front_resolution.zig | (none) | scratch |
-| 5 | `phase_ComptimeEvaluation` | comptime_eval.zig | `CE` | module |
+| 5 | `phase_ComptimeEvaluation` | comptime_eval.zig (P7 2026-10-15: per-node lexical-module attribution — a node's module is the module whose `ast_root` is the smallest parse-chunk root >= the node index) | `CE` | module |
 | 6 | `phase_SemanticAnalysis` | semantic_analyzer.zig, coercion.zig, resolved_type_table.zig, constraint_checker.zig, assign_helper.zig | `RS`, `MZ`, `AD`, `DSE`, `DN`, `SA`, `sA` | scratch |
 | 7 | `phase_StaticAnalyzers` | analyzer.zig, state_map.zig | `A` | scratch |
 | 8 | `phase_AsyncFrameSize` | async_analysis.zig | `AFS` | module |
@@ -306,10 +306,10 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `comptimeEvalFloatBuiltin` | comptime_eval.zig |
 | `comptimeEvalFloatNarrow` | comptime_eval.zig (FX3: value+provenance probe behind the value-aware f64/int -> f32 narrowing) |
 | `comptimeEvalFloatOperandType` | comptime_eval.zig |
-| `comptimeEvalInit` | comptime_eval.zig |
+| `comptimeEvalInit` | comptime_eval.zig (P7 2026-10-15: `ComptimeEval` gains `module_id` — the lexical module for type-arg resolution; init defaults `MODULE_ID_NONE`, callers with a module set it post-init) |
 | `comptimeEvalLogical` | comptime_eval.zig |
 | `comptimeEvalOperandType` | comptime_eval.zig |
-| `comptimeEvalResolveTypeArg` | comptime_eval.zig |
+| `comptimeEvalResolveTypeArg` | comptime_eval.zig (P7 2026-10-15: builds the type-arg `TypeResolveEnv` with `self.module_id` instead of `MODULE_ID_NONE`, so `@sizeOf`/cast type-arg names resolve module-scope-first — the D7 fold fix) |
 | `comptimeEvalWiderIntType` | comptime_eval.zig |
 | `comptimeFoldBool` | lower.zig |
 | `comptimeFoldTableGet` | comptime_eval.zig |

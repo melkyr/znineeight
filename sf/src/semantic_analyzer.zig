@@ -907,6 +907,7 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
         if (s.type_id != @intCast(u32, 0)) { var rdt_nm: []const u8 = "STY:N"; pal_mod.markerWriteInt(rdt_nm, name_id); var rdt_tm: []const u8 = "STY:T"; pal_mod.markerWriteInt(rdt_tm, s.type_id); if (ncg) |nt| { var rdt_ntm: []const u8 = "STY:C"; pal_mod.markerWriteInt(rdt_ntm, nt); } return s.type_id; }
             var rdt_sv: []const u8 = "SVO\n"; pal_mod.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
     }
+    if (ncgm) |m| { var id3m: []const u8 = "C2:M"; pal_mod.markerWriteInt(id3m, m); return m; }
     if (ncg) |t| { var id3: []const u8 = "C2:T"; pal_mod.markerWriteInt(id3, t); return t; }
      var d8n_m: []const u8 = "D8:Nn"; pal_mod.markerWriteInt(d8n_m, name_id);
      var d8c_m: []const u8 = "D8:C"; pal_mod.markerWriteInt(d8c_m, @intCast(u32, self.local_decl_count));
@@ -1051,6 +1052,7 @@ fn semanticAnalyzerStaticArrayLen(self: *SemanticAnalyzer, base_node_idx: u32) ?
 // sites -- a fresh evaluator with the function-local `const` scope bound.
 fn semaComptimeEvalInit(self: *SemanticAnalyzer) ce_mod.ComptimeEval {
     var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+    ce.module_id = self.module_id;
     ce.local_consts = &self.local_consts;
     return ce;
 }
@@ -6844,6 +6846,7 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
     // before this fix it emitted `int zG_X;` and ran truncated).
     if (decl.child_0 == @intCast(u32, 0) and (it == type_mod.TYPE_INT_LIT or it == type_mod.TYPE_I32)) {
         var vd_ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+        vd_ce.module_id = self.module_id;
         if (ce_mod.comptimeEvalEvaluate(&vd_ce, decl.child_1)) |vdcv| {
             if (vdcv.kind == ce_mod.KIND_INT) {
                 if (ce_mod.comptimeIntUntypedType(vdcv.v)) |vdut| {
