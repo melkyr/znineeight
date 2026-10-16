@@ -1,49 +1,64 @@
-// console_linux.zig — Linux raw-console key input for z9play (M5 Task 2).
+// console_linux.zig — complete Linux console backend for z9play (M5b Task 2).
 //
-// Provides the raw terminal mode + non-blocking, non-echoing single-key reader
-// the M5 CLI playback loop drives (space / '+' / '-' / 'q' / Ctrl-C). It is
-// Linux-only (termios via `extern "c"`, SIGINT mapped to a quit key); the Win9x
-// backend lands in M6. The CLI restores the terminal in its normal flow via
-// `termLeaveRaw`.
+// Implements the `Console` contract (platform/console.zig) on Linux: raw-mode
+// enter/leave (termios), non-blocking key decode (a small ESC-introduced arrow
+// state machine plus a sticky SIGINT flag), ANSI clear/setCursor/cursorShow/
+// writeStr, and window size via `ioctl(TIOCGWINSZ)`. It is Linux-only; the
+// Win9x backend lands in M6.
 //
-// Raw mode (enter): the caller's original termios is saved in `TermState.saved`
-// and the working copy clears ECHO/ECHONL, ICANON and IEXTEN (so keys arrive one
-// at a time, un-echoed, with no extended processing) and clears ICRNL/IXON (so
-// CR stays CR and Ctrl-S/Q are ordinary bytes). ISIG is deliberately kept, so
-// Ctrl-C is delivered as SIGINT (see below), matching the plan's "keys: q /
-// Ctrl-C quit". VMIN=0, VTIME=0 makes `read(2)` return immediately — the
-// non-blocking contract of `readKey`. OPOST/`c_oflag` is deliberately left
-// unchanged: the M5 CLI only uses `\r` for the status line and `\n` elsewhere,
-// and can rely on the default ONLCR mapping.
+// Raw mode (enterRaw): the caller's original termios is saved in the state
+// struct and the working copy clears ECHO/ECHONL, ICANON and IEXTEN (so keys
+// arrive one at a time, un-echoed, with no extended processing) and clears
+// ICRNL/IXON (so CR stays CR and Ctrl-S/Q are ordinary bytes). ISIG is
+// deliberately kept, so Ctrl-C is delivered as SIGINT (see below), matching the
+// player's "q / Ctrl-C quit". VMIN=0, VTIME=0 makes `read(2)` return
+// immediately — the non-blocking contract of `readKey`. OPOST/`c_oflag` is
+// deliberately left unchanged: the CLI only uses `\r` for the status line and
+// `\n` elsewhere, and can rely on the default ONLCR mapping.
 //
 // SIGINT handling: `signal(SIGINT, onSigint)` installs a handler that only sets
 // a sticky module flag (`g_sigint`). `readKey` checks the flag and returns
-// `.sigint`; the CLI maps that to a clean quit and the terminal is restored via
-// `termLeaveRaw`. This is why ISIG stays enabled — Ctrl-C must surface as
-// SIGINT, not as the literal byte 0x03.
+// `.sigint`; this is why ISIG stays enabled — Ctrl-C must surface as SIGINT,
+// not as the literal byte 0x03.
 //
-// `leave`: `tcsetattr` writes back the saved termios byte-for-byte, undoing
-// every change above.
+// leaveRaw: `tcsetattr` writes back the saved termios byte-for-byte, undoing
+// every change above; it is a no-op when raw mode is not active, so the caller
+// can call it unconditionally on every exit path.
+//
+// Output conventions: clear/setCursor/cursorShow and writeStr all write to
+// stdout (fd 1). setCursor takes 0-based row/col and emits the 1-based ANSI
+// `ESC[<row+1>;<col+1>H`. width/height read the window via
+// `ioctl(0, TIOCGWINSZ)` and fall back to 80x24 when it fails or reports zero.
+//
+// Assembly note (compiler defect D8): a backend must NOT expose a function that
+// *returns* `Console` in a multi-module build. This module exposes the nine
+// vtable operations as public free functions whose signatures match the
+// contract fields exactly; the caller assembles the `Console` literal and sets
+// `state` to its own `ConsoleLinState`. The C externs live in
+// console_linux_pal.zig (see there for the split rationale).
+//
+// D1 note: `readKey` returns `Key` directly (`.none` when nothing is pending)
+// rather than `?Key`; seed v98 rejects the optional-of-aggregate
+// function-pointer return and mis-emits its C89 typedef order. See D1 in
+// examples/torrent_example_defects.md.
 //
 // Pure Z98: free functions only, strict `@intCast`, numeric termios constants
-// (no dependence on the termios.h macros at the Zig level); the C externs live
-// in console_linux_pal.zig (see there for the split rationale).
+// (no dependence on the termios.h macros at the Zig level).
 
 const std = @import("std");
 const pal = @import("console_linux_pal.zig");
+const con = @import("console.zig");
 
 // Prototypes for the externs in console_linux_pal.zig. Z98 emits no extern
 // prototypes, so gcc sees only these headers' declarations.
 @cInclude("<termios.h>");
 @cInclude("<unistd.h>");
 @cInclude("<signal.h>");
+@cInclude("<sys/ioctl.h>");
 
-// One key event. `char` is one raw byte (no UTF-8/escape decoding — the M5 CLI
-// only needs ASCII keys); `sigint` is Ctrl-C (or an external SIGINT).
-pub const Key = union(enum) {
-    char: u8,
-    sigint,
-};
+// Re-export the contract types so consumers can name them through the backend.
+pub const Key = con.Key;
+pub const Console = con.Console;
 
 // Linux glibc `struct termios` (same layout on i386/x86_64 and musl): four
 // tcflag_t, the line-discipline byte, NCCS=32 control characters, then the two
@@ -60,9 +75,9 @@ const Termios = struct {
     c_ospeed: u32,
 };
 
-// Caller-owned terminal state: the original termios plus whether raw mode is
-// currently in effect (so `termLeaveRaw` is safe to call unconditionally).
-pub const TermState = struct {
+// Caller-owned Linux console state: the original termios plus whether raw mode
+// is currently in effect (so `leaveRaw` is safe to call unconditionally).
+pub const ConsoleLinState = struct {
     saved: Termios,
     entered: bool,
 };
@@ -86,8 +101,14 @@ const IEXTEN: u32 = 0x00008000;
 const ICRNL: u32 = 0x00000100;
 const IXON: u32 = 0x00000400;
 
-// Set by the SIGINT handler; sticky until the next `termEnterRaw`. A byte is
-// enough (the handler is async-signal-safe: one store).
+// TIOCGWINSZ (asm-generic/ioctls.h: _IOR('T', 0x13, struct winsize)).
+const TIOCGWINSZ: u32 = 0x5413;
+
+// ASCII ESC and the arrow-sequence tail bytes.
+const ESC: u8 = 0x1b;
+
+// Set by the SIGINT handler; sticky until the next `enterRaw`. A byte is enough
+// (the handler is async-signal-safe: one store).
 var g_sigint: u8 = 0;
 
 fn onSigint(sig: i32) void {
@@ -95,18 +116,21 @@ fn onSigint(sig: i32) void {
     g_sigint = 1;
 }
 
-// Enter raw mode on stdin (fd 0), saving the original settings into `state`.
-// Idempotent from the caller's viewpoint: a second call re-saves the (already
-// raw) termios, so `termLeaveRaw` still restores whatever termios was current.
-// When stdin is not a tty (tcgetattr fails, e.g. a redirected run) raw mode is
-// not entered and `termLeaveRaw` becomes a no-op, so a bogus termios is never
-// written back.
-pub fn termEnterRaw(state: *TermState) void {
-    g_sigint = 0;
-    state.entered = false;
-    if (pal.tcgetattr(0, @ptrCast(*void, &state.saved)) != 0) return;
+// --- vtable implementation: raw mode --------------------------------------
 
-    var raw: Termios = state.saved;
+// `Console.enterRaw_fn`: enter raw mode on stdin (fd 0), saving the original
+// settings into the caller's state. A second call re-saves the (already raw)
+// termios, so `leaveRaw` still restores whatever termios was current. When
+// stdin is not a tty (tcgetattr fails, e.g. a redirected run) raw mode is not
+// entered and `leaveRaw` becomes a no-op, so a bogus termios is never written
+// back.
+pub fn enterRaw(state: *void) void {
+    var st: *ConsoleLinState = @ptrCast(*ConsoleLinState, state);
+    g_sigint = 0;
+    st.entered = false;
+    if (pal.tcgetattr(0, @ptrCast(*void, &st.saved)) != 0) return;
+
+    var raw: Termios = st.saved;
     raw.c_lflag = raw.c_lflag & ~(ECHO | ECHONL | ICANON | IEXTEN);
     raw.c_iflag = raw.c_iflag & ~(ICRNL | IXON);
     raw.c_cc[VMIN] = 0;
@@ -114,26 +138,147 @@ pub fn termEnterRaw(state: *TermState) void {
     _ = pal.tcsetattr(0, TCSANOW, @ptrCast(*void, &raw));
 
     _ = pal.signal(SIGINT, onSigint);
-    state.entered = true;
+    st.entered = true;
 }
 
-// Restore the termios saved by `termEnterRaw`. A no-op when raw mode is not
-// active, so the CLI can call it unconditionally on every exit path.
-pub fn termLeaveRaw(state: *TermState) void {
-    if (!state.entered) return;
-    _ = pal.tcsetattr(0, TCSANOW, @ptrCast(*void, &state.saved));
-    state.entered = false;
+// `Console.leaveRaw_fn`: restore the termios saved by `enterRaw`. A no-op when
+// raw mode is not active, so the caller can call it unconditionally.
+pub fn leaveRaw(state: *void) void {
+    var st: *ConsoleLinState = @ptrCast(*ConsoleLinState, state);
+    if (!st.entered) return;
+    _ = pal.tcsetattr(0, TCSANOW, @ptrCast(*void, &st.saved));
+    st.entered = false;
 }
 
-// Return the next key, or null when none is ready yet. Non-blocking (VMIN=0):
-// a `read(2)` that returns no byte yields null. A pending SIGINT takes priority
-// and yields `.sigint` (sticky); an interrupted read that then observes the
-// flag also yields `.sigint`.
-pub fn readKey() ?Key {
+// --- vtable implementation: key input -------------------------------------
+
+// One more byte from stdin, or -1 when none is ready (read is non-blocking).
+fn readMoreByte() i32 {
+    var b: [1]u8 = undefined;
+    var n: i32 = pal.read(0, @ptrCast([*]u8, &b[0]), 1);
+    if (n == 1) return @intCast(i32, b[0]);
+    return -1;
+}
+
+// Decode the bytes following a lone ESC: `[A/B/C/D` -> the arrow keys; anything
+// else (including a sequence whose tail has not arrived yet, since reads are
+// non-blocking) -> `.esc`.
+fn decodeEscape() Key {
+    var b1: i32 = readMoreByte();
+    if (b1 != 91) return Key{ .esc = {} }; // '['
+    var b2: i32 = readMoreByte();
+    if (b2 == 65) return Key{ .up = {} };    // 'A'
+    if (b2 == 66) return Key{ .down = {} };  // 'B'
+    if (b2 == 67) return Key{ .right = {} }; // 'C'
+    if (b2 == 68) return Key{ .left = {} };  // 'D'
+    return Key{ .esc = {} };
+}
+
+// `Console.readKey_fn`: return the next key. Non-blocking (VMIN=0): a
+// `read(2)` returning no byte yields `.none`. A pending SIGINT takes priority
+// and yields `.sigint` (sticky). A lone ESC is decoded as an arrow sequence;
+// CR/LF -> `.enter`; any other byte -> `.char`.
+pub fn readKey(state: *void) Key {
+    _ = state;
     if (g_sigint != 0) return Key{ .sigint = {} };
     var b: [1]u8 = undefined;
     var n: i32 = pal.read(0, @ptrCast([*]u8, &b[0]), 1);
-    if (n == 1) return Key{ .char = b[0] };
-    if (n < 0 and g_sigint != 0) return Key{ .sigint = {} };
-    return null;
+    if (n != 1) {
+        if (n < 0 and g_sigint != 0) return Key{ .sigint = {} };
+        return Key{ .none = {} };
+    }
+    var c: u8 = b[0];
+    if (c == ESC) return decodeEscape();
+    if (c == '\r' or c == '\n') return Key{ .enter = {} };
+    return Key{ .char = c };
 }
+
+// --- vtable implementation: output ----------------------------------------
+
+// `Console.writeStr_fn`: write the bytes to stdout (fd 1). The CLI uses this
+// for the startup metadata line and the CR-Prefixed status line.
+pub fn writeStr(state: *void, s: []const u8) void {
+    _ = state;
+    std.io.write(s);
+}
+
+// `Console.clear_fn`: ANSI clear + cursor home `\033[2J\033[H` to stdout.
+pub fn clear(state: *void) void {
+    _ = state;
+    var s: []const u8 = "\x1b[2J\x1b[H";
+    std.io.write(s);
+}
+
+// Decimal digits of `v` (0..65535), no sign. Returns the digit count.
+fn writeDec(buf: []u8, v_in: u32) usize {
+    var v: u32 = v_in;
+    if (v == 0) {
+        buf[0] = '0';
+        return 1;
+    }
+    var tmp: [10]u8 = undefined;
+    var n: usize = 0;
+    while (v > 0) {
+        tmp[n] = @intCast(u8, v % 10) + '0';
+        v = v / 10;
+        n += 1;
+    }
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        buf[i] = tmp[n - 1 - i];
+    }
+    return n;
+}
+
+// `Console.setCursor_fn`: ANSI cursor position `\033[<row+1>;<col+1>H` to
+// stdout. `row`/`col` are 0-based; the ANSI sequence is 1-based, so both are
+// incremented.
+pub fn setCursor(state: *void, row: u16, col: u16) void {
+    _ = state;
+    var buf: [24]u8 = undefined;
+    var n: usize = 0;
+    buf[n] = ESC;
+    n += 1;
+    buf[n] = '[';
+    n += 1;
+    n += writeDec(buf[n..], @intCast(u32, row) + 1);
+    buf[n] = ';';
+    n += 1;
+    n += writeDec(buf[n..], @intCast(u32, col) + 1);
+    buf[n] = 'H';
+    n += 1;
+    std.io.write(buf[0..n]);
+}
+
+// `Console.cursorShow_fn`: ANSI cursor show/hide `\033[?25h` / `\033[?25l`.
+pub fn cursorShow(state: *void, show: bool) void {
+    _ = state;
+    if (show) {
+        var s: []const u8 = "\x1b[?25h";
+        std.io.write(s);
+    } else {
+        var s: []const u8 = "\x1b[?25l";
+        std.io.write(s);
+    }
+}
+
+// `Console.width_fn`: terminal columns from ioctl(TIOCGWINSZ); 80 when the
+// ioctl fails or reports zero.
+pub fn width(state: *void) u16 {
+    _ = state;
+    var ws: pal.Winsize = undefined;
+    if (pal.ioctl(0, TIOCGWINSZ, @ptrCast(*void, &ws)) != 0) return 80;
+    if (ws.ws_col == 0) return 80;
+    return ws.ws_col;
+}
+
+// `Console.height_fn`: terminal rows from ioctl(TIOCGWINSZ); 24 when the ioctl
+// fails or reports zero.
+pub fn height(state: *void) u16 {
+    _ = state;
+    var ws: pal.Winsize = undefined;
+    if (pal.ioctl(0, TIOCGWINSZ, @ptrCast(*void, &ws)) != 0) return 24;
+    if (ws.ws_row == 0) return 24;
+    return ws.ws_row;
+}
+

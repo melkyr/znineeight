@@ -22,3 +22,17 @@ pub extern "c" fn tcgetattr(fd: i32, termios_p: *void) i32;
 pub extern "c" fn tcsetattr(fd: i32, optional_actions: i32, termios_p: *void) i32;
 pub extern "c" fn read(fd: i32, buf: [*]u8, count: u32) i32;
 pub extern "c" fn signal(signum: i32, handler: fn (i32) void) fn (i32) void;
+// int ioctl(int fd, unsigned long request, ...) — called with a pointer arg
+// (TIOCGWINSZ takes a `struct winsize *`).
+pub extern "c" fn ioctl(fd: i32, request: u32, arg: *void) i32;
+
+// Linux `struct winsize` (asm-generic/termios.h, included by <sys/ioctl.h>):
+// four little-endian u16, in the order row, col, xpixel, ypixel. Mirrored here
+// (like `Termios` in the backend) so the backend can pass its address to
+// ioctl(TIOCGWINSZ) without depending on the C type at the Zig level.
+pub const Winsize = struct {
+    ws_row: u16,
+    ws_col: u16,
+    ws_xpixel: u16,
+    ws_ypixel: u16,
+};

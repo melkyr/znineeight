@@ -1,17 +1,23 @@
-// console_test.zig — pty unit test for the Linux raw-console backend (M5 T2).
+// console_test.zig — pty unit test for the complete Linux console backend (M5b T2).
 //
-// Run under a pty (`script`) with the harness feeding one key after the backend
+// Run under a pty (`script`) with the harness feeding keys after the backend
 // has entered raw mode. Asserts, in order:
-//   1. `termEnterRaw` really disabled echo/canonical mode (ECHO and ICANON
-//      cleared, VMIN=VTIME=0) as read back from the live termios;
-//   2. a key written through the pty is read back by `readKey` (non-blocking,
+//   1. `enterRaw` disabled echo/canonical mode (ECHO and ICANON cleared,
+//      VMIN=VTIME=0) as read back from the live termios;
+//   2. `width`/`height` read a sane, non-zero size via ioctl(TIOCGWINSZ);
+//   3. a key written through the pty is read back by `readKey` (non-blocking,
 //      no echo — the harness also asserts the byte never appeared in the pty
 //      output, i.e. it was not echoed);
-//   3. an external SIGINT is surfaced as `Key.sigint` by the handler;
-//   4. `termLeaveRaw` restored the original termios (c_iflag/c_lflag/c_cc).
+//   4. an external SIGINT is surfaced as `Key.sigint` by the handler;
+//   5. the output operations (`clear`, `setCursor`, `writeStr`, `cursorShow`)
+//      run without crashing (their emitted escapes are asserted end-to-end by
+//      the pty harness);
+//   6. `leaveRaw` restored the original termios (c_iflag/c_lflag/c_cc).
 //
-// The harness sends the key only after the program creates a ready marker, so
-// the key is written after raw mode is active — no startup/timing race.
+// The test assembles the `Console` vtable literal and drives every operation
+// through it, exactly as the CLI does (compiler defect D8: no function here
+// *returns* `Console`). This is also a compile-time proof that the backend free
+// functions match the contract field signatures exactly.
 //
 // Build/run from the repo root (binding seed recipe):
 //   mkdir -p out
@@ -26,6 +32,7 @@
 const std = @import("std");
 const filemod = @import("std_file");
 const con = @import("../platform/console_linux.zig");
+const contract = @import("../platform/console.zig");
 
 @cInclude("<termios.h>");
 @cInclude("<signal.h>");
@@ -97,8 +104,24 @@ pub fn main() void {
     var orig: Termios = undefined;
     _ = tcgetattr(0, @ptrCast(*void, &orig));
 
-    var st: con.TermState = undefined;
-    con.termEnterRaw(&st);
+    // Assemble the contract vtable from the backend's public free functions,
+    // exactly as the CLI does. This is a compile-time proof that each backend
+    // signature matches its `Console` field.
+    var st: con.ConsoleLinState = undefined;
+    var cs: contract.Console = contract.Console{
+        .clear_fn = con.clear,
+        .setCursor_fn = con.setCursor,
+        .writeStr_fn = con.writeStr,
+        .readKey_fn = con.readKey,
+        .enterRaw_fn = con.enterRaw,
+        .leaveRaw_fn = con.leaveRaw,
+        .width_fn = con.width,
+        .height_fn = con.height,
+        .cursorShow_fn = con.cursorShow,
+        .state = @ptrCast(*void, &st),
+    };
+
+    cs.enterRaw_fn(cs.state);
 
     // 1. Raw mode is live: echo and canonical processing are off, reads poll.
     var raw: Termios = undefined;
@@ -108,49 +131,63 @@ pub fn main() void {
     if (raw.c_cc[VMIN] != 0) fail("vmin not 0");
     if (raw.c_cc[VTIME] != 0) fail("vtime not 0");
 
+    // 2. Window size reads a sane, non-zero size (ioctl TIOCGWINSZ).
+    var w: u16 = cs.width_fn(cs.state);
+    var h: u16 = cs.height_fn(cs.state);
+    if (w == 0) fail("width is zero");
+    if (h == 0) fail("height is zero");
+
     touchMarker();
 
-    // 2. Read the key the harness writes after the marker (non-blocking poll).
+    // 3. Read the key the harness writes after the marker (non-blocking poll;
+    //    `readKey` returns `.none` until the byte arrives).
     var got_key: i32 = 0;
     var i: usize = 0;
     while (i < 10000) : (i += 1) {
-        if (con.readKey()) |k| {
-            switch (k) {
-                .char => |c| {
-                    if (c == EXPECT_CHAR) {
-                        got_key = 1;
-                        break;
-                    }
-                    fail("wrong key byte");
-                    return;
-                },
-                else => {},
-            }
+        var k: contract.Key = cs.readKey_fn(cs.state);
+        switch (k) {
+            .char => |c| {
+                if (c == EXPECT_CHAR) {
+                    got_key = 1;
+                    break;
+                }
+                fail("wrong key byte");
+                return;
+            },
+            else => {},
         }
         std.io.sleepMs(1);
     }
     if (got_key == 0) fail("key not read back");
 
-    // 3. External SIGINT is surfaced as Key.sigint by the handler.
+    // 4. External SIGINT is surfaced as Key.sigint by the handler.
     _ = raise(SIGINT);
     var got_sig: i32 = 0;
     i = 0;
     while (i < 2000) : (i += 1) {
-        if (con.readKey()) |k| {
-            switch (k) {
-                .sigint => {
-                    got_sig = 1;
-                    break;
-                },
-                else => {},
-            }
+        var k: contract.Key = cs.readKey_fn(cs.state);
+        switch (k) {
+            .sigint => {
+                got_sig = 1;
+                break;
+            },
+            else => {},
         }
         std.io.sleepMs(1);
     }
     if (got_sig == 0) fail("sigint not surfaced");
 
-    // 4. Termios restored byte-for-byte on the fields raw mode touched.
-    con.termLeaveRaw(&st);
+    // 5. Output operations: exercise every remaining op through the vtable.
+    // Their emitted ANSI escapes are asserted end-to-end by the pty harness.
+    cs.clear_fn(cs.state);
+    cs.setCursor_fn(cs.state, 2, 3);
+    cs.cursorShow_fn(cs.state, false);
+    var msg: []const u8 = "z9play console backend\n";
+    cs.writeStr_fn(cs.state, msg);
+    cs.cursorShow_fn(cs.state, true);
+
+    // 6. Termios restored byte-for-byte on the fields raw mode touched.
+    cs.leaveRaw_fn(cs.state);
     var back: Termios = undefined;
     _ = tcgetattr(0, @ptrCast(*void, &back));
     if (back.c_lflag != orig.c_lflag) fail("c_lflag not restored");
@@ -160,5 +197,8 @@ pub fn main() void {
 
     var p: []const u8 = "console_test: PASS echo=off key=64 sigint=1 restored=1\n";
     std.io.write(p);
+    var q: []const u8 = "console_test: OPS clear=1 setcursor=1 writestr=1 cursor=1 size=ok\n";
+    std.io.write(q);
     std.os.exit(0);
 }
+
