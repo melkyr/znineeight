@@ -6,11 +6,24 @@ BOTH directions: each platform module (`windep.zig` = Windows-only
 `@cInclude("<windows.h>")`, `linuxdep.zig` = Linux-only `@cInclude("<sys/ioctl.h>")`)
 is referenced ONLY from the opposite-comptime arm of `if (@isWindows())`, and
 the referenced fn returns an error union (`E!*void`) — the D2 trigger shape
-(non-error-union references in a dead arm are already pruned). The dead
-`call_direct`/`func_ref`/`load_global` edges survive LIR and the emitter's
-module-reachability scan (`sf/src/main.zig` call/func_ref/load_global edge
-scan) marks the wrong-platform module reachable, so it is emitted and its
-platform-only include breaks the other toolchain.
+(non-error-union references in a dead arm are already pruned).
+
+## Mechanism (measured — report §1.2; supersedes the defect entry's hypothesis)
+The statement-position `if (@isWindows())` fold path **fires** on this shape
+(`sf/src/lower.zig:7770` `if_fold`): the untaken arm is never lowered and no
+dead `call_direct`/`func_ref` survives into LIR or the emitted C (verified:
+no `IF:c0=` marker; no dead call in `main_*.c`). The wrong-platform module is
+kept by the **type-level value-reference channel**: `pruneTypeMarkByValue`
+(`sf/src/main.zig:1149-1199`; the error-union branch recurses into
+`p.error_set` at `:1199`) runs over every lowered fn's hoisted temps / return /
+params (`main.zig:1311-1328`) and marks the **owner module of every
+by-value-named type** reachable. The `E!*void` return type is a cross-module
+type name — shared typedef `zT_D078880E_EU_46` + per-module `E` error-set
+names = the EU name pins its owner module — plus the
+`call_direct`/`tail_call`/`func_ref`/`load_global`/`store_global` scan over
+ALL lowered functions (including the never-called module's own fns). T3 must
+kill the type-level pin (or close the module over the live arm only); folding
+the arm away alone does not unpin the module.
 
 ## Measured pre-fix (2026-10-16, seed-built `/tmp/d1d2_build/zig1_5_clean`, md5 `f18b69ece1917bf970a036b276e5e403`)
 Linux build (`-ffast --dump-c89`):

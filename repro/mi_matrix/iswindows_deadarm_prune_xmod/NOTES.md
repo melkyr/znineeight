@@ -5,7 +5,10 @@ Same dead-arm error-union reference shape as `iswindows_deadarm_errunion_xmod`
 (error-union `open` in each arm of `if (@isWindows())`), but the two dependency
 modules are host-neutral (no `@cInclude`), so the current compiler BUILDS AND
 RUNS the program. The red defect is purely the EMISSION of the comptime-dead
-module; the runtime behavior the fix must preserve is frozen in
+module (the arm is folded and never lowered; the wrong-platform module is kept
+by the `E!*void` type-name pin via `pruneTypeMarkByValue`,
+`sf/src/main.zig:1149-1199` — see `iswindows_deadarm_errunion_xmod/NOTES.md`
+"Mechanism"); the runtime behavior the fix must preserve is frozen in
 `expected.txt`/`expected.rc`.
 
 ## Measured pre-fix (2026-10-16, seed-built `/tmp/d1d2_build/zig1_5_clean`, md5 `f18b69ece1917bf970a036b276e5e403`)
@@ -32,4 +35,4 @@ This fixture therefore matches the mi_matrix runtime-anchor SET definition
 (non-stdlib ∧ non-empty `expected.txt` ∧ `expected.rc==0`) but is a T0
 addition — the frozen 25-anchor set is enumerated by name in
 `.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/task-0-report.md`
-(§1.8-style list); later tasks run that explicit list, not a re-enumeration.
+§3.4; later tasks run that explicit list, not a re-enumeration.

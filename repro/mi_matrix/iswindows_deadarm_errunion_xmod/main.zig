@@ -7,11 +7,15 @@
 // Each platform module is referenced ONLY from the opposite-comptime arm of
 // `if (@isWindows())`. The referenced fn returns an error union (the D2
 // trigger — non-error-union references in the same dead arm are already
-// pruned). On a linux build the `@isWindows()` true arm is comptime-dead, yet
-// the dead `errdep`/`windep` edge survives LIR and the emitter's module-
-// reachability scan marks the wrong-platform module reachable: it is emitted
-// and its platform-only `@cInclude` breaks the host gcc. Symmetric on `-osw`
-// (the dead else arm emits linuxdep with `<sys/ioctl.h>` into a mingw build).
+// pruned). On a linux build the `@isWindows()` true arm is comptime-dead; the
+// arm is folded and NOT lowered (`lower.zig:7770` `if_fold` — no dead
+// call/func_ref in LIR or the C), yet the wrong-platform module is still
+// emitted: its `E!*void` return type is a cross-module type name that
+// `pruneTypeMarkByValue` (`sf/src/main.zig:1149-1199`) marks owner-reachable
+// from main's temps/params/returns (measured channel — see NOTES.md
+// "Mechanism"). Its platform-only `@cInclude` then breaks the host gcc.
+// Symmetric on `-osw` (the dead else arm's linuxdep pins in with
+// `<sys/ioctl.h>` into a mingw build).
 //
 // GREEN contract (post-T3): wrong-platform module NOT emitted (`ls <out>/windep_*.c`
 // empty on a linux build, `ls <out>/linuxdep_*.c` empty on an `-osw` build);
