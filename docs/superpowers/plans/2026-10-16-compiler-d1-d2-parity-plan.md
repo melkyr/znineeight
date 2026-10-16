@@ -53,7 +53,7 @@
 
 ### Task 3: Comptime-if folding (D2 root) — Zig rule
 
-**Files:** `sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`, `sf/src/comptime_eval.zig`.
+**Files:** `sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`, `sf/src/comptime_eval.zig`, `sf/src/main.zig` (module-closure half — Amendment 1).
 - [ ] When an `if`/`else` condition is comptime-known (trigger set per spec §3), the untaken arm is **not analyzed and not lowered** (Zig semantics); the `if` takes the live arm's value/type. Runtime conditions untouched.
 - [ ] D2 fixture green (wrong-platform module **not** emitted; both targets cross-build). Battery green (pins may move where dead code disappears). Commit `fix(semantic_analyzer): D2 — comptime-if eliminates the untaken arm`.
 
@@ -82,3 +82,11 @@
 ## After Task 7 (stated for the record)
 
 **The next thing to do is z9play M6 — `docs/superpowers/plans/2026-10-11-z9play-m6-win9x-plan.md`** (Win9x `waveOut` audio + Win9x console backend + `@isWindows()` selection; workspace `.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/` already exists with Task 0 done). M6 has been waiting on this compiler milestone; resume it immediately after T7. Then M7 (TUI + `std.fs` directory iteration) and optional M8 (FLAC).
+
+---
+
+## Amendments
+
+### Amendment 1 — T3 touch-set widen (operator ruling A, 2026-10-16)
+
+T0 evidence (reviewer-verified) refuted the plan's assumed D2 channel: the lowering comptime fold already eliminates untaken arms; the wrong-platform module is pulled in by `sf/src/main.zig:1306+` module-reachability (all-fn scan of hoisted temps/return/params through `pruneTypeMarkByValue` `main.zig:1149-1199`, which marks the type OWNER's module reachable — never-called modules' fns pin their module). No edit in T3's original 3 files can stop that emission. **Ruling A:** T3's touch set += `sf/src/main.zig` (module-closure fix: scan only call-reachable fns, or add type-owner edges only from reachable fns) as ONE task together with the sema fold (untaken arm not analyzed) in the named 3 files. Deliverable unchanged: D2 fixtures green at root (wrong-platform module not emitted; both targets cross-build). Cost if wrong: main.zig edit where a pure-sema fix would have sufficed (impossible per evidence) or closure semantics change with wider blast radius than needed (mitigated by the battery's pins 0/8 requirement + frozen-corpus gate).
