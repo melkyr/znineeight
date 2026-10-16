@@ -67,7 +67,27 @@ pause/resume, `+`/`-` volume ±5, `q`/Ctrl-C quit) via `platform/console_linux.z
 `Z9PLAY_WAV_OUT` is set (else Linux OSS `/dev/dsp`). Exit codes: `0` ok / `1` arg
 / `2` open / `3` decoder / `4` audio / `5` internal. The M5 gate
 `tests/tier_cli.sh` is green (23/23). Example-only; no compiler/seed change (seed
-v98; compiler defects D1–D8 all fixed, so no workaround needed).
+v98; no workaround was needed at M5 time — the defect numbering was reset on
+2026-10-16 and the new D1 is open; see M5b below).
+
+**M5b (console contract + complete Linux backend) — complete (Tasks 1–4).** The
+app-level console abstraction is now `platform/console.zig` — the `Console`
+contract (`Key = union(enum){ none, char, sigint, up, down, left, right, enter,
+esc }`; the nine ops `clear`/`setCursor`/`writeStr`/`readKey`/`enterRaw`/
+`leaveRaw`/`width`/`height`/`cursorShow` + `state`; `readKey_fn: fn (*void) Key`,
+returning the in-band `Key.none`). The complete Linux backend
+`platform/console_linux.zig` implements every op as a free function over a
+caller-owned `ConsoleLinState` (termios raw mode, a persistent ESC/arrow state
+machine, ANSI clear/setCursor/cursorShow, `ioctl(TIOCGWINSZ)` size), and
+`main.zig` assembles the `Console` literal and drives the CLI through it
+(`tests/tier_cli.sh` stays green, 23/23). The extended `tests/tier_console.sh`
+asserts every op — including contiguous+split arrow decode, the exact ANSI
+bytes, and `width`/`height` against a real 100×30 pty window (11/11).
+Example-only; no compiler/seed change (seed v98). `readKey_fn` returns `Key`,
+not `?Key`, because of compiler defect **D1** (optional-of-aggregate
+function-pointer return) — see `examples/torrent_example_defects.md`; the spec §5
+`Console` vtable now carries the `cursorShow_fn` extension (committed in
+`075e1bf1`).
 
 ## Files
 
@@ -129,7 +149,8 @@ M5 (Tasks 1–4 landed):
 - `[x]` `fmt.zig` — player-local integer formatter (`mmss` / `statusLine`; no
   `std.fmt.bufPrint`, no std change).
 - `[x]` `platform/console_linux.zig` — Linux `termios` raw mode + non-blocking
-  `readKey` (`Key = union(enum){ char, sigint }`).
+  `readKey` (M5's 3-op shape; **M5b replaced it with the `Console` contract**,
+  below).
 - `[x]` `platform/console_linux_pal.zig` — the `termios`/`signal` C externs (PAL
   split, as `audio_oss_pal.zig`).
 - `[x]` `cli.zig`/`main.zig` — interactive playback (`<file.ogg>` +
@@ -138,6 +159,19 @@ M5 (Tasks 1–4 landed):
 - `[x]` `tests/fmt_test.zig`, `tests/console_test.zig`, `tests/tier_console.sh` —
   M5 unit harnesses + the raw-console gate.
 - `[x]` `tests/tier_cli.sh` — the M5 gate (Task 4).
+
+M5b (Tasks 1–4 landed):
+
+- `[x]` `platform/console.zig` — the `Console` contract (`Key` + nine ops +
+  `state`; `readKey_fn: fn (*void) Key`).
+- `[x]` `platform/console_linux.zig` — complete Linux backend (raw `termios`, a
+  persistent ESC/arrow state machine, ANSI output, `ioctl(TIOCGWINSZ)` size)
+  over a caller-owned `ConsoleLinState`.
+- `[x]` `platform/console_linux_pal.zig` — `termios`/`signal`/`ioctl` C externs
+  (PAL split; `Winsize` mirror).
+- `[x]` `main.zig`/`cli.zig` — the CLI drives the assembled `Console` contract.
+- `[x]` `tests/console_test.zig`, `tests/tier_console.sh` — the extended all-ops
+  console gate (11/11).
 
 ## Build and Run
 
@@ -248,10 +282,11 @@ the golden `.meta` format and the determinism contract.
 ## Notes
 
 `NOTES.md` holds the build recipe, the `--dump-c89` md5
-(`0a60a27846476a73d2fac8e183d52d48`, seed v98; M5 adds `fmt.zig` +
-`platform/console_linux.zig` to `main.zig`'s import closure and changes
-`cli.zig`/`main.zig` (playback mode, `(M5)` version string), so it changed from
-the M4 value `d695bf99dadb7f6dbbc0f2a94bb42f43`; prior M3
+(`4c9f760ae825d7fcf91cbf7a2500a4a4`, seed v98; M5b adds `platform/console.zig`
+to `main.zig`'s import closure and rewrites `main.zig` to drive the `Console`
+contract and `platform/console_linux.zig`, so it changed from the M5 value
+`0a60a27846476a73d2fac8e183d52d48`; prior M4
+`d695bf99dadb7f6dbbc0f2a94bb42f43`, M3
 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`,
 M1 `344c26ed89dd0830443fa5e16b870ec0`,
 M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`), the golden formats, and the
