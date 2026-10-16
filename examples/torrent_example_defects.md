@@ -3,14 +3,18 @@
 This log records **compiler defects / gaps discovered while building the
 `z9torr` BitTorrent example** (`examples/z98/z9torr/`), each with a minimal
 reproducer, the exact failure, and the workaround the example uses. The
-workarounds are example/spec-level. **D1–D6 are now FIXED** in the compiler
-(D1–D5 via plan `2026-10-09-zig1-codegen-defects-plan`, seed v95/v96 rotated
-2026-10-10; D6 via commit `875b9a9e`, seed v97 rotated 2026-10-11); each fixed
-entry records its fix commit id and a note that the fix reproduces **Zig
-semantics**, not merely `gcc` acceptance. **D7 (see below) is documented as an
-OPEN, unfixed compiler defect** — filed doc-only per operator ruling
-2026-10-11; this class of cumulative compiler defects will be collected and
-solved in a later compiler pass.
+workarounds are example/spec-level. **D1–D8 are now FIXED at root cause** in the
+compiler. D1–D5 were first site-fixed by plan
+`2026-10-09-zig1-codegen-defects-plan` (F1/F2/F3/F5, seed v95/v96 rotated
+2026-10-10) and D6 by commit `875b9a9e` (seed v97 rotated 2026-10-11); the
+plan `2026-10-12-zig1-emitter-sanitization` then root-caused the whole class for
+each (P1 identifier authority, P2 type-dependency relation, P3 canonical
+`typeCName`, P8 builtin descriptor table, P9 structural frame-save, P10 lvalue
+unification) and fixed the two previously OPEN entries **D7** (P7 module-scope-first
+resolution) and **D8** (P2 relation). Each fixed entry records its fix commit id
+and a note that the fix reproduces **Zig semantics**, not merely `gcc`
+acceptance. The site-fix history (F1–F5, `875b9a9e`) is retained in each entry
+as `Prior site fix …`; no history is erased.
 
 Related: `docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md`
 (the example's binding spec).
@@ -19,7 +23,7 @@ Related: `docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md`
 
 ## D1 — A C keyword as a `union(enum)` tag emits invalid C89
 
-**Status:** FIXED (F1, commit `69e82cd8`, 2026-10-09). Union member names are C-keyword-mangled consistently at the declaration and every access site, so any valid Z98 tag compiles. The fix reproduces Zig semantics (any identifier is a valid tag), not merely `gcc` acceptance.
+**Status:** FIXED AT ROOT CAUSE (P1 identifier authority, `refactor(name_mangler)` `4056b26f`/`185bcc13` + fix `9c867fef`/`8ba4b418`, 2026-10-12). `sf/src/name_mangler.zig` is the single identifier-minter (`MintLocal`/`MintField`/`MintMember` keyword-escape + per-scope collision) consulted at declaration AND every access, so a C keyword — or any identifier — is escaped consistently everywhere: the whole class, not one site. Union member names are C-keyword-mangled consistently at the declaration and every access site, so any valid Z98 tag compiles. The fix reproduces Zig semantics (any identifier is a valid tag), not merely `gcc` acceptance. Prior site fix F1 (`69e82cd8`, 2026-10-09) is subsumed by the identifier authority; kept for history.
 
 **Symptom (pre-fix).** A tagged union whose variant tag is a C keyword compiles as Zig
 (Z98) but produces C that `gcc` rejects. The `std_bencode` `Value` type hit
@@ -103,7 +107,7 @@ tag→name table), so any legal Z98 identifier tag compiles.
 
 ## D2 — A slice whose element is a synthetic composite aliases another nested-slice C typedef
 
-**Status:** FIXED (F2, commit `e21dd31b`, 2026-10-09). A slice whose element is synthetic now recurses to derive a distinct element C name, so `[][]const u8`, `[][20]u8`, etc. get distinct typedefs (primitive/named element slices stay byte-identical). The fix reproduces Zig semantics (each `[]synthetic` is a distinct type), not merely `gcc` acceptance.
+**Status:** FIXED AT ROOT CAUSE (P3 canonical `typeCName`, `refactor(type_registry)` `e526859b`/`b33ae234`, 2026-10-13). One derivation — `typeCName` / `typeSliceElementName` in the type registry — names every C type; the emitter is a pure consumer, so a slice whose element is synthetic derives a distinct element C name (no `name_id == 0` collapse). `[][]const u8`, `[][20]u8`, etc. get distinct typedefs (primitive/named element slices stay byte-identical). The fix reproduces Zig semantics (each `[]synthetic` is a distinct type), not merely `gcc` acceptance. Prior site fix F2 (`e21dd31b`, 2026-10-09) is subsumed by the canonical derivation; kept for history.
 
 **Symptom (pre-fix).** Two different nested-slice types emit the *same* C slice typedef
 name, so the second field is declared with the first's element pointer type.
@@ -208,7 +212,7 @@ program hits this today.
 
 ## D3 — A module-global struct whose address is passed to a suspending call emits a frame-save from an undeclared temp
 
-**Status:** FIXED (F3, commit `06a7a793`, merged D3+D4, 2026-10-09). The shared frame-save fix pre-resolves the suppressed `load_global` alias (`temp_global_map`) before the save block, so the frame save/restore names a declared temp. The fix reproduces Zig semantics (a coroutine captures referenced state across a suspension; a save stores a declared temp/global), not merely `gcc` acceptance.
+**Status:** FIXED AT ROOT CAUSE (P9 structural frame-save rule, `refactor(async_state_machine)` `c2772f6a`/`097a5949`, 2026-10-15). The save/restore set is decided at async construction (`asyncTempIsGlobalAlias`: alias temps get no `ASYNC_FIELD_LIVE` slot, so the global by-value round-trip is removed) instead of being spelled at emit time; a suppressed `load_global` alias therefore never becomes a frame-save source. The shared frame-save rule pre-resolves the suppressed `load_global` alias (`temp_global_map`) before the save block, so the frame save/restore names a declared temp. The fix reproduces Zig semantics (a coroutine captures referenced state across a suspension; a save stores a declared temp/global), not merely `gcc` acceptance. Prior site fix F3 (`06a7a793`, 2026-10-09) is subsumed by the structural rule; kept for history.
 
 **Symptom (pre-fix).** In a coroutine that passes the address of a module-global
 `std_stream.MsgReader` to a suspending, cross-module call
@@ -294,7 +298,7 @@ function's preamble), or allocate frame slots without a by-value struct temp.
 
 ## D4 — A by-value struct-return temporary assigned to a module global in a suspending function emits a frame-save from an undeclared temp
 
-**Status:** FIXED (F3, commit `06a7a793`, merged D3+D4, 2026-10-09). Same shared frame-save fix as D3 (the undeclared temp is the loop-carried `load_global` alias of the module global). The fix reproduces Zig semantics (the by-value struct-return is materialised and the aliased global is named), not merely `gcc` acceptance.
+**Status:** FIXED AT ROOT CAUSE (P9 structural frame-save rule, `refactor(async_state_machine)` `c2772f6a`/`097a5949`, 2026-10-15). The save/restore set is decided at async construction (`saveAllFields` consumes `asyncTempIsGlobalAlias`): only declared temps get a frame slot, and alias temps get no `ASYNC_FIELD_LIVE` slot, removing the global by-value round-trip that emitted the undeclared temp. The emitter only spells the decided set. Same shared frame-save rule as D3 (the undeclared temp is the loop-carried `load_global` alias of the module global). The fix reproduces Zig semantics (the by-value struct-return is materialised and the aliased global is named), not merely `gcc` acceptance. Prior site fix F3 (`06a7a793`, 2026-10-09) is subsumed by the structural rule; kept for history.
 
 **Symptom (pre-fix).** Assigning a **struct-returning call's result** directly to a
 module-global inside a suspending function (here
@@ -358,7 +362,7 @@ before the global store in the async lowering.
 
 ## D5 — A store through a slice-index aggregate lvalue is silently lost (writes into a by-value copy)
 
-**Status:** FIXED (F5, commit `ae156d26`, 2026-10-09). Non-tuple index-assign bases now route through address-taking exactly as `lowerFieldStore` does, so the chain `(slice.ptr + idx)->field[...]` is addressed once and the store lands in the element. The fix reproduces Zig semantics (index/field chains are lvalues) — the runtime repro output flips wrong→correct — not merely `gcc` acceptance.
+**Status:** FIXED AT ROOT CAUSE (P10 lvalue unification, `refactor(lower)` `b7cba183`/`b6875640` + fix `5b6b8e1a`, 2026-10-15). One checked `lowerIndexElemAddr` path (plus the `lowerFieldStore` root-index check) addresses every non-tuple index/field chain once, so the store lands in the element instead of a by-value copy. Non-tuple index-assign bases route through address-taking exactly as `lowerFieldStore` does, so the chain `(slice.ptr + idx)->field[...]` is addressed once and the store lands in the element. The fix reproduces Zig semantics (index/field chains are lvalues) — the runtime repro output flips wrong→correct — not merely `gcc` acceptance. Prior site fix F5 (`ae156d26`, 2026-10-09) is subsumed by the unified path; kept for history.
 
 **Symptom.** Writing a nested aggregate field through a slice/array index compiles
 and links, but the store is **lost**: the emitter materialises a *by-value copy* of
@@ -436,20 +440,53 @@ minimal reproducer would require matching the emitted temp layout.
 
 When a workaround is adopted, the example's source and its spec are updated and
 the entry records the workaround + commit; the defect itself is listed **FIXED**
-once the compiler is fixed. D1–D6 are now FIXED; each fixed entry records
-its fix commit and that the fix reproduces Zig semantics. (D4 later became
-reducible to the standalone `repro/mi_matrix/async_frame_structret_xmod`, whose
-classify class flipped FAIL→OK at F3.)
+once the compiler is fixed. D1–D8 are now FIXED; each fixed entry records
+its fix commit and that the fix reproduces Zig semantics. The parked example
+workarounds (`z9play` `Mode` → `VorbisMode`; the D8 example-side workaround) stay
+as committed per the plan's §"Out of scope" — the workarounds become unnecessary
+but examples need not change. (D4 later became reducible to the standalone
+`repro/mi_matrix/async_frame_structret_xmod`, whose classify class flipped
+FAIL→OK at F3.)
 
-_(Add new entries as D7, the next free slot, as they are found while building the
+### Residual class items (already ledgered; not re-fixed here)
+
+These are known pre-existing residuals deliberately preserved by the milestone —
+each was recorded in its increment's report/ledger, not introduced by the root-cause
+fixes above:
+
+- **P7 module-less shapes fallback-first (dead shapes):** nodes after the last
+  `ast_root` (failed-parse partial chunks; empty-entry root-0 sentinel) keep
+  `MODULE_ID_NONE` and today's fallback-first resolution. No battery fixture
+  exercises them (`sf/src/type_resolver.zig` / `semantic_analyzer.zig`).
+- **P8 `error[19]` rendering of `ERR_3000_TYPE_MISMATCH`:** the diagnostics enum
+  lacks a `=3000` entry, so the arity reject renders as `error[19]`; pre-existing,
+  deliberately preserved. Adjacent: the `@cVaArg` dead resolve guard.
+- **P8 `@intCast` 1-arg identity typing narrowing residual:** the single-argument
+  `@intCast(expr)` types the expression as the operand's own type (identity cast);
+  official Zig 0.15.2 infers the target from context. The narrowing-context
+  divergence is the documented Task 7 divergence (`EXPECTED_FAIL`, not a fix).
+- **P10/P9 `async_frame_layout` not stable under `-fsafe` instrumentation growth:**
+  live-temp layout is temp-id-order; `-fsafe` growth can reorder. Recorded.
+- **P4 O7 named tuples get no typedef in the multi-file path.** Recorded.
+- **P14 O3 carrier-fill scan conversion (operator ratify-or-revert pending).**
+
+_(Add new entries as D9, the next free slot, as they are found while building the
 examples; entries are doc-only unless a compiler fix is separately authorized.)_
 
 ---
 
 ## D6 — `@ptrFromInt` with a type argument is silently miscompiled instead of rejected
 
-**Status:** FIXED (commit `875b9a9e`, 2026-10-11; seed v97). The semantic analyzer
-now rejects an `@ptrFromInt` call whose argument count is not exactly one,
+**Status:** FIXED AT ROOT CAUSE (P8 central builtin arity/descriptor table,
+refactor `649fe398` + fix `c4838a29`, 2026-10-15). A central `BuiltinDesc` table
+(`sf/src/semantic_analyzer.zig`) is consulted before the dispatch ladder for all
+37 builtins, so the entire wrong-arity accept class is closed by one relation; the
+`@intCast` accepted-arity range is 1..2 (Amendment 6: one-arg `@intCast(expr)`
+accepted, 0 / ≥3 rejected), `@ptrCast` stays exactly-2, all other type-value casts
+exactly-2, 1-arg plains exactly-1. The earlier site fix `875b9a9e` (2026-10-11,
+seed v97) covered only `@ptrFromInt` and is subsumed by the table. The
+`@ptrFromInt` behavior is unchanged: the semantic analyzer
+rejects an `@ptrFromInt` call whose argument count is not exactly one,
 emitting `ERR_3000_TYPE_MISMATCH` (the same enum member as the sibling "cannot
 infer pointer type" diagnostic) with message `@ptrFromInt requires exactly one
 argument: @ptrFromInt(expr)` and returning `TYPE_UNDEFINED`; one-arg
@@ -523,10 +560,19 @@ longer silently miscompiles the two-argument spelling.
 
 ## D7 — An unqualified type name / `@sizeOf(T)` inside a module resolves to a same-named type imported from another module
 
-**Status:** DOCUMENTED / OPEN (not fixed; filed doc-only per operator ruling
-2026-10-11 — this class of cumulative compiler defects will be collected and
-solved in a later compiler pass). Discovered 2026-10-11 while building
-`examples/z98/z9play/` (M3 audio decode).
+**Status:** FIXED AT ROOT CAUSE (P7 module-scope-first name resolution,
+`refactor` `dcd0c9db`, 2026-10-15; Amendment 8 widened the touch set). The lexical
+module context is now threaded into the comptime type-arg fold path
+(`@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf` resolution — `sf/src/comptime_eval.zig`
+fed from `sf/src/main.zig`, resolved in `sf/src/type_resolver.zig` with the
+`sf/src/semantic_analyzer.zig` identifier fallthrough fixed), and the two in-set
+order bugs are fixed (`ResolveIdent` fallthrough skips `ncgm`; `resolveTypeExprFull`
+module-symbol demoted below fallbacks is promoted). An unqualified type name /
+`@sizeOf(T)` inside a module therefore resolves module-locally; the z9play `Mode`
+collision now resolves to the module's own 8-byte struct at the fold, not
+`std_file.Mode`. Bare cross-module fallback stays legal when module scope misses.
+Was DOCUMENTED/OPEN → now FIXED. The example-side workaround (`Mode` → `VorbisMode`)
+stays as committed — examples need not change.
 
 **Symptom.** Inside a module, an unqualified type name (and its `@sizeOf`)
 resolves to a *same-named* type imported from **another** module, not the
@@ -558,10 +604,17 @@ cross-module collision.
 
 ## D8 — A function-pointer typedef that returns an error union is emitted before the error-union typedef it references (an aggregate carrying the fnptr field by value)
 
-**Status:** DOCUMENTED / OPEN (not fixed; filed doc-only per operator ruling
-2026-10-11 — this class of cumulative compiler defects is collected and solved in
-a later compiler pass). Discovered 2026-10-11 while building `examples/z98/z9play/`
-M4 Task 1 (`platform/audio.zig`, the blueprint §2.2 `AudioOut` vtable).
+**Status:** FIXED AT ROOT CAUSE (P2 single type-dependency relation, refactor
+`1029221f`/`36c6a00a` + fix `40a8a36e`/`f29070b4`, 2026-10-13). `typeRefs` /
+`typeNeedsFullDef` now derive **both** the topological and the definition-emission
+graphs from one relation that includes the `fn_type` return-type edge, so a
+function-pointer typedef can never be ordered before the error-union (or other)
+typedef it references — the D8 edge exists by construction. The emitter is a pure
+consumer of that order; no `fn_type` branch was patched into the old `tstEdgesWalk`
+walker. The fix reproduces Zig semantics (a type is emitted after everything it
+references), not merely `gcc` acceptance. Was DOCUMENTED/OPEN → now FIXED. The
+example-side workaround (free functions + caller-assembled vtable, vtables held by
+pointer) stays as committed — examples need not change.
 
 **Symptom.** In a build with a shared `zig_special_types.h` (multi-module, or a
 single-file program that reaches the same emission path), it emits a
