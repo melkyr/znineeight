@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-Same as prior milestones: example-only `examples/z98/z9play/**`; no compiler change; Z98 rules (NOTE 2026-10-11: compiler defects D1–D6 are FIXED in seed v97 — no workarounds needed for those; but this class of cumulative compiler defects can still surface (e.g. D7, an unqualified type name / `@sizeOf` colliding with a same-named imported type) — if one is hit, STOP-present, apply a minimal example-only workaround, and record it in `examples/torrent_example_defects.md` for a later compiler pass); build `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m5-cli-plan/`.
+Same as prior milestones: example-only `examples/z98/z9play/**`; no compiler change; Z98 rules (NOTE 2026-10-16 — Amendment 1: the M5 base seed is **v98** (fixed point `f18b69ece1917bf970a036b276e5e403`), superseding the v97 the milestone was authored against; compiler defects **D1–D8 are all FIXED** in seed v98 (see `examples/torrent_example_defects.md`), so the prior D7 workaround warning is retired; this class of cumulative compiler defects can still surface in new shapes — if one is hit, STOP-present, apply a minimal example-only workaround, and record it in `examples/torrent_example_defects.md` for a later compiler pass); build `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m5-cli-plan/`.
 
 ## File Structure
 
