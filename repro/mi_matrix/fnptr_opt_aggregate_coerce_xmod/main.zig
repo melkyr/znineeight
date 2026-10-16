@@ -14,11 +14,15 @@
 // `fn (*void) E!T` are accepted (see fn_ptr_signature_ok_xmod and the defect
 // entry); only optional-of-aggregate is broken.
 //
-// GREEN contract (post-T1, for the fixing task to capture as goldens):
+// GREEN contract (post-T2, for the T2 task to capture as goldens — T1 fixed
+// the frontend only; the emitted C still fails gcc on the T2-owned typedef
+// ordering gap, so the run becomes reachable when T2 lands):
 // stdout `coerce sigint ok\n`, rc 0, deterministic 3x — the fn-pointer field
 // coerces, the call through `readKey_fn` returns `?Key`, and the capture
 // switches on the `.sigint` payload. RED pre-fix: dump rc 2, 0 `.c` (exact
-// census in NOTES.md / expected_error.txt).
+// census in NOTES.md / expected_error.txt). Post-T1 measured (2026-10-16):
+// dump rc 0, 6 `.c`, 0 diagnostics → class FAIL (gcc-blocked) — R4 in
+// task-1-report.md.
 const std = @import("std");
 
 pub const Key = union(enum) { char: u8, sigint };

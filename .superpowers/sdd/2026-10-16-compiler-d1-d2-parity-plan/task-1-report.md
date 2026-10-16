@@ -20,7 +20,7 @@ Written before source edits (site census + planned change).
 | `typeRegistryGetOrCreateFn` | 966–990 | name_id (`fnt_<ret>_<params…>` embeds component **ids**) | linear scan by name_id+module+conv | fixed 4/4 | identity follows component ids — unifies once composites unify |
 | `typeRegistryGetOrCreateErrorSet` | 993+ | FNV over tag set (`es_cache`) | unconditional | `state=2` | canonical (content-keyed) |
 
-Registry state-mutation note (T0): every `.state =` in `type_registry.zig` is a creation site; `layoutCompute`/`layoutEnsure` (`type_resolver.zig:278/433`) own resolution. `typeResolverResolve` (`:541`) resolves every type existing at pass time and sets `state=2` (cycles → void + `ERR_3005`).
+Registry state-mutation note (T0): every `.state =` in `type_registry.zig` is a creation site; `layoutCompute`/`layoutEnsure` (`type_resolver.zig:278/433`) own resolution. `typeResolverResolve` (`:541`) resolves every type existing at pass time and sets `state=2` (cycles → void + `ERR_3005`). **(Fix round 1, M4: this invariant is intentionally BROKEN by T1 — the in-place completion helpers write `state = 2` post-creation on cache-hit. The mutation is guarded by `payload.state == 2` and confined to the three synthetic-composite kinds; `layoutCompute` math stays single-sourced in the resolver's layout path plus the creation-time copies.)**
 
 ### Bug mechanism (identity)
 
@@ -36,7 +36,7 @@ Registry state-mutation note (T0): every `.state =` in `type_registry.zig` is a 
    - Premature-layout hazard avoided: `layoutEnsure` at `resolveTypeExprFull` return sites would be unsafe (pre-pass registration order can leave `payload_idx=0` pointing at another type's payload; `layoutEnsure` would freeze a wrong size). Not done; the pass is the single layout moment pre-pass.
 3. **Belt-and-braces structural `fn_type` comparison** (`typeRegistryIsAssignable:1830-1849`): `src_f.return_type == tgt_f.return_type` and the param-id loop become structural equivalence over the synthetic-composite family (new `typeRegistryTypesEquiv`: id fast-path; optional → payload equiv; error_union → payload equiv + error-set id (error sets are content-keyed canonical); array → elem equiv + length; slice → elem equiv + const-flag; tuple → element-list pairwise; fn_type → return + params + flags; everything else id equality — named aggregates stay distinct per Zig). Depth-capped. Widens acceptance only for structurally-identical synthetic composites with residual duplicate ids.
 4. **Tuple/slice audit** (no tuple structural change — see ruling).
-5. New unit tests in `sf/src/tests/test_sym_reg_bin.zig` (dedup + in-place completion), RED before the fix where the harness allows.
+5. New unit tests in `sf/src/tests/test_sym_reg_bin.zig` (dedup + in-place completion), RED before the fix where the harness allows. — **DROPPED (R3, fix round 1 M2: none added; the unit harness is pre-existing broken — `build_test.sh` 0/9 + `test_sym_reg_bin.zig` stale vs `semanticAnalyzerInit` — so no unit RED/GREEN is verifiable; the fixture is the test).**
 
 ### Tuple / slice audit
 
@@ -63,7 +63,7 @@ Every lowering site that creates a composite **of a non-primitive** is the `reso
 ### Planned edits (this task)
 
 1. `type_registry.zig`: unconditional `MapPut` in Optional (`:835`) and Array (`:911`); add `optionalCompleteIfReady` / `errorUnionCompleteIfReady` / `arrayCompleteIfReady` (in-place completion, creation-time math) called from each GetOrCreate cache-hit path; add `typeRegistryTypesEquiv` and use it in the `fn_type` arm of `typeRegistryIsAssignable` (return + params).
-2. `sf/src/tests/test_sym_reg_bin.zig`: dedup + completion tests (RED first where observable pre-fix).
+2. `sf/src/tests/test_sym_reg_bin.zig`: dedup + completion tests (RED first where observable pre-fix). — **DROPPED (R3, fix round 1 M2).**
 3. No emit/lowering/analyzer changes. Goldens captured at fixture flip.
 
 ## Implement
@@ -110,11 +110,16 @@ tally: 952 OK / 58 GREEN / 120 FAIL / 0 ICE / 0 CRASH (postfixture was 952/58/11
 |---|---|---|---|
 | `fnptr_opt_aggregate_coerce_xmod` | GREEN | **FAIL** | **YES — T1 flip (R4: GREEN→FAIL, not the predicted GREEN→OK; frontend fixed, gcc blocked by T2's ordering bug)** |
 | `fnptr_opt_aggregate_emit_xmod` | FAIL | FAIL | unchanged (T2) |
-| `fnptr_opt_aggregate_errunion_xmod` | FAIL | FAIL | unchanged (T3) |
 | `iswindows_deadarm_errunion_xmod` | FAIL | FAIL | unchanged (T3) |
 | `iswindows_deadarm_prune_xmod` | OK | OK | unchanged (T3) |
 | `conditional_import_if_xmod` | FAIL | FAIL | unchanged (T4) |
 | `conditional_import_switch_xmod` | OK | OK | unchanged (T4) |
+
+(Fix round 1, M1: an earlier revision of this table carried a phantom row
+`fnptr_opt_aggregate_errunion_xmod` — that fixture was never landed; the
+errunion fixture is `iswindows_deadarm_errunion_xmod` (D2-faithful, T3). The
+T1 dispatch context's mention of `fnptr_opt_aggregate_errunion_xmod` is that
+same misnomer. Real designed lines = the 6 rows above.)
 
 The 1130-line class file is `/tmp/d1d2_t1work/corpus_t1.txt`; the single diff line vs T0's `corpus_postfixture.txt` is the coerce fixture.
 
@@ -198,5 +203,27 @@ top prefixes: 2005 INT:new / 423 DC:k / 241 FE:p / 195 P / 195 FWD:n= / 122 RaD 
 - **C5 (residual late-layout gap, pre-existing):** a composite created post-pass over a still-pending payload, never re-requested and never `layoutEnsure`d (sema `:5949` covers decl types), keeps `state=0`/size 0 — pre-fix it had no correct id either (no request ever saw a ready payload). Unchanged by design (R2); close if a repro appears.
 - **C6 (tuple observation, not changed):** `typeRegistryGetOrCreateTuple:915` creates `state=2` with size 0/align 1 while `layoutCompute` has real tuple math — literal tuples rely on emit-side typedefs; flagged for T2/emit work if tuple-of-aggregate stack layouts ever matter. Not identity-unsafe (R1), out of T1 scope.
 - **C7 (fixed point moved; seed NOT rotated):** `f18b69ece1917bf970a036b276e5e403` → `69cf0269933a8b943453fa7bce0e25cc`. Seed rotation is a closeout action (per seed-bootstrap spec "Rotation only at plan closeout") — left to the milestone closeout across T2–T5; recorded here so T2's battery compares against `69cf0269…`.
+
+## Fix round 1 (review follow-up, 2026-10-16)
+
+Review verdict: code substance approved; 2 Important + 4 Minor **doc/report** findings. All fixes are doc/comment-only — **no source-logic changes** (the one `sf/src/type_registry.zig` edit is a comment body).
+
+**Battery NOT re-run** — comments and docs cannot change emission, classification, or runtime behavior; the fix round cannot move any battery number. (Evidence anchor: the T1 battery above ran against the identical code logic — `git diff` of the round is confined to comment text in `errorUnionCompleteIfReady`'s doc block plus `.md` files.) T2 re-runs the battery against `69cf0269…`-era sources as planned.
+
+### Findings → changes
+
+| # | finding | change |
+|---|---|---|
+| I1 | coerce fixture docs stale ("After T1 … class OK … goldens captured by T1") — T2 handoff hazard | `repro/mi_matrix/fnptr_opt_aggregate_coerce_xmod/NOTES.md` ("Expected classification" + "Why no expected.txt") rewritten: measured T1 = frontend fixed (rc 0 / 6 `.c` / 0 diag) but class **FAIL** (gcc blocked at T2-owned ordering — fp-typedef `zig_special_types.h:637` before `Opt_23` typedef `:744`); **T2 owns BOTH flips + golden capture**. `main.zig` header GREEN-contract block → post-T2 with the measured T1 state. Emit fixture checked: `fnptr_opt_aggregate_emit_xmod/NOTES.md` + `main.zig` already say "After T2 … captured by T2" — **no stale claim, unchanged**. |
+| I2 | `docs/sf/TYPE_SYSTEM_p2.md` §2.3 documents the guarded cache | Sample updated: cache-hit runs `optionalCompleteIfReady`; tail is unconditional `put` (with the old guarded line quoted as history); post-block note covers the whole synthetic family (optional/EU/array unconditional + complete-on-cache-hit), the C5 residual (never-re-requested pending composite), slice/tuple audit outcome, and the intentional break of the "`.state =` is a creation site" invariant. §2.3 stamped `[updated: 2026-10-16 — D1 canonical synthetic composites: …]` per `docs/sf/AGENTS.md` convention. |
+| M1 | report §2 table phantom row `fnptr_opt_aggregate_errunion_xmod` | Row struck; footnote records the misnomer (T1 dispatch context carried it; the real errunion fixture is `iswindows_deadarm_errunion_xmod`). Table = the real 6 designed lines. |
+| M2 | report claims "New unit tests in `test_sym_reg_bin.zig`" | Investigate item 5 + Planned edits 2 marked **DROPPED (R3)** with the harness-broken rationale. |
+| M3 | `errorUnionCompleteIfReady` comment overclaims ("…if no second request ever arrived") | Reworded: helper runs **on cache-hit only** (a re-request); the never-re-requested case remains the C5 residual, unchanged. |
+| M4 | report restates "every `.state =` … is a creation site" as current | Note now flags the invariant as **intentionally broken by T1** (completion helpers write `state=2` in place, guarded by `payload.state == 2`, confined to the three composite kinds). |
+
+### Concerns (round 1)
+
+- No new concerns; I1/I2 remove the T2-handoff hazards (fixture trajectory + tech-doc sample now match the measured T1 state). Existing C1–C7 stand as recorded (C1/R4 remains the load-bearing designed-trajectory deviation; T2's flip set is coerce FAIL→OK + emit FAIL→OK, and T2 captures the coerce golden).
+- T2 note: the `task-1-context.md` dispatch text itself still contains the `fnptr_opt_aggregate_errunion_xmod` misnomer (M1) — not edited (controller-owned file); the report + fixture docs carry the correction.
 
 

@@ -345,7 +345,7 @@ pub fn init(alloc: *Allocator, interner: *StringInterner) !TypeRegistry {
 }
 ```
 
-### 2.3 Type Creation (Deduplicated)
+### 2.3 Type Creation (Deduplicated)  [updated: 2026-10-16 — D1 canonical synthetic composites: unconditional composite caches + in-place completion]
 
 ```zig
 /// Get or create a pointer type. Deduplicates via ptr_cache.
@@ -395,7 +395,10 @@ pub fn getOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const: bool) !Type
 /// Size = align_up(payload.size, 4) + 4, padded to max(payload.align, 4).
 /// If payload is unresolved, size/alignment are deferred (set to 0).
 pub fn getOrCreateOptional(self: *TypeRegistry, payload: TypeId) !TypeId {
-    if (self.optional_cache.get(payload)) |existing| return existing;
+    if (self.optional_cache.get(payload)) |existing| {
+        optionalCompleteIfReady(self, existing); // D1: complete-on-cache-hit
+        return existing;
+    }
 
     const pay_type = self.types.items[payload];
     var opt_size: u32 = 0;
@@ -421,13 +424,15 @@ pub fn getOrCreateOptional(self: *TypeRegistry, payload: TypeId) !TypeId {
         .payload_idx = payload_idx,
     });
 
-    // Only cache if fully resolved
-    if (opt_state == 2) try self.optional_cache.put(payload, tid);
+    // D1: cache unconditionally (was `if (opt_state == 2) put` — the guarded
+    // cache minted a second id for the same composite whenever the payload was
+    // still pending at creation; model: getOrCreatePtr).
+    try self.optional_cache.put(payload, tid);
     return tid;
 }
 ```
 
-Similar `getOrCreate*` methods exist for `error_union`, `array`, `many_ptr`, `fn`, and `error_set` types.
+Similar `getOrCreate*` methods exist for `error_union`, `array`, `many_ptr`, `fn`, and `error_set` types. **D1 (2026-10-16):** the synthetic-composite family (`optional`, `error_union`, `array`) caches **unconditionally** — error_union already did; optional/array were guarded pre-D1. Each of the three also runs an in-place completion helper (`optionalCompleteIfReady` / `errorUnionCompleteIfReady` / `arrayCompleteIfReady`, `type_registry.zig`) **on cache-hit**: if the cached id is still `state != 2` while its payload is now `state == 2`, the creation-time layout math is applied in place (guarded by `payload.state == 2`, so a pending payload is never read and no layout is frozen prematurely). Together with the topological pass (`typeResolverResolve` completes every pre-pass composite via `layoutEnsure`) this is the on-demand layout coverage for late-created composites. Known residual (C5, pre-existing): a composite created after the topological pass over a still-pending payload, never re-requested (the helpers run only on cache-hit) and never `layoutEnsure`d (sema `layoutEnsure` covers decl types), stays `state=0`/size 0. `slice` is already canonical (unconditional, elem-independent layout); `tuple` literal types are per-occurrence and compared structurally — no cache by design. Note: the completion helpers intentionally break the old invariant "every `.state =` in `type_registry.zig` is a creation site" — state can now flip to 2 in place.
 
 ### 2.4 Named Type Registration
 

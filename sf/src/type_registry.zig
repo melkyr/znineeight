@@ -838,8 +838,10 @@ fn optionalCompleteIfReady(self: *TypeRegistry, tid: u32) void {
 }
 
 // D1 identity: same in-place completion for error unions (cache is already
-// unconditional; this removes the T0 C5a residual where a state-0 EU id froze
-// a pending layout if no second request ever arrived after payload resolution).
+// unconditional). Runs on cache-hit only — a re-request that finds the payload
+// now laid out completes the shared id in place. A cached EU created while its
+// payload was pending and NEVER re-requested stays pending until the
+// topological pass / a `layoutEnsure` (residual case C5 — unchanged).
 fn errorUnionCompleteIfReady(self: *TypeRegistry, tid: u32) void {
     if (@intCast(usize, tid) >= self.types_len) return;
     var ty = self.types_items[@intCast(usize, tid)];
