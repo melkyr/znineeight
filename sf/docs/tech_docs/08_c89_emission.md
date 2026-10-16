@@ -48,14 +48,20 @@ backend-neutral `phase_EmissionClassification` boundary (`c89_plan.spellPlanPlan
 P2 popped/append derivation) and carried as `C89SpellPlan.typedef_order`. Both former emit-time
 call sites (`emitModule` and the multi-file `phase_C89Emission` region) now READ the carried
 order; zero sort calls remain in the emitter or mid-emission (Decision-vs-spelling: ordering is
-on the "emitter never decides" list). The emission passes' walk bounds are untouched (still
-`tsi < types_len`), so post-snapshot appended types (the `emitHoistedDecls` ptr-type appends)
-keep their exact pre-P12 handling — the walk's over-read of the carried array lands in the
-sort's own `queue` buffer (consecutive `sandAlloc`s) and re-visits are dedup no-ops (P2
-deferred minor "bound on snapshot length" unchanged and NOT taken here). Pins 0/8.
-**[updated: 2026-10-12 — P2 fix round 1]** `tstTopologicalSort` now APPENDS any Kahn cycle
+on the "emitter never decides" list). The four `sorted` walkers — `c89_emit.emitTypePasses`'
+3 loops (Pass 1 forward typedefs / Sub-pass 2a pointer-only / Sub-pass 2b value-embedding) and
+`c89_emit.emitModuleHeaderFile`'s module-header walk — are bounded on
+`emitter.plan.typedef_order_len` (the sort-time snapshot length; combined fix H2,
+`c89_plan.zig`), NOT on live `types_len`: the P2 deferred minor "bound on snapshot length" is
+TAKEN, superseding the former P12 body note to the contrary. Post-snapshot registry appends
+(the `emitHoistedDecls` ptr-type appends) are no longer walked, so the old live-`types_len`
+over-read into the sort's own `queue` buffer is structurally impossible. Pins 0/8.
+**[updated: 2026-10-16 — combined-fix H2 truth-up: the four `sorted` walkers are bounded on
+`C89SpellPlan.typedef_order_len` (sort-time snapshot), superseding the stale P12 body claim
+that they still use `tsi < types_len`.]** **[updated: 2026-10-12 — P2 fix round 1]**
+`tstTopologicalSort` now APPENDS any Kahn cycle
 residue (nodes whose indegree never reaches 0) in stable ascending-tid order, so `sorted`
-ALWAYS covers all `types_len` entries and the emission passes' `tsi < types_len` walk can never
+ALWAYS covers all `types_len` entries and the emission passes' `sorted[0..typedef_order_len]` walk can never
 read uninitialized arena memory (the append is a no-op for acyclic programs). A post-resolve
 cyclic type still emits — possibly invalid C — instead of clean-rejecting (the pre-P2 behavior
 class; the diagnose/reject variant is ruled out — no new error codes).
