@@ -169,3 +169,188 @@ their inputs do not contain.
 - **O3:** debug markers (`NP:k`/`OPTVOID`/`C2:T`/…) are compiled out (`pal.zig` `g_markers_debug = 0`);
   probe evidence is behavioral only.
 - **O4:** probes kept tmp-only at `/tmp/p7_work/repro/` per the brief (A1/B/B2/C/D/E + std_file.zig).
+
+---
+
+# Fix round 1 (Amendment 8 — operator ruled widen, option 1)
+
+Requirements: `task-P7-fix1-brief.md` (binding). Touch set = `semantic_analyzer.zig` +
+`type_resolver.zig` + `comptime_eval.zig` + `main.zig` + `lower.zig` (init/env sites only) + tech
+docs. The STOP-present record above stands verbatim as history; this round executes option (1).
+
+## Implement
+
+Edit/fastedit only (read-region-before-edit, bottom-to-top per file; INSERT = anchor replaced with
+new+original):
+
+1. **`sf/src/comptime_eval.zig`** — `ComptimeEval` gains `module_id: u32` (init literal defaults
+   `type_resolver.MODULE_ID_NONE`); `comptimeEvalResolveTypeArg` builds its `TypeResolveEnv` with
+   `self.module_id` (was hardcoded `MODULE_ID_NONE`). Every folded type-arg resolution
+   (`@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/`@bitOffsetOf`/`@intCast`/`@as`/`@floatCast`/
+   `@intToFloat` targets + `comptimeEvalDeclFits` declared-type annotations) is now
+   module-scope-first where a module exists.
+2. **`sf/src/main.zig` `phase_ComptimeEvaluation`** — per-node lexical-module attribution before the
+   existing per-node fold checks (visit set and fold logic unchanged): a node's module is the module
+   whose `ast_root` is the **smallest parse-chunk root ≥ the node index** (each module's parse
+   appends its nodes contiguously to the shared store; `parserParseModuleRoot` appends the
+   `module_root` LAST, so module m's chunk is `(prev_root, m.ast_root]`; the mapping is
+   order-independent in the roots — see O1). Nodes past every root keep `MODULE_ID_NONE`
+   (module-less fallback-first — disclosed residual, O2).
+3. **`sf/src/lower.zig`** (init sites only) — `foldPrintArgIntExact` and `foldNodeIntExact` set
+   `ce.module_id = self.module_id` on their fresh evaluators (the lowerer already had the module).
+4. **`sf/src/semantic_analyzer.zig`** — `semaComptimeEvalInit` and
+   `semanticAnalyzerResolveModuleVarDecl`'s direct `comptimeEvalInit` set `ce.module_id =
+   self.module_id`; `semanticAnalyzerResolveIdent`'s no-symbol fallthrough consults `ncgm`
+   (module-qualified cache) BEFORE the flat `ncg` (new `C2:M` marker beside the existing `C2:T`;
+   all touched debug markers are compiled out — stream unchanged). The `type_alias` arm's
+   `type_id` → `ncgm` → `ncg` order is unchanged (already module-first).
+5. **`sf/src/type_resolver.zig`** — `resolveTypeExprFull`'s `ident_expr` arm: the module symbol
+   table consult (`symbolTypeIdOfModule`) is promoted INTO the module-scope step (right after the
+   `ck_cur` module-qualified cache hit, both inside the `module_id != MODULE_ID_NONE` guard),
+   ahead of the flat cache, the all-module `mkey` scan and `symbolLookupTypeAllModules` — those
+   three are now true cross-module fallbacks. Module-less inputs (e.g.
+   `symbol_registrator.populateTypePayload`) keep today's fallback-first behavior via the kept
+   guards.
+6. **Tech docs** — `[updated: 2026-10-15 — P7 …]` on the changed sections of
+   `sf/docs/tech_docs/03_type_resolution.md` (header + `resolveTypeExprFull` row),
+   `05_semantic_analysis.md` (header + `semanticAnalyzerResolveIdent` order list) and `INDEX.md`
+   (phase-5 row + `comptimeEvalInit`/`comptimeEvalResolveTypeArg` rows).
+
+**Value-ident disclosure:** `evalConstIntFull`'s ident fold (`symbolLookupAllModules` first-match
+scan) and comptime_eval's value-ident arms (all-module first-match loops) are UNCHANGED per the
+brief ("value-ident behavior unchanged unless a shared path forces it"). The one shared path the
+deliverables force is `semanticAnalyzerResolveIdent` (fix1 deliverable 2 names its fallthrough
+explicitly; it serves value and type idents alike).
+
+## Runtime battery
+
+Compiler under test `/tmp/p7_work/new/zig1_5_clean`; OLD `/tmp/p7_work/old/zig1_5_clean` (md5
+`7b6273ffeb8959232a552c105d891fcd` = the pre-P7 recorded fixed point).
+
+1. **Seed two-hop closure:**
+```
+$ FIXED_POINT_MD5=7b6273ffeb8959232a552c105d891fcd bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/p7_work/new
+[seed] hop2 binary md5: f18b69ece1917bf970a036b276e5e403
+[seed] two-hop closure OK: hop1 == hop2 == f18b69ece1917bf970a036b276e5e403
+error: fixed-point mismatch: got 'f18b69ece1917bf970a036b276e5e403', want '7b6273ffeb8959232a552c105d891fcd'
+```
+hop1==hop2 proven; fixed point old `7b6273ffeb8959232a552c105d891fcd` → new
+**`f18b69ece1917bf970a036b276e5e403`** (expected to move; seed NOT rotated).
+
+2. **Corpus classify vs frozen Appendix A — 0 movers:**
+```
+$ bash scripts/corpus/classify /tmp/p7_work/new/zig1_5_clean /tmp/p7_work/corpus_p7.txt
+wrote /tmp/p7_work/corpus_p7.txt: 1124 dirs
+$ md5sum /tmp/p7_work/corpus_p7.txt
+518eca1a9b5d3e1cc5a48abce214abd8  /tmp/p7_work/corpus_p7.txt
+```
+Byte-identical to the frozen `518eca1a…` class file (1124 = 950 OK / 58 GREEN / 116 FAIL / 0 ICE /
+0 CRASH — same file ⇒ same tallies).
+
+3. **Runtime goldens 5/5** (dump `-fsafe` + gcc `-m32 -std=c89 -Wno-long-long -Wno-pointer-sign
+   -I sf/src/include … zig_runtime.c zig_pal.c`; all 4 dump rc=0 / gcc rc=0 / 0 `error:`):
+
+| golden | command | observed md5 | expected | match |
+|---|---|---|---|---|
+| gol (100 gens) | `timeout 120 gold/gol > gol.out` (rc=0) | `fcbf7e7cead5082f0a8caadd5a8f0ff9` | `fcbf7e7cead5082f0a8caadd5a8f0ff9` | YES |
+| lisp `(+ 1 2)` | `printf '(+ 1 2)\n' \| gold/lisp` (rc=0) | `b3d9f8974da24ddbf9d389f3d7d97322` | `b3d9f8974da24ddbf9d389f3d7d97322` | YES |
+| json | `cd examples/z98/json_parser && gold/json` (rc=0) | `8bda3d5a1ec07d14a301bc343df32bf8` | `8bda3d5a1ec07d14a301bc343df32bf8` | YES |
+| mud srv | `bash examples/z98/mud_server/demo/session.sh gold/mud mud_srv.out mud_cli.out` (rc=0) | `66c8f0abb926cca7baf9a0d1692ab318` | `66c8f0abb926cca7baf9a0d1692ab318` | YES |
+| mud cli | (same session) | `93147d0f0bbd983a9d844fea8b7a6fa7` | `93147d0f0bbd983a9d844fea8b7a6fa7` | YES |
+
+Both mud files `cmp`-IDENTICAL to `demo/canonical_expected.txt` / `demo/canonical_client_expected.txt`.
+
+4. **mi_matrix anchors 25 + oob:**
+```
+$ bash scripts/stdlib/run_fixtures.sh /tmp/p7_work/new/zig1_5_clean $(cat /tmp/opencode_p6pre/mi25.list)
+run_fixtures: 25 PASS / 0 FAIL over 25 dirs
+```
+Trap (`-fsafe`) `slice_index_field_store_oob_xmod`: dump rc=0, build rc=0, run **rc=133**
+(Trace/breakpoint trap), stdout 0 B (md5 `d41d8cd98f00b204e9800998ecf8427e`), `expected.rc=133`.
+**MATCH.**
+
+5. **examples/z98/*/ 26/26 build + 26/26 run** (CWD = example dir; `timeout 25` except mud 8;
+   stdin `/dev/null` except rogue* fed `q\n`): all dump=0 / build=0 with `.c` counts identical to
+   task-0 §1.4 (7/6/6/7/6/7/9/9/9/14/15/15/15/8/6/9/6/6/21/20/6/6/7/7/25/38); runs **26/26 rc +
+   stdout md5_16 IDENTICAL** to the §1.4 table — days_in_month `8c0d394cbc6e7f36`, fibonacci
+   `b53b3a3d6ab90ce0`, func_ptr_return `f6a5477970a87a1c`, game_of_life `fcbf7e7cead5082f`,
+   heapsort `8cf0a7844206319d`, hello `746308829575e17c`, json×2 `8bda3d5a1ec07d14`,
+   json_parser_workaround `dc22fa473650bd3d`, lisp×4 `1c1f0a417d5e9434`, lzw `c3c7765e6faf7b70`,
+   mandelbrot `d596677501e36537`, mud_server rc=124 `9545fe1d245293ef`, prime `d095a94d20dcaf7a`,
+   quicksort `45d2f0fb6fc40654`, rogue×2 `3fb6709e7bbd8964`, sort_strings `c6c047cbc13cdd4f`,
+   tco_defer `264ea6b106a51dde`, tco_factorial `3d70c50b5a37d549`, tco_return_try `7421137aa2d104b4`,
+   z9play rc=1 `2016494de476fcb6`, z9torr rc=1 `f666af15cf2625b3`. The z9play `Mode`→`VorbisMode`
+   workaround is untouched (spec: examples need not change).
+
+6. **Stdlib gate:**
+```
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/p7_work/new/zig1_5_clean
+run_fixtures: 285 PASS / 0 FAIL over 285 dirs
+STDLIB GATE OK
+```
+
+7. **The 8 `--dump-c89` pins (old → new; sequential from repo root).**
+Command per row: `<compiler> <mode> --dump-c89 examples/z98/<entry>/main.zig 2>/dev/null | md5sum`.
+
+| entry | mode | old (`7b6273ff…`) | new (`f18b69ec…`) | delta |
+|---|---|---|---|---|
+| mud_server | `-fsafe` | `bbc02913a10af9b0b5ed0f292f4e3407` | `bbc02913a10af9b0b5ed0f292f4e3407` | 0 |
+| mud_server | `-ffast` | `fa346108ed00d03a037c2f9331d3bdf8` | `fa346108ed00d03a037c2f9331d3bdf8` | 0 |
+| game_of_life | `-fsafe` | `93c5e3fdc5b80b2f3db020d995abbe3f` | `93c5e3fdc5b80b2f3db020d995abbe3f` | 0 |
+| game_of_life | `-ffast` | `01a4e2265b33c97a8ca6ff3dfa551231` | `01a4e2265b33c97a8ca6ff3dfa551231` | 0 |
+| lisp_interpreter_curr | `-fsafe` | `6da05d070acd414674b1b1ec947baa5c` | `6da05d070acd414674b1b1ec947baa5c` | 0 |
+| lisp_interpreter_curr | `-ffast` | `e3970e33ac09c8dfaa316d2d69bf61ec` | `e3970e33ac09c8dfaa316d2d69bf61ec` | 0 |
+| json_parser | `-fsafe` | `af3823fae0b29fa4d4ca58932538d631` | `af3823fae0b29fa4d4ca58932538d631` | 0 |
+| json_parser | `-ffast` | `24e0e812e7dffa5a43750135405ffe3f` | `24e0e812e7dffa5a43750135405ffe3f` | 0 |
+
+**Pin delta: 0/8 — emitted C byte-identical; the old column also reproduces the P14 live table.**
+
+8. **`--markers` telemetry:**
+```
+$ /tmp/p7_work/new/zig1_5_clean --markers --dump-c89 examples/z98/game_of_life/main.zig > mk_gol_new.c 2> mk_gol_new.bin
+dump rc=0; 3,437 marker lines / 38,384 B
+$ cmp mk_gol_old.bin mk_gol_new.bin  →  IDENTICAL
+```
+Unchanged **3437/38384** and byte-identical to the old compiler's stream (all debug markers touched
+by the order change are compiled out via `pal.zig g_markers_debug = 0`).
+
+## Reproducer (tmp only — `/tmp/p7_work/repro/`; z9play order per the corrected brief)
+
+`mainF.zig` (entry) imports `std_file.zig` FIRST (colliding `Mode`, 4-byte enum — lower module id)
+then `modF.zig` (victim: declares `Mode` = 8-byte struct, imports std_file, has `mainF` print a
+qualified victim size). `modF.run()` prints (1) unqualified `@sizeOf(Mode)` (2) `@sizeOf(std_file.Mode)`
+(3) `var m: Mode` field `m.y` (4) bare cross-module `OnlyT` (no module-local decl) through a
+signature; `mainF` prints (5) `@sizeOf(mod.Mode)`.
+
+| # | probe item | pre (`7b6273ff…`) | post (`f18b69ec…`) | contract |
+|---|---|---|---|---|
+| 1 | `@sizeOf(Mode)` (unqualified) | **4** (D7 steal at the fold) | **8** (module's own struct) | **FIXED** |
+| 2 | `@sizeOf(std_file.Mode)` (qualified colliding) | 4 | 4 | unchanged |
+| 3 | `m.y` (bare type-position binding) | 22 | 22 | unchanged (module struct) |
+| 4 | `sig(OnlyT)` bare cross-module fallback | 42 | 42 | intact |
+| 5 | `@sizeOf(mod.Mode)` (qualified victim) | 8 | 8 | unchanged |
+
+Full runs: pre `4422428` rc=0 → post `8422428` rc=0 (`/tmp/p7_work/probeF_pre`, `/tmp/p7_work/probeF_post2`).
+Controls post-fix: two-module probe A1 `8422` (module-0 bare-key shape, unchanged), forward-alias
+probe C `882222` (unchanged), FX13-F probe D `42` (unchanged), array-size probe E `65` rc=0 under
+`-fsafe` (module-aware size fold unchanged).
+
+## Observations (fix round)
+
+- **F-O1 (parse order ≠ module id order):** probe F's `IRP:m/IRP:n` pairs (new compiler) are
+  `m0→22, m3→97, m2→106, m1→133, …` — imports are enqueued/parsed in reverse discovery order, so
+  module-array (id) order does NOT order the parse chunks. The first attribution implementation
+  (id-order root cursor + monotonicity guard) correctly refused to attribute on the anomaly and
+  silently reproduced the pre-fix fold (reproducer unchanged at `4422428`); replaced by the
+  order-independent derivation (per node: smallest `ast_root` ≥ node index) before any battery run.
+- **F-O2 (residual module-less shapes):** nodes after the last `ast_root` (failed-parse partial
+  chunks absorbed into the next chunk's attribution; empty-entry root 0 sentinel) keep
+  `MODULE_ID_NONE` and today's fallback-first resolution. No battery fixture exercises them.
+- **F-O3:** value-ident fold scans unchanged (O3 above) — the only behavior changes are (a) folded
+  type-arg resolution with a module context, (b) `semanticAnalyzerResolveIdent`'s
+  module-qualified-before-flat fallthrough, (c) `resolveTypeExprFull`'s module-symbol promotion;
+  all three are invisible to the frozen battery (corpus 0 movers, pins 0/8) and visible on the
+  collision reproducer only.
+- **F-O4:** the earlier `b403d2cd25f8c9aebe239e355fe12254` two-hop point (mid-round, id-order
+  cursor build) is superseded; the recorded post-fix point is `f18b69ece1917bf970a036b276e5e403`
+  (the battery above ran on it).
