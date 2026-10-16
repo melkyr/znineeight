@@ -63,7 +63,8 @@ const dec = @import("decode.zig");
 const audio = @import("platform/audio.zig");
 const wav = @import("platform/audio_wavfile.zig");
 const oss = @import("platform/audio_oss.zig");
-const console = @import("platform/console_linux.zig");
+const con = @import("platform/console_linux.zig");
+const contract = @import("platform/console.zig");
 const fmt = @import("fmt.zig");
 const player = @import("player.zig");
 
@@ -155,9 +156,11 @@ fn discardDrain(state: *void) audio.AudioError!void {
 }
 
 // Print `msg` (if non-empty), restore the terminal, and exit `code`. Used on
-// every playback failure path after `termEnterRaw`.
-fn playFail(ts: *console.TermState, msg: []const u8, code: i32) void {
-    console.termLeaveRaw(ts);
+// every playback failure path after the `Console` entered raw mode. Restores
+// through the contract's `leaveRaw_fn`, so it stays correct if the backend is
+// swapped.
+fn playFail(cs: *contract.Console, msg: []const u8, code: i32) void {
+    cs.leaveRaw_fn(cs.state);
     std.io.write(msg);
     std.os.exit(code);
 }
@@ -673,11 +676,25 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         writeU64(@intCast(u64, id.sample_rate));
         writeText("Hz\n");
 
-        // Raw keyboard input. A no-op when stdin is not a tty; keys are then not
-        // polled, so a redirected run still completes.
-        var ts: console.TermState = undefined;
-        console.termEnterRaw(&ts);
-        var interactive: bool = ts.entered;
+        // Assemble the Linux `Console` vtable from the backend's public free
+        // functions (mirrors the `audio.AudioOut` assembly above). Raw keyboard
+        // input is a no-op when stdin is not a tty; keys are then not polled, so
+        // a redirected run still completes.
+        var st: con.ConsoleLinState = undefined;
+        var cs: contract.Console = contract.Console{
+            .clear_fn = con.clear,
+            .setCursor_fn = con.setCursor,
+            .writeStr_fn = con.writeStr,
+            .readKey_fn = con.readKey,
+            .enterRaw_fn = con.enterRaw,
+            .leaveRaw_fn = con.leaveRaw,
+            .width_fn = con.width,
+            .height_fn = con.height,
+            .cursorShow_fn = con.cursorShow,
+            .state = @ptrCast(*void, &st),
+        };
+        cs.enterRaw_fn(cs.state);
+        var interactive: bool = st.entered;
 
         var pl: player.Player = undefined;
         var quit: bool = false;
@@ -689,15 +706,15 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.arena.reset(&par);
 
             var setup: vs.Setup = vs.parseSetup(&darena, packets[2].bytes, @intCast(u32, id.channels)) catch {
-                playFail(&ts, "z9play: bad Vorbis setup header\n", 3);
+                playFail(&cs, "z9play: bad Vorbis setup header\n", 3);
                 return;
             };
             var state: dec.DecoderState = dec.initDecoderState(&darena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
-                playFail(&ts, "z9play: cannot initialize the decoder\n", 3);
+                playFail(&cs, "z9play: cannot initialize the decoder\n", 3);
                 return;
             };
             var vc: *player.VorbisCtx = player.vorbisCreate(&darena, &scratch, packets, setup, state, 3, id.sample_rate, id.channels, last) catch {
-                playFail(&ts, "z9play: cannot initialize the player decoder\n", 3);
+                playFail(&cs, "z9play: cannot initialize the player decoder\n", 3);
                 return;
             };
             var decv: player.Decoder = player.Decoder{
@@ -713,7 +730,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             var first_ao: *const audio.AudioOut = &mix_ao;
             if (args.start_ms > 0) first_ao = &discard_ao;
             player.playerInit(&pl, &par, &decv, first_ao, meta) catch {
-                playFail(&ts, "z9play: cannot initialize the player\n", 5);
+                playFail(&cs, "z9play: cannot initialize the player\n", 5);
                 return;
             };
             pl.volume = vol;
@@ -725,7 +742,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             if (args.start_ms > 0) {
                 while (pl.state == player.PlayerState.playing and pl.position_ms < args.start_ms) {
                     player.playerPump(&pl) catch {
-                        playFail(&ts, "z9play: cannot seek into the file\n", 3);
+                        playFail(&cs, "z9play: cannot seek into the file\n", 3);
                         return;
                     };
                 }
@@ -743,46 +760,48 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 while (true) {
                     if (interactive) {
                         while (true) {
-                            if (console.readKey()) |k| {
-                                switch (k) {
-                                    .char => |c| {
-                                        if (c == 'q') {
-                                            quit = true;
-                                        } else if (c == ' ') {
-                                            if (pl.state == player.PlayerState.playing) {
-                                                pl.state = player.PlayerState.paused;
-                                                pause_began = std.time.ticksMs();
-                                            } else if (pl.state == player.PlayerState.paused) {
-                                                pl.state = player.PlayerState.playing;
-                                                paused_accum += @intCast(u64, std.time.ticksMs() - pause_began);
-                                            }
-                                        } else if (c == '+' or c == '=') {
-                                            if (vol <= 95) {
-                                                vol += 5;
-                                            } else {
-                                                vol = 100;
-                                            }
-                                            g_mix_vol = vol;
-                                            pl.volume = vol;
-                                        } else if (c == '-') {
-                                            if (vol >= 5) {
-                                                vol -= 5;
-                                            } else {
-                                                vol = 0;
-                                            }
-                                            g_mix_vol = vol;
-                                            pl.volume = vol;
-                                        }
-                                    },
-                                    .sigint => {
+                            var k: contract.Key = cs.readKey_fn(cs.state);
+                            var got: bool = true;
+                            switch (k) {
+                                .char => |c| {
+                                    if (c == 'q') {
                                         quit = true;
-                                    },
-                                    else => {},
-                                }
-                            } else {
-                                break;
+                                    } else if (c == ' ') {
+                                        if (pl.state == player.PlayerState.playing) {
+                                            pl.state = player.PlayerState.paused;
+                                            pause_began = std.time.ticksMs();
+                                        } else if (pl.state == player.PlayerState.paused) {
+                                            pl.state = player.PlayerState.playing;
+                                            paused_accum += @intCast(u64, std.time.ticksMs() - pause_began);
+                                        }
+                                    } else if (c == '+' or c == '=') {
+                                        if (vol <= 95) {
+                                            vol += 5;
+                                        } else {
+                                            vol = 100;
+                                        }
+                                        g_mix_vol = vol;
+                                        pl.volume = vol;
+                                    } else if (c == '-') {
+                                        if (vol >= 5) {
+                                            vol -= 5;
+                                        } else {
+                                            vol = 0;
+                                        }
+                                        g_mix_vol = vol;
+                                        pl.volume = vol;
+                                    }
+                                },
+                                .sigint => {
+                                    quit = true;
+                                },
+                                .none => {
+                                    got = false;
+                                },
+                                else => {},
                             }
                             if (quit) break;
+                            if (!got) break;
                         }
                     }
                     if (quit) break;
@@ -802,11 +821,11 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                         if (played <= elapsed + 200) {
                             player.playerPump(&pl) catch |e| {
                                 if (e == error.DecodeFailed) {
-                                    playFail(&ts, "z9play: playback decode error\n", 3);
+                                    playFail(&cs, "z9play: playback decode error\n", 3);
                                 } else if (e == error.AudioFailed) {
-                                    playFail(&ts, "z9play: audio output failed\n", 4);
+                                    playFail(&cs, "z9play: audio output failed\n", 4);
                                 } else {
-                                    playFail(&ts, "z9play: internal playback error\n", 5);
+                                    playFail(&cs, "z9play: internal playback error\n", 5);
                                 }
                                 return;
                             };
@@ -837,11 +856,11 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         // Drain + close the real sink (via the wrapper), restore the terminal,
         // then print the final position.
         pl.audio.drain_fn(pl.audio.state) catch {
-            playFail(&ts, "z9play: audio drain failed\n", 4);
+            playFail(&cs, "z9play: audio drain failed\n", 4);
             return;
         };
         pl.audio.close_fn(pl.audio.state);
-        console.termLeaveRaw(&ts);
+        cs.leaveRaw_fn(cs.state);
 
         var fpos: u64 = player.playerPositionMs(&pl);
         var nl: []const u8 = "\n";
