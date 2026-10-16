@@ -41,7 +41,7 @@ A library that knows nothing about display. One job: decode the next chunk when 
 ## §5 Frontends and the platform layer
 
 **`platform/audio`** (app-level vtable, blueprint §2.2): `open_fn`/`write_fn`/`close_fn`/`drain_fn` + `state`. Backends: Linux **OSS `/dev/dsp`** and a **null/WAV-file sink** (hermetic tests); Win9x **`waveOut*`**.
-**`platform/console`** (app-level vtable): `clear_fn`/`setCursor_fn`/`writeStr_fn`/`readKey_fn`/`enterRaw_fn`/`leaveRaw_fn`/`width_fn`/`height_fn` + `state`. Backends: Linux **termios + ANSI**; Win9x **`SetConsoleCursorPosition`/`ReadConsoleInput`/`SetConsoleMode`**.
+**`platform/console`** (app-level vtable): `clear_fn`/`setCursor_fn`/`writeStr_fn`/`readKey_fn`/`enterRaw_fn`/`leaveRaw_fn`/`width_fn`/`height_fn`/`cursorShow_fn` + `state` (the `cursorShow_fn` operation is the 2026-10-16 M5b extension). Backends: Linux **termios + ANSI**; Win9x **`SetConsoleCursorPosition`/`ReadConsoleInput`/`SetConsoleMode`**.
 
 The vtables live under `examples/z98/z9play/platform/` (not std), so they can be tested with mock backends and reused by other programs.
 

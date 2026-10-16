@@ -4,7 +4,7 @@
 
 **Goal:** Add `std.fs` directory iteration (the one remaining std addition) and a TUI frontend: a directory browser + now-playing pane + in-memory playlist, built on the `Console` vtable (Linux ANSI; Win9x from M6).
 
-**Architecture:** Add `openDir`/`readDir`/`closeDir` to `sf/src/std_file.zig` (Linux `opendir`/`readdir`/`closedir`; Win9x `FindFirstFileA`/`FindNextFileA`/`FindClose`). Define the app-level `Console` vtable (`platform/console.zig`) and a Linux ANSI backend; the TUI (`ui.zig`) owns the layout and event loop, reusing `Player` (M4).
+**Architecture:** Add `openDir`/`readDir`/`closeDir` to `sf/src/std_file.zig` (Linux `opendir`/`readdir`/`closedir`; Win9x `FindFirstFileA`/`FindNextFileA`/`FindClose`). The app-level `Console` vtable (`platform/console.zig`) and the complete Linux ANSI backend are **already delivered by M5b** (all 9 ops incl. `cursorShow`; not created here); the TUI (`ui.zig`) owns the layout and event loop, reusing `Player` (M4) and the M5b `Console`.
 
 **Tech Stack:** Z98 (`zig1`, `gcc -m32`, `-fsafe`), `std_file` (extended), `Player`, `platform/console`.
 
@@ -16,14 +16,14 @@
 
 - Modify **only** `sf/src/std_file.zig` (+ `std_file_pal.zig` if needed) in `sf/src` (+ its fixture + `scripts/stdlib/expected_dirs.txt`); **no compiler change**; compiler fixed point unchanged.
 - `scripts/stdlib/verify_stdlib.sh` MUST stay green.
-- Example-only otherwise under `examples/z98/z9play/**`. Z98 rules (NOTE 2026-10-11: compiler defects D1–D6 are FIXED in seed v97 — no workarounds needed for those; but this class of cumulative compiler defects can still surface (e.g. D7, an unqualified type name / `@sizeOf` colliding with a same-named imported type) — if one is hit, STOP-present, apply a minimal example-only workaround, and record it in `examples/torrent_example_defects.md` for a later compiler pass); `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m7-tui-plan/`.
+- Example-only otherwise under `examples/z98/z9play/**`. Z98 rules (NOTE 2026-10-16 — the M7 base seed is **v98** (fixed point `f18b69ece1917bf970a036b276e5e403`), superseding the v97 this milestone was authored against; compiler defects **D1–D8 are all FIXED** in seed v98 (see `examples/torrent_example_defects.md`), so the prior D7-class workaround warning is retired; this class of cumulative compiler defects can still surface in new shapes — if one is hit, STOP-present, apply a minimal example-only workaround, and record it in `examples/torrent_example_defects.md` for a later compiler pass); `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m7-tui-plan/`.
 
 ## File Structure
 
 - `sf/src/std_file.zig` (+ `std_file_pal.zig`) — `openDir`/`readDir`/`closeDir` + a `DirEntry` shape.
 - `repro/mi_matrix/stdlib_dir_iter_xmod/` — stdlib fixture; `scripts/stdlib/expected_dirs.txt` pin.
-- `examples/z98/z9play/platform/console.zig` — `Console` vtable + `Key`.
-- `examples/z98/z9play/platform/console_linux.zig` — ANSI backend (clear/cursor/size/keys incl. arrow escapes).
+- `examples/z98/z9play/platform/console.zig` — `Console` vtable + `Key` (**delivered by M5b; not modified here**).
+- `examples/z98/z9play/platform/console_linux.zig` — complete ANSI backend (**delivered by M5b; not modified here**).
 - `examples/z98/z9play/ui.zig` — TUI layout + event loop + in-memory playlist.
 - `examples/z98/z9play/tests/tier_tui.sh`.
 
@@ -39,11 +39,11 @@
 **Interfaces:** `pub const DirEntry = struct { name: []const u8, is_dir: bool };` `pub fn openDir(arena, path: []const u8) !Dir`; `pub fn readDir(arena, d: *Dir) !?DirEntry` (or a one-shot `readAll` returning `[]DirEntry`); `pub fn closeDir(d: *Dir) void`. Linux + Win9x backends.
 - [ ] Fixture `stdlib_dir_iter_xmod`: create a scratch dir with files+subdirs, assert the listing (names + is_dir) sorted. Implement. `verify_stdlib` green; fixed point unchanged. Commit `feat(std_file): directory iteration (openDir/readDir/closeDir)`.
 
-### Task 2: `Console` vtable + Linux ANSI backend
+### Task 2: `Console` vtable + Linux ANSI backend — DELIVERED BY M5b
 
 **Files:** `platform/console.zig`, `platform/console_linux.zig`.
-**Interfaces:** `Console` struct (blueprint §2.2) + `Key` (chars + arrows + enter/esc); Linux backend: `clear` (`\033[2J\033[H`), `setCursor` (`\033[<y>;<x>H`), `writeStr`, `readKey` (raw, arrow escape state machine), `enterRaw`/`leaveRaw` (termios, restore in `defer`), `width`/`height` (`ioctl TIOCGWINSZ`).
-- [ ] Unit test (pty): clear/setCursor emit expected escapes; arrow keys decode; size read. Implement. PASS. Commit `example(z9play): Console vtable + Linux ANSI backend`.
+**Status:** this task's deliverable — the complete `Console` vtable + full Linux ANSI backend (`clear`/`setCursor`/`writeStr`/`readKey` incl. arrow escapes/`enterRaw`/`leaveRaw`/`width`/`height`/`cursorShow`) — is **delivered complete by M5b** (`2026-10-16-z9play-m5b-console-contract-plan.md`). No work here.
+- [ ] Confirm the M5b contract from its Task 6 review; the TUI (Task 3) consumes it. No commit.
 
 ### Task 3: TUI (`ui.zig`)
 
