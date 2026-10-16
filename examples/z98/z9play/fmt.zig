@@ -12,8 +12,11 @@
 //
 // statusLine layout (byte-stable; asserted by tests/fmt_test.zig):
 //
-//   <pos> / <dur>  vol <vol>%  [<bar>]
+//   <pos> / <dur>  vol <v3>%  [<bar>]
 //
+//   v3  : `vol` percent in a fixed 3-char field, right-aligned with leading
+//         spaces (`vol   5%` / `vol  80%` / `vol 100%`) so the whole line has a
+//         constant width for `\r` redraw without a clear-to-EOL.
 //   dur : `MM:SS`, or `--` when `dur_ms == 0` (guard: no progress denominator).
 //   bar : 20 chars between `[` and `]`; floor(pos_ms * 20 / dur_ms) are `#`,
 //         the rest `-`; clamped to the full bar when `pos_ms >= dur_ms`; all
@@ -112,6 +115,14 @@ pub fn statusLine(buf: []u8, pos_ms: u64, dur_ms: u64, vol: u8) []const u8 {
     putStr(buf, &pos, " / ");
     putStr(buf, &pos, dur_s);
     putStr(buf, &pos, "  vol ");
+    // Fixed 3-char volume field, right-aligned (`vol   5%` / `vol  80%` /
+    // `vol 100%`); `vol` is a u8 percent so at most three digits.
+    if (vol < 10) {
+        putByte(buf, &pos, ' ');
+        putByte(buf, &pos, ' ');
+    } else if (vol < 100) {
+        putByte(buf, &pos, ' ');
+    }
     putU64(buf, &pos, @intCast(u64, vol));
     putByte(buf, &pos, '%');
     putStr(buf, &pos, "  [");
