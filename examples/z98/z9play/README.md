@@ -59,6 +59,16 @@ found **no amendment needed** (M4's public `Player` `state`/`volume` fields and
 `AudioOut` vtable and the D8 caller-owned/pointer-vtable shape carry over — M5
 adds its own volume scaling, `--start` skip and `--loop` reset).
 
+**M5 (interactive CLI playback) — complete (Tasks 0–5).** `z9play <file.ogg>
+[--volume N|--start SEC|--loop|--quiet]` plays interactively: a startup metadata
+line, a per-second `\r` status line (`fmt.zig`), and non-echoed keys (space
+pause/resume, `+`/`-` volume ±5, `q`/Ctrl-C quit) via `platform/console_linux.zig`
+(`termios`). Playback drives the M4 `Player` into the hermetic WAV sink when
+`Z9PLAY_WAV_OUT` is set (else Linux OSS `/dev/dsp`). Exit codes: `0` ok / `1` arg
+/ `2` open / `3` decoder / `4` audio / `5` internal. The M5 gate
+`tests/tier_cli.sh` is green (23/23). Example-only; no compiler/seed change (seed
+v98; compiler defects D1–D8 all fixed, so no workaround needed).
+
 ## Files
 
 M0 (all present; `[x]` = landed in M0):
@@ -114,9 +124,25 @@ M4 (Tasks 1–4 landed):
   M4 unit harnesses.
 - `[x]` `tests/tier_audio.sh` — the M4 gate (Task 4).
 
+M5 (Tasks 1–4 landed):
+
+- `[x]` `fmt.zig` — player-local integer formatter (`mmss` / `statusLine`; no
+  `std.fmt.bufPrint`, no std change).
+- `[x]` `platform/console_linux.zig` — Linux `termios` raw mode + non-blocking
+  `readKey` (`Key = union(enum){ char, sigint }`).
+- `[x]` `platform/console_linux_pal.zig` — the `termios`/`signal` C externs (PAL
+  split, as `audio_oss_pal.zig`).
+- `[x]` `cli.zig`/`main.zig` — interactive playback (`<file.ogg>` +
+  `--volume`/`--start`/`--loop`/`--quiet`; keys, startup/status lines, exit
+  codes `0`/`4`/`5`).
+- `[x]` `tests/fmt_test.zig`, `tests/console_test.zig`, `tests/tier_console.sh` —
+  M5 unit harnesses + the raw-console gate.
+- `[x]` `tests/tier_cli.sh` — the M5 gate (Task 4).
+
 ## Build and Run
 
-M0/M1 use the seed built from `release/seed/zig1-seed.tgz` (current seed v97):
+All tiers use the seed built from `release/seed/zig1-seed.tgz` (current seed v98;
+two-hop closure `hop1 == hop2 == f18b69ece1917bf970a036b276e5e403`):
 
 ```bash
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9play_seed
@@ -128,6 +154,8 @@ sh /tmp/z9play_out/build_target.sh linux /tmp/z9play_out/prog
 /tmp/z9play_out/prog --dump-setup examples/z98/z9play/testdata/tagged_unicode.ogg
 /tmp/z9play_out/prog --pcm examples/z98/z9play/testdata/sine_stereo_44100.ogg /tmp/out.wav
 /tmp/z9play_out/prog --wav examples/z98/z9play/testdata/sine_stereo_44100.ogg /tmp/player.wav
+Z9PLAY_WAV_OUT=/tmp/play.wav \
+    /tmp/z9play_out/prog examples/z98/z9play/testdata/sine_stereo_44100.ogg
 ```
 
 `--info <file.ogg>` prints a fixed `key=value` block matching the golden
@@ -172,11 +200,34 @@ Player reached `ended` cleanly and `playerPositionMs` never went backwards). It
 is the M4 gate subcommand; the Linux OSS `/dev/dsp` backend is best-effort and
 device-dependent. Exit codes mirror `--info`/`--pcm` (`0`/`1`/`2`/`3`).
 
+`z9play <file.ogg> [--volume N|--start SEC|--loop|--quiet]` (`M5`) plays
+interactively. It prints a startup metadata line
+
+```
+z9play: <title-or-path>  <mm:ss>  <ch>ch <rate>Hz
+```
+
+and, unless `--quiet`, a per-second `\r` status line from `fmt.statusLine`:
+
+```
+00:42 / 03:15  vol  80%  [########------------]
+```
+
+Keys: **space** pause/resume, **`+`**/**`-`** volume ±5, **`q`**/Ctrl-C quit. On
+exit it prints `Stopped at mm:ss.`. `--volume N` is a percentage (`0..100`,
+default `80`); `--start SEC` skips to integer second `SEC` before playing (the
+seek decodes and discards, so it is block-granular, ≤0.5 s); `--loop` repeats
+until quit. Playback drives the M4 `Player` into the hermetic WAV sink when
+`Z9PLAY_WAV_OUT=<file>` is set, else the Linux OSS `/dev/dsp` backend. Exit
+codes: `0` ok, `1` arguments, `2` open, `3` decoder, `4` audio, `5` internal.
+The M0–M4 request modes (`--info`/`--dump-setup`/`--pcm`/`--wav`) are unchanged.
+
 ```bash
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_info.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_setup.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_decode.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_audio.sh
+ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_cli.sh
 ```
 
 ## Fixtures
@@ -197,9 +248,11 @@ the golden `.meta` format and the determinism contract.
 ## Notes
 
 `NOTES.md` holds the build recipe, the `--dump-c89` md5
-(`d695bf99dadb7f6dbbc0f2a94bb42f43`, seed v97; M4 adds `main.zig`'s audio/player
-import closure and bumps `--version` to `(M4)`, so it changed from the M3 value
-`a5f208b5c8034e9c9f2be9c6800913f4`; prior M2
-`88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`,
+(`0a60a27846476a73d2fac8e183d52d48`, seed v98; M5 adds `fmt.zig` +
+`platform/console_linux.zig` to `main.zig`'s import closure and changes
+`cli.zig`/`main.zig` (playback mode, `(M5)` version string), so it changed from
+the M4 value `d695bf99dadb7f6dbbc0f2a94bb42f43`; prior M3
+`a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`,
+M1 `344c26ed89dd0830443fa5e16b870ec0`,
 M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`), the golden formats, and the
 milestone log.
