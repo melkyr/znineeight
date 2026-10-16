@@ -28,7 +28,11 @@ sh /tmp/z9play_out/build_target.sh linux /tmp/z9play_out/prog
 All tiers run under **`-fsafe`**. The M5 base seed is **v98**, which supersedes
 the v97 this milestone was authored against; compiler defects **D1–D8 are all
 FIXED** in seed v98 (see `examples/torrent_example_defects.md`), so the prior
-D7-class workaround warning is retired (M5 needed none).
+D7-class workaround warning is retired (M5 needed none). *Note:* that defects
+doc was **reset on 2026-10-16** — the earlier D1–D8 are all fixed (history in
+git) and its numbering **restarted**, so the doc's current **D1** is the new
+*open* defect (a function pointer returning optional-of-aggregate cannot be
+emitted); see the M5b section.
 
 ### `--info` usage (M0)
 
@@ -648,7 +652,11 @@ Plan: `docs/superpowers/plans/2026-10-11-z9play-m5-cli-plan.md`. Example-only; n
 compiler/seed change. Seed **v98** (two-hop closure
 `f18b69ece1917bf970a036b276e5e403`); compiler defects **D1–D8 are all FIXED** in
 seed v98, so the prior D7-class workaround warning is retired — M5 hit no
-compiler defect and needed no workaround.
+compiler defect and needed no workaround. (The examples compiler-defects doc was
+**reset 2026-10-16**: the earlier D1–D8 remain fixed, but its numbering
+**restarted**, so its current **D1** is the new *open* defect —
+optional-of-aggregate function-pointer returns cannot be emitted; see the M5b
+section.)
 
 - **Task 0 (preflight) — DONE.** `script` (pty) present; `gcc -m32` ok;
   `termios.h` present; `/dev/dsp` absent (the WAV sink is the hermetic gate, as
