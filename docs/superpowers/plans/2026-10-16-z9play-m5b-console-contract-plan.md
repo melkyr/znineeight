@@ -32,6 +32,7 @@
 
 ```zig
 pub const Key = union(enum) {
+    none,       // no key ready (the readKey "nothing pending" result; avoids an optional-of-aggregate fn-pointer return — compiler defect D1)
     char: u8,   // one raw byte (printable / control / j k a d n p s space + - q, etc.)
     sigint,     // Ctrl-C (Linux SIGINT; Win9x console-control handler in M6)
     up, down, left, right,
@@ -43,7 +44,7 @@ pub const Console = struct {
     clear_fn:       fn (*void) void,
     setCursor_fn:   fn (*void, u16, u16) void,
     writeStr_fn:    fn (*void, []const u8) void,
-    readKey_fn:     fn (*void) ?Key,
+    readKey_fn:     fn (*void) Key,   // returns Key.none when no key is ready (D1 workaround)
     enterRaw_fn:    fn (*void) void,
     leaveRaw_fn:    fn (*void) void,
     width_fn:       fn (*void) u16,
@@ -68,7 +69,7 @@ pub const Console = struct {
 ### Task 2: Linux backend — implement every operation
 
 **Files:** `platform/console.zig` (import target), `platform/console_linux.zig` (rewrite), `platform/console_linux_pal.zig` (externs).
-**Interfaces:** free functions implementing all 9 ops over a caller-owned `ConsoleLinState` (termios saved + entered), assembled by the caller into a `Console`: `enterRaw`, `leaveRaw`, `readKey` (non-blocking; arrow escape state machine → `.up/.down/.left/.right`; ESC → `.esc`; Enter → `.enter`; SIGINT → `.sigint`; else `.char`), `clear` (ANSI `\033[2J\033[H`), `setCursor` (ANSI `\033[<y>;<x>H`), `writeStr`, `width`/`height` (`ioctl TIOCGWINSZ`), `cursorShow` (ANSI `\033[?25h`/`\033[?25l`).
+**Interfaces:** free functions implementing all 9 ops over a caller-owned `ConsoleLinState` (termios saved + entered), assembled by the caller into a `Console`: `enterRaw`, `leaveRaw`, `readKey` (non-blocking; returns `.none` when no key is pending; arrow escape state machine → `.up/.down/.left/.right`; ESC → `.esc`; Enter → `.enter`; SIGINT → `.sigint`; else `.char`), `clear` (ANSI `\033[2J\033[H`), `setCursor` (ANSI `\033[<y>;<x>H`), `writeStr`, `width`/`height` (`ioctl TIOCGWINSZ`), `cursorShow` (ANSI `\033[?25h`/`\033[?25l`).
 - [ ] Preserve M5 semantics (ISIG kept → SIGINT; OPOST kept; non-tty guard; idempotent leave). Update `tests/console_test.zig` to the new signatures and cover all ops (pty). Build `-fsafe` PASS. Commit `example(z9play): complete Linux console backend`.
 
 ### Task 3: CLI retrofit

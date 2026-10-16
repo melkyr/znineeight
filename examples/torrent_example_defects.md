@@ -1,745 +1,103 @@
-# z9torr example — compiler defects found
-
-This log records **compiler defects / gaps discovered while building the
-`z9torr` BitTorrent example** (`examples/z98/z9torr/`), each with a minimal
-reproducer, the exact failure, and the workaround the example uses. The
-workarounds are example/spec-level. **D1–D8 are now FIXED at root cause** in the
-compiler. D1–D5 were first site-fixed by plan
-`2026-10-09-zig1-codegen-defects-plan` (F1/F2/F3/F5, seed v95/v96 rotated
-2026-10-10) and D6 by commit `875b9a9e` (seed v97 rotated 2026-10-11); the
-plan `2026-10-12-zig1-emitter-sanitization` then root-caused the whole class for
-each (P1 identifier authority, P2 type-dependency relation, P3 canonical
-`typeCName`, P8 builtin descriptor table, P9 structural frame-save, P10 lvalue
-unification) and fixed the two previously OPEN entries **D7** (P7 module-scope-first
-resolution) and **D8** (P2 relation). Each fixed entry records its fix commit id
-and a note that the fix reproduces **Zig semantics**, not merely `gcc`
-acceptance. The site-fix history (F1–F5, `875b9a9e`) is retained in each entry
-as `Prior site fix …`; no history is erased.
-
-Related: `docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md`
-(the example's binding spec).
-
----
-
-## D1 — A C keyword as a `union(enum)` tag emits invalid C89
-
-**Status:** FIXED AT ROOT CAUSE (P1 identifier authority, `refactor(name_mangler)` `4056b26f`/`185bcc13` + fix `9c867fef`/`8ba4b418`, 2026-10-12). `sf/src/name_mangler.zig` is the single identifier-minter (`MintLocal`/`MintField`/`MintMember` keyword-escape + per-scope collision) consulted at declaration AND every access, so a C keyword — or any identifier — is escaped consistently everywhere: the whole class, not one site. Union member names are C-keyword-mangled consistently at the declaration and every access site, so any valid Z98 tag compiles. The fix reproduces Zig semantics (any identifier is a valid tag), not merely `gcc` acceptance. Prior site fix F1 (`69e82cd8`, 2026-10-09) is subsumed by the identifier authority; kept for history.
-
-**Symptom (pre-fix).** A tagged union whose variant tag is a C keyword compiles as Zig
-(Z98) but produces C that `gcc` rejects. The `std_bencode` `Value` type hit
-this with the tag `int`:
-
-```zig
-pub const Value = union(enum) {
-    int: i64,          // <-- tag name "int"
-    bytes: []const u8,
-    list: []Value,
-    dict: []Entry,
-};
-```
-
-Emitted `zig_special_types.h`:
-
-```c
-union {
-    struct { long long _0; } int;   /* gcc: expected identifier before 'int' */
-    ...
-} zT_..._Value;
-```
-
-`gcc -m32 -std=c89` fails:
-
-```
-zig_special_types.h:693: error: expected identifier before 'int'
-```
-
-**Cause.** The emitter writes a `union(enum)` variant's tag **verbatim** as
-the C union member name (`sf/src/c89_emit.zig` ~2008–2024). There is no
-C-keyword mangling for union members. `@"int"` (the usual Zig escape for a
-keyword identifier) is rejected by Z98 with `error[4]`, so the tag cannot be
-kept and escaped.
-
-**Minimal reproducer.**
-
-```zig
-// repro.zig
-const std = @import("std.zig");
-
-pub const V = union(enum) {
-    int: i64,
-    bytes: []const u8,
-};
-
-pub fn main() void {
-    var v: V = .{ .int = 3 };
-    switch (v) {
-        .int => |x| { std.io.printInt(@intCast(i32, x)); std.io.write("\n"); },
-        .bytes => |b| { _ = b; },
-        else => {},
-    }
-}
-```
-
-```
-zig1 -ffast -o /tmp/repro repro.zig
-cd /tmp/repro && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long \
-    -Wno-pointer-sign -Wno-implicit-function-declaration -I . -c *.c
-# -> error: expected identifier before 'int'
-```
-
-**Workaround (used by z9torr).** Spell the tag with a non-keyword name:
-`int` → **`int_val`**. Semantics are identical; only the emitted C member
-name changes. Recorded as the spec amendment of 2026-10-08
-(`docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md` §4.2),
-commit `066d863a`.
-
-**Rule going forward.** Never use a C keyword (`int`, `long`, `char`, `short`,
-`float`, `double`, `struct`, `union`, `enum`, `default`, `register`, `return`,
-`switch`, `case`, `signed`, `unsigned`, `void`, `volatile`, `const`, `static`,
-`extern`, `sizeof`, `typedef`, `goto`, `if`, `else`, `for`, `while`, `do`,
-`break`, `continue`, `inline`, `restrict`, …) as a `union(enum)` tag in Z98.
-
-**Proper fix (not done; would rotate the seed).** C-keyword-mangle union
-member names in `sf/src/c89_emit.zig` (or emit numeric member names with a
-tag→name table), so any legal Z98 identifier tag compiles.
-
----
-
-## D2 — A slice whose element is a synthetic composite aliases another nested-slice C typedef
-
-**Status:** FIXED AT ROOT CAUSE (P3 canonical `typeCName`, `refactor(type_registry)` `e526859b`/`b33ae234`, 2026-10-13). One derivation — `typeCName` / `typeSliceElementName` in the type registry — names every C type; the emitter is a pure consumer, so a slice whose element is synthetic derives a distinct element C name (no `name_id == 0` collapse). `[][]const u8`, `[][20]u8`, etc. get distinct typedefs (primitive/named element slices stay byte-identical). The fix reproduces Zig semantics (each `[]synthetic` is a distinct type), not merely `gcc` acceptance. Prior site fix F2 (`e21dd31b`, 2026-10-09) is subsumed by the canonical derivation; kept for history.
-
-**Symptom (pre-fix).** Two different nested-slice types emit the *same* C slice typedef
-name, so the second field is declared with the first's element pointer type.
-`gcc` accepts it with a warning (`-Wincompatible-pointer-types`), and the value
-is correct only by luck of the emitted temporary. A struct with both a
-`[][]const u8` field and a `[][20]u8` field triggers it.
-
-**Cause.** In `sf/src/c89_emit.zig`, `getCTypeName` derives a slice's C name
-from its element's **name id**:
-
-```zig
-// slice branch, ~c89_emit.zig:1028-1035
-var elem_ty2 = reg.types_items[sp.elem];
-var elem_mid2 = nameManglerMangle(mangler, elem_ty2.name_id, 2, 0);  // <-- name_id
-```
-
-Every *synthetic* type (slice/array/tuple/optional) has `name_id == 0`, so a
-slice whose element is itself a synthetic composite gets its element name from
-id 0 — the same mangled string (`…Slice_zT_811C9DC5_`, the hash of the empty
-string) for every such element kind. The **array** branch of the same function
-recurses correctly (`c89_emit.zig:959-966`, `getCTypeName(reg, mangler,
-ap.elem)`), and the tuple branch already sidesteps this with a per-type id.
-
-**Minimal reproducer.**
-
-```zig
-// repro.zig
-const std = @import("std.zig");
-
-pub const T = struct {
-    announce_list: [][]const u8,
-    piece_hashes: [][20]u8,
-};
-
-pub fn main() void {
-    var buf: [64]u8 = undefined;
-    var inner: []const u8 = buf[0..4];
-    var list: [1][]const u8 = undefined;
-    list[0] = inner;
-    var hashes: [1][20]u8 = undefined;
-    var t: T = .{ .announce_list = list[0..1], .piece_hashes = hashes[0..1] };
-    std.io.printInt(@intCast(i32, t.piece_hashes.len));
-    std.io.write("\n");
-}
-```
-
-```
-zig1 -ffast -o /tmp/d2repro/out repro.zig
-cd /tmp/d2repro/out && sh build_target.sh linux prog
-# -> repro_*.c: warning: assignment to
-#    'zT_..._Slice_zT_0B42B2F8_u *' from incompatible pointer type
-#    'unsigned char (*)[20]' [-Wincompatible-pointer-types]
-```
-
-Emitted `zig_special_types.h` shows the collapse — the `[][]const u8` typedef is
-reused for the `[][20]u8` field:
-
-```c
-/* []const u8 */
-typedef struct { unsigned char* ptr; unsigned int len; }
-    zT_8F083A69_Slice_zT_0B42B2F8_u;
-/* [][]const u8 AND [][20]u8 share this one */
-typedef struct { zT_8F083A69_Slice_zT_0B42B2F8_u* ptr; unsigned int len; }
-    zT_9DFA8D74_Slice_zT_811C9DC5_;
-```
-
-**Variants the compiler fix must cover.** `sf/src/main.zig:93`
-(`include_dirs: [16][]const u8`) proves arrays-of-slices are fine — the
-collision is on the element side of a *slice* `[]T` when `T` itself is
-synthetic:
-- `[][]const u8` — slice of slice (the original reproducer).
-- `[][20]u8` — slice of array.
-- `[][*]u8` — slice of many-pointer (z9torr argv; fixed in M1a).
-- `[]?T` — slice of optional (expected to collide the same way).
-- `[]tuple` — slice of tuple (expected to collide the same way).
-
-All collapse to the same `…Slice_zT_811C9DC5_` typedef because each element type
-is synthetic and therefore has `name_id == 0`.
-
-**Design rule (safe/unsafe).** A Z98 slice `[]T` is safe **iff** `T` is a
-primitive or a *named* type (struct/union/enum). It is **unsafe** when `T` is a
-synthetic type (slice/array/pointer/optional/tuple): two different `[]synthetic`
-types alias. To hold composites, use flat bytes (`[]const u8` + manual stride),
-a fixed `[N]T` (the array branch recurses correctly), or a *named* wrapper
-struct.
-
-**Workaround (used by z9torr, spec amendments 2026-10-08 / M1a).** Remove every
-`[]`-of-synthetic type by design: `piece_hashes` is a flat `[]const u8` (20
-bytes per piece) instead of `[][20]u8`; `announce_list` is the fixed
-`[8][]const u8` + `announce_count: u32` (extras dropped) instead of
-`[][]const u8`; argv is `[*][*]u8` instead of `[][*]u8`. No slice whose element
-is synthetic remains, so no shared typedef can be mis-applied. Semantics
-unchanged; `info_hash` unaffected.
-
-**Proper fix (not done; would rotate the seed).** Recursively derive the slice
-element's C name as the array branch already does. A targeted form — recurse
-only when the element's `name_id == 0` — leaves primitive slices (`[]u8`,
-`[]i32`) byte-identical and fixes only nested-composite slices. Any `[][]T`
-program hits this today.
-
----
-
-## D3 — A module-global struct whose address is passed to a suspending call emits a frame-save from an undeclared temp
-
-**Status:** FIXED AT ROOT CAUSE (P9 structural frame-save rule, `refactor(async_state_machine)` `c2772f6a`/`097a5949`, 2026-10-15). The save/restore set is decided at async construction (`asyncTempIsGlobalAlias`: alias temps get no `ASYNC_FIELD_LIVE` slot, so the global by-value round-trip is removed) instead of being spelled at emit time; a suppressed `load_global` alias therefore never becomes a frame-save source. The shared frame-save rule pre-resolves the suppressed `load_global` alias (`temp_global_map`) before the save block, so the frame save/restore names a declared temp. The fix reproduces Zig semantics (a coroutine captures referenced state across a suspension; a save stores a declared temp/global), not merely `gcc` acceptance. Prior site fix F3 (`06a7a793`, 2026-10-09) is subsumed by the structural rule; kept for history.
-
-**Symptom (pre-fix).** In a coroutine that passes the address of a module-global
-`std_stream.MsgReader` to a suspending, cross-module call
-(`wire.readMessageAsync`), the deferred-frame save emitted for the caller
-performs a struct assignment **from a temporary that the emitter never
-declares**. `zig1` accepts the program; `gcc` rejects the emitted C:
-
-```
-peer_07FFFED1.c:865:15: error: 'zT_144' undeclared (first use in this function); did you mean 'zT_194'?
-```
-
-Line 865 is inside the frame-save block (`*zT_455 = zT_144;`, where `zT_455`
-is a `MsgReader *` into the coroutine frame and `zT_144` should be a
-`MsgReader` value). `zT_144` is never declared; a sibling step function in the
-same module declares an unrelated `zT_144`, so the temp-id counter appears to
-collide across `__Z98Step_*` bodies.
-
-**Reproducer (in-example; see note).** The defect is sensitive to the
-enclosing step-function temp layout — it was **not** reducible to a
-standalone two-function program (see "Reduction attempts"). The smallest
-reliable reproducer is the two-line change to
-`examples/z98/z9torr/peer.zig` at commit `a1e83657` that reverts the D3
-workaround: make the `MsgReader` a **module global** and pass `&g_reader` to
-`wire.readMessageAsync`:
-
-```diff
---- a/examples/z98/z9torr/peer.zig
-+++ b/examples/z98/z9torr/peer.zig
-@@ var g_ps: piece.PieceState = undefined;
-+var g_reader: std_stream.MsgReader = undefined;
- var g_ps: piece.PieceState = undefined;
-@@ -225,4 +226,4 @@
--    var reader: std_stream.MsgReader = undefined;
--    reader.src = &peer.sock;
--    reader.buf = peer.read_buf[0..];
--    reader.pending = peer.read_buf[0..0];
-+    g_reader.src = &peer.sock;
-+    g_reader.buf = peer.read_buf[0..];
-+    g_reader.pending = peer.read_buf[0..0];
-@@
--        wire.readMessageAsync(&reader, &msg) catch break;
-+        wire.readMessageAsync(&g_reader, &msg) catch break;
-```
-
-```
-# from the repo root, with the patch applied to examples/z98/z9torr/peer.zig:
-mkdir -p /tmp/d3out
-/tmp/z9_m0_seed/zig1_5_clean -ffast -o /tmp/d3out examples/z98/z9torr/main.zig   # rc 0
-# link (emits *.c then gcc -m32 -std=c89):
-sh /tmp/d3out/build_target.sh linux /tmp/d3out/prog
-# -> peer_*.c:<n>: error: 'zT_NNN' undeclared (first use in this function)
-```
-
-Exact observed (throwaway run `/tmp/z9_d3full_out`):
-
-```
-$ sh /tmp/z9_d3full_out/build_target.sh linux /tmp/z9_d3full_out/prog
-env -u LD ... gcc -m32 -std=c89 ... peer_07FFFED1.c ...
-peer_07FFFED1.c:865:15: error: 'zT_144' undeclared (first use in this function); did you mean 'zT_194'?
-```
-
-**Reduction attempts.** Standalone programs of the form "coroutine caller
-passes `&g` (a global named struct) to a suspending callee" — including a
-global `std_stream.MsgReader` (`/tmp/d3b.zig`, `/tmp/d3g.zig`), a global struct
-with slice fields (`/tmp/d3e.zig`), a two-step cross-module wrapper
-(`/tmp/d3g.zig` + `d3wrap.zig`), and a global struct with multiple slice fields
-plus a local struct (`/tmp/d3h.zig`) — all **linked cleanly** (`gcc` rc 0).
-The collision is therefore a function of the caller's total temp count and
-ordering, not of any single construct; a minimal standalone reproducer would
-require matching the emitted temp layout.
-
-**Workaround (used by z9torr, M2 Task 4).** Keep the `MsgReader` a
-**coroutine local** (`var reader: std_stream.MsgReader`), field-initialised in
-place, and pass `&reader` to the suspending call. This lowers correctly and is
-the form committed in `peer.zig`.
-
-**Proper fix (not done; would rotate the seed).** In the async frame-save pass
-(`sf/src/c89_emit.zig`), declare every temp that the save/restore emits for a
-frame slot (do not assume a temp id is already declared from a sibling step
-function's preamble), or allocate frame slots without a by-value struct temp.
-
----
-
-## D4 — A by-value struct-return temporary assigned to a module global in a suspending function emits a frame-save from an undeclared temp
-
-**Status:** FIXED AT ROOT CAUSE (P9 structural frame-save rule, `refactor(async_state_machine)` `c2772f6a`/`097a5949`, 2026-10-15). The save/restore set is decided at async construction (`saveAllFields` consumes `asyncTempIsGlobalAlias`): only declared temps get a frame slot, and alias temps get no `ASYNC_FIELD_LIVE` slot, removing the global by-value round-trip that emitted the undeclared temp. The emitter only spells the decided set. Same shared frame-save rule as D3 (the undeclared temp is the loop-carried `load_global` alias of the module global). The fix reproduces Zig semantics (the by-value struct-return is materialised and the aliased global is named), not merely `gcc` acceptance. Prior site fix F3 (`06a7a793`, 2026-10-09) is subsumed by the structural rule; kept for history.
-
-**Symptom (pre-fix).** Assigning a **struct-returning call's result** directly to a
-module-global inside a suspending function (here
-`g_reader = std_stream.initMsgReader(...)`) makes the caller's frame-save
-reference an undeclared temp of the returned struct type. Same emitted-C
-symptom as D3, different trigger. `gcc`:
-
-```
-peer_E7BBEDD8.c:1804:15: error: 'zT_135' undeclared (first use in this function)
-```
-
-(`*zT_446 = zT_135;`, `zT_446` a `MsgReader *` frame slot.)
-
-**Reproducer.** Same in-example patch as D3 but restore the **global
-struct-return assignment** form instead of field-initialising:
-
-```diff
--    var reader: std_stream.MsgReader = undefined;
--    reader.src = &peer.sock;
--    reader.buf = peer.read_buf[0..];
--    reader.pending = peer.read_buf[0..0];
-+    g_reader = std_stream.initMsgReader(&peer.sock, peer.read_buf[0..]);
-```
-
-```
-mkdir -p /tmp/d4out
-/tmp/z9_m0_seed/zig1_5_clean -ffast -o /tmp/d4out examples/z98/z9torr/main.zig   # rc 0
-sh /tmp/d4out/build_target.sh linux /tmp/d4out/prog
-# -> peer_*.c:<n>: error: 'zT_NNN' undeclared (first use in this function)
-```
-
-Observed (first build of the Task-4 `peer.zig`):
-```
-peer_E7BBEDD8.c:1804:15: error: 'zT_135' undeclared (first use in this function)
-```
-(Removing the struct-return temp while keeping the global reader moved the
-error to `zT_141`, i.e. D3's trigger; with a coroutine-local, field-initialised
-reader the module links clean.)
-
-**Cause (corrected 2026-10-09, I4).** Same frame-save temp-declaration defect as
-D3. The undeclared temp is **not** the struct-return temporary — that one *is*
-materialised and declared (`zT_398`). It is the **loop-carried `load_global`
-alias of the module global** (`g_reader`), lowered by `lowerLValueAddr`
-(`sf/src/lower.zig:2264-2268`) → `lowerGlobalRef:3931-3932`, then suppressed by the
-declaration loop (`sf/src/c89_emit.zig:3800-3909`) while `temp_global_map`
-(`resolveTempName:6614-6628`) is still empty at the frame-save site. Observed
-trigger: `g_reader = std_stream.initMsgReader(...)` inside a suspending function
-followed by two `&g_reader` call sites in a loop. D3 and D4 share one fix
-(operator ruling 2026-10-09).
-
-**Workaround (used by z9torr, M2 Task 4).** Do not route a struct-return
-temporary through a global in the coroutine: initialise the `MsgReader` field
-by field (`reader.src = ...; reader.buf = ...; reader.pending = ...;`) on a
-coroutine local.
-
-**Proper fix (not done; would rotate the seed).** Declare frame-save temps in
-the emitted preamble; or materialise struct-return temps into a named local
-before the global store in the async lowering.
-
----
-
-## D5 — A store through a slice-index aggregate lvalue is silently lost (writes into a by-value copy)
-
-**Status:** FIXED AT ROOT CAUSE (P10 lvalue unification, `refactor(lower)` `b7cba183`/`b6875640` + fix `5b6b8e1a`, 2026-10-15). One checked `lowerIndexElemAddr` path (plus the `lowerFieldStore` root-index check) addresses every non-tuple index/field chain once, so the store lands in the element instead of a by-value copy. Non-tuple index-assign bases route through address-taking exactly as `lowerFieldStore` does, so the chain `(slice.ptr + idx)->field[...]` is addressed once and the store lands in the element. The fix reproduces Zig semantics (index/field chains are lvalues) — the runtime repro output flips wrong→correct — not merely `gcc` acceptance. Prior site fix F5 (`ae156d26`, 2026-10-09) is subsumed by the unified path; kept for history.
-
-**Symptom.** Writing a nested aggregate field through a slice/array index compiles
-and links, but the store is **lost**: the emitter materialises a *by-value copy* of
-the element struct and writes into the copy. `z9torr` hit this writing the client
-peer_id into a scheduler slot:
-
-```zig
-// examples/z98/z9torr/main.zig (spawnPeerAt)
-g_sched.peers[slot].peer_id[pid_i] = peer_id[pid_i];
-```
-
-Emitted C (`/tmp/z9_linbin/main_B8D622A5.c`, `spawnPeerAt`):
-
-```c
-zT_11 = zT_10[slot];      /* Peer copied BY VALUE into a local temp */
-zT_12 = zT_11.peer_id;    /* pointer into the LOCAL copy */
-zT_12[pid_i] = zT_7;      /* the store lands in the temp, not g_sched.peers[slot] */
-```
-
-So `g_sched.peers[slot].peer_id` stays zero and every outgoing handshake
-advertises an all-zero peer_id (visible in `lin_bin/z9torr.log`). No gate caught it
-because the mocks validate only `info_hash`.
-
-**Zig semantics (the reference).** In real Zig, index/field chains are **lvalues**:
-`arr[i].field[j] = x` writes through the address `&arr[i].field[j]`. Z98 must
-reproduce that, not copy.
-
-**Root cause.** The by-value materialisation happens in lowering, not (only) in
-emission:
-
-- `sf/src/lower.zig` `lowerAssignLValue`, `index_access` arm — **`:2484-2531`**: the
-  base is lowered with a **value read** (`lowerExpr(...)` at `:2487`) instead of an
-  address; the address path exists only for the *tuple* sub-case (`:2493-2508`).
-  Contrast the correct sibling `lowerFieldStore`, which takes nested bases by address
-  at **`:2878-2928`** (`index_access` base ptr+idx / `load_index{decay=1}`
-  `:2878-2909`; field/deref/paren base `lowerLValueAddr` `:2910-2928`).
-- The emission side then chains value copies: `emitBaseIdxAccess` **`c89_emit.zig:204-267`**
-  (`load` `:229-251` value-copies the element; `assign` `:252-266`), `load_index`
-  **`:7593-7596`**, `load_field` **`:7456-7513`**, `assign_index` **`:7226-7271`**,
-  `store_field` **`:7514-7591`**, `addr_of_field` **`:7655-7694`**.
-
-**Reproducer.** A standalone op in which a store through `slice[i].field[j]` must be
-observed by a subsequent read/print (a runtime assertion — the compile-only corpus
-classify cannot see a lost write):
-`repro/mi_matrix/slice_index_field_store_xmod/`.
-
-**Fix (proper Zig semantics).** Route non-tuple index-assign bases through
-address-taking exactly as `lowerFieldStore` already does, so the whole chain
-`(slice.ptr + idx)->field[...]` is addressed once and the store lands in the element.
-The array branch is already correct.
-
-**Equivalence gate.** The repro's runtime output changes from wrong→correct; the
-z9torr `peer_id` becomes the real `-Z9T01-…`; all compiler gates (fixed point,
-corpus, stdlib, examples, dump-MD5 re-baseline) apply.
-
----
-
-## How these defects are exposed
-
-**D1/D2** each pair a **standalone minimal Z98 program** with the **emit + gcc
-commands** and the **exact compiler/gcc failure**, so the defect is
-reproducible in isolation, outside the example.
-
-**D3/D4 are NOT reducible to a standalone minimal program.** Both are
-deferred-frame-save temp-declaration defects that depend on the enclosing
-coroutine step-function's **total temp count and ordering**, not on any single
-construct: six standalone variants (a global `std_stream.MsgReader`, a global
-struct with slice fields, a two-step cross-module wrapper, a multi-slice struct
-plus a local struct, …) all linked cleanly. D3/D4 therefore ship the smallest
-reliable **in-example patch reproducer** (the two-line change to
-`examples/z98/z9torr/peer.zig`) together with the exact build/emit/link
-commands and the observed `gcc` failure. This limitation is recorded explicitly
-in each of the D3/D4 "Reduction attempts" / "Cause" notes. A true standalone
-minimal reproducer would require matching the emitted temp layout.
-
-When a workaround is adopted, the example's source and its spec are updated and
-the entry records the workaround + commit; the defect itself is listed **FIXED**
-once the compiler is fixed. D1–D8 are now FIXED; each fixed entry records
-its fix commit and that the fix reproduces Zig semantics. The parked example
-workarounds (`z9play` `Mode` → `VorbisMode`; the D8 example-side workaround) stay
-as committed per the plan's §"Out of scope" — the workarounds become unnecessary
-but examples need not change. (D4 later became reducible to the standalone
-`repro/mi_matrix/async_frame_structret_xmod`, whose classify class flipped
-FAIL→OK at F3.)
-
-### Residual class items (already ledgered; not re-fixed here)
-
-These are known pre-existing residuals deliberately preserved by the milestone —
-each was recorded in its increment's report/ledger, not introduced by the root-cause
-fixes above:
-
-- **P7 module-less shapes fallback-first (dead shapes):** nodes after the last
-  `ast_root` (failed-parse partial chunks; empty-entry root-0 sentinel) keep
-  `MODULE_ID_NONE` and today's fallback-first resolution. No battery fixture
-  exercises them (`sf/src/type_resolver.zig` / `semantic_analyzer.zig`).
-- **P8 `error[19]` rendering of `ERR_3000_TYPE_MISMATCH`:** the diagnostics enum
-  lacks a `=3000` entry, so the arity reject renders as `error[19]`; pre-existing,
-  deliberately preserved. Adjacent: the `@cVaArg` dead resolve guard.
-- **P8 `@intCast` 1-arg identity typing narrowing residual:** the single-argument
-  `@intCast(expr)` types the expression as the operand's own type (identity cast);
-  official Zig 0.15.2 infers the target from context. The narrowing-context
-  divergence is the documented Task 7 divergence (`EXPECTED_FAIL`, not a fix).
-- **P10/P9 `async_frame_layout` not stable under `-fsafe` instrumentation growth:**
-  live-temp layout is temp-id-order; `-fsafe` growth can reorder. Recorded.
-- **P4 O7 named tuples get no typedef in the multi-file path.** Recorded.
-- **P14 O3 carrier-fill scan conversion (operator ratify-or-revert pending).**
-
-_(Add new entries as D9, the next free slot, as they are found while building the
+# z9play / examples — compiler defects found
+
+Tracks compiler defects found while building the example programs. **Reset 2026-10-16:**
+the earlier entries D1–D8 were all FIXED at root cause by the zig1 emitter-sanitization
+milestone (2026-10-12 … 2026-10-16); their full history, and the milestone's tracked
+residuals, live in git (fix commits `4056b26f`, `e526859b`, `c2772f6a`, `b7cba183`,
+`649fe398`/`c4838a29`, `dcd0c9db`, `1029221f`/`40a8a36e`) and in that milestone's SDD
+reports/ledger. This file now tracks only open defects; numbering restarts at D1.
+
+_(Add new entries as D2, the next free slot, as they are found while building the
 examples; entries are doc-only unless a compiler fix is separately authorized.)_
 
 ---
 
-## D6 — `@ptrFromInt` with a type argument is silently miscompiled instead of rejected
+## D1 — A function pointer whose return type is an optional of an aggregate cannot be emitted
 
-**Status:** FIXED AT ROOT CAUSE (P8 central builtin arity/descriptor table,
-refactor `649fe398` + fix `c4838a29`, 2026-10-15). A central `BuiltinDesc` table
-(`sf/src/semantic_analyzer.zig`) is consulted before the dispatch ladder for all
-37 builtins, so the entire wrong-arity accept class is closed by one relation; the
-`@intCast` accepted-arity range is 1..2 (Amendment 6: one-arg `@intCast(expr)`
-accepted, 0 / ≥3 rejected), `@ptrCast` stays exactly-2, all other type-value casts
-exactly-2, 1-arg plains exactly-1. The earlier site fix `875b9a9e` (2026-10-11,
-seed v97) covered only `@ptrFromInt` and is subsumed by the table. The
-`@ptrFromInt` behavior is unchanged: the semantic analyzer
-rejects an `@ptrFromInt` call whose argument count is not exactly one,
-emitting `ERR_3000_TYPE_MISMATCH` (the same enum member as the sibling "cannot
-infer pointer type" diagnostic) with message `@ptrFromInt requires exactly one
-argument: @ptrFromInt(expr)` and returning `TYPE_UNDEFINED`; one-arg
-`@ptrFromInt(expr)` and two-arg `@intToPtr(T, v)` are unchanged. Filed
-2026-10-10 during the M5 `-fsafe` work. This is a
-**compiler validation / wrong-accept** defect, **not** the anticipated `-fsafe`
-failure: there is **no `-fsafe`/`-ffast` divergence** (both modes emit the same
-wrong code). It did not block the M5 `-fsafe` mission — the example uses the
-correct one-argument `@ptrFromInt(expr)` form — but it is filed here per the
-standing rule that any compiler (not example) defect is recorded, never silently
-skipped.
+**Status:** OPEN (found 2026-10-16 building z9play M5b; example-only workaround documented below; compiler fix not yet authorized).
 
-**Symptom.** Z98's language spec (`docs/reference/Language_Spec_Z98.md` §4) and
-manual define `@ptrFromInt(expr)` — **one** argument, result type from context;
-the two-argument form is `@intToPtr(T, value)`. `@ptrFromInt` with an explicit
-type argument (`@ptrFromInt(*T, value)`) is nevertheless **accepted** and emits
-wrong code: the cast's source operand is the **destination variable itself**
-(an uninitialised local), not the constant/expression. The intended `value` is
-dropped. The compiler should reject the extra argument with a diagnostic.
+**Symptom.** A function-pointer type — or a struct field / variable of such a type —
+whose return type is `?T`, where `T` is an aggregate (`struct`, `enum`, `union(enum)`;
+observed with `?Key`, `?struct`, `?enum`), is not representable in seed v98:
 
-**Minimal reproducer.**
+1. **Frontend coercion rejected.** Assigning a free function whose return type is `?Key`
+   to a function-pointer field fails with
+   `error[3000]: type mismatch in field initialization … note: source: function / note: target: pointer`.
+   The same shapes with `?u8` (optional scalar), a direct aggregate return
+   (`fn (*void) Key`), or an error-union return (`fn (*void) E!T` — the D8 shape) all
+   work. **Only optional-of-aggregate is broken.**
+2. **Emitted C89 invalid.** Even when a shared named alias for the optional makes the
+   frontend accept the coercion, the build fails at gcc:
+   `zig_special_types.h:663:29: error: expected declaration specifiers or '...' before '*' token`
+   / `unknown type name 'zT_…_FP_zT_…_Opt_'`. The function-pointer typedef (whose return
+   type is the optional) is emitted **before** the optional typedef it references — a
+   **D8-class ordering gap for `optional_type`** (the D8 fix added the edge for error
+   unions; optionals are uncovered). Merely *defining* a struct with such a field (never
+   assembling a literal) triggers it.
+
+**Minimal reproducer A — frontend coercion (`probe/a.zig`):**
 
 ```zig
-// repro.zig
-const std = @import("std");
+pub const Key = union(enum) { char: u8, sigint };
+pub const Console = struct { readKey_fn: fn (*void) ?Key, state: *void };
+pub fn readKey(state: *void) ?Key { _ = state; return Key{ .sigint = {} }; }
+var st: u8 = 0;
 pub fn main() void {
-    var p: *u8 = @ptrFromInt(*u8, 7);
-    std.io.printInt(@intCast(i32, @intFromPtr(p)));
-    std.io.write("\n");
+    var c: Console = Console{ .readKey_fn = readKey, .state = @ptrCast(*void, &st) };
+    if (c.readKey_fn(c.state)) |k| { switch (k) { .char => |x| { _ = x; }, else => {} } }
 }
 ```
 
-```
-zig1 -fsafe -o /tmp/d6out repro.zig
-cd /tmp/d6out && sh build_target.sh linux /tmp/d6out/prog
-/tmp/d6out/prog          # prints garbage (observed `1`), not `7`
-zig1 -ffast -o /tmp/d6outf repro.zig   # identical emitted C
+```sh
+timeout 120 /tmp/z9play_seed_v98/zig1_5_clean -fsafe -o /tmp/probe /tmp/probe/a.zig
+# error[3000]: type mismatch in field initialization (source: function, target: pointer)
 ```
 
-**Emitted C (both `-fsafe` and `-ffast`, byte-identical for this function).**
-
-```c
-void zF_EA90E208_main(void) {
-    unsigned char* zT_1;
-    ...
-    unsigned char* p;
-    zT_1 = (unsigned char*)(unsigned int)p;   /* reads p (uninitialised) -- should be 7 */
-    p = zT_1;
-    ...
-}
-```
-
-`value` (`7`) never appears; the `@ptrFromInt` type argument is consumed and the
-integer argument is lost, so the lowering's `int_to_ptr.value` temp resolves to
-the result variable's slot. `@ptrFromInt(7)` (one argument) and
-`@intToPtr(*u8, 7)` (two arguments, old spelling) both emit correct code
-(`zT_1 = (unsigned char*)(unsigned int)zT_2;` with `zT_2 = 7;`), so the defect is
-specific to `@ptrFromInt` receiving an extra type argument.
-
-**Workaround (used by the M5 fix).** Use the documented one-argument
-`@ptrFromInt(expr)` (result type inferred from the annotated target) or the
-two-argument `@intToPtr(T, value)`. `peer.zig`'s `zeroPieceIO` uses
-`@ptrFromInt(0)`.
-
-**Proper fix (DONE, `875b9a9e`, 2026-10-11).** The semantic analyzer diagnoses an
-`@ptrFromInt` call whose argument count is not exactly one (rejected with 0 `.c`
-emitted), mirroring the existing `@ptrCast` arity-reject arm. The compiler no
-longer silently miscompiles the two-argument spelling.
-
----
-
-## D7 — An unqualified type name / `@sizeOf(T)` inside a module resolves to a same-named type imported from another module
-
-**Status:** FIXED AT ROOT CAUSE (P7 module-scope-first name resolution,
-`refactor` `dcd0c9db`, 2026-10-15; Amendment 8 widened the touch set). The lexical
-module context is now threaded into the comptime type-arg fold path
-(`@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf` resolution — `sf/src/comptime_eval.zig`
-fed from `sf/src/main.zig`, resolved in `sf/src/type_resolver.zig` with the
-`sf/src/semantic_analyzer.zig` identifier fallthrough fixed), and the two in-set
-order bugs are fixed (`ResolveIdent` fallthrough skips `ncgm`; `resolveTypeExprFull`
-module-symbol demoted below fallbacks is promoted). An unqualified type name /
-`@sizeOf(T)` inside a module therefore resolves module-locally; the z9play `Mode`
-collision now resolves to the module's own 8-byte struct at the fold, not
-`std_file.Mode`. Bare cross-module fallback stays legal when module scope misses.
-Was DOCUMENTED/OPEN → now FIXED. The example-side workaround (`Mode` → `VorbisMode`)
-stays as committed — examples need not change.
-
-**Symptom.** Inside a module, an unqualified type name (and its `@sizeOf`)
-resolves to a *same-named* type imported from **another** module, not the
-module's own type — i.e. type-name resolution is flat/name-based rather than
-lexical. In `examples/z98/z9play/vorbis_setup.zig`, `@sizeOf(Mode)` (the
-module's own 8-byte struct) resolved to `std_file.Mode` (a 4-byte enum) once
-`std_file` was imported. The `modes` array was therefore under-allocated, a
-later field write corrupted an adjacent value, and the decoder selected the
-wrong mapping and produced garbage PCM (`max|Δ| ≈ 49307` vs the golden).
-
-**Reproducer.**
-```zig
-// inside examples/z98/z9play/vorbis_setup.zig, with `const std_file = @import("std_file.zig");`
-//   @sizeOf(Mode)     -> 4   (wrongly resolves to std_file.Mode, an enum)
-//   @sizeOf(vs.Mode)  -> 8   (qualified: the module's own struct)
-// remove the `std_file` import:
-//   @sizeOf(Mode)     -> 8   (correct)
-```
-
-**Workaround (used by z9play M3 Task 4).** Rename the module's own type so it
-does not collide with any imported name: `Mode` → `VorbisMode`, keeping
-`pub const Mode = VorbisMode;` so the public API is unchanged.
-
-**Proper fix (TODO, later compiler pass).** Resolve unqualified type names
-lexically (module scope first), or emit a diagnostic on a same-named
-cross-module collision.
-
----
-
-## D8 — A function-pointer typedef that returns an error union is emitted before the error-union typedef it references (an aggregate carrying the fnptr field by value)
-
-**Status:** FIXED AT ROOT CAUSE (P2 single type-dependency relation, refactor
-`1029221f`/`36c6a00a` + fix `40a8a36e`/`f29070b4`, 2026-10-13). `typeRefs` /
-`typeNeedsFullDef` now derive **both** the topological and the definition-emission
-graphs from one relation that includes the `fn_type` return-type edge, so a
-function-pointer typedef can never be ordered before the error-union (or other)
-typedef it references — the D8 edge exists by construction. The emitter is a pure
-consumer of that order; no `fn_type` branch was patched into the old `tstEdgesWalk`
-walker. The fix reproduces Zig semantics (a type is emitted after everything it
-references), not merely `gcc` acceptance. Was DOCUMENTED/OPEN → now FIXED. The
-example-side workaround (free functions + caller-assembled vtable, vtables held by
-pointer) stays as committed — examples need not change.
-
-**Symptom.** In a build with a shared `zig_special_types.h` (multi-module, or a
-single-file program that reaches the same emission path), it emits a
-function-pointer typedef whose **return type is an error union** before the
-error-union typedef itself, so the C is invalid:
-
-```
-zig_special_types.h:52: typedef zT_D078880E_EU_46 (*zT_DBCAABE4_FP_zT_D078880E_EU_4)(unsigned int, unsigned char);
-...
-zig_special_types.h:9x: typedef struct { union { void* payload; int err; } data; int is_error; } zT_D078880E_EU_46;
-```
-
-`gcc -m32 -std=c89` rejects the earlier typedef:
-`error: expected declaration specifiers or '...' before '*' token` (and a later
-`unknown type name 'zT_..._FP_zT_..._EU_*'`). This blocks any app-level vtable
-whose methods return `ErrorSet!T` (the shape the z9play spec, blueprint §2.2,
-mandates for `platform/audio` and `platform/console`).
-
-**Reproducer (`a.zig` defines the vtable; `b.zig` returns one; `main.zig` uses
-it).** The trigger is emitting — with any module count — an aggregate that
-carries the error-union-returning function-pointer typedef **by value**: either
-a function that **returns** such an aggregate, or (refined at M4 T3, see below)
-a struct that **embeds** the vtable struct as a field. The defect is a property
-of the emission path (a shared `zig_special_types.h`), not of the number of
-modules: a single-file/no-import program reaches it too, and holding a vtable
-**by pointer** is clean (nothing then carries the fnptr field by value). The
-"multi-module" framing here is about the *emission site* only.
+**Minimal reproducer B — emit ordering (contract defined, never assembled):**
 
 ```zig
-// a.zig
-pub const E = error{ Bad };
-pub const V = struct {
-    open_fn: fn (u32, u8) E!*void,
-    write_fn: fn (*void, []const i16) E!usize,
-    close_fn: fn (*void) void,
-    drain_fn: fn (*void) E!void,
-    state: *void,
+// contract.zig
+pub const Key = union(enum) { char: u8, sigint, up, down, left, right, enter, esc };
+pub const Console = struct {
+    clear_fn: fn (*void) void, setCursor_fn: fn (*void, u16, u16) void,
+    writeStr_fn: fn (*void, []const u8) void, readKey_fn: fn (*void) ?Key,
+    enterRaw_fn: fn (*void) void, leaveRaw_fn: fn (*void) void,
+    width_fn: fn (*void) u16, height_fn: fn (*void) u16,
+    cursorShow_fn: fn (*void, bool) void, state: *void,
 };
-```
-```zig
-// b.zig
-const a = @import("a.zig");
-var ctx: u32 = 0;
-fn o(r: u32, c: u8) a.E!*void { _ = r; _ = c; return @ptrCast(*void, &ctx); }
-fn w(s: *void, d: []const i16) a.E!usize { _ = s; return d.len; }
-fn cl(s: *void) void { _ = s; }
-fn dr(s: *void) a.E!void { _ = s; }
-pub fn open(r: u32, c: u8) a.E!a.V {
-    var p: *void = try o(r, c);
-    return a.V{ .open_fn = o, .write_fn = w, .close_fn = cl, .drain_fn = dr, .state = p };
-}
-```
-```zig
 // main.zig
-const std = @import("std");
-const a = @import("a.zig");
-const b = @import("b.zig");
-pub fn main() void {
-    var v: a.V = b.open(44100, 2) catch { return; };
-    var z: [2]i16 = .{ 1, 2 };
-    var n: usize = v.write_fn(v.state, z[0..]) catch 0;
-    std.io.printInt(@intCast(i32, n));
-    var nl: []const u8 = "\n";
-    std.io.write(nl);
-}
-```
-```
-mkdir -p out
-timeout 120 /tmp/z9play_seed/zig1_5_clean -fsafe -o out main.zig        # rc 0
-sh out/build_target.sh linux out/prog                                   # gcc errors as above
+const con = @import("contract.zig");
+var g_c: *con.Console = undefined;
+pub fn main() void { _ = g_c; }
 ```
 
-**Cause.** The C89 emitter's topological-sort edge walker `tstEdgesWalk`
-(`sf/src/c89_emit.zig`, ~line 1363) has branches for struct / tagged union /
-array / error union / optional / slice / union / tuple **but not `fn_type`**, so
-a function-pointer type never gains a dependency edge to its return type.
-`emitTypePasses` (~line 1808) then emits sub-pass 2a (all `pointer_only_map`
-types) before sub-pass 2b, and both the fn-pointer and its error-union return
-type are pointer-only; they are written in `sorted` order. In the multi-module
-path the fn-pointer's type id precedes its return error union's id, and
-`emitDepMember` (~line 1656) emits a struct's fn-pointer field typedef **without
-first emitting that function type's return-type typedef**, so the fn-pointer
-typedef is written first and references the not-yet-defined error union.
+```sh
+zig -fsafe -o out main.zig            # rc 0
+sh out/build_target.sh linux out/prog
+# zig_special_types.h:663:29: error: expected declaration specifiers or '...' before '*' token
+```
 
-**Workaround (used by z9play M4 Task 1).** At T1 the observed trigger was a
-function whose *return type is the vtable struct*; if no module exposes such a
-function, the emission of the function-pointer and error-union typedefs lands in
-a valid order. So the backend keeps the **exact blueprint §2.2 vtable ABI**
-(`fn(...) ErrorSet!T` entries) and instead exposes them as public free functions
-(`audio_wavfile.open`/`write`/`close`/`drain`); the caller assembles the
-`AudioOut` literal inline (`audio.AudioOut{ .open_fn = wav.open, …, .state = ctx }`
-with `ctx = wav.open(rate, ch)`), and no backend function returns `AudioOut`.
-Naming the error-union result types via aliases (`pub const OpenResult =
-AudioError!*void`) does **not** help — the ordering defect is independent of
-spelling — so it is not used. This is example-only and leaves the binding ABI
-unchanged; it only moves the vtable-assembly point to the caller. A related
-residual seen while landing this workaround (a mis-emitted `catch` result temp
-when a `catch` arm is a bare `noreturn` call, observed at v97 in the same
-multi-module shape) was avoided by using the established `catch { fail(...);
-return X; }` block form; it is noted here but not yet isolated as its own entry.
+**Boundary probes:** `?u8` field assignment → OK; `fn (*void) Key` → OK;
+`fn (*void) E!i32` → OK; `?struct`, `?enum`, `?union(enum)` → **fail**;
+`var x: ?Key = f();` → only `warning[3000]` (rc 0), i.e. the optional identity mismatch
+is systemic and is a hard error only on the function-pointer coercion path. A
+`*const fn (*void) ?Key` cast is accepted by the frontend but emits an undefined
+`zT_…_FP_…_Opt_` type name (still invalid C89).
 
-**Trigger refinement + workaround (M4 Task 3, `player.zig`).** A function
-*returning* the vtable is sufficient but **not necessary**: a struct that
-**embeds** the vtable struct as a field (by value) re-triggers the same
-mis-ordering, even with no function returning it. `player.Player` embeds
-`Decoder` and `audio.AudioOut` (blueprint §3.1), which re-broke the shared
-header at M4 T3 — the fnptr typedefs (`zig_special_types.h:123-137`) were
-emitted before their error unions (`:246-254`), and the T1 workaround
-(free functions + caller-assembled literal) was therefore **insufficient**.
-The minimal example-only fix is to hold the vtables **by pointer**
-(`player.decoder: *const Decoder`, `player.audio: *const audio.AudioOut`) and
-initialise a **caller-owned** `*Player` (`playerInit(p: *Player, …) PlayerError!void`),
-never returning the struct by value. This links cleanly, keeps the binding
-vtables' ABI unchanged, and is the general rule for a player/core struct: **hold
-vtables by pointer — a struct must not embed (nor a function return) an
-aggregate that carries the error-union-returning function-pointer field by
-value.** Holding or passing a vtable *by pointer* is clean; only an aggregate
-that *contains* the fnptr field by value (as a struct field or a function
-result) triggers the emission mis-order. A caller-owned (rather than returned)
-`Player` was also needed because the defect fires for any aggregate that carries
-the fnptr typedef.
+**Root cause (hypothesis).** `typeRegistryGetOrCreateOptional`
+(`sf/src/type_registry.zig:814`) caches an optional only when the payload's `state == 2`
+(layout resolved), so a field's `?Key` and a function's `?Key` can be two distinct
+synthetic optional ids; `typeRegistryIsAssignable`
+(`sf/src/type_registry.zig:1830-1849`) compares the two `fn_type`s' `return_type` ids
+directly ⇒ rejection. The emitter additionally mis-orders the fn-pointer typedef vs the
+optional-return typedef (the D8-class gap).
 
-**Proper fix (TODO, later compiler pass).** Add an `fn_type` branch to
-`tstEdgesWalk` (`sf/src/c89_emit.zig`) that records the function type's
-return-type dependency, and emit that dependency from `emitDepMember` before a
-function-pointer field typedef. Fixes the ordering without any ABI or example
-change; requires the operator to authorize a compiler change, which the
-example-only milestones deliberately avoid.
+**Example-only workaround (used by z9play M5b).** Avoid an optional-of-aggregate
+fn-pointer return: return the aggregate **directly** and add an in-band sentinel.
+`Key = union(enum){ none, char: u8, sigint, up, down, left, right, enter, esc }` with
+`readKey_fn: fn (*void) Key` ("no key ready" = `.none`). No compiler change required.
+
+**Compiler fix (not authorized).** Add the `fn_type`→`optional_type` return-type edge to
+the C89 type-dependency relation, and intern/canonicalize optional-of-aggregate so the
+fn-pointer coercion unifies. A compiler change (outside an example-only milestone);
+author under a future compiler plan.
