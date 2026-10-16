@@ -91,6 +91,17 @@ fn usageError() void {
     std.os.exit(1);
 }
 
+// `--start` takes an integer number of seconds. A non-integer / invalid value
+// (including a missing operand) prints an informative message before the usage
+// summary and still exits 1, so the failure is self-explanatory rather than a
+// bare usage dump. Other flags keep the plain `usageError` behaviour.
+fn startError() void {
+    var msg: []const u8 = "z9play: --start expects an integer number of seconds\n";
+    std.io.write(msg);
+    usage();
+    std.os.exit(1);
+}
+
 // Parse one invocation. `--help`/`--version` print and exit 0; a malformed
 // command line prints usage and exits 1. Request modes (`--info`/`--dump-setup`/
 // `--pcm`/`--wav`) are mutually exclusive and take their file operand(s)
@@ -181,11 +192,11 @@ pub fn parseArgs(argc: i32, argv: [*][*]u8) Args {
             if (mode != 0 and mode != MODE_PLAY) usageError();
             mode = MODE_PLAY;
             i += 1;
-            if (i >= n) usageError();
+            if (i >= n) startError();
             if (parseU64(argAt(argv, i))) |v| {
                 start_ms = v * 1000;
             } else {
-                usageError();
+                startError();
             }
         } else if (eq(tok, "--loop")) {
             if (mode != 0 and mode != MODE_PLAY) usageError();

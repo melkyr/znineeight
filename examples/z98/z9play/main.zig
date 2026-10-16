@@ -791,7 +791,15 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                     if (pl.state == player.PlayerState.playing) {
                         var now: u32 = std.time.ticksMs();
                         var elapsed: u64 = @intCast(u64, now - base_ticks) - paused_accum;
-                        if (pl.position_ms <= elapsed + 200) {
+                        // Pace on *played* time, not the absolute position: after
+                        // a `--start` seek the position already equals start_ms
+                        // while the wall clock has just restarted, so comparing
+                        // the absolute position would idle for start_ms. The
+                        // content is unchanged (status still shows the absolute
+                        // position).
+                        var played: u64 = 0;
+                        if (pl.position_ms > args.start_ms) played = pl.position_ms - args.start_ms;
+                        if (played <= elapsed + 200) {
                             player.playerPump(&pl) catch |e| {
                                 if (e == error.DecodeFailed) {
                                     playFail(&ts, "z9play: playback decode error\n", 3);
