@@ -911,6 +911,7 @@ fn emitTypeDefOnce(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map, gated: u8
     var dedup_key = cnameDedupKey(cname);
     if (hash_mod.u32ToU32MapGet(seen, dedup_key) != null) return;
     hash_mod.u32ToU32MapPut(seen, dedup_key, @intCast(u32, 1));
+    emitDefDeps(emitter, tid, seen, gated);
     if (gated == @intCast(u8, 0)) {
         emitTypeDefinition(emitter, tid);
         return;
@@ -1032,6 +1033,141 @@ fn emitTypeDeps(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map, gated: u8) v
     } else if (ty.kind == TypeKind.array_type) {
         var elem = emitter.registry.array_items[@intCast(usize, ty.payload_idx)].elem;
         emitDepMember(emitter, elem, seen, gated);
+    }
+}
+
+// D1 (T2 — composite typedef ordering): the kinds `emitTypeDefinition` writes
+// a typedef for. A reference to any other kind (scalars, void, pointers)
+// spells no typedef name and must not pull one (the gated form would wrap an
+// empty block and move bytes on already-valid output).
+fn kindWritesTypedef(kind: TypeKind) bool {
+    if (kind == TypeKind.slice_type) return true;
+    if (kind == TypeKind.optional_type) return true;
+    if (kind == TypeKind.error_union_type) return true;
+    if (kind == TypeKind.error_set_type) return true;
+    if (kind == TypeKind.tagged_union_type) return true;
+    if (kind == TypeKind.enum_type) return true;
+    if (kind == TypeKind.struct_type) return true;
+    if (kind == TypeKind.union_type) return true;
+    if (kind == TypeKind.packed_union_type) return true;
+    if (kind == TypeKind.array_type) return true;
+    if (kind == TypeKind.tuple_type) return true;
+    if (kind == TypeKind.i64_type) return true;
+    if (kind == TypeKind.u64_type) return true;
+    if (kind == TypeKind.f64_type) return true;
+    if (kind == TypeKind.fn_type) return true;
+    return false;
+}
+
+// D1 (T2): the definition closure of one BY-VALUE reference — the reference's
+// own typedef must precede the referrer's definition (`typedef struct {
+// Payload value; ... }` embeds Payload; `typedef Elem Name[N];` embeds Elem).
+// A pointer reference is complete as a pointer: only its chain-leaf NAME is
+// spelled (`Opt*`), and `emitPointeeDep` covers that (a forward typedef
+// suffices for named aggregates there).
+fn emitDepRef(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map, gated: u8, depth: u32) void {
+    if (depth > 16) return;
+    if (@intCast(usize, tid) >= emitter.registry.types_len) return;
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
+        var base = emitter.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+        emitPointeeDep(emitter, base, seen, gated, depth + @intCast(u32, 1));
+        return;
+    }
+    if (!kindWritesTypedef(ty.kind)) return;
+    emitTypeDefOnce(emitter, tid, seen, gated);
+}
+
+// D1 (T2): the spelling-dependency walk `emitTypeDefOnce` runs before writing
+// the definition. Every C name the definition spells must be visible first —
+// the Task-6 `emitPointeeDep` site-patch extended to the fn-pointer typedef
+// (`typedef RET (*NAME)(PARAMS);` spells its return/param names — the D1
+// shape: a fn-pointer typedef naming a `?T`/`E!T` composite typedef) and the
+// slice typedef (`typedef struct { Elem* ptr; ... }` spells its elem name),
+// plus the by-value completeness closure a pulled composite brings with it
+// (`?T`/`E!T`/`[N]T`/tuple embed their payload/elem). The typedef ordering
+// relation (`type_registry.typeRefs`) already carries these edges; the
+// emission sub-pass split (pointer-only pass before value-embedding pass) can
+// still emit a referrer first, so the refs are re-ensured at the referrer's
+// own emission site — `seen` dedup makes every pull a no-op wherever the
+// order already held (a gcc-valid output has every spelled typedef already
+// emitted before its referrer).
+fn emitDefDeps(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map, gated: u8) void {
+    if (@intCast(usize, tid) >= emitter.registry.types_len) return;
+    var reg = emitter.registry;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.fn_type) {
+        if ((ty.flags & @intCast(u8, 1)) == @intCast(u8, 0)) return;
+        var fp = reg.fn_items[@intCast(usize, ty.payload_idx)];
+        emitPointeeDep(emitter, fp.return_type, seen, gated, @intCast(u32, 0));
+        var fpend: usize = @intCast(usize, fp.params_start) + @intCast(usize, fp.params_count);
+        if (fpend <= reg.xt_len) {
+            var pi: usize = @intCast(usize, fp.params_start);
+            while (pi < fpend) : (pi += @intCast(usize, 1)) {
+                emitPointeeDep(emitter, reg.xt_items[pi], seen, gated, @intCast(u32, 0));
+            }
+        }
+        return;
+    }
+    if (ty.kind == TypeKind.slice_type) {
+        var se = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
+        emitPointeeDep(emitter, se, seen, gated, @intCast(u32, 0));
+        return;
+    }
+    if (ty.kind == TypeKind.optional_type) {
+        var op = reg.opt_items[@intCast(usize, ty.payload_idx)];
+        emitDepRef(emitter, op.payload, seen, gated, @intCast(u32, 0));
+        return;
+    }
+    if (ty.kind == TypeKind.error_union_type) {
+        var ep = reg.eu_items[@intCast(usize, ty.payload_idx)];
+        emitDepRef(emitter, ep.payload, seen, gated, @intCast(u32, 0));
+        return;
+    }
+    if (ty.kind == TypeKind.array_type) {
+        var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
+        emitDepRef(emitter, ap.elem, seen, gated, @intCast(u32, 0));
+        return;
+    }
+    if (ty.kind == TypeKind.tuple_type) {
+        var tp = reg.tup_items[@intCast(usize, ty.payload_idx)];
+        var ti2: usize = @intCast(usize, 0);
+        while (ti2 < @intCast(usize, tp.elems_count)) : (ti2 += @intCast(usize, 1)) {
+            emitDepRef(emitter, reg.xt_items[@intCast(usize, tp.elems_start) + ti2], seen, gated, @intCast(u32, 0));
+        }
+        return;
+    }
+    if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.union_type or ty.kind == TypeKind.packed_union_type) {
+        if (ty.kind == TypeKind.packed_union_type) return;
+        if (ty.kind == TypeKind.struct_type and type_mod.typeRegistryIsPacked(reg, tid)) return;
+        var fstart: u32 = @intCast(u32, 0);
+        var fcount: u16 = @intCast(u16, 0);
+        if (ty.kind == TypeKind.struct_type) {
+            var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
+            fstart = sp.fields_start; fcount = sp.fields_count;
+        } else {
+            var up = reg.un_items[@intCast(usize, ty.payload_idx)];
+            fstart = up.fields_start; fcount = up.fields_count;
+        }
+        var fi2: usize = @intCast(usize, 0);
+        while (fi2 < @intCast(usize, fcount)) : (fi2 += @intCast(usize, 1)) {
+            emitDepRef(emitter, reg.fe_items[@intCast(usize, fstart) + fi2].type_id, seen, gated, @intCast(u32, 0));
+        }
+        return;
+    }
+    if (ty.kind == TypeKind.tagged_union_type) {
+        var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
+        emitDepRef(emitter, tp.tag_type, seen, gated, @intCast(u32, 0));
+        var fi2: usize = @intCast(usize, 0);
+        while (fi2 < @intCast(usize, tp.fields_count)) : (fi2 += @intCast(usize, 1)) {
+            emitDepRef(emitter, reg.fe_items[@intCast(usize, tp.fields_start) + fi2].type_id, seen, gated, @intCast(u32, 0));
+        }
+        return;
+    }
+    if (ty.kind == TypeKind.enum_type) {
+        var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
+        emitDepRef(emitter, ep.backing_type, seen, gated, @intCast(u32, 0));
+        return;
     }
 }
 

@@ -105,6 +105,17 @@ Emission follows a strict two-phase order to satisfy C89 forward-declaration req
 
 ### 3.1 Topological Sorting of Type Dependencies
 
+[updated: 2026-10-16 — D1 composite typedef ordering (T2): `emitTypeDefOnce`
+now runs a spelling-dependency walk (`emitDefDeps`/`emitDepRef` in
+`sf/src/c89_emit.zig`) before writing a typedef — the Task-6 `emitPointeeDep`
+site-patch extended to fn-pointer return/param names and slice elem names, plus
+the by-value completeness closure of any pulled `?T`/`E!T`/`[N]T`/tuple. The
+P2 ordering relation (`type_registry.typeRefs`) already carries these edges;
+the emitter's pointer-only / value-embedding sub-pass split can still emit a
+referrer first (D1: a fn-pointer typedef naming a `?Aggregate` typedef), so the
+refs are re-ensured at the referrer's emission site (`seen` dedup makes the
+pull a no-op wherever the topological order already held).]
+
 The type registry already contains a dependency graph from Pass 4. The emitter uses Kahn's algorithm again to emit types in an order that satisfies C89's "declare before use" rule.
 
 ```zig
