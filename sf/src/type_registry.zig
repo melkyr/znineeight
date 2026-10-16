@@ -811,8 +811,75 @@ pub fn typeRegistryGetOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const:
     return tid;
 }
 
+// D1 identity: in-place completion of a cached optional created while its
+// payload was still pending. The topological pass (`typeResolverResolve`)
+// completes every pre-pass composite; this covers late requests — a later
+// GetOrCreate finding the payload now laid out completes the shared id in
+// place instead of (pre-fix) minting a second laid-out id. Guarded by
+// `payload.state == 2`, so a pending payload is never read and no layout is
+// frozen prematurely. Math is the creation-time math verbatim (mirrors
+// `layoutCompute`'s optional branch).
+fn optionalCompleteIfReady(self: *TypeRegistry, tid: u32) void {
+    if (@intCast(usize, tid) >= self.types_len) return;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.state == @intCast(u8, 2)) return;
+    if (ty.payload_idx >= @intCast(u32, self.opt_len)) return;
+    var op: OptionalPayload = self.opt_items[@intCast(usize, ty.payload_idx)];
+    if (@intCast(usize, op.payload) >= self.types_len) return;
+    var pay_type = self.types_items[op.payload];
+    if (pay_type.state != @intCast(u8, 2)) return;
+    var pay_align: u32 = if (@intCast(u32, pay_type.alignment) > @intCast(u32, 4)) @intCast(u32, pay_type.alignment) else @intCast(u32, 4);
+    var opt_size: u32 = alignUp(pay_type.size, @intCast(u32, 4)) + @intCast(u32, 4);
+    opt_size = alignUp(opt_size, pay_align);
+    ty.size = opt_size;
+    ty.alignment = @intCast(u16, pay_align);
+    ty.state = @intCast(u8, 2);
+    self.types_items[@intCast(usize, tid)] = ty;
+}
+
+// D1 identity: same in-place completion for error unions (cache is already
+// unconditional; this removes the T0 C5a residual where a state-0 EU id froze
+// a pending layout if no second request ever arrived after payload resolution).
+fn errorUnionCompleteIfReady(self: *TypeRegistry, tid: u32) void {
+    if (@intCast(usize, tid) >= self.types_len) return;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.state == @intCast(u8, 2)) return;
+    if (ty.payload_idx >= @intCast(u32, self.eu_len)) return;
+    var eup: EUPayload = self.eu_items[@intCast(usize, ty.payload_idx)];
+    if (@intCast(usize, eup.payload) >= self.types_len) return;
+    var pay_type = self.types_items[eup.payload];
+    if (pay_type.state != @intCast(u8, 2)) return;
+    var union_size = if (pay_type.size > @intCast(u32, 4)) pay_type.size else @intCast(u32, 4);
+    var union_align: u32 = if (@intCast(u32, pay_type.alignment) > @intCast(u32, 4)) @intCast(u32, pay_type.alignment) else @intCast(u32, 4);
+    var total = alignUp(union_size, union_align);
+    total = alignUp(total, @intCast(u32, 4)) + @intCast(u32, 4);
+    ty.size = alignUp(total, union_align);
+    ty.alignment = @intCast(u16, union_align);
+    ty.state = @intCast(u8, 2);
+    self.types_items[@intCast(usize, tid)] = ty;
+}
+
+// D1 identity: same in-place completion for arrays.
+fn arrayCompleteIfReady(self: *TypeRegistry, tid: u32) void {
+    if (@intCast(usize, tid) >= self.types_len) return;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.state == @intCast(u8, 2)) return;
+    if (ty.payload_idx >= @intCast(u32, self.array_len)) return;
+    var ap: ArrayPayload = self.array_items[@intCast(usize, ty.payload_idx)];
+    if (@intCast(usize, ap.elem) >= self.types_len) return;
+    var elem_ty = self.types_items[ap.elem];
+    if (elem_ty.state != @intCast(u8, 2)) return;
+    ty.size = elem_ty.size * ap.length;
+    ty.alignment = elem_ty.alignment;
+    ty.state = @intCast(u8, 2);
+    self.types_items[@intCast(usize, tid)] = ty;
+}
+
 pub fn typeRegistryGetOrCreateOptional(self: *TypeRegistry, payload: TypeId) u32 {
-    if (hash_mod.u32ToU32MapGet(&self.optional_cache, payload)) |existing| return existing;
+    if (hash_mod.u32ToU32MapGet(&self.optional_cache, payload)) |existing| {
+        optionalCompleteIfReady(self, existing);
+        return existing;
+    }
     var pay_type = self.types_items[payload];
     var opt_size: u32 = 0;
     var opt_align: u32 = 0;
@@ -832,13 +899,17 @@ pub fn typeRegistryGetOrCreateOptional(self: *TypeRegistry, payload: TypeId) u32
         .name_id = @intCast(u32, 0),
         .module_id = @intCast(u16, 0), .payload_idx = @intCast(u32, self.opt_len - @intCast(usize, 1)),
     });
-    if (opt_state == @intCast(u8, 2)) hash_mod.u32ToU32MapPut(&self.optional_cache, payload, tid);
+    // D1 identity: cache unconditionally (model: `typeRegistryGetOrCreatePtr`).
+    // The pre-fix `if (opt_state == 2)` guard left the pending twin uncached, so
+    // the next request minted a second id for the same composite.
+    hash_mod.u32ToU32MapPut(&self.optional_cache, payload, tid);
     return tid;
 }
 
 pub fn typeRegistryGetOrCreateErrorUnion(self: *TypeRegistry, payload: TypeId, error_set: TypeId) u32 {
     var eu_key: u64 = (@intCast(u64, payload) << @intCast(u64, 32)) | @intCast(u64, error_set);
     if (hash_mod.u64ToU32MapGet(&self.eu_cache, eu_key)) |existing| {
+        errorUnionCompleteIfReady(self, existing);
         return existing;
     }
     var pay_type = self.types_items[payload];
@@ -884,6 +955,7 @@ pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u
         var o1l = itoa_mod.itoa(existing, o1b[0..]);
         var o1s: usize = @intCast(usize, 19) - @intCast(usize, o1l);
         pal_mod.markerWrite(o1b[o1s..@intCast(usize, 19)]);
+        arrayCompleteIfReady(self, existing);
         return existing;
     }
     arrayAppend(self, ArrayPayload{ .elem = elem, .length = length });
@@ -908,7 +980,9 @@ pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u
     var o2l = itoa_mod.itoa(tid, o2b[0..]);
     var o2s: usize = @intCast(usize, 19) - @intCast(usize, o2l);
     pal_mod.markerWrite(o2b[o2s..@intCast(usize, 19)]);
-    if (elem_ty.state == @intCast(u8, 2)) hash_mod.u64ToU32MapPut(&self.array_cache, key, tid);
+    // D1 identity: cache unconditionally (model: `typeRegistryGetOrCreatePtr`);
+    // the pre-fix `if (elem_ty.state == 2)` guard left pending twins uncached.
+    hash_mod.u64ToU32MapPut(&self.array_cache, key, tid);
     return tid;
 }
 
@@ -1810,6 +1884,92 @@ pub fn pointerQualifiersMonotone(src_flags: u8, tgt_flags: u8, mask: u8) bool {
     return ((src_flags & mask) & ~(tgt_flags & mask)) == @intCast(u8, 0);
 }
 
+// D1 belt-and-braces: structural equivalence over the synthetic-composite
+// family (optional / error_union / array / slice / tuple / fn shape trees).
+// Everything else — primitives, named aggregates, pointers, error sets —
+// compares by id: named types stay distinct per Zig semantics, and ptr /
+// many-ptr / slice / error-set / fn constructors are already canonical.
+// Used by `typeRegistryIsAssignable`'s fn_type arm (return + params) so a
+// residual duplicate composite id cannot reject an otherwise-identical fn
+// signature. Depth-capped (synthetic payload trees are finite; the cap is
+// insurance).
+pub fn typeRegistryTypesEquiv(self: *TypeRegistry, a: TypeId, b: TypeId) bool {
+    return typesEquivRec(self, a, b, @intCast(u32, 0));
+}
+
+fn typesEquivRec(self: *TypeRegistry, a: TypeId, b: TypeId, depth: u32) bool {
+    if (a == b) return true;
+    if (depth > @intCast(u32, 16)) return false;
+    if (@intCast(usize, a) >= self.types_len) return false;
+    if (@intCast(usize, b) >= self.types_len) return false;
+    var ta = self.types_items[@intCast(usize, a)];
+    var tb = self.types_items[@intCast(usize, b)];
+    if (ta.kind != tb.kind) return false;
+    if (ta.kind == TypeKind.optional_type) {
+        if (ta.payload_idx >= @intCast(u32, self.opt_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.opt_len)) return false;
+        var oa: OptionalPayload = self.opt_items[@intCast(usize, ta.payload_idx)];
+        var ob: OptionalPayload = self.opt_items[@intCast(usize, tb.payload_idx)];
+        return typesEquivRec(self, oa.payload, ob.payload, depth + @intCast(u32, 1));
+    }
+    if (ta.kind == TypeKind.error_union_type) {
+        if (ta.payload_idx >= @intCast(u32, self.eu_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.eu_len)) return false;
+        var ea: EUPayload = self.eu_items[@intCast(usize, ta.payload_idx)];
+        var eb: EUPayload = self.eu_items[@intCast(usize, tb.payload_idx)];
+        // error sets are content-keyed canonical (`GetOrCreateErrorSet`) — id equality
+        if (ea.error_set != eb.error_set) return false;
+        return typesEquivRec(self, ea.payload, eb.payload, depth + @intCast(u32, 1));
+    }
+    if (ta.kind == TypeKind.array_type) {
+        if (ta.payload_idx >= @intCast(u32, self.array_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.array_len)) return false;
+        var aa: ArrayPayload = self.array_items[@intCast(usize, ta.payload_idx)];
+        var ab: ArrayPayload = self.array_items[@intCast(usize, tb.payload_idx)];
+        if (aa.length != ab.length) return false;
+        return typesEquivRec(self, aa.elem, ab.elem, depth + @intCast(u32, 1));
+    }
+    if (ta.kind == TypeKind.slice_type) {
+        if (ta.payload_idx >= @intCast(u32, self.slice_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.slice_len)) return false;
+        if (ta.flags != tb.flags) return false;
+        var sa: SlicePayload = self.slice_items[@intCast(usize, ta.payload_idx)];
+        var sb: SlicePayload = self.slice_items[@intCast(usize, tb.payload_idx)];
+        return typesEquivRec(self, sa.elem, sb.elem, depth + @intCast(u32, 1));
+    }
+    if (ta.kind == TypeKind.tuple_type) {
+        if (ta.payload_idx >= @intCast(u32, self.tup_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.tup_len)) return false;
+        var pa: TuplePayload = self.tup_items[@intCast(usize, ta.payload_idx)];
+        var pb: TuplePayload = self.tup_items[@intCast(usize, tb.payload_idx)];
+        if (pa.elems_count != pb.elems_count) return false;
+        var ei: u16 = 0;
+        while (ei < pa.elems_count) : (ei += 1) {
+            var xa = self.xt_items[@intCast(usize, pa.elems_start) + @intCast(usize, ei)];
+            var xb = self.xt_items[@intCast(usize, pb.elems_start) + @intCast(usize, ei)];
+            if (!typesEquivRec(self, xa, xb, depth + @intCast(u32, 1))) return false;
+        }
+        return true;
+    }
+    if (ta.kind == TypeKind.fn_type) {
+        if (ta.payload_idx >= @intCast(u32, self.fn_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.fn_len)) return false;
+        var fa: FnPayload = self.fn_items[@intCast(usize, ta.payload_idx)];
+        var fb: FnPayload = self.fn_items[@intCast(usize, tb.payload_idx)];
+        if (fa.params_count != fb.params_count) return false;
+        if (fa.flags_packed != fb.flags_packed) return false;
+        if (!typesEquivRec(self, fa.return_type, fb.return_type, depth + @intCast(u32, 1))) return false;
+        var fi: u16 = 0;
+        while (fi < fa.params_count) : (fi += 1) {
+            var xa2 = self.xt_items[@intCast(usize, fa.params_start) + @intCast(usize, fi)];
+            var xb2 = self.xt_items[@intCast(usize, fb.params_start) + @intCast(usize, fi)];
+            if (!typesEquivRec(self, xa2, xb2, depth + @intCast(u32, 1))) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
 pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: TypeId) bool {
     if (source == target) return true;
     var src = self.types_items[@intCast(usize, source)];
@@ -1831,21 +1991,11 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
         var tpp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
         var bt = self.types_items[@intCast(usize, tpp.base)];
         if (bt.kind == TypeKind.fn_type) {
-            var src_f: FnPayload = self.fn_items[@intCast(usize, src.payload_idx)];
-            var tgt_f: FnPayload = self.fn_items[@intCast(usize, bt.payload_idx)];
-            if (src_f.return_type == tgt_f.return_type
-                and src_f.params_count == tgt_f.params_count
-                and (src_f.flags_packed & @intCast(u8, 1)) == (tgt_f.flags_packed & @intCast(u8, 1))
-                and (src_f.flags_packed & @intCast(u8, 2)) == (tgt_f.flags_packed & @intCast(u8, 2)))
-            {
-                var ok: bool = true;
-                var fi: u16 = 0;
-                while (fi < src_f.params_count) : (fi += 1) {
-                    if (self.xt_items[@intCast(usize, src_f.params_start + @as(u32, fi))]
-                        != self.xt_items[@intCast(usize, tgt_f.params_start + @as(u32, fi))]) { ok = false; break; }
-                }
-                if (ok) return true;
-            }
+            // D1 belt-and-braces: structural (return + params) over the
+            // synthetic-composite family instead of raw id equality — a
+            // residual duplicate `?Key`/`E!Key`/`[N]Key` id must not reject an
+            // otherwise-identical fn signature.
+            if (typeRegistryTypesEquiv(self, source, tpp.base)) return true;
         }
     }
     if (tgt.kind == TypeKind.optional_type) {
