@@ -4,13 +4,16 @@
 // has entered raw mode. Asserts, in order:
 //   1. `enterRaw` disabled echo/canonical mode (ECHO and ICANON cleared,
 //      VMIN=VTIME=0) as read back from the live termios;
-//   2. `width`/`height` read a sane, non-zero size via ioctl(TIOCGWINSZ);
+//   2. `width`/`height` equal the real `ioctl(TIOCGWINSZ)` size *and* the
+//      harness-configured pty window (30x100), so the 80x24 fallback cannot
+//      make a broken ioctl path pass;
 //   3. a key written through the pty is read back by `readKey` (non-blocking,
 //      no echo — the harness also asserts the byte never appeared in the pty
 //      output, i.e. it was not echoed);
-//   4. the persistent escape state machine: a SPLIT `ESC` ... `[A` (250 ms gap)
-//      still resolves to `.up`; `ESC` `CR` yields `.esc` then the preserved
-//      `.enter`; a lone `ESC` resolves to `.esc` after the bounded window;
+//   4. escape decode: contiguous `ESC[A/B/C/D` -> up/down/right/left; a SPLIT
+//      `ESC` ... `[A` (250 ms gap) still resolves to `.up`; `ESC` `CR` yields
+//      `.esc` then the preserved `.enter`; a lone `ESC` resolves to `.esc`
+//      after the bounded window;
 //   5. an external SIGINT is surfaced as `Key.sigint` by the handler;
 //   6. the output operations (`clear`, `setCursor`, `writeStr`, `cursorShow`)
 //      run without crashing (their emitted escapes are asserted end-to-end by
@@ -30,10 +33,10 @@
 //   timeout 120 /tmp/z9play_seed_v98/zig1_5_clean -fsafe -o out \
 //       examples/z98/z9play/tests/console_test.zig
 //   sh out/build_target.sh linux out/prog
-//   rm -f /tmp/z9play_console.ready
-//   ( while [ ! -e /tmp/z9play_console.ready ]; do sleep 0.01; done; printf '@'; sleep 5 ) \
-//       | script -qec out/prog /dev/null
-// The full gate is tests/tier_console.sh.
+// The full gate is tests/tier_console.sh: it pins the pty window (`stty rows 30
+// cols 100`), exports Z9PLAY_CONSOLE_COLS/ROWS, feeds the byte sequence, and
+// asserts the emitted escapes. Running the program manually also needs those
+// env vars plus a windowed pty, or the size check fails by design.
 
 const std = @import("std");
 const filemod = @import("std_file");
@@ -42,6 +45,7 @@ const contract = @import("../platform/console.zig");
 
 @cInclude("<termios.h>");
 @cInclude("<signal.h>");
+@cInclude("<sys/ioctl.h>");
 
 // The test reads the live termios itself to prove raw mode was applied and
 // restored (independent of the backend's private saved copy).
@@ -58,6 +62,18 @@ const Termios = struct {
 
 extern "c" fn tcgetattr(fd: i32, termios_p: *void) i32;
 extern "c" fn raise(sig: i32) i32;
+extern "c" fn ioctl(fd: i32, request: u32, arg: *void) i32;
+
+// Linux `struct winsize` mirror so the test can read the pty size directly
+// (independent of the backend) via TIOCGWINSZ.
+const Winsize = struct {
+    ws_row: u16,
+    ws_col: u16,
+    ws_xpixel: u16,
+    ws_ypixel: u16,
+};
+
+const TIOCGWINSZ: u32 = 0x5413;
 
 const ECHO: u32 = 0x00000008;
 const ICANON: u32 = 0x00000002;
@@ -82,6 +98,51 @@ fn markerPath() []const u8 {
         if (e.len != 0) return e;
     }
     return DEFAULT_MARKER;
+}
+
+// Read an unsigned 16-bit env var (0 when unset/empty/non-numeric). The pty
+// harness sets these to the window it configured, so the size assertion cannot
+// be satisfied by the 80x24 fallback.
+fn envU16(name: []const u8) u16 {
+    var e: []const u8 = "";
+    if (std.os.env(name)) |v| {
+        e = v;
+    }
+    if (e.len == 0) return 0;
+    var acc: u32 = 0;
+    var i: usize = 0;
+    while (i < e.len) : (i += 1) {
+        var c: u8 = e[i];
+        if (c < '0' or c > '9') return 0;
+        acc = acc * 10 + @intCast(u32, c - '0');
+        if (acc > 65535) return 0;
+    }
+    return @intCast(u16, acc);
+}
+
+// Decimal u16 to stdout (evidence line for the harness).
+fn writeDec(v_in: u16) void {
+    var v: u32 = @intCast(u32, v_in);
+    if (v == 0) {
+        var z: []const u8 = "0";
+        std.io.write(z);
+        return;
+    }
+    var tmp: [5]u8 = undefined;
+    var n: usize = 0;
+    while (v > 0) {
+        tmp[n] = @intCast(u8, v % 10) + '0';
+        v = v / 10;
+        n += 1;
+    }
+    var out: [5]u8 = undefined;
+    var i: usize = 0;
+    while (i < n) : (i += 1) out[i] = tmp[n - 1 - i];
+    std.io.write(out[0..n]);
+}
+
+fn writeText(s: []const u8) void {
+    std.io.write(s);
 }
 
 fn fail(msg: []const u8) void {
@@ -178,11 +239,27 @@ pub fn main() void {
     if (raw.c_cc[VMIN] != 0) fail("vmin not 0");
     if (raw.c_cc[VTIME] != 0) fail("vtime not 0");
 
-    // 2. Window size reads a sane, non-zero size (ioctl TIOCGWINSZ).
+    // 2. Window size: the harness sets the pty to 30x100 via `stty`; the backend
+    //    must report the real ioctl(TIOCGWINSZ) size, not the 80x24 fallback.
+    //    The test reads the size directly too and requires agreement, so a
+    //    broken ioctl path cannot pass on the fallback.
+    var wsz: Winsize = undefined;
+    if (ioctl(0, TIOCGWINSZ, @ptrCast(*void, &wsz)) != 0) fail("test ioctl TIOCGWINSZ failed");
+    if (wsz.ws_col == 0 or wsz.ws_row == 0) fail("pty reported 0x0 size");
     var w: u16 = cs.width_fn(cs.state);
     var h: u16 = cs.height_fn(cs.state);
-    if (w == 0) fail("width is zero");
-    if (h == 0) fail("height is zero");
+    if (w != wsz.ws_col) fail("width does not match ioctl");
+    if (h != wsz.ws_row) fail("height does not match ioctl");
+    var cols: u16 = envU16("Z9PLAY_CONSOLE_COLS");
+    var rows: u16 = envU16("Z9PLAY_CONSOLE_ROWS");
+    if (cols == 0 or rows == 0) fail("size env not set");
+    if (w != cols) fail("width does not match pty window");
+    if (h != rows) fail("height does not match pty window");
+    writeText("console_test: SIZE w=");
+    writeDec(w);
+    writeText(" h=");
+    writeDec(h);
+    writeText("\n");
 
     touchMarker();
 
@@ -206,6 +283,12 @@ pub fn main() void {
         std.io.sleepMs(1);
     }
     if (got_key == 0) fail("key not read back");
+
+    // 3a. Contiguous arrows: `ESC[A/B/C/D` -> `.up/.down/.right/.left`.
+    if (!waitTag(cs, TAG_UP, 3000)) fail("contiguous ESC[A not decoded to .up");
+    if (!waitTag(cs, TAG_DOWN, 3000)) fail("contiguous ESC[B not decoded to .down");
+    if (!waitTag(cs, TAG_RIGHT, 3000)) fail("contiguous ESC[C not decoded to .right");
+    if (!waitTag(cs, TAG_LEFT, 3000)) fail("contiguous ESC[D not decoded to .left");
 
     // 3b. Split escape sequence: the harness writes ESC now and `[A` ~250 ms
     //     later. The persistent parse state must still resolve it to `.up`; a
@@ -245,7 +328,7 @@ pub fn main() void {
 
     var p: []const u8 = "console_test: PASS echo=off key=64 sigint=1 restored=1\n";
     std.io.write(p);
-    var e: []const u8 = "console_test: ESC split=up preserve=enter lone=esc\n";
+    var e: []const u8 = "console_test: ESC contig=udrl split=up preserve=enter lone=esc\n";
     std.io.write(e);
     var q: []const u8 = "console_test: OPS clear=1 setcursor=1 writestr=1 cursor=1 size=ok\n";
     std.io.write(q);

@@ -4,7 +4,7 @@
 // audio_oss_pal.zig: an `extern "c" fn` may be declared at module scope but NOT
 // inside a struct, and a same-named extern cannot coexist with the backend's
 // public function in one module. The backend therefore owns the public console
-// API (`termEnterRaw`/`termLeaveRaw`/`readKey`) and calls the C library through
+// API (`enterRaw`/`leaveRaw`/`readKey`) and calls the C library through
 // this PAL module.
 //
 // The prototypes are made visible to gcc by the headers console_linux.zig
