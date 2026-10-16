@@ -1,6 +1,6 @@
 // console_test.zig — pty unit test for the complete Linux console backend (M5b T2).
 //
-// Run under a pty (`script`) with the harness feeding keys after the backend
+// Run under a pty (`script`) with the harness feeding bytes after the backend
 // has entered raw mode. Asserts, in order:
 //   1. `enterRaw` disabled echo/canonical mode (ECHO and ICANON cleared,
 //      VMIN=VTIME=0) as read back from the live termios;
@@ -8,11 +8,17 @@
 //   3. a key written through the pty is read back by `readKey` (non-blocking,
 //      no echo — the harness also asserts the byte never appeared in the pty
 //      output, i.e. it was not echoed);
-//   4. an external SIGINT is surfaced as `Key.sigint` by the handler;
-//   5. the output operations (`clear`, `setCursor`, `writeStr`, `cursorShow`)
+//   4. the persistent escape state machine: a SPLIT `ESC` ... `[A` (250 ms gap)
+//      still resolves to `.up`; `ESC` `CR` yields `.esc` then the preserved
+//      `.enter`; a lone `ESC` resolves to `.esc` after the bounded window;
+//   5. an external SIGINT is surfaced as `Key.sigint` by the handler;
+//   6. the output operations (`clear`, `setCursor`, `writeStr`, `cursorShow`)
 //      run without crashing (their emitted escapes are asserted end-to-end by
 //      the pty harness);
-//   6. `leaveRaw` restored the original termios (c_iflag/c_lflag/c_cc).
+//   7. `leaveRaw` restored the original termios (c_iflag/c_lflag/c_cc).
+//
+// `readKey` returns `Key` (`.`none` when nothing is pending) rather than
+// `?Key` — compiler defect D1; the in-band sentinel is the workaround.
 //
 // The test assembles the `Console` vtable literal and drives every operation
 // through it, exactly as the CLI does (compiler defect D8: no function here
@@ -100,6 +106,47 @@ fn touchMarker() void {
     filemod.close(&f);
 }
 
+// Key discriminants for the lookup helpers below (a tagged union cannot be
+// compared directly in Z98).
+const TAG_NONE: u8 = 0;
+const TAG_CHAR: u8 = 1;
+const TAG_SIGINT: u8 = 2;
+const TAG_UP: u8 = 3;
+const TAG_DOWN: u8 = 4;
+const TAG_LEFT: u8 = 5;
+const TAG_RIGHT: u8 = 6;
+const TAG_ENTER: u8 = 7;
+const TAG_ESC: u8 = 8;
+
+fn keyTag(k: contract.Key) u8 {
+    switch (k) {
+        .none => return TAG_NONE,
+        .char => return TAG_CHAR,
+        .sigint => return TAG_SIGINT,
+        .up => return TAG_UP,
+        .down => return TAG_DOWN,
+        .left => return TAG_LEFT,
+        .right => return TAG_RIGHT,
+        .enter => return TAG_ENTER,
+        .esc => return TAG_ESC,
+        else => return 255,
+    }
+}
+
+// Poll `readKey` until `want` arrives. `.none` (nothing pending) is skipped; a
+// different non-`.none` key is a failure. Returns false on timeout.
+fn waitTag(cs: contract.Console, want: u8, timeout_ms: u32) bool {
+    var i: u32 = 0;
+    while (i < timeout_ms) : (i += 1) {
+        var k: contract.Key = cs.readKey_fn(cs.state);
+        var t: u8 = keyTag(k);
+        if (t == want) return true;
+        if (t != TAG_NONE) return false;
+        std.io.sleepMs(1);
+    }
+    return false;
+}
+
 pub fn main() void {
     var orig: Termios = undefined;
     _ = tcgetattr(0, @ptrCast(*void, &orig));
@@ -139,7 +186,7 @@ pub fn main() void {
 
     touchMarker();
 
-    // 3. Read the key the harness writes after the marker (non-blocking poll;
+    // 3. Read the char the harness writes after the marker (non-blocking poll;
     //    `readKey` returns `.none` until the byte arrives).
     var got_key: i32 = 0;
     var i: usize = 0;
@@ -160,22 +207,23 @@ pub fn main() void {
     }
     if (got_key == 0) fail("key not read back");
 
+    // 3b. Split escape sequence: the harness writes ESC now and `[A` ~250 ms
+    //     later. The persistent parse state must still resolve it to `.up`; a
+    //     one-shot decode would return `.esc` and leak the `[`/`A` as chars.
+    if (!waitTag(cs, TAG_UP, 3000)) fail("split ESC [A not decoded to .up");
+
+    // 3c. ESC immediately followed by CR: `.esc`, then the preserved CR as its
+    //     own `.enter` (the non-'[' byte must not be swallowed).
+    if (!waitTag(cs, TAG_ESC, 3000)) fail("ESC CR not decoded to .esc");
+    if (!waitTag(cs, TAG_ENTER, 3000)) fail("ESC CR did not preserve .enter");
+
+    // 3d. A truly lone ESC (no tail ever arrives) resolves to `.esc` once the
+    //     bounded disambiguation window elapses.
+    if (!waitTag(cs, TAG_ESC, 3000)) fail("lone ESC not decoded to .esc");
+
     // 4. External SIGINT is surfaced as Key.sigint by the handler.
     _ = raise(SIGINT);
-    var got_sig: i32 = 0;
-    i = 0;
-    while (i < 2000) : (i += 1) {
-        var k: contract.Key = cs.readKey_fn(cs.state);
-        switch (k) {
-            .sigint => {
-                got_sig = 1;
-                break;
-            },
-            else => {},
-        }
-        std.io.sleepMs(1);
-    }
-    if (got_sig == 0) fail("sigint not surfaced");
+    if (!waitTag(cs, TAG_SIGINT, 2000)) fail("sigint not surfaced");
 
     // 5. Output operations: exercise every remaining op through the vtable.
     // Their emitted ANSI escapes are asserted end-to-end by the pty harness.
@@ -197,6 +245,8 @@ pub fn main() void {
 
     var p: []const u8 = "console_test: PASS echo=off key=64 sigint=1 restored=1\n";
     std.io.write(p);
+    var e: []const u8 = "console_test: ESC split=up preserve=enter lone=esc\n";
+    std.io.write(e);
     var q: []const u8 = "console_test: OPS clear=1 setcursor=1 writestr=1 cursor=1 size=ok\n";
     std.io.write(q);
     std.os.exit(0);

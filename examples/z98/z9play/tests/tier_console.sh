@@ -1,21 +1,26 @@
 #!/bin/sh
-# tier_console.sh — z9play M5 Task 2 gate: Linux raw-console key input.
+# tier_console.sh — z9play M5b Task 2 gate: Linux console backend.
 #
 # Builds tests/console_test.zig with the binding seed recipe under -fsafe, then
 # runs it under a pty (`script`) and asserts:
-#   1. the test exits 0 and prints the PASS line — i.e. `termEnterRaw` really
+#   1. the test exits 0 and prints the PASS line — i.e. `enterRaw` really
 #      disabled echo/canonical mode (ECHO/ICANON cleared, VMIN=VTIME=0, read
 #      back from the live termios), a key written through the pty was returned
 #      by `readKey`, an external SIGINT was surfaced as `Key.sigint`, and
-#      `termLeaveRaw` restored the original termios (c_iflag/c_lflag/c_cc);
-#   2. END-TO-END no-echo: the harness sends the key only after the program
+#      `leaveRaw` restored the original termios (c_iflag/c_lflag/c_cc);
+#   2. the persistent ESC state machine: the harness feeds ESC now and `[A`
+#      ~250 ms later (a split read(2) delivery); the program must still report
+#      `.up`, `ESC` `CR` must give `.esc` then `.enter`, and a lone ESC must
+#      resolve to `.esc`;
+#   3. END-TO-END no-echo: the harness sends bytes only after the program
 #      signals (via a ready marker) that raw mode is active, so the key must
 #      never appear in the pty output; an echo leak fails this check.
 #
-# Non-vacuous: the PASS line is unreachable unless the live-termios checks and
-# the restore comparison hold (a control run with ECHO left on fails with
-# "echo not disabled"), and the key feed is proven live because the program
-# blocks until the byte arrives.
+# Non-vacuous: the PASS line is unreachable unless the live-termios checks, the
+# escape assertions and the restore comparison hold (a control run with ECHO
+# left on fails with "echo not disabled"; a one-shot decoder fails the split
+# ESC[A check), and the key feed is proven live because the program blocks
+# until the byte arrives.
 #
 # Exits non-zero on any failure and prints a PASS/FAIL summary. POSIX sh +
 # coreutils + `script` (pty). Run from anywhere (paths resolved from the
@@ -74,15 +79,25 @@ export Z9PLAY_CONSOLE_MARKER="$MARKER"
 rm -f "$MARKER"
 
 echo "== console_test under a pty (script) =="
-# The writer waits for the program's ready marker (raw mode already active)
-# before sending the key; it then waits for the PASS/FAIL line before closing
-# the pipe, so the pty is never starved of input.
+# The writer waits for the program's ready marker (raw mode already active),
+# then feeds: the basic key, a SPLIT escape sequence (ESC ... ≥200 ms ... `[A`)
+# to exercise the persistent escape state machine, and `ESC` immediately
+# followed by CR to exercise byte preservation. It then waits for the PASS/FAIL
+# line before closing the pipe, so the pty is never starved of input.
 (
     i=0
     while [ ! -e "$MARKER" ] && [ "$i" -lt 2000 ]; do sleep 0.01; i=$((i + 1)); done
     printf '%s' "$KEY_CHAR"
+    sleep 0.05
+    printf '\033'
+    sleep 0.25
+    printf '[A'
+    sleep 0.05
+    printf '\033\r'
+    sleep 0.05
+    printf '\033'
     j=0
-    while [ "$j" -lt 2000 ]; do
+    while [ "$j" -lt 6000 ]; do
         if grep -q 'console_test: \(PASS\|FAIL\)' "$OUT/console.out" 2>/dev/null; then break; fi
         sleep 0.01
         j=$((j + 1))
@@ -99,6 +114,12 @@ if grep -q 'console_test: PASS echo=off key=64 sigint=1 restored=1' "$OUT/consol
     pass_case "raw enter/read/sigint/restore asserted by the program"
 else
     fail_case "console_test PASS line missing ($(tr -d '\r' <"$OUT/console.out" 2>/dev/null))"
+fi
+
+if grep -q 'console_test: ESC split=up preserve=enter lone=esc' "$OUT/console.out"; then
+    pass_case "escape state machine: split ESC[A -> up; ESC CR -> esc then enter; lone ESC -> esc"
+else
+    fail_case "escape-decode line missing ($(tr -d '\r' <"$OUT/console.out" 2>/dev/null))"
 fi
 
 if [ -e "$MARKER" ]; then

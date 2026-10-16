@@ -76,10 +76,20 @@ const Termios = struct {
 };
 
 // Caller-owned Linux console state: the original termios plus whether raw mode
-// is currently in effect (so `leaveRaw` is safe to call unconditionally).
+// is currently in effect (so `leaveRaw` is safe to call unconditionally), and
+// the persistent escape-parse state. The escape state is carried here (not in a
+// `readKey` local) so a sequence split across separate `readKey` calls still
+// resolves: `esc_phase` is 0 (idle), 1 (ESC seen, awaiting `[`) or 2 (ESC `[`
+// seen, awaiting the final byte), and `pending_byte` holds a byte already
+// consumed as the tail of a non-arrow escape so it can be returned as its own
+// key on the next call (e.g. `ESC` `CR` -> `.esc`, then `.enter`).
 pub const ConsoleLinState = struct {
     saved: Termios,
     entered: bool,
+    esc_phase: u8,
+    esc_start: u32,
+    pending_byte: u8,
+    pending_valid: bool,
 };
 
 // termios(3) constants (linux x86 numeric values; deliberately not the macros).
@@ -107,6 +117,14 @@ const TIOCGWINSZ: u32 = 0x5413;
 // ASCII ESC and the arrow-sequence tail bytes.
 const ESC: u8 = 0x1b;
 
+// Inter-byte disambiguation window for the escape state machine. After an ESC
+// (or an ESC `[`) the parser keeps the sequence "open" for this many ms; if no
+// next byte arrives the pending ESC resolves to `.esc`. The machine is
+// non-blocking (each `readKey` still returns `.none` when idle), so this window
+// is not a stall — it only bounds how long a lone ESC waits before it is
+// reported. Splits observed under a pty at 200 ms must resolve, hence 1000 ms.
+const ESC_WINDOW_MS: u32 = 1000;
+
 // Set by the SIGINT handler; sticky until the next `enterRaw`. A byte is enough
 // (the handler is async-signal-safe: one store).
 var g_sigint: u8 = 0;
@@ -128,6 +146,9 @@ pub fn enterRaw(state: *void) void {
     var st: *ConsoleLinState = @ptrCast(*ConsoleLinState, state);
     g_sigint = 0;
     st.entered = false;
+    st.esc_phase = 0;
+    st.esc_start = 0;
+    st.pending_valid = false;
     if (pal.tcgetattr(0, @ptrCast(*void, &st.saved)) != 0) return;
 
     var raw: Termios = st.saved;
@@ -152,45 +173,93 @@ pub fn leaveRaw(state: *void) void {
 
 // --- vtable implementation: key input -------------------------------------
 
-// One more byte from stdin, or -1 when none is ready (read is non-blocking).
-fn readMoreByte() i32 {
+// One byte from stdin, or -1 when none is ready (read is non-blocking, VMIN=0).
+fn pullByte() i32 {
     var b: [1]u8 = undefined;
     var n: i32 = pal.read(0, @ptrCast([*]u8, &b[0]), 1);
     if (n == 1) return @intCast(i32, b[0]);
     return -1;
 }
 
-// Decode the bytes following a lone ESC: `[A/B/C/D` -> the arrow keys; anything
-// else (including a sequence whose tail has not arrived yet, since reads are
-// non-blocking) -> `.esc`.
-fn decodeEscape() Key {
-    var b1: i32 = readMoreByte();
-    if (b1 != 91) return Key{ .esc = {} }; // '['
-    var b2: i32 = readMoreByte();
-    if (b2 == 65) return Key{ .up = {} };    // 'A'
-    if (b2 == 66) return Key{ .down = {} };  // 'B'
-    if (b2 == 67) return Key{ .right = {} }; // 'C'
-    if (b2 == 68) return Key{ .left = {} };  // 'D'
-    return Key{ .esc = {} };
-}
-
 // `Console.readKey_fn`: return the next key. Non-blocking (VMIN=0): a
 // `read(2)` returning no byte yields `.none`. A pending SIGINT takes priority
-// and yields `.sigint` (sticky). A lone ESC is decoded as an arrow sequence;
-// CR/LF -> `.enter`; any other byte -> `.char`.
+// and yields `.sigint` (sticky).
+//
+// ESC handling is a persistent parse state machine carried in `st` (not a
+// one-shot local), so a sequence split across separate `readKey` calls still
+// resolves. `esc_phase` 1 = ESC seen (awaiting `[`), 2 = ESC `[` seen
+// (awaiting the final byte). If the final byte is `A/B/C/D` the arrow is
+// returned; a byte that follows ESC but is not part of an arrow is preserved in
+// `pending_byte` and returned as its own key on the next call (so `ESC` `CR`
+// yields `.esc` then `.enter`, never swallowing the CR). A lone/incomplete ESC
+// resolves to `.esc` once `ESC_WINDOW_MS` elapses with no further byte; while
+// the sequence is open, `readKey` still returns `.none` when idle (no stall).
+// A fresh CR/LF -> `.enter`; any other fresh byte -> `.char`.
 pub fn readKey(state: *void) Key {
-    _ = state;
+    var st: *ConsoleLinState = @ptrCast(*ConsoleLinState, state);
     if (g_sigint != 0) return Key{ .sigint = {} };
-    var b: [1]u8 = undefined;
-    var n: i32 = pal.read(0, @ptrCast([*]u8, &b[0]), 1);
-    if (n != 1) {
-        if (n < 0 and g_sigint != 0) return Key{ .sigint = {} };
-        return Key{ .none = {} };
+
+    while (true) {
+        // A preserved escape tail is returned first, as its own key (it may
+        // itself be an ESC, starting a new sequence).
+        if (st.pending_valid) {
+            var pb: u8 = st.pending_byte;
+            st.pending_valid = false;
+            if (pb == ESC) {
+                st.esc_phase = 1;
+                st.esc_start = std.time.ticksMs();
+                continue;
+            }
+            if (pb == '\r' or pb == '\n') return Key{ .enter = {} };
+            return Key{ .char = pb };
+        }
+
+        // Continue an open escape sequence.
+        if (st.esc_phase != 0) {
+            var b: i32 = pullByte();
+            if (b < 0) {
+                if (std.time.ticksMs() - st.esc_start >= ESC_WINDOW_MS) {
+                    st.esc_phase = 0;
+                    return Key{ .esc = {} };
+                }
+                return Key{ .none = {} };
+            }
+            var c: u8 = @intCast(u8, b);
+            if (st.esc_phase == 1) {
+                if (c == 91) { // '['
+                    st.esc_phase = 2;
+                    st.esc_start = std.time.ticksMs();
+                    continue;
+                }
+                st.esc_phase = 0;
+                st.pending_byte = c;
+                st.pending_valid = true;
+                return Key{ .esc = {} };
+            }
+            // esc_phase == 2: the final byte of an `ESC [ x` sequence.
+            st.esc_phase = 0;
+            if (c == 65) return Key{ .up = {} };    // 'A'
+            if (c == 66) return Key{ .down = {} };  // 'B'
+            if (c == 67) return Key{ .right = {} }; // 'C'
+            if (c == 68) return Key{ .left = {} };  // 'D'
+            st.pending_byte = c;
+            st.pending_valid = true;
+            return Key{ .esc = {} };
+        }
+
+        // Idle: pull a fresh byte. ESC arms the sequence and the loop advances
+        // immediately (contiguous `ESC [ A` resolves in one call).
+        var b2: i32 = pullByte();
+        if (b2 < 0) return Key{ .none = {} };
+        var c2: u8 = @intCast(u8, b2);
+        if (c2 == ESC) {
+            st.esc_phase = 1;
+            st.esc_start = std.time.ticksMs();
+            continue;
+        }
+        if (c2 == '\r' or c2 == '\n') return Key{ .enter = {} };
+        return Key{ .char = c2 };
     }
-    var c: u8 = b[0];
-    if (c == ESC) return decodeEscape();
-    if (c == '\r' or c == '\n') return Key{ .enter = {} };
-    return Key{ .char = c };
 }
 
 // --- vtable implementation: output ----------------------------------------
