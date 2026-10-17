@@ -288,3 +288,125 @@ both (no garbage store).
 - **Deferred minors.** (none raised this round — the temporary debug probes
   were removed before the canonical build; the `true`/`false`-no-else switch
   spelling observation stays T0's, out of scope).
+
+## Fix round (C1b + C2)
+
+Operator rulings (Amendment 2, `8c1733ca`): C1b implement true Zig laziness
+(touch set += `sf/src/main.zig`); C2 fix the `child_buf` clobber now; C3/C4
+stay disclosed, unfixed. Gate compiler `/tmp/d1d2_t4/zig1_5_clean`, fixed
+point **`20bd1a526abaf837190a53ae9f1b2f1a`** (old `e7099859f44e8050e7738be8545e8a58`).
+
+### Mechanism
+
+**C1b — dead-arm `@import` never loads its file.** `parserParseImportExpr`
+skips `moduleRegistryResolveImport` when `Parser.dead_import_depth > 0`
+(an `@import` inside a comptime-untaken `if`/`switch` arm body). The arm
+context is tracked at the only place the condition is visible while the arm
+parses — the parser itself:
+
+- `parserParseIfExpr`/`parserParseIfStmt`: fold the condition with
+  `parserFoldComptimeBool` (capture-free); untaken then/else bodies parse at
+  `dead_import_depth+1` (nested structures inherit it; restore on exit).
+- `parserParseSwitchExpr`/`parserParseSwitchProng`: the folded switch value
+  selects ONE live prong (bool case items + `else`, first match wins — the
+  C4 idiom spelling); every other prong body parses at `dead_import_depth+1`.
+- `parserFoldComptimeBool` folds exactly what is knowable before any module
+  analysis: `true`/`false` literals, `!`/`and`/`or` compounds, zero-arg
+  `@isWindows()` (text-compared; target polarity via
+  `ModuleRegistry.target_is_windows`, set from `cli.target_is_windows` in
+  `main.zig`), and already-parsed immutable `const` bindings (a parse-time
+  const map — block-scoped via `parserParseBlock`'s watermark). Anything
+  else returns null → eager loading (conservative: a live import is never
+  under-loaded).
+- The `import_expr` node is still created (T3's fold stamps the dead arm
+  `TYPE_NORETURN`; consumers of an unregistered path fall back to `void`).
+- Module-scope conditional bindings: `semanticAnalyzerResolveModuleVarDecl`
+  returns `void` for the if/switch-of-imports shape (module values have no C
+  spelling — the storage slot keeps its disclosed-C3 `int` form); the SYMBOL
+  is typed at use sites by T4's `semanticAnalyzerResolveIdent` module-alias
+  fold.
+
+**C2 — `parserParseBuiltinCall` `@import` `child_buf_len = 0` clobber
+deleted.** The `@import` arm appends nothing to `child_buf`, so the standard
+saved/append/listEnd protocol is correct without the reset. T4's switch-local
+prong list stays.
+
+**Investigation finding (id-order dependence).** The first implementation
+interned `"@isWindows"` in `parserInitCommon` for the probe. The interner
+assigns ids in INSERTION ORDER (`stringInternerIntern` returns the entry
+index) — an extra intern before source lexing shifts EVERY later identifier
+id. Measured: that shift ALONE flips `stdlib_crypto_modpow_xmod` OK→GREEN
+(`error[3000]: unable to infer array size`, attributed to `std_io.zig:64`):
+`git archive a7828e5e` baseline rebuilt clean → + 5 dummy `Parser` struct
+fields (PASS) → + one extra early intern of ANY string ("@isWindows" OR a
+never-used "@isWindowz") → FAIL. The latent id-order dependence is
+pre-existing (out of scope); the fix avoids it entirely — the probe
+recognizes `@isWindows` by TEXT, so the compiler interns nothing new and
+interner ids stay byte-identical to T4. (Bisect artifacts: probe body /
+const-map recording / C2 delete / semantic gate were each individually
+suspect until the interning confound was isolated; all are restored and the
+battery below is the authoritative evidence.)
+
+### Probes (before → after)
+
+| probe | before (T4 `e7099859…`) | after (fix round `20bd1a52…`) |
+|---|---|---|
+| dead-arm pin `if (false) @import("missing.zig") else @import("real.zig")` | `error[3048] … 'missing.zig'` rc 2 | silent rc 0; runs `real ping\ncond import lazy ok\n` |
+| target polarity `if (@isWindows()) @import("missing.zig") else @import("real.zig")` | rc 2 both targets (eager) | linux silent rc 0 (`real ping\npolar ok\n`); `-osw` rc 2 `error[3048] missing.zig` (LIVE arm must resolve — target-selected, not suppression) |
+| switch form `switch (false) { true => @import("missing.zig"), else => @import("real.zig") }` | rc 2 (eager) | silent rc 0; runs `real ping\nlazy sw ok\n` |
+| C2 call args `three(1, @import("real.zig").k, 3)` | `error[3061]: expected 3 argument(s), found 2` rc 2 | rc 0, runs `c2 ok` |
+| C2 tuple `.{ 1, @import("real.zig").k, 3 }` | silently 2 elements (`._0=7; ._1=3` in C) | 3 elements |
+| C2 array `[_]i32{ 1, @import("real.zig").k, 3 }` | `error[3062]: index 2 outside array of length 2` rc 2 | rc 0, runs `c2 array ok` |
+
+Fixture pin added (T0 R1 convention): `repro/mi_matrix/conditional_import_lazy_xmod`
+(`if (false)` + `switch (false)` twins over a MISSING dead-arm file;
+`missing.zig` deliberately absent). RED record `expected_error.txt`=`3048 2`
+(pre-C1b rc 2 ×2), goldens captured at the flip (`expected.txt` 40 B
+`real ping\nreal ping\ncond import lazy ok\n`, `expected.rc` 0). Both T4
+fixtures stay green and now hold "only the live module is resolved/emitted"
+at PARSE level too (`a_*`/`b_*` hashes unchanged on `-osw`:
+`a_67A30D4C`/`a_2F9C6941`).
+
+### Runtime battery
+
+8 items, command + observed output. Sequential runs (spill-file race).
+
+| # | gate | command | observed | verdict |
+|---|---|---|---|---|
+| 1 | seed two-hop | `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/d1d2_t4` | hop2 == hop3 == `20bd1a526abaf837190a53ae9f1b2f1a` (old `e7099859…`) | MATCH (moving point) |
+| 2 | corpus | `bash scripts/corpus/classify /tmp/d1d2_t4/zig1_5_clean …corpus_fix2.txt` | 1133 dirs; frozen 1124 md5 `518eca1a9b5d3e1cc5a48abce214abd8` (diff vs T0 EMPTY); tally 959 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH | frozen 0 movers; designed +1 (`conditional_import_lazy` FAIL→OK); 9/9 designed OK |
+| 3 | goldens 5/5 | gol/lisp/json/mud builds + runs | `fcbf7e7c…`, `b3d9f897…`, `8bda3d5a…`, `66c8f0ab…`, `93147d0f…` | 5/5 MATCH |
+| 4 | mi frozen-25 + oob | `run_fixtures.sh <25>`; oob `-fsafe` | 25 PASS / 0 FAIL; oob rc 133, 0 B, `d41d8cd9…` | MATCH |
+| 5 | examples | build+run 26 dirs (CWD=example-dir) | 26/26 build; 26/26 md5s match the T0/T3 table (`8c0d394c`…`f666af15`) | MATCH |
+| 6 | stdlib | `bash scripts/stdlib/verify_stdlib.sh …` | 285 PASS / 0 FAIL, STDLIB GATE OK | MATCH |
+| 7 | 8 pins | `zig1_5_clean <mode> --dump-c89 <ENTRY> \| md5sum` | all 8 digests == T3 table | 0/8 movers |
+| 8 | markers | `--markers --dump-c89 examples/z98/game_of_life/main.zig` | 3436 lines / 38371 B | unchanged |
+
+Fixture cross-checks (green contracts, both targets): `conditional_import_if_xmod`
+linux `b ping\ncond import if ok\n` rc 0 / `-osw`+mingw+wine `a ping\n…` rc 0
+(`a_*`/`b_*` only); `conditional_import_switch_xmod` likewise (`…switch ok`);
+`conditional_import_lazy_xmod` run_fixtures 3x byte-identical rc 0.
+
+### Concerns (fix round)
+
+- **F1 (latent interner id-order dependence — pre-existing, disclosed).** An
+  intern added before source lexing shifts every later identifier id and
+  deterministically flips `stdlib_crypto_modpow_xmod` OK→GREEN (measured on
+  the pristine baseline: dummy fields pass, one extra intern of ANY text
+  fails). Root channel unidentified (candidates: id-keyed caches/mangling
+  internals); out of T4 scope. The T4 code interns nothing new (probe is
+  text-compared) and the frozen-1124 gate is byte-clean, but any future code
+  that interns early will re-trip it. Recommend a dedicated investigation.
+- **F2 (probe coverage boundary, disclosed).** `parserFoldComptimeBool` folds
+  literals/compounds/`@isWindows`/same-module in-order `const` bools; a
+  cross-module const condition (`if (cfg.flag) @import("missing.zig") …`) or
+  a forward-referenced local const is NOT folded at parse time → the dead
+  arm's import still loads (and a missing one still errors). Conservative
+  direction (never under-loads a live import); full Zig parity for those
+  shapes needs symbol-aware folding later in the pipeline (touch-set widen).
+- **F3 (C3/C4 unchanged, per ruling).** `int zG_impl` storage slot remains;
+  switch live-prong match remains bool-case+else only.
+- **F4 (fn-param flat `child_buf` protocol).** `parserParseFnDecl`'s param
+  list uses a flat `child_buf_len = 0` protocol that clobbers an enclosing
+  list when a fn-type appears inside one (same class as C2, different site).
+  Pre-existing; not fixed here (no unrelated fixes).
