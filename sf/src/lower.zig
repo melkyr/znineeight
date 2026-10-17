@@ -6832,10 +6832,25 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             // lower the arm with `lowerIfArmValue` (which lowerStmt()s a
             // return/break/continue) and, when the arm terminated the block,
             // return the "no value" sentinel without materialising anything --
-            // the caller sees `block_terminated` and skips its store. The
-            // `ie_rtype3 != TYPE_NORETURN` guard is kept as a second line of
-            // defence (the resolved type may already be stamped noreturn).
-            if (ast_mod.astStoreNodePayload(store, node_idx) == @intCast(u32, 0) and ie_rtype3 != type_mod.TYPE_NORETURN) {
+            // the caller sees `block_terminated` and skips its store.
+            // T3 (spec §3, supersedes the old `ie_rtype3 != TYPE_NORETURN`
+            // second-line guard): a noreturn-typed folded `if` now eliminates
+            // the untaken arm too — the sema gate left it un-analyzed, so
+            // lowering it would read unresolved nodes (sema/lowering
+            // coherence). The live arm is lowered and the block is marked
+            // terminated, mirroring the A19 divergence construct on one arm.
+            if (ast_mod.astStoreNodePayload(store, node_idx) == @intCast(u32, 0)) {
+                if (ie_rtype3 == type_mod.TYPE_NORETURN) {
+                    if (ie_fv) {
+                        _ = lowerIfArmValue(self, node.child_1);
+                    } else {
+                        if (node.child_2 != @intCast(u32, 0)) {
+                            _ = lowerIfArmValue(self, node.child_2);
+                        }
+                    }
+                    self.block_terminated = @intCast(u8, 1);
+                    return @intCast(u32, 0);
+                }
                 // Task 9D (ii): a void-typed folded if_expr produces no value;
                 // skip the result temp and return the "no value" sentinel.
                 var ie_fold_void: u8 = @intCast(u8, 0);

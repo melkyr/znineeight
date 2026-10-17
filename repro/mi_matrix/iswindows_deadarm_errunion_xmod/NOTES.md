@@ -55,3 +55,23 @@ No runtime golden is measurable pre-fix (host gcc dies on the wrong-platform
 include). zT_missing_fwd_xmod defect-repro shape (NOTES + sources). T3 captures
 goldens at fix time (GREEN contract in main.zig header). The host-neutral twin
 `iswindows_deadarm_prune_xmod` carries the pre-fix-measurable runtime golden.
+
+## Post-fix measured (2026-10-16, T3 gate compiler `/tmp/d1d2_t3/zig1_5_clean`)
+**Mechanism correction (supersedes the "Mechanism" section above):** T3's
+probe matrix (`task-3-report.md` §Investigate) shows the operative pin was
+the **runtime-init root seed** in `sf/src/main.zig` (a module with a
+runtime-initialized global — this fixture's `var g: u32 = 0` — was
+force-reached regardless of call/type reachability), not the
+`pruneTypeMarkByValue` type-owner channel. The all-fn LIR scan and the
+type-owner edges are load-bearing (modules are emitted atomically with all
+their lowered fns) and are unchanged; the fix makes the runtime-init root
+edge reachability-consistent. The spec §3 "Consequence" attribution is
+likewise falsified (T6 owns the truth-up).
+
+**Flip evidence:** linux `-ffast --dump-c89`: rc 0, `windep_*.c`/`.h`
+ABSENT (only `linuxdep_6F2C77EB.*` + std), gcc clean, run
+`iswindows deadarm ok` rc 0. `-osw`: `linuxdep_*` ABSENT, only
+`windep_5A55131B.*`, mingw (`build_target.sh mingw`) clean, wine run
+`iswindows deadarm ok` rc 0 (win arm live — `@isWindows()` polarity follows
+the CLI target). Golden captured at flip (`expected.txt`/`expected.rc`).
+Class flip: **FAIL → OK** (designed NEW-fixture flip).

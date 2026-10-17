@@ -686,19 +686,21 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
                     }
                 }
             }
-        } else if (node.kind == AstKind.if_expr and node.child_2 == @intCast(u32, 0)) {
-            // Task 3 (Task 1 §7): fold and store the condition of every
-            // capture-free no-`else` value `if` -- exactly the domain where
-            // sema's `semanticAnalyzerConditionIsComptimeTrue` grants
-            // acceptance. Lowering's existing `if_expr` `ie_fold` path
-            // (lower.zig) then elides the untaken branch, so module-scope
-            // conditions (step-0 S3/S5/E12) become runtime-equal to Zig
-            // instead of materialising a false runtime branch plus an
-            // uninitialised result temp. A function-local condition operand is
-            // not visible to this module-scope sweep (no local-const scope),
-            // so its (C-correct) runtime branch is kept. `if_stmt` conditions
-            // and `if_expr` with an `else` are deliberately NOT stored
-            // (bounded blast radius: their emitted C is unchanged).
+        } else if (node.kind == AstKind.if_expr or node.kind == AstKind.if_stmt) {
+            // T3 (spec §3 trigger set; supersedes the Task-1-§7 no-`else`-only
+            // domain): fold and store the condition of EVERY capture-free
+            // `if` — value `if` with or without `else`, and `if` statements —
+            // whose condition the module evaluator folds to a bool. This is
+            // the narrow fixture-pinned trigger set: `@isWindows()` (also
+            // covered by the builtin sweep above; `ce.host_is_windows` makes
+            // the value follow the CLI target), literal `true`/`false`,
+            // comptime `const` conditions, and constant folds. Consumers:
+            // lowering's `if_fold`/`ie_fold` (untaken arm not lowered) and
+            // sema's `semanticAnalyzerIfComptimeCondition` (untaken arm not
+            // analyzed — the spec §3 Zig rule). Function-local condition
+            // operands are not visible to this module-scope sweep (no
+            // local-const scope); sema stamps those into the same table.
+            // Runtime conditions fold to nothing and are untouched.
             if (ast_mod.astStoreNodePayload(ctx.store, @intCast(u32, ni)) == @intCast(u32, 0)) {
                 var cval = ce_mod.comptimeEvalEvaluate(&ce, node.child_0);
                 if (cval) |cv| {
@@ -745,6 +747,9 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
          var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
          var src_fid = mods[mi].source_file_id;
          var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.tuple_index_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, ctx.module_reg, &ctx.suspending_fns);
+        // T3: bind the shared fold table so the spec §3 untaken-arm gate can
+        // consult (and stamp) condition folds — sema/lowering coherence.
+        sa.comptime_folds = &ctx.comptime_folds;
         var di: usize = 0;
         while (di < @intCast(usize, decls_n)) : (di += 1) {
             var decl_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, ast_root, @intCast(u32, di));
@@ -1386,23 +1391,25 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         }
     }
     emitter.ts_ref_set = ts_ref_set;
-    // Runtime-init roots: the synthesized main wrapper calls __module_init for
-    // every module that has a runtime-initialized global. Seed an edge from the
-    // root module so those modules stay reachable (and their headers included).
+    // T3 (D2 root fix — the measured leak channel): the runtime-init edge is
+    // NOT an unconditional force-seed any more. Pre-T3 this loop seeded a
+    // root edge for EVERY module with a runtime-initialized global,
+    // regardless of call/type reachability, so a comptime-dead platform
+    // module's `var` global pinned the whole module alive — its `@cInclude`
+    // (`<windows.h>` / `<sys/ioctl.h>`) then broke the other toolchain (the
+    // D2 defect). Measured proof (task-3-report.md §Investigate probe
+    // matrix): the same fixture with the global removed emits no
+    // wrong-platform module, and a global-less non-EU dead-arm reference
+    // pins nothing — the type-level `pruneTypeMarkByValue` channel is
+    // load-bearing but does not pin these shapes; this seed did.
+    // Reachability-consistent form: AFTER the closure below, a root edge is
+    // kept only for ALREADY-reachable modules with runtime-init globals —
+    // exactly the set whose `__module_init` calls the synthesized main
+    // wrapper emits (the `prune_active` gate in `emitModuleInitCalls`), so
+    // their declarations stay in the root header byte-for-byte for every
+    // live module. A module nothing calls or references is dropped whole
+    // (its globals have no readers — Zig's lazy module-init semantics).
     var ri_mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
-    var ri_i: usize = @intCast(usize, 0);
-    while (ri_i < ri_mods.len) : (ri_i += @intCast(usize, 1)) {
-        if (ri_mods[ri_i].id == @intCast(u32, 0)) continue;
-        var ri_has: u8 = @intCast(u8, 0);
-        var gd_ri: usize = @intCast(usize, 0);
-        while (gd_ri < ctx.global_decls.len) : (gd_ri += @intCast(usize, 1)) {
-            var gd_g = ctx.global_decls.items[gd_ri];
-            if (gd_g.module_id == ri_mods[ri_i].id and gd_g.has_runtime_init != @intCast(u8, 0)) { ri_has = @intCast(u8, 1); break; }
-        }
-        if (ri_has != @intCast(u8, 0)) {
-            hash_mod.u32ToU32MapPut(&ref_edges, @intCast(u32, 0) * @intCast(u32, 65536) + ri_mods[ri_i].id, @intCast(u32, 1));
-        }
-    }
     // By-value module-global type references: a by-value global emitted in its
     // own module needs the full type definition that lives only in the type
     // owner's header, so keep the owner reachable (recursively through any
@@ -1437,6 +1444,25 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
                     rf_changed = @intCast(u8, 1);
                 }
             }
+        }
+    }
+    // T3 (continuation of the runtime-init edge ruling above): root edges for
+    // REACHABLE modules with runtime-init globals only — the wrapper's
+    // `__module_init` call sites need their declarations in the root header
+    // (identical pre/post for every live module; only dead modules drop out
+    // of the include set and the emission).
+    var ri_i: usize = @intCast(usize, 0);
+    while (ri_i < ri_mods.len) : (ri_i += @intCast(usize, 1)) {
+        if (ri_mods[ri_i].id == @intCast(u32, 0)) continue;
+        if (hash_mod.u32ToU32MapGet(&reachable, ri_mods[ri_i].id) == null) continue;
+        var ri_has: u8 = @intCast(u8, 0);
+        var gd_ri: usize = @intCast(usize, 0);
+        while (gd_ri < ctx.global_decls.len) : (gd_ri += @intCast(usize, 1)) {
+            var gd_g = ctx.global_decls.items[gd_ri];
+            if (gd_g.module_id == ri_mods[ri_i].id and gd_g.has_runtime_init != @intCast(u8, 0)) { ri_has = @intCast(u8, 1); break; }
+        }
+        if (ri_has != @intCast(u8, 0)) {
+            hash_mod.u32ToU32MapPut(&ref_edges, @intCast(u32, 0) * @intCast(u32, 65536) + ri_mods[ri_i].id, @intCast(u32, 1));
         }
     }
     emitter.reachable = reachable;

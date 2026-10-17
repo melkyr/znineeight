@@ -29,6 +29,20 @@ This document specifies the **LIR → C89 Emission** pass (Pipeline Step 8). It 
 
 **Key Invariant:** The emitter performs **zero analysis**. All type resolution, control-flow lifting, defer expansion, and coercion decisions are finalized in the LIR. Emission is a deterministic string-generation walk over basic blocks.
 
+[updated: 2026-10-16 — D2 root fix (T3): the multi-file module-reachability
+closure in `sf/src/main.zig` (the emission phase's `ref_edges`/`reachable`
+computation) no longer force-seeds a root edge for every module with a
+runtime-initialized global. That seed pinned comptime-dead modules alive
+(their `@cInclude` then broke the other toolchain — the D2 defect); measured
+channel in `task-3-report.md` §Investigate. The runtime-init root edge is now
+added only for ALREADY-reachable modules (exactly the set whose
+`__module_init` calls the synthesized wrapper emits, so live modules keep
+their root-header includes byte-for-byte); a module nothing calls or
+references is dropped whole. The all-fn LIR scan and `pruneTypeMarkByValue`
+type-owner edges are unchanged and load-bearing: modules are emitted
+atomically with all their lowered functions, so never-called fns' call and
+type edges must still be honored for link/compile correctness.]
+
 ---
 
 ## 1. Emitter Architecture & State Management

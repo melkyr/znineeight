@@ -36,3 +36,13 @@ This fixture therefore matches the mi_matrix runtime-anchor SET definition
 addition — the frozen 25-anchor set is enumerated by name in
 `.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/task-0-report.md`
 §3.4; later tasks run that explicit list, not a re-enumeration.
+
+## Post-fix measured (2026-10-16, T3 gate compiler `/tmp/d1d2_t3/zig1_5_clean`)
+Emission contract met: linux `-ffast --dump-c89 --output-dir` emits
+`windep_*.c`/`.h` **ABSENT** (only `linuxdep_*.c` + std); `-osw` emits
+`linuxdep_*` ABSENT (only `windep_*`). Golden PRESERVED byte-identical
+(`run_fixtures.sh` PASS, `expected.txt`/`expected.rc` unchanged — the
+pre-fix capture stands). mingw `build_target.sh mingw` build clean; wine run
+`iswindows prune ok` rc 0. Class **OK → OK** (no class mover; the red was
+purely emission-side). Mechanism correction: see the errunion NOTES
+post-fix section (the pin was the runtime-init root seed).

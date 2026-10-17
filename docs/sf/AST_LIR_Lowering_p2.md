@@ -178,6 +178,16 @@ The following table defines the exact LIR sequence for every `AstKind` that can 
 | `.import_expr` | Already resolved to module symbol; returns `TYPE_MODULE`. |
 | `.paren_expr` | Lower inner expr directly. |
 
+[updated: 2026-10-16 — comptime-if folding (T3): `if_expr`/`if_stmt`
+conditions consult the shared comptime fold table (`comptimeFoldBool` in
+`sf/src/lower.zig`); when the condition is comptime-known (spec §3 trigger
+set — `@isWindows()`, literals, comptime `const` bools/constant folds, plus
+sema's local-const stamps) only the LIVE arm is lowered (`ie_fold`/`if_fold`).
+The noreturn-typed folded `if` now takes the same one-arm path (live arm via
+`lowerIfArmValue`, block marked terminated) — the old
+`ie_rtype3 != TYPE_NORETURN` second-line guard is superseded so lowering
+never walks the arm sema left un-analyzed. Runtime conditions are untouched.]
+
 ### 3.2 Builtin Call Lowering
 
 | Builtin | Lowering |

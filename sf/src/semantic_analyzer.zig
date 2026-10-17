@@ -161,6 +161,12 @@ pub const SemanticAnalyzer = struct {
     async_resume_name_id: u32,
     async_suspend_name_id: u32,
     async_analysis_ready: bool,
+    // T3: shared comptime fold table (`ctx.comptime_folds`). Consulted (and
+    // stamped) by `semanticAnalyzerIfComptimeCondition` so the spec §3
+    // untaken-arm gate and lowering's `if_fold`/`ie_fold` agree on the same
+    // arm. null when the caller has no table (front-resolution pass over-
+    // analyzes both arms — safe; the gate then only fires on literals).
+    comptime_folds: ?*ce_mod.ComptimeFoldTable,
     module_reg: *mr_mod.ModuleRegistry,
     suspending_fns: *hash_mod.U64ToU32Map,
 };
@@ -330,6 +336,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .async_resume_name_id = ars_id,
         .async_suspend_name_id = asu_id,
         .async_analysis_ready = true,
+        .comptime_folds = null,
         .module_reg = module_reg,
         .suspending_fns = suspending_fns,
     };
@@ -3919,6 +3926,59 @@ fn semanticAnalyzerConditionIsComptimeTrue(self: *SemanticAnalyzer, cond_idx: u3
     return false;
 }
 
+// T3 (spec §3, the Zig rule): the narrow fixture-pinned trigger set for
+// comptime-if arm elimination. `if_node_idx` is the `if_expr`/`if_stmt` node.
+// Returns the comptime-known condition value, or null (untouched) when the
+// shape is outside the trigger set (capture conditions, runtime conditions,
+// and anything the shared fold machinery does not know).
+//
+// Trigger set (spec §3):
+//   * literal `true`/`false` conditions;
+//   * conditions the shared comptime fold table already carries to KIND_BOOL
+//     (`@isWindows()` via the builtin sweep, comptime `const` conditions and
+//     constant folds via T3's if-condition sweep in `phase_ComptimeEvaluation`
+//     — the entry is target-correct, so `@isWindows()` polarity follows the
+//     CLI target);
+//   * a function-local comptime `const` bool (the evaluator below, local-const
+//     aware) — folded here and STAMPED into the shared table so lowering's
+//     `if_fold`/`ie_fold` eliminate the same arm (sema/lowering coherence).
+// Nothing else triggers. A fold-table entry is never consulted for a capture
+// (`if (opt) |v|`) — the untaken-arm rule is stated for `if`/`else` bool
+// conditions.
+fn semanticAnalyzerIfComptimeCondition(self: *SemanticAnalyzer, if_node_idx: u32) ?bool {
+    if (if_node_idx == @intCast(u32, 0)) return null;
+    var ifn = ast_mod.astStoreNodeAt(self.store, if_node_idx);
+    if (ast_mod.astStoreNodePayload(self.store, if_node_idx) != @intCast(u32, 0)) return null;
+    var cond_idx = ifn.child_0;
+    if (cond_idx == @intCast(u32, 0)) return null;
+    var cond = ast_mod.astStoreNodeAt(self.store, cond_idx);
+    if (cond.kind == AstKind.bool_literal) {
+        return (cond.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+    }
+    if (self.comptime_folds) |ft| {
+        if (ce_mod.comptimeFoldTableGet(ft, cond_idx)) |cv| {
+            if (cv.kind == ce_mod.KIND_BOOL) {
+                return !ce_mod.ciIsZero(cv.v);
+            }
+            return null;
+        }
+        // Narrow evaluator fallback: an ident of a comptime `const` bool
+        // (function-local scope included). The value is stamped into the
+        // shared table so lowering folds the same arm. Without a table to
+        // stamp (the front-resolution pass) the fallback does not trigger.
+        if (cond.kind == AstKind.ident_expr) {
+            var ce = semaComptimeEvalInit(self);
+            if (ce_mod.comptimeEvalEvaluate(&ce, cond_idx)) |fv| {
+                if (fv.kind == ce_mod.KIND_BOOL) {
+                    ce_mod.comptimeFoldTablePut(ft, cond_idx, fv);
+                    return !ce_mod.ciIsZero(fv.v);
+                }
+            }
+        }
+    }
+    return null;
+}
+
 fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     // A7-F: the `if (x) |v|` capture is scoped to the THEN arm only (Zig
@@ -3927,7 +3987,28 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     // resolves as undeclared (`error[20]`).
     var ifexpr_cap_saved: u32 = @intCast(u32, self.local_decl_count);
     semanticAnalyzerResolveIfHeader(self, node_idx);
-    var then_type = semanticAnalyzerResolveExpr(self, node.child_1);
+    // T3 (spec §3 Zig rule): when the `if`/`else` condition is comptime-known
+    // (narrow trigger set), the untaken arm is NOT semantically analyzed and
+    // the `if` takes the live arm's value/type. The untaken arm is stamped
+    // `TYPE_NORETURN` so the result-typing tail below resolves exactly the
+    // live arm (the same paths a diverging arm already takes). No-`else` ifs
+    // keep the pre-T3 walk (the rule is stated for `if`/`else`; the
+    // error[3059] gate types the then-arm).
+    var t3_egate: ?bool = null;
+    if (node.child_2 != @intCast(u32, 0)) {
+        t3_egate = semanticAnalyzerIfComptimeCondition(self, node_idx);
+    }
+    var then_type: u32 = undefined;
+    if (t3_egate) |t3_ev| {
+        if (t3_ev) {
+            then_type = semanticAnalyzerResolveExpr(self, node.child_1);
+        } else {
+            rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, type_mod.TYPE_NORETURN);
+            then_type = type_mod.TYPE_NORETURN;
+        }
+    } else {
+        then_type = semanticAnalyzerResolveExpr(self, node.child_1);
+    }
     self.local_decl_count = @intCast(usize, ifexpr_cap_saved);
     if (node.child_2 == @intCast(u32, 0)) {
         // Task 9B (b, m1240 ruling 3): a value `if` without `else` is rejected
@@ -3962,7 +4043,17 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         }
         var sif_m: []const u8 = "SIF:0N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type;
     }
-    var else_type = semanticAnalyzerResolveExpr(self, node.child_2);
+    var else_type: u32 = undefined;
+    if (t3_egate) |t3_ev2| {
+        if (t3_ev2) {
+            rtt_mod.resolvedTypeTableSet(self.type_table, node.child_2, type_mod.TYPE_NORETURN);
+            else_type = type_mod.TYPE_NORETURN;
+        } else {
+            else_type = semanticAnalyzerResolveExpr(self, node.child_2);
+        }
+    } else {
+        else_type = semanticAnalyzerResolveExpr(self, node.child_2);
+    }
     var ie_exp = topExpectedType(self);
     if (ie_exp == @intCast(u32, 0) or ie_exp == type_mod.TYPE_VOID) {
         var ie_then_lit: bool = then_type != type_mod.TYPE_NORETURN and ast_mod.astStoreNodeAt(self.store, node.child_1).kind == AstKind.string_literal;
@@ -4003,8 +4094,13 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (ie_exp == type_mod.TYPE_F32) {
         var ie_then_reach: u8 = @intCast(u8, 1);
         var ie_else_reach: u8 = @intCast(u8, 1);
-        if (semanticAnalyzerConditionComptimeBool(self, node.child_0)) |ie_cb| {
+        // T3: arm reachability is the gate's verdict when the trigger set
+        // fired (the untaken arm is un-analyzed — its float-narrow status must
+        // not be walked); otherwise the pre-T3 probe stands.
+        if (t3_egate) |ie_cb| {
             if (ie_cb) { ie_else_reach = @intCast(u8, 0); } else { ie_then_reach = @intCast(u8, 0); }
+        } else if (semanticAnalyzerConditionComptimeBool(self, node.child_0)) |ie_cb2| {
+            if (ie_cb2) { ie_else_reach = @intCast(u8, 0); } else { ie_then_reach = @intCast(u8, 0); }
         }
         var ie_then_st: u8 = FLOAT_NARROW_ACCEPT;
         if (ie_then_reach != @intCast(u8, 0)) { ie_then_st = semanticAnalyzerFloatNarrowArmStatus(self, node.child_1, @intCast(u32, 1)); }
@@ -6133,13 +6229,36 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
              // scope after the else-arm.
              var if_scope_saved: u32 = @intCast(u32, self.local_decl_count);
              semanticAnalyzerResolveIfHeader(self, node_idx);
-             semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
+             // T3 (spec §3 Zig rule): a comptime-known `if`/`else` condition
+             // eliminates the untaken arm before analysis — only the live arm
+             // is walked (the pop marker restores the arm-local scope exactly
+             // as the two-arm sequence did). No-`else` statements keep the
+             // pre-T3 both-arm walk (the §3 rule is stated for `if`/`else`;
+             // the error[3059] no-else gate relies on the then-arm typing).
+             var t3_sgate: ?bool = null;
              if (node.child_2 != @intCast(u32, 0)) {
-                 semanticAnalyzerStmtWorkPush(self, node.child_2);
+                 t3_sgate = semanticAnalyzerIfComptimeCondition(self, node_idx);
              }
-             semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
-             if (node.child_1 != @intCast(u32, 0)) {
-                 semanticAnalyzerStmtWorkPush(self, node.child_1);
+             if (t3_sgate) |t3_sv| {
+                 semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
+                 if (t3_sv) {
+                     if (node.child_1 != @intCast(u32, 0)) {
+                         semanticAnalyzerStmtWorkPush(self, node.child_1);
+                     }
+                 } else {
+                     if (node.child_2 != @intCast(u32, 0)) {
+                         semanticAnalyzerStmtWorkPush(self, node.child_2);
+                     }
+                 }
+             } else {
+                 semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
+                 if (node.child_2 != @intCast(u32, 0)) {
+                     semanticAnalyzerStmtWorkPush(self, node.child_2);
+                 }
+                 semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
+                 if (node.child_1 != @intCast(u32, 0)) {
+                     semanticAnalyzerStmtWorkPush(self, node.child_1);
+                 }
              }
           } else if (node.kind == AstKind.while_stmt) {
             // Task 7D: scope the while-capture to the body.

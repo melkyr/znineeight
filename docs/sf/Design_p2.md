@@ -1219,6 +1219,20 @@ pub const TypeResolver = struct {
 
 Semantic analysis is a series of read-only passes over the AST that build side-tables. They never mutate AST nodes.
 
+[updated: 2026-10-16 — comptime-if folding, the Zig rule (T3, spec
+`2026-10-16-compiler-d1-d2-parity-design.md` §3): when an `if`/`else`
+condition is comptime-known (narrow trigger set — `@isWindows()`, literal
+`true`/`false`, comptime `const` bool conditions, i.e. whatever the shared
+comptime fold machinery already folds to a bool), the untaken arm is NOT
+semantically analyzed and the `if` takes the live arm's value/type (the
+untaken arm is stamped `TYPE_NORETURN` so the result-typing paths resolve the
+live arm). Errors inside a comptime-dead arm vanish (Zig behavior). The gate
+is `semanticAnalyzerIfComptimeCondition` in `sf/src/semantic_analyzer.zig`
+(both the value-`if` resolver and the `if_stmt` statement walker); it reads
+and stamps `ctx.comptime_folds` so lowering's `if_fold`/`ie_fold` eliminate
+the same arm. Runtime conditions are untouched; no-`else` ifs keep the
+pre-T3 walk (the §3 rule is stated for `if`/`else`).]
+
 ### 7.1 Pass Pipeline
 
 1. **Symbol Table Build**: Single pass per module. Creates scoped symbol entries for all declarations.
