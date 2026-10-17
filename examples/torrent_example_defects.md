@@ -101,3 +101,90 @@ fn-pointer return: return the aggregate **directly** and add an in-band sentinel
 the C89 type-dependency relation, and intern/canonicalize optional-of-aggregate so the
 fn-pointer coercion unifies. A compiler change (outside an example-only milestone);
 author under a future compiler plan.
+
+---
+
+## D2 — An error-union function reference in a comptime-dead `@isWindows()` branch still marks the callee module reachable
+
+**Status:** OPEN (found 2026-10-16 building z9play M6 Task 1; blocks the plan's
+"select per-platform backends via `@isWindows()`" approach; compiler fix not yet
+authorized).
+
+**Symptom.** When a function in a comptime-dead `@isWindows()` branch references
+another module's **error-union-returning** function (direct `call`/`catch`, a
+`func_ref` in a vtable literal, or a `load_global` of an error-union-vtable
+global), that callee module is emitted anyway even though the branch is folded
+away and **no call to it survives in the emitted C**. Non-error-union references
+in the same dead branch are pruned correctly, so the emitter's module
+reachability (`sf/src/main.zig:1339-1354`, the `call_direct`/`tail_call`/
+`func_ref`/`load_global` edge scan) still sees the dead `func_ref` and follows it.
+Consequence for cross-target builds: the "wrong-platform" backend module is
+emitted, and its platform-only `@cInclude` (e.g. `<sys/ioctl.h>` for Linux OSS,
+`<windows.h>` for waveOut) makes the other toolchain's compile fail — so
+separate per-platform backend modules cannot be selected by `@isWindows()` alone
+in seed v98.
+
+**Minimal reproducer:**
+
+```zig
+// errdep.zig — only referenced from the dead (non-Windows) arm below
+@cInclude("<linux_only_header.h>");
+pub const E = error{ OpenFailed };
+var g: u32 = 0;
+pub fn open(rate: u32, channels: u8) E!*void {
+    if (rate == 0) return error.OpenFailed;
+    _ = channels;
+    return @ptrCast(*void, &g);
+}
+// main.zig
+const errdep = @import("errdep.zig");
+pub fn main() void {
+    var ctx: *void = undefined;
+    if (@isWindows()) {
+        ctx = @intToPtr(*void, 0);
+    } else {
+        ctx = errdep.open(44100, 2) catch return;
+    }
+    _ = ctx;
+}
+```
+
+```sh
+timeout 120 /tmp/z9play_seed_v98/zig1_5_clean -osw --dump-c89 --output-dir out main.zig
+ls out/errdep_*.c                       # PRESENT (should be pruned on the Windows target)
+i686-w64-mingw32-gcc -std=c89 -m32 -I out -c out/errdep_*.c
+# fatal error: linux_only_header.h: No such file or directory
+```
+
+Confirmed symmetric: the reverse (`-osl` with a Windows-only module referenced in
+a dead `@isWindows()` true arm) emits that module too. Non-error-union calls
+(`pub fn f(x: i32) i32`) and plain constants in the same dead arm are pruned, so
+the trigger is specifically the error-union call/reference.
+
+**Example-only workaround (proposed, not applied — plan ruling pending).** Either
+(a) guard each backend's own `@cInclude`s and function bodies with `if
+(@isWindows())` / `else` (so the wrongly-emitted module is empty and header-safe
+on the other target), which requires touching the existing Linux backends; or
+(b) restructure the selection so the two platforms live in one module behind a
+target-neutral prelude (the `std_file.zig` / `z9torr/console.zig` pattern),
+instead of separate per-platform backend modules.
+
+**Compiler fix (not authorized).** Eliminate dead `@isWindows()` branches (and
+their `func_ref`/`call_direct`/`load_global` edges) in LIR before the emitter's
+module-reachability scan, so a comptime-dead branch cannot keep a module
+reachable. Compiler change (outside an example-only milestone); author under a
+future compiler plan.
+
+## D3 — Conditional `@import`: lazy-load gap class (evaluator-foldable conditions the parse-time probe misses)
+
+**Status:** OPEN / DEFERRED (found 2026-10-16 during the compiler D1/D2 parity milestone, Task 4; derived from the D2 solution; not a defect in the milestone's scoped idiom — a feature-completeness item).
+
+**Symptom.** With the conditional-`@import` idiom (`const impl = if (@isWindows()) @import("a.zig") else @import("b.zig");`, or the `switch` form), the untaken arm's `@import` is eliminated semantically (T3 comptime-if fold) and never emitted (T3 module-closure fix backstops any `@cInclude` leak), but a **parse-time eager load** still opens the dead arm's file when the condition is not folded by the parse-time probe (`parserFoldComptimeBool`). If that file is absent or unparsable on the current target, the compile fails with a spurious `error[3048]`-class diagnostic where Zig (lazy file loading) would never open the file.
+
+**Gap class.** The parse probe folds `@isWindows()`, bool literals, `!`/`and`/`or`, and in-order same-module simple-bool consts — but NOT the evaluator's broader constant-fold `KIND_BOOL` class: comparison/arith const inits (`if (1 == 1) …`), module-scope forward-ref consts, cross-module const conditions. For those shapes the dead arm is semantically dead yet its `@import` file is still loaded. Failure direction is **false REJECT only** (over-load; never wrong-module selection — probe ⊊ evaluator). Target idiom (`@isWindows()` and the M6/M7 shapes) is unaffected; z9play M6 is unblocked.
+
+**Why deferred (feature, not gap-in-scope).** Full semantics = true Zig laziness for every comptime-known condition, i.e. the import-queue/phase restructure (deferred option (c)). This milestone's task set is not adequate to feature-complete it; the parse-probe gate is a conservative approximation.
+
+**Relation to F1 (interner id-order landmine).** The full (c) fix moves module resolution across phases and inevitably perturbs interner id assignment order; ANY intern before source lexing deterministically flips `stdlib_crypto_modpow_xmod` OK→GREEN. F1 is being root-caused/fixed in its own Investigate/Fix round (T4.1); **the (c) fix must not be attempted until F1 is root-fixed.** Evidence: Task 4 report (`.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/task-4-report.md`, incl. the `conditional_import_lazy_xmod` pin and the F2 boundary analysis) + the T4.1 F1 report (same workspace) — these two documents are the strategy inputs for a future correction.
+
+**Reference points.** Parse gate: `parserFoldComptimeBool` / `dead_import_depth` (`sf/src/parser.zig`); evaluator fold set: `comptimeEvalEvaluate` (`sf/src/comptime_eval.zig:859-984`); T3 sema gate: `semantic_analyzer.zig:3948`; closure fix: `sf/src/main.zig` runtime-init reachability. Same clobber class family: `parserParseBuiltinCall` `child_buf_len = 0` (fixed in T4 C2 ruling) and `parserParseFnDecl` param `child_buf` (F4, folded into T4.1).

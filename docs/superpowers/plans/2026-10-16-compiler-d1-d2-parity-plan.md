@@ -94,3 +94,21 @@ T0 evidence (reviewer-verified) refuted the plan's assumed D2 channel: the lower
 ### Amendment 2 — T4 true Zig laziness + C2 clobber fix (operator, 2026-10-16)
 
 T4 evidence refuted the analysis-time module model: `@import` modules are PARSE-registered (`parser.zig:780`), before any analysis gate — emission pruned (no `@cInclude` leak) but an untaken arm's `@import("missing.zig")` / file-syntax error still surfaces, unlike Zig's lazy file loading. **Ruling (C1b):** T4's touch set += `sf/src/main.zig` (import-queue/phase restructure) so an untaken arm's `@import` NEVER loads its file — true Zig laziness. **Ruling (C2):** fix now the pre-existing `parserParseBuiltinCall` `@import` `child_buf_len = 0` clobber (corrupts call args / tuple / array literals; switch-prong case already fixed locally) — the general 1-line delete is authorized despite the no-unrelated-fixes default (operator call). C3 (dead `int zG_impl` storage slot) + C4 (switch match = bool-case+else only) stay DISCLOSED, unfixed. Cost if wrong: import-phase restructure blast radius (mitigated by pins 0/8 + frozen-1124 gate); C2 general fix could shift unrelated parses (mitigated by battery + the corrupt-shape classes being today-broken).
+
+### Amendment 3 — T4 closeout (A) + T4.1 F1 Investigate/Fix (B) (operator, 2026-10-16)
+
+T4 review returned one Important (C1b "NEVER loads" PARTIAL — evaluator-foldable-but-not-parse-foldable condition class eagerly loads dead-arm `@import`, spurious `error[3048]`) + minors. Operator ruling package:
+
+**(A) T4 closeout fix dispatch** (report/docs/tiny revert only; then scoped re-review):
+1. (i) **Revert** the drive-by markers edit (`semanticAnalyzerResolveSwitchExpr` `markerWrite`→`markerWriteInt` double-write with manual itoa) — unauthorized-change cleanup, 1 line.
+2. (ii) **YES — truth-up** `repro/mi_matrix/conditional_import_switch_xmod/NOTES.md` (the `child_buf` clobber IS fixed by `d568880c`; stale "left untouched" text goes).
+3. **D3 defect entry** in `examples/torrent_example_defects.md` (done in this amendment's commit): the Gap Class is recorded as a NEW defect derived from the D2 solution — **feature-completeness item, deferred**; full fix = import-queue/phase restructure (option (c)); must not be attempted before F1 is root-fixed; evidence = T4 report + T4.1 report. The T4 Important is **parked by operator** via this entry; no further Gap-Class code change in this milestone.
+4. T4 review closes after the fix round + scoped re-review.
+
+**(B) T4.1 — F1 Investigate/Fix round** (own dispatch after A; then task review):
+1. **Investigate:** root-cause WHY interner id-order flips `stdlib_crypto_modpow_xmod` OK→GREEN (bisect the sensitivity: missing default / hash-map iteration order / id-consuming subsystem). Deliverable = proper description of what is required to be fixed. **No more mitigation** — workaround posture is retired.
+2. **Fix F1 at root.**
+3. **Fold F4:** 1-line fix of the `parserParseFnDecl` param `child_buf` clobber (`child_buf_len = 0` twin of the C2 site).
+4. Full battery (frozen-1124 canary included) + commits + review.
+
+After A and B: T5 (analyzers) resumes. Cost if wrong: A parks a real false-reject class behind a defect entry (revisit via D3 + the two reports if a future program hits it); B's root fix may itself move `stdlib_crypto_modpow_xmod` (any class change = STOP-present with the delta).
