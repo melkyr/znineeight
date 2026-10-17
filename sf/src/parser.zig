@@ -928,20 +928,34 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
     _ = try parserExpect(self, TokenKind.rparen);
     _ = try parserExpect(self, TokenKind.lbrace);
 
-    var saved_switch: usize = self.child_buf_len;
+    // T4 (spec §4): the conditional-`@import` idiom's `switch` form
+    // (`switch (@isWindows()) { true => @import("a.zig"), else => @import("b.zig") }`).
+    // Prongs are collected in a LOCAL list — exactly like
+    // `parserParseSwitchProng`'s case items — instead of the shared
+    // `child_buf`: `parserParseBuiltinCall`'s `@import` arm resets the shared
+    // buffer (`self.child_buf_len = 0`, parser.zig:712), which destroyed an
+    // in-progress prong list and left only the LAST prong attached to the
+    // `swt_ex` node (measured: a two-prong `@import` switch read back with
+    // `prongs_n == 1`, the else/last prong only).
+    var prong_items: [*]u32 = undefined;
+    var prong_len: usize = 0;
+    var prong_cap: usize = 0;
     while (true) {
         var tok = parserPeek(self);
         if (tok.kind == TokenKind.rbrace) break;
         if (tok.kind == TokenKind.eof) break;
         var prong = try parserParseSwitchProng(self);
-        u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, prong);
+        u32ArrayListAppendInner(&prong_items, &prong_len, &prong_cap, self.allocator, prong);
         if (parserPeek(self).kind == TokenKind.comma) {
             _ = parserAdvance(self);
         }
     }
     _ = try parserExpect(self, TokenKind.rbrace);
 
-    var payload = parserListEnd(self, saved_switch);
+    var payload: u32 = 0;
+    if (prong_len > @intCast(usize, 0)) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, prong_items[0..prong_len]);
+    }
     var end_pos: u32 = kw_tok.span_start + @intCast(u32, kw_tok.span_len);
     var pswe_node = ast_mod.astStoreAddNode(self.store, AstKind.swt_ex, 0,
         kw_tok.span_start, end_pos, cond, 0, 0, payload);

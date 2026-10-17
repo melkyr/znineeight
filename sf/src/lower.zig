@@ -4372,6 +4372,19 @@ fn resolveModuleBase(self: *LirLowerer, base_node_idx: u32) u32 {
                 var sty = self.ctx.registry.types_items[@intCast(usize, s.type_id)];
                 if (sty.kind == type_mod.TypeKind.module_type) return sty.module_id;
             }
+            // T4 (spec §4): a module-alias global of the conditional-`@import`
+            // idiom (`const impl = if (@isWindows()) @import("a.zig") else
+            // @import("b.zig");`) — fold the initializer through the shared
+            // comptime table and return the LIVE module (the symbol may still
+            // carry no type when the module-var fixpoint ran before the fold
+            // table was stamped).
+            if (s.decl_node != @intCast(u32, 0)) {
+                var t4_rmb_n = ast_mod.astStoreNodeAt(store, s.decl_node);
+                if (t4_rmb_n.kind == AstKind.var_decl and t4_rmb_n.child_1 != @intCast(u32, 0)) {
+                    var t4_rmb_mid = lowerModuleAliasInitModule(self, t4_rmb_n.child_1);
+                    if (t4_rmb_mid != @intCast(u32, 0)) return t4_rmb_mid;
+                }
+            }
         }
     }
     var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node_idx);
@@ -6820,6 +6833,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.if_expr) {
         var ie_rt3 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ie_rtype3: u32 = if (ie_rt3) |t| t else type_mod.TYPE_UNDEFINED;
+        // T4 (spec §4): a comptime-selected `@import` `if` (the
+        // conditional-`@import` idiom) yields a compile-time module identity —
+        // no runtime value, so it lowers to nothing exactly like the bare
+        // `import_expr` arm of `lowerExprImpl`. T3's fold left the untaken arm
+        // un-analyzed (`TYPE_NORETURN`-stamped) and it is never reached.
+        if (ie_rtype3 != @intCast(u32, 0) and @intCast(usize, ie_rtype3) < self.ctx.registry.types_len and
+            self.ctx.registry.types_items[@intCast(usize, ie_rtype3)].kind == type_mod.TypeKind.module_type) {
+            return @intCast(u32, 0);
+        }
         // C3: if_expr comptime-fold sub-path is capture-free by construction (a capture
         // requires an optional cond, which the fold table never stores — bools only);
         // guard on payload==0 to mirror the if_stmt fold guard defensively.
@@ -7251,6 +7273,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var swrt_z: []const u8 = "M"; pal.markerWrite(swrt_z);
             }
             var swrt_nl: []const u8 = "\n"; pal.markerWrite(swrt_nl);
+        }
+        // T4 (spec §4): a comptime-selected `@import` switch (the
+        // conditional-`@import` idiom) yields a compile-time module identity —
+        // no runtime value, so it lowers to nothing exactly like the bare
+        // `import_expr` arm of `lowerExprImpl`. Untaken prong bodies are
+        // already `TYPE_NORETURN`-stamped by sema's fold and are never
+        // reached from this value position.
+        if (sw_rt) |t4_swt| {
+            if (t4_swt != @intCast(u32, 0) and @intCast(usize, t4_swt) < self.ctx.registry.types_len and
+                self.ctx.registry.types_items[@intCast(usize, t4_swt)].kind == type_mod.TypeKind.module_type) {
+                return @intCast(u32, 0);
+            }
         }
         var result_tid: u32 = if (sw_rt) |t| (if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID) t else type_mod.TYPE_VOID) else type_mod.TYPE_VOID;
         // A19: keep the result temp allocation at its historical position for
@@ -9397,6 +9431,101 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     return func_ptr.*;
 }
 
+// T4 (spec §4): is this initializer the conditional-`@import` idiom — a bare
+// `import_expr`, an `if_expr`/`swt_ex` whose arms/prong bodies are all
+// `import_expr`s (paren-transparent, capture-free)? Such a value is a
+// compile-time module identity and has no runtime materialisation.
+fn lowerInitIsImportAliasShaped(store: *ast_mod.AstStore, init_idx: u32) bool {
+    var idx = init_idx;
+    var uw: usize = @intCast(usize, 0);
+    while (uw < @intCast(usize, 8)) : (uw += 1) {
+        if (idx == @intCast(u32, 0)) return false;
+        var n = ast_mod.astStoreNodeAt(store, idx);
+        if (n.kind == AstKind.paren_expr) { idx = n.child_0; continue; }
+        break;
+    }
+    if (idx == @intCast(u32, 0)) return false;
+    var n2 = ast_mod.astStoreNodeAt(store, idx);
+    if (n2.kind == AstKind.import_expr) return true;
+    if (n2.kind == AstKind.if_expr) {
+        if (ast_mod.astStoreNodePayload(store, idx) != @intCast(u32, 0)) return false;
+        if (n2.child_1 == @intCast(u32, 0) or n2.child_2 == @intCast(u32, 0)) return false;
+        return lowerInitIsImportAliasShaped(store, n2.child_1) and lowerInitIsImportAliasShaped(store, n2.child_2);
+    }
+    if (n2.kind == AstKind.swt_ex) {
+        var sp_n = ast_mod.astStoreNodeExtraChildCount(store, idx);
+        if (sp_n == @intCast(usize, 0)) return false;
+        var si: usize = 0;
+        while (si < sp_n) : (si += 1) {
+            var sp = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, idx, @intCast(u32, si)));
+            if (sp.child_0 == @intCast(u32, 0)) return false;
+            if (!lowerInitIsImportAliasShaped(store, sp.child_0)) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+// T4 (spec §4): the module id a conditional-`@import` initializer binds, or 0
+// when it is not a comptime-selected module value. The condition is folded
+// through the shared comptime table (`phase_ComptimeEvaluation` —
+// target-correct for `@isWindows()`); only the LIVE arm/prong is selected and
+// its `@import` path resolves to the module.
+fn lowerModuleAliasInitModule(self: *LirLowerer, init_idx: u32) u32 {
+    if (init_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var store = self.ctx.store;
+    var idx = init_idx;
+    var uw: usize = @intCast(usize, 0);
+    while (uw < @intCast(usize, 8)) : (uw += 1) {
+        var n = ast_mod.astStoreNodeAt(store, idx);
+        if (n.kind == AstKind.paren_expr) { idx = n.child_0; continue; }
+        break;
+    }
+    if (idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var n2 = ast_mod.astStoreNodeAt(store, idx);
+    if (n2.kind == AstKind.import_expr) {
+        var path_id = ast_mod.astStoreNodePayload(store, idx);
+        if (mr_mod.moduleRegistryPathToIdGet(self.module_reg, path_id)) |mtid| return mtid;
+        return @intCast(u32, 0);
+    }
+    if (!lowerInitIsImportAliasShaped(store, idx)) return @intCast(u32, 0);
+    if (n2.kind == AstKind.if_expr) {
+        if (comptimeFoldBool(self, n2.child_0)) |tv| {
+            return lowerModuleAliasInitModule(self, if (tv) n2.child_1 else n2.child_2);
+        }
+        return @intCast(u32, 0);
+    }
+    if (n2.kind == AstKind.swt_ex) {
+        if (comptimeFoldBool(self, n2.child_0)) |cv| {
+            var sp_n = ast_mod.astStoreNodeExtraChildCount(store, idx);
+            var live: u32 = @intCast(u32, 0);
+            var els: u32 = @intCast(u32, 0);
+            var si: usize = 0;
+            while (si < sp_n) : (si += 1) {
+                var sp_i = ast_mod.astStoreNodeExtraChildAt(store, idx, @intCast(u32, si));
+                var sp = ast_mod.astStoreNodeAt(store, sp_i);
+                if ((sp.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { els = sp_i; continue; }
+                var ci_n = ast_mod.astStoreNodeExtraChildCount(store, sp_i);
+                var cii: usize = 0;
+                while (cii < ci_n) : (cii += 1) {
+                    var c_i = ast_mod.astStoreNodeExtraChildAt(store, sp_i, @intCast(u32, cii));
+                    if (lowerSwitchCaseItemValue(self, c_i, null)) |cval| {
+                        var want: u64 = if (cv) @intCast(u64, 1) else @intCast(u64, 0);
+                        if (cval == want) { live = sp_i; break; }
+                    }
+                }
+                if (live != @intCast(u32, 0)) break;
+            }
+            if (live == @intCast(u32, 0)) { live = els; }
+            if (live != @intCast(u32, 0)) {
+                return lowerModuleAliasInitModule(self, ast_mod.astStoreNodeAt(store, live).child_0);
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    return @intCast(u32, 0);
+}
+
 pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32, dep_map: *hash_mod.U64ToU32Map) LirFunction {
     var store = self.ctx.store;
     self.module_dep_map = dep_map;
@@ -9443,6 +9572,13 @@ pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32, dep_map: *
                 var fa_base2 = ast_mod.astStoreNodeAt(store, ginit.child_0);
                 if (fa_base2.kind == AstKind.import_expr) continue;
             }
+            // T4 (spec §4): the conditional-`@import` idiom (`const impl = if
+            // (@isWindows()) @import("a.zig") else @import("b.zig");` and the
+            // `switch` form) binds a compile-time module identity — there is
+            // no runtime value to initialise, exactly like the bare `@import`
+            // init skipped above (which otherwise lowers to a garbage temp
+            // store).
+            if (lowerInitIsImportAliasShaped(store, dcl.child_1)) continue;
             if ((@intCast(u16, dcl.flags) & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                 if (ginit.kind == AstKind.int_literal or ginit.kind == AstKind.float_literal or ginit.kind == AstKind.char_literal) continue;
             }

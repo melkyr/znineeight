@@ -1353,6 +1353,15 @@ pub const ComptimeEval = struct {
 
 Cross-module resolution is on-demand: when `module.Symbol` is accessed, the type checker looks up the target module's symbol table. If the target module hasn't been type-checked yet but has been parsed and had symbols registered, forward references via pointers or function signatures are allowed. Value-type access to an unresolved module triggers an error.
 
+**Expression position — conditional `@import` (2026-10-17, spec §4).** An `@import` in expression position resolves to the imported module's `module_type` (a path that failed to resolve keeps `void`), so the Zig conditional-import idiom binds the **live** module:
+
+```zig
+const impl = if (@isWindows()) @import("a.zig") else @import("b.zig");
+const impl = switch (@isWindows()) { true => @import("a.zig"), else => @import("b.zig") };
+```
+
+With a comptime-known condition (the T3 fold trigger set — literals, evaluator-folded `KIND_BOOL` incl. `@isWindows()` via `phase_ComptimeEvaluation`, comptime `const` bools) the untaken arm/prong is not analyzed (`TYPE_NORETURN`-stamped) and only the live `@import` resolves; the binding then behaves exactly like `const foo = @import("foo.zig");` downstream (qualified access, calls), and only the live module is emitted. A not-comptime-known condition keeps the `void` result (runtime-selected imports are out of scope). Module-alias initializers have no runtime materialization: `lowerModuleInit` skips them like a bare `@import` init, and a module-typed `if`/`switch` value lowers to nothing. Parser note: `parserParseBuiltinCall`'s `@import` arm resets the shared `child_buf` (`child_buf_len = 0`), which destroyed an in-progress switch prong list; `parserParseSwitchExpr` therefore collects prongs in a parser-local list (the case-items pattern).
+
 ### 7.5 `std.debug.print` Decomposition
 
 `std.debug.print` is a compiler intrinsic, not a real function call. The semantic analysis pass detects it and decomposes it into a series of runtime helper calls.

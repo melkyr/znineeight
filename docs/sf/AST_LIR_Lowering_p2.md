@@ -188,6 +188,16 @@ The noreturn-typed folded `if` now takes the same one-arm path (live arm via
 `ie_rtype3 != TYPE_NORETURN` second-line guard is superseded so lowering
 never walks the arm sema left un-analyzed. Runtime conditions are untouched.]
 
+[updated: 2026-10-17 — conditional `@import` (T4, spec §4): an `import_expr`
+in expression position lowers to NO value (module identities are compile-time
+only), and so does an `if`/`switch` whose resolved type is `module_type` (the
+comptime-selected import idiom — `const impl = if (@isWindows())
+@import("a.zig") else @import("b.zig");`). `lowerModuleInit` skips such
+module-alias initializers exactly like the bare `@import` init (no garbage
+store into the binding's storage slot); `resolveModuleBase` folds the
+initializer through the shared comptime table so `impl.member` resolves to the
+LIVE module's member.]
+
 ### 3.2 Builtin Call Lowering
 
 | Builtin | Lowering |

@@ -912,6 +912,25 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
         var rdt_sv: []const u8 = "SVO\n"; pal_mod.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
         }
         if (s.type_id != @intCast(u32, 0)) { var rdt_nm: []const u8 = "STY:N"; pal_mod.markerWriteInt(rdt_nm, name_id); var rdt_tm: []const u8 = "STY:T"; pal_mod.markerWriteInt(rdt_tm, s.type_id); if (ncg) |nt| { var rdt_ntm: []const u8 = "STY:C"; pal_mod.markerWriteInt(rdt_ntm, nt); } return s.type_id; }
+        // T4 (spec §4): a module-scope `const impl = if (@isWindows())
+        // @import("a.zig") else @import("b.zig");` (the conditional-`@import`
+        // idiom). The module-var fixpoint types decls before
+        // `phase_ComptimeEvaluation` stamps the fold table, so the decl can
+        // carry no type yet; fold the initializer HERE (table-backed probes
+        // are target-correct in the later phases) and cache the live module's
+        // type on the symbol — exactly the `const std = @import("std")` shape
+        // downstream (field access, lowering) already consumes.
+        if (s.kind == sym_mod.SymbolKind.global and s.decl_node != @intCast(u32, 0)) {
+            var t4_dnn = ast_mod.astStoreNodeAt(self.store, s.decl_node);
+            if (t4_dnn.kind == AstKind.var_decl and t4_dnn.child_1 != @intCast(u32, 0)) {
+                var t4_amt = semanticAnalyzerModuleAliasInitType(self, t4_dnn.child_1);
+                if (t4_amt != @intCast(u32, 0)) {
+                    s.type_id = t4_amt;
+                    var t4_am_m: []const u8 = "T4AM:n"; pal_mod.markerWriteInt(t4_am_m, name_id); var t4_am_t: []const u8 = "T4AM:t"; pal_mod.markerWriteInt(t4_am_t, t4_amt); var t4_am_nl: []const u8 = "\n"; pal_mod.markerWrite(t4_am_nl);
+                    return t4_amt;
+                }
+            }
+        }
             var rdt_sv: []const u8 = "SVO\n"; pal_mod.markerWrite(rdt_sv); return type_mod.TYPE_VOID;
     }
     if (ncgm) |m| { var id3m: []const u8 = "C2:M"; pal_mod.markerWriteInt(id3m, m); return m; }
@@ -3949,7 +3968,15 @@ fn semanticAnalyzerIfComptimeCondition(self: *SemanticAnalyzer, if_node_idx: u32
     if (if_node_idx == @intCast(u32, 0)) return null;
     var ifn = ast_mod.astStoreNodeAt(self.store, if_node_idx);
     if (ast_mod.astStoreNodePayload(self.store, if_node_idx) != @intCast(u32, 0)) return null;
-    var cond_idx = ifn.child_0;
+    return semanticAnalyzerCondComptimeBool(self, ifn.child_0);
+}
+
+// T3 (factored out of `semanticAnalyzerIfComptimeCondition` for T4's switch
+// form — behavior IDENTICAL to the pre-T4 inline body): the comptime-known
+// bool value of a CONDITION node, or null. Table-first (target-correct via
+// `phase_ComptimeEvaluation`'s builtin/condition sweeps); literal `true`/
+// `false`; narrow local-const evaluator fallback stamped into the table.
+fn semanticAnalyzerCondComptimeBool(self: *SemanticAnalyzer, cond_idx: u32) ?bool {
     if (cond_idx == @intCast(u32, 0)) return null;
     var cond = ast_mod.astStoreNodeAt(self.store, cond_idx);
     if (cond.kind == AstKind.bool_literal) {
@@ -3977,6 +4004,111 @@ fn semanticAnalyzerIfComptimeCondition(self: *SemanticAnalyzer, if_node_idx: u32
         }
     }
     return null;
+}
+
+// T4 (spec §4): the `module_type` of an `import_expr` node in expression
+// position, or 0 when the path did not resolve to a registered module.
+fn semanticAnalyzerImportExprModuleType(self: *SemanticAnalyzer, import_idx: u32) u32 {
+    if (import_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var t4_in = ast_mod.astStoreNodeAt(self.store, import_idx);
+    if (t4_in.kind != AstKind.import_expr) return @intCast(u32, 0);
+    var t4_path_id: u32 = ast_mod.astStoreNodePayload(self.store, import_idx);
+    var t4_target = mr_mod.moduleRegistryPathToIdGet(self.module_reg, t4_path_id);
+    if (t4_target) |t4_mtid| {
+        return type_mod.typeRegistryGetOrCreateModule(self.registry, t4_mtid);
+    }
+    return @intCast(u32, 0);
+}
+
+// T4 (spec §4): is this `switch` the conditional-`@import` idiom — every prong
+// body an `import_expr` (paren-transparent)? Only then is the switch a
+// comptime module selection; every other switch keeps the pre-T4 paths.
+fn semanticAnalyzerSwitchIsImportIdiom(self: *SemanticAnalyzer, node_idx: u32) bool {
+    var t4_sn = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (t4_sn.kind != AstKind.swt_ex) return false;
+    var t4_sp_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+    if (t4_sp_n == @intCast(usize, 0)) return false;
+    var t4_si: usize = 0;
+    while (t4_si < t4_sp_n) : (t4_si += 1) {
+        var t4_sp = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, t4_si)));
+        if (t4_sp.child_0 == @intCast(u32, 0)) return false;
+        var t4_body = semaUnwrapParens(self, t4_sp.child_0);
+        var t4_bn = ast_mod.astStoreNodeAt(self.store, t4_body);
+        if (t4_bn.kind != AstKind.import_expr) return false;
+    }
+    return true;
+}
+
+// T4 (spec §4): the module type bound by a module-scope `const impl = <init>`
+// whose initializer is the conditional-`@import` idiom — a bare `import_expr`,
+// an `if_expr`/`swt_ex` over `import_expr`s with a comptime-known condition
+// (T3's table-backed probes select the LIVE arm/prong), or 0 for anything
+// else. Used by `semanticAnalyzerResolveIdent` so a use of `impl` resolves to
+// the live module exactly like the `const std = @import("std");` binding (the
+// module-var fixpoint runs before `phase_ComptimeEvaluation` stamps the fold
+// table, so the decl itself may still carry no type when the use is resolved).
+fn semanticAnalyzerModuleAliasInitType(self: *SemanticAnalyzer, init_idx: u32) u32 {
+    var t4_idx = init_idx;
+    var t4_unwrap: usize = @intCast(usize, 0);
+    while (t4_unwrap < @intCast(usize, 8)) : (t4_unwrap += 1) {
+        var t4_n = ast_mod.astStoreNodeAt(self.store, t4_idx);
+        if (t4_n.kind == AstKind.paren_expr) { t4_idx = t4_n.child_0; continue; }
+        break;
+    }
+    if (t4_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var t4_n2 = ast_mod.astStoreNodeAt(self.store, t4_idx);
+    if (t4_n2.kind == AstKind.import_expr) {
+        return semanticAnalyzerImportExprModuleType(self, t4_idx);
+    }
+    if (t4_n2.kind == AstKind.if_expr) {
+        if (ast_mod.astStoreNodePayload(self.store, t4_idx) != @intCast(u32, 0)) return @intCast(u32, 0);
+        if (semanticAnalyzerIfComptimeCondition(self, t4_idx)) |t4_tv| {
+            var t4_arm: u32 = if (t4_tv) t4_n2.child_1 else t4_n2.child_2;
+            if (t4_arm == @intCast(u32, 0)) return @intCast(u32, 0);
+            var t4_an = ast_mod.astStoreNodeAt(self.store, semaUnwrapParens(self, t4_arm));
+            if (t4_an.kind == AstKind.import_expr) {
+                return semanticAnalyzerImportExprModuleType(self, semaUnwrapParens(self, t4_arm));
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    if (t4_n2.kind == AstKind.swt_ex) {
+        if (!semanticAnalyzerSwitchIsImportIdiom(self, t4_idx)) return @intCast(u32, 0);
+        if (semanticAnalyzerCondComptimeBool(self, t4_n2.child_0)) |t4_cv| {
+            var t4_pr_n = ast_mod.astStoreNodeExtraChildCount(self.store, t4_idx);
+            var t4_live: u32 = @intCast(u32, 0);
+            var t4_els: u32 = @intCast(u32, 0);
+            var t4_pi: usize = 0;
+            while (t4_pi < t4_pr_n) : (t4_pi += 1) {
+                var t4_p_i = ast_mod.astStoreNodeExtraChildAt(self.store, t4_idx, @intCast(u32, t4_pi));
+                var t4_p = ast_mod.astStoreNodeAt(self.store, t4_p_i);
+                if ((t4_p.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { t4_els = t4_p_i; continue; }
+                var t4_ci_n = ast_mod.astStoreNodeExtraChildCount(self.store, t4_p_i);
+                var t4_cii: usize = 0;
+                while (t4_cii < t4_ci_n) : (t4_cii += 1) {
+                    var t4_c_i = ast_mod.astStoreNodeExtraChildAt(self.store, t4_p_i, @intCast(u32, t4_cii));
+                    var t4_c = ast_mod.astStoreNodeAt(self.store, t4_c_i);
+                    if (t4_c.kind == AstKind.bool_literal) {
+                        var t4_cvv: bool = (t4_c.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+                        if (t4_cvv == t4_cv) { t4_live = t4_p_i; break; }
+                    }
+                }
+                if (t4_live != @intCast(u32, 0)) break;
+            }
+            if (t4_live == @intCast(u32, 0)) { t4_live = t4_els; }
+            if (t4_live != @intCast(u32, 0)) {
+                var t4_lb = ast_mod.astStoreNodeAt(self.store, t4_live).child_0;
+                if (t4_lb == @intCast(u32, 0)) return @intCast(u32, 0);
+                var t4_lb_u = semaUnwrapParens(self, t4_lb);
+                var t4_lbn = ast_mod.astStoreNodeAt(self.store, t4_lb_u);
+                if (t4_lbn.kind == AstKind.import_expr) {
+                    return semanticAnalyzerImportExprModuleType(self, t4_lb_u);
+                }
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    return @intCast(u32, 0);
 }
 
 fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
@@ -4648,7 +4780,71 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         }
     }
     var prongs_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
-    if (prongs_n == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWrite(pr0_m); var pr0_b: [10]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 9) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 9)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); self.current_switch_cond_tu = @intCast(u32, 0); self.switch_is_tag = @intCast(u8, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
+    if (prongs_n == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWriteInt(pr0_m, node_idx); var pr0_b: [20]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 19) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 19)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); self.current_switch_cond_tu = @intCast(u32, 0); self.switch_is_tag = @intCast(u8, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
+    // T4 (spec §4): the conditional-`@import` idiom — `switch (@isWindows())
+    // { true => @import("a.zig"), else => @import("b.zig") }`. When EVERY prong
+    // body is an `import_expr` the switch is a comptime module selection, never
+    // a runtime value: with a comptime-known condition (T3's table-backed
+    // probe, target-correct through `phase_ComptimeEvaluation`) only the LIVE
+    // prong is analyzed (the Zig untaken-arm rule), its module type is the
+    // switch's type, and the untaken bodies are stamped `TYPE_NORETURN` (the
+    // same sema/lowering coherence stamp as the `if` fold). A not-comptime-known
+    // condition keeps the pre-T4 `void` result (runtime-selected imports are
+    // out of scope) and analyzes nothing — the arms cannot unify to a module.
+    if (semanticAnalyzerSwitchIsImportIdiom(self, node_idx)) {
+        var t4_sw_has_else: u8 = @intCast(u8, 0);
+        var t4_sw_he_i: usize = 0;
+        while (t4_sw_he_i < prongs_n) : (t4_sw_he_i += 1) {
+            var t4_he_sp = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, t4_sw_he_i)));
+            if ((t4_he_sp.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { t4_sw_has_else = @intCast(u8, 1); break; }
+        }
+        if (t4_sw_has_else == @intCast(u8, 0)) { semanticAnalyzerReportSwitchWithoutElse(self, node_idx); }
+        if (semanticAnalyzerCondComptimeBool(self, node.child_0)) |t4_sw_cv| {
+            var t4_sw_live: u32 = @intCast(u32, 0);
+            var t4_sw_else: u32 = @intCast(u32, 0);
+            var t4_sw_i: usize = 0;
+            while (t4_sw_i < prongs_n) : (t4_sw_i += 1) {
+                var t4_sp_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, t4_sw_i));
+                var t4_sp = ast_mod.astStoreNodeAt(self.store, t4_sp_i);
+                if ((t4_sp.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { t4_sw_else = t4_sp_i; continue; }
+                var t4_sc_n = ast_mod.astStoreNodeExtraChildCount(self.store, t4_sp_i);
+                var t4_sci: usize = 0;
+                while (t4_sci < t4_sc_n) : (t4_sci += 1) {
+                    var t4_sc_i = ast_mod.astStoreNodeExtraChildAt(self.store, t4_sp_i, @intCast(u32, t4_sci));
+                    var t4_sc = ast_mod.astStoreNodeAt(self.store, t4_sc_i);
+                    if (t4_sc.kind == AstKind.bool_literal) {
+                        var t4_scv: bool = (t4_sc.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+                        if (t4_scv == t4_sw_cv) { t4_sw_live = t4_sp_i; break; }
+                    }
+                }
+                if (t4_sw_live != @intCast(u32, 0)) break;
+            }
+            if (t4_sw_live == @intCast(u32, 0)) { t4_sw_live = t4_sw_else; }
+            if (t4_sw_live != @intCast(u32, 0)) {
+                var t4_sw_pj: usize = 0;
+                while (t4_sw_pj < prongs_n) : (t4_sw_pj += 1) {
+                    var t4_dp_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, t4_sw_pj));
+                    var t4_dp = ast_mod.astStoreNodeAt(self.store, t4_dp_i);
+                    if (t4_dp.child_0 != @intCast(u32, 0) and t4_dp_i != t4_sw_live) {
+                        rtt_mod.resolvedTypeTableSet(self.type_table, t4_dp.child_0, type_mod.TYPE_NORETURN);
+                    }
+                }
+                var t4_live_body = ast_mod.astStoreNodeAt(self.store, t4_sw_live).child_0;
+                var t4_sw_bt: u32 = type_mod.TYPE_VOID;
+                if (t4_live_body != @intCast(u32, 0)) { t4_sw_bt = semanticAnalyzerResolveExpr(self, t4_live_body); }
+                self.current_switch_cond_tu = @intCast(u32, 0);
+                self.switch_is_tag = @intCast(u8, 0);
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, t4_sw_bt);
+                self.switch_depth -= @intCast(u32, 1);
+                return t4_sw_bt;
+            }
+        }
+        self.current_switch_cond_tu = @intCast(u32, 0);
+        self.switch_is_tag = @intCast(u8, 0);
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+        self.switch_depth -= @intCast(u32, 1);
+        return type_mod.TYPE_VOID;
+    }
     var unified: u32 = @intCast(u32, 0);
     var unified_node: u32 = @intCast(u32, 0);
     var has_else: u8 = 0;
@@ -5318,7 +5514,14 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = semanticAnalyzerResolveExpr(self, node.child_0);
         self.stmt_expr_node = ee_saved;
     } else if (node.kind == AstKind.import_expr) {
-        result = type_mod.TYPE_VOID;
+        // T4 (spec §4): an `@import` in EXPRESSION position resolves to the
+        // imported module's `module_type` (the conditional-`@import` idiom
+        // `const impl = if (@isWindows()) @import("a.zig") else @import("b.zig");`
+        // binds one comptime-selected module value). A path that failed to
+        // resolve keeps the pre-T4 `void` result so no cascading diagnostics
+        // follow error[3048].
+        var t4_imp_t = semanticAnalyzerImportExprModuleType(self, node_idx);
+        result = if (t4_imp_t != @intCast(u32, 0)) t4_imp_t else type_mod.TYPE_VOID;
      } else if (node.kind == AstKind.block) {
           // Task 7D: an expression-position block scopes its own locals. Resolve
           // the trailing expression, then drain any statement work it deferred

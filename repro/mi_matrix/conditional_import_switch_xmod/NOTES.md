@@ -38,3 +38,25 @@ here; not a T0 deliverable.
 ## Why no expected.txt/expected.rc
 No runtime golden is measurable pre-fix (link fail). zT_missing_fwd_xmod
 defect-repro shape (NOTES + sources). T4 captures goldens at fix time.
+
+## T4 flip (2026-10-17) — designed link-red→links-and-runs (class OK→OK)
+Measured on the T4 fixed point `e7099859f44e8050e7738be8545e8a58`
+(seed-built `/tmp/d1d2_t4/zig1_5_clean`, `-ffast`):
+- linux: dump rc 0 — `b_819BF014.c` PRESENT, `a_*` ABSENT; `build_target.sh
+  linux` clean (pre-fix link fail `undefined reference to 'zT_1'` GONE); run
+  `b ping\ncond import switch ok\n` rc 0 (3x byte-identical).
+- `-osw`: dump rc 0 — `a_2F9C6941.c` PRESENT, `b_*` ABSENT; mingw build clean;
+  wine run `a ping\ncond import switch ok\n` rc 0.
+- Goldens captured at the flip: `expected.txt` = `b ping\ncond import switch
+  ok\n` (29 B), `expected.rc` = 0. Corpus class line: **OK → OK** (the compile-
+  only classifier was blind to the red; the run/link flip is the observable).
+
+**Mechanism note (T4 root cause, `sf/src/parser.zig`):** `parserParseBuiltinCall`'s
+`@import` arm resets the shared `child_buf` (`self.child_buf_len = 0`, added in
+`f18a16ed`), which DESTROYED an in-progress switch prong list — a two-prong
+`@import` switch read back with `prongs_n == 1`, only the LAST prong attached
+(measured with instrumented probes). `parserParseSwitchExpr` now collects
+prongs in a parser-local list (the case-items pattern `parserParseSwitchProng`
+already uses); the `@import` clobber itself is left untouched (it still
+corrupts other `child_buf` list shapes — call args, tuple/array literals —
+recorded as a T4 concern, out of the idiom's scope).

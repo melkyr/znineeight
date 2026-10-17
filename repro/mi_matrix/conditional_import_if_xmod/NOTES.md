@@ -28,3 +28,16 @@ today), plus the §3 sema fold so the untaken arm's `@import` is never resolved.
 No runtime golden is measurable pre-fix (the frontend accepts but emits
 gcc-invalid C; the build dies before run). zT_missing_fwd_xmod defect-repro
 shape (NOTES + sources). T4 captures goldens at fix time.
+
+## T4 flip (2026-10-17) — designed FAIL→OK
+Measured on the T4 fixed point `e7099859f44e8050e7738be8545e8a58`
+(seed-built `/tmp/d1d2_t4/zig1_5_clean`, `-ffast`):
+- linux: dump rc 0 — `b_958020B9.c` PRESENT, `a_*` ABSENT; `build_target.sh
+  linux` clean; run `b ping\ncond import if ok\n` rc 0 (3x byte-identical).
+- `-osw`: dump rc 0 — `a_67A30D4C.c` PRESENT, `b_*` ABSENT; `build_target.sh
+  mingw` (i686-w64-mingw32-gcc) clean; wine run `a ping\ncond import if ok\n`
+  rc 0 (the WIN arm executed — `@isWindows()` polarity follows the CLI target).
+- Goldens captured at the flip (`scripts/stdlib/run_fixtures.sh --capture`):
+  `expected.txt` = `b ping\ncond import if ok\n` (25 B), `expected.rc` = 0
+  (linux contract; the `-osw` contract is the `a ping` twin above). Class file
+  line: **FAIL → OK** (designed new-fixture mover; frozen-corpus untouched).
