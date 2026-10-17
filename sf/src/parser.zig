@@ -68,6 +68,12 @@ pub const Parser = struct {
     import_scratch: ?*Sand,
     current_module_id: u32,
     file_id: u32,
+    dead_import_depth: u32,
+    switch_fold_val: ?bool,
+    switch_fold_matched: bool,
+    t4_const_items: [*]u32,
+    t4_const_len: usize,
+    t4_const_cap: usize,
 };
 
 fn parserInitCommon(source: []const u8, store: *AstStore, interner: *StringInterner, diag: *DiagnosticCollector, alloc: *Sand, builtin_import_id: u32) Parser {
@@ -109,6 +115,12 @@ fn parserInitCommon(source: []const u8, store: *AstStore, interner: *StringInter
         .import_scratch = null,
         .current_module_id = @intCast(u32, 0),
         .file_id = @intCast(u32, 0),
+        .dead_import_depth = @intCast(u32, 0),
+        .switch_fold_val = null,
+        .switch_fold_matched = false,
+        .t4_const_items = undefined,
+        .t4_const_len = @intCast(usize, 0),
+        .t4_const_cap = @intCast(usize, 0),
     };
 }
 
@@ -140,6 +152,79 @@ pub fn parserSetModuleContext(self: *Parser, reg: *ModuleRegistry, mod_id: u32) 
 
 pub fn parserSetImportScratch(self: *Parser, scratch: *Sand) void {
     self.import_scratch = scratch;
+}
+
+// C1b (true Zig laziness, Amendment 2): the parse-time comptime-bool probe
+// for untaken-arm import gating. Folds exactly what is knowable BEFORE any
+// module analysis: `true`/`false` literals, `!`/`and`/`or` compounds of
+// foldable bools, zero-arg `@isWindows()` (target-correct via
+// `ModuleRegistry.target_is_windows`), and already-parsed immutable `const`
+// bindings (the parse-time const map). Anything else (runtime values,
+// cross-module consts, arithmetic folds, forward-referenced consts) returns
+// null and the arm keeps eager import loading — conservative: a live import
+// is never under-loaded. Dead-arm imports are the ONLY suppressed loads.
+fn parserFoldComptimeBool(self: *Parser, node_idx: u32, depth: u32) ?bool {
+    if (node_idx == @intCast(u32, 0)) return null;
+    if (depth >= @intCast(u32, 8)) return null;
+    var n = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (n.kind == AstKind.bool_literal) {
+        return (n.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+    }
+    if (n.kind == AstKind.paren_expr) {
+        return parserFoldComptimeBool(self, n.child_0, depth + @intCast(u32, 1));
+    }
+    if (n.kind == AstKind.bool_not) {
+        if (parserFoldComptimeBool(self, n.child_0, depth + @intCast(u32, 1))) |v| {
+            return !v;
+        }
+        return null;
+    }
+    if (n.kind == AstKind.bool_and) {
+        if (parserFoldComptimeBool(self, n.child_0, depth + @intCast(u32, 1))) |l| {
+            if (!l) return false;
+            return parserFoldComptimeBool(self, n.child_1, depth + @intCast(u32, 1));
+        }
+        return null;
+    }
+    if (n.kind == AstKind.bool_or) {
+        if (parserFoldComptimeBool(self, n.child_0, depth + @intCast(u32, 1))) |l| {
+            if (l) return true;
+            return parserFoldComptimeBool(self, n.child_1, depth + @intCast(u32, 1));
+        }
+        return null;
+    }
+    if (n.kind == AstKind.builtin_call) {
+        // `@isWindows` recognized by TEXT, never by a freshly interned id: the
+        // interner assigns ids in insertion order and an extra early intern
+        // shifts every later id (measured: that shift alone flips
+        // `stdlib_crypto_modpow_xmod` OK→GREEN through a latent id-order
+        // dependence — see task-4-report.md §Fix round).
+        var t4_iw_name: []const u8 = "@isWindows";
+        var t4_bn = string_interner_mod.stringInternerGet(self.interner, n.child_0);
+        if (t4_bn.len != t4_iw_name.len) return null;
+        var t4_bi: usize = 0;
+        while (t4_bi < t4_iw_name.len) : (t4_bi += 1) {
+            if (t4_bn[t4_bi] != t4_iw_name[t4_bi]) return null;
+        }
+        if (ast_mod.astStoreNodeExtraChildCount(self.store, node_idx) != @intCast(u32, 0)) return null;
+        var v: bool = false;
+        if (self.module_reg) |reg| {
+            v = reg.target_is_windows;
+        }
+        return v;
+    }
+    if (n.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        var i: usize = self.t4_const_len;
+        while (i >= @intCast(usize, 2)) {
+            i -= @intCast(usize, 2);
+            if (self.t4_const_items[i] == name_id) {
+                return parserFoldComptimeBool(self, self.t4_const_items[i + @intCast(usize, 1)], depth + @intCast(u32, 1));
+            }
+        }
+        return null;
+    }
+    return null;
 }
 
 pub fn parserTokenText(self: *Parser, tok: ParseToken) []const u8 {
@@ -709,7 +794,14 @@ fn parserParseGroupedExpr(self: *Parser) ParserError!u32 {
 fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
     if (tok.value.string_id == self.builtin_import_id) {
-        self.child_buf_len = 0;
+        // C2 (Amendment 2): the old `self.child_buf_len = 0;` here destroyed
+        // any enclosing shared list in progress (call args, tuple/array
+        // literals, switch prongs — measured: `f(1, @import("x").k, 3)` saw 2
+        // args, `.{ 1, @import("x").k, 3 }` built a 2-element tuple,
+        // `[_]i32{ 1, @import("x").k, 3 }` built a length-2 array). The
+        // `@import` arm appends nothing to `child_buf`, so the saved/append/
+        // listEnd protocol every list user follows is already correct without
+        // the reset.
         return parserParseImportExpr(self, tok);
     }
     var id = tok.value.string_id;
@@ -776,11 +868,19 @@ fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
     }
     var end_pos: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
     _ = parserAdvance(self);
-    if (self.module_reg) |reg| {
-        if (self.import_scratch) |is| {
-            alloc_mod.sandReset(is);
-            var resolved = mr_mod.moduleRegistryResolveImport(reg, path_id, self.current_module_id, is);
-            _ = resolved;
+    // C1b (true Zig laziness, spec §4 + Amendment 2): an `@import` in a
+    // comptime-untaken `if`/`switch` arm NEVER loads its file — the node is
+    // still created (the fold stamps it dead) but no module is registered,
+    // queued, or read (no error[3048] for a missing dead-arm file). Untaken
+    // context is the parser's `dead_import_depth`; live imports resolve
+    // exactly as before.
+    if (self.dead_import_depth == @intCast(u32, 0)) {
+        if (self.module_reg) |reg| {
+            if (self.import_scratch) |is| {
+                alloc_mod.sandReset(is);
+                var resolved = mr_mod.moduleRegistryResolveImport(reg, path_id, self.current_module_id, is);
+                _ = resolved;
+            }
         }
     }
     return ast_mod.astStoreAddNode(self.store, AstKind.import_expr, 0,
@@ -905,11 +1005,17 @@ fn parserParseIfExpr(self: *Parser) ParserError!u32 {
             cap.tok_start, cap.tok_start + @intCast(u32, cap.tok_len),
             0, 0, 0, cap.name_id);
     }
+    var t4_ie_cv: ?bool = parserFoldComptimeBool(self, cond, 0);
+    var t4_ie_saved: u32 = self.dead_import_depth;
+    if (t4_ie_cv) |t4_iev| { if (!t4_iev) { self.dead_import_depth += 1; } }
     var then_body = try parserParseExprPrec(self, Prec.prec_orelse);
+    self.dead_import_depth = t4_ie_saved;
     var else_body: u32 = 0;
     if (parserPeek(self).kind == TokenKind.kw_else) {
         _ = parserAdvance(self);
+        if (t4_ie_cv) |t4_iev2| { if (t4_iev2) { self.dead_import_depth += 1; } }
         else_body = try parserParseExprPrec(self, Prec.prec_orelse);
+        self.dead_import_depth = t4_ie_saved;
     }
     var end_pos: u32 = kw.span_start;
     if (self.last_tok_valid) {
@@ -927,6 +1033,14 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
     var cond: u32 = try parserParseExprPrec(self, Prec.prec_orelse);
     _ = try parserExpect(self, TokenKind.rparen);
     _ = try parserExpect(self, TokenKind.lbrace);
+
+    // C1b: the comptime-known switch value selects the live prong (see
+    // `parserParseSwitchProng`); save/restore around the prong list so a
+    // nested switch starts fresh.
+    var t4_sw_saved: ?bool = self.switch_fold_val;
+    var t4_swm_saved: bool = self.switch_fold_matched;
+    self.switch_fold_val = parserFoldComptimeBool(self, cond, 0);
+    self.switch_fold_matched = false;
 
     // T4 (spec §4): the conditional-`@import` idiom's `switch` form
     // (`switch (@isWindows()) { true => @import("a.zig"), else => @import("b.zig") }`).
@@ -961,6 +1075,8 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
         kw_tok.span_start, end_pos, cond, 0, 0, payload);
     var pswe_nm: []const u8 = "PSWE:n"; pal.markerWriteInt(pswe_nm, pswe_node);
     var pswe_pm: []const u8 = "p"; pal.markerWriteInt(pswe_pm, payload);
+    self.switch_fold_val = t4_sw_saved;
+    self.switch_fold_matched = t4_swm_saved;
     return pswe_node;
 }
 
@@ -1020,12 +1136,46 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
         flags = flags | 1;
     }
 
+    // C1b (true Zig laziness): with a comptime-known switch condition only the
+    // SELECTED prong's body is live — an untaken prong's `@import` must never
+    // load its file (Zig laziness). Bool case items + `else` (the T4/C4 idiom
+    // spelling): a prong is selected when a case item folds to the condition
+    // value (first match wins — a later duplicate is dead), and the `else`
+    // prong when no earlier prong matched. Unknown condition: all prongs live
+    // (runtime-selected imports are out of scope and keep eager loading).
+    var t4_prong_dead: u8 = @intCast(u8, 0);
+    if (self.switch_fold_val) |t4_sv| {
+        var t4_matches: bool = false;
+        if (is_else != 0) {
+            t4_matches = !self.switch_fold_matched;
+        } else {
+            var t4_ci: usize = 0;
+            while (t4_ci < case_len) : (t4_ci += 1) {
+                if (parserFoldComptimeBool(self, case_items[t4_ci], 0)) |t4_cvi| {
+                    if (t4_cvi == t4_sv) { t4_matches = true; break; }
+                }
+            }
+        }
+        if (t4_matches) {
+            if (self.switch_fold_matched) {
+                t4_prong_dead = @intCast(u8, 1);
+            } else {
+                self.switch_fold_matched = true;
+            }
+        } else {
+            t4_prong_dead = @intCast(u8, 1);
+        }
+    }
+    var t4_prong_saved: u32 = self.dead_import_depth;
+    if (t4_prong_dead != @intCast(u8, 0)) { self.dead_import_depth += 1; }
+
     var body: u32 = undefined;
     if (parserPeek(self).kind == TokenKind.lbrace) {
         body = try parserParseBlock(self);
     } else {
         body = try parserParseStmtBodyExpr(self);
     }
+    self.dead_import_depth = t4_prong_saved;
 
     var pcb_m: []const u8 = "PCB:n"; pal.markerWriteInt(pcb_m, @intCast(u32, case_len));
     var pcb_pm: []const u8 = "p="; pal.markerWriteInt(pcb_pm, @intCast(u32, flags));
@@ -1582,6 +1732,14 @@ fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: 
             return init_node;
         }
     }
+    // C1b (true Zig laziness): record immutable bindings in the parse-time
+    // const map so the untaken-arm probe can fold `if (use_a)` conditions
+    // whose `const` is already parsed (T3 trigger-set parity at parse time;
+    // block-scoped via `parserParseBlock`'s watermark).
+    if ((flags & @intCast(u8, 0x01)) == @intCast(u8, 0) and init_node != @intCast(u32, 0)) {
+        u32ArrayListAppendInner(&self.t4_const_items, &self.t4_const_len, &self.t4_const_cap, self.allocator, name_id);
+        u32ArrayListAppendInner(&self.t4_const_items, &self.t4_const_len, &self.t4_const_cap, self.allocator, init_node);
+    }
     return ast_mod.astStoreAddNode(self.store, AstKind.var_decl, flags,
         kw.span_start, end_pos, type_node, init_node, 0, name_id);
 }
@@ -1735,11 +1893,15 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     }
 
     var then_body: u32 = undefined;
+    var t4_stmt_cv: ?bool = parserFoldComptimeBool(self, cond, 0);
+    var t4_stmt_saved: u32 = self.dead_import_depth;
+    if (t4_stmt_cv) |t4_scv| { if (!t4_scv) { self.dead_import_depth += 1; } }
     if (parserPeek(self).kind == TokenKind.lbrace) {
         then_body = try parserParseBlock(self);
     } else {
         then_body = try parserParseStmtBodyExpr(self);
     }
+    self.dead_import_depth = t4_stmt_saved;
 
     var pif_m: []const u8 = "PIF:b"; pal.markerWriteInt(pif_m, then_body);
     var pif_km: []const u8 = "k"; pal.markerWriteInt(pif_km, @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.store, then_body).kind)));
@@ -1747,6 +1909,7 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     var else_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.kw_else) {
         _ = parserAdvance(self);
+        if (t4_stmt_cv) |t4_scv2| { if (t4_scv2) { self.dead_import_depth += 1; } }
         if (parserPeek(self).kind == TokenKind.kw_if) {
             else_node = try parserParseIfStmt(self);
         } else if (parserPeek(self).kind == TokenKind.lbrace) {
@@ -1754,6 +1917,7 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
         } else {
             else_node = try parserParseStmtBodyExpr(self);
         }
+        self.dead_import_depth = t4_stmt_saved;
     }
     if (parserPeek(self).kind == TokenKind.semicolon) {
         _ = parserAdvance(self);
@@ -2043,6 +2207,9 @@ fn parserParseContainerDecl(self: *Parser, kind: AstKind) ParserError!u32 {
 fn parserParseBlock(self: *Parser) ParserError!u32 {
     var lbrace = try parserExpect(self, TokenKind.lbrace);
     var saved_len: usize = self.child_buf_len;
+    // C1b: the parse-time comptime-bool const map is block-scoped (a binding
+    // recorded inside must not fold a later, outer use of the same name).
+    var t4_cm_saved: usize = self.t4_const_len;
     var local_buf: [64]u32 = undefined;
      var local_len: usize = @intCast(usize, 0);
      while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
@@ -2081,6 +2248,7 @@ fn parserParseBlock(self: *Parser) ParserError!u32 {
         payload = ast_mod.astStoreAddExtraChildren(self.store, slice);
     }
     self.child_buf_len = saved_len;
+    self.t4_const_len = t4_cm_saved;
     var plen_m: []const u8 = "PLEN:l"; pal.markerWriteInt(plen_m, @intCast(u32, local_len));
     var plen_pm: []const u8 = "p"; pal.markerWriteInt(plen_pm, payload);
     return ast_mod.astStoreAddNode(self.store, AstKind.block, 0, lbrace.span_start, rbrace.span_start + @intCast(u32, rbrace.span_len), 0, 0, 0, payload);

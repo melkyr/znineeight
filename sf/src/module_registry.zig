@@ -243,6 +243,9 @@ pub const ModuleRegistry = struct {
     path_to_id_spill: HashMapSpillMeta,
     content_to_id_spill: HashMapSpillMeta,
     import_queue: ImportQueue,
+    // C1b (Amendment 2): CLI target flag for the parser's untaken-arm import
+    // gate (`@isWindows()` polarity at parse time — true Zig laziness).
+    target_is_windows: bool,
 };
 
 fn importEdgesEnsureCapacity(items: *[*]u32, len: *usize, cap: *usize, alloc: *Sand, new_cap: usize) void {
@@ -297,11 +300,17 @@ pub fn moduleRegistryInit(alloc: *Sand, interner: *StringInterner, diag: *Diagno
         .path_to_id_spill = HashMapSpillMeta{ .disk_off = @intCast(u32, 0), .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .spilled = @intCast(u8, 0) },
         .content_to_id_spill = HashMapSpillMeta{ .disk_off = @intCast(u32, 0), .capacity = @intCast(usize, 0), .count = @intCast(usize, 0), .spilled = @intCast(u8, 0) },
         .import_queue = importQueueInit(alloc, diag),
+        .target_is_windows = false,
     };
 }
 
 pub fn moduleRegistrySetSourceMan(self: *ModuleRegistry, sm: *SourceManager) void {
     self.source_man = sm;
+}
+
+// C1b (Amendment 2): target polarity for the parser's untaken-arm import gate.
+pub fn moduleRegistrySetTargetIsWindows(self: *ModuleRegistry, is_windows: bool) void {
+    self.target_is_windows = is_windows;
 }
 
 pub fn moduleRegistryAddModule(self: *ModuleRegistry, path_id: u32) u32 {

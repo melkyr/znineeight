@@ -7142,6 +7142,36 @@ pub fn semanticAnalyzerResolveStmt(self: *SemanticAnalyzer, node_idx: u32) void 
     semanticAnalyzerResolveStmtIter(self, node_idx);
 }
 
+// C1b (Amendment 2): is this module-scope initializer the conditional-`@import`
+// binding shape — an `if_expr`/`swt_ex` whose arms/prong bodies are all
+// `import_expr`s (paren-transparent, capture-free)? Such a binding selects a
+// compile-time module and has NO runtime value (see
+// `semanticAnalyzerResolveModuleVarDecl`'s alias-binding rule).
+fn semanticAnalyzerInitIsImportAlias(self: *SemanticAnalyzer, init_idx: u32) bool {
+    var t4_ia_idx = init_idx;
+    var t4_ia_uw: usize = @intCast(usize, 0);
+    while (t4_ia_uw < @intCast(usize, 8)) : (t4_ia_uw += 1) {
+        if (t4_ia_idx == @intCast(u32, 0)) return false;
+        var t4_ia_n = ast_mod.astStoreNodeAt(self.store, t4_ia_idx);
+        if (t4_ia_n.kind == AstKind.paren_expr) { t4_ia_idx = t4_ia_n.child_0; continue; }
+        break;
+    }
+    if (t4_ia_idx == @intCast(u32, 0)) return false;
+    var t4_ia_n2 = ast_mod.astStoreNodeAt(self.store, t4_ia_idx);
+    if (t4_ia_n2.kind == AstKind.if_expr) {
+        if (ast_mod.astStoreNodePayload(self.store, t4_ia_idx) != @intCast(u32, 0)) return false;
+        if (t4_ia_n2.child_1 == @intCast(u32, 0) or t4_ia_n2.child_2 == @intCast(u32, 0)) return false;
+        var t4_ia_a1 = ast_mod.astStoreNodeAt(self.store, semaUnwrapParens(self, t4_ia_n2.child_1));
+        var t4_ia_a2 = ast_mod.astStoreNodeAt(self.store, semaUnwrapParens(self, t4_ia_n2.child_2));
+        return t4_ia_a1.kind == AstKind.import_expr and t4_ia_a2.kind == AstKind.import_expr;
+    }
+    if (t4_ia_n2.kind == AstKind.swt_ex) {
+        if (!semanticAnalyzerSwitchIsImportIdiom(self, t4_ia_idx)) return false;
+        return true;
+    }
+    return false;
+}
+
 pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u32) u32 {
     var decl = ast_mod.astStoreNodeAt(self.store, decl_idx);
     if (decl.child_1 == @intCast(u32, 0)) return @intCast(u32, type_mod.TYPE_UNDEFINED);
@@ -7157,6 +7187,20 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
     var it = semanticAnalyzerResolveExpr(self, decl.child_1);
     self.container_init_depth -= @intCast(u32, 1);
     popExpectedType(self);
+    // C1b (Amendment 2): a conditional-`@import` binding selects a compile-time
+    // module — no runtime value — so the module-var fixpoint must NOT type the
+    // DECL record with the `module_type` (the C emitter has no spelling for it;
+    // the binding's storage slot keeps its pre-T4 `int` spelling — disclosed
+    // C3). The SYMBOL is typed at use sites by
+    // `semanticAnalyzerResolveIdent`'s module-alias fold. Unannotated only: an
+    // annotated mismatch keeps its `error[3000]` reject below.
+    if (decl.child_0 == @intCast(u32, 0) and it != @intCast(u32, 0)) {
+        if (@intCast(usize, it) < self.registry.types_len and
+            self.registry.types_items[@intCast(usize, it)].kind == type_mod.TypeKind.module_type and
+            semanticAnalyzerInitIsImportAlias(self, decl.child_1)) {
+            return type_mod.TYPE_VOID;
+        }
+    }
     // A5-F: reject a module-scope binding whose initializer is a TYPE VALUE
     // referenced by name (`var x = A;` / `var x = i32;` / `var x = type;` /
     // `const T = type;`). The resolved type id erases a `type_alias` to its

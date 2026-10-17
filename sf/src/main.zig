@@ -211,6 +211,10 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      token_mod.initKeywordTable(&compiler_alloc.permanent);
      var mr = mr_mod.moduleRegistryInit(&compiler_alloc.permanent, &interner, &diag);
      mr_mod.moduleRegistrySetSourceMan(&mr, &source_man);
+     // C1b (Amendment 2): target polarity for the parser's untaken-arm import
+     // gate (`@isWindows()` folds at parse time so a dead arm's `@import` never
+     // loads its file — true Zig laziness).
+     mr_mod.moduleRegistrySetTargetIsWindows(&mr, cli.target_is_windows);
      var type_db_arena: alloc_mod.GrowableSand = undefined;
      var type_db_name: []const u8 = "type_db";
      alloc_mod.growableSandInit(&type_db_arena, alloc_mod.poolPtr(), 4096, type_db_name);
