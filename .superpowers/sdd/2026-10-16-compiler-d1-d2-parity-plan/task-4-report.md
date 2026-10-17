@@ -410,3 +410,70 @@ linux `b ping\ncond import if ok\n` rc 0 / `-osw`+mingw+wine `a ping\n…` rc 0
   list uses a flat `child_buf_len = 0` protocol that clobbers an enclosing
   list when a fn-type appears inside one (same class as C2, different site).
   Pre-existing; not fixed here (no unrelated fixes).
+
+## Fix round (closeout A)
+
+Operator ruling (Amendment 3 (A)): exactly two items — revert the T4
+drive-by markers edit; truth-up the `conditional_import_switch_xmod` NOTES
+mechanism note. D3 defect entry already landed (`a823ba78`); the review's
+Important-1 (Gap Class) is PARKED via that entry — no gap-class code change
+this round. Touch set: `sf/src/semantic_analyzer.zig` (1 line),
+`repro/mi_matrix/conditional_import_switch_xmod/NOTES.md`.
+
+### (i) Drive-by markers edit reverted
+
+`semanticAnalyzerResolveSwitchExpr`'s `prongs_n == 0` early-return line: T4's
+a7828e5e had changed the PL0 marker segment `markerWrite` → `markerWriteInt`
+while KEEPING the manual itoa block, so the `prongs_n==0` path emitted
+`PL0:n<idx>` (via `markerWriteInt`) AND `<idx>\n` (via the itoa block) — a
+duplicated `<idx>`. Exact revert to the pre-T4 single-write form (also
+restores the original `pr0_b: [10]u8` / `9`-offset itoa buffer):
+
+- BEFORE (HEAD): `PL0:n"; pal_mod.markerWriteInt(pr0_m, node_idx); var pr0_b: [20]u8`
+- AFTER (worktree): `PL0:n"; pal_mod.markerWrite(pr0_m); var pr0_b: [10]u8`
+- `diff <(git show 2b0cd2cf:… | grep 'PL0:n') <(grep 'PL0:n' …)` → EMPTY
+  (line byte-identical to the pre-T4 form).
+
+### (ii) NOTES truth-up
+
+`conditional_import_switch_xmod/NOTES.md` mechanism note said the `@import`
+`child_buf` clobber was "left untouched … out of the idiom's scope" —
+contradicted by `d568880c` (C2 of the T4 fix round deleted
+`parserParseBuiltinCall`'s `child_buf_len = 0`). Rewritten to the landed
+truth (clobber **fixed**; switch prong local list stays; other list shapes
+fixed by the same delete; the fn-param flat-protocol site is T4.1's F4):
+
+- BEFORE: `the `@import` clobber itself is left untouched (it still`
+- AFTER: `the `@import` `child_buf` clobber itself is **fixed**`
+
+### Runtime battery
+
+Gate compiler `/tmp/d1d2_t4c/zig1_5_clean` (seed-built; sequential runs).
+
+| # | gate | command | observed | verdict |
+|---|---|---|---|---|
+| 1 | seed two-hop | `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/d1d2_t4c` | `three-hop closure OK (moving point): hop2 == hop3 == 8a9ea90a4976165b2074279be7f7ab32` | closure held; fixed point old `9110b933c26306ccbf491767febb35be` (T4.1) → **new `8a9ea90a…`** |
+| 2 | corpus | `bash scripts/corpus/classify /tmp/d1d2_t4c/zig1_5_clean …corpus_t4c.txt` | 1133 dirs; frozen 1124 subset (9 designed removed) md5 **`518eca1a9b5d3e1cc5a48abce214abd8`**; tally 959 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH; designed 9/9 OK | frozen **byte-identical, 0 movers**; no designed flips |
+| 3 | goldens 5/5 | `-ffast --dump-c89` + gcc trio + runs | gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`, lisp `b3d9f8974da24ddbf9d389f3d7d97322`, json `8bda3d5a1ec07d14a301bc343df32bf8`, mud srv `66c8f0abb926cca7baf9a0d1692ab318` / cli `93147d0f0bbd983a9d844fea8b7a6fa7` | **5/5 MATCH** |
+| 4 | mi frozen-25 + oob | `run_fixtures.sh <25>`; oob `-fsafe` | 25 PASS / 0 FAIL; oob dump rc 0, build rc 0, run **rc 133**, stdout 0 B `d41d8cd98f00b204e9800998ecf8427e` | **MATCH** |
+| 5 | examples | `-ffast -o <out> <entry>` + `build_target.sh linux` + run (CWD=example-dir, timeout 25/8, stdin `/dev/null`, rogue `q\n`) | **26/26 build; 26/26 run** — all md5 prefixes == T0/T3 table (`8c0d394c`,`b53b3a3d`,`f6a54779`,`fcbf7e7c`,`8cf0a784`,`74630882`,`8bda3d5a`×2,`dc22fa47`,`1c1f0a41`×4,`c3c7765e`,`d5966775`,mud rc124 `9545fe1d`,`d095a94d`,`45d2f0fb`,`3fb6709e`×2,`c6c047cb`,`264ea6b1`,`3d70c50b`,`7421137a`,z9play rc1 `f35b7ef7`,z9torr rc1 `f666af15`) | **MATCH** |
+| 6 | stdlib | `bash scripts/stdlib/verify_stdlib.sh /tmp/d1d2_t4c/zig1_5_clean` | `run_fixtures: 285 PASS / 0 FAIL over 285 dirs` / `STDLIB GATE OK` | **285/0 MATCH** |
+| 7 | 8 pins | `zig1_5_clean <mode> --dump-c89 <ENTRY> \| md5sum` | mud `-fsafe` `48f188df6b5f09cb1614c532ae7e825a` / `-ffast` `243369f4a942ad27f75b3c391581bd29` (== T4.1 values), gol `93c5e3fdc5b80b2f3db020d995abbe3f`/`01a4e2265b33c97a8ca6ff3dfa551231`, lisp `6da05d070acd414674b1b1ec947baa5c`/`e3970e33ac09c8dfaa316d2d69bf61ec`, json `af3823fae0b29fa4d4ca58932538d631`/`24e0e812e7dffa5a43750135405ffe3f` | **0/8 movers** (old = T4.1 table) |
+| 8 | markers | `zig1_5_clean --markers --dump-c89 examples/z98/game_of_life/main.zig` | `marker_lines=3436 bytes=38371` | **unchanged** (3436/38371) |
+
+Fixed-point note (item 1 delta, measured against the operator's "should NOT
+move" expectation): the revert DOES change self-emission — `semantic_analyzer`'s
+`ResolveSwitchExpr` C differs (marker call arity `markerWriteInt(pr0_m,
+node_idx)` → `markerWrite(pr0_m)`, itoa local `[20]u8`→`[10]u8`); those calls
+are emitted as real calls at `-O0` even though the callee bodies are compiled
+out (`g_markers_debug = 0`), so hop1's C — and every later hop — differs.
+Movement is benign moving-point churn (verdict (a), same class as T1–T4.1);
+closure held (hop2 == hop3) and all 7 other gates are byte-clean above.
+Example-dump pins (item 7) are unaffected because the `PL0` line lives in
+`sf/src`, not in example/stdlib code.
+
+### Concerns (closeout A)
+
+- none open. Scope held to the two ruled items (1 line + 1 doc paragraph);
+  D3/Gap-Class stays parked at `a823ba78` per ruling; C3/C4 remain disclosed
+  per the T4.1 ledger.
