@@ -389,3 +389,213 @@ flipped `2`→`0` at capture (T2 coerce precedent);
   error-vanishing pins use target-neutral `false`/const conditions), so the
   fixture is green on both targets post-T3; pre-fix FAIL was target-neutral
   too (sema analyzed the dead arms under both targets).
+
+---
+
+## Investigation round (C5 + hop gate)
+
+Operator rulings on the T3 STOP-present (recorded): **C1 RATIFIED** — the
+runtime-init-edge fix stands as landed; no rework. **C4 KEEP WIDER** — the
+trigger set stays evaluator-folded `KIND_BOOL` including constant compounds
+(`false and run`, `umax < 0`, `1 < 2`, …); this closes concern C4 as
+ratified and is load-bearing for Investigation 2's delta explanation below.
+
+Evidence-first round; NO code/fixture changes were made (report bookkeeping
+only). Gate compiler for all probes: `/tmp/d1d2_t3/zig1_5_clean` (post-T3).
+
+### Investigation 1 (C5) — else-less `if` gating
+
+**1a. What the Zig rule (the milestone's oracle) actually does.** Zig
+langref 0.15.2, "Compile-Time Expressions" (the comptime-parameter `max(bool)`
+example, `test_comptime_max_with_bool.zig`):
+
+> "This works because Zig implicitly inlines **if expressions** when the
+> condition is known at compile-time, and the compiler guarantees that it
+> will **skip analysis of the branch not taken**."
+
+The rule is stated for `if` expressions generally — no `else`-form
+qualification — and the guarantee is about the **branch not taken**. For an
+else-less `if` there is still exactly one branch not taken when the condition
+is comptime-known: `if (comptime_false) <arm>` — the arm is the branch not
+taken → **not analyzed** (this is the famous `if (false) { @compileError(…); }`
+compiles-anyway pattern); `if (comptime_true) <arm>` — the arm IS the taken
+branch → analyzed. Separately, Zig types an else-less `if` as `void` (already
+pinned in this repo's fixture header: "Official Zig 0.15.2 types a no-`else`
+`if` as `void`, so using it as a value is 'incompatible types: … and void'"),
+so a **value use** of an else-less `if` rejects regardless of arm elimination.
+Spec §3's rule text says "`if`/`else`", but its own parenthetical — "(Zig
+semantics: the untaken branch is eliminated before analysis)" — points at the
+quoted guarantee, which covers the else-less form. **The Zig rule therefore
+DOES include the else-less statement form** (and else-less value forms for
+the purpose of arm-internal diagnostics).
+
+**1b. What z98 does today (measured, gate compiler).**
+`/tmp/d1d2_t3work/inv_c5/stmt_dead.zig` — statement form:
+
+```zig
+pub fn main() void {
+    var x: i32 = 0;
+    if (false) {
+        x = dead_arm_undeclared_ident;
+    }
+    _ = x;
+}
+```
+→ dump rc 2, 0 `.c`, `error[20]` (identifier not declared) + `warning[3000]`
+— the dead arm is **analyzed** and its errors fire. Zig would report nothing
+(branch not taken). This is the C5 divergence, directly demonstrated.
+(Asymmetry note: lowering's `if_fold` ALREADY eliminates the else-less dead
+arm — the same shape emits no dead-arm C — so the gap is diagnostics-only,
+sema-side.)
+
+`/tmp/d1d2_t3work/inv_c5/value_false.zig` — value form, three sites
+(`var x: i32 = if (false) 1;` / `take(if (false) 2);` / `_ = if (false) 3;`)
+→ exactly 3 × `error[3059]` ("if expression without 'else' cannot be used as
+a value (its type is 'void')"), no `error[3000]` cascade (the if is typed
+`then_type` after the 3059, so the enclosing init coerces silently). This
+matches Zig's value-use rejection (void-typed if).
+
+**1c. `if_noelse_reject_xmod` — what it pins and per-row consequences.**
+Measured census (gate compiler): rc 2, 0 `.c`, **exactly 10 ×
+`error[3059]`**, no `error[3000]`/`error[20]`; no `expected_error.txt`
+(contract lives in the header: "rc=2, 0 emitted `.c`, `error[3059]` per
+value-`if` site"). All 10 rows, with the gate relevance of each condition:
+
+| row (main.zig) | shape | condition folds? | dead arm analyzed today? | would arm-walk skip change the row? |
+|---|---|---|---|---|
+| :22 `pick` | `if (a == 1) 1` | no (runtime) | n/a (runtime) | no |
+| :26 `capPick` | `if (o) \|v\| v` | no (capture; gate refuses) | yes | no |
+| :33 `andFalse` | `if (false and run) 1` | **yes** (C4 wider set → `false`) | yes (arm = literal `1`, clean) | **variant-dependent** (below) |
+| :43 `u64Lt0` | `if (umax < 0) 3` | **yes** (C4 wider set → `false`) | yes (arm = literal `3`, clean) | **variant-dependent** (below) |
+| :50 `rhsAndFalse` | `if (run and false) 1` | no (runtime lhs declines) | yes | no |
+| :55 `rhsAndTrue` | `if (run and true) 1` | no (runtime lhs) | yes | no |
+| :60 `rhsOrFalse` | `if (false or run) 1` | no (runtime lhs) | yes | no |
+| :66/:67/:68 `main` | `if (a == 1) …` ×3 | no (runtime) | n/a | no |
+
+Only rows :33 and :43 have comptime-known conditions; their dead arms are
+**clean literals** (T0's adjudication point). Consequences by implementation
+variant:
+
+- **Variant A — transplant the landed with-else gate (untaken arm stamped
+  `TYPE_NORETURN`):** the error[3059] check (`then_type != TYPE_NORETURN and
+  …`) **skips** → rows :33 and :43 lose their 3059 (10 → 8 rows). Worse, the
+  if then types `NORETURN` so `var x: i32 = <noreturn>` — either the program
+  is **silently ACCEPTED** (Zig rejects it: else-less if is `void`) — a
+  semantic regression — or the init cascades an `error[3000]`, which per the
+  classifier (`0 .c + error[3000] → GREEN`) flips the fixture
+  **FAIL → GREEN = frozen-corpus class MOVER** (forbidden gate). The header
+  contract ("3059 per value-`if` site", 10 sites) is violated either way.
+- **Variant B — Zig-faithful:** skip the arm WALK for comptime-known-false
+  else-less arms only; keep the value-use rejection (3059) **unconditional**
+  for else-less ifs whose condition is not comptime-true (its type is `void`
+  — Zig rejects the use regardless of arm elimination). Rows before/after:
+  **10 × error[3059] → 10 × error[3059]**, same sites, class **FAIL → FAIL**
+  (no frozen mover expected). The statement-form probe `stmt_dead` flips
+  FAIL → OK (dead-arm `error[20]` vanishes — Zig-correct) and would need a
+  NEW fixture pin. The fixture's header contract holds.
+
+**1d. T0's scan coverage.** `if_noelse_reject_xmod` **is** in T0's scanned
+adjudication set (the 6-dir table, task-0-report §1.4): "the dead then-arms
+hold clean literals → class stays FAIL (3059 gate fires on the value use
+regardless of arm elimination)". That class-level verdict is correct for
+Variant B and (only if no 3000 cascade appears) for Variant A — T0's
+adjudication did not distinguish the two stamping designs. Scan-coverage
+gap to record: T0's `PAT` does not match constant-**comparison** conditions
+(`umax < 0`-class); a reject fixture whose only comptime-dead arm sits behind
+such a fold AND carries the fixture's only error would have been missed by the
+pattern sweep. The frozen-1124 byte-identity gate is the backstop any
+implementation must re-run.
+
+**1e. Verdict.** The Zig rule (the milestone's oracle) **mandates** the
+untaken-arm elimination for the else-less form too (1a), so option (ii) is
+mandated — and this round's rules say: STOP-present, do not implement. Binding
+STOP-present:
+
+> **I found the intention is** gating else-less `if` arms exactly like the
+> landed with-else gate (untaken arm not analyzed, the `if` taking the live
+> arm's value/type), **but this is impossible given** the landed gate's
+> `TYPE_NORETURN`-stamp pattern: the error[3059] value-use rule keys on the
+> analyzed then-type, so the transplant silently ACCEPTS Zig-rejected value
+> uses (`var x: i32 = if (false) 1;`) and drops 2 of 10 pinned 3059 rows
+> (`if_noelse_reject_xmod` :33 `andFalse`, :43 `u64Lt0`; class FAIL → FAIL
+> only if no `error[3000]` cascade appears — unproven, and a cascade is a
+> frozen FAIL→GREEN mover). A Zig-faithful Variant B (skip the arm walk for
+> comptime-known-false else-less arms; keep the 3059 value-use rejection
+> unconditional) keeps the fixture at 10 × 3059 / class FAIL and flips only
+> dead-arm-internal diagnostics (`stmt_dead`-shape `error[20]` vanishes,
+> Zig-correct — needs a NEW fixture pin), but it is a different design than
+> the landed gate and is a behavior change. Operator must rule: (i) leave
+> as-is (cost: z98 keeps wrong-rejecting dead-arm diagnostics in else-less
+> `if (false)`/comptime-false statement arms — `stmt_dead` probe; emitted C
+> is already correct because lowering folds; divergence from Zig recorded
+> here), or (ii) implement Variant B (or another ruled shape) as a follow-up
+> task with the fixture pin + frozen-gate re-run.
+
+### Investigation 2 (hop gate) — hop1 ≠ hop2
+
+**2a. What the script actually checks (`scripts/seed/build_from_seed.sh`).**
+`build_hop compiler dumpdir binout` runs
+`compiler -ffast --dump-c89 --output-dir dumpdir sf/src/main.zig` (repo root,
+relative path — module-hash tokens depend on the resolved path) then gcc -c +
+link → `binout`. Chain: **hop1** = gcc(seed compiler's C-dump of CURRENT
+`sf/src`) → `zig1_5_clean`; **hop2** = gcc(hop1's C-dump of the same sources)
+→ `hop2/zig1_hop2`; **hop3** = gcc(hop2's C-dump) → `hop3/zig1_hop3`. The gate
+compares **binary md5s** (not C dumps): `hop1 == hop2` prints "two-hop closure
+OK"; on mismatch the script takes its own documented path — *"Moving point:
+the committed seed's dump predates the current sf/src, so hop1 differs;
+convergence is hop2 == hop3"* — and requires `hop2 == hop3` ("three-hop
+closure OK (moving point)"), exiting 0; it **dies** only if hop2 ≠ hop3. The
+recorded fixed-point identity is `CLOSURE_MD5="$HOP2_MD5"` (an optional
+`FIXED_POINT_MD5` gate compares against hop2's md5), i.e. the script's
+canonical fixed point IS the self-hosted binary, and `hop1 == hop2` is the
+fast path that additionally asserts the seed-era dump already agrees.
+
+**2b. Why T3 diverges (measured delta shape).** hop1 ≠ hop2 (binary md5s
+`6de5b2e1…` vs `362fcfb2…`) iff the seed compiler's C-dump of `sf/src` differs
+from hop1's dump of the same sources (gcc is deterministic on the same C).
+Dump evidence from the T3 build dirs:
+
+- module sets: `gen` (seed dump), `hop2/` (hop1 dump), `hop3/` (hop2 dump)
+  each contain the same 49 `.c` files — the T3 closure fix pruned **nothing**
+  from the compiler's self-emission (all `sf/src` modules are reachable);
+- `hop2/` vs `hop3/`: **0 differing files** (byte-identical dumps; totals
+  9 467 080 B both) — the landed compiler's self-dump is stable;
+- `gen/` vs `hop2/`: **exactly one file differs** — `pal_388A8A1B.c`
+  (1200 lines / 29 651 B → 1050 lines / 25 368 B; −4 283 B). The diff shape is
+  T3's dead-arm elimination on the compiler's OWN sources:
+  `sf/src/pal.zig:211` `pub const g_markers_debug: u32 = 0;` and
+  `markerWrite`/`markerWriteInt`'s `if (g_markers_debug != @intCast(u32, 0)) { … }`
+  gates — **comptime-const conditions inside the C4-ratified wider trigger
+  set**. The pre-T3 seed compiler lowered both arms of those ifs
+  (`if ((unsigned char)(0)) goto z_bb_…` + the full marker-flood bodies); the
+  T3 compiler eliminates the dead arms. That is the whole delta.
+
+So the divergence is **exactly the expected one-extra-hop convergence of
+self-hosting after an emission-changing milestone** (seed-compiler-era dump vs
+new-compiler dump of the same sources), not a self-emission instability:
+hop2 == compile(dump(hop2)) holds bit-for-bit (hop2 == hop3 binaries and
+byte-identical dumps). Prior tasks' `hop1 == hop2` held because their emission
+changes were no-ops on `sf/src`'s own shapes (T2's own battery note: "every
+pull is a `seen` no-op"; T0 fixtures-only; T1 registry-identity — all
+recorded `hop1 == hop2` at `f18b69ec…` / `69cf0269…` / `6e6d1262…`). T3 is the
+first emission-changing milestone to move the compiler's own C, and the
+script's moving-point path (explicitly commented for this case) is the
+authoritative gate. The plan battery letter "seed two-hop hop1==hop2" is the
+two-hop spelling of "the built compiler is a self-compile fixed point";
+`hop2 == hop3` is that property. (The context's battery line anticipated the
+fixed point moving and recorded old→new — done: `6e6d1262…` → `362fcfb2…` —
+but assumed hop1==hop2; the assumption held for T0–T2 only.)
+
+**2c. Verdict: (a)** — the gate is satisfied under the script's real
+semantics (hop2 == hop3, the script's own `three-hop closure OK (moving
+point)` pass; the fixed-point identity it would gate with `FIXED_POINT_MD5` is
+hop2's `362fcfb25d88068388755fc1e0ce6c2d`). Not (b): the delta is not an
+instability (2b: byte-identical hop2/hop3 dumps). Not (c): T0/T1/T2 all
+recorded `two-hop closure OK: hop1 == hop2`; T3's build is the first to
+diverge, and the cause is the T3 emission change (pal.zig marker-gate dead
+arms). One residual note for the operator: if the plan letter `hop1==hop2` is
+meant as a HARD two-hop gate regardless of the script's moving-point path,
+then every emission-changing milestone is red by construction until the seed
+is rotated at closeout (the seed's own dump era predates the milestone) — the
+closeout seed rotation is exactly what re-establishes hop1==hop2 on the next
+build.
