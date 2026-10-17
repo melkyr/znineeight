@@ -1230,8 +1230,16 @@ live arm). Errors inside a comptime-dead arm vanish (Zig behavior). The gate
 is `semanticAnalyzerIfComptimeCondition` in `sf/src/semantic_analyzer.zig`
 (both the value-`if` resolver and the `if_stmt` statement walker); it reads
 and stamps `ctx.comptime_folds` so lowering's `if_fold`/`ie_fold` eliminate
-the same arm. Runtime conditions are untouched; no-`else` ifs keep the
-pre-T3 walk (the §3 rule is stated for `if`/`else`).]
+the same arm. Runtime conditions are untouched. [C5 Variant B, operator-ruled:
+else-less `if`s are gated too — a comptime-known-FALSE else-less `if` skips
+its then arm (Zig langref: "skip analysis of the branch not taken"); a
+comptime-known-TRUE one walks it (taken branch). The `error[3059]` value-use
+rejection is kept exactly: it fires unconditionally for the skipped else-less
+value form (the if is `void`-typed with no taken arm) and the result is the
+`TYPE_UNDEFINED` error sentinel — the `TYPE_NORETURN`-stamp transplant
+("Variant A") is deliberately not used there because it would drop the
+`if_noelse_reject_xmod` 3059 rows. `comptime_if_noelse_deadarm_xmod` pins the
+statement-form silence.]
 
 ### 7.1 Pass Pipeline
 

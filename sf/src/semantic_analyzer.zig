@@ -3991,12 +3991,33 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     // (narrow trigger set), the untaken arm is NOT semantically analyzed and
     // the `if` takes the live arm's value/type. The untaken arm is stamped
     // `TYPE_NORETURN` so the result-typing tail below resolves exactly the
-    // live arm (the same paths a diverging arm already takes). No-`else` ifs
-    // keep the pre-T3 walk (the rule is stated for `if`/`else`; the
-    // error[3059] gate types the then-arm).
-    var t3_egate: ?bool = null;
-    if (node.child_2 != @intCast(u32, 0)) {
-        t3_egate = semanticAnalyzerIfComptimeCondition(self, node_idx);
+    // live arm (the same paths a diverging arm already takes).
+    // C5 Variant B (operator-ruled): an ELSE-LESS `if` whose condition is
+    // comptime-known-FALSE also skips its then arm (Zig langref: the compiler
+    // "skip[s] analysis of the branch not taken" — no `else`-form
+    // qualification). The error[3059] value-use rejection is kept EXACTLY:
+    // it fires unconditionally below (an else-less `if` with no taken arm is
+    // `void`-typed, so every value use is an error regardless of what the
+    // skipped arm would have typed — the `if_noelse_reject_xmod` rows with
+    // folding conditions, `andFalse`/`u64Lt0`, keep their 3059 at the same
+    // site). Variant A's `TYPE_NORETURN`-stamp transplant is NOT used here
+    // (it would drop those rows). The `TYPE_UNDEFINED` result is the error
+    // sentinel — every downstream check guards it out, so no cascading
+    // diagnostics. Comptime-known-TRUE else-less ifs keep the pre-T3 walk
+    // (the arm is the TAKEN branch) and ruling-3 acceptance.
+    var t3_egate: ?bool = semanticAnalyzerIfComptimeCondition(self, node_idx);
+    if (node.child_2 == @intCast(u32, 0)) {
+        if (t3_egate) |t3_bv| {
+            if (!t3_bv) {
+                self.local_decl_count = @intCast(usize, ifexpr_cap_saved);
+                if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+                    var t3b_msg: []const u8 = "if expression without 'else' cannot be used as a value (its type is 'void')";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3059_IF_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), t3b_msg);
+                }
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_UNDEFINED);
+                return type_mod.TYPE_UNDEFINED;
+            }
+        }
     }
     var then_type: u32 = undefined;
     if (t3_egate) |t3_ev| {
@@ -6232,23 +6253,20 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
              // T3 (spec §3 Zig rule): a comptime-known `if`/`else` condition
              // eliminates the untaken arm before analysis — only the live arm
              // is walked (the pop marker restores the arm-local scope exactly
-             // as the two-arm sequence did). No-`else` statements keep the
-             // pre-T3 both-arm walk (the §3 rule is stated for `if`/`else`;
-             // the error[3059] no-else gate relies on the then-arm typing).
-             var t3_sgate: ?bool = null;
-             if (node.child_2 != @intCast(u32, 0)) {
-                 t3_sgate = semanticAnalyzerIfComptimeCondition(self, node_idx);
-             }
+             // as the two-arm sequence did). C5 Variant B: the gate also
+             // covers ELSE-LESS statements — a comptime-known-FALSE else-less
+             // `if` skips its then arm (Zig: "skip analysis of the branch not
+             // taken"); a comptime-known-TRUE one walks the then arm (it is
+             // the taken branch). Capture conditions never gate.
+             var t3_sgate: ?bool = semanticAnalyzerIfComptimeCondition(self, node_idx);
              if (t3_sgate) |t3_sv| {
                  semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
                  if (t3_sv) {
                      if (node.child_1 != @intCast(u32, 0)) {
                          semanticAnalyzerStmtWorkPush(self, node.child_1);
                      }
-                 } else {
-                     if (node.child_2 != @intCast(u32, 0)) {
-                         semanticAnalyzerStmtWorkPush(self, node.child_2);
-                     }
+                 } else if (node.child_2 != @intCast(u32, 0)) {
+                     semanticAnalyzerStmtWorkPush(self, node.child_2);
                  }
              } else {
                  semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
