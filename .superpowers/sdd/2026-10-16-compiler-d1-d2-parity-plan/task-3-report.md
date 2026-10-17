@@ -599,3 +599,94 @@ then every emission-changing milestone is red by construction until the seed
 is rotated at closeout (the seed's own dump era predates the milestone) — the
 closeout seed rotation is exactly what re-establishes hop1==hop2 on the next
 build.
+
+---
+
+## Fix round (C5 Variant B)
+
+Operator ruling: implement **Variant B** (the Zig-faithful else-less gating
+specified in the investigation round). Variant A (`TYPE_NORETURN`-stamp
+transplant) forbidden. Implemented + full battery re-run; frozen 1124
+byte-identical (0 movers).
+
+### Mechanism (`sf/src/semantic_analyzer.zig`)
+
+- **`if_stmt` walker:** the T3 gate now covers ELSE-LESS statements too. A
+  comptime-known-FALSE else-less `if` pushes **no arm** (the then arm is the
+  branch not taken — not walked, Zig langref "skip analysis of the branch not
+  taken"); a comptime-known-TRUE one walks the then arm (taken branch);
+  unknown/capture conditions unchanged (capture conditions never gate).
+- **`semanticAnalyzerResolveIfExpr` (value form, else-less):** when the gate
+  returns false (comptime-known-FALSE), the then arm is **not resolved** and
+  `error[3059]` fires **unconditionally** (same message/ErrorCode/span and
+  `diagnosticCollectorMarkNodeOnce` guard as the existing check) — an
+  else-less `if` with no taken arm is `void`-typed, so every value use is
+  rejected regardless of what the skipped arm would have typed (Zig rejects
+  it too). The `if` result is `TYPE_UNDEFINED`, the codebase's error sentinel:
+  every downstream check guards it out, so no cascading diagnostics.
+  Comptime-known-TRUE else-less keeps the pre-T3 walk + ruling-3 acceptance.
+  Analyzed cases (runtime/unknown/capture conditions) keep the existing
+  then-type-gated 3059 check **byte-exact** (maximal behavior preservation;
+  the unconditional rule is scoped to the skipped subset).
+- **Pipeline safety anchor:** `main.zig` exits(2) after
+  `phase_SemanticAnalysis` when any error is present — a program whose only
+  fault is a skipped-arm 3059 never reaches lowering, so the pre-existing
+  void-typed-if-at-value-site lowering ICE (measured: `error[3043]` on
+  `var x: i32 = if (false) v();` when NO 3059 fires) cannot bucket the class
+  as ICE for these shapes. The 3059 rows therefore cannot be displaced by
+  lowering noise.
+- **Variant A guard:** no `TYPE_NORETURN` stamp is used on the else-less
+  skipped path (it would make the existing then-type-gated check skip and
+  drop rows `:33 andFalse`/`:43 u64Lt0` — the forbidden flip).
+
+### Fixture pin (NEW, designed addition)
+
+`repro/mi_matrix/comptime_if_noelse_deadarm_xmod` — else-less statement forms
+whose dead arms carry `error[20]`-class diagnostics (literal `false`,
+comptime `const` false, constant-fold `1 > 2`, clean `@isWindows()`), live
+pins (`if (true)` taken arm analyzed; runtime `if` untouched; `x == 11` gate
+prints the golden). Value forms excluded on purpose (they are always 3059 —
+`if_noelse_reject_xmod` pins that census).
+
+| | pre-C5 (pin compiler `/tmp/d1d2_t3/zig1_5_clean`) | post-C5 (`/tmp/d1d2_c5b/zig1_5_clean`) |
+|---|---|---|
+| dump | rc 2, 0 `.c`, `error[20]`×3 + `warning[3000]`×3 → class **FAIL** | rc 0, 5 `.c`, 0 diagnostics |
+| run | unreachable | `comptime if noelse ok\n` rc 0, 3× deterministic |
+| class | FAIL | **OK** (designed FAIL→OK flip) |
+
+Golden captured at flip: `expected.txt`=`comptime if noelse ok\n`,
+`expected.rc`=0 (`run_fixtures.sh --capture` → 1 PASS). The 3×3059
+preservation probes re-measured post-C5:
+`if_noelse_reject_xmod` → **exactly 10 × error[3059]** (rc 2, 0 `.c`, class
+FAIL — the required "10/10 rows unchanged"); `value_false` probe
+(`var x: i32 = if (false) 1;` etc.) → 3 × 3059 unchanged; `stmt_dead` probe
+(`if (false) { dead_ident; }`) → **rc 0, 0 stderr bytes** (was rc 2 +
+`error[20]` — the pinned Zig silence).
+
+### Runtime battery (gate compiler `/tmp/d1d2_c5b/zig1_5_clean`; sequential)
+
+| # | item | command | observed | verdict |
+|---|---|---|---|---|
+| 1 | seed two-hop | `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/d1d2_c5b` | hop1 `476482dc…`; hop2 == hop3 == **`67abd038909ae211c839e493e895ba72`**; `three-hop closure OK (moving point)` | MATCH (script semantics). Fixed point old→new: `362fcfb2…` → `67abd038…` |
+| 2 | corpus classify | `bash scripts/corpus/classify /tmp/d1d2_c5b/zig1_5_clean …corpus_c5b.txt` | 1132 dirs; frozen-1124 subset md5 `518eca1a9b5d3e1cc5a48abce214abd8`, diff vs T0 anchor **EMPTY**; tally 957 OK / 58 GREEN / 117 FAIL / 0 ICE / 0 CRASH | **Frozen 1124 byte-identical, 0 movers.** Designed lines: `comptime_if_noelse_deadarm_xmod OK` (new flip), errunion/cond_if/prune/coerce/emit OK, cond_import_if FAIL / cond_import_switch OK (T4's, unchanged) |
+| 3 | goldens 5/5 | dump+gcc+run (QUICK_REF recipe) | gol `fcbf7e7c…`, lisp `b3d9f897…`, json `8bda3d5a…`, mud `66c8f0ab…`/`93147d0f…` | **5/5 MATCH** |
+| 4 | mi frozen-25 + oob | `run_fixtures.sh` <25 names> + `-fsafe` oob recipe | 25 PASS / 0 FAIL; oob rc 133, stdout `d41d8cd9…` | **MATCH** |
+| 5 | examples | `-ffast -o` + `build_target.sh linux`; run CWD=example-dir | 26/26 build OK; 26/26 runs — every md5 matches the T0 table (mud rc 124 `9545fe1d…`, z9play/z9torr rc 1, …) | **MATCH** |
+| 6 | stdlib | `bash scripts/stdlib/verify_stdlib.sh …` | 285 PASS / 0 FAIL; `STDLIB GATE OK` | **285/0 MATCH** |
+| 7 | 8 pins | `<zig1> <mode> --dump-c89 <ENTRY> \| md5sum` | mud `bbc02913…`/`fa346108…`, gol `93c5e3fd…`/`01a4e226…`, lisp `6da05d07…`/`e3970e33…`, json `af3823fa…`/`24e0e812…` | **0/8 delta** (unchanged vs QUICK_REF table) |
+| 8 | markers | `--markers --dump-c89 gol` → `wc -lc` | 3436 lines / 38371 B | unchanged vs T3 round (T0: 3437/38384) |
+
+D2 fixtures re-verified green through the classify gate (errunion/cond_if/prune
+OK lines). Hop note: hop1 ≠ hop2 again on the same moving-point path as the
+Investigation-2 finding (C5 changes what the compiler analyzes in its own
+sources — skipped arms drop their hoisted temps from the self-dump); the
+hopped dumps' stability claim from Investigation 2 stands (hop2==hop3 here
+too).
+
+### Commits
+
+(a) `fix(semantic_analyzer): D2 — else-less comptime-dead arm skip (Variant B)`
+— `sf/src/semantic_analyzer.zig` + `docs/sf/Design_p2.md` (§7 note) + the new
+fixture + its captured golden (the T2 convention: flip-time goldens ride with
+the fix commit).
+(b) `docs(sdd): T3 C5 Variant B` — this report.
