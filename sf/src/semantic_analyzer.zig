@@ -4780,7 +4780,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         }
     }
     var prongs_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
-    if (prongs_n == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWriteInt(pr0_m, node_idx); var pr0_b: [20]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 19) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 19)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); self.current_switch_cond_tu = @intCast(u32, 0); self.switch_is_tag = @intCast(u8, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
+    if (prongs_n == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWrite(pr0_m); var pr0_b: [10]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 9) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 9)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); self.current_switch_cond_tu = @intCast(u32, 0); self.switch_is_tag = @intCast(u8, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
     // T4 (spec §4): the conditional-`@import` idiom — `switch (@isWindows())
     // { true => @import("a.zig"), else => @import("b.zig") }`. When EVERY prong
     // body is an `import_expr` the switch is a comptime module selection, never

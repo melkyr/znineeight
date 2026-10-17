@@ -52,11 +52,15 @@ Measured on the T4 fixed point `e7099859f44e8050e7738be8545e8a58`
   only classifier was blind to the red; the run/link flip is the observable).
 
 **Mechanism note (T4 root cause, `sf/src/parser.zig`):** `parserParseBuiltinCall`'s
-`@import` arm resets the shared `child_buf` (`self.child_buf_len = 0`, added in
+`@import` arm reset the shared `child_buf` (`self.child_buf_len = 0`, added in
 `f18a16ed`), which DESTROYED an in-progress switch prong list — a two-prong
 `@import` switch read back with `prongs_n == 1`, only the LAST prong attached
 (measured with instrumented probes). `parserParseSwitchExpr` now collects
 prongs in a parser-local list (the case-items pattern `parserParseSwitchProng`
-already uses); the `@import` clobber itself is left untouched (it still
-corrupts other `child_buf` list shapes — call args, tuple/array literals —
-recorded as a T4 concern, out of the idiom's scope).
+already uses), and the `@import` `child_buf` clobber itself is **fixed**
+(deleted in `d568880c`, C2 of the T4 fix round): the `@import` arm appends
+nothing to `child_buf`, so the standard saved/append/listEnd protocol is
+correct without the reset. The same delete fixes the other `child_buf` list
+shapes (call args, tuple/array literals — before/after measured in
+task-4-report.md §Fix round); the fn-param flat-protocol site is T4.1's F4
+(`3d1397b2`).
