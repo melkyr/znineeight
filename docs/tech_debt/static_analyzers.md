@@ -25,10 +25,20 @@ Messages lacked context about ownership transfers.
 
 ## 2. LifetimeAnalyzer
 
-### 2.1 Missing Capture Propagation
+### 2.1 Missing Capture Propagation [RESOLVED — updated: 2026-10-17 — D1/D2 surface + drift truth-up]
 Pointer provenance is not yet tracked through optional or error union captures.
 - **Example**: `if (opt_ptr) |ptr| { return ptr; }` where `opt_ptr` points to a local variable.
-- **Status**: Deferred.
+- **Status**: Resolved at T5. Captures (`if`/`while` payload captures, `for`
+  captures, `switch`-prong captures, `catch |e|` captures) now bind through
+  `bindCaptureState` (`sf/src/analyzer.zig`): lifetime mode inherits the
+  provenance of the captured expression, so the example flags WARN_6010
+  ("returning pointer to local via variable"). Null mode binds the capture
+  `safe`; double-free mode inherits the origin's allocation state and marks the
+  origin `transferred`. Fixture: `tests/analyzers/capture_lifetime.zig` (run by
+  `test_analyzer_bin`'s `testFixture`); unit test
+  `testCaptureLifetimePropagation`. Base classification (T5): pointer-like
+  params (`*T`, `[*]T`, `[]T`, fn-ptr) seed `Provenance.external` — interiors
+  (`&p.field`) follow the caller-owned pointee; bare `&p` still dangles.
 
 ### 2.2 Alias Tracking
 The analyzer has minimal support for aliasing through pointer dereferences (`*ptr = &local`).
@@ -39,3 +49,34 @@ The analyzer has minimal support for aliasing through pointer dereferences (`*pt
 ### 3.1 Tag-Blind Member Access
 Member access (e.g., `s.ptr`) is conservatively treated as `PS_MAYBE`. It does not yet understand that certain union tags might guarantee a pointer is non-null.
 - **Status**: Requires tag-aware analysis of structs/unions.
+
+## 4. Cross-cutting (T5 truth-up)
+
+### 4.1 Comptime-Dead Arms — Partial Fold Probe [updated: 2026-10-17 — D1/D2 surface + drift truth-up]
+Per Zig semantics (T3 rule) a comptime-untaken arm does not exist for
+analysis. The analyzers now fold a conservative bool-literal family
+(`analyzerFoldComptimeBool`: literals, parens, `!`/`&&`/`||`) and walk only
+the live arm of a capture-free `if`. The shared comptime-fold table is not
+plumbed into `AnalyzerContext` (would touch `main.zig`/`comptime_eval.zig`,
+outside T5's touch set), so evaluator-only folds (named consts, compounds,
+`@isWindows()`) and `switch` prongs still walk both sides.
+- **Status**: Partial; full parity needs the fold table plumbed into the
+  analyzer context.
+
+### 4.2 NullPointer Return/Init Expressions Not Walked [updated: 2026-10-17 — D1/D2 surface + drift truth-up]
+`analyzeExpr` is invoked for conditions, expression statements, and
+assignment RHS, but NOT for `return`-statement expressions or `var`
+initializers — a deref there (`return p.*`) is unchecked. Parameters are not
+seeded in the null state map, so `param.*` patterns conservatively warn
+(measured: 44 false WARN_6002 on the compiler self-source).
+- **Status**: Pre-existing; disclosed, not fixed at T5 (would shift warning
+  volume on live code; separate task).
+
+### 4.3 Capture Aliasing Limits (DoubleFree) [updated: 2026-10-17 — D1/D2 surface + drift truth-up]
+A capture inherits the origin's state when the origin already has one
+(`var op = sandAlloc(...); if (op) |q| { ... }`). Alias chains
+(`var p = alloc(); var op = p; if (op) |q|`) keep `op` untracked (the
+assign-propagation gap of §1.5's transfer model), so frees through `q` in
+that shape stay "untracked" warnings; freeing via one name and then another
+alias is not cross-checked.
+- **Status**: Limited by name-keyed single-map tracking (cf. §2.2).

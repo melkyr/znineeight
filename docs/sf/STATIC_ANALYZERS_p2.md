@@ -274,16 +274,33 @@ Validates that all function signatures are compatible with C89 code generation. 
 
 ### 3.2 Checks
 
+[updated: 2026-10-17 — D1/D2 surface + drift truth-up]
+
 | Check | Condition | Diagnostic |
 |---|---|---|
-| Void parameter | Parameter type resolves to `void` | ERR 2010: `void` not allowed as parameter type |
-| Incomplete struct | Parameter/return type is an unresolved struct | ERR 2011: incomplete type in signature |
-| Incomplete union | Same for unions | ERR 2011 |
-| Anytype parameter | `anytype` keyword detected | ERR 2012: `anytype` not supported in Z98 |
-| Large return value | Return type `sizeof > 64` | WARN 7010: large return may cause MSVC 6.0 issues |
-| Opaque type | Parameter/return is opaque | ERR 2013: opaque types not supported |
+| Void parameter | Direct parameter type resolves to `void` (nested `void` bases like `*void` are fine) | ERR 2010: `void` not allowed as parameter type |
+| Incomplete struct/union/tagged-union/packed-union/enum | Named type (direct or nested in a wrapper / fn-ptr) is unresolved or not yet laid out | ERR 2011: incomplete type in signature |
+| Anytype parameter | `anytype` keyword detected (recursively through wrappers and fn-ptr lists) | ERR 2012: `anytype` not supported in Z98 |
+| Large return value | Named direct/fn-ptr return `sizeof > 64` | WARN 7010: large return may cause MSVC 6.0 issues |
+| Opaque type | (Reserved — `ERR_2013_OPAQUE_NOT_SUPPORTED` exists in the enum but is not emitted by the analyzer) | — |
+
+Accepted surface (no diagnostics): fn-ptr returns of `?Aggregate` / `E!Aggregate`
+(the D1-fixed shapes — the rules recurse through `optional_type` /
+`error_union_type` / pointer / slice / array / `fn_type` wrappers and validate
+the bases), arbitrary-width ints (`i1`-`i63` / `u1`-`u64`, the `parseArbIntWidth`
+family — lowered to a stable C89 carrier), and member type expressions
+(`mod.Key`, `T.tag`-family member types — validated through the name cache when
+they resolve, accepted otherwise).
 
 ### 3.3 Implementation
+
+[updated: 2026-10-17 — D1/D2 surface + drift truth-up] The sketch below is
+schematic (pre-self-hosting API names). The landed walk is
+`analyzeSignature` → `validateSignatureType` / `validateSignatureNamed` in
+`sf/src/analyzer.zig`: positions are encoded as 0 = direct parameter, 1 =
+direct/fn-ptr return, 2 = nested inside a wrapper; `fn_type` nodes recurse
+into their return (position 1) and parameter type lists (position 2);
+`field_access` type nodes validate the member name through the name cache.
 
 ```zig
 pub fn analyzeSignature(ctx: *AnalyzerContext, fn_node_idx: u32) !void {
@@ -343,12 +360,14 @@ Detects definite and potential null pointer dereferences before they become runt
 
 ```zig
 pub const PtrState = enum(u8) {
-    uninit = 0,     // Declared but never assigned (PS_UNINIT)
-    is_null = 1,    // Definitely null (assigned null or 0)
-    safe = 2,       // Definitely non-null (from &x, after null check, from capture)
-    maybe = 3,      // Unknown — could be null or non-null
+    uninit = 10,    // Declared but never assigned (PS_UNINIT)
+    is_null = 11,   // Definitely null (assigned null or 0)
+    safe = 12,      // Definitely non-null (from &x, after null check, from capture)
+    maybe = 13,     // Unknown — could be null or non-null
 };
 ```
+
+[updated: 2026-10-17 — D1/D2 surface + drift truth-up] enum discriminants are 10–13 in `sf/src/analyzer.zig` (not 0–3).
 
 ### 4.3 State Transitions
 
@@ -365,6 +384,7 @@ pub const PtrState = enum(u8) {
 | `if (p == null)` enter then | `maybe` | `is_null` (in then block) | Null check |
 | `if (opt) \|val\|` capture | — | `safe` (for `val`) | Optional unwrap capture |
 | `while (opt) \|val\|` capture | — | `safe` (for `val` in body) | Loop capture |
+| `for`/`switch`-prong/`catch \|e\|` capture [updated: 2026-10-17 — D1/D2 surface + drift truth-up] | — | `safe` (for the capture) | Bound by capture name via `bindCaptureState` (if/while payload nodes resolve through their capture node) |
 | `x orelse y` | — | `safe` (for result) | Orelse provides fallback |
 | `x catch y` | — | `safe` (for result) | Catch provides fallback |
 | Branch merge (differ) | `safe`+`is_null` | `maybe` | Conservative join |
@@ -639,6 +659,7 @@ pub const Provenance = enum(u8) {
     param_addr = 3,   // Points to the ADDRESS of a parameter — DANGER
     global = 4,       // Points to a global — safe to return
     heap = 5,         // Arena-allocated — safe to return (within arena lifetime)
+    external = 6,     // T5: pointer-like parameter / caller-owned pointee — values and interiors safe; bare `&p` still dangles
 };
 ```
 
@@ -649,6 +670,7 @@ pub const Provenance = enum(u8) {
 | `return &local_var;` | `local` | NO | ERR 2020: returning address of local variable |
 | `return &param;` | `param_addr` | NO | ERR 2021: returning address of parameter |
 | `var p = &local; return p;` | `local` (tracked) | NO | WARN 6010: returning pointer to local via variable |
+| `if (op) \|ptr\| { return ptr; }` [updated: 2026-10-17 — D1/D2 surface + drift truth-up] | `local` (capture inherits `op`) | NO | WARN 6010 — tech-debt §2.1, fixture `tests/analyzers/capture_lifetime.zig` |
 | `return param_ptr;` | `param` | YES | — (caller manages lifetime) |
 | `return &global;` | `global` | YES | — |
 | `return arena_alloc(...)` | `heap` | YES | — |
@@ -779,10 +801,15 @@ pub const LifetimeAnalyzer = struct {
 
 ### 5.6 Known Limitations (Documented for Users)
 
+[updated: 2026-10-17 — D1/D2 surface + drift truth-up]
+
 - **No alias tracking through pointer dereferences**: `*ptr = &local; return *ptr;` is not caught.
 - **No field-level assignment tracking**: `s.ptr = &local;` is not tracked (would require per-field provenance maps).
 - **No inter-procedural analysis**: If `store_ref(&local)` stores the reference, the leak is not caught.
 - **Conservative for function results**: All function return values are assumed `heap` provenance. This avoids false positives but misses cases where a function returns a stack reference.
+- **Captures (RESOLVED at T5, tech-debt §2.1)**: provenance IS propagated through payload captures (`if`/`while`/`for`/`switch`-prong/`catch |e|`) via `bindCaptureState` — the capture inherits the captured expression's provenance.
+- **Base classification (T5)**: function locals/params/captures are classified without the symbol table (the real pipeline registers module-level names only); pointer-like params (`*T`, `[*]T`, `[]T`, fn-ptr) seed `Provenance.external` so interiors (`&self.items[i]`) follow the caller-owned pointee while the bare address of the binding (`&p`) is `param_addr`.
+- **Comptime-dead arms (T5, partial)**: a capture-free `if` with a bool-literal-family condition walks only the live arm (T3 Zig rule); evaluator-only folds and `switch` prongs still walk both sides (tech-debt §4.1).
 
 ---
 
@@ -818,6 +845,7 @@ pub const AllocState = enum(u8) {
 | `p = null;` | `allocated` | — | **WARN 6005**: leak |
 | `return p;` | `allocated` | `returned_val` | OK — caller is responsible |
 | `some_func(p);` | `allocated` | `transferred` | **INFO 7001**: ownership transferred |
+| `if (op) \|q\|` capture [updated: 2026-10-17 — D1/D2 surface + drift truth-up] | `op` `allocated` (or tracked) | `q` inherits; `op` → `transferred` | Free/double-free through `q` is tracked (`bindCaptureState`) |
 | Scope exit | `allocated` | — | **WARN 6005**: leak at scope exit |
 | Branch merge | `freed`+`allocated` | `unknown` | Conservative |
 | Switch prong merge, name only in the prong | absent | `unknown` | Conservative (FX7; double-free pass) |

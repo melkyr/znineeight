@@ -35,6 +35,10 @@ pub const Provenance = enum(u8) {
     param_addr = 3,
     global = 4,
     heap = 5,
+    // T5 (§2.1 base): pointer-like parameter / caller-owned pointee. Values
+    // and interiors are safe to return; the bare address of the binding still
+    // dangles (classified param_addr).
+    external = 6,
 };
 
 pub const AllocState = enum(u8) {
@@ -67,14 +71,56 @@ pub fn classifyProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32
     var node = ast_mod.astStoreNodeAt(ctx.store, expr_idx);
     var kind = node.kind;
     if (kind == AstKind.address_of) {
+        // T5 (§2.1 base): classify the STORAGE an address names. A bare
+        // `&name` is the binding's own call-frame slot (dangles for params); an
+        // interior `&name.field`/`&name[i]` follows the pointee's provenance
+        // (pointer-like params are caller-owned — `external`).
+        var t5_is_interior: u8 = @intCast(u8, 0);
+        if (node.child_0 != @intCast(u32, 0)) {
+            var t5_onode = ast_mod.astStoreNodeAt(ctx.store, node.child_0);
+            if (t5_onode.kind != AstKind.ident_expr) t5_is_interior = @intCast(u8, 1);
+        }
         var found_name_id = resolveOrigin(ctx, node.child_0);
         if (found_name_id) |name_id| {
+            var t5_base: u8 = @intCast(u8, 255);
             var sym = sym_mod.symbolTableLookup(ctx.symbols, name_id);
             if (sym) |s| {
-                if (s.kind == SymbolKind.local) return @intCast(u8, @enumToInt(Provenance.local));
-                if (s.kind == SymbolKind.param) return @intCast(u8, @enumToInt(Provenance.param_addr));
-                if (s.kind == SymbolKind.global) return @intCast(u8, @enumToInt(Provenance.global));
+                if (s.kind == SymbolKind.local) {
+                    t5_base = @intCast(u8, @enumToInt(Provenance.local));
+                } else if (s.kind == SymbolKind.param) {
+                    t5_base = @intCast(u8, @enumToInt(Provenance.param));
+                } else if (s.kind == SymbolKind.global) {
+                    t5_base = @intCast(u8, @enumToInt(Provenance.global));
+                } else {
+                    return @intCast(u8, @enumToInt(Provenance.unknown));
+                }
+            } else {
+                // The real pipeline's symbol tables hold module-level names
+                // only (symbol_registrator.zig) — fn locals/params/captures
+                // are absent. Params arrive seeded (`param`/`external`),
+                // vars/captures carry their tracked value provenance, and an
+                // untracked binding is a conservative local.
+                var pv = smap_mod.stateMapGet(state, name_id);
+                if (pv) |v| {
+                    t5_base = v;
+                } else {
+                    t5_base = @intCast(u8, @enumToInt(Provenance.local));
+                }
             }
+            if (t5_is_interior == @intCast(u8, 0)) {
+                if (t5_base == @intCast(u8, @enumToInt(Provenance.global))) return @intCast(u8, @enumToInt(Provenance.global));
+                if (t5_base == @intCast(u8, @enumToInt(Provenance.param)) or
+                    t5_base == @intCast(u8, @enumToInt(Provenance.external)) or
+                    t5_base == @intCast(u8, @enumToInt(Provenance.param_addr))) {
+                    return @intCast(u8, @enumToInt(Provenance.param_addr));
+                }
+                return @intCast(u8, @enumToInt(Provenance.local));
+            }
+            if (t5_base == @intCast(u8, @enumToInt(Provenance.external))) return @intCast(u8, @enumToInt(Provenance.external));
+            if (t5_base == @intCast(u8, @enumToInt(Provenance.global))) return @intCast(u8, @enumToInt(Provenance.global));
+            if (t5_base == @intCast(u8, @enumToInt(Provenance.heap))) return @intCast(u8, @enumToInt(Provenance.heap));
+            if (t5_base == @intCast(u8, @enumToInt(Provenance.param))) return @intCast(u8, @enumToInt(Provenance.param_addr));
+            return @intCast(u8, @enumToInt(Provenance.local));
         }
         return @intCast(u8, @enumToInt(Provenance.unknown));
     }
@@ -474,44 +520,104 @@ fn rejectAnytypeType(ctx: *AnalyzerContext, type_node_idx: u32) void {
     }
 }
 
+// T5: `is_return` is a position code — 0 = direct parameter (void →
+// ERR_2010), 1 = direct or fn-ptr return (size → WARN_7010), 2 = nested
+// inside a wrapper (`?T`, `E!T`, `*T`, `[]T`, `[N]T`, fn-ptr params).
+fn validateSignatureNamed(ctx: *AnalyzerContext, name_id: u32, tnode_idx: u32, is_return: u32) void {
+    var tnode = ast_mod.astStoreNodeAt(ctx.store, tnode_idx);
+    var key = @intCast(u64, name_id);
+    var tid = type_mod.nameCacheGet(ctx.registry, key);
+    if (tid) |ttid| {
+        var ty = ctx.registry.types_items[@intCast(usize, ttid)];
+        if (ty.kind == type_mod.TypeKind.unresolved_name or
+            ((ty.kind == type_mod.TypeKind.struct_type or
+              ty.kind == type_mod.TypeKind.union_type or
+              ty.kind == type_mod.TypeKind.tagged_union_type or
+              ty.kind == type_mod.TypeKind.packed_union_type or
+              ty.kind == type_mod.TypeKind.enum_type) and ty.state != @intCast(u8, 2))) {
+            var tname = interner_mod.stringInternerGet(ctx.interner, name_id);
+            var ip1: []const u8 = "incomplete type '";
+            var ip2: []const u8 = "' in function signature";
+            var iparts: [3][]const u8 = [3][]const u8{ip1, tname, ip2};
+            var imsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &iparts[0], @intCast(u32, 3));
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2011_INCOMPLETE_TYPE)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), imsg);
+        }
+        if (ty.kind == type_mod.TypeKind.void_type and is_return == @intCast(u32, 0)) {
+            var vmsg: []const u8 = "void not allowed as parameter type";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2010_VOID_PARAMETER)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), vmsg);
+        }
+        if (is_return == @intCast(u32, 1)) {
+            if (ty.size > @intCast(u32, 64)) {
+                var wmsg: []const u8 = "return type exceeds 64 bytes; may cause issues on MSVC 6.0";
+                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_7010_LARGE_RETURN)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), wmsg);
+            }
+        }
+    } else {
+        // T5: arbitrary-width ints (`i1`..`i63` / `u1`..`u64` — the
+        // parseArbIntWidth family) may not be cached yet under this name; they
+        // lower to a stable C89 carrier and are accepted. Any other uncached
+        // name is left to type resolution (no analyzer rule).
+        var t5_text = interner_mod.stringInternerGet(ctx.interner, name_id);
+        var t5_au: bool = false;
+        var t5_aw = type_mod.parseArbIntWidth(t5_text, &t5_au);
+        if (t5_aw != @intCast(u32, 0)) return;
+    }
+    var s_anytype: []const u8 = "anytype";
+    var anytype_nid = interner_mod.stringInternerIntern(ctx.interner, s_anytype);
+    if (name_id == anytype_nid) {
+        if (!diag_mod.diagnosticCollectorMarkNodeOnce(ctx.diag, tnode_idx)) return;
+        var amsg: []const u8 = "anytype not supported in Z98";
+        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2012_ANYTYPE_NOT_SUPPORTED)), ctx.source_file_id, tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), amsg);
+    }
+}
+
 pub fn validateSignatureType(ctx: *AnalyzerContext, type_node_idx: u32, is_return: u32) void {
+    if (type_node_idx == @intCast(u32, 0)) return;
     var tnode = ast_mod.astStoreNodeAt(ctx.store, type_node_idx);
-    if (tnode.kind == AstKind.ident_expr) {
-        var name_id = identNameId(ctx.store, type_node_idx);
-        var key = @intCast(u64, name_id);
-        var tid = type_mod.nameCacheGet(ctx.registry, key);
-        if (tid) |ttid| {
-            var ty = ctx.registry.types_items[@intCast(usize, ttid)];
-            if (ty.kind == type_mod.TypeKind.unresolved_name or
-                ((ty.kind == type_mod.TypeKind.struct_type or
-                  ty.kind == type_mod.TypeKind.union_type or
-                  ty.kind == type_mod.TypeKind.tagged_union_type or
-                  ty.kind == type_mod.TypeKind.enum_type) and ty.state != @intCast(u8, 2))) {
-                var tname = interner_mod.stringInternerGet(ctx.interner, name_id);
-                var ip1: []const u8 = "incomplete type '";
-                var ip2: []const u8 = "' in function signature";
-                var iparts: [3][]const u8 = [3][]const u8{ip1, tname, ip2};
-                var imsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &iparts[0], @intCast(u32, 3));
-                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2011_INCOMPLETE_TYPE)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), imsg);
-            }
-            if (ty.kind == type_mod.TypeKind.void_type and is_return == @intCast(u32, 0)) {
-                var vmsg: []const u8 = "void not allowed as parameter type";
-                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2010_VOID_PARAMETER)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), vmsg);
-            }
-            if (is_return != @intCast(u32, 0)) {
-                if (ty.size > @intCast(u32, 64)) {
-                    var wmsg: []const u8 = "return type exceeds 64 bytes; may cause issues on MSVC 6.0";
-                    diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_7010_LARGE_RETURN)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), wmsg);
-                }
+    var kind = tnode.kind;
+    if (kind == AstKind.ident_expr) {
+        validateSignatureNamed(ctx, identNameId(ctx.store, type_node_idx), type_node_idx, is_return);
+        return;
+    }
+    // T5: the rules reach through the composite wrappers, so a fn-ptr return
+    // of `?Aggregate`/`E!Aggregate` (the D1-fixed shapes) is validated like a
+    // bare name and accepted when complete; incomplete bases are still
+    // rejected.
+    if (kind == AstKind.optional_type) {
+        validateSignatureType(ctx, tnode.child_0, @intCast(u32, 2));
+        return;
+    }
+    if (kind == AstKind.error_union_type) {
+        if (tnode.child_0 != @intCast(u32, 0)) validateSignatureType(ctx, tnode.child_0, @intCast(u32, 2));
+        validateSignatureType(ctx, tnode.child_1, @intCast(u32, 2));
+        return;
+    }
+    if (kind == AstKind.ptr_type or kind == AstKind.many_ptr_type or
+        kind == AstKind.slice_type or kind == AstKind.array_type) {
+        validateSignatureType(ctx, tnode.child_0, @intCast(u32, 2));
+        return;
+    }
+    if (kind == AstKind.fn_type) {
+        validateSignatureType(ctx, tnode.child_0, @intCast(u32, 1));
+        if (ast_mod.astStoreNodePayload(ctx.store, type_node_idx) != @intCast(u32, 0)) {
+            var ft_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, type_node_idx);
+            var ft_i: usize = 0;
+            while (ft_i < @intCast(usize, ft_n)) : (ft_i += 1) {
+                var ft_p = ast_mod.astStoreNodeExtraChildAt(ctx.store, type_node_idx, @intCast(u32, ft_i));
+                validateSignatureType(ctx, ft_p, @intCast(u32, 2));
+                rejectAnytypeType(ctx, ft_p);
             }
         }
-        var s_anytype: []const u8 = "anytype";
-        var anytype_nid = interner_mod.stringInternerIntern(ctx.interner, s_anytype);
-        if (name_id == anytype_nid) {
-            if (!diag_mod.diagnosticCollectorMarkNodeOnce(ctx.diag, type_node_idx)) return;
-            var amsg: []const u8 = "anytype not supported in Z98";
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2012_ANYTYPE_NOT_SUPPORTED)), ctx.source_file_id, tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), amsg);
+        return;
+    }
+    if (kind == AstKind.field_access) {
+        // Member type expressions (`mod.Key`, `T.tag`-family member types):
+        // validate the member's named type through the name cache.
+        var t5_mname = ast_mod.astStoreNodePayload(ctx.store, type_node_idx);
+        if (t5_mname != @intCast(u32, 0)) {
+            validateSignatureNamed(ctx, t5_mname, type_node_idx, is_return);
         }
+        return;
     }
 }
 
@@ -556,6 +662,53 @@ pub fn analyzeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void 
         var bi: usize = 0;
         while (bi < @intCast(usize, bargs_n)) : (bi += 1) {
             analyzeExpr(ctx, state, ast_mod.astStoreNodeExtraChildAt(ctx.store, expr_idx, @intCast(u32, bi)));
+        }
+        return;
+    }
+    if (kind == AstKind.if_expr) {
+        // T5 (T3 rule): capture-free comptime-known condition — only the live
+        // arm exists for analysis. A capture binds into a forked state and the
+        // then arm sees it.
+        var t5_ief = analyzerFoldComptimeBool(ctx, node.child_0, 0);
+        if (t5_ief) |iev| {
+            if (ast_mod.astStoreNodePayload(ctx.store, expr_idx) == @intCast(u32, 0)) {
+                if (iev) {
+                    analyzeExpr(ctx, state, node.child_1);
+                } else if (node.child_2 != @intCast(u32, 0)) {
+                    analyzeExpr(ctx, state, node.child_2);
+                }
+                return;
+            }
+        }
+        analyzeExpr(ctx, state, node.child_0);
+        var t5_iecap = captureNameIdOf(ctx.store, expr_idx);
+        if (t5_iecap != @intCast(u32, 0)) {
+            var t5_ies = smap_mod.stateMapFork(state, ctx.alloc);
+            bindCaptureState(ctx, t5_ies, t5_iecap, node.child_0);
+            analyzeExpr(ctx, t5_ies, node.child_1);
+        } else {
+            analyzeExpr(ctx, state, node.child_1);
+        }
+        if (node.child_2 != @intCast(u32, 0)) analyzeExpr(ctx, state, node.child_2);
+        return;
+    }
+    if (kind == AstKind.catch_expr) {
+        // T5: `e catch |err| ...` payload capture — the error binding is
+        // guaranteed present (null-safe) inside the rhs.
+        analyzeExpr(ctx, state, node.child_0);
+        var t5_ecap: u32 = @intCast(u32, 0);
+        if (node.child_2 != @intCast(u32, 0)) {
+            var capn = ast_mod.astStoreNodeAt(ctx.store, node.child_2);
+            if (capn.kind == AstKind.payload_capture) {
+                t5_ecap = ast_mod.astStoreNodePayload(ctx.store, node.child_2);
+            }
+        }
+        if (t5_ecap != @intCast(u32, 0)) {
+            var t5_ecs = smap_mod.stateMapFork(state, ctx.alloc);
+            bindCaptureState(ctx, t5_ecs, t5_ecap, node.child_0);
+            analyzeExpr(ctx, t5_ecs, node.child_1);
+        } else {
+            analyzeExpr(ctx, state, node.child_1);
         }
         return;
     }
@@ -715,29 +868,147 @@ pub fn walkBlock(ctx: *AnalyzerContext, state: *StateMap, block_idx: u32, visit_
     ctx.current_depth = saved_depth;
 }
 
+// T5: resolve a statement's capture binding to the capture NAME id.
+// if_stmt/while_stmt/if_expr carry the if_capture/while_capture NODE index in
+// the payload (that node's payload is the name id — cf. lower.zig
+// `bindOptionalCapture`); if_capture/while_capture/for_stmt carry the name id
+// directly; swt_prong keeps it in child_1.
+fn captureNameIdOf(store: *AstStore, node_idx: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var node = ast_mod.astStoreNodeAt(store, node_idx);
+    var kind = node.kind;
+    if (kind == AstKind.if_stmt or kind == AstKind.while_stmt or kind == AstKind.if_expr) {
+        var cap_idx = ast_mod.astStoreNodePayload(store, node_idx);
+        if (cap_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+        var capn = ast_mod.astStoreNodeAt(store, cap_idx);
+        if (capn.kind == AstKind.if_capture or capn.kind == AstKind.while_capture) {
+            return ast_mod.astStoreNodePayload(store, cap_idx);
+        }
+        return @intCast(u32, 0);
+    }
+    if (kind == AstKind.if_capture or kind == AstKind.while_capture or kind == AstKind.for_stmt) {
+        return ast_mod.astStoreNodePayload(store, node_idx);
+    }
+    if (kind == AstKind.swt_prong) {
+        return node.child_1;
+    }
+    return @intCast(u32, 0);
+}
+
+// T5 (tech-debt §2.1 — capture propagation): bind a payload capture into the
+// active state map. Null mode guarantees the unwrapped payload `safe`; lifetime
+// mode inherits the provenance of the captured expression (so
+// `if (opt_ptr) |ptr| { return ptr; }` flags when opt_ptr points at a local);
+// double-free mode inherits the origin's allocation state and marks the origin
+// transferred (the payload is moved out of the optional).
+fn bindCaptureState(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, src_expr: u32) void {
+    if (name_id == @intCast(u32, 0)) return;
+    if (ctx.null_analysis_mode != @intCast(u8, 0)) {
+        smap_mod.stateMapSet(state, name_id, @enumToInt(PtrState.safe));
+    }
+    if (ctx.lifetime_analysis_mode != @intCast(u8, 0)) {
+        var prov = classifyProvenance(ctx, state, src_expr);
+        smap_mod.stateMapSet(state, name_id, prov);
+    }
+    if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+        var orig = resolveOrigin(ctx, src_expr);
+        if (orig) |oid| {
+            var cur = smap_mod.stateMapGet(state, oid);
+            if (cur) |c| {
+                if (c == @enumToInt(AllocState.allocated)) {
+                    smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.allocated));
+                    smap_mod.stateMapSet(state, oid, @enumToInt(AllocState.transferred));
+                } else {
+                    smap_mod.stateMapSet(state, name_id, c);
+                }
+            }
+        }
+    }
+}
+
+// T5 (T3 interaction — comptime-dead arms): per Zig semantics a
+// comptime-untaken arm does not exist for analysis. Fold the same conservative
+// bool-literal family as the parse-time probe (`parserFoldComptimeBool`:
+// literals, parens, `!`/`&&`/`||`); evaluator-only folds (consts, compounds,
+// `@isWindows`) return null and keep eager walking — see
+// docs/tech_debt/static_analyzers.md.
+fn analyzerFoldComptimeBool(ctx: *AnalyzerContext, node_idx: u32, depth: u32) ?bool {
+    if (node_idx == @intCast(u32, 0)) return null;
+    if (depth >= @intCast(u32, 8)) return null;
+    var n = ast_mod.astStoreNodeAt(ctx.store, node_idx);
+    if (n.kind == AstKind.bool_literal) {
+        return (n.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+    }
+    if (n.kind == AstKind.paren_expr) {
+        return analyzerFoldComptimeBool(ctx, n.child_0, depth + @intCast(u32, 1));
+    }
+    if (n.kind == AstKind.bool_not) {
+        if (analyzerFoldComptimeBool(ctx, n.child_0, depth + @intCast(u32, 1))) |v| {
+            return !v;
+        }
+        return null;
+    }
+    if (n.kind == AstKind.bool_and) {
+        if (analyzerFoldComptimeBool(ctx, n.child_0, depth + @intCast(u32, 1))) |l| {
+            if (!l) return false;
+            return analyzerFoldComptimeBool(ctx, n.child_1, depth + @intCast(u32, 1));
+        }
+        return null;
+    }
+    if (n.kind == AstKind.bool_or) {
+        if (analyzerFoldComptimeBool(ctx, n.child_0, depth + @intCast(u32, 1))) |l| {
+            if (l) return true;
+            return analyzerFoldComptimeBool(ctx, n.child_1, depth + @intCast(u32, 1));
+        }
+        return null;
+    }
+    return null;
+}
+
+// T5: pointer-like parameter types (`*T`, `[*]T`, `[]T`, fn-ptr) own
+// caller-side storage; the bare binding is still call-frame (dangling by
+// address) but interiors follow the pointee.
+fn paramTypeIsPointerLike(ctx: *AnalyzerContext, type_expr_idx: u32) bool {
+    if (type_expr_idx == @intCast(u32, 0)) return false;
+    var tnode = ast_mod.astStoreNodeAt(ctx.store, type_expr_idx);
+    return tnode.kind == AstKind.ptr_type or tnode.kind == AstKind.many_ptr_type or
+        tnode.kind == AstKind.slice_type or tnode.kind == AstKind.fn_type;
+}
+
 pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on_stmt: fn(*AnalyzerContext, *StateMap, u32) void, visit_fn: fn(*AnalyzerContext, *StateMap, u32) void) void {
     if (node_idx == @intCast(u32, 0)) return;
     var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
     var kind = node.kind;
     if (kind == AstKind.if_stmt or kind == AstKind.if_capture) {
+        // T5 (T3 rule): a capture-free comptime-known condition takes the live
+        // arm only — the untaken arm does not exist for analysis.
+        var t5_fold = analyzerFoldComptimeBool(ctx, node.child_0, 0);
+        if (t5_fold) |tfv| {
+            if (ast_mod.astStoreNodePayload(ctx.store, node_idx) == @intCast(u32, 0)) {
+                if (tfv) {
+                    walkBlock(ctx, state, node.child_1, visit_fn);
+                } else if (node.child_2 != @intCast(u32, 0)) {
+                    walkBlock(ctx, state, node.child_2, visit_fn);
+                }
+                return;
+            }
+        }
         analyzeExpr(ctx, state, node.child_0);
         var then_state = smap_mod.stateMapFork(state, ctx.alloc);
         var else_state = smap_mod.stateMapFork(state, ctx.alloc);
         if (ctx.null_analysis_mode != @intCast(u8, 0)) {
             applyNullGuardRefinement(ctx.store, node.child_0, then_state, else_state);
-            if (kind == AstKind.if_capture) {
-                smap_mod.stateMapSet(then_state, ast_mod.astStoreNodePayload(ctx.store, node_idx), @enumToInt(PtrState.safe));
-            }
         }
+        var t5_cap = captureNameIdOf(ctx.store, node_idx);
+        bindCaptureState(ctx, then_state, t5_cap, node.child_0);
         walkBlock(ctx, then_state, node.child_1, visit_fn);
         if (node.child_2 != @intCast(u32, 0)) walkBlock(ctx, else_state, node.child_2, visit_fn);
         smap_mod.stateMapMergeStates(state, then_state, else_state, @intCast(u8, 99));
     } else if (kind == AstKind.while_stmt or kind == AstKind.while_capture) {
         analyzeExpr(ctx, state, node.child_0);
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
-        if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.while_capture) {
-            smap_mod.stateMapSet(body_state, ast_mod.astStoreNodePayload(ctx.store, node_idx), @enumToInt(PtrState.safe));
-        }
+        var t5_wcap = captureNameIdOf(ctx.store, node_idx);
+        bindCaptureState(ctx, body_state, t5_wcap, node.child_0);
         walkBlock(ctx, body_state, node.child_1, visit_fn);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.swt_ex) {
@@ -747,6 +1018,8 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         while (si < @intCast(usize, prongs_n)) : (si += 1) {
             var prong = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, node_idx, @intCast(u32, si)));
             var ps = smap_mod.stateMapFork(state, ctx.alloc);
+            var t5_pcap = captureNameIdOf(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, node_idx, @intCast(u32, si)));
+            bindCaptureState(ctx, ps, t5_pcap, node.child_0);
             walkBlock(ctx, ps, prong.child_0, visit_fn);
             smap_mod.stateMapMergeStates(state, state, ps, @intCast(u8, 99));
             if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
@@ -755,6 +1028,8 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         }
     } else if (kind == AstKind.for_stmt) {
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
+        var t5_fcap = captureNameIdOf(ctx.store, node_idx);
+        bindCaptureState(ctx, body_state, t5_fcap, node.child_0);
         walkBlock(ctx, body_state, node.child_1, visit_fn);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.return_stmt) {
@@ -861,7 +1136,16 @@ pub fn runLifetimeAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx:
         while (pi < @intCast(usize, params_n)) : (pi += 1) {
             var pnode = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi)));
             if (pnode.kind == AstKind.param_decl) {
-                smap_mod.stateMapSet(&state, ast_mod.astStoreNodePayload(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi))), @intCast(u8, @enumToInt(Provenance.param)));
+                // T5 (§2.1 base): pointer-like params (`*T`, `[*]T`, `[]T`,
+                // fn-ptr) seed `external` — their pointee is caller-owned, so
+                // interiors (`&p.field`) are safe to return; the bare address
+                // of the binding (`&p`) still dangles (param_addr). By-value
+                // params seed `param` — interiors are call-frame storage.
+                var t5_pseed: u8 = @intCast(u8, @enumToInt(Provenance.param));
+                if (paramTypeIsPointerLike(ctx, pnode.child_0)) {
+                    t5_pseed = @intCast(u8, @enumToInt(Provenance.external));
+                }
+                smap_mod.stateMapSet(&state, ast_mod.astStoreNodePayload(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi))), t5_pseed);
             }
         }
     }

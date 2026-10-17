@@ -16,6 +16,11 @@ const sym_mod = @import("../symbol_table.zig");
 const SymbolTable = sym_mod.SymbolTable;
 const pal = @import("../pal.zig");
 const helpers = @import("test_analyzer_helpers.zig");
+const Token = @import("../token.zig").Token;
+const TokenKind = @import("../token.zig").TokenKind;
+const token_mod = @import("../token.zig");
+const lexer_mod = @import("../lexer.zig");
+const parser_mod = @import("../parser.zig");
 
 fn testSignatureVoidParam() void {
     var arena: Sand = undefined;
@@ -1311,6 +1316,472 @@ fn testRunAllAnalyzers() void {
     helpers.ok(ok_msg);
 }
 
+fn testSignatureFnPtrOptAggregate() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ks: []const u8 = "Key";
+    var knid = interner_mod.stringInternerIntern(&interner, ks);
+    var ktid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), knid, type_mod.TypeKind.struct_type);
+    typereg.types_items[@intCast(usize, ktid)].state = @intCast(u8, 2);
+    var key_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, knid, @intCast(u32, 0), @intCast(u32, 0));
+    var opt_node = ast_mod.astStoreAddNode(&store, AstKind.optional_type, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), key_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var fnt_node = ast_mod.astStoreAddNode(&store, AstKind.fn_type, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), opt_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var param_node = ast_mod.astStoreAddNode(&store, AstKind.param_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), fnt_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var param_buf: [1]u32 = undefined;
+    param_buf[0] = param_node;
+    var param_payload = ast_mod.astStoreAddExtraChildren(&store, param_buf[0..1]);
+    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u32, ast_mod.astStoreExtraRangeAt(&store, param_payload) >> @intCast(u64, 32)), .params_count = @intCast(u16, 1), .call_conv = @intCast(u8, 0), .return_type_node = fnt_node };
+    var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
+    var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
+    az_mod.analyzeSignature(&ac, fn_node);
+    if (diag.error_count != @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testSignatureFnPtrOptAggregate: expected 0 errors\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testSignatureFnPtrOptAggregate");
+}
+
+fn testSignatureFnPtrErrUnionAggregate() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ks: []const u8 = "Key";
+    var knid = interner_mod.stringInternerIntern(&interner, ks);
+    var ktid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), knid, type_mod.TypeKind.struct_type);
+    typereg.types_items[@intCast(usize, ktid)].state = @intCast(u8, 2);
+    var key_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, knid, @intCast(u32, 0), @intCast(u32, 0));
+    var eu_node = ast_mod.astStoreAddNode(&store, AstKind.error_union_type, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), key_node, @intCast(u32, 0), @intCast(u32, 0));
+    var fnt_node = ast_mod.astStoreAddNode(&store, AstKind.fn_type, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), eu_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u32, 0), .params_count = @intCast(u16, 0), .call_conv = @intCast(u8, 0), .return_type_node = fnt_node };
+    var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
+    var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
+    az_mod.analyzeSignature(&ac, fn_node);
+    if (diag.error_count != @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testSignatureFnPtrErrUnionAggregate: expected 0 errors\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testSignatureFnPtrErrUnionAggregate");
+}
+
+fn testSignatureNestedIncomplete() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var fs: []const u8 = "Foo";
+    var fnid = interner_mod.stringInternerIntern(&interner, fs);
+    var ftid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), fnid, type_mod.TypeKind.struct_type);
+    _ = ftid;
+    var foo_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, fnid, @intCast(u32, 0), @intCast(u32, 0));
+    var opt_node = ast_mod.astStoreAddNode(&store, AstKind.optional_type, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), foo_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.validateSignatureType(&ac, opt_node, @intCast(u32, 1));
+    if (diag.error_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testSignatureNestedIncomplete: expected incomplete-type error\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testSignatureNestedIncomplete");
+}
+
+fn testSignatureArbIntAccepted() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var s7: []const u8 = "i7";
+    _ = type_mod.typeRegistryGetOrCreateArbInt(&typereg, s7);
+    var n7 = interner_mod.stringInternerIntern(&interner, s7);
+    var node7 = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, n7, @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.validateSignatureType(&ac, node7, @intCast(u32, 0));
+    az_mod.validateSignatureType(&ac, node7, @intCast(u32, 1));
+    var s48: []const u8 = "u48";
+    var n48 = interner_mod.stringInternerIntern(&interner, s48);
+    var node48 = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, n48, @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.validateSignatureType(&ac, node48, @intCast(u32, 0));
+    az_mod.validateSignatureType(&ac, node48, @intCast(u32, 1));
+    if (diag.error_count != @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testSignatureArbIntAccepted: expected 0 errors\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testSignatureArbIntAccepted");
+}
+
+fn testSignaturePackedUnionIncomplete() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ps: []const u8 = "PU";
+    var pnid = interner_mod.stringInternerIntern(&interner, ps);
+    var ptid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), pnid, type_mod.TypeKind.packed_union_type);
+    _ = ptid;
+    var pu_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, pnid, @intCast(u32, 0), @intCast(u32, 0));
+    az_mod.validateSignatureType(&ac, pu_node, @intCast(u32, 0));
+    if (diag.error_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testSignaturePackedUnionIncomplete: expected incomplete-type error\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testSignaturePackedUnionIncomplete");
+}
+
+fn testSignatureMemberTypeAccepted() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var ks: []const u8 = "Key";
+    var knid = interner_mod.stringInternerIntern(&interner, ks);
+    var ktid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), knid, type_mod.TypeKind.struct_type);
+    typereg.types_items[@intCast(usize, ktid)].state = @intCast(u8, 2);
+    var ms: []const u8 = "m";
+    var mnid = interner_mod.stringInternerIntern(&interner, ms);
+    var base_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, mnid, @intCast(u32, 0), @intCast(u32, 0));
+    var fa_node = ast_mod.astStoreAddNode(&store, AstKind.field_access, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), base_node, @intCast(u32, 0), @intCast(u32, 0), knid);
+    az_mod.validateSignatureType(&ac, fa_node, @intCast(u32, 1));
+    if (diag.error_count != @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testSignatureMemberTypeAccepted: expected 0 errors\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testSignatureMemberTypeAccepted");
+}
+
+fn buildRunModule(store: *AstStore, body_node: u32) u32 {
+    var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u32, 0), .params_count = @intCast(u16, 0), .call_conv = @intCast(u8, 0), .return_type_node = @intCast(u32, 0) };
+    var proto_idx = ast_mod.astStoreAddFnProto(store, proto);
+    var fn_node = ast_mod.astStoreAddNode(store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body_node, @intCast(u32, 0), @intCast(u32, 0), proto_idx);
+    var decl_buf: [1]u32 = undefined;
+    decl_buf[0] = fn_node;
+    var mr_payload = ast_mod.astStoreAddExtraChildren(store, decl_buf[0..1]);
+    return ast_mod.astStoreAddNode(store, AstKind.module_root, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), mr_payload);
+}
+
+fn testCaptureLifetimePropagation() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var xs: []const u8 = "x";
+    var x_nid = interner_mod.stringInternerIntern(&interner, xs);
+    var local_sym = sym_mod.Symbol{ .name_id = x_nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
+    _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
+    var ten_node = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 10), @intCast(u32, 0), @intCast(u32, 4));
+    var xdecl_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), ten_node, @intCast(u32, 0), x_nid);
+    var x_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, x_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), x_id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var ops: []const u8 = "op";
+    var op_nid = interner_mod.stringInternerIntern(&interner, ops);
+    var odecl_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), addr_node, @intCast(u32, 0), op_nid);
+    var ps: []const u8 = "ptr";
+    var ptr_nid = interner_mod.stringInternerIntern(&interner, ps);
+    var cap_node = ast_mod.astStoreAddNode(&store, AstKind.if_capture, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), ptr_nid);
+    var op_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, op_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var ptr_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, ptr_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ptr_id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var then_buf: [1]u32 = undefined;
+    then_buf[0] = ret_node;
+    var then_payload = ast_mod.astStoreAddExtraChildren(&store, then_buf[0..1]);
+    var then_node = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), then_payload);
+    var if_node = ast_mod.astStoreAddNode(&store, AstKind.if_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), op_id_node, then_node, @intCast(u32, 0), cap_node);
+    var body_buf: [3]u32 = undefined;
+    body_buf[0] = xdecl_node;
+    body_buf[1] = odecl_node;
+    body_buf[2] = if_node;
+    var body_payload = ast_mod.astStoreAddExtraChildren(&store, body_buf[0..3]);
+    var body_node = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), body_payload);
+    var mr_node = buildRunModule(&store, body_node);
+    az_mod.runAllAnalyzers(&ac, mr_node);
+    if (diag.error_count != @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testCaptureLifetimePropagation: expected 0 errors\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    if (diag.warning_count == @intCast(usize, 0)) {
+        var fmsg2: []const u8 = "testCaptureLifetimePropagation: expected capture provenance warning (tech-debt 2.1)\n";
+        pal.stdout_write(fmsg2); pal.exit(1);
+    }
+    helpers.ok("testCaptureLifetimePropagation");
+}
+
+fn testCaptureNullSafe() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var zs: []const u8 = "z";
+    var z_nid = interner_mod.stringInternerIntern(&interner, zs);
+    var one_node = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 1), @intCast(u32, 0), @intCast(u32, 4));
+    var zdecl_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), one_node, @intCast(u32, 0), z_nid);
+    var z_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, z_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), z_id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var ps: []const u8 = "p";
+    var p_nid = interner_mod.stringInternerIntern(&interner, ps);
+    var pdecl_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), addr_node, @intCast(u32, 0), p_nid);
+    var ops: []const u8 = "op";
+    var op_nid = interner_mod.stringInternerIntern(&interner, ops);
+    var p_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, p_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var odecl_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), p_id_node, @intCast(u32, 0), op_nid);
+    var vs: []const u8 = "v";
+    var v_nid = interner_mod.stringInternerIntern(&interner, vs);
+    var cap_node = ast_mod.astStoreAddNode(&store, AstKind.if_capture, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), v_nid);
+    var op_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, op_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var v_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, v_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var deref_node = ast_mod.astStoreAddNode(&store, AstKind.deref, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), v_id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var ws: []const u8 = "w";
+    var w_nid = interner_mod.stringInternerIntern(&interner, ws);
+    var w_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, w_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var asn_node = ast_mod.astStoreAddNode(&store, AstKind.plain_assign, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), w_id_node, deref_node, @intCast(u32, 0), @intCast(u32, 0));
+    var then_buf: [1]u32 = undefined;
+    then_buf[0] = asn_node;
+    var then_payload = ast_mod.astStoreAddExtraChildren(&store, then_buf[0..1]);
+    var then_node = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), then_payload);
+    var if_node = ast_mod.astStoreAddNode(&store, AstKind.if_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), op_id_node, then_node, @intCast(u32, 0), cap_node);
+    var body_buf: [4]u32 = undefined;
+    body_buf[0] = zdecl_node;
+    body_buf[1] = pdecl_node;
+    body_buf[2] = odecl_node;
+    body_buf[3] = if_node;
+    var body_payload = ast_mod.astStoreAddExtraChildren(&store, body_buf[0..4]);
+    var body_node = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), body_payload);
+    var mr_node = buildRunModule(&store, body_node);
+    az_mod.runAllAnalyzers(&ac, mr_node);
+    if (diag.error_count != @intCast(usize, 0) or diag.warning_count != @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testCaptureNullSafe: expected clean run (capture is safe)\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testCaptureNullSafe");
+}
+
+fn testCaptureDoubleFree() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var as: []const u8 = "sandAlloc";
+    var a_nid = interner_mod.stringInternerIntern(&interner, as);
+    var callee_a = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, a_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var argb: [1]u32 = undefined;
+    argb[0] = @intCast(u32, 0);
+    var call_payload = ast_mod.astStoreAddExtraChildren(&store, argb[0..1]);
+    var alloc_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_a, @intCast(u32, 0), @intCast(u32, 0), call_payload);
+    var ops: []const u8 = "op";
+    var op_nid = interner_mod.stringInternerIntern(&interner, ops);
+    var odecl_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), alloc_node, @intCast(u32, 0), op_nid);
+    var qs: []const u8 = "q";
+    var q_nid = interner_mod.stringInternerIntern(&interner, qs);
+    var cap_node = ast_mod.astStoreAddNode(&store, AstKind.if_capture, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), q_nid);
+    var op_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, op_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var fs: []const u8 = "sandFree";
+    var f_nid = interner_mod.stringInternerIntern(&interner, fs);
+    var q_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, q_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var farg_buf: [2]u32 = undefined;
+    farg_buf[0] = @intCast(u32, 0);
+    farg_buf[1] = q_id_node;
+    var f_payload = ast_mod.astStoreAddExtraChildren(&store, farg_buf[0..2]);
+    var callee_f = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, f_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var free_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_f, @intCast(u32, 0), @intCast(u32, 0), f_payload);
+    var then_buf: [2]u32 = undefined;
+    then_buf[0] = free_node;
+    then_buf[1] = free_node;
+    var then_payload = ast_mod.astStoreAddExtraChildren(&store, then_buf[0..2]);
+    var then_node = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), then_payload);
+    var if_node = ast_mod.astStoreAddNode(&store, AstKind.if_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), op_id_node, then_node, @intCast(u32, 0), cap_node);
+    var body_buf: [2]u32 = undefined;
+    body_buf[0] = odecl_node;
+    body_buf[1] = if_node;
+    var body_payload = ast_mod.astStoreAddExtraChildren(&store, body_buf[0..2]);
+    var body_node = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), body_payload);
+    var mr_node = buildRunModule(&store, body_node);
+    az_mod.runAllAnalyzers(&ac, mr_node);
+    if (diag.error_count == @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testCaptureDoubleFree: expected double-free error through capture\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testCaptureDoubleFree");
+}
+
+fn testDeadArmSkipped() void {
+    var arena: Sand = undefined;
+    var interner: StringInterner = undefined;
+    var typereg: TypeRegistry = undefined;
+    var store: AstStore = undefined;
+    var diag: DiagnosticCollector = undefined;
+    helpers.initTest(&arena, &interner, &typereg, &store, &diag);
+    var ac: AnalyzerContext = undefined;
+    var sym_table = sym_mod.symbolTableInit(&arena);
+    helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    var as: []const u8 = "sandAlloc";
+    var a_nid = interner_mod.stringInternerIntern(&interner, as);
+    var callee_a = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, a_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var argb: [1]u32 = undefined;
+    argb[0] = @intCast(u32, 0);
+    var call_payload = ast_mod.astStoreAddExtraChildren(&store, argb[0..1]);
+    var alloc_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_a, @intCast(u32, 0), @intCast(u32, 0), call_payload);
+    var ps: []const u8 = "p";
+    var p_nid = interner_mod.stringInternerIntern(&interner, ps);
+    var pdecl_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), alloc_node, @intCast(u32, 0), p_nid);
+    var fs: []const u8 = "sandFree";
+    var f_nid = interner_mod.stringInternerIntern(&interner, fs);
+    var p_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, p_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var farg_buf: [2]u32 = undefined;
+    farg_buf[0] = @intCast(u32, 0);
+    farg_buf[1] = p_id_node;
+    var f_payload = ast_mod.astStoreAddExtraChildren(&store, farg_buf[0..2]);
+    var callee_f = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, f_nid, @intCast(u32, 0), @intCast(u32, 0));
+    var free_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_f, @intCast(u32, 0), @intCast(u32, 0), f_payload);
+    var false_node = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var then_buf: [2]u32 = undefined;
+    then_buf[0] = free_node;
+    then_buf[1] = free_node;
+    var then_payload = ast_mod.astStoreAddExtraChildren(&store, then_buf[0..2]);
+    var then_node = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), then_payload);
+    var if_node = ast_mod.astStoreAddNode(&store, AstKind.if_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), false_node, then_node, @intCast(u32, 0), @intCast(u32, 0));
+    var body_buf: [3]u32 = undefined;
+    body_buf[0] = pdecl_node;
+    body_buf[1] = if_node;
+    body_buf[2] = free_node;
+    var body_payload = ast_mod.astStoreAddExtraChildren(&store, body_buf[0..3]);
+    var body_node = ast_mod.astStoreAddNode(&store, AstKind.block, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), body_payload);
+    var mr_node = buildRunModule(&store, body_node);
+    az_mod.runAllAnalyzers(&ac, mr_node);
+    if (diag.error_count != @intCast(usize, 0) or diag.warning_count != @intCast(usize, 0)) {
+        var fmsg: []const u8 = "testDeadArmSkipped: expected clean run (dead arm not analyzed)\n";
+        pal.stdout_write(fmsg); pal.exit(1);
+    }
+    helpers.ok("testDeadArmSkipped");
+}
+
+var fx_perm_buf: [2097152]u8 = undefined;
+var fx_scratch_buf: [262144]u8 = undefined;
+var fx_type_buf: [131072]u8 = undefined;
+var fx_tok_buf: [32768]Token = undefined;
+
+// T5 fixture runner for tests/analyzers/**: lex + parse each fixture and run
+// runAllAnalyzers over the parsed module. err_spec/warn_spec: 0 = must be
+// zero, -1 = don't care, N > 0 = must be >= N. Run the binary from the repo
+// root (fixture paths are repo-relative).
+fn testFixture(path: []const u8, name: []const u8, err_spec: i32, warn_spec: i32) void {
+    var perm = alloc_mod.sandInit(fx_perm_buf[0..]);
+    var scratch = alloc_mod.sandInit(fx_scratch_buf[0..]);
+    token_mod.initKeywordTable(&perm);
+    var interner = interner_mod.stringInternerInit(&perm, 4);
+    var diag = diag_mod.diagnosticCollectorInit(&perm, undefined, &interner);
+    var content = pal.readFile(path, &scratch) orelse {
+        var emsg: []const u8 = "FAIL: could not read fixture: ";
+        pal.stderr_write(emsg);
+        pal.stderr_write(path);
+        var nl: []const u8 = "\n";
+        pal.stderr_write(nl);
+        pal.exit(1);
+        return;
+    };
+    var tok_len: usize = 0;
+    var lex = lexer_mod.lexerInit(content, @intCast(u32, 0), &interner, &diag, &scratch);
+    while (true) {
+        var t = lexer_mod.lexerNextToken(&lex);
+        fx_tok_buf[tok_len] = t;
+        tok_len += 1;
+        if (t.kind == TokenKind.eof) break;
+    }
+    var store = ast_mod.astStoreInit(&perm);
+    var p = parser_mod.parserInit(fx_tok_buf[0..tok_len], content, &store, &interner, &diag, &perm);
+    var ast_root = parser_mod.parserParseModuleRoot(&p) catch {
+        var emsg: []const u8 = "FAIL: fixture parse error: ";
+        pal.stderr_write(emsg);
+        pal.stderr_write(name);
+        var nl: []const u8 = "\n";
+        pal.stderr_write(nl);
+        pal.exit(1);
+        return;
+    };
+    alloc_mod.sandReset(&scratch);
+    var type_db = alloc_mod.sandInit(fx_type_buf[0..]);
+    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
+    type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var sym_table = sym_mod.symbolTableInit(&scratch);
+    var ac = AnalyzerContext{
+        .store = &store, .registry = &typereg, .interner = &interner,
+        .diag = &diag, .symbols = &sym_table, .alloc = &scratch,
+        .current_fn_name = @intCast(u32, 0),
+        .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
+        .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &scratch,
+        .current_depth = @intCast(u32, 0),
+        .null_analysis_mode = @intCast(u8, 0),
+        .skip_null_check = @intCast(u8, 0),
+        .skip_lifetime_check = @intCast(u8, 0),
+        .skip_doublefree_check = @intCast(u8, 0),
+        .warn_all = @intCast(u8, 0),
+        .on_stmt_cb = az_mod.onNullStmt,
+        .in_defer_exec = @intCast(u8, 0),
+        .lifetime_analysis_mode = @intCast(u8, 0),
+        .doublefree_analysis_mode = @intCast(u8, 0),
+        .source_file_id = @intCast(u32, 0),
+    };
+    az_mod.runAllAnalyzers(&ac, ast_root);
+    if (err_spec == @intCast(i32, 0) and diag.error_count != @intCast(usize, 0)) {
+        pal.stderr_write(name);
+        helpers.fail(" fixture: expected 0 errors");
+    }
+    if (err_spec > @intCast(i32, 0) and diag.error_count < @intCast(usize, err_spec)) {
+        pal.stderr_write(name);
+        helpers.fail(" fixture: expected errors");
+    }
+    if (warn_spec == @intCast(i32, 0) and diag.warning_count != @intCast(usize, 0)) {
+        pal.stderr_write(name);
+        helpers.fail(" fixture: expected 0 warnings");
+    }
+    if (warn_spec > @intCast(i32, 0) and diag.warning_count < @intCast(usize, warn_spec)) {
+        pal.stderr_write(name);
+        helpers.fail(" fixture: expected warnings");
+    }
+    helpers.ok(name);
+}
+
 pub fn main() void {
     pal.initArgs(0, undefined);
     testSignatureVoidParam();
@@ -1357,6 +1828,21 @@ pub fn main() void {
     testOwnershipNoTransfer();
     testDoubleFreeNested();
     testRunAllAnalyzers();
+    testSignatureFnPtrOptAggregate();
+    testSignatureFnPtrErrUnionAggregate();
+    testSignatureNestedIncomplete();
+    testSignatureArbIntAccepted();
+    testSignaturePackedUnionIncomplete();
+    testSignatureMemberTypeAccepted();
+    testCaptureLifetimePropagation();
+    testCaptureNullSafe();
+    testCaptureDoubleFree();
+    testDeadArmSkipped();
+    testFixture("tests/analyzers/fnptr_opt_aggregate.zig", "fixture fnptr_opt_aggregate", @intCast(i32, 0), @intCast(i32, 0));
+    testFixture("tests/analyzers/capture_lifetime.zig", "fixture capture_lifetime", @intCast(i32, 0), @intCast(i32, 1));
+    testFixture("tests/analyzers/capture_double_free.zig", "fixture capture_double_free", @intCast(i32, 1), @intCast(i32, -1));
+    testFixture("tests/analyzers/dead_arm.zig", "fixture dead_arm", @intCast(i32, 0), @intCast(i32, 0));
+    testFixture("tests/analyzers/surface_types.zig", "fixture surface_types", @intCast(i32, 0), @intCast(i32, 0));
     var msg: []const u8 = "Analyzer tests passed.\n";
     pal.stdout_write(msg);
 }
