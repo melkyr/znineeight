@@ -2084,7 +2084,17 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         type_mod.typeRegistryMarkFnPtrUsed(env.typereg, fnt_tid);
         return type_mod.typeRegistryGetOrCreatePtr(env.typereg, fnt_tid, false);
     }
-    if (node.child_0 != 0) {
+    // T4.1 F1 root fix: never walk a fixed child slot as a node unless
+    // `nodeChildIsNode` says it holds one (ast.zig — "a name id walked as a
+    // node index is fatal"). `builtin_call.child_0` is the builtin's interned
+    // NAME ID (ast.zig:386/:976); the old unguarded recursion consumed that id
+    // as a node index, so the compile aliased whatever node sat at the id's
+    // index — interner ids are insertion-ordered, so any extra early intern
+    // shifted the alias and flipped `stdlib_crypto_modpow_xmod` OK→GREEN
+    // (measured: `@intCast` id 84 aliased an innocent node, id 85 aliased the
+    // entry file's `[_]u8` array_type → error[3000] "unable to infer array
+    // size"; see task-4.1-report.md §Investigate).
+    if (node.child_0 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) {
         // Task A3-F: an aggregate literal's own `[_]T` annotation is not a
         // concrete type; do not recurse into it as if the init node were a type.
         if ((node.kind == AstKind.array_init or node.kind == AstKind.struct_init or node.kind == AstKind.tuple_literal) and typeResolverIsInferredLenArray(env.store, env.interner, node.child_0)) {

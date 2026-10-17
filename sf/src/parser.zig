@@ -1817,7 +1817,15 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     var name_tok = try parserExpect(self, TokenKind.identifier);
     _ = try parserExpect(self, TokenKind.lparen);
 
-    self.child_buf_len = 0;
+    // T4.1 F4 (C2 twin): the old `self.child_buf_len = 0;` here destroyed any
+    // enclosing shared list in progress (measured: a nested `fn` decl in a
+    // block whose stmt list had overflowed into `child_buf` — ≥65 stmts —
+    // zeroed the flushed stmts and the block payload read back as garbage).
+    // The param list now follows the standard saved/append/listEnd protocol
+    // every `child_buf` list user follows (cf. the C2 delete in
+    // `parserParseBuiltinCall`): params append after any enclosing items and
+    // the enclosing length is restored, never reset.
+    var saved_params: usize = self.child_buf_len;
     while (parserPeek(self).kind != TokenKind.rparen and parserPeek(self).kind != TokenKind.eof) {
         if (parserPeek(self).kind == TokenKind.dot_dot_dot) {
             _ = parserAdvance(self);
@@ -1837,11 +1845,11 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
 
     var param_start: u32 = 0;
     var param_count: u16 = @intCast(u16, 0);
-    if (self.child_buf_len > @intCast(usize, 0)) {
-        var pp = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
+    if (self.child_buf_len > saved_params) {
+        var pp = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_params..self.child_buf_len]);
         param_start = @intCast(u32, ast_mod.astStoreExtraRangeAt(self.store, pp) >> @intCast(u64, 32));
-        param_count = @intCast(u16, self.child_buf_len);
-        self.child_buf_len = 0;
+        param_count = @intCast(u16, self.child_buf_len - saved_params);
+        self.child_buf_len = saved_params;
     }
 
     var ret_type_node: u32 = 0;
@@ -1862,7 +1870,7 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
         end_pos = self.last_end;
     }
 
-    if (self.child_buf_len > @intCast(usize, 0)) {
+    if (self.child_buf_len > saved_params) {
         var dmsg: []const u8 = "DP:child_buf_stale\n"; pal.markerWrite(dmsg);
     }
 
@@ -1871,7 +1879,9 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     pal.markerWriteInt(pmsg, @intCast(u32, param_count));
     var proto: FnProto = FnProto{ .name_id = name_id, .params_start = param_start, .params_count = param_count, .call_conv = call_conv, .return_type_node = ret_type_node };
     var proto_idx: u32 = ast_mod.astStoreAddFnProto(self.store, proto);
-    self.child_buf_len = 0;
+    // T4.1 F4: restore, never reset — the param list must not clobber an
+    // enclosing `child_buf` list (the C2 twin class).
+    self.child_buf_len = saved_params;
     var fok: []const u8 = "Fk"; pal.markerWrite(fok);
     return ast_mod.astStoreAddNode(self.store, AstKind.fn_decl, flags, kw.span_start, end_pos, body_node, 0, 0, proto_idx);
 }

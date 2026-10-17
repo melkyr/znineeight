@@ -209,8 +209,13 @@ fn resolveStmtTypesRec(ct: *FrontResCtx, module_id: u32, node_idx: u32, depth: u
         scope.count = scope_base;
     }
     var cd = depth + @intCast(u32, 1);
-    if (node.kind != AstKind.builtin_call) {
-        if (node.child_0 != 0) { resolveStmtTypesRec(ct, module_id, node.child_0, cd, source_file_id, scope); }
-        if (node.child_1 != 0) { resolveStmtTypesRec(ct, module_id, node.child_1, cd, source_file_id, scope); }
-    }
+    // T4.1 F1 (same mechanism as `resolveTypeExprFull`'s tail fix): walk a
+    // fixed child slot as a node only when `nodeChildIsNode` says it holds one.
+    // The old `!= builtin_call` exclusion covered one kind ad-hoc while
+    // `swt_prong.child_1` (capture name id) and statement-form container
+    // `child_0` (name id) were still consumed as node indices — exactly the
+    // id-order-dependent "name id walked as a node index" class ast.zig warns
+    // about (`nodeChildIsNode`).
+    if (node.child_0 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) { resolveStmtTypesRec(ct, module_id, node.child_0, cd, source_file_id, scope); }
+    if (node.child_1 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) { resolveStmtTypesRec(ct, module_id, node.child_1, cd, source_file_id, scope); }
 }
