@@ -1,64 +1,83 @@
 z9torr - manual Windows 9x (Win98) run procedure
 ================================================
 
-Milestone: M5 (Win9x cross-compat). This is the T5 procedure: a MANUAL run on a
-real Windows 9x machine. It is not automated and does not gate anything.
+Milestone: M6 (Win9x default profile) / M5 (Win9x cross-compat). This is the
+manual run procedure: a MANUAL run on a real Windows 9x machine. It is not
+automated and does not gate anything.
 
-  * T4 - automated Wine smoke:
+  * Automated Wine smoke:
       examples/z98/z9torr/tests/tier4_wine.sh
-    Emits the Windows tree with -osw, cross-builds with mingw, and runs
-    z9torr_run.exe under 32-bit Wine against the host mock_tracker/mock_peer.
-    Asserts exit 0 + the golden output SHA-1 (recorded as PARITY=OK).
-  * T5 - THIS DOCUMENT: copy the artifacts to a real Win98 box and run there.
+    Emits the Windows tree with -osw (default 9x no-CRT), cross-builds with
+    mingw, and runs z9torr_run.exe under 32-bit Wine against the host
+    mock_tracker/mock_peer. Asserts exit 0 + the golden output SHA-1
+    (recorded as PARITY=OK).
+  * THIS DOCUMENT: copy the artifacts to a real Win98 box and run there.
     The Win98 machine is outside the repository; there is no in-repo gate.
+
+Default -osw profile: Windows 9x, no CRT. The mingw link is
+-nostdlib -e,_mainCRTStartup -lgcc -lkernel32 -lwsock32, so z9torr.exe is a
+single drag-and-drop EXE with no msvcrt.dll redistributable. The only imported
+DLLs are OS DLLs present on Win95+: KERNEL32.DLL and WSOCK32.DLL (Winsock 1.1).
+The Windows 9x runtime shims live in the emitted no-CRT support. `-osw nt` is
+the explicit opt-in CRT/XP profile.
 
 Every build here uses -fsafe (checked arithmetic). Since M5 S1/S2 the client,
 the tiers and the mocks are all built -fsafe; -ffast is no longer used anywhere
-in this example.
+in this example's recipes (T5.4 also link-checked `-ffast -osw`).
 
-Binding seed: seed v96, /tmp/z9_m5_seed/zig1_5_clean
-(closure 46e3e7af98af3b5ff2a960c7c96025e3).
+Binding seed: seed v101, /tmp/t54/zig1_5_clean
+(closure b299b4b435e624d0ddbd2edde681cbc3).
+
+Design-verified; hardware verification pending (operator, after the z9play
+milestone). MSVC/OpenWatcom no-CRT scripts are emitted for the 9x default
+(build_target_nocrt.bat / build_owc_nocrt.bat); build_target_crt.bat /
+build_owc_crt.bat are the static-CRT alternates. Native toolchains were not
+run here (plan Amendment 5).
 
 
 1. Build z9torr.exe (on a Linux host, cross to win32)
 -----------------------------------------------------
 
-From the repository root:
+From the repository root (default `-osw` = 9x no-CRT):
 
-    mkdir -p /tmp/z9torr_win
-    timeout 120 /tmp/z9_m5_seed/zig1_5_clean -fsafe -osw -o /tmp/z9torr_win \
+    mkdir -p /tmp/t54_z9torr
+    timeout 120 /tmp/t54/zig1_5_clean -fsafe -osw -o /tmp/t54_z9torr \
         examples/z98/z9torr/main.zig
-    sh /tmp/z9torr_win/build_target.sh mingw /tmp/z9torr_win/z9torr.exe
+    sh /tmp/t54_z9torr/build_target.sh mingw /tmp/t54_z9torr/z9torr.exe
 
 The same build through the committed cross harness (dumps with -osw --dump-c89,
 compiles every emitted .c with i686-w64-mingw32-gcc, links -lwsock32):
 
     bash scripts/win32_cross/cross_build_run.sh \
-        /tmp/z9_m5_seed/zig1_5_clean \
+        /tmp/t54/zig1_5_clean \
         examples/z98/z9torr/main.zig \
-        /tmp/z9torr_x /tmp/z9torr_x/z9torr.exe
+        /tmp/t54_cross /tmp/t54_cross/z9torr.exe
 
 Sanity: `file z9torr.exe` reports
-  "PE32 executable (console) Intel 80386, for MS Windows".
+  "PE32 executable (console) Intel 80386, for MS Windows", and the import
+table is exactly KERNEL32.DLL + WSOCK32.DLL (no msvcrt.dll). The committed gate
+is `bash scripts/win32_cross/check_win9x_imports.sh z9torr.exe 9x`.
 
 The mingw link line always adds -lwsock32 (Winsock 1.1). The emitted
-build_target.sh mingw branch sets LIBS="-lwsock32"; cross_build_run.sh does the
-same.
+build_target.sh mingw branch sets LIBS="-lwsock32" and, for the 9x default,
+links with -nostdlib -e,_mainCRTStartup -lgcc -lkernel32; cross_build_run.sh
+does the same.
 
 -osw emit md5 (byte-identity over the Windows-target C89 dump):
 
     cd /workspace/znineeight
-    timeout 120 /tmp/z9_m5_seed/zig1_5_clean -osw --dump-c89 \
+    timeout 120 /tmp/t54/zig1_5_clean -osw --dump-c89 \
         examples/z98/z9torr/main.zig | md5sum
-    # 4a330207a420462a9ad4376ace7d0a63  -
+    # 54146cf3afc4c25cb5d98efccc68a2f1  -
 
-(stable 3x for the M5 source. The `-osw -o` tree carries the module .c/.h plus
-build_target.sh, the Win9x no-CRT default scripts build_target_nocrt.bat /
-build_owc_nocrt.bat, the static-CRT alternates build_target_crt.bat /
-build_owc_crt.bat, the compatibility aliases build_target.bat / build_owc.bat,
-and net_prelude.h. The default is a single no-CRT EXE; msvcrt.dll is not
-required. Native MSVC/OpenWatcom scripts are design-verified; hardware
-verification is pending.)
+(stable 3x for the v101 source. `-osw` and `-osw nt` emit the same C; the
+profile is a C build define in the emitted scripts. The `-osw -o` tree carries
+the module .c/.h plus build_target.sh, the Win9x no-CRT default scripts
+build_target_nocrt.bat / build_owc_nocrt.bat, the static-CRT alternates
+build_target_crt.bat / build_owc_crt.bat, the compatibility aliases
+build_target.bat / build_owc.bat, and net_prelude.h. The default is a single
+no-CRT EXE; msvcrt.dll is not required. Native MSVC/OpenWatcom scripts are
+design-verified; hardware verification is pending.)
 
 
 2. What to copy to the Win98 machine
@@ -76,10 +95,10 @@ Put everything in one short directory, e.g. C:\z9.
     emitted .c sets do not collide):
 
     mkdir -p /tmp/mocks/tr /tmp/mocks/pe
-    timeout 120 /tmp/z9_m5_seed/zig1_5_clean -fsafe -osw -o /tmp/mocks/tr \
+    timeout 120 /tmp/t54/zig1_5_clean -fsafe -osw -o /tmp/mocks/tr \
         examples/z98/z9torr/tools/mock_tracker.zig
     sh /tmp/mocks/tr/build_target.sh mingw /tmp/mocks/tr/mock_tracker.exe
-    timeout 120 /tmp/z9_m5_seed/zig1_5_clean -fsafe -osw -o /tmp/mocks/pe \
+    timeout 120 /tmp/t54/zig1_5_clean -fsafe -osw -o /tmp/mocks/pe \
         examples/z98/z9torr/tools/mock_peer.zig
     sh /tmp/mocks/pe/build_target.sh mingw /tmp/mocks/pe/mock_peer.exe
 
@@ -190,9 +209,11 @@ clusters for the whole extent immediately. Consequences on Win9x:
     fails to allocate even though the client's own seeks are 64-bit.
   - This is the Win9x face of the M5 Task 0 amendment: POSIX now uses 64-bit
     lseek/_llseek so payloads > 2 GiB work on the Linux host (spec section 12
-    risk 7); the Windows equivalent is SetFilePointerEx (already i64). The FAT
-    filesystem itself still caps the file and cannot represent the hole
-    sparsely.
+    risk 7). On the default 9x profile `pal_file_seek64` uses the Win95
+    `SetFilePointer` with explicit high-DWORD arithmetic; the XP+ calls
+    (`SetFilePointerEx` / `GetFileSizeEx` / `GetFileAttributesExA`) exist only
+    on the explicit `-osw nt` profile. The FAT filesystem itself still caps the
+    file and cannot represent the hole sparsely.
   - The end-of-file zero byte (seek to total_length-1, write 0) is what extends
     the file; later block writes seek to their 64-bit offset and write through.
     On NTFS that pre-extend is sparse; on FAT it is fully allocated.
