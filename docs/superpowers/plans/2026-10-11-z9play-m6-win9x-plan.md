@@ -181,3 +181,13 @@ Operator ruling: before implementing T5.3, run a **second inventory task (T5.3a)
 **T5.4/T5.5:** gate text uses actual `WSOCK32.DLL` (not `WS2_32`).
 
 **Next:** T5.3b → T5.3.
+
+### Amendment 5 — No native runtime probing; cleanup precondition; hardware verification deferred (operator ruling, 2026-10-18)
+
+- **Drop the native-toolchain probing requirement from T5.3b.** Do NOT download/install OpenWatcom, do NOT run native toolchains under Wine, do NOT attempt MSVC/OWC runtime probes. The approach is too fragile and makes a mess.
+- T5.3b is **documentation + emitted-C static analysis only**: exact compile/link commands, entry/argv design, runtime-helper strategy (`__chkstk` vs `/Gs`, 64-bit helpers, `_fltused`), static-CRT alternates, exact script contents, import-table expectations, and an explicit **unverified-locally** statement per claim (vendor docs + file:line + emitted-C evidence only).
+- **Manual Win98/hardware verification is operator-owned and happens after the z9play milestone completes.** Native scripts and the Windows-support doc must state "design-verified; hardware verification pending" until the operator records results. No report may claim native runtime verification before that.
+- **Precondition before continuing:** clean `/tmp` of project-created artifacts (including the aborted `/tmp/t53b/ow2-c-linux-x64` download) and wine-created state (`~/.wine`); preserve the opencode/node temp internals. Then rebuild the compiler fresh from the seed into `/tmp/m6` (`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m6`) and record its md5.
+- T5.3 remains: mingw 9x no-CRT + full shim set + argv parser + the T5.3b-designed native scripts + `sf/docs/tech_docs/13_windows_support.md`; usual compiler gates; seed rotation. T5.4/T5.5 Wine gates unchanged; real-hardware checks deferred as above.
+
+**Next:** cleanup + fresh compiler build → T5.3b (design-only) → review → T5.3.
