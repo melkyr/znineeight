@@ -1559,7 +1559,8 @@ primitive while `FIRST_USER_TYPE` read 20); the source constant is left unchange
 | `ModuleState` | module_registry.zig | pending/parsing/parsed/resolved/failed |
 | `StateMap` / `StateEntry` | state_map.zig | Delta-linked parent chain for forking state / name_id + state byte |
 | `CompilerContext` | main.zig | Global compiler state (34 fields) |
-| `CompilerCli` | main.zig | CLI argument struct (26 fields) |
+| `CompilerCli` | main.zig | CLI argument struct (27 fields) |
+| `WinProfile` | c89_emit.zig | Windows target profile: `.win9x` (default, no define) / `.nt` (`ZIG_WIN_NT` define) `[updated: 2026-10-18 — M6 T5.2]` |
 | `Sand` / `SandSegment` / `GrowableSand` | allocator.zig | Bump allocator / one growable segment / growable tier header |
 | `CompilerAlloc` | allocator.zig | 5-tier arena container (permanent, module, scratch, lir_read, emission) + pool budget |
 | `TrackingAllocator` | allocator.zig | Per-allocation counters — kept but not wired into the pipeline |

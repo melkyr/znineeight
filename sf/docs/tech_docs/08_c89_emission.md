@@ -1403,6 +1403,14 @@ warnings-as-errors in `build_target.sh`; `/WX` and `/we` documented as removable
 MSVC/OW scripts). The `emitBuildTarget*` functions are now live (previously dead
 templates); `emitBuildScripts` is invoked from `phase_C89Emission`.
 
+**Windows target profile ([updated: 2026-10-18 — M6 T5.2]):** `emitBuildScripts` takes a
+`WinProfile` (`.win9x` default or `.nt`) from `cli.target_win_profile` and forwards it to all
+three `emitBuildTarget*` writers. `.win9x` emits **no** profile define, so the build scripts are
+byte-identical to pre-T5.2 output. `.nt` adds `-DZIG_WIN_NT` to the gcc/mingw `CFLAGS` in
+`build_target.sh`, `/DZIG_WIN_NT` to the MSVC `cl` `CFLAGS` in `build_target.bat`, and
+`/dZIG_WIN_NT` to every OpenWatcom `wcc386` command in `build_owc.bat`. T5.2 adds no
+`ZIG_NO_CRT`, `-nostdlib`, or new library selection; T5.3 owns those no-CRT/link changes.
+
 ### 6.2 Module pruning in emission
 
 `phase_C89Emission` computes a **value-reference reachability set** (`emitter.reachable`,

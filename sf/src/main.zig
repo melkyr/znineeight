@@ -92,6 +92,7 @@ pub const CompilerCli = struct {
      include_dirs: [16][]const u8,
     include_count: u32,
     target_is_windows: bool,
+    target_win_profile: c89_mod.WinProfile,
 };
 
 pub const CompilerContext = struct {
@@ -1642,7 +1643,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             pal.fileClose(cfd);
             var ff2_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff2_m);
         }
-        c89_mod.emitBuildScripts(&emitter, od, ctx.cli.target_is_windows);
+        c89_mod.emitBuildScripts(&emitter, od, ctx.cli.target_is_windows, ctx.cli.target_win_profile);
         lir_stream.lirStreamEndRead(&ctx.lir_stream);
         ast_mod.astStoreCloseSpill(ctx.store);
         return;
@@ -1691,12 +1692,14 @@ fn parseArgs() CompilerCli {
          .include_count = @intCast(u32, 0),
         .include_dirs = undefined,
         .target_is_windows = false,
+        .target_win_profile = c89_mod.WinProfile.win9x,
     };
     var argc = pal.argCount();
     var i: i32 = 1;
     const s_dump_types: []const u8 = "--dump-types";
     const s_dump_lir: []const u8 = "--dump-lir";
     const s_dump_c89: []const u8 = "--dump-c89";
+    const s_help: []const u8 = "--help";
     const s_max_mem: []const u8 = "--max-mem";
     const s_max_errors: []const u8 = "--max-errors";
     const s_output_dir: []const u8 = "--output-dir";
@@ -1726,6 +1729,8 @@ fn parseArgs() CompilerCli {
     const s_W: []const u8 = "-W";
     const s_osl: []const u8 = "-osl";
     const s_osw: []const u8 = "-osw";
+    const s_profile_9x: []const u8 = "9x";
+    const s_profile_nt: []const u8 = "nt";
     const s_target: []const u8 = "--target";
     const s_fsafe: []const u8 = "-fsafe";
     const s_ffast: []const u8 = "-ffast";
@@ -1733,7 +1738,11 @@ fn parseArgs() CompilerCli {
         var arg_ptr = pal.argGet(i);
         var arg = cstrToSlice(arg_ptr);
         if (arg.len > 0 and arg[0] == '-') {
-            if (matchFlag(arg, s_dump_c89)) {
+            if (matchFlag(arg, s_help)) {
+                printUsage();
+                pal.exit(@intCast(u8, 0));
+                return cli;
+            } else if (matchFlag(arg, s_dump_c89)) {
                 cli.dump_c89 = true;
             } else if (matchFlag(arg, s_max_mem) or matchFlag(arg, s_m)) {
                 i += 1;
@@ -1801,10 +1810,26 @@ fn parseArgs() CompilerCli {
                  cli.target_is_windows = false;
              } else if (matchFlag(arg, s_osw)) {
                  cli.target_is_windows = true;
+                 cli.target_win_profile = c89_mod.WinProfile.win9x;
+                 if (i + 1 < argc) {
+                     var nxt = cstrToSlice(pal.argGet(i + 1));
+                     if (nxt.len > 0 and nxt[0] != '-') {
+                         if (matchFlag(nxt, s_profile_9x)) {
+                             cli.target_win_profile = c89_mod.WinProfile.win9x;
+                             i += 1;
+                         } else if (matchFlag(nxt, s_profile_nt)) {
+                             cli.target_win_profile = c89_mod.WinProfile.nt;
+                             i += 1;
+                         }
+                     }
+                 }
              } else if (matchFlag(arg, s_target)) {
                  i += 1;
                  if (i < argc) {
                      cli.target_is_windows = parseTargetIsWindows(pal.argGet(i));
+                     if (cli.target_is_windows) {
+                         cli.target_win_profile = c89_mod.WinProfile.win9x;
+                     }
                  }
              } else if (matchFlag(arg, s_ffast)) {
                  // -ffast: disable the -fsafe runtime checks + undefined poison.
@@ -2023,8 +2048,44 @@ fn printUsage() void {
     pal.stderr_write(s_help2);
     const s_help3: []const u8 = "            less disk I/O (pool= rises; -s6 = all in RAM -> pair with -mm128)\n";
     pal.stderr_write(s_help3);
-    const os_help: []const u8 = "  -osl       compile target = linux (default); -osw = windows\n";
+    const os_help: []const u8 = "  -osl      compile target = linux (default)\n";
     pal.stderr_write(os_help);
-    const tgt_help: []const u8 = "  --target <linux|windows>  long-form target alias for -osl/-osw\n";
+    const osw_help: []const u8 = "  -osw [9x|nt]  compile target = windows (default 9x = Win9x; nt = NT/XP profile)\n";
+    pal.stderr_write(osw_help);
+    const tgt_help: []const u8 = "  --target <linux|windows>  long-form target alias for -osl/-osw (windows = 9x default)\n";
     pal.stderr_write(tgt_help);
+    const io_help: []const u8 = "  -o, --output-dir <dir>    output directory (default .)\n";
+    pal.stderr_write(io_help);
+    const mem_help: []const u8 = "  -m, --max-mem <size>      hard pool budget with k/m/g suffix (same as -mm<N>)\n";
+    pal.stderr_write(mem_help);
+    const err_help: []const u8 = "  -e, --max-errors <n>      max diagnostics (default 256)\n";
+    pal.stderr_write(err_help);
+    const quiet_help: []const u8 = "  -q, --quiet               suppress non-error output\n";
+    pal.stderr_write(quiet_help);
+    const mode_help: []const u8 = "  --test                    run test blocks\n  --sanity-test             lexer sanity test\n";
+    pal.stderr_write(mode_help);
+    const warn_help: []const u8 = "  -W, --warnings-as-errors  treat warnings as errors; --warn-error also sets warn_error\n";
+    pal.stderr_write(warn_help);
+    const warn_all_help: []const u8 = "  --warn-all                enable all warnings\n";
+    pal.stderr_write(warn_all_help);
+    const diag_help: []const u8 = "  --color <auto|always|never>  diagnostic color mode (default auto)\n";
+    pal.stderr_write(diag_help);
+    const fmt_help: []const u8 = "  --error-format <human|json|sarif>  diagnostic format (default human)\n";
+    pal.stderr_write(fmt_help);
+    const track_help: []const u8 = "  --track-memory            report peak memory\n";
+    pal.stderr_write(track_help);
+    const checks_help: []const u8 = "  --no-null-check | --no-lifetime-check | --no-leak-check  disable those checks\n";
+    pal.stderr_write(checks_help);
+    const markers_help: []const u8 = "  --markers                 emit phase markers\n";
+    pal.stderr_write(markers_help);
+    const inc_help: []const u8 = "  -I <dir>, --lib-dir <dir> add an include/library directory (max 16)\n";
+    pal.stderr_write(inc_help);
+    const safe_help: []const u8 = "  -fsafe                    enable runtime checks + undefined poison (default)\n";
+    pal.stderr_write(safe_help);
+    const fast_help: []const u8 = "  -ffast                    disable runtime checks + undefined poison\n";
+    pal.stderr_write(fast_help);
+    const c89_help: []const u8 = "  --dump-c89                emit C89 into the output directory\n";
+    pal.stderr_write(c89_help);
+    const help_help: []const u8 = "  --help                    show this help\n";
+    pal.stderr_write(help_help);
 }

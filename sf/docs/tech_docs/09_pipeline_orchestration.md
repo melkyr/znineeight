@@ -21,7 +21,7 @@
 
 ## 2. `CompilerCli` — CLI Argument Struct
 
-**File:** `main.zig` (26 fields)
+**File:** `main.zig` (27 fields)
 
 | # | Field | Type | Default | Flag(s) |
 |---|-------|------|---------|---------|
@@ -51,8 +51,11 @@
 | 24 | `include_dirs` | `[16][]const u8` | `undefined` | `-I`, `--lib-dir` |
 | 25 | `include_count` | `u32` | `0` | (implicit from `-I`/`--lib-dir` count) |
 | 26 | `target_is_windows` | `bool` | `false` | `-osw`, `--target windows`; `-osl`/`--target linux` sets false `[updated: 2026-10-17 — T4: consumed by `phase_ComptimeEvaluation` (`@isWindows` fold) AND the parse-time dead-arm `@import` gate (`ModuleRegistry.target_is_windows`)]` |
+| 27 | `target_win_profile` | `c89_mod.WinProfile` | `.win9x` | `-osw [9x\|nt]`; bare `-osw`/`-osw 9x`/`--target windows` = `.win9x`, `-osw nt` = `.nt` `[updated: 2026-10-18 — M6 T5.2: profile reaches `emitBuildScripts` for build-script defines; default 9x]` |
 
 `-fsafe`/`-ffast` toggle `safe_checks`, which flows into the C89 emitter and the LIR lowerer as the c89-ahead runtime-check switch (see 07/08). `target_is_windows` is the single target-platform flip point consumed by `phase_ComptimeEvaluation` (`@isWindows`); `config.zig`'s `host_is_windows` is unwired (see 04). `[updated: 2026-10-17 — T4 (`d568880c`): the same CLI polarity is ALSO wired into the parse-time dead-arm `@import` gate — `main.zig` copies it to `ModuleRegistry.target_is_windows` (docs 00/01) so `parserFoldComptimeBool`'s `@isWindows()` probe agrees with the evaluator's fold (one target truth, both phases).]`
+
+`target_win_profile` is the Windows profile selector, independent of `target_is_windows`: bare `-osw` and `-osw 9x` and `--target windows` all select `.win9x` (the default, Win95/98/Me); only `-osw nt` selects `.nt` (NT/XP family). The profile is passed unchanged to `c89_mod.emitBuildScripts`, which emits `-DZIG_WIN_NT` (gcc/mingw), `/DZIG_WIN_NT` (MSVC `cl`) or `/dZIG_WIN_NT` (OpenWatcom) only for `.nt`; `.win9x` emits no profile define, so existing build scripts stay byte-identical. `[updated: 2026-10-18 — M6 T5.2: `-osw [9x|nt]` parsing + build-script profile emission (T5.3 owns no-CRT/link changes)]`
 
 **main_dump.zig variant:** (16 fields) — replaces `dump_types`/`dump_lir`/`dump_c89` with `dump_tokens`/`dump_ast`, adds `print_usage`, omits `output_dir_set`, `spill_level`, analyzer/safe-check toggle flags (`no_null_check`, `no_lifetime_check`, `no_leak_check`, `safe_checks`, `warn_all`, `warn_error`, `show_markers`), and `target_is_windows`; uses a fixed 16 MiB `max_mem` default.
 
@@ -619,7 +622,8 @@ parseArgs() → CompilerCli
   for i in 1..argc:
     arg = cstrToSlice(pal.argGet(i))
     if arg[0] == '-':
-      match --dump-c89
+      match --help (print usage, exit 0)
+            --dump-c89
             --max-mem/-m (next arg → parseSize) | -mm<N> (matchMMFlag → parseMMBytes)
             -s<N> (matchSFlag → parseSLevel)
             --max-errors/-e (next arg → parseU32)
@@ -630,8 +634,10 @@ parseArgs() → CompilerCli
             --track-memory | --no-null-check | --no-lifetime-check
             --no-leak-check | --warn-all | --markers
             -I/--lib-dir (next arg → include_dirs[include_count++], max 16)
-            -osl (target_is_windows=false) | -osw (target_is_windows=true)
-            --target (next arg → parseTargetIsWindows)
+            -osl (target_is_windows=false)
+            -osw (target_is_windows=true, target_win_profile=.win9x; consume a
+                  following non-'-' token iff it is exactly "9x" [.win9x] or "nt" [.nt])
+            --target (next arg → parseTargetIsWindows; windows resets profile to .win9x)
             -ffast (safe_checks=false) | -fsafe (safe_checks=true)
       else → input_file = cstrToSlice(arg_ptr)
     else → input_file = cstrToSlice(arg_ptr)
@@ -740,7 +746,9 @@ Uses `matchFlag` for comparison.
 ### `parseTargetIsWindows` — `main.zig`
 
 Parse the `--target` argument: `"windows"` → `true`, `"linux"` → `false`; anything else prints
-`error: --target must be 'linux' or 'windows'` and exits 1.
+`error: --target must be 'linux' or 'windows'` and exits 1. `"windows"` also resets
+`target_win_profile` to `.win9x` (bare `-osw` semantics), so the last target flag wins.
+`[updated: 2026-10-18 — M6 T5.2]`
 
 ### `writeU32` — `main.zig`
 
@@ -755,14 +763,21 @@ buffer. Handles `val == 0` as a special case (writes `"0"`). Used by `runCompile
 
 ### `printUsage` — `main.zig`
 
-Prints the usage banner plus the `-mm<N>`, `-s<N>`, `-osl`/`-osw`, and `--target` help lines to
-stderr:
+Prints the usage banner plus every actively parsed option (including `--help`, `--dump-c89`,
+`-mm<N>`, `-s<N>`, the `-osw [9x|nt]` profile, `--target`, and the analyzer/format/safety
+flags) to stderr. Dead constants (`--dump-types`/`--dump-lir`/`-t`/`-a`/`-y`/`-l`) are not
+listed. `[updated: 2026-10-18 — M6 T5.2 truth-up]`
 ```
 zig1 - Z98 self-hosted compiler - usage: zig1 [options] <input.zig>
   -mm<N>    hard pool budget in MB (default 64; pool.peak over budget -> ICE rc=3)
   -s<N>     spill level 0..6 (default 0 = all spills on disk; -s1..-s6 deactivate the ...
-  -osl       compile target = linux (default); -osw = windows
-  --target <linux|windows>  long-form target alias for -osl/-osw
+  -osl      compile target = linux (default)
+  -osw [9x|nt]  compile target = windows (default 9x = Win9x; nt = NT/XP profile)
+  --target <linux|windows>  long-form target alias for -osl/-osw (windows = 9x default)
+  -o, --output-dir <dir>    output directory (default .)
+  ...
+  --dump-c89                emit C89 into the output directory
+  --help                    show this help
 ```
 
 **main_dump.zig variant:** More detailed, lists `--test`/`-t`, `--dump-tokens`, `--dump-ast` flags.
@@ -778,7 +793,7 @@ CLI args (argv)
 parseArgs()
     │
     ▼
-CompilerCli (26 fields)
+CompilerCli (27 fields)
     │
     ▼
 main() constructs CompilerContext (33 fields; P1 removed the write-only `name_mangler` stub field)
@@ -814,6 +829,7 @@ runCompiler(ctx)
 | `cli.dump_c89` | `parseArgs` | `phase_C89Emission` |
 | `cli.safe_checks` | `parseArgs` | `phase_LIRLowering` (SemanticContext), `phase_C89Emission` |
 | `cli.target_is_windows` | `parseArgs` | `phase_ComptimeEvaluation` (`@isWindows`), `phase_C89Emission` (build scripts) |
+| `cli.target_win_profile` | `parseArgs` | `phase_C89Emission` (`emitBuildScripts` profile define) `[updated: 2026-10-18 — M6 T5.2]` |
 | `cli.*_check` flags | `parseArgs` | `phase_StaticAnalyzers` |
 | `cli.track_memory` | `parseArgs` | `runCompiler` (final print) |
 | `store` (AstStore) | `phase_ImportResolution` (parser) | All phases |
@@ -927,7 +943,7 @@ Entry for token/AST dumping without running the full pipeline.
 
 | Aspect | main.zig | main_dump.zig |
 |--------|----------|---------------|
-| CompilerCli fields | 26 | 16 |
+| CompilerCli fields | 27 | 16 |
 | CompilerContext fields | 34 | 6 |
 | Phase implementations | Full 10-phase pipeline | Empty stubs (`_ = ctx;`) |
 | Dump targets | c89 (stdout) / multi-module tree | tokens, ast |
