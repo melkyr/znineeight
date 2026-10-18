@@ -1447,3 +1447,303 @@ is resolved by design (portable typedef + literal-macro layer, with a hi/lo
 fallback), every affected site is in the T5.3 inventory, and the remaining
 uncertainties are native-toolchain/hardware items explicitly deferred by
 Amendment 5. No source files were edited; only this report was amended.
+
+---
+
+## Fix round 2 (2026-10-18)
+
+This section is appended per the second review ruling. It supersedes the
+C1.3/inventory and L4 portions of Fix round 1, and corrects the two minor
+citations/counts below. Still report-only: zero source edits, no
+downloads/installs, no native-toolchain probes. Native claims remain
+**design-verified; hardware verification pending**.
+
+### R2-C1 — Complete 64-bit spelling audit (the round-1 inventory was incomplete)
+
+**Finding accepted.** Fix round 1's C1 design was correct but its site list was
+not exhaustive. In particular it missed the 64-bit literals emitted inside
+`emitFloatHexHelper` and one boundary literal:
+
+| `sf/src/c89_emit.zig` line | Missed spelling | Context |
+|:--|:--|:--|
+| `4165` | `"0xFFFFFFFFFFFFFFFFull"` | `satMaxULitBound(64)` |
+| `5387` | `0xFFFFFFFFFFFFFULL` | `emitFloatHexHelper` (`:5339`), `zT_man = zT_bits & ...` |
+| `5395` | `0x10000000000000ULL` | `emitFloatHexHelper` (`:5339`), implicit-bit insert |
+| `5397` | `0xFULL` | `emitFloatHexHelper` (`:5339`), nibble mask |
+| `4997` | `"ULL"` append (not `:4994`, which is the `while` line) | enum value table |
+
+All are now added to the C1.3 table and the R2 inventory delta. The earlier
+`:4994` citation is corrected to `:4997`.
+
+#### R2-C1.1 Audit command and result
+
+The comprehensive audit used both a broad spelling grep and a fresh emitted-tree
+grep (same `/tmp/m6/zig1_5_clean` dumps as T5.3b):
+
+```sh
+cd /workspace/znineeight
+grep -nE 'long long|unsigned long long|0[xX][0-9A-Fa-f]+(ULL|LL|ull|ll)|[0-9]+(ULL|LL|ull|ll)\b|\bLL\b|\bULL\b' \
+    sf/src/c89_emit.zig sf/src/emit_support.zig
+grep -RInE 'long long|unsigned long long|0[xX][0-9A-Fa-f]+(ULL|LL|ull|ll)|[0-9]+(ULL|LL|ull|ll)\b' \
+    /tmp/t53b_dump/z9play /tmp/t53b_dump/z9torr /tmp/t53b_dump/hello \
+    --include='*.c' --include='*.h'
+```
+
+Result before the T5.3 fix:
+
+- Emitter/support: **136 matching lines** across the two files. Two are not C
+  spellings and are excluded from the edit list: `c89_emit.zig:4862` (comment)
+  and `c89_emit.zig:6539` (`"LL:n"` marker). Of the remaining 134, three are
+  the standalone suffix strings `3974` (`"ULL"`), `3979` (`"LL"`), and `4997`
+  (`"ULL"`), and three (`4453`, `4467`, `4478`) write variables whose
+  definitions are rewritten at `4317`/`4306`. The complete set is in
+  R2-C1.2/R2-C1.3; no other site was found.
+- Fresh emitted tree: **4,065 matching lines** — z9play 1,606, z9torr 2,355,
+  hello 104. The audit was over all `.c/.h` files, not just `zig_runtime.h`.
+- `sf/src/emit_support.zig` sites are enumerated in R2-C1.3; every one is inside
+  the emitted `zig_compat.h`, `std_time_prelude.h`, `zig_runtime.h`, or
+  `zig_runtime.c` literal.
+
+After the T5.3 spelling layer the expected result is **zero** matches for
+`long long`/`unsigned long long`/64-bit suffix in the Windows-compiled tree;
+the audit command above is the mechanical acceptance check. (The POSIX-only
+`std_time_prelude.h` block is excluded by `_WIN32`; if T5.3 maps it to `z64`,
+the zero-match check also holds for the raw tree.)
+
+#### R2-C1.2 Complete `c89_emit.zig` code-emitting site list
+
+This is the comprehensive list from the audit (line numbers current). It
+supersedes the partial C1.3 table.
+
+| Line(s) | Spelling / use | Required action |
+|:--|:--|:--|
+| `1701`, `1708` | `typedef long long` / `typedef unsigned long long` carrier typedefs | `typedef z64` / `typedef zu64` |
+| `3974`, `3979` | `"ULL"` / `"LL"` suffix returns | replace suffix-return design with `writeU64Const`/`writeI64Const` wrappers |
+| `4165` | `"0xFFFFFFFFFFFFFFFFull"` (64-bit boundary) | `Z98_U64_MAX` or `Z98_U64_C(0xFFFFFFFFFFFFFFFF)` |
+| `4306` | `(long long)` in checked-op expression | `(z64)` |
+| `4317` | `0ull` + `(unsigned long long)` | `Z98_U64_C(0)` + `(zu64)` |
+| `4318` | `(unsigned long long)(-(long long)` | `(zu64)(-(z64)` |
+| `4323` | `0ull` + `(unsigned long long)` | `Z98_U64_C(0)` + `(zu64)` |
+| `4336` | `(unsigned long long)` | `(zu64)` |
+| `4453`, `4467`, `4478` | writes the `div0ull`/`eq0ll` variables | no independent literal; changes follow `4317`/`4306` |
+| `4989` | `static const unsigned long long` | `static const zu64` |
+| `4997` | appended `"ULL"` enum-value suffix | `Z98_U64_C(<digits>)` (corrected from `:4994`) |
+| `5024` | `unsigned long long x = (unsigned long long)v;` | `zu64 x = (zu64)v;` |
+| `5331` | `((unsigned long long)(unsigned int)(` | `((zu64)(unsigned int)(` |
+| `5379`, `5380`, `5381` | float-hex union/fields `unsigned long long` | `zu64` |
+| `5387` | `0xFFFFFFFFFFFFFULL` | `Z98_U64_C(0xFFFFFFFFFFFFF)` |
+| `5395` | `0x10000000000000ULL` | `Z98_U64_C(0x10000000000000)` |
+| `5397` | `0xFULL` | `Z98_U64_C(0xF)` |
+| `6227`, `6230`, `6246`, `6275`, `6279` | `emitCastToC(..., "long long"/"unsigned long long", ...)` | `"z64"`/`"zu64"` |
+| `7540` | `(unsigned long long)` | `(zu64)` |
+
+The `4862` comment and `6539` marker are intentionally not code edits; the
+marker `"LL:n"` is not a C literal.
+
+#### R2-C1.3 Complete `emit_support.zig` site ranges
+
+`emit_support.zig` is the source of truth for the emitted support files; the
+audit found these line groups, all of which must be mirrored to
+`z64`/`zu64`/`Z98_*_C`:
+
+- `39,40,42,43` — `zig_compat.h` `z64`/`zu64` typedef branches.
+- `179,183,187` — `std_time_prelude.h` POSIX-only `long long`/`LL` (preprocessed
+  out on `_WIN32`; map for uniformity or leave with an explicit note).
+- `208,209` — `zig_runtime.c` PAL prototypes.
+- `221-330` — every `zig_ovf_*`, `zig_wrap_*`, `zig_overflow_flag_*` signature,
+  local, cast, and `ULL`/`LL` literal.
+- `348,349,356,357` — `std_print_*` prototypes.
+- `358-365` — `std_checked_cast_*` prototypes.
+- `460-480` — `zig_cast_checked_s/u` definitions and casts.
+- `498,499` — `zig_runtime.c` PAL prototypes (duplicate literal block).
+- `526-561` — `std_checked_cast_*` definitions and `ULL` literals.
+
+The canonical mirrors are `sf/src/include/zig_compat.h`,
+`sf/src/include/std_time_prelude.h`, `sf/src/include/zig_runtime.h`, and
+`sf/src/include/zig_runtime.c`. The new `zig_nocrt.c` must include
+`zig_compat.h` (its `pal_wallclock_unix` extern is `z64`, not `long long`).
+
+#### R2-C1.4 `emitFloatHexHelper` (the missed file)
+
+`emitFloatHexHelper` is the source of the missed `5387/5395/5397` literals. Its
+64-bit branch (`sf/src/c89_emit.zig:5339-...`) must use `zu64` for the union and
+fields and `Z98_U64_C(...)` for all three masks/bit constants. The 32-bit branch
+(`float`/`unsigned int`) is unchanged. The emitted tree's
+`z98_printFloatHex64` is part of every module that reaches float formatting;
+missing these literals would fail VC6 `/Za` even if every other site were fixed.
+
+#### R2-C1.5 Inventory delta added to the T5.3 plan
+
+Add to the Fix-round-1 inventory delta:
+
+| File:line (current) | T5.3 edit |
+|:--|:--|
+| `sf/src/c89_emit.zig:4165` | `satMaxULitBound(64)` boundary literal → `Z98_U64_MAX`. |
+| `sf/src/c89_emit.zig:5387` | `emitFloatHexHelper` mantissa mask → `Z98_U64_C(0xFFFFFFFFFFFFF)`. |
+| `sf/src/c89_emit.zig:5395` | `emitFloatHexHelper` implicit bit → `Z98_U64_C(0x10000000000000)`. |
+| `sf/src/c89_emit.zig:5397` | `emitFloatHexHelper` nibble mask → `Z98_U64_C(0xF)`. |
+| `sf/src/c89_emit.zig:4997` | Enum value-table `ULL` append (corrected cite). |
+| `sf/src/c89_emit.zig:4453,4467,4478` | Confirm the variables they write were rewritten at `4317`/`4306`; no independent spelling. |
+| `sf/src/emit_support.zig:39-561` (enumerated R2-C1.3) | All support-type/literal sites. |
+| Fresh emitted tree audit | Acceptance: zero `long long`/`unsigned long long`/64-bit-suffix matches in Windows-compiled `.c/.h`; audit command R2-C1.1. |
+
+### R2-L4 — command.com-safe link commands via response files
+
+**Finding accepted.** The Fix-round-1 single-line `link`/`wlink` commands are
+still too long for `command.com`'s ~127-character limit once the object list is
+expanded (the fixed prefix alone measured 200-217 chars for the z9play/z9torr
+shapes). A single-line command is therefore not a Win98 `command.com` design.
+
+**Decision: response files.** Keep the R1-L4 argument/output-path handling
+(`%1`, no `%~`, no `%*`, no parenthesized `else`, no `setlocal`), but move the
+entire linker command into a response file created with short `echo` lines.
+Each `echo` line is well under 127 chars; the executed command is only
+`link @z98_link.rsp` / `wlink @z98_link.lnk`. No cmd.exe requirement is needed.
+
+Vendor support:
+
+- MSVC LINK: “`@response_file` — Specifies a linker response file. A text file
+  that contains linker commands.”
+  https://learn.microsoft.com/en-us/cpp/build/reference/at-specify-a-linker-response-file?view=msvc-170
+- OpenWatcom `wlink`: “If the directives are contained within a file, the `@`
+  character is used to reference that file. If no file extension is specified, a
+  file extension of `lnk` is assumed.” (`docs/doc/lg/tutmain.gml:21-26`,
+  https://github.com/open-watcom/open-watcom-v2/blob/master/docs/doc/lg/tutmain.gml).
+
+#### R2-L4.1 MSVC response-file script block
+
+Exact `build_target_nocrt.bat` (and `_crt` with its own flags/libs) block;
+`@MODRSP@` is the emitter's one-line-per-module substitution
+`echo <module>.obj >> z98_link.rsp`. Every generated line is short.
+
+```bat
+@echo off
+REM build_target_nocrt.bat - generated by zig1 (MSVC cl, Win9x no-CRT DEFAULT)
+REM REDISTRIBUTION: single EXE, no msvcrt.dll. Imports only OS DLLs.
+REM Status: design-verified; hardware verification pending.
+REM usage: build_target_nocrt.bat [OUT]   (run from the emitted output dir)
+set OUT=prog.exe
+if not "%1"=="" goto z98_have_out
+goto z98_out_ready
+:z98_have_out
+set OUT=%1
+:z98_out_ready
+set CFLAGS=/c /Za /W3 /WX /DZIG_WIN32 /DZIG_NO_CRT /Zl /I .
+echo Compiling...
+@MODC@
+cl %CFLAGS% zig_runtime.c
+cl %CFLAGS% zig_pal.c
+cl %CFLAGS% zig_nocrt.c
+cl %CFLAGS% c_exit.c
+echo Linking...
+if exist z98_link.rsp del z98_link.rsp
+echo /NODEFAULTLIB >> z98_link.rsp
+echo /subsystem:console,4.0 >> z98_link.rsp
+echo /STACK:2097152 >> z98_link.rsp
+echo /entry:_mainCRTStartup@0 >> z98_link.rsp
+@MODRSP@
+echo zig_runtime.obj >> z98_link.rsp
+echo zig_pal.obj >> z98_link.rsp
+echo zig_nocrt.obj >> z98_link.rsp
+echo c_exit.obj >> z98_link.rsp
+echo kernel32.lib winmm.lib @WSOCK_DEP@ libcmt.lib >> z98_link.rsp
+echo /out:%OUT% >> z98_link.rsp
+link @z98_link.rsp
+echo Built: %OUT%
+```
+
+For an nt dump the same script has `/DZIG_WIN_NT` in `CFLAGS`; for
+`build_target_crt.bat`, replace `/DZIG_NO_CRT /Zl` with `/MT` and drop
+`/NODEFAULTLIB` and `libcmt.lib` (the `/MT` default library supplies the static
+CRT). The `@MODRSP@` module-object lines are identical. `@WSOCK_DEP@` expands
+to `wsock32.lib` only when `net_emitted`.
+
+#### R2-L4.2 OpenWatcom response-file script block
+
+Exact `build_owc_nocrt.bat` (`_crt` differs only in no `/dZIG_NO_CRT`, no
+`/zl`, and no `option nodefaultlibs`/`clib3r`; the response-file mechanism is
+the same). `@MODOWCRSP@` is the emitter's one-line-per-module substitution
+`echo file <module>.obj >> z98_link.lnk`.
+
+```bat
+@echo off
+REM build_owc_nocrt.bat - generated by zig1 (OpenWatcom, Win9x no-CRT DEFAULT)
+REM REDISTRIBUTION: single EXE, no runtime DLL dependency. Imports only OS DLLs.
+REM Status: design-verified; hardware verification pending.
+REM usage: build_owc_nocrt.bat [OUT]   (run from the emitted output dir)
+set OUT=prog.exe
+if not "%1"=="" goto z98_have_out
+goto z98_out_ready
+:z98_have_out
+set OUT=%1
+:z98_out_ready
+echo Compiling...
+@MODOWC@
+wcc386 /za /we /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. zig_runtime.c
+wcc386 /za /we /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. zig_pal.c
+wcc386 /za /we /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. zig_nocrt.c
+wcc386 /za /we /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. c_exit.c
+echo Linking...
+if exist z98_link.lnk del z98_link.lnk
+echo system nt >> z98_link.lnk
+echo option nodefaultlibs >> z98_link.lnk
+echo option start=_mainCRTStartup >> z98_link.lnk
+echo option stack=2097152 >> z98_link.lnk
+@MODOWCRSP@
+echo file zig_runtime.obj >> z98_link.lnk
+echo file zig_pal.obj >> z98_link.lnk
+echo file zig_nocrt.obj >> z98_link.lnk
+echo file c_exit.obj >> z98_link.lnk
+echo library kernel32,clib3r,winmm@WSOCK_LIB@ >> z98_link.lnk
+echo name %OUT% >> z98_link.lnk
+wlink @z98_link.lnk
+echo Built: %OUT%
+```
+
+Multiple `FILE` directives are explicitly allowed by the vendor linker
+(“More than one `FILE` directive may be used”, `docs/doc/lg/ldfile.gml`). This
+keeps every `echo` line short. `@WSOCK_LIB@` expands to `,wsock32` only when
+`net_emitted`.
+
+#### R2-L4.3 command.com limits, quoting, and aliases
+
+- The executed command line is `link @z98_link.rsp` or `wlink @z98_link.lnk`
+  (well under 127 chars). The response-file contents are not subject to the
+  command-line limit; each generating `echo` line is short because it carries
+  one object/option.
+- `%1` remains the only argument; no `%~`, `%*`, `%~dp0`, parenthesized `if`,
+  `setlocal`, or `^` continuation. `call` remains the alias mechanism.
+- `set OUT=%1` preserves quotes; `echo /out:%OUT% >> z98_link.rsp` writes the
+  quoted output path. Paths with spaces must be quoted; the resulting response
+  line must still fit command.com's line limit. Recommended: use an 8.3/no-space
+  output path (default `prog.exe` is safe). This is the same documented
+  constraint as R1-L4, now with only the output path on the response line.
+- Alias `build_target.bat` (9x) runs `call build_target_nocrt.bat %1`; nt runs
+  `call build_target_crt.bat %1`; `build_owc.bat` follows the matching OWC
+  script. Run from the emitted output directory (no `%~dp0` in `command.com`).
+- `echo` may leave a trailing space before `>>`; response-file parsers treat it
+  as whitespace. Do not put a space between a filename and `>>` if a future
+  parser is strict; either form is command.com-valid.
+
+### R2 minor corrections
+
+| Earlier text | Correction |
+|:--|:--|
+| “241 occurrences in 45 HTML files” (`docs/sf/manuals/en`) | Actual: **45 files / 129 occurrences** in `docs/sf/manuals/en`; **130 occurrences across all manuals** (including the `dist/en` mirror). The alias/no-dangling conclusion is unchanged. |
+| `zig_runtime.h:120` as the `if (a == 0ULL || b == 0ULL)` line | The `if` is at `zig_runtime.h:121`; `:120` is the `zig_overflow_flag_shl_u` signature. |
+
+### R2 residual risks
+
+| # | Risk | Impact | Mitigation / status |
+|:--|:--|:--|:--|
+| R2-1 | A new/missed 64-bit spelling site | VC6 `/Za` fails again | R2-C1.1 audit command is the acceptance gate; zero matches before hardware sign-off. |
+| R2-2 | `emitFloatHexHelper` literals are easy to miss | float-formatting modules fail VC6 | R2-C1.4 explicitly covers `5387/5395/5397`; audit includes them. |
+| R2-3 | command.com response-file line limit for a very long output path | link fails | use quoted 8.3/no-space output path; default `prog.exe`; documented. |
+| R2-4 | `echo` trailing spaces / redirect parsing | malformed response file | whitespace is legal in LINK/wlink response files; use `>>` with no ambiguity; hardware smoke pending. |
+| R2-5 | `wlink` multiple `FILE` directives | link behavior | vendor docs explicitly allow multiple `FILE` directives (`ldfile.gml`); hardware pending. |
+| R2-6 | `@MODRSP@`/`@MODOWCRSP@` emitter substitution must be one line per module | long line if merged | T5.3 emitter writes one `echo` line per module (short); audit by generated script length. |
+
+**Fix-round-2 status: DONE_WITH_CONCERNS.** The missing 64-bit sites are now
+enumerated with a reproducible audit, and the linker command is moved to
+command.com-safe response files. Remaining concerns are hardware/native
+verification items deferred by Amendment 5; no source edits were made.
