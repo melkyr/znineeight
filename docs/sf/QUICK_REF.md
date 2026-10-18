@@ -24,11 +24,12 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v98** (rotated 2026-10-16 by the zig1 emitter sanitization
-closeout, plan `2026-10-12-zig1-emitter-sanitization`; seed v97 → v98, final
-compiler P7 `dcd0c9db`). Archive md5 `74acfdadbb48fb658e59cf8da6ad678a`;
-archived binary md5 (= v98's rotation fixed point) `f18b69ece1917bf970a036b276e5e403`; `gen/`
-46 `.c` + 47 `.h` (9,900,439 bytes); `lib/` 32 std `.zig`. **This block is updated at every plan closeout that
+**Current seed: v99** (rotated 2026-10-18 by the M6 Win9x T5.3 closeout, plan
+`2026-10-11-z9play-m6-win9x-plan`; seed v98 → v99, final compiler fixed point
+`1ef248e0c9782cfe646de73634dae4d8`). Archive md5
+`c51e8019d0a1a7088c714aa1ff39fa09`; archived binary md5 (= v99's rotation fixed
+point) `1ef248e0c9782cfe646de73634dae4d8`; `gen/` 46 `.c` + 47 `.h`
+(10,253,743 bytes); `lib/` 32 std `.zig`. **This block is updated at every plan closeout that
 rotates the seed**; the branch's in-progress fixed point is recorded in the active plan's
 workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
@@ -50,13 +51,17 @@ arity-reject closeout (2026-10-11) rotated it to v97 (fix `875b9a9e`; fixed
 point / archived binary md5 `bafbba9454cd2b134bdc3d50c65384e0`); and the zig1
 emitter sanitization closeout (2026-10-16) rotated it to v98 (P1–P14
 increments; fixed point / archived binary md5
-`f18b69ece1917bf970a036b276e5e403`; archive md5 `74acfdadbb48fb658e59cf8da6ad678a`).
+`f18b69ece1917bf970a036b276e5e403`; archive md5 `74acfdadbb48fb658e59cf8da6ad678a`);
+and the M6 Win9x T5.3 closeout (2026-10-18) rotated it to v99 (portable 64-bit
+C spelling layer, no-CRT Win9x shim set, native build scripts; fixed point /
+archived binary md5 `1ef248e0c9782cfe646de73634dae4d8`; archive md5
+`c51e8019d0a1a7088c714aa1ff39fa09`).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 46 `.c` + 47 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
-(the emitted 5: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
-`zig_runtime.c`, `zig_pal.c` — NO `net_prelude.h`), `lib/` (the tracked seed
+(the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
+`zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the tracked seed
 archive **v95 carries the full 32 std `.zig`** = `std.zig` plus 31 `std_*.zig`;
 the earlier v94 archive predated M0 with only 30 — from v95 onward
 `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install the current
@@ -264,8 +269,8 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (re-baselined 2026-10-16, zig1 emitter sanitization closeout, seed v98; supersedes the stale 2026-10-10 / 2026-10-11 table — C1: `std_math.zig` growth post-dated it).** Measured with
-the seed-built fixed compiler (`f18b69ece1917bf970a036b276e5e403`):
+**8-pin table (re-baselined 2026-10-18, M6 Win9x T5.3 closeout, seed v99; supersedes the 2026-10-16 table).** Measured with
+the seed-built fixed compiler (`1ef248e0c9782cfe646de73634dae4d8`):
 `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum` from the repo root. The
 absolute pin values are **compiler-build dependent** (each compiler build pairs a `lib/` std
 set; the binary's own path is irrelevant — verified), so only same-build comparisons are
@@ -274,21 +279,20 @@ re-baseline only.
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `bbc02913a10af9b0b5ed0f292f4e3407` | `fa346108ed00d03a037c2f9331d3bdf8` |
-| `examples/z98/game_of_life/main.zig` | `93c5e3fdc5b80b2f3db020d995abbe3f` | `01a4e2265b33c97a8ca6ff3dfa551231` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `6da05d070acd414674b1b1ec947baa5c` | `e3970e33ac09c8dfaa316d2d69bf61ec` |
-| `examples/z98/json_parser/main.zig` | `af3823fae0b29fa4d4ca58932538d631` | `24e0e812e7dffa5a43750135405ffe3f` |
+| `examples/z98/mud_server/main.zig` | `35ec8c8c1158e260c328212ac5fdc013` | `3203868ad4b435e8c1968fedf9284695` |
+| `examples/z98/game_of_life/main.zig` | `4a963f79e08c67329f4fff46530090e4` | `03a18737b641a6a95c67aec71daed3f7` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `4939b6e20eb4ee3d519fc3fd91e6e0d6` | `a2afe23d87d35eb741464423a382c0f8` |
+| `examples/z98/json_parser/main.zig` | `95f82c77058e2f5647f9711a14448a79` | `96fdbc4c6e6e76209cc2b27a6b959482` |
 
-All 8 pins moved vs the pre-plan table (`ad09343f…`/`4cb09916…`,
-`6a9518e7…`/`12a230e2…`, `e7a8e48d…`/`e5b74f4f…`,
-`6eb0c0f8…`/`5daac4a3…`). The old table was stale since before the plan: at
-Task 0 the mismatch was root-caused to `sf/src/std_math.zig` growth
-(z9play M2 `4d6fb5dd`/`b5ca08d2`, 54→402 lines) post-dating it — swapping the
-v97-era `std_math.zig` back reproduces all 8 old values byte-exactly (Task-0
-report §1.6). Re-baseline date/plan: 2026-10-16, plan
-`2026-10-12-zig1-emitter-sanitization` (C1). Runtime goldens are re-proven
-byte-identical PRE↔POST on this compiler (gol `fcbf7e7c…`, lisp `(+ 1 2)`
-`b3d9f897…`, json `8bda3d5a…`, mud `66c8f0ab…`/`93147d0f…`).
+All 8 pins moved vs the 2026-10-16 table (`bbc02913…`/`fa346108…`,
+`93c5e3fd…`/`01a4e226…`, `6da05d07…`/`e3970e33…`,
+`af3823fa…`/`24e0e812…`). This is the intended T5.3 movement: every emitted
+64-bit type/constant now spells through `z64`/`zu64` and
+`Z98_I64_C`/`Z98_U64_C`/`Z98_I64_MIN/MAX`/`Z98_U64_MAX`, and the Win9x
+`std_file`/`std_os`/`std_time` PAL rewiring changes the emitted helper calls.
+The same emitted C still compiles with the normal GCC path; runtime goldens are
+re-proven byte-identical PRE↔POST on this compiler (gol `fcbf7e7c…`, lisp
+`(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`, mud `66c8f0ab…`/`93147d0f…`).
 
 Re-baselined by the FX5 `-fsafe` slice-bounds guards (2026-09-28), then by the
 FX14 layout-model pin (2026-09-29, operator ruling A): every gate dump embeds
