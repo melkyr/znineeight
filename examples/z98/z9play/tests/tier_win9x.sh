@@ -150,7 +150,9 @@ case "$FILEOUT" in
     *) fail_case "not a PE32 i386 executable: ${FILEOUT:-<none>}" ;;
 esac
 
-UNDEF="$(i686-w64-mingw32-nm -u "$EXE" 2>/dev/null | awk '{print $NF}' | grep -E '^z[FT]_' || true)"
+# i386 PE symbols are underscore-prefixed (`U _zF_...`), so allow an optional
+# leading `_` or an unresolved program symbol would slip through this filter.
+UNDEF="$(i686-w64-mingw32-nm -u "$EXE" 2>/dev/null | awk '{print $NF}' | grep -E '^_?z[FT]_' || true)"
 if [ -z "$UNDEF" ]; then
     pass_case "no unresolved zF_/zT_ program symbols"
 else
