@@ -33,9 +33,12 @@ developer build use `gcc -m32`
 There is currently **no architecture target**. The CLI selects only an OS
 target (`-osl` / `-osw`, `--target linux|windows`) and a Windows profile
 (`sf/src/main.zig:1810-1831`, `sf/src/main.zig:2009-2019`). The architecture is
-whatever the host/cross C compiler produces. The emitted build scripts know only
-`linux` and `mingw`, both with `-m32`
-(`sf/src/c89_emit.zig:8556-8565`, `sf/src/c89_emit.zig:8769-8795`).
+whatever the host/cross C compiler produces. The emitted POSIX/mingw
+`build_target.sh` knows only `linux` and `mingw`, both with `-m32`
+(`sf/src/c89_emit.zig:8555-8599`). The `-osw` path additionally emits MSVC and
+OpenWatcom `.bat` recipes (`sf/src/c89_emit.zig:8601-8738`,
+`sf/src/c89_emit.zig:8769-8826`), so the Windows `.bat` set is broader than the
+`.sh` set; neither has an architecture selector.
 
 ### 1.2 Frozen 32-bit semantic model
 
@@ -51,7 +54,7 @@ runtime, and the self-host recipe.
 | Pointer and many-pointer types are size 4, align 4 | `sf/src/type_registry.zig:750-753`, `sf/src/type_registry.zig:772-775` |
 | A slice is size 8 and emitted as `{ Elem *ptr; unsigned int len; }` | `sf/src/type_registry.zig:800`, `sf/src/c89_emit.zig:1726-1742` |
 | `i64`/`u64`/`f64` are size 8, align 8, pinned by `Z98_ALIGN8` | `sf/src/include/zig_compat.h:5-9`, `:29-30`, `:49`; `sf/src/c89_emit.zig:1699-1716` |
-| Optional and error-union layout uses a hard-coded 4-byte payload/tag step | `sf/src/type_resolver.zig:365-377` |
+| Optional/error-union tags are C `int` (4 bytes); layout math pads the payload to 4 and aligns the total | `sf/src/c89_emit.zig:1761`, `:1785`; `sf/src/type_resolver.zig:365-377` |
 | `va_list` is size 4, align 4 | `sf/src/type_registry.zig:1155` |
 | `@sizeOf`/`@alignOf`/`@bitSizeOf` read the registry's stored size/alignment | `sf/src/type_resolver.zig:1255-1273` |
 | `usize` literal range is capped at `4294967295` | `sf/src/type_registry.zig:2181` |
@@ -161,7 +164,9 @@ and the ABI spec, https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/mast
 4. **Calls through libc** are fine; bare-metal needs SBI or a PAL shim.
 5. **`gethostbyname` return-as-`usize`** (`sf/src/std_net.zig:580`) is
    intentionally pointer-sized; with 32-bit `usize` on RV32 it is consistent.
-   It becomes a 64-bit blocker only on RV64.
+   It is a generic LP64 issue, not RV64-specific: on RV64, AArch64, and
+   x86-64 the returned pointer would be stored in a 32-bit `usize` until the
+   width model is fixed.
 
 **Toolchain.** `riscv64-unknown-elf-gcc` / `riscv32-unknown-linux-gnu-gcc`
 and Clang are standard **[unverified locally]**. C89 is supported. RV32IMAC
@@ -192,10 +197,20 @@ the Z98 type/layout model, not C89.
    and emitted as `{ Elem *ptr; unsigned int len; }`
    (`sf/src/c89_emit.zig:1726-1742`). On LP64 this must be 16 bytes with a
    64-bit length. All by-value slice ABI, struct layout, and `@sizeOf` follow.
-3. **Optional/error-union layout.** The `+4` tag steps and 4-byte alignment
-   floors in `sf/src/type_resolver.zig:365-377` are 32-bit assumptions. On
-   LP64 the tag/alignment must become 8 bytes where the payload alignment is
-   8.
+3. **Optional/error-union layout is mostly already target-sized; only the
+   pointer case needs the width model.** The tag is emitted as C `int`
+   (`sf/src/c89_emit.zig:1761`, `:1785`), which is 4 bytes on both ILP32 and
+   LP64. The layout formula (`sf/src/type_resolver.zig:365-377`) pads the
+   payload to a 4-byte boundary, adds a 4-byte tag, then rounds the whole
+   struct to the payload's alignment. That already yields 16 bytes with the
+   tag at offset 8 for 8-aligned payloads such as `u64`, `struct { u64 }`,
+   `E!u64`, and `E!struct { u64 }` on both 32-bit and 64-bit C ABIs. The
+   failure is narrower: a pointer-containing optional/error-union is computed
+   as 8 bytes because the registry still says pointers are 4 bytes, while the
+   emitted C is 16 bytes on LP64. Once pointer size is parameterized, the
+   existing formula produces the correct 16 bytes with the 4-byte tag and
+   padding. **Do not blindly widen the tag to 8 bytes.** See the probe
+   evidence in §2.7.
 4. **Pointer/integer casts.** `@ptrToInt` always produces `usize`
    (`sf/src/c89_emit.zig:7949-7955`) and `@intToPtr` casts through
    `(unsigned int)` (`sf/src/c89_emit.zig:3597-3603`). On AArch64 this
@@ -260,9 +275,10 @@ justify because the current code deliberately emits 32-bit C.
 
 **What breaks.** The same LP64 issues:
 
-- `usize`/pointer width, slice 8 -> 16, optional/error-union layout,
-  `va_list` (x86-64 SysV `va_list` is a 24-byte array-of-struct type), pointer
-  casts, `@sizeOf`.
+- `usize`/pointer width, slice 8 -> 16, pointer-containing
+  optional/error-union layout (the tag itself stays a 4-byte `int`; see
+  §2.7), `va_list` (x86-64 SysV `va_list` is a 24-byte array-of-struct type;
+  see §9.2), pointer casts, `@sizeOf`.
 - `@ptrToInt` must produce a 64-bit value; `@intToPtr` must not cast through
   `(unsigned int)`.
 - `_llseek` is not available on x86-64; use `lseek` (syscall 8) or
@@ -303,7 +319,10 @@ Reasons, in order of severity:
    (`sf/src/type_registry.zig:750-753`) is not representable.
 3. **Object size and stack.** The compiler's static 256 MiB pool
    (`sf/src/allocator.zig:247-248`) and 16 MB budget cannot fit in the
-   640 KiB conventional-memory model or a single 64 KiB segment. A 16-bit
+   640 KiB conventional-memory area (Wikipedia, "Conventional memory": the
+   first 640 kilobytes of PC RAM) or a single real-mode 64 KiB segment
+   (Wikipedia, "x86 memory segmentation": "the fundamental size of a segment
+   is 65,536 bytes"), within a 1 MiB real-mode address space. A 16-bit
    compiler would need a different allocator, smaller data structures, and a
    memory model that can address them. The current compiler is not close.
 4. **Toolchain.** 16-bit C compilers exist (OpenWatcom `WCC` is the 16-bit
@@ -322,6 +341,78 @@ pointers, 4-byte `int`, flat address space. It still needs a DOS PAL and an
 extender, but it does not require a 16-bit memory model. It is not the same
 as "16-bit DOS support" and should be scoped separately.
 
+### 2.7 Emitted layout probe evidence (optional/error-union)
+
+The following probe was emitted with the seed-built compiler
+`/tmp/t55/zig1_5_clean` (md5 `b299b4b435e624d0ddbd2edde681cbc3`) using
+`-ffast --dump-c89 --output-dir <dir>`. Probe source:
+
+```zig
+const S = struct { a: u64 };
+const E = error{ Foo };
+
+var g_opt_u64: ?u64 = null;
+var g_opt_ptr: ?*void = null;
+var g_opt_struct: ?S = null;
+var g_eu_u64: E!u64 = 0;
+var g_eu_ptr: E!*void = null;
+var g_eu_struct: E!S = undefined;
+
+pub fn main() void { }
+```
+
+The emitted `zig_special_types.h` definitions (verbatim, names retained):
+
+```c
+typedef struct { zT_79FAE712_u64 value; int has_value; } zT_BBEE1AC1_Opt_11;
+typedef struct { void* value; int has_value; } zT_AFEBC946_Opt_25;
+typedef struct { zT_D60C1322_S value; int has_value; } zT_B2EBCDFF_Opt_22;
+typedef struct { union { zT_79FAE712_u64 payload; int err; } data; int is_error; } zT_3F70E806_EU_11;
+typedef struct { union { void* payload; int err; } data; int is_error; } zT_D67AD017_EU_52;
+typedef struct { union { zT_D60C1322_S payload; int err; } data; int is_error; } zT_44732E7C_EU_22;
+```
+
+A second probe used `@sizeOf` in value position. The compiler emitted these
+constants (32-bit model):
+
+```text
+?u64       16
+?*void      8
+?struct{u64} 16
+E!u64      16
+E!*void     8
+E!struct{u64} 16
+```
+
+Compiling the emitted header with the host C compiler and printing `sizeof`
+and `offsetof` gives:
+
+| Type | Z98 `@sizeOf` (current model) | C `sizeof` `-m32` | C `sizeof` `-m64` | Tag offset `-m32` / `-m64` |
+|:--|--:|--:|--:|:--|
+| `?u64` | 16 | 16 | 16 | 8 / 8 |
+| `?*void` | 8 | 8 | **16** | 4 / 8 |
+| `?struct { u64 }` | 16 | 16 | 16 | 8 / 8 |
+| `E!u64` | 16 | 16 | 16 | 8 / 8 |
+| `E!*void` | 8 | 8 | **16** | 4 / 8 |
+| `E!struct { u64 }` | 16 | 16 | 16 | 8 / 8 |
+
+`sizeof(int)` was 4 in both `-m32` and `-m64` builds. The tag field
+(`has_value` / `is_error`) is therefore **not** the problem: it is a 4-byte C
+`int` on both ABIs. The 8-aligned payload cases already produce 16 bytes with
+the tag at offset 8 because the layout formula rounds the 8-byte payload to 4,
+adds the 4-byte tag, then rounds the total to the payload alignment. The only
+mismatch in this table is the pointer-containing optional/error-union on LP64,
+which is 16 bytes in C but 8 in the current Z98 model because pointers are
+still 4 bytes. Fixing pointer width fixes those rows without changing the tag.
+
+**Audit recommendation:** after target-width parameterization, re-run this
+probe on each target and compare Z98 `@sizeOf` against the target C compiler's
+`sizeof`/`offsetof` for `?T` and `E!T` where `T` is a 1/2/4/8/16-byte and
+8-aligned payload, plus pointer payloads. Do not widen the tag to 8 bytes on
+the assumption that 8-aligned payloads need it; the C ABI uses padding, not a
+wider tag.
+
+
 ## 3. Real blockers, ranked
 
 The ordering is by blast radius and by how many targets each blocks.
@@ -329,8 +420,10 @@ The ordering is by blast radius and by how many targets each blocks.
 ### 3.1 Target-width-parameterized type model (highest)
 
 **What:** make `usize`, `isize`, pointer size/alignment/width, slice layout,
-optional/error-union layout, `va_list`, and `@sizeOf`/`@alignOf`/`@offsetOf`
-depend on a target descriptor rather than constants.
+pointer-containing optional/error-union layout, `va_list`, and
+`@sizeOf`/`@alignOf`/`@offsetOf` depend on a target descriptor rather than
+constants. The optional/error-union tag remains a 4-byte `int`; the layout
+formula's padding already handles 8-aligned payloads (§2.7).
 
 **Evidence of the constants:** `sf/src/type_registry.zig:337`, `:544-545`,
 `:750-753`, `:772-775`, `:800`, `:1146-1147`, `:1155`, `:2181`;
@@ -365,6 +458,40 @@ pointers and `usize` must not truncate.
 **Complexity/risk:** medium once the type model exists; high if done first,
 because changing the cast spelling without changing `usize` creates
 inconsistent arithmetic.
+
+### 3.2.1 `@intCast` and `-fsafe` semantics under a width change
+
+A width change must move the *ranges*, not just the C typedef spelling.
+
+- Under `-fsafe` (the default), `@intCast` lowers to `int_cast_checked` only
+  when the cast narrows or changes signedness; otherwise it lowers to a plain
+  `int_cast`. The decision uses the source/destination widths from the type
+  registry (`sf/src/lower.zig:6586-6610`,
+  `sf/src/lower.zig:3620-3635`). `-ffast` always uses the plain cast.
+- The emitter maps the checked op to
+  `zig_cast_checked_s/u((zu64)src, src_width, src_signed, dst_width)`
+  (`sf/src/c89_emit.zig:7544-7570`). The helper already computes in `zu64`
+  (a 64-bit type on all supported toolchains) and supports `dw == 64`
+  (`sf/src/include/zig_runtime.h:258-283`). **No helper change is required
+  for a 64-bit `usize`**, but the registry must report width 64. Today it
+  reports 32 (`sf/src/type_registry.zig:337`) and caps `usize` literals at
+  `2^32-1` (`:2181`), so valid 64-bit addresses/`@intCast` values would be
+  rejected or truncated before the helper sees them.
+- Arithmetic overflow checks follow the same pattern. `emitArith` uses
+  `add/sub/mul/shl_with_overflow` and `check_trap{kind=6}` under `-fsafe`
+  (`sf/src/lower.zig:905-940`); the helpers take the operation width and
+  already handle 64 (`sf/src/include/zig_runtime.h:35-60`). A width change
+  changes the bounds, not the helper ABI.
+- Index/slice bounds and pointer arithmetic use `usize`; widening `usize`
+  changes the legal range and the `-fsafe` comparisons
+  (`sf/src/lower.zig:982-1121`). Tests must cover both `-fsafe` (traps on
+  out-of-range) and `-ffast` (wraps/truncates), because `-ffast` will not
+  catch a wrong width.
+- The legacy `std_checked_cast_i8..u64` helpers are upper-bound-only and are
+  **not emitted** by the current compiler (`sf/src/include/zig_runtime.h:157-170`;
+  `sf/docs/tech_docs/10_c_runtime.md`). Do not use them as the model for a
+  port; the live helper is `zig_cast_checked_s/u`.
+
 
 ### 3.3 64-bit literals and arithmetic
 
@@ -428,7 +555,7 @@ All currently discussed targets are little-endian. The emitted C delegates
 object layout to the target C compiler, so ordinary typed accesses are
 endian-correct. The exceptions are explicit byte-order code:
 
-- `std_file.zig`'s `leU32At` (`sf/src/std_file.zig:124-132`) is little-endian
+- `std_file.zig`'s `leU32At` (`sf/src/std_file.zig:117-123`) is little-endian
   by construction. It is used for `st_mtime`/FILETIME; on a big-endian target
   it would be wrong unless the host stat field is handled natively.
 - `std_net.zig`'s `htonsManual`/`htonlManual` (`sf/src/std_net.zig:45-50`)
@@ -551,7 +678,7 @@ target; "no" means it can be skipped for a first port.
 (`sf/src/main.zig`) through module registry, type registry, lowering, async
 layout, C emission, and build-script emission. Minimum fields:
 
-- `arch` (`x86`, `x86_64`, `arm`, `aarch64`, `riscv32`, `riscv64`, `m68k`?),
+- `arch` (`x86`, `x86_64`, `arm`, `aarch64`, `riscv32`, `riscv64`),
 - `os` (`linux`, `windows`, `android`, `none`),
 - `abi` (`sysv`, `mingw`, `aapcs`, `ilp32`, `lp64`, `ilp32d`, `lp64d`),
 - `pointer_width` (4/8/2),
@@ -587,7 +714,9 @@ descriptor. Specific pieces:
   (`sf/src/type_resolver.zig:1255-1273`).
 - Slice emission (`sf/src/c89_emit.zig:1726-1742`) with a pointer-width
   length and natural alignment.
-- Optional/error-union emission and field offsets.
+- Optional/error-union emission and field offsets. Keep the tag as C `int`
+  (4 bytes); verify the formula against the target compiler, especially for
+  pointer payloads (§2.7).
 - `va_list` size/alignment and C spelling.
 - Array-size arithmetic (`Type.size` is `u32`; 64-bit objects can exceed it
   only if a single type is >4 GiB, which is unlikely but should be checked).
@@ -660,8 +789,10 @@ together.
 - linker/startup options for bare-metal,
 - the correct runtime/support object set.
 
-Today the emitter hard-codes `-m32` and only `linux`/`mingw`
-(`sf/src/c89_emit.zig:8556-8565`, `:8769-8795`). **Complexity/risk:** low.
+Today the POSIX/mingw `build_target.sh` hard-codes `-m32` and only
+`linux`/`mingw` (`sf/src/c89_emit.zig:8555-8599`); the `-osw` `.bat` emitters
+are MSVC/OpenWatcom-specific (`sf/src/c89_emit.zig:8601-8738`,
+`:8769-8826`). **Complexity/risk:** low.
 
 ### 4.8 Inline asm (optional; see §5)
 
@@ -1035,6 +1166,10 @@ The exact set depends on the phase; this is the full surface.
 - Add per-target C compile probes, `@sizeOf`/`@alignOf`/slice/optional/
   `va_list` layout probes, pointer-roundtrip tests, async frame probes, and
   a small runtime smoke test per target.
+- Add `@intCast`/`-fsafe` overflow probes per target: boundary values for
+  `usize`/`isize` (2^31-1, 2^32-1, 2^63-1, 2^64-1), narrowing/sign-changing
+  casts, arithmetic overflow traps, and the same cases under `-ffast` to
+  document wrap/truncation behavior.
 - Add target-specific PAL probes (file/stat/time/socket) on real hardware or
   qemu.
 
@@ -1101,7 +1236,7 @@ The exact set depends on the phase; this is the full surface.
 | Pointer/many-pointer size 4 align 4 | `sf/src/type_registry.zig:750-753`, `:772-775` |
 | Slice size 8; emitted `{ Elem *ptr; unsigned int len; }` | `sf/src/type_registry.zig:800`, `sf/src/c89_emit.zig:1726-1742` |
 | i64/u64/f64 size 8 align 8 pinned | `sf/src/include/zig_compat.h:5-9`, `:29-30`, `:49`; `sf/src/c89_emit.zig:1699-1716` |
-| Optional/error-union 4-byte tag/alignment math | `sf/src/type_resolver.zig:365-377` |
+| Optional/error-union tag is C `int` (4 bytes); layout pads/aligns around it | `sf/src/c89_emit.zig:1761`, `:1785`; `sf/src/type_resolver.zig:365-377` |
 | `va_list` size 4 | `sf/src/type_registry.zig:1155` |
 | `@sizeOf`/`@alignOf` read registry size/alignment | `sf/src/type_resolver.zig:1255-1273` |
 | `usize` literal cap 4294967295 | `sf/src/type_registry.zig:2181` |
@@ -1113,7 +1248,8 @@ The exact set depends on the phase; this is the full surface.
 | Compiler 16 MB budget; 256 MiB static pool; 64 MB default | `docs/sf/AGENTS.md:21-22`, `:99`; `sf/src/allocator.zig:247-248`, `:257-260`; `sf/src/main.zig:2043` |
 | Async `Context` offsets and `std_async` comments | `sf/src/async_state_machine.zig:63-75`; `sf/src/std_async.zig:42-51`, `:59-60` |
 | Seed build `gcc -m32` and fixed point | `scripts/seed/build_from_seed.sh:18-29`, `:91-102`, `:150-168` |
-| Emitted build scripts only linux/mingw, `-m32`, `-O0` | `sf/src/c89_emit.zig:8556-8565`, `:8769-8795` |
+| Emitted `build_target.sh` only linux/mingw, `-m32`, `-O0`; `.bat` recipes are Windows-only | `sf/src/c89_emit.zig:8555-8599`, `:8601-8738`, `:8769-8826` |
+| Optional/error-union probe: tag `int`, `?u64`/`?S` 16 bytes, pointer cases 8 vs 16 on LP64 | §2.7 (seed compiler md5 `b299b4b435e624d0ddbd2edde681cbc3`) |
 | Windows no-CRT/profile split (reference) | `sf/docs/tech_docs/13_windows_support.md` §2-§7 |
 
 ### 9.2 External references
@@ -1129,9 +1265,24 @@ The exact set depends on the phase; this is the full surface.
   - C type tables: ILP32 `void *` 4/4, LP64 `void *` 8/8; `long` 4 vs 8.
   - "char is unsigned"; `va_list` section: same representation as `void *`;
     variadic rules.
+- **Arm AAPCS64** — https://github.com/ARM-software/abi-aa/blob/main/aapcs64/aapcs64.rst
+  - `va_list` is `struct __va_list { void *__stack; void *__gr_top;
+    void *__vr_top; int __gr_offs; int __vr_offs; }` (3 pointers + 2 ints =
+    32 bytes on LP64).
 - **x86-64 System V psABI** — https://github.com/hjl-tools/x86-psABI/blob/master/low-level-sys-info.tex
   - Scalar types: `signed long (LP64)` 8/8, pointer `any-type * (LP64)` 8/8.
   - `size_t` is `unsigned long` for LP64, `unsigned int` for ILP32.
+  - `va_list` is `struct { unsigned int gp_offset; unsigned int fp_offset;
+    void *overflow_arg_area; void *reg_save_area; } va_list[1];` (24 bytes
+    on LP64).
+- **DOS conventional memory (640 KiB)** — https://en.wikipedia.org/wiki/Conventional_memory
+  - "conventional memory ... is the first 640 kilobytes of the memory on IBM
+    PC or compatible systems."
+- **x86 real-mode segmentation (64 KiB segments)** — https://en.wikipedia.org/wiki/X86_memory_segmentation
+  - "In real mode or V86 mode, the fundamental size of a segment is 65,536
+    bytes, with individual bytes being addressed using 16-bit offsets."
+  - "The effective 20-bit address space ... limits the addressable memory to
+    2^20 bytes, or 1,048,576 bytes (1 MB).
 - **Linux ARM syscall table** — https://github.com/torvalds/linux/blob/master/arch/arm/tools/syscall.tbl
   - `140 common _llseek sys_llseek`.
 - **Linux generic syscall table** — https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/unistd.h
@@ -1159,6 +1310,9 @@ The exact set depends on the phase; this is the full surface.
   i386/glibc probe in `sf/src/std_file.zig:82-98`.
 - Exact OpenWatcom 16-bit type sizes/promotions beyond the documented memory
   models; the emitted C would need a probe.
+- Optional/error-union layout was verified on the host `gcc -m32`/`-m64`
+  (§2.7), not on a cross target C compiler. Re-probe after pointer-width
+  parameterization.
 - All performance expectations. No benchmark was run; the statements are
   qualitative and based on the data model and toolchain flags.
 - Hardware behavior (Win9x/ARM/RISC-V boards). The project's existing status
