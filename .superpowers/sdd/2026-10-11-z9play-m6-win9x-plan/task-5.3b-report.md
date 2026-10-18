@@ -987,3 +987,463 @@ All analysis artifacts are under `/tmp`:
 No `cl`, `wcc386`, `wlink`, OpenWatcom install, Wine native-toolchain run, or
 download was performed. No repo source file was modified by this task; the only
 repository file created is this report.
+
+---
+
+## Fix round 1 (2026-10-18)
+
+This section is appended per the review ruling. It supersedes the corresponding
+claims above where explicitly noted. Still report-only: zero source edits, no
+downloads/installs, no native-toolchain probes. All new claims remain
+**design-verified; hardware verification pending** unless they are pure
+file:line/vendor-document observations.
+
+### R1-C1 — MSVC 6 `/Za` cannot compile the emitted C: portable 64-bit spelling layer
+
+**Finding (critical; accepted).** The first report's `/Za` claim was incomplete:
+it checked only `zig_compat.h`'s `__int64` mapping and missed that the rest of
+the emitted C spells 64-bit types and constants with `long long` / `LL` / `ULL`.
+Observed counts in the `/tmp/m6/zig1_5_clean` dumps:
+
+- z9play: **1,553** lines containing `long long`/`unsigned long long`;
+  z9torr: **2,289**; z9play: **58** lines with a `ULL`/`LL` literal suffix.
+- `sf/src/emit_support.zig`: **87** lines; `sf/src/c89_emit.zig`: **20** lines.
+- The emitted carrier typedefs are centralized in
+  `zig_special_types.h:98,102` (`typedef long long zT_..._i64` /
+  `typedef unsigned long long zT_..._u64`), and direct casts/literals appear in
+  generated modules, e.g.
+  `vorbis_info_B6B89893.c:57` (`(unsigned long long)`),
+  `std_math_80387A0C.c:724,921,1041` (`4503599627370495ULL`,
+  `18446744073709551615ULL`, ...), and
+  `decode_512E9AC7.c:136,3178`.
+
+`long long` is not a VC6 C type; VC6 supports `__int64`/`unsigned __int64`
+(Microsoft Learn, `__int64`,
+https://learn.microsoft.com/en-us/cpp/cpp/int8-int16-int32-int64?view=msvc-170).
+The project's own MSVC-first literal convention is `i64`/`ui64`
+(`docs/reference/c89_emission.md:45`; `docs/design/Bootstrap_type_system_and_semantics.md:856-860`).
+Therefore the first report's `/Za` design is **not implementable as written**.
+This is fixed by a spelling layer, not by dropping MSVC 6.
+
+**Decision: portable spelling layer; keep MSVC 6 supported. No STOP.**
+
+#### R1-C1.1 `zig_compat.h` (canonical and `emit_support.zig` mirror)
+
+Add literal macros next to the existing `z64`/`zu64` typedefs and make OWC use
+the same 64-bit base type as MSVC:
+
+```c
+#ifdef _MSC_VER
+    typedef __int64 z64 Z98_ALIGN8;
+    typedef unsigned __int64 zu64 Z98_ALIGN8;
+    #define Z98_I64_C(n) n##i64
+    #define Z98_U64_C(n) n##ui64
+#elif defined(__WATCOMC__)
+    typedef __int64 z64 Z98_ALIGN8;
+    typedef unsigned __int64 zu64 Z98_ALIGN8;
+    #define Z98_I64_C(n) n##i64
+    #define Z98_U64_C(n) n##ui64
+#else
+    typedef long long z64 Z98_ALIGN8;
+    typedef unsigned long long zu64 Z98_ALIGN8;
+    #define Z98_I64_C(n) n##LL
+    #define Z98_U64_C(n) n##ULL
+#endif
+
+#define Z98_I64_MAX Z98_I64_C(9223372036854775807)
+#define Z98_I64_MIN (-Z98_I64_MAX - Z98_I64_C(1))
+#define Z98_U64_MAX (~Z98_U64_C(0))
+```
+
+OpenWatcom documents `__int64`, `i64`, and `ui64` as supported
+(`docs/doc/cg/cpwcc.gml:2062-2120`,
+https://github.com/open-watcom/open-watcom-v2/blob/master/docs/doc/cg/cpwcc.gml);
+MSVC 6's `__int64` is vendor-documented above. The `i64`/`ui64` suffix on VC6 is
+the project's documented MSVC-first convention and is hardware-pending here; if
+VC6 `/Za` rejects the suffix, the fallback is the hi/lo constructor form in
+R1-C1.5 (no STOP).
+
+**Also fix the OWC fixed-width typedef gap.** `zig_compat.h:29` currently says
+`#if !defined(__cplusplus) && !defined(__WATCOMC__)`, so OpenWatcom never gets
+`i8`/`i16`/`i32`/`i64`/`u8`/`u16`/`u32`/`u64`/`usize`. OpenWatcom's vendor docs
+list `__int8`/`__int16`/`__int32`/`__int64`, not `i64`/`u64` type names
+(`cpwcc.gml:2027-2085`), so those generated identifiers are otherwise undefined
+under OWC. T5.3 must remove the `!defined(__WATCOMC__)` exclusion (or add an OWC
+arm with `typedef z64 i64; typedef zu64 u64;` etc.):
+
+```c
+#if !defined(__cplusplus)
+    typedef signed char i8;
+    typedef short i16;
+    typedef int i32;
+    typedef z64 i64;
+    /* ... u8/u16/u32/zu64/u64/usize unchanged ... */
+#endif
+```
+
+This is required for **every** emitted TU, not just `zig_compat.h` users, because
+`i64`/`u64` appear in generated module signatures, `zig_pal.c`, and
+`std_*_prelude.h`.
+
+#### R1-C1.2 `zig_runtime.h` / `zig_runtime.c` and their `emit_support.zig` literals
+
+Mechanical, exhaustive replacements in the canonical files and the literal:
+
+- `long long` → `z64`; `unsigned long long` → `zu64`.
+- `ULL`/`LL` suffixes → macro-wrapped constants:
+  `1ULL` → `Z98_U64_C(1)`, `63ULL` → `Z98_U64_C(63)`,
+  `~0ULL` → `Z98_U64_MAX`,
+  `9223372036854775807LL` → `Z98_I64_MAX`,
+  `-9223372036854775807LL - 1LL` → `Z98_I64_MIN`.
+- `9223372036854775807ULL` in `std_checked_cast_i64`
+  (`zig_runtime.c:39-41`; `emit_support.zig:556-558`) → `Z98_I64_MAX`.
+
+Affected anchors (current canonical / literal):
+
+| File:line (current) | Change |
+|:--|:--|
+| `sf/src/include/zig_compat.h:18-41` | New `z64`/`zu64` branches + literal macros + OWC typedef arm (R1-C1.1). |
+| `sf/src/emit_support.zig:17-77` | Mirror of the same `zig_compat.h` changes. |
+| `sf/src/include/zig_runtime.h:9-10` | `pal_i64_to_str`/`pal_u64_to_str` prototypes → `z64`/`zu64`. |
+| `sf/src/include/zig_runtime.h:21-130` | All `long long`/`unsigned long long`, `ULL`/`LL`, `~0ULL`, `Z98_I64_MIN` sites → `z64`/`zu64`/macros. |
+| `sf/src/include/zig_runtime.h:147-164` | Public `std_print_*`/`std_checked_cast_*` prototypes → `z64`/`zu64`. |
+| `sf/src/include/zig_runtime.h:258-278` | `zig_cast_checked_s/u` → `z64`/`zu64`. |
+| `sf/src/emit_support.zig:199-486` | Mirror of all the above `zig_runtime.h` changes. |
+| `sf/src/include/zig_runtime.c:6-12` | PAL prototypes → `z64`/`zu64`. |
+| `sf/src/include/zig_runtime.c:38-68` | `std_checked_cast_i8..u64` definitions → `z64`/`zu64`; `9223372036854775807ULL` → `Z98_I64_MAX`; `return (long long)val` → `(z64)val`. |
+| `sf/src/emit_support.zig:488-677` | Mirror of all the above `zig_runtime.c` changes. |
+| `sf/src/include/zig_pal.c:66-235` | Already uses `i64`/`u64`; no `long long`. It becomes compilable under the OWC typedef arm (R1-C1.1). |
+| `sf/src/include/zig_nocrt.c` (new) | Add `#include "zig_compat.h"`; the T5.3a local `extern long long pal_wallclock_unix(void);` becomes `extern z64 pal_wallclock_unix(void);`. |
+
+#### R1-C1.3 `c89_emit.zig` — type and literal spelling sites
+
+The emitter must never write `long long`, `unsigned long long`, `LL`, or `ULL`
+again. Exact current sites:
+
+| `sf/src/c89_emit.zig` line | Current spelling | Required spelling |
+|:--|:--|:--|
+| `1701` | `typedef long long ` (i64 carrier) | `typedef z64 ` |
+| `1708` | `typedef unsigned long long ` (u64 carrier) | `typedef zu64 ` |
+| `3852`, `3863` | `intLitSuffixNeg`/`intLitSuffixUns` appended to digits | `Z98_I64_C(<digits>)` / `Z98_U64_C(<digits>)` wrappers |
+| `3971-3980` | suffix functions return `"ULL"` / `"LL"` | replaced by `writeU64Const` / `writeI64Const` wrapper emitters (or return prefix/suffix pair) |
+| `4057`, `4076`, `4095`, `4188`, `4203` | suffix appended by saturation/mask writers | wrappers; buffer sizes increased (e.g. `[40]u8`) |
+| `4306-4336` | `(long long)`, `(unsigned long long)`, `0ull` in checked-op strings | `z64`, `zu64`, `Z98_U64_C(0)` |
+| `4989` | `static const unsigned long long ` | `static const zu64 ` |
+| `4994` | appended `"ULL"` in enum value table | `Z98_U64_C(<digits>)` |
+| `5024` | `unsigned long long x = (unsigned long long)v;` | `zu64 x = (zu64)v;` |
+| `5331` | `((unsigned long long)(unsigned int)(` | `((zu64)(unsigned int)(` |
+| `5379-5381` | `union { double f; unsigned long long u; }`, `unsigned long long zT_bits/zT_man` | `zu64` |
+| `6227`, `6230`, `6246`, `6275`, `6279` | `emitCastToC(..., "long long"/"unsigned long long", ...)` | `"z64"`/`"zu64"` |
+| `7540` | `"(unsigned long long)"` | `"(zu64)"` |
+
+This covers generated module carriers (`zig_special_types.h:98,102`), direct
+checked-op casts (`vorbis_info_B6B89893.c:57` etc.), and generated 64-bit
+literals (`std_math_80387A0C.c:724,921,1041`; `decode_512E9AC7.c:136,3178`;
+`floor_426BB7D9.c:1615,1629`; `main_4D6BD2B8.c:137`; `dsp_8A8E2260.c:19`).
+
+Two spelling details are mandatory so the same emitted C keeps 32-bit literal
+semantics:
+
+- Preserve the existing 32-bit branches. `intLitSuffixUns` returns `""` for
+  values `<= 2147483647` and `"u"` for `<= 4294967295`; only the `"ULL"` branch
+  becomes `Z98_U64_C(<digits>)`. `intLitSuffixNeg` returns `""` for
+  `<= 2147483647`; only its `"LL"` branch becomes `Z98_I64_C(<digits>)`.
+  Do not wrap small constants — that would silently promote 32-bit arithmetic.
+- Negative forms wrap the magnitude, then negate: `(-Z98_I64_C(<digits>))` or
+  `Z98_I64_MIN`, never `Z98_I64_C(-<digits>)` (token pasting must see a
+  positive digit token). `writeMinSignedIntLiteral` must use `Z98_I64_MIN` (or
+  `(-Z98_I64_MAX - Z98_I64_C(1))`) for the `-2^63` case; it must not emit
+  `Z98_I64_C(9223372036854775808)`, which is out of signed range.
+
+`sf/src/include/std_time_prelude.h:48-56` and
+`sf/src/emit_support.zig:179-187` are POSIX-only (`#ifndef _WIN32`), so they are
+preprocessed out for MSVC/OWC. For uniformity and to prevent future leakage,
+T5.3 may change them to `z64`/`Z98_I64_C` as well; this is not required for the
+Windows compile path but is listed for completeness.
+
+#### R1-C1.4 Same emitted C on all three toolchains
+
+After the spelling layer, every emitted TU uses only the shared tokens:
+
+| Emitted token | mingw (GCC) | MSVC 6 | OpenWatcom |
+|:--|:--|:--|:--|
+| `z64` | `long long` | `__int64` | `__int64` |
+| `zu64` | `unsigned long long` | `unsigned __int64` | `unsigned __int64` |
+| `Z98_I64_C(n)` | `n##LL` | `n##i64` | `n##i64` |
+| `Z98_U64_C(n)` | `n##ULL` | `n##ui64` | `n##ui64` |
+| `Z98_I64_MAX/MIN`, `Z98_U64_MAX` | macros above | macros above | macros above |
+
+No `long long`/`LL`/`ULL` remains in Windows-compiled emitted C. `-std=c89` on
+mingw still accepts `long long`/`LL`/`ULL` (the current recipe already uses
+`-Wno-long-long`); VC6/OWC see only `__int64` and their documented
+`i64`/`ui64` literal suffixes. `/Za` therefore no longer has a `long long`
+obstacle. `__int64` remains valid under `/Za` on MSVC (Microsoft Learn,
+`__int64`, URL above) and is the documented OpenWatcom 64-bit type
+(`cpwcc.gml:2062-2085`).
+
+#### R1-C1.5 Fallback if the VC6 `i64`/`ui64` suffix is rejected
+
+If hardware testing shows VC6 `/Za` rejects `i64`/`ui64` (not expected; the
+project's MSVC-first emitter already uses this convention), the literal macros
+become 32-bit-half constructors with no 64-bit literal suffix:
+
+```c
+#define Z98_U64_C2(hi, lo) (((zu64)(unsigned long)(hi) << 16 << 16) | (zu64)(unsigned long)(lo))
+#define Z98_U64_C(n) /* emitter emits Z98_U64_C2(0x........, 0x........) instead */
+```
+
+The emitter would then split each 64-bit constant into two 32-bit hex halves.
+This is a fallback only; it is not the primary design. If neither form works,
+the task must STOP-present MSVC 6 as unsupported. This report does not STOP:
+the primary spelling layer is implementable and is in the T5.3 inventory.
+
+### R1-H1 — OpenWatcom `/za` + `long long`: every TU, mapping decision
+
+**Decision: map every TU to `__int64`/`i64`/`ui64`; do not use `/ze`.**
+Coverage is not limited to `zig_compat.h`:
+
+- `zig_compat.h`/`emit_support.zig:17-77`: the shared typedef/macro layer.
+- `zig_runtime.h`/`zig_runtime.c`/`emit_support.zig:199-677`: all helper and
+  cast definitions.
+- Generated module carriers and checked-op casts: `c89_emit.zig` sites in
+  R1-C1.3.
+- `zig_pal.c`/`emit_support.zig:679-1037`: uses `i64`/`u64`; now defined for
+  OWC by the R1-C1.1 typedef arm.
+- `zig_nocrt.c` (new): include `zig_compat.h`; no `long long`.
+- `std_time_prelude.h` POSIX-only block: either mapped for uniformity or
+  excluded by `_WIN32`; not an MSVC/OWC TU.
+
+Every emitted Windows TU includes `zig_compat.h` before using these tokens
+(T5.3a §1.2), so `/za` applies uniformly. OpenWatcom documents `__int64` as a
+supported 64-bit type and `i64`/`ui64` as its literal suffixes
+(`cpwcc.gml:2062-2120`). The old `build_owc.bat`'s `/za` + `long long`
+combination was therefore a latent failure, not a working baseline. If hardware
+shows `/za` rejects `__int64` itself (not expected), the fallback is `/ze` for
+all TUs; this would be recorded as a toolchain limitation, not silently mixed
+per file. `/ze` is **not** part of the primary design.
+
+### R1-M1 — `ZIG_WIN_NT` in the CRT alternates and aliases
+
+The nt `_crt` templates in §3.4 omitted `ZIG_WIN_NT`. More generally,
+`ZIG_WIN_NT` is a **profile** define, not a CRT define: in an nt dump every one
+of the four emitted scripts must carry it, including `build_target_nocrt.bat`
+and `build_owc_nocrt.bat`; in a 9x dump none of the four carries it. `_nocrt`
+denotes “no CRT”, not “9x profile”. Corrected compile lines:
+
+`build_target_crt.bat` (nt dump):
+
+```bat
+set CFLAGS=/c /Za /W3 /WX /DZIG_WIN32 /DZIG_WIN_NT /MT /I .
+```
+
+`build_target_nocrt.bat` (nt dump):
+
+```bat
+set CFLAGS=/c /Za /W3 /WX /DZIG_WIN32 /DZIG_WIN_NT /DZIG_NO_CRT /Zl /I .
+```
+
+`build_owc_crt.bat` (nt dump):
+
+```bat
+wcc386 /za /we /dZIG_WIN32 /dZIG_WIN_NT /bt=nt /sg /i=. <module>.c
+```
+
+`build_owc_nocrt.bat` (nt dump):
+
+```bat
+wcc386 /za /we /dZIG_WIN32 /dZIG_WIN_NT /dZIG_NO_CRT /bt=nt /zl /sg /i=. <module>.c
+```
+
+In a 9x dump the same lines omit `/DZIG_WIN_NT` / `/dZIG_WIN_NT`. Aliases are
+emitted per profile: an nt `build_target.bat` calls `build_target_crt.bat %1`
+(and the OWC alias calls `build_owc_crt.bat %1`), so the define is preserved;
+a 9x alias calls the `_nocrt` script, which correctly lacks the define.
+`build_target.sh`'s nt branch already carries `-DZIG_WIN_NT` (T5.3a §8.1).
+
+### R1-M2 — OpenWatcom stack: 2 MiB
+
+The first report's `option stack=1048576` is too tight against the measured
+z9torr frames (545,024 B `main`, 201,152 B `addrSeen`, 136,080 B
+`schedulerInit`) plus any call-chain depth. Corrected lines in
+`build_owc_nocrt.bat` and `build_owc_crt.bat`:
+
+```bat
+wlink system nt op q opt stack=2097152 ...
+```
+
+MSVC already uses `/STACK:2097152`; the two natives now agree. This is a
+2 MiB reserve; OpenWatcom's `COMMIT` documentation says the default committed
+stack is the smaller of 64K or the specified stack
+(`docs/doc/lg/ldcommit.gml`), so the initial commit remains bounded. The exact
+worst call chain is not proven here; 2 MiB is the chosen design margin and is
+hardware-verification pending.
+
+### R1-L1 — Missed test/doc references and manual survey
+
+Added references (old names are preserved as aliases, so these remain true; if
+aliases were removed these would break):
+
+| File:line | Reference / action |
+|:--|:--|
+| `examples/z98/z9torr/tests/tier4_wine.sh:89` | Loop checks the emit tree contains `build_target.bat` and `build_owc.bat`; the aliases keep this test passing. T5.3 should add the four new names to the same existence check (or keep the old-name check plus aliases). |
+| `examples/z98/z9torr/demo/win9x_README.txt:56` | States the `-osw` tree carries `build_target.bat`/`build_owc.bat`; aliases keep it true. T5.3 should truth-up the redistribution sentence to name the `_nocrt` default. |
+| `docs/sf/manuals/en/**` | Survey: **241 occurrences in 45 HTML files** reference `build_target.bat`/`build_owc.bat` (plus the `docs/sf/manuals/dist/en/` mirror). Old-name aliases prevent dangling references; the quoted script bodies are pre-T5.3 text and are stale, not broken. Representative files: `vol1-03-your-machine.html`, `vol1-04-installing.html`, `vol1-05-first-program.html`, `vol3-08-win9x.html`, `vol5-04-target-win9x.html`, `vol5-19-pack-for-diskette.html`. |
+| `docs/sf/manuals/src/build_owc.bat` | Manual source helper, not emitted output; no old-name breakage. |
+| `docs/sf/AI_TASKS_sf.md:485,834`; `docs/sf/Design_p2.md:1835`; `docs/sf/RUNTIME_PAL_p2.md:975-1035`; `docs/reference/compilation_model.md:22`; `docs/design/C89_Codegen.md:604`; `docs/design/CompilationPipeline.md:83`; `docs/design/DESIGN.md:1111,1150` | Doc truth-up candidates for the new names/default; aliases keep names valid. |
+
+### R1-L2 — Citation corrections
+
+| Earlier claim | Correction |
+|:--|:--|
+| `ogg_06518614.c:1709` as the `last_granule * 1000` multiply | The multiply is `ogg_06518614.c:1705`; `:1709` is `zT_11 = (zT_79FAE712_u64)sample_rate;`. The unsigned divide is `:1712`. |
+| `zig_runtime.h:120` as signed 64-bit right shift | Signed right shift is `zig_runtime.h:118` (`maxs >> b`, `mins >> b`); `:120` is `if (a == 0ULL || b == 0ULL)`. |
+| `zig_runtime.h:113` as unsigned 64-bit right shift | Unsigned right shift is `zig_runtime.h:123` (`zig_ovf_maxu(w) >> b`); `:113` is the signed-shift function signature. |
+| `zig_runtime.h:71,117` as 64-bit left shift | Left shifts are `zig_runtime.h:57` (`zig_wrap_shl_s`) and `:72` (`zig_wrap_shl_u`); `:117` is `if (b >= (long long)w)`. |
+| OWC `__I8LS`/`__U8LS` source `i8ls086.asm` | For 32-bit x86, use `bld/clib/cgsupp/a/i8rs386.asm:71-116`, which defines `__U8RS`, `__I8RS`, `__U8LS`, and `__I8LS`. `i8ls086.asm` is the 16-bit source and is not the 32-bit Win32 helper. |
+
+These corrections do not change the helper-provision decision (vendor
+`clib3r.lib`) or any script command.
+
+### R1-L3 — `main` declaration wording
+
+Corrected wording: the startup declares `int main(int argc, char** argv);` and
+calls it with two arguments. Emitted `main` forms differ:
+
+- `hello` emits `int main(void)` (T5.3a §11.2 context; emitted `main_*.c`).
+- z9play/z9torr emit `int main(int argc, char** argv)` (T5.3a §11.2 cites
+  `main_4D6BD2B8.c:4649`, `main_B8D622A5.c:3934`).
+
+The startup call is **ABI-compatible** on the three target conventions, not a C
+prototype match: cdecl callers clean extra arguments; OpenWatcom's default
+register convention passes/ignores extra register arguments; the callee never
+returns through the entry point (it calls `exit`). This is an emitted-ABI
+contract, not a claim of strict C89 prototype correctness. T5.3 should document
+it in `13_windows_support.md`; if strict prototype correctness is required, the
+alternative is an emitted per-program entry wrapper, which is out of scope here.
+Hardware verification pending.
+
+### R1-L4 — command.com-compatible batch scripts (Win98 baseline)
+
+The §3.4 templates used `%~1`, `%~dp0`, `%*`, parenthesized `if ... else`, and
+`^` line continuations. Those are cmd.exe features, not a safe Win98
+`command.com` baseline (Win98 ships `command.com`; `cmd.exe` is an NT tool).
+Replacement rules for all four `.bat` scripts and the two aliases:
+
+1. No `%~` modifiers, no `%*`, no `%~dp0`, no parenthesized `if/else`.
+2. No `setlocal`/`endlocal` (removed to avoid any command.com variance).
+3. No `^` continuation; each `link`/`wlink` command is one long line.
+4. Output argument handling (exact replacement for the `%~1` line):
+
+```bat
+set OUT=prog.exe
+if not "%1"=="" goto z98_have_out
+goto z98_out_ready
+:z98_have_out
+set OUT=%1
+:z98_out_ready
+```
+
+`set OUT=%1` deliberately preserves quotes if the caller passed a quoted path;
+the `link ... /out:%OUT%` expansion then yields `/out:"path with spaces"`.
+Unquoted paths with spaces are not supported by `command.com`; document “quote
+the output path (or use an 8.3 path)”. The default `prog.exe` has no spaces.
+
+5. Alias replacement (no `%~dp0`; run from the emitted output directory, the
+   same rule the generated scripts already state):
+
+```bat
+@echo off
+REM Compatibility alias; 9x default is build_target_nocrt.bat.
+REM Run from the emitted output directory.
+call build_target_nocrt.bat %1
+```
+
+For an nt dump the same alias calls `build_target_crt.bat %1`; for OpenWatcom
+the corresponding `_owc` script. `call` is a `command.com` batch feature, and
+`%1` (not `%*`) is used because the scripts take one output argument.
+
+6. Single-line link examples (replace the `^`-continued lines in §3.4):
+
+```bat
+link /NODEFAULTLIB /subsystem:console,4.0 /STACK:2097152 /entry:_mainCRTStartup@0 main_4D6BD2B8.obj ... zig_runtime.obj zig_pal.obj zig_nocrt.obj c_exit.obj kernel32.lib winmm.lib wsock32.lib libcmt.lib /out:%OUT%
+```
+
+```bat
+wlink system nt op q opt stack=2097152 option nodefaultlibs option start=_mainCRTStartup file main_4D6BD2B8.obj,...,zig_runtime.obj,zig_pal.obj,zig_nocrt.obj,c_exit.obj library kernel32,clib3r,winmm,wsock32 name %OUT%
+```
+
+The module lists are still the emitter's `@MODOBJ@`/`@MODOWCOBJ@` substitutions;
+the examples show z9play module names only for line shape. `wsock32` is present
+only when `net_emitted`; `winmm` is always present. If the script is run from a
+directory other than the emitted tree, `command.com` has no `%~dp0` equivalent;
+the documented invocation is “from inside the emitted output directory”, which
+is already how the current `.bat` scripts are described.
+
+Exact command.com-compatible skeleton for `build_target_nocrt.bat` (the other
+three scripts substitute their own compiler flags/link line; `_crt` nt adds
+`/DZIG_WIN_NT`, OWC uses `wcc386`/`wlink`):
+
+```bat
+@echo off
+REM build_target_nocrt.bat - generated by zig1 (MSVC cl, Win9x no-CRT DEFAULT)
+REM REDISTRIBUTION: single EXE, no msvcrt.dll. Imports only OS DLLs.
+REM Status: design-verified; hardware verification pending.
+REM usage: build_target_nocrt.bat [OUT]   (run from the emitted output dir)
+set OUT=prog.exe
+if not "%1"=="" goto z98_have_out
+goto z98_out_ready
+:z98_have_out
+set OUT=%1
+:z98_out_ready
+set CFLAGS=/c /Za /W3 /WX /DZIG_WIN32 /DZIG_NO_CRT /Zl /I .
+echo Compiling...
+@MODC@
+cl %CFLAGS% zig_runtime.c
+cl %CFLAGS% zig_pal.c
+cl %CFLAGS% zig_nocrt.c
+cl %CFLAGS% c_exit.c
+echo Linking...
+link /NODEFAULTLIB /subsystem:console,4.0 /STACK:2097152 /entry:_mainCRTStartup@0 @MODOBJ@ zig_runtime.obj zig_pal.obj zig_nocrt.obj c_exit.obj kernel32.lib winmm.lib @WSOCK_DEP@ libcmt.lib /out:%OUT%
+echo Built: %OUT%
+```
+
+### R1 inventory delta (add to §5)
+
+| File:line (current) | T5.3 edit |
+|:--|:--|
+| `sf/src/include/zig_compat.h:18-41` | Add `Z98_I64_C`/`Z98_U64_C`/`Z98_I64_MAX/MIN`/`Z98_U64_MAX`; map OWC `z64`/`zu64` to `__int64`; remove OWC exclusion from fixed-width typedefs. |
+| `sf/src/emit_support.zig:17-77` | Mirror the `zig_compat.h` layer. |
+| `sf/src/include/zig_runtime.h:9-278` | Replace `long long`/`unsigned long long`/`LL`/`ULL`/`~0ULL` with `z64`/`zu64`/macros. |
+| `sf/src/emit_support.zig:199-486` | Mirror `zig_runtime.h`. |
+| `sf/src/include/zig_runtime.c:6-68` | Replace types/literals with `z64`/`zu64`/`Z98_I64_MAX`. |
+| `sf/src/emit_support.zig:488-677` | Mirror `zig_runtime.c`. |
+| `sf/src/c89_emit.zig:1701,1708` | Carrier typedefs use `z64`/`zu64`. |
+| `sf/src/c89_emit.zig:3852,3863,3971-3980,4057,4076,4095,4188,4203` | Literal suffix emitters → macro-wrapped constants. |
+| `sf/src/c89_emit.zig:4306-4336,4989,4994,5024,5331,5379-5381,6227,6230,6246,6275,6279,7540` | Direct `long long`/`unsigned long long`/`ULL`/`0ull` spellings → `z64`/`zu64`/macros. |
+| `sf/src/include/std_time_prelude.h:48-56`; `sf/src/emit_support.zig:179-187` | POSIX-only `long long`/`LL`; map for uniformity or leave preprocessed out on Windows (recommended: map). |
+| `sf/src/include/zig_nocrt.c` (new) | Include `zig_compat.h`; `pal_wallclock_unix` extern uses `z64`; no `long long`. |
+| `examples/z98/z9torr/tests/tier4_wine.sh:89` | Add new script names (and keep old aliases) in the emitted-tree existence check. |
+| `examples/z98/z9torr/demo/win9x_README.txt:56` | Truth-up redistribution wording; old names remain because of aliases. |
+| `docs/sf/manuals/en/**` (45 files, 241 occurrences) | Optional/manual truth-up; aliases prevent dangling names. |
+| `build_target_crt.bat` / `build_owc_crt.bat` templates | Add `/DZIG_WIN_NT` / `/dZIG_WIN_NT`. |
+| `build_owc_nocrt.bat` / `build_owc_crt.bat` templates | `option stack=2097152`. |
+| All four `.bat` templates + aliases | Replace cmd.exe syntax with the R1-L4 command.com block; single-line link commands. |
+
+### R1 residual risks
+
+| # | Risk | Impact | Mitigation / status |
+|:--|:--|:--|:--|
+| R1-1 | VC6 rejects `i64`/`ui64` under `/Za` | literal macros fail | hi/lo constructor fallback (R1-C1.5); if both fail, STOP-present MSVC 6. Hardware verification pending. |
+| R1-2 | OWC `/za` rejects `__int64` | all TUs fail | vendor docs list `__int64` as a keyword; if hardware disproves, fallback is `/ze` for all TUs (documented, not silent). |
+| R1-3 | OWC system headers define `i8`/`i64` etc. | duplicate typedefs when OWC exclusion is removed | hardware compile; if conflict, use `z98_`-prefixed carrier names in a follow-up STOP-present. |
+| R1-4 | command.com quoting of `%1` / paths with spaces | wrong output path | documented: quote the path or use 8.3; default `prog.exe` is safe. |
+| R1-5 | 2 MiB stack still insufficient for a deeper call chain | Win9x stack overflow | measured max frame 545 KiB; 2 MiB margin; hardware verification pending. |
+| R1-6 | Literal macros in `static const`/constant expressions | compile-time rejection | C89 constant expressions permit casts/shifts and macro expansion; `i64`/`ui64` forms are primary; hi/lo fallback uses casts/shifts. Hardware compile pending. |
+| R1-7 | Native stdio macro layer remains header-version-dependent | unresolved `_iob`/`_filbuf`/`_flsbuf` | R1-C1 superset shim + hardware compile; unchanged from §3.1. |
+| R1-8 | Old-name aliases in command.com cannot locate sibling via `%~dp0` | alias fails outside output dir | documented “run from emitted output directory”; same rule as all generated `.bat` scripts. |
+
+**Fix-round status: DONE_WITH_CONCERNS.** The critical `/Za`/`long long` blocker
+is resolved by design (portable typedef + literal-macro layer, with a hi/lo
+fallback), every affected site is in the T5.3 inventory, and the remaining
+uncertainties are native-toolchain/hardware items explicitly deferred by
+Amendment 5. No source files were edited; only this report was amended.
