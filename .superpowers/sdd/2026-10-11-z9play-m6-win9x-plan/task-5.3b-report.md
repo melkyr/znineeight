@@ -1747,3 +1747,267 @@ keeps every `echo` line short. `@WSOCK_LIB@` expands to `,wsock32` only when
 enumerated with a reproducible audit, and the linker command is moved to
 command.com-safe response files. Remaining concerns are hardware/native
 verification items deferred by Amendment 5; no source edits were made.
+
+---
+
+## Fix round 3 (2026-10-18)
+
+This section is appended per the third review ruling. It supersedes the
+“complete/supersedes” claim in Fix round 2, restores the dropped R1 suffix-call
+sites, corrects the audit scope, and fixes the `_crt` entry regression. The
+R2-L4.1/L4.2 `_crt` descriptions are superseded by R3-NEW below. Still
+report-only: zero source edits, no downloads/installs, no native-toolchain
+probes. Native claims remain **design-verified; hardware verification pending**.
+
+### R3-C1 — true complete 64-bit site list (unsuffixed decimals + restored calls)
+
+Fix round 2's C1 list was still partial. This section adds the three unsuffixed
+decimal sites and restores the suffix-appending call sites dropped in R2. The
+complete set is **R2-C1.2 + R3-C1.1 + R3-C1.2**; the R2 `:4994` correction to
+`:4997` remains in force.
+
+#### R3-C1.1 Unsuffixed 64-bit decimal sites (VC6-invalid as written)
+
+| `sf/src/c89_emit.zig` line | Current text | Portable rendering |
+|:--|:--|:--|
+| `4108` | `"9223372036854775807"` (`satMaxLitBound(64)`) | `Z98_I64_MAX` (or `Z98_I64_C(9223372036854775807)`) |
+| `4120` | `"(-9223372036854775807 - 1)"` (`satMinLitBound(64)`) | `Z98_I64_MIN` (short) or `(-Z98_I64_C(9223372036854775807) - Z98_I64_C(1))` |
+| `4153` | `"9223372036854775808"` (`satMinMagLitBound(64)`, 2^63 magnitude) | `Z98_U64_C(9223372036854775808)` (unsigned 64; this is a magnitude, not a signed value) |
+
+These are not just theoretical: the current emitted tree contains live hits:
+
+- `std_math_80387A0C.c:922`, `std_file_A421C1F8.c:950`, and
+  `std_parse_E5E022CD.c:1171,1192` emit the unsuffixed
+  `(-9223372036854775807 - 1)` shape (site `4120`).
+- `std_parse_E5E022CD.c:3039` emits `9223372036854775807ULL` (the
+  `:4108`/`:4153` path); `std_parse_E5E022CD.c:3040` emits
+  `9223372036854775808ULL` (the `:4153` magnitude path).
+
+The 64-bit `LONG_MIN`-shape rule is therefore:
+
+```c
+/* positive max */
+Z98_I64_MAX                                  /* = Z98_I64_C(9223372036854775807) */
+/* signed minimum: never Z98_I64_C(-9223372036854775808) */
+Z98_I64_MIN                                  /* = (-Z98_I64_MAX - Z98_I64_C(1)) */
+/* unsigned magnitude 2^63 (satMinMagLitBound) */
+Z98_U64_C(9223372036854775808)
+```
+
+For widths below 64, keep the existing forms (`127`, `0xFFFFFFFFu`, etc.); do
+not wrap 32-bit literals in 64-bit macros.
+
+**Buffer-size consequence.** The literal-macro spellings are longer than the
+current raw digits. `satMaxLitBound`/`satMinLitBound` callers use
+`max_buf[24]`/`min_buf[24]` (`c89_emit.zig:4274-4275`) and
+`satMinMagLitBound` uses `minmag_buf[24]` (`:4276`); these must grow (e.g.
+`[64]u8`). The internal `[24]u8` buffers in `writeSatNegDecimal`,
+`writeSatUnsDecimal`, `writeSatSignedMaxDecimal`, `writeWidthMaskString`, and
+`writeWidthSignBitString` must also grow for the `Z98_*_C(...)` wrapper text.
+`writeMinSignedIntLiteral`'s `min_buf[40]` (`:4143`) is sufficient for the short
+`Z98_I64_MIN` macro; use `[64]` if the long `(-Z98_I64_C(...) - ...)` form is
+emitted. This is a required C1 edit, not an optional cleanup.
+
+#### R3-C1.2 Restored R1 suffix-appending call sites
+
+Fix round 2 dropped these from its “complete” table. They are the call sites
+that append the suffix returned by `intLitSuffixNeg/Uns`; they must be included
+or the audit is not exhaustive:
+
+| `sf/src/c89_emit.zig` line | Function/context | Required action |
+|:--|:--|:--|
+| `3852` | `writeIntConstRvalue` negative path | wrapper `Z98_I64_C(<digits>)` (or `(-Z98_I64_C(...))` for the min shape) |
+| `3863` | `writeIntConstRvalue` positive path | wrapper `Z98_U64_C(<digits>)` only for the `> 2^32-1` branch |
+| `4057` | `writeSatNegDecimal` | wrapper; negative form `(-Z98_I64_C(<digits>))` |
+| `4076` | `writeSatUnsDecimal` | wrapper only when the old suffix was `ULL` |
+| `4095` | `writeSatSignedMaxDecimal` | wrapper only when the old suffix was `LL` |
+| `4188` | `writeWidthMaskString` | wrapper only for the 64-bit mask branch |
+| `4203` | `writeWidthSignBitString` | wrapper only for the 64-bit sign-bit branch |
+
+Together with R2-C1.2 (`1701,1708,3974,3979,4165,4306,4317,4318,4323,4336,
+4453,4467,4478,4989,4997,5024,5331,5379-5381,5387,5395,5397,6227,6230,6246,
+6275,6279,7540`) and R3-C1.1 (`4108,4120,4153`), this is the exhaustive emitter
+list from the audit. The `:4862` comment and `:6539` marker are not C edits.
+
+The 32-bit suffix branches remain as-is: `intLitSuffixUns` returns `""` for
+`<=2147483647` and `"u"` for `<=4294967295`; only `"ULL"` is replaced.
+`intLitSuffixNeg` returns `""` for `<=2147483647`; only `"LL"` is replaced.
+This preserves 32-bit literal types and arithmetic widths.
+
+#### R3-C1.3 Corrected audit scope and categorized result
+
+The R2 claim “after the fix the expected result is zero matches for the whole
+tree” was wrong: the emitted `zig_compat.h` legitimately contains `long long` in
+the GCC/mingw branch (`#else`), and the POSIX-only `std_time_prelude.h` block is
+intentionally excluded by `_WIN32` but still present as text. The correct
+acceptance scope is **non-portable-layer, Windows-compiled sites**, plus a
+preprocessed-output check when native compilers exist.
+
+Exact emitter/support audit command:
+
+```sh
+cd /workspace/znineeight
+grep -nE 'long long|unsigned long long|0[xX][0-9A-Fa-f]+(ULL|LL|ull|ll)|[0-9]+(ULL|LL|ull|ll)\b|\bLL\b|\bULL\b' \
+    sf/src/c89_emit.zig sf/src/emit_support.zig
+```
+
+Categorized result before the T5.3 edit: **136 matching lines**.
+
+- `2` non-spellings: `c89_emit.zig:4862` (comment) and `:6539` (`"LL:n"` marker).
+- `2` legitimate portable-layer lines: `emit_support.zig:42,43` — the
+  GCC/mingw `long long` branch of the emitted `zig_compat.h`; this branch is
+  preprocessed out on MSVC/OWC and must remain.
+- `2` OWC-branch lines to change: `emit_support.zig:39,40` — the current
+  `#elif defined(__WATCOMC__)` branch still has `long long`; R1-C1.1 changes it
+  to `__int64`/`unsigned __int64`. These two are a **subset** of the 129
+  non-portable sites below, not an additional category.
+- `3` POSIX-only lines: `emit_support.zig:179,183,187` — `std_time_prelude.h`
+  inside `#ifndef _WIN32`; not compiled by MSVC/OWC. Mapping them to
+  `z64`/`Z98_I64_C` is optional uniformity, not a Windows requirement.
+- **129** non-portable non-Windows-layer sites to change (the R2-C1.2 +
+  R3-C1.1 + R3-C1.2 lists, including the 39/40 OWC branch). Category sum:
+  `2 false + 2 legit + 3 POSIX + 129 non-portable = 136`.
+
+Exact emitted-tree audit command:
+
+```sh
+grep -RInE 'long long|unsigned long long|0[xX][0-9A-Fa-f]+(ULL|LL|ull|ll)|[0-9]+(ULL|LL|ull|ll)\b|\bLL\b|\bULL\b' \
+    /tmp/t53b_dump/z9play /tmp/t53b_dump/z9torr /tmp/t53b_dump/hello \
+    --include='*.c' --include='*.h'
+```
+
+Categorized result before the T5.3 edit: **4,065 matching lines**.
+
+- `12` lines are the three emitted `zig_compat.h` copies (4 per dump):
+  - `6` lines are the **OWC branch** (`typedef long long z64` /
+    `typedef unsigned long long zu64`, 2 per dump) and are non-portable sites
+    to change by R1-C1.1. They are included in the 4,053 below.
+  - `6` lines are the **GCC/mingw `#else` branch** (2 per dump); legitimate
+    portable-layer text, preprocessed out on MSVC/OWC.
+- `6` lines are `std_time_prelude.h` POSIX-only text (2-3 per dump; excluded by
+  `_WIN32` in every Windows TU).
+- **4,053** non-portable sites in the Windows-compiled emitted tree (including
+  the 6 OWC-branch lines). The T5.3 acceptance target is **0** for these 4,053;
+  category sum: `6 GCC-legit + 6 POSIX + 4,053 non-portable = 4,065`. The
+  `zig_compat.h` GCC branch and the POSIX-only `std_time_prelude.h` block are
+  explicitly out of scope.
+
+A true preprocessed check requires running MSVC/OWC, which Amendment 5 forbids
+here; it is hardware-pending. If the POSIX block is mapped to
+`z64`/`Z98_I64_C` as optional uniformity, the only remaining raw-tree matches
+are the 6 legitimate GCC-branch `zig_compat.h` lines (2 per dump); the OWC branch
+has become `__int64`.
+
+### R3-NEW — `_crt` scripts must not use the no-CRT entry
+
+**Finding accepted (fix-diff regression).** The response-file blocks in R2 put
+`echo /entry:_mainCRTStartup@0` (MSVC) and
+`echo option start=_mainCRTStartup` (OWC) into the shared skeleton. That is
+wrong for `_crt`: `_crt` does not define `ZIG_NO_CRT`, so `zig_pal.c`'s custom
+`mainCRTStartup`/`_mainCRTStartup` is not emitted. The CRT/clib startup is the
+only entry provider. Leaving the no-CRT entry directive in `_crt` either fails
+to resolve (`_mainCRTStartup@0`/`_mainCRTStartup` undefined) or overrides the
+CRT startup incorrectly.
+
+**Correction.** Remove the entry lines from both `_crt` response-file blocks:
+
+- MSVC `build_target_crt.bat`: **do not** emit
+  `echo /entry:_mainCRTStartup@0 >> z98_link.rsp`. Let LINK use the CRT default
+  entry (`mainCRTStartup` from the static `/MT` CRT).
+- OWC `build_owc_crt.bat`: **do not** emit
+  `echo option start=_mainCRTStartup >> z98_link.lnk`. Let `system nt` + the
+  default static CLIB startup provide the entry.
+
+#### R3-NEW.1 Corrected `_crt` response-file blocks
+
+MSVC `build_target_crt.bat` response block (no `/NODEFAULTLIB`, no `/entry`,
+no `libcmt.lib`; `/MT` supplies the static CRT and default startup):
+
+```bat
+if exist z98_link.rsp del z98_link.rsp
+echo /subsystem:console,4.0 >> z98_link.rsp
+echo /STACK:2097152 >> z98_link.rsp
+@MODRSP@
+echo zig_runtime.obj >> z98_link.rsp
+echo zig_pal.obj >> z98_link.rsp
+echo zig_nocrt.obj >> z98_link.rsp
+echo c_exit.obj >> z98_link.rsp
+echo kernel32.lib winmm.lib @WSOCK_DEP@ >> z98_link.rsp
+echo /out:%OUT% >> z98_link.rsp
+link @z98_link.rsp
+```
+
+OWC `build_owc_crt.bat` response block (no `option nodefaultlibs`, no
+`option start`, no `clib3r`; default static CLIB startup):
+
+```bat
+if exist z98_link.lnk del z98_link.lnk
+echo system nt >> z98_link.lnk
+echo option stack=2097152 >> z98_link.lnk
+@MODOWCRSP@
+echo file zig_runtime.obj >> z98_link.lnk
+echo file zig_pal.obj >> z98_link.lnk
+echo file zig_nocrt.obj >> z98_link.lnk
+echo file c_exit.obj >> z98_link.lnk
+echo library kernel32,winmm@WSOCK_LIB@ >> z98_link.lnk
+echo name %OUT% >> z98_link.lnk
+wlink @z98_link.lnk
+```
+
+#### R3-NEW.2 Explicit `_nocrt` vs `_crt` difference list
+
+| Aspect | `_nocrt` (9x default) | `_crt` (alternate) |
+|:--|:--|:--|
+| MSVC compile defines | `/DZIG_WIN32 /DZIG_NO_CRT` (+ `/DZIG_WIN_NT` in nt) | `/DZIG_WIN32` (+ `/DZIG_WIN_NT` in nt); **no** `ZIG_NO_CRT` |
+| MSVC runtime flag | no `/MT`; `/Zl` | `/MT`; no `/Zl` |
+| MSVC link default libs | `/NODEFAULTLIB` | no `/NODEFAULTLIB` |
+| MSVC helper library | explicit `libcmt.lib` (helper members only) | none; `/MT` default `LIBCMT` supplies startup + CRT |
+| MSVC entry | `/entry:_mainCRTStartup@0` (custom `__stdcall` startup) | **no `/entry`**; CRT `mainCRTStartup` |
+| MSVC `zig_nocrt.c` | active shim (stdio/stream/time) | empty translation unit (dummy typedef) |
+| OWC compile defines | `/dZIG_WIN32 /dZIG_NO_CRT` (+ `/dZIG_WIN_NT` in nt) | `/dZIG_WIN32` (+ `/dZIG_WIN_NT` in nt); **no** `ZIG_NO_CRT` |
+| OWC default-library info | `/zl` + `option nodefaultlibs` | no `/zl`; no `option nodefaultlibs` |
+| OWC helper library | explicit `library clib3r` (helper members only) | none; default static CLIB |
+| OWC entry | `option start=_mainCRTStartup` (custom `__cdecl` startup) | **no `option start`**; default CLIB startup |
+| OWC `zig_nocrt.c` | active shim | empty translation unit |
+| Both | `kernel32.lib` + `winmm.lib`; `wsock32.lib` iff `net_emitted`; `/STACK:2097152` MSVC / `option stack=2097152` OWC | same OS/stack settings |
+| Profile | 9x dump: no `ZIG_WIN_NT`; nt dump: both scripts carry it | same profile rule |
+
+The `_nocrt` response blocks keep the entry lines from R2-L4.1/R2-L4.2; the
+`_crt` blocks above replace them and remove the no-CRT-only library/directive
+lines. Any alias in an nt dump calls the `_crt` script and therefore uses the
+CRT entry with `ZIG_WIN_NT`; any 9x alias calls `_nocrt`.
+
+### R3 inventory delta
+
+Add/restore to the T5.3 inventory:
+
+| File:line (current) | T5.3 edit |
+|:--|:--|
+| `sf/src/c89_emit.zig:4108` | `satMaxLitBound(64)` → `Z98_I64_MAX`. |
+| `sf/src/c89_emit.zig:4120` | `satMinLitBound(64)` → `Z98_I64_MIN` (LONG_MIN shape). |
+| `sf/src/c89_emit.zig:4153` | `satMinMagLitBound(64)` → `Z98_U64_C(9223372036854775808)`. |
+| `sf/src/c89_emit.zig:3852,3863,4057,4076,4095,4188,4203` | Restore the R1 suffix-appending call-site edits (R3-C1.2). |
+| `sf/src/c89_emit.zig:4274-4276,4143` and the `[24]u8` buffers at `4041-4101`, `4175-4205` | Grow literal buffers to `[64]u8` for macro-wrapped spellings. |
+| `emit_support.zig:39,40` | OWC branch → `__int64`/`unsigned __int64` (R1-C1.1); these are non-portable sites. |
+| `emit_support.zig:42,43` | Keep the GCC-branch `long long` (portable layer); do not change. |
+| `emit_support.zig:179,183,187` | POSIX-only; optional uniformity mapping. |
+| `build_target_crt.bat` response block | Remove `echo /entry:_mainCRTStartup@0 ...`; remove `/NODEFAULTLIB`, `libcmt.lib`; keep `/MT`. |
+| `build_owc_crt.bat` response block | Remove `echo option start=_mainCRTStartup ...`; remove `option nodefaultlibs`, `library clib3r`; keep default CLIB. |
+
+### R3 residual risks
+
+| # | Risk | Impact | Mitigation / status |
+|:--|:--|:--|:--|
+| R3-1 | Another missed unsuffixed decimal site | VC6 `/Za` fails | R3-C1.1 + R2-C1.2 + R3-C1.2 list; audit command in R3-C1.3; zero non-portable matches required. |
+| R3-2 | `_crt` entry regression | link failure or wrong startup | R3-NEW removes `/entry`/`option start` from both `_crt` blocks; CRT/clib startup used. Hardware pending. |
+| R3-3 | Buffer overflow from longer literal macros | emitted C corruption | grow all `[24]u8`/`[40]u8` literal buffers to `[64]u8`; file:line inventory above. |
+| R3-4 | Audit “zero” misapplied to `zig_compat.h` GCC branch | false failure | R3-C1.3 scopes the zero to the 4,053 non-portable sites; GCC branch/`std_time` POSIX block excluded. |
+| R3-5 | `_crt` response file still contains `libcmt.lib`/`clib3r` helper | duplicate CRT symbols | R3-NEW blocks explicitly omit them; `/MT`/default CLIB supply the CRT. |
+| R3-6 | command.com response-file line length with long output path | link fails | 8.3/no-space output path; documented in R2-L4.3. |
+
+**Fix-round-3 status: DONE_WITH_CONCERNS.** The remaining C1 unsuffixed sites
+are now specified with valid macro spellings and buffer sizing; the dropped
+suffix-call sites are restored; the audit is correctly scoped; and the `_crt`
+entry/libs regression is corrected with an explicit `_nocrt`/`_crt` matrix.
+Native/hardware verification remains deferred by Amendment 5; no source edits
+were made.
