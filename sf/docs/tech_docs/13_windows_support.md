@@ -67,7 +67,7 @@ required. Wine is not a Win98 loader.
 | `exit`, `atexit` registry, `c_exit` | `c_exit.c` | `_WIN32 && ZIG_NO_CRT` for `exit`/`atexit`; `c_exit` always |
 | `mainCRTStartup`, `__main`, `GetCommandLineA` argv parser | `zig_pal.c` | `_WIN32 && ZIG_NO_CRT` |
 | `pal_file_size`, `pal_file_seek64`, `pal_file_mtime`, `pal_getenv`, `pal_wallclock_unix` | `zig_pal.c` | `_WIN32` (file helpers split on `ZIG_WIN_NT`) |
-| `strlen`, `memcpy`, `strncmp` | `zig_runtime.c` | `_WIN32 && ZIG_NO_CRT` |
+| `strlen`, `memcpy`, `memset` (overlap-safe), `strncmp` | `zig_runtime.c` | `_WIN32 && ZIG_NO_CRT` |
 | `__acrt_iob_func`, `fwrite`, `getchar`, `putchar`, `getc`, `putc`, `fgetc`, `fputc`, `_filbuf`, `_flsbuf`, `getenv`, `_time32`, `time` | `zig_nocrt.c` | `_WIN32 && ZIG_NO_CRT` |
 
 `exit` runs the LIFO `atexit` registry (capacity 32) and then `ExitProcess`.

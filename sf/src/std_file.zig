@@ -7,13 +7,14 @@
 // prototypes come from the authorized std_os_prelude.h plus the portable
 // <fcntl.h>/<stdio.h>.
 //
-// Win32 opens through CreateFileA, never fopen; size uses GetFileSizeEx, not
+// Win32 opens through CreateFileA, never fopen; size/seek go through the
+// profile-aware pal_file_size/pal_file_seek64 helpers (GetFileSize /
+// SetFilePointer on the Win9x default, the Ex calls under ZIG_WIN_NT), not
 // ftell; read returns 0 at EOF, not an error; write may return fewer bytes, so
 // writeAll loops. POSIX uses open/read/write/fsync/close/unlink/rename plus the
 // _llseek syscall for 64-bit seeking. The pinned i386 target has a 32-bit
 // off_t, so the POSIX side seeks via _llseek (with O_LARGEFILE at open) and
-// reports i64 offsets; Windows already uses SetFilePointerEx (i64) /
-// GetFileSizeEx. Payloads > 2 GiB work.
+// reports i64 offsets. Payloads > 2 GiB work.
 
 const arena_mod = @import("std_arena.zig");
 const pal = @import("std_file_pal.zig");
@@ -194,7 +195,7 @@ fn writeHandle(h: *void, buf: []const u8) FileError!usize {
 // -std=c89/no-LFS compilation and would truncate). whence is SEEK_SET/_CUR/_END.
 fn llseekHandle(fd: i32, offset: i64, whence: i32) FileError!i64 {
     if (@isWindows()) {
-        // POSIX-only helper: the Windows 64-bit seek is SetFilePointerEx in
+        // POSIX-only helper: the Windows 64-bit seek is pal_file_seek64 in
         // seekHandle. This branch is pruned under -osw so the emitted C carries
         // no `syscall` reference (mingw has no such symbol).
         return error.SeekFailed;
@@ -298,7 +299,8 @@ pub fn exists(path: []const u8) bool {
 
 // Modification time in seconds since the Unix epoch. POSIX: stat(2) into an
 // opaque buffer and read st_mtime at STAT_MTIME_OFFSET; win32:
-// GetFileAttributesExA + ftLastWriteTime (FILETIME 100-ns ticks). A missing or
+// pal_file_mtime (FindFirstFileA on the Win9x default, GetFileAttributesExA
+// under ZIG_WIN_NT) + ftLastWriteTime (FILETIME 100-ns ticks). A missing or
 // un-statable path is OpenFailed (the granularity `open` uses). Used by the
 // z9torr resume sidecar's mtime validation (spec 2026-10-08 §7).
 pub fn mtime(path: []const u8) FileError!i64 {

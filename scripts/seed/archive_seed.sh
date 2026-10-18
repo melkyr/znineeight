@@ -14,7 +14,7 @@ set -euo pipefail
 #   gen/        <gen_dir>/*.c + *.h  (the seed's self-emission C89 module set;
 #               spill/scratch files are NOT copied, and the six runtime/platform
 #               support files the emitter now writes into DIR are excluded — the
-#               three support .c are staged from runtime/ (+ top-level c_exit.c)
+#               four support .c are staged from runtime/ (+ top-level c_exit.c)
 #               and would double-link if left in gen/, while net_prelude.h is
 #               deliberately NOT shipped in runtime/ — see :74-75)
 #   c_exit.c    from the gen dir's emitted support when the gen dir is
@@ -78,7 +78,7 @@ cp "$BIN" "$SEED/zig1"
 chmod +x "$SEED/zig1"
 cp "$GENDIR"/*.c "$GENDIR"/*.h "$SEED/gen/"
 # The emitter now copies its runtime/platform support into DIR (emit_support):
-# zig_runtime.c/zig_pal.c/c_exit.c + zig_compat.h/zig_runtime.h/net_prelude.h.
+# zig_runtime.c/zig_pal.c/zig_nocrt.c/c_exit.c + zig_compat.h/zig_runtime.h/net_prelude.h.
 # Those are staged into runtime/ + top-level c_exit.c from the gen dir itself
 # (the emitted, mode-specific support); the three support .c MUST NOT be
 # duplicated into gen/ or the archive C double-links against the runtime trio
@@ -181,7 +181,7 @@ About these recipes (fixed-point measurement)
 These recipes are the fixed-point MEASUREMENT procedure, not merely a way to
 get a working binary. The "fixed point" is the md5 of the exact executable bytes
 this canonical build produces: every translation unit (the emitted modules AND
-the runtime support zig_runtime.c / zig_pal.c / c_exit.c) compiled with the full
+the runtime support zig_runtime.c / zig_pal.c / zig_nocrt.c / c_exit.c) compiled with the full
 flag set via 'gcc -c', then every object linked together as '*.o'. Two builds of
 the same sources can run identically yet hash differently if they compile with
 different flags, compile a unit implicitly on the link line instead of with
@@ -207,7 +207,7 @@ From the repo root (current sf/src):
   (run from the repo root with the RELATIVE sf/src/main.zig path: module
   basename-hash tokens depend on the resolved source path; --output-dir must
   already exist. The dump is self-contained: it contains the emitted runtime
-  support zig_runtime.c / zig_pal.c / c_exit.c alongside the module .c. Exclude
+  support zig_runtime.c / zig_pal.c / zig_nocrt.c / c_exit.c alongside the module .c. Exclude
   only the .zig1_*.tmp spill scratch the dump writes into the output dir.)
 
   cd <fresh-dir>
@@ -217,7 +217,7 @@ From the repo root (current sf/src):
 
   The emitted support is compiled by this same 'gcc -c *.c' step (with -Wall)
   and linked as objects. Do NOT also append the repo runtime sources on the link
-  line - that double-links zig_runtime.c/zig_pal.c/c_exit.c.
+  line - that double-links zig_runtime.c/zig_pal.c/zig_nocrt.c/c_exit.c.
 
 Verify two-hop fixed-point closure: dump sf/src/main.zig with zig1_next -ffast
 into a fresh dir, gcc the same way, link -> binary md5 must equal the fixed
@@ -236,10 +236,10 @@ files do not litter the archive:
   cp -r zig1-seed /tmp/zig1-seed-build && cd /tmp/zig1-seed-build
   gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
       -Wno-implicit-function-declaration -I runtime \
-      -c gen/*.c runtime/zig_runtime.c runtime/zig_pal.c c_exit.c
+      -c gen/*.c runtime/zig_runtime.c runtime/zig_pal.c runtime/zig_nocrt.c c_exit.c
   gcc -m32 -O0 *.o -o zig1_fromC
 
-Binary md5 must equal the fixed point $FP_MD5. The three runtime support
+Binary md5 must equal the fixed point $FP_MD5. The four runtime support
 translation units MUST be compiled with 'gcc -c' under the same flag set and
 linked as objects; dropping them onto the link line as sources omits the
 canonical flags (notably -Wall) and links a different object set/order, so the
@@ -264,9 +264,9 @@ recipe, and why EVERY translation unit - support included - must be compiled
 with 'gcc -c' under the full flag set rather than compiled implicitly on a link
 line.
 
-Link rule: the self-emission C89 needs zig_runtime.c + zig_pal.c + c_exit.c
-(all present in the dump/archive and swept into '*.o'). zig_pal.c alone is
-insufficient (undefined std_panic + c_exit).
+Link rule: the self-emission C89 needs zig_runtime.c + zig_pal.c +
+zig_nocrt.c + c_exit.c (all present in the dump/archive and swept into
+'*.o'). zig_pal.c alone is insufficient (undefined std_panic + c_exit).
 
 Archive inventory (sizes from sf/src at HEAD $HEAD):
   runtime/: zig_compat.h, zig_runtime.h, zig_special_types.h, zig_runtime.c,

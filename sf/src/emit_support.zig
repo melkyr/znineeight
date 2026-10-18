@@ -886,6 +886,12 @@ pub fn emitZigRuntimeCSupport(writer: *BufferedWriter, safe_checks: bool) void {
     c89_mod.bufferedWriterWrite(writer, "    return dst;\n");
     c89_mod.bufferedWriterWrite(writer, "}\n");
     c89_mod.bufferedWriterWrite(writer, "\n");
+    c89_mod.bufferedWriterWrite(writer, "void* memset(void* dst, int c, size_t n) {\n");
+    c89_mod.bufferedWriterWrite(writer, "    unsigned char* d = (unsigned char*)dst;\n");
+    c89_mod.bufferedWriterWrite(writer, "    while (n--) *d++ = (unsigned char)c;\n");
+    c89_mod.bufferedWriterWrite(writer, "    return dst;\n");
+    c89_mod.bufferedWriterWrite(writer, "}\n");
+    c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "int strncmp(const char* a, const char* b, size_t n) {\n");
     c89_mod.bufferedWriterWrite(writer, "    while (n--) {\n");
     c89_mod.bufferedWriterWrite(writer, "        unsigned char ca = (unsigned char)*a++;\n");

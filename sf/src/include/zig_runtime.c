@@ -205,6 +205,12 @@ void* memcpy(void* dst, const void* src, size_t n) {
     return dst;
 }
 
+void* memset(void* dst, int c, size_t n) {
+    unsigned char* d = (unsigned char*)dst;
+    while (n--) *d++ = (unsigned char)c;
+    return dst;
+}
+
 int strncmp(const char* a, const char* b, size_t n) {
     while (n--) {
         unsigned char ca = (unsigned char)*a++;

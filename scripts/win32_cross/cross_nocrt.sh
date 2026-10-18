@@ -83,7 +83,7 @@ if [ -f "$DUMPDIR/zig_runtime.c" ]; then
     RT_OBJS=()
 else
     CC_INC="$INCLUDE"
-    RT_OBJS=("$WORK/zig_runtime.o" "$WORK/zig_pal.o")
+    RT_OBJS=("$WORK/zig_runtime.o" "$WORK/zig_pal.o" "$WORK/zig_nocrt.o" "$WORK/c_exit.o")
 fi
 N_C=0
 CC_FAIL=""
