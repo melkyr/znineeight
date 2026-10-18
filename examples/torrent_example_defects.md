@@ -5,7 +5,7 @@ the earlier entries D1–D8 were all FIXED at root cause by the zig1 emitter-san
 milestone (2026-10-12 … 2026-10-16); their full history, and the milestone's tracked
 residuals, live in git (fix commits `4056b26f`, `e526859b`, `c2772f6a`, `b7cba183`,
 `649fe398`/`c4838a29`, `dcd0c9db`, `1029221f`/`40a8a36e`) and in that milestone's SDD
-reports/ledger. This file now tracks only open defects; numbering restarts at D1.
+reports/ledger. This file now tracks only open defects; numbering restarts at D1. [updated: 2026-10-17 — compiler D1/D2 parity milestone: D1 + D2 are now FIXED at root cause (their entries keep the full pre-fix symptom/reproducer history + a dated fix block); D3 stays OPEN/deferred; D4 added — the static-analyzer issues cluster, OPEN.]
 
 _(Add new entries as D2, the next free slot, as they are found while building the
 examples; entries are doc-only unless a compiler fix is separately authorized.)_
@@ -14,7 +14,7 @@ examples; entries are doc-only unless a compiler fix is separately authorized.)_
 
 ## D1 — A function pointer whose return type is an optional of an aggregate cannot be emitted
 
-**Status:** OPEN (found 2026-10-16 building z9play M5b; example-only workaround documented below; compiler fix not yet authorized).
+**Status:** FIXED at root cause (2026-10-17, compiler D1/D2 parity milestone T1+T2 — see the dated fix block below; found 2026-10-16 building z9play M5b; the example-only `Key.none` workaround is RETAINED per operator ruling).
 
 **Symptom.** A function-pointer type — or a struct field / variable of such a type —
 whose return type is `?T`, where `T` is an aggregate (`struct`, `enum`, `union(enum)`;
@@ -102,13 +102,19 @@ the C89 type-dependency relation, and intern/canonicalize optional-of-aggregate 
 fn-pointer coercion unifies. A compiler change (outside an example-only milestone);
 author under a future compiler plan.
 
+**Fixed at root cause [updated: 2026-10-17 — D1/D2 parity, T1+T2].** Root cause CONFIRMED — both halves of the hypothesis above: (1) **identity** — `typeRegistryGetOrCreateOptional` / `typeRegistryGetOrCreateArray` (`sf/src/type_registry.zig`) key-cached only when the payload/elem was already laid out (`MapPut` guarded on `state == 2`), so a field's `?Key` and a function's `?Key` minted two distinct synthetic ids and `typeRegistryIsAssignable`'s raw-id `fn_type` comparison rejected the coercion (`error[3000]` source: function / target: pointer); (2) **emit ordering** — the pointer-only / value-embedding sub-pass split could emit the fn-pointer typedef before the optional typedef it spells (the D8-class gap for `optional_type`; repro B).
+
+Fix commits (branch `zig1_improvements`): T1 `5a56b501` `fix(type_registry): D1 — canonical synthetic composite types` — unconditional key-cache at creation (model `typeRegistryGetOrCreatePtr`), cache-hit in-place completion (`optionalCompleteIfReady`/`arrayCompleteIfReady`, `payload.state==2` guard), and structural `fn_type` comparison (`typeRegistryTypesEquiv`/`typesEquivRec` over return + params for the synthetic-composite family); T2 `1c5247b9` `fix(c89_emit): D1 — composite typedef ordering` — emit-site spelling-dependency walk (`emitDefDeps`/`emitDepRef`: fn return/params, slice elem, by-value `?T`/`E!T`/`[N]T`/tuple closure) so every composite typedef emits before every spelling reference.
+
+Fixtures green (post-fix): `fnptr_opt_aggregate_coerce_xmod` **PASS** (runtime golden `coerce sigint ok`, rc 0) and `fnptr_opt_aggregate_emit_xmod` **PASS** (`fnptr emit ok`, all `.c` gcc-clean) — `bash scripts/stdlib/run_fixtures.sh <zig1> repro/mi_matrix/fnptr_opt_aggregate_{coerce,emit}_xmod` → PASS / PASS (full parity-fixture run: `9 PASS / 0 FAIL`).
+
+**Workaround RETAINED per operator ruling.** The z9play M5b example-only `Key.none` in-band-sentinel shape above stays in the example tree (belt-and-braces; no compiler dependency either way) — the compiler now accepts the original `fn (*void) ?Key` shape (fixtures above). The "Compiler fix (not authorized)" paragraph above is superseded by this block (fix landed under the D1/D2 parity milestone).
+
 ---
 
 ## D2 — An error-union function reference in a comptime-dead `@isWindows()` branch still marks the callee module reachable
 
-**Status:** OPEN (found 2026-10-16 building z9play M6 Task 1; blocks the plan's
-"select per-platform backends via `@isWindows()`" approach; compiler fix not yet
-authorized).
+**Status:** FIXED at root cause (2026-10-17, compiler D1/D2 parity milestone T3+T4 — see the dated fix block below; found 2026-10-16 building z9play M6 Task 1; the per-platform `@isWindows()` backend selection the plan needed is unblocked).
 
 **Symptom.** When a function in a comptime-dead `@isWindows()` branch references
 another module's **error-union-returning** function (direct `call`/`catch`, a
@@ -175,6 +181,12 @@ module-reachability scan, so a comptime-dead branch cannot keep a module
 reachable. Compiler change (outside an example-only milestone); author under a
 future compiler plan.
 
+**Fixed at root cause [updated: 2026-10-17 — D1/D2 parity, T3+T4].** Mechanism truth-up (supersedes the "dead `func_ref` survives LIR" framing in the Symptom and the "Compiler fix" paragraph above — that channel was measured **wrong** for this shape: the comptime-fold path already eliminated the dead arm's LIR before emission; see `task-0-report.md` §1.2 measured nuance). The wrong-platform module was kept by the **module-reachability type-owner pin**: `pruneTypeMarkByValue` (`sf/src/main.zig`) runs over every lowered fn's hoisted temps / return / params and marks the **owner module of every by-value-named type** reachable — the `E!*void` return type is a cross-module type name (shared EU typedef + per-module `E` error-set names pin the owner module) — together with the `call_direct`/`tail_call`/`func_ref`/`load_global`/`store_global` edge scan over ALL lowered functions, including the never-called module's own fns. Non-error-union dead-arm references pin nothing (they create no cross-module type name and their instruction edges fold away with the arm), which is why the defect looked error-union-specific.
+
+Fix commits (branch `zig1_improvements`): T3 `58c4cb1c` `fix(semantic_analyzer): D2 — comptime-if eliminates the untaken arm` — sema fold gate `semanticAnalyzerIfComptimeCondition` (untaken arm NOT analyzed; `TYPE_NORETURN`-stamped; Zig rule "the untaken branch does not exist") + the reachability-consistent runtime-init edge in `main.zig` (the root edge is added only for ALREADY-reachable modules — exactly the set whose `__module_init` the synthesized wrapper emits, `prune_active` gate — so a module nothing calls or references is dropped whole); T3 `3583668b` else-less Variant B (a comptime-dead else-less `if` skips its then arm; the `error[3059]` value-use rejection kept — census 10/10); T4 `a7828e5e` `feat(semantic_analyzer): conditional @import` (the if/switch idiom resolves to the LIVE module on both targets; `import_expr` works in expression position; use-site alias fold) + `d568880c` `fix(parser): true Zig laziness for dead-arm @import + builtin-call clobber` (a dead arm's `@import` NEVER loads its file — parse-time `dead_import_depth` + `parserFoldComptimeBool` probe, CLI-target polarity wire; `parserParseBuiltinCall` `@import` `child_buf_len = 0` clobber deleted).
+
+Fixtures green (post-fix, `bash scripts/stdlib/run_fixtures.sh <zig1> …` → `9 PASS / 0 FAIL` over the 9 parity fixtures; the D2 set specifically): `iswindows_deadarm_errunion_xmod`, `iswindows_deadarm_prune_xmod`, `iswindows_deadarm_cond_if_xmod`, `comptime_if_noelse_deadarm_xmod`, `conditional_import_if_xmod`, `conditional_import_switch_xmod`, `conditional_import_lazy_xmod` — **7 PASS / 0 FAIL**. Cross-target contract: the wrong-platform module is absent on both `-osw` and `-osl` (no platform-only `@cInclude` leak; `windep_*.c` absent on linux, `linuxdep_*.c` absent on windows). Residual gap class: **D3** (below) — parse-probe ⊊ evaluator, OPEN/deferred, untouched.
+
 ## D3 — Conditional `@import`: lazy-load gap class (evaluator-foldable conditions the parse-time probe misses)
 
 **Status:** OPEN / DEFERRED (found 2026-10-16 during the compiler D1/D2 parity milestone, Task 4; derived from the D2 solution; not a defect in the milestone's scoped idiom — a feature-completeness item).
@@ -188,3 +200,29 @@ future compiler plan.
 **Relation to F1 (interner id-order landmine).** The full (c) fix moves module resolution across phases and inevitably perturbs interner id assignment order; ANY intern before source lexing deterministically flips `stdlib_crypto_modpow_xmod` OK→GREEN. F1 is being root-caused/fixed in its own Investigate/Fix round (T4.1); **the (c) fix must not be attempted until F1 is root-fixed.** Evidence: Task 4 report (`.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/task-4-report.md`, incl. the `conditional_import_lazy_xmod` pin and the F2 boundary analysis) + the T4.1 F1 report (same workspace) — these two documents are the strategy inputs for a future correction.
 
 **Reference points.** Parse gate: `parserFoldComptimeBool` / `dead_import_depth` (`sf/src/parser.zig`); evaluator fold set: `comptimeEvalEvaluate` (`sf/src/comptime_eval.zig:859-984`); T3 sema gate: `semantic_analyzer.zig:3948`; closure fix: `sf/src/main.zig` runtime-init reachability. Same clobber class family: `parserParseBuiltinCall` `child_buf_len = 0` (fixed in T4 C2 ruling) and `parserParseFnDecl` param `child_buf` (F4, folded into T4.1).
+
+---
+
+## D4 — Static-analyzer issues cluster (inert base, dead-arm parity, residual walks)
+
+**Status:** OPEN (recorded 2026-10-17 at the compiler D1/D2 parity milestone, T5→T6; a CLUSTER, not a single defect). Operator ruling, quoted in essence: the analyzer issues **"require its own plan to fix whatever is good to fix, but there are several defects worth fixing"** — so this entry is the intake list for a future dedicated analyzer plan; nothing here is fixed by the D1/D2 parity milestone beyond T5's landed revivals below, and no fix is authorized by this entry.
+
+**T5's landed revivals STAND (do not re-litigate).** `5cc7107f` `fix(analyzer): D1/D2 surface + drift truth-up` (report `3e4d5209`) revived three inert mechanisms and those fixes stand: (1) **Lifetime provenance substrate** — analyzer-internal `Provenance` (incl. `external = 6`) base classification + bare-vs-interior `&` rules (the `symbol_registrator`-fed lookup was inert on every real compile); (2) **capture wiring** — `bindCaptureState`/`captureNameIdOf` for `if`/`while`/`for`/switch-prong/`catch |e|` captures, including the miss-keyed `if_stmt` SAFE binding; (3) **Signature surface** — recursive `validateSignatureType`: fn-ptr `?Aggregate`/`E!Aggregate` returns, nested incompletes, arbitrary-width ints, `.tag`/member type exprs, packed-union incomplete reject. 59/59 analyzer tests green at T5 (10 new unit tests + 5 `tests/analyzers/**` fixtures).
+
+**Known defect list (the "several defects worth fixing" — each needs its own scoping decision in the future plan):**
+
+(a) **Full comptime-dead-arm parity missing.** Per Zig (the T3 rule) a comptime-untaken arm does not exist for analysis; the analyzers fold only a conservative bool-literal family (`analyzerFoldComptimeBool`: literals, parens, `!`/`&&`/`||`) and skip only the untaken arm of a capture-free `if`. The shared `comptime_folds` table is **not plumbed into `AnalyzerContext`** (that touches `main.zig`/`comptime_eval.zig`), so evaluator-only folds (named consts, compounds, `@isWindows()`) and `switch` prongs still walk both sides → false diagnostics in comptime-dead code. Sources: tech-debt `docs/tech_debt/static_analyzers.md` §4.1.
+
+(b) **NullPointer: return/init expressions not walked + params unseeded.** `analyzeExpr` covers conditions, expression statements and assignment RHS, but NOT `return`-statement expressions or `var` initializers (`return p.*` unchecked); parameters are not seeded in the null state map — measured 44 false WARN_6002 on the compiler self-source. Sources: tech-debt §4.2.
+
+(c) **DoubleFree misses capture alias chains.** `var p = sandAlloc(...); var op = p; if (op) |q|` keeps `op` untracked (assign-propagation gap), so frees through `q` warn "untracked" and cross-name double frees are not checked. Sources: tech-debt §4.3.
+
+(d) **Symbol-table provenance structurally dead for fn locals/params.** `symbol_registrator` inserts module-root names only (globals/functions/modules/type aliases), so `classifyProvenance`'s `symbolTableLookup` always misses for function locals/params. T5 routed around it with the analyzer-internal `Provenance` substrate; a proper fix registers locals or passes a front-end scope map into the analyzer.
+
+(e) **Vacuous hand-fed-symbol unit-test pattern.** The analyzer unit tests insert `Symbol` records manually, so they exercise a lookup path the real pipeline never takes for locals/params — the old "revival illusion" that masked (d). Future tests should drive the `tests/analyzers/**` fixture runner (the T5 direction) instead of hand-feeding.
+
+(f) **Docs residue.** `docs/design/static_analyzers.md` C++-era prose remnants + `docs/sf/STATIC_ANALYZERS_p2.md` p2 §5.3 aspirational slice row — T5 truth-upped the load-bearing sections; the residue is still open.
+
+(g) **`Symbol` test-init missing `file_id`.** `sf/src/tests/test_analyzer_bin.zig`'s `Symbol{...}` initializers omit `file_id` (zig1 zero-fills missing struct-init fields so it compiles/runs; zig0 would reject) — pre-existing rot, disclosed in the T5 report.
+
+**Provenance of this list.** `.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/task-5-report.md` (§1 root causes + Concerns) + `docs/tech_debt/static_analyzers.md` §4.1/§4.2/§4.3 (appended at T5) + the T5 review minors. The future plan starts from those documents; this entry is the ledger intake.

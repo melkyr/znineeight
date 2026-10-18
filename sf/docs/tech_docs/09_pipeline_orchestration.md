@@ -50,9 +50,9 @@
 | 23 | `show_markers` | `bool` | `false` | `--markers` |
 | 24 | `include_dirs` | `[16][]const u8` | `undefined` | `-I`, `--lib-dir` |
 | 25 | `include_count` | `u32` | `0` | (implicit from `-I`/`--lib-dir` count) |
-| 26 | `target_is_windows` | `bool` | `false` | `-osw`, `--target windows`; `-osl`/`--target linux` sets false |
+| 26 | `target_is_windows` | `bool` | `false` | `-osw`, `--target windows`; `-osl`/`--target linux` sets false `[updated: 2026-10-17 — T4: consumed by `phase_ComptimeEvaluation` (`@isWindows` fold) AND the parse-time dead-arm `@import` gate (`ModuleRegistry.target_is_windows`)]` |
 
-`-fsafe`/`-ffast` toggle `safe_checks`, which flows into the C89 emitter and the LIR lowerer as the c89-ahead runtime-check switch (see 07/08). `target_is_windows` is the single target-platform flip point consumed by `phase_ComptimeEvaluation` (`@isWindows`); `config.zig`'s `host_is_windows` is unwired (see 04).
+`-fsafe`/`-ffast` toggle `safe_checks`, which flows into the C89 emitter and the LIR lowerer as the c89-ahead runtime-check switch (see 07/08). `target_is_windows` is the single target-platform flip point consumed by `phase_ComptimeEvaluation` (`@isWindows`); `config.zig`'s `host_is_windows` is unwired (see 04). `[updated: 2026-10-17 — T4 (`d568880c`): the same CLI polarity is ALSO wired into the parse-time dead-arm `@import` gate — `main.zig` copies it to `ModuleRegistry.target_is_windows` (docs 00/01) so `parserFoldComptimeBool`'s `@isWindows()` probe agrees with the evaluator's fold (one target truth, both phases).]`
 
 **main_dump.zig variant:** (16 fields) — replaces `dump_types`/`dump_lir`/`dump_c89` with `dump_tokens`/`dump_ast`, adds `print_usage`, omits `output_dir_set`, `spill_level`, analyzer/safe-check toggle flags (`no_null_check`, `no_lifetime_check`, `no_leak_check`, `safe_checks`, `warn_all`, `warn_error`, `show_markers`), and `target_is_windows`; uses a fixed 16 MiB `max_mem` default.
 
@@ -483,6 +483,8 @@ covered by 03_type_resolution.md.
    operand is invisible to this module-scope sweep (no local-const scope), so its runtime branch
    stays.
 
+`[updated: 2026-10-17 — T3 (`58c4cb1c`) supersedes the arm-3 scope above: the sweep now folds and stores the condition of EVERY capture-free `if_expr`/`if_stmt` (value `if` with or without `else`, and `if` statements) whose condition the module evaluator folds to `KIND_BOOL` — the narrow trigger set (`@isWindows()` via the builtin sweep above, literal `true`/`false`, comptime `const` conditions, constant folds). Consumers: lowering's `if_fold`/`ie_fold` (untaken arm NOT lowered) and sema's `semanticAnalyzerIfComptimeCondition` (untaken arm NOT analyzed — doc 05); the two always eliminate the same arm. Function-local condition operands remain outside this module-scope sweep (no local-const scope) — sema stamps those into the same table. Runtime conditions fold to nothing and are untouched. The old "if_stmt conditions and if_expr with an else are deliberately not stored" restriction is history.]`
+
 **Markers:** `CE`
 
 **Arena:** No sand reset — operates on existing data. Store results in `ctx.comptime_folds` (module arena).
@@ -567,7 +569,7 @@ by-value globals) so only reachable modules are emitted (module pruning). Task 1
 `moduleIdForBasename(..., "std_fmt.zig")` sets `emitter.std_fmt_module_id` (the id `getPrintFnName`
 mangles against, `0xFFFFFFFF` when absent); during the LIR scan every `.print_val` instruction adds
 a `ref_edges` src→std_fmt entry (the mangled print call is not a LIR call, so nothing else would
-keep std_fmt reachable or include its header). [updated: 2026-09-24 — Task 1]
+keep std_fmt reachable or include its header). [updated: 2026-09-24 — Task 1] `[updated: 2026-10-17 — D2 root fix (T3, `58c4cb1c`): the reachable-set computation's runtime-init root edge is reachability-consistent — added only for ALREADY-reachable modules (exactly the set whose `__module_init` the synthesized wrapper emits; the `prune_active` gate), NOT force-seeded for every module with a runtime-initialized global (the seed that pinned comptime-dead modules alive — the D2 defect). The all-fn LIR edge scan + `pruneTypeMarkByValue` type-owner edges are unchanged and load-bearing (modules emit atomically with all their lowered fns). Full mechanism: doc 08 §6.2.]`
 
 - **Stdout branch (no `--output-dir`)** — the classic single-file path, kept byte-identical:
   `emitIncludes` preamble → `cincludeUnionAll` → `emitModule("output", …)` → final flush.

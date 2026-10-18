@@ -1678,6 +1678,8 @@ level (`-s<N>`). Per-tier peaks are read from each tier's `peak` field; the unwi
 | `11_build_system.md` | `sf/scripts/*`, `scripts/seed/*`, `release/seed/*` | Build system |
 | `12_async_coroutines.md` | `async_analysis.zig`, `async_frame_layout.zig`, `async_state_machine.zig`, `std_async.zig` | Phase 8 / async |
 
+**[updated: 2026-10-17 — compiler D1/D2 parity milestone (T1–T4 mechanisms landed; T6 doc pass)]:** the parity mechanisms are documented in their per-area docs — canonical synthetic composites (T1: unconditional key-cache + in-place completion + structural `fn_type` compare; doc 03 Type Caches / `typeRegistryIsAssignable`), composite typedef ordering (T2: 2a/2b sub-pass + `emitDefDeps`/`emitDepRef` spelling deps; doc 08 §1.1), comptime-if folding incl. else-less Variant B (T3: untaken arm not analyzed/lowered; docs 05 `semanticAnalyzerResolveIfExpr` + 07 Control Flow) with the module-closure edge (reachability-consistent runtime-init root, `prune_active`; docs 08 §6.2 + 09 `phase_C89Emission`), and conditional `@import` + true dead-arm laziness (T4: live-module selection + `dead_import_depth` parse gate; docs 05 + 07 + 00 + 01 + 09 target polarity). Defect ledger `examples/torrent_example_defects.md`: D1/D2 → FIXED at root cause (T1+T2 / T3+T4), D3 stays OPEN/deferred, D4 added (analyzer-issues cluster, OPEN).
+
 ### Variant counts
 
 | Enum | Variants | Source |
