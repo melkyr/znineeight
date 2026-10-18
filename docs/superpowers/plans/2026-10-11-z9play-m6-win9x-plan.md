@@ -191,3 +191,17 @@ Operator ruling: before implementing T5.3, run a **second inventory task (T5.3a)
 - T5.3 remains: mingw 9x no-CRT + full shim set + argv parser + the T5.3b-designed native scripts + `sf/docs/tech_docs/13_windows_support.md`; usual compiler gates; seed rotation. T5.4/T5.5 Wine gates unchanged; real-hardware checks deferred as above.
 
 **Next:** cleanup + fresh compiler build → T5.3b (design-only) → review → T5.3.
+
+### Amendment 6 — OpenWatcom 64-bit mapping restored to the bootstrap; seed v99 → v100 (operator ruling, 2026-10-18)
+
+**Finding (operator):** the bootstrap layer `src/include/zig_compat.h:12-19` defines OpenWatcom as `long long` / `unsigned long long` with the comment "OpenWatcom supports long long as an extension". T5.3 replaced that with `__int64`/`i64`/`ui64`, which could/would not work properly under OpenWatcom.
+
+**Ruling:**
+- Restore the `__WATCOMC__` branch in `sf/src/include/zig_compat.h` (and its `sf/src/emit_support.zig` literal) to the bootstrap definition exactly: `typedef long long z64; typedef unsigned long long zu64;` with `Z98_I64_C(n) n##LL` and `Z98_U64_C(n) n##ULL`.
+- Keep `_MSC_VER` = `__int64` + `i64`/`ui64` (MSVC 6 needs it); GCC/others unchanged (`long long` + `LL`/`ULL`).
+- Audit every `__WATCOMC__` conditional introduced by T5.3 (`zig_pal.c`, `zig_nocrt.c`, `zig_runtime.c/h`, `std_*_prelude.h`, emit_support literals, scripts) so no OWC path assumes the `__int64` mapping.
+- Keep the T5.3 removal of `&& !defined(__WATCOMC__)` from the `i8..usize` typedef guard (OWC needs those names for emitted code) and document why in `sf/docs/tech_docs/13_windows_support.md`.
+- Re-run the full T5.3 gates; re-baseline the 8 pins; **re-rotate the seed v99 → v100** (archive, `CHANGELOG.md`, `QUICK_REF.md` seed + pin table); verify the new seed's hop1==hop2. Hardware verification remains operator-pending per Amendment 5.
+- Truth-up the T5.3 report and `13_windows_support.md` (OWC = bootstrap `long long` path; MSVC = `__int64`).
+
+**Next:** T5.3 fix (OWC mapping) → gates → seed v100 → full T5.3 review.
