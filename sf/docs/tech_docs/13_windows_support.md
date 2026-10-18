@@ -1,4 +1,4 @@
-# 13 — Windows support: Win9x / NT profiles, no-CRT runtime, native build scripts [updated: 2026-10-18 — M6 T5.3 (Win9x no-CRT runtime + portable 64-bit C + native scripts)]
+# 13 — Windows support: Win9x / NT profiles, no-CRT runtime, native build scripts [updated: 2026-10-18 — M6 T5.3 fix round 1, Amendment 6: OpenWatcom restored to the bootstrap `long long`/`LL`/`ULL` mapping; MSVC keeps `__int64`/`i64`/`ui64`] [updated: 2026-10-18 — M6 T5.3 (Win9x no-CRT runtime + portable 64-bit C + native scripts)]
 
 > Covers: `sf/src/include/zig_compat.h`, `sf/src/include/zig_nocrt.c`,
 > `sf/src/include/zig_runtime.[ch]`, `sf/src/include/zig_pal.c`,
@@ -120,14 +120,20 @@ The emitted C is consumable by mingw GCC, MSVC 6 (`/Za`), and OpenWatcom
 
 | Emitted token | mingw | MSVC 6 | OpenWatcom |
 |:--|:--|:--|:--|
-| `z64` / `zu64` | `long long` / `unsigned long long` | `__int64` / `unsigned __int64` | `__int64` / `unsigned __int64` |
-| `Z98_I64_C(n)` / `Z98_U64_C(n)` | `n##LL` / `n##ULL` | `n##i64` / `n##ui64` | `n##i64` / `n##ui64` |
+| `z64` / `zu64` | `long long` / `unsigned long long` | `__int64` / `unsigned __int64` | `long long` / `unsigned long long` |
+| `Z98_I64_C(n)` / `Z98_U64_C(n)` | `n##LL` / `n##ULL` | `n##i64` / `n##ui64` | `n##LL` / `n##ULL` |
 | `Z98_I64_MAX` / `Z98_I64_MIN` / `Z98_U64_MAX` | macros | macros | macros |
 
 The emitter never writes `long long`, `unsigned long long`, `LL`, or `ULL`
-outside the mingw branch of `zig_compat.h`. The `i64`/`ui64` suffix choice and
-the fixed-width typedefs are available on all three toolchains; OpenWatcom no
-longer excludes them.
+outside the mapping branches of `zig_compat.h`. OpenWatcom uses the bootstrap
+definition exactly (`long long` / `unsigned long long`; OpenWatcom's documented
+C extension) with `LL`/`ULL` literals; MSVC 6 uses `__int64` /
+`unsigned __int64` with its `i64`/`ui64` literal suffixes. The fixed-width
+`i8`..`i64`/`u8`..`u64`/`usize` typedefs are emitted for OpenWatcom too (the
+old `&& !defined(__WATCOMC__)` guard remains removed): emitted module
+signatures, `zig_pal.c` and the `std_*_prelude.h` helpers spell those Z98 type
+names, so OpenWatcom must receive the typedefs even though it does not need a
+non-bootstrap 64-bit base type.
 
 ## 8. Verification status
 

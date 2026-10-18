@@ -38,10 +38,10 @@ pub fn emitZigCompatHSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "    #define Z98_I64_C(n) n##i64\n");
     c89_mod.bufferedWriterWrite(writer, "    #define Z98_U64_C(n) n##ui64\n");
     c89_mod.bufferedWriterWrite(writer, "#elif defined(__WATCOMC__)\n");
-    c89_mod.bufferedWriterWrite(writer, "    typedef __int64 z64 Z98_ALIGN8;\n");
-    c89_mod.bufferedWriterWrite(writer, "    typedef unsigned __int64 zu64 Z98_ALIGN8;\n");
-    c89_mod.bufferedWriterWrite(writer, "    #define Z98_I64_C(n) n##i64\n");
-    c89_mod.bufferedWriterWrite(writer, "    #define Z98_U64_C(n) n##ui64\n");
+    c89_mod.bufferedWriterWrite(writer, "    typedef long long z64;\n");
+    c89_mod.bufferedWriterWrite(writer, "    typedef unsigned long long zu64;\n");
+    c89_mod.bufferedWriterWrite(writer, "    #define Z98_I64_C(n) n##LL\n");
+    c89_mod.bufferedWriterWrite(writer, "    #define Z98_U64_C(n) n##ULL\n");
     c89_mod.bufferedWriterWrite(writer, "#else\n");
     c89_mod.bufferedWriterWrite(writer, "    typedef long long z64 Z98_ALIGN8;\n");
     c89_mod.bufferedWriterWrite(writer, "    typedef unsigned long long zu64 Z98_ALIGN8;\n");
