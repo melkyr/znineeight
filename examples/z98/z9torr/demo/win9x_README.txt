@@ -53,7 +53,12 @@ same.
     # 4a330207a420462a9ad4376ace7d0a63  -
 
 (stable 3x for the M5 source. The `-osw -o` tree carries the module .c/.h plus
-build_target.sh, build_target.bat, build_owc.bat and net_prelude.h.)
+build_target.sh, the Win9x no-CRT default scripts build_target_nocrt.bat /
+build_owc_nocrt.bat, the static-CRT alternates build_target_crt.bat /
+build_owc_crt.bat, the compatibility aliases build_target.bat / build_owc.bat,
+and net_prelude.h. The default is a single no-CRT EXE; msvcrt.dll is not
+required. Native MSVC/OpenWatcom scripts are design-verified; hardware
+verification is pending.)
 
 
 2. What to copy to the Win98 machine

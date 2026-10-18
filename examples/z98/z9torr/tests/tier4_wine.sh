@@ -86,7 +86,7 @@ else
     fail_case "emit tree carries module .c/.h ($N_C .c, $N_H .h)"
 fi
 
-for _f in build_target.bat build_owc.bat net_prelude.h; do
+for _f in build_target.bat build_target_nocrt.bat build_target_crt.bat build_owc.bat build_owc_nocrt.bat build_owc_crt.bat net_prelude.h; do
     if [ -e "$WIN/$_f" ]; then pass_case "emit tree carries $_f"
     else fail_case "emit tree carries $_f"; fi
 done
