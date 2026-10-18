@@ -66,6 +66,7 @@ const wav = @import("platform/audio_wavfile.zig");
 const oss = @import("platform/audio_oss.zig");
 const awin = @import("platform/audio_win9x.zig");
 const con = @import("platform/console_linux.zig");
+const cwin = @import("platform/console_win9x.zig");
 const contract = @import("platform/console.zig");
 const fmt = @import("fmt.zig");
 const player = @import("player.zig");
@@ -687,25 +688,46 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         writeU64(@intCast(u64, id.sample_rate));
         writeText("Hz\n");
 
-        // Assemble the Linux `Console` vtable from the backend's public free
-        // functions (mirrors the `audio.AudioOut` assembly above). Raw keyboard
-        // input is a no-op when stdin is not a tty; keys are then not polled, so
-        // a redirected run still completes.
-        var st: con.ConsoleLinState = undefined;
-        var cs: contract.Console = contract.Console{
-            .clear_fn = con.clear,
-            .setCursor_fn = con.setCursor,
-            .writeStr_fn = con.writeStr,
-            .readKey_fn = con.readKey,
-            .enterRaw_fn = con.enterRaw,
-            .leaveRaw_fn = con.leaveRaw,
-            .width_fn = con.width,
-            .height_fn = con.height,
-            .cursorShow_fn = con.cursorShow,
-            .state = @ptrCast(*void, &st),
-        };
+        // Assemble the platform `Console` vtable from the backend's public free
+        // functions (mirrors the `audio.AudioOut` assembly above). With
+        // @isWindows() select the Win9x backend; the explicit else keeps the
+        // Linux backend valid C. Raw keyboard input is a no-op when stdin is not
+        // a tty; keys are then not polled, so a redirected run still completes.
+        var cs: contract.Console = undefined;
+        var entered_ptr: *bool = undefined;
+        if (@isWindows()) {
+            var st_win: cwin.ConsoleWinState = undefined;
+            cs = contract.Console{
+                .clear_fn = cwin.clear,
+                .setCursor_fn = cwin.setCursor,
+                .writeStr_fn = cwin.writeStr,
+                .readKey_fn = cwin.readKey,
+                .enterRaw_fn = cwin.enterRaw,
+                .leaveRaw_fn = cwin.leaveRaw,
+                .width_fn = cwin.width,
+                .height_fn = cwin.height,
+                .cursorShow_fn = cwin.cursorShow,
+                .state = @ptrCast(*void, &st_win),
+            };
+            entered_ptr = &st_win.entered;
+        } else {
+            var st_lin: con.ConsoleLinState = undefined;
+            cs = contract.Console{
+                .clear_fn = con.clear,
+                .setCursor_fn = con.setCursor,
+                .writeStr_fn = con.writeStr,
+                .readKey_fn = con.readKey,
+                .enterRaw_fn = con.enterRaw,
+                .leaveRaw_fn = con.leaveRaw,
+                .width_fn = con.width,
+                .height_fn = con.height,
+                .cursorShow_fn = con.cursorShow,
+                .state = @ptrCast(*void, &st_lin),
+            };
+            entered_ptr = &st_lin.entered;
+        }
         cs.enterRaw_fn(cs.state);
-        var interactive: bool = st.entered;
+        var interactive: bool = entered_ptr.*;
 
         var pl: player.Player = undefined;
         var quit: bool = false;
