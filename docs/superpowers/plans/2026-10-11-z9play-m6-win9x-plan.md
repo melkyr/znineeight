@@ -126,3 +126,19 @@ This amendment **supersedes, for Tasks T5.1–T5.6 only**, the Global Constraint
 **Gate:** review only (report quality); INDEX row present.
 
 **Global gate reminders:** battery definition unchanged from prior milestones; run gates sequentially (spill-file race); `--dump-c89` requires a pre-created `--output-dir`; reports under `.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/`; no push.
+
+### Amendment 3 — T5.3 no-CRT shim set (Option A) + T5.3a safety inventory (operator ruling, 2026-10-18)
+
+Operator ruling: before implementing T5.3, run a **second inventory task (T5.3a)** on what to implement and how to do it safely; then implement **path A** — the full emitted no-CRT shim set, extending T5.3's original list.
+
+**Why:** T5.1 §3.3/§4.8 measured that `-nostdlib` links leave these unresolved in emitted code: `std_io` → `__acrt_iob_func`, `fwrite`, `getchar`, `putchar`; `std_os` → `exit`, `getenv`; `std_time` → `__time32`; `zig_runtime` → `strlen`; `c_exit` → `exit`; z9torr adds `memcpy`; `console_win9x` → `atexit`. The original T5.3 list covers only some; without the rest T5.4/T5.5 cannot link on the 9x default.
+
+**Ruling (A):** T5.3 is authorized and required to implement the full no-CRT runtime shim set in the emitted runtime/support (`sf/src/emit_support.zig` literals + `sf/src/include/*` mirrors, behind `ZIG_NO_CRT`): `exit`→`ExitProcess`; `atexit` registry invoked on the exit path; `__acrt_iob_func`/`_iob`/std-stream emulation + `fwrite`/`getchar`/`putchar`; `memcpy`/`strlen`/`strncmp`; `time`/`__time32` helper; plus the plan-named `c_exit`/`pal_abort`/`getenv`→`GetEnvironmentVariableA`/`GetSystemTimeAsFileTime`/std_file helpers. CRT path behavior unchanged. `-DZIG_NO_CRT` is added by T5.3's emitted 9x build recipe (T5.2 only emits the profile define). `std_os.env` uses a static PAL buffer (single-threaded; preserves the current slice-lifetime contract).
+
+#### Task T5.3a: No-CRT runtime inventory + safe implementation design (REPORT ONLY, runs before T5.3)
+
+- [ ] Produce `task-5.3a-report.md`: exact shim placement and ownership between `zig_pal.c` / `zig_runtime.c` / any new emitted shim file; duplicate-definition/symbol-clash analysis for CRT vs `ZIG_NO_CRT`; header/prototype placement under `-Wall`; `atexit` registry semantics (capacity, ordering, `ExitProcess` bypass) and how `c_exit`/`exit` invoke it; `__acrt_iob_func`/`_iob` std-stream emulation + `fwrite`/`getchar`/`putchar` parity; `memcpy`/`strlen`/`strncmp`; `time`/`__time32` FILETIME→Unix conversion (1601 epoch, 64-bit math); `GetEnvironmentVariableA` static buffer size/ownership; `std_file` helper signatures + Win95 fallback semantics (size/seek64 high-DWORD/mtime source decision with evidence); emitted build recipe changes (sh/bat/owc) incl. `-DZIG_NO_CRT`, `-nostdlib -e,_mainCRTStartup -lgcc -lkernel32` (+winmm/wsock32); `emit_support.zig` ↔ include mirror map updates; whitelist-gate artifact design; risk list + concrete test probes (Wine/Linux). File:line inventory of every T5.3 edit. No source edits.
+
+**Gate:** review only (design/safety review). T5.3 then implements exactly the approved design + Amendment 3 ruling; deviations STOP-present.
+
+**Next:** T5.3a → T5.3.
