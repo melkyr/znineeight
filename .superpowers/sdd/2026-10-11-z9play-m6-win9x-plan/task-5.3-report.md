@@ -173,8 +173,8 @@ After rotation (new v99 seed):
 ```text
 $ bash scripts/corpus/classify /tmp/t53/zig1_5_clean /tmp/t53_corpus.txt
 wrote /tmp/t53_corpus.txt: 1133 dirs
-$ grep -vE '<the 9 designed D1/D2 fixtures>' /tmp/t53_corpus.txt \
-    > /tmp/t53_corpus_frozen1124.txt
+$ grep -vE 'repro/mi_matrix/(fnptr_opt_aggregate_(coerce|emit)_xmod|iswindows_deadarm_(errunion|prune|cond_if)_xmod|conditional_import_(if|switch|lazy)_xmod|comptime_if_noelse_deadarm_xmod) ' \
+    /tmp/t53_corpus.txt > /tmp/t53_corpus_frozen1124.txt
 $ wc -l /tmp/t53_corpus_frozen1124.txt
 1124
 $ md5sum /tmp/t53_corpus_frozen1124.txt
@@ -412,4 +412,92 @@ and GCC/others keep `long long` + `LL`/`ULL`.
   `hop1 == hop2 == 99e90349…`.
 
 **Status:** fix complete; native OWC hardware verification still pending
+(Amendment 5).
+
+---
+
+## Fix round 2 (2026-10-18) — no-CRT `memset`, seed recipe/provenance truth-up
+
+**Important 1 — missing no-CRT `memset` (reproduced then fixed).**
+`zig1 -ffast -osw` z9torr failed to link with
+`undefined reference to memset` (default `-fsafe` linked). Added an
+overlap-safe `memset` to the no-CRT runtime in **both** mirrors:
+`sf/src/include/zig_runtime.c` and the `sf/src/emit_support.zig` literal,
+inside the same `_WIN32 && ZIG_NO_CRT` guard as `strlen`/`memcpy`/`strncmp`:
+
+```c
+void* memset(void* dst, int c, size_t n) {
+    unsigned char* d = (unsigned char*)dst;
+    while (n--) *d++ = (unsigned char)c;
+    return dst;
+}
+```
+
+`sf/docs/tech_docs/13_windows_support.md` §4 now lists
+`strlen`/`memcpy`/`memset`/`strncmp`. Re-probe (fresh compiler):
+
+```text
+zig1 -ffast -osw z9torr: dump rc=0, build rc=0
+imports: KERNEL32.dll WSOCK32.DLL (PE32)
+IMPORT GATE PASS (9x)
+wine z9torr.exe --help -> usage, rc=0
+```
+
+**Important 2 — seed fallback recipe.** `scripts/seed/archive_seed.sh` now
+emits recipe 2 with `runtime/zig_nocrt.c` and says “four runtime support
+translation units”; the generated `SEED_README.txt` was regenerated in the new
+archive. Verified by extracting the committed archive and running the recipe
+verbatim:
+
+```text
+gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+    -Wno-implicit-function-declaration -I runtime \
+    -c gen/*.c runtime/zig_runtime.c runtime/zig_pal.c runtime/zig_nocrt.c c_exit.c
+gcc -m32 -O0 *.o -o zig1_fromC
+md5sum zig1_fromC -> b299b4b435e624d0ddbd2edde681cbc3  (= recorded fixed point)
+```
+
+**Important 3 — provenance.** The historical v100 entry was corrected to
+`HEAD 7bbf2116` (the source commit that produced `99e90349…`) with an explicit
+note that it was captured from the working tree that became `7bbf2116`, before
+that commit, so `git rev-parse HEAD` printed `0595fab4` at capture time. The
+new v101 archive was captured after the fix commit (`HEAD dfc773a1`), so its
+provenance is source-time truthful.
+
+**Minor 4 — `std_file.zig` comments** now name the `pal_file_*` path (Win95
+default `GetFileSize`/`SetFilePointer`/`FindFirstFileA`, `ZIG_WIN_NT` Ex
+calls).
+
+**Minor 6 — `scripts/win32_cross/cross_nocrt.sh`** legacy `RT_OBJS` now
+includes `zig_nocrt.o` and `c_exit.o`, matching the later compile step.
+
+**Minor 7 — report corpus command** now shows the exact 9-fixture filter regex
+instead of the `<the 9 designed D1/D2 fixtures>` placeholder (§3.2 above).
+
+**Full battery (fresh rebuild `/tmp/t53fix2/zig1_5_clean`
+`b299b4b435e624d0ddbd2edde681cbc3`).**
+- Corpus frozen 1124: md5 `518eca1a9b5d3e1cc5a48abce214abd8`, tally
+  `1124 = 950 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH`, 0 movers; 9 designed
+  fixtures `OK`.
+- Goldens 5/5: gol `fcbf7e7c…`, lisp `(+ 1 2)` `b3d9f897…`, json
+  `8bda3d5a…`, mud `66c8f0ab…`/`93147d0f…`.
+- mi_matrix 25/25 PASS; oob `-fsafe` rc=133, empty stdout.
+- Examples: 26/26 build + 26/26 run (all md5 prefixes match).
+- Stdlib: 285 PASS / 0 FAIL, `STDLIB GATE OK`.
+- Emit-support: 8/8 byte-identical.
+- Markers: 3437 lines / 38408 bytes.
+- Pins: **8/8 unchanged** vs v99/v100 (the memset shim is Windows/no-CRT-only,
+  so the GCC gate output is byte-identical): mud `35ec8c8c…`/`3203868a…`, gol
+  `4a963f79…`/`03a18737…`, lisp `4939b6e2…`/`a2afe23d…`, json
+  `95f82c77…`/`96fdbc4c…`.
+- 9x no-CRT probes (`-ffast`): hello KERNEL32; z9play KERNEL32+WINMM; z9torr
+  KERNEL32+WSOCK32; all PE32, import gate PASS, Wine rc=0. NT hello:
+  KERNEL32+msvcrt, Wine rc=0. No native MSVC/OWC probes.
+- Seed: fixed point moved `99e903494c716c1ea9d779b646303d1d` (v100) →
+  `b299b4b435e624d0ddbd2edde681cbc3` (v101); archive md5
+  `c73fef7b07fb4a6fc57dafa77821e47c` → `378f5ea01db25ec69f455fbce52bc947`;
+  `gen/` 46 `.c` + 47 `.h` (10,256,124 bytes). Post-rotation
+  `build_from_seed.sh`: `hop1 == hop2 == b299b4b4…`.
+
+**Status:** fix complete; native OWC/MSVC hardware verification still pending
 (Amendment 5).
