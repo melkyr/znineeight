@@ -142,3 +142,42 @@ Operator ruling: before implementing T5.3, run a **second inventory task (T5.3a)
 **Gate:** review only (design/safety review). T5.3 then implements exactly the approved design + Amendment 3 ruling; deviations STOP-present.
 
 **Next:** T5.3a → T5.3.
+
+### Amendment 4 — Redistribution-first Win9x (path B) + native-toolchain no-CRT + T5.3b (operator ruling, 2026-10-18)
+
+**Goal (operator):** every generated `.exe` must be a single drag-and-drop file on a clean Win98/Me machine (Win95 best-effort). No instructions to install an `msvcrt.dll` redistributable. `winmm.dll` / `wsock32.dll` are OS DLLs (Win95+) and are allowed; `msvcrt` on the 9x path is not.
+
+**Ruling (B):** no-CRT / kernel32-only is the **9x default for all toolchains**:
+- mingw: `-nostdlib -e,_mainCRTStartup -lgcc -lkernel32` + the Amendment 3 shim set.
+- MSVC 6: no-CRT (`/Zl` compile, `/NODEFAULTLIB`, `/entry`, runtime helpers) — exact flags/design from T5.3b.
+- OpenWatcom: no-CRT (`option nodefaultlibs`, entry, runtime helpers) — exact design from T5.3b.
+- Static-CRT variants remain emitted as alternates (single EXE, no DLL) for users who want them.
+
+**Script layout (operator-approved):**
+- `build_target.sh` unchanged for mingw (9x default no-CRT; `nt` arg = CRT + `ZIG_WIN_NT`).
+- For `-osw`, emit: `build_target_nocrt.bat`, `build_target_crt.bat` (MSVC); `build_owc_nocrt.bat`, `build_owc_crt.bat` (OpenWatcom). Each script header states its redistribution guarantee; `_nocrt` is the 9x default.
+- Existing `build_target.bat` / `build_owc.bat` names: T5.3b recommends keep-as-alias or remove; no dangling docs.
+
+**T5.3a rulings folded in:** env static-buffer narrowing accepted and documented; `GetCommandLineA` argv parser authorized; `_iob` omission ratified (no emitted reference under the pinned toolchain) and must be documented visibly; PAL helpers apply to all Windows profiles (CRT-linked builds behavior-equivalent; wording truth-up).
+
+#### Task T5.3b: native-toolchain no-CRT investigation/design (REPORT ONLY, after T5.3a, before T5.3)
+
+- [ ] Produce `task-5.3b-report.md`:
+  1. **MSVC 6.0 no-CRT** — exact compile flags (`/Za /Zl /DZIG_NO_CRT …`), exact `link` invocation (`/NODEFAULTLIB`, `/entry` symbol decoration, `/subsystem:console`, libs), `mainCRTStartup` + argv, and the runtime-helper set actually required by emitted C (`__chkstk` vs `/Gs`, 64-bit mul/div/rem/shift, `_fltused`, float helpers), with the decide-and-justify choice of implementing helpers in C vs taking vendor static-lib objects; verify the static-CRT alternate script.
+  2. **OpenWatcom no-CRT** — `wcc386` flags, `wlink` `system` choice, `option nodefaultlibs`, entry/stack, 64-bit helper set (`__I8M`/`__U8D`/…), static-runtime alternate.
+  3. **Shared** — toolchain-neutral `zig_nocrt.c` vs per-toolchain startup; header/prototype cleanliness; import-table expectations per variant (only OS DLLs); exact contents of the four `.bat` scripts + `.sh` header update.
+  4. **Verification strategy** — host has only mingw+wine, no `cl`/`wcc386`; attempt to obtain/use OpenWatcom 2 (Linux-host) for real compile/link probes; MSVC 6 cannot run here → state exactly what is design-verified vs unverified and the evidence (vendor docs, import tables, probes) for each claim.
+  5. File:line inventory of every T5.3 edit; risk list.
+- No source edits.
+
+**Gate:** review only (redistribution/design safety).
+
+#### T5.3 revisions
+
+- Implement the T5.3a design + T5.3b native scripts; emit the four `.bat` files for `-osw`; resolve old-name aliases per T5.3b.
+- Add visible doc `sf/docs/tech_docs/13_windows_support.md` (+ INDEX): profile × toolchain × CRT matrix, `_iob` omission rationale, env lifetime, redistribution policy, verification status.
+- Gates unchanged + native-script review; seed rotation.
+
+**T5.4/T5.5:** gate text uses actual `WSOCK32.DLL` (not `WS2_32`).
+
+**Next:** T5.3b → T5.3.
