@@ -17,43 +17,59 @@ Prerequisites on the Linux host: a 32-bit mingw cross toolchain
 (i686-w64-mingw32-gcc), gcc -m32, and the repo's bootstrap seed
 (release/seed/zig1-seed.tgz). Wine is only needed for the optional smoke run.
 
-Important compiler note: seed v98 predates the compiler D1/D2 parity fixes.
-M6 must be built with a compiler regenerated from the CURRENT sf/src, not with
-a prebuilt seed-v98 binary:
+The compiler must be rebuilt from seed v101; it carries the Win9x no-CRT
+runtime and default profile:
 
-    bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9play_m6
-    # resulting compiler: /tmp/z9play_m6/zig1_5_clean
-    # md5:        2c48fa702393032c2b711a8d982bd388
-    # fixed point b0e5f3b4e580f69eacdac7bd0e07dda1 (three-hop closure OK)
+    bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9play_seed
+    # resulting compiler: /tmp/z9play_seed/zig1_5_clean
+    # md5:        b299b4b435e624d0ddbd2edde681cbc3
+    # two-hop closure: hop1 == hop2 == b299b4b435e624d0ddbd2edde681cbc3
 
-Then build the Windows console executable through the shared cross harness,
-from the repo root, with the winmm link library:
+Then emit the default `-osw` profile (9x, no-CRT) from the repo root and build
+it through the emitted mingw recipe:
 
-    ROOT=/workspace/znineeight bash scripts/win32_cross/cross_build_run.sh \
-        /tmp/z9play_m6/zig1_5_clean \
-        examples/z98/z9play/main.zig \
-        /tmp/z9play_win9x_build \
-        /tmp/z9play_win9x_build/z9play.exe \
-        -lwinmm
+    mkdir -p /tmp/z9play_win9x_build
+    /tmp/z9play_seed/zig1_5_clean -osw -o /tmp/z9play_win9x_build \
+        examples/z98/z9play/main.zig
+    sh /tmp/z9play_win9x_build/build_target.sh mingw \
+        /tmp/z9play_win9x_build/z9play.exe
 
-The harness prints `XRUNRC=0` on success and writes
-/tmp/z9play_win9x_build/z9play.exe, a PE32 i386 console executable. The
-resulting image imports only KERNEL32, msvcrt and WINMM; it links the emitted
-program objects plus the runtime. (The shared harness also passes `-lwsock32`
-unconditionally; this program does not import it.)
+The emitted `build_target.sh` mingw branch is the Win9x DEFAULT no-CRT link:
 
-Reproducibility check (optional): the M6 -osw C89 dump md5 is
+    -DZIG_NO_CRT -nostdlib -Wl,-e,_mainCRTStartup ... -lkernel32 -lwinmm
 
-    timeout 300 /tmp/z9play_m6/zig1_5_clean -osw --dump-c89 \
+It produces a single PE32 i386 console executable. The resulting image imports
+only the Win9x OS DLLs KERNEL32.dll and WINMM.dll (waveOut) — there is no
+msvcrt.dll import and therefore no CRT redistributable to install.
+
+The same emit tree also carries the native-toolchain scripts for building on
+Windows itself: `build_target_nocrt.bat` (MSVC 6) and `build_owc_nocrt.bat`
+(OpenWatcom) are the 9x no-CRT defaults; `build_target_crt.bat` and
+`build_owc_crt.bat` are static-CRT alternates (still a single EXE, still no DLL
+bundling). The plain `build_target.bat` / `build_owc.bat` names are aliases for
+the no-CRT defaults. The native scripts and the no-CRT link design are
+design-verified; hardware verification is operator-pending after the z9play
+milestone.
+
+An explicit `-osw nt` build is the opt-in CRT/NT profile (`-DZIG_WIN_NT`, no
+`-nostdlib`, modern XP+ file APIs). It is NOT the Win9x default.
+
+Reproducibility check (optional): the seed-v101 default `-osw` C89 dump md5 is
+
+    timeout 300 /tmp/z9play_seed/zig1_5_clean -osw --dump-c89 \
         examples/z98/z9play/main.zig | md5sum
-    # 87856b43091e2bf5d992fc795d9764f2  -
+    # ad9ccfd34aa2ba26c38abbcf48eedeb0  -
 
-The automated tier records this value stable 2x:
+The automated tier records this value stable 2x and gates the emitted no-CRT
+build, imports, WAV parity and console restore:
 
-    ZIG=/tmp/z9play_m6/zig1_5_clean sh examples/z98/z9play/tests/tier_win9x.sh
+    ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_win9x.sh
+    # == tier_win9x summary: 14 passed, 0 failed, 0 skipped ==
+    # TIER_WIN9X PASS
 
-If a prebuilt z9play.exe from a matching M6 commit is available, skip the
-build and use it directly (verify it is the M6 build if the md5 matters).
+If a prebuilt z9play.exe from a matching commit is available, skip the build
+and use it directly (verify it is built with the seed-v101 compiler).
+
 
 
 2. What to copy to the Win98 box
@@ -64,10 +80,10 @@ Copy exactly two files to a directory on the Win98 machine:
     z9play.exe      the PE32 console executable from step 1
     song.ogg        any Ogg Vorbis file (the committed test fixtures work)
 
-Nothing else is required. The player is statically self-contained apart from
-the standard Win9x system DLLs it imports (KERNEL32, msvcrt, WINMM); there is
-no separate decoder DLL and no runtime file to install. Ogg Vorbis is decoded
-entirely in Z98 inside z9play.exe.
+Nothing else is required. The player is a single drag-and-drop EXE: it imports
+only the Win9x OS DLLs KERNEL32.dll and WINMM.dll, with no msvcrt.dll and no
+CRT redistributable, and no separate decoder or runtime DLL to bundle or
+install. Ogg Vorbis is decoded entirely in Z98 inside z9play.exe.
 
 
 3. Run it
