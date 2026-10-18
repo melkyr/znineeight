@@ -67,3 +67,62 @@ Z98 cannot define a stdcall function: `extern "stdcall" fn` with a body is accep
 **Ruling (Option 3):** `enterRaw` clears `ENABLE_PROCESSED_INPUT`; Ctrl-C is delivered as a `KEY_EVENT` with `uChar == 0x03` and `readKey` maps it to `.sigint` (the backend already carries a defensive 0x03 arm); `SetConsoleCtrlHandler` and its cdecl cast are removed; `atexit` remains the restore backstop. Known limitations (documented in Task 5 docs): Ctrl-Break still terminates via the default handler; console-close/shutdown restore is moot (the console is gone).
 
 The compiler issue is recorded as defect **D5** in `examples/torrent_example_defects.md`: defect = extern-fn-with-body silent drop; feature gap = stdcall function definitions do not exist; minimal fix = clean reject with an error code; full fix = stdcall definition support.
+
+### Amendment 2 — Win9x default profile, no-CRT runtime, other-arch research (operator rulings, 2026-10-18)
+
+This amendment **supersedes, for Tasks T5.1–T5.6 only**, the Global Constraints clauses "no compiler change" and "no seed rotation". Tasks 0–6 above remain complete; T5.5 re-truthes Task 5's docs.
+
+**Why:** the T5 review proved the manual Win98 procedure false — the built exe imports KERNEL32 `GetFileSizeEx`, `SetFilePointerEx`, `GetFileAttributesExA` (minimum client Windows XP) from `sf/src/std_file.zig:226/:239/:321`; Win98 resolves the import table at load and fails before `main`. z9torr shares the defect. All other exe imports are Win9x-safe; Wine cannot prove Win98 loadability, so the mechanical per-DLL import whitelist is the loadability gate.
+
+**Rulings (binding):**
+
+- (a) Win9x = 95/98/Me; baseline = **Win98/Me reference**; Win95 best-effort.
+- (b) **Default `-osw` = 9x, NEVER nt.** `nt` is explicit opt-in only.
+- (c) **no-CRT (kernel32-only) is the default for `-osw`**; the XP/NT layer stays available, opt-in.
+- (d) Dynamic `GetProcAddress` resolution REJECTED; a new `@isWin9x()` builtin REJECTED.
+- (e) Mechanism = compile-time profile via C build define: default (no define) = Win9x path; `-osw nt` emits `-DZIG_WIN_NT`; profile-dependent APIs are hand-written C helpers in `zig_pal.c` (`#ifdef ZIG_WIN_NT` modern XP calls / default Win95 equivalents), exposed to Z98 via `extern "c"` (existing `pal_file_*` pattern).
+- (f) T5.6 is pure research/report: no "make it work", no emulation shortcuts (e.g. "RISC-V could emulate 32-bit x86"). Aim as close and performant as we can; report the real work even if infamous; list new compiler features and inline-asm requirements and how it can work overall. Report path `sf/docs/tech_docs/Other_arch_supp.md` (+ INDEX row).
+- (g) Split confirmed: six tasks. Seed rotation happens at T5.3 iff `sf/src` changes (it will).
+
+#### Task T5.1: Inventory + capability table (report only)
+
+- [ ] Produce `task-5.1-report.md`: per-DLL import inventory for z9play and z9torr (objdump + `nm -u` attribution); every `@isWindows()` std branch and its Win9x safety; CRT-startup vs emitted-code import split; per-API Win9x equivalent/fallback (`GetFileSizeEx`→`GetFileSize`; `SetFilePointerEx`→`SetFilePointer`; `GetFileAttributesExA`→`FindFirstFileA` vs `CreateFileA`+`GetFileTime` — decide with evidence); `emit_support.zig` ↔ `sf/src/include/*` mirror map (`check_emit_support.sh`); CLI-help delta (all 12 parsed-but-undocumented flags); whitelist drafts (9x/nt) per DLL with min-OS annotation; proposed `-osw [9x|nt]` CLI semantics. No source edits.
+
+**Gate:** review only (report accuracy).
+
+#### Task T5.2: Compiler plumbing
+
+- [ ] CLI `-osw [9x|nt]` (bare `-osw` = 9x), `target_win_profile`; emit the profile into `build_target.sh`/`.bat`/`.owc` (default = no define = Win9x; nt adds `-DZIG_WIN_NT`); `--help` truth-up (all parsed flags + profile). Commit `feat(main): -osw [9x|nt] target win profile` + `docs(sdd): T5.2 report`.
+
+**Gate:** usual compiler gates — corpus frozen-1124 md5 `518eca1a9b5d3e1cc5a48abce214abd8` (0 movers), goldens 5/5, mi_matrix 25+oob, examples 26/26+26/26, stdlib 285/0, seed hop2==hop3, pins 0/8 recorded old→new, markers, `check_emit_support.sh`. No seed rotation yet.
+
+#### Task T5.3: Compiler semantics + no-CRT runtime
+
+- [ ] `std_file` 3 XP+ APIs → C helpers `pal_file_size` / `pal_file_seek64` / `pal_file_mtime` (`#ifdef ZIG_WIN_NT` = modern XP calls; default = Win95 equivalents per T5.1); `std_file_pal.zig` `extern "c"`.
+- [ ] `std_os.getenv` → `GetEnvironmentVariableA`; `std_time.time` → `GetSystemTimeAsFileTime`.
+- [ ] no-CRT default for `-osw`: emitted mingw link `-nostdlib -e,_mainCRTStartup -lgcc -lkernel32` (+winmm/wsock32 as needed).
+- [ ] Runtime/shim: `c_exit`→`ExitProcess` under `ZIG_NO_CRT`; `pal_abort`; `strlen`/`memcpy`/`strncmp`; `zig_runtime` strlen.
+- [ ] Edit **BOTH** the `sf/src/emit_support.zig` literals **and** the `sf/src/include/*` + `sf/src/c_exit.c` mirrors; `check_emit_support.sh` green.
+- [ ] Commits `fix(win9x): Win9x-safe std runtime + no-CRT default for -osw` + `docs(sdd): T5.3 report`.
+
+**Gate:** usual compiler gates + profile-aware import whitelist gate + std_file cross-probe (create/write/size/seek/read/mtime) Wine↔Linux + **seed rotation** (`archive_seed.sh`, QUICK_REF pins/seed, CHANGELOG; hop2==hop3 recorded).
+
+#### Task T5.4: z9torr Win9x
+
+- [ ] Build z9torr with default `-osw` (9x, no-CRT): whitelist green (KERNEL32 + WS2_32, no msvcrt); Wine smoke (file/disk; network build-only or loopback); README note. Commit `example(z9torr): Win9x default profile build` + `docs(sdd): T5.4 report`.
+
+**Gate:** Wine z9torr + std gates; no compiler hops.
+
+#### Task T5.5: z9play Win9x + docs
+
+- [ ] `tier_win9x` under default `-osw`: PE32, no msvcrt, Wine WAV parity, console restore; whitelist; truth-up `demo/win9x_README.txt`, `NOTES.md`, `README.md` (Win9x default, NT opt-in, no-DLL-bundling note). Commits `example(z9play): Win9x default profile tier` + `docs(z9play): Win9x default profile` + `docs(sdd): T5.5 report`.
+
+**Gate:** Wine z9play/tier 14/14 + std gates; no compiler hops.
+
+#### Task T5.6: Other-arch exploration (report only)
+
+- [ ] Write `sf/docs/tech_docs/Other_arch_supp.md` (+ INDEX row). No tests, no code. Cover: C89-as-IR adequacy per target (AArch32, RISC-V32, 64-bit ARM/RISC-V/x86-64; 16-bit DOS as a feasibility question); the real blockers (Z98's 32-bit semantic model `usize = unsigned int`, 4-byte pointers, `SYS_LLSEEK=140`, `-m32`; per-arch/OS PAL; struct layouts/ABI; 64-bit syscalls); **new compiler features required** (target-width-parameterized type model, pointer↔int casts, 64-bit literal/arith support, ABI selection, etc.); **inline-asm requirements** (which targets genuinely need it and how it would work); targeting another arch (emit C) vs self-hosting the compiler there (own PAL port); effort/phasing/risks and a file-level change list. Explicitly no emulation framing; aim as close and performant as the architecture allows.
+
+**Gate:** review only (report quality); INDEX row present.
+
+**Global gate reminders:** battery definition unchanged from prior milestones; run gates sequentially (spill-file race); `--dump-c89` requires a pre-created `--output-dir`; reports under `.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/`; no push.
