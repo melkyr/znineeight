@@ -1,8 +1,9 @@
 # M6 Task T5.4 report — z9torr Win9x default profile build + docs
 
-**Status:** DONE_WITH_CONCERNS (all import/build/functional smoke gates green;
-the committed `tier4_wine.sh` progress assertion is timing-sensitive and its
-one-shot mock-peer harness is flaky on this Wine host; real-hardware
+**Status:** DONE_WITH_CONCERNS (core build/PE32/import/io and loopback smoke
+gates green; the committed `tier4_wine.sh` exits 1 with `22/1` because its 1 Hz
+progress assertion is timing-sensitive, and its one-shot mock-peer harness is
+flaky on this Wine host; both are disclosed in §3.5/§5. Real-hardware
 verification remains operator-pending per Amendment 5).
 
 **Base:** `ea9c361d` (`docs(sdd): T5.3 complete — ledger`).
@@ -249,3 +250,33 @@ loopback interface. No real peers were contacted.
    `cl`/`wcc386` was run; Amendment 5). Their emitted headers say so.
 4. **No compiler/std gates were re-run** because `sf/src` was untouched; the
    seed fixed point and dump md5 above are the recorded anchors.
+
+---
+
+## Fix round 1 (2026-10-18) — Win9x harness/link/status docs truth-up
+
+**Findings accepted.** Docs-only; no compiler, source, test, or seed changes.
+
+- **False cross-harness claim removed.**
+  `scripts/win32_cross/cross_build_run.sh` links the normal mingw CRT (its exe
+  imports MSVCRT) and is **not** the 9x no-CRT path. `demo/win9x_README.txt`
+  now names the EMITTED `build_target.sh mingw` (or
+  `build_target_nocrt.bat` / `build_owc_nocrt.bat`) as the 9x path, labels the
+  cross harness legacy CRT-only, and states that `cross_nocrt.sh` is not a
+  drop-in (no `-lwsock32`). The “exactly KERNEL32 + WSOCK32” claim is now
+  scoped to the emitted no-CRT image only.
+- **Link line corrected** in `README.md` and `demo/win9x_README.txt`: emitted
+  9x mingw is `-m32 -nostdlib -Wl,-e,_mainCRTStartup` plus
+  `-lgcc -lkernel32 -lwinmm -lwsock32`; winmm is linked but unused unless a
+  WINMM symbol is referenced.
+- **`NOTES.md` M5-era status truth-up:** added an M6 section (seed v101
+  `b299b4b4…`, default 9x no-CRT, `54146cf3…` dump md5, KERNEL32 + WSOCK32
+  import gate, representative tier4 `22/1` with the timing caveat, throttled
+  loopback pass, `tier_win9x_io` 3/0); relabelled the old md5/seed/`19/0` and
+  `SetFilePointerEx` text as M5-era/`-osw nt`; final “Next” now points at M6
+  T5.5 and operator-pending hardware verification.
+- **Report status reworded** to “core build/PE32/import/io and loopback smoke
+  gates green; tier4 `22/1` timing-sensitive/flaky and disclosed”, matching
+  §3.5/§5.
+
+No compiler/std gates were run (docs-only fix round).
