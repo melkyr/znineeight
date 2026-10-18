@@ -1,11 +1,13 @@
 #!/bin/sh
-# tier_win9x.sh — z9play M6 Task 4 gate: mingw cross build + Wine smoke.
+# tier_win9x.sh — z9play Win9x default-profile gate: emitted build + Wine smoke.
 #
-# (a) Builds examples/z98/z9play/main.zig for `-osw` through the shared win32
-#     cross harness (scripts/win32_cross/cross_build_run.sh, `-lwinmm`), then
-#     asserts the harness verdict is XRUNRC=0, the output is a PE32 i386
-#     executable, the final image has no unresolved zF_/zT_ program symbols, and
-#     its imports are only the expected KERNEL32/msvcrt/WINMM DLLs.
+# (a) Emits examples/z98/z9play/main.zig for default `-osw` (9x, no-CRT) and
+#     builds it through the *emitted* build_target.sh mingw recipe (NOT the
+#     legacy cross_build_run.sh CRT harness). Asserts the recipe is the 9x
+#     no-CRT link (-DZIG_NO_CRT, -nostdlib, KERNEL32 + WINMM), the output is a
+#     PE32 i386 executable with no unresolved zF_/zT_ program symbols, imports
+#     only KERNEL32 + WINMM (never msvcrt), and passes the closed-world
+#     scripts/win32_cross/check_win9x_imports.sh 9x whitelist.
 #
 # (b) Runs the real .exe under Wine with the hermetic WAV sink selected by
 #     Z9PLAY_WAV_OUT (so the waveOut device path is never touched) on the
@@ -16,8 +18,9 @@
 #     within the M3 tolerance (max |delta| <= 2 LSB, RMS <= 0.1 LSB). A second
 #     run must produce byte-identical payload (determinism).
 #
-# (c) Builds tests/win9x_console_probe.zig for `-osw` through the same harness
-#     and runs it under Wine inside a pty (`script`), so Wine exposes a console
+# (c) Builds tests/win9x_console_probe.zig for default `-osw` through its own
+#     emitted build_target.sh and runs it under Wine inside a pty (`script`),
+#     so Wine exposes a console
 #     handle. The probe reads the input mode with GetConsoleMode, calls the
 #     Win9x console backend's enterRaw -> leaveRaw, and reads the mode back:
 #     entered=1, raw_changed=1 (line/echo/processed bits really cleared),
@@ -39,9 +42,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 Z9DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$Z9DIR/../../.." && pwd)"
-ZIG="${ZIG:-/tmp/z9play_m6/zig1_5_clean}"
+ZIG="${ZIG:-/tmp/z9play_seed/zig1_5_clean}"
 OUT="${OUT:-/tmp/z9play_tier_win9x}"
-HARNESS="$ROOT/scripts/win32_cross/cross_build_run.sh"
 FIXNAME="sine_stereo_44100"
 FIX="$Z9DIR/testdata/$FIXNAME.ogg"
 GOLD="$Z9DIR/testdata/expected/$FIXNAME.pcm"
@@ -112,10 +114,6 @@ for tool in file script python3 md5sum sha1sum; do
         exit 1
     fi
 done
-if [ ! -f "$HARNESS" ]; then
-    echo "FAIL: cross harness not found: $HARNESS"
-    exit 1
-fi
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -124,25 +122,30 @@ export WINEPREFIX
 
 cd "$ROOT" || exit 1
 
-echo "== (a) cross build z9play (-osw) via cross_build_run.sh =="
+echo "== (a) emit + build z9play (default -osw = 9x no-CRT) =="
 EXE="$OUT/z9play.exe"
-if ROOT="$ROOT" timeout 600 bash "$HARNESS" "$ZIG" examples/z98/z9play/main.zig \
-    "$OUT/build" "$EXE" -lwinmm >"$OUT/harness.log" 2>&1; then
-    if grep -q '^XRUNRC=0$' "$OUT/harness.log"; then
-        pass_case "cross harness XRUNRC=0"
-    else
-        fail_case "cross harness did not print XRUNRC=0"
-    fi
+EMIT="$OUT/emit"
+mkdir -p "$EMIT"
+timeout 600 "$ZIG" -osw -o "$EMIT" examples/z98/z9play/main.zig \
+    >"$OUT/emit.log" 2>&1
+EMIT_RC=$?
+if [ "$EMIT_RC" -eq 0 ] && [ -f "$EMIT/build_target.sh" ] \
+    && grep -q -- '-DZIG_NO_CRT' "$EMIT/build_target.sh" \
+    && grep -q -- '-nostdlib' "$EMIT/build_target.sh" \
+    && grep -q -- '-lkernel32' "$EMIT/build_target.sh" \
+    && grep -q -- '-lwinmm' "$EMIT/build_target.sh"; then
+    pass_case "emitted mingw recipe is 9x no-CRT (DZIG_NO_CRT, nostdlib, kernel32+winmm)"
 else
-    fail_case "cross build failed (see $OUT/harness.log)"
+    fail_case "emit failed or build_target.sh is not the 9x no-CRT recipe (rc=$EMIT_RC; see $OUT/emit.log)"
 fi
-tail -5 "$OUT/harness.log" | sed 's/^/       /'
+tail -5 "$OUT/emit.log" | sed 's/^/       /'
 
-if [ -f "$EXE" ]; then
-    pass_case "exe produced ($(LC_ALL=C wc -c <"$EXE" | tr -d ' ') bytes)"
+if sh "$EMIT/build_target.sh" mingw "$EXE" >"$OUT/build.log" 2>&1 && [ -f "$EXE" ]; then
+    pass_case "emitted build_target.sh mingw produced exe ($(LC_ALL=C wc -c <"$EXE" | tr -d ' ') bytes)"
 else
-    fail_case "exe not produced"
+    fail_case "emitted build failed (see $OUT/build.log)"
 fi
+tail -3 "$OUT/build.log" | sed 's/^/       /'
 
 FILEOUT="$(file "$EXE" 2>/dev/null)"
 case "$FILEOUT" in
@@ -160,18 +163,21 @@ else
 fi
 
 IMPORTS="$(i686-w64-mingw32-objdump -p "$EXE" 2>/dev/null \
-    | sed -n 's/^[[:space:]]*DLL Name:[[:space:]]*//p' | tr -d '\r')"
-if printf '%s\n' "$IMPORTS" | grep -qi '^WINMM\.DLL$'; then
-    pass_case "imports include WINMM.dll"
+    | sed -n 's/^[[:space:]]*DLL Name:[[:space:]]*//p' | tr -d '\r' \
+    | tr '[:lower:]' '[:upper:]' | sort -u | tr '\n' ' ')"
+if [ "$IMPORTS" = "KERNEL32.DLL WINMM.DLL " ]; then
+    pass_case "imports are exactly KERNEL32 + WINMM (no msvcrt)"
 else
-    fail_case "WINMM.dll import missing (imports: $(printf '%s ' $IMPORTS))"
+    fail_case "import set is not exactly KERNEL32+WINMM: $(printf '%s' "$IMPORTS")"
 fi
-UNEXPECTED="$(printf '%s\n' "$IMPORTS" | grep -viE '^(KERNEL32|msvcrt|WINMM)\.DLL$' | tr '\n' ' ' || true)"
-if [ -z "$UNEXPECTED" ]; then
-    pass_case "only expected DLL imports ($(printf '%s ' $IMPORTS))"
+
+if bash "$ROOT/scripts/win32_cross/check_win9x_imports.sh" "$EXE" 9x \
+    >"$OUT/imports.log" 2>&1; then
+    pass_case "check_win9x_imports.sh 9x whitelist PASS"
 else
-    fail_case "unexpected DLL imports: $UNEXPECTED"
+    fail_case "check_win9x_imports.sh 9x whitelist FAILED (see $OUT/imports.log)"
 fi
+tail -3 "$OUT/imports.log" | sed 's/^/       /'
 
 echo "== (a) -osw --dump-c89 md5 (stable 2x) =="
 timeout 300 "$ZIG" -osw --dump-c89 examples/z98/z9play/main.zig \
@@ -271,17 +277,18 @@ fi
 
 echo "== (c) Win9x console raw-mode restore under Wine (probe, pty) =="
 PROBE="$OUT/win9x_console_probe.exe"
-if ROOT="$ROOT" timeout 600 bash "$HARNESS" "$ZIG" examples/z98/z9play/tests/win9x_console_probe.zig \
-    "$OUT/probe_build" "$PROBE" >"$OUT/probe_harness.log" 2>&1; then
-    if grep -q '^XRUNRC=0$' "$OUT/probe_harness.log"; then
-        pass_case "console probe cross build XRUNRC=0"
-    else
-        fail_case "console probe harness did not print XRUNRC=0"
-    fi
+PROBE_EMIT="$OUT/probe_emit"
+mkdir -p "$PROBE_EMIT"
+timeout 600 "$ZIG" -osw -o "$PROBE_EMIT" examples/z98/z9play/tests/win9x_console_probe.zig \
+    >"$OUT/probe_emit.log" 2>&1
+if [ $? -eq 0 ] && [ -f "$PROBE_EMIT/build_target.sh" ] \
+    && sh "$PROBE_EMIT/build_target.sh" mingw "$PROBE" >"$OUT/probe_build.log" 2>&1 \
+    && [ -f "$PROBE" ]; then
+    pass_case "console probe emitted no-CRT build produced exe"
 else
-    fail_case "console probe cross build failed (see $OUT/probe_harness.log)"
+    fail_case "console probe emit/build failed (see $OUT/probe_emit.log, $OUT/probe_build.log)"
 fi
-tail -5 "$OUT/probe_harness.log" | sed 's/^/       /'
+tail -3 "$OUT/probe_build.log" | sed 's/^/       /'
 
 timeout 90 script -qec "exec wine $PROBE" /dev/null \
     </dev/null >"$OUT/probe.log" 2>&1
