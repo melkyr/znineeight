@@ -37,7 +37,8 @@
 //
 //   <file.ogg> [--volume N] [--start SEC] [--loop] [--quiet]
 //                 interactive M5 playback: drive the Player into the WAV sink
-//                 when `Z9PLAY_WAV_OUT` is set, else the OSS `/dev/dsp` backend,
+//                 when `Z9PLAY_WAV_OUT` is set, else the platform backend
+//                 (Win9x waveOut via @isWindows(), Linux OSS `/dev/dsp`),
 //                 with a startup metadata line, a per-second `\r` status line
 //                 (fmt.statusLine) unless `--quiet`, keys space / `+` / `-` / `q`
 //                 / Ctrl-C, and a final `Stopped at mm:ss.` line.
@@ -63,6 +64,7 @@ const dec = @import("decode.zig");
 const audio = @import("platform/audio.zig");
 const wav = @import("platform/audio_wavfile.zig");
 const oss = @import("platform/audio_oss.zig");
+const awin = @import("platform/audio_win9x.zig");
 const con = @import("platform/console_linux.zig");
 const contract = @import("platform/console.zig");
 const fmt = @import("fmt.zig");
@@ -575,8 +577,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // Playback (<file.ogg> [--volume/--start/--loop/--quiet], M5): drive the M4
     // Player through the M5 console + formatter. The audio backend is selected
     // by the environment: when `Z9PLAY_WAV_OUT` is set the hermetic WAV sink is
-    // used (tests); otherwise the Linux OSS `/dev/dsp` backend, which exits 4
-    // when the device is absent. The Player core's `write` does not block for
+    // used (tests); otherwise `@isWindows()` selects waveOut, else the Linux OSS
+    // `/dev/dsp` backend, which exits 4 when the device is absent. The Player
+    // core's `write` does not block for
     // the WAV sink, so the loop paces itself against `std.time.ticksMs()`
     // instead of relying on the device for real time.
     if (args.mode == cli.MODE_PLAY) {
@@ -621,8 +624,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         if (album_val.len > 0) album_opt = album_val;
         var meta: player.Meta = player.Meta{ .title = title_opt, .artist = artist_opt, .album = album_opt };
 
-        // Backend selection: Z9PLAY_WAV_OUT present -> hermetic WAV sink;
-        // otherwise OSS /dev/dsp.
+        // Backend selection: Z9PLAY_WAV_OUT present -> hermetic WAV sink on
+        // every platform; otherwise @isWindows() -> waveOut, else OSS /dev/dsp.
         var wav_env: []const u8 = "Z9PLAY_WAV_OUT";
         var use_wav: bool = false;
         var env_path: []const u8 = "";
@@ -642,6 +645,14 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 return;
             };
             real_ao = audio.AudioOut{ .open_fn = wav.open, .write_fn = wav.write, .close_fn = wav.close, .drain_fn = wav.drain, .state = real_ctx };
+        } else if (@isWindows()) {
+            real_ctx = awin.open(id.sample_rate, id.channels) catch {
+                var msg: []const u8 = "z9play: cannot open the audio device\n";
+                std.io.write(msg);
+                std.os.exit(4);
+                return;
+            };
+            real_ao = audio.AudioOut{ .open_fn = awin.open, .write_fn = awin.write, .close_fn = awin.close, .drain_fn = awin.drain, .state = real_ctx };
         } else {
             real_ctx = oss.open(id.sample_rate, id.channels) catch {
                 var msg: []const u8 = "z9play: cannot open the audio device\n";
