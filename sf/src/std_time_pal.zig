@@ -49,3 +49,6 @@ pub extern "c" fn z98_time_clock_monotonic_available() i32;
 
 // Portable CRT: UTC seconds since the epoch; t is obsolete and passed null.
 pub extern "c" fn time(t: *void) i64;
+
+// win32: GetSystemTimeAsFileTime converted to Unix seconds (Win95+).
+pub extern "c" fn pal_wallclock_unix() i64;

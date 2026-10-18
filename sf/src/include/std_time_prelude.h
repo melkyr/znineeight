@@ -10,6 +10,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>   /* GetTickCount, QueryPerformanceCounter/Frequency */
+z64 pal_wallclock_unix(void);
 #else
 /* clock_gettime/CLOCK_MONOTONIC are POSIX.1b; -std=c89 defines __STRICT_ANSI__
    and hides them unless a feature-test macro is requested BEFORE <time.h>. This
@@ -45,15 +46,15 @@
    QueryPerformanceCounter and never calls this. static __inline__ (not C89
    `inline`) keeps an including TU that does not call it warning-free. */
 #ifndef _WIN32
-static __inline__ long long z98_time_monotonic_ns(void) {
+static __inline__ z64 z98_time_monotonic_ns(void) {
 #if Z98_HAS_CLOCK_MONOTONIC
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (long long)ts.tv_sec * 1000000000LL + (long long)ts.tv_nsec;
+    return (z64)ts.tv_sec * Z98_I64_C(1000000000) + (z64)ts.tv_nsec;
 #else
     struct timeval tv;
     gettimeofday(&tv, 0);
-    return (long long)tv.tv_sec * 1000000LL + (long long)tv.tv_usec;
+    return (z64)tv.tv_sec * Z98_I64_C(1000000) + (z64)tv.tv_usec;
 #endif
 }
 #endif

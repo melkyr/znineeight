@@ -18,15 +18,25 @@
 #ifdef _MSC_VER
     typedef __int64 z64 Z98_ALIGN8;
     typedef unsigned __int64 zu64 Z98_ALIGN8;
+    #define Z98_I64_C(n) n##i64
+    #define Z98_U64_C(n) n##ui64
 #elif defined(__WATCOMC__)
-    typedef long long z64 Z98_ALIGN8;
-    typedef unsigned long long zu64 Z98_ALIGN8;
+    typedef __int64 z64 Z98_ALIGN8;
+    typedef unsigned __int64 zu64 Z98_ALIGN8;
+    #define Z98_I64_C(n) n##i64
+    #define Z98_U64_C(n) n##ui64
 #else
     typedef long long z64 Z98_ALIGN8;
     typedef unsigned long long zu64 Z98_ALIGN8;
+    #define Z98_I64_C(n) n##LL
+    #define Z98_U64_C(n) n##ULL
 #endif
 
-#if !defined(__cplusplus) && !defined(__WATCOMC__)
+#define Z98_I64_MAX Z98_I64_C(9223372036854775807)
+#define Z98_I64_MIN (-Z98_I64_MAX - Z98_I64_C(1))
+#define Z98_U64_MAX (~Z98_U64_C(0))
+
+#if !defined(__cplusplus)
     typedef signed char i8;
     typedef short i16;
     typedef int i32;

@@ -22,3 +22,7 @@ pub extern "c" fn getcwd(buf: [*]u8, size: usize) ?[*]u8;
 
 // Portable CRT: environment lookup; null when unset.
 pub extern "c" fn getenv(name: [*]const u8) ?[*]const u8;
+
+// win32: GetEnvironmentVariableA into one static PAL buffer (single-threaded;
+// valid until the next call); null when unset/oversized.
+pub extern "c" fn pal_getenv(name: [*]const u8) ?[*]const u8;

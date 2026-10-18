@@ -294,6 +294,89 @@ int pal_file_close(PlatFile fd) {
 #endif
 }
 
+#ifdef _WIN32
+/* Profile-aware 64-bit file helpers. The default branch uses the Win95
+ * KERNEL32 surface (GetFileSize/SetFilePointer/FindFirstFileA); ZIG_WIN_NT
+ * selects the modern XP/NT4 calls. Return 1 on success, 0 on failure. */
+int pal_file_size(void* handle, i64* out) {
+#ifdef ZIG_WIN_NT
+    LARGE_INTEGER li;
+    if (!GetFileSizeEx((HANDLE)handle, &li)) return 0;
+    *out = (i64)li.QuadPart;
+    return 1;
+#else
+    DWORD lo, hi;
+    SetLastError(0);
+    lo = GetFileSize((HANDLE)handle, &hi);
+    if (lo == INVALID_FILE_SIZE && GetLastError() != ERROR_SUCCESS) return 0;
+    *out = ((i64)hi << 32) | (i64)lo;
+    return 1;
+#endif
+}
+
+int pal_file_seek64(void* handle, i64 distance, i64* new_pos, u32 method) {
+#ifdef ZIG_WIN_NT
+    LARGE_INTEGER d, np;
+    d.QuadPart = distance;
+    if (!SetFilePointerEx((HANDLE)handle, d, &np, (DWORD)method)) return 0;
+    *new_pos = (i64)np.QuadPart;
+    return 1;
+#else
+    LONG high = (LONG)((u64)distance >> 32);
+    DWORD low = (DWORD)((u64)distance & Z98_U64_C(0xFFFFFFFF));
+    DWORD r;
+    SetLastError(0);
+    r = SetFilePointer((HANDLE)handle, (LONG)low, &high, (DWORD)method);
+    if (r == INVALID_SET_FILE_POINTER && GetLastError() != ERROR_SUCCESS) return 0;
+    *new_pos = ((i64)high << 32) | (i64)r;
+    return 1;
+#endif
+}
+
+int pal_file_mtime(const char* path, i64* out) {
+    u64 ticks;
+#ifdef ZIG_WIN_NT
+    WIN32_FILE_ATTRIBUTE_DATA info;
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &info)) return 0;
+    ticks = ((u64)info.ftLastWriteTime.dwHighDateTime << 32) |
+            (u64)info.ftLastWriteTime.dwLowDateTime;
+#else
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(path, &fd);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    FindClose(h);
+    ticks = ((u64)fd.ftLastWriteTime.dwHighDateTime << 32) |
+            (u64)fd.ftLastWriteTime.dwLowDateTime;
+#endif
+    *out = (i64)(ticks / Z98_U64_C(10000000)) - Z98_I64_C(11644473600);
+    return 1;
+}
+
+/* Environment lookup into one static buffer (single-threaded Z98 runtime).
+ * The returned slice is valid until the next call. */
+const char* pal_getenv(const char* name) {
+    static char g_env_buf[32768];
+    DWORD n;
+    if (!name) return 0;
+    SetLastError(0);
+    n = GetEnvironmentVariableA(name, g_env_buf, (DWORD)sizeof g_env_buf);
+    if (n == 0) {
+        if (GetLastError() == ERROR_ENVVAR_NOT_FOUND) return 0;
+        return g_env_buf;
+    }
+    if (n >= (DWORD)sizeof g_env_buf) return 0;
+    return g_env_buf;
+}
+
+i64 pal_wallclock_unix(void) {
+    FILETIME ft;
+    u64 ticks;
+    GetSystemTimeAsFileTime(&ft);
+    ticks = ((u64)ft.dwHighDateTime << 32) | (u64)ft.dwLowDateTime;
+    return (i64)(ticks / Z98_U64_C(10000000)) - Z98_I64_C(11644473600);
+}
+#endif
+
 int pal_dir_exists(const char* path)
 {
 #ifdef _WIN32
@@ -346,11 +429,77 @@ int pal_get_default_lib_path(char* buf, int bufsize)
 }
 
 #if defined(_WIN32) && defined(ZIG_NO_CRT)
-int main(void);
+#include <stdlib.h>
+
+int main(int argc, char** argv);
+void __main(void) {}
+
+static char g_cmdline[32768];
+static char g_argbuf[32768];
+static char* g_argv[256];
+static int g_argc;
+
+/* MSVCRT command-line rules: whitespace separates; a double quote toggles
+ * quote mode; 2n backslashes before a quote produce n backslashes and toggle
+ * quoting; 2n+1 produce n backslashes and a literal quote. Static storage,
+ * single-threaded, truncating. */
+static void z98_parse_command_line(void) {
+    const char* src = (const char*)GetCommandLineA();
+    char* dst = g_cmdline;
+    char* p;
+    if (!src) { g_argc = 0; return; }
+    while (*src && (unsigned int)(dst - g_cmdline) < (unsigned int)(sizeof g_cmdline - 1)) {
+        *dst++ = *src++;
+    }
+    *dst = '\0';
+    dst = g_argbuf;
+    g_argc = 0;
+    p = g_cmdline;
+    while (*p) {
+        int in_quotes = 0;
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) break;
+        if (g_argc >= 256) break;
+        g_argv[g_argc++] = dst;
+        while (*p) {
+            if (*p == '\\') {
+                int nbs = 0;
+                int i;
+                while (*p == '\\') { nbs++; p++; }
+                if (*p == '"') {
+                    for (i = 0; i < nbs / 2; i++) *dst++ = '\\';
+                    if ((nbs % 2) != 0) {
+                        *dst++ = '"';
+                        p++;
+                    } else {
+                        p++;
+                        in_quotes = !in_quotes;
+                    }
+                } else {
+                    for (i = 0; i < nbs; i++) *dst++ = '\\';
+                }
+            } else if (*p == '"') {
+                in_quotes = !in_quotes;
+                p++;
+            } else if (!in_quotes && (*p == ' ' || *p == '\t')) {
+                p++;
+                break;
+            } else {
+                *dst++ = *p++;
+            }
+        }
+        *dst++ = '\0';
+    }
+}
+
+#if defined(_MSC_VER)
+void __stdcall mainCRTStartup(void)
+#else
 void __cdecl mainCRTStartup(void)
+#endif
 {
-    int result = main();
-    ExitProcess((UINT)result);
+    z98_parse_command_line();
+    exit(main(g_argc, g_argv));
 }
 #endif
 

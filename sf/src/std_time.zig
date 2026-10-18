@@ -114,7 +114,11 @@ pub fn highResFreq() u64 {
 
 // UTC seconds since the epoch.
 pub fn wallClockUnix() i64 {
-    return pal.time(nullVoid());
+    if (@isWindows()) {
+        return pal.pal_wallclock_unix();
+    } else {
+        return pal.time(nullVoid());
+    }
 }
 
 // Sleep for ms milliseconds; wraps the @sleepMs builtin directly (no std_io

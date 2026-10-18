@@ -91,18 +91,6 @@ const SYS_LLSEEK: i32 = 140;
 const STAT_BUF_BYTES: usize = 256;
 const STAT_MTIME_OFFSET: usize = 64;
 
-// win32 WIN32_FILE_ATTRIBUTE_DATA (x86): dwFileAttributes (4), ftCreationTime
-// (8), ftLastAccessTime (8), ftLastWriteTime (8), dwFileSizeHigh/Low (8). A
-// FILETIME is two DWORDs, so ftLastWriteTime.dwLowDateTime is at offset 20.
-const WIN_FILE_ATTR_BYTES: usize = 40;
-const WIN_FT_LASTWRITE_OFF: usize = 20;
-const GET_FILEEX_INFO_STANDARD: u32 = 0;
-
-// FILETIME counts 100-ns ticks from 1601-01-01; the Unix epoch is this many
-// seconds later.
-const FILETIME_TICKS_PER_SEC: i64 = 10000000;
-const WINDOWS_EPOCH_DELTA_SECS: i64 = 11644473600;
-
 // The null `void*` for the optional out-params (security attributes, overlapped,
 // template file). Z98 `null` is optional-only; the same construction std_net /
 // std_time use.
@@ -223,7 +211,7 @@ fn llseekHandle(fd: i32, offset: i64, whence: i32) FileError!i64 {
 fn seekHandle(h: *void, offset: i64, whence: i32) FileError!i64 {
     if (@isWindows()) {
         var np: i64 = 0;
-        if (pal.SetFilePointerEx(h, offset, &np, @intCast(u32, whence)) == 0) return error.SeekFailed;
+        if (pal.pal_file_seek64(h, offset, &np, @intCast(u32, whence)) == 0) return error.SeekFailed;
         return np;
     } else {
         // 64-bit offset (the lseek64 equivalent via the _llseek syscall): a
@@ -236,7 +224,7 @@ fn seekHandle(h: *void, offset: i64, whence: i32) FileError!i64 {
 fn sizeHandle(h: *void) FileError!i64 {
     if (@isWindows()) {
         var sz: i64 = 0;
-        if (pal.GetFileSizeEx(h, &sz) == 0) return error.SizeFailed;
+        if (pal.pal_file_size(h, &sz) == 0) return error.SizeFailed;
         return sz;
     } else {
         const fd = @intCast(i32, @ptrToInt(h));
@@ -317,12 +305,9 @@ pub fn mtime(path: []const u8) FileError!i64 {
     var cbuf: [PATH_BUF]u8 = undefined;
     if (!cstr(path, cbuf[0..])) return error.OpenFailed;
     if (@isWindows()) {
-        var info: [WIN_FILE_ATTR_BYTES]u8 = undefined;
-        if (pal.GetFileAttributesExA(@ptrCast([*]const u8, &cbuf[0]), GET_FILEEX_INFO_STANDARD, @ptrCast(*void, &info[0])) == 0) return error.OpenFailed;
-        var lo: i64 = leU32At(info[0..], WIN_FT_LASTWRITE_OFF);
-        var hi: i64 = leU32At(info[0..], WIN_FT_LASTWRITE_OFF + 4);
-        var ticks: i64 = (hi << 32) | lo;
-        return ticks / FILETIME_TICKS_PER_SEC - WINDOWS_EPOCH_DELTA_SECS;
+        var mt: i64 = 0;
+        if (pal.pal_file_mtime(@ptrCast([*]const u8, &cbuf[0]), &mt) == 0) return error.OpenFailed;
+        return mt;
     } else {
         var stbuf: [STAT_BUF_BYTES]u8 = undefined;
         if (pal.stat(@ptrCast([*]const u8, &cbuf[0]), @ptrCast(*void, &stbuf[0])) != 0) return error.OpenFailed;

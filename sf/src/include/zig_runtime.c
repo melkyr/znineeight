@@ -7,8 +7,8 @@ extern void pal_print_stderr(const char* s, unsigned int len);
 extern void pal_print_stdout(const char* s, unsigned int len);
 extern void pal_abort(void);
 extern void pal_trap(void);
-extern int pal_i64_to_str(long long val, char* buf, int bufsize);
-extern int pal_u64_to_str(unsigned long long val, char* buf, int bufsize);
+extern int pal_i64_to_str(z64 val, char* buf, int bufsize);
+extern int pal_u64_to_str(zu64 val, char* buf, int bufsize);
 extern int pal_f64_to_str(double val, char* buf, int bufsize);
 
 /* Panic handler */
@@ -35,42 +35,42 @@ void std_print_len(const char* s, unsigned int len) { if (s && len) pal_print_st
 
 /* Checked conversions (u64 -> target type) */
 
-signed char std_checked_cast_i8(unsigned long long val) {
-    if (val > 127ULL) std_panic("int cast overflow for i8");
+signed char std_checked_cast_i8(zu64 val) {
+    if (val > Z98_U64_C(127)) std_panic("int cast overflow for i8");
     return (signed char)val;
 }
 
-unsigned char std_checked_cast_u8(unsigned long long val) {
-    if (val > 255ULL) std_panic("int cast overflow for u8");
+unsigned char std_checked_cast_u8(zu64 val) {
+    if (val > Z98_U64_C(255)) std_panic("int cast overflow for u8");
     return (unsigned char)val;
 }
 
-short std_checked_cast_i16(unsigned long long val) {
-    if (val > 32767ULL) std_panic("int cast overflow for i16");
+short std_checked_cast_i16(zu64 val) {
+    if (val > Z98_U64_C(32767)) std_panic("int cast overflow for i16");
     return (short)val;
 }
 
-unsigned short std_checked_cast_u16(unsigned long long val) {
-    if (val > 65535ULL) std_panic("int cast overflow for u16");
+unsigned short std_checked_cast_u16(zu64 val) {
+    if (val > Z98_U64_C(65535)) std_panic("int cast overflow for u16");
     return (unsigned short)val;
 }
 
-int std_checked_cast_i32(unsigned long long val) {
-    if (val > 2147483647ULL) std_panic("int cast overflow for i32");
+int std_checked_cast_i32(zu64 val) {
+    if (val > Z98_U64_C(2147483647)) std_panic("int cast overflow for i32");
     return (int)val;
 }
 
-unsigned int std_checked_cast_u32(unsigned long long val) {
-    if (val > 4294967295ULL) std_panic("int cast overflow for u32");
+unsigned int std_checked_cast_u32(zu64 val) {
+    if (val > Z98_U64_C(4294967295)) std_panic("int cast overflow for u32");
     return (unsigned int)val;
 }
 
-long long std_checked_cast_i64(unsigned long long val) {
-    if (val > 9223372036854775807ULL) std_panic("int cast overflow for i64");
-    return (long long)val;
+z64 std_checked_cast_i64(zu64 val) {
+    if (val > Z98_I64_MAX) std_panic("int cast overflow for i64");
+    return (z64)val;
 }
 
-unsigned long long std_checked_cast_u64(unsigned long long val) {
+zu64 std_checked_cast_u64(zu64 val) {
     return val;
 }
 
@@ -184,3 +184,34 @@ void zig_poison_fill(void* p, unsigned int n) {
         b[i] = (unsigned char)0xAAu;
     }
 }
+
+#if defined(_WIN32) && defined(ZIG_NO_CRT)
+size_t strlen(const char* s) {
+    const char* p = s;
+    while (*p) p++;
+    return (size_t)(p - s);
+}
+
+void* memcpy(void* dst, const void* src, size_t n) {
+    unsigned char* d = (unsigned char*)dst;
+    const unsigned char* s = (const unsigned char*)src;
+    if (d < s) {
+        while (n--) *d++ = *s++;
+    } else {
+        d += n;
+        s += n;
+        while (n--) *--d = *--s;
+    }
+    return dst;
+}
+
+int strncmp(const char* a, const char* b, size_t n) {
+    while (n--) {
+        unsigned char ca = (unsigned char)*a++;
+        unsigned char cb = (unsigned char)*b++;
+        if (ca != cb) return (int)ca - (int)cb;
+        if (ca == 0) return 0;
+    }
+    return 0;
+}
+#endif

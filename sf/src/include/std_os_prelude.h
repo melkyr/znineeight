@@ -8,6 +8,10 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>   /* GetCurrentDirectoryA */
+int pal_file_size(void* handle, i64* out);
+int pal_file_seek64(void* handle, i64 distance, i64* new_pos, u32 method);
+int pal_file_mtime(const char* path, i64* out);
+const char* pal_getenv(const char* name);
 #else
 #include <unistd.h>    /* getcwd */
 #endif

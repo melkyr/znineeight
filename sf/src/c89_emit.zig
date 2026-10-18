@@ -851,6 +851,12 @@ pub fn emitSupportFiles(emitter: *C89Emitter, dir_path: []const u8) void {
     emit_support.emitCExitCSupport(&w5);
     bufferedWriterFlush(&w5);
     pal.fileClose(fd5);
+
+    var fd8: usize = openSupportOutputFile(dir_path, "zig_nocrt.c");
+    var w8: BufferedWriter = bufferedWriterInitFd(fd8);
+    emit_support.emitZigNocrtCSupport(&w8);
+    bufferedWriterFlush(&w8);
+    pal.fileClose(fd8);
 }
 
 
@@ -1698,14 +1704,14 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
 // layout on every supported host compiler.
 fn emitInt64Type(emitter: *C89Emitter, tid: u32) void {
     var mangled_name = getCTypeName(emitter.registry, emitter.mangler, tid);
-    var td: []const u8 = "typedef long long "; bufferedWriterWrite(&emitter.writer, td);
+    var td: []const u8 = "typedef z64 "; bufferedWriterWrite(&emitter.writer, td);
     bufferedWriterWrite(&emitter.writer, mangled_name);
     var sc: []const u8 = " Z98_ALIGN8;\n"; bufferedWriterWrite(&emitter.writer, sc);
 }
 
 fn emitUint64Type(emitter: *C89Emitter, tid: u32) void {
     var mangled_name = getCTypeName(emitter.registry, emitter.mangler, tid);
-    var td: []const u8 = "typedef unsigned long long "; bufferedWriterWrite(&emitter.writer, td);
+    var td: []const u8 = "typedef zu64 "; bufferedWriterWrite(&emitter.writer, td);
     bufferedWriterWrite(&emitter.writer, mangled_name);
     var sc: []const u8 = " Z98_ALIGN8;\n"; bufferedWriterWrite(&emitter.writer, sc);
 }
@@ -3848,9 +3854,10 @@ fn writeIntConstRvalue(emitter: *C89Emitter, value: u64, temp_type_id: u32, pref
                 var is_idx = @intCast(u32, @intCast(u32, 31) - il);
                 var is_start: usize = @intCast(usize, is_idx);
                 var is_end: usize = @intCast(usize, 31);
+                var wide_neg = magnitude > @intCast(u64, 2147483647);
+                if (wide_neg) { var wp: []const u8 = "Z98_I64_C("; bufferedWriterWrite(&emitter.writer, wp); }
                 bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
-                var nsuf = intLitSuffixNeg(magnitude);
-                bufferedWriterWrite(&emitter.writer, nsuf);
+                if (wide_neg) { var wc: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, wc); }
             }
         }
     }
@@ -3859,9 +3866,14 @@ fn writeIntConstRvalue(emitter: *C89Emitter, value: u64, temp_type_id: u32, pref
         var is_idx = @intCast(u32, @intCast(u32, 31) - il);
         var is_start: usize = @intCast(usize, is_idx);
         var is_end: usize = @intCast(usize, 31);
+        var wide_uns = value > @intCast(u64, 4294967295);
+        if (wide_uns) { var wp: []const u8 = "Z98_U64_C("; bufferedWriterWrite(&emitter.writer, wp); }
         bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
-        var usuf = intLitSuffixUns(value);
-        bufferedWriterWrite(&emitter.writer, usuf);
+        if (wide_uns) {
+            var wc: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, wc);
+        } else if (value > @intCast(u64, 2147483647)) {
+            var usuf: []const u8 = "u"; bufferedWriterWrite(&emitter.writer, usuf);
+        }
     }
 }
 
@@ -3968,15 +3980,14 @@ fn getUnOpStr(op: u8) []const u8 {
     else { var s: []const u8 = "~"; return s; }
 }
 
-fn intLitSuffixUns(v: u64) []const u8 {
-    if (v <= @intCast(u64, 2147483647)) { var s: []const u8 = ""; return s; }
-    if (v <= @intCast(u64, 4294967295)) { var s: []const u8 = "u"; return s; }
-    var s: []const u8 = "ULL"; return s;
-}
-
-fn intLitSuffixNeg(v: u64) []const u8 {
-    if (v <= @intCast(u64, 2147483647)) { var s: []const u8 = ""; return s; }
-    var s: []const u8 = "LL"; return s;
+fn writeAllInto(buf: []u8, idx0: usize, s: []const u8) usize {
+    var idx = idx0;
+    var i: usize = @intCast(usize, 0);
+    while (i < s.len) : (i += @intCast(usize, 1)) {
+        buf[idx] = s[i];
+        idx += @intCast(usize, 1);
+    }
+    return idx;
 }
 
 // P6-pre: the const's C carrier is DERIVED at the pre-emit boundary
@@ -4047,18 +4058,15 @@ fn writeSatNegDecimal(v: u64, buf: []u8) []const u8 {
     var ib: [24]u8 = undefined;
     var il = itoa_mod.itoa64(v, ib[0..]);
     var sidx: usize = @intCast(usize, 23) - @intCast(usize, il);
-    var len: usize = @intCast(usize, 1) + @intCast(usize, il);
-    buf[0] = @intCast(u8, '-');
-    var i: usize = @intCast(usize, 0);
-    while (i < @intCast(usize, il)) : (i += @intCast(usize, 1)) {
-        buf[@intCast(usize, 1) + i] = ib[sidx + i];
-    }
-    var idx: usize = len;
-    var sfx = intLitSuffixNeg(v);
-    var s: usize = @intCast(usize, 0);
-    while (s < sfx.len) : (s += @intCast(usize, 1)) {
-        buf[idx] = sfx[s];
-        idx += @intCast(usize, 1);
+    var idx: usize = @intCast(usize, 0);
+    if (v > @intCast(u64, 2147483647)) {
+        idx = writeAllInto(buf, idx, "(-Z98_I64_C(");
+        idx = writeAllInto(buf, idx, ib[sidx..@intCast(usize, 23)]);
+        idx = writeAllInto(buf, idx, "))");
+    } else {
+        buf[0] = @intCast(u8, '-');
+        idx = @intCast(usize, 1);
+        idx = writeAllInto(buf, idx, ib[sidx..@intCast(usize, 23)]);
     }
     return buf[0..idx];
 }
@@ -4067,17 +4075,16 @@ fn writeSatUnsDecimal(v: u64, buf: []u8) []const u8 {
     var ib: [24]u8 = undefined;
     var il = itoa_mod.itoa64(v, ib[0..]);
     var idx: usize = @intCast(usize, 23) - @intCast(usize, il);
-    var i: usize = @intCast(usize, 0);
-    while (i < @intCast(usize, il)) : (i += @intCast(usize, 1)) {
-        buf[i] = ib[idx + i];
-    }
-    var len: usize = @intCast(usize, il);
-    var pos: usize = len;
-    var sfx = intLitSuffixUns(v);
-    var s: usize = @intCast(usize, 0);
-    while (s < sfx.len) : (s += @intCast(usize, 1)) {
-        buf[pos] = sfx[s];
-        pos += @intCast(usize, 1);
+    var pos: usize = @intCast(usize, 0);
+    if (v > @intCast(u64, 4294967295)) {
+        pos = writeAllInto(buf, pos, "Z98_U64_C(");
+        pos = writeAllInto(buf, pos, ib[idx..@intCast(usize, 23)]);
+        pos = writeAllInto(buf, pos, ")");
+    } else {
+        pos = writeAllInto(buf, pos, ib[idx..@intCast(usize, 23)]);
+        if (v > @intCast(u64, 2147483647)) {
+            pos = writeAllInto(buf, pos, "u");
+        }
     }
     return buf[0..pos];
 }
@@ -4086,17 +4093,13 @@ fn writeSatSignedMaxDecimal(v: u64, buf: []u8) []const u8 {
     var ib: [24]u8 = undefined;
     var il = itoa_mod.itoa64(v, ib[0..]);
     var idx: usize = @intCast(usize, 23) - @intCast(usize, il);
-    var i: usize = @intCast(usize, 0);
-    while (i < @intCast(usize, il)) : (i += @intCast(usize, 1)) {
-        buf[i] = ib[idx + i];
-    }
-    var len: usize = @intCast(usize, il);
-    var pos: usize = len;
-    var sfx = intLitSuffixNeg(v);
-    var s: usize = @intCast(usize, 0);
-    while (s < sfx.len) : (s += @intCast(usize, 1)) {
-        buf[pos] = sfx[s];
-        pos += @intCast(usize, 1);
+    var pos: usize = @intCast(usize, 0);
+    if (v > @intCast(u64, 2147483647)) {
+        pos = writeAllInto(buf, pos, "Z98_I64_C(");
+        pos = writeAllInto(buf, pos, ib[idx..@intCast(usize, 23)]);
+        pos = writeAllInto(buf, pos, ")");
+    } else {
+        pos = writeAllInto(buf, pos, ib[idx..@intCast(usize, 23)]);
     }
     return buf[0..pos];
 }
@@ -4105,7 +4108,7 @@ fn satMaxLitBound(width_bits: u32, buf: []u8) []const u8 {
     if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "127"; return s; }
     if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "32767"; return s; }
     if (width_bits == @intCast(u32, 32)) { var s: []const u8 = "2147483647"; return s; }
-    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "9223372036854775807"; return s; }
+    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "Z98_I64_MAX"; return s; }
     var sm: u64 = @intCast(u64, 0);
     if (width_bits < @intCast(u32, 64) and width_bits > @intCast(u32, 0)) {
         sm = (@intCast(u64, 1) << @intCast(u64, width_bits - @intCast(u32, 1))) - @intCast(u64, 1);
@@ -4117,7 +4120,7 @@ fn satMinLitBound(width_bits: u32, buf: []u8) []const u8 {
     if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "(-128)"; return s; }
     if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "(-32768)"; return s; }
     if (width_bits == @intCast(u32, 32)) { var s: []const u8 = "(-2147483647 - 1)"; return s; }
-    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "(-9223372036854775807 - 1)"; return s; }
+    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "Z98_I64_MIN"; return s; }
     var sb: u64 = @intCast(u64, 0);
     if (width_bits < @intCast(u32, 64) and width_bits > @intCast(u32, 0)) {
         sb = @intCast(u64, 1) << @intCast(u64, width_bits - @intCast(u32, 1));
@@ -4150,7 +4153,7 @@ fn satMinMagLitBound(width_bits: u32, buf: []u8) []const u8 {
     if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "128"; return s; }
     if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "32768"; return s; }
     if (width_bits == @intCast(u32, 32)) { var s: []const u8 = "2147483648"; return s; }
-    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "9223372036854775808"; return s; }
+    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "Z98_U64_C(9223372036854775808)"; return s; }
     var sb: u64 = @intCast(u64, 0);
     if (width_bits < @intCast(u32, 64) and width_bits > @intCast(u32, 0)) {
         sb = @intCast(u64, 1) << @intCast(u64, width_bits - @intCast(u32, 1));
@@ -4162,7 +4165,7 @@ fn satMaxULitBound(width_bits: u32, buf: []u8) []const u8 {
     if (width_bits == @intCast(u32, 8)) { var s: []const u8 = "255"; return s; }
     if (width_bits == @intCast(u32, 16)) { var s: []const u8 = "65535"; return s; }
     if (width_bits == @intCast(u32, 32)) { var s: []const u8 = "0xFFFFFFFFu"; return s; }
-    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "0xFFFFFFFFFFFFFFFFull"; return s; }
+    if (width_bits == @intCast(u32, 64)) { var s: []const u8 = "Z98_U64_MAX"; return s; }
     var um: u64 = @intCast(u64, 0);
     if (width_bits < @intCast(u32, 64)) {
         um = (@intCast(u64, 1) << @intCast(u64, width_bits)) - @intCast(u64, 1);
@@ -4184,9 +4187,16 @@ fn writeWidthMaskString(writer: *BufferedWriter, width_bits: u32) void {
     var is_idx = @intCast(u32, @intCast(u32, 23) - il);
     var is_start: usize = @intCast(usize, is_idx);
     var is_end: usize = @intCast(usize, 23);
-    bufferedWriterWrite(writer, ib[is_start..is_end]);
-    var sfx = intLitSuffixUns(mask);
-    bufferedWriterWrite(writer, sfx);
+    if (mask > @intCast(u64, 4294967295)) {
+        var wp: []const u8 = "Z98_U64_C("; bufferedWriterWrite(writer, wp);
+        bufferedWriterWrite(writer, ib[is_start..is_end]);
+        var wc: []const u8 = ")"; bufferedWriterWrite(writer, wc);
+    } else {
+        bufferedWriterWrite(writer, ib[is_start..is_end]);
+        if (mask > @intCast(u64, 2147483647)) {
+            var usuf: []const u8 = "u"; bufferedWriterWrite(writer, usuf);
+        }
+    }
 }
 
 fn writeWidthSignBitString(writer: *BufferedWriter, width_bits: u32) void {
@@ -4199,9 +4209,16 @@ fn writeWidthSignBitString(writer: *BufferedWriter, width_bits: u32) void {
     var is_idx = @intCast(u32, @intCast(u32, 23) - il);
     var is_start: usize = @intCast(usize, is_idx);
     var is_end: usize = @intCast(usize, 23);
-    bufferedWriterWrite(writer, ib[is_start..is_end]);
-    var sfx = intLitSuffixUns(sb);
-    bufferedWriterWrite(writer, sfx);
+    if (sb > @intCast(u64, 4294967295)) {
+        var wp: []const u8 = "Z98_U64_C("; bufferedWriterWrite(writer, wp);
+        bufferedWriterWrite(writer, ib[is_start..is_end]);
+        var wc: []const u8 = ")"; bufferedWriterWrite(writer, wc);
+    } else {
+        bufferedWriterWrite(writer, ib[is_start..is_end]);
+        if (sb > @intCast(u64, 2147483647)) {
+            var usuf: []const u8 = "u"; bufferedWriterWrite(writer, usuf);
+        }
+    }
 }
 
 
@@ -4271,10 +4288,10 @@ fn getTempEffType(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signed
 // the emit-time type inspection are gone.
 fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8, result: []const u8, result_type: u32, width: u8, is_signed: u8) void {
     var width_bits: u32 = @intCast(u32, width);
-    var max_buf: [24]u8 = undefined;
-    var min_buf: [24]u8 = undefined;
-    var minmag_buf: [24]u8 = undefined;
-    var maxu_buf: [24]u8 = undefined;
+    var max_buf: [64]u8 = undefined;
+    var min_buf: [64]u8 = undefined;
+    var minmag_buf: [64]u8 = undefined;
+    var maxu_buf: [64]u8 = undefined;
     var max_lit = satMaxLitBound(width_bits, max_buf[0..]);
     var min_lit = satMinLitBound(width_bits, min_buf[0..]);
     var minmag_lit = satMinMagLitBound(width_bits, minmag_buf[0..]);
@@ -4303,7 +4320,7 @@ fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8,
     var ot2: []const u8 = " : ((";
     var ot1: []const u8 = " : (";
     var colon: []const u8 = " : ";
-    var eq0ll: []const u8 = " == 0) ? 0 : ((((long long)";
+    var eq0ll: []const u8 = " == 0) ? 0 : ((((z64)";
     var gtp_ll: []const u8 = ") > ";
     var qm: []const u8 = ") ? ";
     var ltp_ll: []const u8 = ") < ";
@@ -4314,13 +4331,13 @@ fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8,
     var ge0o2: []const u8 = " >= 0) ? ((";
     var o2c: []const u8 = ")((";
     var o1c: []const u8 = ")(";
-    var div0ull: []const u8 = " / (0ull - (unsigned long long)";
-    var negll: []const u8 = "(unsigned long long)(-(long long)";
+    var div0ull: []const u8 = " / (Z98_U64_C(0) - (zu64)";
+    var negll: []const u8 = "(zu64)(-(z64)";
     var nz_and: []const u8 = " != 0 && ";
     var q0c: []const u8 = ") ? 0 : (";
     var nz_q: []const u8 = " != 0) ? ";
     var z0o2: []const u8 = " : 0) : ((";
-    var zero_ull: []const u8 = "0ull - (unsigned long long)";
+    var zero_ull: []const u8 = "Z98_U64_C(0) - (zu64)";
     var qoo: []const u8 = " ? ((";
     var o3: []const u8 = " : ((";
     var gt0q: []const u8 = " > 0) ? ";
@@ -4333,7 +4350,7 @@ fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8,
     var cl2: []const u8 = "));";
     var eq0q: []const u8 = " == 0) ? 0 : (";
     var gt0q2: []const u8 = " > 0) ? (";
-    var ullb: []const u8 = "(unsigned long long)";
+    var ullb: []const u8 = "(zu64)";
     var clx2: []const u8 = "))";
     var clx3: []const u8 = ")))";
     var clx5: []const u8 = ")))))";
@@ -4986,15 +5003,16 @@ fn emitNamePrinterDef(emitter: *C89Emitter, tid: u32) void {
     var val_n: []const u8 = "";
     if (ty.kind == TypeKind.enum_type) {
         val_n = nm_mod.nameManglerMintIndexName(emitter.mangler, "z98_eval_", tid);
-        var v0: []const u8 = "static const unsigned long long "; bufferedWriterWrite(&emitter.writer, v0);
+        var v0: []const u8 = "static const zu64 "; bufferedWriterWrite(&emitter.writer, v0);
         bufferedWriterWrite(&emitter.writer, val_n);
         var v1: []const u8 = "[] = { "; bufferedWriterWrite(&emitter.writer, v1);
         if (count == @intCast(usize, 0)) { emitU64Dec(emitter, 0); }
         var mi: usize = @intCast(usize, 0);
         while (mi < count) : (mi += 1) {
             if (mi > @intCast(usize, 0)) { var cm: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, cm); }
-            emitI64Dec(emitter, reg.em_items[start + mi].value);
-            var uls: []const u8 = "ULL"; bufferedWriterWrite(&emitter.writer, uls);
+            var uls: []const u8 = "Z98_U64_C("; bufferedWriterWrite(&emitter.writer, uls);
+            emitU64Dec(emitter, reg.em_items[start + mi].value);
+            var ulc: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, ulc);
         }
         var v2: []const u8 = " };\n"; bufferedWriterWrite(&emitter.writer, v2);
     } else {
@@ -5021,7 +5039,7 @@ fn emitNamePrinterDef(emitter: *C89Emitter, tid: u32) void {
     emitter.indent = @intCast(u32, 1);
     bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
     if (ty.kind == TypeKind.enum_type) {
-        var i0: []const u8 = "unsigned long long x = (unsigned long long)v;\n"; bufferedWriterWrite(&emitter.writer, i0);
+        var i0: []const u8 = "zu64 x = (zu64)v;\n"; bufferedWriterWrite(&emitter.writer, i0);
     } else {
         var i0: []const u8 = "int x = (int)v;\n"; bufferedWriterWrite(&emitter.writer, i0);
     }
@@ -5328,7 +5346,7 @@ fn emitPtrValuePrint(emitter: *C89Emitter, tid: u32, is_temp: u8, temp: u32, acc
         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
         var hexfn = stdFmtSourceSymbol(emitter, "printHexU64");
         bufferedWriterWrite(&emitter.writer, hexfn);
-        bufferedWriterWrite(&emitter.writer, "((unsigned long long)(unsigned int)(");
+        bufferedWriterWrite(&emitter.writer, "((zu64)(unsigned int)(");
         emitPtrValueExpr(emitter, is_temp, temp, access);
         bufferedWriterWrite(&emitter.writer, "));\n");
     }
@@ -5376,15 +5394,15 @@ fn emitFloatHexHelper(emitter: *C89Emitter, is32: u8) void {
         bufferedWriterWrite(&emitter.writer, "(zT_exp - 127);\n}\n\n");
     } else {
         bufferedWriterWrite(&emitter.writer, "static void z98_printFloatHex64(double v) {\n");
-        bufferedWriterWrite(&emitter.writer, "    union { double f; unsigned long long u; } zT_fhx;\n");
-        bufferedWriterWrite(&emitter.writer, "    unsigned long long zT_bits;\n");
-        bufferedWriterWrite(&emitter.writer, "    unsigned long long zT_man;\n");
+        bufferedWriterWrite(&emitter.writer, "    union { double f; zu64 u; } zT_fhx;\n");
+        bufferedWriterWrite(&emitter.writer, "    zu64 zT_bits;\n");
+        bufferedWriterWrite(&emitter.writer, "    zu64 zT_man;\n");
         bufferedWriterWrite(&emitter.writer, "    int zT_exp;\n");
         bufferedWriterWrite(&emitter.writer, "    int zT_i;\n");
         bufferedWriterWrite(&emitter.writer, "    char zT_buf[16];\n");
         bufferedWriterWrite(&emitter.writer, "    zT_fhx.f = v;\n");
         bufferedWriterWrite(&emitter.writer, "    zT_bits = zT_fhx.u;\n");
-        bufferedWriterWrite(&emitter.writer, "    zT_man = zT_bits & 0xFFFFFFFFFFFFFULL;\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_man = zT_bits & Z98_U64_C(0xFFFFFFFFFFFFF);\n");
         bufferedWriterWrite(&emitter.writer, "    zT_exp = (int)((zT_bits >> 52) & 0x7FF);\n");
         bufferedWriterWrite(&emitter.writer, "    if ((zT_bits >> 63) != 0) { std_print(\"-\"); }\n");
         bufferedWriterWrite(&emitter.writer, "    if (zT_exp == 0x7FF) {\n");
@@ -5392,9 +5410,9 @@ fn emitFloatHexHelper(emitter: *C89Emitter, is32: u8) void {
         bufferedWriterWrite(&emitter.writer, "        return;\n");
         bufferedWriterWrite(&emitter.writer, "    }\n");
         bufferedWriterWrite(&emitter.writer, "    if (zT_exp == 0 && zT_man == 0) { std_print(\"0x0.0p0\"); return; }\n");
-        bufferedWriterWrite(&emitter.writer, "    if (zT_exp == 0) { zT_exp = zT_exp + 1; } else { zT_man = zT_man | 0x10000000000000ULL; }\n");
+        bufferedWriterWrite(&emitter.writer, "    if (zT_exp == 0) { zT_exp = zT_exp + 1; } else { zT_man = zT_man | Z98_U64_C(0x10000000000000); }\n");
         bufferedWriterWrite(&emitter.writer, "    for (zT_i = 13; zT_i >= 0; zT_i = zT_i - 1) {\n");
-        bufferedWriterWrite(&emitter.writer, "        zT_buf[zT_i] = \"0123456789abcdef\"[(int)(zT_man & 0xFULL)];\n");
+        bufferedWriterWrite(&emitter.writer, "        zT_buf[zT_i] = \"0123456789abcdef\"[(int)(zT_man & Z98_U64_C(0xF))];\n");
         bufferedWriterWrite(&emitter.writer, "        zT_man = zT_man >> 4;\n");
         bufferedWriterWrite(&emitter.writer, "    }\n");
         bufferedWriterWrite(&emitter.writer, "    std_print(\"0x\");\n");
@@ -6224,10 +6242,10 @@ fn emitWrapOp(emitter: *C89Emitter, kind: u8, lhs: u32, rhs: u32, result: u32, w
     bufferedWriterWrite(&emitter.writer, h);
     var lp: []const u8 = "(";
     bufferedWriterWrite(&emitter.writer, lp);
-    if (s != @intCast(u8, 0)) { emitCastToC(emitter, "long long", lhs); } else { emitCastToC(emitter, "unsigned long long", lhs); }
+    if (s != @intCast(u8, 0)) { emitCastToC(emitter, "z64", lhs); } else { emitCastToC(emitter, "zu64", lhs); }
     var cm: []const u8 = ", ";
     bufferedWriterWrite(&emitter.writer, cm);
-    if (s != @intCast(u8, 0)) { emitCastToC(emitter, "long long", rhs); } else { emitCastToC(emitter, "unsigned long long", rhs); }
+    if (s != @intCast(u8, 0)) { emitCastToC(emitter, "z64", rhs); } else { emitCastToC(emitter, "zu64", rhs); }
     bufferedWriterWrite(&emitter.writer, cm);
     emitUintLiteral(emitter, @intCast(u32, w));
     var tr: []const u8 = "u);\n";
@@ -6243,7 +6261,7 @@ fn emitWrapNeg(emitter: *C89Emitter, value: u32, result: u32, w: u8, s: u8) void
     if (s != @intCast(u8, 0)) { var h: []const u8 = "zig_wrap_neg_s"; bufferedWriterWrite(&emitter.writer, h); } else { var h: []const u8 = "zig_wrap_neg_u"; bufferedWriterWrite(&emitter.writer, h); }
     var lp: []const u8 = "(";
     bufferedWriterWrite(&emitter.writer, lp);
-    if (s != @intCast(u8, 0)) { emitCastToC(emitter, "long long", value); } else { emitCastToC(emitter, "unsigned long long", value); }
+    if (s != @intCast(u8, 0)) { emitCastToC(emitter, "z64", value); } else { emitCastToC(emitter, "zu64", value); }
     var cm: []const u8 = ", ";
     bufferedWriterWrite(&emitter.writer, cm);
     emitUintLiteral(emitter, @intCast(u32, w));
@@ -6272,11 +6290,11 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
     bufferedWriterWrite(&emitter.writer, h);
     var lp: []const u8 = "(";
     bufferedWriterWrite(&emitter.writer, lp);
-    if (s != @intCast(u8, 0)) { emitCastToC(emitter, "long long", lhs); } else { emitCastToC(emitter, "unsigned long long", lhs); }
+    if (s != @intCast(u8, 0)) { emitCastToC(emitter, "z64", lhs); } else { emitCastToC(emitter, "zu64", lhs); }
     if (op != lir_mod.CHECK_OP_NEG) {
         var cm: []const u8 = ", ";
         bufferedWriterWrite(&emitter.writer, cm);
-        if (s != @intCast(u8, 0)) { emitCastToC(emitter, "long long", rhs); } else { emitCastToC(emitter, "unsigned long long", rhs); }
+        if (s != @intCast(u8, 0)) { emitCastToC(emitter, "z64", rhs); } else { emitCastToC(emitter, "zu64", rhs); }
     }
     var cm2: []const u8 = ", ";
     bufferedWriterWrite(&emitter.writer, cm2);
@@ -7537,7 +7555,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var s2: []const u8 = ")";
             bufferedWriterWrite(&emitter.writer, s2);
             if (c.dst_signed != @intCast(u8, 0)) { var fn_s: []const u8 = "zig_cast_checked_s("; bufferedWriterWrite(&emitter.writer, fn_s); } else { var fn_u: []const u8 = "zig_cast_checked_u("; bufferedWriterWrite(&emitter.writer, fn_u); }
-            var ul: []const u8 = "(unsigned long long)";
+            var ul: []const u8 = "(zu64)";
             bufferedWriterWrite(&emitter.writer, ul);
             bufferedWriterWrite(&emitter.writer, src);
             var cm: []const u8 = ", ";
@@ -8535,28 +8553,35 @@ fn writeReachableModuleList(writer: *BufferedWriter, emitter: *C89Emitter, prefi
 }
 
 pub fn emitBuildTargetSh(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
-    var h0: []const u8 = "#!/bin/sh\nchmod +x \"$0\" 2>/dev/null || true\n# build_target.sh - generated by zig1\n# usage: sh build_target.sh [TARGET] [OUT]\n#   TARGET: linux (default) or mingw\n#   OUT:    output binary (default: prog on linux, prog.exe on mingw)\n# WARNING POLICY: this script does NOT enable warnings-as-errors (no -Werror here),\n# so compiler warnings are non-fatal and the build still produces the binary.\n# If the build stops with a hard error, the emitted C is invalid for this toolchain:\n# please report it as a bug (include the failing compiler output above).\n# If you add -Werror yourself, drop it to see the warning without failing.\nset -e\ncd \"$(dirname \"$0\")\"\nTARGET=${1:-linux}\nOUT=$2\ncase \"$TARGET\" in\n  linux)\n    CC=gcc\n    CFLAGS=\"-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I .\"\n    LDFLAGS=\"-m32 -O0\"\n    LIBS=\"\"\n    [ -n \"$OUT\" ] || OUT=prog\n    ;;\n";
+    var h0: []const u8 = "#!/bin/sh\nchmod +x \"$0\" 2>/dev/null || true\n# build_target.sh - generated by zig1\n# usage: sh build_target.sh [TARGET] [OUT]\n#   TARGET: linux (default) or mingw\n#   OUT:    output binary (default: prog on linux, prog.exe on mingw)\n# REDISTRIBUTION: on mingw this is the Win9x DEFAULT no-CRT build: a single EXE\n#   importing only KERNEL32 (+WINMM/WSOCK32 when used), no msvcrt.dll.\n#   A CRT-linked NT build is emitted by the compiler's `-osw nt` profile (this\n#   script then carries -DZIG_WIN_NT and does not use -nostdlib).\n# Status: design-verified; hardware verification pending.\n# WARNING POLICY: this script does NOT enable warnings-as-errors (no -Werror here),\n# so compiler warnings are non-fatal and the build still produces the binary.\n# If the build stops with a hard error, the emitted C is invalid for this toolchain:\n# please report it as a bug (include the failing compiler output above).\n# If you add -Werror yourself, drop it to see the warning without failing.\nset -e\ncd \"$(dirname \"$0\")\"\nTARGET=${1:-linux}\nOUT=$2\ncase \"$TARGET\" in\n  linux)\n    CC=gcc\n    CFLAGS=\"-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I .\"\n    LDFLAGS=\"-m32 -O0\"\n    LIBS=\"\"\n    [ -n \"$OUT\" ] || OUT=prog\n    ;;\n";
     bufferedWriterWrite(writer, h0);
     var h1: []const u8 = "  mingw)\n    CC=i686-w64-mingw32-gcc\n    CFLAGS=\"";
     bufferedWriterWrite(writer, h1);
-    var sh_flags: []const u8 = "-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I .";
+    var sh_flags: []const u8 = "-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -DZIG_NO_CRT -I .";
+    var sh_ld: []const u8 = "-m32 -nostdlib -Wl,-e,_mainCRTStartup";
+    var sh_libs: []const u8 = "-lgcc -lkernel32 -lwinmm";
     if (win_profile == WinProfile.nt) {
         sh_flags = "-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -DZIG_WIN_NT -I .";
+        sh_ld = "-m32";
+        sh_libs = "-lwinmm";
     }
     bufferedWriterWrite(writer, sh_flags);
-    var h1b: []const u8 = "\"\n    LDFLAGS=\"-m32\"\n    LIBS=\"";
+    var h1b: []const u8 = "\"\n    LDFLAGS=\"";
     bufferedWriterWrite(writer, h1b);
+    bufferedWriterWrite(writer, sh_ld);
+    var h1c: []const u8 = "\"\n    LIBS=\"";
+    bufferedWriterWrite(writer, h1c);
+    bufferedWriterWrite(writer, sh_libs);
     if (net_emitted != @intCast(u8, 0)) {
-        var nl: []const u8 = "-lwsock32";
+        var nl: []const u8 = " -lwsock32";
         bufferedWriterWrite(writer, nl);
     }
     var h2: []const u8 = "\"\n    [ -n \"$OUT\" ] || OUT=prog.exe\n    ;;\n  *)\n    echo \"Unknown target: $TARGET\"; exit 1\n    ;;\nesac\necho \"Building for $TARGET...\"\n";
     bufferedWriterWrite(writer, h2);
-    var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
     var sh_cpre: []const u8 = "$CC $CFLAGS -c ";
     var sh_csuf: []const u8 = ".c\n";
     writeReachableModuleList(writer, emitter, sh_cpre, sh_csuf);
-    var rt: []const u8 = "$CC $CFLAGS -c zig_runtime.c\n$CC $CFLAGS -c zig_pal.c\n$CC $CFLAGS -c c_exit.c\n";
+    var rt: []const u8 = "$CC $CFLAGS -c zig_runtime.c\n$CC $CFLAGS -c zig_pal.c\n$CC $CFLAGS -c zig_nocrt.c\n$CC $CFLAGS -c c_exit.c\n";
     bufferedWriterWrite(writer, rt);
     // Link order is intentional: compiler module objects first, runtime sources
     // last. This differs from the older seed recipe's alphabetical `*.o` glob; the
@@ -8569,46 +8594,72 @@ pub fn emitBuildTargetSh(writer: *BufferedWriter, emitter: *C89Emitter, net_emit
     var sh_lpre: []const u8 = " ";
     var sh_lsuf: []const u8 = ".o";
     writeReachableModuleList(writer, emitter, sh_lpre, sh_lsuf);
-    var tail: []const u8 = " zig_runtime.o zig_pal.o c_exit.o -o \"$OUT\" $LIBS\necho \"Built: $OUT\"\n";
+    var tail: []const u8 = " zig_runtime.o zig_pal.o zig_nocrt.o c_exit.o -o \"$OUT\" $LIBS\necho \"Built: $OUT\"\n";
     bufferedWriterWrite(writer, tail);
 }
 
-pub fn emitBuildTargetBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
-    var h0: []const u8 = "@echo off\nREM build_target.bat - generated by zig1 (MSVC cl)\nREM usage: build_target.bat [OUT]\nREM WARNING POLICY: CFLAGS below includes /WX, which makes cl treat ALL warnings as errors.\nREM If the build fails on a warning you believe is harmless, remove /WX from CFLAGS to see\nREM the warning without failing the build. If hard errors remain after dropping /WX, the\nREM emitted C is invalid for MSVC: please report it as a bug.\nREM Flag to toggle: /WX (warnings-as-errors) in the CFLAGS line below.\nsetlocal\nif \"%~1\"==\"\" (set OUT=prog.exe) else (set OUT=%~1)\nset CFLAGS=";
+pub fn emitBuildTargetNocrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
+    var h0: []const u8 = "@echo off\nREM build_target_nocrt.bat - generated by zig1 (MSVC cl, Win9x no-CRT DEFAULT)\nREM REDISTRIBUTION: single EXE, no msvcrt.dll. Imports only OS DLLs.\nREM Status: design-verified; hardware verification pending.\nREM usage: build_target_nocrt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\nset CFLAGS=";
     bufferedWriterWrite(writer, h0);
-    var bat_flags: []const u8 = "/c /Za /W3 /WX /DZIG_WIN32 /I .";
+    var bat_flags: []const u8 = "/c /Za /W3 /WX /DZIG_WIN32 /DZIG_NO_CRT /Zl /I .";
     if (win_profile == WinProfile.nt) {
-        bat_flags = "/c /Za /W3 /WX /DZIG_WIN32 /DZIG_WIN_NT /I .";
+        bat_flags = "/c /Za /W3 /WX /DZIG_WIN32 /DZIG_WIN_NT /DZIG_NO_CRT /Zl /I .";
     }
     bufferedWriterWrite(writer, bat_flags);
     var h0b: []const u8 = "\necho Compiling...\n";
     bufferedWriterWrite(writer, h0b);
-    var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
     var bat_cpre: []const u8 = "cl %CFLAGS% ";
     var bat_csuf: []const u8 = ".c\n";
     writeReachableModuleList(writer, emitter, bat_cpre, bat_csuf);
-    var rt: []const u8 = "cl %CFLAGS% zig_runtime.c\ncl %CFLAGS% zig_pal.c\ncl %CFLAGS% c_exit.c\necho Linking...\nlink /subsystem:console kernel32.lib";
+    var rt: []const u8 = "cl %CFLAGS% zig_runtime.c\ncl %CFLAGS% zig_pal.c\ncl %CFLAGS% zig_nocrt.c\ncl %CFLAGS% c_exit.c\necho Linking...\nif exist z98_link.rsp del z98_link.rsp\necho /NODEFAULTLIB >> z98_link.rsp\necho /subsystem:console,4.0 >> z98_link.rsp\necho /STACK:2097152 >> z98_link.rsp\necho /entry:_mainCRTStartup@0 >> z98_link.rsp\n";
     bufferedWriterWrite(writer, rt);
-    var bat_lpre: []const u8 = " ";
-    var bat_lsuf: []const u8 = ".obj";
-    writeReachableModuleList(writer, emitter, bat_lpre, bat_lsuf);
-    var mid: []const u8 = " zig_runtime.obj zig_pal.obj c_exit.obj";
-    bufferedWriterWrite(writer, mid);
+    var rsp_pre: []const u8 = "echo ";
+    var rsp_suf: []const u8 = ".obj >> z98_link.rsp\n";
+    writeReachableModuleList(writer, emitter, rsp_pre, rsp_suf);
+    var rsp_sup: []const u8 = "echo zig_runtime.obj >> z98_link.rsp\necho zig_pal.obj >> z98_link.rsp\necho zig_nocrt.obj >> z98_link.rsp\necho c_exit.obj >> z98_link.rsp\necho kernel32.lib winmm.lib ";
+    bufferedWriterWrite(writer, rsp_sup);
     if (net_emitted != @intCast(u8, 0)) {
-        var wl: []const u8 = " wsock32.lib";
+        var wl: []const u8 = "wsock32.lib ";
         bufferedWriterWrite(writer, wl);
     }
-    var tail: []const u8 = " /out:%OUT%\necho Built: %OUT%\n";
+    var tail: []const u8 = "libcmt.lib >> z98_link.rsp\necho /out:%OUT% >> z98_link.rsp\nlink @z98_link.rsp\necho Built: %OUT%\n";
     bufferedWriterWrite(writer, tail);
 }
 
-pub fn emitBuildOwcBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
-    var h0: []const u8 = "@echo off\nREM build_owc.bat - generated by zig1 (OpenWatcom wcc386/wlink)\nREM usage: build_owc.bat [OUT]\nREM WARNING POLICY: the wcc386 command lines below include /we, which makes OpenWatcom\nREM treat ALL warnings as errors. If the build fails on a warning you believe is harmless,\nREM remove /we from the wcc386 lines to see the warning without failing the build. If hard\nREM errors remain after dropping /we, the emitted C is invalid for OpenWatcom: report it.\nREM Flag to toggle: /we (warnings-as-errors) in the wcc386 lines below.\nsetlocal\nif \"%~1\"==\"\" (set OUT=prog.exe) else (set OUT=%~1)\necho Compiling...\n";
+pub fn emitBuildTargetCrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
+    var h0: []const u8 = "@echo off\nREM build_target_crt.bat - generated by zig1 (MSVC cl, static-CRT ALTERNATE)\nREM REDISTRIBUTION: single EXE, no DLL dependency (static /MT CRT).\nREM Imports only KERNEL32 (+WINMM/WSOCK32 when used); no msvcrt.dll.\nREM Status: design-verified; hardware verification pending.\nREM usage: build_target_crt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\nset CFLAGS=";
     bufferedWriterWrite(writer, h0);
-    var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
-    var owc_flags: []const u8 = "wcc386 /za /we /dZIG_WIN32 /i=. ";
+    var bat_flags: []const u8 = "/c /Za /W3 /WX /DZIG_WIN32 /MT /I .";
     if (win_profile == WinProfile.nt) {
-        owc_flags = "wcc386 /za /we /dZIG_WIN32 /dZIG_WIN_NT /i=. ";
+        bat_flags = "/c /Za /W3 /WX /DZIG_WIN32 /DZIG_WIN_NT /MT /I .";
+    }
+    bufferedWriterWrite(writer, bat_flags);
+    var h0b: []const u8 = "\necho Compiling...\n";
+    bufferedWriterWrite(writer, h0b);
+    var bat_cpre: []const u8 = "cl %CFLAGS% ";
+    var bat_csuf: []const u8 = ".c\n";
+    writeReachableModuleList(writer, emitter, bat_cpre, bat_csuf);
+    var rt: []const u8 = "cl %CFLAGS% zig_runtime.c\ncl %CFLAGS% zig_pal.c\ncl %CFLAGS% zig_nocrt.c\ncl %CFLAGS% c_exit.c\necho Linking...\nif exist z98_link.rsp del z98_link.rsp\necho /subsystem:console,4.0 >> z98_link.rsp\necho /STACK:2097152 >> z98_link.rsp\n";
+    bufferedWriterWrite(writer, rt);
+    var rsp_pre: []const u8 = "echo ";
+    var rsp_suf: []const u8 = ".obj >> z98_link.rsp\n";
+    writeReachableModuleList(writer, emitter, rsp_pre, rsp_suf);
+    var rsp_sup: []const u8 = "echo zig_runtime.obj >> z98_link.rsp\necho zig_pal.obj >> z98_link.rsp\necho zig_nocrt.obj >> z98_link.rsp\necho c_exit.obj >> z98_link.rsp\necho kernel32.lib winmm.lib ";
+    bufferedWriterWrite(writer, rsp_sup);
+    if (net_emitted != @intCast(u8, 0)) {
+        var wl: []const u8 = "wsock32.lib ";
+        bufferedWriterWrite(writer, wl);
+    }
+    var tail: []const u8 = ">> z98_link.rsp\necho /out:%OUT% >> z98_link.rsp\nlink @z98_link.rsp\necho Built: %OUT%\n";
+    bufferedWriterWrite(writer, tail);
+}
+
+pub fn emitBuildOwcNocrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
+    var h0: []const u8 = "@echo off\nREM build_owc_nocrt.bat - generated by zig1 (OpenWatcom, Win9x no-CRT DEFAULT)\nREM REDISTRIBUTION: single EXE, no runtime DLL dependency. Imports only OS DLLs.\nREM Status: design-verified; hardware verification pending.\nREM usage: build_owc_nocrt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\necho Compiling...\n";
+    bufferedWriterWrite(writer, h0);
+    var owc_flags: []const u8 = "wcc386 /za /we /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. ";
+    if (win_profile == WinProfile.nt) {
+        owc_flags = "wcc386 /za /we /dZIG_WIN32 /dZIG_WIN_NT /dZIG_NO_CRT /bt=nt /zl /sg /i=. ";
     }
     var owc_cpre: []const u8 = owc_flags;
     var owc_csuf: []const u8 = ".c\n";
@@ -8620,37 +8671,99 @@ pub fn emitBuildOwcBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitte
     var rt2: []const u8 = "zig_pal.c\n";
     bufferedWriterWrite(writer, rt2);
     bufferedWriterWrite(writer, owc_flags);
-    var rt3: []const u8 = "c_exit.c\necho Linking...\nwlink system console op q opt stack=65536 file ";
+    var rt3: []const u8 = "zig_nocrt.c\n";
     bufferedWriterWrite(writer, rt3);
-    var first: u8 = @intCast(u8, 1);
-    var i: usize = @intCast(usize, 0);
-    while (i < mods.len) : (i += @intCast(usize, 1)) {
-        var m = mods[i];
-        if (hash_mod.u32ToU32MapGet(&emitter.reachable, m.id) == null) continue;
-        if (first == @intCast(u8, 0)) {
-            var cm: []const u8 = ",";
-            bufferedWriterWrite(writer, cm);
-        }
-        writeModuleStem(writer, emitter, m.id);
-        var oe: []const u8 = ".obj";
-        bufferedWriterWrite(writer, oe);
-        first = @intCast(u8, 0);
-    }
-    if (first != @intCast(u8, 0)) {
-        var rp: []const u8 = "zig_runtime.obj";
-        bufferedWriterWrite(writer, rp);
-    } else {
-        var rp2: []const u8 = ",zig_runtime.obj";
-        bufferedWriterWrite(writer, rp2);
-    }
-    var libs: []const u8 = ",zig_pal.obj,c_exit.obj";
-    bufferedWriterWrite(writer, libs);
+    bufferedWriterWrite(writer, owc_flags);
+    var rt4: []const u8 = "c_exit.c\necho Linking...\nif exist z98_link.lnk del z98_link.lnk\necho system nt >> z98_link.lnk\necho option nodefaultlibs >> z98_link.lnk\necho option start=_mainCRTStartup >> z98_link.lnk\necho option stack=2097152 >> z98_link.lnk\n";
+    bufferedWriterWrite(writer, rt4);
+    var lnk_pre: []const u8 = "echo file ";
+    var lnk_suf: []const u8 = ".obj >> z98_link.lnk\n";
+    writeReachableModuleList(writer, emitter, lnk_pre, lnk_suf);
+    var lnk_sup: []const u8 = "echo file zig_runtime.obj >> z98_link.lnk\necho file zig_pal.obj >> z98_link.lnk\necho file zig_nocrt.obj >> z98_link.lnk\necho file c_exit.obj >> z98_link.lnk\necho library kernel32,clib3r,winmm";
+    bufferedWriterWrite(writer, lnk_sup);
     if (net_emitted != @intCast(u8, 0)) {
-        var wl: []const u8 = " library wsock32";
+        var wl: []const u8 = ",wsock32";
         bufferedWriterWrite(writer, wl);
     }
-    var tail: []const u8 = " name %OUT%\necho Built: %OUT%\n";
+    var tail: []const u8 = " >> z98_link.lnk\necho name %OUT% >> z98_link.lnk\nwlink @z98_link.lnk\necho Built: %OUT%\n";
     bufferedWriterWrite(writer, tail);
+}
+
+pub fn emitBuildOwcCrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
+    var h0: []const u8 = "@echo off\nREM build_owc_crt.bat - generated by zig1 (OpenWatcom, static-runtime ALTERNATE)\nREM REDISTRIBUTION: single EXE, no runtime DLL dependency (static clib).\nREM Imports only KERNEL32 (+WINMM/WSOCK32 when used).\nREM Status: design-verified; hardware verification pending.\nREM usage: build_owc_crt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\necho Compiling...\n";
+    bufferedWriterWrite(writer, h0);
+    var owc_flags: []const u8 = "wcc386 /za /we /dZIG_WIN32 /bt=nt /sg /i=. ";
+    if (win_profile == WinProfile.nt) {
+        owc_flags = "wcc386 /za /we /dZIG_WIN32 /dZIG_WIN_NT /bt=nt /sg /i=. ";
+    }
+    var owc_cpre: []const u8 = owc_flags;
+    var owc_csuf: []const u8 = ".c\n";
+    writeReachableModuleList(writer, emitter, owc_cpre, owc_csuf);
+    bufferedWriterWrite(writer, owc_flags);
+    var rt1: []const u8 = "zig_runtime.c\n";
+    bufferedWriterWrite(writer, rt1);
+    bufferedWriterWrite(writer, owc_flags);
+    var rt2: []const u8 = "zig_pal.c\n";
+    bufferedWriterWrite(writer, rt2);
+    bufferedWriterWrite(writer, owc_flags);
+    var rt3: []const u8 = "zig_nocrt.c\n";
+    bufferedWriterWrite(writer, rt3);
+    bufferedWriterWrite(writer, owc_flags);
+    var rt4: []const u8 = "c_exit.c\necho Linking...\nif exist z98_link.lnk del z98_link.lnk\necho system nt >> z98_link.lnk\necho option stack=2097152 >> z98_link.lnk\n";
+    bufferedWriterWrite(writer, rt4);
+    var lnk_pre: []const u8 = "echo file ";
+    var lnk_suf: []const u8 = ".obj >> z98_link.lnk\n";
+    writeReachableModuleList(writer, emitter, lnk_pre, lnk_suf);
+    var lnk_sup: []const u8 = "echo file zig_runtime.obj >> z98_link.lnk\necho file zig_pal.obj >> z98_link.lnk\necho file zig_nocrt.obj >> z98_link.lnk\necho file c_exit.obj >> z98_link.lnk\necho library kernel32,winmm";
+    bufferedWriterWrite(writer, lnk_sup);
+    if (net_emitted != @intCast(u8, 0)) {
+        var wl: []const u8 = ",wsock32";
+        bufferedWriterWrite(writer, wl);
+    }
+    var tail: []const u8 = " >> z98_link.lnk\necho name %OUT% >> z98_link.lnk\nwlink @z98_link.lnk\necho Built: %OUT%\n";
+    bufferedWriterWrite(writer, tail);
+}
+
+pub fn emitBuildTargetAliasBat(writer: *BufferedWriter, crt: bool) void {
+    var h0: []const u8 = "@echo off\nREM Compatibility alias; ";
+    bufferedWriterWrite(writer, h0);
+    if (crt) {
+        var t0: []const u8 = "nt default is build_target_crt.bat.";
+        bufferedWriterWrite(writer, t0);
+    } else {
+        var t1: []const u8 = "9x default is build_target_nocrt.bat.";
+        bufferedWriterWrite(writer, t1);
+    }
+    var h1: []const u8 = "\nREM Run from the emitted output directory.\ncall ";
+    bufferedWriterWrite(writer, h1);
+    if (crt) {
+        var c0: []const u8 = "build_target_crt.bat %1\n";
+        bufferedWriterWrite(writer, c0);
+    } else {
+        var c1: []const u8 = "build_target_nocrt.bat %1\n";
+        bufferedWriterWrite(writer, c1);
+    }
+}
+
+pub fn emitBuildOwcAliasBat(writer: *BufferedWriter, crt: bool) void {
+    var h0: []const u8 = "@echo off\nREM Compatibility alias; ";
+    bufferedWriterWrite(writer, h0);
+    if (crt) {
+        var t0: []const u8 = "nt default is build_owc_crt.bat.";
+        bufferedWriterWrite(writer, t0);
+    } else {
+        var t1: []const u8 = "9x default is build_owc_nocrt.bat.";
+        bufferedWriterWrite(writer, t1);
+    }
+    var h1: []const u8 = "\nREM Run from the emitted output directory.\ncall ";
+    bufferedWriterWrite(writer, h1);
+    if (crt) {
+        var c0: []const u8 = "build_owc_crt.bat %1\n";
+        bufferedWriterWrite(writer, c0);
+    } else {
+        var c1: []const u8 = "build_owc_nocrt.bat %1\n";
+        bufferedWriterWrite(writer, c1);
+    }
 }
 
 pub fn emitBuildScripts(emitter: *C89Emitter, dir_path: []const u8, target_is_windows: bool, win_profile: WinProfile) void {
@@ -8661,16 +8774,36 @@ pub fn emitBuildScripts(emitter: *C89Emitter, dir_path: []const u8, target_is_wi
     bufferedWriterFlush(&w0);
     pal.fileClose(fd0);
     if (target_is_windows) {
-        var fd1: usize = openSupportOutputFile(dir_path, "build_target.bat");
+        var fd1: usize = openSupportOutputFile(dir_path, "build_target_nocrt.bat");
         var w1: BufferedWriter = bufferedWriterInitFd(fd1);
-        emitBuildTargetBat(&w1, emitter, net_emitted, win_profile);
+        emitBuildTargetNocrtBat(&w1, emitter, net_emitted, win_profile);
         bufferedWriterFlush(&w1);
         pal.fileClose(fd1);
-        var fd2: usize = openSupportOutputFile(dir_path, "build_owc.bat");
+        var fd2: usize = openSupportOutputFile(dir_path, "build_target_crt.bat");
         var w2: BufferedWriter = bufferedWriterInitFd(fd2);
-        emitBuildOwcBat(&w2, emitter, net_emitted, win_profile);
+        emitBuildTargetCrtBat(&w2, emitter, net_emitted, win_profile);
         bufferedWriterFlush(&w2);
         pal.fileClose(fd2);
+        var fd3: usize = openSupportOutputFile(dir_path, "build_owc_nocrt.bat");
+        var w3: BufferedWriter = bufferedWriterInitFd(fd3);
+        emitBuildOwcNocrtBat(&w3, emitter, net_emitted, win_profile);
+        bufferedWriterFlush(&w3);
+        pal.fileClose(fd3);
+        var fd4: usize = openSupportOutputFile(dir_path, "build_owc_crt.bat");
+        var w4: BufferedWriter = bufferedWriterInitFd(fd4);
+        emitBuildOwcCrtBat(&w4, emitter, net_emitted, win_profile);
+        bufferedWriterFlush(&w4);
+        pal.fileClose(fd4);
+        var fd5: usize = openSupportOutputFile(dir_path, "build_target.bat");
+        var w5: BufferedWriter = bufferedWriterInitFd(fd5);
+        emitBuildTargetAliasBat(&w5, win_profile == WinProfile.nt);
+        bufferedWriterFlush(&w5);
+        pal.fileClose(fd5);
+        var fd6: usize = openSupportOutputFile(dir_path, "build_owc.bat");
+        var w6: BufferedWriter = bufferedWriterInitFd(fd6);
+        emitBuildOwcAliasBat(&w6, win_profile == WinProfile.nt);
+        bufferedWriterFlush(&w6);
+        pal.fileClose(fd6);
     }
 }
 

@@ -22,7 +22,7 @@ set -euo pipefail
 #               sf/src/c_exit.c (top level) as a pre-EMITEMIT fallback
 #   runtime/    from the gen dir's emitted mode-specific support when
 #               self-contained (zig_compat.h, zig_runtime.h, zig_runtime.c,
-#               zig_pal.c; zig_special_types.h already in gen/), else the
+#               zig_pal.c, zig_nocrt.c; zig_special_types.h already in gen/), else the
 #               canonical repo sf/src/include/{…} as a pre-EMITEMIT fallback
 #               (net_prelude.h excluded — 0 references in a linux -osl dump)
 #   lib/        repo sf/src/{std.zig, std_io.zig, std_fmt.zig, std_arena.zig,
@@ -85,7 +85,7 @@ cp "$GENDIR"/*.c "$GENDIR"/*.h "$SEED/gen/"
 # (Phase-1 reproduced: link rc=1 multiple definition of std_panic). Keep gen/ =
 # the module emission only (net_prelude.h is deliberately not part of the seed
 # — see SEED_README.txt).
-for f in zig_runtime.c zig_pal.c c_exit.c zig_compat.h zig_runtime.h net_prelude.h; do
+for f in zig_runtime.c zig_pal.c zig_nocrt.c c_exit.c zig_compat.h zig_runtime.h net_prelude.h; do
     rm -f "$SEED/gen/$f"
 done
 C_COUNT=$(ls "$SEED/gen"/*.c 2>/dev/null | wc -l)
@@ -101,14 +101,14 @@ if [ -f "$GENDIR/zig_runtime.c" ]; then
     # helpers), which yields a different byte image than the archived binary
     # (A13 discovery: 8a87ef6c vs 1467d932).
     cp "$GENDIR/c_exit.c" "$SEED/c_exit.c"
-    for f in zig_compat.h zig_runtime.h zig_special_types.h zig_runtime.c zig_pal.c; do
+    for f in zig_compat.h zig_runtime.h zig_special_types.h zig_runtime.c zig_pal.c zig_nocrt.c; do
         cp "$GENDIR/$f" "$SEED/runtime/"
     done
 else
     # Pre-EMITEMIT gen dir (no emitted support) — fall back to the canonical
     # repo runtime sources.
     cp "$ROOT/sf/src/c_exit.c" "$SEED/c_exit.c"
-    for f in zig_compat.h zig_runtime.h zig_special_types.h zig_runtime.c zig_pal.c; do
+    for f in zig_compat.h zig_runtime.h zig_special_types.h zig_runtime.c zig_pal.c zig_nocrt.c; do
         cp "$ROOT/sf/src/include/$f" "$SEED/runtime/"
     done
 fi
@@ -125,7 +125,7 @@ cp "$SEED"/gen/*.c "$SEED"/gen/*.h "$STAGE/check/"
 # it and compile/link everything with one alphabetical *.o glob — the same
 # object order build_from_seed.sh uses — so the recorded fixed point is the true
 # self-emission fixed point (the support sources live in runtime/ + top level).
-cp "$SEED"/runtime/zig_runtime.c "$SEED"/runtime/zig_pal.c "$SEED/c_exit.c" "$STAGE/check/"
+cp "$SEED"/runtime/zig_runtime.c "$SEED"/runtime/zig_pal.c "$SEED"/runtime/zig_nocrt.c "$SEED/c_exit.c" "$STAGE/check/"
 ( cd "$STAGE/check" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
     -Wno-implicit-function-declaration -I "$SEED/runtime" -c *.c ) \
     || die "archive C gcc -c failed"
@@ -155,7 +155,7 @@ zig1-seed/gen/        the seed's own self-emission C89 ($C_COUNT .c + $H_COUNT
 zig1-seed/c_exit.c    link source (sf/src/c_exit.c, top level per spec layout)
 zig1-seed/runtime/    link/include sources needed to compile gen/:
                       zig_compat.h, zig_runtime.h, zig_special_types.h,
-                      zig_runtime.c, zig_pal.c (the compiler's emitted,
+                      zig_runtime.c, zig_pal.c, zig_nocrt.c (the compiler's emitted,
                       mode-specific support so a gcc-only rebuild reproduces
                       the seed binary's fixed point; canonical repo copies for
                       pre-EMITEMIT gen dirs)
@@ -270,7 +270,7 @@ insufficient (undefined std_panic + c_exit).
 
 Archive inventory (sizes from sf/src at HEAD $HEAD):
   runtime/: zig_compat.h, zig_runtime.h, zig_special_types.h, zig_runtime.c,
-  zig_pal.c (staged from the gen dir's emitted, mode-specific support so the
+  zig_pal.c, zig_nocrt.c (staged from the gen dir's emitted, mode-specific support so the
   gcc-only rebuild reproduces the archived binary's fixed point; canonical repo
   copies only for pre-EMITEMIT gen dirs). c_exit.c is at archive top level,
   separate from runtime/, per spec layout. Emitted gen set: $C_COUNT .c +

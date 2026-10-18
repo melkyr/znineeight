@@ -30,7 +30,7 @@ set -euo pipefail
 #
 # If the seed binary is missing, the seed compiler is first rebuilt from the
 # seed's own C (self-contained fallback: stage the runtime support sources
-# zig_runtime.c + zig_pal.c + c_exit.c beside gen/*.c, ONE canonical-flag
+# zig_runtime.c + zig_pal.c + zig_nocrt.c + c_exit.c beside gen/*.c, ONE canonical-flag
 # gcc -c over *.c, link *.o — exactly the archive_seed.sh fixed-point check) and
 # that reconstructed compiler is used as the dump engine.
 #
@@ -109,6 +109,7 @@ reconstruct_seed() {
     [ -d "$SEED/runtime" ] || die "seed dir '$SEED' has no runtime/"
     [ -f "$SEED/runtime/zig_runtime.c" ] || die "seed dir '$SEED' has no runtime/zig_runtime.c"
     [ -f "$SEED/runtime/zig_pal.c" ] || die "seed dir '$SEED' has no runtime/zig_pal.c"
+    [ -f "$SEED/runtime/zig_nocrt.c" ] || die "seed dir '$SEED' has no runtime/zig_nocrt.c"
     [ -f "$SEED/c_exit.c" ] || die "seed dir '$SEED' has no top-level c_exit.c"
     echo "[seed] rebuilding seed compiler from its own C (self-contained, -I <seed>/runtime)"
     rm -rf "$OUT/rec"
@@ -119,7 +120,7 @@ reconstruct_seed() {
     # below and linked as objects. Leaving them on the link line compiles them
     # without -Wall (different assembler label numbering) and does NOT reproduce
     # the archived fixed point (SEED_README.txt recipe 2 / flag-set rule).
-    cp "$SEED"/runtime/zig_runtime.c "$SEED"/runtime/zig_pal.c "$SEED/c_exit.c" "$OUT/rec/"
+    cp "$SEED"/runtime/zig_runtime.c "$SEED"/runtime/zig_pal.c "$SEED"/runtime/zig_nocrt.c "$SEED/c_exit.c" "$OUT/rec/"
     ( cd "$OUT/rec" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
         -Wno-implicit-function-declaration -I "$SEED/runtime" -c *.c ) \
         || die "reconstruct gcc -c failed"

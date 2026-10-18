@@ -57,6 +57,7 @@ check zig_runtime.h "$ROOT/sf/src/include/zig_runtime.h"
 check zig_runtime.c "$ROOT/sf/src/include/zig_runtime.c"
 check zig_pal.c     "$ROOT/sf/src/include/zig_pal.c"
 check c_exit.c      "$ROOT/sf/src/c_exit.c"
+check zig_nocrt.c   "$ROOT/sf/src/include/zig_nocrt.c"
 
 net_mod=0
 for f in "$DIR"/std_net_*.c; do
@@ -132,4 +133,4 @@ else
 fi
 
 [ "$fail" = 0 ] || { echo "error: emitted support files differ from canonical" >&2; exit 1; }
-echo "[check] OK: 7/7 support files byte-identical to canonical (5 core + 2 conditional preludes)"
+echo "[check] OK: 8/8 support files byte-identical to canonical (6 core + 2 conditional preludes)"

@@ -71,7 +71,12 @@ pub fn env(name: []const u8) ?[]const u8 {
         nbuf[i] = name[i];
     }
     nbuf[name.len] = 0;
-    var raw: ?[*]const u8 = pal.getenv(@ptrCast([*]const u8, &nbuf[0]));
+    var raw: ?[*]const u8 = undefined;
+    if (@isWindows()) {
+        raw = pal.pal_getenv(@ptrCast([*]const u8, &nbuf[0]));
+    } else {
+        raw = pal.getenv(@ptrCast([*]const u8, &nbuf[0]));
+    }
     if (raw) |p| {
         var n: usize = 0;
         while (p[n] != 0) : (n += 1) {}
