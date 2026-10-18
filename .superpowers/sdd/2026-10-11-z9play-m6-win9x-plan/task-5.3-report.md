@@ -57,9 +57,11 @@ No plan step was found impossible; therefore no STOP-present.
 ## 2. Implement — per file
 
 ### 2.1 Portable 64-bit C spelling layer
-- `sf/src/include/zig_compat.h`: MSVC and OpenWatcom `z64`/`zu64` =
-  `__int64`/`unsigned __int64`; `Z98_I64_C`/`Z98_U64_C` (`i64`/`ui64` on
-  MSVC/OWC, `LL`/`ULL` on GCC); `Z98_I64_MAX`, `Z98_I64_MIN`,
+- `sf/src/include/zig_compat.h`: **CORRECTED in Fix round 1 (Amendment 6,
+  below): MSVC `z64`/`zu64` = `__int64`/`unsigned __int64`; OpenWatcom keeps
+  the bootstrap `long long`/`unsigned long long`.** At T5.3 time this line
+  (incorrectly) also mapped OWC to `__int64`; OWC now uses `LL`/`ULL` while
+  MSVC uses `i64`/`ui64` and GCC uses `LL`/`ULL`; `Z98_I64_MAX`, `Z98_I64_MIN`,
   `Z98_U64_MAX`; the fixed-width `i8..u64/usize` typedefs are now emitted for
   OpenWatcom too (removed the `!defined(__WATCOMC__)` exclusion).
 - `sf/src/include/zig_runtime.h` / `.c`: every `long long` /
@@ -340,3 +342,74 @@ values.
    native artifacts.
 7. **Environment slice lifetime** is narrowed to “until the next `env()` call”
    on Windows (static PAL buffer, single-threaded), per Amendment 3; documented.
+
+---
+
+## Fix round 1 (2026-10-18) — OpenWatcom bootstrap 64-bit mapping (Amendment 6)
+
+**Finding accepted.** T5.3 had mapped OpenWatcom to `__int64` /
+`unsigned __int64` with `i64`/`ui64` literal suffixes. The bootstrap layer
+(`src/include/zig_compat.h:12-19`) defines OpenWatcom as `long long` /
+`unsigned long long` (“OpenWatcom supports long long as an extension”). The
+operator ruling restores that mapping; MSVC 6 keeps `__int64` + `i64`/`ui64`
+and GCC/others keep `long long` + `LL`/`ULL`.
+
+**Changes.**
+- `sf/src/include/zig_compat.h` and the `sf/src/emit_support.zig` literal:
+  `__WATCOMC__` branch is again exactly
+  `typedef long long z64; typedef unsigned long long zu64;` with
+  `Z98_I64_C(n) n##LL` / `Z98_U64_C(n) n##ULL`. `_MSC_VER`, GCC/else branches
+  unchanged. The T5.3 removal of `&& !defined(__WATCOMC__)` from the
+  `i8..usize` typedef guard stays (emitted module/PAL signatures need these
+  Z98 type names on OWC too).
+- `sf/docs/tech_docs/13_windows_support.md` §7 + doc 08 stamp truth-up:
+  OWC = bootstrap `long long`/`LL`/`ULL`; MSVC = `__int64`/`i64`/`ui64`; the
+  fixed-width typedefs are still emitted for OWC.
+- No other OWC conditional introduced by `6731d058` assumes the old mapping.
+  Audit:
+  ```sh
+  grep -rn '__WATCOMC__' sf/src/include sf/src/c89_emit.zig \
+      sf/src/emit_support.zig scripts/win32_cross scripts/seed
+  grep -rnE 'n##i64|n##ui64|__int64|typedef long long z64|typedef unsigned long long zu64' \
+      sf/src/include sf/src/emit_support.zig
+  ```
+  Result: the only `i64`/`ui64`/`__int64` sites are inside the `_MSC_VER`
+  branch of `zig_compat.h` and its `emit_support.zig` mirror. The remaining
+  `__WATCOMC__` sites are:
+  - `zig_compat.h` / mirror: `Z98_ALIGN8` (empty), the restored mapping, and
+    `Z98_STDCALL` (`__stdcall`);
+  - `zig_nocrt.c` / mirror: native `<stdio.h>` include and `__w_FILE __iob[3]`
+    (no 64-bit type/suffix assumption);
+  - `zig_pal.c`: `__asm { int 3 }` in `pal_trap` (no 64-bit type);
+  - `c89_emit.zig`: console ANSI fallbacks and stdcall macro spelling
+    (no 64-bit type);
+  - scripts: only `/dZIG_*` compile flags, no type/suffix mapping.
+  No OWC path assumes `__int64` or `i64`/`ui64` after the fix.
+
+**Gates (full T5.3 battery, fresh rebuild `/tmp/t53fix/zig1_5_clean`
+`99e903494c716c1ea9d779b646303d1d`).**
+- Corpus frozen 1124: md5 `518eca1a9b5d3e1cc5a48abce214abd8`, tally
+  `1124 = 950 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH`, 0 movers; 9
+  designed fixtures `OK`.
+- Goldens 5/5: gol `fcbf7e7c…`, lisp `(+ 1 2)` `b3d9f897…`, json
+  `8bda3d5a…`, mud `66c8f0ab…` / `93147d0f…`.
+- mi_matrix frozen 25: 25 PASS / 0 FAIL; oob `-fsafe` rc=133, 0-byte stdout.
+- Examples: `BUILD_TALLY ok=26 fail=0`; `RUN_TALLY ok=26 fail=0`, all md5
+  prefixes match the frozen table.
+- Stdlib: 285 PASS / 0 FAIL, `STDLIB GATE OK`.
+- Emit-support: 8/8 byte-identical.
+- Pins: **8/8 unchanged vs v99** (the OWC branch is dead under the GCC gate):
+  mud `35ec8c8c…`/`3203868a…`, gol `4a963f79…`/`03a18737…`, lisp
+  `4939b6e2…`/`a2afe23d…`, json `95f82c77…`/`96fdbc4c…` (old→new identical;
+  v99→v100 re-recording only).
+- Markers: 3437 lines / 38408 bytes (unchanged).
+- 9x no-CRT probes: hello KERNEL32; z9play KERNEL32+WINMM; z9torr
+  KERNEL32+WSOCK32; all PE32, import gate PASS, Wine `--help`/hello rc=0.
+  NT hello: KERNEL32+msvcrt, Wine rc=0. No native MSVC/OWC probes.
+- Seed re-rotated v99 → v100: archive `c73fef7b07fb4a6fc57dafa77821e47c`,
+  binary/fixed point `99e903494c716c1ea9d779b646303d1d`, `gen/` 46 `.c` +
+  47 `.h` (10,253,723 bytes). Post-rotation `build_from_seed.sh`:
+  `hop1 == hop2 == 99e90349…`.
+
+**Status:** fix complete; native OWC hardware verification still pending
+(Amendment 5).
