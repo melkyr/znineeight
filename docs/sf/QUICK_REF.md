@@ -24,12 +24,12 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v100** (rotated 2026-10-18 by the M6 Win9x T5.3 fix round 1,
-plan `2026-10-11-z9play-m6-win9x-plan`; seed v99 → v100, final compiler fixed
-point `99e903494c716c1ea9d779b646303d1d`). Archive md5
-`c73fef7b07fb4a6fc57dafa77821e47c`; archived binary md5 (= v100's rotation fixed
-point) `99e903494c716c1ea9d779b646303d1d`; `gen/` 46 `.c` + 47 `.h`
-(10,253,723 bytes); `lib/` 32 std `.zig`. **This block is updated at every plan closeout that
+**Current seed: v101** (rotated 2026-10-18 by the M6 Win9x T5.3 fix round 2,
+plan `2026-10-11-z9play-m6-win9x-plan`; seed v100 → v101, final compiler fixed
+point `b299b4b435e624d0ddbd2edde681cbc3`). Archive md5
+`378f5ea01db25ec69f455fbce52bc947`; archived binary md5 (= v101's rotation fixed
+point) `b299b4b435e624d0ddbd2edde681cbc3`; `gen/` 46 `.c` + 47 `.h`
+(10,256,124 bytes); `lib/` 32 std `.zig`. **This block is updated at every plan closeout that
 rotates the seed**; the branch's in-progress fixed point is recorded in the active plan's
 workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
@@ -59,7 +59,10 @@ archived binary md5 `1ef248e0c9782cfe646de73634dae4d8`; archive md5
 Amendment 6) rotated it to v100 (OpenWatcom restored to bootstrap
 `long long`/`LL`/`ULL`; fixed point / archived binary md5
 `99e903494c716c1ea9d779b646303d1d`; archive md5
-`c73fef7b07fb4a6fc57dafa77821e47c`).
+`c73fef7b07fb4a6fc57dafa77821e47c`); and the T5.3 fix round 2 (2026-10-18)
+rotated it to v101 (no-CRT `memset` shim + seed-recipe/provenance truth-up;
+fixed point / archived binary md5 `b299b4b435e624d0ddbd2edde681cbc3`; archive
+md5 `378f5ea01db25ec69f455fbce52bc947`).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 46 `.c` + 47 `.h`, including `zig_special_types.h`; the emitted
@@ -273,8 +276,8 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (re-baselined 2026-10-18, M6 Win9x T5.3 fix round 1, seed v100; supersedes the v99 table).** Measured with
-the seed-built fixed compiler (`99e903494c716c1ea9d779b646303d1d`):
+**8-pin table (re-baselined 2026-10-18, M6 Win9x T5.3 fix round 2, seed v101; supersedes the v100 table).** Measured with
+the seed-built fixed compiler (`b299b4b435e624d0ddbd2edde681cbc3`):
 `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum` from the repo root. The
 absolute pin values are **compiler-build dependent** (each compiler build pairs a `lib/` std
 set; the binary's own path is irrelevant — verified), so only same-build comparisons are
@@ -288,9 +291,10 @@ re-baseline only.
 | `examples/z98/lisp_interpreter_curr/main.zig` | `4939b6e20eb4ee3d519fc3fd91e6e0d6` | `a2afe23d87d35eb741464423a382c0f8` |
 | `examples/z98/json_parser/main.zig` | `95f82c77058e2f5647f9711a14448a79` | `96fdbc4c6e6e76209cc2b27a6b959482` |
 
-All 8 pin values are **unchanged vs v99**: the fix round 1 change is confined
-to the OpenWatcom mapping (dead under the GCC/mingw gate), so the GCC-emitted
-C is byte-identical. The v99 movement remains the intended T5.3 movement: the
+All 8 pin values are **unchanged vs v99/v100**: fix rounds 1–2 are confined to
+the OpenWatcom mapping and the Windows-only no-CRT `memset` shim (both dead
+under the GCC/mingw Linux gate), so the GCC-emitted C is byte-identical. The
+v99 movement remains the intended T5.3 movement: the
 64-bit spelling layer (`z64`/`zu64` + `Z98_I64_C`/`Z98_U64_C`/
 `Z98_I64_MIN/MAX`/`Z98_U64_MAX`) and the Win9x `std_file`/`std_os`/`std_time`
 PAL rewiring. Runtime goldens are re-proven byte-identical (gol
