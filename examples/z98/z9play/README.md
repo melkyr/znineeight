@@ -89,6 +89,37 @@ function-pointer return) — see `examples/torrent_example_defects.md`; the spec
 `Console` vtable now carries the `cursorShow_fn` extension (committed in
 `075e1bf1`).
 
+**M6 (Windows 9x audio + console) — complete (Tasks 0–5).** A Win9x `waveOut`
+backend (`platform/audio_win9x.zig` + its PAL) implements the M4 `AudioOut`
+vtable (16-bit PCM, 44100/48000 Hz, 1/2 channels, two 500 ms buffers, blocking
+write, drain/close; unsupported config/device → `ConfigUnsupported`/
+`OpenFailed`), and a complete Win9x `Console` backend
+(`platform/console_win9x.zig` + PAL) implements all nine ops (raw mode,
+non-blocking `ReadConsoleInput` keys, Win32 output/size/cursor calls, `atexit`
+restore backstop). `main.zig` selects the backends at compile time with
+`@isWindows()` and an explicit Linux `else`; `Z9PLAY_WAV_OUT` still selects the
+hermetic WAV sink on every platform. Ctrl-C uses **Amendment 1, Option 3**:
+`enterRaw` clears `ENABLE_PROCESSED_INPUT`, so Ctrl-C arrives as a `KEY_EVENT`
+with `uChar == 0x03` → `.sigint` (a clean quit with exit 0); no stdcall
+`SetConsoleCtrlHandler` callback is used. The M6 gate `tests/tier_win9x.sh` is
+green **14/14**: PE32 + real undefined-symbol/import checks, Wine full-playback
+WAV parity vs the Linux golden (`max_delta=1`, `rms_milli=36`) and 2×
+determinism, and a pty console probe
+(`entered=1,raw_changed=1,restored=1`). The manual real-device path is
+`demo/win9x_README.txt`. The M6 `-osw --dump-c89` md5 is
+`87856b43091e2bf5d992fc795d9764f2` (stable 2×).
+
+The compiler for M6 is rebuilt from the **current `sf/src`** (post-D1/D2 parity
+fixes; md5 `2c48fa702393032c2b711a8d982bd388`, fixed point
+`b0e5f3b4e580f69eacdac7bd0e07dda1`, three-hop closure OK) — the pre-fix seed-v98
+binary must not be used. Defect status under the current numbering (reset
+2026-10-16; the old M0–M5 D1–D8 are all FIXED and in history): **D1** and
+**D2** are **FIXED** at root cause by the 2026-10-17 parity milestone; **D3**
+(conditional `@import` lazy-load gap) and **D4** (analyzer cluster) are **OPEN**;
+**D5** (`extern fn` with a body silently treated as a declaration; no stdcall
+definitions) is **OPEN**, and M6 works around it with the Option 3 Ctrl-C
+mechanism above. See `examples/torrent_example_defects.md`.
+
 ## Files
 
 M0 (all present; `[x]` = landed in M0):
@@ -173,10 +204,35 @@ M5b (Tasks 1–4 landed):
 - `[x]` `tests/console_test.zig`, `tests/tier_console.sh` — the extended all-ops
   console gate (11/11).
 
+M6 (Tasks 1–5 landed):
+
+- `[x]` `platform/audio_win9x.zig` — Win9x waveOut backend (16-bit PCM,
+  44100/48000, 1/2 channels, two 500 ms buffers, blocking write, drain/close;
+  `OpenFailed`/`ConfigUnsupported`).
+- `[x]` `platform/audio_win9x_pal.zig` — winmm/PAL `waveOut*` externs and the
+  `WAVEFORMATEX`/`WAVEHDR` mirrors.
+- `[x]` `platform/console_win9x.zig` — complete nine-op Win9x `Console` backend
+  (raw mode with processed input off for Ctrl-C Option 3, non-blocking
+  `ReadConsoleInput` key decode, Win32 output/size/cursor ops, `atexit`
+  restore backstop).
+- `[x]` `platform/console_win9x_pal.zig` — Win32 console API externs and
+  `INPUT_RECORD`/`COORD`/cursor/screen-buffer mirrors.
+- `[x]` `main.zig` — compile-time `@isWindows()` selection (WAV-sink env
+  override first; explicit Linux `else`), with console restore on every exit
+  path.
+- `[x]` `tests/tier_win9x.sh` — the M6 gate (mingw PE32 build + Wine WAV parity
+  + pty console restore; 14/14).
+- `[x]` `tests/win9x_console_probe.zig` — Wine pty probe asserting
+  `entered=1,raw_changed=1,restored=1`.
+- `[x]` `demo/win9x_README.txt` — manual Win98 build/copy/run procedure,
+  console/raw-mode caveats, Ctrl-C semantics and waveOut limits.
+
 ## Build and Run
 
-All tiers use the seed built from `release/seed/zig1-seed.tgz` (current seed v98;
-two-hop closure `hop1 == hop2 == f18b69ece1917bf970a036b276e5e403`):
+The Linux tiers use the seed built from `release/seed/zig1-seed.tgz` (current
+seed v98; two-hop closure `hop1 == hop2 == f18b69ece1917bf970a036b276e5e403`).
+The M6 Win9x tier instead uses the compiler rebuilt from the current `sf/src`
+(post-D1/D2; see the Windows 9x section below).
 
 ```bash
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9play_seed
@@ -252,9 +308,35 @@ exit it prints `Stopped at mm:ss.`. `--volume N` is a percentage (`0..100`,
 default `80`); `--start SEC` skips to integer second `SEC` before playing (the
 seek decodes and discards, so it is block-granular, ≤0.5 s); `--loop` repeats
 until quit. Playback drives the M4 `Player` into the hermetic WAV sink when
-`Z9PLAY_WAV_OUT=<file>` is set, else the Linux OSS `/dev/dsp` backend. Exit
+`Z9PLAY_WAV_OUT=<file>` is set (all platforms); otherwise `@isWindows()` selects
+the Win9x waveOut backend, else the Linux OSS `/dev/dsp` backend. Exit
 codes: `0` ok, `1` arguments, `2` open, `3` decoder, `4` audio, `5` internal.
 The M0–M4 request modes (`--info`/`--dump-setup`/`--pcm`/`--wav`) are unchanged.
+
+### Windows 9x (M6)
+
+The Win9x build is a PE32 i386 console executable produced by the shared mingw
+cross harness (`scripts/win32_cross/cross_build_run.sh`, `-osw`, `-lwinmm`).
+Build the compiler from the **current `sf/src`** (post-D1/D2 parity fixes; the
+seed-v98 binary predates them), then cross-build:
+
+```bash
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9play_m6
+ROOT=/workspace/znineeight bash scripts/win32_cross/cross_build_run.sh \
+    /tmp/z9play_m6/zig1_5_clean examples/z98/z9play/main.zig \
+    /tmp/z9play_win9x_build /tmp/z9play_win9x_build/z9play.exe -lwinmm
+```
+
+Copy `z9play.exe` plus an `.ogg` to the Win98 box and run `z9play.exe song.ogg`
+from an MS-DOS Prompt; the full manual procedure (copy/run, console behavior,
+Ctrl-C Option 3, raw-mode restore/recovery, waveOut limits) is
+`demo/win9x_README.txt`.
+
+```bash
+ZIG=/tmp/z9play_m6/zig1_5_clean sh examples/z98/z9play/tests/tier_win9x.sh
+```
+
+The Linux gates are unchanged:
 
 ```bash
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_info.sh
@@ -281,13 +363,13 @@ the golden `.meta` format and the determinism contract.
 
 ## Notes
 
-`NOTES.md` holds the build recipe, the `--dump-c89` md5
-(`4c9f760ae825d7fcf91cbf7a2500a4a4`, seed v98; M5b adds `platform/console.zig`
-to `main.zig`'s import closure and rewrites `main.zig` to drive the `Console`
-contract and `platform/console_linux.zig`, so it changed from the M5 value
-`0a60a27846476a73d2fac8e183d52d48`; prior M4
+`NOTES.md` holds the build recipe, the `--dump-c89` md5, the golden formats, and
+the milestone log. The M6 gate value is the Win9x target
+`87856b43091e2bf5d992fc795d9764f2` (`-osw --dump-c89`, stable 2×; compiler
+rebuilt from current `sf/src` post-D1/D2). The prior Linux `--dump-c89` value
+was `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b; prior M5
+`0a60a27846476a73d2fac8e183d52d48`, M4
 `d695bf99dadb7f6dbbc0f2a94bb42f43`, M3
 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`,
 M1 `344c26ed89dd0830443fa5e16b870ec0`,
-M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`), the golden formats, and the
-milestone log.
+M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`).

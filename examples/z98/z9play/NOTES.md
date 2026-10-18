@@ -1,12 +1,12 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed). M4 (audio output + ring buffer + Player core) complete and closed out (Tasks 0–6): the `AudioOut` vtable (`platform/audio.zig`), the hermetic WAV sink (`platform/audio_wavfile.zig`) and Linux OSS `/dev/dsp` backend (`platform/audio_oss.zig`/`audio_oss_pal.zig`), the shared `Player` + double-buffer `RingBuffer` (`player.zig`), the `z9play --wav <in.ogg> <out.wav>` gate subcommand, and `tests/tier_audio.sh` (tolerance + completion/monotonicity + 3× determinism vs the M3 goldens; 27/27). M4's Task 6 closeout (below) records the M5 CLI-plan amendment review: **no amendment needed** — M4's caller-owned, field-exposed `Player` API plus the `AudioOut` vtable cover the CLI's status line, keys, volume, clean stop, and the D8 pointer-vtable shape. M5 (interactive CLI playback) complete (Tasks 0–5): the `fmt.zig` status formatter, the `platform/console_linux.zig` raw `termios` console (`readKey`), the `cli.zig`/`main.zig` playback mode (`<file.ogg>` + `--volume`/`--start`/`--loop`/`--quiet`; startup metadata line, per-second `\r` status, keys space/`+`/`-`/`q`/Ctrl-C, `Stopped at mm:ss.`, exit codes 0/1/2/3/4/5), and `tests/tier_cli.sh` (PASS 23/23). M5b (console abstraction + complete Linux backend) complete (Tasks 1–4): the `platform/console.zig` `Console` contract (`Key = {none,char,sigint,up,down,left,right,enter,esc}`; the nine ops `clear`/`setCursor`/`writeStr`/`readKey`/`enterRaw`/`leaveRaw`/`width`/`height`/`cursorShow` + `state`; `readKey_fn: fn (*void) Key`), the rewritten `platform/console_linux.zig` backend over a caller-owned `ConsoleLinState` (`termios` raw mode, persistent ESC/arrow state machine, ANSI clear/setCursor/cursorShow, `ioctl(TIOCGWINSZ)` size), `main.zig` driving the CLI through the assembled `Console`, and the extended `tests/tier_console.sh` (PASS 11/11).
+**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed). M4 (audio output + ring buffer + Player core) complete and closed out (Tasks 0–6): the `AudioOut` vtable (`platform/audio.zig`), the hermetic WAV sink (`platform/audio_wavfile.zig`) and Linux OSS `/dev/dsp` backend (`platform/audio_oss.zig`/`audio_oss_pal.zig`), the shared `Player` + double-buffer `RingBuffer` (`player.zig`), the `z9play --wav <in.ogg> <out.wav>` gate subcommand, and `tests/tier_audio.sh` (tolerance + completion/monotonicity + 3× determinism vs the M3 goldens; 27/27). M4's Task 6 closeout (below) records the M5 CLI-plan amendment review: **no amendment needed** — M4's caller-owned, field-exposed `Player` API plus the `AudioOut` vtable cover the CLI's status line, keys, volume, clean stop, and the D8 pointer-vtable shape. M5 (interactive CLI playback) complete (Tasks 0–5): the `fmt.zig` status formatter, the `platform/console_linux.zig` raw `termios` console (`readKey`), the `cli.zig`/`main.zig` playback mode (`<file.ogg>` + `--volume`/`--start`/`--loop`/`--quiet`; startup metadata line, per-second `\r` status, keys space/`+`/`-`/`q`/Ctrl-C, `Stopped at mm:ss.`, exit codes 0/1/2/3/4/5), and `tests/tier_cli.sh` (PASS 23/23). M5b (console abstraction + complete Linux backend) complete (Tasks 1–4): the `platform/console.zig` `Console` contract (`Key = {none,char,sigint,up,down,left,right,enter,esc}`; the nine ops `clear`/`setCursor`/`writeStr`/`readKey`/`enterRaw`/`leaveRaw`/`width`/`height`/`cursorShow` + `state`; `readKey_fn: fn (*void) Key`), the rewritten `platform/console_linux.zig` backend over a caller-owned `ConsoleLinState` (`termios` raw mode, persistent ESC/arrow state machine, ANSI clear/setCursor/cursorShow, `ioctl(TIOCGWINSZ)` size), `main.zig` driving the CLI through the assembled `Console`, and the extended `tests/tier_console.sh` (PASS 11/11). M6 (Win9x audio + console) complete (Tasks 0–5): `platform/audio_win9x.zig` (+PAL) waveOut backend (16-bit PCM, 44100/48000, 1/2 ch, two 500 ms buffers, blocking write, drain/close), `platform/console_win9x.zig` (+PAL) complete nine-op `Console` backend with Amendment 1 Option 3 Ctrl-C (processed input off → `KEY_EVENT` 0x03 → `.sigint`; no stdcall callback), `main.zig` compile-time `@isWindows()` selection (`Z9PLAY_WAV_OUT` WAV-sink override first, explicit Linux `else`), `tests/tier_win9x.sh` 14/14 (PE32 + real undefined-symbol check, Wine WAV parity, pty console restore; `-osw --dump-c89` `87856b43091e2bf5d992fc795d9764f2`), and `demo/win9x_README.txt` manual Win98 procedure. Defect status (current numbering): D1/D2 FIXED; D3/D4 OPEN; D5 OPEN (Option 3 workaround).
 
 **Entry file:** `main.zig`
 
-**Working commit:** `5a096122` (`example(z9play): M5b console tier`; the last commit of the M5b console surface, pinned at M5b closeout). Prior closeout: `06321a72` (`example(z9play): M5 CLI tier`; the last commit of the M5 CLI surface, pinned at M5 closeout; the docs commit that follows also bumps the `--version` string to `(M5)`, so the recorded M5 MD5 is measured at that closeout tree, not at `06321a72`). Prior closeouts: M4 `61e93e72` (`example(z9play): M4 audio tier`; the last commit of the M4 audio surface — the docs commit that followed bumped `--version` to `(M4)`); M3 `c7af78ac` (`example(z9play): M3 --pcm + tier_decode`; the M3 `--pcm` + `tier_decode` commit — the last commit of the M3 decode surface, pinned at M3 closeout); M2 `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the last `std_math` surface commit; full M2 chain `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs)); M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`). **M3 decode chain:** `bb211810` (IMDCT + window + overlap-add) → `b497323a` (floor1) → `d925cb55` (residue type 0/1/2) → `16ae3eea` (packet → PCM) → `de48b5cf` (docs: D7 + cumulative-defect warning) → `c7af78ac` (M3 `--pcm` + `tier_decode`; this closeout). **M5 CLI chain:** `4154098c` (CLI status formatter) → `437c12cc` (T1 fix: fixed-width volume field) → `2a5384b4` (Linux raw console input) → `8dcb0072` (CLI playback loop + keys) → `7f447896` (T3 fix: `--start` pacing + integer-seconds message) → `06321a72` (M5 `tier_cli`; M5 closeout). **M5b chain:** `c554d666` (Console contract) → `8f968713` (complete Linux backend) → `4a96a0fa` (escape-decode state machine fix) → `35c9893d` (CLI drives the Console contract) → `5a096122` (M5b console tier; this closeout).
+**Working commit:** `a0a7616f` (`example(z9play): M6 T4 fix — real undefined-symbol check`; the last commit of the M6 Win9x surface, pinned at M6 closeout; this docs commit is docs-only and does not bump `--version`, which remains `(M5)`). Prior closeout: `5a096122` (`example(z9play): M5b console tier`; the last commit of the M5b console surface, pinned at M5b closeout). Prior closeout: `06321a72` (`example(z9play): M5 CLI tier`; the last commit of the M5 CLI surface, pinned at M5 closeout; the docs commit that follows also bumps the `--version` string to `(M5)`, so the recorded M5 MD5 is measured at that closeout tree, not at `06321a72`). Prior closeouts: M4 `61e93e72` (`example(z9play): M4 audio tier`; the last commit of the M4 audio surface — the docs commit that followed bumped `--version` to `(M4)`); M3 `c7af78ac` (`example(z9play): M3 --pcm + tier_decode`; the M3 `--pcm` + `tier_decode` commit — the last commit of the M3 decode surface, pinned at M3 closeout); M2 `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the last `std_math` surface commit; full M2 chain `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs)); M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`). **M3 decode chain:** `bb211810` (IMDCT + window + overlap-add) → `b497323a` (floor1) → `d925cb55` (residue type 0/1/2) → `16ae3eea` (packet → PCM) → `de48b5cf` (docs: D7 + cumulative-defect warning) → `c7af78ac` (M3 `--pcm` + `tier_decode`; this closeout). **M5 CLI chain:** `4154098c` (CLI status formatter) → `437c12cc` (T1 fix: fixed-width volume field) → `2a5384b4` (Linux raw console input) → `8dcb0072` (CLI playback loop + keys) → `7f447896` (T3 fix: `--start` pacing + integer-seconds message) → `06321a72` (M5 `tier_cli`; M5 closeout). **M5b chain:** `c554d666` (Console contract) → `8f968713` (complete Linux backend) → `4a96a0fa` (escape-decode state machine fix) → `35c9893d` (CLI drives the Console contract) → `5a096122` (M5b console tier; M5b closeout). **M6 chain:** `866b260f` (Win9x waveOut backend) → `d86b3441` + `85234e21` (Win9x console backend + Option 3 Ctrl-C fix) → `2e0f194a` (`@isWindows()` backend selection) → `f91eb8b2` + `a0a7616f` (Win9x tier + real undefined-symbol check; this closeout).
 
-**MD5 (`--dump-c89`):** `4c9f760ae825d7fcf91cbf7a2500a4a4` (seed `zig1_5_clean`, seed **v98**; stable 2×; M5b). **M5b changed this value** (M5 was `0a60a27846476a73d2fac8e183d52d48`): M5b adds `platform/console.zig` to `main.zig`'s import closure, rewrites `main.zig` to drive the `Console` contract (vtable assembly + `Key` dispatch), and rewrites `platform/console_linux.zig`, so the dump content shifts. The z9play **build seed / compiler fixed point is unchanged by M5b** (`f18b69ece1917bf970a036b276e5e403`; v98 — M5b is example-only, no compiler change). Prior: M5 `0a60a27846476a73d2fac8e183d52d48` (seed v98), M4 `d695bf99dadb7f6dbbc0f2a94bb42f43` (seed v97), M3 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`, M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`.
+**MD5 (`-osw --dump-c89`):** `87856b43091e2bf5d992fc795d9764f2` (M6 compiler rebuilt from current `sf/src` post-D1/D2, md5 `2c48fa702393032c2b711a8d982bd388`; stable 2×; M6). **M6 added the `-osw` target value**; the prior primary value was the Linux default `--dump-c89` `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b), because the M6 compile now emits the Win9x import closure behind `@isWindows()`. The z9play **compiler fixed point for M6** is `b0e5f3b4e580f69eacdac7bd0e07dda1` (compiler rebuilt from current `sf/src`; bootstrap seed v98 — the post-D1/D2 fixes landed after seed v98, so the old v98 binary fixed point `f18b69ece1917bf970a036b276e5e403` must not be used). Prior: M5b Linux `--dump-c89` `4c9f760ae825d7fcf91cbf7a2500a4a4` (seed v98), M5 `0a60a27846476a73d2fac8e183d52d48` (seed v98), M4 `d695bf99dadb7f6dbbc0f2a94bb42f43` (seed v97), M3 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`, M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`.
 
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md` (binding).
 M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
@@ -180,13 +180,16 @@ volume ±5 (0–100), **`q`**/**Ctrl-C** quit. On exit it prints `Stopped at mm:
   lines remain).
 
 The backend is chosen by the environment: `Z9PLAY_WAV_OUT=<file>` selects the
-hermetic WAV sink (`platform/audio_wavfile.zig`; no device touched), otherwise
-the Linux OSS `/dev/dsp` backend (`platform/audio_oss.zig`), which exits 4 when
-the device is absent. Raw keyboard input goes through the `Console` contract
-(`platform/console.zig`), assembled from the Linux backend
-(`platform/console_linux.zig`; `termios` raw mode, restored on every exit
-path); when stdin is not a tty the keys are not polled, so a redirected run
-still completes. Exit codes: `0` ok, `1`
+hermetic WAV sink (`platform/audio_wavfile.zig`; no device touched) on every
+platform. Otherwise the platform is selected at compile time with
+`@isWindows()`: Win9x uses the waveOut backend (`platform/audio_win9x.zig`),
+else Linux uses OSS `/dev/dsp` (`platform/audio_oss.zig`); either device path
+exits 4 when the device is absent/unopenable. Raw keyboard input goes through
+the `Console` contract (`platform/console.zig`), assembled from the matching
+platform backend — `platform/console_win9x.zig` on Win9x or
+`platform/console_linux.zig` on Linux (`termios` raw mode; both restore on
+every exit path). When stdin is not a console/tty the keys are not polled, so a
+redirected run still completes. Exit codes: `0` ok, `1`
 arguments, `2` open, `3` decoder, `4` audio, `5` internal.
 
 ```
@@ -198,7 +201,11 @@ TIER_CLI PASS
 ### `--dump-c89` (for the MD5 above)
 
 ```bash
-timeout 120 /tmp/z9play_seed/zig1_5_clean --dump-c89 examples/z98/z9play/main.zig | md5sum
+# M6: Win9x target (compiler rebuilt from current sf/src, post-D1/D2)
+timeout 300 /tmp/z9play_m6/zig1_5_clean -osw --dump-c89 examples/z98/z9play/main.zig | md5sum
+# 87856b43091e2bf5d992fc795d9764f2  -
+# (M6's recorded value is the -osw target above; the prior Linux value was M5b's:)
+# timeout 120 /tmp/z9play_seed/zig1_5_clean --dump-c89 examples/z98/z9play/main.zig | md5sum
 # 4c9f760ae825d7fcf91cbf7a2500a4a4  -
 # (M5, before M5b's platform/console.zig import closure + the Console-contract dispatch
 #  in main.zig and the platform/console_linux.zig rewrite: 0a60a27846476a73d2fac8e183d52d48;
@@ -758,3 +765,101 @@ abstraction that M6 (Win9x) and M7 (TUI) build on.
   (M5b console tier; this surface's last commit) → this docs commit. The M5b
   plan's Task 6 (M6 amendment review) is a separate dispatch; the plan carries no
   status field, so there is nothing to flip to "done".
+
+### M6 — Win9x audio + console (`platform/audio_win9x.zig`, `platform/console_win9x.zig`, `@isWindows()` selection; Tasks 0–5) — DONE
+
+Plan: `docs/superpowers/plans/2026-10-11-z9play-m6-win9x-plan.md`. Example-only;
+no compiler change and no seed rotation. **Compiler note:** M6 was built with a
+compiler regenerated from the **current `sf/src`** (the post-D1/D2 parity fixes),
+not with a prebuilt seed-v98 binary. Bootstrap seed v98 archive, then:
+
+```bash
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9play_m6
+# /tmp/z9play_m6/zig1_5_clean
+# md5         2c48fa702393032c2b711a8d982bd388
+# fixed point b0e5f3b4e580f69eacdac7bd0e07dda1 (three-hop closure OK)
+```
+
+The old v98 seed binary (`f18b69ece1917bf970a036b276e5e403`) predates those
+fixes and still exhibits old D2; it is **not** the M6 compiler.
+
+- **Task 0 (preflight) — DONE.** mingw i686 + Wine available; shared
+  `scripts/win32_cross/cross_build_run.sh` recipe (`-osw` + `-lwinmm`) confirmed;
+  M5b `Console` contract and M4 `AudioOut` vtable confirmed.
+- **Task 1 (`platform/audio_win9x.zig` + `audio_win9x_pal.zig`) — DONE.**
+  waveOut backend implementing the M4 `AudioOut` vtable
+  (`waveOutOpen`/`waveOutPrepareHeader`/`waveOutWrite`/`waveOutUnprepareHeader`/
+  `waveOutReset`/`waveOutClose`), 16-bit little-endian PCM at 44100/48000 Hz,
+  1/2 channels; anything else is `ConfigUnsupported`, a failed open is
+  `OpenFailed`. Two 500 ms buffers (`NBUF = 2`, max 96000 B each) make the
+  asynchronous waveOut writes behave like the M4 blocking `write`; `drain`
+  submits the final partial buffer and waits, `close` resets/unqueues/closes.
+  The backend exposes free functions (the caller assembles the vtable — the D8
+  pointer shape; it does not return `AudioOut`). Commit `866b260f`.
+- **Task 2 (`platform/console_win9x.zig` + `console_win9x_pal.zig`) — DONE.**
+  Complete nine-op `Console` backend: raw mode via Get/SetConsoleMode, keys via
+  GetNumberOfConsoleInputEvents/ReadConsoleInputA (non-blocking; `VK_*` arrows,
+  Enter, Esc, other characters, in-band `Key.none`), output via
+  WriteConsoleA/FillConsoleOutputCharacterA/SetConsoleCursorPosition,
+  width/height via GetConsoleScreenBufferInfo, cursor visibility via
+  Get/SetConsoleCursorInfo. **Ctrl-C is Amendment 1, Option 3** (this is the
+  defect-D5 workaround): `enterRaw` clears `ENABLE_LINE_INPUT`,
+  `ENABLE_ECHO_INPUT` **and** `ENABLE_PROCESSED_INPUT`; Ctrl-C then arrives as a
+  `KEY_EVENT` with `uChar == 0x03`, which `readKey` maps to `.sigint`.
+  `SetConsoleCtrlHandler` is not used; an idempotent `leaveRaw` plus an
+  `atexit` backstop restore the saved input mode. Known limits: Ctrl-Break still
+  terminates through the default handler; console-close/shutdown restore is
+  moot. Commits `d86b3441` + fix `85234e21`.
+- **Task 3 (`main.zig`) — DONE.** Backend selection is compile-time via
+  `@isWindows()` with an explicit `else`: `Z9PLAY_WAV_OUT` still selects the
+  hermetic WAV sink on **all** platforms (test/hermetic override), else Win9x
+  gets waveOut + the Win9x console, else Linux OSS `/dev/dsp` + the Linux
+  console. Exit codes 0–5 are preserved; playback restores the console through
+  the selected `leaveRaw_fn` on `playFail` and the final exit-0 path (Z98
+  `std.os.exit` runs no `defer`). Commit `2e0f194a`.
+- **Task 4 (`tests/tier_win9x.sh` + `tests/win9x_console_probe.zig`) — DONE.**
+  Green **14/14** (0 failed, 0 skipped). It gates: (a) cross-build via the
+  shared harness with `XRUNRC=0`, a produced **PE32 i386** executable, **no
+  unresolved `zF_`/`zT_` program symbols**, a `WINMM.dll` import, and imports
+  limited to KERNEL32/msvcrt/WINMM; the **`-osw --dump-c89` md5**, stable 2×;
+  (b) Wine full 2 s playback with `Z9PLAY_WAV_OUT` (real waveOut not touched) —
+  exit 0, `Stopped at 00:02.`, canonical 44-byte WAV + golden payload size, WAV
+  parity vs `testdata/expected/sine_stereo_44100.pcm`
+  (`max_delta=1`, `rms_milli=36`), deterministic 2×; (c) the Win9x console
+  probe under a Wine pty asserting `entered=1,raw_changed=1,restored=1`
+  (`before=503 raw=496 after=503`). SKIP-with-reason only when mingw/Wine is
+  genuinely absent; a present Wine with no console is a FAIL, not a pass.
+  Commits `f91eb8b2` + fix `a0a7616f`.
+- **Task 5 (docs) — DONE (this commit).** New
+  `examples/z98/z9play/demo/win9x_README.txt`: the manual Win98 procedure
+  (cross-build/copy/run, expected console behavior, Ctrl-C Option 3 semantics,
+  raw-mode restore caveat + abnormal-termination recovery, waveOut
+  best-effort/format limits, and the `Z9PLAY_WAV_OUT` no-device test override).
+  This section plus `README.md` record the M6 truth.
+
+**MD5 (`-osw --dump-c89`):** `87856b43091e2bf5d992fc795d9764f2` (M6 compiler
+rebuilt from current `sf/src`; stable 2×). It is distinct from the Linux
+`--dump-c89` value `4c9f760ae825d7fcf91cbf7a2500a4a4` recorded for M5b because
+the target changes the emitted platform closure.
+
+**Defect status (numbering disambiguation).** `examples/torrent_example_defects.md`
+was **reset 2026-10-16**: the old M0–M5 **D1–D8** are all FIXED at root cause
+and live in history. Under the **current** numbering: **D1** (optional-of-
+aggregate function-pointer return) is **FIXED**; **D2** (`@isWindows()`
+dead-arm module leak) is **FIXED** — both at root cause by the 2026-10-17
+compiler D1/D2 parity milestone, and both are the reason M6 must build from
+current `sf/src` rather than a pre-fix binary. **D3** (conditional `@import`
+lazy-load gap) and **D4** (static-analyzer cluster) remain **OPEN**. **D5**
+(`extern fn` with a body silently treated as a declaration; no way to define a
+non-cdecl/stdcall function) is **OPEN**; M6 works around D5 with Amendment 1
+Option 3 above (no SetConsoleCtrlHandler/stdcall callback), and the defect entry
+records the clean-reject / stdcall-definition fixes for a future compiler plan.
+
+- M6 chain: `866b260f` (Win9x waveOut backend) → `d86b3441` + `85234e21`
+  (Win9x console backend + Option 3 Ctrl-C fix) → `2e0f194a` (`@isWindows()`
+  backend selection) → `f91eb8b2` + `a0a7616f` (Win9x tier + real
+  undefined-symbol check; the M6 working commit) → this docs commit. The M6
+  plan's Task 6 (M7 amendment review) is a separate dispatch; the plan carries
+  no status field, so there is nothing to flip to "done". Example-only: no
+  `sf/src` change, no seed rotation, and the Linux gates/behavior are unchanged
+  (the `Z9PLAY_WAV_OUT` path still wins on every platform).
