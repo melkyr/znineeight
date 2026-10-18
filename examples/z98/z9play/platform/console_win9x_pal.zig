@@ -15,20 +15,16 @@
 // before the 4-byte-aligned union member).
 //
 // Calling convention: the console API is WINAPI (__stdcall on i686 mingw),
-// hence `extern "stdcall"`. `CtrlHandler` is the PHANDLER_ROUTINE type
-// (BOOL WINAPI (*)(DWORD)). Z98 cannot define a stdcall *definition*, so the
-// backend's cdecl `onCtrl` is converted with an explicit `@ptrCast(CtrlHandler,
-// onCtrl)` at the single registration site; a console-control handler only
-// receives DWORDs/returns BOOL, so the frame shape is the same either way.
+// hence `extern "stdcall"`. No console-control handler is bound: Z98 cannot
+// define a stdcall function (defect D5), and a cdecl function cast to the
+// stdcall handler type would corrupt the i386 stack. The Ctrl-C path is
+// processed-input-off KEY_EVENT 0x03 in the backend (M6 Amendment 1).
 //
 // Pure Z98: free functions only, hardcoded numerically stable Win32 constants
 // live in the backend.
 
 @cInclude("<windows.h>");
 @cInclude("<stdlib.h>");
-
-// PHANDLER_ROUTINE: BOOL (WINAPI *)(DWORD).
-pub const CtrlHandler = extern "stdcall" fn (ctrl_type: u32) i32;
 
 // COORD (wincon.h): SHORT x, SHORT y.
 pub const Coord = struct {
@@ -111,9 +107,6 @@ pub extern "stdcall" fn GetConsoleCursorInfo(hConsoleOutput: *void, lpConsoleCur
 
 // BOOL SetConsoleCursorInfo(HANDLE, const CONSOLE_CURSOR_INFO*);
 pub extern "stdcall" fn SetConsoleCursorInfo(hConsoleOutput: *void, lpConsoleCursorInfo: *void) i32;
-
-// BOOL SetConsoleCtrlHandler(PHANDLER_ROUTINE, BOOL);
-pub extern "stdcall" fn SetConsoleCtrlHandler(handler: CtrlHandler, add: i32) i32;
 
 // int atexit(void (*)(void)) — CRT cdecl callback, used for the crash backstop.
 pub extern "c" fn atexit(func: fn () void) i32;
