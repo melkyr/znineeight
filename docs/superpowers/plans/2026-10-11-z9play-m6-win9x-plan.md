@@ -36,7 +36,7 @@ Same as prior milestones: example-only `examples/z98/z9play/**`; **no compiler c
 
 ### Task 2: Win9x console backend
 
-**Interfaces:** `console_win9x` implementing the **complete M5b `Console` contract** (all 9 ops: `enterRaw`/`leaveRaw`/`readKey`/`clear`/`setCursor`/`writeStr`/`width`/`height`/`cursorShow`). `enterRaw`: `SetConsoleMode` clear `ENABLE_LINE_INPUT`/`ENABLE_ECHO_INPUT`. `leaveRaw` (restore): **explicit before every `std.os.exit` path** (Z98 `std.os.exit` runs no `defer`) **plus** a `SetConsoleCtrlHandler`/`atexit` crash backstop — `defer` alone is insufficient. `readKey`: `ReadConsoleInput`/`KEY_EVENT`, mapping `VK_*` (arrows/`VK_RETURN`/`VK_ESCAPE`) to the shared `Key` variants and Ctrl-C (console-control handler) to `.sigint`. `clear`/`setCursor`/`writeStr`/`cursorShow`: `FillConsoleOutputCharacter`/`SetConsoleCursorPosition`/`WriteConsole`. `width`/`height`: `GetConsoleScreenBufferInfo`.
+**Interfaces:** `console_win9x` implementing the **complete M5b `Console` contract** (all 9 ops: `enterRaw`/`leaveRaw`/`readKey`/`clear`/`setCursor`/`writeStr`/`width`/`height`/`cursorShow`). `enterRaw` (AMENDMENT 1, 2026-10-18 — operator ruling, Option 3): `SetConsoleMode` clear `ENABLE_LINE_INPUT`/`ENABLE_ECHO_INPUT` **and** `ENABLE_PROCESSED_INPUT` (so Ctrl-C is reported in the input buffer as a `KEY_EVENT` with `uChar == 0x03`). `leaveRaw` (restore): **explicit before every `std.os.exit` path** (Z98 `std.os.exit` runs no `defer`) **plus** an `atexit` crash backstop — `defer` alone is insufficient; `SetConsoleCtrlHandler` is NOT used (Z98 cannot define stdcall functions — defect D5; see Amendment 1). `readKey`: `ReadConsoleInput`/`KEY_EVENT`, mapping `VK_*` (arrows/`VK_RETURN`/`VK_ESCAPE`) to the shared `Key` variants and Ctrl-C (`uChar == 0x03`) to `.sigint`. `clear`/`setCursor`/`writeStr`/`cursorShow`: `FillConsoleOutputCharacter`/`SetConsoleCursorPosition`/`WriteConsole`. `width`/`height`: `GetConsoleScreenBufferInfo`.
 - [ ] Build `-osw` clean. Commit `example(z9play): Win9x console backend`.
 
 ### Task 3: Backend selection
@@ -59,3 +59,11 @@ Same as prior milestones: example-only `examples/z98/z9play/**`; **no compiler c
 - [ ] Read `2026-10-11-z9play-m7-tui-plan.md`. Judge whether M6's `console_win9x` + M5's Linux console actually expose the full `Console` vtable M7 needs (cursor addressing, size, screen clear, non-echoed keys) on both platforms, and whether M7's `std.fs` directory-iteration addition is still the right shape. If an amendment is required, **STOP-present** it; else record "no amendment needed".
 
 **Gate:** approved M7 amendment or justified "no amendment needed".
+
+### Amendment 1 — T2 Ctrl-C mechanism (operator ruling, 2026-10-18)
+
+Z98 cannot define a stdcall function: `extern "stdcall" fn` with a body is accepted (rc=0) and the definition is silently dropped (link error surfaces at the C toolchain, not as a diagnostic); `callconv(...)` is rejected by the parser; `export fn` is cdecl. The originally-planned `SetConsoleCtrlHandler` callback is therefore not implementable in Z98 — a cdecl function cast to the stdcall `PHANDLER_ROUTINE` is a real i386 stack-cleanup ABI defect (review Critical, objdump `ret` vs `ret $4`).
+
+**Ruling (Option 3):** `enterRaw` clears `ENABLE_PROCESSED_INPUT`; Ctrl-C is delivered as a `KEY_EVENT` with `uChar == 0x03` and `readKey` maps it to `.sigint` (the backend already carries a defensive 0x03 arm); `SetConsoleCtrlHandler` and its cdecl cast are removed; `atexit` remains the restore backstop. Known limitations (documented in Task 5 docs): Ctrl-Break still terminates via the default handler; console-close/shutdown restore is moot (the console is gone).
+
+The compiler issue is recorded as defect **D5** in `examples/torrent_example_defects.md`: defect = extern-fn-with-body silent drop; feature gap = stdcall function definitions do not exist; minimal fix = clean reject with an error code; full fix = stdcall definition support.
