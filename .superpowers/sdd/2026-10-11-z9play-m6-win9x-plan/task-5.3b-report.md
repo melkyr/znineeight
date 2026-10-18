@@ -2011,3 +2011,178 @@ suffix-call sites are restored; the audit is correctly scoped; and the `_crt`
 entry/libs regression is corrected with an explicit `_nocrt`/`_crt` matrix.
 Native/hardware verification remains deferred by Amendment 5; no source edits
 were made.
+
+---
+
+## Fix round 4 (2026-10-18)
+
+This section is appended per the fourth review ruling. It supersedes the audit
+command, the site/count accounting, and the `std_parse:3039/:3040` attribution in
+Fix round 3, while leaving the site inventory itself unchanged. Still
+report-only: zero source edits, no downloads/installs, no native-toolchain
+probes. Every native claim remains **design-verified; hardware verification
+pending**.
+
+### R4-C1 — complete C1 audit: decimal literals plus suffix-append call sites
+
+**Finding accepted.** The R3-C1.3 emitter command
+(`task-5.3b-report.md:1846-1852`) matched only type spellings and
+already-suffixed literals:
+
+```sh
+grep -nE 'long long|unsigned long long|0[xX][0-9A-Fa-f]+(ULL|LL|ull|ll)|[0-9]+(ULL|LL|ull|ll)\b|\bLL\b|\bULL\b' \
+    sf/src/c89_emit.zig sf/src/emit_support.zig
+```
+
+It cannot match the R3-C1.1 unsuffixed 19+ digit decimals
+(`c89_emit.zig:4108,4120,4153`) or the R3-C1.2 suffix-appending call sites
+(`c89_emit.zig:3852,3863,4057,4076,4095,4188,4203`). The complete audit is now
+three commands.
+
+#### R4-C1.1 Combined type/suffix + long-decimal scan
+
+```sh
+cd /workspace/znineeight
+grep -nE 'long long|unsigned long long|0[xX][0-9A-Fa-f]+(ULL|LL|ull|ll)|[0-9]+(ULL|LL|ull|ll)\b|\bLL\b|\bULL\b|-?[0-9]{19,}' \
+    sf/src/c89_emit.zig sf/src/emit_support.zig
+```
+
+Observed result: **140 raw matching lines** (`c89_emit.zig` 35,
+`emit_support.zig` 105). The added `-?[0-9]{19,}` alternative is what finds
+`4108` (`9223372036854775807`), `4120` (`(-9223372036854775807 - 1)`), and
+`4153` (`9223372036854775808`); it also matches the explanatory comment at
+`4130`.
+
+#### R4-C1.2 Greater-than-2^31 decimal scan
+
+The 19+ digit regex above catches only the `2^63` neighbourhood. A second scan
+covers all decimal literals above `2^31-1`:
+
+```sh
+grep -noE '[0-9]{10,}' sf/src/c89_emit.zig sf/src/emit_support.zig \
+  | awk -F: '$3+0 > 2147483647'
+```
+
+Observed result: **17 matches**, categorized as:
+
+- **3** new R3-C1.1 sites: `c89_emit.zig:4108`, `:4120`, `:4153`.
+- **1** non-code comment: `c89_emit.zig:4130`.
+- **5** already-covered 64-bit sites: `c89_emit.zig:5395`;
+  `emit_support.zig:240,244,552,557` (all already carry `ULL`/`LL` and are in
+  the R2 lists).
+- **8** 32-bit-valid or source-only values: `c89_emit.zig:3973` (Zig threshold,
+  not an emitted literal), `c89_emit.zig:4152` (emitted `2147483648`, valid as a
+  32-bit `unsigned long` in C89), and `emit_support.zig:384,388,429,582,587,639`
+  (emitted `4294967295U`, a valid 32-bit unsigned literal). These do not need a
+  64-bit wrapper and must not get one (it would change arithmetic width).
+
+#### R4-C1.3 Explicit suffix-append call-site audit
+
+```sh
+grep -nE 'intLitSuffix(Neg|Uns)\(' sf/src/c89_emit.zig
+```
+
+Observed result: **9 lines** — the two definitions at `3971`/`3977` and the
+**7 call sites** at `3852`, `3863`, `4057`, `4076`, `4095`, `4188`, `4203`.
+All seven are R3-C1.2 edits; a literal-only grep cannot see them because the
+digits and the suffix are written by separate statements.
+
+#### R4-C1.4 Count reconciliation: 139 sites
+
+The complete ledger arithmetic is:
+
+```text
+140  combined scan lines (R4-C1.1)
+ +7  suffix-append call sites (R4-C1.3; not matched by R4-C1.1)
+---
+147  candidate lines
+ -3  c89 non-code: 4130 comment, 4862 comment, 6539 "LL:n" marker
+ -5  emit_support out-of-scope: 42,43 GCC/mingw branch; 179,183,187 POSIX-only
+---
+139  audit sites
+```
+
+Per file this verifies the reviewer's corrected total:
+
+| File | Sites | Breakdown |
+|:--|--:|:--|
+| `sf/src/c89_emit.zig` | **39** | R2-C1.2 29 + R3-C1.1 3 + R3-C1.2 7 |
+| `sf/src/emit_support.zig` | **100** | 105 raw matches − 5 out-of-scope (42,43,179,183,187) |
+| **Total** | **139** | |
+
+The previous **129** was exactly the two table rows minus the 10 sites added by
+R3-C1.1 (3) and R3-C1.2 (7); that accounting is false and is replaced by 139.
+One precision note: R2-C1.2's 29-line set includes `4453`, `4467`, `4478`, which
+the broad suffix regex matches inside the variable names `div0ull`/`eq0ll`.
+Those are dependent writer lines, not independent literals, so **136** lines
+require an independent spelling edit; the 139 site ledger is unchanged.
+
+### R4-C2 — emitted-tree audit includes the unsuffixed `LONG_MIN` hits
+
+The R3-C1.3 emitted-tree command matched only typed/suffixed text and excluded
+five live unsuffixed sites. The complete command adds the same long-decimal
+alternative:
+
+```sh
+grep -RInE 'long long|unsigned long long|0[xX][0-9A-Fa-f]+(ULL|LL|ull|ll)|[0-9]+(ULL|LL|ull|ll)\b|\bLL\b|\bULL\b|-?[0-9]{19,}' \
+    /tmp/t53b_dump/z9play /tmp/t53b_dump/z9torr /tmp/t53b_dump/hello \
+    --include='*.c' --include='*.h'
+```
+
+Observed result: **4,070 matching lines** (the old 4,065 plus 5), broken down as:
+
+| Dump | Combined lines | GCC `zig_compat.h` (legit) | POSIX `std_time_prelude.h` | Non-portable Windows-compiled |
+|:--|--:|--:|--:|--:|
+| z9play | 1,608 | 2 | 3 | 1,603 |
+| z9torr | 2,358 | 2 | 3 | 2,353 |
+| hello | 104 | 2 | 0 | 102 |
+| **Total** | **4,070** | **6** | **6** | **4,058** |
+
+The five previously missed lines are all the `(-9223372036854775807 - 1)`
+shape produced by `c89_emit.zig:4120`:
+
+- `/tmp/t53b_dump/z9play/std_math_80387A0C.c:922`
+- `/tmp/t53b_dump/z9play/std_file_A421C1F8.c:950`
+- `/tmp/t53b_dump/z9torr/std_file_A421C1F8.c:950`
+- `/tmp/t53b_dump/z9torr/std_parse_E5E022CD.c:1171`
+- `/tmp/t53b_dump/z9torr/std_parse_E5E022CD.c:1192`
+
+The corrected non-portable count is therefore **4,058**, not 4,053. The 4,053
+figure was arithmetically consistent with the old 4,065 raw total but omitted
+these five live unsuffixed sites; the T5.3 acceptance target becomes **0 among
+4,058** (with the 6 legitimate GCC-branch and 6 POSIX-only lines still excluded).
+The six OWC-branch `zig_compat.h` lines remain inside the 4,058 and are changed
+by R1-C1.1.
+
+### R4-C3 — attribution of `std_parse:3039/:3040` corrected
+
+R3 attributed `std_parse_E5E022CD.c:3039` and `:3040` to `c89_emit.zig:4108`
+and `:4153`. That is wrong. Both (and `:3041`) are positive constants emitted by
+`writeIntConstRvalue`'s positive path at `c89_emit.zig:3863`, which calls
+`intLitSuffixUns(value)`; values above `2^32-1` receive `ULL`:
+
+```c
+zG_B8FB85DB_MAX_I64_MAG = (zT_79FAE712_u64)(9223372036854775807ULL);
+zG_4653056E_MAX_I64_NEG_MAG = (zT_79FAE712_u64)(9223372036854775808ULL);
+zG_864DD847_MAX_U64 = (zT_79FAE712_u64)(18446744073709551615ULL);
+```
+
+`4108`/`4153` are the saturation-bound helpers (`satMaxLitBound(64)` /
+`satMinMagLitBound(64)`), not the producer of these initializers. The edit list
+is unchanged — `:3863` is already R3-C1.2 — but the provenance is now correct.
+
+### R4 residual risks
+
+| # | Risk | Impact | Mitigation / status |
+|:--|:--|:--|:--|
+| R4-1 | The old type/suffix grep alone is incomplete | VC6 `/Za` still fails on missed literals | acceptance runs R4-C1.1 + R4-C1.2 + R4-C1.3 and the emitted R4-C2 command; zero non-portable matches required. |
+| R4-2 | `4,058` counts raw source text, not preprocessed output | text-match gate is necessary but not sufficient | native preprocessing remains hardware-pending (Amendment 5); design uses the same tokens for all toolchains. |
+| R4-3 | 139 ledger sites include three dependent writer lines | ledger vs independent-edit count confusion | explicit: 139 audit sites, 136 independent spelling edits; inventory edits unchanged. |
+
+**Fix-round-4 status: DONE_WITH_CONCERNS.** The C1 audit now covers typed,
+suffixed, unsuffixed 19+ digit, and all `>2^31` decimal sites plus the seven
+suffix-append call sites. The corrected ledger is 139 audit sites
+(39 `c89_emit.zig` + 100 `emit_support.zig`), and the emitted tree is
+4,070 raw / 4,058 non-portable lines including the five unsuffixed `LONG_MIN`
+hits. Native compile/link/run verification remains hardware-pending per
+Amendment 5; no source edits or native probes were performed.
