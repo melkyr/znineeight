@@ -106,11 +106,13 @@ qBittorrent `reserved=0000000000180005` handshake now succeeds, and
 ## M6 — Win9x default profile (2026-10-18)
 
 - **Default profile:** bare `-osw` = Windows 9x, no CRT. The emitted mingw
-  script links `-nostdlib -e,_mainCRTStartup -lgcc -lkernel32 -lwsock32`; the
-  emitted no-CRT runtime provides `mainCRTStartup`/argv, stdio/console, env,
-  clock and `strlen`/`memcpy`/`memset`/`strncmp`. Result: a single
-  drag-and-drop `z9torr.exe`; no msvcrt.dll redistributable. `-osw nt` is the
-  explicit opt-in CRT/XP profile.
+  script links `-m32 -nostdlib -Wl,-e,_mainCRTStartup` with
+  `-lgcc -lkernel32 -lwinmm -lwsock32` (winmm is linked but unused unless a
+  WINMM symbol is referenced); the emitted no-CRT runtime provides
+  `mainCRTStartup`/argv, stdio/console, env, clock and
+  `strlen`/`memcpy`/`memset`/`strncmp`. Result: a single drag-and-drop
+  `z9torr.exe`; no msvcrt.dll redistributable. `-osw nt` is the explicit
+  opt-in CRT/XP profile.
 - **Emitted scripts:** 9x no-CRT default `build_target_nocrt.bat` /
   `build_owc_nocrt.bat`; static-CRT alternates `build_target_crt.bat` /
   `build_owc_crt.bat`; `build_target.bat` / `build_owc.bat` remain
@@ -120,10 +122,15 @@ qBittorrent `reserved=0000000000180005` handshake now succeeds, and
   `b299b4b435e624d0ddbd2edde681cbc3`). `-fsafe` and `-ffast` both emit/link
   the 9x no-CRT image. `-osw --dump-c89` md5
   `54146cf3afc4c25cb5d98efccc68a2f1` (stable 3×).
-- **Imports:** PE32; exactly `KERNEL32.DLL` + `WSOCK32.DLL`; no `MSVCRT.DLL`
-  and no XP+ `GetFileSizeEx` / `SetFilePointerEx` / `GetFileAttributesExA`.
-  Gate: `bash scripts/win32_cross/check_win9x_imports.sh <exe> 9x` → PASS.
-- **Wine smoke:** the tier4 functional loopback checks pass (rc 0, fetched
+- **Imports (emitted no-CRT path):** PE32; exactly `KERNEL32.DLL` +
+  `WSOCK32.DLL`; no `MSVCRT.DLL` and no XP+ `GetFileSizeEx` /
+  `SetFilePointerEx` / `GetFileAttributesExA`. Gate:
+  `bash scripts/win32_cross/check_win9x_imports.sh <exe> 9x` → PASS. The legacy
+  `cross_build_run.sh` harness links the normal CRT (its exe imports MSVCRT),
+  so it is not 9x-profile evidence; `cross_nocrt.sh` is not a drop-in for
+  z9torr (no `-lwsock32`).
+- **Wine smoke:** the tier4 run exe is built with the emitted 9x no-CRT
+  `build_target.sh`, and its functional loopback checks pass (rc 0, fetched
   1048576, golden SHA-1 `7a985d40…`, `PARITY=OK`). Its 1 Hz progress assertion
   is timing-sensitive: the 1 MiB loopback transfer can finish before the first
   sample, and the committed one-shot mock-peer restart occasionally races the
@@ -139,8 +146,12 @@ M5 makes the client build and run for Win9x.
   arithmetic). Since M5 S1/S2 every tier and every mock is `-fsafe`; the UB that
   `-ffast` used to hide is fixed, and the example's build recipes no longer say
   `-ffast`.
-- **Windows build:** emit with `-osw`, cross-link with mingw. The win32 link
-  line always adds `-lwsock32` (Winsock 1.1). The M5-era `-osw` emit md5 was
+- **Windows build:** emit with `-osw`; the emitted `build_target.sh mingw`
+  is the 9x no-CRT path. It links `-m32 -nostdlib -Wl,-e,_mainCRTStartup`
+  plus `-lgcc -lkernel32 -lwinmm -lwsock32` (winmm is linked but unused unless
+  a WINMM symbol is referenced). The legacy `cross_build_run.sh` harness links
+  the normal CRT and its exe imports MSVCRT, so it is not 9x-profile evidence.
+  The M5-era `-osw` emit md5 was
   `4a330207a420462a9ad4376ace7d0a63`; under the M6 default 9x profile (seed
   v101) it is `54146cf3afc4c25cb5d98efccc68a2f1` (stable 3×):
   ```bash

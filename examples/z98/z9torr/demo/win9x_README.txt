@@ -14,9 +14,10 @@ automated and does not gate anything.
   * THIS DOCUMENT: copy the artifacts to a real Win98 box and run there.
     The Win98 machine is outside the repository; there is no in-repo gate.
 
-Default -osw profile: Windows 9x, no CRT. The mingw link is
--nostdlib -e,_mainCRTStartup -lgcc -lkernel32 -lwsock32, so z9torr.exe is a
-single drag-and-drop EXE with no msvcrt.dll redistributable. The only imported
+Default -osw profile: Windows 9x, no CRT. The emitted mingw link is
+-m32 -nostdlib -Wl,-e,_mainCRTStartup + -lgcc -lkernel32 -lwinmm -lwsock32
+(winmm is linked but unused unless a WINMM symbol is referenced), so z9torr.exe
+is a single drag-and-drop EXE with no msvcrt.dll redistributable. The only imported
 DLLs are OS DLLs present on Win95+: KERNEL32.DLL and WSOCK32.DLL (Winsock 1.1).
 The Windows 9x runtime shims live in the emitted no-CRT support. `-osw nt` is
 the explicit opt-in CRT/XP profile.
@@ -45,23 +46,25 @@ From the repository root (default `-osw` = 9x no-CRT):
         examples/z98/z9torr/main.zig
     sh /tmp/t54_z9torr/build_target.sh mingw /tmp/t54_z9torr/z9torr.exe
 
-The same build through the committed cross harness (dumps with -osw --dump-c89,
-compiles every emitted .c with i686-w64-mingw32-gcc, links -lwsock32):
+`scripts/win32_cross/cross_build_run.sh` is the legacy CRT cross harness: it
+dumps with -osw --dump-c89, compiles every emitted .c with
+i686-w64-mingw32-gcc, and links the normal CRT + -lwsock32. Do NOT use it to
+verify the 9x default: that exe imports MSVCRT.DLL and is not 9x-profile
+evidence. The 9x no-CRT path is the EMITTED `build_target.sh mingw` above, or
+`build_target_nocrt.bat` / `build_owc_nocrt.bat` on the native toolchains.
+`scripts/win32_cross/cross_nocrt.sh` is not a drop-in for z9torr (it does not
+link -lwsock32).
 
-    bash scripts/win32_cross/cross_build_run.sh \
-        /tmp/t54/zig1_5_clean \
-        examples/z98/z9torr/main.zig \
-        /tmp/t54_cross /tmp/t54_cross/z9torr.exe
-
-Sanity: `file z9torr.exe` reports
+Sanity: for the EMITTED no-CRT exe, `file` reports
   "PE32 executable (console) Intel 80386, for MS Windows", and the import
 table is exactly KERNEL32.DLL + WSOCK32.DLL (no msvcrt.dll). The committed gate
-is `bash scripts/win32_cross/check_win9x_imports.sh z9torr.exe 9x`.
+is `bash scripts/win32_cross/check_win9x_imports.sh z9torr.exe 9x`, applied to
+that emitted no-CRT build.
 
-The mingw link line always adds -lwsock32 (Winsock 1.1). The emitted
-build_target.sh mingw branch sets LIBS="-lwsock32" and, for the 9x default,
-links with -nostdlib -e,_mainCRTStartup -lgcc -lkernel32; cross_build_run.sh
-does the same.
+The emitted 9x mingw link line is
+`-m32 -nostdlib -Wl,-e,_mainCRTStartup` with
+`-lgcc -lkernel32 -lwinmm -lwsock32`. winmm is linked but unused unless a WINMM
+symbol is referenced.
 
 -osw emit md5 (byte-identity over the Windows-target C89 dump):
 

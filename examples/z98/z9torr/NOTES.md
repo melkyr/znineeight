@@ -267,29 +267,62 @@ with `peers=5`, 4177 `piece` frames (exit 124, 100 s window; see
 `lin_bin/z9torr.log`). New `--dump-c89` md5
 `739f5d2d69667ae3f8b758219c7d3248`.
 
+## M6 — Win9x default profile (2026-10-18)
+
+T5.4 truth-up: bare `-osw` is now the Windows 9x no-CRT default (T5.3). The
+emitted `build_target.sh mingw` links `-m32 -nostdlib
+-Wl,-e,_mainCRTStartup` + `-lgcc -lkernel32 -lwinmm -lwsock32`; `winmm` is
+linked but unused unless a WINMM symbol is referenced. The result is a single
+drag-and-drop PE32 importing only KERNEL32.DLL + WSOCK32.DLL (no msvcrt.dll);
+`build_target_nocrt.bat` / `build_owc_nocrt.bat` are the native 9x defaults and
+`*_crt.bat` are the static-CRT alternates. `-osw nt` is the opt-in CRT/XP
+profile. The legacy `cross_build_run.sh` harness links the normal CRT (its exe
+imports MSVCRT) and is not 9x-profile evidence; `cross_nocrt.sh` is not a
+drop-in for z9torr (no `-lwsock32`).
+
+- Seed v101 (`/tmp/t54/zig1_5_clean`, fixed point
+  `b299b4b435e624d0ddbd2edde681cbc3`); `-osw --dump-c89` md5
+  `54146cf3afc4c25cb5d98efccc68a2f1` (stable 3×).
+- 9x build: `-fsafe` and `-ffast` both emit/link; `check_win9x_imports.sh
+  <exe> 9x` PASS (KERNEL32 + WSOCK32 only). Wine: full loopback download
+  rc 0, fetched 1048576, golden SHA-1 (`PARITY=OK` in representative tier4
+  runs); the 1 MiB transfer can finish before tier4's first 1 Hz progress
+  sample, and the one-shot mock-peer/MSE restart is occasionally flaky. A
+  throttled run (`--max-down 32768`) produced 34 progress lines, no bare CR,
+  rc 0 and the same SHA-1. `tests/tier_win9x_io.sh` `3/0`.
+- Real Win98/Me hardware verification is operator-pending (plan Amendment 5).
+
 ## M5 — Win9x cross-compat (2026-10-11)
 
 M5 builds the example for Win9x and documents the manual run.
 
 - **Task 0 (amendment lift, `sf/src`):** `std_file.zig` + `std_file_pal.zig`
-  now use 64-bit file offsets (POSIX `lseek`/`_llseek`; Windows already uses
-  `SetFilePointerEx`, i64) so payloads > 2 GiB work on the Linux host
+  now use 64-bit file offsets (POSIX `lseek`/`_llseek`). On the M6 default 9x
+  profile the Windows side routes through `pal_file_seek64`'s Win95
+  `SetFilePointer` high-DWORD path; `SetFilePointerEx` is used only by the
+  explicit `-osw nt` profile. Payloads > 2 GiB work on the Linux host
   (spec §12 risk 7).
-- **Windows emission + mingw build:** emit with `-osw`, link with mingw. The
-  win32 link line always adds `-lwsock32` (Winsock 1.1).
-  - `-osw` emit md5:
+- **Windows emission + mingw build (M5-era values; M6 profile above):** emit
+  with `-osw`, link with mingw. The M5 link line was the normal CRT plus
+  `-lwsock32` (Winsock 1.1); this is not the 9x no-CRT path.
+  - `-osw` emit md5 (M5-era):
     ```bash
     timeout 120 /tmp/z9_m5_seed/zig1_5_clean -osw --dump-c89 \
         examples/z98/z9torr/main.zig | md5sum
-    # 4a330207a420462a9ad4376ace7d0a63  -   (stable 3×)
+    # 4a330207a420462a9ad4376ace7d0a63  -   (stable 3×, M5 source)
     ```
   - mingw build: `zig1 -fsafe -osw -o <dir> examples/z98/z9torr/main.zig` then
-    `sh <dir>/build_target.sh mingw <dir>/z9torr.exe` (or the committed
-    `scripts/win32_cross/cross_build_run.sh`). `file` reports a PE32 console exe.
+    `sh <dir>/build_target.sh mingw <dir>/z9torr.exe`. `file` reports a PE32
+    console exe. The legacy `scripts/win32_cross/cross_build_run.sh` also
+    produces an exe, but with the normal CRT (imports MSVCRT), so it does not
+    exercise the 9x no-CRT profile.
 - **T4 (automated):** `tests/tier4_wine.sh` is a **Wine smoke** — emit `-osw`,
   mingw cross-build, then run `z9torr_run.exe` under 32-bit Wine against the
   host `mock_tracker`/`mock_peer`; it asserts exit 0 + the t1 golden SHA-1 and
-  records `PARITY=OK` (observed `19/0`). It is a smoke, not real hardware.
+  the redirected-progress shape. M5-era observed `19/0`; the M6 no-CRT re-run
+  is in the M6 section above (representative `22/1` where the only miss is the
+  sub-second 1 Hz progress sample, plus occasional mock-restart flakiness). It
+  is a smoke, not real hardware.
 - **T5 (manual):** the real Win98 run is **manual** and documented in
   `demo/win9x_README.txt` (copy `z9torr.exe` + the mocks + a `.torrent`, run
   `z9torr.exe file.torrent`). The Win98 VM is outside the repo, so T5 is
@@ -314,11 +347,14 @@ M5 builds the example for Win9x and documents the manual run.
     `BadFilePath` name error (exit 2) before any disk access. Gated by the new
     `tests/tier1.sh` name cases.
 
-Gates (example-only; from the repo root with
-`ZIG=/tmp/z9_m5_seed/zig1_5_clean`): `tests/tier1.sh` `21/0`,
-`tests/tier2.sh` `17/0`, `tests/tier4_wine.sh` `19/0` under Wine, and the new
-`tests/tier_win9x_io.sh` `3/0`. T3b (console fallback + Win9x name validation)
-changes only `examples/z98/z9torr/`; `sf/src` is byte-identical (the compiler and
-seed are untouched).
+Gates (example-only; M6/T5.4 run from the repo root with
+`ZIG=/tmp/t54/zig1_5_clean`, seed v101 `b299b4b4…`): `tests/tier1.sh` `21/0`,
+`tests/tier2.sh` `17/0`, `tests/tier_win9x_io.sh` `3/0`, and
+`tests/tier4_wine.sh` representative functional loopback PASS (`22/1`, the
+single miss being the sub-second 1 Hz progress sample; the one-shot
+mock-peer/MSE restart is occasionally flaky). T3b (console fallback + Win9x name
+validation) changes only `examples/z98/z9torr/`; `sf/src` is byte-identical (the
+compiler and seed are untouched at the example level).
 
-Next: none (M5 is the final milestone; `z9torr` is delivered).
+Next: M6 T5.5 covers z9play; z9torr's real Win98/Me load/run verification is
+operator-owned and pending (plan Amendment 5).
