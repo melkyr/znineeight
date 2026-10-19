@@ -15,8 +15,8 @@
 ## Global Constraints
 
 - **No compiler changes** (frozen); `sf/src/**` untouched. **No seed rotation** in this milestone.
-- **Example-only edits** under `examples/z98/z9torr/`. Free functions; no generics/`anytype`/`@Type`; strict `@intCast`; every `switch` needs `else`; D1 (no C-keyword union tags), D2 (no slice of a synthetic type), D3/D4 (no module-global across a suspension; no struct-return temp across a suspension). `edit`/`fastedit` only (re-read region before each edit; bottom-to-top; INSERT = replace anchor line with `[new content + original anchor line]`).
-- Build: seed **v97** closure `bafbba9454cd2b134bdc3d50c65384e0`; rebuild `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_m6_seed`; build the example `mkdir -p <out>; timeout 120 /tmp/z9_m6_seed/zig1_5_clean -fsafe -o <out> examples/z98/z9torr/main.zig; sh <out>/build_target.sh linux <out>/prog`.
+- **Example-only edits** under `examples/z98/z9torr/`. Free functions; no generics/`anytype`/`@Type`; strict `@intCast`; every `switch` needs `else`; keep suspension discipline: no module-global across a suspension and no struct-return temp across a suspension. The compiler is seed v102 (old D1–D8 numbering retired; see `examples/torrent_example_defects.md`); if a new defect shape appears, STOP-present and record it. `edit`/`fastedit` only (re-read region before each edit; bottom-to-top; INSERT = replace anchor line with `[new content + original anchor line]`).
+- Build: seed **v102** (archive md5 `702f34d87b7e6bf401dd206d2517dbee`, fixed point `b299b4b435e624d0ddbd2edde681cbc3`); rebuild `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_m6_seed`; build the example `mkdir -p <out>; timeout 120 /tmp/z9_m6_seed/zig1_5_clean -fsafe -o <out> examples/z98/z9torr/main.zig; sh <out>/build_target.sh linux <out>/prog`.
 - All **16 existing tiers** must stay green under `-fsafe` (`tier1`, `tier1_cli`, `tier1_unit`, `tier2`, `tier3_encrypted`, `tier_udp_tracker`, `tier_dht`, `tier_pex`, `tier_stall`, `tier_fallback`, `tier_refseed`, `tier_refseed_py`, `tier_mse_diag`, `tier_integrity`, `tier_safe`, `tier4_wine`).
 - **NO push. No compression during the build session.** Reports under `.superpowers/sdd/2026-10-11-z9torr-m6-seed-upload-plan/` (commit via `git add -f`).
 - **GIT HARD RULE:** no `git reset --hard/--keep`, `git checkout --`, `git restore`, `git clean`, `git stash drop/clear`, force-push, or history rewriting; only `git commit --amend` on your OWN just-created commit. STOP and report otherwise.
@@ -81,7 +81,7 @@
 
 - [ ] **Step 1: Red.** The leecher connects/handshakes but receives no pieces (no serving loop).
 - [ ] **Step 2: Implement** the seeder serving loop (plaintext and encrypted paths).
-- [ ] **Step 3: Green.** The leecher downloads a **byte-verified** payload from z9torr and `Stats.uploaded` increases; D3/D4 discipline held.
+- [ ] **Step 3: Green.** The leecher downloads a **byte-verified** payload from z9torr and `Stats.uploaded` increases; suspension discipline held.
 - [ ] **Step 4: Battery**; commit.
 
 **Gate:** verifiable upload to a leecher (plaintext + MSE).
