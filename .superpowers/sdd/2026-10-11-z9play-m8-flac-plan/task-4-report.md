@@ -186,3 +186,79 @@ PCM SHA-1 determinism; mixed `.ogg`/`.flac` TUI pty session (18/18); OGG tiers
 - Preserved historical M0–M7 text still contains the strings "v98" and
   "D1–D8 are all FIXED"; the truth greps above show they are historical and
   contextualized, not current claims.
+
+## Fix round 1
+
+**Commit (a):** `ee485934c47b3a0ad06cf4e545fb242bf67b8448` —
+`docs(z9play): M8 T4 fix — pin truth-up` (`NOTES.md` + `README.md` only).
+
+Fixed the stale/contradictory `-osw` pin in all three areas:
+
+- `README.md` Notes: `ad9ccfd3...` is now explicitly historical M6/seed v101,
+  **not a current pin**; `e56af791...` is the current `main.zig` Linux pin;
+  `22676fd9...` supersedes only the M7 `ui.zig` Linux pin `e7bc57a2...`.
+- `NOTES.md` top MD5 field: heading is now `MD5 (`--dump-c89`)`; the historical
+  M6 `-osw` value is labelled **not current**; M8 did not re-pin `-osw` and the
+  current measured value is recorded; Linux pins are distinguished.
+- `NOTES.md` M6 `--dump-c89` region: the recipe is labelled **historical
+  (seed v101)**, its value comment says **not current**, and the current seed
+  v102 `-osw` value is stated above the code block.
+- `NOTES.md` M8 dump bullet: `ad9...` is historical and not current; `22676...`
+  supersedes only the M7 `ui.zig` Linux pin; `e56...` is the current `main.zig`
+  Linux pin; the current `-osw` value `aa6878...` is recorded.
+- Minor: added T1 `c4b53d84` to the M8 chain and changed README wording from
+  "Linux gates are unchanged" to "The M8 FLAC gate and the existing Linux
+  gates".
+
+Measured current `-osw` value (seed v102):
+
+```
+$ timeout 300 /tmp/z9play_seed/zig1_5_clean -osw --dump-c89 examples/z98/z9play/main.zig | md5sum
+aa68782328c001c1f72d03f8ab1282d7  -
+```
+
+Relevant greps:
+
+```
+$ grep -n "remains the Win9x target\|superseded as current pins by these\|Linux gates are unchanged" \
+    examples/z98/z9play/NOTES.md examples/z98/z9play/README.md
+(no output)
+
+$ grep -n "ad9ccfd" examples/z98/z9play/NOTES.md examples/z98/z9play/README.md
+NOTES.md:3     ... M6 historical sentence, "-osw --dump-c89 ... on seed v101"
+NOTES.md:9     ... "historical M6 ... **not current**"
+NOTES.md:216   ... "(historical M6/seed-v101; not current)"
+NOTES.md:868   ... M6 task-4 history
+NOTES.md:890   ... M6 section (seed v101)
+NOTES.md:1020  ... "historical M6/seed v101 and is **not a current pin**"
+README.md:125  ... M6 section (seed v101)
+README.md:517  ... "historical M6/seed v101, **not a current pin**"
+
+$ grep -n "aa687823" examples/z98/z9play/NOTES.md examples/z98/z9play/README.md
+NOTES.md:9     ... current measured -osw value
+NOTES.md:210   ... M6-region note: current measured -osw value
+NOTES.md:1023  ... M8 bullet: current measured -osw value
+README.md:520  ... Notes: current measured -osw value
+
+$ grep -n "e56af791\|22676fd9" examples/z98/z9play/NOTES.md examples/z98/z9play/README.md
+NOTES.md:9     ... current main Linux pin / current ui Linux pin
+NOTES.md:1017-1019 ... M8 bullet: current main pin; ui supersedes only M7 pin
+README.md:513-515 ... Notes: current main pin; ui supersedes only M7 pin
+
+$ grep -n "M8 chain so far" examples/z98/z9play/NOTES.md
+1032:- M8 chain so far: `c4b53d84` (T1 decoder abstraction) → `07d92393` ...
+```
+
+Scope/whitespace:
+
+```
+$ git diff --stat HEAD~1 HEAD
+ examples/z98/z9play/NOTES.md  | 27 +++++++++++++++++----------
+ examples/z98/z9play/README.md | 19 ++++++++++---------
+ 2 files changed, 27 insertions(+), 19 deletions(-)
+$ git diff --check HEAD~1 HEAD
+(no output)
+```
+
+No stale pin is presented as current: every `ad9...` occurrence is either in
+preserved M6/M7 history or explicitly labelled historical/not current.
