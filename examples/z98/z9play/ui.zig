@@ -14,6 +14,7 @@ const fmt = @import("fmt.zig");
 const decoder = @import("decoder.zig");
 const flac = @import("flac.zig");
 const ogg_stream = @import("ogg_stream.zig");
+const stream = @import("stream.zig");
 const player = @import("player.zig");
 
 const WIDTH: usize = 80;
@@ -35,21 +36,21 @@ const MIX_MAX: usize = 88200;
 
 const UI_ARENA_SIZE: usize = 1024 * 1024;
 const DIR_ARENA_SIZE: usize = 1024 * 1024;
-const FILE_ARENA_SIZE: usize = 4 * 1024 * 1024;
+const STREAM_ARENA_SIZE: usize = 2 * 1024 * 1024;
 const DEC_ARENA_SIZE: usize = 16 * 1024 * 1024;
 const SCRATCH_ARENA_SIZE: usize = 8 * 1024 * 1024;
 const PLAYER_ARENA_SIZE: usize = 2 * 1024 * 1024;
 
 var g_ui_buf: [UI_ARENA_SIZE]u8 = undefined;
 var g_dir_buf: [DIR_ARENA_SIZE]u8 = undefined;
-var g_file_buf: [FILE_ARENA_SIZE]u8 = undefined;
+var g_stream_buf: [STREAM_ARENA_SIZE]u8 = undefined;
 var g_dec_buf: [DEC_ARENA_SIZE]u8 = undefined;
 var g_scratch_buf: [SCRATCH_ARENA_SIZE]u8 = undefined;
 var g_player_buf: [PLAYER_ARENA_SIZE]u8 = undefined;
 
 var g_ui_arena: std.arena.Arena = undefined;
 var g_dir_arena: std.arena.Arena = undefined;
-var g_file_arena: std.arena.Arena = undefined;
+var g_stream_arena: std.arena.Arena = undefined;
 var g_dec_arena: std.arena.Arena = undefined;
 var g_scratch_arena: std.arena.Arena = undefined;
 var g_player_arena: std.arena.Arena = undefined;
@@ -85,9 +86,9 @@ var g_real: audio.AudioOut = undefined;
 var g_mix_ao: audio.AudioOut = undefined;
 var g_decoder: player.Decoder = undefined;
 var g_flac: flac.StreamFlacDecoder = undefined;
-var g_flac_open: bool = false;
-var g_ogg: ogg_stream.OggStream = undefined;
-var g_ogg_open: bool = false;
+var g_ogg_stream: ogg_stream.OggStream = undefined;
+var g_stream_open: bool = false;
+var g_stream_is_flac: bool = false;
 var g_player: player.Player = undefined;
 
 fn fillSpaces(buf: []u8) void {
@@ -463,15 +464,19 @@ fn openBackend(rate: u32, channels: u8) bool {
     }
 }
 
-fn stopPlayback() void {
-    if (g_flac_open) {
+fn closeStream() void {
+    if (!g_stream_open) return;
+    if (g_stream_is_flac) {
         flac.closeStream(&g_flac);
-        g_flac_open = false;
+    } else {
+        ogg_stream.oggStreamClose(&g_ogg_stream);
     }
-    if (g_ogg_open) {
-        ogg_stream.oggStreamClose(&g_ogg);
-        g_ogg_open = false;
-    }
+    g_stream_open = false;
+    g_stream_is_flac = false;
+}
+
+fn stopPlayback() void {
+    closeStream();
     if (!g_has_track) return;
     g_player.audio.drain_fn(g_player.audio.state) catch {};
     g_player.audio.close_fn(g_player.audio.state);
@@ -490,16 +495,27 @@ fn tagValue(tags: []vi.Tag, key: []const u8) []const u8 {
 fn playTrack(path: []const u8) bool {
     stopPlayback();
 
-    std.arena.reset(&g_file_arena);
+    std.arena.reset(&g_stream_arena);
     std.arena.reset(&g_dec_arena);
     std.arena.reset(&g_scratch_arena);
     std.arena.reset(&g_player_arena);
 
-    var data: []u8 = filemod.readAll(&g_file_arena, path) catch {
+    var probe: stream.BufferedFile = stream.bufferedFileOpen(&g_stream_arena, path) catch |e| {
+        if (e == error.OutOfMemory) {
+            setStatus("out of memory");
+        } else {
+            setStatus("cannot open track");
+        }
+        return false;
+    };
+    var sig: [4]u8 = undefined;
+    var siglen: usize = stream.bufferedFileRead(&probe, sig[0..]) catch {
+        stream.bufferedFileClose(&probe);
         setStatus("cannot open track");
         return false;
     };
-    var kind: u8 = decoder.detectKind(data);
+    var kind: u8 = decoder.detectKind(sig[0..siglen]);
+    stream.bufferedFileClose(&probe);
     var sr: u32 = 0;
     var chn: u8 = 0;
     var title_val: []const u8 = "";
@@ -507,26 +523,36 @@ fn playTrack(path: []const u8) bool {
     var album_val: []const u8 = "";
 
     if (kind == decoder.KIND_FLAC) {
-        g_flac = flac.openStream(&g_dec_arena, path) catch {
-            setStatus("corrupt or unsupported FLAC stream");
+        g_flac = flac.openStream(&g_dec_arena, path) catch |e| {
+            if (e == error.OutOfMemory) {
+                setStatus("out of memory");
+            } else {
+                setStatus("corrupt or unsupported FLAC stream");
+            }
             return false;
         };
-        g_flac_open = true;
+        g_stream_open = true;
+        g_stream_is_flac = true;
         sr = g_flac.sample_rate;
         chn = g_flac.channels;
         decoder.decoderOpenFlac(&g_decoder, &g_flac);
     } else {
-        g_ogg = ogg_stream.oggStreamOpen(&g_dec_arena, path) catch {
-            setStatus("not an OGG Vorbis stream");
+        g_ogg_stream = ogg_stream.oggStreamOpen(&g_stream_arena, path) catch |e| {
+            if (e == error.OutOfMemory) {
+                setStatus("out of memory");
+            } else {
+                setStatus("not an OGG Vorbis stream");
+            }
             return false;
         };
-        g_ogg_open = true;
+        g_stream_open = true;
+        g_stream_is_flac = false;
 
         var id: vi.IdHeader = undefined;
         var comment: vi.Comment = undefined;
         var setup: vs.Setup = undefined;
 
-        var m0: ?[]const u8 = ogg_stream.oggStreamNextPacket(&g_ogg) catch {
+        var m0: ?[]const u8 = ogg_stream.oggStreamNextPacket(&g_ogg_stream) catch {
             stopPlayback();
             setStatus("not an OGG Vorbis stream");
             return false;
@@ -542,13 +568,13 @@ fn playTrack(path: []const u8) bool {
             setStatus("missing Vorbis headers");
             return false;
         }
-        var m1: ?[]const u8 = ogg_stream.oggStreamNextPacket(&g_ogg) catch {
+        var m1: ?[]const u8 = ogg_stream.oggStreamNextPacket(&g_ogg_stream) catch {
             stopPlayback();
             setStatus("not an OGG Vorbis stream");
             return false;
         };
         if (m1) |p1| {
-            comment = vi.parseComment(&g_file_arena, p1) catch {
+            comment = vi.parseComment(&g_stream_arena, p1) catch {
                 stopPlayback();
                 setStatus("bad Vorbis comment header");
                 return false;
@@ -558,7 +584,7 @@ fn playTrack(path: []const u8) bool {
             setStatus("missing Vorbis headers");
             return false;
         }
-        var m2: ?[]const u8 = ogg_stream.oggStreamNextPacket(&g_ogg) catch {
+        var m2: ?[]const u8 = ogg_stream.oggStreamNextPacket(&g_ogg_stream) catch {
             stopPlayback();
             setStatus("not an OGG Vorbis stream");
             return false;
@@ -574,7 +600,7 @@ fn playTrack(path: []const u8) bool {
             setStatus("missing Vorbis setup header");
             return false;
         }
-        var last: u64 = ogg_stream.oggStreamLastGranule(&g_dec_arena, path, g_ogg.serial) catch {
+        var last: u64 = ogg_stream.oggStreamLastGranule(&g_dec_arena, path, g_ogg_stream.serial) catch {
             stopPlayback();
             setStatus("cannot locate the audio granule");
             return false;
@@ -584,7 +610,7 @@ fn playTrack(path: []const u8) bool {
             setStatus("cannot initialize the decoder");
             return false;
         };
-        var vc: *player.VorbisCtx = player.vorbisCreate(&g_dec_arena, &g_scratch_arena, &g_ogg, setup, state, id.sample_rate, id.channels, last) catch {
+        var vc: *player.VorbisCtx = player.vorbisCreate(&g_dec_arena, &g_scratch_arena, &g_ogg_stream, setup, state, id.sample_rate, id.channels, last) catch {
             stopPlayback();
             setStatus("cannot initialize the player decoder");
             return false;
@@ -713,6 +739,11 @@ fn removeCurrentFromPlaylist() void {
         } else if (g_playlist_index == idx) {
             if (g_playlist_index >= g_playlist_len) g_playlist_index = g_playlist_len - 1;
         }
+    }
+    if (g_player.state == player.PlayerState.playing or g_player.state == player.PlayerState.paused) {
+        stopPlayback();
+    } else {
+        closeStream();
     }
     setStatus("removed from playlist");
 }
@@ -1090,7 +1121,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
     g_ui_arena = std.arena.init(g_ui_buf[0..]);
     g_dir_arena = std.arena.init(g_dir_buf[0..]);
-    g_file_arena = std.arena.init(g_file_buf[0..]);
+    g_stream_arena = std.arena.init(g_stream_buf[0..]);
     g_dec_arena = std.arena.init(g_dec_buf[0..]);
     g_scratch_arena = std.arena.init(g_scratch_buf[0..]);
     g_player_arena = std.arena.init(g_player_buf[0..]);
