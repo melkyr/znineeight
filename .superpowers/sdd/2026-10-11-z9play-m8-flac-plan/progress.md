@@ -25,4 +25,6 @@ Task T2: complete (commits `07d92393` FLAC decoder, `73991c5b` report; review Ap
 Next: T3 `tier_flac.sh` (fixtures + mixed selection).
 Task T3: complete (commits `903ea2ab` tier, `c6f9bedb` report; review Approved, spec ✅, 0 Critical/0 Important/5 Minor). `tier_flac.sh` PASS twice 59/0; real public paths (`main --wav`, TUI mixed `.ogg`/`.flac` selection); FLAC payload exact + deterministic 3×; `.ogg` tiers cli 23/0/tui 40/0/audio 27/0; Win9x PE32 KERNEL32+WINMM import gate PASS; dumps main `e56af791…`, ui `22676fd9…`; seed unchanged. Deferred minors: 16-bit fixture hardcode; WAV header partial; mingw hard requirement; tool re-download/network; inherited LD path.
 Next: T4 docs (FLAC support, dump md5, truthful limitations).
+Task T4: complete (commits `808355d3` docs, fix `ee485934` pin truth-up, `67ba38dd`/`0772f3ee` reports; review Needs-fixes → fix round 1 → scoped re-review all 3 findings ADDRESSED, no new breakage). Docs now truthful: FLAC paths + Vorbis-only request modes, tier 59/0, current Linux pins `e56af791…`/`22676fd9…`, `-osw` current `aa687823…` (M6 `ad9ccfd3…` historical), seed v102, D status, hardware pending; docs-only. Deferred minors: FLAC tags unparsed, CRC-16 skipped, 32-bit FLAC; tier cited not rerun.
+Next: T5 final handoff note.
 
