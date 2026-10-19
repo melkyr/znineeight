@@ -116,6 +116,8 @@ fi
 for f in std.zig std_io.zig std_fmt.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig std_bits.zig std_os.zig std_os_pal.zig std_time.zig std_time_pal.zig std_buf.zig std_file.zig std_file_pal.zig std_stdin.zig std_stdin_pal.zig std_stream.zig std_crypto.zig std_parse.zig std_bencode.zig std_map.zig std_sort.zig std_heap.zig std_rle.zig std_base64.zig std_hex.zig std_utf8.zig std_http.zig std_rand.zig; do
     cp "$ROOT/sf/src/$f" "$SEED/lib/"
 done
+( cd "$SEED/lib" && LC_ALL=C md5sum *.zig > manifest.md5 )
+MANIFEST_MD5=$(md5sum "$SEED/lib/manifest.md5" | cut -d' ' -f1)
 
 GEN_BYTES=$(stat -c '%s' "$SEED"/gen/*.c "$SEED"/gen/*.h | awk '{s += $1} END {print s}')
 
@@ -170,6 +172,8 @@ zig1-seed/lib/        the 33 std .zig (std.zig, std_io.zig, std_fmt.zig,
                       std_map.zig, std_sort.zig, std_heap.zig, std_rle.zig,
                       std_base64.zig, std_hex.zig, std_utf8.zig, std_http.zig,
                       std_rand.zig)
+zig1-seed/lib/manifest.md5  per-file md5 of every lib/*.zig (33 std files,
+                      the std attribution pin)
 zig1-seed/SEED_README.txt  this file
 
 (net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT
@@ -247,7 +251,7 @@ linked as objects; dropping them onto the link line as sources omits the
 canonical flags (notably -Wall) and links a different object set/order, so the
 fixed point is NOT reproduced.
 
-std install: the produced binary needs the std lib next to it (lib/ with the 29
+std install: the produced binary needs the std lib next to it (lib/ with the 33
 std .zig) - copied from zig1-seed/lib/ or the binary's lib-dir.
 
 CRITICAL FLAG SET RULE (operator amendment 2026-09-07)
@@ -308,6 +312,7 @@ emitted \`zig_special_types.h\`, $GEN_BYTES bytes), \`c_exit.c\` (top level),
 | seed binary md5 | \`$BIN_MD5\` |
 | self-emission C | $C_COUNT \`.c\` + $H_COUNT \`.h\` ($GEN_BYTES bytes) |
 | fixed point | \`$FP_MD5\` |
+| lib manifest | \`lib/manifest.md5\` (33 std files; md5 \`$MANIFEST_MD5\`) |
 | archive md5 | \`$ARCHIVE_MD5\` |
 
 Provenance note: the archived binary (md5 $BIN_MD5) was captured by
