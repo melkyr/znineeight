@@ -1,6 +1,5 @@
 const std = @import("std");
 const filemod = @import("std_file");
-const ogg = @import("ogg.zig");
 const vi = @import("vorbis_info.zig");
 const vs = @import("vorbis_setup.zig");
 const dec = @import("decode.zig");
@@ -14,6 +13,7 @@ const contract = @import("platform/console.zig");
 const fmt = @import("fmt.zig");
 const decoder = @import("decoder.zig");
 const flac = @import("flac.zig");
+const ogg_stream = @import("ogg_stream.zig");
 const player = @import("player.zig");
 
 const WIDTH: usize = 80;
@@ -86,6 +86,8 @@ var g_mix_ao: audio.AudioOut = undefined;
 var g_decoder: player.Decoder = undefined;
 var g_flac: flac.StreamFlacDecoder = undefined;
 var g_flac_open: bool = false;
+var g_ogg: ogg_stream.OggStream = undefined;
+var g_ogg_open: bool = false;
 var g_player: player.Player = undefined;
 
 fn fillSpaces(buf: []u8) void {
@@ -466,6 +468,10 @@ fn stopPlayback() void {
         flac.closeStream(&g_flac);
         g_flac_open = false;
     }
+    if (g_ogg_open) {
+        ogg_stream.oggStreamClose(&g_ogg);
+        g_ogg_open = false;
+    }
     if (!g_has_track) return;
     g_player.audio.drain_fn(g_player.audio.state) catch {};
     g_player.audio.close_fn(g_player.audio.state);
@@ -510,35 +516,76 @@ fn playTrack(path: []const u8) bool {
         chn = g_flac.channels;
         decoder.decoderOpenFlac(&g_decoder, &g_flac);
     } else {
-        var packets: []ogg.Packet = ogg.reassemble(&g_file_arena, data) catch {
+        g_ogg = ogg_stream.oggStreamOpen(&g_dec_arena, path) catch {
             setStatus("not an OGG Vorbis stream");
             return false;
         };
-        if (packets.len < 3) {
+        g_ogg_open = true;
+
+        var id: vi.IdHeader = undefined;
+        var comment: vi.Comment = undefined;
+        var setup: vs.Setup = undefined;
+
+        var m0: ?[]const u8 = ogg_stream.oggStreamNextPacket(&g_ogg) catch {
+            stopPlayback();
+            setStatus("not an OGG Vorbis stream");
+            return false;
+        };
+        if (m0) |p0| {
+            id = vi.parseId(p0) catch {
+                stopPlayback();
+                setStatus("bad Vorbis identification header");
+                return false;
+            };
+        } else {
+            stopPlayback();
             setStatus("missing Vorbis headers");
             return false;
         }
-        var id: vi.IdHeader = vi.parseId(packets[0].bytes) catch {
-            setStatus("bad Vorbis identification header");
+        var m1: ?[]const u8 = ogg_stream.oggStreamNextPacket(&g_ogg) catch {
+            stopPlayback();
+            setStatus("not an OGG Vorbis stream");
             return false;
         };
-        var comment: vi.Comment = vi.parseComment(&g_file_arena, packets[1].bytes) catch {
-            setStatus("bad Vorbis comment header");
+        if (m1) |p1| {
+            comment = vi.parseComment(&g_file_arena, p1) catch {
+                stopPlayback();
+                setStatus("bad Vorbis comment header");
+                return false;
+            };
+        } else {
+            stopPlayback();
+            setStatus("missing Vorbis headers");
+            return false;
+        }
+        var m2: ?[]const u8 = ogg_stream.oggStreamNextPacket(&g_ogg) catch {
+            stopPlayback();
+            setStatus("not an OGG Vorbis stream");
             return false;
         };
-        var last: u64 = ogg.lastGranule(&g_file_arena, data) catch {
+        if (m2) |p2| {
+            setup = vs.parseSetup(&g_dec_arena, p2, @intCast(u32, id.channels)) catch {
+                stopPlayback();
+                setStatus("bad Vorbis setup header");
+                return false;
+            };
+        } else {
+            stopPlayback();
+            setStatus("missing Vorbis setup header");
+            return false;
+        }
+        var last: u64 = ogg_stream.oggStreamLastGranule(&g_dec_arena, path, g_ogg.serial) catch {
+            stopPlayback();
             setStatus("cannot locate the audio granule");
             return false;
         };
-        var setup: vs.Setup = vs.parseSetup(&g_dec_arena, packets[2].bytes, @intCast(u32, id.channels)) catch {
-            setStatus("bad Vorbis setup header");
-            return false;
-        };
         var state: dec.DecoderState = dec.initDecoderState(&g_dec_arena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
+            stopPlayback();
             setStatus("cannot initialize the decoder");
             return false;
         };
-        var vc: *player.VorbisCtx = player.vorbisCreate(&g_dec_arena, &g_scratch_arena, packets, setup, state, 3, id.sample_rate, id.channels, last) catch {
+        var vc: *player.VorbisCtx = player.vorbisCreate(&g_dec_arena, &g_scratch_arena, &g_ogg, setup, state, id.sample_rate, id.channels, last) catch {
+            stopPlayback();
             setStatus("cannot initialize the player decoder");
             return false;
         };
@@ -556,10 +603,7 @@ fn playTrack(path: []const u8) bool {
     }
 
     if (!openBackend(sr, chn)) {
-        if (g_flac_open) {
-            flac.closeStream(&g_flac);
-            g_flac_open = false;
-        }
+        stopPlayback();
         setStatus("cannot open audio output");
         return false;
     }
@@ -580,10 +624,7 @@ fn playTrack(path: []const u8) bool {
 
     player.playerInit(&g_player, &g_player_arena, &g_decoder, &g_mix_ao, meta) catch {
         g_real.close_fn(g_real.state);
-        if (g_flac_open) {
-            flac.closeStream(&g_flac);
-            g_flac_open = false;
-        }
+        stopPlayback();
         setStatus("cannot initialize the player");
         return false;
     };

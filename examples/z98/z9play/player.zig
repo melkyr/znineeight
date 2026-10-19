@@ -43,7 +43,7 @@
 
 const std = @import("std");
 const audio = @import("platform/audio.zig");
-const ogg = @import("ogg.zig");
+const ogg_stream = @import("ogg_stream.zig");
 const vs = @import("vorbis_setup.zig");
 const dec = @import("decode.zig");
 
@@ -282,17 +282,17 @@ fn playerFlush(p: *Player) PlayerError!void {
 // --- M3 Vorbis backend for the Decoder vtable ------------------------------
 //
 // An opaque context that owns the persistent decoder state (codebook tables +
-// overlap tail) and the packet cursor, plus a per-packet scratch arena that is
-// reset on every `vorbisNext`. The frontend parses the stream and builds the
-// state (`vs.parseSetup` + `dec.initDecoderState`), then assembles the
-// `Decoder` literal from `vorbisCreate` and the context's metadata fields.
+// overlap tail) and borrows the OGG packet stream, plus a per-packet scratch
+// arena that is reset on every `vorbisNext`. The frontend consumes the three
+// headers, parses `vs.parseSetup` and builds `dec.initDecoderState`, then
+// assembles the `Decoder` literal from `vorbisCreate` and the context's
+// metadata fields. The stream must outlive the context and the Player.
 
 pub const VorbisCtx = struct {
     scratch: *std.arena.Arena,
     setup: vs.Setup,
     state: dec.DecoderState,
-    packets: []ogg.Packet,
-    next_packet: usize,
+    stream: *ogg_stream.OggStream,
     tmp: []i16, // one decoded block before it is copied to pcm_out
 
     max_frames: u32,
@@ -303,10 +303,10 @@ pub const VorbisCtx = struct {
 
 // Build a Vorbis decoder context. `persistent` must outlive playback (it holds
 // `setup`, the state's tables, the context itself and `tmp`); `scratch` is
-// reset per packet. All of `packets` is retained; decoding starts at
-// `first_packet` (the header packet count: id, comment, setup -> 3 for a bare
-// Vorbis stream).
-pub fn vorbisCreate(persistent: *std.arena.Arena, scratch: *std.arena.Arena, packets: []ogg.Packet, setup: vs.Setup, state: dec.DecoderState, first_packet: usize, sample_rate: u32, channels: u8, total_frames: u64) DecoderError!*VorbisCtx {
+// reset per packet. `stream` must already have its three header packets
+// consumed and must outlive the context; decoding starts at the current cursor
+// (the first audio packet).
+pub fn vorbisCreate(persistent: *std.arena.Arena, scratch: *std.arena.Arena, stream: *ogg_stream.OggStream, setup: vs.Setup, state: dec.DecoderState, sample_rate: u32, channels: u8, total_frames: u64) DecoderError!*VorbisCtx {
     if (channels == 0) return error.DecodeFailed;
 
     var mf: u32 = state.max_n / 2;
@@ -324,8 +324,7 @@ pub fn vorbisCreate(persistent: *std.arena.Arena, scratch: *std.arena.Arena, pac
         .scratch = scratch,
         .setup = setup,
         .state = state,
-        .packets = packets,
-        .next_packet = first_packet,
+        .stream = stream,
         .tmp = tmp,
         .max_frames = mf,
         .sample_rate = sample_rate,
@@ -341,19 +340,25 @@ pub fn vorbisCreate(persistent: *std.arena.Arena, scratch: *std.arena.Arena, pac
 pub fn vorbisNext(ctx: *void, pcm_out: []i16) DecoderError!usize {
     var c: *VorbisCtx = @ptrCast(*VorbisCtx, ctx);
     var ch: usize = @intCast(usize, c.state.channels);
-    while (c.next_packet < c.packets.len) {
-        var idx: usize = c.next_packet;
-        c.next_packet += 1;
-        std.arena.reset(c.scratch);
-        var f: usize = dec.decodePacket(c.scratch, c.setup, &c.state, c.packets[idx].bytes, c.tmp) catch |e| {
+    while (true) {
+        var maybe: ?[]const u8 = ogg_stream.oggStreamNextPacket(c.stream) catch |e| {
             if (e == error.OutOfMemory) return error.OutOfMemory;
             return error.DecodeFailed;
         };
-        if (f > 0) {
-            var n: usize = f * ch;
-            var i: usize = 0;
-            while (i < n) : (i += 1) pcm_out[i] = c.tmp[i];
-            return f;
+        if (maybe) |packet| {
+            std.arena.reset(c.scratch);
+            var f: usize = dec.decodePacket(c.scratch, c.setup, &c.state, packet, c.tmp) catch |e| {
+                if (e == error.OutOfMemory) return error.OutOfMemory;
+                return error.DecodeFailed;
+            };
+            if (f > 0) {
+                var n: usize = f * ch;
+                var i: usize = 0;
+                while (i < n) : (i += 1) pcm_out[i] = c.tmp[i];
+                return f;
+            }
+        } else {
+            return 0;
         }
     }
     return 0;

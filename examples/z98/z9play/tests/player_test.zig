@@ -27,6 +27,7 @@
 const std = @import("std");
 const filemod = @import("std_file");
 const ogg = @import("../ogg.zig");
+const ogg_stream = @import("../ogg_stream.zig");
 const vi = @import("../vorbis_info.zig");
 const vs = @import("../vorbis_setup.zig");
 const dec = @import("../decode.zig");
@@ -84,36 +85,58 @@ fn playOnce(parse: *std.arena.Arena, scratch: *std.arena.Arena, par: *std.arena.
     std.arena.reset(scratch);
     std.arena.reset(par);
 
-    var data: []u8 = filemod.readAll(parse, FIXTURE) catch {
-        fail("cannot read fixture");
+    var id: vi.IdHeader = undefined;
+    var setup: vs.Setup = undefined;
+    var os: ogg_stream.OggStream = ogg_stream.oggStreamOpen(parse, FIXTURE) catch {
+        fail("oggStreamOpen failed");
         return;
     };
-    var packets: []ogg.Packet = ogg.reassemble(parse, data) catch {
-        fail("reassemble failed");
+    var m0: ?[]const u8 = ogg_stream.oggStreamNextPacket(&os) catch {
+        fail("packet 0 failed");
         return;
     };
-    if (packets.len < 3) {
+    if (m0) |p0| {
+        id = vi.parseId(p0) catch {
+            fail("parseId failed");
+            return;
+        };
+    } else {
         fail("missing Vorbis headers");
         return;
     }
-    var id: vi.IdHeader = vi.parseId(packets[0].bytes) catch {
-        fail("parseId failed");
+    var m1: ?[]const u8 = ogg_stream.oggStreamNextPacket(&os) catch {
+        fail("packet 1 failed");
         return;
     };
-    var setup: vs.Setup = vs.parseSetup(parse, packets[2].bytes, @intCast(u32, id.channels)) catch {
-        fail("parseSetup failed");
+    if (m1) |p1| {
+        _ = p1;
+    } else {
+        fail("missing Vorbis headers");
+        return;
+    }
+    var m2: ?[]const u8 = ogg_stream.oggStreamNextPacket(&os) catch {
+        fail("packet 2 failed");
         return;
     };
+    if (m2) |p2| {
+        setup = vs.parseSetup(parse, p2, @intCast(u32, id.channels)) catch {
+            fail("parseSetup failed");
+            return;
+        };
+    } else {
+        fail("missing Vorbis setup header");
+        return;
+    }
     var st: dec.DecoderState = dec.initDecoderState(parse, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
         fail("initDecoderState failed");
         return;
     };
-    var last: u64 = ogg.lastGranule(parse, data) catch {
+    var last: u64 = ogg_stream.oggStreamLastGranule(parse, FIXTURE, os.serial) catch {
         fail("lastGranule failed");
         return;
     };
 
-    var vc: *player.VorbisCtx = player.vorbisCreate(parse, scratch, packets, setup, st, 3, id.sample_rate, id.channels, last) catch {
+    var vc: *player.VorbisCtx = player.vorbisCreate(parse, scratch, &os, setup, st, id.sample_rate, id.channels, last) catch {
         fail("vorbisCreate failed");
         return;
     };
@@ -169,6 +192,7 @@ fn playOnce(parse: *std.arena.Arena, scratch: *std.arena.Arena, par: *std.arena.
         return;
     };
     pl.audio.close_fn(pl.audio.state);
+    ogg_stream.oggStreamClose(&os);
 }
 
 // Reproduce the M3 `--pcm` reference: decode every audio packet with one
