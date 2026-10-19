@@ -205,3 +205,102 @@ No unrelated files touched; `run.err` untouched and unstaged. No push.
 - (a) `fix(std_map): on-demand probe distance (no u8 wrap)`
 - (b) `docs(spec): std_map distance computed on demand`
 - (c) `docs(sdd): M1 T3 fix round 1` (this append)
+
+## Fix round 2
+
+Operator ruling C supersedes ruling A: store the probe distance as `u32`
+instead of recomputing it on demand. Base `f06f1804`.
+
+### What changed vs round 1
+
+- `sf/src/std_map.zig`: added `dist: u32` after `state` in
+  `Entry32x32`/`Entry32Ptr`/`EntryStrPtr`. Removed the round-1 on-demand
+  helpers (`dist32x32`/`dist32Ptr`/`distStrPtr`) and all occupant re-hashing.
+  - Insertion carries `(key, val, state, dist)` with `dist: u32`; the strict
+    `>` swap reads the occupant's stored `dist`; the swap moves `key`/`val`/
+    `state`/`dist` together; empty placement writes the carried `dist`.
+  - Backward-shift reads the next entry's stored `dist`, shifts while it is
+    `> 0`, and writes the moved entry's `dist - 1`; stops at empty or home.
+  - `mask`, ctrl encoding (`0x80` empty, used = 7-bit fragment, `0xFE` never
+    steady), capacity semantics, slot sizing, and string-copy timing unchanged.
+  - Header comment now records the stored `u32` distance and rule C, plus entry
+    sizes 16/16/20 bytes.
+- Spec §6.2: removed the "no distance field" / on-demand wording and added:
+  "Probe distance stored as `u32` (operator ruling 2026-10-19, option C):
+  exact for any 32-bit table (max distance `≤ capacity-1 ≤ 2^32-2`); no wrap.
+  The blueprint's u8 'provably < 255' claim is false under same-home
+  clustering. Entries: 16 / 16 / 20 bytes for Map32x32 / Map32Ptr /
+  MapStrPtr."
+- Invariants fixture: kept the adversarial same-home cluster and ctrl
+  assertions; added stored-distance checks over `0..m.mask` for every used
+  slot in Map32x32, Map32Ptr (both via fixture `mix32`) and MapStrPtr (via a
+  fixture-local FNV-1a copy over `entries[i].key`), including after deletes.
+  Checks run after reverse insertion, delete/reinsert, delete-half, fill,
+  adversarial insert/delete, Map32Ptr/MapStrPtr deletes, and churn.
+
+### Evidence
+
+Rebuild and lib match:
+
+```
+$ FIXED_POINT_MD5=b299b4b435e624d0ddbd2edde681cbc3 \
+    bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m1_t3_seed
+[seed] two-hop closure OK: hop1 == hop2 == b299b4b435e624d0ddbd2edde681cbc3
+[seed] recorded fixed point OK: b299b4b435e624d0ddbd2edde681cbc3
+$ cmp sf/src/std_map.zig /tmp/m1_t3_seed/lib/std_map.zig
+(no output; match)
+```
+
+Targeted map fixtures (includes adversarial cluster, stored-distance, ctrl,
+and string copy-on-put lifetime):
+
+```
+$ bash scripts/stdlib/run_fixtures.sh /tmp/m1_t3_seed/zig1_5_clean \
+    stdlib_map_{map32x32,map32ptr,mapstrptr,oom,stress,determinism,robinhood}_xmod \
+    stdlib_test/map_sort_heap_usage
+run_fixtures: 8 PASS / 0 FAIL over 8 dirs
+```
+
+Capacity 0/1/2/3 + full-capacity replace scratch check:
+
+```
+$ <emit/build/run /tmp/t3_caps/main.zig with /tmp/m1_t3_seed/zig1_5_clean>
+map caps ok
+CAPS_RC=0
+```
+
+Measured entry sizes (capacity 1 -> 2 slots; arena delta / 2):
+
+```
+$ <emit/build/run /tmp/t3_sizes/main.zig with /tmp/m1_t3_seed/zig1_5_clean>
+map sizes 16/16/20 ok
+SIZES_RC=0
+```
+
+Determinism 3x (explicit):
+
+```
+$ <emit/build determinism fixture>
+$ /tmp/t3det/prog > r1; /tmp/t3det/prog > r2; /tmp/t3det/prog > r3
+$ cmp r1 r2 && cmp r1 r3 && cmp r1 expected.txt
+map determinism ok
+```
+
+Full gate:
+
+```
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/m1_t3_seed/zig1_5_clean
+run_fixtures: 292 PASS / 0 FAIL over 292 dirs
+run_crosscheck: 2 PASS / 0 FAIL over 2 modules
+STDLIB GATE OK
+GATE_RC=0
+```
+
+Existing map goldens remained byte-identical; `map_sort_heap_usage` unchanged.
+No unrelated files touched; `run.err` untouched and unstaged. No push.
+
+### Commits
+
+- (a) `fix(std_map): store u32 probe distance (rule C)`
+- (b) `docs(spec): std_map distance width u32 (rule C)`
+- (c) `docs(sdd): M1 T3 fix round 2` (this append)
