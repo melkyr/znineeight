@@ -12,6 +12,7 @@ const con = @import("platform/console_linux.zig");
 const cwin = @import("platform/console_win9x.zig");
 const contract = @import("platform/console.zig");
 const fmt = @import("fmt.zig");
+const decoder = @import("decoder.zig");
 const player = @import("player.zig");
 
 const WIDTH: usize = 80;
@@ -518,14 +519,7 @@ fn playTrack(path: []const u8) bool {
         return false;
     };
 
-    g_decoder = player.Decoder{
-        .ctx = @ptrCast(*void, vc),
-        .next_fn = player.vorbisNext,
-        .max_frames = vc.max_frames,
-        .sample_rate = vc.sample_rate,
-        .channels = vc.channels,
-        .total_frames = vc.total_frames,
-    };
+    decoder.decoderOpenVorbis(&g_decoder, vc);
 
     if (!openBackend(id.sample_rate, id.channels)) {
         setStatus("cannot open audio output");

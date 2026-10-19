@@ -69,6 +69,7 @@ const con = @import("platform/console_linux.zig");
 const cwin = @import("platform/console_win9x.zig");
 const contract = @import("platform/console.zig");
 const fmt = @import("fmt.zig");
+const decoder = @import("decoder.zig");
 const player = @import("player.zig");
 
 // Backing store for the read/reassembly/comment arena; module-global so it does
@@ -494,14 +495,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.os.exit(3);
             return;
         };
-        var decv: player.Decoder = player.Decoder{
-            .ctx = @ptrCast(*void, vc),
-            .next_fn = player.vorbisNext,
-            .max_frames = vc.max_frames,
-            .sample_rate = vc.sample_rate,
-            .channels = vc.channels,
-            .total_frames = vc.total_frames,
-        };
+        var decv: player.Decoder = undefined;
+        decoder.decoderOpenVorbis(&decv, vc);
 
         wav.setOutputPath(args.out_path);
         var actx: *void = wav.open(id.sample_rate, id.channels) catch {
@@ -750,14 +745,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 playFail(&cs, "z9play: cannot initialize the player decoder\n", 3);
                 return;
             };
-            var decv: player.Decoder = player.Decoder{
-                .ctx = @ptrCast(*void, vc),
-                .next_fn = player.vorbisNext,
-                .max_frames = vc.max_frames,
-                .sample_rate = vc.sample_rate,
-                .channels = vc.channels,
-                .total_frames = vc.total_frames,
-            };
+            var decv: player.Decoder = undefined;
+            decoder.decoderOpenVorbis(&decv, vc);
 
             g_mix_vol = vol;
             var first_ao: *const audio.AudioOut = &mix_ao;
