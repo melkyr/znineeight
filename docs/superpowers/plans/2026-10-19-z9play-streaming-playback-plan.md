@@ -98,17 +98,18 @@
 
 ### Task 3: FLAC file-backed streaming
 
-**Purpose:** Land the second codec's stream path before the frontends switch, so Task 4 can remove `readAll` in one step.
+**Purpose:** Land the second codec's stream path and switch the existing FLAC call sites in one compile-green step. Operator ruling (2026-10-19): T3 includes the minimal `main.zig`/`ui.zig` FLAC call-site changes; T4/T5 still remove the surrounding `readAll` and finish OGG streaming.
 
 - [ ] Add `flac.StreamFlacDecoder` per spec §4.4: `bf: *stream.BufferedFile`, metadata fields, fixed `samples`, `eof`; keep `flac.FlacDecoder`/`open(arena, bytes)`/`decode` **unchanged** as the byte-slice test oracle.
 - [ ] `openStream` parses `fLaC` + metadata with bounded reads; `decodeStream` uses a file-backed MSB bit reader and reads the frame header/subframes/CRC-16; `closeStream` closes the file.
 - [ ] `decoder.zig`: point the FLAC arm at `*flac.StreamFlacDecoder` and make `decoderOpenFlac` take that type (`flacStreamNext`); keep the existing vtable shape and D8 pointer discipline. The byte-slice `flac.FlacDecoder` is not wrapped by the selector.
+- [ ] Minimal FLAC frontend switch (authorized): in `main.zig` (`:487/:497`, `:792/:798`) and `ui.zig` (`:87/:505`), change the decoder type to `flac.StreamFlacDecoder`, open with `flac.openStream`, and close on the existing failure/stop paths. Do not remove `readAll` or refactor OGG in this task; that is T4/T5.
 - [ ] `tests/flac_test.zig`: add a file-stream test; compare decoded PCM/frames with the byte-slice path (max_delta 0 for the committed fixture); keep 3× determinism.
 - [ ] Run `tier_flac` 59/0; keep the byte-slice oracle test green.
 
-**Gate:** FLAC streaming exact; no FLAC `readAll` in production after Task 4; `tier_flac` green. Commit `example(z9play): stream FLAC frames`.
+**Gate:** FLAC streaming exact; no FLAC `readAll` after T4; `tier_flac` green; build of `main.zig`/`ui.zig` green. Commit `example(z9play): stream FLAC frames`.
 
-**Precision requirements:** metadata block lengths are bounded and skipped without allocation; frame CRC-16 may remain skipped (as M8) but must be read; `max_block` scratch stays fixed; no per-frame growth; `openStream` failure closes the file.
+**Precision requirements:** metadata block lengths are bounded and skipped without allocation; frame CRC-16 may remain skipped (as M8) but must be read; `max_block` scratch stays fixed; no per-frame growth; `openStream` failure closes the file; the streaming decoder's `BufferedFile` lifetime spans the frontend's player/decoder use.
 
 ---
 
