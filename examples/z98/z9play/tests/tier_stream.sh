@@ -9,11 +9,15 @@
 #      CRCs), and checks that a second run is byte-identical;
 #   2. runs `z9play --info` on that file under `ulimit -v 65536` KiB (64 MiB)
 #      and asserts exit 0 plus the exact channels/sample_rate/duration block.
+#      The duration comes from independent libvorbis frame counts (1 block =
+#      88,200, +89,216 per additional block), not from the generator's own
+#      duration_s line.
 #      The same limit is proven to reject a buffer the size of the generated
 #      file (Python allocates and touches every 4 KiB page), so this is a real
 #      full-file-allocation negative, not a claim. The streaming binary fits:
-#      its static arenas are ~42 MiB and its stream buffers are bounded
-#      (64 KiB read + 64 KiB page + 1 MiB packet + 256 KiB tail scan);
+#      its static arenas are 40.24 MiB (42,191,504 bytes) and its stream
+#      buffers are bounded (64 KiB read + 64 KiB page + 1 MiB packet + 256 KiB
+#      tail scan);
 #   3. runs `z9play --pcm` on testdata/sine_stereo_44100.ogg and compares the
 #      whole canonical WAV byte-for-byte with the committed pre-streaming
 #      regression pin (md5 e7f24870ec03b924be1b8e55a1962fb3, 352844 bytes);
@@ -49,6 +53,12 @@ TIERS="${TMPDIR:-/tmp}/z9s_tiers"
 FIXDIR="$Z9DIR/testdata"
 LARGE_MIN=$((64 * 1024 * 1024))
 VM_KB=65536
+# Independent duration oracle for the committed sine_stereo_44100 fixture:
+# libvorbis decodes 1 block = 88,200 frames, 2 blocks = 177,416, 3 blocks =
+# 266,632 (T6 review measurements). The first block is the fixture's 2.000 s
+# trimmed stream; each additional repeated block advances 89,216 frames.
+LIB_FIRST_FRAMES=88200
+LIB_BLOCK_ADVANCE=89216
 
 PASSES=0
 FAILS=0
@@ -166,17 +176,33 @@ rm -f "$LARGE2"
 LSIZE="$(wc -c <"$LARGE" 2>/dev/null | tr -d ' ')"
 LCH="$(sed -n 's/^channels=//p' "$STATS" | tail -1)"
 LSR="$(sed -n 's/^sample_rate=//p' "$STATS" | tail -1)"
-LDUR="$(sed -n 's/^duration_s=//p' "$STATS" | tail -1)"
+LFRAMES="$(sed -n 's/^frames=//p' "$STATS" | tail -1)"
 LBLOCKS="$(sed -n 's/^blocks=//p' "$STATS" | tail -1)"
 if [ -n "$LSIZE" ] && [ "$LSIZE" -ge "$LARGE_MIN" ]; then
     pass_case "large OGG size $LSIZE >= $LARGE_MIN bytes (64 MiB)"
 else
     fail_case "large OGG too small (got ${LSIZE:-none}, want >= $LARGE_MIN)"
 fi
+
+# Duration is derived from the libvorbis oracle constants above and the
+# independently parsed block count, not from the generator's duration_s line.
+case "${LBLOCKS:-x}${LSR:-x}" in
+    *[!0-9]*) LIB_FRAMES=""; LDUR="" ;;
+    *)
+        LIB_FRAMES=$((LIB_FIRST_FRAMES + (LBLOCKS - 1) * LIB_BLOCK_ADVANCE))
+        LIB_MS=$((LIB_FRAMES * 1000 / LSR))
+        LDUR="$(printf '%d.%03d' $((LIB_MS / 1000)) $((LIB_MS % 1000)))"
+        ;;
+esac
 if [ "$LCH" = "2" ] && [ "$LSR" = "44100" ] && [ -n "$LDUR" ]; then
-    pass_case "generator stats: ${LCH}ch ${LSR}Hz duration=${LDUR}s blocks=$LBLOCKS"
+    pass_case "independent duration oracle: ${LCH}ch ${LSR}Hz frames=$LIB_FRAMES duration=${LDUR}s blocks=$LBLOCKS"
 else
-    fail_case "generator stats missing/mismatched (ch=${LCH:-?} rate=${LSR:-?} dur=${LDUR:-?})"
+    fail_case "independent duration oracle missing/mismatched (ch=${LCH:-?} rate=${LSR:-?} blocks=${LBLOCKS:-?})"
+fi
+if [ -n "$LFRAMES" ] && [ "$LFRAMES" = "$LIB_FRAMES" ]; then
+    pass_case "generator final frames $LFRAMES match the libvorbis oracle"
+else
+    fail_case "generator final frames ${LFRAMES:-none} != libvorbis oracle ${LIB_FRAMES:-none}"
 fi
 
 echo

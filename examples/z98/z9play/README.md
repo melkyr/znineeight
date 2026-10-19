@@ -501,22 +501,27 @@ sizes at offsets 4 and 40. The TUI uses the same streaming path.
 ```bash
 python3 examples/z98/z9play/tests/make_large_ogg.py \
     examples/z98/z9play/testdata/sine_stereo_44100.ogg /tmp/large.ogg --size 64M
-# size=67109323 ... duration_s=19798.000
+# size=67109323 ... frames=883148168 ... duration_s=20026.035
 
 ( ulimit -v 65536; /tmp/z9play_out/prog --info /tmp/large.ogg )
 # channels=2
 # sample_rate=44100
-# duration_s=19798.000
+# duration_s=20026.035
 
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_stream.sh
-# == tier_stream summary: 19 passed, 0 failed ==
+# == tier_stream summary: 20 passed, 0 failed ==
 ```
 
-`ulimit -v 65536` is 64 MiB: the streaming binary's static arenas are ~42 MiB
-and its stream buffers are bounded (64 KiB read + 64 KiB page + 1 MiB packet +
-256 KiB tail), so it runs; a buffer the size of the ≥64 MiB generated file
+`ulimit -v 65536` is 64 MiB: the streaming binary's static arenas are 40.24 MiB
+(42,191,504 bytes) and its stream buffers are bounded (64 KiB read + 64 KiB page
++ 1 MiB packet + 256 KiB tail), so it runs; a buffer the size of the ≥64 MiB generated file
 cannot be allocated under the same limit. `make_large_ogg.py` is deterministic
-and uses only the Python standard library (no third-party OGG library). Set
+and uses only the Python standard library (no third-party OGG library). Its
+granules are sample-accurate: Vorbis block-size accounting reproduces the
+committed fixture's libvorbis-written page granules exactly, and the gate's
+duration assertion uses the independent libvorbis frame counts (1 block =
+88,200, +89,216 per additional block) rather than the generator's own duration
+line. Set
 `Z9PLAY_LARGE_OGG=/path/to/real.ogg` to add the same `--info` check on the
 operator's track; that file is never committed.
 

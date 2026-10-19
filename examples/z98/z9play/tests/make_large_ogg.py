@@ -8,13 +8,18 @@ audio pages are repeated as a block.  Every emitted page is rebuilt with:
 
   * a monotonic sequence number (0, 1, 2, ...),
   * the fixture's single logical-stream serial,
-  * granule positions advanced by one fixture duration per audio block,
+  * sample-accurate granule positions derived from each audio packet's Vorbis
+    block size (the previous/current overlap contribution, plus the trimmed
+    fixture tail and the block-boundary overlap),
   * the EOS flag on the last page only, and
   * a recomputed OGG CRC-32 (poly 0x04c11db7, init/xorout 0, not reflected).
 
 The audio block boundary is a packet boundary, so page continuation flags stay
-valid when the block repeats.  Output is byte-for-byte deterministic (no
-timestamps, no randomness).
+valid when the block repeats.  The setup header is walked only to recover each
+mode's block flag; no third-party OGG/Vorbis library is used.  As an
+independent oracle, the computed running sample totals must reproduce the
+committed fixture's non-final page granules (written by libvorbis/oggenc).
+Output is byte-for-byte deterministic (no timestamps, no randomness).
 
 Usage:
     python3 make_large_ogg.py [--size 64M] [--quiet] FIXTURE.ogg OUTPUT.ogg
@@ -156,6 +161,192 @@ def format_ms(ms):
     return "%d.%03d" % (ms // 1000, ms % 1000)
 
 
+# --- minimal Vorbis setup/mode accounting (no third-party OGG library) -----
+#
+# Sample-accurate granules need each audio packet's block size.  The packet's
+# first bit is 0 (audio), followed by the mode number in ilog(mode_count-1)
+# LSB-first bits; the mode's blockflag selects blocksize_0 or blocksize_1 from
+# the identification header.  Reaching the modes requires walking the setup
+# header's codebooks, floors, residues and mappings, which is what this small
+# reader does.  It only consumes fields; it does not allocate tables.
+
+class BitReader(object):
+    def __init__(self, data):
+        self.data = data
+        self.nbits = len(data) * 8
+        self.pos = 0
+
+    def read(self, n):
+        if self.pos + n > self.nbits:
+            fail("Vorbis setup/audio packet is truncated")
+        v = 0
+        for i in range(n):
+            b = (self.data[self.pos >> 3] >> (self.pos & 7)) & 1
+            v |= b << i
+            self.pos += 1
+        return v
+
+    def skip(self, n):
+        if self.pos + n > self.nbits:
+            fail("Vorbis setup/audio packet is truncated")
+        self.pos += n
+
+
+def ilog(x):
+    n = 0
+    while x > 0:
+        n += 1
+        x >>= 1
+    return n
+
+
+def lookup1_values(entries, dims):
+    r = 0
+    while r < entries:
+        prod = 1
+        for _ in range(dims):
+            prod *= r + 1
+            if prod > entries:
+                break
+        if prod > entries:
+            break
+        r += 1
+    return r
+
+
+def parse_setup_modes(packet, channels):
+    if not packet.startswith(b"\x05vorbis"):
+        fail("setup packet signature is not \\x05vorbis")
+    br = BitReader(packet)
+    br.skip(7 * 8)
+
+    codebooks = br.read(8) + 1
+    for _ in range(codebooks):
+        if br.read(24) != 0x564342:
+            fail("bad Vorbis codebook sync")
+        dims = br.read(16)
+        entries = br.read(24)
+        ordered = br.read(1)
+        if ordered:
+            br.read(5)
+            ce = 0
+            while ce < entries:
+                ce += br.read(ilog(entries - ce))
+        else:
+            sparse = br.read(1)
+            for _e in range(entries):
+                if sparse:
+                    if br.read(1):
+                        br.read(5)
+                else:
+                    br.read(5)
+        lookup = br.read(4)
+        if lookup > 2:
+            fail("bad Vorbis codebook lookup type")
+        if lookup == 1 or lookup == 2:
+            br.skip(32)
+            br.skip(32)
+            value_bits = br.read(4) + 1
+            br.read(1)
+            if lookup == 1:
+                lv = lookup1_values(entries, dims)
+            else:
+                lv = entries * dims
+            br.skip(lv * value_bits)
+
+    for _ in range(br.read(6) + 1):
+        if br.read(16) != 0:
+            fail("unsupported Vorbis time-domain transform")
+
+    floor_count = br.read(6) + 1
+    for _ in range(floor_count):
+        ftype = br.read(16)
+        if ftype == 0:
+            br.skip(8 + 16 + 16 + 6 + 8)
+            br.skip((br.read(4) + 1) * 8)
+        elif ftype == 1:
+            partitions = br.read(5)
+            pclass = []
+            maxclass = -1
+            for _p in range(partitions):
+                v = br.read(4)
+                pclass.append(v)
+                if v > maxclass:
+                    maxclass = v
+            cdim = []
+            for _c in range(maxclass + 1):
+                cdim.append(br.read(3) + 1)
+                subclasses = br.read(2)
+                if subclasses > 0:
+                    br.read(8)
+                br.skip((1 << subclasses) * 8)
+            br.read(2)
+            rangebits = br.read(4)
+            for p in range(partitions):
+                br.skip(cdim[pclass[p]] * rangebits)
+        else:
+            fail("unsupported Vorbis floor type")
+
+    residue_count = br.read(6) + 1
+    for _ in range(residue_count):
+        if br.read(16) > 2:
+            fail("unsupported Vorbis residue type")
+        br.skip(24 + 24 + 24)
+        classes = br.read(6) + 1
+        br.read(8)
+        cascade = []
+        for _c in range(classes):
+            low = br.read(3)
+            flag = br.read(1)
+            high = br.read(5) if flag else 0
+            cascade.append(high * 8 + low)
+        for c in range(classes):
+            for j in range(8):
+                if cascade[c] & (1 << j):
+                    br.read(8)
+
+    mapping_count = br.read(6) + 1
+    for _ in range(mapping_count):
+        if br.read(16) != 0:
+            fail("unsupported Vorbis mapping type")
+        submaps = 1
+        if br.read(1):
+            submaps = br.read(4) + 1
+        if br.read(1):
+            steps = br.read(8) + 1
+            br.skip(steps * ilog(channels - 1) * 2)
+        if br.read(2) != 0:
+            fail("unsupported Vorbis mapping submap type")
+        if submaps > 1:
+            br.skip(channels * 4)
+        for _s in range(submaps):
+            br.skip(8 + 8 + 8)
+
+    modes = []
+    for _ in range(br.read(6) + 1):
+        blockflag = br.read(1)
+        if br.read(16) != 0 or br.read(16) != 0:
+            fail("unsupported Vorbis window/transform type")
+        br.read(8)
+        modes.append(blockflag == 1)
+    if br.read(1) != 1:
+        fail("Vorbis setup framing bit missing")
+    if not modes:
+        fail("Vorbis setup has no modes")
+    return modes
+
+
+def packet_blocksize(packet, modes, block0, block1):
+    mbits = ilog(len(modes) - 1)
+    br = BitReader(packet)
+    if br.read(1) != 0:
+        fail("audio packet has a non-zero packet type")
+    mode = br.read(mbits) if mbits > 0 else 0
+    if mode >= len(modes):
+        fail("audio packet mode is out of range")
+    return block1 if modes[mode] else block0
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="deterministically repeat a committed OGG fixture")
@@ -249,11 +440,74 @@ def main():
     if open_len != 0:
         fail("fixture ends with an unterminated packet")
 
-    block_samples = last_granule
-    if block_samples == 0:
-        fail("fixture has no audio granule to advance")
-    if len(audio_pages) == 0:
-        fail("fixture has no audio pages")
+    rate = struct.unpack_from("<I", first_packets[0], 12)[0]
+    channels = first_packets[0][11]
+    if rate == 0:
+        fail("fixture identification header has sample rate 0")
+
+    # Sample-accurate Vorbis accounting.  A packet's output contribution is
+    # (previous_blocksize + current_blocksize) / 4 after the first audio packet
+    # (which has no previous block); page granules are the running total of
+    # those contributions.  Both block sizes come from the identification
+    # header and each packet's mode bit in the setup header.
+    modes = parse_setup_modes(first_packets[2], channels)
+    blocksize = first_packets[0][28]
+    block0 = 1 << (blocksize & 0x0F)
+    block1 = 1 << (blocksize >> 4)
+    if block0 < 64 or block1 < block0:
+        fail("fixture has invalid Vorbis block sizes")
+
+    audio_packets = []
+    pending = bytearray()
+    for j, p in enumerate(audio_pages):
+        cur = 0
+        for lace in p.segs:
+            pending += p.body[cur:cur + lace]
+            cur += lace
+            if lace < 255:
+                audio_packets.append((bytes(pending), j))
+                pending = bytearray()
+    if pending:
+        fail("fixture ends with an unterminated audio packet")
+    if not audio_packets:
+        fail("fixture has no audio packets")
+
+    cum_at_page = [0] * len(audio_pages)
+    cum = 0
+    prev_bs = None
+    for packet, page_index in audio_packets:
+        bs = packet_blocksize(packet, modes, block0, block1)
+        if prev_bs is not None:
+            cum += (prev_bs + bs) // 4
+        prev_bs = bs
+        cum_at_page[page_index] = cum
+
+    # Independent oracle: the committed fixture's non-final page granules were
+    # produced by libvorbis/oggenc.  The accounting above must reproduce them
+    # exactly.  Only the final page may be trimmed by the encoder, so its
+    # stored granule may be below the computed total.
+    for j in range(len(audio_pages) - 1):
+        stored = audio_pages[j].granule
+        if stored == NO_GRANULE:
+            continue
+        if cum_at_page[j] != stored:
+            fail("sample accounting mismatch on fixture page %d: "
+                 "computed %d, stored %d" % (j, cum_at_page[j], stored))
+    untrimmed_total = cum_at_page[-1]
+    if last_granule > untrimmed_total:
+        fail("fixture final granule exceeds the decoded sample total")
+    trim = untrimmed_total - last_granule
+    if trim != 0 and not (audio_pages[-1].header_type & EOS):
+        fail("fixture has a trimmed final granule without EOS")
+    if untrimmed_total == 0:
+        fail("fixture has no decoded audio samples")
+
+    first_bs = packet_blocksize(audio_packets[0][0], modes, block0, block1)
+    last_bs = packet_blocksize(audio_packets[-1][0], modes, block0, block1)
+    boundary = (last_bs + first_bs) // 4
+    block_advance = boundary + untrimmed_total
+    if block_advance <= 0:
+        fail("fixture block does not advance the granule")
 
     header_pages = pages[:audio_start]
     header_bytes = sum(len(p.raw) for p in header_pages)
@@ -264,11 +518,6 @@ def main():
     if repeats < 1:
         repeats = 1
 
-    rate = struct.unpack_from("<I", first_packets[0], 12)[0]
-    channels = first_packets[0][11]
-    if rate == 0:
-        fail("fixture identification header has sample rate 0")
-
     out = bytearray()
     seq = 0
     for p in header_pages:
@@ -278,14 +527,21 @@ def main():
         seq += 1
     last_audio_page = len(audio_pages) - 1
     for k in range(repeats):
-        offset = k * block_samples
         for j, p in enumerate(audio_pages):
             header_type = p.header_type & ~EOS
             if k == repeats - 1 and j == last_audio_page:
                 header_type |= EOS
             granule = p.granule
             if granule != NO_GRANULE:
-                granule += offset
+                if k == 0:
+                    # The fixture's first block keeps its libvorbis-written
+                    # granules, including the final-page trim.
+                    granule = p.granule
+                else:
+                    # Continuation position after trimming the previous block,
+                    # plus the boundary overlap and this page's internal total.
+                    granule = (last_granule + (k - 1) * block_advance
+                               + boundary + cum_at_page[j])
                 if granule > NO_GRANULE - 1:
                     fail("granule position overflow")
             out += build_page(header_type, granule, serial, seq, p.segs, p.body)
@@ -312,9 +568,10 @@ def main():
         elif has_eos:
             fail("generated page %d carries an early EOS" % i)
     final = check[-1].granule
-    if final != block_samples * repeats:
+    expected_final = last_granule + (repeats - 1) * block_advance
+    if final != expected_final:
         fail("generated final granule %d != %d" %
-             (final, block_samples * repeats))
+             (final, expected_final))
 
     try:
         with open(args.output, "wb") as f:
@@ -327,6 +584,9 @@ def main():
         print("size=%d" % len(out))
         print("pages=%d" % len(check))
         print("blocks=%d" % repeats)
+        print("frames=%d" % final)
+        print("block_advance=%d" % block_advance)
+        print("trim=%d" % trim)
         print("channels=%d" % channels)
         print("sample_rate=%d" % rate)
         print("duration_s=%s" % format_ms(dur_ms))

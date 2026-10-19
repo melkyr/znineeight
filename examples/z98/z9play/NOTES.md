@@ -1067,11 +1067,14 @@ Example-only: no `sf/**`, compiler, or seed change. Seed **v102** (archive
 - **Large-file gate (`tests/tier_stream.sh`).** Builds `main.zig`/`ui.zig` with
   `-fsafe`, generates a deterministic valid single-stream OGG of 67,109,323
   bytes (≥64 MiB) from `testdata/sine_stereo_44100.ogg` via
-  `tests/make_large_ogg.py` (repeated audio block, monotonic sequence and
-  granule, EOS only on the last page, recomputed CRCs), and checks a second run
-  is byte-identical. `--info` on that file runs under `ulimit -v 65536` KiB
-  (64 MiB) and returns the exact block `channels=2`, `sample_rate=44100`,
-  `duration_s=19798.000`; a Python probe that allocates and touches the same
+  `tests/make_large_ogg.py` (repeated audio block; sample-accurate granules
+  from Vorbis block-size accounting, validated against the fixture's
+  libvorbis-written non-final page granules; EOS only on the last page;
+  recomputed CRCs), and checks a second run is byte-identical. `--info` on that
+  file runs under `ulimit -v 65536` KiB (64 MiB) and returns the exact block
+  `channels=2`, `sample_rate=44100`, `duration_s=20026.035` (883,148,168
+  frames: 88,200 for the first block plus 89,216 for each additional block,
+  matching the libvorbis oracle); a Python probe that allocates and touches the same
   67,109,323-byte buffer fails under the same limit, proving the limit rejects
   a full-file allocation. `--pcm` on `sine_stereo_44100.ogg` is byte-identical
   to the pre-streaming pin (md5 `e7f24870ec03b924be1b8e55a1962fb3`, 352,844
