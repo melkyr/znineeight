@@ -124,3 +124,110 @@ Tracked paths: `scripts/stdlib/run_crosscheck.sh`, `scripts/stdlib/verify_stdlib
 ## Final status
 
 DONE — all Task 1 gates green; commit (a) `5d4bdde4`; report committed as (b).
+
+## Fix round 1
+
+Base reviewed: `17d34b97`. Operator rulings applied: vector expectations use `.expected`, and refs build `gcc -m32 -std=c89 -O0`.
+
+### Item 1 — rename vectors `.out` → `.expected`
+Command:
+```
+git mv scripts/stdlib/vectors/smoke/a.out scripts/stdlib/vectors/smoke/a.expected
+git mv scripts/stdlib/vectors/smoke/b.out scripts/stdlib/vectors/smoke/b.expected
+git mv scripts/stdlib/vectors/smoke/c.out scripts/stdlib/vectors/smoke/c.expected
+```
+Observed:
+```
+R  scripts/stdlib/vectors/smoke/a.out -> scripts/stdlib/vectors/smoke/a.expected
+R  scripts/stdlib/vectors/smoke/b.out -> scripts/stdlib/vectors/smoke/b.expected
+R  scripts/stdlib/vectors/smoke/c.out -> scripts/stdlib/vectors/smoke/c.expected
+```
+No `.gitignore` edit.
+
+### Item 2 — `run_crosscheck.sh` expectation path + messages + `-m32`
+Changed `out_file="$vec_dir/$name.expected"`, header/user-facing messages from `.out` to `.expected`, and the ref build to `gcc -m32 -std=c89 -O0` (temporary `z.out`/`r.out` capture files are unchanged internals).
+
+Evidence:
+```
+grep -n "\.out\|\.expected\|gcc .*O0" scripts/stdlib/run_crosscheck.sh
+2:# Cross-check gate for std modules: Z98 == C89 reference == committed .expected.
+15:#   2. build `scripts/stdlib/ref/<module>/ref.c` once: `gcc -m32 -std=c89 -O0`.
+18:#      three ways: Z98 == ref, Z98 == committed .expected, ref == committed .expected.
+133:    gcc -m32 -std=c89 -O0 "$ref_dir/ref.c" -o "$tmp/ref" ...
+148:        out_file="$vec_dir/$name.expected"
+```
+(Remaining `.out` lines are only `z.out`/`r.out` temporary capture files.)
+
+### Item 3 — spec §5/§6.4
+Applied `<name>.out` → `<name>.expected`, `committed .out` → `committed .expected`, `*.{in,out}` → `*.{in,expected}`, and ref flag `gcc -std=c89 -O0` → `gcc -m32 -std=c89 -O0`.
+
+Evidence:
+```
+grep -n "{in,out}\|\.out\|gcc -std=c89" docs/superpowers/specs/2026-10-19-z98-std-algorithms-design.md
+=> NO_REMAINING
+```
+
+### Item 4 — plans M1–M7
+Applied every `{in,out}` → `{in,expected}`, every `.out` → `.expected`, and M1 Step 3 ref flags → `gcc -m32 -std=c89 -O0`.
+
+Evidence:
+```
+grep -rn "{in,out}\|\.out\|gcc -std=c89 -O0" docs/superpowers/specs/...design.md docs/superpowers/plans/...m*-*.md
+=> NO_REMAINING
+```
+M1 now shows `{a,b,c}.{in,expected}`, `<name>.{in,expected}`, `*.{in,expected}`, `mutated-.expected`, and `gcc -m32 -std=c89 -O0`; M2–M7 show `*.{in,expected}`.
+
+### Item 5 — gates
+
+Syntax:
+```
+bash -n scripts/stdlib/*.sh
+=> BASH_N_OK
+```
+
+Smoke crosscheck:
+```
+bash scripts/stdlib/run_crosscheck.sh /tmp/m7_t5_seed2/zig1_5_clean smoke
+=> PASS smoke (3 vectors)
+=> run_crosscheck: 1 PASS / 0 FAIL over 1 modules
+=> CROSS_RC=0
+```
+
+Full gate:
+```
+bash scripts/stdlib/verify_stdlib.sh /tmp/m7_t5_seed2/zig1_5_clean
+=> run_fixtures: 287 PASS / 0 FAIL over 287 dirs
+=> == std-lib crosscheck gate ==
+=> PASS smoke (3 vectors)
+=> run_crosscheck: 1 PASS / 0 FAIL over 1 modules
+=> STDLIB GATE OK
+=> VERIFY_RC=0
+```
+
+Non-vacuity (scratch copy; mutate `c.expected` from `42` to `3`, then restore):
+```
+cp scratch vectors/smoke/a.expected -> scratch vectors/smoke/c.expected
+bash "$scratch/scripts/stdlib/run_crosscheck.sh" /tmp/m7_t5_seed2/zig1_5_clean smoke
+=> z98 vs committed .expected: ... -42 +3
+=> FAIL smoke (Z98-NE-EXPECTED:c)
+=> run_crosscheck: 0 PASS / 1 FAIL over 1 modules
+=> MUTATED_RC=1
+
+cp repo vectors/smoke/c.expected -> scratch vectors/smoke/c.expected
+bash "$scratch/scripts/stdlib/run_crosscheck.sh" /tmp/m7_t5_seed2/zig1_5_clean smoke
+=> PASS smoke (3 vectors)
+=> RESTORED_RC=0
+```
+Harness still fails on a mutated expectation, so the control is non-vacuous with `.expected`.
+
+### Item 6 — commit (a)
+```
+git commit -m "refactor(scripts): vector expectations .expected; refs -m32"
+=> aab2ddef
+```
+Commit (a) tracks only vectors, `run_crosscheck.sh`, spec, and plans; report is committed separately as (b).
+
+### Fix round 1 status
+
+DONE — both operator findings applied and gated; commit (a) `aab2ddef`.
+
