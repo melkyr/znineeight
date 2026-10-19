@@ -191,6 +191,24 @@ unchanged (archive `702f34d87b7e6bf401dd206d2517dbee`; fixed point
 `b299b4b435e624d0ddbd2edde681cbc3`). Defect status: **D1/D2 FIXED; D3/D4/D5
 OPEN**. This is not a feature-complete claim; the M8 Task 5 handoff owns that.
 
+**M9 (streaming playback) — code/tests/docs complete (Tasks 0–6).** OGG and
+FLAC playback no longer read a whole track into memory. `stream.zig` provides a
+64 KiB `BufferedFile` over `std_file`; `ogg_stream.zig` reads one page at a
+time (max 65,307 bytes) and assembles one bounded packet (≤1 MiB), with a
+256 KiB tail scan for duration; `flac.StreamFlacDecoder` reads metadata and
+frames through the same buffered file; and `player.VorbisCtx` pulls packets
+from the stream instead of a packet array. `main.zig` and `ui.zig` use streams
+for `--info`, `--dump-setup`, `--pcm`, `--wav`, the interactive CLI, and the
+TUI; `--pcm` writes the WAV header first and patches the sizes at offsets 4/40.
+Media memory is bounded by the read buffer + one page + one packet + decoder
+tables + the PCM ring, independent of file size. `tests/tier_stream.sh`
+generates a deterministic valid ≥64 MiB OGG from the committed 2 s fixture and
+passes `--info` under `ulimit -v 65536` KiB while a same-size allocation fails;
+`--pcm` remains byte-exact; the prior tiers stay at info 20/0, setup 21/0, cli
+23/0, tui 40/0, audio 27/0, flac 59/0. The operator's 8.2 MB track now plays
+in the TUI. Seed v102 is unchanged; D1/D2 FIXED, **D3/D4/D5 OPEN**; Win98/Me
+hardware verification remains **operator-pending** (not claimed).
+
 ## Files
 
 M0 (all present; `[x]` = landed in M0):
@@ -322,6 +340,25 @@ M8 (Tasks 1–3 landed):
   3× determinism, mixed `.ogg`/`.flac` TUI, OGG regressions, Win9x import gate;
   59/0 twice).
 
+M9 (Tasks 1–6 landed):
+
+- `[x]` `stream.zig` — bounded `BufferedFile` (64 KiB) over `std_file`
+  (`open`/`read`/`readByte`/`seek`/`tell`/`size`/`close`; no `readAll`).
+- `[x]` `ogg_stream.zig` — incremental OGG pages/packets (65,536-byte page
+  buffer, ≤1 MiB packet) + bounded 256 KiB tail-granule scan.
+- `[x]` `flac.zig` — `StreamFlacDecoder` (`openStream`/`decodeStream`/
+  `closeStream`); the byte-slice decoder stays as the unit-test oracle.
+- `[x]` `player.zig` — `VorbisCtx` pulls packets from `*OggStream`.
+- `[x]` `main.zig`/`ui.zig` — all modes stream; `ui.zig` replaces the 4 MiB
+  file arena with bounded stream/page/packet buffers.
+- `[x]` `tests/stream_test.zig`, `tests/ogg_stream_test.zig` — streaming unit
+  gates (>4 MiB file, packet equality vs `reassemble`, tail-granule equality).
+- `[x]` `tests/make_large_ogg.py` — deterministic valid ≥64 MiB OGG generator
+  from a committed fixture (no third-party OGG library).
+- `[x]` `tests/tier_stream.sh` — the M9 gate (large OGG `--info` under
+  `ulimit -v 65536`, same-size allocation negative, exact `--pcm` pin, optional
+  operator track, existing tiers).
+
 ## Build and Run
 
 The Linux tiers and the Win9x tier both use the seed v102 compiler built from
@@ -412,8 +449,9 @@ codebooks=38 floors=2 residues=2 mappings=2 modes=2
 The counts are the parsed header-object list lengths. Exit codes mirror
 `--info` (`0`/`1`/`2`/`3`).
 
-`--pcm <in.ogg> <out.wav>` (`M3`) decodes the whole stream and writes a canonical
-44-byte-header PCM WAV (16-bit, the fixture's channels/sample-rate) whose `data`
+`--pcm <in.ogg> <out.wav>` (`M3`; streamed since M9) decodes packets
+incrementally and writes a canonical 44-byte-header PCM WAV (16-bit, the
+fixture's channels/sample-rate) whose `data`
 payload is the decoded interleaved s16 LE frames, trimmed to the stream granule
 so it lines up with the `oggdec` golden `testdata/expected/*.pcm`. Exit codes:
 `0` ok, `1` arguments (incl. a missing output path), `2` open, `3` decoder
@@ -451,6 +489,37 @@ the Win9x waveOut backend, else the Linux OSS `/dev/dsp` backend. Exit
 codes: `0` ok, `1` arguments, `2` open, `3` decoder, `4` audio, `5` internal.
 The M0–M4 request modes (`--info`/`--dump-setup`/`--pcm`/`--wav`) are unchanged.
 
+### Streaming (M9)
+
+All playback and request modes read the file incrementally; no mode allocates or
+reads an entire track. The flag names and output formats are unchanged:
+`--info` streams the three headers and reads the last-page granule with a
+bounded tail scan; `--dump-setup` streams headers only; `--pcm` writes the
+44-byte WAV header first, writes PCM per packet, then patches the RIFF/data
+sizes at offsets 4 and 40. The TUI uses the same streaming path.
+
+```bash
+python3 examples/z98/z9play/tests/make_large_ogg.py \
+    examples/z98/z9play/testdata/sine_stereo_44100.ogg /tmp/large.ogg --size 64M
+# size=67109323 ... duration_s=19798.000
+
+( ulimit -v 65536; /tmp/z9play_out/prog --info /tmp/large.ogg )
+# channels=2
+# sample_rate=44100
+# duration_s=19798.000
+
+ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_stream.sh
+# == tier_stream summary: 19 passed, 0 failed ==
+```
+
+`ulimit -v 65536` is 64 MiB: the streaming binary's static arenas are ~42 MiB
+and its stream buffers are bounded (64 KiB read + 64 KiB page + 1 MiB packet +
+256 KiB tail), so it runs; a buffer the size of the ≥64 MiB generated file
+cannot be allocated under the same limit. `make_large_ogg.py` is deterministic
+and uses only the Python standard library (no third-party OGG library). Set
+`Z9PLAY_LARGE_OGG=/path/to/real.ogg` to add the same `--info` check on the
+operator's track; that file is never committed.
+
 ### Windows 9x (M6)
 
 The default `-osw` profile is Win9x no-CRT. Emit into a scratch dir and build
@@ -479,9 +548,11 @@ ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_win9x.sh
 # == tier_win9x summary: 14 passed, 0 failed, 0 skipped ==
 ```
 
-The M8 FLAC gate and the existing Linux gates:
+The M9 streaming gate (it also runs the existing tiers) and the individual
+Linux gates:
 
 ```bash
+ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_stream.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_info.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_setup.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_decode.sh
@@ -509,15 +580,17 @@ the golden `.meta` format and the determinism contract.
 ## Notes
 
 `NOTES.md` holds the build recipe, the `--dump-c89` md5, the golden formats, and
-the milestone log. The **M8 current** Linux-default pins are `main.zig`
-`e56af7916edd199e796f3ef11d5e49c4` (current `main.zig` Linux pin) and `ui.zig`
-`22676fd997471df1c4c3a3f04397121d` (supersedes only the historical M7 `ui.zig`
-Linux pin `e7bc57a2a38a72cb83f51a1ce7497239`) on seed v102 (archive md5
-`702f34d87b7e6bf401dd206d2517dbee`; binary/fixed point unchanged). The M6
-`-osw` value `ad9ccfd34aa2ba26c38abbcf48eedeb0` is historical M6/seed v101
-(md5 `b299b4b435e624d0ddbd2edde681cbc3`), **not a current pin**. M8 did not
-re-pin `-osw`; the current measured `-osw --dump-c89` for `main.zig` on seed
-v102 is `aa68782328c001c1f72d03f8ab1282d7`. The prior Linux `--dump-c89` value
+the milestone log. The **M9 current** Linux-default pins on seed v102 (archive
+md5 `702f34d87b7e6bf401dd206d2517dbee`; binary/fixed point
+`b299b4b435e624d0ddbd2edde681cbc3` unchanged) are `main.zig`
+`23f9b5ec0f8e69fe48e9b5598719ced7` and `ui.zig`
+`76d0fc83121892118089b10c6b66bb41`; they supersede the M8-era values
+`e56af7916edd199e796f3ef11d5e49c4` and `22676fd997471df1c4c3a3f04397121d`. The
+M9 `-osw --dump-c89` values are `main.zig`
+`6cd349b5fae0b6a703d27424ddfb70f2` and `ui.zig`
+`294e3fde8819e638556d07cddc385301`. The M6 `-osw` value
+`ad9ccfd34aa2ba26c38abbcf48eedeb0` is historical M6/seed v101 and is **not a
+current pin**. The prior Linux `--dump-c89` value
 was `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b; prior M5
 `0a60a27846476a73d2fac8e183d52d48`, M4
 `d695bf99dadb7f6dbbc0f2a94bb42f43`, M3

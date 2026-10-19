@@ -1,12 +1,12 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed). M4 (audio output + ring buffer + Player core) complete and closed out (Tasks 0–6): the `AudioOut` vtable (`platform/audio.zig`), the hermetic WAV sink (`platform/audio_wavfile.zig`) and Linux OSS `/dev/dsp` backend (`platform/audio_oss.zig`/`audio_oss_pal.zig`), the shared `Player` + double-buffer `RingBuffer` (`player.zig`), the `z9play --wav <in.ogg> <out.wav>` gate subcommand, and `tests/tier_audio.sh` (tolerance + completion/monotonicity + 3× determinism vs the M3 goldens; 27/27). M4's Task 6 closeout (below) records the M5 CLI-plan amendment review: **no amendment needed** — M4's caller-owned, field-exposed `Player` API plus the `AudioOut` vtable cover the CLI's status line, keys, volume, clean stop, and the D8 pointer-vtable shape. M5 (interactive CLI playback) complete (Tasks 0–5): the `fmt.zig` status formatter, the `platform/console_linux.zig` raw `termios` console (`readKey`), the `cli.zig`/`main.zig` playback mode (`<file.ogg>` + `--volume`/`--start`/`--loop`/`--quiet`; startup metadata line, per-second `\r` status, keys space/`+`/`-`/`q`/Ctrl-C, `Stopped at mm:ss.`, exit codes 0/1/2/3/4/5), and `tests/tier_cli.sh` (PASS 23/23). M5b (console abstraction + complete Linux backend) complete (Tasks 1–4): the `platform/console.zig` `Console` contract (`Key = {none,char,sigint,up,down,left,right,enter,esc}`; the nine ops `clear`/`setCursor`/`writeStr`/`readKey`/`enterRaw`/`leaveRaw`/`width`/`height`/`cursorShow` + `state`; `readKey_fn: fn (*void) Key`), the rewritten `platform/console_linux.zig` backend over a caller-owned `ConsoleLinState` (`termios` raw mode, persistent ESC/arrow state machine, ANSI clear/setCursor/cursorShow, `ioctl(TIOCGWINSZ)` size), `main.zig` driving the CLI through the assembled `Console`, and the extended `tests/tier_console.sh` (PASS 11/11). M6 (Win9x audio + console, then the T5.5 Win9x default-profile truth-up) complete (Tasks 0–5): `platform/audio_win9x.zig` (+PAL) waveOut backend (16-bit PCM, 44100/48000, 1/2 ch, two 500 ms buffers, blocking write, drain/close), `platform/console_win9x.zig` (+PAL) complete nine-op `Console` backend with Amendment 1 Option 3 Ctrl-C (processed input off → `KEY_EVENT` 0x03 → `.sigint`; no stdcall callback), `main.zig` compile-time `@isWindows()` selection (`Z9PLAY_WAV_OUT` WAV-sink override first, explicit Linux `else`), and `tests/tier_win9x.sh` 14/14. T5.5 gates the DEFAULT `-osw` = 9x no-CRT emitted `build_target.sh` path (not the legacy CRT harness): single PE32 EXE importing exactly KERNEL32+WINMM, no msvcrt, `check_win9x_imports.sh 9x` PASS, Wine WAV parity, pty console restore; `-osw --dump-c89` is `ad9ccfd34aa2ba26c38abbcf48eedeb0` on seed v101 (md5 `b299b4b435e624d0ddbd2edde681cbc3`). `demo/win9x_README.txt` is the manual Win98 procedure (single drag-and-drop EXE, no msvcrt redistributable, native `*_nocrt.bat` defaults vs `*_crt.bat` alternates; hardware verification operator-pending). Defect status (current numbering): D1/D2 FIXED; D3/D4 OPEN; D5 OPEN (Option 3 workaround). M7 (TUI + `std_file` directory iteration) complete (Tasks 0–5): `std_file` gains streaming `DirEntry`/`Dir`/`openDir`/`readDir`/`closeDir` on Linux and Win9x (caller-arena names, no `.`/`..` filtering, Linux `DT_UNKNOWN` `stat` fallback); the TUI is a separate 80×25 root `ui.zig` (directory browser, now-playing pane, in-memory playlist, `Console` + `Player`), and `tests/tier_tui.sh` is 40/40 (32 pty checks + Win9x `-osw` PE/import + stable `--dump-c89` `e7bc57a2a38a72cb83f51a1ce7497239`). Seed v101 → v102 rotates only the archive `lib/` payload (fixed point `b299b4b435e624d0ddbd2edde681cbc3` unchanged; v102 archive md5 `702f34d87b7e6bf401dd206d2517dbee`); Win98/Me hardware verification remains operator-pending. M8 (optional native FLAC) adds `flac.zig` + `decoder.zig` selection for `.flac` playback through `--wav`, interactive CLI, and the TUI (mixed `.ogg`/`.flac` selection); `--info`/`--dump-setup`/`--pcm` remain Vorbis-only (FLAC exits 3), and `tests/tier_flac.sh` is 59/0 twice (lossless exact PCM, 3× deterministic). Seed v102 is unchanged; D1/D2 FIXED, D3/D4/D5 OPEN; Win98/Me hardware verification remains operator-pending. The M8 Task 5 handoff owns any feature-complete statement.
+**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed). M4 (audio output + ring buffer + Player core) complete and closed out (Tasks 0–6): the `AudioOut` vtable (`platform/audio.zig`), the hermetic WAV sink (`platform/audio_wavfile.zig`) and Linux OSS `/dev/dsp` backend (`platform/audio_oss.zig`/`audio_oss_pal.zig`), the shared `Player` + double-buffer `RingBuffer` (`player.zig`), the `z9play --wav <in.ogg> <out.wav>` gate subcommand, and `tests/tier_audio.sh` (tolerance + completion/monotonicity + 3× determinism vs the M3 goldens; 27/27). M4's Task 6 closeout (below) records the M5 CLI-plan amendment review: **no amendment needed** — M4's caller-owned, field-exposed `Player` API plus the `AudioOut` vtable cover the CLI's status line, keys, volume, clean stop, and the D8 pointer-vtable shape. M5 (interactive CLI playback) complete (Tasks 0–5): the `fmt.zig` status formatter, the `platform/console_linux.zig` raw `termios` console (`readKey`), the `cli.zig`/`main.zig` playback mode (`<file.ogg>` + `--volume`/`--start`/`--loop`/`--quiet`; startup metadata line, per-second `\r` status, keys space/`+`/`-`/`q`/Ctrl-C, `Stopped at mm:ss.`, exit codes 0/1/2/3/4/5), and `tests/tier_cli.sh` (PASS 23/23). M5b (console abstraction + complete Linux backend) complete (Tasks 1–4): the `platform/console.zig` `Console` contract (`Key = {none,char,sigint,up,down,left,right,enter,esc}`; the nine ops `clear`/`setCursor`/`writeStr`/`readKey`/`enterRaw`/`leaveRaw`/`width`/`height`/`cursorShow` + `state`; `readKey_fn: fn (*void) Key`), the rewritten `platform/console_linux.zig` backend over a caller-owned `ConsoleLinState` (`termios` raw mode, persistent ESC/arrow state machine, ANSI clear/setCursor/cursorShow, `ioctl(TIOCGWINSZ)` size), `main.zig` driving the CLI through the assembled `Console`, and the extended `tests/tier_console.sh` (PASS 11/11). M6 (Win9x audio + console, then the T5.5 Win9x default-profile truth-up) complete (Tasks 0–5): `platform/audio_win9x.zig` (+PAL) waveOut backend (16-bit PCM, 44100/48000, 1/2 ch, two 500 ms buffers, blocking write, drain/close), `platform/console_win9x.zig` (+PAL) complete nine-op `Console` backend with Amendment 1 Option 3 Ctrl-C (processed input off → `KEY_EVENT` 0x03 → `.sigint`; no stdcall callback), `main.zig` compile-time `@isWindows()` selection (`Z9PLAY_WAV_OUT` WAV-sink override first, explicit Linux `else`), and `tests/tier_win9x.sh` 14/14. T5.5 gates the DEFAULT `-osw` = 9x no-CRT emitted `build_target.sh` path (not the legacy CRT harness): single PE32 EXE importing exactly KERNEL32+WINMM, no msvcrt, `check_win9x_imports.sh 9x` PASS, Wine WAV parity, pty console restore; `-osw --dump-c89` is `ad9ccfd34aa2ba26c38abbcf48eedeb0` on seed v101 (md5 `b299b4b435e624d0ddbd2edde681cbc3`). `demo/win9x_README.txt` is the manual Win98 procedure (single drag-and-drop EXE, no msvcrt redistributable, native `*_nocrt.bat` defaults vs `*_crt.bat` alternates; hardware verification operator-pending). Defect status (current numbering): D1/D2 FIXED; D3/D4 OPEN; D5 OPEN (Option 3 workaround). M7 (TUI + `std_file` directory iteration) complete (Tasks 0–5): `std_file` gains streaming `DirEntry`/`Dir`/`openDir`/`readDir`/`closeDir` on Linux and Win9x (caller-arena names, no `.`/`..` filtering, Linux `DT_UNKNOWN` `stat` fallback); the TUI is a separate 80×25 root `ui.zig` (directory browser, now-playing pane, in-memory playlist, `Console` + `Player`), and `tests/tier_tui.sh` is 40/40 (32 pty checks + Win9x `-osw` PE/import + stable `--dump-c89` `e7bc57a2a38a72cb83f51a1ce7497239`). Seed v101 → v102 rotates only the archive `lib/` payload (fixed point `b299b4b435e624d0ddbd2edde681cbc3` unchanged; v102 archive md5 `702f34d87b7e6bf401dd206d2517dbee`); Win98/Me hardware verification remains operator-pending. M8 (optional native FLAC) adds `flac.zig` + `decoder.zig` selection for `.flac` playback through `--wav`, interactive CLI, and the TUI (mixed `.ogg`/`.flac` selection); `--info`/`--dump-setup`/`--pcm` remain Vorbis-only (FLAC exits 3), and `tests/tier_flac.sh` is 59/0 twice (lossless exact PCM, 3× deterministic). Seed v102 is unchanged; D1/D2 FIXED, D3/D4/D5 OPEN; Win98/Me hardware verification remains operator-pending. The M8 Task 5 handoff owns any feature-complete statement. M9 (streaming playback) is complete for the code/tests/docs scope (Tasks 0–6): `stream.zig` adds the bounded 64 KiB `BufferedFile`, `ogg_stream.zig` adds incremental page/packet parsing plus a 256 KiB tail-granule scan, `flac.StreamFlacDecoder` reads frames from the file, `player.VorbisCtx` pulls packets from the stream, and `main.zig`/`ui.zig` use streams for every mode (`--info`, `--dump-setup`, `--pcm`, `--wav`, interactive CLI, TUI). No whole track is buffered: media memory is bounded by the read buffer + one OGG page + one ≤1 MiB packet + decoder tables + the PCM ring. `tests/tier_stream.sh` generates a deterministic valid ≥64 MiB OGG from the committed 2 s fixture and passes `--info` under `ulimit -v 65536` while a same-size allocation fails under that limit; `--pcm` remains byte-exact. Seed v102 is unchanged; D1/D2 FIXED, D3/D4/D5 OPEN; Win98/Me hardware verification remains operator-pending.
 
 **Entry file:** `main.zig`
 
 **Working commit:** `a0a7616f` (`example(z9play): M6 T4 fix — real undefined-symbol check`; the last commit of the M6 Win9x surface, pinned at M6 closeout; this docs commit is docs-only and does not bump `--version`, which remains `(M5)`). Prior closeout: `5a096122` (`example(z9play): M5b console tier`; the last commit of the M5b console surface, pinned at M5b closeout). Prior closeout: `06321a72` (`example(z9play): M5 CLI tier`; the last commit of the M5 CLI surface, pinned at M5 closeout; the docs commit that follows also bumps the `--version` string to `(M5)`, so the recorded M5 MD5 is measured at that closeout tree, not at `06321a72`). Prior closeouts: M4 `61e93e72` (`example(z9play): M4 audio tier`; the last commit of the M4 audio surface — the docs commit that followed bumped `--version` to `(M4)`); M3 `c7af78ac` (`example(z9play): M3 --pcm + tier_decode`; the M3 `--pcm` + `tier_decode` commit — the last commit of the M3 decode surface, pinned at M3 closeout); M2 `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the last `std_math` surface commit; full M2 chain `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs)); M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`). **M3 decode chain:** `bb211810` (IMDCT + window + overlap-add) → `b497323a` (floor1) → `d925cb55` (residue type 0/1/2) → `16ae3eea` (packet → PCM) → `de48b5cf` (docs: D7 + cumulative-defect warning) → `c7af78ac` (M3 `--pcm` + `tier_decode`; this closeout). **M5 CLI chain:** `4154098c` (CLI status formatter) → `437c12cc` (T1 fix: fixed-width volume field) → `2a5384b4` (Linux raw console input) → `8dcb0072` (CLI playback loop + keys) → `7f447896` (T3 fix: `--start` pacing + integer-seconds message) → `06321a72` (M5 `tier_cli`; M5 closeout). **M5b chain:** `c554d666` (Console contract) → `8f968713` (complete Linux backend) → `4a96a0fa` (escape-decode state machine fix) → `35c9893d` (CLI drives the Console contract) → `5a096122` (M5b console tier; M5b closeout). **M6 chain:** `866b260f` (Win9x waveOut backend) → `d86b3441` + `85234e21` (Win9x console backend + Option 3 Ctrl-C fix) → `2e0f194a` (`@isWindows()` backend selection) → `f91eb8b2` + `a0a7616f` (Win9x tier + real undefined-symbol check; this closeout).
 
-**MD5 (`--dump-c89`):** historical M6 `-osw` target `ad9ccfd34aa2ba26c38abbcf48eedeb0` (seed v101 compiler, md5 `b299b4b435e624d0ddbd2edde681cbc3`, two-hop closure; stable 2×; M6 default 9x no-CRT profile; **not current**). **M6 added the `-osw` target value**; the prior primary value was the Linux default `--dump-c89` `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b), because the M6 compile now emits the Win9x import closure behind `@isWindows()`. Prior M6-era pre-rotation value was `87856b43091e2bf5d992fc795d9764f2` (compiler rebuilt from post-D1/D2 `sf/src`, bootstrap seed v98); seed v101 (T5.3 no-CRT) legitimately moves the emitted C89. Prior: M5b Linux `--dump-c89` `4c9f760ae825d7fcf91cbf7a2500a4a4` (seed v98), M5 `0a60a27846476a73d2fac8e183d52d48` (seed v98), M4 `d695bf99dadb7f6dbbc0f2a94bb42f43` (seed v97), M3 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`, M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`. **M8 current Linux default (seed v102, stable 2×):** `main.zig` `e56af7916edd199e796f3ef11d5e49c4` (current `main.zig` Linux pin); `ui.zig` `22676fd997471df1c4c3a3f04397121d` (supersedes only the M7 `ui.zig` Linux pin `e7bc57a2a38a72cb83f51a1ce7497239`). M8 did not re-pin `-osw`; the current measured `-osw --dump-c89` for `main.zig` on seed v102 is `aa68782328c001c1f72d03f8ab1282d7`.
+**MD5 (`--dump-c89`):** historical M6 `-osw` target `ad9ccfd34aa2ba26c38abbcf48eedeb0` (seed v101 compiler, md5 `b299b4b435e624d0ddbd2edde681cbc3`, two-hop closure; stable 2×; M6 default 9x no-CRT profile; **not current**). **M6 added the `-osw` target value**; the prior primary value was the Linux default `--dump-c89` `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b), because the M6 compile now emits the Win9x import closure behind `@isWindows()`. Prior M6-era pre-rotation value was `87856b43091e2bf5d992fc795d9764f2` (compiler rebuilt from post-D1/D2 `sf/src`, bootstrap seed v98); seed v101 (T5.3 no-CRT) legitimately moves the emitted C89. Prior: M5b Linux `--dump-c89` `4c9f760ae825d7fcf91cbf7a2500a4a4` (seed v98), M5 `0a60a27846476a73d2fac8e183d52d48` (seed v98), M4 `d695bf99dadb7f6dbbc0f2a94bb42f43` (seed v97), M3 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`, M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`. **M8-era Linux default (seed v102, stable 2×; superseded by M9):** `main.zig` `e56af7916edd199e796f3ef11d5e49c4`; `ui.zig` `22676fd997471df1c4c3a3f04397121d`. **M9 current Linux default (seed v102, stable 2×):** `main.zig` `23f9b5ec0f8e69fe48e9b5598719ced7` (current `main.zig` Linux pin); `ui.zig` `76d0fc83121892118089b10c6b66bb41` (current `ui.zig` Linux pin; supersedes the M8 `22676fd9…` and M7 `e7bc57a2…` values). M9 `-osw --dump-c89` on seed v102: `main.zig` `6cd349b5fae0b6a703d27424ddfb70f2`, `ui.zig` `294e3fde8819e638556d07cddc385301`.
 
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md` (binding).
 M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
@@ -206,9 +206,9 @@ TIER_CLI PASS
 ### `--dump-c89` (for the MD5 above)
 
 The M6 `-osw` recipe below is **historical (seed v101)**. On the current seed
-v102 the measured `-osw --dump-c89` value for `main.zig` is
-`aa68782328c001c1f72d03f8ab1282d7`; M8 did not re-pin `-osw`. The current M8
-Linux-default pins are in the M8 section.
+v102 the M9 `-osw --dump-c89` values are `6cd349b5fae0b6a703d27424ddfb70f2`
+for `main.zig` and `294e3fde8819e638556d07cddc385301` for `ui.zig`. The current
+M9 Linux-default pins are in the M9 section.
 
 ```bash
 # historical M6: Win9x target (seed v101; default -osw = 9x no-CRT)
@@ -503,8 +503,9 @@ change.
   `frames=88640 golden_frames=88200 max_delta=1 rms_milli=36`, 3× deterministic
   (decoded SHA-1 `f891394376e3012753ddcb6e4a18cf1cfe321b14`).
 - **Task 5 (--pcm + gate) — DONE (this commit).** `cli.zig`/`main.zig` gained
-  `--pcm <in.ogg> <out.wav>`, decoding the whole file and writing a canonical
-  44-byte-header PCM WAV (payload trimmed to the stream granule). New gate
+  `--pcm <in.ogg> <out.wav>`, decoding the stream and writing a canonical
+  44-byte-header PCM WAV (payload trimmed to the stream granule; M3 decoded a
+  whole-file buffer, M9 streams the same packet outputs). New gate
   `tests/tier_decode.sh`: for all 5 fixtures, header/size check, tolerance vs the
   `oggdec` golden (`max |Δ| = 1 LSB`, `rms_milli` 34–39), 3× determinism, and the
   non-vacuous negative exit codes (args 1 / open 2 / decoder 3); exact-match
@@ -1013,14 +1014,12 @@ no compiler/seed change. Seed **v102** (archive
   **Vorbis-only** and reject FLAC with exit 3 (the existing "not an OGG Vorbis
   stream" path). FLAC tags are not shown (the interactive startup line falls
   back to the path).
-- **`--dump-c89` (M8 current, Linux default, seed v102, stable 2×):** `main.zig`
-  `e56af7916edd199e796f3ef11d5e49c4` (current `main.zig` Linux pin); `ui.zig`
-  `22676fd997471df1c4c3a3f04397121d` (supersedes only the historical M7 `ui.zig`
-  Linux pin `e7bc57a2a38a72cb83f51a1ce7497239`). The M6 `-osw` value
+- **`--dump-c89` (M8-era, Linux default, seed v102, stable 2×; superseded by
+  M9):** `main.zig` `e56af7916edd199e796f3ef11d5e49c4`; `ui.zig`
+  `22676fd997471df1c4c3a3f04397121d`. The M6 `-osw` value
   `ad9ccfd34aa2ba26c38abbcf48eedeb0` is historical M6/seed v101 and is **not a
-  current pin**. M8 did not re-pin `-osw`; the current measured `-osw
-  --dump-c89` for `main.zig` on seed v102 is
-  `aa68782328c001c1f72d03f8ab1282d7`.
+  current pin**. M9 re-pins both Linux values and the `-osw` values (M9
+  section below).
 - **Win9x gate.** The tier emits/builds `main.zig` with default `-osw` and
   asserts a PE32 i386 EXE whose imports are exactly KERNEL32 + WINMM, with no
   msvcrt, and `check_win9x_imports.sh 9x` PASS. Real Win98/Me hardware
@@ -1031,3 +1030,68 @@ no compiler/seed change. Seed **v102** (archive
   that statement.
 - M8 chain so far: `c4b53d84` (T1 decoder abstraction) → `07d92393` (T2 native
   FLAC decoder) → `903ea2ab` (T3 `tier_flac.sh`) → this docs/report commit.
+
+### M9 — Streaming playback (`stream.zig`, `ogg_stream.zig`, FLAC/Vorbis streams, `main.zig`/`ui.zig`; Tasks 0–6) — DONE
+
+Plan: `docs/superpowers/plans/2026-10-19-z9play-streaming-playback-plan.md`.
+Spec: `docs/superpowers/specs/2026-10-19-z9play-streaming-playback-design.md`.
+Example-only: no `sf/**`, compiler, or seed change. Seed **v102** (archive
+`702f34d87b7e6bf401dd206d2517dbee`; fixed point
+`b299b4b435e624d0ddbd2edde681cbc3`).
+
+- **Streaming file (`stream.zig`).** `BufferedFile` owns a `std_file.File` and
+  a caller-arena 64 KiB buffer (`STREAM_BUF_SIZE`); `bufferedFileOpen`/
+  `Read`/`ReadByte`/`Seek`/`Tell`/`Size`/`Close`. `Read` refills until the
+  output is full or EOF; close is idempotent; there is no `readAll` on a media
+  path.
+- **Incremental OGG (`ogg_stream.zig`).** Pages are read one at a time into a
+  65,536-byte buffer (max page 27 + 255 + 65,025 = 65,307) and CRC-checked;
+  `nextPacket` assembles one bounded packet (≤1 MiB) across laces/pages;
+  serial changes and continuation misuse are rejected. `oggStreamLastGranule`
+  opens its own handle and scans at most the last 256 KiB. `ogg.reassemble`/
+  `ogg.lastGranule` remain test-only oracles.
+- **Vorbis + FLAC streaming.** `player.VorbisCtx` now holds
+  `stream: *OggStream` and pulls one packet per `vorbisNext`; scratch is reset
+  per packet. `flac.StreamFlacDecoder` (`openStream`/`decodeStream`/
+  `closeStream`) reads metadata and frames through `BufferedFile` with a
+  file-backed MSB bit reader; the byte-slice `flac.FlacDecoder` remains the
+  unit-test oracle. `decoder.zig` wraps only the streaming FLAC context.
+- **Frontends.** `main.zig` detects the kind from four streamed bytes, then
+  reopens a stream for `--info` (headers + tail granule), `--dump-setup`
+  (headers only), `--pcm` (44-byte WAV header written first, PCM written per
+  packet, RIFF/data sizes patched at offsets 4/40), `--wav`, the interactive
+  CLI, and `--loop`. `ui.zig` replaces the 4 MiB file arena with a 2 MiB stream
+  arena (64 KiB read + 64 KiB page + 1 MiB packet + header/tag copies), stores
+  `g_ogg_stream`/`g_flac`, and closes the stream in `stopPlayback` and every
+  failure path. The TUI layout/keys/status are unchanged.
+- **Large-file gate (`tests/tier_stream.sh`).** Builds `main.zig`/`ui.zig` with
+  `-fsafe`, generates a deterministic valid single-stream OGG of 67,109,323
+  bytes (≥64 MiB) from `testdata/sine_stereo_44100.ogg` via
+  `tests/make_large_ogg.py` (repeated audio block, monotonic sequence and
+  granule, EOS only on the last page, recomputed CRCs), and checks a second run
+  is byte-identical. `--info` on that file runs under `ulimit -v 65536` KiB
+  (64 MiB) and returns the exact block `channels=2`, `sample_rate=44100`,
+  `duration_s=19798.000`; a Python probe that allocates and touches the same
+  67,109,323-byte buffer fails under the same limit, proving the limit rejects
+  a full-file allocation. `--pcm` on `sine_stereo_44100.ogg` is byte-identical
+  to the pre-streaming pin (md5 `e7f24870ec03b924be1b8e55a1962fb3`, 352,844
+  bytes). With `Z9PLAY_LARGE_OGG` set the tier also runs `--info` on the
+  operator's real track under the same limit (the file is never committed).
+  Existing tiers stay green: `tier_info` 20/0, `tier_setup` 21/0, `tier_cli`
+  23/0, `tier_tui` 40/0, `tier_audio` 27/0, `tier_flac` 59/0.
+- **Operator track.** `lin_bin/z9play-console` was rebuilt from the final
+  `ui.zig` with seed v102 and `build_target.sh linux`. Under a pty the
+  8,205,755-byte `01. 霜月はるか — ユメノハテニ.ogg` shows `Now:` and
+  `State: Playing`, writes >1 MiB to the WAV sink, and never shows
+  “cannot open track”. `lin_bin/` remains untracked.
+- **`--dump-c89` (M9 current, Linux default, seed v102, stable 2×):** `main.zig`
+  `23f9b5ec0f8e69fe48e9b5598719ced7`; `ui.zig`
+  `76d0fc83121892118089b10c6b66bb41`. `-osw --dump-c89`: `main.zig`
+  `6cd349b5fae0b6a703d27424ddfb70f2`, `ui.zig`
+  `294e3fde8819e638556d07cddc385301`. All supersede the M8-era pins.
+- **Defect status (current numbering):** **D1/D2 FIXED**; **D3/D4/D5 OPEN**.
+  Win98/Me hardware verification remains design-verified / **operator-pending**
+  (not claimed).
+- M9 chain: `ecf2bcdd` (T1 stream) → `dc11bc88` (T2 OGG stream) → `ad3d7313`
+  (T3 FLAC stream) → `4d88f4d2` (T4 CLI streams) → `71aabc63` (T5 TUI stream)
+  → T6 tests/docs (this report).
