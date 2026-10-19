@@ -17,4 +17,5 @@ Spec: docs/superpowers/specs/2026-10-19-z9play-streaming-playback-design.md
 - T1 stream.zig: complete (commits `ecf2bcdd`, `e312c886`; review APPROVE 0C/0I/4 Minor; 64K buffer, >4MiB test PASS, arena_used=65536).
 - T2 ogg_stream.zig: complete (commits `dc11bc88`, `968fcc12`; review APPROVE 0C/0I/3 Minor; 5 fixtures packet-identical, 8 synthetic cases, page-local offsets, tail bounded).
 - T3 FLAC streaming: complete (commits `ad3d7313`, `a9dc1ecc`; review APPROVE 0C/0I/4 Minor; oracle max_delta=0, tier_flac 59/0, minimal FLAC frontend switch authorized).
-- T4 Vorbis + main modes: next.
+- T4 Vorbis + main modes: complete (commits `4d88f4d2`, `1211759c`; fix round 1 `688b5c9d`, `45a112a9`; review APPROVE after C1 scratch-arena fix + I1 exact `--pcm` pin; tiers green).
+- T5 ui.zig streaming TUI: next.
