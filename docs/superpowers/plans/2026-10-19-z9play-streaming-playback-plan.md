@@ -92,7 +92,7 @@
 
 **Gate:** unit tests PASS; `ogg.reassemble`/`lastGranule` remain only as test oracles. Commit `example(z9play): incremental OGG packet stream`.
 
-**Precision requirements:** state packet-buffer lifetime (until next `nextPacket`); verify CRC over the page bytes with the CRC field zeroed; no full-file reads; tail scan uses a bounded buffer and never mutates the decode cursor.
+**Precision requirements:** state packet-buffer lifetime (until next `nextPacket`); verify CRC over the page bytes with the CRC field zeroed; no full-file reads; tail scan uses a bounded buffer and never mutates the decode cursor. `ogg.Page.body_start`/`body_len` are absolute file offsets; when parsing a page buffer, use page-local offsets (or a local page struct) so a >4 GiB file cannot overflow a `u32`.
 
 ---
 

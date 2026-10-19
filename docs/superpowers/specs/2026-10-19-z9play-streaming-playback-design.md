@@ -79,7 +79,7 @@ pub fn bufferedFileSize(bf: *BufferedFile) u64;
 ```
 
 Semantics:
-- `bufferedFileRead` returns short only at EOF or when `out.len` exceeds the remaining file; it fills as much as possible using at most one refill.
+- `bufferedFileRead` returns short only at EOF or when `out.len` exceeds the remaining file; it refills as needed until `out` is full or EOF.
 - `bufferedFileSeek` resets the buffer; `Tell` reports the file offset of `buf[pos]`.
 - Close is idempotent; all allocation comes from `arena`.
 
