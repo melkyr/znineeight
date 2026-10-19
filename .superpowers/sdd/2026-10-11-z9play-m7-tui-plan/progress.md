@@ -27,4 +27,7 @@ No contradictions found.
 ## Tasks
 Task T0: complete (commit `8bc1eadd` report; review Approved, spec ✅, 0 Critical/0 Important/2 Minor). Confirmed: API shape `DirEntry{name,is_dir}` + `Dir{handle,first_pending,data,path}` + `openDir/readDir/closeDir` implementable on seed v101 (probe rc=0); Linux `opendir/readdir/closedir` + dirent mirror size 268; Win9x `FindFirstFileA/FindNextFileA/FindClose` + `WIN32_FIND_DATAA` size 320, KERNEL32 only; M6 console 9/9 both platforms (Win9x width/height = `dwSize`); TUI = separate `ui.zig` root (no main.zig/cli.zig edit). Minors deferred: expected_dirs sort-position citation; `@ptrCast` precedent cite.
 Next: T1 `std_file` directory iteration + fixture + whitelist.
+Task T1: complete (commits `e4c07f9a` feat, `9914e1e7` report; review Approved, spec ✅, 0 Critical/0 Important/4 Minor). Implemented `DirEntry{name,is_dir}` + `Dir{handle,first_pending,data,path}` + streaming `openDir/readDir/closeDir`; Linux opendir/readdir/closedir + DT_UNKNOWN stat fallback; Win9x FindFirstFileA/FindNextFileA/FindClose KERNEL32-only; fixture `stdlib_dir_iter_xmod` PASS; `verify_stdlib` 286/0; seed fixed point `b299b4b4…` unchanged; whitelist edit exactly `FindNextFileA`. Minors deferred: Win9x `Dir.path` borrowed not copied (unused); Linux OOM leak after opendir; ownership comment nit; DT_UNKNOWN not runtime-exercised.
+Task T2: complete — no work; M5b/M6 console contract confirmed by T0 §1.5 (9/9 ops both platforms; Win9x `dwSize` caveat carried into T3).
+Next: T3 `ui.zig` TUI (separate root; 80×25; no main.zig/cli.zig edit).
 
