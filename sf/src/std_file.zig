@@ -22,13 +22,17 @@ const pal = @import("std_file_pal.zig");
 @cInclude("<std_os_prelude.h>");
 @cInclude("<fcntl.h>");
 @cInclude("<stdio.h>");
+// <dirent.h> supplies the POSIX opendir/readdir/closedir prototypes for the
+// directory-iteration surface below. MinGW also ships this header, and the
+// POSIX body is pruned by @isWindows(), so it is safe under -osw.
+@cInclude("<dirent.h>");
 // <sys/stat.h> supplies the POSIX stat(2) prototype for the mtime capability
 // below (the Z98 extern live in std_file_pal.zig; the C prototype must be
 // visible in this module's emitted C). Portable across the win32 branch too.
 @cInclude("<sys/stat.h>");
 
 // One error set per module (R2). OutOfMemory is readAll's arena error (R1).
-pub const FileError = error{ OpenFailed, ReadFailed, WriteFailed, SeekFailed, SizeFailed, FlushFailed, RemoveFailed, RenameFailed, OutOfMemory };
+pub const FileError = error{ OpenFailed, ReadFailed, WriteFailed, SeekFailed, SizeFailed, FlushFailed, RemoveFailed, RenameFailed, OpenDirFailed, ReadDirFailed, OutOfMemory };
 
 pub const Mode = enum { Read, Write, Append, ReadWrite };
 pub const SeekWhence = enum { Set, Cur, End };
@@ -39,6 +43,21 @@ pub const File = struct {
     handle: *void,
     size_cache: i64,
     arena: *arena_mod.Arena,
+};
+
+// One directory entry. `name` is caller-arena-owned (copied by readDir) and is
+// not NUL-terminated; `.`/`..` are returned, not filtered.
+pub const DirEntry = struct { name: []const u8, is_dir: bool };
+
+// An open directory. `handle` is DIR* on POSIX or the FindFirstFile HANDLE on
+// win32. Win9x caches the first entry in `data` (first_pending) because
+// FindFirstFileA already returned it; `path` is the arena-owned original path
+// used by the Linux d_type == DT_UNKNOWN stat fallback.
+pub const Dir = struct {
+    handle: *void,
+    first_pending: bool,
+    data: pal.Win32FindDataA,
+    path: []const u8,
 };
 
 // Longest supported path (NUL-terminated into a stack buffer before every OS
@@ -91,6 +110,8 @@ const SYS_LLSEEK: i32 = 140;
 // the pinned i386 non-LFS layout is supported.
 const STAT_BUF_BYTES: usize = 256;
 const STAT_MTIME_OFFSET: usize = 64;
+// offsetof(struct stat, st_mode) == 16 on the same pinned i386 layout.
+const STAT_MODE_OFFSET: usize = 16;
 
 // The null `void*` for the optional out-params (security attributes, overlapped,
 // template file). Z98 `null` is optional-only; the same construction std_net /
@@ -251,6 +272,48 @@ fn flushHandle(h: *void) FileError!void {
     }
 }
 
+// --- directory-iteration helpers -------------------------------------------
+// POSIX d_type values on the pinned Linux target (DT_UNKNOWN == 0, DT_DIR == 4)
+// and the struct stat mode bits used by the DT_UNKNOWN fallback.
+const DT_UNKNOWN: u8 = 0;
+const DT_DIR: u8 = 4;
+const S_IFMT: u32 = 61440; // 0xF000
+const S_IFDIR: u32 = 16384; // 0x4000
+
+// Length of a fixed byte field up to (not including) its NUL terminator.
+fn nulLen(field: []const u8) usize {
+    var n: usize = 0;
+    while (n < field.len and field[n] != 0) : (n += 1) {}
+    return n;
+}
+
+// Linux DT_UNKNOWN fallback: stat(dir + "/" + name) and test S_IFDIR. The
+// @isWindows() guard prunes the stat reference from the -osw emission (MinGW's
+// no-CRT link has no stat symbol); this helper is called only by the Linux
+// readDir branch.
+fn posixIsDir(dir: []const u8, name: []const u8) bool {
+    if (@isWindows()) {
+        return false;
+    } else {
+        var pbuf: [PATH_BUF]u8 = undefined;
+        if (dir.len + 1 + name.len >= pbuf.len) return false;
+        var i: usize = 0;
+        while (i < dir.len) : (i += 1) {
+            pbuf[i] = dir[i];
+        }
+        pbuf[dir.len] = '/';
+        var j: usize = 0;
+        while (j < name.len) : (j += 1) {
+            pbuf[dir.len + 1 + j] = name[j];
+        }
+        pbuf[dir.len + 1 + name.len] = 0;
+        var stbuf: [STAT_BUF_BYTES]u8 = undefined;
+        if (pal.stat(@ptrCast([*]const u8, &pbuf[0]), @ptrCast(*void, &stbuf[0])) != 0) return false;
+        const mode = @intCast(u32, leU32At(stbuf[0..], STAT_MODE_OFFSET));
+        return (mode & S_IFMT) == S_IFDIR;
+    }
+}
+
 // --- blueprint §3 L3 public surface ----------------------------------------
 
 pub fn open(arena: *arena_mod.Arena, path: []const u8, mode: Mode) FileError!File {
@@ -386,4 +449,86 @@ pub fn writeAll(path: []const u8, data: []const u8) FileError!void {
         return error.FlushFailed;
     };
     closeHandle(h);
+}
+
+// --- directory iteration (blueprint §3 L3 addition) -------------------------
+// Streaming OS-order listing; `.`/`..` are not filtered. Names are copied into
+// the caller's arena and are not NUL-terminated.
+
+pub fn openDir(arena: *arena_mod.Arena, path: []const u8) FileError!Dir {
+    var cbuf: [PATH_BUF]u8 = undefined;
+    if (!cstr(path, cbuf[0..])) return error.OpenDirFailed;
+    if (@isWindows()) {
+        var pbuf: [PATH_BUF]u8 = undefined;
+        var n: usize = path.len;
+        if (n > 0 and (path[n - 1] == '/' or path[n - 1] == '\\')) n -= 1;
+        if (n + 3 > pbuf.len) return error.OpenDirFailed;
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            pbuf[i] = path[i];
+        }
+        pbuf[n] = '\\';
+        pbuf[n + 1] = '*';
+        pbuf[n + 2] = 0;
+        var d: Dir = undefined;
+        d.first_pending = true;
+        d.path = path;
+        const h = pal.FindFirstFileA(@ptrCast([*]const u8, &pbuf[0]), &d.data);
+        if (@ptrToInt(h) == INVALID_HANDLE_VALUE_U) return error.OpenDirFailed;
+        d.handle = h;
+        return d;
+    } else {
+        const h = pal.opendir(@ptrCast([*]const u8, &cbuf[0]));
+        if (@ptrToInt(h) == 0) return error.OpenDirFailed;
+        const raw = arena_mod.alloc(arena, path.len) catch return error.OutOfMemory;
+        var i: usize = 0;
+        while (i < path.len) : (i += 1) {
+            raw[i] = path[i];
+        }
+        var d: Dir = undefined;
+        d.handle = h;
+        d.first_pending = false;
+        d.path = raw[0..path.len];
+        return d;
+    }
+}
+
+pub fn readDir(arena: *arena_mod.Arena, d: *Dir) FileError!?DirEntry {
+    if (@isWindows()) {
+        if (d.first_pending) {
+            d.first_pending = false;
+        } else {
+            if (pal.FindNextFileA(d.handle, &d.data) == 0) return null;
+        }
+        const n = nulLen(d.data.cFileName[0..]);
+        const raw = arena_mod.alloc(arena, n) catch return error.OutOfMemory;
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            raw[i] = d.data.cFileName[i];
+        }
+        return DirEntry{ .name = raw[0..n], .is_dir = (d.data.dwFileAttributes & 16) != 0 };
+    } else {
+        const h = pal.readdir(d.handle);
+        if (@ptrToInt(h) == 0) return null;
+        const p: *pal.PosixDirent = @ptrCast(*pal.PosixDirent, h);
+        const n = nulLen(p.d_name[0..]);
+        const dst = arena_mod.alloc(arena, n) catch return error.OutOfMemory;
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            dst[i] = p.d_name[i];
+        }
+        var is_dir = p.d_type == DT_DIR;
+        if (p.d_type == DT_UNKNOWN) {
+            is_dir = posixIsDir(d.path, dst[0..n]);
+        }
+        return DirEntry{ .name = dst[0..n], .is_dir = is_dir };
+    }
+}
+
+pub fn closeDir(d: *Dir) void {
+    if (@isWindows()) {
+        _ = pal.FindClose(d.handle);
+    } else {
+        _ = pal.closedir(d.handle);
+    }
 }

@@ -37,6 +37,30 @@ pub extern "stdcall" fn MoveFileA(lpExistingFileName: [*]const u8, lpNewFileName
 // GetFileAttributesExA under ZIG_WIN_NT. Return is BOOL (0 on failure).
 pub extern "c" fn pal_file_mtime(path: [*]const u8, unix_seconds_out: *i64) i32;
 
+// The Win9x directory-iteration ABI: WIN32_FIND_DATAA (size 320, cFileName at
+// offset 44; probed against the pinned i686 MinGW headers, 2026-10-18).
+// FindFirstFileA returns INVALID_HANDLE_VALUE on failure; FindNextFileA returns
+// 0 at the end of the listing (or on error); FindClose releases the handle.
+pub const Win32FindDataA = struct {
+    dwFileAttributes: u32,
+    ftCreationTime_low: u32,
+    ftCreationTime_high: u32,
+    ftLastAccessTime_low: u32,
+    ftLastAccessTime_high: u32,
+    ftLastWriteTime_low: u32,
+    ftLastWriteTime_high: u32,
+    nFileSizeHigh: u32,
+    nFileSizeLow: u32,
+    dwReserved0: u32,
+    dwReserved1: u32,
+    cFileName: [260]u8,
+    cAlternateFileName: [14]u8,
+};
+
+pub extern "stdcall" fn FindFirstFileA(lpFileName: [*]const u8, lpFindFileData: *Win32FindDataA) *void;
+pub extern "stdcall" fn FindNextFileA(hFindFile: *void, lpFindFileData: *Win32FindDataA) i32;
+pub extern "stdcall" fn FindClose(hFindFile: *void) i32;
+
 // --- POSIX ----------------------------------------------------------------
 // open flags are hardcoded by the caller (no dependence on the fcntl.h macro
 // values); the pinned i386 target has a 32-bit off_t. 64-bit seeking goes
@@ -67,3 +91,19 @@ pub extern "c" fn access(path: [*]const u8, mode: i32) i32;
 // stat@GLIBC_2.33 / fstat@GLIBC_2.33 on glibc 2.36/i386).
 pub extern "c" fn stat(path: [*]const u8, buf: *void) i32;
 pub extern "c" fn fstat(fd: i32, buf: *void) i32;
+
+// POSIX directory iteration for std_file's openDir/readDir/closeDir. The C
+// prototypes come from <dirent.h> (@cInclude'd by std_file.zig); the struct
+// dirent mirror is the pinned i386 glibc layout (size 268, d_type at 10,
+// d_name at 11; probed 2026-10-18). readdir returns NULL at end-of-listing.
+pub const PosixDirent = struct {
+    d_ino: u32,
+    d_off: i32,
+    d_reclen: u16,
+    d_type: u8,
+    d_name: [256]u8,
+};
+
+pub extern "c" fn opendir(path: [*]const u8) *void;
+pub extern "c" fn readdir(d: *void) *void;
+pub extern "c" fn closedir(d: *void) i32;
