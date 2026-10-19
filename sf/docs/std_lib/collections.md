@@ -12,18 +12,31 @@ Z98 has **no generics**, so these modules are concrete: each collection is
 declared over fixed key/value types rather than parameterized. All four are L4
 and imported by path (not re-exported through `std`).
 
-**`std_map` — three fixed-capacity hash maps.** `Map32x32` maps `u32 -> u32`,
-`Map32Ptr` maps `u32 -> *void`, and `MapStrPtr` maps `[]const u8 -> *void`. Each
-is open-addressed with linear probing over a table allocated once from the
-caller's arena at `init`; `put` on an existing key replaces the value in place,
-and a new key on a full table is `error.OutOfMemory`. `remove` marks the slot a
-tombstone so probe chains stay intact, and a later `put` reuses it. `MapStrPtr`
-copies each key byte-for-byte into the arena at `put`, so a stored key never
-aliases the caller's buffer; lookups compare by byte content (`std_str.eql`).
-The maps never free — arena reset reclaims everything. Iteration over the
-backing table is deterministic (slot index ascending), because the slot a key
-occupies is a pure function of the key, the capacity, and the insertion/removal
-sequence (R6).
+**`std_map` — three fixed-capacity Robin Hood hash maps.** `Map32x32` maps
+`u32 -> u32`, `Map32Ptr` maps `u32 -> *void`, and `MapStrPtr` maps
+`[]const u8 -> *void`. Each is open-addressed over a table allocated once from
+the caller's arena at `init`, using **Robin Hood insertion** (a carried record
+swaps with any occupant it has probed further than) and **backward-shift
+deletion** (following entries shift back one slot while their probe distance
+stays positive, so no tombstone is left observable). Entries keep the
+`state`/`key`/`val` fields; the `state` control byte is `0x80` for empty,
+`0xFE` reserved (a deleted marker that is unreachable in steady state), and
+`0x00..0x7F` for the 7-bit hash fragment of a used slot. The probe distance is
+stored as a `dist: u32` — exact for any 32-bit table. Slots are the next power
+of two at or above `capacity/0.75` (the load factor never exceeds 0.75), the
+home slot is `hash & mask`, and `capacity` remains the maximum number of
+entries: `put` on an existing key replaces the value in place, and a new key
+when `len == capacity` is `error.OutOfMemory`. Entry sizes are 16 / 16 / 20
+bytes for `Map32x32` / `Map32Ptr` / `MapStrPtr`. `MapStrPtr` copies each key
+byte-for-byte into the arena at `put`, so a stored key never aliases the
+caller's buffer; lookups compare by byte content (`std_str.eql`). The maps
+never free — arena reset reclaims everything. Iteration over the backing table
+is deterministic (slot index ascending), because the slot a key occupies is a
+pure function of the key, the capacity, and the insertion/removal sequence
+(R6). A **Swiss table** is intentionally deferred (spec §2): its real win is a
+16-way SIMD probe, C89 cannot emit it, and the target PII/PIII lacks SSE2
+entirely (MMX `pcmpeqb` would still need an asm backend). The ctrl-byte
+encoding above keeps that future path open without reshaping the table.
 
 **`std_sort` — introsort and a `u32` binary search.** `sort` drives a
 caller-supplied vtable (`Sortable`) through quicksort with a median-of-three
