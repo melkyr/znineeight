@@ -27,4 +27,6 @@ Task T3: complete (commits `903ea2ab` tier, `c6f9bedb` report; review Approved, 
 Next: T4 docs (FLAC support, dump md5, truthful limitations).
 Task T4: complete (commits `808355d3` docs, fix `ee485934` pin truth-up, `67ba38dd`/`0772f3ee` reports; review Needs-fixes → fix round 1 → scoped re-review all 3 findings ADDRESSED, no new breakage). Docs now truthful: FLAC paths + Vorbis-only request modes, tier 59/0, current Linux pins `e56af791…`/`22676fd9…`, `-osw` current `aa687823…` (M6 `ad9ccfd3…` historical), seed v102, D status, hardware pending; docs-only. Deferred minors: FLAC tags unparsed, CRC-16 skipped, 32-bit FLAC; tier cited not rerun.
 Next: T5 final handoff note.
+Task T5: complete (commit `8fb5d18d` report; review Approved, spec ✅, 0 Critical/0 Important/2 Minor). Final handoff records z9play feature-complete per spec (OGG + optional FLAC; CLI+TUI; Linux verified, Win9x design-verified/hardware pending), deferred arms, z9torr M6 next milestone, no open M8 Critical/Important, seed v102 unchanged, tier evidence 59/0 + OGG regressions. M8 **COMPLETE**.
+Next: z9torr M6 seed/upload (plan truth-up `44cd1237`), execution pending.
 
