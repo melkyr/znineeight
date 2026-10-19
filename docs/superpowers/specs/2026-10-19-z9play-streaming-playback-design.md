@@ -172,6 +172,17 @@ pub fn decodeStream(d: *StreamFlacDecoder, arena: *std.arena.Arena, out: []i16) 
 
 `openStream` reads `fLaC` plus metadata blocks; `STREAMINFO` is parsed; other blocks are skipped with bounded reads. `decodeStream` reads the next frame through `BufferedFile` with an MSB-first bit reader; it does not require a frame-sized byte buffer. The existing `flac.open(arena, bytes)` and byte-slice `BitReader` remain for unit tests only. Frontends use `openStream`/`decodeStream`.
 
+### §4.5 `decoder.zig` selector
+
+The selector keeps its current shape and D8 pointer discipline. Its FLAC arm points at the streaming decoder; the byte-slice `flac.FlacDecoder` is never wrapped by the selector:
+
+```zig
+pub const FlacDecoder = struct { fd: *flac.StreamFlacDecoder };
+pub fn decoderOpenFlac(out: *player.Decoder, fd: *flac.StreamFlacDecoder) void;
+```
+
+`decoderOpenVorbis(out, vc)` is unchanged in shape. `detectKind` remains a 4-byte signature check; frontends read the first four bytes through `BufferedFile` and seek back to 0.
+
 ## §5 Frontend behavior
 
 **`main.zig`**

@@ -102,7 +102,7 @@
 
 - [ ] Add `flac.StreamFlacDecoder` per spec §4.4: `bf: *stream.BufferedFile`, metadata fields, fixed `samples`, `eof`; keep `flac.FlacDecoder`/`open(arena, bytes)`/`decode` **unchanged** as the byte-slice test oracle.
 - [ ] `openStream` parses `fLaC` + metadata with bounded reads; `decodeStream` uses a file-backed MSB bit reader and reads the frame header/subframes/CRC-16; `closeStream` closes the file.
-- [ ] `decoder.zig`: add a `StreamFlacDecoder` arm/adapter (`flacStreamNext`) without changing the existing vtable shape or D8 pointer discipline.
+- [ ] `decoder.zig`: point the FLAC arm at `*flac.StreamFlacDecoder` and make `decoderOpenFlac` take that type (`flacStreamNext`); keep the existing vtable shape and D8 pointer discipline. The byte-slice `flac.FlacDecoder` is not wrapped by the selector.
 - [ ] `tests/flac_test.zig`: add a file-stream test; compare decoded PCM/frames with the byte-slice path (max_delta 0 for the committed fixture); keep 3× determinism.
 - [ ] Run `tier_flac` 59/0; keep the byte-slice oracle test green.
 
