@@ -20,4 +20,6 @@ Spec: docs/superpowers/specs/2026-10-19-z9play-streaming-playback-design.md
 - T4 Vorbis + main modes: complete (commits `4d88f4d2`, `1211759c`; fix round 1 `688b5c9d`, `45a112a9`; review APPROVE after C1 scratch-arena fix + I1 exact `--pcm` pin; tiers green).
 - T5 ui.zig streaming TUI: complete (commits `71aabc63`, `0ae9f9f6`; review APPROVE 0C/0I/4 Minor; no readAll; OGG+FLAC stream; `tier_tui` 40/0; repeated play/stop fd check).
 - T6 large-file gate + lin_bin + docs: complete (commits `72ca8efa`, `b7c548b9`, `b2446dc1`; fix `7a873812`, `1d12989c`; review APPROVE after sample-accurate granule fix; tier_stream 20/0; operator 8.2MB track plays).
-- T7 final review/handoff: next.
+- T7 final handoff: complete (commits `8cbe25ae`, truth-up `bc38240b`; operator confirmed real OGG+FLAC playback; no gate rerun; T6 results authoritative; review APPROVE after provenance truth-up).
+- T8 Win9x READMEs: complete (commits `75b650b6`, `05c70a31`, report `7fe720ed`; review APPROVE; docs-only).
+- M9 COMPLETE. Seed v102 unchanged. No push.
