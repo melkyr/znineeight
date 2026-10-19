@@ -22,6 +22,10 @@
 # FAILS the gate instead of silently shrinking coverage. Explicit <dir> runs
 # skip only the discovery set-equality check; the unpinned-stdlib-dir guard
 # (a std-looking dir on disk that is absent from the pin) ALWAYS runs.
+#
+# After the fixtures pass, this wrapper runs scripts/stdlib/run_crosscheck.sh
+# over every scripts/stdlib/ref/<module>/ module (Z98 == C89 ref == .out); any
+# crosscheck failure fails the gate.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,6 +46,14 @@ bash "$ROOT/scripts/stdlib/run_fixtures.sh" "$ZIG1" "$@"
 rc=$?
 if [ "$rc" -ne 0 ]; then
   echo "STDLIB GATE FAILED (run_fixtures rc=$rc)"
+  exit 1
+fi
+
+echo "== std-lib crosscheck gate =="
+bash "$ROOT/scripts/stdlib/run_crosscheck.sh" "$ZIG1"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  echo "STDLIB GATE FAILED (run_crosscheck rc=$rc)"
   exit 1
 fi
 echo "STDLIB GATE OK"

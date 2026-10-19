@@ -48,6 +48,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT" || exit 2
 
+export Z98_SEED=1
+
 CAPTURE=0
 if [ "${1:-}" = "--capture" ]; then CAPTURE=1; shift; fi
 
