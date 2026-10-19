@@ -261,3 +261,83 @@ compiler's `.zig1_*.tmp` spill files in the repo root) and are stable 2×.
   dependency-free.
 - D3/D4/D5 remain OPEN; real Win98/Me hardware verification remains
   operator-pending. No compiler/seed rotation and no `sf/**` change.
+
+## Fix round 1 (T6 review) — `7a873812`
+
+**I1 — sample-accurate granules.** The previous generator advanced each block
+by the fixture's declared final granule (88,200) instead of the actual decoded
+sample advance. It now parses the Vorbis setup header just far enough to reach
+the modes (codebooks, floors, residues, mappings; no third-party library),
+reads each audio packet's mode number, and selects blocksize_0/blocksize_1.
+Each packet after the first contributes
+`(previous_blocksize + current_blocksize) / 4`; the fixture's final-page trim
+(440 samples) is applied at the trim point, and the block-boundary overlap
+`(last_blocksize + first_blocksize) / 4 = 576` is included when a block repeats.
+
+**Independent oracle.** The computed running totals must reproduce the
+committed fixture's non-final page granules exactly (those granules were written
+by libvorbis/oggenc); the final page is allowed to be trimmed. The generated
+file then uses the reviewer/libvorbis frame measurements:
+
+```text
+1 block  =  88,200 frames  (2.000 s)
+2 blocks = 177,416 frames  (4.023 s, block advance 89,216)
+3 blocks = 266,632 frames  (6.046 s)
+64 MiB   = 883,148,168 frames (20,026.035 s)
+```
+
+Exact fixed-generator output:
+
+```text
+$ python3 examples/z98/z9play/tests/make_large_ogg.py \
+    examples/z98/z9play/testdata/sine_stereo_44100.ogg /tmp/large_fix.ogg --size 64M
+size=67109323
+pages=19800
+blocks=9899
+frames=883148168
+block_advance=89216
+trim=440
+channels=2
+sample_rate=44100
+duration_s=20026.035
+
+$ ( ulimit -v 65536; .../main/prog --info /tmp/large_fix.ogg )
+channels=2
+sample_rate=44100
+duration_s=20026.035
+```
+
+The generated page sequence is now
+`55872, 88200 | 144648, 177416 | 233864, 266632 | ... | 883148168` for the
+fixture's two audio pages per block.
+
+**M1 — independent duration assertion.** `tier_stream.sh` no longer reads
+`duration_s` from the generator. It derives the expected frames as
+`88,200 + (blocks - 1) * 89,216` from the libvorbis oracle constants, formats
+milliseconds with the same integer truncation as `z9play`, and separately
+cross-checks the generator's `frames=` line against that value.
+
+**M2 — `.bss` wording.** Corrected to **40.24 MiB (42,191,504 bytes)** in
+`tier_stream.sh`, `README.md`, and the revised M9 text.
+
+**Re-verification:**
+
+```text
+$ ZIG=/tmp/m7_t5_seed2/zig1_5_clean sh examples/z98/z9play/tests/tier_stream.sh
+ok   - independent duration oracle: 2ch 44100Hz frames=883148168 duration=20026.035s blocks=9899
+ok   - generator final frames 883148168 match the libvorbis oracle
+ok   - large --info exit 0 under ulimit -v 65536
+ok   - large --info matches expected channels/sample_rate/duration exactly
+ok   - full-file allocation of 67109323 bytes fails under the same ulimit
+ok   - --pcm byte-exact pin (md5=e7f24870ec03b924be1b8e55a1962fb3)
+info 20/0, setup 21/0, cli 23/0, tui 40/0, audio 27/0, flac 59/0
+== tier_stream summary: 20 passed, 0 failed ==
+TIER_STREAM PASS
+```
+
+`lin_bin/z9play-console` was rebuilt again from the unchanged final `ui.zig`:
+md5 `af1cef634dd7b885363bff2ec3582aff`. The operator track still plays under a
+pty (`Now:` + `State: Playing`, 1,082,668 WAV bytes, no `cannot open track`);
+`--info` on it under 64 MiB remains exit 0 / 334.000 s. `README.md` and the M9
+section of `NOTES.md` were corrected to the new frames/duration and the
+independent-oracle wording. No source, compiler, std, or seed change.
