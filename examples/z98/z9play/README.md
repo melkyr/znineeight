@@ -527,26 +527,50 @@ operator's track; that file is never committed.
 
 ### Windows 9x (M6)
 
-The default `-osw` profile is Win9x no-CRT. Emit into a scratch dir and build
-through the emitted mingw recipe (a single PE32 i386 console EXE importing only
-KERNEL32 + WINMM; no msvcrt, no CRT redistributable):
+The default `-osw` profile is Win9x (95/98/Me) no-CRT. Rebuild seed v102 from
+`release/seed/zig1-seed.tgz` (archive md5
+`702f34d87b7e6bf401dd206d2517dbee`; fixed point
+`b299b4b435e624d0ddbd2edde681cbc3`) and emit both roots with `-fsafe -osw`.
+`-fsafe` matches the Linux/gate recipes; `-osw` (no `nt`) selects the 9x no-CRT
+profile. The emitted mingw recipe produces a single PE32 i386 console EXE; no
+msvcrt.dll and no CRT redistributable.
+
+CLI (`main.zig` → `z9play.exe`):
 
 ```bash
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9play_seed
-mkdir -p /tmp/z9play_win9x_build
-/tmp/z9play_seed/zig1_5_clean -osw -o /tmp/z9play_win9x_build \
+mkdir -p /tmp/z9play_win9x_build /tmp/z9play_win9x_tui
+/tmp/z9play_seed/zig1_5_clean -fsafe -osw -o /tmp/z9play_win9x_build \
     examples/z98/z9play/main.zig
 sh /tmp/z9play_win9x_build/build_target.sh mingw \
     /tmp/z9play_win9x_build/z9play.exe
 ```
 
-`-osw nt` is the opt-in CRT/NT profile (XP+ file APIs); it is not the Win9x
-default. Copy `z9play.exe` plus an `.ogg` to the Win98 box (nothing else; no DLL
-to bundle) and run `z9play.exe song.ogg` from an MS-DOS Prompt; the full manual
-procedure (copy/run, console behavior, Ctrl-C Option 3, raw-mode
-restore/recovery, waveOut limits, and the native `*_nocrt.bat` /
-`*_crt.bat` scripts) is `demo/win9x_README.txt`. Hardware verification is
-operator-pending after the z9play milestone.
+TUI (`ui.zig` → `z9play-console.exe`, fixed 80×25):
+
+```bash
+/tmp/z9play_seed/zig1_5_clean -fsafe -osw -o /tmp/z9play_win9x_tui \
+    examples/z98/z9play/ui.zig
+sh /tmp/z9play_win9x_tui/build_target.sh mingw \
+    /tmp/z9play_win9x_tui/z9play-console.exe
+```
+
+Import check (expected: PE32 i386, exactly KERNEL32 + WINMM, no msvcrt):
+
+```bash
+bash scripts/win32_cross/check_win9x_imports.sh \
+    /tmp/z9play_win9x_build/z9play.exe 9x
+```
+
+Copy the EXE plus `.ogg`/`.flac` files to the Win98 box (nothing else) and run
+`z9play.exe song.ogg` (or the TUI exe) from an MS-DOS Prompt. `-osw nt` is the
+explicit opt-in CRT/NT profile (XP+ file APIs), not the Win9x default. Native
+`build_target_nocrt.bat` (MSVC 6) / `build_owc_nocrt.bat` (OpenWatcom) are
+emitted no-CRT scripts; `build_target_crt.bat` / `build_owc_crt.bat` are
+static-CRT alternates. They are design-verified, hardware pending. The full
+manual procedure (copy/run, console behavior, Ctrl-C Option 3, raw-mode
+restore/recovery, waveOut limits) is `demo/win9x_README.txt`. Real Win98/Me
+hardware verification remains **operator-pending** (not claimed).
 
 ```bash
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_win9x.sh
