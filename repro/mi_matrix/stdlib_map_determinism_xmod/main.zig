@@ -5,12 +5,13 @@
 // function of the operation sequence — no addresses, no clock, no PID. Two maps
 // built from identical sequences over separate arenas must have byte-identical
 // occupied-slot layout (state/key/value per slot index), which is the map's
-// iteration order (insertion-index order). This is checked directly against the
+// iteration order (slot-ascending order). This is checked directly against the
 // backing `entries` array, not just through Get.
 //
 // Sequence per map: put 0..31 (fills a capacity-32 table), remove every even
-// key (tombstones), re-put a removed key and one new key, then compare every
-// slot of the two maps and every observable Get/Len result.
+// key (backward-shift deletion, no tombstones), re-put a removed key and one
+// new key, then compare every slot of the two maps and every observable
+// Get/Len result.
 //
 // GREEN (contract): deterministic byte-exact stdout `map determinism ok\n`.
 const std = @import("std");
