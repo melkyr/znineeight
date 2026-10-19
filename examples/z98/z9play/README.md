@@ -134,6 +134,36 @@ the current numbering (reset
 definitions) is **OPEN**, and M6 works around it with the Option 3 Ctrl-C
 mechanism above. See `examples/torrent_example_defects.md`.
 
+**M7 (TUI + `std_file` directory iteration) — complete (Tasks 0–5).**
+`sf/src/std_file.zig` (+ `std_file_pal.zig`) adds streaming directory iteration:
+`DirEntry { name: []const u8, is_dir: bool }`, `Dir`,
+`openDir(arena, path)`, `readDir(arena, *Dir) !?DirEntry`, and `closeDir(*Dir)`
+on Linux (`opendir`/`readdir`/`closedir`) and Win9x
+(`FindFirstFileA`/`FindNextFileA`/`FindClose`). Names are copied into the
+caller arena, `.`/`..` are **not** filtered, and Linux `is_dir` falls back to
+`stat` when `d_type == DT_UNKNOWN`. No compiler change: seed v101 → v102
+rotates only the archive `lib/` payload (fixed point unchanged,
+`b299b4b435e624d0ddbd2edde681cbc3`; v102 archive md5
+`702f34d87b7e6bf401dd206d2517dbee`).
+
+The TUI is a **separate root** `examples/z98/z9play/ui.zig` (not a `main.zig`
+flag), built on the M5b `Console` contract. It uses a hard-pinned 80×25 layout:
+directory pane (left), now-playing pane (right), separator/help rows, and an
+in-memory playlist (`PLAYLIST_MAX = 256`). The directory pane lists dirs plus
+`.ogg`/`.flac`, synthesizes `..`, and sorts dirs first then names. Keys:
+`↑`/`↓` or `j`/`k` move, Enter plays a file or enters a directory/`..`, `a`
+adds the selected file, `d` removes the current playlist track, `n`/`p`
+next/previous playlist track, space pause/resume, `+`/`-` volume (5-step,
+clamped 0–100), `q`/Ctrl-C quit (terminal restored). `tests/tier_tui.sh` is
+green **40/40** under the v102 seed: 32 non-vacuous pty behavior checks, the
+Win9x `-osw` PE/import gate, and a stable 2× `--dump-c89`. The TUI
+`--dump-c89` md5 is `e7bc57a2a38a72cb83f51a1ce7497239`.
+
+Win9x `-osw` emits/builds a PE32 i386 EXE importing only KERNEL32 + WINMM,
+with **no msvcrt**; real Win98/Me hardware behavior remains design-verified /
+**operator-pending** (not claimed). Defect status is unchanged from M6:
+**D1/D2 FIXED; D3/D4/D5 OPEN**.
+
 ## Files
 
 M0 (all present; `[x]` = landed in M0):
@@ -241,12 +271,27 @@ M6 (Tasks 1–5 landed):
 - `[x]` `demo/win9x_README.txt` — manual Win98 build/copy/run procedure,
   console/raw-mode caveats, Ctrl-C semantics and waveOut limits.
 
+M7 (Tasks 1–4 landed):
+
+- `[x]` `sf/src/std_file.zig` + `sf/src/std_file_pal.zig` — streaming
+  `openDir`/`readDir`/`closeDir` + `DirEntry` (Linux POSIX; Win9x
+  `FindFirstFileA`/`FindNextFileA`/`FindClose`; `DT_UNKNOWN` `stat` fallback).
+- `[x]` `repro/mi_matrix/stdlib_dir_iter_xmod` + `scripts/stdlib/expected_dirs.txt`
+  — the std directory-iteration fixture/pin.
+- `[x]` `ui.zig` — the separate TUI root (fixed 80×25 layout, directory browser,
+  now-playing pane, in-memory playlist, M5b `Console` + M4 `Player`).
+- `[x]` `tests/tier_tui.sh` — the M7 gate (32 pty behavior checks + Win9x
+  PE/import gate + stable `--dump-c89`; 40/40).
+
 ## Build and Run
 
-The Linux tiers and the Win9x tier both use the seed v101 compiler built from
-`release/seed/zig1-seed.tgz` (md5 `b299b4b435e624d0ddbd2edde681cbc3`; two-hop
-closure `hop1 == hop2`). Seed v101 carries the Win9x no-CRT runtime and the
-default `-osw` profile; the Linux `-fsafe` recipe is unchanged.
+The Linux tiers and the Win9x tier both use the seed v102 compiler built from
+`release/seed/zig1-seed.tgz` (archive md5
+`702f34d87b7e6bf401dd206d2517dbee`; binary/fixed point
+`b299b4b435e624d0ddbd2edde681cbc3`; two-hop closure `hop1 == hop2`). Seed v102
+is the v101 payload plus the M7 `std_file` directory-iteration change in
+`lib/`; the compiler fixed point is unchanged. It carries the Win9x no-CRT
+runtime and the default `-osw` profile; the Linux `-fsafe` recipe is unchanged.
 
 ```bash
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9play_seed
@@ -260,6 +305,29 @@ sh /tmp/z9play_out/build_target.sh linux /tmp/z9play_out/prog
 /tmp/z9play_out/prog --wav examples/z98/z9play/testdata/sine_stereo_44100.ogg /tmp/player.wav
 Z9PLAY_WAV_OUT=/tmp/play.wav \
     /tmp/z9play_out/prog examples/z98/z9play/testdata/sine_stereo_44100.ogg
+```
+
+### TUI (M7)
+
+`ui.zig` is a separate root; build and run it from a music directory:
+
+```bash
+mkdir -p /tmp/z9play_tui
+timeout 120 /tmp/z9play_seed/zig1_5_clean -fsafe -o /tmp/z9play_tui \
+    examples/z98/z9play/ui.zig
+sh /tmp/z9play_tui/build_target.sh linux /tmp/z9play_tui/z9play-tui
+cd /path/to/music && /tmp/z9play_tui/z9play-tui
+```
+
+The screen is pinned to 80×25 (the Win9x `dwSize`/`srWindow` distinction cannot
+move the panes). Keys: `↑`/`↓` or `j`/`k` move, Enter play/navigate, `a` add,
+`d` remove current, `n`/`p` next/previous, space pause/resume, `+`/`-` volume,
+`q`/Ctrl-C quit. Set `Z9PLAY_WAV_OUT=<file>` to send playback to the hermetic
+WAV sink instead of OSS. The M7 gate:
+
+```bash
+ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_tui.sh
+# == tier_tui summary: 40 passed, 0 failed ==
 ```
 
 `--info <file.ogg>` prints a fixed `key=value` block matching the golden
@@ -363,6 +431,7 @@ ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_setup.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_decode.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_audio.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_cli.sh
+ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_tui.sh
 ```
 
 ## Fixtures
@@ -385,7 +454,10 @@ the golden `.meta` format and the determinism contract.
 `NOTES.md` holds the build recipe, the `--dump-c89` md5, the golden formats, and
 the milestone log. The M6 gate value is the Win9x target
 `ad9ccfd34aa2ba26c38abbcf48eedeb0` (`-osw --dump-c89`, stable 2×; seed v101,
-md5 `b299b4b435e624d0ddbd2edde681cbc3`). The prior Linux `--dump-c89` value
+md5 `b299b4b435e624d0ddbd2edde681cbc3`). The M7 TUI is a separate root:
+`ui.zig --dump-c89` is `e7bc57a2a38a72cb83f51a1ce7497239` (Linux default,
+stable 2×) on seed v102 (archive md5 `702f34d87b7e6bf401dd206d2517dbee`;
+binary/fixed point unchanged). The prior Linux `--dump-c89` value
 was `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b; prior M5
 `0a60a27846476a73d2fac8e183d52d48`, M4
 `d695bf99dadb7f6dbbc0f2a94bb42f43`, M3

@@ -1,6 +1,6 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed). M4 (audio output + ring buffer + Player core) complete and closed out (Tasks 0–6): the `AudioOut` vtable (`platform/audio.zig`), the hermetic WAV sink (`platform/audio_wavfile.zig`) and Linux OSS `/dev/dsp` backend (`platform/audio_oss.zig`/`audio_oss_pal.zig`), the shared `Player` + double-buffer `RingBuffer` (`player.zig`), the `z9play --wav <in.ogg> <out.wav>` gate subcommand, and `tests/tier_audio.sh` (tolerance + completion/monotonicity + 3× determinism vs the M3 goldens; 27/27). M4's Task 6 closeout (below) records the M5 CLI-plan amendment review: **no amendment needed** — M4's caller-owned, field-exposed `Player` API plus the `AudioOut` vtable cover the CLI's status line, keys, volume, clean stop, and the D8 pointer-vtable shape. M5 (interactive CLI playback) complete (Tasks 0–5): the `fmt.zig` status formatter, the `platform/console_linux.zig` raw `termios` console (`readKey`), the `cli.zig`/`main.zig` playback mode (`<file.ogg>` + `--volume`/`--start`/`--loop`/`--quiet`; startup metadata line, per-second `\r` status, keys space/`+`/`-`/`q`/Ctrl-C, `Stopped at mm:ss.`, exit codes 0/1/2/3/4/5), and `tests/tier_cli.sh` (PASS 23/23). M5b (console abstraction + complete Linux backend) complete (Tasks 1–4): the `platform/console.zig` `Console` contract (`Key = {none,char,sigint,up,down,left,right,enter,esc}`; the nine ops `clear`/`setCursor`/`writeStr`/`readKey`/`enterRaw`/`leaveRaw`/`width`/`height`/`cursorShow` + `state`; `readKey_fn: fn (*void) Key`), the rewritten `platform/console_linux.zig` backend over a caller-owned `ConsoleLinState` (`termios` raw mode, persistent ESC/arrow state machine, ANSI clear/setCursor/cursorShow, `ioctl(TIOCGWINSZ)` size), `main.zig` driving the CLI through the assembled `Console`, and the extended `tests/tier_console.sh` (PASS 11/11). M6 (Win9x audio + console, then the T5.5 Win9x default-profile truth-up) complete (Tasks 0–5): `platform/audio_win9x.zig` (+PAL) waveOut backend (16-bit PCM, 44100/48000, 1/2 ch, two 500 ms buffers, blocking write, drain/close), `platform/console_win9x.zig` (+PAL) complete nine-op `Console` backend with Amendment 1 Option 3 Ctrl-C (processed input off → `KEY_EVENT` 0x03 → `.sigint`; no stdcall callback), `main.zig` compile-time `@isWindows()` selection (`Z9PLAY_WAV_OUT` WAV-sink override first, explicit Linux `else`), and `tests/tier_win9x.sh` 14/14. T5.5 gates the DEFAULT `-osw` = 9x no-CRT emitted `build_target.sh` path (not the legacy CRT harness): single PE32 EXE importing exactly KERNEL32+WINMM, no msvcrt, `check_win9x_imports.sh 9x` PASS, Wine WAV parity, pty console restore; `-osw --dump-c89` is `ad9ccfd34aa2ba26c38abbcf48eedeb0` on seed v101 (md5 `b299b4b435e624d0ddbd2edde681cbc3`). `demo/win9x_README.txt` is the manual Win98 procedure (single drag-and-drop EXE, no msvcrt redistributable, native `*_nocrt.bat` defaults vs `*_crt.bat` alternates; hardware verification operator-pending). Defect status (current numbering): D1/D2 FIXED; D3/D4 OPEN; D5 OPEN (Option 3 workaround).
+**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed). M4 (audio output + ring buffer + Player core) complete and closed out (Tasks 0–6): the `AudioOut` vtable (`platform/audio.zig`), the hermetic WAV sink (`platform/audio_wavfile.zig`) and Linux OSS `/dev/dsp` backend (`platform/audio_oss.zig`/`audio_oss_pal.zig`), the shared `Player` + double-buffer `RingBuffer` (`player.zig`), the `z9play --wav <in.ogg> <out.wav>` gate subcommand, and `tests/tier_audio.sh` (tolerance + completion/monotonicity + 3× determinism vs the M3 goldens; 27/27). M4's Task 6 closeout (below) records the M5 CLI-plan amendment review: **no amendment needed** — M4's caller-owned, field-exposed `Player` API plus the `AudioOut` vtable cover the CLI's status line, keys, volume, clean stop, and the D8 pointer-vtable shape. M5 (interactive CLI playback) complete (Tasks 0–5): the `fmt.zig` status formatter, the `platform/console_linux.zig` raw `termios` console (`readKey`), the `cli.zig`/`main.zig` playback mode (`<file.ogg>` + `--volume`/`--start`/`--loop`/`--quiet`; startup metadata line, per-second `\r` status, keys space/`+`/`-`/`q`/Ctrl-C, `Stopped at mm:ss.`, exit codes 0/1/2/3/4/5), and `tests/tier_cli.sh` (PASS 23/23). M5b (console abstraction + complete Linux backend) complete (Tasks 1–4): the `platform/console.zig` `Console` contract (`Key = {none,char,sigint,up,down,left,right,enter,esc}`; the nine ops `clear`/`setCursor`/`writeStr`/`readKey`/`enterRaw`/`leaveRaw`/`width`/`height`/`cursorShow` + `state`; `readKey_fn: fn (*void) Key`), the rewritten `platform/console_linux.zig` backend over a caller-owned `ConsoleLinState` (`termios` raw mode, persistent ESC/arrow state machine, ANSI clear/setCursor/cursorShow, `ioctl(TIOCGWINSZ)` size), `main.zig` driving the CLI through the assembled `Console`, and the extended `tests/tier_console.sh` (PASS 11/11). M6 (Win9x audio + console, then the T5.5 Win9x default-profile truth-up) complete (Tasks 0–5): `platform/audio_win9x.zig` (+PAL) waveOut backend (16-bit PCM, 44100/48000, 1/2 ch, two 500 ms buffers, blocking write, drain/close), `platform/console_win9x.zig` (+PAL) complete nine-op `Console` backend with Amendment 1 Option 3 Ctrl-C (processed input off → `KEY_EVENT` 0x03 → `.sigint`; no stdcall callback), `main.zig` compile-time `@isWindows()` selection (`Z9PLAY_WAV_OUT` WAV-sink override first, explicit Linux `else`), and `tests/tier_win9x.sh` 14/14. T5.5 gates the DEFAULT `-osw` = 9x no-CRT emitted `build_target.sh` path (not the legacy CRT harness): single PE32 EXE importing exactly KERNEL32+WINMM, no msvcrt, `check_win9x_imports.sh 9x` PASS, Wine WAV parity, pty console restore; `-osw --dump-c89` is `ad9ccfd34aa2ba26c38abbcf48eedeb0` on seed v101 (md5 `b299b4b435e624d0ddbd2edde681cbc3`). `demo/win9x_README.txt` is the manual Win98 procedure (single drag-and-drop EXE, no msvcrt redistributable, native `*_nocrt.bat` defaults vs `*_crt.bat` alternates; hardware verification operator-pending). Defect status (current numbering): D1/D2 FIXED; D3/D4 OPEN; D5 OPEN (Option 3 workaround). M7 (TUI + `std_file` directory iteration) complete (Tasks 0–5): `std_file` gains streaming `DirEntry`/`Dir`/`openDir`/`readDir`/`closeDir` on Linux and Win9x (caller-arena names, no `.`/`..` filtering, Linux `DT_UNKNOWN` `stat` fallback); the TUI is a separate 80×25 root `ui.zig` (directory browser, now-playing pane, in-memory playlist, `Console` + `Player`), and `tests/tier_tui.sh` is 40/40 (32 pty checks + Win9x `-osw` PE/import + stable `--dump-c89` `e7bc57a2a38a72cb83f51a1ce7497239`). Seed v101 → v102 rotates only the archive `lib/` payload (fixed point `b299b4b435e624d0ddbd2edde681cbc3` unchanged; v102 archive md5 `702f34d87b7e6bf401dd206d2517dbee`); Win98/Me hardware verification remains operator-pending.
 
 **Entry file:** `main.zig`
 
@@ -13,11 +13,13 @@ M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
 
 ## Build Recipe (binding for M0)
 
-The seed is built from `release/seed/zig1-seed.tgz` (current seed **v101**):
+The seed is built from `release/seed/zig1-seed.tgz` (current seed **v102**;
+archive md5 `702f34d87b7e6bf401dd206d2517dbee`, binary/fixed point
+`b299b4b435e624d0ddbd2edde681cbc3`):
 
 ```bash
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9play_seed
-# two-hop closure OK: hop1 == hop2 == b299b4b435e624d0ddbd2edde681cbc3 (v101)
+# two-hop closure OK: hop1 == hop2 == b299b4b435e624d0ddbd2edde681cbc3 (v102)
 
 mkdir -p /tmp/z9play_out
 timeout 120 /tmp/z9play_seed/zig1_5_clean -fsafe -o /tmp/z9play_out \
@@ -25,11 +27,12 @@ timeout 120 /tmp/z9play_seed/zig1_5_clean -fsafe -o /tmp/z9play_out \
 sh /tmp/z9play_out/build_target.sh linux /tmp/z9play_out/prog
 ```
 
-All Linux tiers run under **`-fsafe`**. Seed v101 carries the T5.3 Win9x no-CRT
-runtime and the default `-osw` = 9x profile, so the same compiler builds the
-Win9x tier (default `-osw`, emitted `build_target.sh mingw`; no CRT). The M5
-base seed was **v98**; compiler defects **D1–D8 are all FIXED** in seed v98 (see
-`examples/torrent_example_defects.md`), so the prior
+All Linux tiers run under **`-fsafe`**. Seed v102 carries the T5.3 Win9x no-CRT
+runtime, the default `-osw` = 9x profile, and the M7 `std_file` directory
+iteration in its archive `lib/`, so the same compiler builds the Win9x and TUI
+gates (default `-osw`, emitted `build_target.sh mingw`; no CRT). The M5
+base seed was **v98**; the **pre-reset** M0–M5 defects **D1–D8 are all FIXED**
+and in history (see `examples/torrent_example_defects.md`), so the prior
 D7-class workaround warning is retired (M5 needed none). *Note:* that defects
 doc was **reset on 2026-10-16** — the earlier D1–D8 are all fixed (history in
 git) and its numbering **restarted**, so the doc's current **D1** is the new
@@ -217,6 +220,33 @@ timeout 300 /tmp/z9play_seed/zig1_5_clean -osw --dump-c89 examples/z98/z9play/ma
 #  M2, before M3's decode.zig import closure: 88ad559ce5e4a3dae6f11a0c52b35792;
 #  M1, before the M2 std_math f64 functions: 344c26ed89dd0830443fa5e16b870ec0)
 ```
+
+### TUI build + `--dump-c89` (M7)
+
+`ui.zig` is a **separate root** (the M0–M6 `main.zig` CLI path is unchanged):
+
+```bash
+mkdir -p /tmp/z9play_tui
+timeout 120 /tmp/z9play_seed/zig1_5_clean -fsafe -o /tmp/z9play_tui \
+    examples/z98/z9play/ui.zig
+sh /tmp/z9play_tui/build_target.sh linux /tmp/z9play_tui/z9play-tui
+cd /path/to/music && /tmp/z9play_tui/z9play-tui
+
+# TUI C89 pin (Linux default, repo root, relative entry path)
+timeout 300 /tmp/z9play_seed/zig1_5_clean --dump-c89 examples/z98/z9play/ui.zig | md5sum
+# e7bc57a2a38a72cb83f51a1ce7497239  -
+```
+
+The layout is hard-pinned to 80×25: top border, directory pane (dirs +
+`.ogg`/`.flac`, synthesized `..`, dirs-first alphabetical), now-playing pane,
+separator/help rows, bottom border. Keys: `↑`/`↓` or `j`/`k`, Enter
+(play/navigate), `a` add, `d` remove current, `n`/`p` next/previous, space
+pause/resume, `+`/`-` volume, `q`/Ctrl-C quit (terminal restored). `Z9PLAY_WAV_OUT`
+selects the hermetic WAV sink. The M7 gate is
+`ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_tui.sh`
+→ `40 passed, 0 failed` (32 pty checks + Win9x PE/import gate + stable 2× dump).
+Win9x `-osw` is PE32 with KERNEL32 + WINMM only and no msvcrt; Win98/Me hardware
+behavior remains design-verified / **operator-pending**.
 
 ## Baseline (Task 0)
 
@@ -884,3 +914,60 @@ records the clean-reject / stdcall-definition fixes for a future compiler plan.
   the Linux gates/behavior are unchanged (the `Z9PLAY_WAV_OUT` path still wins
   on every platform). Native scripts and real Win98 hardware remain
   design-verified / operator-pending per Amendment 5.
+
+### M7 — TUI + `std_file` directory iteration (`std_file`, `ui.zig`, `tests/tier_tui.sh`; Tasks 0–5) — DONE
+
+Plan: `docs/superpowers/plans/2026-10-11-z9play-m7-tui-plan.md` (incl.
+Amendment 1). This is the only M7 milestone that changes the std library;
+the compiler self-emission fixed point does not move.
+
+- **Task 1 (`sf/src/std_file.zig` + `std_file_pal.zig`) — DONE.**
+  Streaming directory iteration: `DirEntry { name: []const u8, is_dir: bool }`,
+  `Dir` (OS handle + Win9x first-entry/pending state + arena-owned path for the
+  Linux fallback), `openDir(arena, path)`, `readDir(arena, *Dir) !?DirEntry`,
+  `closeDir(*Dir)`. Linux uses `opendir`/`readdir`/`closedir` and falls back to
+  `stat` when `d_type == DT_UNKNOWN`; Win9x uses
+  `FindFirstFileA`/`FindNextFileA`/`FindClose` only (KERNEL32, no msvcrt).
+  `readDir` copies every name into the caller arena; names are not
+  NUL-terminated; `.`/`..` are **not** filtered. Fixture
+  `repro/mi_matrix/stdlib_dir_iter_xmod` + `scripts/stdlib/expected_dirs.txt`
+  pin the listing; `FindNextFileA` was added to the 9x import whitelist.
+  Commit `e4c07f9a`.
+- **Task 2 (Console contract) — CONFIRMED, no work.** The M5b nine-op
+  `Console` contract/backend and the M6 Win9x backend are consumed unchanged.
+- **Task 3 (`ui.zig`) — DONE.** Separate root with the same
+  `main(argc, argv)` signature; no `--tui` flag and no `main.zig`/`cli.zig`
+  edit. Hard-pinned 80×25 layout (so the Win9x `dwSize`/`srWindow` distinction
+  cannot move the panes): directory pane, now-playing pane, help rows,
+  in-memory playlist (`PLAYLIST_MAX = 256`), streaming `std_file` listing with
+  per-load arena reset. Filters dirs + `.ogg`/`.flac`, skips `.`/`..`,
+  synthesizes `..` when not at root, sorts dirs first then alphabetical. Keys
+  exactly per plan (arrows/`j`/`k`, Enter, `a`, `d`, `n`/`p`, space, `+`/`-`,
+  `q`/Ctrl-C); reuses M4 `Player` and the M5/M6 sink/console selection; restores
+  the terminal and shows the cursor on every normal exit. Commit `74d8c785`.
+- **Task 4 (`tests/tier_tui.sh`) — DONE.** Green **40/40 twice** (32
+  non-vacuous pty checks: exact 25×80 frame/borders, raw-mode active/restored,
+  navigation, WAV absent→complete at `Ended`, playlist 0→1→0, cursor shown +
+  screen cleared on quit; Win9x PE32/no-msvcrt/import whitelist; stable 2×
+  `--dump-c89`). Win9x `-osw` build imports exactly KERNEL32 + WINMM and no
+  msvcrt; Wine is not used. Commit `7bc243d9`.
+- **Task 5 (docs + seed rotation) — DONE.** Seed **v101 → v102**; only the
+  archive `lib/` payload changes. Archive md5
+  `702f34d87b7e6bf401dd206d2517dbee`; archived binary/fixed point
+  `b299b4b435e624d0ddbd2edde681cbc3` (two-hop closure `hop1 == hop2`,
+  `gen/` unchanged). Rebuilt-seed gates: stdlib **286 PASS / 0 FAIL**
+  (`STDLIB GATE OK`); dir fixture **PASS**; all **8** dump pins re-measured
+  **unchanged 8/8**; `tier_tui.sh` **40/40** on the rotated seed. The TUI
+  `--dump-c89` is `e7bc57a2a38a72cb83f51a1ce7497239` (Linux default, stable
+  2×). No corpus/goldens run: no compiler change and no emitted-C movement.
+
+**Defect status (current numbering):** **D1/D2 FIXED**; **D3** (conditional
+`@import` lazy-load), **D4** (static-analyzer cluster), and **D5** (`extern fn`
+with a body) remain **OPEN**. This is not a "D1–D8 all FIXED" claim. Win98/Me
+hardware behavior (including 80×25 conhost rendering) is design-verified only,
+**operator-pending**.
+
+- M7 chain: `e4c07f9a` (`std_file` directory iteration) → `74d8c785` (TUI
+  frontend) → `7bc243d9` (M7 TUI tier) → this docs/seed/report commit. The M7
+  plan's Task 6 (M8 amendment review) is a separate dispatch; the plan carries
+  no status field, so there is nothing to flip to "done".

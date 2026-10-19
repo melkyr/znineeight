@@ -24,12 +24,13 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v101** (rotated 2026-10-18 by the M6 Win9x T5.3 fix round 2,
-plan `2026-10-11-z9play-m6-win9x-plan`; seed v100 → v101, final compiler fixed
-point `b299b4b435e624d0ddbd2edde681cbc3`). Archive md5
-`378f5ea01db25ec69f455fbce52bc947`; archived binary md5 (= v101's rotation fixed
+**Current seed: v102** (rotated 2026-10-19 at the z9play M7 closeout, plan
+`2026-10-11-z9play-m7-tui-plan`; seed v101 → v102, compiler fixed point
+unchanged `b299b4b435e624d0ddbd2edde681cbc3`). Archive md5
+`702f34d87b7e6bf401dd206d2517dbee`; archived binary md5 (= v102's rotation fixed
 point) `b299b4b435e624d0ddbd2edde681cbc3`; `gen/` 46 `.c` + 47 `.h`
-(10,256,124 bytes); `lib/` 32 std `.zig`. **This block is updated at every plan closeout that
+(10,256,124 bytes; unchanged); `lib/` 32 std `.zig` (now includes the M7
+`std_file` directory iteration). **This block is updated at every plan closeout that
 rotates the seed**; the branch's in-progress fixed point is recorded in the active plan's
 workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
@@ -62,7 +63,11 @@ Amendment 6) rotated it to v100 (OpenWatcom restored to bootstrap
 `c73fef7b07fb4a6fc57dafa77821e47c`); and the T5.3 fix round 2 (2026-10-18)
 rotated it to v101 (no-CRT `memset` shim + seed-recipe/provenance truth-up;
 fixed point / archived binary md5 `b299b4b435e624d0ddbd2edde681cbc3`; archive
-md5 `378f5ea01db25ec69f455fbce52bc947`).
+md5 `378f5ea01db25ec69f455fbce52bc947`); and the z9play M7 closeout
+(2026-10-19) rotated it to v102 (`std_file` directory iteration
+`openDir`/`readDir`/`closeDir`; compiler fixed point / archived binary md5
+unchanged `b299b4b435e624d0ddbd2edde681cbc3`; archive md5
+`702f34d87b7e6bf401dd206d2517dbee`).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 46 `.c` + 47 `.h`, including `zig_special_types.h`; the emitted
@@ -133,6 +138,22 @@ point is unmoved), via
 (gcc-rebuilds the archive C self-contained to the NEW fixed point + prepends the provenance entry to
 `release/seed/CHANGELOG.md`). The seed lives at `release/seed/` (tracked), never `/tmp`.
 
+
+### `std_file` directory iteration (M7)  [added: 2026-10-19]
+
+- **API (`sf/src/std_file.zig`):** `pub const DirEntry = struct { name: []const u8, is_dir: bool };`,
+  `pub const Dir` (OS handle; Win9x carries the first-entry/pending state + path),
+  `openDir(arena, path) FileError!Dir`, `readDir(arena, *Dir) FileError!?DirEntry`,
+  `closeDir(*Dir) void`. The module is **`std_file`** — there is no `std.fs`
+  namespace in `sf/src/std.zig`.
+- **Semantics:** streaming OS-order listing. `readDir` copies each name into the
+  **caller arena**; names are not NUL-terminated. `.`/`..` are **not filtered** —
+  the TUI synthesizes `..` itself. On Linux, `is_dir` uses `d_type` and falls
+  back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
+  KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
+- **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
+  pin); `verify_stdlib` is 286/0 on seed v102. The z9play M7 TUI consumes this
+  API (`examples/z98/z9play/ui.zig`).
 
 ### Compiler limits — `Type`-column ceilings  [added: 2026-10-08]
 
@@ -276,8 +297,10 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (re-baselined 2026-10-18, M6 Win9x T5.3 fix round 2, seed v101; supersedes the v100 table).** Measured with
-the seed-built fixed compiler (`b299b4b435e624d0ddbd2edde681cbc3`):
+**8-pin table (v102, 2026-10-19, z9play M7 closeout; values unchanged vs the v101 table).**
+Measured with the rotated seed-built fixed compiler
+(`b299b4b435e624d0ddbd2edde681cbc3`; v102 archive md5
+`702f34d87b7e6bf401dd206d2517dbee`):
 `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum` from the repo root. The
 absolute pin values are **compiler-build dependent** (each compiler build pairs a `lib/` std
 set; the binary's own path is irrelevant — verified), so only same-build comparisons are
@@ -300,6 +323,14 @@ v99 movement remains the intended T5.3 movement: the
 PAL rewiring. Runtime goldens are re-proven byte-identical (gol
 `fcbf7e7c…`, lisp `(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`, mud
 `66c8f0ab…`/`93147d0f…`).
+
+**v102 re-measure (z9play M7 T5, 2026-10-19):** the seed rotated v101 → v102
+only because the archive `lib/` payload carries the M7 `std_file` directory
+iteration; the compiler fixed point did not move. All **8 pins were re-measured
+unchanged 8/8** (values above) with `/tmp/m7_t5_seed2/zig1_5_clean`
+(`b299b4b4…`) from the repo root with relative entry paths. No corpus/golden
+run was needed (no compiler change, no emitted-C movement). The M7 TUI has its
+own pin: `ui.zig --dump-c89` = `e7bc57a2a38a72cb83f51a1ce7497239` (stable 2×).
 
 Re-baselined by the FX5 `-fsafe` slice-bounds guards (2026-09-28), then by the
 FX14 layout-model pin (2026-09-29, operator ruling A): every gate dump embeds
