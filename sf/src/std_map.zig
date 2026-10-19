@@ -20,7 +20,9 @@
 //
 // Entry `state` is the control byte: `0x80` empty, `0xFE` reserved (deleted,
 // never observable in a steady-state table), and `0x00..0x7F` the 7-bit hash
-// fragment of a used slot. `dist` is the probe distance.
+// fragment of a used slot. Probe distance is computed on demand as
+// `(slot - home) & mask`; no distance field is stored, so long same-home
+// clusters cannot wrap a narrow counter.
 //
 // Determinism (blueprint §1 R6): the slot a key occupies is a pure function of
 // the key, the table capacity, and the insertion/removal sequence — there is no
@@ -41,21 +43,18 @@ const Entry32x32 = struct {
     key: u32,
     val: u32,
     state: u8,
-    dist: u8,
 };
 
 const Entry32Ptr = struct {
     key: u32,
     val: *void,
     state: u8,
-    dist: u8,
 };
 
 const EntryStrPtr = struct {
     key: []const u8,
     val: *void,
     state: u8,
-    dist: u8,
 };
 
 pub const Map32x32 = struct {
@@ -122,6 +121,23 @@ fn slotOf(h: u32, mask: usize) usize {
     return @intCast(usize, h) & mask;
 }
 
+// On-demand probe distance: no stored distance, so a cluster longer than 255
+// entries is represented exactly (a stored u8 would wrap and strand keys).
+fn dist32x32(m: *const Map32x32, idx: usize) usize {
+    var home: usize = slotOf(mix32(m.entries[idx].key), m.mask);
+    return (idx -% home) & m.mask;
+}
+
+fn dist32Ptr(m: *const Map32Ptr, idx: usize) usize {
+    var home: usize = slotOf(mix32(m.entries[idx].key), m.mask);
+    return (idx -% home) & m.mask;
+}
+
+fn distStrPtr(m: *const MapStrPtr, idx: usize) usize {
+    var home: usize = slotOf(hashBytes(m.entries[idx].key), m.mask);
+    return (idx -% home) & m.mask;
+}
+
 // ---- Map32x32 --------------------------------------------------------------
 
 pub fn map32x32Init(arena: *arena_mod.Arena, capacity: usize) !Map32x32 {
@@ -179,7 +195,7 @@ pub fn map32x32Put(m: *Map32x32, key: u32, val: u32) !void {
     var cur_key: u32 = key;
     var cur_val: u32 = val;
     var cur_frag: u8 = frag;
-    var dist: u8 = 0;
+    var dist: usize = 0;
     idx = slotOf(h, m.mask);
     step = 0;
     while (step < slots) : (step += 1) {
@@ -188,23 +204,21 @@ pub fn map32x32Put(m: *Map32x32, key: u32, val: u32) !void {
             m.entries[idx].key = cur_key;
             m.entries[idx].val = cur_val;
             m.entries[idx].state = cur_frag;
-            m.entries[idx].dist = dist;
             m.len += 1;
             return;
         }
-        if (dist > m.entries[idx].dist) {
+        var od: usize = dist32x32(m, idx);
+        if (dist > od) {
             var tk: u32 = m.entries[idx].key;
             var tv: u32 = m.entries[idx].val;
             var tf: u8 = m.entries[idx].state;
-            var td: u8 = m.entries[idx].dist;
             m.entries[idx].key = cur_key;
             m.entries[idx].val = cur_val;
             m.entries[idx].state = cur_frag;
-            m.entries[idx].dist = dist;
             cur_key = tk;
             cur_val = tv;
             cur_frag = tf;
-            dist = td;
+            dist = od;
         }
         idx = (idx + 1) & m.mask;
         dist += 1;
@@ -231,19 +245,16 @@ pub fn map32x32Remove(m: *Map32x32, key: u32) bool {
                 var nst: u8 = m.entries[next].state;
                 if (nst == STATE_EMPTY) {
                     m.entries[hole].state = STATE_EMPTY;
-                    m.entries[hole].dist = 0;
                     return true;
                 }
-                var nd: u8 = m.entries[next].dist;
+                var nd: usize = dist32x32(m, next);
                 if (nd == 0) {
                     m.entries[hole].state = STATE_EMPTY;
-                    m.entries[hole].dist = 0;
                     return true;
                 }
                 m.entries[hole].key = m.entries[next].key;
                 m.entries[hole].val = m.entries[next].val;
                 m.entries[hole].state = m.entries[next].state;
-                m.entries[hole].dist = nd - 1;
                 hole = next;
             }
             return true;
@@ -314,7 +325,7 @@ pub fn map32PtrPut(m: *Map32Ptr, key: u32, val: *void) !void {
     var cur_key: u32 = key;
     var cur_val: *void = val;
     var cur_frag: u8 = frag;
-    var dist: u8 = 0;
+    var dist: usize = 0;
     idx = slotOf(h, m.mask);
     step = 0;
     while (step < slots) : (step += 1) {
@@ -323,23 +334,21 @@ pub fn map32PtrPut(m: *Map32Ptr, key: u32, val: *void) !void {
             m.entries[idx].key = cur_key;
             m.entries[idx].val = cur_val;
             m.entries[idx].state = cur_frag;
-            m.entries[idx].dist = dist;
             m.len += 1;
             return;
         }
-        if (dist > m.entries[idx].dist) {
+        var od: usize = dist32Ptr(m, idx);
+        if (dist > od) {
             var tk: u32 = m.entries[idx].key;
             var tv: *void = m.entries[idx].val;
             var tf: u8 = m.entries[idx].state;
-            var td: u8 = m.entries[idx].dist;
             m.entries[idx].key = cur_key;
             m.entries[idx].val = cur_val;
             m.entries[idx].state = cur_frag;
-            m.entries[idx].dist = dist;
             cur_key = tk;
             cur_val = tv;
             cur_frag = tf;
-            dist = td;
+            dist = od;
         }
         idx = (idx + 1) & m.mask;
         dist += 1;
@@ -366,19 +375,16 @@ pub fn map32PtrRemove(m: *Map32Ptr, key: u32) bool {
                 var nst: u8 = m.entries[next].state;
                 if (nst == STATE_EMPTY) {
                     m.entries[hole].state = STATE_EMPTY;
-                    m.entries[hole].dist = 0;
                     return true;
                 }
-                var nd: u8 = m.entries[next].dist;
+                var nd: usize = dist32Ptr(m, next);
                 if (nd == 0) {
                     m.entries[hole].state = STATE_EMPTY;
-                    m.entries[hole].dist = 0;
                     return true;
                 }
                 m.entries[hole].key = m.entries[next].key;
                 m.entries[hole].val = m.entries[next].val;
                 m.entries[hole].state = m.entries[next].state;
-                m.entries[hole].dist = nd - 1;
                 hole = next;
             }
             return true;
@@ -457,7 +463,7 @@ pub fn mapStrPtrPut(m: *MapStrPtr, key: []const u8, val: *void) !void {
     var cur_key: []const u8 = cptr[0..key.len];
     var cur_val: *void = val;
     var cur_frag: u8 = frag;
-    var dist: u8 = 0;
+    var dist: usize = 0;
     idx = slotOf(h, m.mask);
     step = 0;
     while (step < slots) : (step += 1) {
@@ -466,23 +472,21 @@ pub fn mapStrPtrPut(m: *MapStrPtr, key: []const u8, val: *void) !void {
             m.entries[idx].key = cur_key;
             m.entries[idx].val = cur_val;
             m.entries[idx].state = cur_frag;
-            m.entries[idx].dist = dist;
             m.len += 1;
             return;
         }
-        if (dist > m.entries[idx].dist) {
+        var od: usize = distStrPtr(m, idx);
+        if (dist > od) {
             var tk: []const u8 = m.entries[idx].key;
             var tv: *void = m.entries[idx].val;
             var tf: u8 = m.entries[idx].state;
-            var td: u8 = m.entries[idx].dist;
             m.entries[idx].key = cur_key;
             m.entries[idx].val = cur_val;
             m.entries[idx].state = cur_frag;
-            m.entries[idx].dist = dist;
             cur_key = tk;
             cur_val = tv;
             cur_frag = tf;
-            dist = td;
+            dist = od;
         }
         idx = (idx + 1) & m.mask;
         dist += 1;
@@ -509,19 +513,16 @@ pub fn mapStrPtrRemove(m: *MapStrPtr, key: []const u8) bool {
                 var nst: u8 = m.entries[next].state;
                 if (nst == STATE_EMPTY) {
                     m.entries[hole].state = STATE_EMPTY;
-                    m.entries[hole].dist = 0;
                     return true;
                 }
-                var nd: u8 = m.entries[next].dist;
+                var nd: usize = distStrPtr(m, next);
                 if (nd == 0) {
                     m.entries[hole].state = STATE_EMPTY;
-                    m.entries[hole].dist = 0;
                     return true;
                 }
                 m.entries[hole].key = m.entries[next].key;
                 m.entries[hole].val = m.entries[next].val;
                 m.entries[hole].state = m.entries[next].state;
-                m.entries[hole].dist = nd - 1;
                 hole = next;
             }
             return true;

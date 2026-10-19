@@ -8,10 +8,11 @@
 // iteration order (slot-ascending order). This is checked directly against the
 // backing `entries` array, not just through Get.
 //
-// Sequence per map: put 0..31 (fills a capacity-32 table), remove every even
-// key (backward-shift deletion, no tombstones), re-put a removed key and one
-// new key, then compare every slot of the two maps and every observable
-// Get/Len result.
+// Sequence per map: put 0..31 (recall capacity is the entry limit, so the
+// internal slot array is larger), remove every even key (backward-shift
+// deletion, no tombstones), re-put a removed key and one new key, then compare
+// slots `0..capacity` of the two maps (the fixture's loop bound, not every
+// internal slot) and every observable Get/Len result.
 //
 // GREEN (contract): deterministic byte-exact stdout `map determinism ok\n`.
 const std = @import("std");

@@ -12,6 +12,10 @@
 //   - delete-half: remove every even key, odd keys resolve, evens null;
 //   - overwrite: re-put an existing key replaces the value, len unchanged;
 //   - fill: capacity N -> N puts succeed, a new key -> error.OutOfMemory;
+//   - adversarial same-home cluster: 257 keys sharing one home slot, delete
+//     the head, every survivor still resolves (a stored u8 distance wraps);
+//   - ctrl encoding: every slot is 0x80 (empty) or a 7-bit hash fragment;
+//     0xFE never appears, in steady state and after deletions;
 //   - churn: 10k put/remove cycles over a bounded key space; every survivor
 //     resolves (checked periodically and at the end; no infinite loop).
 //
@@ -22,10 +26,36 @@ const map = @import("std_map.zig");
 
 var g_fail: u32 = 0;
 
+// Fixture-side copy of std_map's mix32, used only to target one home slot.
+fn mix32(x0: u32) u32 {
+    var x: u32 = x0;
+    x = x ^ (x >> 16);
+    x = x *% 0x7feb352d;
+    x = x ^ (x >> 15);
+    x = x *% 0x846ca68b;
+    x = x ^ (x >> 16);
+    return x;
+}
+
 fn ck(cond: bool, what: []const u8) void {
     if (!cond) {
         g_fail += 1;
         @panic(what);
+    }
+}
+
+// Steady-state ctrl byte: 0x80 empty, or the record's own 7-bit hash fragment.
+// 0xFE (reserved) and the old 0/1/2 codes as control values never appear.
+fn checkCtrl(m: *map.Map32x32, what: []const u8) void {
+    var s: usize = 0;
+    while (s <= m.mask) : (s += 1) {
+        var st: u8 = m.entries[s].state;
+        ck(st != 0xFE, what);
+        if (st != 0x80) {
+            ck(st <= 0x7F, what);
+            var frag: u8 = @intCast(u8, mix32(m.entries[s].key) & 0x7F);
+            ck(st == frag, what);
+        }
     }
 }
 
@@ -77,6 +107,7 @@ pub fn main() void {
     while (i <= 1000) : (i += 1) {
         want32(&m, i, i * 3 + 1, "reverse get");
     }
+    checkCtrl(&m, "reverse ctrl");
 
     // delete 500, then reinsert them with new values
     i = 1;
@@ -101,6 +132,7 @@ pub fn main() void {
             want32(&m, i, i * 3 + 1, "delete-reinsert old get");
         }
     }
+    checkCtrl(&m, "delete-reinsert ctrl");
 
     // remove every even key; odds must still resolve through the shifted slots
     i = 2;
@@ -120,6 +152,7 @@ pub fn main() void {
     while (i <= 1000) : (i += 2) {
         ck(map.map32x32Get(&m, i) == null, "delete-half even absent");
     }
+    checkCtrl(&m, "delete-half ctrl");
 
     // overwrite: existing key replaces value, len unchanged
     var before: usize = map.map32x32Len(&m);
@@ -148,6 +181,42 @@ pub fn main() void {
     while (f < 100) : (f += 1) {
         want32(&fm, f, f * 2 + 1, "fill value intact");
     }
+    checkCtrl(&fm, "fill ctrl");
+
+    // ---- adversarial same-home cluster (stored u8 distance would wrap) ----
+    var back_adv: [8192]u8 = undefined;
+    var ar_adv = std.arena.init(back_adv[0..]);
+    var am = map.map32x32Init(&ar_adv, 300) catch {
+        @panic("init adversarial");
+    };
+    var adv_keys: [257]u32 = undefined;
+    var want_home: usize = @intCast(usize, mix32(0)) & am.mask;
+    var found: usize = 0;
+    var cand: u32 = 0;
+    while (found < 257) : (cand += 1) {
+        if ((@intCast(usize, mix32(cand)) & am.mask) == want_home) {
+            adv_keys[found] = cand;
+            found += 1;
+        }
+    }
+    var a: usize = 0;
+    while (a < 257) : (a += 1) {
+        put32(&am, adv_keys[a], adv_keys[a] + 1, "adversarial put");
+    }
+    ck(map.map32x32Len(&am) == 257, "adversarial len 257");
+    checkCtrl(&am, "adversarial ctrl after insert");
+    a = 0;
+    while (a < 257) : (a += 1) {
+        want32(&am, adv_keys[a], adv_keys[a] + 1, "adversarial get");
+    }
+    ck(map.map32x32Remove(&am, adv_keys[0]), "adversarial remove head");
+    ck(map.map32x32Get(&am, adv_keys[0]) == null, "adversarial head absent");
+    ck(map.map32x32Len(&am) == 256, "adversarial len after delete");
+    a = 1;
+    while (a < 257) : (a += 1) {
+        want32(&am, adv_keys[a], adv_keys[a] + 1, "adversarial survivor");
+    }
+    checkCtrl(&am, "adversarial ctrl after delete");
 
     // ---- churn: 10k put/remove cycles over a bounded key space ------------
     var back_churn: [16384]u8 = undefined;
@@ -179,6 +248,7 @@ pub fn main() void {
         }
     }
     verifyChurn(&cm, present[0..64], expected[0..64]);
+    checkCtrl(&cm, "churn ctrl");
 
     if (g_fail == 0) {
         std.io.write("map robinhood ok\n");
