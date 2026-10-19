@@ -24,13 +24,14 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v102** (rotated 2026-10-19 at the z9play M7 closeout, plan
-`2026-10-11-z9play-m7-tui-plan`; seed v101 → v102, compiler fixed point
-unchanged `b299b4b435e624d0ddbd2edde681cbc3`). Archive md5
-`702f34d87b7e6bf401dd206d2517dbee`; archived binary md5 (= v102's rotation fixed
+**Current seed: v103** (rotated 2026-10-19 at the std-algorithms M1 closeout, plan
+`2026-10-19-z98-std-algorithms-m1-foundation-plan`; seed v102 → v103, compiler
+fixed point unchanged `b299b4b435e624d0ddbd2edde681cbc3`). Archive md5
+`c4d1e7a6f3d7403dee2c683a3a5ab438`; archived binary md5 (= v103's rotation fixed
 point) `b299b4b435e624d0ddbd2edde681cbc3`; `gen/` 46 `.c` + 47 `.h`
-(10,256,124 bytes; unchanged); `lib/` 32 std `.zig` (now includes the M7
-`std_file` directory iteration). **This block is updated at every plan closeout that
+(10,256,124 bytes; unchanged); `lib/` 33 std `.zig` plus `lib/manifest.md5`
+(per-file std attribution pin) — the M1 closeout adds `std_rand.zig` and the
+manifest (33 files). **This block is updated at every plan closeout that
 rotates the seed**; the branch's in-progress fixed point is recorded in the active plan's
 workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
@@ -67,7 +68,11 @@ md5 `378f5ea01db25ec69f455fbce52bc947`); and the z9play M7 closeout
 (2026-10-19) rotated it to v102 (`std_file` directory iteration
 `openDir`/`readDir`/`closeDir`; compiler fixed point / archived binary md5
 unchanged `b299b4b435e624d0ddbd2edde681cbc3`; archive md5
-`702f34d87b7e6bf401dd206d2517dbee`).
+`702f34d87b7e6bf401dd206d2517dbee`); and the std-algorithms M1 closeout
+(2026-10-19) rotated it to v103 (adds `std_rand.zig` + `lib/manifest.md5`
+(33 files); compiler fixed point / archived binary md5 unchanged
+`b299b4b435e624d0ddbd2edde681cbc3`; archive md5
+`c4d1e7a6f3d7403dee2c683a3a5ab438`).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 46 `.c` + 47 `.h`, including `zig_special_types.h`; the emitted
@@ -152,7 +157,7 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is 286/0 on seed v102. The z9play M7 TUI consumes this
+  pin); `verify_stdlib` is 292/0 on seed v103. The z9play M7 TUI consumes this
   API (`examples/z98/z9play/ui.zig`).
 
 ### Compiler limits — `Type`-column ceilings  [added: 2026-10-08]
@@ -297,10 +302,10 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (v102, 2026-10-19, z9play M7 closeout; values unchanged vs the v101 table).**
+**8-pin table (v103, 2026-10-19, std-algorithms M1 closeout; values unchanged vs the v102 table).**
 Measured with the rotated seed-built fixed compiler
-(`b299b4b435e624d0ddbd2edde681cbc3`; v102 archive md5
-`702f34d87b7e6bf401dd206d2517dbee`):
+(`b299b4b435e624d0ddbd2edde681cbc3`; v103 archive md5
+`c4d1e7a6f3d7403dee2c683a3a5ab438`):
 `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum` from the repo root. The
 absolute pin values are **compiler-build dependent** (each compiler build pairs a `lib/` std
 set; the binary's own path is irrelevant — verified), so only same-build comparisons are
