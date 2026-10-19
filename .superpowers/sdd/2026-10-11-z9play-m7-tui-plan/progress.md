@@ -25,4 +25,6 @@ archive-only v101→v102 rotation in Amendment 1. No task mandates a compiler fe
 No contradictions found.
 
 ## Tasks
+Task T0: complete (commit `8bc1eadd` report; review Approved, spec ✅, 0 Critical/0 Important/2 Minor). Confirmed: API shape `DirEntry{name,is_dir}` + `Dir{handle,first_pending,data,path}` + `openDir/readDir/closeDir` implementable on seed v101 (probe rc=0); Linux `opendir/readdir/closedir` + dirent mirror size 268; Win9x `FindFirstFileA/FindNextFileA/FindClose` + `WIN32_FIND_DATAA` size 320, KERNEL32 only; M6 console 9/9 both platforms (Win9x width/height = `dwSize`); TUI = separate `ui.zig` root (no main.zig/cli.zig edit). Minors deferred: expected_dirs sort-position citation; `@ptrCast` precedent cite.
+Next: T1 `std_file` directory iteration + fixture + whitelist.
 
