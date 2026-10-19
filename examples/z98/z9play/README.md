@@ -479,7 +479,7 @@ ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_win9x.sh
 # == tier_win9x summary: 14 passed, 0 failed, 0 skipped ==
 ```
 
-The Linux gates are unchanged:
+The M8 FLAC gate and the existing Linux gates:
 
 ```bash
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_info.sh
@@ -510,14 +510,15 @@ the golden `.meta` format and the determinism contract.
 
 `NOTES.md` holds the build recipe, the `--dump-c89` md5, the golden formats, and
 the milestone log. The **M8 current** Linux-default pins are `main.zig`
-`e56af7916edd199e796f3ef11d5e49c4` and `ui.zig`
-`22676fd997471df1c4c3a3f04397121d` (seed v102, stable 2×). The M6 gate value
-remains the Win9x target `ad9ccfd34aa2ba26c38abbcf48eedeb0` (`-osw --dump-c89`,
-stable 2×; seed v101, md5 `b299b4b435e624d0ddbd2edde681cbc3`). The M7 `ui.zig`
-Linux-default value was `e7bc57a2a38a72cb83f51a1ce7497239` (stable 2×) on seed
-v102 (archive md5 `702f34d87b7e6bf401dd206d2517dbee`; binary/fixed point
-unchanged); M8 supersedes it as the current `ui.zig` pin. The prior Linux
-`--dump-c89` value was `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b; prior M5
+`e56af7916edd199e796f3ef11d5e49c4` (current `main.zig` Linux pin) and `ui.zig`
+`22676fd997471df1c4c3a3f04397121d` (supersedes only the historical M7 `ui.zig`
+Linux pin `e7bc57a2a38a72cb83f51a1ce7497239`) on seed v102 (archive md5
+`702f34d87b7e6bf401dd206d2517dbee`; binary/fixed point unchanged). The M6
+`-osw` value `ad9ccfd34aa2ba26c38abbcf48eedeb0` is historical M6/seed v101
+(md5 `b299b4b435e624d0ddbd2edde681cbc3`), **not a current pin**. M8 did not
+re-pin `-osw`; the current measured `-osw --dump-c89` for `main.zig` on seed
+v102 is `aa68782328c001c1f72d03f8ab1282d7`. The prior Linux `--dump-c89` value
+was `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b; prior M5
 `0a60a27846476a73d2fac8e183d52d48`, M4
 `d695bf99dadb7f6dbbc0f2a94bb42f43`, M3
 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`,

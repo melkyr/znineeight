@@ -6,7 +6,7 @@
 
 **Working commit:** `a0a7616f` (`example(z9play): M6 T4 fix — real undefined-symbol check`; the last commit of the M6 Win9x surface, pinned at M6 closeout; this docs commit is docs-only and does not bump `--version`, which remains `(M5)`). Prior closeout: `5a096122` (`example(z9play): M5b console tier`; the last commit of the M5b console surface, pinned at M5b closeout). Prior closeout: `06321a72` (`example(z9play): M5 CLI tier`; the last commit of the M5 CLI surface, pinned at M5 closeout; the docs commit that follows also bumps the `--version` string to `(M5)`, so the recorded M5 MD5 is measured at that closeout tree, not at `06321a72`). Prior closeouts: M4 `61e93e72` (`example(z9play): M4 audio tier`; the last commit of the M4 audio surface — the docs commit that followed bumped `--version` to `(M4)`); M3 `c7af78ac` (`example(z9play): M3 --pcm + tier_decode`; the M3 `--pcm` + `tier_decode` commit — the last commit of the M3 decode surface, pinned at M3 closeout); M2 `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the last `std_math` surface commit; full M2 chain `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs)); M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`). **M3 decode chain:** `bb211810` (IMDCT + window + overlap-add) → `b497323a` (floor1) → `d925cb55` (residue type 0/1/2) → `16ae3eea` (packet → PCM) → `de48b5cf` (docs: D7 + cumulative-defect warning) → `c7af78ac` (M3 `--pcm` + `tier_decode`; this closeout). **M5 CLI chain:** `4154098c` (CLI status formatter) → `437c12cc` (T1 fix: fixed-width volume field) → `2a5384b4` (Linux raw console input) → `8dcb0072` (CLI playback loop + keys) → `7f447896` (T3 fix: `--start` pacing + integer-seconds message) → `06321a72` (M5 `tier_cli`; M5 closeout). **M5b chain:** `c554d666` (Console contract) → `8f968713` (complete Linux backend) → `4a96a0fa` (escape-decode state machine fix) → `35c9893d` (CLI drives the Console contract) → `5a096122` (M5b console tier; M5b closeout). **M6 chain:** `866b260f` (Win9x waveOut backend) → `d86b3441` + `85234e21` (Win9x console backend + Option 3 Ctrl-C fix) → `2e0f194a` (`@isWindows()` backend selection) → `f91eb8b2` + `a0a7616f` (Win9x tier + real undefined-symbol check; this closeout).
 
-**MD5 (`-osw --dump-c89`):** `ad9ccfd34aa2ba26c38abbcf48eedeb0` (seed v101 compiler, md5 `b299b4b435e624d0ddbd2edde681cbc3`, two-hop closure; stable 2×; M6 default 9x no-CRT profile). **M6 added the `-osw` target value**; the prior primary value was the Linux default `--dump-c89` `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b), because the M6 compile now emits the Win9x import closure behind `@isWindows()`. Prior M6-era pre-rotation value was `87856b43091e2bf5d992fc795d9764f2` (compiler rebuilt from post-D1/D2 `sf/src`, bootstrap seed v98); seed v101 (T5.3 no-CRT) legitimately moves the emitted C89. Prior: M5b Linux `--dump-c89` `4c9f760ae825d7fcf91cbf7a2500a4a4` (seed v98), M5 `0a60a27846476a73d2fac8e183d52d48` (seed v98), M4 `d695bf99dadb7f6dbbc0f2a94bb42f43` (seed v97), M3 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`, M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`. **M8 current (Linux default, seed v102):** `main.zig` `e56af7916edd199e796f3ef11d5e49c4`; `ui.zig` `22676fd997471df1c4c3a3f04397121d` (both stable 2×).
+**MD5 (`--dump-c89`):** historical M6 `-osw` target `ad9ccfd34aa2ba26c38abbcf48eedeb0` (seed v101 compiler, md5 `b299b4b435e624d0ddbd2edde681cbc3`, two-hop closure; stable 2×; M6 default 9x no-CRT profile; **not current**). **M6 added the `-osw` target value**; the prior primary value was the Linux default `--dump-c89` `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b), because the M6 compile now emits the Win9x import closure behind `@isWindows()`. Prior M6-era pre-rotation value was `87856b43091e2bf5d992fc795d9764f2` (compiler rebuilt from post-D1/D2 `sf/src`, bootstrap seed v98); seed v101 (T5.3 no-CRT) legitimately moves the emitted C89. Prior: M5b Linux `--dump-c89` `4c9f760ae825d7fcf91cbf7a2500a4a4` (seed v98), M5 `0a60a27846476a73d2fac8e183d52d48` (seed v98), M4 `d695bf99dadb7f6dbbc0f2a94bb42f43` (seed v97), M3 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`, M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`. **M8 current Linux default (seed v102, stable 2×):** `main.zig` `e56af7916edd199e796f3ef11d5e49c4` (current `main.zig` Linux pin); `ui.zig` `22676fd997471df1c4c3a3f04397121d` (supersedes only the M7 `ui.zig` Linux pin `e7bc57a2a38a72cb83f51a1ce7497239`). M8 did not re-pin `-osw`; the current measured `-osw --dump-c89` for `main.zig` on seed v102 is `aa68782328c001c1f72d03f8ab1282d7`.
 
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md` (binding).
 M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
@@ -205,10 +205,15 @@ TIER_CLI PASS
 
 ### `--dump-c89` (for the MD5 above)
 
+The M6 `-osw` recipe below is **historical (seed v101)**. On the current seed
+v102 the measured `-osw --dump-c89` value for `main.zig` is
+`aa68782328c001c1f72d03f8ab1282d7`; M8 did not re-pin `-osw`. The current M8
+Linux-default pins are in the M8 section.
+
 ```bash
-# M6: Win9x target (seed v101; default -osw = 9x no-CRT)
+# historical M6: Win9x target (seed v101; default -osw = 9x no-CRT)
 timeout 300 /tmp/z9play_seed/zig1_5_clean -osw --dump-c89 examples/z98/z9play/main.zig | md5sum
-# ad9ccfd34aa2ba26c38abbcf48eedeb0  -
+# ad9ccfd34aa2ba26c38abbcf48eedeb0  -   (historical M6/seed-v101; not current)
 # (M6's recorded value is the -osw target above; the prior Linux value was M5b's:)
 # timeout 120 /tmp/z9play_seed/zig1_5_clean --dump-c89 examples/z98/z9play/main.zig | md5sum
 # 4c9f760ae825d7fcf91cbf7a2500a4a4  -
@@ -1009,11 +1014,13 @@ no compiler/seed change. Seed **v102** (archive
   stream" path). FLAC tags are not shown (the interactive startup line falls
   back to the path).
 - **`--dump-c89` (M8 current, Linux default, seed v102, stable 2×):** `main.zig`
-  `e56af7916edd199e796f3ef11d5e49c4`; `ui.zig`
-  `22676fd997471df1c4c3a3f04397121d`. The M6 `-osw` value above
-  (`ad9ccfd34aa2ba26c38abbcf48eedeb0`) and the historical M7 `ui.zig` value
-  (`e7bc57a2a38a72cb83f51a1ce7497239`) are superseded as current pins by these
-  M8 values.
+  `e56af7916edd199e796f3ef11d5e49c4` (current `main.zig` Linux pin); `ui.zig`
+  `22676fd997471df1c4c3a3f04397121d` (supersedes only the historical M7 `ui.zig`
+  Linux pin `e7bc57a2a38a72cb83f51a1ce7497239`). The M6 `-osw` value
+  `ad9ccfd34aa2ba26c38abbcf48eedeb0` is historical M6/seed v101 and is **not a
+  current pin**. M8 did not re-pin `-osw`; the current measured `-osw
+  --dump-c89` for `main.zig` on seed v102 is
+  `aa68782328c001c1f72d03f8ab1282d7`.
 - **Win9x gate.** The tier emits/builds `main.zig` with default `-osw` and
   asserts a PE32 i386 EXE whose imports are exactly KERNEL32 + WINMM, with no
   msvcrt, and `check_win9x_imports.sh 9x` PASS. Real Win98/Me hardware
@@ -1022,5 +1029,5 @@ no compiler/seed change. Seed **v102** (archive
   This is not a "D1–D8 all FIXED" claim.
 - **Feature-complete status:** not claimed here; the M8 Task 5 final handoff owns
   that statement.
-- M8 chain so far: `07d92393` (T2 native FLAC decoder) → `903ea2ab` (T3
-  `tier_flac.sh`) → this docs/report commit.
+- M8 chain so far: `c4b53d84` (T1 decoder abstraction) → `07d92393` (T2 native
+  FLAC decoder) → `903ea2ab` (T3 `tier_flac.sh`) → this docs/report commit.
