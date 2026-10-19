@@ -70,6 +70,7 @@ const cwin = @import("platform/console_win9x.zig");
 const contract = @import("platform/console.zig");
 const fmt = @import("fmt.zig");
 const decoder = @import("decoder.zig");
+const flac = @import("flac.zig");
 const player = @import("player.zig");
 
 // Backing store for the read/reassembly/comment arena; module-global so it does
@@ -306,25 +307,41 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         return;
     };
 
-    var packets: []ogg.Packet = ogg.reassemble(&arena, data) catch {
+    var kind: u8 = decoder.detectKind(data);
+    var is_flac: bool = kind == decoder.KIND_FLAC;
+
+    // FLAC is routed only through the Player paths (--wav + interactive) in
+    // M8 T2; --info/--dump-setup/--pcm remain Vorbis-only.
+    if (is_flac and args.mode != cli.MODE_WAV and args.mode != cli.MODE_PLAY) {
         var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
-        std.io.write(msg);
-        std.os.exit(3);
-        return;
-    };
-    if (packets.len < 2) {
-        var msg: []const u8 = "z9play: missing Vorbis headers\n";
         std.io.write(msg);
         std.os.exit(3);
         return;
     }
 
-    var id: vi.IdHeader = vi.parseId(packets[0].bytes) catch {
-        var msg: []const u8 = "z9play: bad Vorbis identification header\n";
-        std.io.write(msg);
-        std.os.exit(3);
-        return;
-    };
+    var packets: []ogg.Packet = undefined;
+    var id: vi.IdHeader = undefined;
+    if (!is_flac) {
+        packets = ogg.reassemble(&arena, data) catch {
+            var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        if (packets.len < 2) {
+            var msg: []const u8 = "z9play: missing Vorbis headers\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        }
+
+        id = vi.parseId(packets[0].bytes) catch {
+            var msg: []const u8 = "z9play: bad Vorbis identification header\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+    }
 
     if (args.mode == cli.MODE_DUMP_SETUP) {
         if (packets.len < 3) {
@@ -456,13 +473,6 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // output layer with no device dependency. Exit codes follow the spec:
     // 3 = malformed stream / decode / audio failure, 2 = sink open failure.
     if (args.mode == cli.MODE_WAV) {
-        if (packets.len < 3) {
-            var msg: []const u8 = "z9play: missing Vorbis setup header\n";
-            std.io.write(msg);
-            std.os.exit(3);
-            return;
-        }
-
         // Persistent decode state (setup, DecoderState, the VorbisCtx and its
         // one-block scratch) off the 32-bit stack; `scratch` is reset per packet
         // by vorbisNext; `par` backs the Player ring + block buffer. `darena`
@@ -471,35 +481,59 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var scratch = std.arena.init(wav_scratch_buf[0..]);
         var par = std.arena.init(wav_player_buf[0..]);
 
-        var setup: vs.Setup = vs.parseSetup(&darena, packets[2].bytes, @intCast(u32, id.channels)) catch {
-            var msg: []const u8 = "z9play: bad Vorbis setup header\n";
-            std.io.write(msg);
-            std.os.exit(3);
-            return;
-        };
-        var state: dec.DecoderState = dec.initDecoderState(&darena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
-            var msg: []const u8 = "z9play: cannot initialize the decoder\n";
-            std.io.write(msg);
-            std.os.exit(3);
-            return;
-        };
-        var last: u64 = ogg.lastGranule(&arena, data) catch {
-            var msg: []const u8 = "z9play: cannot locate the audio granule\n";
-            std.io.write(msg);
-            std.os.exit(3);
-            return;
-        };
-        var vc: *player.VorbisCtx = player.vorbisCreate(&darena, &scratch, packets, setup, state, 3, id.sample_rate, id.channels, last) catch {
-            var msg: []const u8 = "z9play: cannot initialize the player decoder\n";
-            std.io.write(msg);
-            std.os.exit(3);
-            return;
-        };
         var decv: player.Decoder = undefined;
-        decoder.decoderOpenVorbis(&decv, vc);
+        var sr: u32 = 0;
+        var chn: u8 = 0;
+        var fdec: flac.FlacDecoder = undefined;
+        if (is_flac) {
+            fdec = flac.open(&darena, data) catch {
+                var msg: []const u8 = "z9play: corrupt or unsupported FLAC stream\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            };
+            sr = fdec.sample_rate;
+            chn = fdec.channels;
+            decoder.decoderOpenFlac(&decv, &fdec);
+        } else {
+            if (packets.len < 3) {
+                var msg: []const u8 = "z9play: missing Vorbis setup header\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            }
+
+            var setup: vs.Setup = vs.parseSetup(&darena, packets[2].bytes, @intCast(u32, id.channels)) catch {
+                var msg: []const u8 = "z9play: bad Vorbis setup header\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            };
+            var state: dec.DecoderState = dec.initDecoderState(&darena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
+                var msg: []const u8 = "z9play: cannot initialize the decoder\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            };
+            var last: u64 = ogg.lastGranule(&arena, data) catch {
+                var msg: []const u8 = "z9play: cannot locate the audio granule\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            };
+            var vc: *player.VorbisCtx = player.vorbisCreate(&darena, &scratch, packets, setup, state, 3, id.sample_rate, id.channels, last) catch {
+                var msg: []const u8 = "z9play: cannot initialize the player decoder\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            };
+            sr = id.sample_rate;
+            chn = id.channels;
+            decoder.decoderOpenVorbis(&decv, vc);
+        }
 
         wav.setOutputPath(args.out_path);
-        var actx: *void = wav.open(id.sample_rate, id.channels) catch {
+        var actx: *void = wav.open(sr, chn) catch {
             var msg: []const u8 = "z9play: cannot open the WAV sink\n";
             std.io.write(msg);
             std.os.exit(2);
@@ -579,39 +613,60 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // the WAV sink, so the loop paces itself against `std.time.ticksMs()`
     // instead of relying on the device for real time.
     if (args.mode == cli.MODE_PLAY) {
-        if (packets.len < 3) {
-            var msg: []const u8 = "z9play: missing Vorbis setup header\n";
-            std.io.write(msg);
-            std.os.exit(3);
-            return;
-        }
-
         // Decode chain backing stores (same as --wav) + the container comment
         // for the startup metadata line.
         var darena = std.arena.init(dec_arena_buf[0..]);
         var scratch = std.arena.init(wav_scratch_buf[0..]);
         var par = std.arena.init(wav_player_buf[0..]);
 
-        var comment: vi.Comment = vi.parseComment(&arena, packets[1].bytes) catch {
-            var msg: []const u8 = "z9play: bad Vorbis comment header\n";
-            std.io.write(msg);
-            std.os.exit(3);
-            return;
-        };
-        var last: u64 = ogg.lastGranule(&arena, data) catch {
-            var msg: []const u8 = "z9play: cannot locate the audio granule\n";
-            std.io.write(msg);
-            std.os.exit(3);
-            return;
-        };
-        var dur_ms: u64 = ogg.durationMs(last, id.sample_rate);
+        var sr: u32 = 0;
+        var chn: u8 = 0;
+        var dur_ms: u64 = 0;
+        var title_val: []const u8 = "";
+        var artist_val: []const u8 = "";
+        var album_val: []const u8 = "";
 
-        var k_title: []const u8 = "TITLE";
-        var k_artist: []const u8 = "ARTIST";
-        var k_album: []const u8 = "ALBUM";
-        var title_val: []const u8 = tagValue(comment.tags, k_title);
-        var artist_val: []const u8 = tagValue(comment.tags, k_artist);
-        var album_val: []const u8 = tagValue(comment.tags, k_album);
+        if (is_flac) {
+            var finfo: flac.FlacDecoder = flac.open(&arena, data) catch {
+                var msg: []const u8 = "z9play: corrupt or unsupported FLAC stream\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            };
+            sr = finfo.sample_rate;
+            chn = finfo.channels;
+            if (sr > 0) dur_ms = finfo.total_frames * 1000 / @intCast(u64, sr);
+        } else {
+            if (packets.len < 3) {
+                var msg: []const u8 = "z9play: missing Vorbis setup header\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            }
+            var comment: vi.Comment = vi.parseComment(&arena, packets[1].bytes) catch {
+                var msg: []const u8 = "z9play: bad Vorbis comment header\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            };
+            var last: u64 = ogg.lastGranule(&arena, data) catch {
+                var msg: []const u8 = "z9play: cannot locate the audio granule\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            };
+            sr = id.sample_rate;
+            chn = id.channels;
+            dur_ms = ogg.durationMs(last, sr);
+
+            var k_title: []const u8 = "TITLE";
+            var k_artist: []const u8 = "ARTIST";
+            var k_album: []const u8 = "ALBUM";
+            title_val = tagValue(comment.tags, k_title);
+            artist_val = tagValue(comment.tags, k_artist);
+            album_val = tagValue(comment.tags, k_album);
+        }
+
         var title_opt: ?[]const u8 = null;
         if (title_val.len > 0) title_opt = title_val;
         var artist_opt: ?[]const u8 = null;
@@ -634,7 +689,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var real_ao: audio.AudioOut = undefined;
         if (use_wav) {
             wav.setOutputPath(env_path);
-            real_ctx = wav.open(id.sample_rate, id.channels) catch {
+            real_ctx = wav.open(sr, chn) catch {
                 var msg: []const u8 = "z9play: cannot open the WAV sink\n";
                 std.io.write(msg);
                 std.os.exit(4);
@@ -642,7 +697,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             };
             real_ao = audio.AudioOut{ .open_fn = wav.open, .write_fn = wav.write, .close_fn = wav.close, .drain_fn = wav.drain, .state = real_ctx };
         } else if (@isWindows()) {
-            real_ctx = awin.open(id.sample_rate, id.channels) catch {
+            real_ctx = awin.open(sr, chn) catch {
                 var msg: []const u8 = "z9play: cannot open the audio device\n";
                 std.io.write(msg);
                 std.os.exit(4);
@@ -650,7 +705,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             };
             real_ao = audio.AudioOut{ .open_fn = awin.open, .write_fn = awin.write, .close_fn = awin.close, .drain_fn = awin.drain, .state = real_ctx };
         } else {
-            real_ctx = oss.open(id.sample_rate, id.channels) catch {
+            real_ctx = oss.open(sr, chn) catch {
                 var msg: []const u8 = "z9play: cannot open the audio device\n";
                 std.io.write(msg);
                 std.os.exit(4);
@@ -678,9 +733,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var mbuf: [fmt.MMSS_MAX]u8 = undefined;
         std.io.write(fmt.mmss(mbuf[0..], dur_ms));
         writeText("  ");
-        writeU64(@intCast(u64, id.channels));
+        writeU64(@intCast(u64, chn));
         writeText("ch ");
-        writeU64(@intCast(u64, id.sample_rate));
+        writeU64(@intCast(u64, sr));
         writeText("Hz\n");
 
         // Assemble the platform `Console` vtable from the backend's public free
@@ -733,20 +788,33 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.arena.reset(&scratch);
             std.arena.reset(&par);
 
-            var setup: vs.Setup = vs.parseSetup(&darena, packets[2].bytes, @intCast(u32, id.channels)) catch {
-                playFail(&cs, "z9play: bad Vorbis setup header\n", 3);
-                return;
-            };
-            var state: dec.DecoderState = dec.initDecoderState(&darena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
-                playFail(&cs, "z9play: cannot initialize the decoder\n", 3);
-                return;
-            };
-            var vc: *player.VorbisCtx = player.vorbisCreate(&darena, &scratch, packets, setup, state, 3, id.sample_rate, id.channels, last) catch {
-                playFail(&cs, "z9play: cannot initialize the player decoder\n", 3);
-                return;
-            };
             var decv: player.Decoder = undefined;
-            decoder.decoderOpenVorbis(&decv, vc);
+            var fdec: flac.FlacDecoder = undefined;
+            if (is_flac) {
+                fdec = flac.open(&darena, data) catch {
+                    playFail(&cs, "z9play: corrupt or unsupported FLAC stream\n", 3);
+                    return;
+                };
+                decoder.decoderOpenFlac(&decv, &fdec);
+            } else {
+                var setup: vs.Setup = vs.parseSetup(&darena, packets[2].bytes, @intCast(u32, id.channels)) catch {
+                    playFail(&cs, "z9play: bad Vorbis setup header\n", 3);
+                    return;
+                };
+                var state: dec.DecoderState = dec.initDecoderState(&darena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
+                    playFail(&cs, "z9play: cannot initialize the decoder\n", 3);
+                    return;
+                };
+                var last: u64 = ogg.lastGranule(&arena, data) catch {
+                    playFail(&cs, "z9play: cannot locate the audio granule\n", 3);
+                    return;
+                };
+                var vc: *player.VorbisCtx = player.vorbisCreate(&darena, &scratch, packets, setup, state, 3, id.sample_rate, id.channels, last) catch {
+                    playFail(&cs, "z9play: cannot initialize the player decoder\n", 3);
+                    return;
+                };
+                decoder.decoderOpenVorbis(&decv, vc);
+            }
 
             g_mix_vol = vol;
             var first_ao: *const audio.AudioOut = &mix_ao;

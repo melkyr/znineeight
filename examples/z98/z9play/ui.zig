@@ -13,6 +13,7 @@ const cwin = @import("platform/console_win9x.zig");
 const contract = @import("platform/console.zig");
 const fmt = @import("fmt.zig");
 const decoder = @import("decoder.zig");
+const flac = @import("flac.zig");
 const player = @import("player.zig");
 
 const WIDTH: usize = 80;
@@ -83,6 +84,7 @@ var g_mix_vol: u8 = 80;
 var g_real: audio.AudioOut = undefined;
 var g_mix_ao: audio.AudioOut = undefined;
 var g_decoder: player.Decoder = undefined;
+var g_flac: flac.FlacDecoder = undefined;
 var g_player: player.Player = undefined;
 
 fn fillSpaces(buf: []u8) void {
@@ -486,42 +488,68 @@ fn playTrack(path: []const u8) bool {
         setStatus("cannot open track");
         return false;
     };
-    var packets: []ogg.Packet = ogg.reassemble(&g_file_arena, data) catch {
-        setStatus("not an OGG Vorbis stream");
-        return false;
-    };
-    if (packets.len < 3) {
-        setStatus("missing Vorbis headers");
-        return false;
+    var kind: u8 = decoder.detectKind(data);
+    var sr: u32 = 0;
+    var chn: u8 = 0;
+    var title_val: []const u8 = "";
+    var artist_val: []const u8 = "";
+    var album_val: []const u8 = "";
+
+    if (kind == decoder.KIND_FLAC) {
+        g_flac = flac.open(&g_dec_arena, data) catch {
+            setStatus("corrupt or unsupported FLAC stream");
+            return false;
+        };
+        sr = g_flac.sample_rate;
+        chn = g_flac.channels;
+        decoder.decoderOpenFlac(&g_decoder, &g_flac);
+    } else {
+        var packets: []ogg.Packet = ogg.reassemble(&g_file_arena, data) catch {
+            setStatus("not an OGG Vorbis stream");
+            return false;
+        };
+        if (packets.len < 3) {
+            setStatus("missing Vorbis headers");
+            return false;
+        }
+        var id: vi.IdHeader = vi.parseId(packets[0].bytes) catch {
+            setStatus("bad Vorbis identification header");
+            return false;
+        };
+        var comment: vi.Comment = vi.parseComment(&g_file_arena, packets[1].bytes) catch {
+            setStatus("bad Vorbis comment header");
+            return false;
+        };
+        var last: u64 = ogg.lastGranule(&g_file_arena, data) catch {
+            setStatus("cannot locate the audio granule");
+            return false;
+        };
+        var setup: vs.Setup = vs.parseSetup(&g_dec_arena, packets[2].bytes, @intCast(u32, id.channels)) catch {
+            setStatus("bad Vorbis setup header");
+            return false;
+        };
+        var state: dec.DecoderState = dec.initDecoderState(&g_dec_arena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
+            setStatus("cannot initialize the decoder");
+            return false;
+        };
+        var vc: *player.VorbisCtx = player.vorbisCreate(&g_dec_arena, &g_scratch_arena, packets, setup, state, 3, id.sample_rate, id.channels, last) catch {
+            setStatus("cannot initialize the player decoder");
+            return false;
+        };
+
+        sr = id.sample_rate;
+        chn = id.channels;
+        decoder.decoderOpenVorbis(&g_decoder, vc);
+
+        var k_title: []const u8 = "TITLE";
+        var k_artist: []const u8 = "ARTIST";
+        var k_album: []const u8 = "ALBUM";
+        title_val = tagValue(comment.tags, k_title);
+        artist_val = tagValue(comment.tags, k_artist);
+        album_val = tagValue(comment.tags, k_album);
     }
-    var id: vi.IdHeader = vi.parseId(packets[0].bytes) catch {
-        setStatus("bad Vorbis identification header");
-        return false;
-    };
-    var comment: vi.Comment = vi.parseComment(&g_file_arena, packets[1].bytes) catch {
-        setStatus("bad Vorbis comment header");
-        return false;
-    };
-    var last: u64 = ogg.lastGranule(&g_file_arena, data) catch {
-        setStatus("cannot locate the audio granule");
-        return false;
-    };
-    var setup: vs.Setup = vs.parseSetup(&g_dec_arena, packets[2].bytes, @intCast(u32, id.channels)) catch {
-        setStatus("bad Vorbis setup header");
-        return false;
-    };
-    var state: dec.DecoderState = dec.initDecoderState(&g_dec_arena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
-        setStatus("cannot initialize the decoder");
-        return false;
-    };
-    var vc: *player.VorbisCtx = player.vorbisCreate(&g_dec_arena, &g_scratch_arena, packets, setup, state, 3, id.sample_rate, id.channels, last) catch {
-        setStatus("cannot initialize the player decoder");
-        return false;
-    };
 
-    decoder.decoderOpenVorbis(&g_decoder, vc);
-
-    if (!openBackend(id.sample_rate, id.channels)) {
+    if (!openBackend(sr, chn)) {
         setStatus("cannot open audio output");
         return false;
     }
@@ -532,13 +560,6 @@ fn playTrack(path: []const u8) bool {
         .drain_fn = mixDrain,
         .state = g_real.state,
     };
-
-    var k_title: []const u8 = "TITLE";
-    var k_artist: []const u8 = "ARTIST";
-    var k_album: []const u8 = "ALBUM";
-    var title_val: []const u8 = tagValue(comment.tags, k_title);
-    var artist_val: []const u8 = tagValue(comment.tags, k_artist);
-    var album_val: []const u8 = tagValue(comment.tags, k_album);
     var title_opt: ?[]const u8 = null;
     if (title_val.len > 0) title_opt = title_val;
     var artist_opt: ?[]const u8 = null;
