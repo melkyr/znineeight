@@ -208,11 +208,15 @@ API byte-stable (existing callers: `stdlib_test/map_sort_heap_usage`, 6
 - Layout: keep AoS `entries` with field names `state`/`key`/`val` (fixtures
   read them: `stdlib_map_determinism_xmod`); `state` byte uses the ctrl
   encoding `0x80` empty, `0xFE` deleted-reserved, `0x00..0x7F` = 7-bit hash
-  fragment; add `dist: u8` (probe distance) per entry.
-- Probe distance `u8` (blueprint §3.4 bound); load factor ≤ 0.75; `Put`
-  still `error.OutOfMemory` at caller `capacity` (semantics preserved:
-  `Init`'s `capacity` = max entries; internal slots = next pow2 ≥
-  `capacity`/0.75); hash keeps existing `mix32`/string mix; index by mask.
+  fragment. No distance field is stored.
+- Probe distance is computed on demand as `(slot - home) & mask` during
+  Robin Hood compare and backward-shift; no distance field is stored. (Operator
+  ruling 2026-10-19: the blueprint's u8 'provably < 255' claim is false under
+  same-home clustering; a stored u8 wraps at 256 and strands keys.)
+- Load factor ≤ 0.75; `Put` still `error.OutOfMemory` at caller `capacity`
+  (semantics preserved: `Init`'s `capacity` = max entries; internal slots =
+  next pow2 ≥ `capacity`/0.75); hash keeps existing `mix32`/string mix; index
+  by mask.
 - Determinism (R6): slot placement a pure function of key/capacity/ops
   sequence. **Goldens default: byte-identical** (they are assert-summary
   strings, no slot dumps). Multiset re-record is last resort only — any
