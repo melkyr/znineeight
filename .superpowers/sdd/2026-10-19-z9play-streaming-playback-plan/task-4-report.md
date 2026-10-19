@@ -236,3 +236,108 @@ NO_MEDIA_WHOLE_FILE_CALLS
    tag slices stay in the persistent arena.
 4. **Win9x hardware verification** remains operator-pending; the `-osw`
    emit/link and PE/import checks pass inside `tier_flac`/`tier_tui`.
+
+---
+
+## 5. Fix round 1 (post-review)
+
+**Code commit:** `688b5c9d` `fix(z9play): stream --pcm decode scratch`.
+
+### 5.1 C1 — `--pcm` per-packet scratch
+
+`main.zig` now has a dedicated module-global `pcm_scratch_buf` (8 MiB). The
+`--pcm` mode initializes `darena` (persistent setup/state/context/fixed output
+buffers) and a separate `scratch` arena, then resets `scratch` immediately
+before every `dec.decodePacket` call:
+
+```zig
+std.arena.reset(&scratch);
+var f: usize = dec.decodePacket(&scratch, setup, &state, packet, tmp) ...
+```
+
+`darena` is never reset in `--pcm`. Output bytes, granule trim, WAV header
+patching and all failure cleanup are unchanged.
+
+Exact fixture check after the fix:
+
+```text
+$ /tmp/m7_t5_seed2/zig1_5_clean -fsafe -o /tmp/m9t4_fix \
+      examples/z98/z9play/main.zig
+$ sh /tmp/m9t4_fix/build_target.sh linux /tmp/m9t4_fix/prog
+$ /tmp/m9t4_fix/prog --pcm \
+      examples/z98/z9play/testdata/sine_stereo_44100.ogg \
+      /tmp/m9t4_fix/out.wav
+rc=0
+352844 /tmp/m9t4_fix/out.wav
+e7f24870ec03b924be1b8e55a1962fb3  /tmp/m9t4_fix/out.wav
+$ cmp /tmp/m9t4_fix/out.wav /tmp/m9t4_old/out.wav
+MATCHES_PRE_TASK
+```
+
+Large-file smoke on the operator track
+(`lin_bin/01. 霜月はるか — ユメノハテニ.ogg`, 8,205,755 bytes):
+
+```text
+$ time timeout 300 /tmp/m9t4_fix/prog --pcm \
+      "lin_bin/01. 霜月はるか — ユメノハテニ.ogg" \
+      /tmp/m9t4_fix/operator.wav
+real 5m0.001s
+rc=124                      (timeout, not a decoder error)
+$ ls -l /tmp/m9t4_fix/operator.wav
+14803756 bytes
+```
+
+The run wrote 14.8 MB of PCM (well past the ~1,200-packet failure point) with
+no `corrupt or unsupported audio packet` message before the 5-minute timeout.
+Full-track completion was not practical in this fix round.
+
+### 5.2 I1 — committed `--pcm` byte-exact regression pin
+
+`tests/tier_decode.sh` now runs a dedicated exact check after the tolerance
+loop, using the pre-streaming output pin (not the libvorbis `.pcm` oracle):
+
+```sh
+EXACT_MD5="e7f24870ec03b924be1b8e55a1962fb3"
+EXACT_SIZE=352844
+"$PROG" --pcm "$FIXDIR/sine_stereo_44100.ogg" "$EXACT_WAV"
+```
+
+The check asserts rc 0, exact file size, and exact md5.
+
+### 5.3 Fix-round tier results
+
+```text
+$ ZIG=/tmp/m7_t5_seed2/zig1_5_clean OUT=/tmp/z9play_tier_decode_t4fix \
+      sh examples/z98/z9play/tests/tier_decode.sh
+ok   - sine_stereo_44100: --pcm byte-exact pin (md5=e7f24870... size=352844)
+== tier_decode summary: 25 passed, 0 failed ==
+TIER_DECODE PASS                       (rc=0)
+
+$ ZIG=/tmp/m7_t5_seed2/zig1_5_clean OUT=/tmp/z9play_tier_info_t4fix \
+      sh examples/z98/z9play/tests/tier_info.sh
+== tier_info summary: 20 passed, 0 failed ==       (rc=0)
+
+$ ZIG=/tmp/m7_t5_seed2/zig1_5_clean OUT=/tmp/z9play_tier_setup_t4fix \
+      sh examples/z98/z9play/tests/tier_setup.sh
+== tier_setup summary: 21 passed, 0 failed ==      (rc=0)
+
+$ ZIG=/tmp/m7_t5_seed2/zig1_5_clean OUT=/tmp/z9play_tier_cli_t4fix \
+      sh examples/z98/z9play/tests/tier_cli.sh
+== tier_cli summary: 23 passed, 0 failed ==        (rc=0)
+
+$ ZIG=/tmp/m7_t5_seed2/zig1_5_clean OUT=/tmp/z9play_tier_tui_t4fix \
+      sh examples/z98/z9play/tests/tier_tui.sh
+== tier_tui summary: 40 passed, 0 failed ==        (rc=0)
+
+$ ZIG=/tmp/m7_t5_seed2/zig1_5_clean OUT=/tmp/z9play_tier_audio_t4fix \
+      sh examples/z98/z9play/tests/tier_audio.sh
+== tier_audio summary: 27 passed, 0 failed ==      (rc=0)
+
+$ ZIG=/tmp/m7_t5_seed2/zig1_5_clean OUT=/tmp/z9play_tier_flac_t4fix \
+      sh examples/z98/z9play/tests/tier_flac.sh
+== tier_flac summary: 59 passed, 0 failed ==       (rc=0)
+```
+
+New dump pins observed in the fix round: `main.zig`
+`23f9b5ec0f8e69fe48e9b5598719ced7`, `ui.zig`
+`e4fd8ece958d554a426cf59e47943bd0` (both stable 2x).
