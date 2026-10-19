@@ -4,8 +4,10 @@
 // `--crosscheck` reads `seed stream count` per line (decimal u64, u64, u32)
 // and prints two lines per input: `count` space-separated lowercase hex u32
 // PCG32 outputs, then `count` space-separated 16-digit lowercase hex
-// xoshiro256** outputs. The C89 reference at scripts/stdlib/ref/std_rand/ref.c
-// implements the same protocol.
+// xoshiro256** outputs. A `bounded seed stream bound count` line (decimal
+// u64, u64, u32, u32) instead prints one line of `count` lowercase hex u32
+// `pcg32Bounded` outputs. The C89 reference at
+// scripts/stdlib/ref/std_rand/ref.c implements the same protocol.
 const std = @import("std");
 const os = @import("std_os.zig");
 const stdin = @import("std_stdin.zig");
@@ -71,46 +73,66 @@ fn writeHexPadded(v: u64, digits: usize) void {
     std.io.write(buf[0..digits]);
 }
 
+fn nextToken(line: []const u8, pos: *usize) ?[]const u8 {
+    var i: usize = pos.*;
+    while (i < line.len and isWs(line[i])) : (i += 1) {}
+    if (i >= line.len) {
+        pos.* = i;
+        return null;
+    }
+    var j: usize = i;
+    while (j < line.len and !isWs(line[j])) : (j += 1) {}
+    pos.* = j;
+    return line[i..j];
+}
+
 fn crossMain() void {
     var buf: [512]u8 = undefined;
     while (true) {
         const line_opt = stdin.readLine(buf[0..]) catch @panic("crosscheck read");
         if (line_opt) |line| {
-            var i: usize = 0;
-            while (i < line.len and isWs(line[i])) : (i += 1) {}
-            var j: usize = i;
-            while (j < line.len and !isWs(line[j])) : (j += 1) {}
-            if (j == i) @panic("crosscheck parse seed");
-            var k: usize = j;
-            while (k < line.len and isWs(line[k])) : (k += 1) {}
-            var m: usize = k;
-            while (m < line.len and !isWs(line[m])) : (m += 1) {}
-            if (m == k) @panic("crosscheck parse stream");
-            var n: usize = m;
-            while (n < line.len and isWs(line[n])) : (n += 1) {}
-            var q: usize = n;
-            while (q < line.len and !isWs(line[q])) : (q += 1) {}
-            if (q == n) @panic("crosscheck parse count");
+            var pos: usize = 0;
+            const first = nextToken(line[0..], &pos) orelse @panic("crosscheck empty line");
+            if (sliceEq(first, "bounded")) {
+                const seed_s = nextToken(line[0..], &pos) orelse @panic("crosscheck seed");
+                const stream_s = nextToken(line[0..], &pos) orelse @panic("crosscheck stream");
+                const bound_s = nextToken(line[0..], &pos) orelse @panic("crosscheck bound");
+                const count_s = nextToken(line[0..], &pos) orelse @panic("crosscheck count");
+                const seed = parse.parseUint64(seed_s) orelse @panic("crosscheck seed");
+                const stream = parse.parseUint64(stream_s) orelse @panic("crosscheck stream");
+                const bound = parse.parseUint(bound_s) orelse @panic("crosscheck bound");
+                const count = parse.parseUint(count_s) orelse @panic("crosscheck count");
 
-            const seed = parse.parseUint64(line[i..j]) orelse @panic("crosscheck seed");
-            const stream = parse.parseUint64(line[k..m]) orelse @panic("crosscheck stream");
-            const count = parse.parseUint(line[n..q]) orelse @panic("crosscheck count");
+                var bp = rand.pcg32Init(seed, stream);
+                var bz: u32 = 0;
+                while (bz < count) : (bz += 1) {
+                    if (bz != 0) std.io.write(" ");
+                    writeHexU32(rand.pcg32Bounded(&bp, bound));
+                }
+                std.io.write("\n");
+            } else {
+                const stream_s = nextToken(line[0..], &pos) orelse @panic("crosscheck stream");
+                const count_s = nextToken(line[0..], &pos) orelse @panic("crosscheck count");
+                const seed = parse.parseUint64(first) orelse @panic("crosscheck seed");
+                const stream = parse.parseUint64(stream_s) orelse @panic("crosscheck stream");
+                const count = parse.parseUint(count_s) orelse @panic("crosscheck count");
 
-            var p = rand.pcg32Init(seed, stream);
-            var z: u32 = 0;
-            while (z < count) : (z += 1) {
-                if (z != 0) std.io.write(" ");
-                writeHexU32(rand.pcg32Next(&p));
+                var p = rand.pcg32Init(seed, stream);
+                var z: u32 = 0;
+                while (z < count) : (z += 1) {
+                    if (z != 0) std.io.write(" ");
+                    writeHexU32(rand.pcg32Next(&p));
+                }
+                std.io.write("\n");
+
+                var x = rand.xoshiroInit(seed);
+                z = 0;
+                while (z < count) : (z += 1) {
+                    if (z != 0) std.io.write(" ");
+                    writeHexPadded(rand.xoshiroNext(&x), 16);
+                }
+                std.io.write("\n");
             }
-            std.io.write("\n");
-
-            var x = rand.xoshiroInit(seed);
-            z = 0;
-            while (z < count) : (z += 1) {
-                if (z != 0) std.io.write(" ");
-                writeHexPadded(rand.xoshiroNext(&x), 16);
-            }
-            std.io.write("\n");
         } else {
             break;
         }

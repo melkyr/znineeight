@@ -6,7 +6,9 @@
 //   - serial Pearson r over consecutive u32s, pass iff |r| < 0.01;
 //   - 2^20 pcg32Bounded(7) draws: every draw < 7, bucket chi-squared
 //     < 16.81 (df=6, p=0.01);
-//   - pcg32Bounded(1) is always 0.
+//   - pcg32Bounded(1) is always 0;
+//   - xoshiroBounded bounds 2^63 and 2^64-1: every draw < bound;
+//     xoshiroBounded(1) is always 0.
 //
 // GREEN (contract): byte-exact stdout `rand stat ok\n` and RUNRC=0.
 const std = @import("std");
@@ -95,6 +97,21 @@ pub fn main() void {
     i = 0;
     while (i < 1000) : (i += 1) {
         ck(rand.pcg32Bounded(&one, 1) == 0, "bounded bound 1");
+    }
+
+    var bx = rand.xoshiroInit(SEED);
+    i = 0;
+    while (i < N) : (i += 1) {
+        ck(rand.xoshiroBounded(&bx, 9223372036854775808) < 9223372036854775808, "xoshiro bound 2^63");
+    }
+    i = 0;
+    while (i < N) : (i += 1) {
+        ck(rand.xoshiroBounded(&bx, 18446744073709551615) < 18446744073709551615, "xoshiro bound 2^64-1");
+    }
+    var xone = rand.xoshiroInit(SEED);
+    i = 0;
+    while (i < 1000) : (i += 1) {
+        ck(rand.xoshiroBounded(&xone, 1) == 0, "xoshiro bound 1");
     }
 
     std.io.write("rand stat ok\n");

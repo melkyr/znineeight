@@ -5,6 +5,9 @@
  * u32); two output lines per input:
  *   line 1: `count` lowercase hex u32 PCG32 outputs, single-space separated
  *   line 2: `count` lowercase hex u64 xoshiro256** outputs, 16 digits each
+ * A `bounded seed stream bound count` line (decimal u64, u64, u32, u32) prints
+ * one line of `count` lowercase hex u32 `pcg32Bounded` outputs (same rejection
+ * sampling as the Z98 module).
  * With `--kat`, prints the KAT fixture's golden: 100 PCG32 outputs (8 hex
  * digits, one per line), 100 xoshiro256** outputs (16 hex digits, one per
  * line), then `rand kat ok`.
@@ -56,6 +59,16 @@ static u32 pcg32_next(Pcg32 *r)
     xorshifted = (u32)(((old >> 18) ^ old) >> 27);
     rot = (u32)(old >> 59);
     return (xorshifted >> rot) | (xorshifted << ((32u - rot) & 31u));
+}
+
+static u32 pcg32_bounded(Pcg32 *r, u32 bound)
+{
+    u64 b64 = (u64)bound;
+    u32 threshold = (u32)(((1ULL << 32) - b64) % b64);
+    for (;;) {
+        u32 v = pcg32_next(r);
+        if ((u64)v >= (u64)threshold) return v % bound;
+    }
 }
 
 static Xoshiro256 xoshiro_init(u64 seed)
@@ -134,6 +147,25 @@ int main(int argc, char **argv)
         u32 i;
         Pcg32 p;
         Xoshiro256 x;
+        while (line[pos] == ' ' || line[pos] == '\t') pos++;
+        if (line[pos] == 'b') {
+            u64 bound64;
+            u32 bound;
+            pos += 7; /* "bounded" */
+            if (!parse_u64(line, &pos, &seed)) continue;
+            if (!parse_u64(line, &pos, &stream)) continue;
+            if (!parse_u64(line, &pos, &bound64)) continue;
+            if (!parse_u64(line, &pos, &count64)) continue;
+            count = (u32)count64;
+            bound = (u32)bound64;
+            p = pcg32_init(seed, stream);
+            for (i = 0; i < count; i++) {
+                if (i != 0) putchar(' ');
+                printf("%x", pcg32_bounded(&p, bound));
+            }
+            putchar('\n');
+            continue;
+        }
         if (!parse_u64(line, &pos, &seed)) continue;
         if (!parse_u64(line, &pos, &stream)) continue;
         if (!parse_u64(line, &pos, &count64)) continue;
