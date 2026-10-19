@@ -2,7 +2,7 @@
 
 Status: DONE
 Commit (a): `0be9ae82` refactor(std_map): Robin Hood + backward-shift deletion (M1)
-Commit (b): recorded below.
+Commit (b): `8e0a47f6` docs(sdd): M1 T3 report
 
 ## What changed
 
@@ -109,3 +109,99 @@ None blocking. The new invariants fixture also passed on the old tombstone
 implementation, so it is a forward-looking invariant pin rather than a
 pre-upgrade failing test; all required legs pass under the new implementation
 and all existing goldens are unchanged.
+
+## Fix round 1
+
+Operator ruling A: no stored distance. Base `8e0a47f6`; round-0 commit (b) SHA
+is `8e0a47f6` (now recorded above as well).
+
+### What changed
+
+- `sf/src/std_map.zig`: dropped `dist: u8` from all three entry structs.
+  Probe distance is now computed on demand per map as
+  `(slot - home) & mask` (`dist32x32` / `dist32Ptr` / `distStrPtr`), using
+  `mix32(key)` for integer maps and `hashBytes(key)` for the string map.
+  Insertion carries `(key, val, state, dist)` and swaps against the occupant's
+  on-demand distance; backward-shift stops on empty or on-demand distance 0.
+  No stored-distance updates remain. Ctrl-state encoding, capacity semantics,
+  string-copy timing, `mask` indexing, and slot sizing are unchanged.
+- `docs/superpowers/specs/...design.md` §6.2: layout bullet no longer adds a
+  distance field; probe-distance bullet now states on-demand computation and
+  records the operator ruling (u8 wraps at 256 under same-home clustering).
+  Ctrl encoding and load-factor bullets retained.
+- `stdlib_map_robinhood_xmod`: added an adversarial same-home cluster
+  (fixture-side `mix32`; 257 keys sharing one home slot in a capacity-300 map;
+  insert all, check all, delete the head, check every survivor and the deleted
+  key) and steady-state/post-deletion ctrl-byte assertions over `0..mask`
+  (each slot `0x80` or `<= 0x7F`, fragment equals the record's own hash
+  fragment, `0xFE` absent).
+- `stdlib_map_determinism_xmod` header: corrected coverage-bound wording — the
+  loop compares slots `0..capacity`, while the internal slot array is larger;
+  it does not compare every internal slot.
+
+### Evidence
+
+Old u8 implementation, copied from `0be9ae82` into a scratch compiler lib,
+against the updated fixture:
+
+```
+$ <emit/build updated fixture with /tmp/m1_t3_u8/zig1_5_clean>
+panic: adversarial survivor
+OLD_U8_RC=133
+```
+
+New implementation, rebuilt compiler:
+
+```
+$ FIXED_POINT_MD5=b299b4b435e624d0ddbd2edde681cbc3 \
+    bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m1_t3_seed
+[seed] two-hop closure OK: hop1 == hop2 == b299b4b435e624d0ddbd2edde681cbc3
+[seed] recorded fixed point OK: b299b4b435e624d0ddbd2edde681cbc3
+$ cmp sf/src/std_map.zig /tmp/m1_t3_seed/lib/std_map.zig
+(no output; match)
+```
+
+Targeted map fixtures (new adversarial fixture passes):
+
+```
+$ bash scripts/stdlib/run_fixtures.sh /tmp/m1_t3_seed/zig1_5_clean \
+    stdlib_map_{map32x32,map32ptr,mapstrptr,oom,stress,determinism,robinhood}_xmod \
+    stdlib_test/map_sort_heap_usage
+run_fixtures: 8 PASS / 0 FAIL over 8 dirs
+```
+
+Capacity 0/1/2/3 + full-capacity replace scratch check:
+
+```
+$ <emit/build/run /tmp/t3_caps/main.zig with /tmp/m1_t3_seed/zig1_5_clean>
+map caps ok
+CAPS_RC=0
+```
+
+Determinism 3x (explicit):
+
+```
+$ <emit/build determinism fixture>
+$ /tmp/t3det/prog > r1; /tmp/t3det/prog > r2; /tmp/t3det/prog > r3
+$ cmp r1 r2 && cmp r1 r3 && cmp r1 expected.txt
+map determinism ok
+```
+
+Full gate:
+
+```
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/m1_t3_seed/zig1_5_clean
+run_fixtures: 292 PASS / 0 FAIL over 292 dirs
+run_crosscheck: 2 PASS / 0 FAIL over 2 modules
+STDLIB GATE OK
+GATE_RC=0
+```
+
+Existing map goldens remained byte-identical; `map_sort_heap_usage` unchanged.
+No unrelated files touched; `run.err` untouched and unstaged. No push.
+
+### Commits
+
+- (a) `fix(std_map): on-demand probe distance (no u8 wrap)`
+- (b) `docs(spec): std_map distance computed on demand`
+- (c) `docs(sdd): M1 T3 fix round 1` (this append)
