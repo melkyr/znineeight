@@ -70,10 +70,13 @@ show_mismatch() {
 
 driver_dir_for() {
   local module="$1"
+  local short="${module#std_}"
   if [ -d "$ROOT/repro/mi_matrix/stdlib_${module}_cross_xmod" ]; then
     printf '%s' "$ROOT/repro/mi_matrix/stdlib_${module}_cross_xmod"
   elif [ -d "$ROOT/repro/mi_matrix/stdlib_cross_${module}_xmod" ]; then
     printf '%s' "$ROOT/repro/mi_matrix/stdlib_cross_${module}_xmod"
+  elif [ "$short" != "$module" ] && [ -d "$ROOT/repro/mi_matrix/stdlib_${short}_cross_xmod" ]; then
+    printf '%s' "$ROOT/repro/mi_matrix/stdlib_${short}_cross_xmod"
   fi
 }
 

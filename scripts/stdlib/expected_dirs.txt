@@ -201,6 +201,10 @@ repro/mi_matrix/stdlib_pub_visibility_ok_xmod
 repro/mi_matrix/stdlib_ptr_array_slice_ok_xmod
 repro/mi_matrix/stdlib_ptrarray_for_ok_xmod
 repro/mi_matrix/stdlib_ptrslice_ok_xmod
+repro/mi_matrix/stdlib_rand_advance_xmod
+repro/mi_matrix/stdlib_rand_cross_xmod
+repro/mi_matrix/stdlib_rand_kat_xmod
+repro/mi_matrix/stdlib_rand_stat_xmod
 repro/mi_matrix/stdlib_rle_decode_xmod
 repro/mi_matrix/stdlib_rle_decodedlen_xmod
 repro/mi_matrix/stdlib_rle_determinism_xmod
