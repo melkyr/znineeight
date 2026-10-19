@@ -21,3 +21,5 @@ BASE at dispatch: 15ad012e448fd4628adad57bc57e21a711124a6e
 - Important I2: stale enumerations — archive_seed.sh:35 comment + SEED_README heredoc text (:162) still say "32 std .zig" and omit std_rand; QUICK_REF:208 install recipe and README:297 module list omit std_rand. Rotation at Task 4 would ship stale text.
 - Minors deferred: no committed regression for xoshiroBounded / bound==0 panics (reviewer probe only); expected_dirs global sort pre-existing-unclean (new entries placed correctly); run_crosscheck.sh touched by Task 2 (disclosed, needed for std_ prefix mapping).
 - STATUS: STOP-present to operator for I1/I2 ruling before Task 3.
+- Task 2: fix round 1 (08e161af bounded KAT + xoshiro range; 6f73eee5 enumerations; ab91e8d3 report): I1-A + I2-A ADDRESSED — scoped re-review PASS; modulo shortcut diverges line 1 of rejecting-bound vector; no new breakage. Minor deferred: build_from_seed.sh:24 comment still says "32 std .zig" (same class, outside enumerated I2-A list).
+- Task 2: complete (commits ea1f6b45..ab91e8d3, review clean).
