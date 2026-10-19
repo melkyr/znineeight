@@ -121,6 +121,7 @@
 - [ ] `vorbisCreate(persistent, scratch, stream, setup, state, sample_rate, channels, total_frames)`.
 - [ ] `vorbisNext`: `oggStreamNextPacket(c.stream)`; `null` → 0; decode packet; map `PacketTooLarge`/CRC/Truncated to `DecodeFailed`; reset scratch per packet.
 - [ ] `decoder.zig`: `decoderOpenVorbis(out, vc)` unchanged in shape; no packet array.
+- [ ] Minimal UI Vorbis call-site switch (authorized by the 2026-10-19 T4 sequencing ruling): in `ui.zig` `playTrack`, open an `OggStream` for OGG, consume the three headers, call `oggStreamLastGranule`, and create the stream-backed `VorbisCtx`; store the stream so it outlives `playTrack` and close it in `stopPlayback`/failure paths. Keep `readAll`, the file arena, and the FLAC path as-is in T4; Task 5 removes `readAll` and completes the arena/lifetime cleanup.
 - [ ] `main.zig`: replace the initial `readAll` with `BufferedFile`: read 4 bytes for `detectKind`, seek to 0, then dispatch.
 - [ ] OGG `--info`: stream id/comment/setup packets; parse tags/id; `oggStreamLastGranule`; print exactly as today.
 - [ ] OGG `--dump-setup`: stream the three headers; print counts; no audio.
