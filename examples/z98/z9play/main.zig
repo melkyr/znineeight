@@ -80,11 +80,15 @@ const player = @import("player.zig");
 // not sit on the 32-bit stack (~11 KiB fixtures need a small fraction of this).
 var arena_buf: [4 * 1024 * 1024]u8 = undefined;
 
-// Separate arena for `--pcm` decode scratch. Decoding a whole file builds the
-// codebook decode tables and the residue decoder's per-codeword vectors, which
-// accumulate over the stream; the read/reassembly arena above is reused for the
-// container and must stay intact. Module-global so it is off the 32-bit stack.
+// Separate arena for persistent decode state (setup tables, DecoderState, the
+// VorbisCtx and fixed output buffers). Module-global so it is off the 32-bit
+// stack.
 var dec_arena_buf: [16 * 1024 * 1024]u8 = undefined;
+
+// Per-packet decode scratch for `--pcm`. `dec.decodePacket` allocates residue
+// and codebook temporaries per call; resetting this arena before every packet
+// keeps memory bounded over long tracks (same pattern as `vorbisNext`).
+var pcm_scratch_buf: [8 * 1024 * 1024]u8 = undefined;
 
 // `--wav` (M4 Player) backing stores: `wav_scratch_buf` is the per-packet decode
 // scratch (reset by vorbisNext each packet, so it stays small); `wav_player_buf`
@@ -520,6 +524,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
     if (args.mode == cli.MODE_PCM) {
         var darena = std.arena.init(dec_arena_buf[0..]);
+        var scratch = std.arena.init(pcm_scratch_buf[0..]);
 
         var os: ogg_stream.OggStream = ogg_stream.oggStreamOpen(&arena, args.path) catch |e| {
             if (e == error.OutOfMemory) {
@@ -597,7 +602,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 return;
             };
             if (maybe) |packet| {
-                var f: usize = dec.decodePacket(&darena, setup, &state, packet, tmp) catch {
+                std.arena.reset(&scratch);
+                var f: usize = dec.decodePacket(&scratch, setup, &state, packet, tmp) catch {
                     ogg_stream.oggStreamClose(&os);
                     filemod.close(&outf);
                     var msg: []const u8 = "z9play: corrupt or unsupported audio packet\n";

@@ -168,6 +168,20 @@ for name in $FIXTURES; do
     fi
 done
 
+echo "== --pcm exact regression pin (pre-streaming output) =="
+EXACT_WAV="$OUT/sine_stereo_44100.exact.wav"
+EXACT_MD5="e7f24870ec03b924be1b8e55a1962fb3"
+EXACT_SIZE=352844
+"$PROG" --pcm "$FIXDIR/sine_stereo_44100.ogg" "$EXACT_WAV" >"$OUT/exact.out" 2>"$OUT/exact.err"
+rc=$?
+wsz=$(LC_ALL=C wc -c < "$EXACT_WAV" 2>/dev/null | tr -d ' ')
+hx=$(md5sum "$EXACT_WAV" 2>/dev/null | awk '{print $1}')
+if [ "$rc" -eq 0 ] && [ "$wsz" = "$EXACT_SIZE" ] && [ "$hx" = "$EXACT_MD5" ]; then
+    pass_case "sine_stereo_44100: --pcm byte-exact pin (md5=$hx size=$wsz)"
+else
+    fail_case "sine_stereo_44100: --pcm byte-exact pin (rc=$rc size=${wsz:-none} md5=${hx:-none})"
+fi
+
 echo "== exit codes: arguments =="
 "$PROG" --pcm >"$OUT/noout.out" 2>&1; rc=$?
 if [ "$rc" -eq 1 ]; then pass_case "--pcm without output path exit 1"; else fail_case "--pcm without output path exit 1 (got $rc)"; fi
