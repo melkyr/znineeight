@@ -103,6 +103,55 @@ peers, 7 TCP connects, 7 `handshake ok` (2 encrypted + 5 plaintext); the exact
 qBittorrent `reserved=0000000000180005` handshake now succeeds, and
 **~37.75 MiB (4.9 %) was fetched** before the bounded 100 s window.
 
+## Building for Windows 9x (seed v102)
+
+The default `-osw` profile is Win9x (95/98/Me) no-CRT. Rebuild seed v102 from
+`release/seed/zig1-seed.tgz` (archive md5
+`702f34d87b7e6bf401dd206d2517dbee`; fixed point
+`b299b4b435e624d0ddbd2edde681cbc3`) and emit with `-fsafe -osw`. The emitted
+mingw recipe links the no-CRT runtime and produces a single PE32 console EXE;
+no msvcrt.dll, no CRT redistributable.
+
+Client (`main.zig` → `z9torr.exe`):
+
+```bash
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9torr_seed
+mkdir -p /tmp/z9torr_win9x_build
+/tmp/z9torr_seed/zig1_5_clean -fsafe -osw -o /tmp/z9torr_win9x_build \
+    examples/z98/z9torr/main.zig
+sh /tmp/z9torr_win9x_build/build_target.sh mingw \
+    /tmp/z9torr_win9x_build/z9torr.exe
+```
+
+Import check (expected: PE32 i386, exactly KERNEL32 + WSOCK32, no msvcrt):
+
+```bash
+bash scripts/win32_cross/check_win9x_imports.sh \
+    /tmp/z9torr_win9x_build/z9torr.exe 9x
+```
+
+Optional mock binaries for a localhost Win98 test:
+
+```bash
+mkdir -p /tmp/z9torr_mock_tracker /tmp/z9torr_mock_peer
+/tmp/z9torr_seed/zig1_5_clean -fsafe -osw -o /tmp/z9torr_mock_tracker \
+    examples/z98/z9torr/tools/mock_tracker.zig
+sh /tmp/z9torr_mock_tracker/build_target.sh mingw \
+    /tmp/z9torr_mock_tracker/mock_tracker.exe
+/tmp/z9torr_seed/zig1_5_clean -fsafe -osw -o /tmp/z9torr_mock_peer \
+    examples/z98/z9torr/tools/mock_peer.zig
+sh /tmp/z9torr_mock_peer/build_target.sh mingw \
+    /tmp/z9torr_mock_peer/mock_peer.exe
+```
+
+Copy the exe + mocks + a `.torrent` and run from an MS-DOS Prompt; the exact
+copy/run procedure, mocks and payload details are in `demo/win9x_README.txt`.
+`-osw nt` is the explicit CRT/NT opt-in (XP+ file APIs), not the Win9x default.
+Native `build_target_nocrt.bat` (MSVC 6) / `build_owc_nocrt.bat` (OpenWatcom)
+are emitted no-CRT scripts; `build_target_crt.bat` / `build_owc_crt.bat` are
+static-CRT alternates. They are design-verified, hardware pending; real
+Win98/Me hardware verification remains **operator-pending** (not claimed).
+
 ## M6 — Win9x default profile (2026-10-18)
 
 - **Default profile:** bare `-osw` = Windows 9x, no CRT. The emitted mingw
