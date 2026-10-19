@@ -23,6 +23,7 @@
 // arena per frame. `decode` returns the frame count of the next frame.
 
 const std = @import("std");
+const stream = @import("stream.zig");
 
 pub const FlacError = error{
     BadStream,
@@ -562,4 +563,604 @@ pub fn open(arena: *std.arena.Arena, bytes: []const u8) FlacError!FlacDecoder {
 pub fn decode(d: *FlacDecoder, arena: *std.arena.Arena, out: []i16) FlacError!usize {
     _ = arena;
     return decodeFrame(d, out);
+}
+
+// ---------------------------------------------------------------------------
+// File-backed streaming decoder (M9 Task 3, spec §4.4).
+//
+// `StreamFlacDecoder` reads metadata and frames directly from a
+// `stream.BufferedFile`. It never holds a frame-sized byte buffer: the frame
+// header and subframes are consumed through `StreamBitReader`, which pulls one
+// byte at a time from the buffered file. The byte-slice `FlacDecoder` above
+// remains the unit-test oracle and is not used by this path.
+//
+// The only allocation is the fixed `channels * max_block` i64 scratch block,
+// made once by `openStream`; decoding a frame grows nothing.
+// ---------------------------------------------------------------------------
+
+pub const StreamFlacDecoder = struct {
+    bf: *stream.BufferedFile,
+    arena: *std.arena.Arena,
+    sample_rate: u32,
+    channels: u8,
+    bits_per_sample: u8,
+    min_block: u16,
+    max_block: u16,
+    max_frames: u32,
+    total_frames: u64,
+    samples: []i64,
+    eof: bool,
+};
+
+// MSB-first bit reader over a BufferedFile. While `recording` is set, loaded
+// bytes are captured in the fixed `hdr` buffer for the frame-header CRC-8; the
+// buffer is far larger than the maximum FLAC frame header.
+const StreamBitReader = struct {
+    bf: *stream.BufferedFile,
+    cur: u8,
+    bit_pos: u8, // 0..7, next bit within `cur`
+    recording: bool,
+    hdr: [64]u8,
+    hdr_len: usize,
+};
+
+fn sLoadByte(br: *StreamBitReader) FlacError!void {
+    var maybe: ?u8 = stream.bufferedFileReadByte(br.bf) catch return error.Truncated;
+    if (maybe) |b| {
+        br.cur = b;
+    } else {
+        return error.Truncated;
+    }
+    if (br.recording) {
+        if (br.hdr_len >= br.hdr.len) return error.BadFrame;
+        br.hdr[br.hdr_len] = br.cur;
+        br.hdr_len += 1;
+    }
+}
+
+fn sReadBit(br: *StreamBitReader) FlacError!u1 {
+    if (br.bit_pos == 0) try sLoadByte(br);
+    var sh: u3 = @intCast(u3, 7 - br.bit_pos);
+    var bit: u1 = @intCast(u1, (br.cur >> sh) & 1);
+    if (br.bit_pos == 7) {
+        br.bit_pos = 0;
+    } else {
+        br.bit_pos += 1;
+    }
+    return bit;
+}
+
+fn sReadBits(br: *StreamBitReader, n: u32) FlacError!u64 {
+    if (n == 0) return 0;
+    var v: u64 = 0;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        var bit: u1 = try sReadBit(br);
+        v = (v << 1) | @intCast(u64, bit);
+    }
+    return v;
+}
+
+fn sReadSigned(br: *StreamBitReader, n: u32) FlacError!i64 {
+    if (n == 0) return 0;
+    var uv: u64 = try sReadBits(br, n);
+    var signbit: u64 = @intCast(u64, 1) << @intCast(u64, n - 1);
+    if ((uv & signbit) == 0) return @intCast(i64, uv);
+    var mask: u64 = (@intCast(u64, 1) << @intCast(u64, n)) - 1;
+    var extended: u64 = uv | (~mask);
+    return @bitCast(i64, extended);
+}
+
+fn sReadUnary(br: *StreamBitReader) FlacError!u32 {
+    var q: u32 = 0;
+    while (true) {
+        var bit: u1 = try sReadBit(br);
+        if (bit == 1) return q;
+        q += 1;
+        if (q > 0x00ffffff) return error.BadFrame;
+    }
+    return 0;
+}
+
+fn sAlignByte(br: *StreamBitReader) void {
+    if (br.bit_pos != 0) br.bit_pos = 0;
+}
+
+fn sReadUtf8Number(br: *StreamBitReader) FlacError!u64 {
+    var b0: u8 = @intCast(u8, try sReadBits(br, 8));
+    var extra: u32 = 0;
+    var val: u64 = 0;
+    if ((b0 & 0x80) == 0) {
+        val = b0;
+    } else if ((b0 & 0xe0) == 0xc0) {
+        extra = 1;
+        val = b0 & 0x1f;
+    } else if ((b0 & 0xf0) == 0xe0) {
+        extra = 2;
+        val = b0 & 0x0f;
+    } else if ((b0 & 0xf8) == 0xf0) {
+        extra = 3;
+        val = b0 & 0x07;
+    } else if ((b0 & 0xfc) == 0xf8) {
+        extra = 4;
+        val = b0 & 0x03;
+    } else if ((b0 & 0xfe) == 0xfc) {
+        extra = 5;
+        val = b0 & 0x01;
+    } else if (b0 == 0xfe) {
+        extra = 6;
+        val = 0;
+    } else {
+        return error.BadFrame;
+    }
+    var i: u32 = 0;
+    while (i < extra) : (i += 1) {
+        var b: u8 = @intCast(u8, try sReadBits(br, 8));
+        if ((b & 0xc0) != 0x80) return error.BadFrame;
+        val = (val << 6) | @intCast(u64, b & 0x3f);
+    }
+    return val;
+}
+
+fn sDecodeResidual(br: *StreamBitReader, dst: []i64, block: u32, order: u32) FlacError!void {
+    var method: u32 = @intCast(u32, try sReadBits(br, 2));
+    if (method > 1) return error.Unsupported;
+    var pbits: u32 = 4;
+    if (method == 1) pbits = 5;
+    var param_max: u32 = (@intCast(u32, 1) << @intCast(u32, pbits)) - 1;
+
+    var porder: u32 = @intCast(u32, try sReadBits(br, 4));
+    var parts: u32 = @intCast(u32, 1) << @intCast(u32, porder);
+    if ((block % parts) != 0) return error.BadFrame;
+    var part_len: u32 = block / parts;
+    if (part_len < order and porder != 0) return error.BadFrame;
+
+    var idx: u32 = order;
+    var p: u32 = 0;
+    while (p < parts) : (p += 1) {
+        var n: u32 = part_len;
+        if (p == 0) {
+            if (part_len < order) return error.BadFrame;
+            n = part_len - order;
+        }
+        var param: u32 = @intCast(u32, try sReadBits(br, pbits));
+        if (param == param_max) {
+            var raw_bits: u32 = @intCast(u32, try sReadBits(br, 5));
+            var k: u32 = 0;
+            while (k < n) : (k += 1) {
+                var v: i64 = try sReadSigned(br, raw_bits);
+                dst[@intCast(usize, idx)] = v;
+                idx += 1;
+            }
+        } else {
+            var k: u32 = 0;
+            while (k < n) : (k += 1) {
+                var q: u32 = try sReadUnary(br);
+                var rem: u64 = try sReadBits(br, param);
+                var uv: u64 = (@intCast(u64, q) << @intCast(u64, param)) | rem;
+                var sign: i64 = -@intCast(i64, uv & 1);
+                var v: i64 = @intCast(i64, uv >> 1);
+                if (sign != 0) v = ~v;
+                dst[@intCast(usize, idx)] = v;
+                idx += 1;
+            }
+        }
+    }
+    if (idx != block) return error.BadFrame;
+}
+
+fn sDecodeSubframe(br: *StreamBitReader, dst: []i64, block: u32, bps: u32) FlacError!void {
+    if (try sReadBit(br) != 0) return error.BadFrame;
+    var stype: u32 = @intCast(u32, try sReadBits(br, 6));
+    var wasted: u32 = 0;
+    if (try sReadBit(br) == 1) {
+        wasted = try sReadUnary(br) + 1;
+    }
+    if (wasted >= bps) return error.BadFrame;
+    var ebits: u32 = bps - wasted;
+
+    if (stype == 0) {
+        var v: i64 = try sReadSigned(br, ebits);
+        var i: u32 = 0;
+        while (i < block) : (i += 1) dst[@intCast(usize, i)] = v;
+    } else if (stype == 1) {
+        var i: u32 = 0;
+        while (i < block) : (i += 1) {
+            dst[@intCast(usize, i)] = try sReadSigned(br, ebits);
+        }
+    } else if (stype >= 8 and stype <= 12) {
+        var order: u32 = stype - 8;
+        if (order > block) return error.BadFrame;
+        var i: u32 = 0;
+        while (i < order) : (i += 1) {
+            dst[@intCast(usize, i)] = try sReadSigned(br, ebits);
+        }
+        try sDecodeResidual(br, dst, block, order);
+        if (order == 1) {
+            i = order;
+            while (i < block) : (i += 1) {
+                var ui: usize = @intCast(usize, i);
+                dst[ui] = dst[ui] + dst[ui - 1];
+            }
+        } else if (order == 2) {
+            i = order;
+            while (i < block) : (i += 1) {
+                var ui: usize = @intCast(usize, i);
+                dst[ui] = dst[ui] + 2 * dst[ui - 1] - dst[ui - 2];
+            }
+        } else if (order == 3) {
+            i = order;
+            while (i < block) : (i += 1) {
+                var ui: usize = @intCast(usize, i);
+                dst[ui] = dst[ui] + 3 * dst[ui - 1] - 3 * dst[ui - 2] + dst[ui - 3];
+            }
+        } else if (order == 4) {
+            i = order;
+            while (i < block) : (i += 1) {
+                var ui: usize = @intCast(usize, i);
+                dst[ui] = dst[ui] + 4 * dst[ui - 1] - 6 * dst[ui - 2] + 4 * dst[ui - 3] - dst[ui - 4];
+            }
+        }
+    } else if (stype >= 32) {
+        var order: u32 = (stype - 32) + 1;
+        if (order > block or order > 32) return error.BadFrame;
+        var i: u32 = 0;
+        while (i < order) : (i += 1) {
+            dst[@intCast(usize, i)] = try sReadSigned(br, ebits);
+        }
+        var precision: u32 = @intCast(u32, try sReadBits(br, 4));
+        if (precision == 15) return error.BadFrame;
+        precision += 1;
+        var shift: i64 = try sReadSigned(br, 5);
+        var coefs: [32]i64 = undefined;
+        i = 0;
+        while (i < order) : (i += 1) {
+            coefs[@intCast(usize, i)] = try sReadSigned(br, precision);
+        }
+        try sDecodeResidual(br, dst, block, order);
+        i = order;
+        while (i < block) : (i += 1) {
+            var ui: usize = @intCast(usize, i);
+            var sum: i64 = 0;
+            var j: u32 = 0;
+            while (j < order) : (j += 1) {
+                sum += coefs[@intCast(usize, j)] * dst[ui - 1 - @intCast(usize, j)];
+            }
+            if (shift >= 0) {
+                sum = sum >> @intCast(i64, shift);
+            } else {
+                sum = sum << @intCast(i64, -shift);
+            }
+            dst[ui] = dst[ui] + sum;
+        }
+    } else {
+        return error.Unsupported;
+    }
+
+    if (wasted > 0) {
+        var i2: u32 = 0;
+        while (i2 < block) : (i2 += 1) {
+            var ui: usize = @intCast(usize, i2);
+            dst[ui] = dst[ui] << @intCast(i64, wasted);
+        }
+    }
+}
+
+fn sBlockSize(code: u32, br: *StreamBitReader) FlacError!u32 {
+    if (code == 0) return error.BadFrame;
+    if (code == 1) return 192;
+    if (code >= 2 and code <= 5) {
+        return @intCast(u32, 576) << @intCast(u32, code - 2);
+    }
+    if (code == 6) return @intCast(u32, try sReadBits(br, 8)) + 1;
+    if (code == 7) return @intCast(u32, try sReadBits(br, 16)) + 1;
+    if (code >= 8 and code <= 15) {
+        return @intCast(u32, 256) << @intCast(u32, code - 8);
+    }
+    return error.BadFrame;
+}
+
+fn decodeStreamFrame(d: *StreamFlacDecoder, out: []i16) FlacError!usize {
+    var br: StreamBitReader = undefined;
+    br.bf = d.bf;
+    br.cur = 0;
+    br.bit_pos = 0;
+    br.recording = true;
+    br.hdr_len = 0;
+
+    var sync: u32 = @intCast(u32, try sReadBits(&br, 14));
+    if (sync != 0x3ffe) return error.BadFrame;
+    if (try sReadBit(&br) != 0) return error.BadFrame;
+    var blocking: u1 = try sReadBit(&br);
+    var bscode: u32 = @intCast(u32, try sReadBits(&br, 4));
+    var srcode: u32 = @intCast(u32, try sReadBits(&br, 4));
+    var chanassign: u32 = @intCast(u32, try sReadBits(&br, 4));
+    var sscode: u32 = @intCast(u32, try sReadBits(&br, 3));
+    if (try sReadBit(&br) != 0) return error.BadFrame;
+
+    _ = try sReadUtf8Number(&br);
+
+    var block: u32 = try sBlockSize(bscode, &br);
+
+    var frame_rate: u32 = d.sample_rate;
+    if (srcode == 1) {
+        frame_rate = 88200;
+    } else if (srcode == 2) {
+        frame_rate = 176400;
+    } else if (srcode == 3) {
+        frame_rate = 192000;
+    } else if (srcode == 4) {
+        frame_rate = 8000;
+    } else if (srcode == 5) {
+        frame_rate = 16000;
+    } else if (srcode == 6) {
+        frame_rate = 22050;
+    } else if (srcode == 7) {
+        frame_rate = 24000;
+    } else if (srcode == 8) {
+        frame_rate = 32000;
+    } else if (srcode == 9) {
+        frame_rate = 44100;
+    } else if (srcode == 10) {
+        frame_rate = 48000;
+    } else if (srcode == 11) {
+        frame_rate = 96000;
+    } else if (srcode == 12) {
+        frame_rate = @intCast(u32, try sReadBits(&br, 8)) * 1000;
+    } else if (srcode == 13) {
+        frame_rate = @intCast(u32, try sReadBits(&br, 16));
+    } else if (srcode == 14) {
+        frame_rate = @intCast(u32, try sReadBits(&br, 16)) * 10;
+    } else if (srcode == 15) {
+        return error.BadFrame;
+    }
+    if (frame_rate == 0) return error.BadFrame;
+
+    var frame_bps: u32 = d.bits_per_sample;
+    if (sscode == 1) {
+        frame_bps = 8;
+    } else if (sscode == 2) {
+        frame_bps = 12;
+    } else if (sscode == 4) {
+        frame_bps = 16;
+    } else if (sscode == 5) {
+        frame_bps = 20;
+    } else if (sscode == 6) {
+        frame_bps = 24;
+    } else if (sscode != 0) {
+        return error.BadFrame;
+    }
+    if (frame_bps == 0 or frame_bps > 32) return error.BadFrame;
+    _ = blocking;
+
+    var nch: u32 = 0;
+    if (chanassign <= 7) {
+        nch = chanassign + 1;
+    } else if (chanassign >= 8 and chanassign <= 10) {
+        nch = 2;
+    } else {
+        return error.BadFrame;
+    }
+    if (nch != @intCast(u32, d.channels)) return error.BadFrame;
+    if (block > @intCast(u32, d.max_block) or block > @intCast(u32, d.max_frames)) {
+        return error.BadFrame;
+    }
+
+    if (br.bit_pos != 0) return error.BadFrame;
+    br.recording = false;
+    var stored_crc: u8 = @intCast(u8, try sReadBits(&br, 8));
+    var computed: u8 = crc8(br.hdr[0..br.hdr_len]);
+    if (stored_crc != computed) return error.BadFrame;
+
+    var stride: usize = @intCast(usize, d.max_block);
+    var ch: u32 = 0;
+    while (ch < nch) : (ch += 1) {
+        var bps: u32 = frame_bps;
+        if (chanassign == 8 and ch == 1) bps += 1; // left-side: side channel
+        if (chanassign == 9 and ch == 0) bps += 1; // right-side: side channel
+        if (chanassign == 10 and ch == 1) bps += 1; // mid-side: side channel
+        if (bps > 33) return error.BadFrame;
+        var base: usize = @intCast(usize, ch) * stride;
+        var dst: []i64 = d.samples[base .. base + @intCast(usize, block)];
+        try sDecodeSubframe(&br, dst, block, bps);
+    }
+
+    if (chanassign == 8) {
+        var left: []i64 = d.samples[0..@intCast(usize, block)];
+        var side: []i64 = d.samples[stride .. stride + @intCast(usize, block)];
+        var i: usize = 0;
+        while (i < @intCast(usize, block)) : (i += 1) {
+            side[i] = left[i] - side[i];
+        }
+    } else if (chanassign == 9) {
+        var side: []i64 = d.samples[0..@intCast(usize, block)];
+        var right: []i64 = d.samples[stride .. stride + @intCast(usize, block)];
+        var i: usize = 0;
+        while (i < @intCast(usize, block)) : (i += 1) {
+            side[i] = side[i] + right[i];
+        }
+    } else if (chanassign == 10) {
+        var mid: []i64 = d.samples[0..@intCast(usize, block)];
+        var side: []i64 = d.samples[stride .. stride + @intCast(usize, block)];
+        var i: usize = 0;
+        while (i < @intCast(usize, block)) : (i += 1) {
+            var m: i64 = (mid[i] << 1) | (side[i] & 1);
+            mid[i] = (m + side[i]) >> 1;
+            side[i] = (m - side[i]) >> 1;
+        }
+    }
+
+    sAlignByte(&br);
+    _ = try sReadBits(&br, 16); // frame CRC-16 (read, not verified, as in M8)
+
+    var nsamples: usize = @intCast(usize, block) * @intCast(usize, nch);
+    if (out.len < nsamples) return error.BadBuffer;
+
+    var fi: usize = 0;
+    while (fi < @intCast(usize, block)) : (fi += 1) {
+        var ci: usize = 0;
+        while (ci < @intCast(usize, nch)) : (ci += 1) {
+            var v: i64 = d.samples[ci * stride + fi];
+            if (frame_bps < 16) {
+                v = v << @intCast(i64, 16 - frame_bps);
+            } else if (frame_bps > 16) {
+                v = v >> @intCast(i64, frame_bps - 16);
+            }
+            if (v > 32767) v = 32767;
+            if (v < -32768) v = -32768;
+            out[fi * @intCast(usize, nch) + ci] = @intCast(i16, v);
+        }
+    }
+    return @intCast(usize, block);
+}
+
+const StreamInfo = struct {
+    sample_rate: u32,
+    channels: u8,
+    bits_per_sample: u8,
+    min_block: u16,
+    max_block: u16,
+    total_frames: u64,
+};
+
+fn streamReadExact(bf: *stream.BufferedFile, out: []u8) FlacError!void {
+    var total: usize = 0;
+    while (total < out.len) {
+        var got: usize = stream.bufferedFileRead(bf, out[total..]) catch return error.Truncated;
+        if (got == 0) return error.Truncated;
+        total += got;
+    }
+}
+
+// Skip `n` bytes through a fixed stack buffer; metadata block lengths are
+// bounded by the 24-bit header field and never allocated.
+fn streamSkip(bf: *stream.BufferedFile, n: usize) FlacError!void {
+    var chunk: [4096]u8 = undefined;
+    var left: usize = n;
+    while (left > 0) {
+        var take: usize = left;
+        if (take > chunk.len) take = chunk.len;
+        try streamReadExact(bf, chunk[0..take]);
+        left -= take;
+    }
+}
+
+fn parseStreamMetadata(bf: *stream.BufferedFile) FlacError!StreamInfo {
+    var marker: [4]u8 = undefined;
+    try streamReadExact(bf, marker[0..]);
+    if (marker[0] != 'f' or marker[1] != 'L' or marker[2] != 'a' or marker[3] != 'C') {
+        return error.BadStream;
+    }
+
+    var have_info: bool = false;
+    var min_block: u16 = 0;
+    var max_block: u16 = 0;
+    var sample_rate: u32 = 0;
+    var channels: u8 = 0;
+    var bits: u8 = 0;
+    var total: u64 = 0;
+
+    while (true) {
+        var hdr: [4]u8 = undefined;
+        try streamReadExact(bf, hdr[0..]);
+        var last: bool = (hdr[0] & 0x80) != 0;
+        var mtype: u8 = hdr[0] & 0x7f;
+        var mlen: usize = (@intCast(usize, hdr[1]) << 16) |
+            (@intCast(usize, hdr[2]) << 8) |
+            @intCast(usize, hdr[3]);
+        if (mtype == 0) {
+            if (mlen < 34) return error.BadStream;
+            var b: [34]u8 = undefined;
+            try streamReadExact(bf, b[0..]);
+            min_block = (@intCast(u16, b[0]) << 8) | @intCast(u16, b[1]);
+            max_block = (@intCast(u16, b[2]) << 8) | @intCast(u16, b[3]);
+            var packbits: u64 = 0;
+            var i: usize = 10;
+            while (i < 18) : (i += 1) packbits = (packbits << 8) | @intCast(u64, b[i]);
+            sample_rate = @intCast(u32, (packbits >> 44) & 0xfffff);
+            channels = @intCast(u8, ((packbits >> 41) & 0x7) + 1);
+            bits = @intCast(u8, ((packbits >> 36) & 0x1f) + 1);
+            total = packbits & 0xfffffffff;
+            have_info = true;
+            if (mlen > 34) try streamSkip(bf, mlen - 34);
+        } else {
+            try streamSkip(bf, mlen);
+        }
+        if (last) break;
+    }
+
+    if (!have_info) return error.BadStream;
+    if (sample_rate == 0 or channels == 0 or channels > 8) return error.BadStream;
+    if (bits < 4 or bits > 32) return error.BadStream;
+    if (max_block < 16) return error.BadStream;
+    if (min_block > max_block) return error.BadStream;
+
+    return StreamInfo{
+        .sample_rate = sample_rate,
+        .channels = channels,
+        .bits_per_sample = bits,
+        .min_block = min_block,
+        .max_block = max_block,
+        .total_frames = total,
+    };
+}
+
+// Open `path` and parse `fLaC` + metadata with bounded reads. On any failure
+// after the file is open, the file is closed before the error is returned.
+pub fn openStream(arena: *std.arena.Arena, path: []const u8) FlacError!StreamFlacDecoder {
+    var raw_bf: [*]u8 = std.arena.alloc(arena, @sizeOf(stream.BufferedFile)) catch return error.OutOfMemory;
+    var bf: *stream.BufferedFile = @ptrCast(*stream.BufferedFile, raw_bf);
+    bf.* = stream.bufferedFileOpen(arena, path) catch |err| {
+        if (err == error.OutOfMemory) return error.OutOfMemory;
+        return error.Truncated;
+    };
+
+    var info: StreamInfo = parseStreamMetadata(bf) catch |err| {
+        stream.bufferedFileClose(bf);
+        return err;
+    };
+
+    var ch: usize = @intCast(usize, info.channels);
+    var mb: usize = @intCast(usize, info.max_block);
+    var n: usize = ch * mb;
+    var raw: [*]u8 = std.arena.alloc(arena, n * @sizeOf(i64)) catch {
+        stream.bufferedFileClose(bf);
+        return error.OutOfMemory;
+    };
+    var samples: []i64 = @ptrCast([*]i64, raw)[0..n];
+    var i: usize = 0;
+    while (i < n) : (i += 1) samples[i] = 0;
+
+    return StreamFlacDecoder{
+        .bf = bf,
+        .arena = arena,
+        .sample_rate = info.sample_rate,
+        .channels = info.channels,
+        .bits_per_sample = info.bits_per_sample,
+        .min_block = info.min_block,
+        .max_block = info.max_block,
+        .max_frames = @intCast(u32, info.max_block),
+        .total_frames = info.total_frames,
+        .samples = samples,
+        .eof = false,
+    };
+}
+
+pub fn closeStream(d: *StreamFlacDecoder) void {
+    stream.bufferedFileClose(d.bf);
+}
+
+// Decode the next frame from the file into `out` (interleaved s16). Returns 0
+// at a clean end of stream. A short/truncated frame is `Truncated`; a corrupt
+// header/subframe or a buffer too small is `BadFrame`/`BadBuffer`.
+pub fn decodeStream(d: *StreamFlacDecoder, arena: *std.arena.Arena, out: []i16) FlacError!usize {
+    _ = arena;
+    if (d.eof) return 0;
+    if (stream.bufferedFileTell(d.bf) >= stream.bufferedFileSize(d.bf)) {
+        d.eof = true;
+        return 0;
+    }
+    var f: usize = try decodeStreamFrame(d, out);
+    if (f == 0) d.eof = true;
+    return f;
 }

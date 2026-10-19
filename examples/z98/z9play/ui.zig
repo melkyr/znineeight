@@ -84,7 +84,8 @@ var g_mix_vol: u8 = 80;
 var g_real: audio.AudioOut = undefined;
 var g_mix_ao: audio.AudioOut = undefined;
 var g_decoder: player.Decoder = undefined;
-var g_flac: flac.FlacDecoder = undefined;
+var g_flac: flac.StreamFlacDecoder = undefined;
+var g_flac_open: bool = false;
 var g_player: player.Player = undefined;
 
 fn fillSpaces(buf: []u8) void {
@@ -461,6 +462,10 @@ fn openBackend(rate: u32, channels: u8) bool {
 }
 
 fn stopPlayback() void {
+    if (g_flac_open) {
+        flac.closeStream(&g_flac);
+        g_flac_open = false;
+    }
     if (!g_has_track) return;
     g_player.audio.drain_fn(g_player.audio.state) catch {};
     g_player.audio.close_fn(g_player.audio.state);
@@ -496,10 +501,11 @@ fn playTrack(path: []const u8) bool {
     var album_val: []const u8 = "";
 
     if (kind == decoder.KIND_FLAC) {
-        g_flac = flac.open(&g_dec_arena, data) catch {
+        g_flac = flac.openStream(&g_dec_arena, path) catch {
             setStatus("corrupt or unsupported FLAC stream");
             return false;
         };
+        g_flac_open = true;
         sr = g_flac.sample_rate;
         chn = g_flac.channels;
         decoder.decoderOpenFlac(&g_decoder, &g_flac);
@@ -550,6 +556,10 @@ fn playTrack(path: []const u8) bool {
     }
 
     if (!openBackend(sr, chn)) {
+        if (g_flac_open) {
+            flac.closeStream(&g_flac);
+            g_flac_open = false;
+        }
         setStatus("cannot open audio output");
         return false;
     }
@@ -570,6 +580,10 @@ fn playTrack(path: []const u8) bool {
 
     player.playerInit(&g_player, &g_player_arena, &g_decoder, &g_mix_ao, meta) catch {
         g_real.close_fn(g_real.state);
+        if (g_flac_open) {
+            flac.closeStream(&g_flac);
+            g_flac_open = false;
+        }
         setStatus("cannot initialize the player");
         return false;
     };

@@ -484,9 +484,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var decv: player.Decoder = undefined;
         var sr: u32 = 0;
         var chn: u8 = 0;
-        var fdec: flac.FlacDecoder = undefined;
+        var fdec: flac.StreamFlacDecoder = undefined;
         if (is_flac) {
-            fdec = flac.open(&darena, data) catch {
+            fdec = flac.openStream(&darena, args.path) catch {
                 var msg: []const u8 = "z9play: corrupt or unsupported FLAC stream\n";
                 std.io.write(msg);
                 std.os.exit(3);
@@ -536,6 +536,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var actx: *void = wav.open(sr, chn) catch {
             var msg: []const u8 = "z9play: cannot open the WAV sink\n";
             std.io.write(msg);
+            if (is_flac) flac.closeStream(&fdec);
             std.os.exit(2);
             return;
         };
@@ -552,6 +553,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         player.playerInit(&pl, &par, &decv, &ao, meta) catch {
             var msg: []const u8 = "z9play: cannot initialize the player\n";
             std.io.write(msg);
+            if (is_flac) flac.closeStream(&fdec);
             std.os.exit(3);
             return;
         };
@@ -563,6 +565,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             player.playerPump(&pl) catch {
                 var msg: []const u8 = "z9play: playback failed\n";
                 std.io.write(msg);
+                if (is_flac) flac.closeStream(&fdec);
                 std.os.exit(3);
                 return;
             };
@@ -573,12 +576,14 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         if (pl.state != player.PlayerState.ended) {
             var msg: []const u8 = "z9play: playback did not end cleanly\n";
             std.io.write(msg);
+            if (is_flac) flac.closeStream(&fdec);
             std.os.exit(3);
             return;
         }
         pl.audio.drain_fn(pl.audio.state) catch {
             var msg: []const u8 = "z9play: audio drain failed\n";
             std.io.write(msg);
+            if (is_flac) flac.closeStream(&fdec);
             std.os.exit(3);
             return;
         };
@@ -600,6 +605,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             writeText(f);
         }
         writeNl();
+        if (is_flac) flac.closeStream(&fdec);
         std.os.exit(0);
         return;
     }
@@ -627,7 +633,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var album_val: []const u8 = "";
 
         if (is_flac) {
-            var finfo: flac.FlacDecoder = flac.open(&arena, data) catch {
+            var finfo: flac.StreamFlacDecoder = flac.openStream(&arena, args.path) catch {
                 var msg: []const u8 = "z9play: corrupt or unsupported FLAC stream\n";
                 std.io.write(msg);
                 std.os.exit(3);
@@ -636,6 +642,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             sr = finfo.sample_rate;
             chn = finfo.channels;
             if (sr > 0) dur_ms = finfo.total_frames * 1000 / @intCast(u64, sr);
+            flac.closeStream(&finfo);
         } else {
             if (packets.len < 3) {
                 var msg: []const u8 = "z9play: missing Vorbis setup header\n";
@@ -789,9 +796,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.arena.reset(&par);
 
             var decv: player.Decoder = undefined;
-            var fdec: flac.FlacDecoder = undefined;
+            var fdec: flac.StreamFlacDecoder = undefined;
             if (is_flac) {
-                fdec = flac.open(&darena, data) catch {
+                fdec = flac.openStream(&darena, args.path) catch {
                     playFail(&cs, "z9play: corrupt or unsupported FLAC stream\n", 3);
                     return;
                 };
@@ -820,6 +827,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             var first_ao: *const audio.AudioOut = &mix_ao;
             if (args.start_ms > 0) first_ao = &discard_ao;
             player.playerInit(&pl, &par, &decv, first_ao, meta) catch {
+                if (is_flac) flac.closeStream(&fdec);
                 playFail(&cs, "z9play: cannot initialize the player\n", 5);
                 return;
             };
@@ -832,6 +840,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             if (args.start_ms > 0) {
                 while (pl.state == player.PlayerState.playing and pl.position_ms < args.start_ms) {
                     player.playerPump(&pl) catch {
+                        if (is_flac) flac.closeStream(&fdec);
                         playFail(&cs, "z9play: cannot seek into the file\n", 3);
                         return;
                     };
@@ -910,6 +919,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                         if (pl.position_ms > args.start_ms) played = pl.position_ms - args.start_ms;
                         if (played <= elapsed + 200) {
                             player.playerPump(&pl) catch |e| {
+                                if (is_flac) flac.closeStream(&fdec);
                                 if (e == error.DecodeFailed) {
                                     playFail(&cs, "z9play: playback decode error\n", 3);
                                 } else if (e == error.AudioFailed) {
@@ -937,6 +947,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             } else if (args.start_ms > 0) {
                 ended_by_start = true;
             }
+
+            if (is_flac) flac.closeStream(&fdec);
 
             if (quit) break;
             if (ended_by_start) break;

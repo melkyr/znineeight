@@ -145,6 +145,71 @@ fn decodeOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []const u8) 
     return RunResult{ .frames = total, .golden_frames = golden_frames, .max_delta = md, .hash = hash };
 }
 
+// One complete decode pass through the file-backed streaming path. The
+// returned shape matches decodeOnce so the caller can compare frame counts,
+// PCM deltas, and hashes against the byte-slice oracle.
+fn decodeStreamOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []const u8) RunResult {
+    var gold: []u8 = filemod.readAll(arena, golden) catch {
+        fail("cannot read golden PCM");
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+    };
+
+    var fd: flac.StreamFlacDecoder = flac.openStream(arena, fixture) catch {
+        fail("flac.openStream failed");
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+    };
+    var ch: usize = @intCast(usize, fd.channels);
+
+    var total: usize = 0;
+    while (true) {
+        var room: usize = out_buf.len - total * ch;
+        if (room == 0) {
+            flac.closeStream(&fd);
+            fail("streamed output exceeds harness buffer");
+            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+        }
+        var f: usize = flac.decodeStream(&fd, arena, out_buf[total * ch ..]) catch |e| {
+            flac.closeStream(&fd);
+            if (e == error.OutOfMemory) {
+                fail("flac.decodeStream: arena OutOfMemory");
+            } else {
+                fail("flac.decodeStream returned an error");
+            }
+            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+        };
+        if (f == 0) break;
+        total += f;
+    }
+    flac.closeStream(&fd);
+
+    var golden_frames: usize = gold.len / (2 * ch);
+    var n: usize = total * ch;
+    var gv: []i16 = @ptrCast([*]i16, gold.ptr)[0 .. golden_frames * ch];
+    var md: i32 = 0;
+    var i: usize = 0;
+    while (i < n and i < gv.len) : (i += 1) {
+        var d: i32 = @intCast(i32, out_buf[i]) - @intCast(i32, gv[i]);
+        if (d < 0) d = -d;
+        if (d > md) md = d;
+    }
+    if (total != golden_frames) {
+        var p: []const u8 = "flac_test: FAIL: stream frame count ";
+        std.io.write(p);
+        writeU(@intCast(u64, total));
+        var q: []const u8 = " != golden ";
+        std.io.write(q);
+        writeU(@intCast(u64, golden_frames));
+        var nl: []const u8 = "\n";
+        std.io.write(nl);
+        std.os.exit(1);
+    }
+
+    var bytes: []const u8 = @ptrCast([*]const u8, out_buf[0..n].ptr)[0 .. n * 2];
+    var hash: [20]u8 = undefined;
+    sha1Of(bytes, &hash);
+    return RunResult{ .frames = total, .golden_frames = golden_frames, .max_delta = md, .hash = hash };
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     if (argc < 3) {
         fail("usage: flac_test <fixture.flac> <golden.pcm>");
@@ -160,14 +225,33 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     if (r1.max_delta != 0) fail("decoded PCM is not an exact match");
 
     std.arena.reset(&arena);
-    var r2: RunResult = decodeOnce(&arena, fixture, golden);
-    std.arena.reset(&arena);
-    var r3: RunResult = decodeOnce(&arena, fixture, golden);
+    var s1: RunResult = decodeStreamOnce(&arena, fixture, golden);
+    if (s1.max_delta != 0) fail("streamed PCM is not an exact match");
+    if (s1.frames != r1.frames) fail("streamed frame count differs from oracle");
 
     var i2: usize = 0;
     while (i2 < 20) : (i2 += 1) {
+        if (s1.hash[i2] != r1.hash[i2]) {
+            fail("streamed PCM differs from byte-slice oracle");
+        }
+    }
+
+    std.arena.reset(&arena);
+    var r2: RunResult = decodeOnce(&arena, fixture, golden);
+    std.arena.reset(&arena);
+    var r3: RunResult = decodeOnce(&arena, fixture, golden);
+    std.arena.reset(&arena);
+    var s2: RunResult = decodeStreamOnce(&arena, fixture, golden);
+    std.arena.reset(&arena);
+    var s3: RunResult = decodeStreamOnce(&arena, fixture, golden);
+
+    i2 = 0;
+    while (i2 < 20) : (i2 += 1) {
         if (r1.hash[i2] != r2.hash[i2] or r1.hash[i2] != r3.hash[i2]) {
-            fail("3x determinism mismatch");
+            fail("3x byte-slice determinism mismatch");
+        }
+        if (s1.hash[i2] != s2.hash[i2] or s1.hash[i2] != s3.hash[i2]) {
+            fail("3x stream determinism mismatch");
         }
     }
 

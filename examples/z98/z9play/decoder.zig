@@ -25,10 +25,12 @@ pub const VorbisDecoder = struct {
     vc: *player.VorbisCtx,
 };
 
-// The FLAC arm of the selector. `fd` is the context built by `flac.open`; the
-// frontend owns the file bytes and the arena that backs the decoder scratch.
+// The FLAC arm of the selector. `fd` is the streaming context built by
+// `flac.openStream`; the frontend owns the underlying file and the arena that
+// backs the decoder scratch. The byte-slice `flac.FlacDecoder` is test-only
+// and is never wrapped by this selector.
 pub const FlacDecoder = struct {
-    fd: *flac.FlacDecoder,
+    fd: *flac.StreamFlacDecoder,
 };
 
 // Frontend-side codec choice.
@@ -70,21 +72,22 @@ pub fn decoderOpenVorbis(out: *player.Decoder, vc: *player.VorbisCtx) void {
 }
 
 // `Decoder.next_fn` adapter for the FLAC arm.
-fn flacNext(ctx: *void, pcm_out: []i16) player.DecoderError!usize {
-    var fd: *flac.FlacDecoder = @ptrCast(*flac.FlacDecoder, ctx);
-    var f: usize = flac.decode(fd, fd.arena, pcm_out) catch |e| {
+fn flacStreamNext(ctx: *void, pcm_out: []i16) player.DecoderError!usize {
+    var fd: *flac.StreamFlacDecoder = @ptrCast(*flac.StreamFlacDecoder, ctx);
+    var f: usize = flac.decodeStream(fd, fd.arena, pcm_out) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
         return error.DecodeFailed;
     };
     return f;
 }
 
-// Fill the caller-owned `out` vtable from an already-opened FLAC decoder. Like
-// the Vorbis path, this never returns a `player.Decoder` by value (D8).
-pub fn decoderOpenFlac(out: *player.Decoder, fd: *flac.FlacDecoder) void {
+// Fill the caller-owned `out` vtable from an already-opened streaming FLAC
+// decoder. Like the Vorbis path, this never returns a `player.Decoder` by
+// value (D8).
+pub fn decoderOpenFlac(out: *player.Decoder, fd: *flac.StreamFlacDecoder) void {
     out.* = player.Decoder{
         .ctx = @ptrCast(*void, fd),
-        .next_fn = flacNext,
+        .next_fn = flacStreamNext,
         .max_frames = fd.max_frames,
         .sample_rate = fd.sample_rate,
         .channels = fd.channels,
