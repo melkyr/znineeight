@@ -29,7 +29,7 @@ M1 plan Global Constraints bind verbatim. Extra: error set exactly `error.StepTo
 **Files:**
 - Create: `sf/src/std_num.zig`
 - Create: `scripts/stdlib/ref/std_num/ref.c` (C89 RK45, same tableau)
-- Create: `scripts/stdlib/vectors/std_num/*.{in,out}`
+- Create: `scripts/stdlib/vectors/std_num/*.{in,expected}`
 - Create: `repro/mi_matrix/stdlib_num_{basic,cross}_xmod/{main.zig,expected.txt,expected.rc}`
 - Modify: `scripts/stdlib/expected_dirs.txt`, seed copy lists (`build_from_seed.sh:146`, `archive_seed.sh:115`)
 

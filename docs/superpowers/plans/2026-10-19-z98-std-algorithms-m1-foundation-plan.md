@@ -4,7 +4,7 @@
 
 **Goal:** Land the cross-check testing substrate, `std_rand` (PCG32 + xoshiro256\*\*), and the Robin Hood `std_map` internals upgrade.
 
-**Architecture:** New `run_crosscheck.sh` three-way harness (Z98 == C89 ref == committed `.out`) folded into `verify_stdlib.sh`; `std_rand.zig` L5 module (two concrete generators, explicit seeds); `std_map.zig` keeps its API and gains Robin Hood insertion + backward-shift deletion + ctrl-byte state encoding.
+**Architecture:** New `run_crosscheck.sh` three-way harness (Z98 == C89 ref == committed `.expected`) folded into `verify_stdlib.sh`; `std_rand.zig` L5 module (two concrete generators, explicit seeds); `std_map.zig` keeps its API and gains Robin Hood insertion + backward-shift deletion + ctrl-byte state encoding.
 
 **Tech Stack:** Z98 (Zig subset → C89), bash harness, gcc C89 reference builds.
 
@@ -24,7 +24,7 @@
 1. Rejection-sampling bias in `pcg32Bounded`/`xoshiroBounded` — a `% bound` shortcut passes casual tests; only the bucket-band check over 1M draws catches it.
 2. xoshiro SplitMix64 seeding byte-exactness vs reference — one bit off diverges every vector.
 3. Backward-shift deletion correctness — a wrong shift leaves keys unreachable; the delete-reinsert fixture is the canary.
-4. Crosscheck harness non-vacuity — a compare that can't fail proves nothing; the mutated-`.out` control must fail.
+4. Crosscheck harness non-vacuity — a compare that can't fail proves nothing; the mutated-`.expected` control must fail.
 5. Golden drift in the map fixtures — anything beyond summary-line movement is a STOP.
 
 ---
@@ -35,18 +35,18 @@
 - Create: `scripts/stdlib/run_crosscheck.sh`
 - Modify: `scripts/stdlib/verify_stdlib.sh` (crosscheck pass after fixtures)
 - Modify: `scripts/stdlib/run_fixtures.sh` (export fixed `Z98_SEED`)
-- Create: `scripts/stdlib/vectors/smoke/{a,b,c}.{in,out}` (3 tiny pairs)
+- Create: `scripts/stdlib/vectors/smoke/{a,b,c}.{in,expected}` (3 tiny pairs)
 - Create: `scripts/stdlib/ref/smoke/ref.c`
 - Create: `repro/mi_matrix/stdlib_cross_smoke_xmod/{main.zig,expected.txt,expected.rc}`
 
 **Interfaces:**
 - Consumes: `run_fixtures.sh` discovery + `expected_dirs.txt` pin convention.
-- Produces: `run_crosscheck.sh <zig1> [<module>…]` for every later milestone; vector layout `scripts/stdlib/vectors/<module>/<name>.{in,out}`; ref layout `scripts/stdlib/ref/<module>/ref.c`; driver fixture `stdlib_<module>_cross_xmod` with `--crosscheck` stdin mode.
+- Produces: `run_crosscheck.sh <zig1> [<module>…]` for every later milestone; vector layout `scripts/stdlib/vectors/<module>/<name>.{in,expected}`; ref layout `scripts/stdlib/ref/<module>/ref.c`; driver fixture `stdlib_<module>_cross_xmod` with `--crosscheck` stdin mode.
 
 - [ ] **Step 1: Write the failing smoke fixture + ref.** `stdlib_cross_smoke_xmod/main.zig`: reads `a b` per line on stdin in `--crosscheck` mode, prints `a+b`; default mode prints fixed `cross smoke ok`. `ref.c` = same sum on stdin (C89, `long` parse). Vectors: `a=1 b=2 → 3`, `a=0 b=0 → 0`, `a=40 b=2 → 42`.
 - [ ] **Step 2: Run fixture gate — expect FAIL (fixture absent from `expected_dirs.txt`).**
-- [ ] **Step 3: Implement `run_crosscheck.sh`** — build driver (`zig1 -ffast` → `build_target.sh linux`) + `gcc -std=c89 -O0` ref once per module; feed each `.in` to both; three-way compare (Z98 stdout == ref stdout == `.out`, `cmp` for binary, `diff` for text); both exit 0; wire into `verify_stdlib.sh` after the fixtures pass. `run_fixtures.sh`/`run_crosscheck.sh` export `Z98_SEED=1`.
-- [ ] **Step 4: Run gates green.** `verify_stdlib.sh` full set green incl. smoke; non-vacuity control: mutate one `.out` copy in a scratch run → run_crosscheck FAILS (restore after).
+- [ ] **Step 3: Implement `run_crosscheck.sh`** — build driver (`zig1 -ffast` → `build_target.sh linux`) + `gcc -m32 -std=c89 -O0` ref once per module; feed each `.in` to both; three-way compare (Z98 stdout == ref stdout == `.expected`, `cmp` for binary, `diff` for text); both exit 0; wire into `verify_stdlib.sh` after the fixtures pass. `run_fixtures.sh`/`run_crosscheck.sh` export `Z98_SEED=1`.
+- [ ] **Step 4: Run gates green.** `verify_stdlib.sh` full set green incl. smoke; non-vacuity control: mutate one `.expected` copy in a scratch run → run_crosscheck FAILS (restore after).
 - [ ] **Step 5: Commit.** `feat(scripts): std crosscheck harness + smoke fixture`.
 
 ### Task 2: `std_rand` — PCG32 + xoshiro256\*\*
@@ -57,7 +57,7 @@
 - Create: `repro/mi_matrix/stdlib_rand_advance_xmod/{main.zig,expected.txt,expected.rc}`
 - Create: `repro/mi_matrix/stdlib_rand_stat_xmod/{main.zig,expected.txt,expected.rc}`
 - Create: `repro/mi_matrix/stdlib_rand_cross_xmod/{main.zig,expected.txt,expected.rc}`
-- Create: `scripts/stdlib/ref/std_rand/ref.c`, `scripts/stdlib/vectors/std_rand/*.{in,out}`
+- Create: `scripts/stdlib/ref/std_rand/ref.c`, `scripts/stdlib/vectors/std_rand/*.{in,expected}`
 - Modify: `scripts/stdlib/expected_dirs.txt`, `scripts/seed/build_from_seed.sh:146`, `scripts/seed/archive_seed.sh:115`
 
 **Interfaces:**

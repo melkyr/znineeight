@@ -29,7 +29,7 @@ M1 plan Global Constraints bind verbatim. Extra: same no-corner-cut rule as M5; 
 **Files:**
 - Create: `sf/src/std_hpa.zig`
 - Create: `scripts/stdlib/ref/std_hpa/ref.c` (full-grid A\*, C89)
-- Create: `scripts/stdlib/vectors/std_hpa/*.{in,out}`
+- Create: `scripts/stdlib/vectors/std_hpa/*.{in,expected}`
 - Create: `repro/mi_matrix/stdlib_hpa_{basic,cross}_xmod/{main.zig,expected.txt,expected.rc}`
 - Modify: `scripts/stdlib/expected_dirs.txt`, seed copy lists (`build_from_seed.sh:146`, `archive_seed.sh:115`)
 

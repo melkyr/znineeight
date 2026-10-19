@@ -28,7 +28,7 @@ M1 plan Global Constraints bind verbatim. Extra: decoder allocates nothing beyon
 
 **Files:**
 - Create: `sf/src/std_zstd.zig`
-- Create: `scripts/stdlib/vectors/std_zstd/*.{in,out}` (binary; host `zstd`/`zstd -d` generated once, committed)
+- Create: `scripts/stdlib/vectors/std_zstd/*.{in,expected}` (binary; host `zstd`/`zstd -d` generated once, committed)
 - Create: `scripts/stdlib/get_zstd_tools.sh` (no-root acquisition, M8 pattern)
 - Create: `repro/mi_matrix/stdlib_zstd_{basic,cross}_xmod/{main.zig,expected.txt,expected.rc}`
 - Modify: `scripts/stdlib/expected_dirs.txt`, seed copy lists (`build_from_seed.sh:146`, `archive_seed.sh:115`)
@@ -37,11 +37,11 @@ M1 plan Global Constraints bind verbatim. Extra: decoder allocates nothing beyon
 - Consumes: none beyond L0–L2.
 - Produces: `std_zstd.{ZSTD_DEFAULT_WINDOW_LOG,zstdDecompress}` — §6.4 signature verbatim (`pub fn zstdDecompress(src: []const u8, dst: []u8, max_window_log: u8) !u32`; errors `Corrupt`/`OutputTooSmall`/`WindowTooBig`).
 
-- [ ] **Step 1: Vector generation setup.** `get_zstd_tools.sh` acquires `zstd` CLI; generate corpus (text/binary/incompressible; window logs 10–21; block sizes 1/64 KB) with `zstd -1/-19`; `zstd -d` produces `.out`; commit pairs. Verification: `.out` byte-equals originals (the frozen agreement).
+- [ ] **Step 1: Vector generation setup.** `get_zstd_tools.sh` acquires `zstd` CLI; generate corpus (text/binary/incompressible; window logs 10–21; block sizes 1/64 KB) with `zstd -1/-19`; `zstd -d` produces `.expected`; commit pairs. Verification: `.expected` byte-equals originals (the frozen agreement).
 - [ ] **Step 2: Write failing fixtures.** `stdlib_zstd_basic_xmod`: round-trip decode all corpus vectors byte-exact; empty content; single raw/RLE block; `WindowTooBig` (frame with window_log 22 vs `max_window_log=21` — generated via `zstd --long=22` or crafted); custom `max_window_log=24` accepts it; truncations + bit-flips → `error.Corrupt`; dst-too-small → `error.OutputTooSmall`; skippable frame + valid frame = decodes, payload ignored.
 - [ ] **Step 3: Run — FAIL (module absent).**
 - [ ] **Step 4: Implement decoder** — frame magic `0xFD2FB528` + header (window descriptor, content-size optional, single-segment); block header parse; raw/RLE passthrough; compressed: FSE literals (predefined/raw/RLE/compressed modes) + FSE sequences (litlen/offset/matchlen modes) + repeat-sequences handling; sequence execution with overlap-safe copies; every back-reference inside `dst[0..written]`.
-- [ ] **Step 5: Crosscheck pass green** — `stdlib_zstd_cross_xmod --crosscheck` decodes vectors (no ref binary; committed `.out` is the authority — the three-way compare degrades to Z98 == `.out`); determinism 3×.
+- [ ] **Step 5: Crosscheck pass green** — `stdlib_zstd_cross_xmod --crosscheck` decodes vectors (no ref binary; committed `.expected` is the authority — the three-way compare degrades to Z98 == `.expected`); determinism 3×.
 - [ ] **Step 6: Gates + commit.** Full §4 RUN set; import-resolvability; stack discipline checked (no `>4 KB` function-local arrays beyond the documented tables). `feat(std_zstd): RFC 8878 subset decoder (M3)`.
 
 ### Task 2: M3 closeout — docs + seed rotation

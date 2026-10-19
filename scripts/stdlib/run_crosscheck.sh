@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-check gate for std modules: Z98 == C89 reference == committed .out.
+# Cross-check gate for std modules: Z98 == C89 reference == committed .expected.
 #
 # Spec: docs/superpowers/specs/2026-10-19-z98-std-algorithms-design.md §5.
 #
@@ -12,10 +12,10 @@
 # Per module:
 #   1. build the `stdlib_<module>_cross_xmod` (or legacy `stdlib_cross_<module>_
 #      xmod`) driver once: `zig1 -ffast -o <tmp>` -> gcc -> build_target.sh.
-#   2. build `scripts/stdlib/ref/<module>/ref.c` once: `gcc -std=c89 -O0`.
+#   2. build `scripts/stdlib/ref/<module>/ref.c` once: `gcc -m32 -std=c89 -O0`.
 #   3. for every `scripts/stdlib/vectors/<module>/*.in`, feed the bytes to both
 #      the driver (`--crosscheck`) and the reference, and compare stdout
-#      three ways: Z98 == ref, Z98 == committed .out, ref == committed .out.
+#      three ways: Z98 == ref, Z98 == committed .expected, ref == committed .expected.
 #      Both processes must exit 0. Text mismatches print a diff; binary
 #      mismatches print `cmp -l`.
 #
@@ -130,7 +130,7 @@ for module in "${MODULES[@]}"; do
   fi
 
   if [ -z "$reason" ]; then
-    gcc -std=c89 -O0 "$ref_dir/ref.c" -o "$tmp/ref" >"$tmp/.refout" 2>"$tmp/.referr"
+    gcc -m32 -std=c89 -O0 "$ref_dir/ref.c" -o "$tmp/ref" >"$tmp/.refout" 2>"$tmp/.referr"
     rrc_cc=$?
     if [ "$rrc_cc" -ne 0 ] || [ ! -x "$tmp/ref" ]; then
       reason="REF-BUILD-RC$rrc_cc"
@@ -145,7 +145,7 @@ for module in "${MODULES[@]}"; do
     else
       for in_file in "${ins[@]}"; do
         name="$(basename "$in_file" .in)"
-        out_file="$vec_dir/$name.out"
+        out_file="$vec_dir/$name.expected"
         if [ ! -f "$out_file" ]; then
           reason="MISSING-EXPECTED:$name"
           break
@@ -170,11 +170,11 @@ for module in "${MODULES[@]}"; do
           break
         elif ! cmp -s "$tmp/z.out" "$out_file"; then
           reason="Z98-NE-EXPECTED:$name"
-          show_mismatch "z98 vs committed .out" "$tmp/z.out" "$out_file"
+          show_mismatch "z98 vs committed .expected" "$tmp/z.out" "$out_file"
           break
         elif ! cmp -s "$tmp/r.out" "$out_file"; then
           reason="REF-NE-EXPECTED:$name"
-          show_mismatch "ref vs committed .out" "$tmp/r.out" "$out_file"
+          show_mismatch "ref vs committed .expected" "$tmp/r.out" "$out_file"
           break
         fi
       done

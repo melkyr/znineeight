@@ -29,7 +29,7 @@ M1 plan Global Constraints bind verbatim. Extra: `pbdAddParticle`/`pbdAddDistanc
 **Files:**
 - Create: `sf/src/std_physics.zig`
 - Create: `scripts/stdlib/ref/std_physics/ref.c` (C89 PBD, same Verlet/projection)
-- Create: `scripts/stdlib/vectors/std_physics/*.{in,out}`
+- Create: `scripts/stdlib/vectors/std_physics/*.{in,expected}`
 - Create: `repro/mi_matrix/stdlib_physics_{basic,cross}_xmod/{main.zig,expected.txt,expected.rc}`
 - Modify: `scripts/stdlib/expected_dirs.txt`, seed copy lists (`build_from_seed.sh:146`, `archive_seed.sh:115`)
 

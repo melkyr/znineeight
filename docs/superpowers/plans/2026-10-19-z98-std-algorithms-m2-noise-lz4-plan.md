@@ -29,7 +29,7 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 **Files:**
 - Create: `sf/src/std_noise.zig`
 - Create: `scripts/stdlib/ref/std_noise/ref.c` (port of 2014 OpenSimplex, `github.com/KdotJPG/OpenSimplexNoise`, attribution header)
-- Create: `scripts/stdlib/vectors/std_noise/*.{in,out}`
+- Create: `scripts/stdlib/vectors/std_noise/*.{in,expected}`
 - Create: `repro/mi_matrix/stdlib_noise_{basic,cross}_xmod/{main.zig,expected.txt,expected.rc}`
 - Modify: `scripts/stdlib/expected_dirs.txt`, seed copy lists (`build_from_seed.sh:146`, `archive_seed.sh:115`)
 
@@ -48,7 +48,7 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 **Files:**
 - Create: `sf/src/std_lz4.zig`
 - Create: `scripts/stdlib/ref/std_lz4/ref.c` (vendored `LZ4_decompress_safe`, BSD attribution)
-- Create: `scripts/stdlib/vectors/std_lz4/*.{in,out}` (binary; host `lz4` generated)
+- Create: `scripts/stdlib/vectors/std_lz4/*.{in,expected}` (binary; host `lz4` generated)
 - Create: `repro/mi_matrix/stdlib_lz4_{basic,cross}_xmod/{main.zig,expected.txt,expected.rc}`
 - Modify: `scripts/stdlib/expected_dirs.txt`, seed copy lists
 
