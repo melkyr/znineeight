@@ -12,3 +12,12 @@ BASE at dispatch: 15ad012e448fd4628adad57bc57e21a711124a6e
 - STATUS: STOP-present to operator for I1/I2 ruling before Task 2.
 - Task 1: fix round 1 (aab2ddef refactor scripts/spec/plans + 78dd69fb report): both Important findings ADDRESSED (vectors .expected; refs gcc -m32) — scoped re-review PASS, no new breakage. Minor deferred: verify_stdlib.sh:27 comment still says `.out` (comment-only, pre-existing).
 - Task 1: complete (commits 5d4bdde4..78dd69fb, review clean).
+
+## M1 Task 2 — std_rand
+- implementer ea1f6b45 (feat) + 6a361148 (report)
+- gates: verify_stdlib 291/291 + crosscheck (smoke, std_rand), STDLIB GATE OK; 4/4 fixtures determinism 3x; rebuilt compiler fixed point b299b4b4 unchanged; lib/ has 33 files
+- review: spec PASS; 0 Critical / 2 Important / 3 Minor
+- Important I1: mandated bounded-bias canary (1M draws @ bound=7) is statistically ineffective — rejection probability ~9e-10, modulo shortcut bias ~1e-11 signal; source is correct but the test cannot fail for the bug it targets. xoshiroBounded has no bias/range test.
+- Important I2: stale enumerations — archive_seed.sh:35 comment + SEED_README heredoc text (:162) still say "32 std .zig" and omit std_rand; QUICK_REF:208 install recipe and README:297 module list omit std_rand. Rotation at Task 4 would ship stale text.
+- Minors deferred: no committed regression for xoshiroBounded / bound==0 panics (reviewer probe only); expected_dirs global sort pre-existing-unclean (new entries placed correctly); run_crosscheck.sh touched by Task 2 (disclosed, needed for std_ prefix mapping).
+- STATUS: STOP-present to operator for I1/I2 ruling before Task 3.
