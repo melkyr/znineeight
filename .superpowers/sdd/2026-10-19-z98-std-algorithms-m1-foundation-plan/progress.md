@@ -23,3 +23,7 @@ BASE at dispatch: 15ad012e448fd4628adad57bc57e21a711124a6e
 - STATUS: STOP-present to operator for I1/I2 ruling before Task 3.
 - Task 2: fix round 1 (08e161af bounded KAT + xoshiro range; 6f73eee5 enumerations; ab91e8d3 report): I1-A + I2-A ADDRESSED — scoped re-review PASS; modulo shortcut diverges line 1 of rejecting-bound vector; no new breakage. Minor deferred: build_from_seed.sh:24 comment still says "32 std .zig" (same class, outside enumerated I2-A list).
 - Task 2: complete (commits ea1f6b45..ab91e8d3, review clean).
+- Task 3 round 0 (0be9ae82 + 8e0a47f6): gates green; review Important: u8 dist wraps at 256 under same-home clustering -> stranded keys (repro 1@257, 44@1000).
+- Task 3 fix round 1 (8b9ff166/87a934d5/f06f1804): operator first ruled A (on-demand distance) — landed, unreviewed.
+- Task 3 fix round 2 (931c553b/630e3720/ef6f7215): operator re-ruled C after perf/use-case analysis — stored u32 dist (exact any 32-bit table, +4B/entry, no rehash, no cap); round-1 on-demand removed; spec §6.2 amended; fixture asserts stored-dist + ctrl + adversarial cluster. Scoped re-review ADDRESSED, no new Critical/Important.
+- Task 3: complete (commits 0be9ae82..ef6f7215, review clean). Deferred minors: emptied slots retain stale dist (state-gated, harmless); determinism/stress slot-comparison bounds narrower than their comments (fixture comments outside authorized edits); stale "linear probing/tombstone" comments in map32x32/stress headers.
