@@ -1,7 +1,7 @@
 # z9play
 
-z9play — a **native Z98** OGG Vorbis music player (CLI + TUI) for Linux and
-Windows 9x. Decoded entirely in Z98 (no vendored decoder, no C decoder
+z9play — a **native Z98** OGG Vorbis + FLAC music player (CLI + TUI) for Linux
+and Windows 9x. Decoded entirely in Z98 (no vendored decoder, no C decoder
 library); playback goes through a small application-level platform audio layer.
 
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md`.
@@ -164,6 +164,33 @@ with **no msvcrt**; real Win98/Me hardware behavior remains design-verified /
 **operator-pending** (not claimed). Defect status is unchanged from M6:
 **D1/D2 FIXED; D3/D4/D5 OPEN**.
 
+**M8 (optional native FLAC decoder) — Tasks 1–3 complete; docs recorded.**
+`flac.zig` is a native FLAC stream/frame decoder (`fLaC` marker + metadata walk,
+`STREAMINFO`, constant/verbatim/fixed/LPC subframes, partitioned Rice residuals,
+wasted bits, channel decorrelation → interleaved s16 PCM; frame header CRC-8 is
+verified, frame CRC-16 is not). `decoder.zig` selects Vorbis vs FLAC by the
+`OggS`/`fLaC` signature and assembles the existing caller-owned `player.Decoder`
+vtable; `main.zig` and `ui.zig` both route `.flac` through it. `.flac` plays via
+`--wav`, the interactive CLI, and the TUI, including directories that mix
+`.ogg` and `.flac`.
+
+`tests/tier_flac.sh` is green **59 passed, 0 failed twice**: it regenerates
+three `.flac` fixtures from the committed raw PCM goldens using the no-root
+`tests/get_flac_tools.sh`, drives `--wav` for each, and checks **byte-exact**
+output against the `flac -d` goldens (FLAC is lossless) plus **3× determinism**
+by raw-PCM SHA-1. It also runs a mixed `.ogg`/`.flac` TUI session under a pty
+(18/18 driver checks) and keeps `tier_cli` 23/0, `tier_tui` 40/0, and
+`tier_audio` 27/0 green.
+
+**Limits:** `--info`, `--dump-setup`, and `--pcm` remain **Vorbis-only** and
+reject FLAC with exit 3; FLAC tags are not parsed (the interactive startup line
+uses the path). Win9x `-osw` emits/builds a PE32 i386 EXE importing exactly
+KERNEL32 + WINMM with no msvcrt and passes the import gate; real Win98/Me
+hardware verification remains **operator-pending** (not claimed). Seed v102 is
+unchanged (archive `702f34d87b7e6bf401dd206d2517dbee`; fixed point
+`b299b4b435e624d0ddbd2edde681cbc3`). Defect status: **D1/D2 FIXED; D3/D4/D5
+OPEN**. This is not a feature-complete claim; the M8 Task 5 handoff owns that.
+
 ## Files
 
 M0 (all present; `[x]` = landed in M0):
@@ -283,6 +310,18 @@ M7 (Tasks 1–4 landed):
 - `[x]` `tests/tier_tui.sh` — the M7 gate (32 pty behavior checks + Win9x
   PE/import gate + stable `--dump-c89`; 40/40).
 
+M8 (Tasks 1–3 landed):
+
+- `[x]` `flac.zig` — native FLAC stream/frame decode (`STREAMINFO`, subframes,
+  Rice residuals, wasted bits, channel decorrelation → interleaved s16).
+- `[x]` `decoder.zig` — signature-based Vorbis/FLAC selector that assembles the
+  player `Decoder` vtable.
+- `[x]` `tests/flac_test.zig` — M8 decoder unit/golden harness.
+- `[x]` `tests/get_flac_tools.sh` — no-root `flac` acquisition.
+- `[x]` `tests/tier_flac.sh` — the M8 gate (lossless exact `--wav` output,
+  3× determinism, mixed `.ogg`/`.flac` TUI, OGG regressions, Win9x import gate;
+  59/0 twice).
+
 ## Build and Run
 
 The Linux tiers and the Win9x tier both use the seed v102 compiler built from
@@ -329,6 +368,23 @@ WAV sink instead of OSS. The M7 gate:
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_tui.sh
 # == tier_tui summary: 40 passed, 0 failed ==
 ```
+
+### FLAC (M8)
+
+`.flac` playback is selected by signature in `decoder.zig` and works through
+`--wav`, the interactive CLI, and the TUI (mixed `.ogg`/`.flac` directories).
+The gate regenerates its fixtures from the committed raw PCM goldens with
+`tests/get_flac_tools.sh` (the `.flac` fixtures themselves are not committed):
+
+```bash
+ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_flac.sh
+# == tier_flac summary: 59 passed, 0 failed ==
+```
+
+FLAC is lossless, so `--wav` output is byte-exact against the `flac -d` goldens
+and deterministic 3×. The M0–M3 request modes are **Vorbis-only**:
+`--info`/`--dump-setup`/`--pcm` reject a FLAC input with exit 3. FLAC tags are
+not parsed.
 
 `--info <file.ogg>` prints a fixed `key=value` block matching the golden
 `testdata/expected/*.meta`:
@@ -432,6 +488,7 @@ ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_decode.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_audio.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_cli.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_tui.sh
+ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_flac.sh
 ```
 
 ## Fixtures
@@ -452,13 +509,15 @@ the golden `.meta` format and the determinism contract.
 ## Notes
 
 `NOTES.md` holds the build recipe, the `--dump-c89` md5, the golden formats, and
-the milestone log. The M6 gate value is the Win9x target
-`ad9ccfd34aa2ba26c38abbcf48eedeb0` (`-osw --dump-c89`, stable 2×; seed v101,
-md5 `b299b4b435e624d0ddbd2edde681cbc3`). The M7 TUI is a separate root:
-`ui.zig --dump-c89` is `e7bc57a2a38a72cb83f51a1ce7497239` (Linux default,
-stable 2×) on seed v102 (archive md5 `702f34d87b7e6bf401dd206d2517dbee`;
-binary/fixed point unchanged). The prior Linux `--dump-c89` value
-was `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b; prior M5
+the milestone log. The **M8 current** Linux-default pins are `main.zig`
+`e56af7916edd199e796f3ef11d5e49c4` and `ui.zig`
+`22676fd997471df1c4c3a3f04397121d` (seed v102, stable 2×). The M6 gate value
+remains the Win9x target `ad9ccfd34aa2ba26c38abbcf48eedeb0` (`-osw --dump-c89`,
+stable 2×; seed v101, md5 `b299b4b435e624d0ddbd2edde681cbc3`). The M7 `ui.zig`
+Linux-default value was `e7bc57a2a38a72cb83f51a1ce7497239` (stable 2×) on seed
+v102 (archive md5 `702f34d87b7e6bf401dd206d2517dbee`; binary/fixed point
+unchanged); M8 supersedes it as the current `ui.zig` pin. The prior Linux
+`--dump-c89` value was `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b; prior M5
 `0a60a27846476a73d2fac8e183d52d48`, M4
 `d695bf99dadb7f6dbbc0f2a94bb42f43`, M3
 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`,
