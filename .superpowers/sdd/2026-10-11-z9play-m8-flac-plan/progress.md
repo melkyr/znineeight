@@ -19,4 +19,6 @@ Defects: D1/D2 FIXED; D3/D4/D5 OPEN. No compiler/std changes; no seed rotation e
 Self-consistency: no task mandates a compiler feature; no std change; seed rotation only if `sf/**` changes (not planned). T1 keeps the existing `player.Decoder` vtable caller-owned/by-pointer. No contradictions found.
 
 ## Tasks
+Task T1: complete (commits `c4b53d84` decoder selector, `9024d433` report; review Approved, spec ✅, 0 Critical/0 Important/3 Minor). `decoder.zig` `DecoderKind{ vorbis, flac }` + `decoderOpenVorbis(out: *player.Decoder, vc)` caller-owned vtable; main `--wav`/interactive and `ui.playTrack` route through it; no player.zig change; FLAC arm inert. Gates: main/ui build; tier_cli 23/0, tier_tui 40/0, tier_audio 27/0, info 20/0, setup 21/0, win9x 14/0; seed v102 unchanged. Dump moved main `75133080→1a0e5440`, ui `e7bc57a2→38e4e1ca` (module split). Minor: selector nominal until T2; test duplicate assembly; D8 wording.
+Next: T2 FLAC stream/frame decode + selector wiring.
 
