@@ -40,7 +40,7 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 - [ ] **Step 1: Lattice-zero pre-check (STOP gate).** Port ref first; run ref `noise2d(0,0)`, `(1,0)`, `(0,1)`, `(1,1)`. If nonzero → STOP-present (`I found the intention is … blueprint §5.5 zero-at-lattice, but this is impossible given the 2014 reference returns <value>`) and hold for spec amendment.
 - [ ] **Step 2: Write failing fixtures.** `stdlib_noise_basic_xmod`: range test 100k samples in [-1,1]; continuity `|n(x,y)-n(x+0.0001,y)| < 0.001`; determinism (two inits same seed ⇒ identical 1k samples); `octaves=0 ⇒ 0.0`; committed visual golden (256×256 PGM from `noiseFbm2d`, byte-hash in `expected.txt`).
 - [ ] **Step 3: Implement `std_noise.zig`** — 2014 algorithm: skew `(sqrt(3)-1)/2` / unskew `(3-sqrt(3))/6` literals; 8 gradients 2D / 12 3D; `perm`/`perm_grad` via xoshiro Fisher–Yates; f64 throughout; `opensimplexInit` 512 B state.
-- [ ] **Step 4: Crosscheck green** — `stdlib_noise_cross_xmod --crosscheck` vs ref over vector grid (seeds × coordinates); range/continuity/determinism all green; visual golden matches ref-generated image bytes.
+- [ ] **Step 4: Crosscheck green.** `.in` lines are `2 <seed> <x> <y>` or `3 <seed> <x> <y> <z>` (decimal). `stdlib_noise_cross_xmod --crosscheck` re-inits `opensimplexInit(seed)` per line and prints exactly one line: the 16 lowercase hex digits of the IEEE-754 f64 bit pattern returned by `noise2d`/`noise3d`; always exits 0. Ref uses the same line format. `noiseFbm2d` is covered by the basic fixture/visual golden, not crosscheck. Vectors = seeds × coordinate grid.
 - [ ] **Step 5: Gates + commit.** Full §4 RUN set; 3× determinism; import-resolvability. `feat(std_noise): OpenSimplex 2D/3D + fBm (M2)`.
 
 ### Task 2: `std_lz4` — LZ4 block decoder
@@ -48,7 +48,7 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 **Files:**
 - Create: `sf/src/std_lz4.zig`
 - Create: `scripts/stdlib/ref/std_lz4/ref.c` (vendored `LZ4_decompress_safe`, BSD attribution)
-- Create: `scripts/stdlib/vectors/std_lz4/*.{in,expected}` (binary; host `lz4` generated)
+- Create: `scripts/stdlib/vectors/std_lz4/*.{in,expected}` (`.in` = raw block bytes; expected text; host `lz4` generated)
 - Create: `repro/mi_matrix/stdlib_lz4_{basic,cross}_xmod/{main.zig,expected.txt,expected.rc}`
 - Modify: `scripts/stdlib/expected_dirs.txt`, seed copy lists
 
@@ -59,15 +59,24 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 - [ ] **Step 1: Write failing fixtures.** `stdlib_lz4_basic_xmod`: round-trip vs host-`lz4` corpus (text/binary/already-compressed), empty block → 0, all-literals block, truncations + bit-flips → `error.Corrupt`, dst-too-small → `error.OutputTooSmall`, end-rule violations (last-match <12 from end) → `error.Corrupt`.
 - [ ] **Step 2: Run — FAIL (module absent).**
 - [ ] **Step 3: Implement decoder** — token split 4+4; literal/match length extension loops (15→+255…); match offset LE u16; overlap-safe copy; bounds checks before every write/read.
-- [ ] **Step 4: Crosscheck green** — `stdlib_lz4_cross_xmod --crosscheck` vs vendored ref over valid blocks + truncations (ref negative rc → one canonical fail line).
+- [ ] **Step 4: Crosscheck green.** `.in` = raw LZ4 block bytes. `stdlib_lz4_cross_xmod --crosscheck` reads all stdin, decodes into a fixed 64 KiB destination, and prints exactly one line: `ok <bytes_written>` on success or `corrupt` on `error.Corrupt`; it always exits 0. The vendored ref wrapper uses the same 64 KiB destination and maps a negative `LZ4_decompress_safe` result to `corrupt`, also exiting 0. Vectors = valid host-`lz4` blocks + truncations; `error.OutputTooSmall` is covered only by the unit fixture (dst smaller than the decoded size).
 - [ ] **Step 5: Gates + commit.** `feat(std_lz4): LZ4 block decoder (M2)`.
 
-### Task 3: M2 closeout — docs + seed rotation
+### Task 3: M2 closeout — usage, docs, truth-ups, seed rotation
 
 **Files:**
+- Create: `stdlib_test/noise_lz4_usage/{main.zig,expected.txt,expected.rc}`
 - Create: `sf/docs/std_lib/noise.md`; Modify: `sf/docs/std_lib/codecs.md` (lz4 section)
+- Modify: `STD_README.MD` (domain table + doc-index rows for `std_rand`, `std_noise`, `std_lz4`)
+- Modify: `README.md` (higher-layer module list: `std_noise`, `std_lz4`)
+- Modify: `docs/sf/QUICK_REF.md` (current std set/count and install recipe: `std_noise`, `std_lz4`)
+- Modify: `scripts/seed/archive_seed.sh` (hardcoded `33` text → `35`; module comment/list)
+- Modify: `scripts/seed/build_from_seed.sh` (stale `32` std-lib comment → `35`)
+- Modify: `scripts/stdlib/expected_dirs.txt` (new usage + fixture dirs)
 - Modify: `release/seed/CHANGELOG.md` (via archive script)
 
-- [ ] **Step 1: Docs** — noise API + fBm params + lattice-zero note (if STOP resolved, record ruling); lz4 contract + offline-compress workflow.
-- [ ] **Step 2: Rotate seed** — archive + manifest (35 files); binary md5 + fixed point unchanged.
-- [ ] **Step 3: Full gate re-run + commits** (`docs(std_lib): noise + lz4 docs (M2)`, `chore(seed): rotate (M2)`).
+- [ ] **Step 1: Usage program.** `stdlib_test/noise_lz4_usage` uses `std_rand.xoshiroInit` to seed `std_noise.opensimplexInit`, asserts `noise2d`/`noise3d` are in `[-1, 1]`, asserts two identical inits produce identical samples, asserts `noiseFbm2d(..., octaves=0) == 0.0`, and decodes one embedded valid all-literals LZ4 block with `std_lz4.lz4DecompressBlock` (fixed seed/inputs; no clock/env). It prints deterministic summary lines ending `noise_lz4 ok`; commit `expected.txt`/`expected.rc` captured from the passing program.
+- [ ] **Step 2: Docs** — noise API + fBm params + lattice-zero note (record the Task 1 STOP ruling if taken); lz4 contract + offline-compress workflow.
+- [ ] **Step 3: Truth-ups.** Update `STD_README.MD` domain table and doc-index list with `std_rand`/`rand.md`, `std_noise`/`noise.md`, `std_lz4`/`codecs.md`; update root `README.md` higher-layer list; update `docs/sf/QUICK_REF.md` current std count/install recipe; update the hardcoded `33` texts in `scripts/seed/archive_seed.sh` to `35`, its module comment/list, and the stale `32` comment in `scripts/seed/build_from_seed.sh`.
+- [ ] **Step 4: Rotate seed** — archive + manifest (35 files); binary md5 + fixed point unchanged.
+- [ ] **Step 5: Full gate re-run + commits** (`docs(std_lib): noise + lz4 docs (M2)`, `chore(seed): rotate (M2)`).
