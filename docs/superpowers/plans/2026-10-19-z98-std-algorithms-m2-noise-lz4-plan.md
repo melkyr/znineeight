@@ -86,6 +86,23 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 - [ ] **Step 5: Conclusion.** One algorithm recommended with: justification for PII/PIII + 16–32 MB RAM; proof sketch of correct rounding (or explicit "correct for all f64" argument); implementation blueprint for Task 1B (data structures, edge cases, estimated code size); why no further rounding fixes will be needed.
 - [ ] **Step 6: Commit report.** `docs(sdd): M2 T1AEx methodology report`. No code changes.
 
+### Task 1Bp: Lexer f64 fix — pre-implementation edit plan (derivative of blocked Task 1)
+
+**Files:**
+- Create: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1bp-report.md`
+- No source, fixture, seed, or tracked-file edits.
+
+**Interfaces:**
+- Consumes: Task 1A bit table; Task 1AEx algorithm blueprint (§5).
+- Produces: exact edit plan for Task 1B — what to change, where, how, with full code sketches.
+
+- [ ] **Step 1: Read `parseF64` at `sf/src/lexer.zig:610-668`.** Identify every variable, every accumulation step, every rounding point. Map each to its replacement in the 1AEx algorithm.
+- [ ] **Step 2: Specify the new algorithm in full detail.** For each helper function (digit accumulation, integer multiply by 5^k, integer divide by 5^k, RNE rounding, f64 bit assembly): exact Z98 signature, exact data structures (u64 limb pairs, u32 arrays), exact control flow. Include edge cases: zero, subnormal, overflow to inf, underflow to zero, denormal boundary, tie-to-even, 800-digit truncation.
+- [ ] **Step 3: Specify the exact edit to `sf/src/lexer.zig`.** Which lines to delete, which to insert, where helpers go (before or after `parseF64`). Include the full replacement code for `parseF64` body.
+- [ ] **Step 4: Specify the fixture.** Exact `main.zig` content (literal list, expected bit checks, output format `lexer float round ok`), exact `expected.txt`, exact `expected.rc`.
+- [ ] **Step 5: Specify verification commands.** Exact commands and expected outputs for: fixture RED before fix, fixture GREEN after fix, `lexer_float_exponent_xmod`, compiler self-build.
+- [ ] **Step 6: Commit report.** `docs(sdd): M2 T1Bp edit plan`. No code changes.
+
 ### Task 1B: Lexer f64 rounding — fix (minimal repro + correct values)
 
 **Files:**
@@ -94,7 +111,7 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 - Create: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1b-report.md`
 
 **Interfaces:**
-- Consumes: Task 1A bit table and migration list.
+- Consumes: Task 1Bp edit plan (exact code sketches and edit locations).
 - Produces: correctly rounded decimal `f64` parsing; the new fixture is the permanent regression pin.
 
 - [ ] **Step 1: Write the failing fixture.** `lexer_float_rounding_xmod` checks the exact bit patterns from Task 1A, including the mantissa and exponent cases, and prints `lexer float round ok` with rc 0 only when all match. Run it before the fix and record the failure.
