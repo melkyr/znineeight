@@ -35,7 +35,7 @@ Report-only. No source edits in this task. Target: `sf/src/lexer.zig` `parseF64`
 
 ### 1.4 Failure-mode corpus (why the fix is mandatory)
 
-Task 1A's mandated rows that current code gets wrong or gets right by accident: `0.366025403784439` (D2 drift), `0.3` (may be right by single-op luck), `0.75`/`1.75` (exact, fine), `−0.16666666666666666` (D2), `1e300`/`1.0e300` (D4a `power` error + D4b), `1e-308` (D4b). Corpus re-scan baseline: 240 mismatches vs `gcc -m32 -std=c89` `strtod` / Python `float` oracle (T1AEx §5.4 verification). Target after fix: 0.
+Task 1A's mandated rows — **all 8 mismatch today** (Task 1A §3 "Z98 bits (bug)" column): `0.366025403784439` (D2 drift, +2 ULP), `0.3` (D2: `3 * 0.1` lands on `3fd3333333333334`, +1 ULP), `0.75`/`1.75` (D2 despite being exactly representable: `7*0.1 + 5*0.01` accumulation drifts +1 ULP to `…001` — exact values are NOT safe under D2), `−0.16666666666666666` (D2), `1e300`/`1.0e300` (D4a `power` error + D4b), `1e-308` (D4b). Corpus re-scan baseline: 240 mismatches vs `gcc -m32 -std=c89` `strtod` / Python `float` oracle (T1AEx §5.4 verification). Target after fix: 0.
 
 ---
 
@@ -201,7 +201,9 @@ fn fastRound(qhi: u64, qlo: u64, sticky: bool, e_prime: i32, negative: bool) f64
     if (e + 1075 == 0) {
         var is_pow2 = (qhi == 0) and ((qlo & (qlo - 1)) == 0);
         if (is_pow2 and !sticky) return f64SignedZero(negative);
-        return f64FromBits(1);
+        var sign: u64 = 0;
+        if (negative) sign = 0x8000000000000000;
+        return f64FromBits(1 | sign);
     }
     var prec: i32 = 53;
     if (e + 1022 < 0) {
@@ -531,7 +533,7 @@ fn parseF64(text: []const u8) f64 {
 2. Scan/HPD build fixes D1-D5 in one pass; D3/D4 crash class dies at the `dp` bounds (saturated `e10`); D5 exponent `_` skip included.
 3. `hpdRound` is Zig `decimal.zig` `round()` verbatim semantics: the `dp + 1 == n` exact-half arm is safe **only** because `hpdTrim` runs after every shift (invariant §2.1) — do not remove trims.
 4. `fastRound` subnormal arm emits `keep` directly (`keep == 2^52` bit pattern == min normal, carry self-assembles); the `prec == 53` arm does the explicit carry (`keep >>= 1`-equivalent + `e += 1`) and inf re-check, mirroring `convert_slow.zig`'s `mantissa >= (1 << 53)` branch.
-5. Integer tie in `fastRound` (`e + 1075 == 0`): exact midpoint 2⁻¹⁰⁷⁵ iff `Q` is a power of two and `!sticky` → ties-to-even → 0; anything else above the midpoint → min subnormal. `2.5e-324` (above midpoint) → `0000000000000001` ✓ (T1AEx fix-round-1 item 2).
+5. Integer tie in `fastRound` (`e + 1075 == 0`): exact midpoint 2⁻¹⁰⁷⁵ iff `Q` is a power of two and `!sticky` → ties-to-even → 0; anything else above the midpoint → min subnormal (sign applied via `1 | sign`). **Reachability:** under the fast-path gate (`|e| ≤ 22`, `m < 2^53`) the smallest representable `E` is ≈ −77, so the `e + 1075 ≤ 0` arms are defensive-only — every subnormal-boundary row (`5e-324`, `2.5e-324`, `2.47e-324`, `2.48e-324`, the 2⁻¹⁰⁷⁵ tie family) has `|e| > 22` and goes through **SDC** (`hpdRound` tie rule), not `fastRound`. e.g. `2.5e-324`: `n = 2`, `dp = −323`, `e = −325` → gate rejects → SDC → `0000000000000001` ✓ (T1AEx fix-round-1 item 2).
 6. Size: ~330 lines Z98 (est. 500-560 C89, ~3.5-4 KB i386); stack ≤ ~0.9 KB (`Hpd` 816 B + locals), no tables, no heap (T1AEx §5.2 budget).
 7. Placement: helpers + `Hpd` sit between `isU64MaxLiteral`'s neighborhood and `parseF64`'s current slot; `lexer.zig:422` call site (`var value = parseF64(text);`) unchanged — signature identical.
 
@@ -636,6 +638,7 @@ pub fn main() void {
 ```
 
 Notes:
+0. **Standalone assembly:** `tie_lit`, `tie_up_lit`, `tie_trunc_lit`, `tie_tz_lit` are declared by the §4.2 generator output — paste its four `var … : f64 = …;` lines at **file scope** (directly above `pub fn main` / below the `ckBits` helper), then `main.zig` compiles as written. §4.3 is the authoritative spec and **supersedes any existing draft** already sitting in `repro/mi_matrix/lexer_float_rounding_xmod/` (untracked leftover from an earlier attempt — overwrite its `main.zig`/`expected.txt`/`expected.rc` wholesale with §4.3 + §4.1 content).
 1. `f64ToBits` is the `std_math.zig:82-85` `sqrtD2B` idiom — `@ptrCast` is legal in user fixtures (`xmod_amp_arena_union_store/main.zig`, `stdlib_map_determinism_xmod/main.zig` already use it).
 2. Golden hex values re-verified this session: Python `struct.pack('>d', float(s))` on every decimal row; `tie_*` rows verified against `Decimal(2)**Decimal(-1075)` construction (§4.2).
 3. `2.5e-324 → 0000000000000001` is **above** the 0|min-subnormal midpoint 2⁻¹⁰⁷⁵; `2.47e-324` is below it (T1AEx fix-round-1 item 2).
@@ -647,7 +650,7 @@ Notes:
 
 ## 5. Verification commands (Task 1B step 3 record)
 
-All commands from repo root. Build recipe is the canonical seed bootstrap (`scripts/seed/build_from_seed.sh`): it dumps `sf/src/main.zig` with the seed compiler → gcc `-m32 -std=c89` → `zig1_5_clean` + sibling `lib/`, then verifies the two-hop fixed-point closure (md5 hop1 == md5 hop2) automatically. **The self-build is itself a parseF64 stress test** — it parses all 306 `sf/src` float literals through the new code.
+All commands from repo root. Build recipe is the canonical seed bootstrap (`scripts/seed/build_from_seed.sh`): it dumps `sf/src/main.zig` with the seed compiler → gcc `-m32 -std=c89` → `zig1_5_clean` + sibling `lib/`, then verifies the two-hop fixed-point closure (md5 hop1 == md5 hop2) automatically. **The self-build is itself a parseF64 stress test** — it parses all in-graph literals (every float literal in the sources actually reached by the build) through the new code.
 
 ### 5.1 RED — before the fix (record output verbatim)
 
@@ -657,7 +660,7 @@ scripts/stdlib/run_fixtures.sh /tmp/t1b_pre/zig1_5_clean \
     repro/mi_matrix/lexer_float_rounding_xmod
 ```
 
-Expected RED: fixture run FAILs — observed stdout `lexer float round FAIL` (rc 0) vs golden `lexer float round ok`; `run_fixtures.sh` prints `FAIL ... (stdout mismatch)`. Save the observed byte diff in the Task 1B report. (If `run_fixtures.sh` refuses non-stdlib dirs in future revisions, fall back to its 4 internal steps verbatim: `zig1 -ffast -o <tmp> <entry>` → `gcc -m32 -std=c89 ... -c` emitted `.c` → `sh <tmp>/build_target.sh linux <tmp>/prog` → run under `timeout 120`, diff stdout/`$?` to `expected.txt`/`expected.rc`.)
+Expected RED: fixture run FAILs — observed stdout `lexer float round FAIL` (rc 0) vs golden `lexer float round ok`; `run_fixtures.sh` prints `FAIL <dir> (STDOUT-MISMATCH)`. Save the observed byte diff in the Task 1B report. (If `run_fixtures.sh` refuses non-stdlib dirs in future revisions, fall back to its 4 internal steps verbatim: `zig1 -ffast -o <tmp> <entry>` → `gcc -m32 -std=c89 ... -c` emitted `.c` → `sh <tmp>/build_target.sh linux <tmp>/prog` → run under `timeout 120`, diff stdout/`$?` to `expected.txt`/`expected.rc`.)
 
 ### 5.2 GREEN — after the fix
 
@@ -704,3 +707,15 @@ Commands for the in-file tests: run `test_runner.zig` the way CI does (see `sf/t
 ## 6. Commit
 
 Two commits in Task 1B (not this task): `fix(lexer): correctly round decimal f64 literals` (source + fixture) then `docs(sdd): M2 T1B report`. **This task (1Bp) is report-only** — committed as `docs(sdd): M2 T1Bp edit plan`.
+
+---
+
+## Fix round 1
+
+Review findings addressed (report-only; no source changes):
+
+1. **MEDIUM — `fastRound` min-subnormal arm dropped sign.** `return f64FromBits(1)` returned `+min-subnormal` even for negative literals (`−2.5e-324`-class rows would come out `0000000000000001` instead of `8000000000000001`). **Fixed:** sign mask computed from `negative`, `return f64FromBits(1 | sign)`. §3.1 note 5 corrected on reachability: `2.5e-324` and the whole subnormal-boundary family have `|e| > 22` (`2.5e-324`: `n = 2`, `dp = −323`, `e = −325`) and go through **SDC**, not `fastRound`; the `e + 1075 ≤ 0` arms in `fastRound` are defensive-only (smallest fast-path `E ≈ −77`).
+2. **LOW — §1.4 misclassified `0.3`/`0.75`/`1.75`.** Claimed `0.3` "right by single-op luck" and `0.75`/`1.75` "exact, fine". Task 1A §3 shows all three mismatch today, +1 ULP (`3fd3333333333334`, `3fe8000000000001`, `3ffc000000000001`) — D2 fires even on exactly representable values (`7*0.1 + 5*0.01` accumulation drift). **Fixed:** §1.4 now states all 8 mandated rows mismatch and names D2 as the mechanism for the three.
+3. **LOW — §4.3 not standalone.** `main.zig` referenced `tie_lit`/`tie_up_lit`/`tie_trunc_lit`/`tie_tz_lit` without declaring them. **Fixed:** §4.3 note 0 — paste the four §4.2 generator `var … : f64 = …;` lines at file scope (directly above `pub fn main`).
+4. **LOW — stale untracked fixture draft.** **Fixed:** §4.3 note 0 also records that §4.3 + §4.1 supersede any existing draft in `repro/mi_matrix/lexer_float_rounding_xmod/` (untracked leftover; overwrite wholesale at implementation time).
+5. **LOW — §5 inaccuracies.** (a) `run_fixtures.sh` failure line is `FAIL <dir> (STDOUT-MISMATCH)`, not "(stdout mismatch)" — §5.1 corrected. (b) Self-build does not parse "all 306 `sf/src` float literals" (that was the Task 1A corpus count) but "all in-graph literals" (sources reached by the build) — §5 intro corrected.
