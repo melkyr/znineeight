@@ -24,17 +24,18 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v104** (rotated 2026-10-20 at the std-algorithms M2 T1C closeout,
-plan `2026-10-19-z98-std-algorithms-m2-noise-lz4-plan`; seed v103 → v104, first
-rotation carrying the corrected `parseF64` + C89 inf/nan emission; compiler
-fixed point `21c957730d268f1e7883176fa5413b65` — moved from the v103-era
-`b299b4b435e624d0ddbd2edde681cbc3` by the lexer/format fixes, not by T1C).
-Archive md5 `cfe7fe31edd16a526d549201dfbd7c2b`; archived binary md5 (= v104's
+**Current seed: v105** (rotated 2026-10-20 at the std-algorithms M2 T1D closeout,
+plan `2026-10-19-z98-std-algorithms-m2-noise-lz4-plan`; seed v104 → v105,
+canonical `std_noise` f64 literals restored after the T1B lexer fix — no
+compiler movement; compiler fixed point
+`21c957730d268f1e7883176fa5413b65` UNCHANGED from v104).
+Archive md5 `cc2ea2be17d018556b4b7dd9f365a73b`; archived binary md5 (= v105's
 rotation fixed point) `21c957730d268f1e7883176fa5413b65`; `gen/` 46 `.c` + 47
 `.h` (10,307,965 bytes); `lib/` 34 std `.zig` plus `lib/manifest.md5`
 (per-file std attribution pin, manifest md5
-`3e8b6f6628973414425c1df63f8c4455`) — the M2 held-Task-1 `std_noise.zig` is
-now counted (interim count 34; Task 3 takes it to 35 with `std_lz4`). The
+`04710546e55a844f82598fd6d6ab7991`) — `std_noise.zig` now carries the
+canonical 2014-reference literals (M2 Task 1 unblocked at T1D; count stays 34,
+Task 3 takes it to 35 with `std_lz4`). The
 T1B/T1F lexer-format fixes make post-rotation `build_from_seed.sh` two-hop
 again (hop1 == hop2; the T1F three-hop moving point closes once the seed embeds
 post-T1F `emit_support`). **This block is updated at every plan closeout that
@@ -82,7 +83,13 @@ unchanged `b299b4b435e624d0ddbd2edde681cbc3`; archive md5
 (2026-10-20) rotated it to v104 (first lexer-fix rotation — corrected
 `parseF64` + C89 `Z98_INF`/`Z98_NEGINF`/`Z98_NAN` emission; fixed point /
 archived binary md5 `21c957730d268f1e7883176fa5413b65`; `lib/` 34 files
-(`std_noise.zig` counted); archive md5 `cfe7fe31edd16a526d549201dfbd7c2b`).
+(`std_noise.zig` counted); archive md5 `cfe7fe31edd16a526d549201dfbd7c2b`);
+and the std-algorithms M2 T1D closeout (2026-10-20) rotated it to v105
+(canonical `std_noise` literals `0.366025403784439`/`-0.16666666666666666`
+after the T1B lexer fix, D6 FIXED; compiler fixed point / archived binary md5
+unchanged `21c957730d268f1e7883176fa5413b65`; `lib/` 34 files; manifest md5
+`04710546e55a844f82598fd6d6ab7991`; archive md5
+`cc2ea2be17d018556b4b7dd9f365a73b`).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 46 `.c` + 47 `.h`, including `zig_special_types.h`; the emitted
