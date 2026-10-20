@@ -122,19 +122,33 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 ### Task 1F: formatF64 non-finite emission + precision digits (operator-authorized)
 
 **Files:**
+- Modify: `sf/src/include/zig_compat.h` (add Z98_INF/Z98_NEGINF/Z98_NAN macros)
 - Modify: `sf/src/util/format.zig` (`formatF64`)
 - Modify: `repro/mi_matrix/lexer_float_rounding_xmod/` (restore inf rows)
 - Create: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1f-report.md`
 
 **Interfaces:**
 - Consumes: Task 1B fixed `parseF64` (correctly returns ±inf on overflow).
-- Produces: `formatF64` emits C89-valid inf/nan; fixture validates overflow end-to-end.
+- Produces: `formatF64` emits C89-valid inf/nan via `zig_compat.h` macros; fixture validates overflow end-to-end.
 
-- [ ] **Step 1: Fix `formatF64` non-finite emission.** Map `+inf` → `HUGE_VAL`, `-inf` → `-HUGE_VAL`, NaN → `NAN` (or `0.0/0.0` fallback). These are C89 `<math.h>` constants. If `<math.h>` not available in emitted code, use `__builtin_inf()`/`__builtin_nan()` as fallback. The comment "There is no valid C89 literal for inf/nan" is wrong — `HUGE_VAL` exists.
-- [ ] **Step 2: Verify precision digits.** Confirm `formatF64` generates enough decimal digits to round-trip f64 (17 significant digits). If it already does, record evidence. If not, fix.
-- [ ] **Step 3: Restore inf rows in fixture.** Re-add `1e309` → `7ff0000000000000` and `-1e309` → `fff0000000000000` to `lexer_float_rounding_xmod` (replacing the max-finite workaround rows). Verify fixture GREEN with inf rows.
-- [ ] **Step 4: Verify.** Fixture passes with all rows including inf; `lexer_float_exponent_xmod` passes; compiler self-build succeeds. Record exact commands and bits.
-- [ ] **Step 5: Commit** `fix(format): emit C89 HUGE_VAL/NAN for non-finite f64`, then `docs(sdd): M2 T1F report`.
+**Architecture note:** `parseF64` is backend-independent (produces IEEE-754 f64 values including inf/NaN). `formatF64` is C89-emission-layer only (called from `c89_emit.zig`). A future asm backend would use raw bit patterns, not `formatF64`. The fix is emission-layer text representation only.
+
+- [ ] **Step 1: Add C89 union macros to `zig_compat.h`.** True C89 (no C99 compound literals, no GCC builtins, no `math.h`/libm). Union type-pun:
+```c
+typedef union { unsigned long u[2]; double d; } z98_f64_bits;
+static const z98_f64_bits z98_inf_bits  = {{ 0x00000000, 0x7FF00000 }};
+static const z98_f64_bits z98_ninf_bits = {{ 0x00000000, 0xFFF00000 }};
+static const z98_f64_bits z98_nan_bits  = {{ 0x00000000, 0x7FF80000 }};
+#define Z98_INF    (z98_inf_bits.d)
+#define Z98_NEGINF (z98_ninf_bits.d)
+#define Z98_NAN    (z98_nan_bits.d)
+```
+Little-endian IEEE-754 confirmed on all targets (PII/PIII, i686). `unsigned long` is 32-bit on all three toolchains (GCC/mingw, MSVC6, OpenWatcom). Place alongside existing `Z98_I64_C` macros.
+- [ ] **Step 2: Fix `formatF64` non-finite emission.** Replace the zero/non-finite guard: `+inf` → return `"Z98_INF"`, `-inf` → return `"Z98_NEGINF"`, NaN → return `"Z98_NAN"`. Remove the wrong comment "There is no valid C89 literal for inf/nan". Keep finite/zero behavior unchanged.
+- [ ] **Step 3: Verify precision digits.** Confirm `formatF64` generates enough decimal digits to round-trip f64 (17 significant digits). If it already does, record evidence. If not, fix.
+- [ ] **Step 4: Restore inf rows in fixture.** Re-add `1e309` → `7ff0000000000000` and `-1e309` → `fff0000000000000` to `lexer_float_rounding_xmod` (replacing the max-finite workaround rows). Verify fixture GREEN with inf rows.
+- [ ] **Step 5: Verify.** Fixture passes with all rows including inf; `lexer_float_exponent_xmod` passes; compiler self-build succeeds. Record exact commands and bits.
+- [ ] **Step 6: Commit** `fix(format): emit C89 union-type-pun inf/nan via zig_compat.h`, then `docs(sdd): M2 T1F report`.
 
 ### Task 1C: Migrate z9play to corrected rounding + full battery + seed rotation
 
