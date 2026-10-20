@@ -253,7 +253,7 @@ Fixtures green (post-fix, `bash scripts/stdlib/run_fixtures.sh <zig1> …` → `
 
 ## D6 — Decimal `f64` literals are not correctly rounded by the lexer
 
-**Status:** OPEN (found 2026-10-19 while pinning `std_noise` for M2; worked around in `sf/src/std_noise.zig`).
+**Status:** FIXED at root cause (2026-10-20, std-algorithms M2 T1B lexer fix + T1D literal restore — see the dated fix block below; found 2026-10-19 while pinning `std_noise` for M2; the `std_noise.zig` workaround literals are REMOVED).
 
 **Defect.** `parseF64` in `sf/src/lexer.zig` accumulates the fractional part digit-by-digit with `result += digit * frac_mul` and `frac_mul *= 0.1`. That is not a correctly-rounded decimal-to-binary conversion, so a literal can land one or more ULPs away from the double a conforming compiler (`gcc`, Zig) produces. The error is silent and propagates into emitted C.
 
@@ -289,3 +289,11 @@ The correct round-to-nearest-even doubles are `3fd76cf5d0b0995b` (`0.36602540378
 **Impact.** Any bit-exact algorithm, crosscheck vector, or serialized constant can silently differ by ULPs; the workaround makes source literals misleading and will break if the lexer is fixed. The M2 `std_noise` crosscheck pins the current workaround, so a lexer fix is expected to fail that vector until the literals are restored.
 
 **Reference points.** `sf/src/lexer.zig:610-645` (`parseF64` fractional loop); `sf/src/std_math.zig:208` (known-lexer note); M2 Task 1 report `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1-report.md` §Fix round 1 (literal workaround + bit evidence).
+
+**Fixed at root cause [updated: 2026-10-20 — std-algorithms M2 T1B + T1D].** The lexer is now correctly rounded and the `std_noise` compensation is gone.
+
+Fix commits (branch `std_algorithms_m2`): T1B `f967aeff` `fix(lexer): correctly round decimal f64 literals` — `parseF64` (`sf/src/lexer.zig`) rewritten as a correctly-rounded decimal-to-binary conversion (Clinger fast path + slow-path decimal correction), so `0.366025403784439` produces `3fd76cf5d0b0995b` and `-0.16666666666666666` produces `bfc5555555555555` (the "Proper behavior" bar above) and the 17-sig-digit round-trip holds; T1D `fix(std_noise): restore canonical f64 literals after lexer fix` — `sf/src/std_noise.zig` literals restored to the canonical 2014-reference spellings `0.366025403784439` / `-0.16666666666666666` and the compensating comment deleted (the adjacent-literal workaround is REMOVED — it now parsed 1–2 ULPs off under the fixed lexer and failed the crosscheck grid).
+
+Verification (T1D, seed-built fixed compiler `21c957730d268f1e7883176fa5413b65`): `scripts/stdlib/run_crosscheck.sh <zig1> std_noise` **PASS 3/3** (Z98 == C89 ref == committed `grid.expected`, md5 `94314ebd32053089b226387770c0cd5d` UNCHANGED); `verify_stdlib` **STDLIB GATE OK 3/3** (294/0 fixtures; `stdlib_noise_basic_xmod` PGM hash `4921c94f3ec08543` re-captured byte-identical). Full detail: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1d-report.md`.
+
+The "Reproducer" / "Impact" paragraphs above are the historical record at intake (pre-fix). `sf/src/std_math.zig`'s bit-pattern constant style remains valid engineering (no dependency on parser precision) — only its parenthetical "the lexer's decimal-float parser is not correctly rounded" note is now historical (T1B fixed it).

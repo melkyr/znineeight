@@ -32,12 +32,8 @@ pub const OpenSimplex = struct {
 };
 
 const STRETCH_CONSTANT_2D: f64 = -0.211324865405187;
-// Decimal literals are chosen to survive the Z98 lexer's fractional-digit
-// accumulation unchanged; 0.3660254037844389 and -0.16666666666666664 parse
-// to the same IEEE-754 doubles that gcc assigns to the 2014 reference's
-// 0.366025403784439 and -1.0/6.0 constants.
-const SQUISH_CONSTANT_2D: f64 = 0.3660254037844389;
-const STRETCH_CONSTANT_3D: f64 = -0.16666666666666664;
+const SQUISH_CONSTANT_2D: f64 = 0.366025403784439;
+const STRETCH_CONSTANT_3D: f64 = -0.16666666666666666;
 const SQUISH_CONSTANT_3D: f64 = 0.3333333333333333;
 const NORM_CONSTANT_2D: f64 = 47.0;
 const NORM_CONSTANT_3D: f64 = 103.0;

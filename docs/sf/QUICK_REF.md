@@ -92,22 +92,23 @@ runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 archive **v95 carries the full 32 std `.zig`** = `std.zig` plus 31 `std_*.zig`;
 the earlier v94 archive predated M0 with only 30 — from v95 onward
 `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install the current
-`sf/src` set (31 `std_*.zig` + `std.zig` = 32) into the produced compiler's
+`sf/src` set (33 `std_*.zig` + `std.zig` = 34) into the produced compiler's
 `lib/` and the archive), and `SEED_README.txt`.
 
-**Std-module inventory:** the `sf/src` std set is **31** `std_*.zig` + `std.zig`
+**Std-module inventory:** the `sf/src` std set is **33** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
 `std_net`, `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`,
 `std_time_pal`, `std_buf`, `std_file`, `std_file_pal`, `std_stdin`,
 `std_stdin_pal`, `std_stream`, `std_crypto`, `std_parse`, `std_bencode`,
 `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`,
-`std_utf8`, `std_http`). `std.zig` re-exports
+`std_utf8`, `std_http`, `std_rand`, `std_noise`). `std.zig` re-exports
 the core **13** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/buf`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
-`scripts/seed/build_from_seed.sh` installs all 32 into the rebuilt compiler's `lib/`.
+`scripts/seed/build_from_seed.sh` installs all 34 into the rebuilt compiler's `lib/`.
 **`std_crypto` (M4):** carries streaming SHA-1/SHA-256/MD5 + CRC-32 plus RC4 (`rc4Init`/`rc4Apply`, RFC 6229 vectors) and modular exponentiation (`modpow`, fixed 32-bit limbs sized for the MSE/PE 768-bit Diffie-Hellman prime) for the encrypted handshake.
 **`std_http` deferral:** HTTP/1.1, no TLS; chunked transfer-encoding and keep-alive are **DEFERRED** (not implemented) — `parseResponse` requires a `Content-Length` or a close-delimited body and rejects `Transfer-Encoding: chunked` with `BadResponse` (binding note in `sf/src/std_http.zig`).
 **`std_math` f64 (M2, z9play):** adds pure-Z98 `sqrt(x: f64) f64` (correctly rounded: exact integer square root of the significand, 0 ULP), plus `sin(x: f64) f64` / `cos(x: f64) f64` (Cody-Waite argument reduction on a split `2/pi` + fdlibm `__kernel_sin`/`__kernel_cos` minimax, one op per statement so the C89 emitter's f64 stores defeat x87 excess precision). **Pure Z98 — no libm, no `@sqrt`/`@sin`/`@cos` builtins**; the emitted C imports no math symbol (the z9play M2 tier asserts `nm -u` has no `sqrt`/`sin`/`cos`/`pow` and DT_NEEDED has no `libm`). `sin`/`cos` are valid for `|x| <= 2^20*(pi/2) ≈ 1.65e6` (fdlibm medium-reduction cap; covers the Vorbis IMDCT/window range with >60x headroom) and return NaN outside it; `sqrt` maps `x<0` to NaN and passes `0`/`inf` through. Accuracy <= 1 ULP vs a glibc/python oracle. Fixture: `repro/mi_matrix/stdlib_math_f64_xmod`; z9play gate: `examples/z98/z9play/tests/tier_math.sh`. See `sf/src/std_math.zig`.
+**`std_noise` (M2):** Kurt Spencer's **2014 OpenSimplex v1.1** (NOT OpenSimplex2) — `opensimplexInit`/`noise2d`/`noise3d`/`noiseFbm2d`, 512 B state (`perm` + `perm_grad`) seeded via `std_rand` xoshiro Fisher–Yates; f64 throughout (no f32 shortcut — it fails the visual golden). Canonical 2014-reference constant literals (`0.366025403784439` / `-0.16666666666666666`); the temporary adjacent-literal lexer workaround was removed at the M2 T1D closeout (defect D6 FIXED — T1B correctly-rounded `parseF64`). Pins: crosscheck `scripts/stdlib/vectors/std_noise/grid.expected` md5 `94314ebd32053089b226387770c0cd5d` (Z98 == C89 ref), visual golden `pgm fnv1a64 4921c94f3ec08543` (`stdlib_noise_basic_xmod`). Doc: `sf/docs/std_lib/noise.md`.
 
 - **Compiler↔std separation:** the compiler's import graph reaches **no std module** —
   the transitive `@import` closure from `sf/src/main.zig` is zero std modules. The std lib is
@@ -167,7 +168,8 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is 292/0 on seed v103. The z9play M7 TUI consumes this
+  pin); `verify_stdlib` is 294/0 (292/0 at M7 on v103; the two M2
+  `stdlib_noise_*` fixtures made it 294). The z9play M7 TUI consumes this
   API (`examples/z98/z9play/ui.zig`).
 
 ### Compiler limits — `Type`-column ceilings  [added: 2026-10-08]
