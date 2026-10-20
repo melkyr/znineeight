@@ -607,12 +607,243 @@ fn parseU64(text: []const u8, base: u8) u64 {
     return result;
 }
 
-fn parseF64(text: []const u8) f64 {
-    var result: f64 = 0.0;
-    var i: usize = 0;
-    var negative = false;
+const Hpd = struct {
+    num_digits: u32,
+    decimal_point: i32,
+    negative: bool,
+    truncated: bool,
+    digits: [800]u8,
+};
 
-    if (i < text.len and text[i] == '-') { negative = true; i += 1; }
+fn f64FromBits(bits: u64) f64 {
+    var p: *f64 = @ptrCast(*f64, &bits);
+    return p.*;
+}
+
+fn f64SignedZero(negative: bool) f64 {
+    if (negative) return f64FromBits(0x8000000000000000);
+    return f64FromBits(0);
+}
+
+fn f64SignedInf(negative: bool) f64 {
+    if (negative) return f64FromBits(0xFFF0000000000000);
+    return f64FromBits(0x7FF0000000000000);
+}
+
+fn pow5of(k: u32) u64 {
+    var r: u64 = 1;
+    var i: u32 = 0;
+    while (i < k) {
+        r = r * 5;
+        i += 1;
+    }
+    return r;
+}
+
+fn bitlen128(hi: u64, lo: u64) u32 {
+    var v: u64 = hi;
+    var base: u32 = 0;
+    if (v == 0) {
+        v = lo;
+    } else {
+        base = 64;
+    }
+    if (v == 0) return 0;
+    var n: u32 = base;
+    while (v != 0) {
+        v = v >> 1;
+        n += 1;
+    }
+    return n;
+}
+
+fn shr128(hi: u64, lo: u64, shift: u32) u64 {
+    if (shift == 0) return lo;
+    if (shift >= 64) return hi >> @intCast(u64, shift - 64);
+    return (lo >> @intCast(u64, shift)) | (hi << @intCast(u64, 64 - shift));
+}
+
+fn bit128(hi: u64, lo: u64, i: u32) u64 {
+    if (i >= 64) return (hi >> @intCast(u64, i - 64)) & 1;
+    return (lo >> @intCast(u64, i)) & 1;
+}
+
+fn lowNonZero128(hi: u64, lo: u64, cnt: u32) bool {
+    if (cnt == 0) return false;
+    if (cnt >= 64) {
+        if (lo != 0) return true;
+        if (cnt == 64) return false;
+        var hm: u64 = (@intCast(u64, 1) << @intCast(u64, cnt - 64)) - 1;
+        return (hi & hm) != 0;
+    }
+    var lm: u64 = (@intCast(u64, 1) << @intCast(u64, cnt)) - 1;
+    return (lo & lm) != 0;
+}
+
+fn fastRound(qhi: u64, qlo: u64, sticky: bool, e_prime: i32, negative: bool) f64 {
+    var l: i32 = @intCast(i32, bitlen128(qhi, qlo));
+    if (l == 0) return f64SignedZero(negative);
+    var e: i32 = e_prime + l - 1;
+    if (e + 1075 < 0) return f64SignedZero(negative);
+    if (e + 1075 == 0) {
+        var is_pow2 = (qhi == 0) and ((qlo & (qlo - 1)) == 0);
+        if (is_pow2 and !sticky) return f64SignedZero(negative);
+        var sign: u64 = 0;
+        if (negative) sign = 0x8000000000000000;
+        return f64FromBits(1 | sign);
+    }
+    var prec: i32 = 53;
+    if (e + 1022 < 0) {
+        prec = e + 1075;
+    }
+    var keep: u64 = 0;
+    var shift: i32 = l - prec;
+    if (shift <= 0) {
+        keep = qlo << @intCast(u64, prec - l);
+    } else {
+        keep = shr128(qhi, qlo, @intCast(u32, shift));
+        var round_bit = bit128(qhi, qlo, @intCast(u32, shift - 1));
+        var sticky2 = sticky or lowNonZero128(qhi, qlo, @intCast(u32, shift - 1));
+        if (round_bit != 0 and (sticky2 or (keep & 1) != 0)) {
+            keep = keep + 1;
+        }
+    }
+    if (prec == 53) {
+        if (keep >= (@intCast(u64, 1) << 53)) {
+            keep = @intCast(u64, 1) << 52;
+            e = e + 1;
+        }
+        if (e > 1023) return f64SignedInf(negative);
+        var biased: u64 = @intCast(u64, e + 1023);
+        var frac: u64 = keep & 0x000fffffffffffff;
+        var bits: u64 = (biased << 52) | frac;
+        if (negative) bits = bits | 0x8000000000000000;
+        return f64FromBits(bits);
+    }
+    if (negative) return f64FromBits(keep | 0x8000000000000000);
+    return f64FromBits(keep);
+}
+
+fn hpdTrim(h: *Hpd) void {
+    var n: usize = @intCast(usize, h.num_digits);
+    while (n != 0 and h.digits[n - 1] == 0) {
+        n -= 1;
+    }
+    h.num_digits = @intCast(u32, n);
+}
+
+fn hpdMul2(h: *Hpd) void {
+    var n: usize = @intCast(usize, h.num_digits);
+    if (n == 0) return;
+    var carry: u32 = 0;
+    var i: usize = n;
+    while (i > 0) {
+        i -= 1;
+        var t: u32 = @intCast(u32, h.digits[i]) * 2 + carry;
+        h.digits[i] = @intCast(u8, t % 10);
+        carry = t / 10;
+    }
+    if (carry != 0) {
+        if (n == 800) {
+            if (h.digits[799] != 0) {
+                h.truncated = true;
+            }
+            var j: usize = 799;
+            while (j > 0) {
+                h.digits[j] = h.digits[j - 1];
+                j -= 1;
+            }
+            h.digits[0] = @intCast(u8, carry);
+        } else {
+            var j: usize = n;
+            while (j > 0) {
+                h.digits[j] = h.digits[j - 1];
+                j -= 1;
+            }
+            h.digits[0] = @intCast(u8, carry);
+            n += 1;
+            h.num_digits = @intCast(u32, n);
+        }
+        h.decimal_point += 1;
+    }
+    hpdTrim(h);
+}
+
+fn hpdDiv2(h: *Hpd) void {
+    var n: usize = @intCast(usize, h.num_digits);
+    if (n == 0) return;
+    var carry: u32 = 0;
+    var i: usize = n;
+    while (i > 0) {
+        i -= 1;
+        var t: u32 = @intCast(u32, h.digits[i]) * 5 + carry;
+        h.digits[i] = @intCast(u8, t % 10);
+        carry = t / 10;
+    }
+    if (carry != 0) {
+        if (n == 800) {
+            if (h.digits[799] != 0) {
+                h.truncated = true;
+            }
+            var j: usize = 799;
+            while (j > 0) {
+                h.digits[j] = h.digits[j - 1];
+                j -= 1;
+            }
+            h.digits[0] = @intCast(u8, carry);
+        } else {
+            var j: usize = n;
+            while (j > 0) {
+                h.digits[j] = h.digits[j - 1];
+                j -= 1;
+            }
+            h.digits[0] = @intCast(u8, carry);
+            n += 1;
+            h.num_digits = @intCast(u32, n);
+        }
+    } else {
+        h.decimal_point -= 1;
+    }
+    hpdTrim(h);
+}
+
+fn hpdRound(h: *Hpd) u64 {
+    if (h.num_digits == 0 or h.decimal_point < 0) return 0;
+    if (h.decimal_point > 18) return 0xFFFFFFFFFFFFFFFF;
+    var dp: usize = @intCast(usize, h.decimal_point);
+    var n: usize = @intCast(usize, h.num_digits);
+    var acc: u64 = 0;
+    var i: usize = 0;
+    while (i < dp) {
+        acc = acc * 10;
+        if (i < n) {
+            acc = acc + @intCast(u64, h.digits[i]);
+        }
+        i += 1;
+    }
+    var round_up = false;
+    if (dp < n) {
+        round_up = h.digits[dp] >= 5;
+        if (h.digits[dp] == 5 and dp + 1 == n) {
+            round_up = h.truncated or ((dp != 0) and ((1 & h.digits[dp - 1]) != 0));
+        }
+    }
+    if (round_up) {
+        acc = acc + 1;
+    }
+    return acc;
+}
+
+fn parseF64(text: []const u8) f64 {
+    var h: Hpd = undefined;
+    h.num_digits = 0;
+    h.decimal_point = 0;
+    h.negative = false;
+    h.truncated = false;
+    var i: usize = 0;
+    var int_digits: i32 = 0;
+
+    if (i < text.len and text[i] == '-') { h.negative = true; i += 1; }
     if (i < text.len and text[i] == '+') { i += 1; }
 
     while (i < text.len) {
@@ -621,50 +852,165 @@ fn parseF64(text: []const u8) f64 {
         if (c == '_') continue;
         if (c == '.' or c == 'e' or c == 'E') { i -= 1; break; }
         if (!isDigit(c)) { i -= 1; break; }
-        var dg: i32 = @intCast(i32, c - @intCast(u8, '0'));
-        result = result * 10.0 + @intToFloat(f64, dg);
+        if (h.num_digits < 800) {
+            h.digits[@intCast(usize, h.num_digits)] = c - @intCast(u8, '0');
+        } else {
+            if (c != '0') h.truncated = true;
+        }
+        h.num_digits += 1;
+        int_digits += 1;
     }
 
     if (i < text.len and text[i] == '.') {
         i += 1;
-        var frac_mul: f64 = 0.1;
         while (i < text.len) {
             var c = text[i];
             i += 1;
             if (c == '_') continue;
             if (c == 'e' or c == 'E') { i -= 1; break; }
             if (!isDigit(c)) break;
-            var dg2: i32 = @intCast(i32, c - @intCast(u8, '0'));
-            result += @intToFloat(f64, dg2) * frac_mul;
-            frac_mul *= 0.1;
+            if (h.num_digits < 800) {
+                h.digits[@intCast(usize, h.num_digits)] = c - @intCast(u8, '0');
+            } else {
+                if (c != '0') h.truncated = true;
+            }
+            h.num_digits += 1;
         }
     }
 
+    var e10: i32 = 0;
+    var e10_neg = false;
     if (i < text.len and (text[i] == 'e' or text[i] == 'E')) {
         i += 1;
-        var exp_neg = false;
-        if (i < text.len and text[i] == '-') { exp_neg = true; i += 1; }
+        if (i < text.len and text[i] == '-') { e10_neg = true; i += 1; }
         if (i < text.len and text[i] == '+') { i += 1; }
-
-        var exp: i32 = 0;
-        while (i < text.len and isDigit(text[i])) {
-            exp = exp * 10 + @intCast(i32, text[i] - '0');
+        while (i < text.len) {
+            var c = text[i];
+            if (c == '_') { i += 1; continue; }
+            if (!isDigit(c)) break;
             i += 1;
+            if (e10 < 100000) {
+                e10 = e10 * 10 + @intCast(i32, c - @intCast(u8, '0'));
+            }
         }
+    }
+    if (e10_neg) {
+        h.decimal_point = int_digits - e10;
+    } else {
+        h.decimal_point = int_digits + e10;
+    }
 
-        var power: f64 = 1.0;
-        for (0..@intCast(usize, exp)) |_| {
-            power *= 10.0;
+    while (h.num_digits != 0 and h.digits[@intCast(usize, h.num_digits - 1)] == 0) {
+        h.num_digits -= 1;
+    }
+    var lz: usize = 0;
+    var tot: usize = @intCast(usize, h.num_digits);
+    while (lz < tot and h.digits[lz] == 0) {
+        lz += 1;
+    }
+    if (lz > 0) {
+        var j: usize = 0;
+        while (lz + j < tot) {
+            h.digits[j] = h.digits[lz + j];
+            j += 1;
         }
-        if (exp_neg) {
-            result /= power;
-        } else {
-            result *= power;
+        h.num_digits -= @intCast(u32, lz);
+        h.decimal_point -= @intCast(i32, lz);
+    }
+    if (h.num_digits == 0) return f64SignedZero(h.negative);
+
+    if (h.decimal_point + 324 < 0) return f64SignedZero(h.negative);
+    if (h.decimal_point >= 310) return f64SignedInf(h.negative);
+
+    var n: usize = @intCast(usize, h.num_digits);
+    if (!h.truncated and n <= 16) {
+        var m: u64 = 0;
+        var j: usize = 0;
+        while (j < n) {
+            m = m * 10 + @intCast(u64, h.digits[j]);
+            j += 1;
+        }
+        if (m < (@intCast(u64, 1) << 53)) {
+            var e: i32 = h.decimal_point - @intCast(i32, n);
+            if (e + 22 >= 0 and e <= 22) {
+                if (e >= 0) {
+                    var p5: u64 = pow5of(@intCast(u32, e));
+                    var m_lo: u64 = m & 0xFFFFFFFF;
+                    var m_hi: u64 = m >> 32;
+                    var p_lo: u64 = p5 & 0xFFFFFFFF;
+                    var p_hi: u64 = p5 >> 32;
+                    var ll: u64 = m_lo * p_lo;
+                    var lh: u64 = m_lo * p_hi;
+                    var hl: u64 = m_hi * p_lo;
+                    var hh: u64 = m_hi * p_hi;
+                    var mid: u64 = (ll >> 32) + (lh & 0xFFFFFFFF) + (hl & 0xFFFFFFFF);
+                    var lo: u64 = (mid << 32) | (ll & 0xFFFFFFFF);
+                    var hi: u64 = hh + (lh >> 32) + (hl >> 32) + (mid >> 32);
+                    return fastRound(hi, lo, false, e, h.negative);
+                } else {
+                    var k: i32 = 0 - e;
+                    var p5b: u64 = pow5of(@intCast(u32, k));
+                    var q: u64 = m / p5b;
+                    var rr: u64 = m % p5b;
+                    var qhi: u64 = 0;
+                    var qlo: u64 = q;
+                    var t: i32 = 0;
+                    while (bitlen128(qhi, qlo) < 54 and rr != 0) {
+                        rr = rr * 2;
+                        var bit: u64 = 0;
+                        if (rr >= p5b) {
+                            rr = rr - p5b;
+                            bit = 1;
+                        }
+                        var carry: u64 = qlo >> 63;
+                        qlo = qlo * 2 + bit;
+                        qhi = qhi * 2 + carry;
+                        t += 1;
+                    }
+                    var e_prime: i32 = 0 - t - k;
+                    return fastRound(qhi, qlo, rr != 0, e_prime, h.negative);
+                }
+            }
         }
     }
 
-    if (negative) result = -result;
-    return result;
+    var exp2: i32 = 0;
+    while (h.decimal_point > 0) {
+        hpdDiv2(&h);
+        exp2 += 1;
+    }
+    while (true) {
+        if (h.decimal_point == 0 and h.digits[0] >= 5) break;
+        hpdMul2(&h);
+        exp2 -= 1;
+    }
+    exp2 -= 1;
+    while (exp2 + 1022 < 0) {
+        hpdDiv2(&h);
+        exp2 += 1;
+    }
+    if (exp2 + 1023 >= 2047) return f64SignedInf(h.negative);
+
+    var s: u32 = 0;
+    while (s < 53) {
+        hpdMul2(&h);
+        s += 1;
+    }
+    var mantissa: u64 = hpdRound(&h);
+    if (mantissa >= (@intCast(u64, 1) << 53)) {
+        hpdDiv2(&h);
+        exp2 += 1;
+        mantissa = hpdRound(&h);
+        if (exp2 + 1023 >= 2047) return f64SignedInf(h.negative);
+    }
+    var power2: i32 = exp2 + 1023;
+    if (mantissa < (@intCast(u64, 1) << 52)) {
+        power2 -= 1;
+    }
+    mantissa = mantissa & 0x000fffffffffffff;
+    var bits: u64 = (@intCast(u64, power2) << 52) | mantissa;
+    if (h.negative) bits = bits | 0x8000000000000000;
+    return f64FromBits(bits);
 }
 
 fn isU64MaxLiteral(text: []const u8) bool {
