@@ -43,6 +43,84 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 - [ ] **Step 4: Crosscheck green.** `.in` lines are `2 <seed> <x> <y>` or `3 <seed> <x> <y> <z>` (decimal). `stdlib_noise_cross_xmod --crosscheck` re-inits `opensimplexInit(seed)` per line and prints exactly one line: the 16 lowercase hex digits of the IEEE-754 f64 bit pattern returned by `noise2d`/`noise3d`; always exits 0. Ref uses the same line format. `noiseFbm2d` is covered by the basic fixture/visual golden, not crosscheck. Vectors = seeds × coordinate grid.
 - [ ] **Step 5: Gates + commit.** Full §4 RUN set; 3× determinism; import-resolvability. `feat(std_noise): OpenSimplex 2D/3D + fBm (M2)`.
 
+**Status (2026-10-19): BLOCKED.** The implementing commit `10fd69c0` and report `72297f98` are held, not complete. The lexer f64 rounding defect (`D6`) invalidated the ULP workaround. Do not review or close Task 1; resume after Task 1D.
+
+### Task 1A: Lexer f64 rounding — investigation (derivative of blocked Task 1)
+
+**Files:**
+- Create: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1a-report.md`
+- No source, fixture, seed, or tracked-file edits.
+
+**Interfaces:**
+- Consumes: `sf/src/lexer.zig` `parseF64`; current compiler `/tmp/t4_review/zig1_5_clean`.
+- Produces: root cause, minimal repro, correct IEEE-754 bit table, full affected-file inventory, and migration list for Task 1B/1C/1D.
+
+- [ ] **Step 1: Root-cause the parser.** Confirm the mantissa fraction loop and the exponent `power *= 10.0` path both contribute to incorrect rounding. Do not limit the investigation to literals with a decimal point: `1e300` is also wrong.
+- [ ] **Step 2: Minimal repro.** Record a minimal Z98 program and the exact `--dump-c89` command showing `0.366025403784439` emits `3.660254037844391e-1` and `-0.16666666666666666` emits `1.6666666666666669e-1`.
+- [ ] **Step 3: Correct-value table.** Establish round-to-nearest-even values against an independent oracle (`gcc -m32 -std=c89` `strtod` and/or Python `float`), including at least:
+  - `0.366025403784439` -> `3fd76cf5d0b0995b`
+  - `-0.16666666666666666` -> `bfc5555555555555`
+  - `1e300` / `1.0e300` -> `7e37e43c8800759c`
+  - `1e-308` -> `000730d67819e8d2`
+  - `0.3` -> `3fd3333333333333`
+  - `0.75` -> `3fe8000000000000`
+  - `1.75` -> `3ffc000000000000`
+- [ ] **Step 4: Inventory.** Scan decimal float literals under `sf/src`, `examples/z98`, `repro/mi_matrix`, and `stdlib_test`; list every mismatch with file:line, literal, current bits, correct bits, and impact class. Baseline to confirm: 1,061 literals, 240 mismatches, 13 files (recompute, do not trust this summary).
+- [ ] **Step 5: Migration list.** Identify every fixture, golden, exact pin, dump pin, app source, and seed artifact that must change in Tasks 1C/1D. Separate definite failures from rerun-only cases.
+- [ ] **Step 6: Commit report.** `docs(sdd): M2 T1A investigation report`. No code changes.
+
+### Task 1B: Lexer f64 rounding — fix (minimal repro + correct values)
+
+**Files:**
+- Modify: `sf/src/lexer.zig`
+- Create: `repro/mi_matrix/lexer_float_rounding_xmod/{main.zig,expected.txt,expected.rc}`
+- Create: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1b-report.md`
+
+**Interfaces:**
+- Consumes: Task 1A bit table and migration list.
+- Produces: correctly rounded decimal `f64` parsing; the new fixture is the permanent regression pin.
+
+- [ ] **Step 1: Write the failing fixture.** `lexer_float_rounding_xmod` checks the exact bit patterns from Task 1A, including the mantissa and exponent cases, and prints `lexer float round ok` with rc 0 only when all match. Run it before the fix and record the failure.
+- [ ] **Step 2: Fix `parseF64`.** Implement correctly rounded decimal-to-f64 for both mantissa and exponent, round-to-nearest-even, with no libc `strtod`, no platform-specific dependency, and no new language surface. Do not just compensate with adjacent literals.
+- [ ] **Step 3: Verify.** Fixture passes; existing `lexer_float_exponent_xmod` still passes; compiler self-build succeeds. Record exact commands and bits.
+- [ ] **Step 4: Commit** `fix(lexer): correctly round decimal f64 literals`, then `docs(sdd): M2 T1B report`.
+
+### Task 1C: Migrate z9play to corrected rounding + full battery + seed rotation
+
+**Files:**
+- Modify only as measured: z9play exact goldens/pins (`examples/z98/z9play/testdata/expected/*.pcm`, `tests/tier_decode.sh`, `tests/tier_stream.sh`), z9play docs dump pins (`README.md`, `NOTES.md`, `docs/sf/QUICK_REF.md`), and `scripts/seed/archive_seed.sh` interim count `33` -> `34`.
+- Create: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1c-report.md`
+- Seed: `release/seed/zig1-seed.tgz`, `release/seed/CHANGELOG.md` (via archive script).
+
+**Interfaces:**
+- Consumes: Task 1B fixed compiler.
+- Produces: z9play artifacts consistent with the corrected `floor.zig` table; first lexer-fix seed rotation.
+
+- [ ] **Step 1: Rebuild.** Build a fresh compiler from the fixed source; record its binary md5 and fixed point.
+- [ ] **Step 2: Full battery.** Run the full compiler battery (corpus class, goldens 5/5, mi_matrix 25+oob, examples 26/26 build+run, stdlib, seed hop, 8 pins, markers) plus all z9play tiers (`info`, `setup`, `cli`, `tui`, `audio`, `decode`, `flac`, `stream`, `win9x`). Record every mover old -> new.
+- [ ] **Step 3: Migrate z9play.** Update only artifacts proven to move: exact PCM/WAV goldens and pins, `--dump-c89` pins, and docs. Do not edit `floor.zig` unless Task 1A proves a workaround literal; the table is already the spec decimal text.
+- [ ] **Step 4: Interim seed count.** Update `archive_seed.sh` hardcoded count/prose to 34 (std_noise is already in the copy list); Task 3 later takes it to 35.
+- [ ] **Step 5: Rotate seed.** `bash scripts/seed/archive_seed.sh <zig1> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`; record archive md5, manifest, binary md5, fixed point.
+- [ ] **Step 6: Commit** `example(z9play): migrate to correctly rounded f64 literals`, `chore(seed): rotate v104 (lexer f64)`, then `docs(sdd): M2 T1C report`.
+
+### Task 1D: Restore canonical std_noise + re-baseline + second seed rotation
+
+**Files:**
+- Modify: `sf/src/std_noise.zig` (canonical literals), `repro/mi_matrix/stdlib_noise_basic_xmod/expected.txt` (PGM hash), `sf/docs/std_lib/noise.md`, `examples/torrent_example_defects.md` (D6 status), `docs/sf/QUICK_REF.md`/seed docs as needed.
+- Verify unchanged: `scripts/stdlib/vectors/std_noise/grid.expected` (should stay the reference output).
+- Seed: `release/seed/zig1-seed.tgz`, `release/seed/CHANGELOG.md` (via archive script).
+- Create: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1d-report.md`
+
+**Interfaces:**
+- Consumes: Task 1B fixed lexer; Task 1C rotated seed v104.
+- Produces: canonical `std_noise`; unblocked Task 1.
+
+- [ ] **Step 1: Restore canonical literals.** Replace the workaround `0.3660254037844389` and `-0.16666666666666664` with `0.366025403784439` and `-0.16666666666666666`; remove the compensating comment.
+- [ ] **Step 2: Re-baseline noise.** Run `verify_stdlib` and `run_crosscheck std_noise` 3x; confirm `grid.expected` is unchanged and re-capture only the `stdlib_noise_basic` PGM hash.
+- [ ] **Step 3: Truth-up.** Mark D6 FIXED in `examples/torrent_example_defects.md`; update noise docs and QUICK_REF counts/pins. “Rebase” here means re-baseline fixtures/pins, never `git rebase`.
+- [ ] **Step 4: Rotate seed again.** Rotate v105 with the canonical std_noise; record archive md5, manifest, binary md5, fixed point (must equal Task 1C’s fixed point).
+- [ ] **Step 5: Unblock.** After the gate is green, mark Task 1 complete in the ledger and resume Task 2. Commit `fix(std_noise): restore canonical f64 literals after lexer fix`, `chore(seed): rotate v105 (std_noise canonical)`, then `docs(sdd): M2 T1D report`.
+
 ### Task 2: `std_lz4` — LZ4 block decoder
 
 **Files:**
