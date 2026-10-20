@@ -6,7 +6,8 @@ Task 1: STOP-present (lattice-zero gate) — 2014 ref seed 0: (0,0)=0, (1,0)=0.4
 Ruling: pin actual 2014 reference behavior; zero-at-lattice superseded; use 24 3D gradients. Spec §6.5/§9 + plan Task 1/3 amended; Task 1 resumes.
 Task 1: BLOCKED — lexer f64 rounding (D6). Implementation 10fd69c0 + report 72297f98 held, not complete; ULP workaround invalid. Resume only after Task 1D.
 Task 1A: pending — investigation, minimal repro, correct-value table, full affected inventory.
-Task 1B: pending — fix parseF64 correctly rounded; regression fixture lexer_float_rounding_xmod.
+Task 1B: complete (commits f967aeff fix + 5f316bc0 report) — parseF64 correctly rounded (1Bp §3), lexer_float_rounding_xmod GREEN, exponent GREEN, self-build hop1==hop2==73417f39. Rulings: §4.3 inf rows swapped to max-finite (formatF64 maps non-finite→0, out of T1B scope — ticket in report §8.1); noise golden stable despite 1-2 ULP constant drift (u8 quantization) — Task 1D still needed.
 Task 1C: pending — migrate z9play pins/goldens, full battery, seed v104 (interim 34).
 Task 1D: pending — restore canonical std_noise, rebaseline noise, D6 FIXED, seed v105; then unblock Task 1.
+Task 1F: complete (commits below) — formatF64 emits C89 union-type-pun macros (Z98_INF/Z98_NEGINF/Z98_NAN via zig_compat.h + emit_support.zig byte-mirror), inf rows restored in lexer_float_rounding_xmod (1e309→7ff0…, -1e309→fff0…), 17-sig-digit round-trip confirmed. Self-build three-hop closure hop2==hop3==21c95773 (moving point: seed embeds pre-T1F support); check_emit_support 8/8; float sweep 5/5. T1B §8.1 ticket closed.
 
