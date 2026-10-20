@@ -278,17 +278,15 @@ pub fn noiseFbm2d(n: *const OpenSimplex, x: f64, y: f64, octaves: u8, lacunarity
 ```
 f64 internally (f32 skews produce artifacts); skew `(sqrt(3)-1)/2` and
 unskew `(3-sqrt(3))/6` as precomputed literals (no runtime sqrt needed);
-2D gradients = 8 compass directions, 3D = 12 cube edges; do not substitute
-Perlin gradients (blueprint §5.4). `octaves == 0` → `0.0`.
+2D gradients = 8 compass directions, 3D = 24 rhombicuboctahedron gradients
+(`perm_grad[i] = (perm[i] % 24) * 3`); do not substitute Perlin gradients
+(blueprint §5.4). `octaves == 0` → `0.0`.
 Ref = Kurt Spencer's **2014 OpenSimplex** (`github.com/KdotJPG/OpenSimplexNoise`
 — NOT OpenSimplex2; blueprint §5 names the 2014 algorithm and the
 `perm`/`perm_grad` state is that implementation's shape), ported to
-`scripts/stdlib/ref/std_noise/ref.c`; vectors pin it.
-**Named risk (STOP condition):** blueprint §5.5 claims zero at integer
-lattice points — that is a Perlin property and MAY NOT hold for OpenSimplex.
-Task 1 verifies against the reference first; if the reference is nonzero at
-lattice points, the plan pins the reference behavior and
-STOP-presents this spec line for amendment before implementing.
+`scripts/stdlib/ref/std_noise/ref.c`; vectors pin it. The 2014 reference is
+authoritative: at seed 0, `(0,0)` is zero but `(1,0)`, `(0,1)`, `(1,1)` are
+nonzero. Blueprint §5.5's zero-at-integer-lattice claim is superseded.
 
 ### 6.6 `std_num.zig` (M4, L5) — Dormand–Prince RK45
 
@@ -402,8 +400,10 @@ map internals upgrade lands exactly once, in M1.
 
 ## 9. Risks and STOP conditions
 
-- **OpenSimplex lattice-zero** (§6.5) — verify vs reference first; STOP if
-  blueprint and reference disagree.
+- **OpenSimplex reference behavior** (§6.5) — the 2014 reference is
+  authoritative; its seed-0 `(0,0)` is zero but `(1,0)`, `(0,1)`, `(1,1)` are
+  nonzero. Blueprint §5.5's zero-at-integer-lattice claim is superseded by the
+  pinned reference vectors.
 - **Map golden movement** — default byte-identical (§6.2); any movement not
   in the summary-line family = STOP-present.
 - **zstd complexity** — Huffman+FSE is the largest single item in the
