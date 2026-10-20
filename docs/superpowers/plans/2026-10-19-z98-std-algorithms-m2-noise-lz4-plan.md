@@ -119,6 +119,23 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 - [ ] **Step 3: Verify.** Fixture passes; existing `lexer_float_exponent_xmod` still passes; compiler self-build succeeds. Record exact commands and bits.
 - [ ] **Step 4: Commit** `fix(lexer): correctly round decimal f64 literals`, then `docs(sdd): M2 T1B report`.
 
+### Task 1F: formatF64 non-finite emission + precision digits (operator-authorized)
+
+**Files:**
+- Modify: `sf/src/util/format.zig` (`formatF64`)
+- Modify: `repro/mi_matrix/lexer_float_rounding_xmod/` (restore inf rows)
+- Create: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1f-report.md`
+
+**Interfaces:**
+- Consumes: Task 1B fixed `parseF64` (correctly returns ±inf on overflow).
+- Produces: `formatF64` emits C89-valid inf/nan; fixture validates overflow end-to-end.
+
+- [ ] **Step 1: Fix `formatF64` non-finite emission.** Map `+inf` → `HUGE_VAL`, `-inf` → `-HUGE_VAL`, NaN → `NAN` (or `0.0/0.0` fallback). These are C89 `<math.h>` constants. If `<math.h>` not available in emitted code, use `__builtin_inf()`/`__builtin_nan()` as fallback. The comment "There is no valid C89 literal for inf/nan" is wrong — `HUGE_VAL` exists.
+- [ ] **Step 2: Verify precision digits.** Confirm `formatF64` generates enough decimal digits to round-trip f64 (17 significant digits). If it already does, record evidence. If not, fix.
+- [ ] **Step 3: Restore inf rows in fixture.** Re-add `1e309` → `7ff0000000000000` and `-1e309` → `fff0000000000000` to `lexer_float_rounding_xmod` (replacing the max-finite workaround rows). Verify fixture GREEN with inf rows.
+- [ ] **Step 4: Verify.** Fixture passes with all rows including inf; `lexer_float_exponent_xmod` passes; compiler self-build succeeds. Record exact commands and bits.
+- [ ] **Step 5: Commit** `fix(format): emit C89 HUGE_VAL/NAN for non-finite f64`, then `docs(sdd): M2 T1F report`.
+
 ### Task 1C: Migrate z9play to corrected rounding + full battery + seed rotation
 
 **Files:**
