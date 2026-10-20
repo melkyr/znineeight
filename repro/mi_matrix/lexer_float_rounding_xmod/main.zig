@@ -44,13 +44,12 @@ pub fn main() void {
     ckBits(1_000.5, 0x408f440000000000, "1_000.5");
 
     // --- sign / overflow / underflow bounds ---
-    // Ruling (T1B §4): 1e309/-1e309 (parseF64 -> +-inf) cannot survive the C
-    // emitter (util/format.zig formatF64 maps non-finite to 0; out of T1B
-    // scope). Pin the overflow boundary with max-finite rows instead; the
-    // +-inf return path is pinned by code inspection + manual probe (T1B §4).
+    // Task 1F: formatF64 now emits C89 union-type-pun macros (Z98_INF /
+    // Z98_NEGINF via zig_compat.h), so the overflow-to-inf rows are again
+    // verifiable end to end (parseF64 overflow arm -> emitter -> runtime bits).
     ckBits(-0.0, 0x8000000000000000, "-0.0");
-    ckBits(1.7976931348623157e308, 0x7fefffffffffffff, "1.7976931348623157e308");
-    ckBits(-1.7976931348623157e308, 0xffefffffffffffff, "-1.7976931348623157e308");
+    ckBits(1e309, 0x7ff0000000000000, "1e309");
+    ckBits(-1e309, 0xfff0000000000000, "-1e309");
     ckBits(1e-400, 0x0000000000000000, "1e-400");
     ckBits(-1e-400, 0x8000000000000000, "-1e-400");
 

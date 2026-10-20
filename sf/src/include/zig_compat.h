@@ -36,6 +36,18 @@
 #define Z98_I64_MIN (-Z98_I64_MAX - Z98_I64_C(1))
 #define Z98_U64_MAX (~Z98_U64_C(0))
 
+/* IEEE-754 binary64 non-finite constants (C89 union type-pun; no C99
+   compound literals, no GCC builtins, no math.h/libm). Little-endian
+   layout: u[0] is the low word, u[1] the high word; unsigned long is
+   32-bit on every supported toolchain. */
+typedef union { unsigned long u[2]; double d; } z98_f64_bits;
+static const z98_f64_bits z98_inf_bits  = {{ 0x00000000, 0x7FF00000 }};
+static const z98_f64_bits z98_ninf_bits = {{ 0x00000000, 0xFFF00000 }};
+static const z98_f64_bits z98_nan_bits  = {{ 0x00000000, 0x7FF80000 }};
+#define Z98_INF    (z98_inf_bits.d)
+#define Z98_NEGINF (z98_ninf_bits.d)
+#define Z98_NAN    (z98_nan_bits.d)
+
 #if !defined(__cplusplus)
     typedef signed char i8;
     typedef short i16;

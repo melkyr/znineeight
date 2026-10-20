@@ -53,6 +53,18 @@ pub fn emitZigCompatHSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#define Z98_I64_MIN (-Z98_I64_MAX - Z98_I64_C(1))\n");
     c89_mod.bufferedWriterWrite(writer, "#define Z98_U64_MAX (~Z98_U64_C(0))\n");
     c89_mod.bufferedWriterWrite(writer, "\n");
+    c89_mod.bufferedWriterWrite(writer, "/* IEEE-754 binary64 non-finite constants (C89 union type-pun; no C99\n");
+    c89_mod.bufferedWriterWrite(writer, "   compound literals, no GCC builtins, no math.h/libm). Little-endian\n");
+    c89_mod.bufferedWriterWrite(writer, "   layout: u[0] is the low word, u[1] the high word; unsigned long is\n");
+    c89_mod.bufferedWriterWrite(writer, "   32-bit on every supported toolchain. */\n");
+    c89_mod.bufferedWriterWrite(writer, "typedef union { unsigned long u[2]; double d; } z98_f64_bits;\n");
+    c89_mod.bufferedWriterWrite(writer, "static const z98_f64_bits z98_inf_bits  = {{ 0x00000000, 0x7FF00000 }};\n");
+    c89_mod.bufferedWriterWrite(writer, "static const z98_f64_bits z98_ninf_bits = {{ 0x00000000, 0xFFF00000 }};\n");
+    c89_mod.bufferedWriterWrite(writer, "static const z98_f64_bits z98_nan_bits  = {{ 0x00000000, 0x7FF80000 }};\n");
+    c89_mod.bufferedWriterWrite(writer, "#define Z98_INF    (z98_inf_bits.d)\n");
+    c89_mod.bufferedWriterWrite(writer, "#define Z98_NEGINF (z98_ninf_bits.d)\n");
+    c89_mod.bufferedWriterWrite(writer, "#define Z98_NAN    (z98_nan_bits.d)\n");
+    c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "#if !defined(__cplusplus)\n");
     c89_mod.bufferedWriterWrite(writer, "    typedef signed char i8;\n");
     c89_mod.bufferedWriterWrite(writer, "    typedef short i16;\n");

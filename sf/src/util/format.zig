@@ -96,11 +96,15 @@ pub fn formatF64(val: f64, buf: []u8, buf_len: usize) []u8 {
     var sb: [64]u8 = undefined;
     var bi: usize = 0;
 
-    // Zero and non-finite guard. There is no valid C89 literal for inf/nan;
-    // this only avoids the old formatter's unbounded normalization loop.
+    // Zero guard. Non-finite values emit the C89 union-type-pun macros from
+    // zig_compat.h (Z98_INF / Z98_NEGINF / Z98_NAN) so the emitted C stays
+    // C89-valid end to end.
     if (val == 0.0) { sb[0] = '0'; return fmtCopyOut(sb[0..1], buf, cap); }
-    if (val != val) { sb[0] = '0'; return fmtCopyOut(sb[0..1], buf, cap); }
-    if (val * 2.0 == val) { sb[0] = '0'; return fmtCopyOut(sb[0..1], buf, cap); }
+    if (val != val) { return fmtCopyOut("Z98_NAN", buf, cap); }
+    if (val * 2.0 == val) {
+        if (val > 0.0) { return fmtCopyOut("Z98_INF", buf, cap); }
+        return fmtCopyOut("Z98_NEGINF", buf, cap);
+    }
 
     var neg: u8 = 0;
     var v = val;
