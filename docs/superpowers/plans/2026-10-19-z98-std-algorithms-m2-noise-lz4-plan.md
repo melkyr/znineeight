@@ -69,6 +69,23 @@ M1 plan Global Constraints bind verbatim (std-only gates, R6 determinism, seed r
 - [ ] **Step 5: Migration list.** Identify every fixture, golden, exact pin, dump pin, app source, and seed artifact that must change in Tasks 1C/1D. Separate definite failures from rerun-only cases.
 - [ ] **Step 6: Commit report.** `docs(sdd): M2 T1A investigation report`. No code changes.
 
+### Task 1AEx: Decimal→f64 Algorithm Methodology Decision (derivative of blocked Task 1)
+
+**Files:**
+- Create: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1aex-report.md`
+- No source, fixture, seed, or tracked-file edits.
+
+**Interfaces:**
+- Consumes: Task 1A root cause + bit table; `sf/src/lexer.zig` `parseF64` (current algorithm).
+- Produces: selected algorithm with full tradeoff analysis, implementation blueprint for Task 1B.
+
+- [ ] **Step 1: Survey modern approaches.** Study at minimum: (a) Clinger fast path + bignum fallback (glibc `strtod`, musl `strtod`); (b) Eisel-Lemire 2020 (Rust `str::parse::<f64>`, Go `ParseFloat`); (c) simple big-integer (digits→limbs, exact `significand × 10^exp`, single rounding); (d) x87 80-bit extended (PII/PIII native); (e) Steele & White / Dragon inverse. RECOMMEND the best available modern approach — no need era-accurate; leverage modern techniques.
+- [ ] **Step 2: PII/PIII tradeoffs.** For each approach: code size (Z98→C89, no u128/generics/libc), stack/arena usage (worst-case 800-digit literals), speed (fast-path hit rate vs fallback on 200–400 MHz), precision guarantee (must be correctly rounded for ALL f64), implementation complexity in Z98 (no `@bitCast` for f64, limited integer types).
+- [ ] **Step 3: How C solves it.** Trace glibc `strtod` and musl `strtod` — identify exact algorithm, which parts depend on libc/platform.
+- [ ] **Step 4: How Zig solves it.** Trace `std.fmt.parseFloat` — is it correctly rounded? What does it guarantee?
+- [ ] **Step 5: Conclusion.** One algorithm recommended with: justification for PII/PIII + 16–32 MB RAM; proof sketch of correct rounding (or explicit "correct for all f64" argument); implementation blueprint for Task 1B (data structures, edge cases, estimated code size); why no further rounding fixes will be needed.
+- [ ] **Step 6: Commit report.** `docs(sdd): M2 T1AEx methodology report`. No code changes.
+
 ### Task 1B: Lexer f64 rounding — fix (minimal repro + correct values)
 
 **Files:**
