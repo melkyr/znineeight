@@ -178,6 +178,8 @@ repro/mi_matrix/stdlib_net_udp_settimeout_xmod
 repro/mi_matrix/stdlib_net_udp_stress_xmod
 repro/mi_matrix/stdlib_net_udp_truncation_xmod
 repro/mi_matrix/stdlib_net_udp_zero_len_xmod
+repro/mi_matrix/stdlib_noise_basic_xmod
+repro/mi_matrix/stdlib_noise_cross_xmod
 repro/mi_matrix/stdlib_os_argc_xmod
 repro/mi_matrix/stdlib_os_cwd_xmod
 repro/mi_matrix/stdlib_os_env_xmod
