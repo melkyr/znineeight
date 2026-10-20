@@ -335,7 +335,20 @@ iteration; the compiler fixed point did not move. All **8 pins were re-measured
 unchanged 8/8** (values above) with `/tmp/m7_t5_seed2/zig1_5_clean`
 (`b299b4b4…`) from the repo root with relative entry paths. No corpus/golden
 run was needed (no compiler change, no emitted-C movement). The M7 TUI has its
-own pin: `ui.zig --dump-c89` = `e7bc57a2a38a72cb83f51a1ce7497239` (stable 2×).
+own pin: `ui.zig --dump-c89` = `e7bc57a2a38a72cb83f51a1ce7497239` (stable 2×;
+historical M7-era value, superseded by the M8 `22676fd9…`, M9 `76d0fc83…`, and
+M2-T1C `7395dad777efe7fb8417fc1e57d64235` values).
+
+**M2 T1C re-measure (2026-10-20, corrected f64 rounding; fixed point
+`21c957730d268f1e7883176fa5413b65`):** all **8 pins re-measured unchanged 8/8**
+(values above) — the four gate programs carry no decimal f64 literal whose
+parse moved. The z9play `--dump-c89` pins **moved 4/4** (floor table literals
+re-parse; runtime goldens byte-identical): Linux default `main.zig`
+`23f9b5ec…`→`47f1691c8d1f5041e4bd7208e50ed65d`, `ui.zig`
+`76d0fc83…`→`7395dad777efe7fb8417fc1e57d64235`; `-osw` `main.zig`
+`6cd349b5…`→`92b9ae90148e037f8e3a0ead6ef30538`, `ui.zig`
+`294e3fde…`→`cbe3cfa6bb70d1b0b2161a37a4fdf400` (see
+`examples/z98/z9play/NOTES.md` for the full pin history).
 
 Re-baselined by the FX5 `-fsafe` slice-bounds guards (2026-09-28), then by the
 FX14 layout-model pin (2026-09-29, operator ruling A): every gate dump embeds

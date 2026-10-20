@@ -609,15 +609,20 @@ the golden `.meta` format and the determinism contract.
 ## Notes
 
 `NOTES.md` holds the build recipe, the `--dump-c89` md5, the golden formats, and
-the milestone log. The **M9 current** Linux-default pins on seed v102 (archive
-md5 `702f34d87b7e6bf401dd206d2517dbee`; binary/fixed point
-`b299b4b435e624d0ddbd2edde681cbc3` unchanged) are `main.zig`
-`23f9b5ec0f8e69fe48e9b5598719ced7` and `ui.zig`
-`76d0fc83121892118089b10c6b66bb41`; they supersede the M8-era values
+the milestone log. The **M2 T1C current** Linux-default pins (corrected f64
+rounding; fixed point `21c957730d268f1e7883176fa5413b65`, seed v104) are
+`main.zig` `47f1691c8d1f5041e4bd7208e50ed65d` and `ui.zig`
+`7395dad777efe7fb8417fc1e57d64235`; they supersede the M9-era values
+`23f9b5ec0f8e69fe48e9b5598719ced7` and
+`76d0fc83121892118089b10c6b66bb41` (seed v102, archive md5
+`702f34d87b7e6bf401dd206d2517dbee`; fixed point then
+`b299b4b435e624d0ddbd2edde681cbc3`), which superseded the M8-era values
 `e56af7916edd199e796f3ef11d5e49c4` and `22676fd997471df1c4c3a3f04397121d`. The
-M9 `-osw --dump-c89` values are `main.zig`
-`6cd349b5fae0b6a703d27424ddfb70f2` and `ui.zig`
-`294e3fde8819e638556d07cddc385301`. The M6 `-osw` value
+T1C `-osw --dump-c89` values are `main.zig`
+`92b9ae90148e037f8e3a0ead6ef30538` and `ui.zig`
+`cbe3cfa6bb70d1b0b2161a37a4fdf400` (supersede the M9 `-osw` values
+`6cd349b5fae0b6a703d27424ddfb70f2` / `294e3fde8819e638556d07cddc385301`).
+The M6 `-osw` value
 `ad9ccfd34aa2ba26c38abbcf48eedeb0` is historical M6/seed v101 and is **not a
 current pin**. The prior Linux `--dump-c89` value
 was `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b; prior M5
