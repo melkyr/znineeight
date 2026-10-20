@@ -248,3 +248,44 @@ Fixtures green (post-fix, `bash scripts/stdlib/run_fixtures.sh <zig1> …` → `
 **Evidence.** T2 review of `d86b3441` (`.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/review-323bff07..d86b3441.diff`): objdump of the emitted callback path shows a plain `ret` (cdecl) where a `__stdcall` callback must `ret $4`, so the `@ptrCast(CtrlHandler, onCtrl)` bridge is a real stack-cleanup mismatch. Direct probe: the compiler accepts `pub extern "stdcall" fn onCtrl(t: u32) i32 { ... }` with rc=0, emits only the registration-site reference (`zT_1 = ((...)onCtrl);`) and no definition, and mingw then rejects the emitted C with `error: 'onCtrl' undeclared` (no Z98 diagnostic); see the T2 fix-round report (`.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/task-2-report.md`, "Fix round 1"). Workaround verification: the new `-osw` probe dump has no `SetConsoleCtrlHandler`/`PHANDLER_ROUTINE`/`onCtrl`/cast, `XRUNRC=0`, `--dump-c89` md5 `81c052098c89218b96da2ea908f77310`.
 
 **Reference points.** `sf/src/parser.zig` `parserParseExternDecl`/`parserParseFnDecl` (`is_extern` + body accepted); `docs/superpowers/specs/2026-09-13-win9x-calling-convention-design.md` §1 (conventions only on extern declarations + fn-pointer types; non-extern definitions never carry a convention); D1/D2/D4 entries above for the intake style.
+
+---
+
+## D6 — Decimal `f64` literals are not correctly rounded by the lexer
+
+**Status:** OPEN (found 2026-10-19 while pinning `std_noise` for M2; worked around in `sf/src/std_noise.zig`).
+
+**Defect.** `parseF64` in `sf/src/lexer.zig` accumulates the fractional part digit-by-digit with `result += digit * frac_mul` and `frac_mul *= 0.1`. That is not a correctly-rounded decimal-to-binary conversion, so a literal can land one or more ULPs away from the double a conforming compiler (`gcc`, Zig) produces. The error is silent and propagates into emitted C.
+
+**Reproducer.** Build a program with the two literals and inspect the dumped C:
+
+```zig
+const std = @import("std");
+const a: f64 = 0.366025403784439;
+const c: f64 = -0.16666666666666666;
+pub fn main() void {
+    std.io.print("{} {}\n", .{a, c});
+}
+```
+
+```sh
+mkdir -p /tmp/f64_round/out
+/tmp/t4_review/zig1_5_clean -ffast -o /tmp/f64_round/out /tmp/f64_round.zig
+grep -n "3.660254\|1.666666" /tmp/f64_round/out/*.c
+```
+
+Observed emitted C:
+
+```c
+zF_..._printF64((zT_..._f64)(3.660254037844391e-1));
+...
+zG_..._c = (zT_..._f64)(-(zT_..._f64)(1.6666666666666669e-1));
+```
+
+The correct round-to-nearest-even doubles are `3fd76cf5d0b0995b` (`0.366025403784439`) and `bfc5555555555555` (`-0.16666666666666666`). The lexer produces `3fd76cf5d0b0995d` (2 ULP high) and `bfc5555555555556` (1 ULP high). A second adjacent literal, `0.3660254037844389`, lands on `3fd76cf5d0b0995b`, which is why `std_noise` currently uses that noncanonical spelling as a workaround; `sf/src/std_math.zig:208` documents the same limitation.
+
+**Proper behavior.** Parse decimal `f64` literals with correct rounding (round-to-nearest-even), matching `strtod`/Zig. At minimum, `0.366025403784439` must produce `3fd76cf5d0b0995b` and `-0.16666666666666666` must produce `bfc5555555555555`, without source-level adjacent-literal compensation.
+
+**Impact.** Any bit-exact algorithm, crosscheck vector, or serialized constant can silently differ by ULPs; the workaround makes source literals misleading and will break if the lexer is fixed. The M2 `std_noise` crosscheck pins the current workaround, so a lexer fix is expected to fail that vector until the literals are restored.
+
+**Reference points.** `sf/src/lexer.zig:610-645` (`parseF64` fractional loop); `sf/src/std_math.zig:208` (known-lexer note); M2 Task 1 report `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1-report.md` §Fix round 1 (literal workaround + bit evidence).
