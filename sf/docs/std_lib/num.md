@@ -166,7 +166,9 @@ positive tolerances. Supply a coherent configuration.
 - `f` — derivative callback `f(t, y, out)`. It must write all `n` entries of
   `out`; `y` is read-only and `n == state.y.len`. It must be a plain function
   (no captured state); pass context through globals or a module-level value.
-  It is called 7 times per attempted step.
+  Inside one attempted step it is called six times (stages 2–7); the first
+  stage is the caller-provided `dy` (FSAL), so the step consumes seven stage
+  values without re-evaluating `f(t, y)`.
 - `dt` — in/out step size. On entry, the requested step (clamped down to
   `cfg.max_step`). On return after success, the step size **suggested for the
   next call**. On `error.StepTooSmall`, the caller must treat it as invalid.
