@@ -303,7 +303,7 @@ reference and verified against `dy/dt = -y` (blueprint §7.4). Explicit
 method — stiff ODEs documented as out of scope. State vector caller-supplied
 (not arena).
 
-### 6.7 `std_pathfind.zig` (M5, L5) — Jump Point Search
+### 6.7 `std_pathfind.zig` (M5, L5) — Jump Point Search and JPS+
 
 ```
 pub const Point = struct { x: u32, y: u32 };
@@ -325,6 +325,27 @@ blocked start/goal, or zero-sized grid, returns `error.NoPath`;
 stack); open set = existing `std_heap` min-heap with composite `i64` key
 `(f<<32)|(~g)` (f-tie → higher g first; no `std_heap` change). L5→L4 import
 of `std_heap` is sanctioned (DAG rule §3).
+
+```
+pub const JpsPlus = struct {
+    dist: []i32,   // width*height*8; order N,NE,E,SE,S,SW,W,NW
+    width: u32,
+    height: u32,
+};
+
+pub fn jpsPlusBuild(arena: *std_arena.Arena, grid: *const Grid) !JpsPlus
+pub fn jpsPlusFind(arena: *std_arena.Arena, map: *const JpsPlus, grid: *const Grid, start: Point, goal: Point, out: []u32) !u32
+```
+Optional preprocessed path for static grids. `dist` stores eight signed
+distances per cell: positive = next jump point, negative = wall, `0` =
+blocked; direction order N, NE, E, SE, S, SW, W, NW. Preprocessing is O(8N),
+arena only (32 bytes/cell), and uses the same strict no-corner-cut movement
+as `jpsFind`. `jpsPlusBuild` errors `OutOfMemory`; `jpsPlusFind` has the same
+`NoPath`/`OutOfMemory` errors and `out` contract as `jpsFind`. The map is
+static: rebuild if `Grid.tiles` changes. `jpsPlusFind` validates
+`map.width/height` and `dist.len` against `grid` (mismatch -> `NoPath`) and
+uses `jpsFind`'s heap/path/out semantics. `jpsFind` remains the dynamic-grid
+path.
 
 ### 6.8 `std_physics.zig` (M6, L5) — Position-Based Dynamics
 
