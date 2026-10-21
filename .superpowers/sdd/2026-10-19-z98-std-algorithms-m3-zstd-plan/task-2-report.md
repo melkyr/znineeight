@@ -140,3 +140,46 @@ No `sf/src` changes.
 - None. Archive md5 moved as expected (new `lib/std_zstd.zig` tracked in
   `lib/manifest.md5`); binary md5 / fixed point held, confirming compiler/std
   zero coupling.
+
+## Fix round 1 — doc accuracy (review)
+
+Docs-only fix in `sf/docs/std_lib/zstd.md`; no code change and no seed
+rotation. Full gate was not rerun (nothing executable changed).
+
+- `cc172927` — `docs(std_lib): zstd doc accuracy fix (M3)`
+- report commit follows this file — `docs(sdd): M3 T2 fix round 1`
+
+- **Important 1 (window/level guidance).** Removed the false claim that the
+  default `21` covers ordinary `-1`/`-19` output. The offline workflow now
+  states that `-19` raises the window on larger inputs (libzstd 1.5.4 uses
+  window log 23 on 10 MiB) and recommends `max_window_log` `23`–`24` for `-19`
+  on more than 2 MiB, or constraining compression with
+  `zstd --zstd=wlog=21`. Step 3 likewise recommends `23`–`24` for `-19` above
+  2 MiB and notes `-1` fits the default.
+- **Minor 2 (literal/sequence table modes).** Reworded to: Huffman literals are
+  raw/RLE/compressed (direct-weight and FSE-compressed tree descriptions) plus
+  treeless/repeat; FSE sequence tables use predefined/RLE/FSE-compressed plus
+  repeat modes and repeat offsets.
+- **Minor 3 (WindowTooBig wording).** Overview and error bullet now match the
+  source: non-single-segment frames compare the frame **window log** against
+  `max_window_log` (`sf/src/std_zstd.zig:1074-1078`), while a single-segment
+  content size is compared against `2^max_window_log`.
+- **Minor 4 (quick start input length).** Quick start now carries
+  `packed_len` and passes `packed[0..packed_len]`, so trailing undefined bytes
+  cannot cause a bogus magic/`error.Corrupt`.
+
+Verification (host zstd 1.5.4, no repo changes):
+
+```
+$ zstd -19 -f /tmp/zstd_3m.bin -o /tmp/zstd_3m.zst && zstd -lv /tmp/zstd_3m.zst
+Window Size: 3.00 MiB (3145728 B)        # single-segment, > 2^21
+$ zstd -19 -f /tmp/zstd_10m.bin -o /tmp/zstd_10m.zst && zstd -lv /tmp/zstd_10m.zst
+Window Size: 8.00 MiB (8388608 B)        # window log 23
+```
+
+Source check for the `WindowTooBig` contract:
+
+```
+sf/src/std_zstd.zig:1074-1078  wlog = 10 + exp; if (wlog > max_window_log) return error.WindowTooBig;
+sf/src/std_zstd.zig:1113-1114  window_size = frame_size; if (window_size > windowCap(max_window_log)) ...
+```
