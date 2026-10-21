@@ -65,7 +65,7 @@ strict: lower layers only, never siblings, never higher (R3).
 | **L1** | Process, clocks, and diagnostics over the builtins and a per-OS PAL | `std.os`, `std.time`, `std.debug` |
 | **L2** | Data layer built on L0 — string slices and growable buffers | `std.str`, `std.buf` |
 | **L3** | Resources — owned-handle files, stdin, and sockets | `std_file`, `std_stdin`, `std.net` |
-| **L4** | Collections — concrete maps, sort/search, a stable min-heap, RLE | `std_map`, `std_sort`, `std_heap`, `std_rle` |
+| **L4** | Collections and byte codecs — concrete maps, sort/search, a stable min-heap, RLE, LZ4 block and zstd frame decode | `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_lz4`, `std_zstd` |
 | **L5** | Codecs — base64/hex, UTF-8, streaming hashes, number parse/format | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_parse` |
 | **L6** | Composition — coroutine-aware line and frame readers | `std_stream` |
 | async runtime | Outside L0–L6 — the cooperative scheduler and child-frame pool | `std.async` |
@@ -132,6 +132,7 @@ apply to its modules.
 | PCG32 / xoshiro256\*\* pseudorandom generators | `std_rand` | [rand.md](sf/docs/std_lib/rand.md) |
 | OpenSimplex 2D/3D noise and fBm | `std_noise` | [noise.md](sf/docs/std_lib/noise.md) |
 | LZ4 raw block decode | `std_lz4` | [codecs.md](sf/docs/std_lib/codecs.md) |
+| Zstd frame decode | `std_zstd` | [zstd.md](sf/docs/std_lib/zstd.md) |
 | Base64 encode/decode | `std_base64` | [codecs.md](sf/docs/std_lib/codecs.md) |
 | Hex encode/decode | `std_hex` | [codecs.md](sf/docs/std_lib/codecs.md) |
 | UTF-8 validate, decode, encode, count | `std_utf8` | [codecs.md](sf/docs/std_lib/codecs.md) |
@@ -218,6 +219,8 @@ entry for each public function. Read the one for the job at hand:
 - [codecs.md](sf/docs/std_lib/codecs.md) — `std_base64`, `std_hex`,
   `std_utf8`, `std_crypto`, `std_parse`, `std_lz4`: encoders/decoders, hashes,
   number parsing, and raw LZ4 block decode.
+- [zstd.md](sf/docs/std_lib/zstd.md) — `std_zstd`: single-shot zstd frame
+  decode with a caller-overridable window cap.
 
 ## Further reading
 
