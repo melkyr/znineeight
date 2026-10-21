@@ -156,7 +156,7 @@ Signatures below are binding shape; bodies are the implementer's. All modules fo
 house naming (`std_<name>.zig`, camelCase) and the L5-style purity contract unless
 stated.
 
-### 5.1 `std_crypto` additions (hash/PRF family)
+### 5.1 `std_crypto` additions (hash/PRF/RSA family)
 
 ```zig
 pub fn hmacSha256(key: []const u8, msg: []const u8, out: *[32]u8) void
@@ -168,9 +168,21 @@ pub fn blake2sInit(key: []const u8, out_len: u32) Blake2s
 pub fn blake2sUpdate(s: *Blake2s, data: []const u8) void
 pub fn blake2sFinal(s: *Blake2s, out: []u8) void
 pub fn hmacBlake2s(key: []const u8, msg: []const u8, out: []u8) void       // WG MACs
+pub const Sha384 = struct { ... };               // FIPS 180-4 streaming
+pub const Sha512 = struct { ... };
+pub fn sha384Init() Sha384 ;  sha384Update ;  sha384Final(out: *[48]u8)
+pub fn sha512Init() Sha512 ;  sha512Update ;  sha512Final(out: *[64]u8)
+// RSA verify only (no signing) — new generic modexp up to 4096-bit n with fixed
+// scratch; the existing MSE-sized modpow (768-bit) is too small for this.
+pub fn rsaVerifyPkcs1v15(n: []const u8, e: u32, hash_alg: HashAlg,
+    hash: []const u8, sig: []const u8) !void      // RFC 8017 §8.2.2
+pub fn rsaVerifyPss(n: []const u8, e: u32, hash_alg: HashAlg,
+    hash: []const u8, salt_len: u32, sig: []const u8) !void   // RFC 8017 §8.1.2 + MGF1
 ```
 
-Vectors: RFC 4231 (HMAC-SHA256), RFC 5869 (HKDF), RFC 7693 appendix (BLAKE2s).
+Vectors: RFC 4231 (HMAC-SHA256), RFC 5869 (HKDF), RFC 7693 appendix (BLAKE2s),
+FIPS 180-4 / NIST CAVP (SHA-384/512), NIST CAVP RSA + RFC 8017 (PKCS#1 v1.5 and
+PSS/MGF1). Errors: `error.{BadSignature, UnsupportedAlgorithm, Corrupt}`.
 
 ### 5.2 `std_cipher` (symmetric; constant-time)
 
@@ -203,12 +215,18 @@ pub fn p256Generate(rng: *std_rand.Xoshiro256, priv: *[32]u8, pub_out: *[65]u8) 
 pub fn p256Ecdh(priv: *const [32]u8, peer_pub: *const [65]u8, out: *[32]u8) !void
 pub fn p256EcdsaVerify(pub_uncompressed: *const [65]u8, hash32: *const [32]u8,
     r: *const [32]u8, s: *const [32]u8) bool
+pub fn p384EcdsaVerify(pub_uncompressed: *const [97]u8, hash48: *const [48]u8,
+    r: *const [48]u8, s: *const [48]u8) bool     // verify-only: chain auth (§5.4)
 ```
 
 X25519: ref10-style 26-bit limbs (PORTABLE), constant-time ladder, all-zero output
 rejected (`error.WeakPublicKey`). P-256: p256-m portable C path ported (32-bit limbs,
-constant-time); **never written from scratch**. ECDSA verify uses a caller-supplied
-32-byte hash (SHA-256). Vectors: RFC 7748, NIST CAVP P-256 ECDH/ECDSA samples.
+constant-time); **never written from scratch**. P-384 is **verify-only** (no
+keygen/ECDH: client ECDHE groups stay x25519 + secp256r1) and ports the BearSSL
+portable P-384 verify path — p256-m covers only P-256; the shared-limb generic EC
+engine is the alternative if the implementer prefers one engine for both curves.
+ECDSA verify takes a caller-supplied hash (SHA-256 for P-256, SHA-384 for P-384).
+Vectors: RFC 7748, NIST CAVP P-256 ECDH/ECDSA, NIST CAVP P-384 ECDSA verify.
 
 ### 5.4 `std_asn1` / `std_x509`
 
@@ -265,13 +283,18 @@ subject + SPKI + validity), keeping resident cost ~30 KB for ~150 anchors.
 ```zig
 pub const TlsAction = union(enum) { send: []const u8, recv: usize, wait: u32, established: void, closed: void };
 pub const TlsConfig = struct { hostname: []const u8, store: *TrustStore,
-    rng: *std_rand.Xoshiro256, min_version: u16, max_version: u16 };
+    rng: *std_rand.Xoshiro256, now_unix: i64, min_version: u16, max_version: u16 };
 pub const TlsSession = struct { ...fixed-size state... };       // caller-allocated
 pub fn tlsInit(sess: *TlsSession, cfg: *TlsConfig) void
 pub fn tlsStep(sess: *TlsSession, input: []const u8, output: []u8) !TlsAction
 pub fn tlsRead(sess: *TlsSession, out: []u8) !usize             // app data, post-handshake
 pub fn tlsWrite(sess: *TlsSession, data: []const u8, output: []u8) !usize  // returns bytes in output
 ```
+
+`now_unix` is the wall clock at session start (seconds since epoch); cert validity is
+checked against it (R6: the driver supplies time — `std_time`-derived in the demos,
+config `clock_override_unix` for dead-RTC Win9x machines; with no valid clock and no
+override the demo fails cleanly `cert: time`).
 
 Record layer: 5-byte header, `TLS_MAX_RECORD = 16384`, AEAD per suite
 (`TLS_ECDHE_{ECDSA,RSA}_WITH_{AES_128_GCM_SHA256, CHACHA20_POLY1305_SHA256}`),
@@ -288,7 +311,9 @@ in scope despite the blueprint's minimal table — real internet (google) uses b
 TLS 1.3 (milestone 5): X25519 group, suites `TLS_AES_128_GCM_SHA256` +
 `TLS_CHACHA20_POLY1305_SHA256`; HKDF-Expand-Label key schedule; EncryptedExtensions /
 Certificate / CertificateVerify / Finished; no PSK, no 0-RTT, no HRR (group mismatch
-= `error.UnsupportedGroup`). Reference structure: picotls.
+= `error.UnsupportedGroup`). RSA-cert servers authenticate with **RSA-PSS**
+(RFC 8446 §4.4.3 — PKCS#1 v1.5 is forbidden in CertificateVerify; the §5.1
+`rsaVerifyPss` + MGF1 primitive serves this). Reference structure: picotls.
 
 ### 5.7 `std_wireguard` (sans-I/O, initiator)
 
@@ -299,10 +324,17 @@ pub const WgPeer = struct { static_priv: [32]u8, remote_static_pub: [32]u8,
 pub const WgDevice = struct { iface_priv: [32]u8, iface_pub: [32]u8, peers: []WgPeer, ... };
 pub fn wgInit(dev: *WgDevice, iface_priv: *const [32]u8) void
 pub fn wgAddPeer(dev: *WgDevice, peer: *WgPeer) !void
-pub fn wgTick(dev: *WgDevice, now_ms: u64, out: []u8) !WgAction        // timers: send handshake/keepalive
+pub fn wgTick(dev: *WgDevice, now_ms: u64, wall_unix_ns: u64, out: []u8) !WgAction
 pub fn wgReceive(dev: *WgDevice, now_ms: u64, udp_payload: []const u8, out: []u8) !WgAction
-pub fn wgSend(dev: *WgDevice, now_ms: u64, inner_ip: []const u8, out: []u8) !usize  // transport data
+pub fn wgSend(dev: *WgDevice, now_ms: u64, wall_unix_ns: u64, inner_ip: []const u8,
+    out: []u8) !usize          // transport data; may trigger a handshake
 ```
+
+`wall_unix_ns` (Unix time in nanoseconds; second-resolution callers pass `sec * 1e9`)
+feeds the TAI64N timestamp in handshake initiations. **Never derive it from `now_ms`**:
+a monotonic-derived TAI64N makes the kernel far side reject later initiations as
+replays after a client restart (silent interop failure). The two time bases are
+distinct: `now_ms` = monotonic for timers, `wall_unix_ns` = wall clock for the wire.
 
 NoiseIK initiator per the blueprint (§2.3 of `projects_phase1.txt`): handshake
 initiation/response construction, KDF = HKDF-BLAKE2s (WireGuard paper §5.4), AEAD =
@@ -369,7 +401,9 @@ install note, resource expectations) and a `NOTES.md` log.
 - **`tls_demo`**: `caconv` + `ca_store.bin` asset; `main.zig` fetches the URL (default
   `https://www.google.com/`), prints status line + body (first 4 KB), then a resource
   line `tls_demo ok status=200 bytes=N arena_peak=N rss_peak=N cpu_ms=N`. Failures
-  exit non-zero with a precise reason (`cert: HostnameMismatch` etc.).
+  exit non-zero with a precise reason (`cert: HostnameMismatch` etc.). Config (optional
+  args/file): URL, store path, `clock_override_unix` for dead-RTC Win9x machines
+  (documented; without it, a nonsensical system clock fails cleanly `cert: time`).
 - **`wireguard_demo`**: `wg.conf` (hex/base64 keys, endpoint host:port, allowed IPs,
   tunnel local IP, DNS server); drives `std_tcpip` + `std_wireguard` over a
   `std_net` UDP socket; connects TCP to the mud server's tunnel IP, prints the banner,
@@ -401,9 +435,10 @@ Per-milestone gates (same discipline as the std-algorithms program):
 1. **M1 — Pre-flight RSS truth-up** (small): measure compiler peak RSS/arena on the
    standard workload; README + QUICK_REF get the numbers and the measurement recipe;
    demo RAM budget stated. *Output: docs only.*
-2. **M2 — Crypto core**: `std_crypto` additions (HMAC-SHA256/HKDF/BLAKE2s),
-   `std_cipher`, `std_ecc`; RFC/NIST vectors + crosscheck refs. *Output: three std
-   modules, all fixtures green.*
+2. **M2 — Crypto core**: `std_crypto` additions (HMAC-SHA256/HKDF/BLAKE2s,
+   SHA-384/SHA-512, RSA PKCS#1 v1.5 + PSS verify over a new generic modexp),
+   `std_cipher`, `std_ecc` (X25519, P-256, P-384 ECDSA verify); RFC/NIST vectors +
+   crosscheck refs. *Output: three std modules, all fixtures green.*
 3. **M3 — X.509 + trust store + converter**: `std_asn1`, `std_x509`, store format +
    `trustStoreLoad`, `caconv` tool, first `ca_store.bin` asset + refresh docs.
    *Output: validation engine + tool + asset.*
@@ -412,8 +447,9 @@ Per-milestone gates (same discipline as the std-algorithms program):
    CA store shipped in the demo. *Output: real HTTPS fetch on Linux and (Wine/`-osw`)
    Win9x build.*
 5. **M5 — TLS 1.3**: X25519 + HKDF-Expand-Label key schedule, EncryptedExtensions/
-   CertificateVerify/Finished path; suites AES-128-GCM + ChaCha20-Poly1305. *Output:
-   TLS 1.3 clients interop with real servers.*
+   CertificateVerify/Finished path (RSA-cert auth via RSA-PSS, RFC 8446 §4.4.3);
+   suites AES-128-GCM + ChaCha20-Poly1305. *Output: TLS 1.3 clients interop with
+   real servers, including RSA-cert ones.*
 6. **M6 — WireGuard protocol**: `std_wireguard` NoiseIK initiator + transport +
    timers + cookie consumption; protocol tests vs canned exchanges; build fixtures.
    *Output: handshake/transport proven against the wireguard-lwip reference.*
@@ -464,6 +500,18 @@ gzip, inner-stack TCP server role, WireGuard responder, IPv6, OCSP/CRL, and the
 8. RAM: compiler <16 MB the goal (tracked, slightly over today); demos 16 MB
    target / 32 MB hard ceiling; measured even on Linux.
 9. Seven milestones, one plan per milestone.
+10. Builder-check ruling (a): SHA-384/SHA-512 + P-384 ECDSA verify + RSA
+    PKCS#1 v1.5/PSS verification join the crypto core (M2/M3 grow). Verified live
+    2026-10-21: both demo targets chain through `ecdsa-with-SHA384`
+    (www.google.com: WE2 signed by GTS Root R4 = secp384r1; example.com: two
+    SHA-384 links to its ECC root).
+11. Builder-check ruling (a): wall time enters explicitly — `now_unix: i64` on
+    `TlsConfig`, `wall_unix_ns: u64` on the WireGuard handshake entry points
+    (`wgTick`/`wgSend`); never derived from `now_ms` (TAI64N replay trap). Demo
+    policy: `clock_override_unix` config for dead-RTC Win9x machines, clean
+    `cert: time` failure otherwise.
+12. Builder-check ruling (a): TLS 1.3 RSA-cert authentication uses RSA-PSS
+    (RFC 8446 §4.4.3) in M5 — PKCS#1 v1.5 is forbidden there by the RFC.
 
 ## 11. What's left to the builder
 
