@@ -1,0 +1,10 @@
+random ok
+entrance ok
+blocked-cluster ok
+parity32 ok
+leave-reenter ok
+nondiv ok
+special ok
+trunc ok
+determinism ok
+hpa basic ok

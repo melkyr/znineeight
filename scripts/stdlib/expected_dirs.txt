@@ -137,6 +137,8 @@ repro/mi_matrix/stdlib_hex_encodeupper_xmod
 repro/mi_matrix/stdlib_hex_oom_xmod
 repro/mi_matrix/stdlib_hex_roundtrip_xmod
 repro/mi_matrix/stdlib_hex_stress_xmod
+repro/mi_matrix/stdlib_hpa_basic_xmod
+repro/mi_matrix/stdlib_hpa_cross_xmod
 repro/mi_matrix/stdlib_http_badurl_xmod
 repro/mi_matrix/stdlib_http_parseresponse_chunked_reject_xmod
 repro/mi_matrix/stdlib_http_parseresponse_xmod
@@ -307,6 +309,7 @@ stdlib_test/bits_buf_str_usage
 stdlib_test/crypto_codec_usage
 stdlib_test/file_stdin_usage
 stdlib_test/file_stream_usage
+stdlib_test/hpa_usage
 stdlib_test/map_sort_heap_usage
 stdlib_test/noise_lz4_usage
 stdlib_test/net_stream_usage
