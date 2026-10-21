@@ -266,7 +266,7 @@ whole-build/whole-gate process-tree maxima (they include gcc) as compiler RSS:
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
 |---|---:|---:|---|
-| (a) fixed-point self-emission (`--dump-c89`) | 20792 | 5.66 | pool=18871K, total=2921K |
+| (a) fixed-point self-emission (`-ffast --dump-c89`) | 20792 | 5.66 | pool=18871K, total=2921K |
 | (b) full stdlib gate, compiler-only max (321 invocations) | 28836 | 0.32 | not exposed |
 | (c) z9play `main.zig` `-fsafe` emit | 8140 | 0.36 | pool=4609K, total=2032K |
 

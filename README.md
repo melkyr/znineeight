@@ -162,7 +162,7 @@ medians used for the historical table above).
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
 |---|---:|---:|---|
-| (a) fixed-point self-emission (`--dump-c89`) | 20792 | 5.66 | pool=18871K, total=2921K |
+| (a) fixed-point self-emission (`-ffast --dump-c89`) | 20792 | 5.66 | pool=18871K, total=2921K |
 | (b) full stdlib gate, compiler-only max (321 invocations) | 28836 | 0.32 | not exposed |
 | (c) z9play `main.zig` `-fsafe` emit | 8140 | 0.36 | pool=4609K, total=2032K |
 
@@ -281,7 +281,7 @@ the build script is `sf/scripts/build_release.sh`. Release binaries (`zig1_linux
 | `--target <linux\|windows>` | Alias for the target OS |
 | `-fsafe` | **Default.** Enable the six runtime checks (cast / div-mod / shift-count / null-unwrap / index-OOB / integer-overflow) and the `undefined` `0xAA` poison fill |
 | `-ffast` | Disable the six runtime checks and poison fill (used for the compiler self-build). `unreachable`/`@panic` still trap in both modes |
-| `-s<N>` | Spill level 0–6 (default `-s0`): how many of the six compiler-state spills live in RAM instead of `.zig1_*.tmp` disk files. Deactivation order S-AST → S-LIR → S-HASH → S-RES → S-SIDE → S-EXTRA. Higher `-s` = more RAM, less disk I/O; emission byte-identical in every mode. `-s0` ≈ 13.8 MB pool (all disk); `-s1` ≈ 33.1 MB; `-s2`/`-s3` ≈ 70.0 MB; `-s4` ≈ 73.0 MB; `-s5` ≈ 74.0 MB (S-EXTRA still on disk); `-s6` ≈ 77.0 MB (all RAM). Bare/non-digit/out-of-range `-s` = error rc=1 |
+| `-s<N>` | Spill level 0–6 (default `-s0`): how many of the six compiler-state spills live in RAM instead of `.zig1_*.tmp` disk files. Deactivation order S-AST → S-LIR → S-HASH → S-RES → S-SIDE → S-EXTRA. Higher `-s` = more RAM, less disk I/O; emission byte-identical in every mode. **Historical ladder at fixed point `553a39b4…`:** `-s0` ≈ 13.8 MB pool (all disk); `-s1` ≈ 33.1 MB; `-s2`/`-s3` ≈ 70.0 MB; `-s4` ≈ 73.0 MB; `-s5` ≈ 74.0 MB (S-EXTRA still on disk); `-s6` ≈ 77.0 MB (all RAM). **Current fixed point `21c957…`:** `-s0` pool=18871K (18.4 MB); `-s1`–`-s6` not re-measured here. Bare/non-digit/out-of-range `-s` = error rc=1 |
 | `-mm<N>` | Hard pool budget in MB (default 64). Levels whose pool exceeds the budget abort with `memory limit exceeded` rc=3 (e.g. `-s2`+ need `-mm128`) |
 | `-m <size>` / `--max-mem <size>` | Pool memory budget with k/M/G suffix |
 | `--track-memory`, `--markers` | Memory tracking / pipeline markers (e.g. the `pool=` report line) |
