@@ -26,6 +26,7 @@ const pf = @import("std_pathfind.zig");
 var MAP_BACK: [8388608]u8 = undefined;
 var RUN_BACK: [8388608]u8 = undefined;
 var TILES: [4096]u8 = undefined;
+var LOCAL_TILES: [4096]u8 = undefined;
 var OUT: [32768]u32 = undefined;
 var JOUT: [32768]u32 = undefined;
 var MAP_BACK2: [8388608]u8 = undefined;
@@ -130,6 +131,14 @@ fn noPathHpa(ar: *std.arena.Arena, map: *const hpa.AbstractMap, grid: *const pf.
     };
     _ = n;
     return false;
+}
+
+fn localJps(ar: *std.arena.Arena, lg: *const pf.Grid, fx: u32, fy: u32, gx: u32, gy: u32) Result {
+    var n = pf.jpsFind(ar, lg, pf.Point{ .x = fx, .y = fy }, pf.Point{ .x = gx, .y = gy }, JOUT[0..]) catch |e| {
+        if (e == error.NoPath) return Result{ .ok = false, .cost = 0, .count = 0 };
+        @panic("local jps unexpected error");
+    };
+    return Result{ .ok = true, .cost = costOf(JOUT[0..], n), .count = n };
 }
 
 fn checkPair(mapar: *std.arena.Arena, runar: *std.arena.Arena, map: *const hpa.AbstractMap, grid: *const pf.Grid, sx: u32, sy: u32, gx: u32, gy: u32, what: []const u8) void {
@@ -403,6 +412,115 @@ fn checkNonDivisible() void {
     std.io.write("nondiv ok\n");
 }
 
+fn permanentBytes(m: *const hpa.AbstractMap) usize {
+    return m.clusters.len * @sizeOf(hpa.Cluster) +
+        m.node_start.len * @sizeOf(u32) +
+        m.nodes.len * @sizeOf(hpa.AbstractNode) +
+        m.edge_start.len * @sizeOf(u32) +
+        m.edges.len * @sizeOf(hpa.AbstractEdge);
+}
+
+fn copyClusterGrid(grid: *const pf.Grid, c: hpa.Cluster) pf.Grid {
+    var y: u32 = 0;
+    while (y < c.h) : (y += 1) {
+        var x: u32 = 0;
+        while (x < c.w) : (x += 1) {
+            var si: usize = idx(grid.width, c.x0 + x, c.y0 + y);
+            var di: usize = @intCast(usize, y) * @intCast(usize, c.w) + @intCast(usize, x);
+            LOCAL_TILES[di] = grid.tiles[si];
+        }
+    }
+    var n: usize = @intCast(usize, c.w) * @intCast(usize, c.h);
+    return pf.Grid{ .tiles = LOCAL_TILES[0..n], .width = c.w, .height = c.h };
+}
+
+fn checkEdgeOrder() void {
+    var mapar = std.arena.init(MAP_BACK[0..]);
+    fill(TILES[0..256], 1);
+    var grid = pf.Grid{ .tiles = TILES[0..256], .width = 16, .height = 16 };
+    std.arena.reset(&mapar);
+    var map = hpa.hpaBuild(&mapar, &grid, 4, 4) catch @panic("edge-order build");
+    var n: u32 = 0;
+    while (n < @intCast(u32, map.nodes.len)) : (n += 1) {
+        var e: u32 = map.edge_start[@intCast(usize, n)] + 1;
+        var ee: u32 = map.edge_start[@intCast(usize, n) + 1];
+        while (e < ee) : (e += 1) {
+            ck(map.edges[@intCast(usize, e - 1)].to < map.edges[@intCast(usize, e)].to, "edge order");
+        }
+    }
+    std.io.write("edge-order ok\n");
+}
+
+fn checkNodeOrder() void {
+    var mapar = std.arena.init(MAP_BACK[0..]);
+    fill(TILES[0..256], 1);
+    var grid = pf.Grid{ .tiles = TILES[0..256], .width = 16, .height = 16 };
+    std.arena.reset(&mapar);
+    var map = hpa.hpaBuild(&mapar, &grid, 4, 4) catch @panic("node-order build");
+    var c: u32 = 0;
+    while (c < @intCast(u32, map.clusters.len)) : (c += 1) {
+        var n: u32 = map.node_start[@intCast(usize, c)];
+        var e: u32 = map.node_start[@intCast(usize, c) + 1];
+        while (n < e) : (n += 1) {
+            ck(map.nodes[@intCast(usize, n)].cluster == c, "node cluster id");
+            if (n > map.node_start[@intCast(usize, c)]) {
+                var a = map.nodes[@intCast(usize, n - 1)];
+                var b = map.nodes[@intCast(usize, n)];
+                ck(a.y < b.y or (a.y == b.y and a.x < b.x), "node row-major order");
+            }
+        }
+    }
+    std.io.write("node-order ok\n");
+}
+
+fn checkScratchRelease() void {
+    var mapar = std.arena.init(MAP_BACK[0..]);
+    fill(TILES[0..256], 1);
+    var grid = pf.Grid{ .tiles = TILES[0..256], .width = 16, .height = 16 };
+    std.arena.reset(&mapar);
+    var pad = std.arena.alloc(&mapar, 16) catch @panic("scratch pad");
+    _ = pad;
+    var base: usize = mapar.used;
+    var map = hpa.hpaBuild(&mapar, &grid, 4, 4) catch @panic("scratch build");
+    ck(mapar.used == base + permanentBytes(&map), "build scratch released");
+    std.io.write("scratch ok\n");
+}
+
+fn checkIntraEdges() void {
+    var mapar = std.arena.init(MAP_BACK[0..]);
+    var runar = std.arena.init(RUN_BACK[0..]);
+    fill(TILES[0..256], 1);
+    var grid = pf.Grid{ .tiles = TILES[0..256], .width = 16, .height = 16 };
+    std.arena.reset(&mapar);
+    var map = hpa.hpaBuild(&mapar, &grid, 8, 8) catch @panic("intra build");
+    var c: u32 = 0;
+    while (c < @intCast(u32, map.clusters.len)) : (c += 1) {
+        var geom = map.clusters[@intCast(usize, c)];
+        var lg = copyClusterGrid(&grid, geom);
+        var i: u32 = map.node_start[@intCast(usize, c)];
+        var ie: u32 = map.node_start[@intCast(usize, c) + 1];
+        while (i < ie) : (i += 1) {
+            var j: u32 = i + 1;
+            while (j < ie) : (j += 1) {
+                var ni = map.nodes[@intCast(usize, i)];
+                var nj = map.nodes[@intCast(usize, j)];
+                std.arena.reset(&runar);
+                var r = localJps(&runar, &lg, ni.x - geom.x0, ni.y - geom.y0, nj.x - geom.x0, nj.y - geom.y0);
+                var e1: u32 = edgeCost(&map, i, j);
+                var e2: u32 = edgeCost(&map, j, i);
+                if (r.ok) {
+                    ck(e1 == r.cost, "intra edge i->j cost");
+                    ck(e2 == r.cost, "intra edge j->i cost");
+                } else {
+                    ck(e1 == 4294967295, "unreachable intra edge i->j");
+                    ck(e2 == 4294967295, "unreachable intra edge j->i");
+                }
+            }
+        }
+    }
+    std.io.write("intra ok\n");
+}
+
 fn checkSpecial() void {
     var mapar = std.arena.init(MAP_BACK[0..]);
     var runar = std.arena.init(RUN_BACK[0..]);
@@ -415,6 +533,13 @@ fn checkSpecial() void {
     var same = hpa.hpaFind(&runar, &map, &grid, pf.Point{ .x = 5, .y = 5 }, pf.Point{ .x = 5, .y = 5 }, OUT[0..]) catch @panic("same");
     ck(same == 1, "same count");
     ck(OUT[0] == 5 and OUT[1] == 5, "same tile");
+
+    TILES[idx(32, 3, 3)] = 0;
+    std.arena.reset(&runar);
+    ck(noPathHpa(&runar, &map, &grid, 3, 3, 3, 3), "blocked same-tile path");
+    TILES[idx(32, 3, 3)] = 1;
+    std.arena.reset(&runar);
+    ck(noPathHpa(&runar, &map, &grid, 32, 0, 32, 0), "oob same-tile path");
 
     std.arena.reset(&runar);
     ck(noPathHpa(&runar, &map, &grid, 32, 0, 1, 1), "oob start path");
@@ -434,10 +559,38 @@ fn checkSpecial() void {
     bad_w.width = 33;
     std.arena.reset(&runar);
     ck(noPathHpa(&runar, &bad_w, &grid, 0, 0, 1, 1), "width mismatch path");
-    var bad_c = map;
-    bad_c.cluster_cols = 5;
+    var bad_h = map;
+    bad_h.height = 33;
     std.arena.reset(&runar);
-    ck(noPathHpa(&runar, &bad_c, &grid, 0, 0, 1, 1), "cluster mismatch path");
+    ck(noPathHpa(&runar, &bad_h, &grid, 0, 0, 1, 1), "height mismatch path");
+    var bad_cw = map;
+    bad_cw.cluster_w = 4;
+    std.arena.reset(&runar);
+    ck(noPathHpa(&runar, &bad_cw, &grid, 0, 0, 1, 1), "cluster_w mismatch path");
+    var bad_ch = map;
+    bad_ch.cluster_h = 4;
+    std.arena.reset(&runar);
+    ck(noPathHpa(&runar, &bad_ch, &grid, 0, 0, 1, 1), "cluster_h mismatch path");
+    var bad_cc = map;
+    bad_cc.cluster_cols = 5;
+    std.arena.reset(&runar);
+    ck(noPathHpa(&runar, &bad_cc, &grid, 0, 0, 1, 1), "cluster_cols mismatch path");
+    var bad_cr = map;
+    bad_cr.cluster_rows = 5;
+    std.arena.reset(&runar);
+    ck(noPathHpa(&runar, &bad_cr, &grid, 0, 0, 1, 1), "cluster_rows mismatch path");
+    var bad_cl = map;
+    bad_cl.clusters = map.clusters[0 .. map.clusters.len - 1];
+    std.arena.reset(&runar);
+    ck(noPathHpa(&runar, &bad_cl, &grid, 0, 0, 1, 1), "clusters len mismatch path");
+    var bad_ns = map;
+    bad_ns.node_start = map.node_start[0 .. map.node_start.len - 1];
+    std.arena.reset(&runar);
+    ck(noPathHpa(&runar, &bad_ns, &grid, 0, 0, 1, 1), "node_start len mismatch path");
+    var bad_es = map;
+    bad_es.edge_start = map.edge_start[0 .. map.edge_start.len - 1];
+    std.arena.reset(&runar);
+    ck(noPathHpa(&runar, &bad_es, &grid, 0, 0, 1, 1), "edge_start len mismatch path");
 
     var ztiles: [1]u8 = undefined;
     ztiles[0] = 1;
@@ -562,6 +715,10 @@ pub fn main() void {
     checkParity32();
     checkLeaveReenter();
     checkNonDivisible();
+    checkEdgeOrder();
+    checkNodeOrder();
+    checkScratchRelease();
+    checkIntraEdges();
     checkSpecial();
     checkTruncation();
     checkDeterminism();
