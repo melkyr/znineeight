@@ -7,17 +7,20 @@
 #
 #   <zig1>    seed-built `zig1_5_clean` (its sibling lib/ resolves std modules).
 #   <module>  optional module names (e.g. `smoke`). With no modules, discovery
-#             is every `scripts/stdlib/ref/<module>/` directory.
+#             is the union of `scripts/stdlib/ref/<module>/` and
+#             `scripts/stdlib/vectors/<module>/` directories.
 #
 # Per module:
 #   1. build the `stdlib_<module>_cross_xmod` (or legacy `stdlib_cross_<module>_
 #      xmod`) driver once: `zig1 -ffast -o <tmp>` -> gcc -> build_target.sh.
-#   2. build `scripts/stdlib/ref/<module>/ref.c` once: `gcc -m32 -std=c89 -O0`.
-#   3. for every `scripts/stdlib/vectors/<module>/*.in`, feed the bytes to both
-#      the driver (`--crosscheck`) and the reference, and compare stdout
-#      three ways: Z98 == ref, Z98 == committed .expected, ref == committed .expected.
-#      Both processes must exit 0. Text mismatches print a diff; binary
-#      mismatches print `cmp -l`.
+#   2. if `scripts/stdlib/ref/<module>/ref.c` exists, build it once with
+#      `gcc -m32 -std=c89 -O0`.
+#   3. for every `scripts/stdlib/vectors/<module>/*.in`, feed the bytes to the
+#      driver (`--crosscheck`) and compare stdout. With a reference, also feed
+#      the reference and compare three ways: Z98 == ref, Z98 == committed
+#      .expected, ref == committed .expected. A ref-less module (std_zstd)
+#      requires only Z98 exit 0 and Z98 == committed .expected. Text mismatches
+#      print a diff; binary mismatches print `cmp -l`.
 #
 # Z98_SEED is exported fixed on every invocation (harness convention; std code
 # itself never reads the environment).
@@ -44,12 +47,15 @@ declare -a MODULES=()
 if [ "$#" -gt 0 ]; then
   for m in "$@"; do MODULES+=("${m%/}"); done
 else
-  mapfile -t MODULES < <(find "$SCRIPT_DIR/ref" -mindepth 1 -maxdepth 1 -type d \
-                           -printf '%f\n' 2>/dev/null | LC_ALL=C sort)
+  mapfile -t MODULES < <(
+    { find "$SCRIPT_DIR/ref" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null
+      find "$SCRIPT_DIR/vectors" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null
+    } | LC_ALL=C sort -u
+  )
 fi
 
 if [ "${#MODULES[@]}" -eq 0 ]; then
-  echo "error: no crosscheck modules (no scripts/stdlib/ref/<module>/ dirs)" >&2
+  echo "error: no crosscheck modules (no scripts/stdlib/ref|vectors/<module>/ dirs)" >&2
   exit 2
 fi
 
@@ -88,10 +94,10 @@ for module in "${MODULES[@]}"; do
   vec_dir="$SCRIPT_DIR/vectors/$module"
   driver_dir="$(driver_dir_for "$module")"
   reason=""
+  ref_present=0
+  if [ -f "$ref_dir/ref.c" ]; then ref_present=1; fi
 
-  if [ ! -f "$ref_dir/ref.c" ]; then
-    reason="MISSING-REF"
-  elif [ ! -d "$vec_dir" ]; then
+  if [ ! -d "$vec_dir" ]; then
     reason="MISSING-VECTORS"
   elif [ -z "$driver_dir" ]; then
     reason="MISSING-DRIVER"
@@ -132,7 +138,7 @@ for module in "${MODULES[@]}"; do
     fi
   fi
 
-  if [ -z "$reason" ]; then
+  if [ -z "$reason" ] && [ "$ref_present" -eq 1 ]; then
     gcc -m32 -std=c89 -O0 "$ref_dir/ref.c" -o "$tmp/ref" >"$tmp/.refout" 2>"$tmp/.referr"
     rrc_cc=$?
     if [ "$rrc_cc" -ne 0 ] || [ ! -x "$tmp/ref" ]; then
@@ -156,26 +162,32 @@ for module in "${MODULES[@]}"; do
 
         timeout 120 "$tmp/prog" --crosscheck <"$in_file" >"$tmp/z.out" 2>"$tmp/z.err"
         zrc=$?
-        timeout 120 "$tmp/ref" <"$in_file" >"$tmp/r.out" 2>"$tmp/r.err"
-        rrc=$?
-
         if [ "$zrc" -ne 0 ]; then
           reason="Z98-RC$zrc:$name"
           echo "    z98 stderr: $(head -n 1 "$tmp/z.err")"
           break
-        elif [ "$rrc" -ne 0 ]; then
-          reason="REF-RC$rrc:$name"
-          echo "    ref stderr: $(head -n 1 "$tmp/r.err")"
-          break
-        elif ! cmp -s "$tmp/z.out" "$tmp/r.out"; then
-          reason="Z98-NE-REF:$name"
-          show_mismatch "z98 vs ref" "$tmp/z.out" "$tmp/r.out"
-          break
-        elif ! cmp -s "$tmp/z.out" "$out_file"; then
+        fi
+
+        if [ "$ref_present" -eq 1 ]; then
+          timeout 120 "$tmp/ref" <"$in_file" >"$tmp/r.out" 2>"$tmp/r.err"
+          rrc=$?
+          if [ "$rrc" -ne 0 ]; then
+            reason="REF-RC$rrc:$name"
+            echo "    ref stderr: $(head -n 1 "$tmp/r.err")"
+            break
+          elif ! cmp -s "$tmp/z.out" "$tmp/r.out"; then
+            reason="Z98-NE-REF:$name"
+            show_mismatch "z98 vs ref" "$tmp/z.out" "$tmp/r.out"
+            break
+          fi
+        fi
+
+        if ! cmp -s "$tmp/z.out" "$out_file"; then
           reason="Z98-NE-EXPECTED:$name"
           show_mismatch "z98 vs committed .expected" "$tmp/z.out" "$out_file"
           break
-        elif ! cmp -s "$tmp/r.out" "$out_file"; then
+        fi
+        if [ "$ref_present" -eq 1 ] && ! cmp -s "$tmp/r.out" "$out_file"; then
           reason="REF-NE-EXPECTED:$name"
           show_mismatch "ref vs committed .expected" "$tmp/r.out" "$out_file"
           break
