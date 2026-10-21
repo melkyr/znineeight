@@ -205,6 +205,7 @@ repro/mi_matrix/stdlib_pathfind_cross_xmod
 repro/mi_matrix/stdlib_pathfind_plus_xmod
 repro/mi_matrix/stdlib_physics_basic_xmod
 repro/mi_matrix/stdlib_physics_cross_xmod
+repro/mi_matrix/stdlib_physics_panic_distance_xmod
 repro/mi_matrix/stdlib_physics_panic_xmod
 repro/mi_matrix/stdlib_print_alias_xmod
 repro/mi_matrix/stdlib_print_autoimport_xmod
