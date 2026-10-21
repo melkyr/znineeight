@@ -395,19 +395,64 @@ the per-iteration fraction (1 = exact in one projection). Caller reads
 
 ```
 pub const Cluster = struct { x0: u32, y0: u32, w: u32, h: u32 };
-pub const AbstractMap = struct { /* cluster grid + entrance table, arena-owned */ };
+pub const AbstractNode = struct { x: u32, y: u32, cluster: u32 };
+pub const AbstractEdge = struct { to: u32, cost: u32 };
+pub const AbstractMap = struct {
+    width: u32, height: u32, cluster_w: u32, cluster_h: u32,
+    cluster_cols: u32, cluster_rows: u32,
+    clusters: []Cluster, node_start: []u32,
+    nodes: []AbstractNode, edge_start: []u32, edges: []AbstractEdge,
+};
 
 pub fn hpaBuild(arena: *std_arena.Arena, grid: *const std_pathfind.Grid, cluster_w: u32, cluster_h: u32) !AbstractMap
 pub fn hpaFind(arena: *std_arena.Arena, m: *const AbstractMap, grid: *const std_pathfind.Grid, start: Point, goal: Point, out: []u32) !u32
 ```
-Bluepoint (Botea et al. 2004): partition grid into `cluster_w × cluster_h`
-clusters; entrances between neighbouring clusters; traversal costs between
-entrances within a cluster precomputed at build (per-entrance Dijkstra on the
-cluster interior); `hpaFind` = A\* on the abstract graph then path refinement
-per traversed cluster. Returns tile count like `jpsFind`; `error.NoPath`,
-`error.OutOfMemory`. Types `Point` re-exported by import of `std_pathfind`.
-Build cost is O(clusters × cluster area); memory from the caller arena.
-Same no-corner-cut rule as JPS.
+
+HPA\* (Botea et al. 2004) partitions the grid into clipped
+`cluster_w × cluster_h` clusters. Cluster ids are row-major; the final row and
+column are clipped to the grid. `cluster_w == 0` or `cluster_h == 0` is a
+caller bug (`@panic`), and `grid.tiles.len >= width*height` is a precondition.
+A zero-sized grid builds an empty map.
+
+The v1 abstract graph is exact: a **transition tile** is a walkable tile with
+at least one legal 8-neighbour move to a walkable tile in a different cluster
+(diagonal legality uses the strict no-corner-cut rule). One `AbstractNode` is
+created per transition tile. Node ids are cluster-major, then row-major inside
+the cluster; `node_start[c]..node_start[c+1]` is cluster `c`'s node range.
+Every legal cross-cluster adjacency becomes directed `AbstractEdge`s both ways
+with cost 10 (cardinal) or 14 (diagonal). For every pair of transition nodes in
+the same cluster, `hpaBuild` computes the exact cluster-restricted
+shortest-path cost with `jpsFind` on a compact cluster-local `Grid`; reachable
+pairs become directed edges both ways. Fully blocked clusters contribute no
+nodes. Edges are ordered by `to` ascending; `edge_start[n]..edge_start[n+1]`
+is node `n`'s adjacency range. The map is arena-owned and static: rebuild it
+after any `Grid.tiles` change.
+
+`hpaFind` adds temporary `S`/`G` nodes: `S` connects to every transition node
+reachable from `start` inside its cluster, every transition node reachable to
+`goal` connects to `G`, and a same-cluster pair also gets a direct `S -> G`
+edge. A\* uses the octile heuristic and the M5 composite heap key
+`(f<<32)|(~g)`. The selected abstract path is refined by concatenating exact
+cluster-local `jpsFind` paths for same-cluster segments and the single legal
+step for cross-cluster edges; duplicate boundary tiles are dropped. The result
+is the full tile path, including start and goal. `out` is a capacity in u32
+slots: write at most `out.len/2` `(x,y)` pairs, ignore an odd trailing slot,
+never overflow, and return the full tile count (caller detects truncation via
+`2*return > out.len`). Blocked/out-of-bounds endpoints, `start==goal` with a
+walkable tile, map/grid mismatch, and unreachable goals follow `jpsFind`
+semantics (`start==goal` returns 1). `hpaFind` errors are exactly `NoPath` and
+`OutOfMemory`; `hpaBuild` errors are exactly `OutOfMemory`.
+
+`hpaBuild` leaves only map allocations in the build arena (temporary build
+scratch is released before return; an OOM may consume the arena). `hpaFind`'s
+`arena` is query scratch and may be reset by the caller after each call; it
+must not be the arena that owns `m` if the caller resets it. A\* and refinement
+are deterministic: fixed cluster/node/edge order, stable heap insertion order,
+and fixed local search. Build cost is `O(sum_c k_c*(A_c+k_c))` for `k_c`
+transition tiles and cluster area `A_c`; memory is arena-owned and proportional
+to clusters, nodes, and edges. Classic Botea entrance-segment compression is a
+future optimization; it is not part of this exact-cost v1.
+
 
 ## 7. Milestone division (forward-only; no back-and-forth)
 
