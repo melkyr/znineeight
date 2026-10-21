@@ -47,6 +47,8 @@ M1 plan Global Constraints bind verbatim. Extra: error set exactly `error.StepTo
 
 **Files:**
 - Create: `sf/docs/std_lib/num.md`; Modify: `release/seed/CHANGELOG.md` (via archive script)
+- Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh` (36 → 37 count text + `std_num` module list)
+- Modify: `docs/sf/QUICK_REF.md`, root `README.md`, `STD_README.MD` (37 std files, install list, num doc/index row)
 
 - [ ] **Step 1: Docs** — API, tolerance semantics, FSAL note, stiff-system caveat.
 - [ ] **Step 2: Rotate seed** — archive + manifest (37 files); binary md5 + fixed point unchanged.
