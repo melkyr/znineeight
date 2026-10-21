@@ -49,6 +49,8 @@ M1 plan Global Constraints bind verbatim. Extra: decoder allocates nothing beyon
 
 **Files:**
 - Create: `sf/docs/std_lib/zstd.md`; Modify: `release/seed/CHANGELOG.md` (via archive script)
+- Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh` (35 → 36 count text + `std_zstd` module list)
+- Modify: `docs/sf/QUICK_REF.md`, root `README.md`, `STD_README.MD` (36 std files, install list, zstd doc/index row)
 
 - [ ] **Step 1: Docs** — subset boundaries (no dictionaries), window-override usage (default 21; 256 MB box passes 24–28), offline-compress workflow, error contract.
 - [ ] **Step 2: Rotate seed** — archive + manifest (36 files); binary md5 + fixed point unchanged.
