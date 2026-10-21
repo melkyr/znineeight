@@ -263,6 +263,46 @@ line-oriented.
 </li>
 </ol>
 
+<h2>Directory iteration, mtime, and bounded reads</h2>
+<p>
+<tt>std_file</tt> also lists directories and reports a path's modification
+time. A directory is an owned iterator: open it, pull entries until
+<tt>readDir</tt> returns <tt>null</tt>, then close it. The surface is:
+</p>
+<pre>
+pub const DirEntry = struct { name: []const u8, is_dir: bool };
+pub fn openDir(arena: *std.arena.Arena, path: []const u8) FileError!Dir
+pub fn readDir(arena: *std.arena.Arena, d: *Dir) FileError!?DirEntry
+pub fn closeDir(d: *Dir) void
+pub fn mtime(path: []const u8) FileError!i64
+</pre>
+<p>
+Entry names are copied into the arena you pass to <tt>readDir</tt> and are not
+NUL-terminated; every call allocates a fresh name, so a long listing grows the
+arena until you reset it. Ordering is the operating system's, not sorted, and
+<tt>readDir</tt> does <b>not</b> filter <tt>.</tt> or <tt>..</tt> &mdash; skip
+them yourself. On Linux <tt>is_dir</tt> comes from the directory entry's
+<tt>d_type</tt>; when that is <tt>DT_UNKNOWN</tt> the layer stats the held
+directory path plus the name. On Win9x the <tt>FindFirstFileA</tt> /
+<tt>FindNextFileA</tt> pair backs the same calls. End of directory is
+<tt>null</tt>, not an error; an open failure is <tt>error.OpenDirFailed</tt>,
+and <tt>closeDir</tt> releases the OS handle with no error channel.
+</p>
+<p>
+<tt>mtime(path)</tt> returns whole seconds since the Unix epoch, or
+<tt>error.OpenFailed</tt> when the path does not fit the 4096-byte buffer or
+cannot be stat'ed. The z9torr resume path compares it against the value recorded
+in its sidecar to reject a resume whose source file changed.
+</p>
+<p>
+One read-size caution: <tt>readAll</tt> sizes the file, allocates that many bytes
+from the arena, and reads the whole thing. That is right for a config or a small
+asset, but a large media file should be streamed with
+<tt>open</tt>/<tt>read</tt>/<tt>seek</tt> so only one chunk is live at a time;
+that is the pattern z9play uses for playback. A tool that needs only a header
+can <tt>seek</tt> to it and read a bounded buffer instead of slurping the file.
+</p>
+
 <h2>Verify it worked</h2>
 <p>
 The three gate runs in Steps&nbsp;2&ndash;4 are the recorded measured output of

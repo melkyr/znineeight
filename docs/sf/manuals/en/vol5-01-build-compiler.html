@@ -5,7 +5,7 @@
 <title>Z98 Manual: Rebuild the Compiler from Seed</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual volume V HOWTO rebuild compiler from seed zig1 seed archive build_from_seed FIXED_POINT_MD5 two-hop closure fixed point gcc lib zig1_5_clean release seed v91">
+<meta name="keywords" content="Z98 manual volume V HOWTO rebuild compiler from seed zig1 seed archive build_from_seed FIXED_POINT_MD5 two-hop closure fixed point gcc lib zig1_5_clean release seed v111">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -81,7 +81,7 @@ point.
 <li>A Linux host with <tt>bash</tt> and a 32-bit-capable <tt>gcc</tt> (the
 build uses <tt>gcc -m32 -std=c89</tt>).</li>
 <li>The repository checked out with the committed seed
-<tt>release/seed/zig1-seed.tgz</tt> (current seed <b>v91</b>) and the script
+<tt>release/seed/zig1-seed.tgz</tt> (current seed <b>v111</b>) and the script
 <tt>scripts/seed/build_from_seed.sh</tt> present.</li>
 <li>Every command runs from the repository root, <tt>/workspace/znineeight</tt>.
 No <tt>zig0</tt> is needed: this is the zig0-independent rebuild path, and
@@ -119,7 +119,7 @@ argument is the committed seed archive; the second is a fresh output folder
 (the script removes it first).
 </p>
 <pre>
-$ FIXED_POINT_MD5=0b8c3e4ac0b1fc49c0bdf8caf9d39945 \
+$ FIXED_POINT_MD5=21c957730d268f1e7883176fa5413b65 \
 &gt;   bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
 </pre>
 <p>
@@ -133,10 +133,10 @@ Read the gate. A successful run prints the hop md5s, the closure verdict, the
 fixed-point check, and the <tt>Done</tt> marker:
 </p>
 <pre>
-[seed] hop1 binary md5: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
-[seed] hop2 binary md5: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
-[seed] two-hop closure OK: hop1 == hop2 == 0b8c3e4ac0b1fc49c0bdf8caf9d39945
-[seed] recorded fixed point OK: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
+[seed] hop1 binary md5: 21c957730d268f1e7883176fa5413b65
+[seed] hop2 binary md5: 21c957730d268f1e7883176fa5413b65
+[seed] two-hop closure OK: hop1 == hop2 == 21c957730d268f1e7883176fa5413b65
+[seed] recorded fixed point OK: 21c957730d268f1e7883176fa5413b65
 === [seed] Done: /tmp/manual_seed ===
 </pre>
 <p>
@@ -156,7 +156,7 @@ _unpack  gen  hop2  lib  zig1_5_clean
 </pre>
 <p>
 The compiler is <tt>/tmp/manual_seed/zig1_5_clean</tt>; the standard library is
-<tt>/tmp/manual_seed/lib/</tt> (30 <tt>.zig</tt> files). The compiler resolves
+<tt>/tmp/manual_seed/lib/</tt> (40 <tt>.zig</tt> files). The compiler resolves
 <tt>@import("std")</tt> from the <tt>lib</tt> folder beside itself, so keep them
 together. <tt>_unpack/</tt> is the unpacked seed, and <tt>gen/</tt> and
 <tt>hop2/</tt> are build scratch; none of the three is needed afterward.
@@ -169,7 +169,7 @@ current seed:
 </p>
 <pre>
 $ md5sum /tmp/manual_seed/zig1_5_clean
-0b8c3e4ac0b1fc49c0bdf8caf9d39945  /tmp/manual_seed/zig1_5_clean
+21c957730d268f1e7883176fa5413b65  /tmp/manual_seed/zig1_5_clean
 </pre>
 </li>
 </ol>
@@ -183,17 +183,17 @@ the same value on disk.
 </p>
 <pre>
 $ cd /workspace/znineeight
-$ FIXED_POINT_MD5=0b8c3e4ac0b1fc49c0bdf8caf9d39945 \
+$ FIXED_POINT_MD5=21c957730d268f1e7883176fa5413b65 \
 &gt;   bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
-[seed] hop1 binary md5: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
-[seed] hop2 binary md5: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
-[seed] two-hop closure OK: hop1 == hop2 == 0b8c3e4ac0b1fc49c0bdf8caf9d39945
-[seed] recorded fixed point OK: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
+[seed] hop1 binary md5: 21c957730d268f1e7883176fa5413b65
+[seed] hop2 binary md5: 21c957730d268f1e7883176fa5413b65
+[seed] two-hop closure OK: hop1 == hop2 == 21c957730d268f1e7883176fa5413b65
+[seed] recorded fixed point OK: 21c957730d268f1e7883176fa5413b65
 === [seed] Done: /tmp/manual_seed ===
 $ md5sum /tmp/manual_seed/zig1_5_clean
-0b8c3e4ac0b1fc49c0bdf8caf9d39945  /tmp/manual_seed/zig1_5_clean
+21c957730d268f1e7883176fa5413b65  /tmp/manual_seed/zig1_5_clean
 $ ls /tmp/manual_seed/lib | wc -l
-30
+40
 </pre>
 
 <h2>Common mistakes</h2>

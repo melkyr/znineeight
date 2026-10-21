@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Modules** | `std.bits`, `std.math` |
-| **Layers** | `L0` — foundation layer: no library imports; pure bit and integer computation with no allocation and no error sets |
+| **Layers** | `L0` — foundation layer: no library imports; pure bit, integer, and f64 scalar computation with no allocation and no error sets |
 | **Import (re-export)** | `const std = @import("std");` → `std.bits`, `std.math` |
 | **Import (by path)** | `const std_bits = @import("std_bits");`, `const std_math = @import("std_math");` |
 
@@ -11,9 +11,9 @@
 
 `std.bits` and `std.math` are the pure-computation corner of the library. Both
 are L0: they import nothing, allocate nothing, and declare no error sets. Every
-function is a plain value-in/value-out computation over concrete integer types —
-`u32`/`u64` for bits, `i32`/`u32` for math. Z98 has no generics, so each
-operation is written for its exact type.
+function is a plain value-in/value-out computation over concrete types —
+`u32`/`u64` for bits, `i32`/`u32` and `f64` for math. Z98 has no generics, so
+each operation is written for its exact type.
 
 `std.bits` covers population count, leading/trailing zero counts, rotations, bit
 reversal, masks, and bitfield `extract`/`insert`, plus `isPow2`/`nextPow2`. Z98
@@ -26,8 +26,8 @@ return the bit width, `nextPow2(0)` returns `1`, and `mask(bits)` is defined for
 `bits` in `[0, 32]`.
 
 `std.math` provides scalar `i32`/`u32` `min`/`max`, `abs`, `clamp`, a power-of-two
-predicate, and power-of-two `alignUp`/`alignDown`. It has no floating-point
-surface and no `f64`/`f32` helpers.
+predicate, and power-of-two `alignUp`/`alignDown`, plus f64 `sqrt`, `sin`, and
+`cos`. There is no f32 surface.
 
 ## Quick start
 
@@ -634,6 +634,85 @@ const a = std.math.alignDown(5, 4); // 4
 
 **Gotchas** — assumes `alignment` is a power of two; `alignment == 0` underflows
 `alignment - 1` and traps under the default `-fsafe` mode.
+
+#### `sqrt`
+
+**Purpose** — returns the square root of an `f64`.
+
+**When to use** — geometry, distances, and normalization. For integer work use
+the integer helpers above.
+
+**Signature** — `pub fn sqrt(x: f64) f64`
+
+**Parameters**
+- `x` — the value to take the square root of.
+
+**Returns** — the non-negative square root. A negative input or `NaN` returns
+`NaN`; zero and positive infinity are preserved; subnormal inputs are handled.
+
+**Errors** — none.
+
+**Example**
+```zig
+const r = std.math.sqrt(9.0); // 3.0
+```
+
+**Gotchas** — correctly rounded (round-to-nearest-even), implemented in pure
+Z98 with no libm call. A negative input returns `NaN` instead of trapping.
+There is no f32 overload; cast explicitly with `@floatCast`.
+
+#### `sin`
+
+**Purpose** — returns the sine of an angle in radians.
+
+**When to use** — rotation, waves, and signal work that already holds `f64`
+arguments.
+
+**Signature** — `pub fn sin(x: f64) f64`
+
+**Parameters**
+- `x` — the angle in radians.
+
+**Returns** — `sin(x)`, within 1 ULP of a correctly rounded result for
+`|x| <= 2^20*(pi/2)` (about `1.65e6`). Returns `NaN` outside that domain, for
+an infinity, or for a `NaN` input.
+
+**Errors** — none.
+
+**Example**
+```zig
+const s = std.math.sin(0.0); // 0.0
+```
+
+**Gotchas** — argument reduction is limited to the medium range above; larger
+magnitudes return `NaN` rather than reducing further. There is no f32 overload;
+cast explicitly with `@floatCast`.
+
+#### `cos`
+
+**Purpose** — returns the cosine of an angle in radians.
+
+**When to use** — rotation, waves, and signal work that already holds `f64`
+arguments.
+
+**Signature** — `pub fn cos(x: f64) f64`
+
+**Parameters**
+- `x` — the angle in radians.
+
+**Returns** — `cos(x)`, within 1 ULP of a correctly rounded result for
+`|x| <= 2^20*(pi/2)` (about `1.65e6`). Returns `NaN` outside that domain, for
+an infinity, or for a `NaN` input.
+
+**Errors** — none.
+
+**Example**
+```zig
+const c = std.math.cos(0.0); // 1.0
+```
+
+**Gotchas** — same reduction domain as `sin`; larger magnitudes return `NaN`.
+There is no f32 overload; cast explicitly with `@floatCast`.
 
 ## See also
 

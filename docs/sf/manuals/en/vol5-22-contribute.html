@@ -232,7 +232,7 @@ lives under version control with its provenance:
 $ ls release/seed
 CHANGELOG.md
 zig1-seed.tgz
-$ FIXED_POINT_MD5=0b8c3e4ac0b1fc49c0bdf8caf9d39945 \
+$ FIXED_POINT_MD5=21c957730d268f1e7883176fa5413b65 \
     bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
 ...
 === [seed] Done: /tmp/manual_seed ===
@@ -240,7 +240,7 @@ $ FIXED_POINT_MD5=0b8c3e4ac0b1fc49c0bdf8caf9d39945 \
 <p>
 The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> plus its <tt>lib/</tt>,
 and the closure gate proves the rebuilt compiler reproduces the recorded fixed
-point <tt>0b8c3e4ac0b1fc49c0bdf8caf9d39945</tt> (<tt>docs/sf/AGENTS.md</tt>
+point <tt>21c957730d268f1e7883176fa5413b65</tt> (<tt>docs/sf/AGENTS.md</tt>
 &sect;9.4; the seed archive is rotated only at a plan closeout, and only if an
 amendment moved the fixed point). Three consequences govern a compiler
 contribution. A real defect found while verifying a step <b>stops</b> the task:

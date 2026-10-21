@@ -15,7 +15,8 @@ writers (`write`, `writeByte`, `writeStr`, `print`, `printInt`), a reader
 `fileWrite`, `fileClose`). `std_file` is the higher-level, owned-handle file
 API: it opens a `File` with a `Mode`, reads/writes/seek/sizes/flushes it, and
 offers whole-file helpers (`readAll`, `writeAll`) plus path operations
-(`exists`, `remove`, `rename`). `std_stdin` reads lines and the whole of
+(`exists`, `mtime`, `remove`, `rename`) and directory iteration (`openDir`,
+`readDir`, `closeDir`). `std_stdin` reads lines and the whole of
 standard input.
 
 **Two file surfaces.** `std.io`'s `fileOpen` returns a raw OS descriptor
@@ -361,7 +362,7 @@ std.io.fileClose(fd);
 
 **When to use** — when naming or matching a `std_file` failure.
 
-**Signature** — `pub const FileError = error{ OpenFailed, ReadFailed, WriteFailed, SeekFailed, SizeFailed, FlushFailed, RemoveFailed, RenameFailed, OutOfMemory };`
+**Signature** — `pub const FileError = error{ OpenFailed, ReadFailed, WriteFailed, SeekFailed, SizeFailed, FlushFailed, RemoveFailed, RenameFailed, OpenDirFailed, ReadDirFailed, OutOfMemory };`
 
 **Parameters** — none.
 
@@ -380,7 +381,13 @@ std.io.fileClose(fd);
 - `error.RemoveFailed` — `unlink`/`DeleteFileA` failed (or the path was too
   long).
 - `error.RenameFailed` — `rename`/`MoveFileA` failed (or a path was too long).
-- `error.OutOfMemory` — `readAll` could not allocate from its arena (R1).
+- `error.OpenDirFailed` — `openDir` could not open the directory (or the path
+  did not fit the buffer).
+- `error.ReadDirFailed` — declared for the directory surface; the current
+  `readDir` reports end of directory as `null` and allocation failure as
+  `OutOfMemory`.
+- `error.OutOfMemory` — `readAll` could not allocate from its arena (R1), or a
+  directory call could not copy a name/path into the caller arena.
 
 **Example**
 ```zig
@@ -474,6 +481,146 @@ std_file.close(&f);
 **Gotchas** — `open` does not allocate; only `readAll` touches `arena`. Treat
 `handle` as opaque and never construct a `File` by hand. A `File` is not
 refcounted: `close` closes the handle but does not free the arena.
+
+#### `DirEntry`
+
+**Purpose** — one entry returned while iterating a directory.
+
+**When to use** — as the value produced by `readDir`.
+
+**Signature** — `pub const DirEntry = struct { name: []const u8, is_dir: bool };`
+
+**Parameters** (fields)
+- `name` — the entry's file name, copied into the caller's arena by `readDir`.
+  It is not NUL-terminated.
+- `is_dir` — `true` for a directory, `false` for anything else.
+
+**Returns** — a plain value type.
+
+**Errors** — none.
+
+**Example**
+```zig
+while (try std_file.readDir(&arena, &d)) |ent| {
+    std.io.write(ent.name);
+    std.io.writeByte('\n');
+}
+```
+
+**Gotchas** — `.` and `..` are returned, not filtered; skip them yourself. A
+new name is allocated on every `readDir` call, so the arena grows for the whole
+listing until you reset it.
+
+#### `Dir`
+
+**Purpose** — an open directory iterator.
+
+**When to use** — as the value returned by `openDir` and passed to `readDir`
+and `closeDir`.
+
+**Type** — `pub const Dir` with opaque iterator state: `handle`,
+`first_pending`, `data`, and `path`. `handle` is a POSIX `DIR*` or a Win32 find
+handle; `first_pending` marks the Win9x entry already returned by
+`FindFirstFileA`; `path` is retained for the Linux `DT_UNKNOWN` fallback (on
+POSIX it is copied into the caller's arena by `openDir`).
+
+**Parameters** (fields) — treat every field as opaque; do not construct a `Dir`
+by hand.
+
+**Returns** — a plain value type.
+
+**Errors** — none.
+
+**Gotchas** — a `Dir` owns an OS handle; `closeDir` releases it. It does not
+own arena memory, and closing does not free the copied path.
+
+#### `openDir`
+
+**Purpose** — opens a directory for streaming iteration.
+
+**When to use** — when you need the names in a directory, in the operating
+system's order.
+
+**Signature** — `pub fn openDir(arena: *std.arena.Arena, path: []const u8) FileError!Dir`
+
+**Parameters**
+- `arena` — the allocation source; on POSIX the directory path is copied into
+  it, and `readDir` later copies each name into it.
+- `path` — the directory path, copied into a 4096-byte stack buffer for the OS
+  call.
+
+**Returns** — an open `Dir`.
+
+**Errors** — `error.OpenDirFailed` when the path does not fit the buffer or the
+OS cannot open the directory; `error.OutOfMemory` on POSIX when the path copy
+cannot be allocated.
+
+**Example**
+```zig
+var d = try std_file.openDir(&arena, "assets");
+defer std_file.closeDir(&d);
+```
+
+**Gotchas** — iteration is OS-order, not sorted. On win32 the path gets a `\*`
+search suffix; on POSIX it is passed to `opendir`. Close the `Dir` with
+`closeDir`, not `close`.
+
+#### `readDir`
+
+**Purpose** — returns the next directory entry, or `null` at end of directory.
+
+**When to use** — the loop body of a directory scan.
+
+**Signature** — `pub fn readDir(arena: *std.arena.Arena, d: *Dir) FileError!?DirEntry`
+
+**Parameters**
+- `arena` — receives the copied entry name.
+- `d` — an open directory from `openDir`.
+
+**Returns** — `?DirEntry`: the next entry, or `null` when the directory is
+exhausted.
+
+**Errors** — `error.OutOfMemory` when the name cannot be copied into the arena.
+
+**Example**
+```zig
+var d = try std_file.openDir(&arena, ".");
+while (try std_file.readDir(&arena, &d)) |ent| {
+    if (ent.is_dir) continue;
+    std.io.write(ent.name);
+    std.io.writeByte('\n');
+}
+std_file.closeDir(&d);
+```
+
+**Gotchas** — every returned `name` is a fresh arena copy and is not
+NUL-terminated. `.` and `..` are **not** filtered. Ordering is the OS's. On
+Linux `is_dir` comes from `d_type`; when that is `DT_UNKNOWN` the layer stats
+the held directory path plus the name. On Win9x the `FindFirstFileA` /
+`FindNextFileA` pair backs the same calls.
+
+#### `closeDir`
+
+**Purpose** — closes the directory's OS handle.
+
+**When to use** — when finished with a `Dir`.
+
+**Signature** — `pub fn closeDir(d: *Dir) void`
+
+**Parameters**
+- `d` — the directory to close.
+
+**Returns** — nothing.
+
+**Errors** — none exposed; the OS close result is ignored.
+
+**Example**
+```zig
+std_file.closeDir(&d);
+```
+
+**Gotchas** — does not free arena memory; the copied path and entry names stay
+allocated until the arena is reset.
 
 #### `open`
 
@@ -726,6 +873,35 @@ try std_file.rename("tmp.bin", "final.bin");
 **Gotchas** — both paths are copied into separate 4096-byte buffers; a path too
 long is `RenameFailed`.
 
+#### `mtime`
+
+**Purpose** — returns a file's modification time in seconds since the Unix
+epoch.
+
+**When to use** — change detection and resume validation; z9torr uses it to
+reject a resume sidecar whose source file changed.
+
+**Signature** — `pub fn mtime(path: []const u8) FileError!i64`
+
+**Parameters**
+- `path` — the path to stat, copied into a 4096-byte stack buffer and
+  NUL-terminated.
+
+**Returns** — the modification time as whole seconds in an `i64`.
+
+**Errors** — `error.OpenFailed` when the path does not fit the buffer or cannot
+be stat'ed.
+
+**Example**
+```zig
+const t = try std_file.mtime("resume.sidecar");
+```
+
+**Gotchas** — POSIX reads `st_mtime` from `stat(2)`; win32 uses the
+`FindFirstFileA`-based PAL helper on Win9x (and `GetFileAttributesExA` under
+`ZIG_WIN_NT`). The value has one-second granularity. A missing path is
+`OpenFailed`, the same error `open` uses.
+
 #### `readAll`
 
 **Purpose** — reads an entire file into one arena allocation.
@@ -752,7 +928,9 @@ std.io.write(text);
 std.arena.reset(&arena);
 ```
 
-**Gotchas** — allocates `size` bytes up front; the slice is valid only until the
+**Gotchas** — allocates `size` bytes up front, so it holds the whole file in the
+arena at once; for large media use `open`/`read`/`seek` and stream one bounded
+chunk at a time (z9play does this). The slice is valid only until the
 next arena `reset`. On a read failure after that allocation the file is closed and
 the arena is left with the size buffer consumed; `SizeFailed` allocates nothing
 and `OutOfMemory` fails before any consumption.

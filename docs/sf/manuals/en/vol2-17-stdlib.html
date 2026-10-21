@@ -80,7 +80,8 @@ that proves it is there. The chapter's program,
 one run.
 </p>
 <p>
-Thirteen is a small number, and the size is deliberate. The compiler's
+Thirteen is a small number, and the size is deliberate: this chapter covers
+the whole <tt>std</tt> namespace, not the whole shipped library. The compiler's
 runtime library directory carries more files than the <tt>std</tt> namespace
 re-exports; only the names in this chapter resolve as <tt>std.&lt;name&gt;</tt>.
 The formal lookup for the language-level calls these modules are built from
@@ -93,16 +94,19 @@ function of every module, has shipped.
 <tr>
 <td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
 <td><b>Honest note.</b> You will reach for a standard library; here is how
-small this one is. The library is thirteen modules, and most of them are
-short. There is no formatted input, no floating-point math beyond the
-printer, no dynamic array in the compiler sense, no hash map, no string
-object. What exists is a set of concrete, hand-written helpers: an arena you
-own, byte slices you slice yourself, a formatting engine behind
-<tt>print</tt>, and thin wrappers over the operating system. The list below
-is not a subset chosen for a tour; it is the whole surface. What you gain is
-that every function is a plain Z98 function you can read in the compiler's
-source, with no hidden allocation and no dispatch you did not write. What
-you lose is the convenience layer a larger language would have built on top
+small the <tt>std</tt> namespace is. It is thirteen modules, and most of them
+are short. There is no formatted input, no dynamic array in the compiler sense,
+no map in the <tt>std</tt> namespace (a by-path <tt>std_map</tt> ships
+separately), no string object. Floating-point math is limited to the f64
+<tt>sqrt</tt>, <tt>sin</tt>, and <tt>cos</tt> in <tt>std.math</tt>; there is no
+f32 surface. What exists is a set of concrete, hand-written helpers: an arena
+you own, byte slices you slice yourself, a formatting engine behind
+<tt>print</tt>, and thin wrappers over the operating system. The list below is
+the whole <tt>std</tt> namespace; the shipped library also has twenty-two
+by-path modules beyond it (see <a href="#beyond">Beyond <tt>std</tt></a>). What
+you gain is that every function is a plain Z98 function you can read in the
+compiler's source, with no hidden allocation and no dispatch you did not write.
+What you lose is the convenience layer a larger language would have built on top
 of it.</td>
 </tr>
 </table>
@@ -188,10 +192,41 @@ covered here so the list is complete.
 <td>A growable byte buffer backed by an arena.</td>
 </tr>
 </table>
+
+<h2><a name="beyond"></a>Beyond <tt>std</tt></h2>
 <p>
-The directory holds more <tt>std_*.zig</tt> files than these thirteen. A name
-that is not in the table above is not part of the <tt>std</tt> namespace. The
-compiler rejects it rather than resolving it, for example:
+The namespace above is the whole <tt>std</tt> namespace, but not the whole
+shipped library. Twenty-two more modules ship by path: import one as
+<tt>@import("std_&lt;name&gt;")</tt> rather than through <tt>std</tt>. They are
+documented in four companion reference pages:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Companion page</th>
+<th align="left">Modules</th>
+</tr>
+<tr>
+<td><a href="vol4-18-stdlib-data.html">Data and containers</a></td>
+<td><tt>std_map</tt>, <tt>std_sort</tt>, <tt>std_heap</tt>, <tt>std_rle</tt>, <tt>std_parse</tt>, <tt>std_bencode</tt></td>
+</tr>
+<tr>
+<td><a href="vol4-18-stdlib-codecs.html">Codecs and crypto</a></td>
+<td><tt>std_base64</tt>, <tt>std_hex</tt>, <tt>std_utf8</tt>, <tt>std_crypto</tt>, <tt>std_lz4</tt>, <tt>std_zstd</tt></td>
+</tr>
+<tr>
+<td><a href="vol4-18-stdlib-io.html">I/O and HTTP</a></td>
+<td><tt>std_file</tt>, <tt>std_stdin</tt>, <tt>std_stream</tt>, <tt>std_http</tt></td>
+</tr>
+<tr>
+<td><a href="vol4-18-stdlib-algorithms.html">Algorithms</a></td>
+<td><tt>std_rand</tt>, <tt>std_noise</tt>, <tt>std_num</tt>, <tt>std_pathfind</tt>, <tt>std_physics</tt>, <tt>std_hpa</tt></td>
+</tr>
+</table>
+<p>
+The directory holds twenty-two more <tt>std_*.zig</tt> modules than these
+thirteen, and they ship by path. A name that is not in the re-export table
+above is not part of the <tt>std</tt> namespace. The compiler rejects it rather
+than resolving it, for example:
 </p>
 <pre>
 const S = @sizeOf(std.base64);
@@ -354,11 +389,12 @@ else.
 
 <h2><a name="math"></a>std.math</h2>
 <p>
-<tt>std.math</tt> is integer-only and concrete: the signed helpers take
-<tt>i32</tt> and the unsigned helpers take <tt>u32</tt>. It is not a
-floating-point library. One result is out of range: <tt>abs</tt> of the most
-negative <tt>i32</tt> negates <tt>-2147483648</tt>, which overflows <tt>i32</tt>
-and traps under the default safety checks.
+<tt>std.math</tt> is concrete, not generic: the signed helpers take
+<tt>i32</tt> and the unsigned helpers take <tt>u32</tt>. It also ships f64
+<tt>sqrt</tt>, <tt>sin</tt>, and <tt>cos</tt>; there is no f32 surface. The
+integer helpers remain a separate group. One result is out of range:
+<tt>abs</tt> of the most negative <tt>i32</tt> negates <tt>-2147483648</tt>,
+which overflows <tt>i32</tt> and traps under the default safety checks.
 </p>
 <pre>
 pub fn min(a: i32, b: i32) i32
@@ -371,12 +407,19 @@ pub fn clampU(v: u32, lo: u32, hi: u32) u32
 pub fn isPowerOfTwoU32(n: u32) bool
 pub fn alignUp(n: u32, alignment: u32) u32
 pub fn alignDown(n: u32, alignment: u32) u32
+pub fn sqrt(x: f64) f64
+pub fn sin(x: f64) f64
+pub fn cos(x: f64) f64
 </pre>
 <p>
-If you need a float square root or a sine, you write it yourself or call a
-C function through an <tt>extern</tt> declaration. The forty builtins of
-<a href="vol2-15-builtins.html">chapter&nbsp;15</a> do not include a math
-library either.
+The three floating-point functions are pure Z98, with no libm call and no
+<tt>f32</tt> overload. <tt>sqrt</tt> is correctly rounded and returns NaN for a
+negative input or NaN; it handles subnormals and preserves zero and infinity.
+<tt>sin</tt> and <tt>cos</tt> take radians, are within 1&nbsp;ULP of a
+correctly rounded result for <tt>|x| &lt;= 2^20*(pi/2)</tt> (about
+<tt>1.65e6</tt>), and return NaN outside that range or for an infinity. The
+forty builtins of <a href="vol2-15-builtins.html">chapter&nbsp;15</a> include
+no math library, so these functions are the whole floating-point surface.
 </p>
 
 <h2><a name="debug"></a>std.debug</h2>
@@ -733,10 +776,10 @@ information in Z98 is in the return type, which is why the arena returns
 <tt>NetError!T</tt>.
 </p>
 <p>
-<b>Assuming more modules ship than the thirteen.</b> The library directory
-holds more <tt>std_*.zig</tt> files than the <tt>std</tt> namespace
-re-exports, and a name that is not in the table above is not reachable
-through <tt>std</tt>. The compiler says so at the point of use:
+<b>Assuming more modules ship through <tt>std</tt>.</b> The library directory
+holds twenty-two more <tt>std_*.zig</tt> modules that ship by path, and a name
+that is not in the re-export table is not reachable through <tt>std</tt>. The
+compiler says so at the point of use:
 </p>
 <pre>
 const S = @sizeOf(std.base64);
@@ -744,8 +787,9 @@ const S = @sizeOf(std.base64);
 </pre>
 <p>
 Check the re-export list in <tt>sf/src/std.zig</tt> before you reach for a
-name. If it is not one of the thirteen, it is not part of the documented
-surface, whatever else exists on disk.
+name. If it is not one of the thirteen, it is not part of the <tt>std</tt>
+namespace; if it is one of the twenty-two by-path modules, import it as
+<tt>@import("std_&lt;name&gt;")</tt> and use the companion page above.
 </p>
 <p>
 <b>Mixing the buffered and unbuffered output paths.</b>
@@ -783,7 +827,9 @@ where the arena, buffer, and init-function patterns are collected.</li>
 </ul>
 <p>
 <a href="vol4-18-stdlib.html">The Reference stdlib page</a> documents every
-function of every module in the table above. The runnable example in
+function of every module in the table above; the four companion pages linked
+under <a href="#beyond">Beyond <tt>std</tt></a> do the same for the twenty-two
+by-path modules. The runnable example in
 <tt>docs/sf/manuals/src/vol2/stdio.z98</tt> is the working reference for the
 shape of a call, and the module sources
 <tt>sf/src/std_*.zig</tt> are the authority for a signature this chapter did
