@@ -196,3 +196,64 @@ Seed copy lists updated: `scripts/seed/build_from_seed.sh` and
 - Z98 warns (3000) when assigning a whole `[3]f32` field in a fixture
   (`source: array / target: pointer`); fixtures therefore assign elements
   individually. `std_physics.zig` itself is warning-free.
+
+## Fix round 1
+
+Operator ruling: option 1 — add the missing distance-capacity panic coverage.
+Library logic unchanged; existing `stdlib_physics_panic_xmod` kept.
+
+Added `repro/mi_matrix/stdlib_physics_panic_distance_xmod/` (`pbdInit(2,1)`,
+two particles, one distance fills the single constraint slot, second
+`pbdAddDistance` traps), empty `expected.txt`, `expected.rc=133`, and the pin
+entry in C-locale position between `_cross_` and `_panic_`.
+
+Fixture commit: `9fc485c3fdb4623cad157216a417a2f23c14fc7a` —
+`fix(std_physics): cover distance-capacity panic`.
+
+Targeted fixtures (both panic probes + existing):
+
+```
+bash scripts/stdlib/run_fixtures.sh /tmp/m5_seed/zig1_5_clean \
+  repro/mi_matrix/stdlib_physics_basic_xmod \
+  repro/mi_matrix/stdlib_physics_cross_xmod \
+  repro/mi_matrix/stdlib_physics_panic_xmod \
+  repro/mi_matrix/stdlib_physics_panic_distance_xmod \
+  stdlib_test/physics_usage
+PASS repro/mi_matrix/stdlib_physics_basic_xmod
+PASS repro/mi_matrix/stdlib_physics_cross_xmod
+PASS repro/mi_matrix/stdlib_physics_panic_xmod
+PASS repro/mi_matrix/stdlib_physics_panic_distance_xmod
+PASS stdlib_test/physics_usage
+run_fixtures: 5 PASS / 0 FAIL over 5 dirs
+RC=0
+```
+
+Both panic probes log `Trace/breakpoint trap` under the harness and compare
+empty stdout + rc 133.
+
+Full gate:
+
+```
+bash scripts/stdlib/verify_stdlib.sh /tmp/m5_seed/zig1_5_clean
+...
+run_fixtures: 309 PASS / 0 FAIL over 309 dirs
+== std-lib crosscheck gate ==
+PASS smoke (3 vectors)
+PASS std_lz4 (20 vectors)
+PASS std_noise (1 vectors)
+PASS std_num (1 vectors)
+PASS std_pathfind (2 vectors)
+PASS std_physics (1 vectors)
+PASS std_rand (2 vectors)
+PASS std_zstd (30 vectors)
+run_crosscheck: 8 PASS / 0 FAIL over 8 modules
+STDLIB GATE OK
+RC=0
+```
+
+Discovery pin confirmation:
+
+```
+discovered=309 pinned=309
+diff -u sorted-pin sorted-discovery -> diff rc=0, 0 lines
+```
