@@ -137,7 +137,7 @@ RSS = "Maximum resident set size (kbytes)". All runs: rc=0, 0 `error[`, 0 PANIC.
 | D | zig1 `-s0` self-compile → C89 | 3.90 | 16,376 | 16.0 | 45 module (48 full) |
 | E | gcc -m32 compile+link of zig1's self-emitted C89 → zig1_5 | 5.87 | 160,712 | 157.0 | (48 in; 45 module) |
 
-> **Note:** Rows A/B/C are historical 0.20.0-era bootstrap measurements (`zig0` retired; not re-measurable). Rows D/E are current at fixed point `553a39b4…`: their Wall/Peak RSS figures are the current medians and their emitted `.c` counts are 45 module (48 full) for D and 48 full (45 module) for E.
+> **Note:** Rows A/B/C are historical 0.20.0-era bootstrap measurements (`zig0` retired; not re-measurable). Rows D/E were current at fixed point `553a39b4…` (historical; superseded by the Phase 1 M1 measurements below): their Wall/Peak RSS figures are the medians at that fixed point and their emitted `.c` counts are 45 module (48 full) for D and 48 full (45 module) for E.
 
 > **The gcc caveat (~80 MB and ~157 MB, both measured).** The gcc backend is the memory hotspot of
 > building the compiler from source, and both gcc steps are measured here. Row C — gcc over the gen-0 C89 that zig0 emitted
@@ -151,19 +151,63 @@ RSS = "Maximum resident set size (kbytes)". All runs: rc=0, 0 `error[`, 0 PANIC.
 > release ships prebuilt `zig0` binaries (no `zig0` source archive). Rows B (~46 MB) and D (~16 MB)
 > fit comfortably in era-class RAM.
 
-Supporting data for the `-s0` row: `zig1 -s0 --markers --track-memory` self-compile reports
-`pool=14145K` (~13.8 MB pool) with RSS ~16.0 MB — the self-compile now **meets** the "~16 MB at `-s0`" figure (pool 14,145 K = 2,239 K under; RSS 16,376 kB = 8 kB under, at the boundary).
+Supporting data for row D at fixed point `553a39b4…`: `zig1 -s0 --markers --track-memory` self-compile reported
+`pool=14145K` (~13.8 MB pool) with RSS ~16.0 MB — that older build **met** the "~16 MB at `-s0`" figure (pool 14,145 K = 2,239 K under; RSS 16,376 kB = 8 kB under, at the boundary). At the current fixed point `21c957…`, the measured peak is 20792 KiB RSS with pool 18871K (below).
+
+### Current compiler peak (Phase 1 M1 pre-flight)
+
+One run on the build machine at seed v111 / fixed point `21c957730d268f1e7883176fa5413b65`,
+fixed-point binary `/tmp/m1_build/zig1_5_clean`, under `/usr/bin/time -v` (not the 3×
+medians used for the historical table above).
+
+| Workload | Max RSS (KiB) | Wall (s) | Arena |
+|---|---:|---:|---|
+| (a) fixed-point self-emission (`--dump-c89`) | 20792 | 5.66 | pool=18871K, total=2921K |
+| (b) full stdlib gate, compiler-only max (321 invocations) | 28836 | 0.32 | not exposed |
+| (c) z9play `main.zig` `-fsafe` emit | 8140 | 0.36 | pool=4609K, total=2032K |
+
+Row (b) is the maximum over 321 compiler invocations in the full `scripts/stdlib/verify_stdlib.sh`
+gate; **0.32 s is that largest invocation's wall, not the full gate wall** (~153 s including gcc).
+Whole-build and whole-gate process-tree maxima include gcc and are **not** compiler RSS. Arena
+`total` is `perm + mod + scr`; `pool` is reported separately (not part of `total`).
+
+Exact recipe, runnable from the repo root:
+
+```bash
+# build the fixed-point binary first
+FIXED_POINT_MD5=21c957730d268f1e7883176fa5413b65 \
+  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m1_build
+
+# (a) compiler-only peak RSS + wall
+rm -rf /tmp/m1_emit && mkdir -p /tmp/m1_emit
+/usr/bin/time -v /tmp/m1_build/zig1_5_clean -ffast --dump-c89 \
+  --output-dir /tmp/m1_emit sf/src/main.zig
+
+# arena (separate run; exposes pool/perm/mod/scr/type_db/total)
+rm -rf /tmp/m1_emit_arena && mkdir -p /tmp/m1_emit_arena
+/tmp/m1_build/zig1_5_clean --markers --track-memory -ffast --dump-c89 \
+  --output-dir /tmp/m1_emit_arena sf/src/main.zig 2>&1 | grep 'track-memory:'
+```
+
+**Compiler target:** **<16 MB goal; current peak recorded above; tracked per Phase 1 milestone.**
+The current fixed-point self-emission fails on both axes: 20792 KiB RSS (20.3 MB; +4.3 MB over)
+and pool 18871K (18.4 MB; +2.4 MB over).
+
+**Demo RAM budget (Phase 1):** **16 MB target / 32 MB hard ceiling, enforced with
+`ulimit -v 32768` + recorded peak RSS**.
 
 ## Minimum Requirements
 | Requirement | Linux | Windows 9x / MinGW |
 |---|---|---|
-| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 9-file `lib/` std set next to it (auto-discovered); ~16 MB RAM at `-s0` | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); ~16 MB RAM at `-s0` |
+| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 9-file `lib/` std set next to it (auto-discovered); **~20.3 MB RSS / ~18.4 MB pool at `-s0` on the current Linux fixed point (16 MB goal not met)** | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); ~16 MB RAM at `-s0` (historical; not re-measured in Phase 1 M1) |
 | **BUILDING the compiler from source** | gcc (C89) for the emitted C — gcc backend **~80 MB** peak (measured ~85 MB); + g++ ~182 MB if also rebuilding the `zig0` bootstrap from scratch | mingw gcc for the emitted C — gcc backend dominates (mingw cross measured ~168 MB on the reference machine) |
 
-> **zig1 runs in ~16 MB at `-s0`, but building the compiler from source is dominated by the gcc
-> backend ~80 MB — a 16 MB machine can run zig1 but cannot build it from source.** Running (compiling
-> programs) and building (recompiling the compiler) have different memory profiles; do not assume a
-> small-RAM era machine that can run the released binaries can also build them.
+> **At current fixed point `21c957…`, Linux `zig1` self-build peaks at ~20.3 MB RSS / ~18.4 MB
+> pool at `-s0` — the <16 MB compiler goal is not met. Building the compiler from source remains
+> dominated by the gcc backend (historical self-host gcc step ~157 MB; see the gcc caveat above),
+> so a 16 MB machine cannot build it from source.** Running (compiling programs) and building
+> (recompiling the compiler) have different memory profiles; do not assume a small-RAM era machine
+> that can run the released binaries can also build them.
 
 ## PII/PIII Time Estimates
 Engineering estimates — not measurements. Clock-scaled from the table above via

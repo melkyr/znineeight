@@ -257,6 +257,42 @@ cd <dump> && timeout 120 sh build_target.sh mingw
 ```
 - Harness wrapper: `scripts/win32_cross/cross_build_run.sh <zig1> <entry> <workdir> <exe> [-lwsock32]` — `cross_build_run.sh` links `-lwsock32` unconditionally (Amendment A0), so no extra flag is needed.
 
+### Compiler RSS/arena — Phase 1 M1 measured baseline (fixed point `21c957…`)
+
+One run on the build machine at seed v111 / fixed point
+`21c957730d268f1e7883176fa5413b65`, fixed-point binary `/tmp/m1_build/zig1_5_clean`, under
+`/usr/bin/time -v` (one run, not 3× medians). Compiler-only rows — do **not** use
+whole-build/whole-gate process-tree maxima (they include gcc) as compiler RSS:
+
+| Workload | Max RSS (KiB) | Wall (s) | Arena |
+|---|---:|---:|---|
+| (a) fixed-point self-emission (`--dump-c89`) | 20792 | 5.66 | pool=18871K, total=2921K |
+| (b) full stdlib gate, compiler-only max (321 invocations) | 28836 | 0.32 | not exposed |
+| (c) z9play `main.zig` `-fsafe` emit | 8140 | 0.36 | pool=4609K, total=2032K |
+
+Row (b): **0.32 s is the largest single compiler invocation's wall, not the full gate wall**
+(~153 s including gcc). Arena `total` is `perm + mod + scr`; `pool` is separate.
+
+Exact recipe, runnable from the repo root:
+
+```bash
+FIXED_POINT_MD5=21c957730d268f1e7883176fa5413b65 \
+  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m1_build
+rm -rf /tmp/m1_emit && mkdir -p /tmp/m1_emit
+/usr/bin/time -v /tmp/m1_build/zig1_5_clean -ffast --dump-c89 \
+  --output-dir /tmp/m1_emit sf/src/main.zig
+rm -rf /tmp/m1_emit_arena && mkdir -p /tmp/m1_emit_arena
+/tmp/m1_build/zig1_5_clean --markers --track-memory -ffast --dump-c89 \
+  --output-dir /tmp/m1_emit_arena sf/src/main.zig 2>&1 | grep 'track-memory:'
+```
+
+**Compiler target:** **<16 MB goal; current peak recorded above; tracked per Phase 1 milestone.**
+The current fixed-point self-emission fails on both axes: 20792 KiB RSS (20.3 MB; +4.3 MB over)
+and pool 18871K (18.4 MB; +2.4 MB over).
+
+**Demo RAM budget (Phase 1):** **16 MB target / 32 MB hard ceiling, enforced with
+`ulimit -v 32768` + recorded peak RSS**.
+
 ### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [updated: 2026-09-17]
 
 `-s<N>` picks how many of the six spills live in RAM instead of the `.zig1_*.tmp` disk files.
