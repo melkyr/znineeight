@@ -52,5 +52,3 @@ Created `docs/sf/manuals/en/vol4-18-stdlib-algorithms.html`.
 
 1. The brief says directory iteration returns names without `.` and `..`; `sf/src/std_file.zig` explicitly says the opposite (`. ` and `..` are returned, not filtered). The page follows the source.
 2. The brief asks for encoded/decoded length helpers for hex; `sf/src/std_hex.zig` has none. The page documents the source's direct `src.len * 2` / `src.len / 2` sizing.
-
-
