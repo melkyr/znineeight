@@ -1,0 +1,6 @@
+exponential ok
+harmonic ok
+vdp ok
+stepgrowth ok
+minstep ok
+num basic ok
