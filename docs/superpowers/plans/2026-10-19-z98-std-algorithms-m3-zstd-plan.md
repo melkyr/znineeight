@@ -32,6 +32,7 @@ M1 plan Global Constraints bind verbatim. Extra: decoder allocates nothing beyon
 - Create: `scripts/stdlib/get_zstd_tools.sh` (no-root acquisition, M8 pattern)
 - Create: `repro/mi_matrix/stdlib_zstd_{basic,cross}_xmod/{main.zig,expected.txt,expected.rc}`
 - Modify: `scripts/stdlib/expected_dirs.txt`, seed copy lists (`build_from_seed.sh:146`, `archive_seed.sh:115`)
+- Modify: `scripts/stdlib/run_crosscheck.sh` (ref-less modules: missing `ref/<module>/ref.c` skips ref build/compare; require Z98 == committed `.expected`)
 
 **Interfaces:**
 - Consumes: none beyond L0–L2.
@@ -41,7 +42,7 @@ M1 plan Global Constraints bind verbatim. Extra: decoder allocates nothing beyon
 - [ ] **Step 2: Write failing fixtures.** `stdlib_zstd_basic_xmod`: round-trip decode all corpus vectors byte-exact; empty content; single raw/RLE block; `WindowTooBig` (frame with window_log 22 vs `max_window_log=21` — generated via `zstd --long=22` or crafted); custom `max_window_log=24` accepts it; truncations + bit-flips → `error.Corrupt`; dst-too-small → `error.OutputTooSmall`; skippable frame + valid frame = decodes, payload ignored.
 - [ ] **Step 3: Run — FAIL (module absent).**
 - [ ] **Step 4: Implement decoder** — frame magic `0xFD2FB528` + header (window descriptor, content-size optional, single-segment); block header parse; raw/RLE passthrough; compressed: FSE literals (predefined/raw/RLE/compressed modes) + FSE sequences (litlen/offset/matchlen modes) + repeat-sequences handling; sequence execution with overlap-safe copies; every back-reference inside `dst[0..written]`.
-- [ ] **Step 5: Crosscheck pass green** — `stdlib_zstd_cross_xmod --crosscheck` decodes vectors (no ref binary; committed `.expected` is the authority — the three-way compare degrades to Z98 == `.expected`); determinism 3×.
+- [ ] **Step 5: Crosscheck pass green** — `run_crosscheck.sh` must support ref-less modules for this task: when `scripts/stdlib/ref/<module>/ref.c` is absent, skip ref build/compare and require only Z98 == committed `.expected` (plus Z98 exit 0); `std_zstd` has no ref binary. `stdlib_zstd_cross_xmod --crosscheck` decodes vectors; determinism 3×.
 - [ ] **Step 6: Gates + commit.** Full §4 RUN set; import-resolvability; stack discipline checked (no `>4 KB` function-local arrays beyond the documented tables). `feat(std_zstd): RFC 8878 subset decoder (M3)`.
 
 ### Task 2: M3 closeout — docs + seed rotation
