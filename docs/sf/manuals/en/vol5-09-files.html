@@ -292,7 +292,7 @@ and <tt>closeDir</tt> releases the OS handle with no error channel.
 <tt>mtime(path)</tt> returns whole seconds since the Unix epoch, or
 <tt>error.OpenFailed</tt> when the path does not fit the 4096-byte buffer or
 cannot be stat'ed. The z9torr resume path compares it against the value recorded
-in its sidecar to reject a resume whose source file changed.
+in its sidecar to reject a resume whose output/download file changed.
 </p>
 <p>
 One read-size caution: <tt>readAll</tt> sizes the file, allocates that many bytes

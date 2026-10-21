@@ -478,7 +478,9 @@ _ = try std_file.size(&f);
 std_file.close(&f);
 ```
 
-**Gotchas** — `open` does not allocate; only `readAll` touches `arena`. Treat
+**Gotchas** — `open` does not allocate; `readAll` allocates the file body from
+`arena`, and `openDir`/`readDir` copy the directory path and entry names into
+it. Treat
 `handle` as opaque and never construct a `File` by hand. A `File` is not
 refcounted: `close` closes the handle but does not free the arena.
 
@@ -879,7 +881,7 @@ long is `RenameFailed`.
 epoch.
 
 **When to use** — change detection and resume validation; z9torr uses it to
-reject a resume sidecar whose source file changed.
+reject a resume sidecar whose output/download file changed.
 
 **Signature** — `pub fn mtime(path: []const u8) FileError!i64`
 

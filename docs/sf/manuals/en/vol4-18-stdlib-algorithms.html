@@ -382,7 +382,8 @@ distance to the next static jump point in that direction, a negative value is
 the distance to the wall when there is no jump point first, and zero means the
 cell is blocked or the move is illegal. The persistent table is exactly 32 bytes
 per cell. The build also uses one transient <tt>N</tt>-byte jump-point bitmap,
-so peak build memory is 33 bytes per cell; the bitmap is not retained.
+so peak build memory is 33 bytes per cell; the returned table does not retain
+the bitmap, but its arena allocation remains until the arena is reset.
 </p>
 <p>
 The table is a static snapshot; rebuild it after any tile change. The find

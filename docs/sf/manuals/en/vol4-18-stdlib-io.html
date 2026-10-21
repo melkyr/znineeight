@@ -296,7 +296,9 @@ the <tt>\r</tt> of a <tt>\r\n</tt> pair, and returns a slice into the caller's
 buffer. At EOF with no partial line it returns <tt>null</tt>. A line longer than
 the buffer returns a full buffer and leaves the rest of the line for the next
 call; the module carries boundary state so an exact-multiple long line does not
-produce a spurious empty line. A zero-length buffer is a panic.
+produce a spurious empty line when the buffer is longer than one byte. A
+one-byte buffer keeps the plain boundary behavior, and a zero-length buffer is a
+panic.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -429,7 +431,9 @@ run a scheduler.
 <p>
 The line readers strip <tt>\n</tt> and the <tt>\r</tt> of <tt>\r\n</tt>, return
 the final unterminated line at EOF, and return an overlong line as a full-buffer
-prefix without creating a spurious empty line. <tt>MsgReader</tt> reads a
+prefix without creating a spurious empty line when the buffer is longer than one
+byte; a one-byte buffer keeps the plain boundary behavior. <tt>MsgReader</tt>
+reads a
 big-endian <tt>u32</tt> length prefix, then that many bytes. A declared length
 larger than <tt>buf.len</tt> is <tt>error.FrameTooLarge</tt>. A zero-length
 frame is valid and returns an empty slice, not <tt>null</tt>. EOF in the prefix

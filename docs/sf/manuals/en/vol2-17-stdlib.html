@@ -223,8 +223,9 @@ documented in four companion reference pages:
 </tr>
 </table>
 <p>
-The directory holds twenty-two more <tt>std_*.zig</tt> modules than these
-thirteen, and they ship by path. A name that is not in the re-export table
+The directory holds twenty-six more <tt>std_*.zig</tt> files than these
+thirteen; twenty-two of them are public modules that ship by path, and four are
+internal <tt>*_pal</tt> support files. A name that is not in the re-export table
 above is not part of the <tt>std</tt> namespace. The compiler rejects it rather
 than resolving it, for example:
 </p>

@@ -424,9 +424,11 @@ discard step must do it in its own layer.
 <tt>std_lz4</tt> exposes one function, <tt>lz4DecompressBlock</tt>, and it
 decompresses a raw LZ4 <b>block</b>, not an LZ4 frame. The destination buffer is
 the whole output; there is no allocator and no internal buffer. A token carries
-a four-bit literal length and a four-bit match length. A length of fifteen means
-the real length continues in following bytes, each added with 255 continuing
-the extension. The match offset is a little-endian 16-bit value after the
+a four-bit literal length and a four-bit match length. For the match, the low
+nibble encodes <tt>match_len - 4</tt>; a length of fifteen means the real value
+continues in following bytes, each added with 255 continuing the extension, and
+the mandatory <tt>+4</tt> (<tt>MINMATCH</tt>) step is applied after that
+extension. The match offset is a little-endian 16-bit value after the
 literals. A match is copied forward from the already-written history, so
 overlapping matches work byte by byte. After at least one match, the final
 block rules are enforced: the last literals must be at least five bytes, and
