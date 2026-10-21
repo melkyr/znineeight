@@ -136,8 +136,10 @@ beginning of the path.
 
 - `hpaBuild` allocates the map from the caller's arena. It uses temporary
   counting/scatter and cluster-local search scratch, then restores the arena's
-  used bytes before returning, so **only the map allocations remain**. An
-  allocation failure may consume build-arena scratch.
+  used bytes before returning, so **only the map allocations remain**. Size the
+  map arena for the **peak build scratch plus the persistent map** — the peak
+  can be far larger than the final map. An allocation failure may consume
+  build-arena scratch.
 - The map is a **static snapshot** of the grid. Rebuild it after any
   `Grid.tiles` change; `hpaFind` does not detect tile mutation. It does
   validate `width`/`height`, the cluster geometry/counts implied by
@@ -210,11 +212,11 @@ pub fn main() !void {
 
     var grid = std_pathfind.Grid{ .tiles = tiles[0..], .width = 16, .height = 16 };
 
-    var map_backing: [16384]u8 = undefined;
+    var map_backing: [1048576]u8 = undefined;
     var map_arena = std.arena.init(map_backing[0..]);
     const map = try std_hpa.hpaBuild(&map_arena, &grid, 8, 8);
 
-    var query_backing: [16384]u8 = undefined;
+    var query_backing: [1048576]u8 = undefined;
     var query_arena = std.arena.init(query_backing[0..]);
     var out: [512]u32 = undefined;
     const count = try std_hpa.hpaFind(
