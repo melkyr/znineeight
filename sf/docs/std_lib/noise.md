@@ -45,10 +45,13 @@ come back (defect D6 in `examples/torrent_example_defects.md`, FIXED).
 | `NORM_CONSTANT_2D` | `47.0` | exact |
 | `NORM_CONSTANT_3D` | `103.0` | exact |
 
-**Lattice pin (2014 reference, seed 0):** `noise2d(0,0) == 0`;
-`noise2d(1,0) = 0.42680000932807727`; `noise2d(0,1) = -0.061333742599571132`;
-`noise2d(1,1) = -0.62215238898136938`. The crosscheck grid
-(`scripts/stdlib/vectors/std_noise/grid.expected`, md5
+**Lattice pin (2014 reference, seed 0):** `noise2d(0,0) == 0` (bits
+`0000000000000000`); `noise2d(1,0) = 0.42680000932807705` (bits
+`3fdb50b0fc7fc810`); `noise2d(0,1) = -0.061333742599571035` (bits
+`bfaf6722e5367f41`); `noise2d(1,1) = -0.62215238898136926` (bits
+`bfe3e8ac2079b43d`). These are the authoritative 2014-reference values
+(blueprint §5.5's zero-at-integer-lattice claim is superseded). The crosscheck
+grid (`scripts/stdlib/vectors/std_noise/grid.expected`, md5
 `94314ebd32053089b226387770c0cd5d`) is the reference output and must stay
 unchanged when the compiler or parser moves.
 
