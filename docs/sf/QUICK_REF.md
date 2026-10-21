@@ -24,16 +24,16 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v107** (rotated 2026-10-21 at the std-algorithms M3 closeout,
-plan `2026-10-19-z98-std-algorithms-m3-zstd-plan`; seed v106 → v107,
-first 36-file manifest after adding `std_zstd` — no compiler movement; compiler
-fixed point `21c957730d268f1e7883176fa5413b65` UNCHANGED from v106).
-Archive md5 `5ec6e497bb962ff0fdf3145311acc4a1`; archived binary md5 (= v107's
+**Current seed: v108** (rotated 2026-10-21 at the std-algorithms M4 numerics
+closeout, plan `2026-10-19-z98-std-algorithms-m4-num-plan`; seed v107 → v108,
+first 37-file manifest after adding `std_num` — no compiler movement; compiler
+fixed point `21c957730d268f1e7883176fa5413b65` UNCHANGED from v107).
+Archive md5 `f73943f4ce5170e3c776fb985a24cb43`; archived binary md5 (= v108's
 rotation fixed point) `21c957730d268f1e7883176fa5413b65`; `gen/` 46 `.c` + 47
-`.h` (10,307,965 bytes); `lib/` 36 std `.zig` plus `lib/manifest.md5`
+`.h` (10,307,965 bytes); `lib/` 37 std `.zig` plus `lib/manifest.md5`
 (per-file std attribution pin, manifest md5
-`aac8a4bf651d8d616c2b4ee3400c58f3`) — `std_zstd.zig` lands the RFC 8878
-subset frame decoder. The
+`f98a25b905994f17c72a39d4507c3d7e`) — `std_num.zig` lands the explicit
+Dormand–Prince RK45 stepper. The
 T1B/T1F lexer-format fixes make post-rotation `build_from_seed.sh` two-hop
 again (hop1 == hop2; the T1F three-hop moving point closes once the seed embeds
 post-T1F `emit_support`). **This block is updated at every plan closeout that
