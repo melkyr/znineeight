@@ -11,7 +11,7 @@
 <link rel="home" href="index.html">
 <link rel="up" href="toc.html">
 <link rel="prev" href="vol4-17-memory.html">
-<link rel="next" href="vol4-19-pal.html">
+<link rel="next" href="vol4-18-stdlib-data.html">
 </head>
 <body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
 <table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
@@ -57,6 +57,10 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol4-16-async.html">Async</a><br>
 <a href="vol4-17-memory.html">Memory</a><br>
 <b>The standard library</b><br>
+<a href="vol4-18-stdlib-data.html">Data and containers</a><br>
+<a href="vol4-18-stdlib-codecs.html">Codecs and crypto</a><br>
+<a href="vol4-18-stdlib-io.html">I/O and HTTP</a><br>
+<a href="vol4-18-stdlib-algorithms.html">Algorithms</a><br>
 <a href="vol4-19-pal.html">The PAL</a><br>
 <a href="vol4-20-markers.html">Markers</a><br>
 <a href="vol4-21-diagnostics.html">Diagnostics</a><br>
@@ -79,6 +83,8 @@ the <tt>sf/src/std_*.zig</tt> file that defines it, with its return type and
 error set. The language-level calls these modules are built from are on
 <a href="vol4-15-builtins.html">Builtins</a>; the tutorial treatment is
 <a href="vol2-17-stdlib.html">Volume II, The standard library tour</a>.
+The shipped by-path library is indexed near the end of this page and detailed
+on four companion pages.
 </p>
 <p>
 The surface is <b>concrete only</b>. Z98 has no generics, no <tt>anytype</tt>,
@@ -610,9 +616,9 @@ its element width in the function name, because Z98 has no generic
 
 <h2><a name="math"></a>std.math</h2>
 <p>
-<tt>std.math</tt> is integer-only and concrete: the signed helpers take
-<tt>i32</tt> and the unsigned helpers take <tt>u32</tt>. It is not a
-floating-point library.
+<tt>std.math</tt> is concrete: the integer helpers take <tt>i32</tt> or
+<tt>u32</tt>, and the trigonometric and square-root helpers take <tt>f64</tt>.
+There is no <tt>f32</tt> surface.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -620,6 +626,24 @@ floating-point library.
 <th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
 <th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
 <th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>sqrt</tt></td>
+<td valign="top"><tt>pub fn sqrt(x: f64) f64</tt></td>
+<td valign="top"><tt>f64</tt>; non-negative input, a negative input yields NaN</td>
+<td valign="top">Correctly rounded square root.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sin</tt></td>
+<td valign="top"><tt>pub fn sin(x: f64) f64</tt></td>
+<td valign="top"><tt>f64</tt>; NaN outside the supported Cody-Waite range</td>
+<td valign="top">Sine in radians.</td>
+</tr>
+<tr>
+<td valign="top"><tt>cos</tt></td>
+<td valign="top"><tt>pub fn cos(x: f64) f64</tt></td>
+<td valign="top"><tt>f64</tt>; same domain as <tt>sin</tt></td>
+<td valign="top">Cosine in radians.</td>
 </tr>
 <tr>
 <td valign="top"><tt>min</tt></td>
@@ -1012,7 +1036,7 @@ builtins are on <a href="vol4-15-builtins.html">Builtins</a>.
 <tr>
 <td valign="top"><tt>contextInit</tt></td>
 <td valign="top"><tt>pub fn contextInit(buf: []u8) *Context</tt></td>
-<td valign="top"><tt>*Context</tt>; traps when <tt>buf.ptr</tt> is not 8-aligned or <tt>buf.len &lt; 16</tt></td>
+<td valign="top"><tt>*Context</tt>; traps when <tt>buf.ptr</tt> is not 8-aligned in both modes; <tt>buf.len &gt;= 16</tt> is a caller precondition, and the capacity subtraction traps under <tt>-fsafe</tt> but wraps under <tt>-ffast</tt></td>
 <td valign="top">Place the <tt>Context</tt> at the head of <tt>buf</tt>.</td>
 </tr>
 <tr>
@@ -1434,22 +1458,49 @@ endian-tagged append functions exist because wire and file formats need them.
 </tr>
 </table>
 
-<h2><a name="not-reexported"></a>Modules shipped but not re-exported</h2>
+<h2><a name="by-path"></a>Modules imported by path</h2>
 <p>
 The library directory beside the compiler holds more <tt>std_*.zig</tt> files
 than the thirteen re-exports. A name that is not in the table above does not
 resolve as <tt>std.&lt;name&gt;</tt>; the compiler rejects it (the measured
 diagnostic is <tt>error[3074]</tt>, shown on
 <a href="vol2-17-stdlib.html">Volume II, The standard library tour</a>).
-Reachable modules that exist in <tt>sf/src</tt> but are <b>not</b> part of the
-<tt>std</tt> namespace: <tt>std_base64</tt>, <tt>std_crypto</tt>,
-<tt>std_file</tt>, <tt>std_heap</tt>, <tt>std_hex</tt>, <tt>std_map</tt>,
-<tt>std_parse</tt>, <tt>std_rle</tt>, <tt>std_sort</tt>, <tt>std_stdin</tt>,
-<tt>std_stream</tt>, and <tt>std_utf8</tt>. Four further files
-(<tt>std_file_pal</tt>, <tt>std_os_pal</tt>, <tt>std_stdin_pal</tt>, and
-<tt>std_time_pal</tt>) are the per-OS support layer used by re-exported modules;
-they are not public modules at all.
+The shipped by-path library is indexed below and detailed on four companion
+pages. The <tt>*_pal</tt> files (<tt>std_file_pal</tt>, <tt>std_os_pal</tt>,
+<tt>std_stdin_pal</tt>, and <tt>std_time_pal</tt>) are internal implementation,
+not public modules.
 </p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Area</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Modules</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Reference page</b></th>
+</tr>
+<tr>
+<td valign="top">Data and containers</td>
+<td valign="top"><tt>std_map</tt>, <tt>std_sort</tt>, <tt>std_heap</tt>,
+<tt>std_rle</tt>, <tt>std_parse</tt>, <tt>std_bencode</tt></td>
+<td valign="top"><a href="vol4-18-stdlib-data.html">Data and containers</a></td>
+</tr>
+<tr>
+<td valign="top">Codecs and crypto</td>
+<td valign="top"><tt>std_base64</tt>, <tt>std_hex</tt>, <tt>std_utf8</tt>,
+<tt>std_crypto</tt>, <tt>std_lz4</tt>, <tt>std_zstd</tt></td>
+<td valign="top"><a href="vol4-18-stdlib-codecs.html">Codecs and crypto</a></td>
+</tr>
+<tr>
+<td valign="top">I/O and HTTP</td>
+<td valign="top"><tt>std_file</tt>, <tt>std_stdin</tt>, <tt>std_stream</tt>,
+<tt>std_http</tt></td>
+<td valign="top"><a href="vol4-18-stdlib-io.html">I/O and HTTP</a></td>
+</tr>
+<tr>
+<td valign="top">Algorithms</td>
+<td valign="top"><tt>std_rand</tt>, <tt>std_noise</tt>, <tt>std_num</tt>,
+<tt>std_pathfind</tt>, <tt>std_physics</tt>, <tt>std_hpa</tt></td>
+<td valign="top"><a href="vol4-18-stdlib-algorithms.html">Algorithms</a></td>
+</tr>
+</table>
 
 <h2>See also</h2>
 <p>
@@ -1468,9 +1519,9 @@ for the compiler-internal contract beneath the file, time, and OS modules.
 &nbsp;&nbsp;
 <a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 &nbsp;&nbsp;
-<a href="vol4-19-pal.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+<a href="vol4-18-stdlib-data.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 </p>
-<p>Previous: <a href="vol4-17-memory.html">Memory</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-19-pal.html">The platform layer</a></p>
+<p>Previous: <a href="vol4-17-memory.html">Memory</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-18-stdlib-data.html">Data and Containers</a></p>
 </td>
 </tr>
 </table>
