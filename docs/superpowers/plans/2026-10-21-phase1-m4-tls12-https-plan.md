@@ -16,7 +16,7 @@
 - Suites exactly: `TLS_ECDHE_{ECDSA,RSA}_WITH_{AES_128_GCM_SHA256, CHACHA20_POLY1305_SHA256}`. SNI required. `TLS_MAX_RECORD = 16384`. No renegotiation/resumption/0-RTT/client-cert.
 - Errors: `error.{Corrupt, HandshakeFailed, CertificateExpired, CertificateNotYetValid, UnknownIssuer, HostnameMismatch, UnsupportedSuite, UnsupportedGroup, RecordTooLarge, Closed, OutOfMemory, Time}`.
 - Demo RAM 32 MB hard ceiling / 16 MB target (`ulimit -v 32768` + `/usr/bin/time -v` recorded); body print capped 4 KB; resource line `tls_demo ok status=200 bytes=N arena_peak=N rss_peak=N cpu_ms=N`.
-- Gates per task: full stdlib gate + 3× determinism; `tier_tls.sh` (local s_server + `Z98_NET=1` internet smoke); `-osw` build + import gate (KERNEL32+WINMM+WSOCK32, no msvcrt).
+- Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism; `tier_tls.sh` (local s_server + `Z98_NET=1` internet smoke); `-osw` build + import gate (KERNEL32+WINMM+WSOCK32, no msvcrt). Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 4 closeout. Task 1 edits existing `std_http` → full gate; Task 2 extends new `std_tls` → targeted; Task 3 demo/tier → targeted + tier.
 - Closeout rotates seed **v114** (45 lib files: +`std_tls`); fixed point unchanged `21c957730d268f1e7883176fa5413b65`.
 - Commits `feat(std_tls): … (Phase1 M4)`, `feat(std_http): transport vtable …`, `example(z9play-style)`: `example(z9demo): tls_demo …`, `docs(std_lib): …`, `chore(seed): rotate (M4)`, `docs(sdd): …`. STOP-present on contract change.
 
@@ -63,7 +63,7 @@
 - [ ] **Step 1:** Failing fixture: canned full-handshake transcripts captured from `openssl s_server` (one ECDHE-ECDSA/AES-GCM, one ECDHE-RSA/ChaCha20, one with a fragmented Certificate record) — driver feeds bytes through `tlsStep`, asserts action sequence + `tlsRead` application bytes + transcript/Finished verification; negatives: bad Finished → `HandshakeFailed`, expired leaf → `CertificateExpired`, no SNI match → `HostnameMismatch`.
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement the state machine (spec §5.6 + `projects_phase1.txt` §1.4 order); ServerKeyExchange signature check (ECDSA/RSA per leaf key); key block derivation (PRF_SHA256); CCS + Finished both directions.
-- [ ] **Step 4:** Run — PASS + full gate + 3×.
+- [ ] **Step 4:** Run — PASS + targeted `std_tls` fixtures + affected `run_crosscheck.sh` modules + 3×. Full gate at Task 4 closeout.
 - [ ] **Step 5:** Commit `feat(std_tls): TLS 1.2 handshake (Phase1 M4)`.
 
 ### Task 3: `tls_demo` + `tier_tls.sh`
@@ -80,7 +80,7 @@
 
 - [ ] **Step 1:** Implement demo; default URL `https://www.google.com/`; parse `clock_override_unix` optional arg.
 - [ ] **Step 2:** `tier_tls.sh`: (a) local `openssl s_server` with committed test cert/key — happy path fetch exact body; negative cases: expired cert, wrong-host cert, untrusted anchor → exact error text; (b) `Z98_NET=1` internet smoke: google.com + example.com status 200 + `bytes>0`; unset `Z98_NET` → loud SKIP line; (c) RAM: `ulimit -v 32768` wrapper + `/usr/bin/time -v` peak recorded in tier output; (d) `-osw` emit/build + `check_win9x_imports.sh 9x` gate.
-- [ ] **Step 3:** Run tier green (2× deterministic); full gate green.
+- [ ] **Step 3:** Run `tier_tls.sh` green (2× deterministic) + targeted demo/transport checks + 3×. Full gate at Task 4 closeout.
 - [ ] **Step 4:** Commit `example(z9demo): tls_demo HTTPS fetch (Phase1 M4)` + `test(tier): tier_tls (Phase1 M4)`.
 
 ### Task 4: M4 closeout — docs + seed rotation

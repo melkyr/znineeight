@@ -16,7 +16,7 @@
 - Validation policy is binding: SAN dNSName only (exact + single-leftmost-label `*.` wildcard, case-insensitive); NO CN fallback, no IP SANs, no OCSP/CRL, SHA-1 signatures non-goal (roots trusted by fiat).
 - Error set exact: `error.{CertificateExpired, CertificateNotYetValid, UnknownIssuer, HostnameMismatch, BadSignature, ChainTooLong, Corrupt, UnsupportedAlgorithm}`.
 - Store format (spec §5.5) pinned byte-for-byte; `caconv` output deterministic (PEM file order).
-- Gates per task: `verify_stdlib.sh` + `run_crosscheck.sh` + 3× determinism; bad-input fixtures must error, never crash.
+- Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism; bad-input fixtures must error, never crash. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 3 closeout. Tasks 1–2 add new modules → targeted-only until closeout.
 - Closeout rotates seed **v113** (44 lib files: +`std_asn1`, +`std_x509`); fixed point unchanged `21c957730d268f1e7883176fa5413b65`.
 - Commits `feat(std_asn1): …`, `feat(std_x509): …`, `feat(demo): caconv … (Phase1 M3)`, `docs(std_lib): … (M2-style)`, `chore(seed): rotate (M3)`, `docs(sdd): …`. STOP-present on contract change.
 
@@ -45,7 +45,7 @@
 - [ ] **Step 1:** Failing fixtures: a committed corpus of 6+ real certificates (generated once via host `openssl` into `vectors/`, committed as DER blobs — leaf ECDSA P-256, leaf ECDSA P-384, leaf RSA-2048, CA cert with basicConstraints, cert with SAN list incl. wildcard, expired cert) + malformed set (truncated TLV, indefinite length, nested overflow, bad OID) asserting `error.Corrupt`.
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement streaming TLV reader (explicit length only; reject indefinite); OID table for the sig/pk algs in use (ecdsa-with-SHA256/384, sha256/384/512WithRSAEncryption, RSA-PSS ids reserved); SAN dNSName extraction.
-- [ ] **Step 4:** Run — PASS + full gate; 3× determinism.
+- [ ] **Step 4:** Run — PASS + targeted `std_asn1`/`std_x509` fixtures + 3× determinism. Full gate at Task 3 closeout.
 - [ ] **Step 5:** Commit `feat(std_asn1,std_x509): DER + certificate parse (Phase1 M3)`.
 
 ### Task 2: `x509VerifyChain` + trust store
@@ -63,7 +63,7 @@
 - [ ] **Step 1:** Failing fixtures: valid 3-cert chain (ECDSA P-256 leaf → SHA-384 intermediate → P-384 root — the real google-shaped case), RSA chain (SHA-256 + SHA-512 links), and negatives each asserting the exact error: `BadSignature` (bit-flip in intermediate sig), `CertificateExpired`/`CertificateNotYetValid` (now_unix boundary ±1 s), `UnknownIssuer` (anchor missing), `HostnameMismatch` (exact/wildcard/multi-label cases incl. `*.example.com` vs `a.b.example.com`), `ChainTooLong` (9 deep), `UnsupportedAlgorithm` (SHA-1 link). TrustStore fixtures: round-trip a hand-built store (format bytes committed as vector) + `Corrupt` cases (bad magic, truncated entry, wrong total_len).
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement path build (subject/issuer equality, depth ≤ 8, intermediates pool), per-signature verify dispatch on `sig_alg`, validity vs `now_unix`, `is_ca` enforcement for non-leaf, SAN-only hostname matching per policy.
-- [ ] **Step 4:** Run — PASS + full gate + 3× determinism.
+- [ ] **Step 4:** Run — PASS + targeted `std_x509` verify/truststore fixtures + affected `run_crosscheck.sh` modules + 3× determinism. Full gate at Task 3 closeout.
 - [ ] **Step 5:** Commit `feat(std_x509): chain verification + trust store (Phase1 M3)`.
 
 ### Task 3: `caconv` tool + store asset + docs + closeout

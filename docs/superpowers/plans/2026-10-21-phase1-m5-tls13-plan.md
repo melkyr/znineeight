@@ -15,7 +15,7 @@
 - Same sans-I/O API and error set as M4 (`TlsConfig.now_unix` feeds cert validity); `min_version`/`max_version` select 1.2/1.3; default offers both (version negotiation per RFC 8446 supported_versions).
 - Cipher suites exactly the two above; hash = SHA-256 for the schedule; record layer = M4's (1.3 inner content-type).
 - Certificate chain validation unchanged (M3, SAN-only, store-supplied); leaf auth: ECDSA or RSA-PSS only (PKCS#1 v1.5 MUST be rejected in CertificateVerify).
-- Gates per task: full stdlib gate + 3×; `tier_tls.sh` extended with TLS 1.3 cases (local `openssl s_server -tls1_3` + `Z98_NET=1` real servers incl. an RSA-cert host); `-osw` build + import gate.
+- Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3×; `tier_tls.sh` extended with TLS 1.3 cases (local `openssl s_server -tls1_3` + `Z98_NET=1` real servers incl. an RSA-cert host); `-osw` build + import gate. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract. M5 extends existing `std_tls` → full gate per task and at closeout.
 - Closeout rotates seed **v115** (45 files — no new module); fixed point unchanged `21c957730d268f1e7883176fa5413b65`.
 - Commits `feat(std_tls): TLS 1.3 (Phase1 M5)`, `docs(std_lib): …`, `chore(seed): rotate (M5)`, `docs(sdd): …`. STOP-present on contract change.
 

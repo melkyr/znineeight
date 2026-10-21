@@ -16,7 +16,7 @@
 - Initiator only (no responder/cookie-reply generation; cookie *consumption* with mac2 = keyed BLAKE2s-128 required). One peer in demos; peer table capacity caller-sized.
 - Timers exact: `REKEY_AFTER_TIME` 120 s, `REJECT_AFTER_TIME` 180 s, `REKEY_TIMEOUT` 5 s + attempt backoff, `KEEPALIVE_TIMEOUT` 10 s. Counter/replay: sliding 2048-bit window; nonce reuse is a hard bug (fixture must pin counter monotonicity).
 - All wire integers little-endian via explicit load/store helpers; no alignment assumptions.
-- Gates per task: full stdlib gate + 3×; canned-exchange fixtures byte-compare against vectors derived from `wireguard-lwip` (vendored ref `scripts/stdlib/ref/std_wireguard/ref.c`, BSD attribution) run at capture time; `-osw` build + import gate.
+- Gates per task (hybrid): targeted `std_wireguard` fixtures + affected `run_crosscheck.sh` modules + 3×; canned-exchange fixtures byte-compare against vectors derived from `wireguard-lwip` (vendored ref `scripts/stdlib/ref/std_wireguard/ref.c`, BSD attribution) run at capture time; `-osw` build + import gate. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 3 closeout. `std_wireguard` is new → targeted-only until closeout.
 - Closeout rotates seed **v116** (46 lib files: +`std_wireguard`); fixed point unchanged `21c957730d268f1e7883176fa5413b65`.
 - Commits `feat(std_wireguard): … (Phase1 M6)`, `docs(std_lib): …`, `chore(seed): rotate (M6)`, `docs(sdd): …`. STOP-present on contract change.
 
@@ -44,7 +44,7 @@
 - [ ] **Step 1:** Failing fixtures: canned handshake exchanges captured from the vendored `wireguard-lwip` ref build (initiation bytes, response bytes, derived transport keys) — byte-exact; negatives: wrong static key → `AuthenticationFailed`, truncated message → `Corrupt`, mac1 mismatch → `Corrupt`.
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement NoiseIK initiator per the paper §2 + `projects_phase1.txt` §2.3 steps; TAI64N from `wall_unix_ns` (pin wire bytes); LE helpers.
-- [ ] **Step 4:** Run — PASS + full gate + 3×.
+- [ ] **Step 4:** Run — PASS + targeted `std_wireguard` fixtures + affected `run_crosscheck.sh` modules + 3×. Full gate at Task 3 closeout.
 - [ ] **Step 5:** Commit `feat(std_wireguard): NoiseIK handshake (Phase1 M6)`.
 
 ### Task 2: Transport, timers, replay, cookies
@@ -60,7 +60,7 @@
 - [ ] **Step 1:** Failing fixtures: transport round-trip byte-exact vs ref (padding to 16, counter 0/1/max-before-reject); replay negatives (duplicate, too-old, in-window-not-seen); timer sweep fixture (advance `now_ms` through rekey/keepalive/reject thresholds asserting `wgTick` outputs); CookieReply → subsequent initiation carries correct mac2.
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement per spec §5.7; never `sleep` (pure time-parameterized).
-- [ ] **Step 4:** Run — PASS + full gate + 3× + `-osw` gate.
+- [ ] **Step 4:** Run — PASS + targeted `std_wireguard` fixtures + affected `run_crosscheck.sh` modules + 3× + `-osw` gate. Full gate at Task 3 closeout.
 - [ ] **Step 5:** Commit `feat(std_wireguard): transport + timers (Phase1 M6)`.
 
 ### Task 3: M6 closeout — docs + seed rotation

@@ -16,7 +16,7 @@
 - Errors: `error.{Corrupt, NoRoute, ConnRefused, Timeout, DnsFailed, OutOfMemory, OutputTooSmall, Closed}` + per-socket failure via `TcpipAction.failed`.
 - Demo config `wg.conf` keys (hex/base64): private key, peer public key, endpoint host:port, allowed IPs, tunnel local IP, optional DNS server + `clock_override_unix`.
 - RAM: 32 MB hard ceiling / 16 MB target, enforced + recorded (`ulimit -v 32768`, `/usr/bin/time -v`); resource line `wireguard_demo ok bytes=N arena_peak=N rss_peak=N cpu_ms=N`.
-- Gates per task: full stdlib gate + 3×; `tier_wireguard.sh` (kernel `wg-quick` netns far side + `mud_server` through tunnel; loud SKIP if `wg`/netns unavailable; never vacuous); `-osw` build + import gate (KERNEL32+WINMM+WSOCK32, no msvcrt).
+- Gates per task (hybrid): targeted `std_tcpip`/demo fixtures + affected `run_crosscheck.sh` modules + 3×; `tier_wireguard.sh` (kernel `wg-quick` netns far side + `mud_server` through tunnel; loud SKIP if `wg`/netns unavailable; never vacuous); `-osw` build + import gate (KERNEL32+WINMM+WSOCK32, no msvcrt). Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 4 closeout. `std_tcpip`/demo are new → targeted-only until closeout.
 - Closeout rotates seed **v117** (47 lib files: +`std_tcpip`); fixed point unchanged `21c957730d268f1e7883176fa5413b65`; Phase 1 defect ledger entries appended to `examples/torrent_example_defects.md` (next free slot).
 - Commits `feat(std_tcpip): … (Phase1 M7)`, `example(z9demo): wireguard_demo …`, `test(tier): tier_wireguard …`, `docs(std_lib): …`, `chore(seed): rotate (M7)`, `docs(sdd): …`. STOP-present on contract change.
 
@@ -44,7 +44,7 @@
 - [ ] **Step 1:** Failing fixture: scripted packet-exchange tests driving `tcpipPoll` with synthetic peer bytes — 3WHS, data both ways (byte-exact), FIN close, RST → `failed`, retransmission after dropped ACK (assert re-sent seq), out-of-order segment buffering (within 8 KB), MSS 1400 split of a 5 KB `tcpSend`.
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement IPv4 + TCP client (8 KB window, simplified RTO 1 s + Karn, slow-start/AIMD; fixed scratch; no fragmentation).
-- [ ] **Step 4:** Run — PASS + full gate + 3×.
+- [ ] **Step 4:** Run — PASS + targeted `std_tcpip` TCP fixtures + affected `run_crosscheck.sh` modules + 3×. Full gate at Task 4 closeout.
 - [ ] **Step 5:** Commit `feat(std_tcpip): IPv4 + TCP client (Phase1 M7)`.
 
 ### Task 2: UDP + DNS + ICMP
@@ -61,7 +61,7 @@
 - [ ] **Step 1:** Failing fixtures: UDP round-trip synthetic; DNS request/response byte-exact query + parsed A record (v4-mapped answer), malformed answers → `DnsFailed`, timeout+retry counts; ICMP echo reply parse → RTT.
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement per §5.8.
-- [ ] **Step 4:** Run — PASS + full gate + 3×.
+- [ ] **Step 4:** Run — PASS + targeted `std_tcpip` UDP/DNS/ICMP fixtures + affected `run_crosscheck.sh` modules + 3×. Full gate at Task 4 closeout.
 - [ ] **Step 5:** Commit `feat(std_tcpip): UDP + DNS + ICMP (Phase1 M7)`.
 
 ### Task 3: `wireguard_demo` + `tier_wireguard.sh`
@@ -76,7 +76,7 @@
 
 - [ ] **Step 1:** Implement demo (WAV-style house CLI conventions not needed — plain console; explicit `wall_unix_ns`/`now_ms` from `std_time`; `clock_override_unix` support; precise failure text `wg: …`/`tcp: …`).
 - [ ] **Step 2:** `tier_wireguard.sh`: start Linux kernel WireGuard (`wg-quick` netns, committed tiny conf template with generated keys) + `mud_server` bound on the tunnel net; run the demo (Linux build) asserting banner bytes + resource line; Wine `-osw` run of the same demo against the same far side (tier case); `check_win9x_imports.sh 9x` gate; RAM enforcement `ulimit -v 32768` + recorded peak; loud SKIP when `wg`/`ip netns` absent.
-- [ ] **Step 3:** Run tier 2× deterministic + full gate green.
+- [ ] **Step 3:** Run `tier_wireguard.sh` 2× deterministic + targeted demo checks + 3×. Full gate at Task 4 closeout.
 - [ ] **Step 4:** Commits `example(z9demo): wireguard_demo (Phase1 M7)`, `test(tier): tier_wireguard (Phase1 M7)`.
 
 ### Task 4: Phase 1 closeout

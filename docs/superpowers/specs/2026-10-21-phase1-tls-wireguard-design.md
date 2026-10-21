@@ -415,9 +415,14 @@ install note, resource expectations) and a `NOTES.md` log.
 
 Per-milestone gates (same discipline as the std-algorithms program):
 
-1. `verify_stdlib.sh` full run (fixtures) + `run_crosscheck.sh` (`.in`/`.expected`
-   vectors; C89 `ref/` implementations for crypto where a portable reference exists
-   — vendored per the LZ4 precedent with BSD attribution).
+1. Gate policy (hybrid, Amendment 1): per-task runs use targeted fixtures for the
+   touched module and direct consumers, `run_crosscheck.sh` for affected modules,
+   and 3× determinism. Full `verify_stdlib.sh` + full `run_crosscheck.sh` is
+   mandatory at every milestone closeout and immediately after any change to an
+   existing module's functions, shared harness/`expected_dirs.txt`, `std.zig`, or a
+   cross-module contract; new independent modules use targeted-only until closeout.
+   Vectors follow `.in`/`.expected`; C89 `ref/` implementations for crypto where a
+   portable reference exists — vendored per the LZ4 precedent with BSD attribution.
 2. Module tests carry RFC/NIST vectors as fixtures; state-machine tests use canned
    recorded transcripts (e.g. openssl s_server capture) byte-compared.
 3. Integration tiers: `tier_tls.sh` (local `openssl s_server` with a test cert +

@@ -17,7 +17,7 @@
 - No f64 intermediates anywhere in arithmetic (x87 double-rounding class); conversions at API edges only, with edge KATs pinned.
 - R6: no clock/env reads; randomness is caller-supplied xoshiro256\*\*.
 - New files: `sf/src/std_cipher.zig`, `sf/src/std_ecc.zig`; extend `sf/src/std_crypto.zig` only; `std.zig` unchanged (by-path import).
-- Gates per task: `verify_stdlib.sh` full + `run_crosscheck.sh` + 3× determinism + targeted fixtures; existing stdlib stays green (MSE `modpow` users unchanged).
+- Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at milestone closeout. Task 1 edits existing `std_crypto` → full gate; Tasks 2–3 are new modules → targeted-only until Task 4 closeout.
 - Closeout rotates seed **v112** (42 lib files: +`std_cipher`, +`std_ecc`); fixed point `21c957730d268f1e7883176fa5413b65` must not move.
 - Commits `feat(std_crypto|std_cipher|std_ecc): … (Phase1 M2)`, `docs(std_lib): … (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): … report`. STOP-present on any contract change.
 
@@ -65,7 +65,7 @@
 - [ ] **Step 1:** Failing fixtures: RFC 8439 ChaCha20 block/XOR vectors, Poly1305 RFC 8439 §2.5.2 + donna-style vectors, AEAD §2.8.2 + a tamper-tag case (`AuthenticationFailed`); NIST GCM test vectors (AES-128: at least one per empty-AD/empty-PT/full case + one tamper case).
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement; fully unroll the 20 ChaCha rounds; constant-time Poly1305 limb math (no 64-bit overflow traps — use `+%`/`*%` discipline as `std_crypto` does); GCM per SP800-38D.
-- [ ] **Step 4:** Run — PASS + full gate green + 3× determinism; assert T-tables land in const (fixture: arena_used unchanged across a seal).
+- [ ] **Step 4:** Run — PASS + targeted `std_cipher` fixtures + 3× determinism; assert T-tables land in const (fixture: arena_used unchanged across a seal). Full gate at Task 4 closeout.
 - [ ] **Step 5:** Commit `feat(std_cipher): ChaCha20-Poly1305 + AES-128-GCM (Phase1 M2)`.
 
 ### Task 3: `std_ecc` — X25519, P-256, P-384 verify
@@ -84,7 +84,7 @@
 - [ ] **Step 1:** Failing fixtures: RFC 7748 X25519 vectors (scalar mult + base + all-zero rejection); NIST CAVP P-256 ECDH shared-secret vectors; P-256 ECDSA verify good/bad (≥2 curve points each); P-384 ECDSA verify NIST CAVP good/bad (SHA-384). Bad cases assert `false`/error, never silent accept.
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement: X25519 ref10-style 26-bit portable ladder; P-256 from **p256-m portable C** (port, do not write from scratch); P-384 verify from **BearSSL portable P-384** (or one shared generic EC engine for both curves — implementer's call, documented); constant-time scalar paths.
-- [ ] **Step 4:** Run — PASS + full gate + 3× determinism.
+- [ ] **Step 4:** Run — PASS + targeted `std_ecc` fixtures + affected `run_crosscheck.sh` modules + 3× determinism. Full gate at Task 4 closeout.
 - [ ] **Step 5:** Commit `feat(std_ecc): X25519 + P-256 + P-384 verify (Phase1 M2)`.
 
 ### Task 4: M2 closeout — docs + seed rotation
