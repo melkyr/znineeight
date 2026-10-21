@@ -120,6 +120,71 @@ Task 2 closeout, not this task.
 
 ## Concerns
 
-None. Build performs one exact-cost counting pass plus one scatter pass (both
-bounded by the §6.9 complexity), using only arena scratch that is released
-before return.
+None. Build performs one exact-cost counting pass plus one scatter pass, using
+only arena scratch that is released before return.
+
+## Fix round 1 (review findings)
+
+Status: DONE
+
+Coverage added to `repro/mi_matrix/stdlib_hpa_basic_xmod/main.zig`:
+
+- `edge-order ok`: every `edges[edge_start[n]..edge_start[n+1]]` range is
+  strictly ascending by `to`.
+- `node-order ok`: each cluster's node range is row-major by `(y,x)` and every
+  node carries that cluster id.
+- `scratch ok`: `arena.used` before/after `hpaBuild` equals the exact
+  permanent allocation sum (with a non-zero pre-build base).
+- `special ok`: blocked and OOB same-tile start/goal both return `NoPath`
+  (shortcut ordering covered).
+- `special ok`: map copies altered in `width`, `height`, `cluster_w`,
+  `cluster_h`, `cluster_cols`, `cluster_rows`, `clusters.len`,
+  `node_start.len`, and `edge_start.len` all return `NoPath`.
+- `intra ok`: on a 16x16/8x8 clustered map, every same-cluster transition-node
+  pair has both directed edges with the exact cluster-local `jpsFind` cost
+  (and no edge when unreachable).
+
+Targeted verification:
+
+```
+bash scripts/stdlib/run_fixtures.sh /tmp/m7_seed/zig1_5_clean \
+  repro/mi_matrix/stdlib_hpa_basic_xmod \
+  repro/mi_matrix/stdlib_hpa_cross_xmod stdlib_test/hpa_usage
+PASS repro/mi_matrix/stdlib_hpa_basic_xmod
+PASS repro/mi_matrix/stdlib_hpa_cross_xmod
+PASS stdlib_test/hpa_usage
+run_fixtures: 3 PASS / 0 FAIL over 3 dirs
+
+bash scripts/stdlib/run_crosscheck.sh /tmp/m7_seed/zig1_5_clean std_hpa
+PASS std_hpa (8 vectors)
+run_crosscheck: 1 PASS / 0 FAIL over 1 modules
+```
+
+Mutation checks (each on a `/tmp` copy of `std_hpa`; seed lib restored after):
+
+```
+1 sortNodeEdges disabled -> rc 133, panic: edge order
+2 node ids reversed within cluster -> rc 133, panic: node row-major order
+3 `arena.used = perm_end` removed -> rc 133, panic: build scratch released
+4 OOB/walkable endpoint validation removed before start==goal shortcut
+  -> rc 133, panic: blocked same-tile path
+```
+
+Full gate:
+
+```
+bash scripts/stdlib/verify_stdlib.sh /tmp/m7_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_hpa_basic_xmod
+PASS repro/mi_matrix/stdlib_hpa_cross_xmod
+run_fixtures: 312 PASS / 0 FAIL over 312 dirs
+run_crosscheck: 9 PASS / 0 FAIL over 9 modules
+STDLIB GATE OK
+```
+
+Complexity truth-up (non-blocking): `hpaBuild` computes every reachable
+same-cluster transition-node pair with a cluster-local `jpsFind`, so its worst
+case is `O(sum_c k_c^2 * A_c)`, not the spec's stated
+`O(sum_c k_c*(A_c+k_c))`. Implementation unchanged; controller to correct the
+spec text.
+
+No behavior change was required; the fix commit is coverage only.
