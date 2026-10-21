@@ -448,8 +448,9 @@ scratch is released before return; an OOM may consume the arena). `hpaFind`'s
 `arena` is query scratch and may be reset by the caller after each call; it
 must not be the arena that owns `m` if the caller resets it. A\* and refinement
 are deterministic: fixed cluster/node/edge order, stable heap insertion order,
-and fixed local search. Build cost is `O(sum_c k_c*(A_c+k_c))` for `k_c`
-transition tiles and cluster area `A_c`; memory is arena-owned and proportional
+and fixed local search. Build cost is `O(sum_c k_c^2 * A_c)` worst case for
+the pairwise cluster-local `jpsFind` precompute, for `k_c` transition tiles and
+cluster area `A_c`; memory is arena-owned and proportional
 to clusters, nodes, and edges. Classic Botea entrance-segment compression is a
 future optimization; it is not part of this exact-cost v1.
 
