@@ -311,12 +311,20 @@ pub const Grid = struct { tiles: []u8, width: u32, height: u32 };   // 0 = block
 
 pub fn jpsFind(arena: *std_arena.Arena, grid: *const Grid, start: Point, goal: Point, out: []u32) !u32
 ```
-Returns tile count written to `out` as (x,y) pairs (`out.len ≥ 2×tiles`);
-`error.NoPath`, `error.OutOfMemory`. Corner-cutting **disallowed** (tile-game
-correctness; blueprint §4.4 modified pruning rules); jump as loop, not
-recursion (bounded stack); open set = existing `std_heap` min-heap with
-composite `i64` key `(f<<32)|(~g)` (f-tie → higher g first; no `std_heap`
-change). L5→L4 import of `std_heap` is sanctioned (DAG rule §3).
+Returns the full path tile count. `out` is a capacity; writes at most
+`out.len/2` `(x,y)` pairs in forward order including start and goal, ignores
+an odd trailing slot, and never overflows; caller detects truncation via
+`2*return > out.len`. `error.NoPath`, `error.OutOfMemory`. Movement is
+8-connected on a uniform-cell-cost grid: cardinal cost 10, diagonal cost 14
+(integer octile); heuristic `10*max(dx,dy)+4*min(dx,dy)`; a diagonal move is
+legal only when both adjacent cardinal cells are walkable (strict
+corner-cutting disallowed; Harabor & Grastien, *The JPS Pathfinding System*,
+SoCS 2012). `tiles` is row-major (`idx = y*width+x`); out-of-bounds or
+blocked start/goal, or zero-sized grid, returns `error.NoPath`;
+`start==goal` walkable returns 1. Jump as loop, not recursion (bounded
+stack); open set = existing `std_heap` min-heap with composite `i64` key
+`(f<<32)|(~g)` (f-tie → higher g first; no `std_heap` change). L5→L4 import
+of `std_heap` is sanctioned (DAG rule §3).
 
 ### 6.8 `std_physics.zig` (M6, L5) — Position-Based Dynamics
 
