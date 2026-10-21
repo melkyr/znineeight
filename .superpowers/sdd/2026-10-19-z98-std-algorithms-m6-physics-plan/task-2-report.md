@@ -198,3 +198,50 @@ The harness itself also runs every fixture three times.
 - The plan/spec files remain modified by the controller and are intentionally
   uncommitted.
 - `run.err` was left untouched (untracked).
+
+## Fix round 1
+
+Docs-only corrections; no `sf/src` or seed change. The product doc is a separate
+commit (`docs(std_lib): physics projection truth-up`), followed by this report
+commit (`docs(sdd): M6 T2 fix round 1`).
+
+### Important — projection formula and skip rules
+
+Added a `### Projection formula and skip rules` section to
+`sf/docs/std_lib/physics.md` that states, matching spec §6.8 and source:
+
+```
+corr = (len - rest) / len * stiffness
+pos[a] += dx * corr * wa / (wa + wb)      (likewise dy, dz)
+pos[b] -= dx * corr * wb / (wa + wb)      (likewise dy, dz)
+```
+
+with `wa = inv_mass[a]`, `wb = inv_mass[b]`, and explicit skip rules: skip when
+`len == 0` or `wa + wb == 0`, before `corr` is formed. This makes the earlier
+report's claim accurate.
+
+### Minor — RNG draws, quick-start lengths, spec no-op
+
+- `pbdStep` gotchas and the shuffle paragraph now say the Fisher–Yates shuffle
+  and rng draw happen only with `constraint_count >= 2`; one constraint has no
+  shuffle draw. Zero constraints integrates and returns.
+- The quick-start note now says the link distances stay within f32 rounding of
+  rest length `1` (about `1.000024` and `1.0`), not exactly `1`.
+- Spec §6.8 truth-up (documentation only, **not committed**):
+  `Zero particles/constraints is a no-op.` →
+  `Zero particles is a no-op; zero constraints integrates only.`
+
+Verification:
+
+```
+$ grep -n "Projection formula\|corr = (len\|wa + wb == 0" sf/docs/std_lib/physics.md
+73:### Projection formula and skip rules
+80:corr = (len - rest) / len * stiffness
+88:**Skip rules:** a constraint is skipped entirely when `len == 0` (no direction
+89:to project along) or `wa + wb == 0` (both endpoints pinned). The skip happens
+$ git diff --check -- sf/docs/std_lib/physics.md
+(no output; rc=0)
+```
+
+The plan/spec remain controller-modified and uncommitted; `run.err` is still
+untouched.
