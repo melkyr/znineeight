@@ -66,7 +66,7 @@ strict: lower layers only, never siblings, never higher (R3).
 | **L2** | Data layer built on L0 — string slices and growable buffers | `std.str`, `std.buf` |
 | **L3** | Resources — owned-handle files, stdin, and sockets | `std_file`, `std_stdin`, `std.net` |
 | **L4** | Collections and byte codecs — concrete maps, sort/search, a stable min-heap, RLE, LZ4 block and zstd frame decode | `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_lz4`, `std_zstd` |
-| **L5** | Codecs, numerics, and search — base64/hex, UTF-8, streaming hashes, number parse/format, explicit adaptive ODE integration, grid pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_parse`, `std_num`, `std_pathfind`, `std_physics` |
+| **L5** | Codecs, numerics, and search — base64/hex, UTF-8, streaming hashes, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
 | **L6** | Composition — coroutine-aware line and frame readers | `std_stream` |
 | async runtime | Outside L0–L6 — the cooperative scheduler and child-frame pool | `std.async` |
 
@@ -135,6 +135,7 @@ apply to its modules.
 | Zstd frame decode | `std_zstd` | [zstd.md](sf/docs/std_lib/zstd.md) |
 | Adaptive ODE integration (explicit Dormand–Prince RK45) | `std_num` | [num.md](sf/docs/std_lib/num.md) |
 | Grid pathfinding (JPS, preprocessed JPS+) | `std_pathfind` | [pathfind.md](sf/docs/std_lib/pathfind.md) |
+| Hierarchical pathfinding (HPA\*, exact transition tiles) | `std_hpa` | [hpa.md](sf/docs/std_lib/hpa.md) |
 | Position-Based Dynamics (Verlet + distance constraints) | `std_physics` | [physics.md](sf/docs/std_lib/physics.md) |
 | Base64 encode/decode | `std_base64` | [codecs.md](sf/docs/std_lib/codecs.md) |
 | Hex encode/decode | `std_hex` | [codecs.md](sf/docs/std_lib/codecs.md) |
@@ -230,6 +231,9 @@ entry for each public function. Read the one for the job at hand:
 - [pathfind.md](sf/docs/std_lib/pathfind.md) — `std_pathfind`: JPS on dynamic
   8-connected grids and preprocessed JPS+ on static grids, with the cardinal
   10 / diagonal 14 no-corner-cut movement model.
+- [hpa.md](sf/docs/std_lib/hpa.md) — `std_hpa`: exact-cost HPA\* on static
+  grids, with clipped clusters, transition tiles, and cluster-local JPS
+  refinement.
 - [physics.md](sf/docs/std_lib/physics.md) — `std_physics`: Position-Based
   Dynamics (Verlet integration plus iterative distance projection) for cloth,
   soft bodies, and ropes.

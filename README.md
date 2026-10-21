@@ -296,7 +296,7 @@ The Z98 standard library lives in `sf/src/std_*.zig`. Its core modules (`io`, `a
 `@import("std")`; the higher layers (`std_file`, `std_stdin`, `std_stream`, `std_crypto`,
 `std_parse`, `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`, `std_utf8`,
 `std_rand`, `std_noise`, `std_lz4`, `std_zstd`, `std_num`, `std_pathfind`,
-`std_physics`)
+`std_hpa`, `std_physics`)
 are imported by path. See the guide for the library's model and an index that links each
 domain's detailed doc:
 
