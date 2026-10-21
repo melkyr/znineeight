@@ -19,9 +19,9 @@ The module follows the L4 codec model used by `std_lz4`, not the arena model:
 the caller owns both buffers and sizes `dst` for the full decoded payload.
 Errors are deliberate and distinct — `error.Corrupt` (malformed, truncated, or
 outside the supported subset), `error.OutputTooSmall` (the destination cannot
-hold the frame's declared content), and `error.WindowTooBig` (the frame's window
-exceeds the caller's cap). A failed call offers no partial-output contract;
-discard `dst` on any error.
+hold the frame's declared content), and `error.WindowTooBig` (the frame's
+window log — or a single-segment content size — exceeds the caller's cap). A
+failed call offers no partial-output contract; discard `dst` on any error.
 
 ## Quick start
 
@@ -30,11 +30,12 @@ const std = @import("std");
 const std_zstd = @import("std_zstd");
 
 var packed: [4096]u8 = undefined;   // filled offline with a .zst file
+var packed_len: usize = 0;         // set to the actual .zst byte count
 var plain: [16384]u8 = undefined;  // sized for the decoded payload
 
 pub fn main() void {
     const n = std_zstd.zstdDecompress(
-        packed[0..],
+        packed[0..packed_len],
         plain[0..],
         std_zstd.ZSTD_DEFAULT_WINDOW_LOG,
     ) catch |e| {
@@ -114,8 +115,8 @@ nothing and returns `0`.
   feature outside the supported subset (most notably a nonzero dictionary id).
 - `error.OutputTooSmall` — a frame declares more content than the remaining
   space in `dst`, or a block would write past `dst.len`.
-- `error.WindowTooBig` — the frame's window (or single-segment content size)
-  exceeds `2^max_window_log`.
+- `error.WindowTooBig` — the frame's window log exceeds `max_window_log`, or a
+  single-segment frame's content size exceeds `2^max_window_log`.
 
 **Example**
 ```zig
@@ -141,8 +142,10 @@ fresh buffer after fixing the caller's size/cap or the input.
 ### Supported subset and boundaries
 
 - Standard zstd frames with raw, RLE, and compressed blocks.
-- Predefined, RLE, and FSE-compressed Huffman literal tables; predefined, RLE,
-  and FSE-compressed sequence tables; repeat modes and repeat offsets.
+- Huffman literals: raw, RLE, compressed (direct-weight and FSE-compressed tree
+  descriptions), and treeless/repeat modes.
+- FSE sequence tables: predefined, RLE, and FSE-compressed modes, plus repeat
+  modes and repeat offsets.
 - Optional content size and content checksum (xxh64 low 32 bits).
 - RFC-mandated skippable frames.
 - **No dictionaries.** A frame with a nonzero dictionary id is
@@ -156,17 +159,20 @@ fresh buffer after fixing the caller's size/cap or the input.
 Compression is never done at runtime by Z98:
 
 1. Compress on the host with the zstd CLI, for example
-   `zstd -19 -f input.bin -o input.bin.zst`. Use `--long=24` (or another
-   window log) only when the decoder will be given a matching `max_window_log`.
-   Do **not** use `-D` / dictionaries.
+   `zstd -19 -f input.bin -o input.bin.zst`. Level `-19` raises the window on
+   larger inputs (libzstd 1.5.4 uses window log 23 on 10 MiB), and `--long=24`
+   (or another window log) raises it further. Either give the decoder a matching
+   `max_window_log` (`23`–`24` for `-19` on more than 2 MiB) or constrain the
+   producer with `zstd --zstd=wlog=21`. Do **not** use `-D` / dictionaries.
 2. Commit the resulting `.zst` as the `.in` fixture/asset and its decoded bytes
    (or the original input) as `.expected`; never regenerate vectors during a
    test run — the committed pair is the frozen agreement.
 3. At runtime pass the `.zst` bytes and a `dst` sized for the known decoded
    length to `zstdDecompress`, with `max_window_log` no smaller than the window
-   used to produce the frame. The default `21` covers ordinary
-   `zstd -1`/`-19` output; a 256 MB box can pass `24`–`28` for long-window
-   frames.
+   used to produce the frame. Level `-1` output fits the default `21`; level
+   `-19` raises the window automatically on larger inputs, so use `23`–`24`
+   for `-19` on more than 2 MiB (a 256 MB box can pass `24`–`28`) or constrain
+   the producer with `zstd --zstd=wlog=21`.
 
 The repo's vectors follow this path: `scripts/stdlib/vectors/std_zstd/` holds
 committed host-zstd frames (text, binary, incompressible data, several window
