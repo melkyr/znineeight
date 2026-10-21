@@ -3,6 +3,7 @@
 Base: 64e8ea0b (plan amendment committed)
 Seed under test: v103, binary/fixed point b299b4b435e624d0ddbd2edde681cbc3
 Task 1: STOP-present (lattice-zero gate) — 2014 ref seed 0: (0,0)=0, (1,0)=0.42680000932807727, (0,1)=-0.061333742599571132, (1,1)=-0.62215238898136938; also 24 vs 12 3D gradients. Report 3e297105; ref.c uncommitted. Awaiting operator amendment.
+
 Ruling: pin actual 2014 reference behavior; zero-at-lattice superseded; use 24 3D gradients. Spec §6.5/§9 + plan Task 1/3 amended; Task 1 resumes.
 
 Task 1: BLOCKED — lexer f64 rounding (D6). Implementation 10fd69c0 + report 72297f98 held, not complete; ULP workaround invalid. Resume only after Task 1D.
@@ -14,4 +15,5 @@ Task 1D: complete (commits acf76052 fix + d3527c34 seed v105 + report) — canon
 Task 1F: complete (commits below) — formatF64 emits C89 union-type-pun macros (Z98_INF/Z98_NEGINF/Z98_NAN via zig_compat.h + emit_support.zig byte-mirror), inf rows restored in lexer_float_rounding_xmod (1e309→7ff0…, -1e309→fff0…), 17-sig-digit round-trip confirmed. Self-build three-hop closure hop2==hop3==21c95773 (moving point: seed embeds pre-T1F support); check_emit_support 8/8; float sweep 5/5. T1B §8.1 ticket closed.
 Task 2: STOP-present (environment) — plan Task 2 requires host `lz4`-generated raw-block vectors and a vendored `LZ4_decompress_safe` ref.c, but this host has no `lz4` CLI, no `liblz4` headers/source (`lz4.c`/`lz4.h` absent), only runtime `liblz4.so.1`. Capability/ref cannot be produced within the plan; awaiting operator ruling.
 Task 2: complete (commits e48278ef feat + 1be3d979 report, review clean 0C/0I/3 Minor) — LZ4 block decoder, vendored v1.9.4 ref, 5 real-block vectors + truncations, fixtures, seed copy lists. Full gate 296/0 + crosscheck 4/4 (std_lz4 20 vectors). Operator option 1 unblocked toolchain via local official v1.9.4 source/CLI. Review minors: last-5-literals and match-path OutputTooSmall not independently regression-tested; header style.
+Task 3: complete (commits 660adfcd docs + 2c860db7 seed + 7d26ffe7 report; fix 7a0a608c + a634183e; review clean after 1 fix) — usage program, docs/truth-ups to 35, seed v106. Gate 297/0 + crosscheck 4/4; v106 archive `46dff057dd1751a937021dba97ad118f`, 35-file manifest `87a231a3a2d511814cf413ae1a5586eb`, binary/fixed point unchanged `21c957730d268f1e7883176fa5413b65`. Review Important: stale seed-0 noise lattice values in docs/report; fixed to ref/grid values (bits 3fdb50b0fc7fc810 / bfaf6722e5367f41 / bfe3e8ac2079b43d); scoped re-review PASS.
 
