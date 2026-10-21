@@ -148,6 +148,8 @@ repro/mi_matrix/stdlib_intcast_widen_sign_runtime_xmod
 repro/mi_matrix/stdlib_layout_align8_xmod
 repro/mi_matrix/stdlib_local_type_emission_xmod
 repro/mi_matrix/stdlib_local_type_fieldcap_xmod
+repro/mi_matrix/stdlib_lz4_basic_xmod
+repro/mi_matrix/stdlib_lz4_cross_xmod
 repro/mi_matrix/stdlib_map_determinism_xmod
 repro/mi_matrix/stdlib_map_map32ptr_xmod
 repro/mi_matrix/stdlib_map_map32x32_xmod
