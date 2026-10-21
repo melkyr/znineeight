@@ -353,7 +353,8 @@ path.
 pub const Particle = struct { pos: [3]f32, prev: [3]f32, inv_mass: f32 };   // inv_mass 0 = pinned
 pub const DistanceConstraint = struct { a: u32, b: u32, rest: f32, stiffness: f32 };
 pub const PbdWorld = struct {
-    particles: []Particle, constraints: []DistanceConstraint,
+    particles: []Particle, constraints: []DistanceConstraint, order: []u32,
+    particle_count: u32, constraint_count: u32,
     gravity: [3]f32, damping: f32, iterations: u8,
     rng: std_rand.Xoshiro256,
 };
@@ -364,12 +365,31 @@ pub fn pbdAddParticle(w: *PbdWorld, pos: [3]f32, inv_mass: f32) u32
 pub fn pbdAddDistance(w: *PbdWorld, a: u32, b: u32, stiffness: f32) u32
 pub fn pbdPin(w: *PbdWorld, i: u32) void
 ```
-Verlet: `new = pos + (pos-prev)*(1-damping) + g*dt²` (dt² scaling exact —
-blueprint §6.4); constraint order **shuffled per iteration** with `rng`
-(bias avoidance; seed param added vs blueprint — determinism under R6);
-stiffness = per-iteration fraction (1 = exact in one projection). v1: no
-collision constraints. `pbdAddParticle`/`pbdAddDistance` over init counts →
-`@panic` (precondition). Caller reads `particles[i].pos` after step.
+`particles.len`/`constraints.len`/`order.len` are capacities; `particle_count`/`constraint_count`
+are used counts, and `order.len == constraints.len`. `pbdInit` allocates all three from
+`arena`, zeroes them, seeds `rng = xoshiroInit(seed)`, and sets `gravity = {0,0,0}`,
+`damping = 0`, `iterations = 4`. It returns `arena` OOM unchanged.
+`pbdAddParticle` sets `prev = pos`, returns the slot index, and increments
+`particle_count`; over capacity or negative `inv_mass` is a caller bug -> `@panic`.
+`pbdAddDistance` requires `a != b` and both indices `< particle_count` (else
+`@panic`), computes `rest` from the current positions at add time as
+`f32(std_math.sqrt(f64(dx*dx + dy*dy + dz*dz)))`, returns the constraint index,
+and increments `constraint_count`; over capacity -> `@panic`. `pbdPin` sets
+`inv_mass = 0` for a live index; out of range -> `@panic`.
+`pbdStep` integrates every non-pinned particle with
+`new = pos + (pos-prev)*(1-damping) + g*dt²` (`dt²` scaling exact — blueprint
+§6.4), then stores `prev = old pos` and `pos = new`. With `iterations == 0` it
+integrates only. Each projection iteration identity-fills `order[0..constraint_count]`,
+shuffles it with Fisher–Yates using `xoshiroBounded(rng, i+1)` for
+`i = constraint_count-1 down to 1`, then projects constraints in `order` sequence:
+`len = f32(std_math.sqrt(f64(dx*dx + dy*dy + dz*dz)))`;
+`corr = (len-rest)/len * stiffness`; with `wa = inv_mass[a]`, `wb = inv_mass[b]`,
+`pos[a] += dx * corr * wa/(wa+wb)` and `pos[b] -= dx * corr * wb/(wa+wb)`.
+Skip a constraint when `len == 0` or `wa+wb == 0`. Zero particles is a no-op;
+zero constraints integrates only. v1: no collision constraints. Stiffness is
+the per-iteration fraction (1 = exact in one projection). Caller reads
+`particles[i].pos` after a step.
+
 
 ### 6.9 `std_hpa.zig` (M7, L5) — HPA\*
 
