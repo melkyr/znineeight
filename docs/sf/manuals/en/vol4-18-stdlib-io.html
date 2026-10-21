@@ -1,0 +1,526 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: I/O and HTTP</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual reference standard library by path std_file std_stdin std_stream std_http file directory stdin line reader socket message frame HTTP client URL">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-18-stdlib-codecs.html">
+<link rel="next" href="vol4-18-stdlib-algorithms.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol4-00-title.html">How to use the Reference</a><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<a href="vol4-12-statements.html">Statements</a><br>
+<a href="vol4-13-control-flow.html">Control flow</a><br>
+<a href="vol4-14-error-expressions.html">Error expressions</a><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+<a href="vol4-16-async.html">Async</a><br>
+<a href="vol4-17-memory.html">Memory</a><br>
+<b>The standard library</b><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+<a href="vol4-23-limits.html">Limits</a><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>I/O and HTTP</h1>
+<p>
+The I/O modules are imported by path: <tt>@import("std_file.zig")</tt>,
+<tt>@import("std_stream.zig")</tt>, and their companions. They are not part of
+the thirteen-name <tt>std</tt> re-export list. <a href="#file"><tt>std_file</tt></a>
+owns an OS handle and is binary-safe; <a href="#stdin"><tt>std_stdin</tt></a>
+reads lines and all input from process stdin; <a href="#stream"><tt>std_stream</tt></a>
+composes line and frame readers over file and socket sources; and
+<a href="#http"><tt>std_http</tt></a> is a small HTTP/1.1 client.
+</p>
+<p>
+The file, stdin, and stream layers never allocate behind the caller's back:
+<tt>std_file</tt> allocates only for <tt>readAll</tt> and directory names,
+<tt>std_stream</tt> never allocates at all, and <tt>std_http</tt> allocates its
+parsed result from a caller arena. The OS-specific work lives in the std-side
+PAL support files, not in the compiler PAL.
+</p>
+
+<h2>Module index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Module</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Source file</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Layer / role</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>std_file</tt></td>
+<td valign="top"><tt>std_file.zig</tt></td>
+<td valign="top">L3 / binary-safe files and directories.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_stdin</tt></td>
+<td valign="top"><tt>std_stdin.zig</tt></td>
+<td valign="top">L3 / process standard input.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_stream</tt></td>
+<td valign="top"><tt>std_stream.zig</tt></td>
+<td valign="top">L6 / coroutine-aware line and frame readers.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_http</tt></td>
+<td valign="top"><tt>std_http.zig</tt></td>
+<td valign="top">HTTP / minimal HTTP/1.1 client.</td>
+</tr>
+</table>
+
+<h2><a name="file"></a>std_file</h2>
+<p>
+<tt>std_file</tt> is a binary-safe file layer built on OS handles. On Win32 it
+opens through <tt>CreateFileA</tt>, sizes and seeks with the profile-aware
+helpers, and uses the Win9x <tt>FindFirstFileA</tt>/<tt>FindNextFileA</tt>
+backend for directory iteration. On POSIX it uses <tt>open</tt>, <tt>read</tt>,
+<tt>write</tt>, <tt>fsync</tt>, <tt>close</tt>, <tt>unlink</tt>, and
+<tt>rename</tt>, with 64-bit seeking. <tt>read</tt> returns zero at end of file,
+not an error; <tt>write</tt> may write fewer bytes than requested, so
+<tt>writeAll</tt> loops.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>FileError</tt></td>
+<td valign="top"><tt>pub const FileError = error{ OpenFailed, ReadFailed, WriteFailed, SeekFailed, SizeFailed, FlushFailed, RemoveFailed, RenameFailed, OpenDirFailed, ReadDirFailed, OutOfMemory };</tt></td>
+<td valign="top">error set</td>
+<td valign="top">The module's one error set; <tt>OutOfMemory</tt> is the arena error for <tt>readAll</tt> and directory names.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Mode</tt></td>
+<td valign="top"><tt>pub const Mode = enum { Read, Write, Append, ReadWrite };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Open mode.</td>
+</tr>
+<tr>
+<td valign="top"><tt>SeekWhence</tt></td>
+<td valign="top"><tt>pub const SeekWhence = enum { Set, Cur, End };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Seek origin.</td>
+</tr>
+<tr>
+<td valign="top"><tt>File</tt></td>
+<td valign="top"><tt>pub const File = struct { handle: *void, size_cache: i64, arena: *arena_mod.Arena };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">An open file: opaque OS handle, last size query, and owning arena.</td>
+</tr>
+<tr>
+<td valign="top"><tt>DirEntry</tt></td>
+<td valign="top"><tt>pub const DirEntry = struct { name: []const u8, is_dir: bool };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">One directory entry; the name is arena-copied and is not NUL-terminated.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Dir</tt></td>
+<td valign="top"><tt>pub const Dir = struct { handle: *void, first_pending: bool, data: pal.Win32FindDataA, path: []const u8 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">An open directory, including the Win9x first-entry carry and the path used by the Linux <tt>DT_UNKNOWN</tt> fallback.</td>
+</tr>
+<tr>
+<td valign="top"><tt>open</tt></td>
+<td valign="top"><tt>pub fn open(arena: *arena_mod.Arena, path: []const u8, mode: Mode) FileError!File</tt></td>
+<td valign="top"><tt>FileError!File</tt></td>
+<td valign="top">Open <tt>path</tt> in the requested mode.</td>
+</tr>
+<tr>
+<td valign="top"><tt>close</tt></td>
+<td valign="top"><tt>pub fn close(f: *File) void</tt></td>
+<td valign="top"><tt>void</tt>; the close result is discarded</td>
+<td valign="top">Close the handle.</td>
+</tr>
+<tr>
+<td valign="top"><tt>read</tt></td>
+<td valign="top"><tt>pub fn read(f: *File, buf: []u8) FileError!usize</tt></td>
+<td valign="top">bytes read; <tt>0</tt> at end of file</td>
+<td valign="top">Read up to <tt>buf.len</tt> bytes from the current position.</td>
+</tr>
+<tr>
+<td valign="top"><tt>write</tt></td>
+<td valign="top"><tt>pub fn write(f: *File, buf: []const u8) FileError!usize</tt></td>
+<td valign="top">bytes written, which may be fewer than <tt>buf.len</tt></td>
+<td valign="top">Write a chunk at the current position.</td>
+</tr>
+<tr>
+<td valign="top"><tt>seek</tt></td>
+<td valign="top"><tt>pub fn seek(f: *File, offset: i64, whence: SeekWhence) FileError!i64</tt></td>
+<td valign="top"><tt>FileError!i64</tt>; the new position</td>
+<td valign="top">Seek from the requested origin.</td>
+</tr>
+<tr>
+<td valign="top"><tt>size</tt></td>
+<td valign="top"><tt>pub fn size(f: *File) FileError!i64</tt></td>
+<td valign="top"><tt>FileError!i64</tt></td>
+<td valign="top">Query the file size and update the cache.</td>
+</tr>
+<tr>
+<td valign="top"><tt>flush</tt></td>
+<td valign="top"><tt>pub fn flush(f: *File) FileError!void</tt></td>
+<td valign="top"><tt>FileError!void</tt></td>
+<td valign="top">Flush pending writes to the OS.</td>
+</tr>
+<tr>
+<td valign="top"><tt>exists</tt></td>
+<td valign="top"><tt>pub fn exists(path: []const u8) bool</tt></td>
+<td valign="top"><tt>bool</tt>; no error and no allocation</td>
+<td valign="top">Test whether <tt>path</tt> exists.</td>
+</tr>
+<tr>
+<td valign="top"><tt>mtime</tt></td>
+<td valign="top"><tt>pub fn mtime(path: []const u8) FileError!i64</tt></td>
+<td valign="top"><tt>FileError!i64</tt>; seconds since the Unix epoch, or <tt>error.OpenFailed</tt> when missing or unstatable</td>
+<td valign="top">Read modification time, used for resume validation.</td>
+</tr>
+<tr>
+<td valign="top"><tt>remove</tt></td>
+<td valign="top"><tt>pub fn remove(path: []const u8) FileError!void</tt></td>
+<td valign="top"><tt>FileError!void</tt>; <tt>error.RemoveFailed</tt></td>
+<td valign="top">Delete a file.</td>
+</tr>
+<tr>
+<td valign="top"><tt>rename</tt></td>
+<td valign="top"><tt>pub fn rename(old_path: []const u8, new_path: []const u8) FileError!void</tt></td>
+<td valign="top"><tt>FileError!void</tt>; <tt>error.RenameFailed</tt></td>
+<td valign="top">Rename or move a file.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readAll</tt></td>
+<td valign="top"><tt>pub fn readAll(arena: *arena_mod.Arena, path: []const u8) FileError![]u8</tt></td>
+<td valign="top"><tt>FileError![]u8</tt>; <tt>error.OutOfMemory</tt> from the arena</td>
+<td valign="top">Open, size, allocate, and read a whole file.</td>
+</tr>
+<tr>
+<td valign="top"><tt>writeAll</tt></td>
+<td valign="top"><tt>pub fn writeAll(path: []const u8, data: []const u8) FileError!void</tt></td>
+<td valign="top"><tt>FileError!void</tt></td>
+<td valign="top">Open for writing, loop over short writes, flush, and close.</td>
+</tr>
+<tr>
+<td valign="top"><tt>openDir</tt></td>
+<td valign="top"><tt>pub fn openDir(arena: *arena_mod.Arena, path: []const u8) FileError!Dir</tt></td>
+<td valign="top"><tt>FileError!Dir</tt>; <tt>error.OpenDirFailed</tt> or <tt>error.OutOfMemory</tt></td>
+<td valign="top">Open a directory for streaming iteration.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readDir</tt></td>
+<td valign="top"><tt>pub fn readDir(arena: *arena_mod.Arena, d: *Dir) FileError!?DirEntry</tt></td>
+<td valign="top"><tt>FileError!?DirEntry</tt>; <tt>null</tt> at the end, <tt>error.OutOfMemory</tt> for the name copy</td>
+<td valign="top">Return the next directory entry in OS order.</td>
+</tr>
+<tr>
+<td valign="top"><tt>closeDir</tt></td>
+<td valign="top"><tt>pub fn closeDir(d: *Dir) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Close the directory handle.</td>
+</tr>
+</table>
+<p>
+Directory names are copied into the caller's arena on each <tt>readDir</tt> and
+are not NUL-terminated. The source does <b>not</b> filter <tt>.</tt> or
+<tt>..</tt>; callers that do not want them must skip those names themselves.
+On Linux a <tt>DT_UNKNOWN</tt> entry falls back to a stat of the joined path to
+decide <tt>is_dir</tt>. <tt>openDir</tt> also copies the path into the arena on
+the POSIX path so that fallback can use it.
+</p>
+<p>
+Use <tt>readAll</tt> for a whole small file, and bounded <tt>read</tt> plus
+<tt>seek</tt> for large media instead of materializing the whole payload. The
+<tt>mtime</tt> result is intended for resume sidecars. A worked introduction is
+on <a href="vol5-09-files.html">Volume V, Read, write, exists</a>.
+</p>
+
+<h2><a name="stdin"></a>std_stdin</h2>
+<p>
+<tt>std_stdin</tt> wraps process stdin as a <tt>std_file.File</tt> and reads
+through the file layer. <tt>readLine</tt> reads one byte at a time so it never
+consumes past the line terminator. It strips the terminating <tt>\n</tt>, and
+the <tt>\r</tt> of a <tt>\r\n</tt> pair, and returns a slice into the caller's
+buffer. At EOF with no partial line it returns <tt>null</tt>. A line longer than
+the buffer returns a full buffer and leaves the rest of the line for the next
+call; the module carries boundary state so an exact-multiple long line does not
+produce a spurious empty line. A zero-length buffer is a panic.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>StdinError</tt></td>
+<td valign="top"><tt>pub const StdinError = error{OutOfMemory, Io};</tt></td>
+<td valign="top">error set</td>
+<td valign="top">The module's one error set; <tt>Io</tt> is a read failure.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readLine</tt></td>
+<td valign="top"><tt>pub fn readLine(buf: []u8) StdinError!?[]u8</tt></td>
+<td valign="top"><tt>StdinError!?[]u8</tt>; <tt>null</tt> at EOF with no partial line</td>
+<td valign="top">Read one line into <tt>buf</tt>, stripping its terminator.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readAll</tt></td>
+<td valign="top"><tt>pub fn readAll(arena: *arena_mod.Arena) StdinError![]u8</tt></td>
+<td valign="top"><tt>StdinError![]u8</tt></td>
+<td valign="top">Read all of stdin into one arena allocation grown by doubling.</td>
+</tr>
+</table>
+<p>
+<tt>readLine</tt> allocates nothing and returns a view into the caller's buffer.
+<tt>readAll</tt> is the only allocating function, and it uses the caller's
+arena. Both propagate a read failure as <tt>error.Io</tt>.
+</p>
+
+<h2><a name="stream"></a>std_stream</h2>
+<p>
+<tt>std_stream</tt> composes line and frame readers over caller-owned resources.
+It never allocates: the caller supplies the accumulation buffer, and a returned
+line or frame aliases that buffer until the next call. Each source has a
+blocking sync function and a cooperative async function. The async path yields
+with <tt>@asyncSuspend(null)</tt> when a read is incomplete or would block, and
+the caller re-drives it on the next scheduler tick. The module does not own or
+run a scheduler.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>StreamError</tt></td>
+<td valign="top"><tt>pub const StreamError = file_mod.FileError;</tt></td>
+<td valign="top">error set alias</td>
+<td valign="top">The file reader's errors, kept in lockstep with <tt>std_file</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>FileLineReader</tt></td>
+<td valign="top"><tt>pub const FileLineReader = struct { src: *file_mod.File, buf: []u8, pending: []u8, pending_cr: bool, overflow_cont: bool };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Line reader state over a caller-owned file.</td>
+</tr>
+<tr>
+<td valign="top"><tt>initFileLineReader</tt></td>
+<td valign="top"><tt>pub fn initFileLineReader(src: *file_mod.File, buf: []u8) FileLineReader</tt></td>
+<td valign="top"><tt>FileLineReader</tt></td>
+<td valign="top">Wrap a file and an empty caller buffer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readFileLineSync</tt></td>
+<td valign="top"><tt>pub fn readFileLineSync(lr: *FileLineReader) StreamError!?[]u8</tt></td>
+<td valign="top"><tt>StreamError!?[]u8</tt>; <tt>null</tt> at EOF</td>
+<td valign="top">Blocking line read; never yields.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readFileLineAsync</tt></td>
+<td valign="top"><tt>pub fn readFileLineAsync(lr: *FileLineReader) StreamError!?[]u8</tt></td>
+<td valign="top"><tt>StreamError!?[]u8</tt>; <tt>null</tt> at EOF</td>
+<td valign="top">Chunked line read that yields once per incomplete read.</td>
+</tr>
+<tr>
+<td valign="top"><tt>SocketLineReader</tt></td>
+<td valign="top"><tt>pub const SocketLineReader = struct { src: *net_mod.Socket, buf: []u8, pending: []u8, pending_cr: bool, overflow_cont: bool };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Line reader state over a caller-owned socket.</td>
+</tr>
+<tr>
+<td valign="top"><tt>initSocketLineReader</tt></td>
+<td valign="top"><tt>pub fn initSocketLineReader(src: *net_mod.Socket, buf: []u8) SocketLineReader</tt></td>
+<td valign="top"><tt>SocketLineReader</tt></td>
+<td valign="top">Wrap a socket and an empty caller buffer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readSocketLineSync</tt></td>
+<td valign="top"><tt>pub fn readSocketLineSync(lr: *SocketLineReader) !?[]u8</tt></td>
+<td valign="top"><tt>!?[]u8</tt>; the socket error set, including <tt>error.WouldBlock</tt></td>
+<td valign="top">Blocking line read; a non-blocking socket can report <tt>WouldBlock</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readSocketLineAsync</tt></td>
+<td valign="top"><tt>pub fn readSocketLineAsync(lr: *SocketLineReader) !?[]u8</tt></td>
+<td valign="top"><tt>!?[]u8</tt>; the socket error set</td>
+<td valign="top">Cooperative line read that suspends on <tt>WouldBlock</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>MsgReader</tt></td>
+<td valign="top"><tt>pub const MsgReader = struct { src: *net_mod.Socket, buf: []u8, pending: []u8 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Length-prefixed frame reader state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>initMsgReader</tt></td>
+<td valign="top"><tt>pub fn initMsgReader(src: *net_mod.Socket, buf: []u8) MsgReader</tt></td>
+<td valign="top"><tt>MsgReader</tt></td>
+<td valign="top">Wrap a socket and an empty caller buffer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readMsgSync</tt></td>
+<td valign="top"><tt>pub fn readMsgSync(mr: *MsgReader) !?[]u8</tt></td>
+<td valign="top"><tt>!?[]u8</tt>; <tt>error.FrameTooLarge</tt>, <tt>error.WouldBlock</tt>, or another socket error; <tt>null</tt> at EOF</td>
+<td valign="top">Blocking read of a four-byte prefix and its body.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readMsgAsync</tt></td>
+<td valign="top"><tt>pub fn readMsgAsync(mr: *MsgReader) !?[]u8</tt></td>
+<td valign="top"><tt>!?[]u8</tt>; <tt>error.FrameTooLarge</tt> or a socket error; <tt>null</tt> at EOF</td>
+<td valign="top">Cooperative frame read that suspends while incomplete.</td>
+</tr>
+</table>
+<p>
+The line readers strip <tt>\n</tt> and the <tt>\r</tt> of <tt>\r\n</tt>, return
+the final unterminated line at EOF, and return an overlong line as a full-buffer
+prefix without creating a spurious empty line. <tt>MsgReader</tt> reads a
+big-endian <tt>u32</tt> length prefix, then that many bytes. A declared length
+larger than <tt>buf.len</tt> is <tt>error.FrameTooLarge</tt>. A zero-length
+frame is valid and returns an empty slice, not <tt>null</tt>. EOF in the prefix
+or body returns <tt>null</tt>. For the coroutine setting, see
+<a href="vol3-10-coroutine-program.html">Volume III, A coroutine program</a>.
+</p>
+
+<h2><a name="http"></a>std_http</h2>
+<p>
+<tt>std_http</tt> is a minimal HTTP/1.1 client with no TLS. The source supports
+<tt>Content-Length</tt> and close-delimited bodies; chunked transfer encoding
+and keep-alive are not implemented and a chunked response is rejected. The
+header block is capped at 8 KB and the body at 1 MB. The pure functions are
+<tt>parseUrl</tt>, <tt>percentEncode</tt>, and <tt>parseResponse</tt>;
+<tt>get</tt> is the network entry point. The module is the tracker client behind
+z9torr.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th valign="top" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Url</tt></td>
+<td valign="top"><tt>pub const Url = struct { host: []const u8, port: u16, path: []const u8, query: []const u8 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A parsed HTTP URL; slices point into the input.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Header</tt></td>
+<td valign="top"><tt>pub const Header = struct { name: []const u8, value: []const u8 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">One response header.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Response</tt></td>
+<td valign="top"><tt>pub const Response = struct { status: u16, headers: []Header, body: []u8 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A parsed response.</td>
+</tr>
+<tr>
+<td valign="top"><tt>HttpError</tt></td>
+<td valign="top"><tt>pub const HttpError = error{ BadUrl, DnsFailed, ConnectFailed, Timeout, BadResponse, TooLarge, OutOfMemory };</tt></td>
+<td valign="top">error set</td>
+<td valign="top">The module's one error set.</td>
+</tr>
+<tr>
+<td valign="top"><tt>parseUrl</tt></td>
+<td valign="top"><tt>pub fn parseUrl(url: []const u8) HttpError!Url</tt></td>
+<td valign="top"><tt>HttpError!Url</tt>; <tt>error.BadUrl</tt></td>
+<td valign="top">Parse an <tt>http://</tt> URL with an optional port, path, and query.</td>
+</tr>
+<tr>
+<td valign="top"><tt>percentEncode</tt></td>
+<td valign="top"><tt>pub fn percentEncode(arena: *std.arena.Arena, bytes: []const u8) HttpError![]u8</tt></td>
+<td valign="top"><tt>HttpError![]u8</tt>; <tt>error.OutOfMemory</tt></td>
+<td valign="top">Percent-encode bytes into a new arena slice.</td>
+</tr>
+<tr>
+<td valign="top"><tt>parseResponse</tt></td>
+<td valign="top"><tt>pub fn parseResponse(arena: *std.arena.Arena, raw: []const u8) HttpError!Response</tt></td>
+<td valign="top"><tt>HttpError!Response</tt>; <tt>BadResponse</tt>, <tt>TooLarge</tt>, or <tt>OutOfMemory</tt></td>
+<td valign="top">Parse a complete response into arena-owned headers and body.</td>
+</tr>
+<tr>
+<td valign="top"><tt>get</tt></td>
+<td valign="top"><tt>pub fn get(arena: *std.arena.Arena, url: []const u8, timeout_ms: u32) HttpError!Response</tt></td>
+<td valign="top"><tt>HttpError!Response</tt>; network, timeout, sizing, or arena error</td>
+<td valign="top">Perform a GET request, following one redirect when present.</td>
+</tr>
+</table>
+<p>
+<tt>parseUrl</tt> allocates nothing: its four slices point into the caller's
+input. <tt>percentEncode</tt>, <tt>parseResponse</tt>, and <tt>get</tt> allocate
+from the supplied arena. In a parsed response the header name and value slices
+point into the raw response, while the header array and the body are copied into
+the arena. <tt>get</tt> passes <tt>timeout_ms</tt> to the connect and select
+paths and follows a <tt>301</tt>, <tt>302</tt>, <tt>303</tt>, or <tt>307</tt>
+redirect once if a location header is present. The socket layer it uses is
+<a href="vol4-18-stdlib.html#net"><tt>std.net</tt></a>.
+</p>
+
+<p class="navbtns">
+<a href="vol4-18-stdlib-codecs.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-18-stdlib-algorithms.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-18-stdlib-codecs.html">Codecs and Crypto</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-18-stdlib-algorithms.html">Algorithms</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

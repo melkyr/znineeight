@@ -1,0 +1,506 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Codecs and Crypto</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual reference standard library by path std_base64 std_hex std_utf8 std_crypto std_lz4 std_zstd base64 hex UTF-8 SHA-1 SHA-256 MD5 CRC-32 RC4 LZ4 zstd">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-18-stdlib-data.html">
+<link rel="next" href="vol4-18-stdlib-io.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol4-00-title.html">How to use the Reference</a><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<a href="vol4-12-statements.html">Statements</a><br>
+<a href="vol4-13-control-flow.html">Control flow</a><br>
+<a href="vol4-14-error-expressions.html">Error expressions</a><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+<a href="vol4-16-async.html">Async</a><br>
+<a href="vol4-17-memory.html">Memory</a><br>
+<b>The standard library</b><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+<a href="vol4-23-limits.html">Limits</a><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Codecs and crypto</h1>
+<p>
+These codec and hash modules are also imported by path:
+<tt>@import("std_base64.zig")</tt>, <tt>@import("std_zstd.zig")</tt>, and so
+on. None is part of the thirteen-name <tt>std</tt> re-export list. The codecs
+split into text encodings (<a href="#base64"><tt>std_base64</tt></a>,
+<a href="#hex"><tt>std_hex</tt></a>, <a href="#utf8"><tt>std_utf8</tt></a>),
+hashing and stream ciphers (<a href="#crypto"><tt>std_crypto</tt></a>), and
+block or frame decompressors (<a href="#lz4"><tt>std_lz4</tt></a>,
+<a href="#zstd"><tt>std_zstd</tt></a>).
+</p>
+<p>
+The base64 and hex codecs allocate only their output from a caller arena;
+<tt>std_utf8</tt> allocates nothing. The hash functions allocate nothing and
+keep all state in caller-owned values.
+<tt>std_lz4</tt> and <tt>std_zstd</tt> decompress into a caller destination and
+have no allocator parameter at all. The bencode and HTTP consumers live on the
+<a href="vol4-18-stdlib-data.html#bencode">data page</a> and the
+<a href="vol4-18-stdlib-io.html#http">I/O page</a>.
+</p>
+
+<h2>Module index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Module</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Source file</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Layer / role</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>std_base64</tt></td>
+<td valign="top"><tt>std_base64.zig</tt></td>
+<td valign="top">L5 / RFC 4648 base64 text codec.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_hex</tt></td>
+<td valign="top"><tt>std_hex.zig</tt></td>
+<td valign="top">L5 / hexadecimal text codec.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_utf8</tt></td>
+<td valign="top"><tt>std_utf8.zig</tt></td>
+<td valign="top">L5 / UTF-8 code point iteration.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_crypto</tt></td>
+<td valign="top"><tt>std_crypto.zig</tt></td>
+<td valign="top">L5 / streaming hashes, CRC-32, RC4, modular exponentiation.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_lz4</tt></td>
+<td valign="top"><tt>std_lz4.zig</tt></td>
+<td valign="top">Block codec / raw LZ4 block decompression.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_zstd</tt></td>
+<td valign="top"><tt>std_zstd.zig</tt></td>
+<td valign="top">L4 / RFC 8878 zstd frame decoder subset.</td>
+</tr>
+</table>
+
+<h2><a name="base64"></a>std_base64</h2>
+<p>
+<tt>std_base64</tt> implements RFC 4648 section 4 standard base64 with the
+alphabet <tt>ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/</tt>
+and mandatory <tt>=</tt> padding to a multiple of four output characters.
+Encoding emits no whitespace. Decoding accepts only canonical padded base64:
+whitespace, a length that is not a multiple of four, and misplaced or malformed
+padding all produce <tt>error.InvalidInput</tt>. An empty input is a valid empty
+result. An invalid decode allocates nothing.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>encodedLen</tt></td>
+<td valign="top"><tt>pub fn encodedLen(n: usize) usize</tt></td>
+<td valign="top"><tt>usize</tt>; no allocation</td>
+<td valign="top">Exact encoded size, <tt>4 * ceil(n / 3)</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>decodedLen</tt></td>
+<td valign="top"><tt>pub fn decodedLen(n: usize) usize</tt></td>
+<td valign="top"><tt>usize</tt>; no allocation</td>
+<td valign="top">Maximum decoded size, <tt>(n / 4) * 3</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>encode</tt></td>
+<td valign="top"><tt>pub fn encode(arena: *arena_mod.Arena, src: []const u8) ![]u8</tt></td>
+<td valign="top"><tt>![]u8</tt>; <tt>error.OutOfMemory</tt> (inferred)</td>
+<td valign="top">Allocate and return the padded base64 text.</td>
+</tr>
+<tr>
+<td valign="top"><tt>decode</tt></td>
+<td valign="top"><tt>pub fn decode(arena: *arena_mod.Arena, src: []const u8) DecodeError![]u8</tt></td>
+<td valign="top"><tt>error{OutOfMemory, InvalidInput}![]u8</tt></td>
+<td valign="top">Allocate and return the decoded bytes.</td>
+</tr>
+</table>
+<p>
+<tt>decodedLen</tt> is an upper bound because the exact size depends on trailing
+padding. <tt>encode</tt> allocates only its output and can fail only with
+<tt>error.OutOfMemory</tt>. <tt>decode</tt> validates before allocating, so a
+malformed input leaves the arena unchanged.
+</p>
+
+<h2><a name="hex"></a>std_hex</h2>
+<p>
+<tt>std_hex</tt> writes two hexadecimal characters per byte, high nybble first.
+<tt>encodeLower</tt> emits <tt>0-9 a-f</tt>, <tt>encodeUpper</tt> emits
+<tt>0-9 A-F</tt>, and <tt>decode</tt> accepts either case. There is no separate
+length helper in the source: the encoded size is <tt>src.len * 2</tt> and the
+decoded size is <tt>src.len / 2</tt>. Decoding does not skip whitespace and
+rejects an odd-length string or any byte outside the hexadecimal ranges.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>encodeLower</tt></td>
+<td valign="top"><tt>pub fn encodeLower(arena: *arena_mod.Arena, src: []const u8) ![]u8</tt></td>
+<td valign="top"><tt>![]u8</tt>; <tt>error.OutOfMemory</tt> (inferred)</td>
+<td valign="top">Allocate and return lower-case hexadecimal text.</td>
+</tr>
+<tr>
+<td valign="top"><tt>encodeUpper</tt></td>
+<td valign="top"><tt>pub fn encodeUpper(arena: *arena_mod.Arena, src: []const u8) ![]u8</tt></td>
+<td valign="top"><tt>![]u8</tt>; <tt>error.OutOfMemory</tt> (inferred)</td>
+<td valign="top">Allocate and return upper-case hexadecimal text.</td>
+</tr>
+<tr>
+<td valign="top"><tt>decode</tt></td>
+<td valign="top"><tt>pub fn decode(arena: *arena_mod.Arena, src: []const u8) DecodeError![]u8</tt></td>
+<td valign="top"><tt>error{OutOfMemory, InvalidInput}![]u8</tt></td>
+<td valign="top">Allocate and return the bytes; case-insensitive, no whitespace.</td>
+</tr>
+</table>
+<p>
+As with base64, an empty input decodes to a valid empty slice. Invalid input
+does not allocate. <tt>encodeLower</tt> and <tt>encodeUpper</tt> can fail only
+with <tt>error.OutOfMemory</tt>.
+</p>
+
+<h2><a name="utf8"></a>std_utf8</h2>
+<p>
+<tt>std_utf8</tt> is a pure UTF-8 code point walker. A sequence is valid only
+when every continuation byte is in <tt>0x80..0xBF</tt>, the code point is not
+overlong, is not a surrogate in <tt>U+D800..U+DFFF</tt>, and is not above
+<tt>U+10FFFF</tt>. Lead bytes <tt>0x80..0xBF</tt>, <tt>0xC0</tt>, <tt>0xC1</tt>,
+and <tt>0xF5..0xFF</tt> are invalid. A truncated sequence is invalid.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Codepoint</tt></td>
+<td valign="top"><tt>pub const Codepoint = struct { cp: u32, len: u8 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A decoded code point and its encoded byte length.</td>
+</tr>
+<tr>
+<td valign="top"><tt>codepointLen</tt></td>
+<td valign="top"><tt>pub fn codepointLen(first_byte: u8) u8</tt></td>
+<td valign="top"><tt>u8</tt>; <tt>1..4</tt>, or <tt>0</tt> for a byte that cannot begin a valid sequence</td>
+<td valign="top">Lead-byte sequence length; only the first byte is consulted.</td>
+</tr>
+<tr>
+<td valign="top"><tt>decode</tt></td>
+<td valign="top"><tt>pub fn decode(s: []const u8) ?Codepoint</tt></td>
+<td valign="top"><tt>?Codepoint</tt>; <tt>null</tt> when empty or not valid UTF-8 at the start</td>
+<td valign="top">Decode the first code point after full validation.</td>
+</tr>
+<tr>
+<td valign="top"><tt>encode</tt></td>
+<td valign="top"><tt>pub fn encode(buf: []u8, cp: u32) ?[]u8</tt></td>
+<td valign="top"><tt>?[]u8</tt>; <tt>null</tt> for a surrogate, a code point above <tt>U+10FFFF</tt>, or a short buffer</td>
+<td valign="top">Write the encoding to <tt>buf</tt> and return its slice.</td>
+</tr>
+<tr>
+<td valign="top"><tt>countCodepoints</tt></td>
+<td valign="top"><tt>pub fn countCodepoints(s: []const u8) usize</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Walk the whole slice; each valid code point counts one and each invalid lead advances one byte.</td>
+</tr>
+</table>
+<p>
+<tt>decode</tt> validates before returning, so it never yields a value outside
+the Unicode scalar range. <tt>codepointLen</tt> does not enforce the second-byte
+rules for <tt>E0</tt>, <tt>ED</tt>, <tt>F0</tt>, or <tt>F4</tt>; <tt>decode</tt>
+does. <tt>encode</tt> refuses a buffer smaller than the encoding rather than
+writing a partial sequence.
+</p>
+
+<h2><a name="crypto"></a>std_crypto</h2>
+<p>
+<tt>std_crypto</tt> is pure and allocation-free. Every hash is a streaming
+value-type state: an <tt>Init</tt> returns the state, every <tt>Update</tt>
+takes a pointer to it, and every <tt>Final</tt> writes the digest into a
+caller-supplied array. Updates may be called any number of times with any chunk
+sizes. CRC-32 uses the IEEE 802.3 polynomial and the usual pre- and
+post-inversion. RC4 keeps its state in a caller value and XORs a caller buffer
+in place. <tt>modpow</tt> is the fixed-limb modular exponentiation helper used by
+the MSE/PE handshake.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Sha1</tt></td>
+<td valign="top"><tt>pub const Sha1 = struct { h0: u32, h1: u32, h2: u32, h3: u32, h4: u32, buf: [64]u8, buf_len: usize, total: u64 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">SHA-1 streaming state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sha1Init</tt></td>
+<td valign="top"><tt>pub fn sha1Init() Sha1</tt></td>
+<td valign="top"><tt>Sha1</tt></td>
+<td valign="top">Initialise a SHA-1 state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sha1Update</tt></td>
+<td valign="top"><tt>pub fn sha1Update(s: *Sha1, data: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Feed a chunk into SHA-1.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sha1Final</tt></td>
+<td valign="top"><tt>pub fn sha1Final(s: *Sha1, out: *[20]u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Finish SHA-1 and write its 20-byte digest.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Sha256</tt></td>
+<td valign="top"><tt>pub const Sha256 = struct { h: [8]u32, buf: [64]u8, buf_len: usize, total: u64 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">SHA-256 streaming state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sha256Init</tt></td>
+<td valign="top"><tt>pub fn sha256Init() Sha256</tt></td>
+<td valign="top"><tt>Sha256</tt></td>
+<td valign="top">Initialise a SHA-256 state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sha256Update</tt></td>
+<td valign="top"><tt>pub fn sha256Update(s: *Sha256, data: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Feed a chunk into SHA-256.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sha256Final</tt></td>
+<td valign="top"><tt>pub fn sha256Final(s: *Sha256, out: *[32]u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Finish SHA-256 and write its 32-byte digest.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Md5</tt></td>
+<td valign="top"><tt>pub const Md5 = struct { h0: u32, h1: u32, h2: u32, h3: u32, buf: [64]u8, buf_len: usize, total: u64 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">MD5 streaming state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>md5Init</tt></td>
+<td valign="top"><tt>pub fn md5Init() Md5</tt></td>
+<td valign="top"><tt>Md5</tt></td>
+<td valign="top">Initialise an MD5 state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>md5Update</tt></td>
+<td valign="top"><tt>pub fn md5Update(s: *Md5, data: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Feed a chunk into MD5.</td>
+</tr>
+<tr>
+<td valign="top"><tt>md5Final</tt></td>
+<td valign="top"><tt>pub fn md5Final(s: *Md5, out: *[16]u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Finish MD5 and write its 16-byte digest.</td>
+</tr>
+<tr>
+<td valign="top"><tt>crc32Init</tt></td>
+<td valign="top"><tt>pub fn crc32Init() u32</tt></td>
+<td valign="top"><tt>u32</tt>; the <tt>0xFFFFFFFF</tt> starting state</td>
+<td valign="top">Start a CRC-32 computation.</td>
+</tr>
+<tr>
+<td valign="top"><tt>crc32Update</tt></td>
+<td valign="top"><tt>pub fn crc32Update(state: u32, data: []const u8) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Feed bytes into the CRC-32 state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>crc32Final</tt></td>
+<td valign="top"><tt>pub fn crc32Final(state: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Apply the final inversion.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Rc4</tt></td>
+<td valign="top"><tt>pub const Rc4 = struct { s: [256]u8, i: u8, j: u8 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">RC4 key stream state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>rc4Init</tt></td>
+<td valign="top"><tt>pub fn rc4Init(key: []const u8, out: *Rc4) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Run the RC4 key-scheduling algorithm into <tt>out</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>rc4Apply</tt></td>
+<td valign="top"><tt>pub fn rc4Apply(ctx: *Rc4, buf: []u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">XOR the RC4 key stream over <tt>buf</tt> in place.</td>
+</tr>
+<tr>
+<td valign="top"><tt>modpow</tt></td>
+<td valign="top"><tt>pub fn modpow(base: []const u8, exp: []const u8, modulus: []const u8, out: []u8) void</tt></td>
+<td valign="top"><tt>void</tt>; writes zero when the modulus is empty, too large, or <tt>out.len</tt> does not match</td>
+<td valign="top">Big-endian modular exponentiation for the MSE/PE handshake.</td>
+</tr>
+</table>
+<p>
+Every function in the module is total: there is no error set and no allocation.
+The hash states are values the caller owns; <tt>Final</tt> mutates the state and
+writes the digest, and the caller decides when the state may be reused. RC4
+itself does not discard any key-stream bytes; a protocol that requires the MSE
+discard step must do it in its own layer.
+</p>
+
+<h2><a name="lz4"></a>std_lz4</h2>
+<p>
+<tt>std_lz4</tt> exposes one function, <tt>lz4DecompressBlock</tt>, and it
+decompresses a raw LZ4 <b>block</b>, not an LZ4 frame. The destination buffer is
+the whole output; there is no allocator and no internal buffer. A token carries
+a four-bit literal length and a four-bit match length. A length of fifteen means
+the real length continues in following bytes, each added with 255 continuing
+the extension. The match offset is a little-endian 16-bit value after the
+literals. A match is copied forward from the already-written history, so
+overlapping matches work byte by byte. After at least one match, the final
+block rules are enforced: the last literals must be at least five bytes, and
+the last match must start at least twelve bytes before the end of the output.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>lz4DecompressBlock</tt></td>
+<td valign="top"><tt>pub fn lz4DecompressBlock(src: []const u8, dst: []u8) !u32</tt></td>
+<td valign="top"><tt>!u32</tt>; <tt>error.Corrupt</tt> or <tt>error.OutputTooSmall</tt></td>
+<td valign="top">Decompress one raw LZ4 block into <tt>dst</tt> and return the byte count.</td>
+</tr>
+</table>
+<p>
+<tt>error.Corrupt</tt> covers an empty input, a truncated token or extension, a
+zero offset, an offset beyond the written output, and a final literals or
+match-distance rule violation. <tt>error.OutputTooSmall</tt> means the caller's
+destination cannot hold the decoded block. The input is not modified and no
+allocation occurs.
+</p>
+
+<h2><a name="zstd"></a>std_zstd</h2>
+<p>
+<tt>std_zstd</tt> decodes an RFC 8878 zstd stream into a caller destination. It
+supports standard frames with raw, RLE, and compressed blocks; predefined, RLE,
+and FSE-compressed Huffman and FSE tables; repeat modes; and skippable frames.
+Dictionaries are not supported: a nonzero dictionary id is
+<tt>error.Corrupt</tt>. The history is the destination itself
+(<tt>dst[0..written]</tt>), and the decoder has no heap and no buffer beyond
+<tt>dst</tt>; entropy tables are function-local.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>ZSTD_DEFAULT_WINDOW_LOG</tt></td>
+<td valign="top"><tt>pub const ZSTD_DEFAULT_WINDOW_LOG: u8 = 21;</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">The default window-log value, a 2 MiB window.</td>
+</tr>
+<tr>
+<td valign="top"><tt>zstdDecompress</tt></td>
+<td valign="top"><tt>pub fn zstdDecompress(src: []const u8, dst: []u8, max_window_log: u8) !u32</tt></td>
+<td valign="top"><tt>!u32</tt>; <tt>error.Corrupt</tt>, <tt>error.OutputTooSmall</tt>, or <tt>error.WindowTooBig</tt></td>
+<td valign="top">Decompress a complete zstd stream into <tt>dst</tt> and return the bytes written.</td>
+</tr>
+</table>
+<p>
+<tt>error.Corrupt</tt> covers malformed, truncated, unsupported, or
+dictionary-backed frame data. <tt>error.OutputTooSmall</tt> means the
+destination cannot hold the decoded content. <tt>error.WindowTooBig</tt> means
+the frame's window log exceeds <tt>max_window_log</tt>. A sensible default cap
+is <tt>ZSTD_DEFAULT_WINDOW_LOG</tt> (21, or 2 MiB); raise it for large or
+higher-level frames. The function writes only into <tt>dst</tt> and allocates
+nothing.
+</p>
+
+<p class="navbtns">
+<a href="vol4-18-stdlib-data.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-18-stdlib-io.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-18-stdlib-data.html">Data and Containers</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-18-stdlib-io.html">I/O and HTTP</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

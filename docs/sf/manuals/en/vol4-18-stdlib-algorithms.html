@@ -1,0 +1,557 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Algorithms</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual reference standard library by path std_rand std_noise std_num std_pathfind std_physics std_hpa random noise RK45 pathfinding JPS HPA physics PBD">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-18-stdlib-io.html">
+<link rel="next" href="vol4-19-pal.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol4-00-title.html">How to use the Reference</a><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<a href="vol4-12-statements.html">Statements</a><br>
+<a href="vol4-13-control-flow.html">Control flow</a><br>
+<a href="vol4-14-error-expressions.html">Error expressions</a><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+<a href="vol4-16-async.html">Async</a><br>
+<a href="vol4-17-memory.html">Memory</a><br>
+<b>The standard library</b><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+<a href="vol4-23-limits.html">Limits</a><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Algorithms</h1>
+<p>
+The algorithm modules are imported by path with
+<tt>@import("std_rand.zig")</tt>, <tt>@import("std_pathfind.zig")</tt>, and so
+on. None is in the thirteen-name <tt>std</tt> re-export list. They are concrete
+and free-function based: random number generators are structs with explicit
+seeds, the ODE stepper and the physics world are caller-owned values, and the
+pathfinders allocate scratch or maps from a caller arena.
+</p>
+<p>
+The page is organised from the deterministic seed contract outward:
+<a href="#rand"><tt>std_rand</tt></a> supplies the generators,
+<a href="#noise"><tt>std_noise</tt></a> builds on them,
+<a href="#num"><tt>std_num</tt></a> is numeric integration,
+<a href="#pathfind"><tt>std_pathfind</tt></a> supplies grid search,
+<a href="#physics"><tt>std_physics</tt></a> uses the random generator for its
+constraint order, and <a href="#hpa"><tt>std_hpa</tt></a> builds on the
+pathfinder.
+</p>
+
+<h2>Module index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Module</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Source file</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Layer / role</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>std_rand</tt></td>
+<td valign="top"><tt>std_rand.zig</tt></td>
+<td valign="top">L5 / PCG32 and xoshiro256** generators.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_noise</tt></td>
+<td valign="top"><tt>std_noise.zig</tt></td>
+<td valign="top">L5 / OpenSimplex noise and fBm.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_num</tt></td>
+<td valign="top"><tt>std_num.zig</tt></td>
+<td valign="top">L5 / Dormand-Prince adaptive RK45 step.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_pathfind</tt></td>
+<td valign="top"><tt>std_pathfind.zig</tt></td>
+<td valign="top">L5 / JPS and JPS+ on an 8-connected grid.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_physics</tt></td>
+<td valign="top"><tt>std_physics.zig</tt></td>
+<td valign="top">L5 / position-based dynamics.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_hpa</tt></td>
+<td valign="top"><tt>std_hpa.zig</tt></td>
+<td valign="top">L5 / HPA* over the pathfinder grid.</td>
+</tr>
+</table>
+
+<h2><a name="rand"></a>std_rand</h2>
+<p>
+<tt>std_rand</tt> has two concrete generators, each with an explicit
+<tt>u64</tt> seed and no clock, environment, address, or process id input.
+<tt>pcg32Init</tt> follows O'Neill's <tt>pcg32_srandom_r</tt> seeding: the
+stream argument becomes the odd increment, the state is advanced, the seed is
+added, and the state is advanced again. <tt>xoshiroInit</tt> expands its seed
+through SplitMix64 into four 64-bit words. Both bounded functions use rejection
+sampling, not a modulo reduction. A zero bound is a panic.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Pcg32</tt></td>
+<td valign="top"><tt>pub const Pcg32 = struct { state: u64, inc: u64 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">PCG32 generator state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Xoshiro256</tt></td>
+<td valign="top"><tt>pub const Xoshiro256 = struct { s: [4]u64 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">xoshiro256** generator state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pcg32Init</tt></td>
+<td valign="top"><tt>pub fn pcg32Init(seed: u64, stream: u64) Pcg32</tt></td>
+<td valign="top"><tt>Pcg32</tt></td>
+<td valign="top">Seed a PCG32 generator.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pcg32Next</tt></td>
+<td valign="top"><tt>pub fn pcg32Next(r: *Pcg32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Return the next 32-bit value and advance the state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pcg32Bounded</tt></td>
+<td valign="top"><tt>pub fn pcg32Bounded(r: *Pcg32, bound: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt> in <tt>[0, bound)</tt>; panics when <tt>bound == 0</tt></td>
+<td valign="top">Uniform bounded value by rejection sampling.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pcg32Advance</tt></td>
+<td valign="top"><tt>pub fn pcg32Advance(r: *Pcg32, delta: u64) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Advance the PCG state by <tt>delta</tt> steps without generating intermediates.</td>
+</tr>
+<tr>
+<td valign="top"><tt>xoshiroInit</tt></td>
+<td valign="top"><tt>pub fn xoshiroInit(seed: u64) Xoshiro256</tt></td>
+<td valign="top"><tt>Xoshiro256</tt></td>
+<td valign="top">Expand a <tt>u64</tt> seed with SplitMix64.</td>
+</tr>
+<tr>
+<td valign="top"><tt>xoshiroNext</tt></td>
+<td valign="top"><tt>pub fn xoshiroNext(r: *Xoshiro256) u64</tt></td>
+<td valign="top"><tt>u64</tt></td>
+<td valign="top">Return the next 64-bit value and advance the state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>xoshiroBounded</tt></td>
+<td valign="top"><tt>pub fn xoshiroBounded(r: *Xoshiro256, bound: u64) u64</tt></td>
+<td valign="top"><tt>u64</tt> in <tt>[0, bound)</tt>; panics when <tt>bound == 0</tt></td>
+<td valign="top">Uniform bounded value by rejection sampling.</td>
+</tr>
+</table>
+<p>
+The generators are deterministic: the same state and call sequence produce the
+same values on every run. They do not self-seed. Callers that need a different
+reproducible sequence choose a different seed; callers that need
+non-reproducibility must obtain a seed from their own entropy source.
+</p>
+
+<h2><a name="noise"></a>std_noise</h2>
+<p>
+<tt>std_noise</tt> implements Kurt Spencer's 2014 OpenSimplex noise, not
+OpenSimplex2. The state is the 256-byte permutation plus its 256-byte gradient
+table, 512 bytes in all. Initialisation builds the permutation with a seeded
+xoshiro256** Fisher-Yates shuffle, so there is no heap, clock, environment, pid,
+or address input. All arithmetic is <tt>f64</tt>. The 2D gradients are the eight
+compass gradients and the 3D gradients are the 24 rhombicuboctahedron
+gradients. The 2014 reference lattice is preserved: at seed 0 the origin is zero
+but the neighbouring lattice points are not all zero.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>OpenSimplex</tt></td>
+<td valign="top"><tt>pub const OpenSimplex = struct { perm: [256]u8, perm_grad: [256]u8 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">The complete noise state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>opensimplexInit</tt></td>
+<td valign="top"><tt>pub fn opensimplexInit(seed: u64) OpenSimplex</tt></td>
+<td valign="top"><tt>OpenSimplex</tt></td>
+<td valign="top">Build a deterministic permutation and gradient table.</td>
+</tr>
+<tr>
+<td valign="top"><tt>noise2d</tt></td>
+<td valign="top"><tt>pub fn noise2d(n: *const OpenSimplex, x: f64, y: f64) f64</tt></td>
+<td valign="top"><tt>f64</tt> in <tt>[-1, 1]</tt></td>
+<td valign="top">Two-dimensional OpenSimplex sample.</td>
+</tr>
+<tr>
+<td valign="top"><tt>noise3d</tt></td>
+<td valign="top"><tt>pub fn noise3d(n: *const OpenSimplex, x: f64, y: f64, z: f64) f64</tt></td>
+<td valign="top"><tt>f64</tt> in <tt>[-1, 1]</tt></td>
+<td valign="top">Three-dimensional OpenSimplex sample.</td>
+</tr>
+<tr>
+<td valign="top"><tt>noiseFbm2d</tt></td>
+<td valign="top"><tt>pub fn noiseFbm2d(n: *const OpenSimplex, x: f64, y: f64, octaves: u8, lacunarity: f64, gain: f64) f64</tt></td>
+<td valign="top"><tt>f64</tt>; exactly <tt>0.0</tt> when <tt>octaves == 0</tt></td>
+<td valign="top">Fractal Brownian motion over <tt>noise2d</tt>.</td>
+</tr>
+</table>
+<p>
+The noise functions allocate nothing and take the state by const pointer, so
+one initialised state can serve any number of samples. The seed is the only
+input to <tt>opensimplexInit</tt>; the seed contract is the same deterministic
+one as <a href="#rand"><tt>std_rand</tt></a>.
+</p>
+
+<h2><a name="num"></a>std_num</h2>
+<p>
+<tt>std_num</tt> is a Dormand-Prince 5(4) adaptive Runge-Kutta step, the same
+seven-stage pair used by MATLAB's <tt>ode45</tt>. It is an explicit method, so
+stiff problems may reject down to <tt>min_step</tt>. The function is FSAL: on
+entry <tt>dy</tt> must hold <tt>f(t, y)</tt>, and on a successful return it holds
+<tt>f(t_new, y_new)</tt>. The error norm is a scaled root-mean-square over the
+state vector. There is no allocation; the stage scratch is fixed in the
+function and the maximum state dimension is 64.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Rk45Config</tt></td>
+<td valign="top"><tt>pub const Rk45Config = struct { abs_tol: f64, rel_tol: f64, min_step: f64, max_step: f64, max_steps: u32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Tolerances, step bounds, and retry limit.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Rk45State</tt></td>
+<td valign="top"><tt>pub const Rk45State = struct { t: f64, y: []f64, dy: []f64, cfg: Rk45Config };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Current time, state, derivative, and configuration.</td>
+</tr>
+<tr>
+<td valign="top"><tt>rk45Step</tt></td>
+<td valign="top"><tt>pub fn rk45Step(state: *Rk45State, f: fn (f64, []const f64, []f64) void, dt: *f64) !void</tt></td>
+<td valign="top"><tt>!void</tt>; <tt>error.StepTooSmall</tt></td>
+<td valign="top">Attempt one adaptive step, updating the state and the next-step suggestion.</td>
+</tr>
+</table>
+<p>
+On entry <tt>dt</tt> is the requested step, clamped to <tt>max_step</tt>; on
+return it is the next suggested step, grown by 1.5 after a sufficiently accurate
+accepted step and capped at <tt>max_step</tt>. <tt>state.t</tt> advances by the
+step actually accepted. <tt>error.StepTooSmall</tt> is returned when the initial
+step is below <tt>min_step</tt>, when a retry would fall below
+<tt>min_step</tt>, or when <tt>max_steps</tt> attempts are exhausted. An empty
+state vector or one longer than 64 is a panic.
+</p>
+
+<h2><a name="pathfind"></a>std_pathfind</h2>
+<p>
+<tt>std_pathfind</tt> searches an 8-connected grid. A tile value of zero is
+blocked and one is walkable. Cardinal moves cost 10, diagonal moves cost 14, and
+the heuristic is the octile distance
+<tt>10*max(dx,dy) + 4*min(dx,dy)</tt>. A diagonal move is legal only when both
+adjacent cardinal cells are walkable, so corner cutting is strictly forbidden.
+The plain search is JPS; the preprocessed search is JPS+.
+</p>
+<p>
+Both search functions treat <tt>out</tt> as a capacity in <tt>u32</tt> slots.
+They write at most <tt>out.len / 2</tt> complete <tt>(x, y)</tt> pairs, ignore an
+odd trailing slot, and never write past the slice. The return value is always
+the <b>full</b> path tile count, so a caller detects truncation with
+<tt>2*return &gt; out.len</tt>. A walkable <tt>start == goal</tt> returns 1 and
+writes the single pair when <tt>out.len &gt;= 2</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Point</tt></td>
+<td valign="top"><tt>pub const Point = struct { x: u32, y: u32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A grid coordinate.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Grid</tt></td>
+<td valign="top"><tt>pub const Grid = struct { tiles: []u8, width: u32, height: u32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Row-major tiles, zero blocked and one walkable.</td>
+</tr>
+<tr>
+<td valign="top"><tt>jpsFind</tt></td>
+<td valign="top"><tt>pub fn jpsFind(arena: *arena_mod.Arena, grid: *const Grid, start: Point, goal: Point, out: []u32) !u32</tt></td>
+<td valign="top"><tt>!u32</tt>; <tt>error.NoPath</tt> or <tt>error.OutOfMemory</tt></td>
+<td valign="top">Plain JPS search with a heap open set and arena scratch.</td>
+</tr>
+<tr>
+<td valign="top"><tt>JpsPlus</tt></td>
+<td valign="top"><tt>pub const JpsPlus = struct { dist: []i32, width: u32, height: u32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">The persistent JPS+ distance table.</td>
+</tr>
+<tr>
+<td valign="top"><tt>jpsPlusBuild</tt></td>
+<td valign="top"><tt>pub fn jpsPlusBuild(arena: *arena_mod.Arena, grid: *const Grid) !JpsPlus</tt></td>
+<td valign="top"><tt>!JpsPlus</tt>; <tt>error.OutOfMemory</tt></td>
+<td valign="top">Precompute the eight directional distances for every tile.</td>
+</tr>
+<tr>
+<td valign="top"><tt>jpsPlusFind</tt></td>
+<td valign="top"><tt>pub fn jpsPlusFind(arena: *arena_mod.Arena, map: *const JpsPlus, grid: *const Grid, start: Point, goal: Point, out: []u32) !u32</tt></td>
+<td valign="top"><tt>!u32</tt>; <tt>error.NoPath</tt> or <tt>error.OutOfMemory</tt></td>
+<td valign="top">Search using the precomputed table.</td>
+</tr>
+</table>
+<p>
+<tt>JpsPlus.dist</tt> stores eight signed <tt>i32</tt> distances per cell in
+direction order <b>N, NE, E, SE, S, SW, W, NW</b>. A positive value is the
+distance to the next static jump point in that direction, a negative value is
+the distance to the wall when there is no jump point first, and zero means the
+cell is blocked or the move is illegal. The persistent table is exactly 32 bytes
+per cell. The build also uses one transient <tt>N</tt>-byte jump-point bitmap,
+so peak build memory is 33 bytes per cell; the bitmap is not retained.
+</p>
+<p>
+The table is a static snapshot; rebuild it after any tile change. The find
+validates the map dimensions and the table length against the grid. The open
+set is the <a href="vol4-18-stdlib-data.html#heap"><tt>std_heap</tt></a> min-heap
+keyed by the composite <tt>(f &lt;&lt; 32) | (~g &amp; 0xffffffff)</tt>, so equal
+<tt>f</tt> prefers the larger <tt>g</tt>.
+</p>
+
+<h2><a name="physics"></a>std_physics</h2>
+<p>
+<tt>std_physics</tt> is position-based dynamics with distance constraints. A
+world is allocated once at <tt>pbdInit</tt> with fixed capacities. The slices
+are capacities; <tt>particle_count</tt> and <tt>constraint_count</tt> are the
+live entries. <tt>order</tt> is the constraint-count scratch array used for the
+per-iteration shuffle. The world carries its own xoshiro256** generator, seeded
+explicitly at init.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Particle</tt></td>
+<td valign="top"><tt>pub const Particle = struct { pos: [3]f32, prev: [3]f32, inv_mass: f32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Current position, previous position, and inverse mass.</td>
+</tr>
+<tr>
+<td valign="top"><tt>DistanceConstraint</tt></td>
+<td valign="top"><tt>pub const DistanceConstraint = struct { a: u32, b: u32, rest: f32, stiffness: f32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A distance constraint between two particle indices.</td>
+</tr>
+<tr>
+<td valign="top"><tt>PbdWorld</tt></td>
+<td valign="top"><tt>pub const PbdWorld = struct { particles: []Particle, constraints: []DistanceConstraint, order: []u32, particle_count: u32, constraint_count: u32, gravity: [3]f32, damping: f32, iterations: u8, rng: rand_mod.Xoshiro256 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Capacities, live counts, solver settings, and random state.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pbdInit</tt></td>
+<td valign="top"><tt>pub fn pbdInit(arena: *arena_mod.Arena, particle_count: u32, constraint_count: u32, seed: u64) !PbdWorld</tt></td>
+<td valign="top"><tt>!PbdWorld</tt>; <tt>error.OutOfMemory</tt> (inferred)</td>
+<td valign="top">Allocate the three arrays and initialise the generator.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pbdAddParticle</tt></td>
+<td valign="top"><tt>pub fn pbdAddParticle(w: *PbdWorld, pos: [3]f32, inv_mass: f32) u32</tt></td>
+<td valign="top"><tt>u32</tt> index; panics on over-capacity or a negative inverse mass</td>
+<td valign="top">Append a particle with its position and inverse mass.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pbdAddDistance</tt></td>
+<td valign="top"><tt>pub fn pbdAddDistance(w: *PbdWorld, a: u32, b: u32, stiffness: f32) u32</tt></td>
+<td valign="top"><tt>u32</tt> index; panics on over-capacity, equal indices, or an out-of-range index</td>
+<td valign="top">Add a distance constraint, using the current positions to set its rest length.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pbdPin</tt></td>
+<td valign="top"><tt>pub fn pbdPin(w: *PbdWorld, i: u32) void</tt></td>
+<td valign="top"><tt>void</tt>; panics on a bad index</td>
+<td valign="top">Pin a particle by setting its inverse mass to zero.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pbdStep</tt></td>
+<td valign="top"><tt>pub fn pbdStep(w: *PbdWorld, dt: f32) void</tt></td>
+<td valign="top"><tt>void</tt>; no error</td>
+<td valign="top">Integrate, shuffle the constraints, and run the projection iterations.</td>
+</tr>
+</table>
+<p>
+A step integrates every non-pinned particle with
+<tt>new = pos + (pos-prev)*(1-damping) + gravity*dt*dt</tt> and then stores
+<tt>prev = old pos</tt>. Each projection iteration identity-fills
+<tt>order[0..constraint_count]</tt>, Fisher-Yates shuffles it with
+<tt>xoshiroBounded(i+1)</tt>, and projects constraints in that order. A distance
+projection uses inverse-mass projection and skips a constraint when the current
+length is zero or the two inverse masses sum to zero. Pinned particles have
+inverse mass zero and do not move. Version 1 has no collision constraints;
+stiffness is the per-iteration fraction. Use <a href="#rand"><tt>std_rand</tt></a>
+for the same deterministic seed contract outside the world.
+</p>
+
+<h2><a name="hpa"></a>std_hpa</h2>
+<p>
+<tt>std_hpa</tt> is an exact-cost HPA* layer over <a href="#pathfind"><tt>std_pathfind</tt></a>.
+Clusters are clipped row-major rectangles, using the requested cluster width and
+height and truncated at the grid edge. A transition tile is a walkable tile with
+at least one legal cross-cluster 8-neighbour, with diagonal corner cutting
+forbidden. One abstract node exists per transition tile, cluster-major then
+row-major. Cross-cluster adjacencies become directed edges of cost 10 or 14, and
+every reachable same-cluster node pair gets exact cluster-restricted
+<tt>jpsFind</tt> costs in both directions. Edges are sorted by destination.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Cluster</tt></td>
+<td valign="top"><tt>pub const Cluster = struct { x0: u32, y0: u32, w: u32, h: u32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A clipped cluster rectangle.</td>
+</tr>
+<tr>
+<td valign="top"><tt>AbstractNode</tt></td>
+<td valign="top"><tt>pub const AbstractNode = struct { x: u32, y: u32, cluster: u32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A transition tile and its cluster.</td>
+</tr>
+<tr>
+<td valign="top"><tt>AbstractEdge</tt></td>
+<td valign="top"><tt>pub const AbstractEdge = struct { to: u32, cost: u32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A directed abstract edge.</td>
+</tr>
+<tr>
+<td valign="top"><tt>AbstractMap</tt></td>
+<td valign="top"><tt>pub const AbstractMap = struct { width: u32, height: u32, cluster_w: u32, cluster_h: u32, cluster_cols: u32, cluster_rows: u32, clusters: []Cluster, node_start: []u32, nodes: []AbstractNode, edge_start: []u32, edges: []AbstractEdge };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">The persistent static abstraction.</td>
+</tr>
+<tr>
+<td valign="top"><tt>hpaBuild</tt></td>
+<td valign="top"><tt>pub fn hpaBuild(arena: *arena_mod.Arena, grid: *const pf.Grid, cluster_w: u32, cluster_h: u32) !AbstractMap</tt></td>
+<td valign="top"><tt>!AbstractMap</tt>; <tt>error.OutOfMemory</tt>; panics on a zero cluster size</td>
+<td valign="top">Build the map, restoring build scratch before returning.</td>
+</tr>
+<tr>
+<td valign="top"><tt>hpaFind</tt></td>
+<td valign="top"><tt>pub fn hpaFind(arena: *arena_mod.Arena, m: *const AbstractMap, grid: *const pf.Grid, start: pf.Point, goal: pf.Point, out: []u32) !u32</tt></td>
+<td valign="top"><tt>!u32</tt>; <tt>error.NoPath</tt> or <tt>error.OutOfMemory</tt></td>
+<td valign="top">Search the abstraction and refine to a tile path.</td>
+</tr>
+</table>
+<p>
+The build allocates the persistent map from the caller's arena, uses temporary
+counting, scatter, and cluster-local search scratch, then restores the arena's
+used bytes so only the map remains. Size the build arena for the peak scratch
+plus the map, not just the final map. The build cost is
+<tt>O(sum_c k_c^2 * A_c)</tt> for <tt>k_c</tt> transition tiles and cluster area
+<tt>A_c</tt>. The map is a static snapshot; rebuild it after any tile change.
+</p>
+<p>
+<tt>hpaFind</tt> uses its arena as query scratch and may be reset after each
+call; it must not be the arena that owns the map. The search adds virtual start
+and goal nodes, connects them with exact intra-cluster costs, and runs A* with
+the octile heuristic and the same composite key <tt>(f&lt;&lt;32)|(~g)</tt> as
+the pathfinder. The abstract path is refined with cluster-local
+<tt>jpsFind</tt>, dropping duplicate boundary tiles. The output contract matches
+<a href="#pathfind"><tt>std_pathfind</tt></a>: at most <tt>out.len / 2</tt>
+pairs, an odd trailing slot untouched, and the full tile count returned so
+<tt>2*return &gt; out.len</tt> detects truncation.
+</p>
+
+<p class="navbtns">
+<a href="vol4-18-stdlib-io.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-19-pal.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-18-stdlib-io.html">I/O and HTTP</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-19-pal.html">The PAL</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

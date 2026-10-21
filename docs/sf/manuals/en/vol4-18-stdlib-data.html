@@ -1,0 +1,623 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Data and Containers</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual reference standard library by path std_map std_sort std_heap std_rle std_parse std_bencode maps sorting heaps run length parsing bencode containers">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-18-stdlib.html">
+<link rel="next" href="vol4-18-stdlib-codecs.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol4-00-title.html">How to use the Reference</a><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<a href="vol4-12-statements.html">Statements</a><br>
+<a href="vol4-13-control-flow.html">Control flow</a><br>
+<a href="vol4-14-error-expressions.html">Error expressions</a><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+<a href="vol4-16-async.html">Async</a><br>
+<a href="vol4-17-memory.html">Memory</a><br>
+<b>The standard library</b><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+<a href="vol4-23-limits.html">Limits</a><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Data and containers</h1>
+<p>
+These modules ship with the compiler but are <b>imported by path</b>, not
+re-exported from <tt>std</tt>. A program names the source file directly:
+<tt>@import("std_map.zig")</tt>, <tt>@import("std_sort.zig")</tt>, and so on.
+<tt>sf/src/std.zig</tt> remains the thirteen-name re-export list described on
+<a href="vol4-18-stdlib.html">The standard library</a>. The by-path modules use
+the same concrete, no-generics rules as the re-exported surface: each container
+has a fixed key and value type, and each function names its element width in
+its own name where that matters.
+</p>
+<p>
+The modules on this page divide into three groups: the arena-backed containers
+(<a href="#map"><tt>std_map</tt></a>, <a href="#heap"><tt>std_heap</tt></a>),
+the in-place ordering helpers (<a href="#sort"><tt>std_sort</tt></a>,
+<a href="#rle"><tt>std_rle</tt></a>), and the text and wire-format helpers
+(<a href="#parse"><tt>std_parse</tt></a>, <a href="#bencode"><tt>std_bencode</tt></a>).
+None of them changes <tt>std.zig</tt>.
+</p>
+
+<h2>Module index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Module</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Source file</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Layer / role</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>std_map</tt></td>
+<td valign="top"><tt>std_map.zig</tt></td>
+<td valign="top">L4 / three concrete Robin Hood hash maps.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_sort</tt></td>
+<td valign="top"><tt>std_sort.zig</tt></td>
+<td valign="top">L4 / in-place introsort and binary search.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_heap</tt></td>
+<td valign="top"><tt>std_heap.zig</tt></td>
+<td valign="top">L4 / stable binary min-heap.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_rle</tt></td>
+<td valign="top"><tt>std_rle.zig</tt></td>
+<td valign="top">L4 / byte run-length codec.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_parse</tt></td>
+<td valign="top"><tt>std_parse.zig</tt></td>
+<td valign="top">L5 / number parsing and decimal formatting.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_bencode</tt></td>
+<td valign="top"><tt>std_bencode.zig</tt></td>
+<td valign="top">L5 consumer / bencode decode, span lookup, encode.</td>
+</tr>
+</table>
+
+<h2><a name="map"></a>std_map</h2>
+<p>
+<tt>std_map</tt> is three concrete open-addressed hash tables, all using Robin
+Hood insertion and backward-shift deletion. There is no generic map and no
+allocator object: each <tt>init</tt> takes a caller arena and a capacity, and
+the table is one arena allocation made at init. The capacity is the maximum
+number of entries; the slot array is sized to the next power of two that keeps
+the load factor at or below 0.75. A full table reports
+<tt>error.OutOfMemory</tt> on a new key, while a put of an existing key replaces
+the value in place.
+</p>
+<p>
+The control byte is <tt>0x80</tt> for empty, <tt>0xFE</tt> for reserved (not
+observed in a steady-state table), and <tt>0x00..0x7F</tt> for the low seven
+bits of the hash of a used slot. Probe distance is a <tt>u32</tt>, which is exact
+for any 32-bit table. Deletion shifts following entries backward while their
+probe distance stays positive, so no tombstones remain. The maps never free:
+reset the arena to reclaim them. Slot order and lookup are deterministic; no
+address, clock, or process id enters the hash.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Map32x32</tt></td>
+<td valign="top"><tt>pub const Map32x32 = struct { entries: [*]Entry32x32, capacity: usize, len: usize, mask: usize };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A <tt>u32</tt>-to-<tt>u32</tt> map.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Map32Ptr</tt></td>
+<td valign="top"><tt>pub const Map32Ptr = struct { entries: [*]Entry32Ptr, capacity: usize, len: usize, mask: usize };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A <tt>u32</tt>-to-<tt>*void</tt> map.</td>
+</tr>
+<tr>
+<td valign="top"><tt>MapStrPtr</tt></td>
+<td valign="top"><tt>pub const MapStrPtr = struct { arena: *arena_mod.Arena, entries: [*]EntryStrPtr, capacity: usize, len: usize, mask: usize };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A <tt>[]const u8</tt>-to-<tt>*void</tt> map; string keys are copied into the arena at put.</td>
+</tr>
+<tr>
+<td valign="top"><tt>map32x32Init</tt></td>
+<td valign="top"><tt>pub fn map32x32Init(arena: *arena_mod.Arena, capacity: usize) !Map32x32</tt></td>
+<td valign="top"><tt>!Map32x32</tt>; <tt>error.OutOfMemory</tt> (inferred)</td>
+<td valign="top">Allocate and initialise a <tt>u32</tt>-to-<tt>u32</tt> table.</td>
+</tr>
+<tr>
+<td valign="top"><tt>map32x32Get</tt></td>
+<td valign="top"><tt>pub fn map32x32Get(m: *Map32x32, key: u32) ?u32</tt></td>
+<td valign="top"><tt>?u32</tt>; <tt>null</tt> when absent</td>
+<td valign="top">Look up <tt>key</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>map32x32Put</tt></td>
+<td valign="top"><tt>pub fn map32x32Put(m: *Map32x32, key: u32, val: u32) !void</tt></td>
+<td valign="top"><tt>!void</tt>; <tt>error.OutOfMemory</tt> when adding a key to a full table</td>
+<td valign="top">Insert or replace a key with Robin Hood insertion.</td>
+</tr>
+<tr>
+<td valign="top"><tt>map32x32Remove</tt></td>
+<td valign="top"><tt>pub fn map32x32Remove(m: *Map32x32, key: u32) bool</tt></td>
+<td valign="top"><tt>bool</tt>; <tt>false</tt> when absent</td>
+<td valign="top">Remove <tt>key</tt> with backward-shift deletion.</td>
+</tr>
+<tr>
+<td valign="top"><tt>map32x32Len</tt></td>
+<td valign="top"><tt>pub fn map32x32Len(m: *const Map32x32) usize</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Number of live entries.</td>
+</tr>
+<tr>
+<td valign="top"><tt>map32PtrInit</tt></td>
+<td valign="top"><tt>pub fn map32PtrInit(arena: *arena_mod.Arena, capacity: usize) !Map32Ptr</tt></td>
+<td valign="top"><tt>!Map32Ptr</tt>; <tt>error.OutOfMemory</tt> (inferred)</td>
+<td valign="top">Allocate and initialise a <tt>u32</tt>-to-<tt>*void</tt> table.</td>
+</tr>
+<tr>
+<td valign="top"><tt>map32PtrGet</tt></td>
+<td valign="top"><tt>pub fn map32PtrGet(m: *Map32Ptr, key: u32) ?*void</tt></td>
+<td valign="top"><tt>?*void</tt>; <tt>null</tt> when absent</td>
+<td valign="top">Look up <tt>key</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>map32PtrPut</tt></td>
+<td valign="top"><tt>pub fn map32PtrPut(m: *Map32Ptr, key: u32, val: *void) !void</tt></td>
+<td valign="top"><tt>!void</tt>; <tt>error.OutOfMemory</tt> when adding a key to a full table</td>
+<td valign="top">Insert or replace a pointer value.</td>
+</tr>
+<tr>
+<td valign="top"><tt>map32PtrRemove</tt></td>
+<td valign="top"><tt>pub fn map32PtrRemove(m: *Map32Ptr, key: u32) bool</tt></td>
+<td valign="top"><tt>bool</tt>; <tt>false</tt> when absent</td>
+<td valign="top">Remove <tt>key</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>map32PtrLen</tt></td>
+<td valign="top"><tt>pub fn map32PtrLen(m: *const Map32Ptr) usize</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Number of live entries.</td>
+</tr>
+<tr>
+<td valign="top"><tt>mapStrPtrInit</tt></td>
+<td valign="top"><tt>pub fn mapStrPtrInit(arena: *arena_mod.Arena, capacity: usize) !MapStrPtr</tt></td>
+<td valign="top"><tt>!MapStrPtr</tt>; <tt>error.OutOfMemory</tt> (inferred)</td>
+<td valign="top">Allocate and initialise a byte-slice-keyed table.</td>
+</tr>
+<tr>
+<td valign="top"><tt>mapStrPtrGet</tt></td>
+<td valign="top"><tt>pub fn mapStrPtrGet(m: *MapStrPtr, key: []const u8) ?*void</tt></td>
+<td valign="top"><tt>?*void</tt>; <tt>null</tt> when absent</td>
+<td valign="top">Look up a byte-slice key by content.</td>
+</tr>
+<tr>
+<td valign="top"><tt>mapStrPtrPut</tt></td>
+<td valign="top"><tt>pub fn mapStrPtrPut(m: *MapStrPtr, key: []const u8, val: *void) !void</tt></td>
+<td valign="top"><tt>!void</tt>; <tt>error.OutOfMemory</tt> when the entry limit or key copy exhausts the arena</td>
+<td valign="top">Copy <tt>key</tt> into the arena and insert or replace it.</td>
+</tr>
+<tr>
+<td valign="top"><tt>mapStrPtrRemove</tt></td>
+<td valign="top"><tt>pub fn mapStrPtrRemove(m: *MapStrPtr, key: []const u8) bool</tt></td>
+<td valign="top"><tt>bool</tt>; <tt>false</tt> when absent</td>
+<td valign="top">Remove a byte-slice key.</td>
+</tr>
+<tr>
+<td valign="top"><tt>mapStrPtrLen</tt></td>
+<td valign="top"><tt>pub fn mapStrPtrLen(m: *const MapStrPtr) usize</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Number of live entries.</td>
+</tr>
+</table>
+<p>
+The three families share the same probe and deletion rules but do not share a
+generic implementation. Use <a href="#heap"><tt>std_heap</tt></a> when the job
+is repeatedly taking the smallest key, <a href="#sort"><tt>std_sort</tt></a>
+when a batch needs ordering, and <tt>std_map</tt> when lookup by key is the
+operation that matters.
+</p>
+
+<h2><a name="sort"></a>std_sort</h2>
+<p>
+<tt>std_sort</tt> is an in-place introsort over a caller-supplied vtable. The
+vtable exposes length, less-than, and swap callbacks over a <tt>*void</tt> data
+pointer. Introsort uses median-of-three pivot selection, a recursion-depth limit
+of twice the floor of the base-two logarithm of the element count, and heapsort
+once that limit is exhausted. Ranges of sixteen elements or fewer finish with
+insertion sort. The sort is in place, allocates nothing, and is not stable.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Sortable</tt></td>
+<td valign="top"><tt>pub const Sortable = struct { lenFn: fn(*void) usize, lessFn: fn(*void, usize, usize) bool, swapFn: fn(*void, usize, usize) void, data: *void };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">The caller-owned comparison and swap interface.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sort</tt></td>
+<td valign="top"><tt>pub fn sort(s: Sortable) void</tt></td>
+<td valign="top"><tt>void</tt>; no error, no allocation</td>
+<td valign="top">Sort the vtable's elements in place.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sortI32</tt></td>
+<td valign="top"><tt>pub fn sortI32(items: []i32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Sort signed 32-bit integers.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sortU32</tt></td>
+<td valign="top"><tt>pub fn sortU32(items: []u32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Sort unsigned 32-bit integers.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sortStr</tt></td>
+<td valign="top"><tt>pub fn sortStr(items: [][]const u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Sort byte slices lexicographically by unsigned byte value.</td>
+</tr>
+<tr>
+<td valign="top"><tt>binarySearchU32</tt></td>
+<td valign="top"><tt>pub fn binarySearchU32(items: []const u32, key: u32) ?usize</tt></td>
+<td valign="top"><tt>?usize</tt>; <tt>null</tt> when absent</td>
+<td valign="top">Find any matching index in a non-decreasing array.</td>
+</tr>
+</table>
+<p>
+<tt>binarySearchU32</tt> assumes the array is sorted in non-decreasing order,
+for example by <tt>sortU32</tt>; on unsorted input the result is unspecified. A
+duplicate key may return any one of its positions. The concrete wrappers are
+not stable, so a caller that needs stability must sort on a total order such as
+a composite key.
+</p>
+
+<h2><a name="heap"></a>std_heap</h2>
+<p>
+<tt>std_heap</tt> is a binary min-heap over <tt>(i64 key, *void value)</tt>
+entries. It orders first by key and then by a monotonically increasing insertion
+sequence number, so equal keys pop in insertion order. The backing table is
+allocated from the caller arena at init; a push that fills it grows the table by
+doubling. Growth allocates and copies before changing the heap, so a failed
+growth leaves the heap and the arena untouched. <tt>heapPop</tt>,
+<tt>heapPeek</tt>, and <tt>heapLen</tt> never allocate.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>HeapItem</tt></td>
+<td valign="top"><tt>pub const HeapItem = struct { key: i64, value: *void };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A heap entry as the caller sees it.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Heap</tt></td>
+<td valign="top"><tt>pub const Heap = struct { arena: *arena_mod.Arena, items: [*]HeapEntry, capacity: usize, len: usize, seq: u64 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">The heap state, including its arena, live count, and stability sequence.</td>
+</tr>
+<tr>
+<td valign="top"><tt>heapInit</tt></td>
+<td valign="top"><tt>pub fn heapInit(arena: *arena_mod.Arena, capacity: usize) !Heap</tt></td>
+<td valign="top"><tt>!Heap</tt>; <tt>error.OutOfMemory</tt> (inferred)</td>
+<td valign="top">Allocate a table with room for <tt>capacity</tt> entries.</td>
+</tr>
+<tr>
+<td valign="top"><tt>heapPush</tt></td>
+<td valign="top"><tt>pub fn heapPush(h: *Heap, item: HeapItem) !void</tt></td>
+<td valign="top"><tt>!void</tt>; <tt>error.OutOfMemory</tt> when growth fails</td>
+<td valign="top">Insert an item and sift it up.</td>
+</tr>
+<tr>
+<td valign="top"><tt>heapPop</tt></td>
+<td valign="top"><tt>pub fn heapPop(h: *Heap) ?HeapItem</tt></td>
+<td valign="top"><tt>?HeapItem</tt>; <tt>null</tt> when empty</td>
+<td valign="top">Remove and return the minimum item.</td>
+</tr>
+<tr>
+<td valign="top"><tt>heapPeek</tt></td>
+<td valign="top"><tt>pub fn heapPeek(h: *const Heap) ?HeapItem</tt></td>
+<td valign="top"><tt>?HeapItem</tt>; <tt>null</tt> when empty</td>
+<td valign="top">Return the minimum item without removing it.</td>
+</tr>
+<tr>
+<td valign="top"><tt>heapLen</tt></td>
+<td valign="top"><tt>pub fn heapLen(h: *const Heap) usize</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Number of live items.</td>
+</tr>
+</table>
+<p>
+The heap is the open set behind <a href="vol4-18-stdlib-algorithms.html#pathfind"><tt>std_pathfind</tt></a>.
+Use <a href="#map"><tt>std_map</tt></a> for key lookup rather than an exhaustive
+heap walk, and <a href="#sort"><tt>std_sort</tt></a> when the whole set must be
+ordered once.
+</p>
+
+<h2><a name="rle"></a>std_rle</h2>
+<p>
+<tt>std_rle</tt> is a byte-oriented run-length encoder. A stream starts with a
+four-byte little-endian <tt>u32</tt> decoded-length prefix, followed by tokens.
+A token byte below <tt>0x80</tt> is a literal and emits itself. A token byte with
+the high bit set is a run control: the low seven bits plus one give the run
+length in the range 1 to 128, and the next byte is the repeated value. A run
+longer than 128 is split into several run tokens. A single byte whose value is
+below <tt>0x80</tt> is a literal; every other run, including a one-byte run of a
+value with the high bit set, uses a run token.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>encodedLen</tt></td>
+<td valign="top"><tt>pub fn encodedLen(src: []const u8) usize</tt></td>
+<td valign="top"><tt>usize</tt>; no allocation</td>
+<td valign="top">Exact encoded size, prefix and tokens included.</td>
+</tr>
+<tr>
+<td valign="top"><tt>decodedLen</tt></td>
+<td valign="top"><tt>pub fn decodedLen(src: []const u8) usize</tt></td>
+<td valign="top"><tt>usize</tt>; <tt>0</tt> when <tt>src.len &lt; 4</tt></td>
+<td valign="top">The prefix value, without decoding the body.</td>
+</tr>
+<tr>
+<td valign="top"><tt>encode</tt></td>
+<td valign="top"><tt>pub fn encode(arena: *arena_mod.Arena, src: []const u8) ![]u8</tt></td>
+<td valign="top"><tt>![]u8</tt>; <tt>error.OutOfMemory</tt> (inferred)</td>
+<td valign="top">Allocate and return the prefixed encoded stream.</td>
+</tr>
+<tr>
+<td valign="top"><tt>decode</tt></td>
+<td valign="top"><tt>pub fn decode(arena: *arena_mod.Arena, src: []const u8) ![]u8</tt></td>
+<td valign="top"><tt>![]u8</tt>; <tt>error.OutOfMemory</tt> (inferred)</td>
+<td valign="top">Allocate and return the decoded bytes.</td>
+</tr>
+</table>
+<p>
+The length helpers allocate nothing. <tt>encode</tt> and <tt>decode</tt>
+allocate only their output, and their error set is exactly
+<tt>error.OutOfMemory</tt>. <tt>decode</tt> trusts a well-formed stream: a
+truncated stream yields a zero-filled tail, and an overlong run is clamped to
+the declared decoded length. It never reads out of bounds.
+</p>
+
+<h2><a name="parse"></a>std_parse</h2>
+<p>
+<tt>std_parse</tt> is pure and imports nothing. Parsing rejects whitespace, a
+leading <tt>+</tt>, and underscores; malformed input and overflow return
+<tt>null</tt> rather than trapping. Overflow is detected in <tt>u64</tt> before
+narrowing. The integer formatting functions write backwards from the end of the
+caller's buffer and return a slice into that buffer.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>parseInt</tt></td>
+<td valign="top"><tt>pub fn parseInt(s: []const u8) ?i32</tt></td>
+<td valign="top"><tt>?i32</tt>; <tt>null</tt> on malformed input or overflow</td>
+<td valign="top">Parse a signed 32-bit decimal integer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>parseUint</tt></td>
+<td valign="top"><tt>pub fn parseUint(s: []const u8) ?u32</tt></td>
+<td valign="top"><tt>?u32</tt>; <tt>null</tt> on malformed input or overflow</td>
+<td valign="top">Parse an unsigned 32-bit decimal integer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>parseInt64</tt></td>
+<td valign="top"><tt>pub fn parseInt64(s: []const u8) ?i64</tt></td>
+<td valign="top"><tt>?i64</tt>; <tt>null</tt> on malformed input or overflow</td>
+<td valign="top">Parse a signed 64-bit decimal integer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>parseUint64</tt></td>
+<td valign="top"><tt>pub fn parseUint64(s: []const u8) ?u64</tt></td>
+<td valign="top"><tt>?u64</tt>; <tt>null</tt> on malformed input or overflow</td>
+<td valign="top">Parse an unsigned 64-bit decimal integer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>parseFloat</tt></td>
+<td valign="top"><tt>pub fn parseFloat(s: []const u8) ?f64</tt></td>
+<td valign="top"><tt>?f64</tt>; <tt>null</tt> on malformed input or overflow to infinity</td>
+<td valign="top">Parse an optional leading minus, decimal digits, and at most one fractional part.</td>
+</tr>
+<tr>
+<td valign="top"><tt>itoa</tt></td>
+<td valign="top"><tt>pub fn itoa(buf: []u8, v: i32) []u8</tt></td>
+<td valign="top">decimal slice into <tt>buf</tt></td>
+<td valign="top">Format a signed 32-bit integer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>utoa</tt></td>
+<td valign="top"><tt>pub fn utoa(buf: []u8, v: u32) []u8</tt></td>
+<td valign="top">decimal slice into <tt>buf</tt></td>
+<td valign="top">Format an unsigned 32-bit integer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>itoa64</tt></td>
+<td valign="top"><tt>pub fn itoa64(buf: []u8, v: i64) []u8</tt></td>
+<td valign="top">decimal slice into <tt>buf</tt></td>
+<td valign="top">Format a signed 64-bit integer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>utoa64</tt></td>
+<td valign="top"><tt>pub fn utoa64(buf: []u8, v: u64) []u8</tt></td>
+<td valign="top">decimal slice into <tt>buf</tt></td>
+<td valign="top">Format an unsigned 64-bit integer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>ftoa</tt></td>
+<td valign="top"><tt>pub fn ftoa(buf: []u8, v: f64, precision: u8) []u8</tt></td>
+<td valign="top">text slice into <tt>buf</tt>; <tt>buf[0..0]</tt> when the buffer is too small</td>
+<td valign="top">Format a <tt>f64</tt> in fixed-point notation.</td>
+</tr>
+</table>
+<p>
+<tt>ftoa</tt> rounds half up, uses at most seventeen fraction digits (a larger
+<tt>precision</tt> is clamped), and never emits exponent notation. It renders
+NaN as <tt>nan</tt>, positive infinity as <tt>inf</tt>, and negative infinity as
+<tt>-inf</tt>. A finite value needs at most 328 bytes for sign, 309 integer
+digits, the decimal point, and 17 fraction digits. If the buffer cannot hold the
+rendered text, <tt>ftoa</tt> writes nothing and returns an empty slice.
+</p>
+
+<h2><a name="bencode"></a>std_bencode</h2>
+<p>
+<tt>std_bencode</tt> is the BitTorrent bencode reader and writer. The decoded
+form is a <tt>Value</tt> tagged union, with lists as <tt>[]Value</tt> and
+dictionaries as <tt>[]Entry</tt>. Every list, dictionary, and <tt>Value</tt>
+array is allocated from the caller's arena; a caller resets that arena to
+reclaim the whole tree. The encoder also writes through the arena, using the
+buffer module. The module is used by z9torr for torrent metadata, DHT messages,
+and PEX.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Value</tt></td>
+<td valign="top"><tt>pub const Value = union(enum) { int_val: i64, bytes: []const u8, list: []Value, dict: []Entry };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A decoded bencode value.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Entry</tt></td>
+<td valign="top"><tt>pub const Entry = struct { key: []const u8, value: Value };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">One dictionary key and value.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Span</tt></td>
+<td valign="top"><tt>pub const Span = struct { start: u32, end: u32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A raw byte range in the input, used for an info hash.</td>
+</tr>
+<tr>
+<td valign="top"><tt>BencodeError</tt></td>
+<td valign="top"><tt>pub const BencodeError = error{ InvalidToken, Overflow, TooDeep, TooLarge, DuplicateKey, OutOfMemory };</tt></td>
+<td valign="top">error set</td>
+<td valign="top">The module's one error set.</td>
+</tr>
+<tr>
+<td valign="top"><tt>decode</tt></td>
+<td valign="top"><tt>pub fn decode(arena: *std.arena.Arena, bytes: []const u8) BencodeError!Value</tt></td>
+<td valign="top"><tt>BencodeError!Value</tt></td>
+<td valign="top">Decode one complete top-level value; a trailing byte is an error.</td>
+</tr>
+<tr>
+<td valign="top"><tt>dictValueSpan</tt></td>
+<td valign="top"><tt>pub fn dictValueSpan(bytes: []const u8, key: []const u8) BencodeError!?Span</tt></td>
+<td valign="top"><tt>BencodeError!?Span</tt>; <tt>null</tt> when the key is absent</td>
+<td valign="top">Return the raw span of a top-level dictionary value without decoding or allocating.</td>
+</tr>
+<tr>
+<td valign="top"><tt>encode</tt></td>
+<td valign="top"><tt>pub fn encode(arena: *std.arena.Arena, value: Value) BencodeError![]u8</tt></td>
+<td valign="top"><tt>BencodeError![]u8</tt></td>
+<td valign="top">Serialize a value into arena-owned bytes.</td>
+</tr>
+</table>
+<p>
+The decoder limits nesting to 100 levels, 1024 keys per dictionary, 32 MB per
+value, and 64 MB total input. It rejects <tt>i04e</tt>, <tt>i-0e</tt>, leading
+zeros, <tt>i64</tt> overflow, duplicate dictionary keys, and a string length
+larger than the remaining input. <tt>encode</tt> writes dictionary keys in their
+stored order, not sorted order, so a caller that wants a canonical dictionary
+must sort the entries before encoding. For the HTTP side of torrent work, see
+<a href="vol4-18-stdlib-io.html#http"><tt>std_http</tt></a>.
+</p>
+
+<p class="navbtns">
+<a href="vol4-18-stdlib.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-18-stdlib-codecs.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-18-stdlib.html">The standard library</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-18-stdlib-codecs.html">Codecs and Crypto</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
