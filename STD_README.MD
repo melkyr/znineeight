@@ -129,6 +129,9 @@ apply to its modules.
 | In-place sort and `u32` binary search | `std_sort` | [collections.md](sf/docs/std_lib/collections.md) |
 | Stable min-heap priority queue | `std_heap` | [collections.md](sf/docs/std_lib/collections.md) |
 | Run-length encode/decode | `std_rle` | [collections.md](sf/docs/std_lib/collections.md) |
+| PCG32 / xoshiro256\*\* pseudorandom generators | `std_rand` | [rand.md](sf/docs/std_lib/rand.md) |
+| OpenSimplex 2D/3D noise and fBm | `std_noise` | [noise.md](sf/docs/std_lib/noise.md) |
+| LZ4 raw block decode | `std_lz4` | [codecs.md](sf/docs/std_lib/codecs.md) |
 | Base64 encode/decode | `std_base64` | [codecs.md](sf/docs/std_lib/codecs.md) |
 | Hex encode/decode | `std_hex` | [codecs.md](sf/docs/std_lib/codecs.md) |
 | UTF-8 validate, decode, encode, count | `std_utf8` | [codecs.md](sf/docs/std_lib/codecs.md) |
@@ -208,9 +211,13 @@ entry for each public function. Read the one for the job at hand:
   `std_stream`: the Model C scheduler and stream readers.
 - [collections.md](sf/docs/std_lib/collections.md) — `std_map`, `std_sort`,
   `std_heap`, `std_rle`: maps, sort/search, heap, and RLE.
+- [rand.md](sf/docs/std_lib/rand.md) — `std_rand`: PCG32 and xoshiro256\*\*
+  deterministic pseudorandom generators.
+- [noise.md](sf/docs/std_lib/noise.md) — `std_noise`: 2014 OpenSimplex 2D/3D
+  noise and fBm.
 - [codecs.md](sf/docs/std_lib/codecs.md) — `std_base64`, `std_hex`,
-  `std_utf8`, `std_crypto`, `std_parse`: encoders/decoders, hashes, and number
-  parsing.
+  `std_utf8`, `std_crypto`, `std_parse`, `std_lz4`: encoders/decoders, hashes,
+  number parsing, and raw LZ4 block decode.
 
 ## Further reading
 

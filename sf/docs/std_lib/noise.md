@@ -149,7 +149,20 @@ per-octave frequency and amplitude scaling.
 
 **Returns** — `f64` sum `Σ amplitude_i * noise2d(x*freq_i, y*freq_i)`.
 
+**fBm parameters (exact stack)** — the loop starts at `frequency = 1.0` and
+`amplitude = 1.0`; for each of `octaves` iterations it adds
+`amplitude * noise2d(x*frequency, y*frequency)`, then multiplies
+`frequency *= lacunarity` and `amplitude *= gain`. The sum is **not**
+normalized by the total amplitude (`Σ gain^i`), so larger `gain` values raise
+the output magnitude; keep the composed value in `[-1, 1]` yourself when a
+bounded signal is required. `lacunarity` and `gain` are plain `f64` (no
+clamping), and `octaves == 0` returns exactly `0.0` before touching either.
+
 **Errors** — none.
+
+**Gotchas** — negative `lacunarity`/`gain` are accepted and applied verbatim;
+they are not validated. Choose `lacunarity > 1` and `0 < gain < 1` for the
+conventional octave stack.
 
 ## Gates and pins
 
@@ -158,6 +171,7 @@ per-octave frequency and amplitude scaling.
 | crosscheck grid | `scripts/stdlib/run_crosscheck.sh <zig1> std_noise` | Z98 == C89 ref == `scripts/stdlib/vectors/std_noise/grid.expected` (md5 `94314ebd32053089b226387770c0cd5d`) |
 | basic fixture | `scripts/stdlib/run_fixtures.sh <zig1> repro/mi_matrix/stdlib_noise_basic_xmod` | stdout byte-exact; PGM visual golden `pgm fnv1a64 4921c94f3ec08543` (256×256 from `noiseFbm2d`) |
 | cross fixture | `scripts/stdlib/run_fixtures.sh <zig1> repro/mi_matrix/stdlib_noise_cross_xmod` | stdout byte-exact |
+| usage program | `scripts/stdlib/run_fixtures.sh <zig1> stdlib_test/noise_lz4_usage` | stdout byte-exact, ends `noise_lz4 ok` |
 | full std gate | `scripts/stdlib/verify_stdlib.sh <zig1>` | `STDLIB GATE OK` (fixtures + all crosscheck modules) |
 
 Reference implementation: `scripts/stdlib/ref/std_noise/ref.c` (2014

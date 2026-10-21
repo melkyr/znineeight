@@ -1,15 +1,15 @@
-# Codecs — `std_base64` + `std_hex` + `std_utf8` + `std_crypto` + `std_parse`
+# Codecs — `std_base64` + `std_hex` + `std_utf8` + `std_crypto` + `std_parse` + `std_lz4`
 
 | | |
 |---|---|
-| **Modules** | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_parse` |
-| **Layers** | `L5` — codec layer: base64 and hex text codecs, UTF-8 validation/iteration, streaming hashes plus CRC-32, and number parse/format |
-| **Import (by path)** | `const std_base64 = @import("std_base64");`, `const std_hex = @import("std_hex");`, `const std_utf8 = @import("std_utf8");`, `const std_crypto = @import("std_crypto");`, `const std_parse = @import("std_parse");` |
+| **Modules** | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_parse`, `std_lz4` |
+| **Layers** | `L5` — codec layer: base64 and hex text codecs, UTF-8 validation/iteration, streaming hashes plus CRC-32, and number parse/format; `L4` — `std_lz4` block decoder |
+| **Import (by path)** | `const std_base64 = @import("std_base64");`, `const std_hex = @import("std_hex");`, `const std_utf8 = @import("std_utf8");`, `const std_crypto = @import("std_crypto");`, `const std_parse = @import("std_parse");`, `const std_lz4 = @import("std_lz4");` |
 
 ## Module overview
 
-All five modules are L5 and imported by path (not re-exported through `std`).
-They split into three shapes.
+All six modules are imported by path (not re-exported through `std`). The five
+`L5` modules split into three shapes; `std_lz4` is the `L4` byte-block decoder.
 
 **Text codecs (`std_base64`, `std_hex`).** Both allocate only their output
 through the caller's arena and follow the same input contract. `encode`/`decode`
@@ -38,6 +38,14 @@ input (overflow is detected in `u64` before narrowing, so a bad input never
 traps). Formatting writes digits backwards from the end of `buf`; the returned
 slice points into `buf`. `ftoa` uses fixed-point notation with round-half-up and
 renders non-finite values as text.
+
+**Block decode (`std_lz4`).** L4 and stateless. `lz4DecompressBlock` is a
+single-shot raw LZ4 block decoder (no frame header, no dictionary, no
+allocation): the caller owns both the compressed bytes and the destination
+buffer. It returns the decoded byte count, or `error.Corrupt` for a malformed /
+truncated / invalid-match block and `error.OutputTooSmall` when the caller's
+destination cannot hold the result. Compression is **offline** with the host
+`lz4` tool (see the workflow in the `std_lz4` API section).
 
 ## Quick start
 
@@ -1119,10 +1127,80 @@ at least 328 bytes to cover every finite `f64`; a shorter buffer can return
 trap). Avoids any `f64 -> int` conversion, so it is portable to the pinned
 target.
 
+### `std_lz4`
+
+#### `lz4DecompressBlock`
+
+**Purpose** — decodes one raw LZ4 block (LZ4 block format, no frame header or
+metadata) into a caller-owned destination buffer.
+
+**When to use** — to expand data that was compressed **offline** with a host
+LZ4 tool and shipped/stored as a raw block. The decoder is stateless and
+allocation-free, so it fits the L0–L2 import budget and cannot fail on memory.
+
+**Signature** — `pub fn lz4DecompressBlock(src: []const u8, dst: []u8) !u32`
+
+**Parameters**
+- `src` — the complete raw LZ4 block: token/literal/match sequences, with no
+  frame magic, content size, block checksum, or dictionary.
+- `dst` — the destination; the caller sizes it to at least the decoded length.
+  History is read from the already-written prefix of `dst`, so a match offset
+  never reaches outside the output.
+
+**Returns** — the number of bytes written to `dst` (`u32`), which is also the
+decoded length. An empty *raw block* is the single byte `0x00` and decodes to
+`0`; an empty `src` slice is not a valid block.
+
+**Errors**
+- `error.Corrupt` — malformed or truncated input, an invalid/zero match offset,
+  a match that reaches before the start of the output, or a violation of the
+  LZ4 parsing rules (last 5 bytes must be literals; the last match must start
+  at least 12 bytes before the end).
+- `error.OutputTooSmall` — `dst` cannot hold the decoded bytes. This is a
+  caller-sizing error, deliberately distinct from corruption; no partial-output
+  contract is offered.
+
+**Example**
+```zig
+const std_lz4 = @import("std_lz4");
+
+var dst: [4096]u8 = undefined;
+const n = std_lz4.lz4DecompressBlock(block[0..], dst[0..]) catch |e| {
+    if (e == error.OutputTooSmall) return; // caller sized dst too small
+    return;                               // error.Corrupt
+};
+std.io.write(dst[0..@intCast(usize, n)]);
+```
+
+**Gotchas** — the decoder consumes a **block**, not a `.lz4` frame: feeding a
+CLI-produced frame's magic bytes yields `error.Corrupt`. Match offsets are
+little-endian `u16`, so a valid block can never reference more than 65,535
+bytes back; size `dst` for the whole decoded payload, not just the current
+chunk. The module never allocates and keeps no state between calls.
+
+**Offline-compress workflow** — compression is never done at runtime by Z98:
+
+1. Produce the raw block offline with the host LZ4 library's block API
+   (`LZ4_compress_default(src, dst, src_len, dst_capacity)` from the official
+   `lz4` source/CLI build tree), or compress to a frame with the host `lz4`
+   CLI and extract its block payload. The `lz4` CLI alone emits framed files,
+   so strip the frame header/trailer before committing the block.
+2. Commit the resulting raw block as the `.in` fixture/asset and its expected
+   decoded bytes/text separately; never regenerate vectors during a test run.
+3. At runtime hand that block to `lz4DecompressBlock` with a destination sized
+   from the known decoded length (or a documented upper bound). There is no
+   runtime dependency on the host `lz4` tool or library.
+
+The repo's vectors follow exactly this path: `scripts/stdlib/vectors/std_lz4/`
+holds official host-LZ4 raw blocks (text, binary, already-compressed, an
+all-literals block, and an empty block) plus truncations, and
+`scripts/stdlib/ref/std_lz4/ref.c` vendors the official `LZ4_decompress_safe`
+as the C89 crosscheck.
+
 ## See also
 
-- `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_parse` — the modules
-  in this doc.
+- `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_parse`, `std_lz4` —
+  the modules in this doc.
 - [`text.md`](text.md) — `std.buf`, the growable byte buffer that pairs with
   these encoders.
 - [`memory.md`](memory.md) — the `std.arena` model for the allocating codecs.
