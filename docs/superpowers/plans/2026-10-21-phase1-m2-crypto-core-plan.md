@@ -1,0 +1,102 @@
+# Phase 1 M2 — Crypto Core — Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Ship the shared cryptographic foundation in std: hash/PRF/RSA-verify additions to `std_crypto`, a new `std_cipher` (ChaCha20/Poly1305/AEAD/AES-GCM), and a new `std_ecc` (X25519, P-256, P-384 verify) — everything TLS and WireGuard later need, RFC/NIST vector-pinned.
+
+**Architecture:** Three std modules following the existing `std_crypto` contract (pure, no alloc, no errors except named verification failures, caller-provided state). Integer/limb arithmetic only (x87-safe); AES T-tables are `const` rodata. Spec §5.1–§5.3 are the binding contracts.
+
+**Tech Stack:** Z98 (L5-style modules), C89 `ref/` ports where a portable reference exists (vendored with BSD attribution, LZ4 precedent), existing `run_fixtures.sh`/`run_crosscheck.sh` harness.
+
+**Spec:** `docs/superpowers/specs/2026-10-21-phase1-tls-wireguard-design.md` §5.1, §5.2, §5.3, §7, §9, §10 rulings 10–12
+
+## Global Constraints
+
+- Z98 subset; emitted C89 builds mingw/MSVC6/OpenWatcom; no libm/C99/builtins/malloc in shipped code; no-CRT `-osw` stays linkable.
+- Constant-time: no data-dependent branches/table indices in Poly1305, X25519, P-256/P-384 scalar paths.
+- No f64 intermediates anywhere in arithmetic (x87 double-rounding class); conversions at API edges only, with edge KATs pinned.
+- R6: no clock/env reads; randomness is caller-supplied xoshiro256\*\*.
+- New files: `sf/src/std_cipher.zig`, `sf/src/std_ecc.zig`; extend `sf/src/std_crypto.zig` only; `std.zig` unchanged (by-path import).
+- Gates per task: `verify_stdlib.sh` full + `run_crosscheck.sh` + 3× determinism + targeted fixtures; existing stdlib stays green (MSE `modpow` users unchanged).
+- Closeout rotates seed **v112** (42 lib files: +`std_cipher`, +`std_ecc`); fixed point `21c957730d268f1e7883176fa5413b65` must not move.
+- Commits `feat(std_crypto|std_cipher|std_ecc): … (Phase1 M2)`, `docs(std_lib): … (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): … report`. STOP-present on any contract change.
+
+## Review Focus
+
+1. A signature-verify primitive that accepts a wrong signature silently (negative KATs required for every verify path — BadSignature must fire).
+2. x87/limb conversion rounding: edge KATs (max/min limbs, 2^53 boundaries) must pin exact output.
+3. Constant-time regressions (early-exit loops in scalar mult / Poly1305) — mutation check: no branch on secret-derived values.
+4. AES T-tables counted into arena or stack (must be `const`; assert arena_used untouched).
+5. SHA-384/512 truncation/length-field errors (64-bit length encoding) — FIPS vectors must cover ≥1-block messages.
+
+---
+
+### Task 1: `std_crypto` additions — SHA-384/512, HMAC-SHA256, HKDF, BLAKE2s, RSA verify
+
+**Files:**
+- Modify: `sf/src/std_crypto.zig` (append; existing SHA-1/SHA-256/MD5/CRC32/RC4/modpow untouched)
+- Test: `repro/mi_matrix/stdlib_hash_sha384_512_xmod/{main.zig,expected.txt,expected.rc}`
+- Test: `repro/mi_matrix/stdlib_crypto_prf_xmod/{main.zig,expected.txt,expected.rc}`
+- Test: `repro/mi_matrix/stdlib_rsa_verify_xmod/{main.zig,expected.txt,expected.rc}`
+- Modify: `scripts/stdlib/expected_dirs.txt` (sorted, C-locale)
+
+**Interfaces:**
+- Consumes: nothing new.
+- Produces (spec §5.1 verbatim): `Sha384/Sha512` + init/update/final; `HmacSha256` + `hmacSha256`; `hkdfExtract`/`hkdfExpand`; `Blake2s` + `blake2sInit/Update/Final` + `hmacBlake2s`; `rsaVerifyPkcs1v15(n,e,hash_alg,hash,sig) !void`; `rsaVerifyPss(n,e,hash_alg,hash,salt_len,sig) !void`; `HashAlg` enum {sha256, sha384, sha512}; internal generic modexp (≤4096-bit `n`, fixed scratch — the existing 768-bit MSE `modpow` is NOT reused/modified).
+
+- [ ] **Step 1:** Write failing fixtures first: FIPS 180-4 SHA-384/512 KATs (empty, "abc", 1-block, 2-block, 112-byte); RFC 4231 HMAC-SHA256 cases 1–7; RFC 5869 HKDF cases 1–3 + 7; RFC 7693 BLAKE2s KATs + keyed vectors; NIST CAVP RSA PKCS#1 v1.5 verify (2 known-good + 2 corrupted-sig cases) + PSS (SHA-256, salt 32/0) good+bad. Bad-signature cases must assert `error.BadSignature`.
+- [ ] **Step 2:** Run — FAIL (module absent).
+- [ ] **Step 3:** Implement to spec §5.1 signatures exactly. Generic modexp: fixed 512-byte operand scratch, right-to-left binary (verify-only; not constant-time-required since public exponent/modulus), PKCS#1 v1.5 padding check per RFC 8017 §8.2.2, PSS per §8.1.2 with MGF1 over the chosen HashAlg.
+- [ ] **Step 4:** Run — PASS; full `verify_stdlib.sh` + `run_crosscheck.sh` green; existing MSE fixtures unchanged.
+- [ ] **Step 5:** Commit `feat(std_crypto): hash/PRF/RSA verify additions (Phase1 M2)`.
+
+### Task 2: `std_cipher` — ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128-GCM
+
+**Files:**
+- Create: `sf/src/std_cipher.zig`
+- Test: `repro/mi_matrix/stdlib_chacha_poly_xmod/{main.zig,expected.txt,expected.rc}`
+- Test: `repro/mi_matrix/stdlib_aes_gcm_xmod/{main.zig,expected.txt,expected.rc}`
+- Modify: `scripts/stdlib/expected_dirs.txt`
+
+**Interfaces:**
+- Consumes: `std_crypto` (nothing — pure primitives).
+- Produces (spec §5.2 verbatim): `chacha20Init/Xor`; `poly1305Init/Update/Final` (donna 5×26-bit limbs); `chacha20Poly1305Seal/Open` (`error.AuthenticationFailed` on tag mismatch); `Aes128` + `aes128Init/EncryptBlock` (T-tables 4 KB `const`); `aes128GcmSeal/Open` with GHASH (4-bit tables).
+
+- [ ] **Step 1:** Failing fixtures: RFC 8439 ChaCha20 block/XOR vectors, Poly1305 RFC 8439 §2.5.2 + donna-style vectors, AEAD §2.8.2 + a tamper-tag case (`AuthenticationFailed`); NIST GCM test vectors (AES-128: at least one per empty-AD/empty-PT/full case + one tamper case).
+- [ ] **Step 2:** Run — FAIL.
+- [ ] **Step 3:** Implement; fully unroll the 20 ChaCha rounds; constant-time Poly1305 limb math (no 64-bit overflow traps — use `+%`/`*%` discipline as `std_crypto` does); GCM per SP800-38D.
+- [ ] **Step 4:** Run — PASS + full gate green + 3× determinism; assert T-tables land in const (fixture: arena_used unchanged across a seal).
+- [ ] **Step 5:** Commit `feat(std_cipher): ChaCha20-Poly1305 + AES-128-GCM (Phase1 M2)`.
+
+### Task 3: `std_ecc` — X25519, P-256, P-384 verify
+
+**Files:**
+- Create: `sf/src/std_ecc.zig`
+- Test: `repro/mi_matrix/stdlib_x25519_xmod/{main.zig,expected.txt,expected.rc}`
+- Test: `repro/mi_matrix/stdlib_ecc_verify_xmod/{main.zig,expected.txt,expected.rc}`
+- Optional ref: `scripts/stdlib/ref/std_ecc/ref.c` (vendored portable X25519, BSD attribution) + `run_crosscheck.sh` wiring
+- Modify: `scripts/stdlib/expected_dirs.txt`
+
+**Interfaces:**
+- Consumes: `std_rand.Xoshiro256` (P-256 keygen only).
+- Produces (spec §5.3 verbatim): `x25519`/`x25519Base` (`error.WeakPublicKey` on all-zero); `p256Generate` (uncompressed 65-byte pub); `p256Ecdh`; `p256EcdsaVerify`; `p384EcdsaVerify` (verify-only, 97-byte uncompressed, SHA-384 hash).
+
+- [ ] **Step 1:** Failing fixtures: RFC 7748 X25519 vectors (scalar mult + base + all-zero rejection); NIST CAVP P-256 ECDH shared-secret vectors; P-256 ECDSA verify good/bad (≥2 curve points each); P-384 ECDSA verify NIST CAVP good/bad (SHA-384). Bad cases assert `false`/error, never silent accept.
+- [ ] **Step 2:** Run — FAIL.
+- [ ] **Step 3:** Implement: X25519 ref10-style 26-bit portable ladder; P-256 from **p256-m portable C** (port, do not write from scratch); P-384 verify from **BearSSL portable P-384** (or one shared generic EC engine for both curves — implementer's call, documented); constant-time scalar paths.
+- [ ] **Step 4:** Run — PASS + full gate + 3× determinism.
+- [ ] **Step 5:** Commit `feat(std_ecc): X25519 + P-256 + P-384 verify (Phase1 M2)`.
+
+### Task 4: M2 closeout — docs + seed rotation
+
+**Files:**
+- Create: `sf/docs/std_lib/crypto.md`, `sf/docs/std_lib/cipher.md`, `sf/docs/std_lib/ecc.md`
+- Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (counts 40→42 std files, install list, module rows)
+- Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh` (copy lists + counts)
+- Rotate: `release/seed/` → **v112** (archive + `lib/manifest.md5`, 42 files)
+
+- [ ] **Step 1:** Write the three docs (API contracts from spec §5.1–§5.3; constant-time and no-heap notes; KAT provenance table).
+- [ ] **Step 2:** Truth-ups (STD_README domain/doc-index rows for the 3 modules; root README higher-layer list; QUICK_REF counts/install/verify line).
+- [ ] **Step 3:** Seed scripts count/copy-list updates; rotate seed v112; verify archive md5, manifest md5, binary/fixed point unchanged `21c957730d268f1e7883176fa5413b65`, hop1==hop2 from rotated archive.
+- [ ] **Step 4:** Full gate re-run (fixtures + crosscheck) on the rotated compiler.
+- [ ] **Step 5:** Commits `docs(std_lib): crypto/cipher/ecc docs (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): M2 closeout report`.
