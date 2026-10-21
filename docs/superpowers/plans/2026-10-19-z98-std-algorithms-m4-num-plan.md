@@ -19,7 +19,7 @@ M1 plan Global Constraints bind verbatim. Extra: error set exactly `error.StepTo
 1. Tableau transcription — a wrong Butenin coefficient passes smooth ODEs and fails stiff-ish ones; the Van der Pol fixture is the canary.
 2. RMS error norm vs max-norm — max makes step size oscillate; the step-size monotonicity fixture catches it.
 3. FSAL reuse correctness — reusing a stale stage silently changes order; exponential-decay tolerance (1e-6) is tight enough to catch it.
-4. dt in/out semantics — `dt` reports the step ACTUALLY taken; a caller stepping twice with the same `dt` integrates wrong.
+4. dt in/out semantics — `state.t` advances by the step ACTUALLY taken; `dt` returns the next suggested step size (the caller must pass it into the next call). Stepping twice with the same stale `dt` defeats adaptation.
 5. fn-ptr call convention — D8-class shapes were fixed, but a mismatched arity here fails at gcc level; compile both fixtures early.
 
 ---
