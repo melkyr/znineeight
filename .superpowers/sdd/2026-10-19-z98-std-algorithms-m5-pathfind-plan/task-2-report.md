@@ -161,3 +161,43 @@ The rebuilt compiler passes the three pathfind fixtures and the
   slice length in the search functions.
 - `run.err` was left untouched (untracked).
 
+## Fix round 1 — perf table unit
+
+Finding (Important, docs-only): `sf/docs/std_lib/pathfind.md` labeled the
+plain-JPS table “per query”, but the `1.84 s` / `0.69 s` values are totals
+over 200 queries (Task 1 report: 200 runs; Task 1b: 200 JPS queries =
+1773.773 ms = 8.87 ms/query). That overstated per-query latency ~200× and
+made the JPS+ table look inconsistent.
+
+Fix: the plain-JPS table now states **200 queries total** in its heading and
+both column headers, followed by an explicit sentence separating it from the
+JPS+ table, which remains **per query**. Values were not changed.
+
+Evidence:
+
+```
+$ sed -n '297,317p' sf/docs/std_lib/pathfind.md
+Measurements are report-only (no timing gate). Two 256×256 maps, start
+`(0,0)` → goal `(255,255)`, built with `gcc -m32 -std=c89 -O0`; Z98 timings
+use `std_time.highRes`, the C89 A* baseline uses `gettimeofday`.
+
+Plain JPS, **200 queries total**, versus a C89 A* reference:
+
+| map | Z98 JPS (200 queries) | C89 A* (200 queries) |
+| --- | ---: | ---: |
+| 22% obstacles | 1.84 s | 0.55 s |
+| fully open | 0.69 s | 0.01 s |
+
+The values above are totals over 200 queries. JPS+ build once, then 200
+queries (**per query**):
+
+| map | JPS+ | `jpsFind` |
+| --- | ---: | ---: |
+| 22% obstacles | 6.06 ms | 8.87 ms |
+| fully open | 0.127 ms | 3.37 ms |
+```
+
+No source or seed changes, so no seed rotation or tier gate rerun was needed.
+The earlier post-rotation full gate (304/304 fixtures, 7/7 crosscheck,
+`STDLIB GATE OK`) remains the applicable gate result.
+
