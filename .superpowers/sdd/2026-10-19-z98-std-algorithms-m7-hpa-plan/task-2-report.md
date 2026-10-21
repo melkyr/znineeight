@@ -73,3 +73,34 @@ program from `@import("std_hpa.zig")` through the seed compiler's sibling
 ## Concerns
 
 - None.
+
+## Fix round 1 (review finding)
+
+Status: DONE
+
+Commit: `a230d004` — `docs(std_lib): M7 hpa quick-start arena fix`
+
+Finding: the `hpa.md` quick start used 16 KiB map/query arenas;
+`hpaBuild`/`hpaFind` return `OutOfMemory` at those sizes because build peak
+scratch exceeds the final map (reviewer: build peak >128 KiB, final map
+5,672 bytes, query use 33,080 bytes; 1 MiB each works).
+
+Fix: the quick-start `map_backing` and `query_backing` are now
+`[1048576]u8` (1 MiB) each. The ownership section now states the map arena
+must cover the peak build scratch plus the persistent map, which can be far
+larger than the final map; query scratch remains a separate, caller-reset
+arena.
+
+Verification of the exact sample (code copied verbatim from `hpa.md`, seed
+compiler `/tmp/m7_seed/zig1_5_clean`, emitted C compiled with the binding
+`gcc -m32 -std=c89 -O0 -Wall ...` flag set, linked via the emitted
+`build_target.sh linux`):
+
+```
+dump rc=0
+build rc=0
+run rc=0
+stdout: 21
+```
+
+No compiler/std source changes.
