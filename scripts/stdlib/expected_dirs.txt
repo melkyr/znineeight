@@ -203,6 +203,9 @@ repro/mi_matrix/stdlib_parse_utoa_xmod
 repro/mi_matrix/stdlib_pathfind_basic_xmod
 repro/mi_matrix/stdlib_pathfind_cross_xmod
 repro/mi_matrix/stdlib_pathfind_plus_xmod
+repro/mi_matrix/stdlib_physics_basic_xmod
+repro/mi_matrix/stdlib_physics_cross_xmod
+repro/mi_matrix/stdlib_physics_panic_xmod
 repro/mi_matrix/stdlib_print_alias_xmod
 repro/mi_matrix/stdlib_print_autoimport_xmod
 repro/mi_matrix/stdlib_print_dispatch_xmod
@@ -307,3 +310,4 @@ stdlib_test/map_sort_heap_usage
 stdlib_test/noise_lz4_usage
 stdlib_test/net_stream_usage
 stdlib_test/os_time_usage
+stdlib_test/physics_usage

@@ -139,7 +139,7 @@ for module in "${MODULES[@]}"; do
   fi
 
   if [ -z "$reason" ] && [ "$ref_present" -eq 1 ]; then
-    gcc -m32 -std=c89 -O0 "$ref_dir/ref.c" -o "$tmp/ref" >"$tmp/.refout" 2>"$tmp/.referr"
+    gcc -m32 -std=c89 -O0 "$ref_dir/ref.c" -o "$tmp/ref" -lm >"$tmp/.refout" 2>"$tmp/.referr"
     rrc_cc=$?
     if [ "$rrc_cc" -ne 0 ] || [ ! -x "$tmp/ref" ]; then
       reason="REF-BUILD-RC$rrc_cc"

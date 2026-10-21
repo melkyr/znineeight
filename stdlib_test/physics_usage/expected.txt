@@ -1,0 +1,5 @@
+physics_usage
+worlds-identical: 1
+pin-fixed: 1
+distance-ok: 1
+physics ok
