@@ -52,8 +52,9 @@ by Tasks 1–2).
 - Extended existing `sf/docs/std_lib/noise.md` (did not recreate): added the
   exact fBm stack (`frequency/amplitude = 1.0`, per-octave `*= lacunarity/gain`,
   no normalization), validation gotchas, and a usage-program pin. The pinned
-  2014 seed-0 lattice values and the "blueprint §5.5 zero-at-lattice
-  superseded" statement were already present from T1D and remain.
+  2014 seed-0 lattice values were **corrected in fix round 1** to the
+  authoritative ref/vector output (see below); the "blueprint §5.5
+  zero-at-lattice superseded" statement remains.
 - Extended `sf/docs/std_lib/codecs.md` with `std_lz4`: module table/import,
   overview contract, full `lz4DecompressBlock` API (returns bytes written;
   `error.Corrupt` vs `error.OutputTooSmall`; last-5-literals / last-match-12
@@ -186,5 +187,49 @@ and each fixture ran 3× byte-identically (harness determinism rule).
 - `2c860db7` — `chore(seed): rotate (M2)` (v106 archive + CHANGELOG)
 - (this commit) — `docs(sdd): M2 T3 report`
 - Concerns: none.
+
+## Fix round 1 — noise lattice pin truth-up
+
+Review finding: `sf/docs/std_lib/noise.md` carried stale seed-0 lattice
+decimals from the earlier x87 STOP run instead of the authoritative current
+2014 reference / vector output. Docs-only fix; no source/std/compiler/seed
+changes.
+
+Commands + observed output:
+
+```
+$ gcc -m32 -std=c89 -O0 scripts/stdlib/ref/std_noise/ref.c -o /tmp/m2_t3_fr1_ref
+$ /tmp/m2_t3_fr1_ref --lattice
+0 0 0000000000000000 0
+1 0 3fdb50b0fc7fc810 0.42680000932807705
+0 1 bfaf6722e5367f41 -0.061333742599571035
+1 1 bfe3e8ac2079b43d -0.62215238898136926
+
+$ sed -n '1,6p' scripts/stdlib/vectors/std_noise/grid.expected
+0000000000000000
+3fdb50b0fc7fc810
+bfaf6722e5367f41
+bfe3e8ac2079b43d
+3fddda84d5a52c93
+bfd30ed03992f1ac
+```
+
+The first four `grid.expected` lines match the `--lattice` bits exactly.
+Corrected `noise.md` lattice pin:
+
+- `(0,0) == 0` — bits `0000000000000000`
+- `(1,0) = 0.42680000932807705` — bits `3fdb50b0fc7fc810`
+- `(0,1) = -0.061333742599571035` — bits `bfaf6722e5367f41`
+- `(1,1) = -0.62215238898136926` — bits `bfe3e8ac2079b43d`
+
+The "2014 reference authoritative / blueprint §5.5 zero-at-lattice superseded"
+meaning is unchanged. Full stdlib gate not required for a docs-only fix and
+was not re-run.
+
+Commits:
+
+- `docs(std_lib): M2 noise lattice pin truth-up`
+- `docs(sdd): M2 T3 fix round 1`
+
 
 
