@@ -69,6 +69,27 @@ and `pbdStep` (current length during projection) use this rule. Do not replace
 it with an f32 `sqrt` or a tolerance: the C89 reference follows the same
 protocol and the crosscheck is an exact `cmp`.
 
+### Projection formula and skip rules
+
+Each constraint in the shuffled `order` is projected with the current particle
+positions. With `dx = pos[b] - pos[a]`, `dy`, `dz` component-wise, `len`
+computed by the length rule above, and `wa = inv_mass[a]`, `wb = inv_mass[b]`:
+
+```
+corr = (len - rest) / len * stiffness
+pos[a] += dx * corr * wa / (wa + wb)      (likewise dy, dz)
+pos[b] -= dx * corr * wb / (wa + wb)      (likewise dy, dz)
+```
+
+The inverse-mass weights put the correction on the movable endpoint:
+`wa/(wa+wb)` for `a` and `wb/(wa+wb)` for `b`. A pinned endpoint has
+`inv_mass = 0`, so the other endpoint absorbs the full correction.
+
+**Skip rules:** a constraint is skipped entirely when `len == 0` (no direction
+to project along) or `wa + wb == 0` (both endpoints pinned). The skip happens
+before `corr` is formed, so neither division sees a zero denominator. Both
+conditions are part of the contract and are covered by the crosscheck vector.
+
 ### Stiffness, iterations, and damping
 
 `stiffness` is the **per-iteration fraction** of the positional error removed
@@ -93,10 +114,11 @@ fraction. `iterations == 0` is valid and integrates only (pure ballistic
 motion, no constraint projection). `iterations` is a `u8`; very large values
 cost time linearly.
 
-The constraint order is shuffled every iteration with the world's seeded
-`std_rand.Xoshiro256` generator. That removes the projection-order bias of a
-fixed sweep (an 8-seed asymmetric fixture asserts at least two distinct final
-positions, which a dead shuffle would not produce).
+With two or more constraints, the order is shuffled every iteration with the
+world's seeded `std_rand.Xoshiro256` generator. That removes the
+projection-order bias of a fixed sweep (an 8-seed asymmetric fixture asserts at
+least two distinct final positions, which a dead shuffle would not produce).
+With a single constraint there is nothing to shuffle and no rng draw is made.
 
 ### No collision constraints (v1)
 
@@ -153,8 +175,9 @@ pub fn main() void {
 ```
 
 The pinned particle stays at `y = 2`. With no damping the chain keeps
-swinging; after 240 steps the free end prints about `0.6285`, and both links
-remain at their rest length of `1`.
+swinging; after 240 steps the free end prints about `0.6285`, and the link
+distances stay within f32 rounding of their rest length `1` (about `1.000024`
+and `1.0`).
 
 ## API
 
@@ -365,12 +388,14 @@ std_physics.pbdStep(&w, dt);
 ```
 
 **Gotchas** — call it with a consistent `dt`; the solver does not adapt the
-step or subdivide. With `iterations == 0` it integrates only. Every iteration
-identity-fills and shuffles `order[0..constraint_count]` before projecting, so
-the rng advances even when the constraint set is unchanged. Zero particles is a
+step or subdivide. With `iterations == 0` it integrates only. With two or more
+live constraints, every iteration identity-fills and shuffles
+`order[0..constraint_count]` before projecting, so the rng advances each
+iteration even when the constraint set is unchanged. With one constraint the
+Fisher–Yates loop does not run and no rng draw occurs. Zero particles is a
 no-op; zero constraints integrates and returns. A `dt` of `0` still runs the
-shuffle (if constraints exist) and a full projection, so avoid zero-dt steps
-when reproducing a trajectory.
+projection (and the shuffle when `constraint_count >= 2`), so avoid zero-dt
+steps when reproducing a trajectory.
 
 ### Preconditions and panics
 
