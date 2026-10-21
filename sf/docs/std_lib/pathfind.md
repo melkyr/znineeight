@@ -298,14 +298,15 @@ Measurements are report-only (no timing gate). Two 256×256 maps, start
 `(0,0)` → goal `(255,255)`, built with `gcc -m32 -std=c89 -O0`; Z98 timings
 use `std_time.highRes`, the C89 A* baseline uses `gettimeofday`.
 
-Plain JPS per query versus a C89 A* reference:
+Plain JPS, **200 queries total**, versus a C89 A* reference:
 
-| map | Z98 JPS | C89 A* |
+| map | Z98 JPS (200 queries) | C89 A* (200 queries) |
 | --- | ---: | ---: |
 | 22% obstacles | 1.84 s | 0.55 s |
 | fully open | 0.69 s | 0.01 s |
 
-JPS+ build once, then 200 queries (per query):
+The values above are totals over 200 queries. JPS+ build once, then 200
+queries (**per query**):
 
 | map | JPS+ | `jpsFind` |
 | --- | ---: | ---: |
