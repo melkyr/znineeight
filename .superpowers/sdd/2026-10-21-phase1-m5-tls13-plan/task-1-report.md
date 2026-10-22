@@ -49,45 +49,58 @@ TLS 1.2 ClientHello wire image is preserved byte-for-byte (the 1.2-only
 
 ## 3. Transcript capture from OpenSSL 3.0.22
 
-Capture tool: `/tmp/t3_cap/capture13.zig`, compiled by the seed compiler and
-linked with the binding gcc flags. It connects to host `openssl s_server`
-with `min_version = max_version = TLS_VERSION_13` and the deterministic seed
-`0x0123456789ABCDEF`; `now_unix = 1800000000`.
+TLS 1.3 capture tool: `/tmp/t3_cap/capture13.zig`, compiled by the seed
+compiler and linked with the binding gcc flags. It connects to host
+`openssl s_server` with `min_version = max_version = TLS_VERSION_13` and the
+deterministic seed `0x0123456789ABCDEF`; `now_unix = 1800000000`.
 
-Server command (ECDSA cert / AES-128-GCM example):
+TLS 1.2 fallback capture tool: `/tmp/t3_cap/capture_fallback.zig`, same client
+but `min_version = TLS_VERSION_12`, `max_version = TLS_VERSION_13`. The
+fallback transcript was captured from a real OpenSSL **TLS 1.2-only** server
+(`-min_protocol TLSv1.2 -max_protocol TLSv1.2`), RSA certificate,
+`ECDHE-RSA-AES128-GCM-SHA256`, forced handshake signature
+`-sigalgs rsa_pss_rsae_sha256`. The captured ServerHello has no downgrade
+sentinel (correct for a TLS 1.2-only peer), and its SKE uses
+`rsa_pss_rsae_sha256` (0x0804), x25519 (0x001d). This same transcript backs
+the positive fallback and the RSA-PSS SKE verifier test.
+
+Server command (ECDSA cert / AES-128-GCM TLS 1.3 example):
 
 ```text
-$ openssl s_server -accept 18448 -cert /tmp/t2_cap/leaf_ecdsa.pem \
+$ openssl s_server -accept 18451 -cert /tmp/t2_cap/leaf_ecdsa.pem \
     -key /tmp/t2_cap/leaf_ecdsa.key -CAfile /tmp/t2_cap/ca.pem -tls1_3 \
     -ciphersuites TLS_AES_128_GCM_SHA256 -groups X25519 -www \
-    -keylogfile /tmp/t3_cap/run6.keylog -naccept 1
-$ /tmp/t3_cap/capture13 18448 /tmp/t2_cap/ca_store.bin \
-    /tmp/t3_cap/out6.zig
+    -keylogfile /tmp/t3_cap/rec_ecdsa_aes.keylog -naccept 1
+$ /tmp/t3_cap/capture13 18451 /tmp/t2_cap/ca_store.bin \
+    repro/mi_matrix/stdlib_tls13_handshake_xmod/ecdsa_aes_data.zig
 captured tls13
 ```
 
-OpenSSL key log (exact traffic secrets):
+OpenSSL key log (current `ecdsa_aes_data.zig` transcript):
 
 ```text
-SERVER_HANDSHAKE_TRAFFIC_SECRET ... dfafc4c5c44cd85988e0307c32a5d0297910db418b9b60b8d7d87b204bcb1108
-CLIENT_HANDSHAKE_TRAFFIC_SECRET ... ccb639ce46ff68174a46bbd746150a10a53c612734256ac6d033ffacfbc70a02
-SERVER_TRAFFIC_SECRET_0         ... 048320a29f89262b4da90fe22d01b67097f1dea747b4e75ed1c59de0ae754079
-CLIENT_TRAFFIC_SECRET_0         ... b944df3da72dd71faaf873b44eef484100d9dbbdf84534abcfe6a83b70c2191b
+SERVER_HANDSHAKE_TRAFFIC_SECRET ... 71802ba6afa17f108b8bbc60e8a880aed89749a0b11e0759c8a3c15f553e9969
+CLIENT_HANDSHAKE_TRAFFIC_SECRET ... 64eeaba67caf9bc6c4e909f8cdf1b7a7a20c9e2b6ea48d0490b1e58365d58a02
+SERVER_TRAFFIC_SECRET_0         ... 81280317aa2d2e76fbcf6e16620f6d420d90d74b59f2ad8946523cdaf4d6d648
+CLIENT_TRAFFIC_SECRET_0         ... f010480d54e2b833218d4dbdc14703793f63d98aebf631d955ef615176616d94
 ```
 
-Independent comparison (capture output vs key log) for all three transcripts:
+Independent comparison (capture output vs key log) for all four current TLS 1.3
+transcripts:
 
 ```text
-$ python3 - <<'PY'   # parse data arrays + keylog lines
-... compares client_hs/server_hs/client_app/server_app ...
-PY
-ecdsa_aes_data.zig    True server 6163 pkcs1 6163 fend 1745
-ecdsa_chacha_data.zig True server 6193 pkcs1 6193 fend 1746
-rsa_pss_data.zig      True server 6546 pkcs1 6546 fend 2133
+ecdsa_aes_data.zig     True server 6171 ch 143 flight 58 pkcs1 6171 badfin 6171 fend 1744
+ecdsa_chacha_data.zig  True server 6196 ch 143 flight 58 pkcs1 6196 badfin 6196 fend 1745
+rsa_pss_data.zig       True server 6551 ch 143 flight 58 pkcs1 6551 badfin 6551 sha1 6551 fend 2133
+p384_data.zig          True server 6179 ch 143 flight 58 pkcs1 6179 badfin 6179 fend 1759
 ```
 
-`True` means all four derived traffic secrets equal the OpenSSL key-log bytes.
-The captured arrays also pin `early_secret`, `handshake_secret`, `master_secret`.
+`True` means all four derived traffic secrets (client/server handshake and
+client/server application) equal the OpenSSL key-log bytes. The captured
+arrays also pin `early_secret`, `handshake_secret`, `master_secret`.
+
+Current fallback transcript sizes: `server_raw 4068`, `client_hello 163`,
+`client_flight 93`, `app_plain 1947`.
 
 ## 4. Targeted fixtures
 
@@ -114,23 +127,27 @@ New fixture dirs:
     `HandshakeFailed` (exercises `verifyFinished13`)
   - key_share group changed to secp256r1 -> `UnsupportedGroup`
 - `repro/mi_matrix/stdlib_tls13_fallback_xmod`
-  - combined 1.3+1.2 ClientHello replayed against a real TLS 1.2 server
-    transcript without the downgrade sentinel -> `HandshakeFailed` at
-    ServerHello
-  - patched ServerHello.random with the sentinel progresses past ServerHello
-    to the ServerKeyExchange signature check (proves the positive sentinel
-    branch is reached)
+  - combined 1.3+1.2 ClientHello replayed against a real TLS 1.2-only server
+    transcript with NO downgrade sentinel: allowed by RFC 8446, completes the
+    fallback (`Established`, TLS 1.2, ECDHE-RSA-AES128-GCM-SHA256, app data)
+  - asserts the SKE is x25519 and `rsa_pss_rsae_sha256` (0x0804), positively
+    exercising the new TLS 1.2 RSA-PSS SKE verifier branch
+  - writing `DOWNGRD\x01` into ServerHello.random -> `HandshakeFailed` at
+    ServerHello (RFC 8446 abort semantics)
   - direct `hasDowngradeSentinel` true/false/mismatch checks
 
 All three dirs pinned in `scripts/stdlib/expected_dirs.txt`.
 
 ```text
 $ bash scripts/stdlib/run_fixtures.sh /tmp/m2_t4_v114_build/zig1_5_clean \
-    repro/mi_matrix/stdlib_tls13_handshake_xmod repro/mi_matrix/stdlib_tls13_auth_xmod
+    repro/mi_matrix/stdlib_tls13_handshake_xmod \
+    repro/mi_matrix/stdlib_tls13_auth_xmod \
+    repro/mi_matrix/stdlib_tls13_fallback_xmod
 PASS repro/mi_matrix/stdlib_tls13_handshake_xmod
 PASS repro/mi_matrix/stdlib_tls13_auth_xmod
+PASS repro/mi_matrix/stdlib_tls13_fallback_xmod
 ----------------------------------------
-run_fixtures: 2 PASS / 0 FAIL over 2 dirs
+run_fixtures: 3 PASS / 0 FAIL over 3 dirs
 ```
 
 ## 5. Full stdlib gate + crosscheck
@@ -189,13 +206,9 @@ run3 rc=0 run_fixtures: 5 PASS / 0 FAIL over 5 dirs
    `stdlib_tls13_handshake_xmod` adds an exact-max test: a record carrying
    16384 content bytes plus inner type is protected, fed through `tlsStep`,
    and read back byte-for-byte.
-2. Downgrade sentinel: `hasDowngradeSentinel` checks
-   `ServerHello.random[24..32] == "DOWNGRD\x01"` whenever the client offered
-   1.3 and the server negotiated 1.2; absent -> `HandshakeFailed`.
-   `stdlib_tls13_fallback_xmod` replays a real combined-ClientHello/TLS-1.2
-   server flight without the sentinel (fails closed at ServerHello), then a
-   sentinel-patched copy that reaches the ServerKeyExchange signature check.
-   Direct helper checks cover true/false/mismatch.
+2. Downgrade sentinel predicate: `hasDowngradeSentinel` checks
+   `ServerHello.random[24..32] == "DOWNGRD\x01"`. Final call-site semantics
+   were corrected in round 2 (abort when present; absence is normal).
 3. Combined fallback signature schemes: `verifyServerKeyExchange` now handles
    the full advertised set: ECDSA SHA-256/SHA-384 and RSA PKCS#1 SHA-256 plus
    RSA-PSS SHA-256/SHA-384 (salt = digest length), using the existing
@@ -218,12 +231,23 @@ run3 rc=0 run_fixtures: 5 PASS / 0 FAIL over 5 dirs
     `ecdsa_secp384r1_sha384` CertificateVerify. Its traffic secrets match the
     OpenSSL key log.
 
-Fallback-fixture limitation: a stock 1.3-capable OpenSSL server always
-negotiates 1.3 when the client offers it; `-max_protocol TLSv1.2` disables the
-sentinel. The fixture therefore uses a real TLS 1.2-only server response for
-the absent-sentinel rejection and a sentinel-patched copy to prove the positive
-branch reaches SKE. A full positive 1.2 handshake would require re-signing a
-captured ServerKeyExchange and re-sealing Finished, which is outside Task 1.
+## 7.1 Fix round 2
+
+- Corrected the downgrade check to RFC 8446 §4.1.3 semantics: when a 1.3
+  client receives a 1.2 ServerHello, abort only if
+  `random[24..32] == "DOWNGRD\x01"`; absence is normal and accepted.
+- Rewrote `stdlib_tls13_fallback_xmod` as a positive fallback fixture:
+  combined 1.3+1.2 ClientHello + real TLS 1.2-only server flight without the
+  sentinel completes (`Established`, TLS 1.2, ECDHE-RSA-AES128-GCM-SHA256,
+  captured application data). A sentinel-injected copy aborts at ServerHello.
+- Fixture provenance: OpenSSL TLS 1.2-only server, RSA certificate,
+  `-cipher ECDHE-RSA-AES128-GCM-SHA256 -sigalgs rsa_pss_rsae_sha256
+  -groups X25519`, `capture_fallback.zig` (`min=TLS1.2, max=TLS1.3`).
+  The fixture asserts the SKE group is x25519 and the signature algorithm is
+  `rsa_pss_rsae_sha256` (0x0804), so at least one new TLS 1.2 SKE branch
+  (RSA-PSS) is positively exercised at runtime.
+- Stale report key-log/length figures replaced with current values:
+  6171 / 6196 / 6551 / 6179 for server_raw; fallback 4068/163/93/1947.
 
 ## 8. Notes / follow-ups (outside Task 1)
 
