@@ -1520,7 +1520,9 @@ fn pssCheck(alg: HashAlg, hash: []const u8, salt_len: u32, em: []const u8, em_bi
     var unused: usize = 8 * em.len - em_bits;
     if (unused > 8) return false;
     if (unused > 0) {
-        var topmask: u8 = @intCast(u8, 0xFF << (8 - unused));
+        var shift: u32 = @intCast(u32, 8 - unused);
+        var wide: u32 = @intCast(u32, 0xFF) << shift;
+        var topmask: u8 = @intCast(u8, wide & 0xFF);
         if ((em[0] & topmask) != 0) return false;
     }
 
@@ -1529,7 +1531,9 @@ fn pssCheck(alg: HashAlg, hash: []const u8, salt_len: u32, em: []const u8, em_bi
     var i: usize = 0;
     while (i < db_len) : (i += 1) db[i] = db[i] ^ em[i];
     if (unused > 0) {
-        var clearmask: u8 = @intCast(u8, 0xFF >> unused);
+        var shift_clear: u32 = @intCast(u32, unused);
+        var wide_clear: u32 = @intCast(u32, 0xFF) >> shift_clear;
+        var clearmask: u8 = @intCast(u8, wide_clear & 0xFF);
         db[0] = db[0] & clearmask;
     }
 
