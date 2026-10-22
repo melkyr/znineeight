@@ -188,3 +188,97 @@ does not emit C `const` initialisers for arrays (see I-R11 Option C, never
 implemented). The source and 4 KiB/static/arena gates are satisfied, but
 the emitted object places the tables in `.bss`, not `.rodata`. Changing
 that would require a compiler-emitter change, which this task forbids.
+
+## Unblock — seed copy lists + cipher rodata gate (after T1C-F)
+
+Status: COMPLETE — seed copy lists wired, cipher rodata gate green, targeted +
+full gates green. The `.bss` concern above is resolved by T1C-F (committed
+`45ca99fe`); the new gate below proves `Te0..Te3`/`SBOX` are now `R/r` rodata.
+
+### Script changes (no seed rotation)
+
+- `scripts/seed/build_from_seed.sh`: added `sf/src/std_cipher.zig` after
+  `std_crypto.zig` in the lib copy list; comment `40 std .zig` -> `41`.
+- `scripts/seed/archive_seed.sh`: added `std_cipher.zig` after `std_crypto.zig`
+  in the header module list and the lib copy loop; SEED_README + CHANGELOG
+  prose counts `40` -> `41` (lib blurb, manifest line, std-install line,
+  changelog row).
+- `release/seed/zig1-seed.tgz` NOT rotated; archive md5 unchanged:
+  `578993ec772dcf2e715f705da9e451aa` (v112 remains the 40-file compiler-fix
+  seed).
+- `sf/src/std_cipher.zig`, both fixtures, `expected_dirs.txt`, `run.err`
+  untouched.
+
+### New gate `scripts/compiler/gate_cipher_rodata.sh`
+
+Dumps/builds `repro/mi_matrix/stdlib_aes_gcm_xmod` with the given compiler,
+compiles every emitted `.c` under `gcc -m32 -std=c89 -O0 -Wall
+-Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I .`,
+then uses `nm -S` to require the real `std_cipher` T-table symbols to be
+read-only with exact sizes (`Te0..Te3` `R/r` `0x400`; `SBOX` `R/r` `0x100`;
+none `B/b`).
+
+### Rebuild from v112
+
+```
+FIXED_POINT_MD5=45158dcede81125a39a2c2c58478e21e \
+  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m2_t2_build
+```
+
+Observed:
+
+```
+[seed] hop1 binary md5: 45158dcede81125a39a2c2c58478e21e
+[seed] hop2 binary md5: 45158dcede81125a39a2c2c58478e21e
+[seed] two-hop closure OK: hop1 == hop2 == 45158dcede81125a39a2c2c58478e21e
+[seed] recorded fixed point OK: 45158dcede81125a39a2c2c58478e21e
+```
+
+`/tmp/m2_t2_build/lib` has 41 `.zig` files including `std_cipher.zig`.
+
+### Targeted + gates
+
+```
+bash scripts/stdlib/run_fixtures.sh /tmp/m2_t2_build/zig1_5_clean \
+  repro/mi_matrix/stdlib_chacha_poly_xmod \
+  repro/mi_matrix/stdlib_aes_gcm_xmod
+PASS repro/mi_matrix/stdlib_chacha_poly_xmod
+PASS repro/mi_matrix/stdlib_aes_gcm_xmod
+run_fixtures: 2 PASS / 0 FAIL over 2 dirs
+```
+
+(Harness runs each fixture 3x and compares stdout byte-for-byte.)
+
+```
+bash scripts/compiler/gate_cipher_rodata.sh /tmp/m2_t2_build/zig1_5_clean
+[gate_cipher_rodata] ok _Te0 type 'r' size 0x400
+[gate_cipher_rodata] ok _Te1 type 'r' size 0x400
+[gate_cipher_rodata] ok _Te2 type 'r' size 0x400
+[gate_cipher_rodata] ok _Te3 type 'r' size 0x400
+[gate_cipher_rodata] ok _SBOX type 'r' size 0x100
+CIPHER_RODATA GATE OK
+```
+
+```
+bash scripts/compiler/gate_const_rodata.sh /tmp/m2_t2_build/zig1_5_clean
+CONST_RODATA GATE OK
+```
+
+### Full gates
+
+```
+bash scripts/stdlib/verify_stdlib.sh /tmp/m2_t2_build/zig1_5_clean
+run_fixtures: 318 PASS / 0 FAIL over 318 dirs
+run_crosscheck: 9 PASS / 0 FAIL over 9 modules
+STDLIB GATE OK
+```
+
+```
+bash scripts/stdlib/run_crosscheck.sh /tmp/m2_t2_build/zig1_5_clean
+run_crosscheck: 9 PASS / 0 FAIL over 9 modules
+```
+
+Result: seed copy lists include `std_cipher` for the next rotation; v112 is
+unaltered; cipher T-tables are verified `R/r` rodata by the new gate; targeted
+(2/2), cipher/const rodata gates, full stdlib (318/0) and crosscheck (9/9) all
+green.
