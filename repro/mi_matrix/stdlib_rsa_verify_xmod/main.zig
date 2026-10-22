@@ -231,6 +231,9 @@ pub fn main() void {
     bad4[255] = bad4[255] ^ 0x80;
     checkBadPss(n[0..], 65537, crypto.HashAlg.sha256, h256[0..], 0, bad4[0..], "pss salt0 corrupted");
 
+    checkBadPss(n[0..], 65537, crypto.HashAlg.sha256, h256[0..], 0xFFFFFFFF, sig_pss_32[0..], "pss salt_len u32 max rejected");
+    checkBadPss(n[0..], 65537, crypto.HashAlg.sha256, h256[0..], 0x80000000, sig_pss_32[0..], "pss salt_len 2^31 rejected");
+
     if (g_fail == 0) {
         std.io.write("crypto rsa verify ok\n");
     } else {

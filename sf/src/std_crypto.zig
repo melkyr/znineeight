@@ -1513,6 +1513,7 @@ fn mgf1(alg: HashAlg, seed: []const u8, out: []u8) void {
 fn pssCheck(alg: HashAlg, hash: []const u8, salt_len: u32, em: []const u8, em_bits: usize) bool {
     var hlen: usize = hashAlgLen(alg);
     var sl: usize = @intCast(usize, salt_len);
+    if (sl > em.len) return false;
     if (em.len < hlen + sl + 2) return false;
     if (em[em.len - 1] != 0xbc) return false;
 
