@@ -370,6 +370,9 @@ pub fn main() void {
     var r4 = drive(big, 1, false, false, true) catch @panic("big certificate handshake");
     ck(r4.sends == 2 and r4.established, "big certificate actions");
 
+    var r6 = drive(big, big.server_raw.len, false, false, true) catch @panic("big certificate one-chunk handshake");
+    ck(r6.sends == 2 and r6.established, "big certificate one-chunk actions");
+
     var r5 = drive(ecdsa, 1, false, false, true) catch @panic("fragmented input handshake");
     ck(r5.sends == 2 and r5.established, "fragmented input actions");
 

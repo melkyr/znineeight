@@ -2,7 +2,8 @@
 //
 // std_tls.zig is the new pure record layer. This fixture pins:
 //   - 5-byte record encode/decode (type, version, 16-bit length)
-//   - 16384 cap + error.RecordTooLarge (encode, header parse)
+//   - plaintext cap 16384, wire-payload cap 16408; exact AES-GCM (16408) and
+//     ChaCha20-Poly1305 (16400) boundaries, one-over rejects on both limits
 //   - RecordReader incremental input buffering: fragmented header/payload and
 //     a clean-close error.Closed / truncated-close error.Corrupt
 //   - AES-128-GCM (RFC 5288): fixed_iv || explicit seq, explicit nonce on the
@@ -80,7 +81,7 @@ fn checkHeaderAndFragments() void {
     ck(hdr.length == @intCast(u16, pt.len), "decode length");
     ckBytes(frag, pt, "decode fragment");
 
-    var big: [tls.TLS_MAX_RECORD + 1]u8 = undefined;
+    var big: [tls.TLS_MAX_WIRE_RECORD + 1]u8 = undefined;
     var out: [16]u8 = undefined;
     var saw: bool = false;
     _ = tls.encodeRecord(tls.content_handshake, tls.TLS_VERSION_12, big[0..], out[0..]) catch |e| {
@@ -90,13 +91,81 @@ fn checkHeaderAndFragments() void {
     ck(saw, "encode too large");
 
     var huge: [5]u8 = undefined;
-    _ = unhex("1703034001", huge[0..]);
+    _ = unhex("1703034019", huge[0..]); // 16409 = wire cap + 1
     saw = false;
     tls.parseRecordHeader(huge[0..]) catch |e| {
         ck(e == error.RecordTooLarge, "header too large");
         saw = true;
     };
     ck(saw, "header too large");
+}
+
+fn fillPattern(buf: []u8, seed: u8) void {
+    var i: usize = 0;
+    while (i < buf.len) : (i += 1) {
+        buf[i] = @intCast(u8, (i + @intCast(usize, seed)) & 0xFF);
+    }
+}
+
+fn checkRecordLimits() void {
+    var plain: [tls.TLS_MAX_PLAINTEXT_RECORD]u8 = undefined;
+    var over: [tls.TLS_MAX_PLAINTEXT_RECORD + 1]u8 = undefined;
+    var wire: [tls.TLS_MAX_WIRE_RECORD]u8 = undefined;
+    var framed: [tls.TLS_MAX_WIRE_RECORD + tls.RECORD_HEADER_LEN]u8 = undefined;
+    var recovered: [tls.TLS_MAX_PLAINTEXT_RECORD]u8 = undefined;
+    fillPattern(plain[0..], 1);
+    fillPattern(over[0..], 2);
+
+    var aes_key: [16]u8 = undefined;
+    var aes_iv: [4]u8 = undefined;
+    fillPattern(aes_key[0..], 3);
+    fillPattern(aes_iv[0..], 4);
+    var n = tls.protectRecord(aesSuite(), aes_key[0..], aes_iv[0..], 0,
+        tls.content_application_data, tls.TLS_VERSION_12, plain[0..], wire[0..]) catch @panic("aes max protect");
+    ck(n == tls.TLS_MAX_WIRE_RECORD, "aes wire boundary");
+    const framed_len = tls.encodeRecord(tls.content_application_data, tls.TLS_VERSION_12, wire[0..n], framed[0..]) catch @panic("aes max encode");
+    ck(framed_len == tls.RECORD_HEADER_LEN + tls.TLS_MAX_WIRE_RECORD, "aes framed boundary");
+    var hdr: tls.RecordHeader = undefined;
+    var frag: []const u8 = undefined;
+    tls.decodeRecord(framed[0..framed_len], &hdr, &frag) catch @panic("aes max decode");
+    ck(hdr.length == @intCast(u16, tls.TLS_MAX_WIRE_RECORD), "aes header boundary");
+    ck(frag.len == tls.TLS_MAX_WIRE_RECORD, "aes wire decode length");
+    const m = tls.unprotectRecord(aesSuite(), aes_key[0..], aes_iv[0..], 0,
+        tls.content_application_data, tls.TLS_VERSION_12, wire[0..n], recovered[0..]) catch @panic("aes max unprotect");
+    ck(m == tls.TLS_MAX_PLAINTEXT_RECORD, "aes recovered boundary");
+    ckBytes(recovered[0..], plain[0..], "aes recovered bytes");
+
+    var saw: bool = false;
+    _ = tls.protectRecord(aesSuite(), aes_key[0..], aes_iv[0..], 0,
+        tls.content_application_data, tls.TLS_VERSION_12, over[0..], wire[0..]) catch |e| {
+        ck(e == error.RecordTooLarge, "aes plaintext over boundary");
+        saw = true;
+    };
+    ck(saw, "aes plaintext over boundary");
+
+    var ch_key: [32]u8 = undefined;
+    var ch_iv: [12]u8 = undefined;
+    fillPattern(ch_key[0..], 5);
+    fillPattern(ch_iv[0..], 6);
+    n = tls.protectRecord(chachaSuite(), ch_key[0..], ch_iv[0..], 0,
+        tls.content_application_data, tls.TLS_VERSION_12, plain[0..], wire[0..]) catch @panic("chacha max protect");
+    ck(n == tls.TLS_MAX_PLAINTEXT_RECORD + 16, "chacha wire boundary");
+    const ch_framed_len = tls.encodeRecord(tls.content_application_data, tls.TLS_VERSION_12, wire[0..n], framed[0..]) catch @panic("chacha max encode");
+    ck(ch_framed_len == tls.RECORD_HEADER_LEN + n, "chacha framed boundary");
+    tls.decodeRecord(framed[0..ch_framed_len], &hdr, &frag) catch @panic("chacha max decode");
+    ck(hdr.length == @intCast(u16, n), "chacha header boundary");
+    const ch_m = tls.unprotectRecord(chachaSuite(), ch_key[0..], ch_iv[0..], 0,
+        tls.content_application_data, tls.TLS_VERSION_12, wire[0..n], recovered[0..]) catch @panic("chacha max unprotect");
+    ck(ch_m == tls.TLS_MAX_PLAINTEXT_RECORD, "chacha recovered boundary");
+    ckBytes(recovered[0..], plain[0..], "chacha recovered bytes");
+
+    saw = false;
+    _ = tls.protectRecord(chachaSuite(), ch_key[0..], ch_iv[0..], 0,
+        tls.content_application_data, tls.TLS_VERSION_12, over[0..], wire[0..]) catch |e| {
+        ck(e == error.RecordTooLarge, "chacha plaintext over boundary");
+        saw = true;
+    };
+    ck(saw, "chacha plaintext over boundary");
 }
 
 fn checkFragmentedReader() void {
@@ -263,6 +332,7 @@ fn chachaRecordKats() void {
 
 pub fn main() void {
     checkHeaderAndFragments();
+    checkRecordLimits();
     checkFragmentedReader();
     aesRecordKats();
     chachaRecordKats();

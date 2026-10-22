@@ -25,9 +25,10 @@
 //     no explicit nonce; AAD = seq || type || version || len.
 //
 // Errors: Corrupt (malformed lengths/truncation), AuthenticationFailed (AEAD
-// tag/nonce tamper), RecordTooLarge (> TLS_MAX_RECORD or reader overflow),
-// Closed (clean end of stream at a record boundary), plus the handshake and
-// certificate errors below. Every pre-Established failure fails closed.
+// tag/nonce tamper), RecordTooLarge (> the plaintext or wire record limit, or
+// reader overflow), Closed (clean end of stream at a record boundary), plus the
+// handshake and certificate errors below. Every pre-Established failure fails
+// closed.
 
 const cipher = @import("std_cipher.zig");
 const crypto = @import("std_crypto.zig");
@@ -37,7 +38,12 @@ const asn1 = @import("std_asn1.zig");
 const x509 = @import("std_x509.zig");
 const arena_mod = @import("std_arena.zig");
 
-pub const TLS_MAX_RECORD: usize = 16384;
+// TLS 1.2 caps a plaintext record fragment at 2^14 bytes. AEAD wire payloads
+// add the ChaCha20-Poly1305 tag (16) or the AES-GCM explicit nonce + tag
+// (8 + 16); the larger of those defines the wire framing ceiling.
+pub const TLS_MAX_PLAINTEXT_RECORD: usize = 16384;
+pub const TLS_MAX_RECORD: usize = TLS_MAX_PLAINTEXT_RECORD;
+pub const TLS_MAX_WIRE_RECORD: usize = TLS_MAX_PLAINTEXT_RECORD + 8 + 16;
 pub const RECORD_HEADER_LEN: usize = 5;
 pub const TLS_VERSION_12: u16 = 0x0303;
 
@@ -106,7 +112,7 @@ pub fn suiteFixedIvLen(suite: CipherSuite) usize {
 // --- record codec -----------------------------------------------------------
 
 pub fn encodeRecord(content_type: u8, version: u16, payload: []const u8, out: []u8) RecordError!usize {
-    if (payload.len > TLS_MAX_RECORD) return error.RecordTooLarge;
+    if (payload.len > TLS_MAX_WIRE_RECORD) return error.RecordTooLarge;
     const total = RECORD_HEADER_LEN + payload.len;
     if (out.len < total) return error.Corrupt;
     out[0] = content_type;
@@ -119,7 +125,7 @@ pub fn encodeRecord(content_type: u8, version: u16, payload: []const u8, out: []
 pub fn parseRecordHeader(raw: []const u8) RecordError!RecordHeader {
     if (raw.len < RECORD_HEADER_LEN) return error.Corrupt;
     const length = loadU16be(raw, 3);
-    if (@intCast(usize, length) > TLS_MAX_RECORD) return error.RecordTooLarge;
+    if (@intCast(usize, length) > TLS_MAX_WIRE_RECORD) return error.RecordTooLarge;
     return RecordHeader{
         .content_type = raw[0],
         .version = loadU16be(raw, 1),
@@ -139,7 +145,7 @@ pub fn decodeRecord(raw: []const u8, header: *RecordHeader, fragment: *[]const u
 // compact with memmove before growing, so a returned fragment stays valid until
 // the next append (callers consume it before feeding more input).
 pub const RecordReader = struct {
-    buf: [TLS_MAX_RECORD + RECORD_HEADER_LEN]u8,
+    buf: [TLS_MAX_WIRE_RECORD + RECORD_HEADER_LEN]u8,
     start: usize,
     len: usize,
     closed: bool,
@@ -205,7 +211,7 @@ pub fn readerNext(r: *RecordReader, header: *RecordHeader, fragment: *[]const u8
 // --- AEAD seam --------------------------------------------------------------
 
 pub fn recordAad(seq: u64, content_type: u8, version: u16, plaintext_len: usize, out: *[13]u8) RecordError!void {
-    if (plaintext_len > TLS_MAX_RECORD) return error.RecordTooLarge;
+    if (plaintext_len > TLS_MAX_PLAINTEXT_RECORD) return error.RecordTooLarge;
     storeU64be(out[0..], 0, seq);
     out[8] = content_type;
     storeU16be(out[0..], 9, version);
@@ -260,7 +266,7 @@ pub fn openFragment(suite: CipherSuite, key: []const u8, nonce: *const [12]u8, a
 // Returns the protected fragment length. AES-GCM includes the 8-byte explicit
 // nonce; both suites include the 16-byte tag.
 pub fn protectRecord(suite: CipherSuite, key: []const u8, fixed_iv: []const u8, seq: u64, content_type: u8, version: u16, pt: []const u8, out: []u8) RecordError!usize {
-    if (pt.len > TLS_MAX_RECORD) return error.RecordTooLarge;
+    if (pt.len > TLS_MAX_PLAINTEXT_RECORD) return error.RecordTooLarge;
     if (key.len != suiteKeyLen(suite)) return error.Corrupt;
     if (fixed_iv.len != suiteFixedIvLen(suite)) return error.Corrupt;
 
@@ -292,11 +298,12 @@ pub fn protectRecord(suite: CipherSuite, key: []const u8, fixed_iv: []const u8, 
 pub fn unprotectRecord(suite: CipherSuite, key: []const u8, fixed_iv: []const u8, seq: u64, content_type: u8, version: u16, record: []const u8, out: []u8) RecordError!usize {
     if (key.len != suiteKeyLen(suite)) return error.Corrupt;
     if (fixed_iv.len != suiteFixedIvLen(suite)) return error.Corrupt;
+    if (record.len > TLS_MAX_WIRE_RECORD) return error.RecordTooLarge;
 
     if (suiteIsAesGcm(suite)) {
         if (record.len < 8 + 16) return error.Corrupt;
         const pt_len = record.len - 8 - 16;
-        if (pt_len > TLS_MAX_RECORD) return error.RecordTooLarge;
+        if (pt_len > TLS_MAX_PLAINTEXT_RECORD) return error.RecordTooLarge;
         if (out.len < pt_len) return error.Corrupt;
         var aad: [13]u8 = undefined;
         try recordAad(seq, content_type, version, pt_len, &aad);
@@ -310,7 +317,7 @@ pub fn unprotectRecord(suite: CipherSuite, key: []const u8, fixed_iv: []const u8
 
     if (record.len < 16) return error.Corrupt;
     const pt_len = record.len - 16;
-    if (pt_len > TLS_MAX_RECORD) return error.RecordTooLarge;
+    if (pt_len > TLS_MAX_PLAINTEXT_RECORD) return error.RecordTooLarge;
     if (out.len < pt_len) return error.Corrupt;
     var aad: [13]u8 = undefined;
     try recordAad(seq, content_type, version, pt_len, &aad);
@@ -332,7 +339,7 @@ pub const TLS_HANDSHAKE_MAX: usize = 65536;
 pub const TLS_FINISHED_LEN: usize = 12;
 const TLS_PENDING_MAX: usize = 8192;
 const TLS_APP_MAX: usize = TLS_MAX_RECORD * 2;
-const TLS_MAX_PLAINTEXT_PER_RECORD: usize = TLS_MAX_RECORD - 24;
+const TLS_MAX_PLAINTEXT_PER_RECORD: usize = TLS_MAX_PLAINTEXT_RECORD;
 
 const hs_client_hello: u8 = 1;
 const hs_server_hello: u8 = 2;
@@ -645,7 +652,7 @@ fn verifyServerKeyExchange(sess: *TlsSession, params: []const u8, sig_alg: u16, 
 }
 
 fn queueRecord(sess: *TlsSession, content_type: u8, payload: []const u8) TlsError!void {
-    var protected: [TLS_MAX_RECORD + 32]u8 = undefined;
+    var protected: [TLS_MAX_WIRE_RECORD]u8 = undefined;
     var frag: []const u8 = payload;
     if (sess.write_cipher) {
         const n = try protectRecord(sess.suite, sess.client_key[0..suiteKeyLen(sess.suite)],
@@ -999,6 +1006,7 @@ fn bufferApplication(sess: *TlsSession, data: []const u8) TlsError!void {
 
 fn handleRecord(sess: *TlsSession, hdr: *const RecordHeader, frag: []const u8) TlsError!void {
     var pt: [TLS_MAX_RECORD]u8 = undefined;
+    if (!sess.read_cipher and frag.len > TLS_MAX_PLAINTEXT_RECORD) return error.RecordTooLarge;
 
     if (hdr.content_type == content_handshake) {
         const plain = try decryptRecord(sess, content_handshake, frag, pt[0..]);
@@ -1066,33 +1074,53 @@ pub fn tlsInit(sess: *TlsSession, cfg: *TlsConfig) void {
     sess.app_end = 0;
 }
 
-pub fn tlsStep(sess: *TlsSession, input: []const u8, output: []u8) TlsError!TlsAction {
-    if (sess.state == .Error) return error.HandshakeFailed;
-    if (sess.closed) return TlsAction{ .closed = {} };
-    if (input.len > 0) try readerAppend(&sess.reader, input);
-    if (sess.pending_len > 0) return flushPending(sess, output);
-
-    if (sess.state == .SendClientHello) {
-        try sendClientHello(sess);
-        return flushPending(sess, output);
-    }
-
+fn drainRecords(sess: *TlsSession) TlsError!void {
     while (true) {
         var hdr: RecordHeader = undefined;
         var frag: []const u8 = undefined;
         const more = readerNext(&sess.reader, &hdr, &frag) catch |e| {
             if (e == error.Closed) {
-                if (sess.state == .Established) return TlsAction{ .closed = {} };
+                if (sess.state == .Established) return;
                 return error.HandshakeFailed;
             }
             return e;
         };
-        if (!more) break;
+        if (!more) return;
         try handleRecord(sess, &hdr, frag);
-        if (sess.pending_len > 0) return flushPending(sess, output);
-        if (sess.closed) return TlsAction{ .closed = {} };
+        if (sess.closed) return;
     }
+}
 
+// Feed caller input incrementally: append only what fits the fixed record
+// buffer, then drain every complete record before appending more. This admits
+// an arbitrary-size input slice (including a whole captured server flight)
+// with bounded memory.
+fn feedInput(sess: *TlsSession, input: []const u8) TlsError!void {
+    var off: usize = 0;
+    while (off < input.len) {
+        const buffered = readerBuffered(&sess.reader);
+        if (buffered > sess.reader.buf.len) return error.Corrupt;
+        const room = sess.reader.buf.len - buffered;
+        if (room == 0) return error.RecordTooLarge;
+        var take = input.len - off;
+        if (take > room) take = room;
+        try readerAppend(&sess.reader, input[off .. off + take]);
+        off += take;
+        try drainRecords(sess);
+        if (sess.closed) return;
+    }
+}
+
+pub fn tlsStep(sess: *TlsSession, input: []const u8, output: []u8) TlsError!TlsAction {
+    if (sess.state == .Error) return error.HandshakeFailed;
+    if (sess.closed) return TlsAction{ .closed = {} };
+
+    if (sess.state == .SendClientHello) try sendClientHello(sess);
+    if (input.len > 0) try feedInput(sess, input);
+    try drainRecords(sess);
+
+    if (sess.closed) return TlsAction{ .closed = {} };
+    if (sess.pending_len > 0) return flushPending(sess, output);
     if (sess.state == .Established) return TlsAction{ .established = {} };
     return TlsAction{ .recv = 1 };
 }
@@ -1128,7 +1156,7 @@ pub fn tlsWrite(sess: *TlsSession, data: []const u8, output: []u8) TlsError!usiz
         var take: usize = data.len - pos;
         if (take > TLS_MAX_PLAINTEXT_PER_RECORD) take = TLS_MAX_PLAINTEXT_PER_RECORD;
 
-        var protected: [TLS_MAX_RECORD]u8 = undefined;
+        var protected: [TLS_MAX_WIRE_RECORD]u8 = undefined;
         const n = try protectRecord(sess.suite, sess.client_key[0..suiteKeyLen(sess.suite)],
             sess.client_iv[0..suiteFixedIvLen(sess.suite)],
             sess.write_seq, content_application_data, TLS_VERSION_12, data[pos .. pos + take], protected[0..]);
