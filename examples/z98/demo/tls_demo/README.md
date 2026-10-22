@@ -112,6 +112,17 @@ tls: BadArgs
 tls: HttpBadUrl
 tls: HttpTooLarge
 tls: TlsInternal
+tls: OutOfMemory
+tls: UnsupportedVersion
+tls: BadConfig
+tls: AppTooLarge
+tls: OutputTooSmall
+tls: BadAction
+tls: WeakPublicKey
+tls: InvalidPrivateKey
+tls: InvalidPublicKey
+tls: HttpBadResponse
+tls: HttpFailed
 ```
 
 ## RAM expectations

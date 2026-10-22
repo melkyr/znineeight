@@ -35,7 +35,7 @@ attribution pin, manifest md5 `0c022fe049c808828704b702e6a2b2e7`) —
 `std_tls.zig` adds the sans-I/O TLS 1.2 record layer and client handshake over
 the M2 crypto/ECC and M3 X.509 stack; the M4 demo `examples/z98/demo/tls_demo/`
 uses it with `std_http.httpGetOver` and the M3 `ca_store.bin`. The v115
-compiler-fix rotation stayed two-hop; v116 adds std-only payload, so the
+std-only X.509 rotation stayed two-hop; v116 adds std-only payload, so the
 rebuilt archive is two-hop (`build_from_seed.sh`: hop1 == hop2 == `F_new`).
 **This block is updated at
 every plan closeout that rotates the seed**; the branch's in-progress fixed
@@ -968,7 +968,7 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 - Discovery is `repro/mi_matrix/stdlib_*/` (any `stdlib_*` dir, not just
   `_xmod`) plus `stdlib_test/*/`. In discovery mode the harness asserts the
   discovered dir set EQUALS the committed baseline
-  `scripts/stdlib/expected_dirs.txt` (324 dirs today: 314
+  `scripts/stdlib/expected_dirs.txt` (327 dirs today: 317
   `repro/mi_matrix/stdlib_*` + 10 `stdlib_test/*`), so a dropped/renamed/added
   fixture FAILS the gate instead of silently shrinking coverage. Update the pin
   intentionally when a band adds/removes fixtures.
