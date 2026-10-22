@@ -20,8 +20,8 @@ Added two pinned fixture dirs:
   - 9-intermediate chain (leaf + 9 CAs + root) for `ChainTooLong`.
   - Bit-flipped ECDSA intermediate signature vector.
 - `repro/mi_matrix/stdlib_truststore_xmod/` — hand-built 6-anchor store
-  (`store_roundtrip.bin`) plus corrupt vectors: bad magic, truncated entry,
-  wrong `total_len`.
+  (`store_roundtrip.bin`) plus corrupt vectors: bad magic, truncated entry
+  (correct `total_len`, last entry body short), and wrong `total_len`.
 
 `scripts/stdlib/expected_dirs.txt` now pins both dirs.
 
@@ -155,11 +155,64 @@ exit=0
 Full stdlib gate, seed rotation, caconv, docs and compiler battery are deferred
 to Task 3 per the brief.
 
+## Round-1 review fix — truncated-entry vector
+
+Review found that the original `corrupt_truncated_entry.bin` still carried
+`total_len = 1275` while the file was 1274 bytes, so `trustStoreLoad` returned
+`Corrupt` at the total-length self-check before reaching the entry-length check.
+The fixture now keeps `total_len == file length` and truncates the last entry
+body instead; the separate wrong-`total_len` vector is unchanged.
+
+Byte-level check (entry 5 header declares 187 body bytes, only 186 remain):
+
+```
+$ python3 -c 'import struct; from pathlib import Path; b=Path("repro/mi_matrix/stdlib_truststore_xmod/vectors/corrupt_truncated_entry.bin").read_bytes(); print("len", len(b), "total_len", struct.unpack("<I", b[12:16])[0]); off=16; cnt=struct.unpack("<I",b[8:12])[0]
+for i in range(cnt):
+ sl,kl=struct.unpack("<HH",b[off:off+4]); rem=len(b)-(off+12); print("entry",i,"body",sl+kl,"remaining",rem,"OK" if sl+kl<=rem else "TRUNCATED"); off+=12+sl+kl'
+len 1274 total_len 1274
+entry 0 body 143 remaining 1246 OK
+entry 1 body 315 remaining 1091 OK
+entry 2 body 113 remaining 764 OK
+entry 3 body 113 remaining 639 OK
+entry 4 body 316 remaining 514 OK
+entry 5 body 187 remaining 186 TRUNCATED
+```
+
+Re-ran the targeted parse/verify/truststore set 3x after regenerating
+`vectors_data.zig`:
+
+```
+$ for i in 1 2 3; do echo "=== run $i ==="; bash scripts/stdlib/run_fixtures.sh /tmp/m2_t4_v114_build/zig1_5_clean repro/mi_matrix/stdlib_x509_parse_xmod repro/mi_matrix/stdlib_x509_verify_xmod repro/mi_matrix/stdlib_truststore_xmod; echo "exit=$?"; done
+=== run 1 ===
+PASS repro/mi_matrix/stdlib_x509_parse_xmod
+PASS repro/mi_matrix/stdlib_x509_verify_xmod
+PASS repro/mi_matrix/stdlib_truststore_xmod
+----------------------------------------
+run_fixtures: 3 PASS / 0 FAIL over 3 dirs
+exit=0
+=== run 2 ===
+PASS repro/mi_matrix/stdlib_x509_parse_xmod
+PASS repro/mi_matrix/stdlib_x509_verify_xmod
+PASS repro/mi_matrix/stdlib_truststore_xmod
+----------------------------------------
+run_fixtures: 3 PASS / 0 FAIL over 3 dirs
+exit=0
+=== run 3 ===
+PASS repro/mi_matrix/stdlib_x509_parse_xmod
+PASS repro/mi_matrix/stdlib_x509_verify_xmod
+PASS repro/mi_matrix/stdlib_truststore_xmod
+----------------------------------------
+run_fixtures: 3 PASS / 0 FAIL over 3 dirs
+exit=0
+```
+
 ## Step 5 — commit
 
-Code/fixtures: `a911b286a04f6cf3e0a07e44b723150dc7bf7294`
+Code/fixtures: `a911b286a04f6cf3e0a07e44b723150dc7bf7294` (initial);
+`c39ece75c5461cad60c58ad636b808e5e3c8fd19` (round-1 truncated-entry fixture fix).
 
-Report: this file (separate `docs(sdd)` commit).
+Report: this file (`df1741f1` initial report; this update is the separate
+`docs(sdd)` commit).
 
 ## Concerns
 
