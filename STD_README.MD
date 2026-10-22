@@ -66,7 +66,7 @@ strict: lower layers only, never siblings, never higher (R3).
 | **L2** | Data layer built on L0 — string slices and growable buffers | `std.str`, `std.buf` |
 | **L3** | Resources — owned-handle files, stdin, and sockets | `std_file`, `std_stdin`, `std.net` |
 | **L4** | Collections and byte codecs — concrete maps, sort/search, a stable min-heap, RLE, LZ4 block and zstd frame decode | `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_lz4`, `std_zstd` |
-| **L5** | Codecs, numerics, and search — base64/hex, UTF-8, streaming hashes, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
+| **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
 | **L6** | Composition — coroutine-aware line and frame readers | `std_stream` |
 | async runtime | Outside L0–L6 — the cooperative scheduler and child-frame pool | `std.async` |
 
@@ -140,7 +140,12 @@ apply to its modules.
 | Base64 encode/decode | `std_base64` | [codecs.md](sf/docs/std_lib/codecs.md) |
 | Hex encode/decode | `std_hex` | [codecs.md](sf/docs/std_lib/codecs.md) |
 | UTF-8 validate, decode, encode, count | `std_utf8` | [codecs.md](sf/docs/std_lib/codecs.md) |
-| SHA-1, SHA-256, MD5, CRC-32 | `std_crypto` | [codecs.md](sf/docs/std_lib/codecs.md) |
+| SHA-1/256/384/512, MD5, CRC-32, HMAC, HKDF, BLAKE2s | `std_crypto` | [crypto.md](sf/docs/std_lib/crypto.md) |
+| RSA PKCS#1 v1.5 / PSS signature verify | `std_crypto` | [crypto.md](sf/docs/std_lib/crypto.md) |
+| ChaCha20, Poly1305, ChaCha20-Poly1305 AEAD | `std_cipher` | [cipher.md](sf/docs/std_lib/cipher.md) |
+| AES-128 block and AES-128-GCM AEAD | `std_cipher` | [cipher.md](sf/docs/std_lib/cipher.md) |
+| X25519 key agreement | `std_ecc` | [ecc.md](sf/docs/std_lib/ecc.md) |
+| P-256 keygen / ECDH / ECDSA verify; P-384 ECDSA verify | `std_ecc` | [ecc.md](sf/docs/std_lib/ecc.md) |
 | Parse/format integers and fixed-point `f64` | `std_parse` | [codecs.md](sf/docs/std_lib/codecs.md) |
 
 ## Worked example
@@ -195,7 +200,7 @@ pub fn main() !void {
 }
 ```
 
-## Domain docs  [updated: 2026-10-21 — M6]
+## Domain docs  [updated: 2026-10-22 — M2]
 
 Every domain has a full doc with an overview, a quick start, and a structured
 entry for each public function. Read the one for the job at hand:
@@ -220,9 +225,17 @@ entry for each public function. Read the one for the job at hand:
   deterministic pseudorandom generators.
 - [noise.md](sf/docs/std_lib/noise.md) — `std_noise`: 2014 OpenSimplex 2D/3D
   noise and fBm.
+- [crypto.md](sf/docs/std_lib/crypto.md) — `std_crypto`: SHA-1/256/384/512,
+  MD5, CRC-32, HMAC-SHA256, HKDF, BLAKE2s/HMAC-BLAKE2s, RC4, modexp, and RSA
+  PKCS#1 v1.5 / PSS verify.
+- [cipher.md](sf/docs/std_lib/cipher.md) — `std_cipher`: ChaCha20, Poly1305,
+  ChaCha20-Poly1305 AEAD, AES-128, and AES-128-GCM (const T-tables, GHASH).
+- [ecc.md](sf/docs/std_lib/ecc.md) — `std_ecc`: X25519, P-256
+  keygen/ECDH/ECDSA verify, and P-384 ECDSA verify.
 - [codecs.md](sf/docs/std_lib/codecs.md) — `std_base64`, `std_hex`,
-  `std_utf8`, `std_crypto`, `std_parse`, `std_lz4`: encoders/decoders, hashes,
-  number parsing, and raw LZ4 block decode.
+  `std_utf8`, `std_parse`, `std_lz4`: encoders/decoders, number parsing, and
+  raw LZ4 block decode (legacy `std_crypto` primitives are indexed in
+  [crypto.md](sf/docs/std_lib/crypto.md)).
 - [zstd.md](sf/docs/std_lib/zstd.md) — `std_zstd`: single-shot zstd frame
   decode with a caller-overridable window cap.
 - [num.md](sf/docs/std_lib/num.md) — `std_num`: explicit adaptive

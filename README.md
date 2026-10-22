@@ -334,15 +334,18 @@ To build a Z98 program on a target machine you need:
 - [README_zig0_bootstrap.md](README_zig0_bootstrap.md) — the preserved bootstrap-era (`zig0`)
   README, kept byte-verbatim.
 
-## Standard Library  [updated: 2026-10-21 — M6]
+## Standard Library  [updated: 2026-10-22 — M2]
 The Z98 standard library lives in `sf/src/std_*.zig`. Its core modules (`io`, `arena`, `str`,
 `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `buf`) are re-exported through
 `@import("std")`; the higher layers (`std_file`, `std_stdin`, `std_stream`, `std_crypto`,
-`std_parse`, `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`, `std_utf8`,
-`std_rand`, `std_noise`, `std_lz4`, `std_zstd`, `std_num`, `std_pathfind`,
-`std_hpa`, `std_physics`)
-are imported by path. See the guide for the library's model and an index that links each
-domain's detailed doc:
+`std_cipher`, `std_ecc`, `std_parse`, `std_map`, `std_sort`, `std_heap`, `std_rle`,
+`std_base64`, `std_hex`, `std_utf8`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
+`std_num`, `std_pathfind`, `std_hpa`, `std_physics`)
+are imported by path. `std_crypto` provides streaming SHA-1/256/384/512, MD5, CRC-32,
+HMAC-SHA256, HKDF, BLAKE2s, RC4, modexp, and RSA PKCS#1 v1.5 / PSS verify; `std_cipher`
+provides ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128, and AES-128-GCM (const T-tables);
+`std_ecc` provides X25519, P-256 keygen/ECDH/ECDSA verify, and P-384 ECDSA verify. See the
+guide for the library's model and an index that links each domain's detailed doc:
 
 - [STD_README.MD](STD_README.MD) — the Z98 standard library guide and index.
 

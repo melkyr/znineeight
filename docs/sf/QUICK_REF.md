@@ -97,21 +97,25 @@ runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 archive **v95 carries the full 32 std `.zig`** = `std.zig` plus 31 `std_*.zig`;
 the earlier v94 archive predated M0 with only 30 — from v95 onward
 `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install the current
-`sf/src` set (39 `std_*.zig` + `std.zig` = 40) into the produced compiler's
+`sf/src` set (41 `std_*.zig` + `std.zig` = 42) into the produced compiler's
 `lib/` and the archive), and `SEED_README.txt`.
 
-**Std-module inventory:** the `sf/src` std set is **39** `std_*.zig` + `std.zig`
+**Std-module inventory:** the `sf/src` std set is **41** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
 `std_net`, `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`,
 `std_time_pal`, `std_buf`, `std_file`, `std_file_pal`, `std_stdin`,
-`std_stdin_pal`, `std_stream`, `std_crypto`, `std_parse`, `std_bencode`,
+`std_stdin_pal`, `std_stream`, `std_crypto`, `std_cipher`, `std_ecc`,
+`std_parse`, `std_bencode`,
 `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`,
 `std_utf8`, `std_http`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
 `std_num`, `std_pathfind`, `std_hpa`, `std_physics`). `std.zig` re-exports
 the core **13** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/buf`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
-`scripts/seed/build_from_seed.sh` installs all 40 into the rebuilt compiler's `lib/`.
+`scripts/seed/build_from_seed.sh` installs all 42 into the rebuilt compiler's `lib/`.
 **`std_crypto` (M4):** carries streaming SHA-1/SHA-256/MD5 + CRC-32 plus RC4 (`rc4Init`/`rc4Apply`, RFC 6229 vectors) and modular exponentiation (`modpow`, fixed 32-bit limbs sized for the MSE/PE 768-bit Diffie-Hellman prime) for the encrypted handshake.
+**`std_crypto` M2 additions:** SHA-384/512, HMAC-SHA256 (one-shot + streaming), HKDF extract/expand (RFC 5869), BLAKE2s + HMAC-BLAKE2s (RFC 7693 / WireGuard MAC), and verify-only RSA PKCS#1 v1.5 / PSS (RFC 8017, generic modexp cap 4096-bit). Errors: `BadSignature` / `Corrupt` (`UnsupportedAlgorithm` is unrepresentable via `HashAlg`).
+**`std_cipher` (M2):** ChaCha20 (RFC 8439, 20 rounds unrolled), Poly1305 (donna 5×26-bit limbs, constant-time), ChaCha20-Poly1305 AEAD (`error.AuthenticationFailed`), AES-128 (FIPS-197, 4 KiB `const` T-tables `R/r` rodata), AES-128-GCM (SP800-38D, GHASH 4-bit tables). Pure, no heap/arena; fixtures `stdlib_chacha_poly_xmod` + `stdlib_aes_gcm_xmod`; T-table gate `scripts/compiler/gate_cipher_rodata.sh`. Doc: `sf/docs/std_lib/cipher.md`.
+**`std_ecc` (M2):** X25519 (ref10 26/25-bit ladder, RFC 7748 clamp + all-zero `error.WeakPublicKey`), P-256 keygen/ECDH/ECDSA verify, P-384 ECDSA verify (shared BearSSL i31 engine, MIT). No heap/libm/f64; constant-time scalar paths; uncompressed pubkeys 65/97 bytes. Fixtures `stdlib_x25519_xmod` + `stdlib_ecc_verify_xmod` (plus `scripts/stdlib/run_ecc_safe.sh`). Doc: `sf/docs/std_lib/ecc.md`.
 **`std_http` deferral:** HTTP/1.1, no TLS; chunked transfer-encoding and keep-alive are **DEFERRED** (not implemented) — `parseResponse` requires a `Content-Length` or a close-delimited body and rejects `Transfer-Encoding: chunked` with `BadResponse` (binding note in `sf/src/std_http.zig`).
 **`std_math` f64 (M2, z9play):** adds pure-Z98 `sqrt(x: f64) f64` (correctly rounded: exact integer square root of the significand, 0 ULP), plus `sin(x: f64) f64` / `cos(x: f64) f64` (Cody-Waite argument reduction on a split `2/pi` + fdlibm `__kernel_sin`/`__kernel_cos` minimax, one op per statement so the C89 emitter's f64 stores defeat x87 excess precision). **Pure Z98 — no libm, no `@sqrt`/`@sin`/`@cos` builtins**; the emitted C imports no math symbol (the z9play M2 tier asserts `nm -u` has no `sqrt`/`sin`/`cos`/`pow` and DT_NEEDED has no `libm`). `sin`/`cos` are valid for `|x| <= 2^20*(pi/2) ≈ 1.65e6` (fdlibm medium-reduction cap; covers the Vorbis IMDCT/window range with >60x headroom) and return NaN outside it; `sqrt` maps `x<0` to NaN and passes `0`/`inf` through. Accuracy <= 1 ULP vs a glibc/python oracle. Fixture: `repro/mi_matrix/stdlib_math_f64_xmod`; z9play gate: `examples/z98/z9play/tests/tier_math.sh`. See `sf/src/std_math.zig`.
 **`std_noise` (M2):** Kurt Spencer's **2014 OpenSimplex v1.1** (NOT OpenSimplex2) — `opensimplexInit`/`noise2d`/`noise3d`/`noiseFbm2d`, 512 B state (`perm` + `perm_grad`) seeded via `std_rand` xoshiro Fisher–Yates; f64 throughout (no f32 shortcut — it fails the visual golden). Canonical 2014-reference constant literals (`0.366025403784439` / `-0.16666666666666666`); the temporary adjacent-literal lexer workaround was removed at the M2 T1D closeout (defect D6 FIXED — T1B correctly-rounded `parseF64`). Pins: crosscheck `scripts/stdlib/vectors/std_noise/grid.expected` md5 `94314ebd32053089b226387770c0cd5d` (Z98 == C89 ref), visual golden `pgm fnv1a64 4921c94f3ec08543` (`stdlib_noise_basic_xmod`). Doc: `sf/docs/std_lib/noise.md`.
@@ -180,9 +184,10 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is 294/0 (292/0 at M7 on v103; the two M2
-  `stdlib_noise_*` fixtures made it 294). The z9play M7 TUI consumes this
-  API (`examples/z98/z9play/ui.zig`).
+  pin); `verify_stdlib` is **320/0** on seed v113 (294/0 at M7 on v103; the two
+  M2 `stdlib_noise_*` fixtures and the M2 crypto/cipher/ecc fixtures account
+  for the current set). The z9play M7 TUI consumes this API
+  (`examples/z98/z9play/ui.zig`).
 
 ### Compiler limits — `Type`-column ceilings  [added: 2026-10-08]
 
@@ -234,7 +239,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   via the search path: (1) importer's dir, (2) `-I`/`--lib-dir` dirs in CLI order, (3) the default
   install path `<exe_dir>/lib`, (4) CWD. To run a migrated example/repro you must first install the
   canonical std lib next to the compiler under test:
-  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_fmt.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig sf/src/std_crypto.zig sf/src/std_parse.zig sf/src/std_bencode.zig sf/src/std_map.zig sf/src/std_sort.zig sf/src/std_heap.zig sf/src/std_rle.zig sf/src/std_base64.zig sf/src/std_hex.zig sf/src/std_utf8.zig sf/src/std_http.zig sf/src/std_rand.zig sf/src/std_noise.zig sf/src/std_lz4.zig sf/src/std_zstd.zig sf/src/std_num.zig sf/src/std_pathfind.zig sf/src/std_physics.zig sf/src/std_hpa.zig <exe_dir>/lib/`
+  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_fmt.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig sf/src/std_crypto.zig sf/src/std_cipher.zig sf/src/std_ecc.zig sf/src/std_parse.zig sf/src/std_bencode.zig sf/src/std_map.zig sf/src/std_sort.zig sf/src/std_heap.zig sf/src/std_rle.zig sf/src/std_base64.zig sf/src/std_hex.zig sf/src/std_utf8.zig sf/src/std_http.zig sf/src/std_rand.zig sf/src/std_noise.zig sf/src/std_lz4.zig sf/src/std_zstd.zig sf/src/std_num.zig sf/src/std_pathfind.zig sf/src/std_physics.zig sf/src/std_hpa.zig <exe_dir>/lib/`
   (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The canonical set
   includes `std_fmt.zig` (the print-formatting layer, auto-imported by the compiler
   whenever a `print` is lowered); a compiler whose `lib/` predates it can resolve a
@@ -957,8 +962,8 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 - Discovery is `repro/mi_matrix/stdlib_*/` (any `stdlib_*` dir, not just
   `_xmod`) plus `stdlib_test/*/`. In discovery mode the harness asserts the
   discovered dir set EQUALS the committed baseline
-  `scripts/stdlib/expected_dirs.txt` (192 dirs today: 185
-  `repro/mi_matrix/stdlib_*` + 7 `stdlib_test/*`), so a dropped/renamed/added
+  `scripts/stdlib/expected_dirs.txt` (320 dirs today: 310
+  `repro/mi_matrix/stdlib_*` + 10 `stdlib_test/*`), so a dropped/renamed/added
   fixture FAILS the gate instead of silently shrinking coverage. Update the pin
   intentionally when a band adds/removes fixtures.
 - Independently of the discovery pin, a guard ALWAYS fails
