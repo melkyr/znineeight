@@ -24,21 +24,21 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v111** (rotated 2026-10-21 at the std-algorithms M7 HPA\*
-closeout, plan `2026-10-19-z98-std-algorithms-m7-hpa-plan`; seed v110 →
-v111, first 40-file manifest after adding `std_hpa` — no compiler
-movement; compiler fixed point `21c957730d268f1e7883176fa5413b65` UNCHANGED
-from v110). Archive md5 `5dc851a1a96c0776ef36e8e5b29774b7`; archived binary
-md5 (= v111's rotation fixed point) `21c957730d268f1e7883176fa5413b65`;
-`gen/` 46 `.c` + 47 `.h` (10,307,965 bytes); `lib/` 40 std `.zig` plus
+**Current seed: v113** (rotated 2026-10-22 at the Phase 1 M2 crypto-core
+closeout, plan `2026-10-21-phase1-m2-crypto-core-plan`; seed v112 → v113,
+first 42-file manifest after adding `std_cipher` and `std_ecc` — no compiler
+movement; compiler fixed point `45158dcede81125a39a2c2c58478e21e` UNCHANGED
+from v112). Archive md5 `92d39942ed3d08a6543d29d5fafc5a95`; archived binary
+md5 (= v113's rotation fixed point) `45158dcede81125a39a2c2c58478e21e`;
+`gen/` 47 `.c` + 48 `.h` (10,691,275 bytes); `lib/` 42 std `.zig` plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`788f5642c1fdb13ee532673c5d24ed7e`) — `std_hpa.zig` adds exact-cost
-hierarchical HPA\* pathfinding. The
-T1B/T1F lexer-format fixes make post-rotation `build_from_seed.sh` two-hop
-again (hop1 == hop2; the T1F three-hop moving point closes once the seed embeds
-post-T1F `emit_support`). **This block is updated at every plan closeout that
-rotates the seed**; the branch's in-progress fixed point is recorded in the active plan's
-workspace ledger.
+`b4c3059de37b3f5de2948ebc019e18a9`) — `std_cipher.zig` adds
+ChaCha20/Poly1305/ChaCha20-Poly1305/AES-128-GCM, and `std_ecc.zig` adds
+X25519 / P-256 ECDH+ECDSA verify / P-384 ECDSA verify. The v112 compiler-fix
+rotation stayed two-hop; v113 adds std-only payload, so the rebuilt archive is
+two-hop (`build_from_seed.sh`: hop1 == hop2 == `F_new`). **This block is
+updated at every plan closeout that rotates the seed**; the branch's
+in-progress fixed point is recorded in the active plan's workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
 "seed v88 NOT rotated (closeout-only)" status at the time; the Volume II Task 22
 closeout (2026-09-30) rotated the seed to v89; the Amendment A1 closeout
