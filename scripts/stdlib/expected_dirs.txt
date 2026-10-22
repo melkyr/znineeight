@@ -151,6 +151,7 @@ repro/mi_matrix/stdlib_http_parseresponse_chunked_reject_xmod
 repro/mi_matrix/stdlib_http_parseresponse_xmod
 repro/mi_matrix/stdlib_http_parseurl_xmod
 repro/mi_matrix/stdlib_http_percentencode_xmod
+repro/mi_matrix/stdlib_http_transport_xmod
 repro/mi_matrix/stdlib_intcast_loop_capture_xmod
 repro/mi_matrix/stdlib_intcast_range_xmod
 repro/mi_matrix/stdlib_intcast_widen_sign_runtime_xmod

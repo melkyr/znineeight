@@ -147,12 +147,7 @@ fn parsePort(s: []const u8) HttpError!u16 {
     return @intCast(u16, v);
 }
 
-pub fn parseUrl(url: []const u8) HttpError!Url {
-    const sep = findFrom(url, "://", 0);
-    if (sep >= url.len) return error.BadUrl;
-    const scheme = url[0..sep];
-    if (!eqBytes(scheme, "http")) return error.BadUrl;
-
+fn parseAuthorityUrl(url: []const u8, sep: usize, default_port: u16) HttpError!Url {
     const auth_start = sep + 3;
     var auth_end: usize = auth_start;
     while (auth_end < url.len and url[auth_end] != '/' and url[auth_end] != '?') : (auth_end += 1) {}
@@ -160,7 +155,7 @@ pub fn parseUrl(url: []const u8) HttpError!Url {
 
     const authority = url[auth_start..auth_end];
     var host: []const u8 = authority;
-    var port: u16 = DEFAULT_PORT;
+    var port: u16 = default_port;
     const colon = findFrom(authority, ":", 0);
     if (colon < authority.len) {
         host = authority[0..colon];
@@ -184,6 +179,22 @@ pub fn parseUrl(url: []const u8) HttpError!Url {
         }
     }
     return Url{ .host = host, .port = port, .path = path, .query = query };
+}
+
+pub fn parseUrl(url: []const u8) HttpError!Url {
+    const sep = findFrom(url, "://", 0);
+    if (sep >= url.len) return error.BadUrl;
+    if (!eqBytes(url[0..sep], "http")) return error.BadUrl;
+    return parseAuthorityUrl(url, sep, DEFAULT_PORT);
+}
+
+fn parseTransportUrl(url: []const u8) HttpError!Url {
+    const sep = findFrom(url, "://", 0);
+    if (sep >= url.len) return error.BadUrl;
+    const scheme = url[0..sep];
+    if (eqBytes(scheme, "https")) return parseAuthorityUrl(url, sep, 443);
+    if (eqBytes(scheme, "http")) return parseAuthorityUrl(url, sep, DEFAULT_PORT);
+    return error.BadUrl;
 }
 
 // --- percentEncode -----------------------------------------------------------
@@ -294,6 +305,274 @@ pub fn parseResponse(arena: *std.arena.Arena, raw: []const u8) HttpError!Respons
         copyBytes(body, raw[body_off..]);
     }
     return Response{ .status = status, .headers = hdrs, .body = body };
+}
+
+// --- transport vtable + httpGetOver -----------------------------------------
+
+pub const HttpTransport = struct {
+    state: *void,
+    read_fn: fn (*void, []u8) !usize,
+    write_fn: fn (*void, []const u8) !usize,
+    close_fn: fn (*void) void,
+};
+
+const Conn = struct {
+    t: *HttpTransport,
+    buf: [4096]u8,
+    pos: usize,
+    len: usize,
+    eof: bool,
+};
+
+fn connFill(c: *Conn) !bool {
+    if (c.pos < c.len) return true;
+    c.pos = 0;
+    c.len = 0;
+    const n = try c.t.read_fn(c.t.state, c.buf[0..]);
+    if (n == 0) {
+        c.eof = true;
+        return false;
+    }
+    c.len = n;
+    return true;
+}
+
+fn connReadSome(c: *Conn, dst: []u8) !usize {
+    if (dst.len == 0) return 0;
+    if (!try connFill(c)) return 0;
+    var n = c.len - c.pos;
+    if (n > dst.len) n = dst.len;
+    var i: usize = 0;
+    while (i < n) : (i += 1) dst[i] = c.buf[c.pos + i];
+    c.pos += n;
+    return n;
+}
+
+fn connReadExact(c: *Conn, dst: []u8) !void {
+    var got: usize = 0;
+    while (got < dst.len) {
+        const n = try connReadSome(c, dst[got..]);
+        if (n == 0) return error.BadResponse;
+        got += n;
+    }
+}
+
+fn connReadByte(c: *Conn, out: *u8) !bool {
+    if (!try connFill(c)) return false;
+    out.* = c.buf[c.pos];
+    c.pos += 1;
+    return true;
+}
+
+fn connReadLine(c: *Conn, line: []u8) !usize {
+    var n: usize = 0;
+    while (true) {
+        var b: u8 = 0;
+        if (!try connReadByte(c, &b)) {
+            if (n == 0) return error.BadResponse;
+            return error.BadResponse;
+        }
+        if (b == '\n') {
+            if (n > 0 and line[n - 1] == '\r') n -= 1;
+            return n;
+        }
+        if (n >= line.len) return error.TooLarge;
+        line[n] = b;
+        n += 1;
+    }
+    return error.BadResponse;
+}
+
+fn isHex(c: u8) bool {
+    if (c >= '0' and c <= '9') return true;
+    if (c >= 'a' and c <= 'f') return true;
+    if (c >= 'A' and c <= 'F') return true;
+    return false;
+}
+
+fn hexVal(c: u8) usize {
+    if (c >= '0' and c <= '9') return @intCast(usize, c - 48);
+    if (c >= 'a' and c <= 'f') return @intCast(usize, c - 87);
+    return @intCast(usize, c - 55);
+}
+
+fn parseChunkSize(s: []const u8) HttpError!usize {
+    var v: usize = 0;
+    var any: bool = false;
+    var i: usize = 0;
+    while (i < s.len and s[i] != ';') : (i += 1) {
+        if (!isHex(s[i])) return error.BadResponse;
+        any = true;
+        v = v * @intCast(usize, 16) + hexVal(s[i]);
+        if (v > MAX_BODY_BYTES) return error.TooLarge;
+    }
+    if (!any) return error.BadResponse;
+    return v;
+}
+
+fn readTrailers(c: *Conn) !void {
+    var line: [1024]u8 = undefined;
+    var count: usize = 0;
+    while (count < 64) : (count += 1) {
+        const n = try connReadLine(c, line[0..]);
+        if (n == 0) return;
+    }
+    return error.TooLarge;
+}
+
+fn readChunked(c: *Conn, body: *std.buf.Buf) !void {
+    while (true) {
+        var line: [64]u8 = undefined;
+        const n = try connReadLine(c, line[0..]);
+        const sz = try parseChunkSize(line[0..n]);
+        if (sz == 0) {
+            try readTrailers(c);
+            return;
+        }
+        if (body.len + sz > MAX_BODY_BYTES) return error.TooLarge;
+        try std.buf.reserve(body, sz);
+        var got: usize = 0;
+        while (got < sz) {
+            const part = try connReadSome(c, body.data[body.len + got .. body.len + sz]);
+            if (part == 0) return error.BadResponse;
+            got += part;
+        }
+        body.len += sz;
+        var crlf: [2]u8 = undefined;
+        try connReadExact(c, crlf[0..]);
+        if (crlf[0] != '\r' or crlf[1] != '\n') return error.BadResponse;
+    }
+}
+
+fn transportWriteAll(t: *HttpTransport, data: []const u8) !void {
+    var sent: usize = 0;
+    while (sent < data.len) {
+        const n = try t.write_fn(t.state, data[sent..]);
+        if (n == 0) return error.ConnectFailed;
+        sent += n;
+    }
+}
+
+fn appendHead(head: []u8, head_len: *usize, line: []const u8) HttpError!void {
+    if (head_len.* + line.len + 2 > head.len) return error.TooLarge;
+    copyBytes(head[head_len.* .. head_len.* + line.len], line);
+    head_len.* += line.len;
+    head[head_len.*] = '\r';
+    head[head_len.* + 1] = '\n';
+    head_len.* += 2;
+}
+
+// GET over any caller-supplied transport (plain TCP, TLS, mock). HTTP/1.1,
+// `Connection: close`, identity + chunked bodies. The transport owns the bytes;
+// the arena owns the returned headers/body.
+pub fn httpGetOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, out: *Response) !void {
+    const u = try parseTransportUrl(url);
+    const scheme_sep = findFrom(url, "://", 0);
+    var default_port: u16 = DEFAULT_PORT;
+    if (scheme_sep < url.len and eqBytes(url[0..scheme_sep], "https")) default_port = 443;
+    defer t.close_fn(t.state);
+
+    var req = std.buf.init(arena);
+    try std.buf.append(&req, "GET ");
+    try std.buf.append(&req, u.path);
+    if (u.query.len > 0) {
+        try std.buf.appendByte(&req, '?');
+        try std.buf.append(&req, u.query);
+    }
+    try std.buf.append(&req, " HTTP/1.1\r\nHost: ");
+    try std.buf.append(&req, u.host);
+    if (u.port != default_port) {
+        try std.buf.appendByte(&req, ':');
+        try appendU16(&req, u.port);
+    }
+    try std.buf.append(&req, "\r\nConnection: close\r\n\r\n");
+    try transportWriteAll(t, std.buf.slice(&req));
+
+    var c = Conn{ .t = t, .buf = undefined, .pos = 0, .len = 0, .eof = false };
+    var head: [MAX_HEADER_BLOCK]u8 = undefined;
+    var head_len: usize = 0;
+    var line: [MAX_HEADER_BLOCK]u8 = undefined;
+
+    const status_len = try connReadLine(&c, line[0..]);
+    try appendHead(head[0..], &head_len, line[0..status_len]);
+    while (true) {
+        const n = try connReadLine(&c, line[0..]);
+        if (n == 0) break;
+        try appendHead(head[0..], &head_len, line[0..n]);
+    }
+    try appendHead(head[0..], &head_len, line[0..0]);
+
+    const durable = try allocBytes(arena, head_len);
+    copyBytes(durable, head[0..head_len]);
+
+    const first_end = findFrom(durable, "\r\n", 0);
+    if (first_end >= durable.len) return error.BadResponse;
+    const status = try parseStatus(durable[0..first_end]);
+
+    var count: usize = 0;
+    var pos: usize = first_end + 2;
+    while (true) {
+        const le = findFrom(durable, "\r\n", pos);
+        if (le >= durable.len) return error.BadResponse;
+        if (le == pos) break;
+        count += 1;
+        pos = le + 2;
+    }
+
+    const hdrs = try allocHeaders(arena, count);
+    var have_cl: bool = false;
+    var have_chunked: bool = false;
+    var clen: usize = 0;
+    var idx: usize = 0;
+    pos = first_end + 2;
+    while (true) {
+        const le = findFrom(durable, "\r\n", pos);
+        if (le >= durable.len) return error.BadResponse;
+        if (le == pos) break;
+        const hline = durable[pos..le];
+        const colon = findFrom(hline, ":", 0);
+        if (colon >= hline.len) return error.BadResponse;
+        const name = hline[0..colon];
+        const value = trimSpaces(hline[colon + 1 ..]);
+        hdrs[idx] = Header{ .name = name, .value = value };
+        idx += 1;
+        if (eqIgnoreCase(name, "content-length")) {
+            have_cl = true;
+            clen = try parseSize(value);
+        } else if (eqIgnoreCase(name, "transfer-encoding")) {
+            if (containsIgnoreCase(value, "chunked")) {
+                have_chunked = true;
+            } else if (!containsIgnoreCase(value, "identity")) {
+                return error.BadResponse;
+            }
+        }
+        pos = le + 2;
+    }
+
+    var body = std.buf.init(arena);
+    if (have_chunked) {
+        try readChunked(&c, &body);
+    } else if (have_cl) {
+        if (clen > MAX_BODY_BYTES) return error.TooLarge;
+        try std.buf.reserve(&body, clen);
+        var got: usize = 0;
+        while (got < clen) {
+            const n = try connReadSome(&c, body.data[body.len + got .. body.len + clen]);
+            if (n == 0) return error.BadResponse;
+            got += n;
+        }
+        body.len += clen;
+    } else {
+        var tmp: [4096]u8 = undefined;
+        while (true) {
+            const n = try connReadSome(&c, tmp[0..]);
+            if (n == 0) break;
+            if (body.len + n > MAX_BODY_BYTES) return error.TooLarge;
+            try std.buf.append(&body, tmp[0..n]);
+        }
+    }
+
+    out.* = Response{ .status = status, .headers = hdrs, .body = std.buf.slice(&body) };
 }
 
 // --- get (network) -----------------------------------------------------------
