@@ -133,7 +133,7 @@
 
 **Files:**
 - Create: `sf/docs/std_lib/crypto.md`, `sf/docs/std_lib/cipher.md`, `sf/docs/std_lib/ecc.md`
-- Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (counts 41→42 std files, install list, module rows)
+- Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (user-facing current seed v111/40→v113/42; install list, module rows; copy lists already 42)
 - Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh` (verify counts; copy lists already wired at Tasks 2–3)
 - Rotate: `release/seed/` → **v113** (archive + `lib/manifest.md5`, 42 files)
 
