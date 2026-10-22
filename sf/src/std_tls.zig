@@ -1309,7 +1309,9 @@ fn handleServerHello(sess: *TlsSession, body: []const u8) TlsError!void {
     if (legacy_version != TLS_VERSION_12) return error.UnsupportedVersion;
     if (sess.cfg.min_version > TLS_VERSION_12) return error.UnsupportedVersion;
     if (sess.cfg.max_version >= TLS_VERSION_13) {
-        if (!hasDowngradeSentinel(sess.server_random[0..])) return error.HandshakeFailed;
+        // RFC 8446 §4.1.3: abort only if the sentinel IS present; a real
+        // TLS 1.2-only server legitimately sends random bytes here.
+        if (hasDowngradeSentinel(sess.server_random[0..])) return error.HandshakeFailed;
     }
     sess.version = TLS_VERSION_12;
     sess.suite = try suiteFromId(suite_id);
