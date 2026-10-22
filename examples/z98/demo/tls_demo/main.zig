@@ -148,10 +148,12 @@ fn parseI64Clock(s: []const u8) ?i64 {
     }
     if (i >= s.len) return null;
     var v: u64 = 0;
+    const limit: u64 = @intCast(u64, 9223372036854775807);
     while (i < s.len) : (i += 1) {
         if (!isDigit(s[i])) return null;
-        v = v * 10 + @intCast(u64, s[i] - 48);
-        if (v > @intCast(u64, 9223372036854775807)) return null;
+        const digit: u64 = @intCast(u64, s[i] - 48);
+        if (v > (limit - digit) / 10) return null;
+        v = v * 10 + digit;
     }
     if (neg) return -@intCast(i64, v);
     return @intCast(i64, v);
@@ -262,8 +264,6 @@ fn fail(e: DemoError) noreturn {
         name = "HttpTooLarge";
     } else if (e == DemoError.HttpFailed) {
         name = "HttpFailed";
-    } else if (e == DemoError.CertificateExpired) {
-        name = "CertificateExpired";
     } else if (e == DemoError.HandshakeFailed) {
         name = "HandshakeFailed";
     } else if (e == DemoError.Corrupt) {
@@ -387,8 +387,6 @@ fn handshake(c: *Conn) DemoError!void {
 
 fn openTls(url: []const u8, now_unix: i64) DemoError!Conn {
     const parts = try parseHttpsUrl(url);
-    std.net.init();
-    defer std.net.cleanup();
 
     const ip = std.net.resolve(parts.host) catch return DemoError.DnsFailed;
     const fd = std.net.tcpSocket() catch return DemoError.ConnectFailed;
@@ -651,6 +649,11 @@ fn run(argc: i32, argv: [*][*]u8) DemoError!void {
 }
 
 pub fn main(argc: i32, argv: [*][*]u8) void {
-    run(argc, argv) catch |e| fail(e);
+    std.net.init();
+    run(argc, argv) catch |e| {
+        std.net.cleanup();
+        fail(e);
+    };
+    std.net.cleanup();
     std.os.exit(0);
 }

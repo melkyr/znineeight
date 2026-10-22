@@ -4,7 +4,9 @@
 # (a) local `openssl s_server` (TLS 1.2, committed test certs) happy path to an
 #     exact body, then the three fail-closed negatives: expired leaf
 #     (`cert: CertificateExpired`), wrong host (`cert: HostnameMismatch`),
-#     untrusted anchor (`cert: UnknownIssuer`).
+#     untrusted anchor (`cert: UnknownIssuer`). Local runs pin the cert clock
+#     to 2030-01-01 so the tier is date-stable; a clock-overflow regression
+#     asserts `tls: BadArgs` (not an -fsafe trap).
 # (b) `Z98_NET=1` internet smoke: google.com + example.com return status 200
 #     with bytes>0. With Z98_NET unset the smoke is a loud SKIP, never a pass.
 # (c) RAM: run the local happy path under `ulimit -v 32768` and record the
@@ -28,6 +30,9 @@ CERTS="$SCRIPT_DIR/certs"
 STORE="$CERTS/store.bin"
 BODY_TEXT="tls tier body"
 BODY_LEN="$(printf '%s\n' "$BODY_TEXT" | wc -c | tr -d ' ')"
+# Pin local cert validation to 2030-01-01 so the tier is independent of the
+# current host date; the committed leaves are valid 2026..2036.
+LOCAL_CLOCK=1893456000
 
 PASSES=0
 FAILS=0
@@ -114,7 +119,7 @@ run_local() {
         echo "__NO_SERVER__"
         return 1
     fi
-    timeout 40 "$BIN" "https://localhost:$port/$url_path" "$STORE"
+    timeout 40 "$BIN" "https://localhost:$port/$url_path" "$STORE" "$LOCAL_CLOCK"
     local rc=$?
     stop_server
     return "$rc"
@@ -154,6 +159,17 @@ neg_case() {
 neg_case "expired leaf" expired.pem expired.key "" "cert: CertificateExpired" expired
 neg_case "wrong host" wronghost.pem wronghost.key "" "cert: HostnameMismatch" wronghost
 neg_case "untrusted anchor" untrusted.pem untrusted.key rogue-root.pem "cert: UnknownIssuer" untrusted
+
+echo "== (a) clock-override overflow (no -fsafe trap) =="
+timeout 10 "$BIN" "https://localhost:9/body.txt" "$STORE" \
+    999999999999999999999999999999 >"$OUT/clock_overflow.out" 2>"$OUT/clock_overflow.err"
+CLOCK_RC=$?
+CLOCK_GOT="$(cat "$OUT/clock_overflow.out" "$OUT/clock_overflow.err" 2>/dev/null)"
+if [ "$CLOCK_RC" -ne 0 ] && [ "$CLOCK_GOT" = "tls: BadArgs" ]; then
+    pass_case "clock override overflow -> tls: BadArgs"
+else
+    fail_case "clock override overflow (rc=$CLOCK_RC, got '$CLOCK_GOT', want 'tls: BadArgs')"
+fi
 
 echo "== (a) happy determinism (2 runs) =="
 run_local localhost.pem localhost.key "" "body.txt" "$OUT/srv_happy2.log" \
@@ -201,7 +217,7 @@ RAM_PORT="$(free_port)"
 SERVER_PID=$!
 if wait_port "$RAM_PORT" "$SERVER_PID"; then
     ( ulimit -v 32768; /usr/bin/time -v "$BIN" \
-        "https://localhost:$RAM_PORT/body.txt" "$STORE" ) \
+        "https://localhost:$RAM_PORT/body.txt" "$STORE" "$LOCAL_CLOCK" ) \
         >"$OUT/ram.out" 2>"$OUT/ram.err"
     RAM_RC=$?
 else

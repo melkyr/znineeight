@@ -108,6 +108,10 @@ tls: ConnectFailed
 tls: Timeout
 tls: StoreRead
 tls: StoreCorrupt
+tls: BadArgs
+tls: HttpBadUrl
+tls: HttpTooLarge
+tls: TlsInternal
 ```
 
 ## RAM expectations
