@@ -55,12 +55,13 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v116** (`release/seed/zig1-seed.tgz`, archive md5
-`ca0c46dcd671d50fd4f22497f5bc525a`), with **45** std files (`std.zig` +
+The committed seed is **v117** (`release/seed/zig1-seed.tgz`, archive md5
+`111e0474c702a582516f60c2e570a3c0`), with **45** std files (`std.zig` +
 44 `std_*.zig`) and `lib/manifest.md5` md5
-`0c022fe049c808828704b702e6a2b2e7`. The compiler fixed point is
-`45158dcede81125a39a2c2c58478e21e` (`F_new`, unchanged since v112); v116 is
-the M4 TLS 1.2 payload rotation (adds `std_tls.zig`; no compiler movement).
+`ef02702556fe1ae8c21e68d8f2bff141`. The compiler fixed point is
+`45158dcede81125a39a2c2c58478e21e` (`F_new`, unchanged since v112); v117 is
+the M5 TLS 1.3 payload rotation (updates `std_tls.zig`; no new module and no
+compiler movement).
 
 ## Layer model (L0–L6)  [updated: 2026-10-22 — M5]
 

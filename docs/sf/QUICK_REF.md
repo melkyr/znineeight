@@ -24,19 +24,20 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v116** (rotated 2026-10-22 at the Phase 1 M4 TLS 1.2 /
-HTTPS closeout, plan `2026-10-21-phase1-m4-tls12-https-plan`; v115 → v116
-adds `std_tls.zig` — no compiler movement; compiler fixed point
-`45158dcede81125a39a2c2c58478e21e` UNCHANGED from v115). Archive
-md5 `ca0c46dcd671d50fd4f22497f5bc525a`; archived binary md5 (= v116's rotation
-fixed point) `45158dcede81125a39a2c2c58478e21e`; `gen/` 47 `.c` + 48 `.h`
-(10,691,275 bytes); `lib/` 45 std `.zig` plus `lib/manifest.md5` (per-file std
-attribution pin, manifest md5 `0c022fe049c808828704b702e6a2b2e7`) —
-`std_tls.zig` adds the sans-I/O TLS 1.2 record layer and client handshake over
-the M2 crypto/ECC and M3 X.509 stack; the M4 demo `examples/z98/demo/tls_demo/`
-uses it with `std_http.httpGetOver` and the M3 `ca_store.bin`. The v115
-std-only X.509 rotation stayed two-hop; v116 adds std-only payload, so the
-rebuilt archive is two-hop (`build_from_seed.sh`: hop1 == hop2 == `F_new`).
+**Current seed: v117** (rotated 2026-10-22 at the Phase 1 M5 TLS 1.3
+closeout, plan `2026-10-21-phase1-m5-tls13-plan`; v116 → v117
+updates `std_tls.zig` with TLS 1.3 — no new module and no compiler movement;
+compiler fixed point `45158dcede81125a39a2c2c58478e21e` UNCHANGED from v116).
+Archive md5 `111e0474c702a582516f60c2e570a3c0`; archived binary md5 (= v117's
+rotation fixed point) `45158dcede81125a39a2c2c58478e21e`; `gen/` 47 `.c` +
+48 `.h` (10,691,275 bytes); `lib/` 45 std `.zig` plus `lib/manifest.md5`
+(per-file std attribution pin, manifest md5
+`ef02702556fe1ae8c21e68d8f2bff141`) — `std_tls.zig` now carries the sans-I/O
+TLS 1.2/1.3 record layer and client handshakes over the M2 crypto/ECC and M3
+X.509 stack; the M4/M5 demo `examples/z98/demo/tls_demo/` uses it with
+`std_http.httpGetOver` and the M3 `ca_store.bin`. The v117 rotation is std-only
+payload, so the rebuilt archive is two-hop (`build_from_seed.sh`: hop1 ==
+hop2 == `F_new`).
 **This block is updated at
 every plan closeout that rotates the seed**; the branch's in-progress fixed
 point is recorded in the active plan's workspace ledger.
@@ -91,15 +92,14 @@ unchanged `21c957730d268f1e7883176fa5413b65`; `lib/` 34 files; manifest md5
 `cc2ea2be17d018556b4b7dd9f365a73b`).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
-module set — 46 `.c` + 47 `.h`, including `zig_special_types.h`; the emitted
+module set — 47 `.c` + 48 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
-`zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the tracked seed
-archive **v95 carries the full 32 std `.zig`** = `std.zig` plus 31 `std_*.zig`;
-the earlier v94 archive predated M0 with only 30 — from v95 onward
-`scripts/seed/build_from_seed.sh` and `archive_seed.sh` install the current
-`sf/src` set (44 `std_*.zig` + `std.zig` = 45) into the produced compiler's
-`lib/` and the archive), and `SEED_README.txt`.
+`zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
+tracked seed archive **v117 carries the full 45 std `.zig`** = `std.zig` plus
+44 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
+the current `sf/src` set into the produced compiler's `lib/` and the archive),
+and `SEED_README.txt`.
 
 **Std-module inventory:** the `sf/src` std set is **44** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
@@ -189,10 +189,11 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is **327/0** on seed v116 (294/0 at M7 on v103; the two
+  pin); `verify_stdlib` is **330/0** on seed v117 (294/0 at M7 on v103; the two
   M2 `stdlib_noise_*` fixtures, the M2 crypto/cipher/ecc fixtures, the four
-  M3 `std_asn1`/`std_x509` fixtures, and the three M4 `std_tls`/HTTP-transport
-  fixtures account for the current set). The z9play M7 TUI consumes this API
+  M3 `std_asn1`/`std_x509` fixtures, the three M4 `std_tls`/HTTP-transport
+  fixtures, and the three M5 TLS 1.3 fixtures account for the current set).
+  The z9play M7 TUI consumes this API
   (`examples/z98/z9play/ui.zig`).
 
 ### Compiler limits — `Type`-column ceilings  [added: 2026-10-08]

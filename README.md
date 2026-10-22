@@ -35,7 +35,7 @@ compiles itself to become the fully self-hosted compiler, **zig1** — the subje
 ## Current Status
 The **self-hosted milestone is complete**: `zig1` compiles itself, the compilation is
 **deterministic to a fixed point** (current self-compile binary md5 `45158dce…`; committed seed
-**v116**, `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
+**v117**, `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
 [Determinism](#determinism)), and the maintained example matrix is **25/25** dump/gcc/link. The
 mi_matrix corpus at `-s0` is enumerated by the canonical generator
 [`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the documented
@@ -89,11 +89,11 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
 
 - **Current self-compile fixed point:** self-compiled `zig1` binary md5
   `45158dcede81125a39a2c2c58478e21e` (47 module `.c` + 48 module `.h`, 0 `error[`, 0 PANIC;
-  hop1 == hop2 closure), committed seed **v116** (`release/seed/zig1-seed.tgz`, archive md5
-  `ca0c46dcd671d50fd4f22497f5bc525a`; `lib/manifest.md5` md5
-  `0c022fe049c808828704b702e6a2b2e7`, 45 std files). The fixed point moved to `F_new` at M2
-  T1C-F (the `const`-rodata compiler fix); the seed payload moved to v116 at the M4 TLS 1.2 /
-  HTTPS closeout (adds `std_tls`; no compiler movement).
+  hop1 == hop2 closure), committed seed **v117** (`release/seed/zig1-seed.tgz`, archive md5
+  `111e0474c702a582516f60c2e570a3c0`; `lib/manifest.md5` md5
+  `ef02702556fe1ae8c21e68d8f2bff141`, 45 std files). The fixed point moved to `F_new` at M2
+  T1C-F (the `const`-rodata compiler fix); the seed payload moved to v117 at the M5 TLS 1.3
+  closeout (updates `std_tls`; no new module and no compiler movement).
 - **Historical fixed point (0.20.0-era):** `553a39b4…` / seed v27 (45 module `.c` + 46 module `.h`);
   the operator-approved C89-AHEAD closeout (2026-09-13) was at the earlier fixed point
   `1467d932…` / seed v10. The old N-hop chain (seed v26 `f03d8485…` → hop1/hop2 `553a39b4…`) is
