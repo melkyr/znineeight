@@ -1,10 +1,12 @@
-# tls_demo — HTTPS fetch over `std_net` + `std_tls` (Phase 1 M4)
+# tls_demo — HTTPS fetch over `std_net` + `std_tls` (Phase 1 M4/M5)
 
 `tls_demo` is a Z98 program that fetches an HTTPS URL through
 `std_http.httpGetOver` using a transport built on `std_net` TCP and the
-sans-I/O `std_tls` TLS 1.2 client. Server certificates are validated against
-the pinned `ca_store.bin` trust store (M3) with the driver-supplied wall clock.
-It runs on Linux and builds as a `-osw` Win9x (no-CRT) executable.
+sans-I/O `std_tls` TLS 1.2/1.3 client. The session offers TLS 1.3 first and
+falls back to TLS 1.2 when the server selects it. Server certificates are
+validated against the pinned `ca_store.bin` trust store (M3) with the
+driver-supplied wall clock. It runs on Linux and builds as a `-osw` Win9x
+(no-CRT) executable.
 
 ```
 tls_demo [url] [store] [clock_override_unix]
@@ -21,6 +23,21 @@ tls_demo [url] [store] [clock_override_unix]
 
 Only HTTPS URLs are accepted. HTTP redirects and gzip are deferred, so the URL
 must return the response directly (no `301`/`302` follow).
+
+## TLS 1.3 notes
+
+- Suites: `TLS_AES_128_GCM_SHA256` (`0x1301`) and
+  `TLS_CHACHA20_POLY1305_SHA256` (`0x1303`), with an x25519 key_share.
+  No PSK/resumption, 0-RTT, or HelloRetryRequest; a non-x25519 key_share fails
+  as `tls: UnsupportedGroup`.
+- Server auth: chain/hostname validation is unchanged (`std_x509`).
+  CertificateVerify accepts ECDSA P-256/SHA-256, P-384/SHA-384, or RSA-PSS
+  SHA-256/SHA-384. PKCS#1 v1.5 CertificateVerify is rejected (RFC 8446
+  §4.4.3) as `tls: HandshakeFailed`.
+- Key update: not implemented. A post-handshake `KeyUpdate` closes the
+  session as `tls: Closed`; `NewSessionTicket` is ignored. Reconnect to rekey.
+- TLS 1.2 remains available in the same client; the tier keeps a local
+  `-tls1_2` fallback case green.
 
 ## Build and run (Linux)
 
@@ -101,6 +118,7 @@ tls: HandshakeFailed
 tls: Corrupt
 tls: AuthenticationFailed
 tls: RecordTooLarge
+tls: Closed
 tls: UnsupportedSuite
 tls: UnsupportedGroup
 tls: DnsFailed
@@ -127,8 +145,8 @@ tls: HttpFailed
 
 ## RAM expectations
 
-The demo is a 32-bit program with fixed static state: `TlsSession` is 124008
-bytes (about 121 KiB), the store arena is 512 KiB, and the fetch arena is 4 MiB. The tier runs
+The demo is a 32-bit program with fixed static state: `TlsSession` is 124400
+bytes (about 121.5 KiB), the store arena is 512 KiB, and the fetch arena is 4 MiB. The tier runs
 the local fetch under `ulimit -v 32768` (32 MiB hard ceiling) and records
 `/usr/bin/time -v` peak RSS; observed Linux peaks are about 2.3–2.6 MiB, well
 under the 16 MiB target. The response body itself is capped at 1 MiB by
@@ -148,11 +166,13 @@ bash examples/z98/demo/tls_demo/tests/tier_tls.sh
 Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
 ```
 
-The tier builds the demo, runs a local `openssl s_server -tls1_2` happy path
-with an exact body, asserts the expired/wrong-host/untrusted negatives, checks
-the `Z98_NET` internet smoke (google.com + example.com) or prints a loud SKIP
-when unset, measures RAM under `ulimit -v 32768`, and builds/gates the `-osw`
-Win9x executable. Test certificates and keys under `tests/certs/` are
+The tier builds the demo, runs a local `openssl s_server -tls1_2` fallback
+happy path and TLS 1.3 happy paths for both suites (`-tls1_3
+-ciphersuites TLS_AES_128_GCM_SHA256` and `TLS_CHACHA20_POLY1305_SHA256`) with
+an exact body, asserts the expired/wrong-host/untrusted negatives, checks the
+`Z98_NET` internet smoke (google.com + example.com + `www.microsoft.com/en-us/`
+as the RSA-PSS TLS 1.3 host) or prints a loud SKIP when unset, measures RAM
+under `ulimit -v 32768`, and builds/gates the `-osw` Win9x executable. Test certificates and keys under `tests/certs/` are
 **test-only** and must never be trusted outside the tier.
 
 Common failures:
@@ -168,8 +188,9 @@ Common failures:
 - `tls: DnsFailed` / `ConnectFailed` / `Timeout` — no DNS/route, a firewall, or
   (on Win95) no Winsock 2 update.
 - `tls: UnsupportedSuite` / `UnsupportedGroup` — the server offers none of the
-  four M4 suites (`ECDHE-{ECDSA,RSA}-AES128-GCM-SHA256` or
-  `ECDHE-{ECDSA,RSA}-CHACHA20-POLY1305-SHA256`) or no P-256/x25519 group.
+  offered suites (TLS 1.3 `AES_128_GCM_SHA256`/`CHACHA20_POLY1305_SHA256`, or
+  the TLS 1.2 `ECDHE-{ECDSA,RSA}-{AES128-GCM,CHACHA20-POLY1305}-SHA256` set) or
+  no acceptable group (TLS 1.3 requires x25519; TLS 1.2 accepts P-256/x25519).
 - `tls: StoreRead` / `StoreCorrupt` — missing or malformed `ca_store.bin`; rerun
   `caconv` from the current Mozilla bundle.
 
@@ -186,5 +207,6 @@ Common failures:
 | `store.bin` | pinned store containing only `root.pem` |
 
 They were generated with host `openssl` (RSA-2048, SHA-256) and `store.bin` with
-`sibling/caconv root.pem store.bin` (`wrote 1 anchors`). The tier uses
-`openssl s_server -tls1_2 -WWW` so the body is file-exact.
+`sibling/caconv root.pem store.bin` (`wrote 1 anchors`). The local tier uses
+`openssl s_server -WWW` (with `-tls1_2` or `-tls1_3`) so the body is
+file-exact; the RSA leaf exercises RSA-PSS CertificateVerify under TLS 1.3.

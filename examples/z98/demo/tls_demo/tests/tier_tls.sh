@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
-# tier_tls.sh — Phase 1 M4 integration tier for tls_demo.
+# tier_tls.sh — Phase 1 M4/M5 integration tier for tls_demo.
 #
-# (a) local `openssl s_server` (TLS 1.2, committed test certs) happy path to an
-#     exact body, then the three fail-closed negatives: expired leaf
+# (a) local `openssl s_server` (committed test certs) happy paths: TLS 1.2
+#     fallback (client offers 1.3+1.2, server -tls1_2) and TLS 1.3 with both
+#     supported suites (AES-128-GCM, ChaCha20-Poly1305), each to an exact body.
+#     Then the three fail-closed negatives: expired leaf
 #     (`cert: CertificateExpired`), wrong host (`cert: HostnameMismatch`),
 #     untrusted anchor (`cert: UnknownIssuer`). Local runs pin the cert clock
 #     to 2030-01-01 so the tier is date-stable; a clock-overflow regression
 #     asserts `tls: BadArgs` (not an -fsafe trap).
 # (b) `Z98_NET=1` internet smoke: google.com + example.com return status 200
-#     with bytes>0. With Z98_NET unset the smoke is a loud SKIP, never a pass.
+#     with bytes>0, plus www.microsoft.com/en-us/ as the RSA-PSS TLS 1.3 host.
+#     With Z98_NET unset the smoke is a loud SKIP, never a pass.
 # (c) RAM: run the local happy path under `ulimit -v 32768` and record the
 #     `/usr/bin/time -v` peak RSS.
 # (d) `-osw -fsafe` emit + mingw build + `check_win9x_imports.sh 9x`.
-# Plus a two-run byte check of the happy status/body/bytes lines.
+# Plus two-run byte checks of the 1.2 fallback and both 1.3 happy
+# status/body/bytes lines.
 #
 # usage: tier_tls.sh
 # Env: ZIG (default /tmp/m2_t4_v114_build/zig1_5_clean), OUT (/tmp/tier_tls)
@@ -125,7 +129,24 @@ run_local() {
     return "$rc"
 }
 
-echo "== (a) local openssl s_server: happy path (exact body) =="
+run_local13() {
+    local suite="$1" log="$2" port
+    port="$(free_port)"
+    ( cd "$WORK" && exec openssl s_server -accept "$port" -tls1_3 \
+        -ciphersuites "$suite" -cert "$CERTS/localhost.pem" \
+        -key "$CERTS/localhost.key" -WWW -quiet ) >"$log" 2>&1 &
+    SERVER_PID=$!
+    if ! wait_port "$port" "$SERVER_PID"; then
+        echo "__NO_SERVER__"
+        return 1
+    fi
+    timeout 40 "$BIN" "https://localhost:$port/body.txt" "$STORE" "$LOCAL_CLOCK"
+    local rc=$?
+    stop_server
+    return "$rc"
+}
+
+echo "== (a) local openssl s_server: TLS 1.2 fallback happy path (exact body) =="
 run_local localhost.pem localhost.key "" "body.txt" "$OUT/srv_happy.log" \
     >"$OUT/happy.out" 2>"$OUT/happy.err"
 HAPPY_RC=$?
@@ -133,9 +154,9 @@ if [ "$HAPPY_RC" -eq 0 ] \
    && [ "$(sed -n '1p' "$OUT/happy.out")" = "status=200" ] \
    && [ "$(sed -n '2p' "$OUT/happy.out")" = "$BODY_TEXT" ] \
    && grep -Eq "^tls_demo ok status=200 bytes=$BODY_LEN arena_peak=[0-9]+ rss_peak=[0-9]+ cpu_ms=[0-9]+$" "$OUT/happy.out"; then
-    pass_case "local TLS 1.2 fetch: status=200, exact body, bytes=$BODY_LEN"
+    pass_case "local TLS 1.2 fallback fetch: status=200, exact body, bytes=$BODY_LEN"
 else
-    fail_case "local TLS 1.2 fetch (rc=$HAPPY_RC; see $OUT/happy.out / $OUT/happy.err / $OUT/srv_happy.log)"
+    fail_case "local TLS 1.2 fallback fetch (rc=$HAPPY_RC; see $OUT/happy.out / $OUT/happy.err / $OUT/srv_happy.log)"
     sed 's/^/       /' "$OUT/happy.out" "$OUT/happy.err" 2>/dev/null | head -20
 fi
 HAPPY_LINE="$(grep '^tls_demo ok' "$OUT/happy.out" 2>/dev/null | sed 's/ arena_peak=.*//')"
@@ -184,11 +205,53 @@ else
     fail_case "happy status/body/bytes differ (rc=$HAPPY2_RC)"
 fi
 
+echo "== (a) local openssl s_server: TLS 1.3 happy paths (both suites) =="
+run13_case() {
+    local label="$1" suite="$2" tag="$3"
+    run_local13 "$suite" "$OUT/srv13_$tag.log" \
+        >"$OUT/13_$tag.out" 2>"$OUT/13_$tag.err"
+    local rc=$?
+    if [ "$rc" -eq 0 ] \
+       && [ "$(sed -n '1p' "$OUT/13_$tag.out")" = "status=200" ] \
+       && [ "$(sed -n '2p' "$OUT/13_$tag.out")" = "$BODY_TEXT" ] \
+       && grep -Eq "^tls_demo ok status=200 bytes=$BODY_LEN arena_peak=[0-9]+ rss_peak=[0-9]+ cpu_ms=[0-9]+$" "$OUT/13_$tag.out"; then
+        pass_case "local TLS 1.3 $label fetch: status=200, exact body, bytes=$BODY_LEN"
+    else
+        fail_case "local TLS 1.3 $label fetch (rc=$rc; see $OUT/13_$tag.out / $OUT/13_$tag.err / $OUT/srv13_$tag.log)"
+        sed 's/^/       /' "$OUT/13_$tag.out" "$OUT/13_$tag.err" 2>/dev/null | head -20
+    fi
+    local line
+    line="$(grep '^tls_demo ok' "$OUT/13_$tag.out" 2>/dev/null | sed 's/ arena_peak=.*//')"
+    sed -n '1,2p' "$OUT/13_$tag.out" >"$OUT/13_$tag.norm" 2>/dev/null
+    printf '%s\n' "$line" >>"$OUT/13_$tag.norm"
+}
+run13_case "AES-128-GCM" TLS_AES_128_GCM_SHA256 aes
+run13_case "ChaCha20-Poly1305" TLS_CHACHA20_POLY1305_SHA256 chacha
+
+echo "== (a) TLS 1.3 happy determinism (2 runs each suite) =="
+run13_repeat() {
+    local label="$1" suite="$2" tag="$3"
+    run_local13 "$suite" "$OUT/srv13_${tag}2.log" \
+        >"$OUT/13_${tag}2.out" 2>"$OUT/13_${tag}2.err"
+    local rc=$?
+    local line
+    line="$(grep '^tls_demo ok' "$OUT/13_${tag}2.out" 2>/dev/null | sed 's/ arena_peak=.*//')"
+    sed -n '1,2p' "$OUT/13_${tag}2.out" >"$OUT/13_${tag}2.norm" 2>/dev/null
+    printf '%s\n' "$line" >>"$OUT/13_${tag}2.norm"
+    if [ "$rc" -eq 0 ] && cmp -s "$OUT/13_$tag.norm" "$OUT/13_${tag}2.norm"; then
+        pass_case "TLS 1.3 $label status/body/bytes identical 2x"
+    else
+        fail_case "TLS 1.3 $label status/body/bytes differ (rc=$rc)"
+    fi
+}
+run13_repeat "AES-128-GCM" TLS_AES_128_GCM_SHA256 aes
+run13_repeat "ChaCha20-Poly1305" TLS_CHACHA20_POLY1305_SHA256 chacha
+
 echo "== (b) internet smoke (Z98_NET) =="
 if [ "${Z98_NET:-}" = "1" ]; then
     net_case() {
-        local host="$1" tag="$2"
-        timeout 60 "$BIN" "https://$host/" "$DEMO_DIR/ca_store.bin" \
+        local host="$1" tag="$2" path="${3:-/}"
+        timeout 60 "$BIN" "https://$host$path" "$DEMO_DIR/ca_store.bin" \
             >"$OUT/net_$tag.out" 2>"$OUT/net_$tag.err"
         local rc=$?
         local hdr="$(sed -n '1p' "$OUT/net_$tag.out")"
@@ -197,16 +260,19 @@ if [ "${Z98_NET:-}" = "1" ]; then
         bytes="$(printf '%s\n' "$res" | sed -n 's/.* bytes=\([0-9][0-9]*\) .*/\1/p')"
         if [ "$rc" -eq 0 ] && [ "$hdr" = "status=200" ] \
            && [ -n "$bytes" ] && [ "$bytes" -gt 0 ]; then
-            pass_case "internet $host status=200 bytes=$bytes"
+            pass_case "internet $host$path status=200 bytes=$bytes"
         else
-            fail_case "internet $host (rc=$rc, '$hdr', '$res')"
+            fail_case "internet $host$path (rc=$rc, '$hdr', '$res')"
             head -5 "$OUT/net_$tag.err" 2>/dev/null | sed 's/^/       /'
         fi
     }
     net_case www.google.com google
     net_case example.com example
+    # RSA-2048 certificate, RSA-PSS CertificateVerify over TLS 1.3. The root
+    # returns a bot-check 403 to a bare GET; /en-us/ returns the real page 200.
+    net_case www.microsoft.com microsoft /en-us/
 else
-    skip_case "Z98_NET unset: internet smoke SKIPPED (set Z98_NET=1 to run google.com + example.com)"
+    skip_case "Z98_NET unset: internet smoke SKIPPED (set Z98_NET=1 to run google.com + example.com + microsoft.com)"
 fi
 
 echo "== (c) RAM: ulimit -v 32768 + /usr/bin/time -v peak =="

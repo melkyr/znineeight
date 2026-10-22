@@ -404,7 +404,7 @@ fn openTls(url: []const u8, now_unix: i64) DemoError!Conn {
         .rng = &g_rng,
         .now_unix = now_unix,
         .min_version = tls.TLS_VERSION_12,
-        .max_version = tls.TLS_VERSION_12,
+        .max_version = tls.TLS_VERSION_13,
     };
     tls.tlsInit(&g_session, &cfg);
 

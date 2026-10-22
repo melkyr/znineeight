@@ -1,17 +1,17 @@
-# TLS 1.2 — `std_tls`
+# TLS 1.2/1.3 — `std_tls`
 
 | | |
 |---|---|
 | **Modules** | `std_tls` |
-| **Layers** | `L5` — sans-I/O TLS 1.2 record layer and client handshake |
+| **Layers** | `L5` — sans-I/O TLS 1.2/1.3 record layer and client handshakes |
 | **Import (by path)** | `const std_tls = @import("std_tls.zig");` |
-| **Consumes** | `std_cipher` (AES-128-GCM, ChaCha20-Poly1305), `std_crypto` (SHA-256, HMAC, RSA verify), `std_ecc` (P-256, X25519, ECDSA verify), `std_rand` (client randomness), `std_asn1`/`std_x509` (certificate parsing and chain verification) |
+| **Consumes** | `std_cipher` (AES-128-GCM, ChaCha20-Poly1305), `std_crypto` (SHA-256/384, HMAC, HKDF, RSA PKCS#1 v1.5/PSS verify), `std_ecc` (P-256, P-384, X25519, ECDSA verify), `std_rand` (client randomness), `std_asn1`/`std_x509` (certificate parsing and chain verification) |
 
 `std_tls` is not re-exported through `std`; import it by path.
 
 ## Module overview
 
-`std_tls` implements the client half of TLS 1.2 from the specification in
+`std_tls` implements the client half of TLS 1.2 and TLS 1.3 from the specification in
 `docs/superpowers/specs/2026-10-21-phase1-tls-wireguard-design.md` §5.6. It is
 **sans-I/O**: there are no sockets, no clock reads, no environment reads, and no
 hidden heap. The caller owns the socket and the clock, allocates the fixed-size
@@ -21,20 +21,27 @@ machine with `tlsStep`.
 The module has two layers:
 
 - **Record layer.** A 5-byte TLS record header is encoded/parsed with a
-  **`TLS_MAX_PLAINTEXT_RECORD = 16384`** cap. Each of the four supported suites
-  protects records with an AEAD (`AES-128-GCM` or `ChaCha20-Poly1305`). The wire
-  layout follows RFC 5288 for AES-GCM (8-byte explicit nonce transmitted in the
-  record) and RFC 7905 for ChaCha20-Poly1305 (no explicit nonce; the record
-  sequence number is XORed into the fixed IV). The AAD is always
-  `seq_num || type || version || plaintext_length` (13 bytes).
+  **`TLS_MAX_PLAINTEXT_RECORD = 16384`** cap. The six supported suites protect
+  records with an AEAD (`AES-128-GCM` or `ChaCha20-Poly1305`). For TLS 1.2 the
+  wire layout follows RFC 5288 for AES-GCM (8-byte explicit nonce transmitted in
+  the record) and RFC 7905 for ChaCha20-Poly1305 (no explicit nonce; the record
+  sequence number is XORed into the fixed IV); the AAD is
+  `seq_num || type || version || plaintext_length` (13 bytes). For TLS 1.3 the
+  outer content type is always `application_data`, the nonce is
+  `static_iv XOR seq_be64`, the AAD is the 5-byte TLSCiphertext header, and the
+  AEAD plaintext is the content followed by the real inner content type.
 - **Handshake.** The explicit state machine is
-  `SendClientHello … Established`. It sends SNI and offers the four M4 suites
-  and the `secp256r1` + `x25519` groups, verifies the server certificate chain
-  through `std_x509.x509VerifyChain` against the caller's trust store, checks
-  the ServerKeyExchange signature (ECDSA or RSA PKCS#1 v1.5, both SHA-256),
-  derives the master secret and key block with `PRF_SHA256`, and verifies the
-  server's 12-byte `Finished` verify_data. The transcript is SHA-256 over every
-  handshake message exactly once; record headers are excluded.
+  `SendClientHello … Established`. It sends SNI and offers the two TLS 1.3
+  suites (+ the four TLS 1.2 suites when the configured range permits 1.2),
+  verifies the server certificate chain through
+  `std_x509.x509VerifyChain` against the caller's trust store, checks the
+  server authentication signature, and verifies `Finished`. TLS 1.2 uses ECDHE
+  with `secp256r1`/`x25519`, a ServerKeyExchange signature (ECDSA, RSA PKCS#1
+  v1.5, or RSA-PSS), `PRF_SHA256`, and a 12-byte Finished. TLS 1.3 uses an
+  x25519 key_share, the HKDF-Expand-Label SHA-256 schedule, CertificateVerify
+  (ECDSA P-256/P-384 or RSA-PSS), and a 32-byte Finished. The transcript is
+  SHA-256 over every handshake message exactly once; record headers are
+  excluded.
 
 **Time policy.** `std_tls` never reads a clock. The caller supplies
 `TlsConfig.now_unix` (seconds since the Unix epoch) at session start; it is
@@ -47,16 +54,51 @@ system clock is outside 2000-01-01 … 2100-01-01 and no override is supplied it
 fails cleanly as `cert: time`.
 
 **Determinism and ownership.** All state lives in the caller's `TlsSession`
-(124008 bytes, about 121 KiB, including the 64 KiB handshake reassembly buffer, 32 KiB
-application buffer, 8 KiB pending output buffer, and 16 KiB record reader).
-There is no allocation and no arena parameter. Client randomness comes only from
-the caller's RNG, so the same initial RNG state and the same server flight
-produce the same client flight.
+(124400 bytes, about 121.5 KiB, including the 64 KiB handshake reassembly
+buffer, 32 KiB application buffer, 8 KiB pending output buffer, and 16 KiB
+record reader). There is no allocation and no arena parameter. Client
+randomness comes only from the caller's RNG, so the same initial RNG state and
+the same server flight produce the same client flight.
 
-**Scope.** Exactly four suites, two groups, SNI required, no renegotiation, no
-session resumption, no 0-RTT, no client certificates, and no TLS 1.3. A clean
-`close_notify` alert yields `error.Closed`/`.closed`; all other alerts fail the
+**Scope.** Exactly six suites (four TLS 1.2, two TLS 1.3), x25519 for TLS 1.3
+(plus `secp256r1` for TLS 1.2 ECDHE), SNI required, no renegotiation, no
+session resumption/PSK, no 0-RTT, no HelloRetryRequest, no client certificates,
+and no TLS 1.3 key update. A clean `close_notify` alert yields
+`error.Closed`/`.closed`; a post-handshake TLS 1.3 `KeyUpdate` also yields
+`error.Closed` because rekeying is not implemented; all other alerts fail the
 handshake. Every pre-`Established` failure path fails closed.
+
+## TLS 1.3
+
+TLS 1.3 is enabled when `TlsConfig.max_version >= TLS_VERSION_13`; setting
+`min_version = max_version = TLS_VERSION_13` makes the client 1.3-only, while
+the default demo range (`min=1.2`, `max=1.3`) offers both versions and falls
+back to TLS 1.2 when the server selects it. The ClientHello offers
+`TLS_AES_128_GCM_SHA256` (`0x1301`) and `TLS_CHACHA20_POLY1305_SHA256`
+(`0x1303`) in that order, plus a single x25519 `key_share` and the
+`supported_versions` extension. There is no PSK/resumption, 0-RTT, or
+HelloRetryRequest; a server selecting a non-x25519 key_share fails with
+`error.UnsupportedGroup`, and a TLS 1.2 ServerHello carrying the RFC 8446
+`DOWNGRD\x01` sentinel fails with `error.HandshakeFailed`.
+
+**Key schedule.** The no-PSK schedule uses the M2 HKDF primitives with SHA-256:
+`HKDF-Extract(0,0)` → early secret, `"derived"` → handshake secret, then the
+handshake/application traffic secrets via HKDF-Expand-Label. Sequence numbers
+reset at each key epoch. The server `EncryptedExtensions`/`Certificate`/
+`CertificateVerify`/`Finished` flight and middlebox-compatibility CCS are
+handled; `Finished` uses the 32-byte TLS 1.3 `finished_key`.
+
+**Server authentication.** The certificate chain and hostname are validated
+unchanged by `std_x509` (SAN dNSName, caller `now_unix`). CertificateVerify
+accepts ECDSA P-256/SHA-256 (`0x0403`), ECDSA P-384/SHA-384 (`0x0503`), and
+RSA-PSS `rsa_pss_rsae_sha256`/`rsa_pss_rsae_sha384` (`0x0804`/`0x0805`).
+PKCS#1 v1.5 schemes are rejected with `error.HandshakeFailed` per RFC 8446
+§4.4.3; other schemes fail with `error.UnsupportedAlgorithm`.
+
+**KeyUpdate stance.** Sending is not implemented. Receiving a post-handshake
+`KeyUpdate` closes the session (`error.Closed`); `NewSessionTicket` messages are
+ignored (no resumption). Application writes still use the inner content type
+rule, so each protected record carries one extra plaintext byte.
 
 ## Quick start
 
@@ -77,7 +119,7 @@ var cfg = tls.TlsConfig{
     .rng = &rng,
     .now_unix = 1760000000,
     .min_version = tls.TLS_VERSION_12,
-    .max_version = tls.TLS_VERSION_12,
+    .max_version = tls.TLS_VERSION_13,
 };
 tls.tlsInit(&session, &cfg);
 
@@ -118,8 +160,9 @@ writes every `.send` slice, and calls `tlsRead` for application bytes.
 
 **Signature** — `pub const TLS_MAX_PLAINTEXT_RECORD: usize = 16384;`
 
-**Gotchas** — this is the 2^14 TLS 1.2 plaintext cap. `protectRecord` and
-`recordAad` reject a larger plaintext with `error.RecordTooLarge`.
+**Gotchas** — this is the 2^14 TLS plaintext cap. `protectRecord`,
+`protectRecord13`, and `recordAad` reject a larger plaintext with
+`error.RecordTooLarge` (TLS 1.3 records add one inner content-type byte).
 
 ### `TLS_MAX_RECORD`
 
@@ -150,6 +193,12 @@ length with `error.RecordTooLarge`.
 
 **Signature** — `pub const TLS_VERSION_12: u16 = 0x0303;`
 
+### `TLS_VERSION_13`
+
+**Purpose** — TLS 1.3 protocol version (`0x0304`).
+
+**Signature** — `pub const TLS_VERSION_13: u16 = 0x0304;`
+
 ### Content-type constants
 
 **Purpose** — record content types used by the record layer and handshake.
@@ -164,9 +213,10 @@ pub const content_application_data: u8 = 23;
 
 ### `CipherSuite`
 
-**Purpose** — the four TLS 1.2 suites supported by the M4 client.
+**Purpose** — the four TLS 1.2 suites and two TLS 1.3 suites supported by the
+client.
 
-**Signature** — `pub const CipherSuite = enum { ecdsa_aes_128_gcm_sha256, rsa_aes_128_gcm_sha256, ecdsa_chacha20_poly1305_sha256, rsa_chacha20_poly1305_sha256 };`
+**Signature** — `pub const CipherSuite = enum { ecdsa_aes_128_gcm_sha256, rsa_aes_128_gcm_sha256, ecdsa_chacha20_poly1305_sha256, rsa_chacha20_poly1305_sha256, tls13_aes_128_gcm_sha256, tls13_chacha20_poly1305_sha256 };`
 
 | Enum value | IANA name | Wire ID | Server-auth signature | AEAD | Key | Fixed IV | Nonce on the wire |
 |---|---|---|---|---|---|---|---|
@@ -174,11 +224,16 @@ pub const content_application_data: u8 = 23;
 | `rsa_aes_128_gcm_sha256` | `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256` | `0xC02F` | RSA PKCS#1 v1.5 / SHA-256 | AES-128-GCM | 16 | 4 | `fixed_iv[4] \|\| seq_be64` (8 explicit bytes) |
 | `ecdsa_chacha20_poly1305_sha256` | `TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256` | `0xCCA9` | ECDSA P-256 / SHA-256 | ChaCha20-Poly1305 | 32 | 12 | none; nonce = `(0^4 \|\| seq_be64) XOR fixed_iv` |
 | `rsa_chacha20_poly1305_sha256` | `TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256` | `0xCCA8` | RSA PKCS#1 v1.5 / SHA-256 | ChaCha20-Poly1305 | 32 | 12 | none; nonce = `(0^4 \|\| seq_be64) XOR fixed_iv` |
+| `tls13_aes_128_gcm_sha256` | `TLS_AES_128_GCM_SHA256` | `0x1301` | CertificateVerify: ECDSA P-256/P-384 or RSA-PSS | AES-128-GCM | 16 | 12 | none; nonce = `static_iv XOR seq_be64` |
+| `tls13_chacha20_poly1305_sha256` | `TLS_CHACHA20_POLY1305_SHA256` | `0x1303` | CertificateVerify: ECDSA P-256/P-384 or RSA-PSS | ChaCha20-Poly1305 | 32 | 12 | none; nonce = `static_iv XOR seq_be64` |
 
-**Gotchas** — the ClientHello offers these four in the order shown. A
-ServerHello selecting anything else fails with `error.UnsupportedSuite`. The
+**Gotchas** — the TLS 1.3 ClientHello offers `0x1301` then `0x1303` (followed
+by the four TLS 1.2 suites when 1.2 is enabled). A ServerHello selecting
+anything else fails with `error.UnsupportedSuite`. For TLS 1.2 the
 server-certificate key type must match the suite's authentication family; a
-mismatch fails with `error.UnsupportedAlgorithm`.
+mismatch fails with `error.UnsupportedAlgorithm`. TLS 1.3 suite selection is
+independent of the certificate key type; CertificateVerify picks the auth
+scheme.
 
 ### `suiteIsAesGcm`
 
@@ -186,8 +241,17 @@ mismatch fails with `error.UnsupportedAlgorithm`.
 
 **Signature** — `pub fn suiteIsAesGcm(suite: CipherSuite) bool`
 
-**Returns** — `true` for the two AES-128-GCM suites, `false` for the two
+**Returns** — `true` for the three AES-128-GCM suites, `false` for the three
 ChaCha20-Poly1305 suites.
+
+### `suiteIsTls13`
+
+**Purpose** — classifies a suite as TLS 1.3.
+
+**Signature** — `pub fn suiteIsTls13(suite: CipherSuite) bool`
+
+**Returns** — `true` for `tls13_aes_128_gcm_sha256` and
+`tls13_chacha20_poly1305_sha256`, `false` for the four TLS 1.2 suites.
 
 ### `suiteKeyLen`
 
@@ -203,8 +267,8 @@ ChaCha20-Poly1305 suites.
 
 **Signature** — `pub fn suiteFixedIvLen(suite: CipherSuite) usize`
 
-**Returns** — `4` for AES-128-GCM (RFC 5288 explicit-nonce construction), `12`
-for ChaCha20-Poly1305 (RFC 7905).
+**Returns** — `4` for the TLS 1.2 AES-128-GCM suites (RFC 5288 explicit-nonce
+construction), `12` for ChaCha20-Poly1305 and both TLS 1.3 suites.
 
 ### `RecordError`
 
@@ -418,7 +482,47 @@ plaintext; `error.AuthenticationFailed` for a tag mismatch.
 **Gotchas** — AES-GCM uses the transmitted 8-byte explicit nonce, not the
 `seq` argument, for the nonce tail, but still uses `seq` in the AAD. The AAD
 length is the decrypted plaintext length, so the caller must pass the same
-record content type/version.
+record content type/version. This is the TLS 1.2 framing function; use
+`protectRecord13`/`unprotectRecord13` for TLS 1.3.
+
+### `protectRecord13`
+
+**Purpose** — encrypts one TLS 1.3 record fragment.
+
+**Signature** — `pub fn protectRecord13(suite: CipherSuite, key: []const u8, fixed_iv: []const u8, seq: u64, inner_type: u8, pt: []const u8, out: []u8) RecordError!usize`
+
+**Parameters** — `key` is 16 or 32 bytes; `fixed_iv` must be 12 bytes; `seq`
+feeds the nonce; `inner_type` is appended to the plaintext as the real content
+type; `pt` is at most 16384 bytes.
+
+**Returns** — `pt.len + 1 + 16` (content + inner type + AEAD tag). The caller
+frames the 5-byte outer header with content type `application_data` and version
+`0x0303`.
+
+**Errors** — `error.RecordTooLarge` for an oversized plaintext;
+`error.Corrupt` for bad key/IV lengths or a short `out`.
+
+**Gotchas** — the nonce is `static_iv XOR seq_be64` and the AAD is the 5-byte
+TLSCiphertext header, whose length field is the full protected fragment
+(`pt.len + 1 + 16`). There is no explicit nonce on the wire.
+
+### `unprotectRecord13`
+
+**Purpose** — verifies and decrypts one TLS 1.3 protected fragment.
+
+**Signature** — `pub fn unprotectRecord13(suite: CipherSuite, key: []const u8, fixed_iv: []const u8, seq: u64, record: []const u8, out: []u8) RecordError!usize`
+
+**Returns** — plaintext length **including** the trailing inner content type
+byte, so `out[ret-1]` is the real content type and `out[0..ret-1]` is the
+content.
+
+**Errors** — `error.Corrupt` for bad key/IV lengths, a too-short record, or a
+short `out`; `error.RecordTooLarge` for an oversized wire fragment or
+plaintext; `error.AuthenticationFailed` for a tag mismatch.
+
+**Gotchas** — the caller must split off the inner type before buffering
+application data. The record argument is the protected fragment only (no 5-byte
+header).
 
 ### `TLS_HANDSHAKE_MAX`
 
@@ -435,6 +539,9 @@ the cap is reassembled.
 **Purpose** — TLS 1.2 `Finished` verify_data length.
 
 **Signature** — `pub const TLS_FINISHED_LEN: usize = 12;`
+
+**Gotchas** — TLS 1.3 `Finished` is 32 bytes (HMAC with the 32-byte
+`finished_key`); that length is internal to the 1.3 path, not this constant.
 
 ### `TlsError`
 
@@ -458,10 +565,10 @@ pub const TlsError = error{
 | `AppTooLarge` | decrypted application bytes would overflow the 32 KiB session buffer. |
 | `OutputTooSmall` | the caller's `output` cannot hold the pending flight or a `tlsWrite` record set. |
 | `BadConfig` | empty hostname or hostname longer than 255 bytes. |
-| `HandshakeFailed` | wrong message kind/order, bad Finished, non-`close_notify` alert, or use before `Established`. |
-| `UnsupportedVersion` | not TLS 1.2 (the M4 client requires exactly `0x0303`). |
-| `UnsupportedSuite` | server selected one of the four suite IDs not offered. |
-| `UnsupportedGroup` | ServerKeyExchange used a group other than P-256 or X25519. |
+| `HandshakeFailed` | wrong message kind/order, bad Finished, a PKCS#1 v1.5 CertificateVerify, non-`close_notify` alert, or use before `Established`. |
+| `UnsupportedVersion` | the configured range does not intersect TLS 1.2/1.3, or the peer selected an unsupported version. |
+| `UnsupportedSuite` | server selected a suite ID that was not offered. |
+| `UnsupportedGroup` | TLS 1.2 ServerKeyExchange used a group other than P-256/X25519, or TLS 1.3 key_share was not x25519. |
 | `CertificateExpired` | `x509VerifyChain` found a certificate expired at `now_unix`. |
 | `CertificateNotYetValid` | `x509VerifyChain` found a certificate not yet valid at `now_unix`. |
 | `UnknownIssuer` | the server chain does not reach the supplied trust store. |
@@ -472,7 +579,7 @@ pub const TlsError = error{
 | `Corrupt` | malformed records/messages or invalid length fields. |
 | `AuthenticationFailed` | AEAD tag mismatch after `Established`. |
 | `RecordTooLarge` | record/handshake/reader limit exceeded. |
-| `Closed` | clean end of stream (`close_notify` or record-boundary close). |
+| `Closed` | clean end of stream (`close_notify` or record-boundary close), or a post-handshake TLS 1.3 `KeyUpdate` (no rekey support). |
 | `WeakPublicKey` | the ECDH peer public key is invalid/all-zero. |
 | `InvalidPrivateKey` | the locally generated ECDH private key is invalid. |
 | `InvalidPublicKey` | the peer ECDH public key is invalid. |
@@ -494,8 +601,8 @@ this set because the module allocates nothing and never reads a clock.
   `tlsStep` output buffer and is valid until the next call.
 - `recv` — the driver should read and pass in more bytes; the current
   implementation always sets the hint to `1`.
-- `wait` — reserved for a future timer-driven driver; the M4 `tlsStep` never
-  returns it.
+- `wait` — reserved for a future timer-driven driver; `tlsStep` never returns
+  it.
 - `established` — the handshake is complete and application data may be
   written/read.
 - `closed` — the peer sent `close_notify` or the stream closed cleanly.
@@ -524,8 +631,10 @@ pub const TlsConfig = struct {
   ECDHE private key.
 - `now_unix` — wall clock in Unix seconds at session start; the only time
   source, passed to certificate validation.
-- `min_version` / `max_version` — accepted protocol range; the M4 client
-  requires `TLS_VERSION_12` to be inside it.
+- `min_version` / `max_version` — accepted protocol range, `TLS_VERSION_12`
+  (`0x0303`) through `TLS_VERSION_13` (`0x0304`); `min_version <= max_version`
+  and the range must include at least one of them. With both enabled the
+  client offers 1.3 first and falls back to 1.2 if the server selects it.
 
 ### `HandshakeState`
 
@@ -534,17 +643,20 @@ pub const TlsConfig = struct {
 **Signature**
 ```zig
 pub const HandshakeState = enum {
-    SendClientHello, RecvServerHello, RecvCertificate, RecvServerKeyExchange,
-    RecvServerHelloDone, SendClientKeyExchange, SendChangeCipherSpec,
-    SendFinished, RecvChangeCipherSpec, RecvFinished, Established, Error,
+    SendClientHello, RecvServerHello, RecvEncryptedExtensions, RecvCertificate,
+    RecvServerKeyExchange, RecvServerHelloDone, SendClientKeyExchange,
+    SendChangeCipherSpec, SendFinished, RecvChangeCipherSpec,
+    RecvCertificateVerify, RecvFinished, Established, Error,
 };
 ```
 
 **Gotchas** — the enum is public for diagnostics; callers should not write
-`sess.state` directly. `SendClientKeyExchange`/`SendChangeCipherSpec`/
-`SendFinished` are intermediate labels used while the client flight is queued;
-the externally observable progression is driven by `tlsStep`. The `Error` value
-is not currently entered by the implementation (errors are returned directly).
+`sess.state` directly. TLS 1.3 uses `RecvEncryptedExtensions` and
+`RecvCertificateVerify`; TLS 1.2 uses the ServerKeyExchange/CCS labels.
+`SendClientKeyExchange`/`SendChangeCipherSpec`/`SendFinished` are intermediate
+labels used while the client flight is queued; the externally observable
+progression is driven by `tlsStep`. The `Error` value is not currently entered
+by the implementation (errors are returned directly).
 
 ### `TlsSession`
 
@@ -559,19 +671,25 @@ is not currently entered by the implementation (errors are returned directly).
 - `hs_buf` / `hs_len` — 65536-byte handshake reassembly buffer and its length.
 - `transcript` — streaming SHA-256 of handshake messages.
 - `client_random` / `server_random` — 32 bytes each.
+- `version` — negotiated `TLS_VERSION_12` or `TLS_VERSION_13`.
 - `suite` / `peer_group` / `peer_pub` / `peer_key` — negotiated suite, group,
-  peer ECDH public key, and parsed certificate public key.
+  peer ECDH public key, and parsed certificate public key (P-256, P-384, or
+  RSA).
+- `early_secret` / `handshake_secret` / `master_secret` /
+  `client_hs_secret` / `server_hs_secret` / `client_app_secret` /
+  `server_app_secret` — TLS 1.3 HKDF schedule material.
 - `pre_master` / `master` / `client_key` / `server_key` / `client_iv` /
-  `server_iv` — key schedule material.
+  `server_iv` — TLS 1.2 key schedule material and the active record keys.
 - `write_seq` / `read_seq` / `write_cipher` / `read_cipher` — record counters
-  and AEAD-active flags.
+  and AEAD-active flags (reset per TLS 1.3 key epoch).
 - `pending` / `pending_len` — 8192-byte queued output flight.
 - `app` / `app_start` / `app_end` — 32768-byte decrypted application buffer.
 
-**Gotchas** — treat every field as private. The struct is 124008 bytes (about 121 KiB); keep
-it out of small stacks and allocate it once (the demo uses a global). Do not
-copy a live session: internal slices in `cfg` and the RNG/store pointers are
-borrowed, and the record reader's fragments alias its own buffer.
+**Gotchas** — treat every field as private. The struct is 124400 bytes (about
+121.5 KiB); keep it out of small stacks and allocate it once (the demo uses a
+global). Do not copy a live session: internal slices in `cfg` and the
+RNG/store pointers are borrowed, and the record reader's fragments alias its
+own buffer.
 
 ### `tlsInit`
 
@@ -606,8 +724,9 @@ driver action.
 
 **Gotchas**
 - The first call emits the ClientHello as `.send` before consuming `input`.
-- If a complete flight is queued (ClientKeyExchange + CCS + Finished), the
-  whole queued flight is returned in one `.send`; the queue is then drained.
+- If a complete flight is queued (TLS 1.2: ClientKeyExchange + CCS + Finished;
+  TLS 1.3: client Finished), the whole queued flight is returned in one
+  `.send`; the queue is then drained.
 - `input` larger than the 16413-byte record buffer is fed in chunks; each
   complete record is drained before more is appended.
 - A `recv` hint of `1` is advisory; the caller may read any size.
@@ -645,28 +764,31 @@ the complete 5-byte-header-framed record set.
 `error.OutputTooSmall` when `output` cannot hold every record.
 
 **Gotchas** — with `n` chunks the required output is
-`n*5 + data.len + n*overhead`, where overhead is 24 bytes for AES-GCM
-(explicit nonce + tag) and 16 bytes for ChaCha20-Poly1305. Sequence numbers
-advance per record.
+`n*5 + data.len + n*overhead`. For TLS 1.2 overhead is 24 bytes for AES-GCM
+(explicit nonce + tag) and 16 bytes for ChaCha20-Poly1305. For TLS 1.3 it is
+17 bytes for both suites (tag + inner content type; no explicit nonce).
+Sequence numbers advance per record.
 
 ## Buffer and record limits
 
 | Limit | Value | Enforced by |
 |---|---|---|
 | Plaintext record fragment | 16384 | `protectRecord`, `recordAad`, `unprotectRecord` |
+| TLS 1.3 inner plaintext (content + type) | 16385 | `protectRecord13`/`unprotectRecord13` |
 | Protected wire fragment | 16408 | `parseRecordHeader`, `unprotectRecord`, `RecordReader` |
 | Record header | 5 | `encodeRecord`/`decodeRecord` |
 | `RecordReader` buffer | 16413 | `readerAppend` |
 | Handshake reassembly | 65536 | `handleRecord`/`drainHandshake` |
 | Pending output flight | 8192 | `queueRecord` |
 | Application buffer | 32768 | `bufferApplication` |
-| Finished verify_data | 12 | `handleFinished` |
+| Finished verify_data | 12 (1.2) / 32 (1.3) | `handleFinished` / `verifyFinished13` |
 
 ## See also
 
 - [`cipher.md`](cipher.md) — AES-128-GCM and ChaCha20-Poly1305 primitives.
-- [`crypto.md`](crypto.md) — SHA-256, HMAC/PRF_SHA256, and RSA verification.
-- [`ecc.md`](ecc.md) — P-256 ECDH/ECDSA and X25519.
+- [`crypto.md`](crypto.md) — SHA-256/384, HMAC/PRF_SHA256, HKDF, and RSA
+  PKCS#1 v1.5/PSS verification.
+- [`ecc.md`](ecc.md) — P-256 ECDH/ECDSA, P-384 ECDSA, and X25519.
 - [`x509.md`](x509.md) — certificate parsing, chain verification, and the
   trust-store format.
 - [`examples/z98/demo/tls_demo/README.md`](../../../examples/z98/demo/tls_demo/README.md)

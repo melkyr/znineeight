@@ -344,7 +344,7 @@ To build a Z98 program on a target machine you need:
 - [README_zig0_bootstrap.md](README_zig0_bootstrap.md) — the preserved bootstrap-era (`zig0`)
   README, kept byte-verbatim.
 
-## Standard Library  [updated: 2026-10-22 — M4]
+## Standard Library  [updated: 2026-10-22 — M5]
 The Z98 standard library lives in `sf/src/std_*.zig`. Its core modules (`io`, `arena`, `str`,
 `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `buf`) are re-exported through
 `@import("std")`; the higher layers (`std_file`, `std_stdin`, `std_stream`, `std_crypto`,
@@ -357,7 +357,8 @@ provides ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128, and AES-128-GCM (const 
 `std_ecc` provides X25519, P-256 keygen/ECDH/ECDSA verify, and P-384 ECDSA verify; `std_asn1`
 provides the streaming DER reader and `std_x509` certificate parsing, leaf-to-anchor chain
 verification, SAN dNSName hostname matching, and the pinned trust-store loader; `std_tls`
-provides the sans-I/O TLS 1.2 record layer and client handshake. See the
+provides the sans-I/O TLS 1.2/1.3 record layer and client handshakes (TLS 1.3 suites,
+x25519, HKDF-Expand-Label key schedule, ECDSA/P-384/RSA-PSS CertificateVerify). See the
 guide for the library's model and an index that links each domain's detailed doc:
 
 
