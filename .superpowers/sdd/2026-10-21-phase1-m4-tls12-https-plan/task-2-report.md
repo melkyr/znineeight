@@ -14,18 +14,28 @@ Scope: Task 2 only (TLS 1.2 handshake + fixture); no demo/tier/docs/seed rotatio
 
 ## Step 1 — fixture scaffold + canned transcripts
 
-Created `repro/mi_matrix/stdlib_tls12_handshake_xmod/` with the driver, two
+Created `repro/mi_matrix/stdlib_tls12_handshake_xmod/` with the driver, four
 generated transcript data files, and golden `expected.txt` / `expected.rc`.
 
 Fixture covers:
 
 - ECDHE-ECDSA / AES-128-GCM-SHA256
 - ECDHE-RSA / CHACHA20-POLY1305-SHA256
-- ECDHE-ECDSA replay fed one byte at a time (fragmented Certificate record /
-  fragmented TCP input), asserting the meaningful action sequence
-  `ClientHello send → client-flight send → established`
-- negatives: tampered server Finished `→ HandshakeFailed`; `now_unix = 2100`
+- ECDHE-x25519 / AES-128-GCM-SHA256
+- ECDHE-ECDSA / AES-128-GCM-SHA256 with a >16 KiB Certificate message split
+  across two TLS records (cert is 20,651 DER bytes; records are 16,384 + 4,277
+  payload bytes). An independent record walker asserts
+  `cert_message_len > TLS_MAX_RECORD` and `cert_record_fragments >= 2`, then
+  the handshake must reach `Established`.
+- ECDHE-ECDSA replay fed one byte at a time, asserting the meaningful action
+  sequence `ClientHello send → client-flight send → established`
+- negatives: tampered server Finished `→ HandshakeFailed`; tampered
+  ServerKeyExchange signature `→ HandshakeFailed`; `now_unix = 2100`
   `→ CertificateExpired`; hostname with no SAN match `→ HostnameMismatch`
+- `tlsWrite` short-output regression: a 17,000-byte write into a 16,389-byte
+  buffer returns `OutputTooSmall` before writing any record or advancing
+  `write_seq`; the same write then succeeds in 17,058 bytes with `write_seq`
+  advanced by exactly two records.
 
 The fixture pins the exact deterministic `ClientHello` and client flight
 (`ClientKeyExchange + ChangeCipherSpec + Finished`) bytes, so a transcript or
@@ -48,6 +58,22 @@ openssl genrsa -out leaf_rsa.key 2048
 openssl req -new -key leaf_rsa.key -subj "/CN=localhost" -out leaf_rsa.csr
 openssl x509 -req -in leaf_rsa.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
   -days 3650 -sha256 -extfile ext.cnf -out leaf_rsa.pem
+
+# >16 KiB leaf: add a 20,000-byte custom extension (unknown OID is ignored by
+# std_x509) to inflate the Certificate message beyond one TLS record.
+python3 make_big_ext.py          # writes ext_big.cnf
+openssl ecparam -name prime256v1 -genkey -noout -out leaf_big.key
+openssl req -new -key leaf_big.key -subj "/CN=localhost" -out leaf_big.csr
+openssl x509 -req -in leaf_big.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
+  -days 3650 -sha256 -extfile ext_big.cnf -out leaf_big.pem
+openssl x509 -in leaf_big.pem -outform DER -out leaf_big.der
+wc -c leaf_big.der
+```
+
+Observed big leaf:
+
+```
+20651 leaf_big.der
 ```
 
 Observed (ext.cnf has `subjectAltName=DNS:localhost`,
@@ -84,14 +110,39 @@ $ nohup openssl s_server -accept 24444 -tls1_2 \
     -cert leaf_rsa.pem -key leaf_rsa.key -groups P-256 -www -quiet -naccept 1 &
 $ ./capout/capture 24444 ca_store.bin rsa_chacha_data.zig
 captured
+
+$ nohup openssl s_server -accept 24445 -tls1_2 \
+    -cipher ECDHE-ECDSA-AES128-GCM-SHA256 \
+    -cert leaf_ecdsa.pem -key leaf_ecdsa.key -groups X25519 -www -quiet -naccept 1 &
+$ ./capout/capture 24445 ca_store.bin x25519_data.zig
+captured
+
+$ nohup openssl s_server -accept 24446 -tls1_2 \
+    -cipher ECDHE-ECDSA-AES128-GCM-SHA256 \
+    -cert leaf_big.pem -key leaf_big.key -groups P-256 -www -quiet -naccept 1 &
+$ ./capout/capture 24446 ca_store.bin big_cert_data.zig
+captured
 ```
 
 Resulting embedded files:
 
 ```
-ecdsa_aes_data.zig   31906 bytes  finished_record_end = 950
-rsa_chacha_data.zig  34022 bytes  finished_record_end = 1329
+ecdsa_aes_data.zig    31906 bytes  finished_record_end = 950
+rsa_chacha_data.zig   34022 bytes  finished_record_end = 1329
+x25519_data.zig       31460 bytes  finished_record_end = 945
+big_cert_data.zig    158253 bytes  finished_record_end = 20973
 ```
+
+Record split observed in `big_cert_data.zig` (raw server bytes, first records):
+
+```
+raw 22716 records 8
+(22,84) (22,16384) (22,4277) (22,148) (22,4) (20,1) (22,40) (23,1738)
+```
+
+The Certificate handshake message (20,657 bytes) starts in the 16,384-byte
+record and continues into the following 4,277-byte record; the fixture's
+independent scanner asserts that split.
 
 ## Step 2 — initial targeted FAIL
 
@@ -132,10 +183,15 @@ Extended `sf/src/std_tls.zig` (record layer unchanged):
 - Transcript: SHA-256 over every handshake message (record headers excluded);
   PRF_SHA256 master secret + key expansion; AES-GCM and ChaCha20-Poly1305 key /
   fixed-IV lengths; CCS then Finished in both directions.
+- Multi-record handshake reassembly keeps a fixed-size 64 KiB message buffer
+  (`TLS_HANDSHAKE_MAX`), admitting a >16 KiB Certificate split across several
+  TLS records; individual record payloads remain capped at 16,384 bytes.
 - `tlsRead` buffers decrypted application data; `tlsWrite` fragments below the
-  16384-byte protected-record cap (max 16360 plaintext).
-- Pre-Established failures fail closed; Finished unprotect/verify failures map
-  to `error.HandshakeFailed`.
+  16384-byte protected-record cap (max 16360 plaintext). Capacity is checked
+  for the complete write before any record is emitted or `write_seq` advances,
+  so `OutputTooSmall` leaves the stream untouched.
+- Pre-Established failures fail closed; Finished unprotect/verify failures and
+  SKE signature verification failures map to `error.HandshakeFailed`.
 
 Fixture transcript data was captured after the state machine existed, then
 embedded; the fixture still pinned the same deterministic seed/bytes.
@@ -149,6 +205,10 @@ $ .../prog
 tls handshake ok
 rc=0
 ```
+
+That PASS includes the >16 KiB multi-record Certificate, x25519 ECDHE,
+tampered-SKE and short-`tlsWrite` assertions; any of those failing would
+`@panic` instead of printing the GREEN line.
 
 Targeted fixtures, 3×:
 
@@ -207,16 +267,19 @@ Full stdlib gate deliberately deferred to Task 4 closeout.
 
 - Code/fixtures commit: `3b98ebb3d35b1ab609668db72f616da22034f3e3`
   `feat(std_tls): TLS 1.2 handshake (Phase1 M4)`
-- Report commit: this commit
+- Original report commit: `76f993ea57d8107a09a0050dcfb695b57edfb1e0`
   `docs(sdd): M4 T2 report`
+- Fix commit: `e79a20ef3a15c41122eac85949ebd51b14d819cb`
+  `fix(std_tls): multi-record certificates, bounded handshake, atomic write`
+- Fix report commit: this commit
+  `docs(sdd): M4 T2 fix report`
 
 No changes to `progress.md` or `run.err`.
 
 ## Concerns
 
-- Canned transcripts use P-256 ECDHE; the x25519 code path is implemented but
-  not covered by a committed transcript (brief specifies the two suites +
-  fragmented Certificate, not a third x25519 capture).
+- `TLS_HANDSHAKE_MAX` bounds one handshake message (Certificate chain) at
+  64 KiB; larger chains fail closed with `error.RecordTooLarge`.
 - Only ECDSA-SHA256 / RSA-PKCS1-SHA256 server-key-exchange signatures are
   offered/accepted (matching the four SHA-256 suites); SHA-384 signature
   variants are out of scope for this task.
