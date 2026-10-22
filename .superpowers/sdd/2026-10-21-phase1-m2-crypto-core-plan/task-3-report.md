@@ -258,21 +258,22 @@ run3_rc=0
 expected_cmp=0
 ```
 
-Observed `-fsafe` outputs (3 runs each, byte-identical):
+Observed `-fsafe` outputs (3 runs each, byte-identical; md5sum):
 
 ```
 x25519:
-7a89335d143be1b09385ef1bc64a6d21a42b89908bc1a5b722bd5625f58f7e6c  run1.out
-7a89335d143be1b09385ef1bc64a6d21a42b89908bc1a5b722bd5625f58f7e6c  run2.out
-7a89335d143be1b09385ef1bc64a6d21a42b89908bc1a5b722bd5625f58f7e6c  run3.out
+487ac9bd6b86f6d40cfc3255ce49aacf  run1.out
+487ac9bd6b86f6d40cfc3255ce49aacf  run2.out
+487ac9bd6b86f6d40cfc3255ce49aacf  run3.out
 x25519 ok
 
 ecc verify:
-848846786845d9ef102cdf2d13fe80393ed42e03f05e948375a9ef2fb2d19fb8  run1.out
-848846786845d9ef102cdf2d13fe80393ed42e03f05e948375a9ef2fb2d19fb8  run2.out
-848846786845d9ef102cdf2d13fe80393ed42e03f05e948375a9ef2fb2d19fb8  run3.out
+548f98572f83c67de2d8988e60a5b391  run1.out
+548f98572f83c67de2d8988e60a5b391  run2.out
+548f98572f83c67de2d8988e60a5b391  run3.out
 ecc verify ok
 ```
+
 
 ### Hygiene
 
@@ -285,3 +286,85 @@ shell-syntax-ok
 
 The public API and all previously passing KAT outputs are unchanged. Seed was
 not rotated; compiler/`std.zig` and the shared harness were not modified.
+
+## Fix round 2
+
+Scoped re-review required a committed default-mode gate and a non-vacuous
+`r == 0` KAT.
+
+### 1. Committed `-fsafe` gate
+
+Added executable `scripts/stdlib/run_ecc_safe.sh`:
+
+```
+usage: run_ecc_safe.sh <zig1> [<dir>...]
+```
+
+Defaults to the two `std_ecc` fixtures. For each dir it:
+
+1. emits with `zig1 -o <tmp> <entry>` — no `-ffast`, so the compiler default
+   `-fsafe` checks are active;
+2. builds via the emitted `build_target.sh linux`;
+3. runs 3× from a scratch CWD;
+4. compares every rc/stdout to the committed `expected.rc`/`expected.txt`;
+5. fails loudly with scratch path/stderr/diff on EMIT/BUILD/RUN trap, rc
+   mismatch, or stdout mismatch.
+
+The shared `run_fixtures.sh` was not modified.
+
+```
+$ bash scripts/stdlib/run_ecc_safe.sh /tmp/m2_t3_build/zig1_5_clean
+PASS repro/mi_matrix/stdlib_x25519_xmod (md5=487ac9bd6b86f6d40cfc3255ce49aacf rc=0)
+PASS repro/mi_matrix/stdlib_ecc_verify_xmod (md5=548f98572f83c67de2d8988e60a5b391 rc=0)
+----------------------------------------
+run_ecc_safe: 2 PASS / 0 FAIL over 2 dirs
+```
+
+### 2. Non-vacuous `r == 0` KAT
+
+Added discriminating cases (pub = curve generator, zero hash, `r = 0`, `s = 1`)
+for both P-256 and P-384. Without the explicit `r != 0` gate these verify
+(both ECDSA scalars are zero), so they fail the negative fixture when the gate
+is removed.
+
+Proof performed against a throwaway compiler tree with the `r` check deleted:
+
+```
+$ bash scripts/stdlib/run_fixtures.sh \
+    /tmp/m2_t3_nocheck/zig1_5_clean \
+    repro/mi_matrix/stdlib_ecc_verify_xmod
+...
+FAIL repro/mi_matrix/stdlib_ecc_verify_xmod (STDOUT-MISMATCH)
+----------------------------------------
+run_fixtures: 0 PASS / 1 FAIL over 1 dirs
+```
+
+With the shipped check restored:
+
+```
+$ bash scripts/stdlib/run_fixtures.sh /tmp/m2_t3_build/zig1_5_clean \
+    repro/mi_matrix/stdlib_x25519_xmod repro/mi_matrix/stdlib_ecc_verify_xmod
+PASS repro/mi_matrix/stdlib_x25519_xmod
+PASS repro/mi_matrix/stdlib_ecc_verify_xmod
+----------------------------------------
+run_fixtures: 2 PASS / 0 FAIL over 2 dirs
+```
+
+### 3. Corrected `-fsafe` md5s
+
+The older `-fsafe` evidence listed SHA-256 values under an md5 label. Current
+fixture output md5s are `487ac9bd6b86f6d40cfc3255ce49aacf` (X25519) and
+`548f98572f83c67de2d8988e60a5b391` (ECC verify); the stale block in the
+Fix round 1 section now shows these md5s.
+
+### Hygiene
+
+```
+$ bash -n scripts/stdlib/run_ecc_safe.sh
+script-syntax-ok
+$ git diff --check
+(no output; rc=0)
+```
+
+No shift-fix/API/KAT logic changes were reverted. Seed copy lists unchanged;
+no seed rotation; compiler/`std.zig` and the shared harness untouched.
