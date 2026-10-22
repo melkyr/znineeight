@@ -18,7 +18,7 @@
 - R6: no clock/env reads; randomness is caller-supplied xoshiro256\*\*.
 - New files: `sf/src/std_cipher.zig`, `sf/src/std_ecc.zig`; extend `sf/src/std_crypto.zig` only; `std.zig` unchanged (by-path import).
 - Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at milestone closeout. Task 1 edits existing `std_crypto` → full gate; Task 1C-F is a compiler fix → full compiler battery + seed rotation; Tasks 2–3 are new modules → targeted-only until Task 4 closeout.
-- Closeout rotates seed **v112** (42 lib files: +`std_cipher`, +`std_ecc`); fixed point `21c957730d268f1e7883176fa5413b65` must not move.
+- Seed rotations (two): Task 1C-F (compiler fix) rotates seed **v112** (40 lib files, unchanged copy list) with a **new** fixed point `F_new` (`hop2==hop3`, moving point — `hop1≠hop2` expected); Task 4 closeout rotates seed **v113** (42 lib files: +`std_cipher`, +`std_ecc`) with fixed point `F_new` unchanged (`hop1==hop2==hop3`; std-only, compiler source unchanged). The prior anchor `21c95773…` is superseded by `F_new` after 1C-F.
 - Commits `feat(std_crypto|std_cipher|std_ecc): … (Phase1 M2)`, `docs(std_lib): … (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): … report`. STOP-present on any contract change.
 
 ## Review Focus
@@ -74,16 +74,17 @@
 
 **Depends on:** Task 1C-I. Implement the I report design exactly; do not improvise or defer shapes the I task proves in scope.
 
-**Files (expected; final list from I report):**
+**Files (expected; final list from I report §9):**
+- Create: `sf/src/const_init_eval.zig` (the one classification pass — `constInitEvaluate`)
 - Modify: `sf/src/lir.zig`, `sf/src/main.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig`
 - Create/modify committed compiler gate + fixture(s) from I report
 - Modify: seed scripts/counts as required for rotation
 
 - [ ] **Step 1:** Add the const/initializer representation required by the I design.
-- [ ] **Step 2:** Emit C89 `static const` initializers for all in-scope const shapes; remove their `__module_init`/`store_global` copies. Keep non-constant const as `.bss` + runtime init.
+- [ ] **Step 2:** Emit C89 `static const` initializers for all in-scope const shapes; remove their `__module_init`/`store_global` copies. Keep non-constant const as `.bss` + runtime init. **STOP-1 ruling (abstraction layer):** non-first-member union const initializers (C89 §3.5.7 initializes only the first member) → `constInitEvaluate` returns `null` → `.bss` fallback (correct values preserved); first-member unions, structs, multi-D arrays, and nested combinations → `static const` rodata. Documented C89 boundary; negative fixture asserts the fallback keeps correct values.
 - [ ] **Step 3:** Add the committed rodata gate and fixture(s); prove non-vacuous by mutating emitters to `.bss` (must fail) and non-constant const (must stay `.bss`).
 - [ ] **Step 4:** Full compiler battery: corpus frozen-1124 class file, goldens 5/5, mi_matrix 25+oob, examples 26/26 build+run, stdlib full gate, pins recorded old→new, markers, emit-support, hop closure. No unrelated fixes.
-- [ ] **Step 5:** Seed rotation with the I report's version assignment; record archive/manifest/binary/fixed-point and verify hop1==hop2; update affected plan seed-version references.
+- [ ] **Step 5:** Rotate seed **v112** (compiler fix, 40-file copy list unchanged); record archive/manifest/binary/`F_new`; verify **`hop2==hop3`** (moving point — `hop1≠hop2` expected for the compiler change). Re-anchor the plan text from `21c9…` to `F_new`; update affected plan seed-version references (Task 4 → v113).
 - [ ] **Step 6:** Commits: `fix(c89_emit): emit file-scope const values as C89 const rodata` + `docs(sdd): M2 T1C-F report`. No push.
 
 ### Task 2: `std_cipher` — ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128-GCM
@@ -135,6 +136,6 @@
 
 - [ ] **Step 1:** Write the three docs (API contracts from spec §5.1–§5.3; constant-time and no-heap notes; KAT provenance table).
 - [ ] **Step 2:** Truth-ups (STD_README domain/doc-index rows for the 3 modules; root README higher-layer list; QUICK_REF counts/install/verify line).
-- [ ] **Step 3:** Seed scripts count/copy-list updates; rotate seed v112; verify archive md5, manifest md5, binary/fixed point unchanged `21c957730d268f1e7883176fa5413b65`, hop1==hop2 from rotated archive.
+- [ ] **Step 3:** Seed scripts count/copy-list updates; rotate seed **v113** (+`std_cipher`+`std_ecc`, 42 lib files); verify archive md5, manifest md5, binary/fixed point **`F_new`** unchanged (equals v112's `F_new`), **`hop1==hop2==hop3`** (std-only; compiler source unchanged) from rotated archive.
 - [ ] **Step 4:** Full gate re-run (fixtures + crosscheck) on the rotated compiler.
 - [ ] **Step 5:** Commits `docs(std_lib): crypto/cipher/ecc docs (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): M2 closeout report`.

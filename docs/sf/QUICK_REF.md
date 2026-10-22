@@ -522,7 +522,7 @@ self-emission 48 `.c` + 48 `.h` / 0 PANIC; corpus `-s0`
 **1090 = 922 OK / 56 GREEN / 112 FAIL / 0 ICE / 0 CRASH** (the only class movers
 are the two new A2-F fixtures `enum_subbyte_backing_xmod` GREEN -> OK and
 `empty_named_struct_field_xmod` FAIL -> OK; zero pre-existing movers); the new
-fixed point (moving point hop1 `7fc608358f4f6af5abab43e633d44f83` == hop2,
+fixed point (hop1 `7fc608358f4f6af5abab43e633d44f83` == hop2,
 explicit `FIXED_POINT_MD5` gate) is **`7fc608358f4f6af5abab43e633d44f83`**; seed
 v90 NOT rotated.
 
@@ -544,7 +544,7 @@ guarded in `type_resolver.zig`, `front_resolution.zig` and
 emit 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48 `.h` /
 0 PANIC; corpus `-s0` **1091 = 922 OK / 57 GREEN / 112 FAIL / 0 ICE / 0 CRASH**
 (the only mover is the new reject fixture FAIL -> GREEN; zero pre-existing
-movers); the new fixed point (moving point hop1 == hop2, explicit
+movers); the new fixed point (hop1 == hop2, explicit
 `FIXED_POINT_MD5` gate) is **`2794fe04e0828c95dd5c2c6fecdea362`**; seed v90 NOT
 rotated.
 
@@ -566,7 +566,7 @@ byte-identical (6/6); example matrix 24/24; stdlib **266 PASS / 0 FAIL**; emit
 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48 `.h` /
 0 PANIC; corpus `-s0` **1092 = 923 OK / 57 GREEN / 112 FAIL / 0 ICE / 0 CRASH**
 (zero common-dir movers; the new fixture classifies OK either way — the pin is
-the runtime golden); the new fixed point (moving point hop1 == hop2, explicit
+the runtime golden); the new fixed point (hop1 == hop2, explicit
 `FIXED_POINT_MD5` gate) is **`c1746347cbcdbb39385f325be20b9b6b`**; seed v90 NOT
 rotated. Residual (out of scope, do NOT fix): `return <void expr>;` in a `?void`
 function still ICEs `error[3043]` — identical on base and fixed.
@@ -590,7 +590,7 @@ FAIL**; emit 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48
 `.h` / 0 PANIC; build_test 0/9 (pre-existing); run_all 13/13; corpus `-s0`
 **1093 = 923 OK / 58 GREEN / 112 FAIL / 0 ICE / 0 CRASH** (the only movers are
 the two new A5-F fixtures; zero pre-existing movers); the new fixed point
-(moving point hop1 == hop2, explicit `FIXED_POINT_MD5` gate) is
+(hop1 == hop2, explicit `FIXED_POINT_MD5` gate) is
 **`821481e69df63fc0cf69176fdaaf9dd9`**; seed v90 NOT rotated. PARKED (A5-I §6,
 same root cause, do NOT fold): function-local `var x = i32;` / `var x = A;`;
 module `var X = struct {...};` / `var X = *i32;`; shadow-diagnostic noise.
@@ -617,7 +617,7 @@ FAIL**; emit 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48
 `.h` / 0 PANIC; build_test 0/9 (pre-existing); run_all 13/13; corpus `-s0`
 **1094 = 923 OK / 58 GREEN / 113 FAIL / 0 ICE / 0 CRASH** (only mover = the new
 fixture OK -> FAIL by the raw classifier, declared green-guard; zero
-pre-existing movers); the new fixed point (moving point hop1 == hop2, explicit
+pre-existing movers); the new fixed point (hop1 == hop2, explicit
 `FIXED_POINT_MD5` gate) is **`17a88daf2402eb8d6ca53d09eb005f8e`**; seed v90 NOT
 rotated. PARKED (do NOT fold): a *value*-switch prong keeps accepting an
 assignment and Z98 does not type the void prong against the switch type —
@@ -652,7 +652,7 @@ emit 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48 `.h` / 0
 PANIC; build_test 0/9 (pre-existing); run_all 13/13; corpus `-s0`
 **1097 = 923 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH** (base same; join-diff
 empty — zero pre-existing movers; the only addition is the new FAIL fixture);
-the new fixed point (moving point hop1 == hop2, explicit `FIXED_POINT_MD5`
+the new fixed point (hop1 == hop2, explicit `FIXED_POINT_MD5`
 gate) is **`0b8c3e4ac0b1fc49c0bdf8caf9d39945`**; seed v90 NOT rotated.
 
 A8-F (2026-10-05; Volume IV Amendment A8, operator m1617 ruled option A —
@@ -679,7 +679,7 @@ self-emission 48 `.c` + 48 `.h` / 0 PANIC; build_test 0/9 (pre-existing);
 run_all 13/13; corpus `-s0` **1096 = 923 OK / 58 GREEN / 115 FAIL / 0 ICE / 0
 CRASH** (base excluding the new fixture 1095 = 923/58/114; join-diff empty —
 zero pre-existing movers; the only addition is the new FAIL fixture); the new
-fixed point (moving point hop1 == hop2, explicit `FIXED_POINT_MD5` gate) is
+fixed point (hop1 == hop2, explicit `FIXED_POINT_MD5` gate) is
 **`ca21a1bab9fa185f43b99eeb4bd7b847`**; seed v90 NOT rotated.
 
 A7-F (2026-10-05; Volume IV Amendment A7, operator m1596) scopes the
@@ -703,7 +703,7 @@ emitted-C pins stay **UNCHANGED 8/8** both modes; example matrix 24/24; stdlib
 48 `.c` + 48 `.h` / 0 PANIC; build_test 0/9 (pre-existing); run_all 13/13;
 corpus `-s0` **1095 = 923 OK / 58 GREEN / 114 FAIL / 0 ICE / 0 CRASH** (join-diff
 vs base `17a88daf` empty over the 1094 common dirs; the only addition is the new
-fixture); the new fixed point (moving point hop1 == hop2, explicit
+fixture); the new fixed point (hop1 == hop2, explicit
 `FIXED_POINT_MD5` gate) is **`2719c55740724c2eb06b58c3e4ab970f`**; seed v90 NOT
 rotated.
 

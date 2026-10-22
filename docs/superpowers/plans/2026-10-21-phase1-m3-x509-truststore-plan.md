@@ -84,5 +84,5 @@
 - [ ] **Step 1:** Implement caconv (PEM scan `BEGIN CERTIFICATE` blocks, base64 decode, `x509Parse` each, write format §5.5 in file order; deterministic). Fixtures: tool run on a committed mini-PEM (3 certs) → expected store bytes (byte-exact golden committed); re-run 2× identical.
 - [ ] **Step 2:** Generate `ca_store.bin` from the current Mozilla `cacert.pem` snapshot (commit the binary + record snapshot date/source in the README); verify `trustStoreLoad` reads it (count = anchors parsed).
 - [ ] **Step 3:** Docs: asn1.md + x509.md (API + validation policy + error table); caconv README (download `cacert.pem` from curl.se, run tool, snapshot-date note); truth-ups to 3 docs; seed scripts counts.
-- [ ] **Step 4:** Rotate seed v113; verify manifest 44 / archive md5 / fixed point unchanged / hop1==hop2; full gate green on rotated compiler.
+- [ ] **Step 4:** Rotate seed v113; verify manifest 44 / archive md5 / fixed point unchanged / hop1==hop2 (std-only; compiler source unchanged); full gate green on rotated compiler.
 - [ ] **Step 5:** Commits `feat(demo): caconv CA-store converter (Phase1 M3)`, `docs(std_lib): asn1/x509 docs (M3)`, `chore(seed): rotate (M3)`, `docs(sdd): M3 closeout report`.

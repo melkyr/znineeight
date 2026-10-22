@@ -90,5 +90,5 @@
 - Rotate: `release/seed/` → **v117** (47 files)
 
 - [ ] **Step 1:** tcpip.md (API §5.8, TCP policy table, DNS/ICMP notes, memory bounds); demo READMEs get measured RAM/CPU tables (Linux + Wine).
-- [ ] **Step 2:** Truth-ups; defect ledger sweep (all Phase 1 STOPs/defects recorded or fixed); seed scripts; rotate v117; verify archive/manifest 47/fixed point `21c95773…`/hop1==hop2; full gate + both tiers green on rotated compiler.
+- [ ] **Step 2:** Truth-ups; defect ledger sweep (all Phase 1 STOPs/defects recorded or fixed); seed scripts; rotate v117; verify archive/manifest 47/fixed point `21c95773…`/hop1==hop2 (std-only; compiler source unchanged); full gate + both tiers green on rotated compiler.
 - [ ] **Step 3:** Commits `docs(std_lib): tcpip docs + Phase 1 closeout`, `chore(seed): rotate (M7)`, `docs(sdd): M7 closeout report`.

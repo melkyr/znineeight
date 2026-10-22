@@ -92,5 +92,5 @@
 - Rotate: `release/seed/` → **v114** (45 files)
 
 - [ ] **Step 1:** tls.md (API §5.6, suite table, error table, time/clock policy, buffer sizes); demo README already written in T3 — cross-check.
-- [ ] **Step 2:** Truth-ups + seed scripts; rotate v114; verify manifest/archive/fixed point `21c95773…`/hop1==hop2; full gate on rotated compiler.
+- [ ] **Step 2:** Truth-ups + seed scripts; rotate v114; verify manifest/archive/fixed point `21c95773…`/hop1==hop2 (std-only; compiler source unchanged); full gate on rotated compiler.
 - [ ] **Step 3:** Commits `docs(std_lib): tls docs (M4)`, `chore(seed): rotate (M4)`, `docs(sdd): M4 closeout report`.
