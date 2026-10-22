@@ -55,15 +55,15 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v114** (`release/seed/zig1-seed.tgz`, archive md5
-`d65fbb411296eaae68f5abcbdf91efbd`), with **42** std files (`std.zig` +
-41 `std_*.zig`) and `lib/manifest.md5` md5
-`35c97d7f19e39aae52e082e7fc3c2fc3`. The compiler fixed point is
-`45158dcede81125a39a2c2c58478e21e` (`F_new`, unchanged since v112); v114 is
-the M2 crypto-core payload rotation (v113 was the superseded preliminary
-rotation before the RSA-PSS `-fsafe` fix).
+The committed seed is **v115** (`release/seed/zig1-seed.tgz`, archive md5
+`484ae9797545591e113f002e595a26d2`), with **44** std files (`std.zig` +
+43 `std_*.zig`) and `lib/manifest.md5` md5
+`576cffb600863a648f518748edad81c6`. The compiler fixed point is
+`45158dcede81125a39a2c2c58478e21e` (`F_new`, unchanged since v112); v115 is
+the M3 X.509/trust-store payload rotation (adds `std_asn1.zig` and
+`std_x509.zig`; no compiler movement).
 
-## Layer model (L0–L6)  [updated: 2026-10-21 — M6]
+## Layer model (L0–L6)  [updated: 2026-10-22 — M3]
 
 The library is layered so dependencies only ever point downward. Imports are
 strict: lower layers only, never siblings, never higher (R3).
@@ -76,7 +76,7 @@ strict: lower layers only, never siblings, never higher (R3).
 | **L2** | Data layer built on L0 — string slices and growable buffers | `std.str`, `std.buf` |
 | **L3** | Resources — owned-handle files, stdin, and sockets | `std_file`, `std_stdin`, `std.net` |
 | **L4** | Collections and byte codecs — concrete maps, sort/search, a stable min-heap, RLE, LZ4 block and zstd frame decode | `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_lz4`, `std_zstd` |
-| **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
+| **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, DER/X.509 parsing and chain verification, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
 | **L6** | Composition — coroutine-aware line and frame readers | `std_stream` |
 | async runtime | Outside L0–L6 — the cooperative scheduler and child-frame pool | `std.async` |
 
@@ -116,7 +116,7 @@ apply to its modules.
   bands also ship composed usage programs under `stdlib_test/`.
 
 
-## Which module for which job  [updated: 2026-10-21 — M6]
+## Which module for which job  [updated: 2026-10-22 — M3]
 
 | Job | Module | Domain doc |
 |---|---|---|
@@ -156,6 +156,8 @@ apply to its modules.
 | AES-128 block and AES-128-GCM AEAD | `std_cipher` | [cipher.md](sf/docs/std_lib/cipher.md) |
 | X25519 key agreement | `std_ecc` | [ecc.md](sf/docs/std_lib/ecc.md) |
 | P-256 keygen / ECDH / ECDSA verify; P-384 ECDSA verify | `std_ecc` | [ecc.md](sf/docs/std_lib/ecc.md) |
+| DER TLV read/scan (streaming, no allocation) | `std_asn1` | [asn1.md](sf/docs/std_lib/asn1.md) |
+| X.509 certificate parse, chain verify, hostname match, trust store | `std_x509` | [x509.md](sf/docs/std_lib/x509.md) |
 | Parse/format integers and fixed-point `f64` | `std_parse` | [codecs.md](sf/docs/std_lib/codecs.md) |
 
 ## Worked example
@@ -210,7 +212,7 @@ pub fn main() !void {
 }
 ```
 
-## Domain docs  [updated: 2026-10-22 — M2]
+## Domain docs  [updated: 2026-10-22 — M3]
 
 Every domain has a full doc with an overview, a quick start, and a structured
 entry for each public function. Read the one for the job at hand:
@@ -242,6 +244,11 @@ entry for each public function. Read the one for the job at hand:
   ChaCha20-Poly1305 AEAD, AES-128, and AES-128-GCM (const T-tables, GHASH).
 - [ecc.md](sf/docs/std_lib/ecc.md) — `std_ecc`: X25519, P-256
   keygen/ECDH/ECDSA verify, and P-384 ECDSA verify.
+- [asn1.md](sf/docs/std_lib/asn1.md) — `std_asn1`: streaming DER TLV reader
+  with definite-length and minimal-encoding validation.
+- [x509.md](sf/docs/std_lib/x509.md) — `std_x509`: certificate parsing,
+  browser-grade leaf-to-anchor chain verification, SAN dNSName hostname
+  matching, and the pinned §5.5 trust-store loader.
 - [codecs.md](sf/docs/std_lib/codecs.md) — `std_base64`, `std_hex`,
   `std_utf8`, `std_parse`, `std_lz4`: encoders/decoders, number parsing, and
   raw LZ4 block decode (legacy `std_crypto` primitives are indexed in

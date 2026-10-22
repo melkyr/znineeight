@@ -35,7 +35,7 @@ compiles itself to become the fully self-hosted compiler, **zig1** — the subje
 ## Current Status
 The **self-hosted milestone is complete**: `zig1` compiles itself, the compilation is
 **deterministic to a fixed point** (current self-compile binary md5 `45158dce…`; committed seed
-**v114**, `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
+**v115**, `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
 [Determinism](#determinism)), and the maintained example matrix is **25/25** dump/gcc/link. The
 mi_matrix corpus at `-s0` is enumerated by the canonical generator
 [`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the documented
@@ -89,11 +89,11 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
 
 - **Current self-compile fixed point:** self-compiled `zig1` binary md5
   `45158dcede81125a39a2c2c58478e21e` (47 module `.c` + 48 module `.h`, 0 `error[`, 0 PANIC;
-  hop1 == hop2 closure), committed seed **v114** (`release/seed/zig1-seed.tgz`, archive md5
-  `d65fbb411296eaae68f5abcbdf91efbd`; `lib/manifest.md5` md5
-  `35c97d7f19e39aae52e082e7fc3c2fc3`, 42 std files). The fixed point moved to `F_new` at M2
-  T1C-F (the `const`-rodata compiler fix); the seed payload moved to v114 at the M2 crypto-core
-  closeout (v113 was the superseded preliminary rotation).
+  hop1 == hop2 closure), committed seed **v115** (`release/seed/zig1-seed.tgz`, archive md5
+  `484ae9797545591e113f002e595a26d2`; `lib/manifest.md5` md5
+  `576cffb600863a648f518748edad81c6`, 44 std files). The fixed point moved to `F_new` at M2
+  T1C-F (the `const`-rodata compiler fix); the seed payload moved to v115 at the M3 X.509 /
+  trust-store closeout (adds `std_asn1` and `std_x509`; no compiler movement).
 - **Historical fixed point (0.20.0-era):** `553a39b4…` / seed v27 (45 module `.c` + 46 module `.h`);
   the operator-approved C89-AHEAD closeout (2026-09-13) was at the earlier fixed point
   `1467d932…` / seed v10. The old N-hop chain (seed v26 `f03d8485…` → hop1/hop2 `553a39b4…`) is
@@ -344,18 +344,21 @@ To build a Z98 program on a target machine you need:
 - [README_zig0_bootstrap.md](README_zig0_bootstrap.md) — the preserved bootstrap-era (`zig0`)
   README, kept byte-verbatim.
 
-## Standard Library  [updated: 2026-10-22 — M2]
+## Standard Library  [updated: 2026-10-22 — M3]
 The Z98 standard library lives in `sf/src/std_*.zig`. Its core modules (`io`, `arena`, `str`,
 `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `buf`) are re-exported through
 `@import("std")`; the higher layers (`std_file`, `std_stdin`, `std_stream`, `std_crypto`,
-`std_cipher`, `std_ecc`, `std_parse`, `std_map`, `std_sort`, `std_heap`, `std_rle`,
-`std_base64`, `std_hex`, `std_utf8`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
+`std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_parse`, `std_map`, `std_sort`, `std_heap`,
+`std_rle`, `std_base64`, `std_hex`, `std_utf8`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
 `std_num`, `std_pathfind`, `std_hpa`, `std_physics`)
 are imported by path. `std_crypto` provides streaming SHA-1/256/384/512, MD5, CRC-32,
 HMAC-SHA256, HKDF, BLAKE2s, RC4, modexp, and RSA PKCS#1 v1.5 / PSS verify; `std_cipher`
 provides ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128, and AES-128-GCM (const T-tables);
-`std_ecc` provides X25519, P-256 keygen/ECDH/ECDSA verify, and P-384 ECDSA verify. See the
+`std_ecc` provides X25519, P-256 keygen/ECDH/ECDSA verify, and P-384 ECDSA verify; `std_asn1`
+provides the streaming DER reader and `std_x509` certificate parsing, leaf-to-anchor chain
+verification, SAN dNSName hostname matching, and the pinned trust-store loader. See the
 guide for the library's model and an index that links each domain's detailed doc:
+
 
 - [STD_README.MD](STD_README.MD) — the Z98 standard library guide and index.
 
