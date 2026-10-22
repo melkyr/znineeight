@@ -25,8 +25,15 @@ Fixture covers:
 - ECDHE-ECDSA / AES-128-GCM-SHA256 with a >16 KiB Certificate message split
   across two TLS records (cert is 20,651 DER bytes; records are 16,384 + 4,277
   payload bytes). An independent record walker asserts
-  `cert_message_len > TLS_MAX_RECORD` and `cert_record_fragments >= 2`, then
-  the handshake must reach `Established`.
+  `cert_message_len > TLS_MAX_PLAINTEXT_RECORD` and
+  `cert_record_fragments >= 2`, then the handshake must reach `Established`.
+- The same big-cert transcript is also fed as one 22,716-byte `tlsStep` input
+  (not bytewise), proving arbitrary-size caller input is drained incrementally
+  with bounded memory.
+- Exact record framing boundaries in `stdlib_tls_record_xmod`: AES-GCM accepts
+  16,384 plaintext -> 16,408 wire payload; ChaCha20-Poly1305 accepts 16,384
+  plaintext -> 16,400 wire payload; one byte over either plaintext or wire cap
+  is `RecordTooLarge`; headers/framing accept the wire maximum.
 - ECDHE-ECDSA replay fed one byte at a time, asserting the meaningful action
   sequence `ClientHello send → client-flight send → established`
 - negatives: tampered server Finished `→ HandshakeFailed`; tampered
@@ -183,13 +190,22 @@ Extended `sf/src/std_tls.zig` (record layer unchanged):
 - Transcript: SHA-256 over every handshake message (record headers excluded);
   PRF_SHA256 master secret + key expansion; AES-GCM and ChaCha20-Poly1305 key /
   fixed-IV lengths; CCS then Finished in both directions.
+- `tlsStep` feeds caller input in fixed-buffer-sized pieces and drains every
+  complete record before appending more, so an arbitrary-size input slice (the
+  full 22,716-byte big-cert flight) works without unbounded memory.
 - Multi-record handshake reassembly keeps a fixed-size 64 KiB message buffer
   (`TLS_HANDSHAKE_MAX`), admitting a >16 KiB Certificate split across several
-  TLS records; individual record payloads remain capped at 16,384 bytes.
-- `tlsRead` buffers decrypted application data; `tlsWrite` fragments below the
-  16384-byte protected-record cap (max 16360 plaintext). Capacity is checked
-  for the complete write before any record is emitted or `write_seq` advances,
-  so `OutputTooSmall` leaves the stream untouched.
+  TLS records.
+- Record limits are explicit: TLS 1.2 plaintext records remain capped at
+  16,384 bytes (`TLS_MAX_PLAINTEXT_RECORD`), while wire AEAD payloads may reach
+  16,408 bytes (AES-GCM explicit nonce + tag; ChaCha20-Poly1305 is 16,400).
+  `encodeRecord`, header parsing, and the record reader use the wire ceiling;
+  `protectRecord`/`unprotectRecord` enforce the plaintext ceiling; unprotected
+  incoming records are additionally rejected above 16,384.
+- `tlsRead` buffers decrypted application data; `tlsWrite` uses the full
+  16,384-byte plaintext rule per record. Capacity is checked for the complete
+  write before any record is emitted or `write_seq` advances, so
+  `OutputTooSmall` leaves the stream untouched.
 - Pre-Established failures fail closed; Finished unprotect/verify failures and
   SKE signature verification failures map to `error.HandshakeFailed`.
 
@@ -206,9 +222,10 @@ tls handshake ok
 rc=0
 ```
 
-That PASS includes the >16 KiB multi-record Certificate, x25519 ECDHE,
-tampered-SKE and short-`tlsWrite` assertions; any of those failing would
-`@panic` instead of printing the GREEN line.
+That PASS includes the >16 KiB multi-record Certificate, the same transcript
+as one 22,716-byte `tlsStep` input, x25519 ECDHE, exact AES-GCM/ChaCha wire
+boundaries, tampered-SKE and short-`tlsWrite` assertions; any of those failing
+would `@panic` instead of printing the GREEN line.
 
 Targeted fixtures, 3×:
 
@@ -269,10 +286,12 @@ Full stdlib gate deliberately deferred to Task 4 closeout.
   `feat(std_tls): TLS 1.2 handshake (Phase1 M4)`
 - Original report commit: `76f993ea57d8107a09a0050dcfb695b57edfb1e0`
   `docs(sdd): M4 T2 report`
-- Fix commit: `e79a20ef3a15c41122eac85949ebd51b14d819cb`
+- Fix commit (round 1): `e79a20ef3a15c41122eac85949ebd51b14d819cb`
   `fix(std_tls): multi-record certificates, bounded handshake, atomic write`
+- Fix commit (round 2): `ae88c9d54b615f41e785148f9f0a999133950260`
+  `fix(std_tls): arbitrary-size input and record wire limits`
 - Fix report commit: this commit
-  `docs(sdd): M4 T2 fix report`
+  `docs(sdd): M4 T2 security fix report`
 
 No changes to `progress.md` or `run.err`.
 
