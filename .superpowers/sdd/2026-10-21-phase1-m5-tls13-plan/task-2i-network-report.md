@@ -265,3 +265,14 @@ This would give local coverage for ECDSA P-256, ECDSA P-384, and RSA-PSS. The re
 - `www.microsoft.com` can return a hard 403, a soft 200 block page, an HTTP/2 protocol error, or a timeout. Any tier assertion based only on `status=200` and `bytes>0` can pass on the soft block page.
 - Large dynamic pages (Amazon, AWS, GitHub, WhatsApp, etc.) have unstable body hashes even when byte sizes are stable; only status/body length should be asserted, not content hashes.
 - Public certificates and chains rotate; the recorded chain signature algorithms are point-in-time observations. Re-validate the Mozilla bundle before treating the store as current.
+
+## Resolution (applied in the Task 2 endpoint fix)
+
+- `tier_tls.sh` now uses `aws.amazon.com` (fallback `www.mozilla.org`) for the
+  RSA-PSS TLS 1.3 smoke and `letsencrypt.org` (fallback `example.com`) for the
+  ECDSA TLS 1.3 smoke; Microsoft was removed.
+- Internet cases reject `Your request has been blocked`, `Just a moment`, and
+  `captcha` markers even when the HTTP status is 200.
+- Two `Z98_NET=1` runs: `19 passed / 0 failed / 0 skipped`, `TIER_TLS PASS`.
+- Local ECDSA test leaves remain deferred; remote ECDSA endpoints provide the
+  interop coverage in this fix.

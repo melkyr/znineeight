@@ -222,10 +222,53 @@ No `sf/src` changes. `progress.md` and `run.err` were not touched.
   CertificateVerify remains covered by the Task 1 canned-transcript fixtures,
   not by a local `openssl s_server` ECDSA cert (no ECDSA test cert is
   committed).
-- `www.microsoft.com/` returns a bot-check 403 to the demo's header-light GET;
-  the RSA-PSS smoke uses `/en-us/`, which returns 200 under TLS 1.3.
+- The original `www.microsoft.com/en-us/` RSA-PSS smoke was a 200 soft-block
+  page; Task 2-I replaced it (see §9) and added a challenge-marker check.
 - Google response bytes vary between runs; the smoke asserts status=200 and
   bytes>0, while local status/body/bytes determinism is pinned byte-for-byte.
 - The v117 manifest md5 differs from v116 because v116 predated the Task 1
   `std_tls.zig` payload; the compiler fixed point is unchanged.
+
+## 9. Endpoint fix (Task 2-I)
+
+Investigation report:
+`.superpowers/sdd/2026-10-21-phase1-m5-tls13-plan/task-2i-network-report.md`.
+
+Changes in `examples/z98/demo/tls_demo/tests/tier_tls.sh`:
+
+- Removed the `www.microsoft.com/en-us/` RSA-PSS smoke (200 soft-block page).
+- RSA-PSS TLS 1.3: `aws.amazon.com` primary, `www.mozilla.org` fallback.
+- ECDSA TLS 1.3: `letsencrypt.org` primary, `example.com` fallback.
+- Internet cases now fail when the response body/title contains
+  `Your request has been blocked`, `Just a moment`, or `captcha`, in addition
+  to the existing status=200 / bytes>0 checks.
+- Local TLS 1.3 both-suite cases and the local TLS 1.2 fallback are unchanged.
+- `examples/z98/demo/tls_demo/README.md` updated; local ECDSA test leaves were
+  deliberately deferred (no source/seed changes in this fix).
+
+Network tier run 1:
+
+```text
+$ OUT=/tmp/tier_tls_fix1 Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
+ok   - internet www.google.com/ status=200 bytes=91532
+ok   - internet example.com/ status=200 bytes=577
+ok   - internet RSA-PSS TLS 1.3 aws.amazon.com status=200 bytes=509641
+ok   - internet ECDSA TLS 1.3 letsencrypt.org status=200 bytes=90353
+ok   - check_win9x_imports.sh 9x whitelist PASS
+== tier_tls summary: 19 passed, 0 failed, 0 skipped ==
+TIER_TLS PASS
+```
+
+Network tier run 2:
+
+```text
+$ OUT=/tmp/tier_tls_fix2 Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
+ok   - internet www.google.com/ status=200 bytes=91500
+ok   - internet example.com/ status=200 bytes=577
+ok   - internet RSA-PSS TLS 1.3 aws.amazon.com status=200 bytes=509641
+ok   - internet ECDSA TLS 1.3 letsencrypt.org status=200 bytes=90353
+ok   - check_win9x_imports.sh 9x whitelist PASS
+== tier_tls summary: 19 passed, 0 failed, 0 skipped ==
+TIER_TLS PASS
+```
 

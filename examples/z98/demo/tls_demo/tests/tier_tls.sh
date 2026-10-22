@@ -10,8 +10,12 @@
 #     to 2030-01-01 so the tier is date-stable; a clock-overflow regression
 #     asserts `tls: BadArgs` (not an -fsafe trap).
 # (b) `Z98_NET=1` internet smoke: google.com + example.com return status 200
-#     with bytes>0, plus www.microsoft.com/en-us/ as the RSA-PSS TLS 1.3 host.
-#     With Z98_NET unset the smoke is a loud SKIP, never a pass.
+#     with bytes>0; the RSA-PSS TLS 1.3 case uses aws.amazon.com with
+#     www.mozilla.org as fallback, and the ECDSA TLS 1.3 case uses
+#     letsencrypt.org with example.com as fallback. Block/challenge pages
+#     (`Your request has been blocked`, `Just a moment`, `captcha`) fail even
+#     when the HTTP status is 200. With Z98_NET unset the smoke is a loud SKIP,
+#     never a pass.
 # (c) RAM: run the local happy path under `ulimit -v 32768` and record the
 #     `/usr/bin/time -v` peak RSS.
 # (d) `-osw -fsafe` emit + mingw build + `check_win9x_imports.sh 9x`.
@@ -249,7 +253,9 @@ run13_repeat "ChaCha20-Poly1305" TLS_CHACHA20_POLY1305_SHA256 chacha
 
 echo "== (b) internet smoke (Z98_NET) =="
 if [ "${Z98_NET:-}" = "1" ]; then
-    net_case() {
+    NET_BYTES=""
+    NET_DETAIL=""
+    net_ok() {
         local host="$1" tag="$2" path="${3:-/}"
         timeout 60 "$BIN" "https://$host$path" "$DEMO_DIR/ca_store.bin" \
             >"$OUT/net_$tag.out" 2>"$OUT/net_$tag.err"
@@ -258,21 +264,50 @@ if [ "${Z98_NET:-}" = "1" ]; then
         local res="$(grep '^tls_demo ok' "$OUT/net_$tag.out" 2>/dev/null)"
         local bytes
         bytes="$(printf '%s\n' "$res" | sed -n 's/.* bytes=\([0-9][0-9]*\) .*/\1/p')"
+        local blocked=0
+        if grep -Eqi 'Your request has been blocked|Just a moment|captcha' \
+            "$OUT/net_$tag.out" 2>/dev/null; then
+            blocked=1
+        fi
+        NET_BYTES="$bytes"
         if [ "$rc" -eq 0 ] && [ "$hdr" = "status=200" ] \
-           && [ -n "$bytes" ] && [ "$bytes" -gt 0 ]; then
-            pass_case "internet $host$path status=200 bytes=$bytes"
+           && [ -n "$bytes" ] && [ "$bytes" -gt 0 ] && [ "$blocked" -eq 0 ]; then
+            return 0
+        fi
+        NET_DETAIL="rc=$rc '$hdr' bytes='$bytes' blocked=$blocked"
+        return 1
+    }
+    net_case() {
+        local host="$1" tag="$2" path="${3:-/}"
+        if net_ok "$host" "$tag" "$path"; then
+            pass_case "internet $host$path status=200 bytes=$NET_BYTES"
         else
-            fail_case "internet $host$path (rc=$rc, '$hdr', '$res')"
+            fail_case "internet $host$path ($NET_DETAIL)"
             head -5 "$OUT/net_$tag.err" 2>/dev/null | sed 's/^/       /'
         fi
     }
+    net_pair() {
+        local label="$1" primary="$2" ptag="$3" fallback="$4" ftag="$5"
+        if net_ok "$primary" "$ptag"; then
+            pass_case "internet $label $primary status=200 bytes=$NET_BYTES"
+            return
+        fi
+        local primary_detail="$NET_DETAIL"
+        if net_ok "$fallback" "$ftag"; then
+            pass_case "internet $label fallback $fallback status=200 bytes=$NET_BYTES"
+            return
+        fi
+        fail_case "internet $label ($primary: $primary_detail; $fallback: $NET_DETAIL)"
+    }
     net_case www.google.com google
     net_case example.com example
-    # RSA-2048 certificate, RSA-PSS CertificateVerify over TLS 1.3. The root
-    # returns a bot-check 403 to a bare GET; /en-us/ returns the real page 200.
-    net_case www.microsoft.com microsoft /en-us/
+    # RSA-2048 leaf + RSA-PSS CertificateVerify over TLS 1.3. Microsoft's
+    # 200 block page is rejected by the marker check; AWS is a real page.
+    net_pair "RSA-PSS TLS 1.3" aws.amazon.com aws_rsa www.mozilla.org mozilla_rsa
+    # ECDSA P-256 leaf + ECDSA CertificateVerify over TLS 1.3.
+    net_pair "ECDSA TLS 1.3" letsencrypt.org letsencrypt_ecdsa example.com example_ecdsa
 else
-    skip_case "Z98_NET unset: internet smoke SKIPPED (set Z98_NET=1 to run google.com + example.com + microsoft.com)"
+    skip_case "Z98_NET unset: internet smoke SKIPPED (set Z98_NET=1 to run google.com + example.com + RSA-PSS/ECDSA TLS 1.3 hosts)"
 fi
 
 echo "== (c) RAM: ulimit -v 32768 + /usr/bin/time -v peak =="

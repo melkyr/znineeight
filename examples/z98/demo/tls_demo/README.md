@@ -170,10 +170,14 @@ The tier builds the demo, runs a local `openssl s_server -tls1_2` fallback
 happy path and TLS 1.3 happy paths for both suites (`-tls1_3
 -ciphersuites TLS_AES_128_GCM_SHA256` and `TLS_CHACHA20_POLY1305_SHA256`) with
 an exact body, asserts the expired/wrong-host/untrusted negatives, checks the
-`Z98_NET` internet smoke (google.com + example.com + `www.microsoft.com/en-us/`
-as the RSA-PSS TLS 1.3 host) or prints a loud SKIP when unset, measures RAM
-under `ulimit -v 32768`, and builds/gates the `-osw` Win9x executable. Test certificates and keys under `tests/certs/` are
-**test-only** and must never be trusted outside the tier.
+`Z98_NET` internet smoke (google.com + example.com; RSA-PSS TLS 1.3 via
+`aws.amazon.com` with `www.mozilla.org` fallback; ECDSA TLS 1.3 via
+`letsencrypt.org` with `example.com` fallback) or prints a loud SKIP when
+unset. Internet cases reject block/challenge pages even when the status is 200.
+The tier measures RAM under `ulimit -v 32768` and builds/gates the `-osw` Win9x
+executable. Test certificates and keys under `tests/certs/` are **test-only**
+and must never be trusted outside the tier. Local ECDSA TLS 1.3 test leaves are
+deferred; remote letsencrypt.org/example.com cover ECDSA CertificateVerify.
 
 Common failures:
 
