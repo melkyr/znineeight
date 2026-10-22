@@ -100,6 +100,7 @@ repro/mi_matrix/stdlib_defer_control_flow_xmod
 repro/mi_matrix/stdlib_defer_queue_reset_xmod
 repro/mi_matrix/stdlib_defer_switch_block_xmod
 repro/mi_matrix/stdlib_dir_iter_xmod
+repro/mi_matrix/stdlib_ecc_verify_xmod
 repro/mi_matrix/stdlib_enum_init_expr_xmod
 repro/mi_matrix/stdlib_errdefer_dyn_xmod
 repro/mi_matrix/stdlib_errdefer_xmod
@@ -309,6 +310,7 @@ repro/mi_matrix/stdlib_print_untyped_lit_xmod
 repro/mi_matrix/stdlib_print_unrelated_ident_xmod
 repro/mi_matrix/stdlib_print_init_order_dep_xmod
 repro/mi_matrix/stdlib_tuple_model_ok_xmod
+repro/mi_matrix/stdlib_x25519_xmod
 repro/mi_matrix/stdlib_zstd_basic_xmod
 repro/mi_matrix/stdlib_zstd_cross_xmod
 stdlib_test/bits_buf_str_usage
