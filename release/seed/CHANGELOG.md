@@ -11,6 +11,32 @@ Each completed plan that moves the self-emission fixed point rotates the seed
 (new zig1 binary + new self-emission C), overwriting the archive and appending
 a provenance entry here. Prior seeds remain recoverable in git history.
 
+## 2026-10-22 — seed v114 (HEAD 27722aea)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (47 `.c` + 48 `.h` incl.
+emitted `zig_special_types.h`, 10691275 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-10-22 |
+| HEAD | `27722aea` |
+| seed binary md5 | `45158dcede81125a39a2c2c58478e21e` |
+| self-emission C | 47 `.c` + 48 `.h` (10691275 bytes) |
+| fixed point | `45158dcede81125a39a2c2c58478e21e` |
+| lib manifest | `lib/manifest.md5` (42 std files; md5 `35c97d7f19e39aae52e082e7fc3c2fc3`) |
+| archive md5 | `d65fbb411296eaae68f5abcbdf91efbd` |
+
+Provenance note: the archived binary (md5 45158dcede81125a39a2c2c58478e21e) was captured by
+scripts/seed/archive_seed.sh at HEAD 27722aea; gcc of the archive's self-emission
+C reproduces the self-emission fixed point `45158dcede81125a39a2c2c58478e21e` — both are the same
+compiler state at HEAD 27722aea. The compiler self-build uses `-ffast` (user
+programs default to `-fsafe`), so the recorded fixed point is the `-ffast`
+binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
 ## 2026-10-22 — seed v113 (HEAD fe5b3c03)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
