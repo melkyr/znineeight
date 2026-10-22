@@ -476,3 +476,16 @@ run_ecc_safe: 2 PASS / 0 FAIL over 2 dirs
 
 No `std_cipher` / `std_ecc` behavior or fixtures changed; no compiler change;
 no push; `run.err` left untracked.
+
+## Final-review doc fixes
+
+Docs-only, no rerun, no seed rotation, no code/test changes.
+
+- `sf/docs/std_lib/cipher.md`: corrected the GCM-table note — the 4-bit tables
+  are stack-local (`GHash.tab`) and rebuilt per operation; only the AES
+  T-tables are file-scope `const` rodata.
+- `sf/docs/std_lib/crypto.md`: corrected the RSA PSS `-fsafe` KAT row — the
+  top-mask path runs in all modes; `-fsafe` is what traps on the masked-shift
+  overflow.
+
+Committed as `docs(std_lib): M2 final-review doc fixes`.

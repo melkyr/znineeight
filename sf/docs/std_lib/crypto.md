@@ -504,7 +504,7 @@ three times and byte-compares stdout and rc.
 | HMAC-BLAKE2s | keyed BLAKE2s WireGuard MAC form | `stdlib_crypto_prf_xmod` |
 | RSA PKCS#1 v1.5 | 2048-bit key generated with OpenSSL; SHA-256 and SHA-384 good signatures; corrupted-signature negatives assert `error.BadSignature` | `stdlib_rsa_verify_xmod` |
 | RSA PSS | OpenSSL signatures, SHA-256 with salt 32 and 0; corrupted-signature negatives assert `error.BadSignature` | `stdlib_rsa_verify_xmod` |
-| RSA PSS / PKCS#1 under `-fsafe` | the same fixture emitted with the compiler default (no `-ffast`), 3 runs; this catches the PSS top-mask path that only runs under `-fsafe` | `scripts/stdlib/run_crypto_safe.sh` |
+| RSA PSS / PKCS#1 under `-fsafe` | the same fixture emitted with the compiler default (no `-ffast`), 3 runs; the PSS top-mask path runs in all modes, and `-fsafe` is what traps on its masked-shift overflow | `scripts/stdlib/run_crypto_safe.sh` |
 | Existing SHA-1/SHA-256/MD5/CRC-32/RC4/modpow | RFC 3174, FIPS 180-4, RFC 1321, IEEE 802.3, RFC 6229, MSE/PE 768-bit DH | see [`codecs.md`](codecs.md) |
 
 ## See also

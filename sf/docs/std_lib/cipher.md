@@ -416,7 +416,8 @@ tag comparison is a full 16-byte accumulate, not an early-exit compare.
 
 - **No heap / no arena.** Every function writes only through caller slices and
   stack-local scratch. The AES T-tables are file-scope `const` rodata; the GCM
-  4-bit tables are also `const`. `scripts/compiler/gate_cipher_rodata.sh`
+  4-bit tables are stack-local (`GHash.tab`) and rebuilt per operation — only
+  the AES T-tables are file-scope `const` rodata. `scripts/compiler/gate_cipher_rodata.sh`
   checks `_Te0`–`_Te3` and `_SBOX` are `R/r`, and the AES-GCM fixture asserts
   an arena's `used` is unchanged across a seal.
 - **Poly1305** uses donna's 5×26-bit limbs with fixed loops and wrap
