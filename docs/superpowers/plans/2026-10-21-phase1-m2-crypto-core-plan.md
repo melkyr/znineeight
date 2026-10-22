@@ -18,7 +18,7 @@
 - R6: no clock/env reads; randomness is caller-supplied xoshiro256\*\*.
 - New files: `sf/src/std_cipher.zig`, `sf/src/std_ecc.zig`; extend `sf/src/std_crypto.zig` only; `std.zig` unchanged (by-path import).
 - Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at milestone closeout. Task 1 edits existing `std_crypto` → full gate; Task 1C-F is a compiler fix → full compiler battery + seed rotation; Tasks 2–3 are new modules → targeted-only until Task 4 closeout.
-- Seed rotations (two): Task 1C-F (compiler fix) rotates seed **v112** (40 lib files, unchanged copy list) with a **new** fixed point `F_new` (`hop2==hop3`, moving point — `hop1≠hop2` expected); Task 4 closeout rotates seed **v113** (42 lib files: +`std_cipher`, +`std_ecc`) with fixed point `F_new` unchanged (`hop1==hop2==hop3`; std-only, compiler source unchanged). The prior anchor `21c95773…` is superseded by `F_new` after 1C-F.
+- Seed rotations (two): Task 1C-F (compiler fix) rotates seed **v112** (40 lib files, unchanged copy list) with a **new** fixed point `F_new` = `45158dcede81125a39a2c2c58478e21e` (`hop2==hop3`, moving point — `hop1≠hop2` expected); Task 4 closeout rotates seed **v113** (42 lib files: +`std_cipher`, +`std_ecc`) with fixed point `F_new` unchanged (`hop1==hop2==hop3`; std-only, compiler source unchanged). The prior anchor `21c95773…` is superseded by `F_new` (`45158dcede81125a39a2c2c58478e21e`, rotated at 1C-F).
 - Commits `feat(std_crypto|std_cipher|std_ecc): … (Phase1 M2)`, `docs(std_lib): … (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): … report`. STOP-present on any contract change.
 
 ## Review Focus
@@ -132,7 +132,7 @@
 - Create: `sf/docs/std_lib/crypto.md`, `sf/docs/std_lib/cipher.md`, `sf/docs/std_lib/ecc.md`
 - Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (counts 40→42 std files, install list, module rows)
 - Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh` (copy lists + counts)
-- Rotate: `release/seed/` → **v112** (archive + `lib/manifest.md5`, 42 files)
+- Rotate: `release/seed/` → **v113** (archive + `lib/manifest.md5`, 42 files)
 
 - [ ] **Step 1:** Write the three docs (API contracts from spec §5.1–§5.3; constant-time and no-heap notes; KAT provenance table).
 - [ ] **Step 2:** Truth-ups (STD_README domain/doc-index rows for the 3 modules; root README higher-layer list; QUICK_REF counts/install/verify line).

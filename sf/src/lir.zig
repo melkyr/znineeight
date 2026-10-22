@@ -579,6 +579,12 @@ pub const ModuleGlobalDecl = struct {
     module_id: u32,
     type_id: u32,
     has_runtime_init: u8,
+    // M2 T1C-F: root index into the ConstInit pool (0xFFFFFFFF = none); a
+    // constant-tree decl is emitted as C89 `static const`/`const` rodata and
+    // never stored from `__module_init`.
+    const_init: u32,
+    // 1 = pub|export (external linkage); 0 = module-private (`static`).
+    link_visible: u8,
 };
 
 pub const GlobalDeclArrayList = struct {

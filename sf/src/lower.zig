@@ -36,6 +36,7 @@ const async_analysis = @import("async_analysis.zig");
 const async_state_machine = @import("async_state_machine.zig");
 const mr_mod = @import("module_registry.zig");
 const ce_mod = @import("comptime_eval.zig");
+const const_init_eval = @import("const_init_eval.zig");
 
 pub const SrcIntent = enum(u8) { value, null_src, error_src };
 
@@ -100,6 +101,10 @@ pub const SemanticContext = struct {
     error_code_registry: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
     comptime_folds: *ce_mod.ComptimeFoldTable,
+    // M2 T1C-F: the shared const-init classification (built by
+    // `phase_ConstInit`); the module-init skip and the use-site scalar fold
+    // consult it — never a second evaluator.
+    const_inits: *const_init_eval.ConstInitTable,
     source_file_id: u32,
     safe_checks: bool,
     suspending_fns: *hash_mod.U64ToU32Map,
@@ -2509,7 +2514,21 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
         if (is_local and !is_agg) {
             if (findLocalTemp(self, name_id)) |temp| { operand_temp = temp; }
         } else {
-            operand_temp = lowerExpr(self, lv_node_idx);
+            // M2 T1C-F (D3): the use-site scalar fold is value-context only.
+            // An lvalue borrow of a global must render the global's C name
+            // (`&zG_...`), never a folded literal temp.
+            var lv_gref: u8 = @intCast(u8, 0);
+            if (self.ctx.has_symbols != @intCast(u8, 0)) {
+                if (sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id)) |lvs| {
+                    if (lvs.kind == sym_mod.SymbolKind.global) {
+                        operand_temp = lowerGlobalRef(self, lvs.*, name_id);
+                        lv_gref = @intCast(u8, 1);
+                    }
+                }
+            }
+            if (lv_gref == @intCast(u8, 0)) {
+                operand_temp = lowerExpr(self, lv_node_idx);
+            }
         }
         var tid = nextTemp(self, result_type);
         emitInst(self, LirInst{ .addr_of = .{ .operand = operand_temp, .result = tid } });
@@ -4246,6 +4265,63 @@ fn symbolIsConstGlobal(s: *sym_mod.Symbol) bool {
     return (@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0);
 }
 
+// M2 T1C-F (fold-scope OPTION A): materialise a scalar constant-init tree
+// root at a use site (`emitIntConstFacts` with the DECL's resolved type
+// width/signedness; negatives travel as the exact two's-complement pattern).
+// Non-scalar roots (aggregates) and absent/declined trees return TEMP_NONE
+// and the use keeps `load_global`. >64-bit values never reach a tree.
+fn foldConstTreeScalar(self: *LirLowerer, decl_node: u32, sym_type_id: u32) u32 {
+    if (decl_node == @intCast(u32, 0)) return TEMP_NONE;
+    if (hash_mod.u32ToU32MapGet(&self.ctx.const_inits.roots, decl_node)) |croot| {
+        if (croot == const_init_eval.CIE_NONE) return TEMP_NONE;
+        var nd = const_init_eval.constInitNodeAt(self.ctx.const_inits, croot);
+        var dn_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, decl_node);
+        var tid_type: u32 = sym_type_id;
+        if (dn_type) |dt| {
+            if (dt != @intCast(u32, 0) and dt != type_mod.TYPE_UNDEFINED) { tid_type = dt; }
+        }
+        if (nd.kind == const_init_eval.CIE_INT or nd.kind == const_init_eval.CIE_CHAR) {
+            var fold_ty: u32 = tid_type;
+            var w: u8 = @intCast(u8, 0);
+            var sg: u8 = @intCast(u8, 0);
+            if (fold_ty != @intCast(u32, 0) and @intCast(usize, fold_ty) < self.ctx.registry.types_len) {
+                w = type_mod.typeRegistryIntWidthBits(self.ctx.registry, fold_ty);
+                if (type_mod.typeRegistryIntIsSigned(self.ctx.registry, fold_ty)) { sg = @intCast(u8, 1); }
+            }
+            if (w == @intCast(u8, 0)) {
+                // untyped / non-int carrier: mirror the record-time rule
+                fold_ty = type_mod.TYPE_U32;
+                if ((nd.b & @intCast(u32, 1)) != @intCast(u32, 0)) { fold_ty = type_mod.TYPE_I64; }
+                else if (nd.a > @intCast(u64, 4294967295)) { fold_ty = type_mod.TYPE_U64; }
+                w = type_mod.typeRegistryIntWidthBits(self.ctx.registry, fold_ty);
+                if (type_mod.typeRegistryIntIsSigned(self.ctx.registry, fold_ty)) { sg = @intCast(u8, 1); }
+            }
+            var tid = nextTemp(self, fold_ty);
+            emitIntConstFacts(self, nd.a, tid, w, sg);
+            return tid;
+        }
+        if (nd.kind == const_init_eval.CIE_BOOL) {
+            var bval: u8 = @intCast(u8, nd.a);
+            var btid = nextTemp(self, type_mod.TYPE_BOOL);
+            emitInst(self, LirInst{ .bool_const = .{ .value = bval, .result = btid } });
+            return btid;
+        }
+        if (nd.kind == const_init_eval.CIE_FLOAT) {
+            var fbits: u64 = nd.a;
+            var fty: u32 = tid_type;
+            if (fty == @intCast(u32, 0) or @intCast(usize, fty) >= self.ctx.registry.types_len) { fty = type_mod.TYPE_F64; }
+            var ftk = self.ctx.registry.types_items[@intCast(usize, fty)].kind;
+            if (ftk != type_mod.TypeKind.f32_type and ftk != type_mod.TypeKind.f64_type) { fty = type_mod.TYPE_F64; }
+            var ftid = nextTemp(self, fty);
+            // Z98 @bitCast is integer-only; transport the f64 bit pattern.
+            var fbp: *f64 = @ptrCast(*f64, &fbits);
+            emitInst(self, LirInst{ .float_const = .{ .value = fbp.*, .result = ftid } });
+            return ftid;
+        }
+    }
+    return TEMP_NONE;
+}
+
 fn isStorageGlobal(self: *LirLowerer, name_id: u32) bool {
     if (self.ctx.has_symbols == @intCast(u8, 0)) return false;
     var sg_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
@@ -4441,6 +4517,16 @@ fn lowerModuleMemberValue(self: *LirLowerer, target_mod: u32, field_name_id: u32
                         emitInst(self, LirInst{ .float_const = .{ .value = gval, .result = gtid } });
                         return gtid;
                     }
+                    // M2 T1C-F (fold-scope OPTION A): bool gains the fold;
+                    // scalar constant trees (S3/S18) fold at the use too.
+                    if (gi_node.kind == AstKind.bool_literal) {
+                        var gbval: u8 = @intCast(u8, gi_node.flags & @intCast(u8, 1));
+                        var gbtid = nextTemp(self, type_mod.TYPE_BOOL);
+                        emitInst(self, LirInst{ .bool_const = .{ .value = gbval, .result = gbtid } });
+                        return gbtid;
+                    }
+                    var gt_fold = foldConstTreeScalar(self, ts.decl_node, gbl_tid);
+                    if (gt_fold != TEMP_NONE) { return gt_fold; }
                 }
             }
             var gtemp = nextTemp(self, gbl_tid);
@@ -5054,6 +5140,20 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                               var tid = nextTemp(self, type_mod.TYPE_U8);
                               emitIntConst(self, val, tid);
                               literal_tid = tid;
+                          }
+                          // M2 T1C-F (fold-scope OPTION A): `bool_literal`
+                          // gains the fold, and any other scalar constant
+                          // tree (S3 `3+4`/`@intCast`/`-10`, S18 refs) folds
+                          // at the use site from the shared const-init tree.
+                          // S1's literal path above stays byte-identical.
+                          if (init_node.kind == AstKind.bool_literal) {
+                              var bval: u8 = @intCast(u8, init_node.flags & @intCast(u8, 1));
+                              var btid = nextTemp(self, type_mod.TYPE_BOOL);
+                              emitInst(self, LirInst{ .bool_const = .{ .value = bval, .result = btid } });
+                              literal_tid = btid;
+                          }
+                          if (literal_tid == TEMP_NONE) {
+                              literal_tid = foldConstTreeScalar(self, s.decl_node, s.type_id);
                           }
                             if (literal_tid != TEMP_NONE) {
                                 var s_ty = self.ctx.registry.types_items[@intCast(usize, s.type_id)];
@@ -9580,6 +9680,15 @@ pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32, dep_map: *
             // store).
             if (lowerInitIsImportAliasShaped(store, dcl.child_1)) continue;
             if ((@intCast(u16, dcl.flags) & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                // M2 T1C-F: a constant-init tree means the value is emitted as
+                // a C89 `static const` initializer — no `store_global` copy.
+                // Today's literal skip is kept for trees that declined
+                // (literal-init consts have no C symbol either).
+                var ci_skip: u8 = @intCast(u8, 0);
+                if (hash_mod.u32ToU32MapGet(&self.ctx.const_inits.roots, decl_idx)) |croot| {
+                    if (croot != const_init_eval.CIE_NONE) { ci_skip = @intCast(u8, 1); }
+                }
+                if (ci_skip != @intCast(u8, 0)) continue;
                 if (ginit.kind == AstKind.int_literal or ginit.kind == AstKind.float_literal or ginit.kind == AstKind.char_literal) continue;
             }
             cand_decl[cand_n] = decl_idx;

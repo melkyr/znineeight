@@ -40,6 +40,7 @@ const CoercionTable = coercion_mod.CoercionTable;
 const sa_mod = @import("semantic_analyzer.zig");
 const type_resolver = @import("type_resolver.zig");
 const ce_mod = @import("comptime_eval.zig");
+const const_init_eval = @import("const_init_eval.zig");
 const symbol_registrator = @import("symbol_registrator.zig");
 const const_alias_prepass = @import("const_alias_prepass.zig");
 const front_res = @import("front_resolution.zig");
@@ -117,6 +118,12 @@ pub const CompilerContext = struct {
     call_arg_types: hash_mod.U32ToU32Map,
     call_param_map: hash_mod.U32ToU32Map,
     comptime_folds: ce_mod.ComptimeFoldTable,
+    // M2 T1C-F: the shared const-init classification (decl node -> tree root)
+    // built by `phase_ConstInit`; consumed by the storage walk, lowering
+    // (module-init skip + use-site scalar fold) and the C89 emitter. Lives on
+    // the emission arena: the trees outlive the lowering->emission
+    // `sandReset` of the module arena.
+    const_inits: const_init_eval.ConstInitTable,
     // P4 fix round 2: the completed emission classification (shared_set /
     // pointer_only_map / needs_def_map / needed_tuple_set) — filled by the
     // resolver-owned mechanism (`phase_TypeResolution` + the pre-emit
@@ -323,6 +330,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var comptime_folds = ce_mod.comptimeFoldTableInitSized(&compiler_alloc.module, @intCast(usize, fold_hint));
+     var const_inits = const_init_eval.constInitTableInit(&compiler_alloc.emission);
      // P4 fix round 2: the emission classification state (maps on the
      // permanent arena; the three group maps are re-inited at capacity and
      // assigned by `classifyTypeEmissionGroups`, `needed_tuple_set` is filled
@@ -369,6 +377,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .call_arg_types = call_arg_types,
         .call_param_map = call_param_map,
         .comptime_folds = comptime_folds,
+        .const_inits = const_inits,
         .exported = exported,
         .suspending_fns = suspending_fns,
         .frame_sizes = frame_sizes,
@@ -425,6 +434,7 @@ fn runCompiler(ctx: *CompilerContext) void {
         pal.exit(2);
     }
     phase_AsyncFrameSize(ctx);
+    phase_ConstInit(ctx);
     phase_LIRLowering(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
@@ -836,6 +846,45 @@ fn phase_AsyncFrameSize(ctx: *CompilerContext) void {
     async_analysis.asyncFrameSizeRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.interner, ctx.module_reg, ctx.typereg, ctx.resolved_types, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.state_widths, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.driver_targets, &ctx.parent_result_type_list, &ctx.parent_result_start, &ctx.parent_result_count);
 }
 
+// M2 T1C-F (D4): classify every file-scope `const` initializer ONCE, before
+// any `lowerFn` runs. The decl->tree map is the shared result consulted by the
+// storage walk below, `lower.zig` (module-init skip + use-site scalar fold)
+// and `c89_emit.zig` (rodata definitions) — never a second kind test.
+fn phase_ConstInit(ctx: *CompilerContext) void {
+    var ci_m: []const u8 = "CIE\n"; pal.markerWrite(ci_m);
+    var ci_ce = ce_mod.comptimeEvalInit(ctx.typereg, ctx.store, ctx.interner, ctx.symbol_reg);
+    ci_ce.host_is_windows = ctx.cli.target_is_windows;
+    ci_ce.diag = ctx.diag;
+    var cic = const_init_eval.ConstInitEvalCtx{
+        .tbl = &ctx.const_inits,
+        .store = ctx.store,
+        .registry = ctx.typereg,
+        .symbol_reg = ctx.symbol_reg,
+        .resolved = ctx.resolved_types,
+        .ce = &ci_ce,
+        .enum_values = &ctx.enum_value_table,
+        .module_reg = ctx.module_reg,
+    };
+    var cmods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var cmi: usize = @intCast(usize, 0);
+    while (cmi < cmods.len) : (cmi += @intCast(usize, 1)) {
+        var croot = cmods[cmi].ast_root;
+        if (croot == @intCast(u32, 0)) continue;
+        ci_ce.module_id = cmods[cmi].id;
+        var cdn = ast_mod.astStoreNodeExtraChildCount(ctx.store, croot);
+        var cdi: usize = @intCast(usize, 0);
+        while (cdi < @intCast(usize, cdn)) : (cdi += @intCast(usize, 1)) {
+            var cdecl_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, croot, @intCast(u32, cdi));
+            var cdecl = ast_mod.astStoreNodeAt(ctx.store, cdecl_idx);
+            if (cdecl.kind != AstKind.var_decl) continue;
+            if ((@intCast(u16, cdecl.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) continue;
+            if ((@intCast(u16, cdecl.flags) & @intCast(u16, 0x01)) != @intCast(u16, 0)) continue;
+            if (cdecl.child_1 == @intCast(u32, 0)) continue;
+            _ = const_init_eval.constInitEvaluate(&cic, cmods[cmi].id, cdecl_idx);
+        }
+    }
+}
+
 fn phase_LIRLowering(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "L\n"; pal.markerWrite(p_msg);
     var lnmsg: []const u8 = "nodes="; pal.markerWrite(lnmsg);
@@ -879,6 +928,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
         .comptime_folds = &ctx.comptime_folds,
+        .const_inits = &ctx.const_inits,
         .source_file_id = @intCast(u32, 0),
         .safe_checks = ctx.cli.safe_checks,
         .suspending_fns = &ctx.suspending_fns,
@@ -964,6 +1014,61 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         var gv_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, mods[mi].id, gv_name);
                         if (gv_sym) |gvs| {
                             if (gvs.kind == sym_mod.SymbolKind.global) {
+                                // M2 T1C-F: a `const` with a constant-init tree is
+                                // recorded as C89 const rodata (`static const`/
+                                // `const`, no `__module_init` store). Import /
+                                // field-of-import un-sets stay first (module
+                                // identity has no C storage); everything without
+                                // a tree keeps today's `.bss` path verbatim.
+                                var gv_ctree: u32 = @intCast(u32, 0xFFFFFFFF);
+                                if ((@intCast(u16, decl.flags) & @intCast(u16, 0x01)) == @intCast(u16, 0) and decl.child_1 != @intCast(u32, 0)) {
+                                    var gv_i0 = ast_mod.astStoreNodeAt(ctx.store, decl.child_1);
+                                    var gv_alias: u8 = @intCast(u8, 0);
+                                    if (gv_i0.kind == AstKind.import_expr) { gv_alias = @intCast(u8, 1); }
+                                    if (gv_i0.kind == AstKind.field_access) {
+                                        var gv_fb0 = ast_mod.astStoreNodeAt(ctx.store, gv_i0.child_0);
+                                        if (gv_fb0.kind == AstKind.import_expr) { gv_alias = @intCast(u8, 1); }
+                                    }
+                                    if (gv_alias == @intCast(u8, 0)) {
+                                        if (hash_mod.u32ToU32MapGet(&ctx.const_inits.roots, decl_idx)) |croot| {
+                                            if (croot != const_init_eval.CIE_NONE) { gv_ctree = croot; }
+                                        }
+                                    }
+                                }
+                                if (gv_ctree != @intCast(u32, 0xFFFFFFFF)) {
+                                    if ((@intCast(u16, decl.flags) & @intCast(u16, 0x08)) != @intCast(u16, 0)) {
+                                        var gexp_key: u64 = (@intCast(u64, mods[mi].id) << @intCast(u64, 35)) | (@intCast(u64, 1) << @intCast(u64, 32)) | @intCast(u64, gv_name);
+                                        _ = hash_mod.u64ToU32MapPut(&ctx.exported, gexp_key, @intCast(u32, 1));
+                                    }
+                                    var gv_rt2 = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decl_idx);
+                                    var gv_tid2: u32 = if (gv_rt2) |grt2| grt2 else type_mod.TYPE_UNDEFINED;
+                                    // Un-typed literal carriers (`integer_literal_type`
+                                    // spells `int`, size 0) need a concrete C type for
+                                    // the rodata definition; mirror the use-site
+                                    // fold's carrier rule.
+                                    if (gv_tid2 == type_mod.TYPE_INT_LIT or gv_tid2 == type_mod.TYPE_UNDEFINED or gv_tid2 == @intCast(u32, 0)) {
+                                        var gv_rn = const_init_eval.constInitNodeAt(&ctx.const_inits, gv_ctree);
+                                        if (gv_rn.kind == const_init_eval.CIE_INT or gv_rn.kind == const_init_eval.CIE_CHAR) {
+                                            gv_tid2 = type_mod.TYPE_U32;
+                                            if ((gv_rn.b & @intCast(u32, 1)) != @intCast(u32, 0)) { gv_tid2 = type_mod.TYPE_I64; }
+                                            else if (gv_rn.a > @intCast(u64, 4294967295)) { gv_tid2 = type_mod.TYPE_U64; }
+                                        } else if (gv_rn.kind == const_init_eval.CIE_BOOL) {
+                                            gv_tid2 = type_mod.TYPE_BOOL;
+                                        } else if (gv_rn.kind == const_init_eval.CIE_FLOAT) {
+                                            gv_tid2 = type_mod.TYPE_F64;
+                                        }
+                                    }
+                                    var gv_lv: u8 = @intCast(u8, 0);
+                                    if ((@intCast(u16, decl.flags) & @intCast(u16, 0x0A)) != @intCast(u16, 0)) { gv_lv = @intCast(u8, 1); }
+                                    lir_mod.globalDeclArrayListAppend(&ctx.global_decls, lir_mod.ModuleGlobalDecl{
+                                        .name_id = gv_name,
+                                        .module_id = mods[mi].id,
+                                        .type_id = gv_tid2,
+                                        .has_runtime_init = @intCast(u8, 0),
+                                        .const_init = gv_ctree,
+                                        .link_visible = gv_lv,
+                                    });
+                                } else {
                                 var gv_is_storage: u8 = @intCast(u8, 0);
                                 if ((@intCast(u16, decl.flags) & @intCast(u16, 0x01)) != @intCast(u16, 0)) {
                                     gv_is_storage = @intCast(u8, 1);
@@ -996,12 +1101,17 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                                     if (gv_has_ri == @intCast(u8, 1)) { mod_has_ri = @intCast(u8, 1); }
                                     var gv_rt = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decl_idx);
                                     var gv_tid: u32 = if (gv_rt) |grt| grt else type_mod.TYPE_UNDEFINED;
+                                    var gv_lv2: u8 = @intCast(u8, 0);
+                                    if ((@intCast(u16, decl.flags) & @intCast(u16, 0x0A)) != @intCast(u16, 0)) { gv_lv2 = @intCast(u8, 1); }
                                     lir_mod.globalDeclArrayListAppend(&ctx.global_decls, lir_mod.ModuleGlobalDecl{
                                         .name_id = gv_name,
                                         .module_id = mods[mi].id,
                                         .type_id = gv_tid,
                                         .has_runtime_init = gv_has_ri,
+                                        .const_init = @intCast(u32, 0xFFFFFFFF),
+                                        .link_visible = gv_lv2,
                                     });
+                                }
                                 }
                             }
                         }
@@ -1302,6 +1412,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var gd_slice = lir_mod.globalDeclArrayListGetSlice(&ctx.global_decls);
     emitter.global_decls = gd_slice.ptr;
     emitter.global_decls_len = @intCast(u32, gd_slice.len);
+    emitter.const_inits = &ctx.const_inits;
     // Task 9 fix round 3 (Q7): the dependency-ordered `__module_init` call list
     // computed at the end of `phase_LIRLowering`.
     emitter.module_init_order = ctx.module_init_order.items;

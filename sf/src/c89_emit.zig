@@ -17,6 +17,7 @@ const type_mod = @import("type_registry.zig");
 const mr_mod = @import("module_registry.zig");
 const nm_mod = @import("name_mangler.zig");
 const c89_plan = @import("c89_plan.zig");
+const const_init_eval = @import("const_init_eval.zig");
 
 const type_resolver = @import("type_resolver.zig");
 const itoa_mod = @import("util/itoa.zig");
@@ -605,6 +606,8 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
       gg_set: U32ToU32Map,
       global_decls: [*]lir_mod.ModuleGlobalDecl,
       global_decls_len: u32,
+      // M2 T1C-F: the shared const-init trees (decl -> root) for rodata defs.
+      const_inits: *const_init_eval.ConstInitTable,
       // Task 9 fix round 3 (Q7): stable module-init call order computed by
       // `phase_LIRLowering` (dependency-ordered `__module_init` calls).
       module_init_order: [*]u32,
@@ -676,6 +679,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
            .gg_set = hash_mod.u32ToU32MapInit(persist_alloc),
            .global_decls = undefined,
            .global_decls_len = @intCast(u32, 0),
+           .const_inits = undefined,
            .module_init_order = undefined,
            .module_init_order_len = @intCast(usize, 0),
            .safe_checks = safe_checks,
@@ -2127,6 +2131,358 @@ pub fn moduleQualifiedName(emitter: *C89Emitter, module_id: u32) []const u8 {
     return nm_mod.nameManglerMintModuleStem(emitter.mangler, path_str);
 }
 
+// M2 T1C-F: render a constant-init tree node as a C89 constant initializer.
+// The walk is type-directed (the tree's agg children follow the C-visible
+// field order the evaluator stamped). Depth-bounded; a missing/degenerate
+// shape degrades to `0`, never a wrong value (the tree is only built for
+// shapes the evaluator proved representable).
+fn emitConstInitIntLit(emitter: *C89Emitter, pattern: u64, type_id: u32) void {
+    var ctype = getCTypeName(emitter.registry, emitter.mangler, type_id);
+    var lp: []const u8 = "(";
+    bufferedWriterWrite(&emitter.writer, lp);
+    bufferedWriterWrite(&emitter.writer, ctype);
+    var rp: []const u8 = ")(";
+    bufferedWriterWrite(&emitter.writer, rp);
+    writeIntConstRvalue(emitter, pattern, type_id, "");
+    var rp2: []const u8 = ")";
+    bufferedWriterWrite(&emitter.writer, rp2);
+}
+
+fn emitConstInitFloatLit(emitter: *C89Emitter, bits: u64, type_id: u32) void {
+    var ctype = getCTypeName(emitter.registry, emitter.mangler, type_id);
+    var lp: []const u8 = "(";
+    bufferedWriterWrite(&emitter.writer, lp);
+    bufferedWriterWrite(&emitter.writer, ctype);
+    var rp: []const u8 = ")(";
+    bufferedWriterWrite(&emitter.writer, rp);
+    var buf: [64]u8 = undefined;
+    // Z98 @bitCast is integer-only; transport the f64 bit pattern.
+    var bits_local: u64 = bits;
+    var fbp: *f64 = @ptrCast(*f64, &bits_local);
+    var fb = format_mod.formatF64(fbp.*, buf[0..], 64);
+    bufferedWriterWrite(&emitter.writer, fb);
+    var rp2: []const u8 = ")";
+    bufferedWriterWrite(&emitter.writer, rp2);
+}
+
+fn emitConstInitGlobalName(emitter: *C89Emitter, name_id: u32, module_id: u32, type_id: u32) []const u8 {
+    var gmid = nm_mod.nameManglerMangleGlobal(emitter.mangler, emitter.registry, name_id, module_id, type_id);
+    return interner_mod.stringInternerGet(emitter.interner, gmid);
+}
+
+fn emitConstInitFnName(emitter: *C89Emitter, name_id: u32, module_id: u32) []const u8 {
+    var fmid = nm_mod.nameManglerMangle(emitter.mangler, name_id, @intCast(u8, 0), module_id);
+    return interner_mod.stringInternerGet(emitter.interner, fmid);
+}
+
+fn constInitTypeKind(emitter: *C89Emitter, type_id: u32) u32 {
+    if (type_id == @intCast(u32, 0) or @intCast(usize, type_id) >= emitter.registry.types_len) {
+        return @intCast(u32, @enumToInt(type_mod.TypeKind.none_sentinel));
+    }
+    return @intCast(u32, @enumToInt(emitter.registry.types_items[@intCast(usize, type_id)].kind));
+}
+
+fn constInitU8ish(emitter: *C89Emitter, elem: u32) bool {
+    if (elem == type_mod.TYPE_U8 or elem == type_mod.TYPE_C_CHAR) return true;
+    return constInitTypeKind(emitter, elem) == @intCast(u32, @enumToInt(type_mod.TypeKind.u8_type));
+}
+
+fn emitConstInitValue(emitter: *C89Emitter, node_idx: u32, type_id: u32, depth: u32) void {
+    if (depth > @intCast(u32, 24)) {
+        var z0: []const u8 = "0";
+        bufferedWriterWrite(&emitter.writer, z0);
+        return;
+    }
+    var nd = const_init_eval.constInitNodeAt(emitter.const_inits, node_idx);
+    var tk = constInitTypeKind(emitter, type_id);
+    if (nd.kind == const_init_eval.CIE_AGG) {
+        emitConstInitAgg(emitter, node_idx, type_id, depth);
+        return;
+    }
+    if (nd.kind == const_init_eval.CIE_ZERO) {
+        var aggish: u8 = @intCast(u8, 0);
+        if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.array_type)) or
+            tk == @intCast(u32, @enumToInt(type_mod.TypeKind.struct_type)) or
+            tk == @intCast(u32, @enumToInt(type_mod.TypeKind.tuple_type)) or
+            tk == @intCast(u32, @enumToInt(type_mod.TypeKind.union_type)) or
+            tk == @intCast(u32, @enumToInt(type_mod.TypeKind.tagged_union_type)) or
+            tk == @intCast(u32, @enumToInt(type_mod.TypeKind.optional_type)) or
+            tk == @intCast(u32, @enumToInt(type_mod.TypeKind.error_union_type)) or
+            tk == @intCast(u32, @enumToInt(type_mod.TypeKind.slice_type)))
+        {
+            aggish = @intCast(u8, 1);
+        }
+        if (aggish != @intCast(u8, 0)) {
+            var z1: []const u8 = "{ 0 }";
+            bufferedWriterWrite(&emitter.writer, z1);
+        } else {
+            var z2: []const u8 = "0";
+            bufferedWriterWrite(&emitter.writer, z2);
+        }
+        return;
+    }
+    if (nd.kind == const_init_eval.CIE_INT or nd.kind == const_init_eval.CIE_CHAR) {
+        var lit_ty: u32 = type_id;
+        var ok_ty: u8 = @intCast(u8, 0);
+        if (lit_ty != @intCast(u32, 0) and @intCast(usize, lit_ty) < emitter.registry.types_len) {
+            var ltk = constInitTypeKind(emitter, lit_ty);
+            if (ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.i8_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.i16_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.i32_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.i64_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.u8_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.u16_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.u32_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.u64_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.isize_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.usize_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.c_char_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.bool_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.enum_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.arb_uint_type)) or
+                ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.arb_int_type)))
+            {
+                if (emitter.registry.types_items[@intCast(usize, lit_ty)].size != @intCast(u32, 0) or
+                    ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.arb_uint_type)) or
+                    ltk == @intCast(u32, @enumToInt(type_mod.TypeKind.arb_int_type)))
+                {
+                    ok_ty = @intCast(u8, 1);
+                }
+            }
+        }
+        if (ok_ty == @intCast(u8, 0)) {
+            lit_ty = type_mod.TYPE_U32;
+            if ((nd.b & @intCast(u32, 1)) != @intCast(u32, 0)) { lit_ty = type_mod.TYPE_I64; }
+            else if (nd.a > @intCast(u64, 4294967295)) { lit_ty = type_mod.TYPE_U64; }
+        }
+        emitConstInitIntLit(emitter, nd.a, lit_ty);
+        return;
+    }
+    if (nd.kind == const_init_eval.CIE_BOOL) {
+        if (nd.a != @intCast(u64, 0)) {
+            var b1: []const u8 = "1";
+            bufferedWriterWrite(&emitter.writer, b1);
+        } else {
+            var b0: []const u8 = "0";
+            bufferedWriterWrite(&emitter.writer, b0);
+        }
+        return;
+    }
+    if (nd.kind == const_init_eval.CIE_FLOAT) {
+        var fty: u32 = type_id;
+        if (constInitTypeKind(emitter, fty) != @intCast(u32, @enumToInt(type_mod.TypeKind.f32_type)) and
+            constInitTypeKind(emitter, fty) != @intCast(u32, @enumToInt(type_mod.TypeKind.f64_type)))
+        {
+            fty = type_mod.TYPE_F64;
+        }
+        emitConstInitFloatLit(emitter, nd.a, fty);
+        return;
+    }
+    if (nd.kind == const_init_eval.CIE_STRING) {
+        var str = interner_mod.stringInternerGet(emitter.interner, @intCast(u32, nd.a));
+        if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.array_type)) and
+            constInitU8ish(emitter, emitter.registry.array_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, type_id)].payload_idx)].elem))
+        {
+            // S12: `[N]u8 = "…"` string-initializes the char array.
+            emitCStringLiteral(&emitter.writer, str);
+            return;
+        }
+        if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.slice_type))) {
+            var spty = emitter.registry.types_items[@intCast(usize, type_id)];
+            var spelem = emitter.registry.slice_items[@intCast(usize, spty.payload_idx)].elem;
+            var spc = getCTypeName(emitter.registry, emitter.mangler, spelem);
+            var s0: []const u8 = "{ (";
+            bufferedWriterWrite(&emitter.writer, s0);
+            bufferedWriterWrite(&emitter.writer, spc);
+            var s1: []const u8 = "*)";
+            bufferedWriterWrite(&emitter.writer, s1);
+            emitCStringLiteral(&emitter.writer, str);
+            var s2: []const u8 = ", ";
+            bufferedWriterWrite(&emitter.writer, s2);
+            var ib: [16]u8 = undefined;
+            var il = itoa_mod.itoa(@intCast(u32, str.len), ib[0..]);
+            var istart: usize = @intCast(usize, 15) - @intCast(usize, il);
+            bufferedWriterWrite(&emitter.writer, ib[istart..@intCast(usize, 15)]);
+            var s3: []const u8 = " }";
+            bufferedWriterWrite(&emitter.writer, s3);
+            return;
+        }
+        if (tk != @intCast(u32, @enumToInt(type_mod.TypeKind.none_sentinel))) {
+            var pct = getCTypeName(emitter.registry, emitter.mangler, type_id);
+            var p0: []const u8 = "(";
+            bufferedWriterWrite(&emitter.writer, p0);
+            bufferedWriterWrite(&emitter.writer, pct);
+            var p1: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, p1);
+        }
+        emitCStringLiteral(&emitter.writer, str);
+        return;
+    }
+    if (nd.kind == const_init_eval.CIE_GLOBAL) {
+        var gname = emitConstInitGlobalName(emitter, @intCast(u32, nd.a), nd.b, nd.c);
+        if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.slice_type))) {
+            var gty2 = emitter.registry.types_items[@intCast(usize, type_id)];
+            var gelem = emitter.registry.slice_items[@intCast(usize, gty2.payload_idx)].elem;
+            var gc2 = getCTypeName(emitter.registry, emitter.mangler, gelem);
+            var g0: []const u8 = "{ (";
+            bufferedWriterWrite(&emitter.writer, g0);
+            bufferedWriterWrite(&emitter.writer, gc2);
+            var g1: []const u8 = "*)";
+            bufferedWriterWrite(&emitter.writer, g1);
+            bufferedWriterWrite(&emitter.writer, gname);
+            var g2: []const u8 = ", ";
+            bufferedWriterWrite(&emitter.writer, g2);
+            var glen: u32 = @intCast(u32, 0);
+            if (nd.c != @intCast(u32, 0) and @intCast(usize, nd.c) < emitter.registry.types_len) {
+                if (constInitTypeKind(emitter, nd.c) == @intCast(u32, @enumToInt(type_mod.TypeKind.array_type))) {
+                    glen = emitter.registry.array_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, nd.c)].payload_idx)].length;
+                }
+            }
+            var ib2: [16]u8 = undefined;
+            var il2 = itoa_mod.itoa(glen, ib2[0..]);
+            var istart2: usize = @intCast(usize, 15) - @intCast(usize, il2);
+            bufferedWriterWrite(&emitter.writer, ib2[istart2..@intCast(usize, 15)]);
+            var g3: []const u8 = " }";
+            bufferedWriterWrite(&emitter.writer, g3);
+            return;
+        }
+        if (tk != @intCast(u32, @enumToInt(type_mod.TypeKind.none_sentinel))) {
+            var gct = getCTypeName(emitter.registry, emitter.mangler, type_id);
+            var q0: []const u8 = "(";
+            bufferedWriterWrite(&emitter.writer, q0);
+            bufferedWriterWrite(&emitter.writer, gct);
+            var q1: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, q1);
+        }
+        bufferedWriterWrite(&emitter.writer, gname);
+        return;
+    }
+    if (nd.kind == const_init_eval.CIE_FN) {
+        var fname = emitConstInitFnName(emitter, @intCast(u32, nd.a), nd.b);
+        if (tk != @intCast(u32, @enumToInt(type_mod.TypeKind.none_sentinel))) {
+            var fct = getCTypeName(emitter.registry, emitter.mangler, type_id);
+            var f0: []const u8 = "(";
+            bufferedWriterWrite(&emitter.writer, f0);
+            bufferedWriterWrite(&emitter.writer, fct);
+            var f1: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, f1);
+        }
+        bufferedWriterWrite(&emitter.writer, fname);
+        return;
+    }
+    var zf: []const u8 = "0";
+    bufferedWriterWrite(&emitter.writer, zf);
+}
+
+fn emitConstInitAgg(emitter: *C89Emitter, node_idx: u32, type_id: u32, depth: u32) void {
+    var nd = const_init_eval.constInitNodeAt(emitter.const_inits, node_idx);
+    var tk = constInitTypeKind(emitter, type_id);
+    var ob: []const u8 = "{ ";
+    bufferedWriterWrite(&emitter.writer, ob);
+    var i: u32 = @intCast(u32, 0);
+    if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.array_type))) {
+        var ap = emitter.registry.array_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, type_id)].payload_idx)];
+        while (i < nd.child_count) : (i += @intCast(u32, 1)) {
+            if (i != @intCast(u32, 0)) { var cm: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, cm); }
+            emitConstInitValue(emitter, const_init_eval.constInitChildAt(emitter.const_inits, node_idx, i), ap.elem, depth + @intCast(u32, 1));
+        }
+    } else if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.struct_type))) {
+        var sp = emitter.registry.st_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, type_id)].payload_idx)];
+        var fs: usize = @intCast(usize, sp.fields_start);
+        var fc: usize = @intCast(usize, sp.fields_count);
+        var vi: u32 = @intCast(u32, 0);
+        var fi: usize = @intCast(usize, 0);
+        while (fi < fc and vi < nd.child_count) : (fi += @intCast(usize, 1)) {
+            if (emitter.registry.fe_items[fs + fi].type_id == type_mod.TYPE_VOID) continue;
+            if (vi != @intCast(u32, 0)) { var cm2: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, cm2); }
+            emitConstInitValue(emitter, const_init_eval.constInitChildAt(emitter.const_inits, node_idx, vi), emitter.registry.fe_items[fs + fi].type_id, depth + @intCast(u32, 1));
+            vi += @intCast(u32, 1);
+        }
+    } else if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.tuple_type))) {
+        var tpu = emitter.registry.tup_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, type_id)].payload_idx)];
+        while (i < nd.child_count) : (i += @intCast(u32, 1)) {
+            if (i != @intCast(u32, 0)) { var cm3: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, cm3); }
+            var et = emitter.registry.xt_items[@intCast(usize, tpu.elems_start) + @intCast(usize, i)];
+            emitConstInitValue(emitter, const_init_eval.constInitChildAt(emitter.const_inits, node_idx, i), et, depth + @intCast(u32, 1));
+        }
+    } else if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.union_type))) {
+        // first non-void member (the evaluator's STOP-1 boundary)
+        var up = emitter.registry.un_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, type_id)].payload_idx)];
+        var ufs: usize = @intCast(usize, up.fields_start);
+        var ufc: usize = @intCast(usize, up.fields_count);
+        var uj: usize = @intCast(usize, 0);
+        while (uj < ufc) : (uj += @intCast(usize, 1)) {
+            if (emitter.registry.fe_items[ufs + uj].type_id != type_mod.TYPE_VOID) {
+                if (nd.child_count > @intCast(u32, 0)) {
+                    emitConstInitValue(emitter, const_init_eval.constInitChildAt(emitter.const_inits, node_idx, @intCast(u32, 0)), emitter.registry.fe_items[ufs + uj].type_id, depth + @intCast(u32, 1));
+                }
+                break;
+            }
+        }
+    } else if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.tagged_union_type))) {
+        // `{ tag, { 0 } }` — empty-payload form (D1)
+        var tpu2 = emitter.registry.tu_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, type_id)].payload_idx)];
+        if (nd.child_count > @intCast(u32, 0)) {
+            emitConstInitValue(emitter, const_init_eval.constInitChildAt(emitter.const_inits, node_idx, @intCast(u32, 0)), tpu2.tag_type, depth + @intCast(u32, 1));
+        }
+        var tp1: []const u8 = ", { ";
+        bufferedWriterWrite(&emitter.writer, tp1);
+        if (nd.child_count > @intCast(u32, 1)) {
+            emitConstInitValue(emitter, const_init_eval.constInitChildAt(emitter.const_inits, node_idx, @intCast(u32, 1)), type_mod.TYPE_U8, depth + @intCast(u32, 1));
+        } else {
+            var tp0: []const u8 = "0";
+            bufferedWriterWrite(&emitter.writer, tp0);
+        }
+        var tp2: []const u8 = " }";
+        bufferedWriterWrite(&emitter.writer, tp2);
+    } else if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.optional_type))) {
+        var op = emitter.registry.opt_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, type_id)].payload_idx)];
+        if (nd.child_count > @intCast(u32, 0)) {
+            emitConstInitValue(emitter, const_init_eval.constInitChildAt(emitter.const_inits, node_idx, @intCast(u32, 0)), op.payload, depth + @intCast(u32, 1));
+        }
+        var op1: []const u8 = ", ";
+        bufferedWriterWrite(&emitter.writer, op1);
+        if (nd.child_count > @intCast(u32, 1)) {
+            emitConstInitValue(emitter, const_init_eval.constInitChildAt(emitter.const_inits, node_idx, @intCast(u32, 1)), type_mod.TYPE_I32, depth + @intCast(u32, 1));
+        } else {
+            var op0: []const u8 = "0";
+            bufferedWriterWrite(&emitter.writer, op0);
+        }
+    } else if (tk == @intCast(u32, @enumToInt(type_mod.TypeKind.error_union_type))) {
+        var ep = emitter.registry.eu_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, type_id)].payload_idx)];
+        var pay_void: u8 = @intCast(u8, 0);
+        if (ep.payload == type_mod.TYPE_VOID or constInitTypeKind(emitter, ep.payload) == @intCast(u32, @enumToInt(type_mod.TypeKind.void_type))) {
+            pay_void = @intCast(u8, 1);
+        }
+        if (pay_void == @intCast(u8, 0)) {
+            var eu0: []const u8 = "{ ";
+            bufferedWriterWrite(&emitter.writer, eu0);
+        }
+        if (nd.child_count > @intCast(u32, 0)) {
+            var c0ty: u32 = ep.payload;
+            if (pay_void != @intCast(u8, 0)) { c0ty = type_mod.TYPE_I32; }
+            emitConstInitValue(emitter, const_init_eval.constInitChildAt(emitter.const_inits, node_idx, @intCast(u32, 0)), c0ty, depth + @intCast(u32, 1));
+        }
+        if (pay_void == @intCast(u8, 0)) {
+            var eu1: []const u8 = " }";
+            bufferedWriterWrite(&emitter.writer, eu1);
+        }
+        var eu2: []const u8 = ", ";
+        bufferedWriterWrite(&emitter.writer, eu2);
+        if (nd.child_count > @intCast(u32, 1)) {
+            emitConstInitValue(emitter, const_init_eval.constInitChildAt(emitter.const_inits, node_idx, @intCast(u32, 1)), type_mod.TYPE_I32, depth + @intCast(u32, 1));
+        } else {
+            var eu3: []const u8 = "0";
+            bufferedWriterWrite(&emitter.writer, eu3);
+        }
+    } else {
+        var uz: []const u8 = "0";
+        bufferedWriterWrite(&emitter.writer, uz);
+    }
+    var cb: []const u8 = " }";
+    bufferedWriterWrite(&emitter.writer, cb);
+}
+
 // D1-4: global extern-declaration emission shared by `emitModuleHeaderFile`
 // (`want_extern`=1, always module-filtered) and `emitGlobalDecls`
 // (`want_extern`=0; `all`=1 emits every module's globals). The dedup set is
@@ -2157,6 +2513,41 @@ fn emitGlobalExternDecls(emitter: *C89Emitter, module_id: u32, all: u8, want_ext
         hash_mod.u32ToU32MapPut(seen, gmid, @intCast(u32, 1));
         var gname = interner_mod.stringInternerGet(emitter.interner, gmid);
         var gtype = getCTypeName(emitter.registry, emitter.mangler, g.type_id);
+        // M2 T1C-F: constant-init rows are C89 const rodata. `const` goes
+        // BEFORE the declarator name (`T const n`) so raw pointer spellings
+        // get pointer-constness (probe S11 `unsigned char* const`).
+        if (g.const_init != @intCast(u32, 0xFFFFFFFF)) {
+            if (want_extern != @intCast(u8, 0)) {
+                // header: visible consts only — a `static` definition in the
+                // owner TU must not be preceded by a conflicting `extern`.
+                if (g.link_visible == @intCast(u8, 0)) continue;
+                bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 0));
+                var cex: []const u8 = "extern ";
+                bufferedWriterWrite(&emitter.writer, cex);
+                bufferedWriterWrite(&emitter.writer, gtype);
+                var csp: []const u8 = " const ";
+                bufferedWriterWrite(&emitter.writer, csp);
+                bufferedWriterWrite(&emitter.writer, gname);
+                var csc: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, csc);
+                continue;
+            }
+            bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 0));
+            if (g.link_visible == @intCast(u8, 0)) {
+                var cst: []const u8 = "static ";
+                bufferedWriterWrite(&emitter.writer, cst);
+            }
+            bufferedWriterWrite(&emitter.writer, gtype);
+            var csp2: []const u8 = " const ";
+            bufferedWriterWrite(&emitter.writer, csp2);
+            bufferedWriterWrite(&emitter.writer, gname);
+            var ceq: []const u8 = " = ";
+            bufferedWriterWrite(&emitter.writer, ceq);
+            emitConstInitValue(emitter, g.const_init, g.type_id, @intCast(u32, 0));
+            var csc2: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, csc2);
+            continue;
+        }
         bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 0));
         if (want_extern != @intCast(u8, 0)) {
             var ex0: []const u8 = "extern ";
@@ -6878,8 +7269,25 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var result = resolveTempName(emitter, a.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
-            var s: []const u8 = " = &";
+            var s: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s);
+            // M2 T1C-F: explicit cast to the destination pointer type — a
+            // borrow of a `const`-qualified global must not discard the
+            // qualifier silently (Z98 rejects writes through the loan).
+            var ao_ct: []const u8 = "";
+            var ao_ty = hoistedTypeOf(emitter, a.result);
+            if (ao_ty != @intCast(u32, 0) and @intCast(usize, ao_ty) < emitter.registry.types_len) {
+                ao_ct = getCTypeName(emitter.registry, emitter.mangler, ao_ty);
+            }
+            if (ao_ct.len != @intCast(usize, 0)) {
+                var sc0: []const u8 = "(";
+                bufferedWriterWrite(&emitter.writer, sc0);
+                bufferedWriterWrite(&emitter.writer, ao_ct);
+                var sc1: []const u8 = ")";
+                bufferedWriterWrite(&emitter.writer, sc1);
+            }
+            var sa: []const u8 = "&";
+            bufferedWriterWrite(&emitter.writer, sa);
             bufferedWriterWrite(&emitter.writer, op);
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
@@ -7619,6 +8027,23 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             bufferedWriterWrite(&emitter.writer, dst);
             var l1: []const u8 = ".ptr = ";
             bufferedWriterWrite(&emitter.writer, l1);
+            // M2 T1C-F: explicit cast to the slice's element-pointer type —
+            // a `const` source must not discard the qualifier silently.
+            var ms_ct: []const u8 = "";
+            if (s.type_id != @intCast(u32, 0) and @intCast(usize, s.type_id) < emitter.registry.types_len) {
+                var ms_ty = emitter.registry.types_items[@intCast(usize, s.type_id)];
+                if (ms_ty.kind == type_mod.TypeKind.slice_type) {
+                    var ms_elem = emitter.registry.slice_items[@intCast(usize, ms_ty.payload_idx)].elem;
+                    ms_ct = getCTypeName(emitter.registry, emitter.mangler, ms_elem);
+                }
+            }
+            if (ms_ct.len != @intCast(usize, 0)) {
+                var msc0: []const u8 = "(";
+                bufferedWriterWrite(&emitter.writer, msc0);
+                bufferedWriterWrite(&emitter.writer, ms_ct);
+                var msc1: []const u8 = "*)";
+                bufferedWriterWrite(&emitter.writer, msc1);
+            }
             bufferedWriterWrite(&emitter.writer, ptr);
             var semi1: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, semi1);
