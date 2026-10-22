@@ -330,6 +330,20 @@ fn checkWriteAtomic() void {
     ck(g_session.write_seq == seq_before + 2, "write sequence after retry");
 }
 
+// TLS 1.2 ChaCha20-Poly1305 has no explicit nonce: exact output size for
+// 17000 bytes is 17000 + 2 records * (5 header + 16 tag) = 17042.
+fn checkWriteExactFit() void {
+    var data: [17000]u8 = undefined;
+    var i: usize = 0;
+    while (i < data.len) : (i += 1) data[i] = @intCast(u8, i & 0xFF);
+
+    var out: [17042]u8 = undefined;
+    const seq_before = g_session.write_seq;
+    const n = tls.tlsWrite(&g_session, data[0..], out[0..]) catch @panic("exact fit write");
+    ck(n == 17042, "exact fit length");
+    ck(g_session.write_seq == seq_before + 2, "exact fit sequence");
+}
+
 fn expectExpired(s: Scenario) void {
     _ = drive(s, 97, false, false, false) catch |e| {
         ck(e == error.CertificateExpired, "expired leaf");
@@ -363,6 +377,7 @@ pub fn main() void {
 
     var r2 = drive(rsa, 163, false, false, true) catch @panic("rsa/chacha handshake");
     ck(r2.sends == 2 and r2.established, "rsa/chacha actions");
+    checkWriteExactFit();
 
     var r3 = drive(x25519, 113, false, false, true) catch @panic("x25519 handshake");
     ck(r3.sends == 2 and r3.established, "x25519 actions");

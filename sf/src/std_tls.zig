@@ -14,16 +14,22 @@
 //
 // Handshake (spec §5.6):
 //   TlsAction / TlsConfig / TlsSession / tlsInit / tlsStep / tlsRead / tlsWrite
-//   states SendClientHello .. Established; Finished verify_data is 12 bytes.
-//   ClientHello offers SNI, secp256r1 + x25519, and exactly the four M4 suites.
-//   The transcript is SHA-256 over every handshake message (record headers are
-//   excluded) and PRF_SHA256 derives the master secret and key block.
+//   states SendClientHello .. Established. TLS 1.2 Finished verify_data is 12
+//   bytes (PRF_SHA256); TLS 1.3 Finished verify_data is 32 bytes (finished_key).
+//   ClientHello offers SNI, the two TLS 1.3 suites, and (when 1.2 is enabled)
+//   the four M4 suites. All handshake messages feed one SHA-256 transcript.
+//   TLS 1.2 derives master/key-block via PRF_SHA256; TLS 1.3 uses the
+//   HKDF-Expand-Label schedule and resets sequence numbers per key epoch.
 //
 // Wire AEAD (TLS 1.2):
 //   AES-128-GCM (RFC 5288): nonce = fixed_iv[4] || explicit[8]; explicit nonce
 //     (= sequence number) is transmitted; AAD = seq || type || version || len.
 //   ChaCha20-Poly1305 (RFC 7905): nonce = (0x00^4 || seq_be64) XOR fixed_iv[12];
 //     no explicit nonce; AAD = seq || type || version || len.
+//
+// Wire AEAD (TLS 1.3):
+//   always outer application_data; nonce = static_iv XOR seq; AAD = the 5-byte
+//   TLSCiphertext header; plaintext = content || inner content type.
 //
 // Errors: Corrupt (malformed lengths/truncation), AuthenticationFailed (AEAD
 // tag/nonce tamper), RecordTooLarge (> the plaintext or wire record limit, or
@@ -436,8 +442,11 @@ const sig_ecdsa_sha384: u16 = 0x0503;
 const sig_rsa_pkcs1_sha256: u16 = 0x0401;
 const sig_rsa_pss_rsae_sha256: u16 = 0x0804;
 const sig_rsa_pss_rsae_sha384: u16 = 0x0805;
-const sig_rsa_pss_pss_sha256: u16 = 0x0809;
-const sig_rsa_pss_pss_sha384: u16 = 0x080A;
+const sig_rsa_pkcs1_sha1: u16 = 0x0201;
+
+// RFC 8446 §4.1.3: a 1.3-capable server negotiating TLS 1.2 sets the last 8
+// bytes of ServerHello.random to this value.
+const downgrade_sentinel = [_]u8{ 0x44, 0x4F, 0x57, 0x4E, 0x47, 0x52, 0x44, 0x01 };
 
 const suite_ecdsa_aes_128_gcm_sha256: u16 = 0xC02B;
 const suite_rsa_aes_128_gcm_sha256: u16 = 0xC02F;
@@ -805,25 +814,68 @@ fn parsePeerKey(spki: []const u8, out: *PeerKey) TlsError!void {
 }
 
 fn verifyServerKeyExchange(sess: *TlsSession, params: []const u8, sig_alg: u16, sig: []const u8) TlsError!void {
-    var hash: [32]u8 = undefined;
-    var h = crypto.sha256Init();
-    crypto.sha256Update(&h, sess.client_random[0..]);
-    crypto.sha256Update(&h, sess.server_random[0..]);
-    crypto.sha256Update(&h, params);
-    crypto.sha256Final(&h, &hash);
-
     if (sig_alg == sig_ecdsa_sha256) {
         if (sess.peer_key.kind != 1) return error.UnsupportedAlgorithm;
+        var hash: [32]u8 = undefined;
+        var h = crypto.sha256Init();
+        crypto.sha256Update(&h, sess.client_random[0..]);
+        crypto.sha256Update(&h, sess.server_random[0..]);
+        crypto.sha256Update(&h, params);
+        crypto.sha256Final(&h, &hash);
         var r: [32]u8 = undefined;
         var s: [32]u8 = undefined;
         try parseEcdsaSig(sig, &r, &s);
         if (!ecc.p256EcdsaVerify(&sess.peer_key.ec_pub, &hash, &r, &s)) return error.BadSignature;
         return;
     }
+    if (sig_alg == sig_ecdsa_sha384) {
+        if (sess.peer_key.kind != 3) return error.UnsupportedAlgorithm;
+        var hash: [48]u8 = undefined;
+        var h = crypto.sha384Init();
+        crypto.sha384Update(&h, sess.client_random[0..]);
+        crypto.sha384Update(&h, sess.server_random[0..]);
+        crypto.sha384Update(&h, params);
+        crypto.sha384Final(&h, &hash);
+        var r: [48]u8 = undefined;
+        var s: [48]u8 = undefined;
+        try parseEcdsaSigInto(sig, r[0..], s[0..]);
+        if (!ecc.p384EcdsaVerify(&sess.peer_key.p384_pub, &hash, &r, &s)) return error.BadSignature;
+        return;
+    }
     if (sig_alg == sig_rsa_pkcs1_sha256) {
         if (sess.peer_key.kind != 2) return error.UnsupportedAlgorithm;
+        var hash: [32]u8 = undefined;
+        var h = crypto.sha256Init();
+        crypto.sha256Update(&h, sess.client_random[0..]);
+        crypto.sha256Update(&h, sess.server_random[0..]);
+        crypto.sha256Update(&h, params);
+        crypto.sha256Final(&h, &hash);
         crypto.rsaVerifyPkcs1v15(sess.peer_key.rsa_n[0..sess.peer_key.rsa_n_len],
             sess.peer_key.rsa_e, crypto.HashAlg.sha256, hash[0..], sig) catch return error.BadSignature;
+        return;
+    }
+    if (sig_alg == sig_rsa_pss_rsae_sha256) {
+        if (sess.peer_key.kind != 2) return error.UnsupportedAlgorithm;
+        var hash: [32]u8 = undefined;
+        var h = crypto.sha256Init();
+        crypto.sha256Update(&h, sess.client_random[0..]);
+        crypto.sha256Update(&h, sess.server_random[0..]);
+        crypto.sha256Update(&h, params);
+        crypto.sha256Final(&h, &hash);
+        crypto.rsaVerifyPss(sess.peer_key.rsa_n[0..sess.peer_key.rsa_n_len],
+            sess.peer_key.rsa_e, crypto.HashAlg.sha256, hash[0..], 32, sig) catch return error.BadSignature;
+        return;
+    }
+    if (sig_alg == sig_rsa_pss_rsae_sha384) {
+        if (sess.peer_key.kind != 2) return error.UnsupportedAlgorithm;
+        var hash: [48]u8 = undefined;
+        var h = crypto.sha384Init();
+        crypto.sha384Update(&h, sess.client_random[0..]);
+        crypto.sha384Update(&h, sess.server_random[0..]);
+        crypto.sha384Update(&h, params);
+        crypto.sha384Final(&h, &hash);
+        crypto.rsaVerifyPss(sess.peer_key.rsa_n[0..sess.peer_key.rsa_n_len],
+            sess.peer_key.rsa_e, crypto.HashAlg.sha384, hash[0..], 48, sig) catch return error.BadSignature;
         return;
     }
     return error.UnsupportedAlgorithm;
@@ -1170,8 +1222,17 @@ fn sendClientHello(sess: *TlsSession) TlsError!void {
     sess.state = .RecvServerHello;
 }
 
-fn handleServerHello(sess: *TlsSession, body: []const u8) TlsError!void {
+// RFC 8446 §4.1.3 downgrade sentinel (last 8 bytes of ServerHello.random).
+pub fn hasDowngradeSentinel(random: []const u8) bool {
+    if (random.len < 32) return false;
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        if (random[24 + i] != downgrade_sentinel[i]) return false;
+    }
+    return true;
+}
 
+fn handleServerHello(sess: *TlsSession, body: []const u8) TlsError!void {
     if (body.len < 2 + 32 + 1 + 2 + 1) return error.Corrupt;
     const legacy_version = loadU16be(body, 0);
     copyBytes(sess.server_random[0..], body[2..34]);
@@ -1247,6 +1308,9 @@ fn handleServerHello(sess: *TlsSession, body: []const u8) TlsError!void {
     // TLS 1.2 fallback.
     if (legacy_version != TLS_VERSION_12) return error.UnsupportedVersion;
     if (sess.cfg.min_version > TLS_VERSION_12) return error.UnsupportedVersion;
+    if (sess.cfg.max_version >= TLS_VERSION_13) {
+        if (!hasDowngradeSentinel(sess.server_random[0..])) return error.HandshakeFailed;
+    }
     sess.version = TLS_VERSION_12;
     sess.suite = try suiteFromId(suite_id);
     if (suiteIsTls13(sess.suite)) return error.UnsupportedSuite;
@@ -1256,6 +1320,7 @@ fn handleCertificate(sess: *TlsSession, body: []const u8, tls13: bool) TlsError!
     if (tls13) {
         if (body.len < 1) return error.Corrupt;
         const ctx_len = @intCast(usize, body[0]);
+        if (ctx_len != 0) return error.HandshakeFailed; // no client auth in this profile
         pos = 1;
         if (pos + ctx_len + 3 > body.len) return error.Corrupt;
         pos += ctx_len;
@@ -1312,7 +1377,8 @@ fn handleCertificateVerify(sess: *TlsSession, body: []const u8) TlsError!void {
     if (4 + sig_len != body.len) return error.Corrupt;
     const sig = body[4..];
 
-    if (scheme == sig_rsa_pkcs1_sha256 or scheme == 0x0501 or scheme == 0x0601) {
+    if (scheme == sig_rsa_pkcs1_sha1 or scheme == sig_rsa_pkcs1_sha256 or
+        scheme == 0x0501 or scheme == 0x0601) {
         return error.HandshakeFailed; // RFC 8446 §4.4.3 forbids PKCS#1 v1.5
     }
 
@@ -1351,7 +1417,7 @@ fn handleCertificateVerify(sess: *TlsSession, body: []const u8) TlsError!void {
         if (!ecc.p384EcdsaVerify(&sess.peer_key.p384_pub, &hash, &r, &s)) return error.HandshakeFailed;
         return;
     }
-    if (scheme == sig_rsa_pss_rsae_sha256 or scheme == sig_rsa_pss_pss_sha256) {
+    if (scheme == sig_rsa_pss_rsae_sha256) {
         if (sess.peer_key.kind != 2) return error.UnsupportedAlgorithm;
         var hash: [32]u8 = undefined;
         var h = crypto.sha256Init();
@@ -1361,7 +1427,7 @@ fn handleCertificateVerify(sess: *TlsSession, body: []const u8) TlsError!void {
             sess.peer_key.rsa_e, crypto.HashAlg.sha256, hash[0..], 32, sig) catch return error.HandshakeFailed;
         return;
     }
-    if (scheme == sig_rsa_pss_rsae_sha384 or scheme == sig_rsa_pss_pss_sha384) {
+    if (scheme == sig_rsa_pss_rsae_sha384) {
         if (sess.peer_key.kind != 2) return error.UnsupportedAlgorithm;
         var hash: [48]u8 = undefined;
         var h = crypto.sha384Init();
@@ -1601,30 +1667,31 @@ fn handleRecord(sess: *TlsSession, hdr: *const RecordHeader, frag: []const u8) T
         }
         if (hdr.content_type != content_application_data) return error.HandshakeFailed;
 
+        var pt13: [TLS_MAX_PLAINTEXT_RECORD + 1]u8 = undefined;
         const n = unprotectRecord13(sess.suite, sess.server_key[0..suiteKeyLen(sess.suite)],
-            sess.server_iv[0..12], sess.read_seq, frag, pt[0..]) catch |e| {
+            sess.server_iv[0..12], sess.read_seq, frag, pt13[0..]) catch |e| {
             if (sess.state != .Established) return error.HandshakeFailed;
             return e;
         };
         sess.read_seq += 1;
         if (n == 0) return error.Corrupt;
-        const inner = pt[n - 1];
+        const inner = pt13[n - 1];
         const plain_len = n - 1;
         if (inner == content_handshake) {
             if (sess.hs_len + plain_len > sess.hs_buf.len) return error.RecordTooLarge;
-            copyBytes(sess.hs_buf[sess.hs_len .. sess.hs_len + plain_len], pt[0..plain_len]);
+            copyBytes(sess.hs_buf[sess.hs_len .. sess.hs_len + plain_len], pt13[0..plain_len]);
             sess.hs_len += plain_len;
             try drainHandshake(sess);
             return;
         }
         if (inner == content_application_data) {
             if (sess.state != .Established) return error.HandshakeFailed;
-            try bufferApplication(sess, pt[0..plain_len]);
+            try bufferApplication(sess, pt13[0..plain_len]);
             return;
         }
         if (inner == content_alert) {
             if (plain_len < 2) return error.Corrupt;
-            if (pt[1] == 0) {
+            if (pt13[1] == 0) {
                 sess.closed = true;
                 return;
             }
@@ -1775,8 +1842,12 @@ pub fn tlsWrite(sess: *TlsSession, data: []const u8, output: []u8) TlsError!usiz
 
     var chunks: usize = data.len / TLS_MAX_PLAINTEXT_PER_RECORD;
     if (data.len % TLS_MAX_PLAINTEXT_PER_RECORD != 0) chunks += 1;
-    var overhead: usize = 17;
-    if (sess.version != TLS_VERSION_13 and suiteIsAesGcm(sess.suite)) overhead = 24;
+    var overhead: usize = 16;
+    if (sess.version == TLS_VERSION_13) {
+        overhead = 17;
+    } else if (suiteIsAesGcm(sess.suite)) {
+        overhead = 24;
+    }
     const needed = chunks * RECORD_HEADER_LEN + data.len + chunks * overhead;
     if (output.len < needed) return error.OutputTooSmall;
 

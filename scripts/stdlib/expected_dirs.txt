@@ -314,6 +314,7 @@ repro/mi_matrix/stdlib_print_unrelated_ident_xmod
 repro/mi_matrix/stdlib_print_init_order_dep_xmod
 repro/mi_matrix/stdlib_tls12_handshake_xmod
 repro/mi_matrix/stdlib_tls13_auth_xmod
+repro/mi_matrix/stdlib_tls13_fallback_xmod
 repro/mi_matrix/stdlib_tls13_handshake_xmod
 repro/mi_matrix/stdlib_tls_record_xmod
 repro/mi_matrix/stdlib_tuple_model_ok_xmod

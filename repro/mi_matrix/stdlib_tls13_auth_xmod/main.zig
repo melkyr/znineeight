@@ -3,8 +3,11 @@
 // Replays a captured RSA-cert TLS 1.3 handshake (RSA-PSS CertificateVerify)
 // and asserts fail-closed behavior before `Established`:
 //   - baseline: the untouched transcript establishes with RSA-PSS
-//   - PKCS#1 v1.5 CertificateVerify scheme (0x0401) -> error.HandshakeFailed
-//   - tampered server Finished ciphertext -> error.HandshakeFailed
+//   - PKCS#1 v1.5 CertificateVerify schemes (0x0201 SHA-1, 0x0401 SHA-256)
+//     -> error.HandshakeFailed
+//   - tampered server Finished ciphertext (bad tag) -> error.HandshakeFailed
+//   - re-sealed server Finished with wrong 32-byte verify_data ->
+//     error.HandshakeFailed (exercises verifyFinished13, not just the AEAD tag)
 //   - server key_share group changed to secp256r1 -> error.UnsupportedGroup
 //
 // The PKCS#1 transcript is generated at capture time by decrypting the real
@@ -127,6 +130,8 @@ fn expectError(raw: []const u8, want: tls.TlsError, what: []const u8) void {
 
 pub fn main() void {
     ck(rsa_pss.pkcs1_server_raw.len == rsa_pss.server_raw.len, "pkcs1 transcript length");
+    ck(rsa_pss.bad_finished_server_raw.len == rsa_pss.server_raw.len, "bad finished transcript length");
+    ck(rsa_pss.sha1_pkcs1_server_raw.len == rsa_pss.server_raw.len, "sha1 pkcs1 transcript length");
     ck(rsa_pss.finished_record_end > 0, "finished offset");
     ck(rsa_pss.finished_record_end <= rsa_pss.server_raw.len, "finished offset bounds");
 
@@ -134,12 +139,15 @@ pub fn main() void {
     ck(g_session.version == tls.TLS_VERSION_13, "baseline version");
     ck(g_session.suite == tls.CipherSuite.tls13_aes_128_gcm_sha256, "baseline suite");
 
-    expectError(rsa_pss.pkcs1_server_raw[0..], error.HandshakeFailed, "pkcs1 certificate verify");
+    expectError(rsa_pss.pkcs1_server_raw[0..], error.HandshakeFailed, "pkcs1 sha256 certificate verify");
+    expectError(rsa_pss.sha1_pkcs1_server_raw[0..], error.HandshakeFailed, "pkcs1 sha1 certificate verify");
 
     var bad_fin: [tls.TLS_HANDSHAKE_MAX]u8 = undefined;
     copyInto(bad_fin[0..rsa_pss.server_raw.len], rsa_pss.server_raw[0..]);
     bad_fin[rsa_pss.finished_record_end - 1] = bad_fin[rsa_pss.finished_record_end - 1] ^ 1;
-    expectError(bad_fin[0..rsa_pss.server_raw.len], error.HandshakeFailed, "bad finished");
+    expectError(bad_fin[0..rsa_pss.server_raw.len], error.HandshakeFailed, "bad finished tag");
+
+    expectError(rsa_pss.bad_finished_server_raw[0..], error.HandshakeFailed, "wrong finished verify_data");
 
     var bad_group: [tls.TLS_HANDSHAKE_MAX]u8 = undefined;
     copyInto(bad_group[0..rsa_pss.server_raw.len], rsa_pss.server_raw[0..]);

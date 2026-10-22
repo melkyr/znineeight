@@ -9,6 +9,7 @@
 //   - ECDSA P-256 certificate / TLS_AES_128_GCM_SHA256
 //   - ECDSA P-256 certificate / TLS_CHACHA20_POLY1305_SHA256
 //   - RSA certificate with RSA-PSS CertificateVerify / AES-128-GCM
+//   - ECDSA P-384 certificate / ecdsa_secp384r1_sha384 CertificateVerify
 //
 // Each scenario pins the exact early/handshake/master and per-direction
 // traffic secrets (independently verified against the OpenSSL key log),
@@ -25,6 +26,7 @@ const x509 = @import("std_x509.zig");
 const ecdsa_aes = @import("ecdsa_aes_data.zig");
 const ecdsa_chacha = @import("ecdsa_chacha_data.zig");
 const rsa_pss = @import("rsa_pss_data.zig");
+const p384 = @import("p384_data.zig");
 
 var g_fail: u32 = 0;
 
@@ -189,6 +191,34 @@ fn checkWriteRoundTrip() void {
     ck(pt[msg.len] == tls.content_application_data, "write inner type");
 }
 
+// Exact-max TLS 1.3 plaintext: 16384 content bytes + the inner content type =
+// 16385 AEAD plaintext bytes. Feeding the resulting record through tlsStep
+// exercises the 1.3 receive buffer at its maximum size.
+fn checkMaxAppRecord() void {
+    var plain: [tls.TLS_MAX_PLAINTEXT_RECORD]u8 = undefined;
+    var i: usize = 0;
+    while (i < plain.len) : (i += 1) plain[i] = @intCast(u8, (i * 7 + 3) & 0xFF);
+
+    var wire: [tls.TLS_MAX_WIRE_RECORD]u8 = undefined;
+    const n = tls.protectRecord13(g_session.suite,
+        g_session.server_key[0..tls.suiteKeyLen(g_session.suite)],
+        g_session.server_iv[0..12], g_session.read_seq,
+        tls.content_application_data, plain[0..], wire[0..]) catch @panic("max protect");
+    ck(n == tls.TLS_MAX_PLAINTEXT_RECORD + 1 + 16, "max protected length");
+
+    var framed: [tls.TLS_MAX_WIRE_RECORD + tls.RECORD_HEADER_LEN]u8 = undefined;
+    const flen = tls.encodeRecord(tls.content_application_data, tls.TLS_VERSION_12,
+        wire[0..n], framed[0..]) catch @panic("max encode");
+
+    var out: [64]u8 = undefined;
+    _ = tls.tlsStep(&g_session, framed[0..flen], out[0..]) catch @panic("max record step");
+
+    var got: [tls.TLS_MAX_RECORD]u8 = undefined;
+    const rn = tls.tlsRead(&g_session, got[0..]) catch @panic("max record read");
+    ck(rn == tls.TLS_MAX_PLAINTEXT_RECORD, "max application bytes");
+    ckBytes(got[0..rn], plain[0..], "max application content");
+}
+
 fn ecdsaAesScenario() Scenario {
     return Scenario{
         .seed = ecdsa_aes.seed,
@@ -252,13 +282,38 @@ fn rsaPssScenario() Scenario {
     };
 }
 
+fn p384Scenario() Scenario {
+    return Scenario{
+        .seed = p384.seed,
+        .hostname = p384.hostname[0..],
+        .now_unix = p384.now_unix,
+        .store_bin = p384.store_bin[0..],
+        .server_raw = p384.server_raw[0..],
+        .client_hello = p384.client_hello[0..],
+        .client_flight = p384.client_flight[0..],
+        .app_plain = p384.app_plain[0..],
+        .suite = tls.CipherSuite.tls13_aes_128_gcm_sha256,
+        .early_secret = p384.early_secret[0..],
+        .handshake_secret = p384.handshake_secret[0..],
+        .master_secret = p384.master_secret[0..],
+        .client_hs_secret = p384.client_hs_secret[0..],
+        .server_hs_secret = p384.server_hs_secret[0..],
+        .client_app_secret = p384.client_app_secret[0..],
+        .server_app_secret = p384.server_app_secret[0..],
+    };
+}
+
 pub fn main() void {
     drive(ecdsaAesScenario(), 97) catch @panic("ecdsa/aes handshake");
     checkWriteRoundTrip();
+    checkMaxAppRecord();
 
     drive(ecdsaChachaScenario(), 163) catch @panic("ecdsa/chacha handshake");
     drive(rsaPssScenario(), 113) catch @panic("rsa/pss handshake");
+    drive(p384Scenario(), 127) catch @panic("p384 handshake");
 
+    const aes_scenario = ecdsaAesScenario();
+    drive(aes_scenario, aes_scenario.server_raw.len) catch @panic("one-chunk ecdsa/aes handshake");
     drive(ecdsaAesScenario(), 1) catch @panic("fragmented ecdsa/aes handshake");
 
     if (g_fail == 0) {
