@@ -235,10 +235,83 @@ TIER_TLS PASS
 # exit 1: tls: BadArgs
 ```
 
+## Fix round 1
+
+Changes:
+
+1. **Win9x Winsock lifetime (MEDIUM).** Removed `std.net.init()` /
+   `defer std.net.cleanup()` from `openTls` so `WSACleanup` no longer runs after
+   the handshake and before `httpGetOver` send/recv. `main` now owns the
+   process-lifetime init and calls `std.net.cleanup()` on both success and the
+   error path before `fail`. Linux is unchanged (`init`/`cleanup` are no-ops).
+2. **Clock overflow (LOW/MEDIUM).** `parseI64Clock` now checks
+   `v > (limit - digit) / 10` before multiplying, so an oversized override
+   returns `tls: BadArgs` instead of trapping under `-fsafe`. Tier regression:
+   `999999999999999999999999999999 -> tls: BadArgs`.
+3. **Date-stable tier.** All local runs (happy, negatives, determinism, RAM)
+   pass `clock_override_unix=1893456000` (2030-01-01), inside the committed
+   leaf validity (2026..2036), so results no longer depend on the host date.
+4. **Clean `expired.pem`.** Re-emitted PEM-only with `openssl x509 -out`; the
+   63-line `-text` dump and all trailing whitespace are gone. DER bytes are
+   unchanged (`sha256 98a12d6adc46b80e3df6f7cc896f010d4a656cc74e7577f0afc41021ab2736c6`);
+   `git diff --check` exits 0.
+5. **Dead branch.** Removed the duplicate/unreachable `CertificateExpired`
+   branch in `fail`.
+6. **README failure list.** Added `tls: BadArgs`, `tls: HttpBadUrl`,
+   `tls: HttpTooLarge`, `tls: TlsInternal`.
+
+Re-verification:
+
+```
+$ Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh   # run 1
+ok   - local TLS 1.2 fetch: status=200, exact body, bytes=14
+ok   - expired leaf -> cert: CertificateExpired
+ok   - wrong host -> cert: HostnameMismatch
+ok   - untrusted anchor -> cert: UnknownIssuer
+ok   - clock override overflow -> tls: BadArgs
+ok   - happy status/body/bytes identical 2x
+ok   - internet www.google.com status=200 bytes=90428
+ok   - internet example.com status=200 bytes=577
+ok   - RAM ceiling ok: /usr/bin/time peak RSS=2540 kB (ulimit -v 32768)
+ok   - -osw emit + mingw build produced tls_demo.exe
+ok   - file: PE32 i386
+ok   - check_win9x_imports.sh 9x whitelist PASS
+== tier_tls summary: 13 passed, 0 failed, 0 skipped ==
+TIER_TLS PASS
+
+$ Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh   # run 2
+ok   - internet www.google.com status=200 bytes=90276
+ok   - internet example.com status=200 bytes=577
+ok   - RAM ceiling ok: /usr/bin/time peak RSS=2588 kB (ulimit -v 32768)
+== tier_tls summary: 13 passed, 0 failed, 0 skipped ==
+TIER_TLS PASS
+
+$ bash scripts/stdlib/run_fixtures.sh /tmp/m2_t4_v114_build/zig1_5_clean \
+    repro/mi_matrix/stdlib_http_transport_xmod \
+    repro/mi_matrix/stdlib_tls12_handshake_xmod
+PASS repro/mi_matrix/stdlib_http_transport_xmod
+PASS repro/mi_matrix/stdlib_tls12_handshake_xmod
+run_fixtures: 2 PASS / 0 FAIL over 2 dirs
+```
+
+The `-osw` import set remains `KERNEL32.DLL` + `WSOCK32.DLL`. Extra Wine
+runtime smoke of the emitted exe against the local TLS 1.2 server (same pinned
+clock) now succeeds end-to-end, confirming the Winsock handle survives the
+handshake:
+
+```
+$ WINEPREFIX=$HOME/.wine_tls32 WINEARCH=win32 wine /tmp/tier_tls/tls_demo.exe \
+    https://localhost:<port>/body.txt Z:/.../tests/certs/store.bin 1893456000
+status=200
+tls tier body
+tls_demo ok status=200 bytes=14 arena_peak=321 rss_peak=6808 cpu_ms=480
+```
+
 ## Commits
 
 - `example(z9demo): tls_demo HTTPS fetch (Phase1 M4)` — `b9fb17bd`
 - `test(tier): tier_tls (Phase1 M4)` — `dc591c3b`
+- `fix(demo): tls_demo Winsock lifetime + clock overflow (Phase1 M4)` — `e9c039df`
 - `docs(sdd): M4 T3 report` — this report
 
 ## Concerns
@@ -251,4 +324,5 @@ TIER_TLS PASS
 - The committed test private keys are intentionally public and `tests/certs/`
   is test-only; the README says not to trust them outside the tier.
 - Win9x hardware execution is operator-owned; this task gates emission, PE32,
-  and the closed-world import whitelist only.
+  and the closed-world import whitelist, and now also smoke-runs the emitted
+  exe under 32-bit Wine (real Win9x hardware remains operator-owned).
