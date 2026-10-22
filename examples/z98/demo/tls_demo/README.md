@@ -116,8 +116,8 @@ tls: TlsInternal
 
 ## RAM expectations
 
-The demo is a 32-bit program with fixed static state: `TlsSession` is about
-110 KiB, the store arena is 512 KiB, and the fetch arena is 4 MiB. The tier runs
+The demo is a 32-bit program with fixed static state: `TlsSession` is 124008
+bytes (about 121 KiB), the store arena is 512 KiB, and the fetch arena is 4 MiB. The tier runs
 the local fetch under `ulimit -v 32768` (32 MiB hard ceiling) and records
 `/usr/bin/time -v` peak RSS; observed Linux peaks are about 2.3–2.6 MiB, well
 under the 16 MiB target. The response body itself is capped at 1 MiB by

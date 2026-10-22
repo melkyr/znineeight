@@ -55,15 +55,14 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v115** (`release/seed/zig1-seed.tgz`, archive md5
-`484ae9797545591e113f002e595a26d2`), with **44** std files (`std.zig` +
-43 `std_*.zig`) and `lib/manifest.md5` md5
-`576cffb600863a648f518748edad81c6`. The compiler fixed point is
-`45158dcede81125a39a2c2c58478e21e` (`F_new`, unchanged since v112); v115 is
-the M3 X.509/trust-store payload rotation (adds `std_asn1.zig` and
-`std_x509.zig`; no compiler movement).
+The committed seed is **v116** (`release/seed/zig1-seed.tgz`, archive md5
+`ca0c46dcd671d50fd4f22497f5bc525a`), with **45** std files (`std.zig` +
+44 `std_*.zig`) and `lib/manifest.md5` md5
+`0c022fe049c808828704b702e6a2b2e7`. The compiler fixed point is
+`45158dcede81125a39a2c2c58478e21e` (`F_new`, unchanged since v112); v116 is
+the M4 TLS 1.2 payload rotation (adds `std_tls.zig`; no compiler movement).
 
-## Layer model (L0–L6)  [updated: 2026-10-22 — M3]
+## Layer model (L0–L6)  [updated: 2026-10-22 — M4]
 
 The library is layered so dependencies only ever point downward. Imports are
 strict: lower layers only, never siblings, never higher (R3).
@@ -76,7 +75,7 @@ strict: lower layers only, never siblings, never higher (R3).
 | **L2** | Data layer built on L0 — string slices and growable buffers | `std.str`, `std.buf` |
 | **L3** | Resources — owned-handle files, stdin, and sockets | `std_file`, `std_stdin`, `std.net` |
 | **L4** | Collections and byte codecs — concrete maps, sort/search, a stable min-heap, RLE, LZ4 block and zstd frame decode | `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_lz4`, `std_zstd` |
-| **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, DER/X.509 parsing and chain verification, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
+| **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, DER/X.509 parsing and chain verification, TLS 1.2 client, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
 | **L6** | Composition — coroutine-aware line and frame readers | `std_stream` |
 | async runtime | Outside L0–L6 — the cooperative scheduler and child-frame pool | `std.async` |
 
@@ -116,7 +115,7 @@ apply to its modules.
   bands also ship composed usage programs under `stdlib_test/`.
 
 
-## Which module for which job  [updated: 2026-10-22 — M3]
+## Which module for which job  [updated: 2026-10-22 — M4]
 
 | Job | Module | Domain doc |
 |---|---|---|
@@ -158,6 +157,7 @@ apply to its modules.
 | P-256 keygen / ECDH / ECDSA verify; P-384 ECDSA verify | `std_ecc` | [ecc.md](sf/docs/std_lib/ecc.md) |
 | DER TLV read/scan (streaming, no allocation) | `std_asn1` | [asn1.md](sf/docs/std_lib/asn1.md) |
 | X.509 certificate parse, chain verify, hostname match, trust store | `std_x509` | [x509.md](sf/docs/std_lib/x509.md) |
+| TLS 1.2 client (sans-I/O records + handshake) | `std_tls` | [tls.md](sf/docs/std_lib/tls.md) |
 | Parse/format integers and fixed-point `f64` | `std_parse` | [codecs.md](sf/docs/std_lib/codecs.md) |
 
 ## Worked example
@@ -212,7 +212,7 @@ pub fn main() !void {
 }
 ```
 
-## Domain docs  [updated: 2026-10-22 — M3]
+## Domain docs  [updated: 2026-10-22 — M4]
 
 Every domain has a full doc with an overview, a quick start, and a structured
 entry for each public function. Read the one for the job at hand:
@@ -249,6 +249,8 @@ entry for each public function. Read the one for the job at hand:
 - [x509.md](sf/docs/std_lib/x509.md) — `std_x509`: certificate parsing,
   browser-grade leaf-to-anchor chain verification, SAN dNSName hostname
   matching, and the pinned §5.5 trust-store loader.
+- [tls.md](sf/docs/std_lib/tls.md) — `std_tls`: sans-I/O TLS 1.2 record
+  layer and client handshake over the M2/M3 crypto and X.509 stack.
 - [codecs.md](sf/docs/std_lib/codecs.md) — `std_base64`, `std_hex`,
   `std_utf8`, `std_parse`, `std_lz4`: encoders/decoders, number parsing, and
   raw LZ4 block decode (legacy `std_crypto` primitives are indexed in
