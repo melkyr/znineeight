@@ -18,7 +18,7 @@
 - R6: no clock/env reads; randomness is caller-supplied xoshiro256\*\*.
 - New files: `sf/src/std_cipher.zig`, `sf/src/std_ecc.zig`; extend `sf/src/std_crypto.zig` only; `std.zig` unchanged (by-path import).
 - Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at milestone closeout. Task 1 edits existing `std_crypto` → full gate; Task 1C-F is a compiler fix → full compiler battery + seed rotation; Tasks 2–3 are new modules → targeted-only until Task 4 closeout.
-- Seed rotations (two): Task 1C-F (compiler fix) rotates seed **v112** (40 lib files, unchanged copy list) with a **new** fixed point `F_new` = `45158dcede81125a39a2c2c58478e21e` (`hop2==hop3`, moving point — `hop1≠hop2` expected); Task 4 closeout rotates seed **v113** (42 lib files: +`std_cipher`, +`std_ecc`) with fixed point `F_new` unchanged (`hop1==hop2==hop3`; std-only, compiler source unchanged). The prior anchor `21c95773…` is superseded by `F_new` (`45158dcede81125a39a2c2c58478e21e`, rotated at 1C-F).
+- Seed rotations: Task 1C-F rotates seed **v112** (40 lib files, unchanged copy list) with a **new** fixed point `F_new` = `45158dcede81125a39a2c2c58478e21e` (`hop2==hop3`, moving point — `hop1≠hop2` expected). Task 2 unblock wires `std_cipher` into both seed copy lists immediately (41 lib files; no seed rotation — v112 remains the 40-file compiler-fix seed). Task 4 closeout rotates seed **v113** (42 lib files: +`std_cipher`, +`std_ecc`) with fixed point `F_new` unchanged (`hop1==hop2`; std-only, compiler source unchanged). The prior anchor `21c95773…` is superseded by `F_new` (`45158dcede81125a39a2c2c58478e21e`, rotated at 1C-F).
 - Commits `feat(std_crypto|std_cipher|std_ecc): … (Phase1 M2)`, `docs(std_lib): … (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): … report`. STOP-present on any contract change.
 
 ## Review Focus
@@ -89,13 +89,15 @@
 
 ### Task 2: `std_cipher` — ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128-GCM
 
-**Status:** BLOCKED by Task 1C-F. Held commits `fe2c74d2` + `57181726` must be re-reviewed after the compiler fix; add the rodata `nm` assertion to this task's gate.
+**Status:** UNBLOCKED — Task 1C-F landed. Wire `std_cipher` into both seed copy lists (no seed rotation; v112 remains 40 files), add the rodata `nm` gate, run targeted + full gates, then re-review the held commits `fe2c74d2` + `57181726`.
 
 **Files:**
 - Create: `sf/src/std_cipher.zig`
 - Test: `repro/mi_matrix/stdlib_chacha_poly_xmod/{main.zig,expected.txt,expected.rc}`
 - Test: `repro/mi_matrix/stdlib_aes_gcm_xmod/{main.zig,expected.txt,expected.rc}`
 - Modify: `scripts/stdlib/expected_dirs.txt`
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (copy `std_cipher`; counts 40→41)
+- Create: `scripts/compiler/gate_cipher_rodata.sh`
 
 **Interfaces:**
 - Consumes: `std_crypto` (nothing — pure primitives).
@@ -104,7 +106,7 @@
 - [ ] **Step 1:** Failing fixtures: RFC 8439 ChaCha20 block/XOR vectors, Poly1305 RFC 8439 §2.5.2 + donna-style vectors, AEAD §2.8.2 + a tamper-tag case (`AuthenticationFailed`); NIST GCM test vectors (AES-128: at least one per empty-AD/empty-PT/full case + one tamper case).
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement; fully unroll the 20 ChaCha rounds; constant-time Poly1305 limb math (no 64-bit overflow traps — use `+%`/`*%` discipline as `std_crypto` does); GCM per SP800-38D.
-- [ ] **Step 4:** Run — PASS + targeted `std_cipher` fixtures + 3× determinism; assert T-tables land in const (fixture: arena_used unchanged across a seal). Full gate at Task 4 closeout.
+- [ ] **Step 4:** Unblock + run — wire `std_cipher` into both seed copy lists (41 lib files; no seed rotation), rebuild from v112 seed, run targeted `std_cipher` fixtures + 3× determinism, assert T-tables are `R/r` rodata with `scripts/compiler/gate_cipher_rodata.sh`, then full `verify_stdlib.sh` + crosscheck. Commit the seed/gate change, append report, and re-review the held Task 2 commits.
 - [ ] **Step 5:** Commit `feat(std_cipher): ChaCha20-Poly1305 + AES-128-GCM (Phase1 M2)`.
 
 ### Task 3: `std_ecc` — X25519, P-256, P-384 verify
@@ -130,12 +132,12 @@
 
 **Files:**
 - Create: `sf/docs/std_lib/crypto.md`, `sf/docs/std_lib/cipher.md`, `sf/docs/std_lib/ecc.md`
-- Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (counts 40→42 std files, install list, module rows)
+- Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (counts 41→42 std files, install list, module rows)
 - Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh` (copy lists + counts)
 - Rotate: `release/seed/` → **v113** (archive + `lib/manifest.md5`, 42 files)
 
 - [ ] **Step 1:** Write the three docs (API contracts from spec §5.1–§5.3; constant-time and no-heap notes; KAT provenance table).
 - [ ] **Step 2:** Truth-ups (STD_README domain/doc-index rows for the 3 modules; root README higher-layer list; QUICK_REF counts/install/verify line).
-- [ ] **Step 3:** Seed scripts count/copy-list updates; rotate seed **v113** (+`std_cipher`+`std_ecc`, 42 lib files); verify archive md5, manifest md5, binary/fixed point **`F_new`** unchanged (equals v112's `F_new`), **`hop1==hop2==hop3`** (std-only; compiler source unchanged) from rotated archive.
+- [ ] **Step 3:** Seed scripts count update (`std_cipher` already wired at Task 2; add `std_ecc`); rotate seed **v113** (+`std_ecc`; 42 lib files); verify archive md5, manifest md5, binary/fixed point **`F_new`** unchanged (equals v112's `F_new`), **`hop1==hop2`** (std-only; compiler source unchanged) from rotated archive.
 - [ ] **Step 4:** Full gate re-run (fixtures + crosscheck) on the rotated compiler.
 - [ ] **Step 5:** Commits `docs(std_lib): crypto/cipher/ecc docs (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): M2 closeout report`.
