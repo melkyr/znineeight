@@ -17,7 +17,7 @@
 - Demo config `wg.conf` keys (hex/base64): private key, peer public key, endpoint host:port, allowed IPs, tunnel local IP, optional DNS server + `clock_override_unix`.
 - RAM: 32 MB hard ceiling / 16 MB target, enforced + recorded (`ulimit -v 32768`, `/usr/bin/time -v`); resource line `wireguard_demo ok bytes=N arena_peak=N rss_peak=N cpu_ms=N`.
 - Gates per task (hybrid): targeted `std_tcpip`/demo fixtures + affected `run_crosscheck.sh` modules + 3×; `tier_wireguard.sh` (kernel `wg-quick` netns far side + `mud_server` through tunnel; loud SKIP if `wg`/netns unavailable; never vacuous); `-osw` build + import gate (KERNEL32+WINMM+WSOCK32, no msvcrt). Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 4 closeout. `std_tcpip`/demo are new → targeted-only until closeout.
-- Closeout rotates seed **v117** (47 lib files: +`std_tcpip`); fixed point unchanged `21c957730d268f1e7883176fa5413b65`; Phase 1 defect ledger entries appended to `examples/torrent_example_defects.md` (next free slot).
+- Closeout rotates seed **v118** (47 lib files: +`std_tcpip`); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`; Phase 1 defect ledger entries appended to `examples/torrent_example_defects.md` (next free slot).
 - Commits `feat(std_tcpip): … (Phase1 M7)`, `example(z9demo): wireguard_demo …`, `test(tier): tier_wireguard …`, `docs(std_lib): …`, `chore(seed): rotate (M7)`, `docs(sdd): …`. STOP-present on contract change.
 
 ## Review Focus
@@ -87,8 +87,8 @@
 - Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (46→47 counts/rows + Phase 1 summary)
 - Modify: `examples/torrent_example_defects.md` (any Phase 1 defects; next free slot)
 - Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh`
-- Rotate: `release/seed/` → **v117** (47 files)
+- Rotate: `release/seed/` → **v118** (47 files)
 
 - [ ] **Step 1:** tcpip.md (API §5.8, TCP policy table, DNS/ICMP notes, memory bounds); demo READMEs get measured RAM/CPU tables (Linux + Wine).
-- [ ] **Step 2:** Truth-ups; defect ledger sweep (all Phase 1 STOPs/defects recorded or fixed); seed scripts; rotate v117; verify archive/manifest 47/fixed point `21c95773…`/hop1==hop2 (std-only; compiler source unchanged); full gate + both tiers green on rotated compiler.
+- [ ] **Step 2:** Truth-ups; defect ledger sweep (all Phase 1 STOPs/defects recorded or fixed); seed scripts; rotate v118; verify archive/manifest 47/fixed point `45158dcede81125a39a2c2c58478e21e`/hop1==hop2 (std-only; compiler source unchanged); full gate + both tiers green on rotated compiler.
 - [ ] **Step 3:** Commits `docs(std_lib): tcpip docs + Phase 1 closeout`, `chore(seed): rotate (M7)`, `docs(sdd): M7 closeout report`.

@@ -117,6 +117,7 @@
 - Test: `repro/mi_matrix/stdlib_ecc_verify_xmod/{main.zig,expected.txt,expected.rc}`
 - Optional ref: `scripts/stdlib/ref/std_ecc/ref.c` (vendored portable X25519, BSD attribution) + `run_crosscheck.sh` wiring
 - Modify: `scripts/stdlib/expected_dirs.txt`
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (copy `std_ecc`; counts 41→42)
 
 **Interfaces:**
 - Consumes: `std_rand.Xoshiro256` (P-256 keygen only).
@@ -125,7 +126,7 @@
 - [ ] **Step 1:** Failing fixtures: RFC 7748 X25519 vectors (scalar mult + base + all-zero rejection); NIST CAVP P-256 ECDH shared-secret vectors; P-256 ECDSA verify good/bad (≥2 curve points each); P-384 ECDSA verify NIST CAVP good/bad (SHA-384). Bad cases assert `false`/error, never silent accept.
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement: X25519 ref10-style 26-bit portable ladder; P-256 from **p256-m portable C** (port, do not write from scratch); P-384 verify from **BearSSL portable P-384** (or one shared generic EC engine for both curves — implementer's call, documented); constant-time scalar paths.
-- [ ] **Step 4:** Run — PASS + targeted `std_ecc` fixtures + affected `run_crosscheck.sh` modules + 3× determinism. Full gate at Task 4 closeout.
+- [ ] **Step 4:** Run — PASS + targeted `std_ecc` fixtures + affected `run_crosscheck.sh` modules + 3× determinism; wire `std_ecc` into both seed copy lists (41→42), rebuild from v112 seed, rerun targeted. Full gate at Task 4 closeout.
 - [ ] **Step 5:** Commit `feat(std_ecc): X25519 + P-256 + P-384 verify (Phase1 M2)`.
 
 ### Task 4: M2 closeout — docs + seed rotation
@@ -133,11 +134,11 @@
 **Files:**
 - Create: `sf/docs/std_lib/crypto.md`, `sf/docs/std_lib/cipher.md`, `sf/docs/std_lib/ecc.md`
 - Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (counts 41→42 std files, install list, module rows)
-- Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh` (copy lists + counts)
+- Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh` (verify counts; copy lists already wired at Tasks 2–3)
 - Rotate: `release/seed/` → **v113** (archive + `lib/manifest.md5`, 42 files)
 
 - [ ] **Step 1:** Write the three docs (API contracts from spec §5.1–§5.3; constant-time and no-heap notes; KAT provenance table).
 - [ ] **Step 2:** Truth-ups (STD_README domain/doc-index rows for the 3 modules; root README higher-layer list; QUICK_REF counts/install/verify line).
-- [ ] **Step 3:** Seed scripts count update (`std_cipher` already wired at Task 2; add `std_ecc`); rotate seed **v113** (+`std_ecc`; 42 lib files); verify archive md5, manifest md5, binary/fixed point **`F_new`** unchanged (equals v112's `F_new`), **`hop1==hop2`** (std-only; compiler source unchanged) from rotated archive.
+- [ ] **Step 3:** Verify seed copy lists already contain `std_cipher` (Task 2) and `std_ecc` (Task 3), counts 42; rotate seed **v113** (42 lib files); verify archive md5, manifest md5, binary/fixed point **`F_new`** unchanged (equals v112's `F_new`), **`hop1==hop2`** (std-only; compiler source unchanged) from rotated archive.
 - [ ] **Step 4:** Full gate re-run (fixtures + crosscheck) on the rotated compiler.
 - [ ] **Step 5:** Commits `docs(std_lib): crypto/cipher/ecc docs (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): M2 closeout report`.
