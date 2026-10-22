@@ -69,7 +69,11 @@ Bad signatures are asserted false; a silent accept panics.
 
 ## Gate evidence
 
-### 1. Targeted fixtures before copy-list wiring (`/tmp/m2_t2_build/zig1_5_clean`)
+### 1. Targeted fixtures with a manually staged 41-file compiler (`/tmp/m2_t2_build/zig1_5_clean`)
+
+The `/tmp/m2_t2_build` tree was the Task 2 build with `std_ecc.zig` copied
+into its `lib/` by hand for early fixture development. It is NOT a clean
+pre-wiring seed; the authoritative post-wiring rebuild is §2–§3 below.
 
 ```
 $ bash scripts/stdlib/run_fixtures.sh /tmp/m2_t2_build/zig1_5_clean \
@@ -174,3 +178,110 @@ Full `verify_stdlib.sh`/crosscheck remains Task 4 closeout per plan.
 - `p256Generate` loops until the xoshiro-derived candidate is in `[1, n-1]`
   (same acceptance test as BearSSL/p256-m keygen).
 - No seed rotation; v112 archive remains the compiler-fix seed as required.
+
+## Fix round 1
+
+Review findings addressed:
+
+1. **HIGH — default `-fsafe` shift traps.** The BearSSL i31 helpers used raw
+   left shifts whose high bits are intentionally discarded. Under `-fsafe`
+   Z98 traps on such shifts; the fixture passed only with `-ffast`.
+   Added `shlMasked(x, sh) = ((x & (0xFFFFFFFF >> sh)) << sh)` and used it in:
+   - `i31Decode`
+   - `i31DecodeMod`
+   - `i31Encode`
+   - `i31Rshift`
+
+   The mask is branchless, so constant-time behavior is preserved. No API
+   changes.
+2. **LOW — ECDSA `r == 0`.** Added the missing range check alongside `s == 0`;
+   both `r` and `s` must now be in `[1, n-1]`.
+3. **LOW — negative validation fixtures.** Added KATs for:
+   - `r = 0`, `s = 0`, `r = n`, `s = n` (P-256; `r = 0` also P-384)
+   - invalid public-key tag (`0x05` instead of `0x04`)
+   - off-curve public key (flipped Y bit)
+   - X/Y coordinate equal to the field prime `p` (P-256 X/Y and P-384 X)
+   - ECDH zero private key and private key equal to `n`
+   - ECDH peer with bad tag, off-curve point, and X equal to `p`
+   All assert `false`/`error.InvalidPublicKey`/`error.InvalidPrivateKey`.
+4. **LOW — report accuracy.** §1 above now labels `/tmp/m2_t2_build` as a
+   manually staged development tree, not a clean pre-wiring seed.
+
+### Seed rebuild (unchanged seed, current module)
+
+```
+$ rm -rf /tmp/m2_t3_build
+$ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m2_t3_build
+...
+[seed] hop1 binary md5: 45158dcede81125a39a2c2c58478e21e
+[seed] hop2 binary md5: 45158dcede81125a39a2c2c58478e21e
+[seed] two-hop closure OK: hop1 == hop2 == 45158dcede81125a39a2c2c58478e21e
+=== [seed] Done: /tmp/m2_t3_build ===
+rc=0
+
+$ ls /tmp/m2_t3_build/lib/*.zig | wc -l
+42
+$ md5sum /tmp/m2_t3_build/zig1_5_clean
+45158dcede81125a39a2c2c58478e21e  /tmp/m2_t3_build/zig1_5_clean
+$ cmp -s sf/src/std_ecc.zig /tmp/m2_t3_build/lib/std_ecc.zig
+cmp_lib=0
+```
+
+### Targeted `-ffast` (harness) on rebuilt 42-lib compiler
+
+```
+$ bash scripts/stdlib/run_fixtures.sh /tmp/m2_t3_build/zig1_5_clean \
+    repro/mi_matrix/stdlib_x25519_xmod repro/mi_matrix/stdlib_ecc_verify_xmod
+PASS repro/mi_matrix/stdlib_x25519_xmod
+PASS repro/mi_matrix/stdlib_ecc_verify_xmod
+----------------------------------------
+run_fixtures: 2 PASS / 0 FAIL over 2 dirs
+```
+
+### Direct default `-fsafe` emit/build/run (harness unchanged)
+
+For each fixture, emitted with no `-ffast`:
+
+```
+$ /tmp/m2_t3_build/zig1_5_clean -o /tmp/m2_t3_safe2/<dir> \
+    repro/mi_matrix/<dir>/main.zig
+emit_rc=0
+$ gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+    -Wno-implicit-function-declaration -I <out> -c <out>/*.c
+gcc_rc=0
+$ (cd <out> && sh build_target.sh linux <out>/prog)
+build_rc=0
+$ timeout 120 <out>/prog   # run 3×
+run1_rc=0
+run2_rc=0
+run3_rc=0
+expected_cmp=0
+```
+
+Observed `-fsafe` outputs (3 runs each, byte-identical):
+
+```
+x25519:
+7a89335d143be1b09385ef1bc64a6d21a42b89908bc1a5b722bd5625f58f7e6c  run1.out
+7a89335d143be1b09385ef1bc64a6d21a42b89908bc1a5b722bd5625f58f7e6c  run2.out
+7a89335d143be1b09385ef1bc64a6d21a42b89908bc1a5b722bd5625f58f7e6c  run3.out
+x25519 ok
+
+ecc verify:
+848846786845d9ef102cdf2d13fe80393ed42e03f05e948375a9ef2fb2d19fb8  run1.out
+848846786845d9ef102cdf2d13fe80393ed42e03f05e948375a9ef2fb2d19fb8  run2.out
+848846786845d9ef102cdf2d13fe80393ed42e03f05e948375a9ef2fb2d19fb8  run3.out
+ecc verify ok
+```
+
+### Hygiene
+
+```
+$ git diff --check
+(no output; rc=0)
+$ bash -n scripts/seed/build_from_seed.sh && bash -n scripts/seed/archive_seed.sh
+shell-syntax-ok
+```
+
+The public API and all previously passing KAT outputs are unchanged. Seed was
+not rotated; compiler/`std.zig` and the shared harness were not modified.
