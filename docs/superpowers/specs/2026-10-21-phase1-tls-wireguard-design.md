@@ -108,7 +108,7 @@ the dev/test environment and the WireGuard far side).
   (`tier_tls.sh`, `tier_wireguard.sh`) for real-server runs; Wine tier for `-osw`.
   No silent skips. Defects go to `examples/torrent_example_defects.md` (next free
   slot). Seed rotation at each milestone closeout (std file count grows; fixed point
-  `21c957730d268f1e7883176fa5413b65` must not move — std is outside self-emission).
+  `45158dcede81125a39a2c2c58478e21e` must not move — std is outside self-emission).
 
 ## 4. Architecture — what is std, what is demo
 
@@ -126,10 +126,12 @@ the dev/test environment and the WireGuard far side).
         |                     |                     |              |
         +---------------------+----------+----------+--------------+
                                         |
-                        std_crypto += HMAC-SHA256, HKDF, BLAKE2s
+                        std_crypto += SHA-384/512, HMAC-SHA256, HKDF, BLAKE2s,
+                                      RSA PKCS#1 v1.5/PSS verify
                         std_cipher = ChaCha20, Poly1305, ChaCha20-Poly1305,
                                      AES-128-GCM (T-tables, GHASH)
-                        std_ecc = X25519, P-256 ECDH + ECDSA verify
+                        std_ecc = X25519, P-256 ECDH + ECDSA verify,
+                                  P-384 ECDSA verify
                                         |
               existing: std_net (OS sockets/DNS), std_arena, std_async, std_rand,
                         std_time, std_base64, std_hex, std_math, std_mem, std_str
@@ -421,6 +423,8 @@ Per-milestone gates (same discipline as the std-algorithms program):
    mandatory at every milestone closeout and immediately after any change to an
    existing module's functions, shared harness/`expected_dirs.txt`, `std.zig`, or a
    cross-module contract; new independent modules use targeted-only until closeout.
+   This is the std harness only: compiler corpus/goldens/examples/pins/markers are
+   not run unless compiler source changes.
    Vectors follow `.in`/`.expected`; C89 `ref/` implementations for crypto where a
    portable reference exists — vendored per the LZ4 precedent with BSD attribution.
 2. Module tests carry RFC/NIST vectors as fixtures; state-machine tests use canned
