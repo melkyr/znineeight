@@ -94,21 +94,35 @@ The captured arrays also pin `early_secret`, `handshake_secret`, `master_secret`
 New fixture dirs:
 
 - `repro/mi_matrix/stdlib_tls13_handshake_xmod`
-  `ecdsa_aes_data.zig`, `ecdsa_chacha_data.zig`, `rsa_pss_data.zig`
+  `ecdsa_aes_data.zig`, `ecdsa_chacha_data.zig`, `rsa_pss_data.zig`,
+  `p384_data.zig`
   - exact `client_hello` / `client_flight` bytes
   - two-send action sequence then `Established`
   - exact early/handshake/master + four traffic secrets
   - captured server application data
   - client `tlsWrite` round-trip decrypted with the client app key; short
     output -> `OutputTooSmall` with no sequence advance
-  - whole flight in one chunk and one-byte-at-a-time replay
+  - exact-max 1.3 AEAD record (16384 content + inner type = 16385 plaintext)
+    fed through `tlsStep`/`tlsRead`
+  - true whole-flight single-chunk replay and one-byte-at-a-time replay
 - `repro/mi_matrix/stdlib_tls13_auth_xmod`
   - RSA-PSS baseline establishes
-  - PKCS#1 v1.5 CertificateVerify -> `HandshakeFailed`
-  - tampered server Finished -> `HandshakeFailed`
+  - PKCS#1 v1.5 CertificateVerify (0x0201 SHA-1 and 0x0401 SHA-256) ->
+    `HandshakeFailed`
+  - tampered server Finished tag -> `HandshakeFailed`
+  - re-sealed Finished with valid AEAD tag but wrong 32-byte verify_data ->
+    `HandshakeFailed` (exercises `verifyFinished13`)
   - key_share group changed to secp256r1 -> `UnsupportedGroup`
+- `repro/mi_matrix/stdlib_tls13_fallback_xmod`
+  - combined 1.3+1.2 ClientHello replayed against a real TLS 1.2 server
+    transcript without the downgrade sentinel -> `HandshakeFailed` at
+    ServerHello
+  - patched ServerHello.random with the sentinel progresses past ServerHello
+    to the ServerKeyExchange signature check (proves the positive sentinel
+    branch is reached)
+  - direct `hasDowngradeSentinel` true/false/mismatch checks
 
-Both dirs pinned in `scripts/stdlib/expected_dirs.txt`.
+All three dirs pinned in `scripts/stdlib/expected_dirs.txt`.
 
 ```text
 $ bash scripts/stdlib/run_fixtures.sh /tmp/m2_t4_v114_build/zig1_5_clean \
@@ -126,10 +140,11 @@ $ bash scripts/stdlib/verify_stdlib.sh /tmp/m2_t4_v114_build/zig1_5_clean
 ...
 PASS repro/mi_matrix/stdlib_tls12_handshake_xmod
 PASS repro/mi_matrix/stdlib_tls13_auth_xmod
+PASS repro/mi_matrix/stdlib_tls13_fallback_xmod
 PASS repro/mi_matrix/stdlib_tls13_handshake_xmod
 PASS repro/mi_matrix/stdlib_tls_record_xmod
 ...
-run_fixtures: 329 PASS / 0 FAIL over 329 dirs
+run_fixtures: 330 PASS / 0 FAIL over 330 dirs
 == std-lib crosscheck gate ==
 PASS smoke (3 vectors)
 PASS std_hpa (8 vectors)
@@ -145,27 +160,72 @@ run_crosscheck: 9 PASS / 0 FAIL over 9 modules
 STDLIB GATE OK
 ```
 
-The same full gate was run three times (exit 0 each); the final run after the
-source-header comment update also reported `329 PASS / 0 FAIL` and
-`9 PASS / 0 FAIL` (`STDLIB GATE OK`).
+The full gate was rerun after the fix round and reported
+`330 PASS / 0 FAIL` and `9 PASS / 0 FAIL` (`STDLIB GATE OK`).
 
 ## 6. 3x determinism
 
 The harness runs every fixture program three times and compares stdout bytes.
-The two new TLS 1.3 fixtures were additionally invoked three times:
+All five TLS fixtures were additionally invoked three times:
 
 ```text
 $ for i in 1 2 3; do
     bash scripts/stdlib/run_fixtures.sh /tmp/m2_t4_v114_build/zig1_5_clean \
+      repro/mi_matrix/stdlib_tls_record_xmod \
+      repro/mi_matrix/stdlib_tls12_handshake_xmod \
       repro/mi_matrix/stdlib_tls13_handshake_xmod \
-      repro/mi_matrix/stdlib_tls13_auth_xmod
+      repro/mi_matrix/stdlib_tls13_auth_xmod \
+      repro/mi_matrix/stdlib_tls13_fallback_xmod
   done
-tls13 run1 rc=0 run_fixtures: 2 PASS / 0 FAIL over 2 dirs
-tls13 run2 rc=0 run_fixtures: 2 PASS / 0 FAIL over 2 dirs
-tls13 run3 rc=0 run_fixtures: 2 PASS / 0 FAIL over 2 dirs
+run1 rc=0 run_fixtures: 5 PASS / 0 FAIL over 5 dirs
+run2 rc=0 run_fixtures: 5 PASS / 0 FAIL over 5 dirs
+run3 rc=0 run_fixtures: 5 PASS / 0 FAIL over 5 dirs
 ```
 
-## 7. Notes / follow-ups (outside Task 1)
+## 7. Fix round 1 (review findings)
+
+1. Max-size 1.3 record: `handleRecord` now decrypts into
+   `[TLS_MAX_PLAINTEXT_RECORD + 1]u8` (16385) for the 1.3 inner plaintext.
+   `stdlib_tls13_handshake_xmod` adds an exact-max test: a record carrying
+   16384 content bytes plus inner type is protected, fed through `tlsStep`,
+   and read back byte-for-byte.
+2. Downgrade sentinel: `hasDowngradeSentinel` checks
+   `ServerHello.random[24..32] == "DOWNGRD\x01"` whenever the client offered
+   1.3 and the server negotiated 1.2; absent -> `HandshakeFailed`.
+   `stdlib_tls13_fallback_xmod` replays a real combined-ClientHello/TLS-1.2
+   server flight without the sentinel (fails closed at ServerHello), then a
+   sentinel-patched copy that reaches the ServerKeyExchange signature check.
+   Direct helper checks cover true/false/mismatch.
+3. Combined fallback signature schemes: `verifyServerKeyExchange` now handles
+   the full advertised set: ECDSA SHA-256/SHA-384 and RSA PKCS#1 SHA-256 plus
+   RSA-PSS SHA-256/SHA-384 (salt = digest length), using the existing
+   `std_ecc` P-384 and `std_crypto.rsaVerifyPss` primitives.
+4. `rsa_pkcs1_sha1` 0x0201 now maps to `HandshakeFailed`; the auth fixture
+   replays a re-sealed CV with 0x0201 as well as 0x0401.
+5. Bad Finished: the auth fixture keeps the tag-flip negative and adds a
+   pre-sealed record with a valid AEAD tag but wrong 32-byte verify_data, so
+   `verifyFinished13` itself rejects it.
+6. One-chunk claim: the handshake fixture now truly replays the whole server
+   flight in one chunk (in addition to the one-byte-at-a-time run).
+7. `tlsWrite` 1.2 ChaCha20 overhead restored to 16 bytes (17 only for 1.3).
+   The TLS 1.2 handshake fixture adds an exact-fit 17042-byte write test.
+8. CertificateVerify accepts only the advertised PSS schemes (0x0804/0x0805)
+   and requires an empty 1.3 Certificate request context.
+9. `std_tls.zig` header comment now states 1.2 Finished = 12 bytes, 1.3
+   Finished = 32 bytes, and that the ClientHello offers the 1.3 suites.
+10. P-384: added `p384_data.zig` (ECDSA P-384 certificate, RSA/ECDSA key
+    exchange x25519) and a fourth handshake scenario exercising
+    `ecdsa_secp384r1_sha384` CertificateVerify. Its traffic secrets match the
+    OpenSSL key log.
+
+Fallback-fixture limitation: a stock 1.3-capable OpenSSL server always
+negotiates 1.3 when the client offers it; `-max_protocol TLSv1.2` disables the
+sentinel. The fixture therefore uses a real TLS 1.2-only server response for
+the absent-sentinel rejection and a sentinel-patched copy to prove the positive
+branch reaches SKE. A full positive 1.2 handshake would require re-signing a
+captured ServerKeyExchange and re-sealing Finished, which is outside Task 1.
+
+## 8. Notes / follow-ups (outside Task 1)
 
 - Capture harness `/tmp/t3_cap/capture13.zig` and OpenSSL key logs are
   transient under `/tmp`; committed fixture data pins every derived secret.
