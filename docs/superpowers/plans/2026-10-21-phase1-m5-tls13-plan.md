@@ -16,7 +16,7 @@
 - Cipher suites exactly the two above; hash = SHA-256 for the schedule; record layer = M4's (1.3 inner content-type).
 - Certificate chain validation unchanged (M3, SAN-only, store-supplied); leaf auth: ECDSA or RSA-PSS only (PKCS#1 v1.5 MUST be rejected in CertificateVerify).
 - Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3×; `tier_tls.sh` extended with TLS 1.3 cases (local `openssl s_server -tls1_3` + `Z98_NET=1` real servers incl. an RSA-cert host); `-osw` build + import gate. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract. M5 extends existing `std_tls` → full gate per task and at closeout.
-- Closeout rotates seed **v116** (45 files — no new module); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`.
+- Closeout rotates seed **v117** (45 files — no new module); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`.
 - Commits `feat(std_tls): TLS 1.3 (Phase1 M5)`, `docs(std_lib): …`, `chore(seed): rotate (M5)`, `docs(sdd): …`. STOP-present on contract change.
 
 ## Review Focus
@@ -55,8 +55,8 @@
 - Create/Modify: `sf/docs/std_lib/tls.md` (1.3 section)
 - Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (45-file state, tls.md update)
 - Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh`
-- Rotate: `release/seed/` → **v116**
+- Rotate: `release/seed/` → **v117**
 
 - [ ] **Step 1:** Extend tier: 1.3 happy paths both suites + RSA-PSS host; 1.2 fallback case still green; run 2× deterministic; `-osw` import gate.
-- [ ] **Step 2:** Docs truth-ups (tls.md 1.3 section: suites, auth rules, key-update stance); counts/prose; seed scripts; rotate v116; fixed point verify; full gate.
+- [ ] **Step 2:** Docs truth-ups (tls.md 1.3 section: suites, auth rules, key-update stance); counts/prose; seed scripts; rotate v117; fixed point verify; full gate.
 - [ ] **Step 3:** Commits `docs(std_lib): tls 1.3 docs (M5)`, `chore(seed): rotate (M5)`, `docs(sdd): M5 closeout report`.

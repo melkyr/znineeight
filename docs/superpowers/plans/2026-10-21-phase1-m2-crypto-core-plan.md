@@ -18,7 +18,7 @@
 - R6: no clock/env reads; randomness is caller-supplied xoshiro256\*\*.
 - New files: `sf/src/std_cipher.zig`, `sf/src/std_ecc.zig`; extend `sf/src/std_crypto.zig` only; `std.zig` unchanged (by-path import).
 - Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at milestone closeout. Task 1 edits existing `std_crypto` → full gate; Task 1C-F is a compiler fix → full compiler battery + seed rotation; Tasks 2–3 are new modules → targeted-only until Task 4 closeout.
-- Seed rotations: Task 1C-F rotates seed **v112** (40 lib files, unchanged copy list) with a **new** fixed point `F_new` = `45158dcede81125a39a2c2c58478e21e` (`hop2==hop3`, moving point — `hop1≠hop2` expected). Task 2 unblock wires `std_cipher` into both seed copy lists immediately (41 lib files; no seed rotation — v112 remains the 40-file compiler-fix seed). Task 4 closeout rotates seed **v113** (42 lib files: +`std_cipher`, +`std_ecc`) with fixed point `F_new` unchanged (`hop1==hop2`; std-only, compiler source unchanged). The prior anchor `21c95773…` is superseded by `F_new` (`45158dcede81125a39a2c2c58478e21e`, rotated at 1C-F).
+- Seed rotations: Task 1C-F rotates seed **v112** (40 lib files, unchanged copy list) with a **new** fixed point `F_new` = `45158dcede81125a39a2c2c58478e21e` (`hop2==hop3`, moving point — `hop1≠hop2` expected). Task 2 unblock wires `std_cipher` into both seed copy lists immediately (41 lib files; no seed rotation — v112 remains the 40-file compiler-fix seed). Task 4 closeout rotates seed **v114** (42 lib files: +`std_cipher`, +`std_ecc`) with fixed point `F_new` unchanged (`hop1==hop2`; std-only, compiler source unchanged). v113 was a preliminary rotation superseded after the PSS `-fsafe` fix; v114 is current. The prior anchor `21c95773…` is superseded by `F_new` (`45158dcede81125a39a2c2c58478e21e`, rotated at 1C-F).
 - Commits `feat(std_crypto|std_cipher|std_ecc): … (Phase1 M2)`, `docs(std_lib): … (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): … report`. STOP-present on any contract change.
 
 ## Review Focus
@@ -84,7 +84,7 @@
 - [ ] **Step 2:** Emit C89 `static const` initializers for all in-scope const shapes; remove their `__module_init`/`store_global` copies. Keep non-constant const as `.bss` + runtime init. **STOP-1 ruling (abstraction layer):** non-first-member union const initializers (C89 §3.5.7 initializes only the first member) → `constInitEvaluate` returns `null` → `.bss` fallback (correct values preserved); first-member unions, structs, multi-D arrays, and nested combinations → `static const` rodata. Documented C89 boundary; negative fixture asserts the fallback keeps correct values.
 - [ ] **Step 3:** Add the committed rodata gate and fixture(s); prove non-vacuous by mutating emitters to `.bss` (must fail) and non-constant const (must stay `.bss`).
 - [ ] **Step 4:** Full compiler battery: corpus frozen-1124 class file, goldens 5/5, mi_matrix 25+oob, examples 26/26 build+run, stdlib full gate, pins recorded old→new, markers, emit-support, hop closure. No unrelated fixes.
-- [ ] **Step 5:** Rotate seed **v112** (compiler fix, 40-file copy list unchanged); record archive/manifest/binary/`F_new`; verify **`hop2==hop3`** (moving point — `hop1≠hop2` expected for the compiler change). Re-anchor the plan text from `21c9…` to `F_new`; update affected plan seed-version references (Task 4 → v113).
+- [ ] **Step 5:** Rotate seed **v112** (compiler fix, 40-file copy list unchanged); record archive/manifest/binary/`F_new`; verify **`hop2==hop3`** (moving point — `hop1≠hop2` expected for the compiler change). Re-anchor the plan text from `21c9…` to `F_new`; update affected plan seed-version references (Task 4 → v114).
 - [ ] **Step 6:** Commits: `fix(c89_emit): emit file-scope const values as C89 const rodata` + `docs(sdd): M2 T1C-F report`. No push.
 
 ### Task 2: `std_cipher` — ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128-GCM
@@ -133,12 +133,12 @@
 
 **Files:**
 - Create: `sf/docs/std_lib/crypto.md`, `sf/docs/std_lib/cipher.md`, `sf/docs/std_lib/ecc.md`
-- Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (user-facing current seed v111/40→v113/42; install list, module rows; copy lists already 42)
+- Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (user-facing current seed v111/40→v114/42; install list, module rows; copy lists already 42)
 - Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh` (verify counts; copy lists already wired at Tasks 2–3)
-- Rotate: `release/seed/` → **v113** (archive + `lib/manifest.md5`, 42 files)
+- Rotate: `release/seed/` → **v114** (archive + `lib/manifest.md5`, 42 files)
 
 - [ ] **Step 1:** Write the three docs (API contracts from spec §5.1–§5.3; constant-time and no-heap notes; KAT provenance table).
 - [ ] **Step 2:** Truth-ups (STD_README domain/doc-index rows for the 3 modules; root README higher-layer list; QUICK_REF counts/install/verify line).
-- [ ] **Step 3:** Verify seed copy lists already contain `std_cipher` (Task 2) and `std_ecc` (Task 3), counts 42; rotate seed **v113** (42 lib files); verify archive md5, manifest md5, binary/fixed point **`F_new`** unchanged (equals v112's `F_new`), **`hop1==hop2`** (std-only; compiler source unchanged) from rotated archive.
+- [ ] **Step 3:** Verify seed copy lists already contain `std_cipher` (Task 2) and `std_ecc` (Task 3), counts 42; rotate seed **v114** (42 lib files); verify archive md5, manifest md5, binary/fixed point **`F_new`** unchanged (equals v112's `F_new`), **`hop1==hop2`** (std-only; compiler source unchanged) from rotated archive. (v113 was a preliminary rotation superseded after the PSS `-fsafe` fix; v114 is current.)
 - [ ] **Step 4:** Full gate re-run (fixtures + crosscheck) on the rotated compiler.
 - [ ] **Step 5:** Commits `docs(std_lib): crypto/cipher/ecc docs (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): M2 closeout report`.

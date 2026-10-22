@@ -17,7 +17,7 @@
 - Error set exact: `error.{CertificateExpired, CertificateNotYetValid, UnknownIssuer, HostnameMismatch, BadSignature, ChainTooLong, Corrupt, UnsupportedAlgorithm}`.
 - Store format (spec §5.5) pinned byte-for-byte; `caconv` output deterministic (PEM file order).
 - Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism; bad-input fixtures must error, never crash. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 3 closeout. Tasks 1–2 add new modules → targeted-only until closeout.
-- Closeout rotates seed **v114** (44 lib files: +`std_asn1`, +`std_x509`); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`.
+- Closeout rotates seed **v115** (44 lib files: +`std_asn1`, +`std_x509`); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`.
 - Commits `feat(std_asn1): …`, `feat(std_x509): …`, `feat(demo): caconv … (Phase1 M3)`, `docs(std_lib): … (M2-style)`, `chore(seed): rotate (M3)`, `docs(sdd): …`. STOP-present on contract change.
 
 ## Review Focus
@@ -75,7 +75,7 @@
 - Create: `sf/docs/std_lib/asn1.md`, `sf/docs/std_lib/x509.md`
 - Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (42→44 counts/rows)
 - Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh`
-- Rotate: `release/seed/` → **v114** (44 files)
+- Rotate: `release/seed/` → **v115** (44 files)
 
 **Interfaces:**
 - Consumes: `std_base64.decode`, `std_x509`.
@@ -84,5 +84,5 @@
 - [ ] **Step 1:** Implement caconv (PEM scan `BEGIN CERTIFICATE` blocks, base64 decode, `x509Parse` each, write format §5.5 in file order; deterministic). Fixtures: tool run on a committed mini-PEM (3 certs) → expected store bytes (byte-exact golden committed); re-run 2× identical.
 - [ ] **Step 2:** Generate `ca_store.bin` from the current Mozilla `cacert.pem` snapshot (commit the binary + record snapshot date/source in the README); verify `trustStoreLoad` reads it (count = anchors parsed).
 - [ ] **Step 3:** Docs: asn1.md + x509.md (API + validation policy + error table); caconv README (download `cacert.pem` from curl.se, run tool, snapshot-date note); truth-ups to 3 docs; seed scripts counts.
-- [ ] **Step 4:** Rotate seed v114; verify manifest 44 / archive md5 / fixed point `45158dcede81125a39a2c2c58478e21e` / hop1==hop2 (std-only; compiler source unchanged); full gate green on rotated compiler.
+- [ ] **Step 4:** Rotate seed v115; verify manifest 44 / archive md5 / fixed point `45158dcede81125a39a2c2c58478e21e` / hop1==hop2 (std-only; compiler source unchanged); full gate green on rotated compiler.
 - [ ] **Step 5:** Commits `feat(demo): caconv CA-store converter (Phase1 M3)`, `docs(std_lib): asn1/x509 docs (M3)`, `chore(seed): rotate (M3)`, `docs(sdd): M3 closeout report`.

@@ -17,7 +17,7 @@
 - Timers exact: `REKEY_AFTER_TIME` 120 s, `REJECT_AFTER_TIME` 180 s, `REKEY_TIMEOUT` 5 s + attempt backoff, `KEEPALIVE_TIMEOUT` 10 s. Counter/replay: sliding 2048-bit window; nonce reuse is a hard bug (fixture must pin counter monotonicity).
 - All wire integers little-endian via explicit load/store helpers; no alignment assumptions.
 - Gates per task (hybrid): targeted `std_wireguard` fixtures + affected `run_crosscheck.sh` modules + 3×; canned-exchange fixtures byte-compare against vectors derived from `wireguard-lwip` (vendored ref `scripts/stdlib/ref/std_wireguard/ref.c`, BSD attribution) run at capture time; `-osw` build + import gate. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 3 closeout. `std_wireguard` is new → targeted-only until closeout.
-- Closeout rotates seed **v117** (46 lib files: +`std_wireguard`); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`.
+- Closeout rotates seed **v118** (46 lib files: +`std_wireguard`); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`.
 - Commits `feat(std_wireguard): … (Phase1 M6)`, `docs(std_lib): …`, `chore(seed): rotate (M6)`, `docs(sdd): …`. STOP-present on contract change.
 
 ## Review Focus
@@ -69,8 +69,8 @@
 - Create: `sf/docs/std_lib/wireguard.md`
 - Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (45→46 counts/rows)
 - Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh`
-- Rotate: `release/seed/` → **v117** (46 files)
+- Rotate: `release/seed/` → **v118** (46 files)
 
 - [ ] **Step 1:** wireguard.md (API §5.7, message flow diagram, timer table, replay/cookie semantics, `wall_unix_ns` vs `now_ms` warning).
-- [ ] **Step 2:** Truth-ups; seed scripts; rotate v117; fixed point verify; full gate on rotated compiler.
+- [ ] **Step 2:** Truth-ups; seed scripts; rotate v118; fixed point verify; full gate on rotated compiler.
 - [ ] **Step 3:** Commits `docs(std_lib): wireguard docs (M6)`, `chore(seed): rotate (M6)`, `docs(sdd): M6 closeout report`.

@@ -17,7 +17,7 @@
 - Errors: `error.{Corrupt, HandshakeFailed, CertificateExpired, CertificateNotYetValid, UnknownIssuer, HostnameMismatch, UnsupportedSuite, UnsupportedGroup, RecordTooLarge, Closed, OutOfMemory, Time}`.
 - Demo RAM 32 MB hard ceiling / 16 MB target (`ulimit -v 32768` + `/usr/bin/time -v` recorded); body print capped 4 KB; resource line `tls_demo ok status=200 bytes=N arena_peak=N rss_peak=N cpu_ms=N`.
 - Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism; `tier_tls.sh` (local s_server + `Z98_NET=1` internet smoke); `-osw` build + import gate (KERNEL32+WINMM+WSOCK32, no msvcrt). Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 4 closeout. Task 1 edits existing `std_http` → full gate; Task 2 extends new `std_tls` → targeted; Task 3 demo/tier → targeted + tier.
-- Closeout rotates seed **v115** (45 lib files: +`std_tls`); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`.
+- Closeout rotates seed **v116** (45 lib files: +`std_tls`); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`.
 - Commits `feat(std_tls): … (Phase1 M4)`, `feat(std_http): transport vtable …`, `example(z9play-style)`: `example(z9demo): tls_demo …`, `docs(std_lib): …`, `chore(seed): rotate (M4)`, `docs(sdd): …`. STOP-present on contract change.
 
 ## Review Focus
@@ -89,8 +89,8 @@
 - Create: `sf/docs/std_lib/tls.md`
 - Modify: `STD_README.MD`, `README.md`, `docs/sf/QUICK_REF.md` (44→45 counts/rows)
 - Modify: `scripts/seed/archive_seed.sh`, `scripts/seed/build_from_seed.sh`
-- Rotate: `release/seed/` → **v115** (45 files)
+- Rotate: `release/seed/` → **v116** (45 files)
 
 - [ ] **Step 1:** tls.md (API §5.6, suite table, error table, time/clock policy, buffer sizes); demo README already written in T3 — cross-check.
-- [ ] **Step 2:** Truth-ups + seed scripts; rotate v115; verify manifest/archive/fixed point `45158dcede81125a39a2c2c58478e21e`/hop1==hop2 (std-only; compiler source unchanged); full gate on rotated compiler.
+- [ ] **Step 2:** Truth-ups + seed scripts; rotate v116; verify manifest/archive/fixed point `45158dcede81125a39a2c2c58478e21e`/hop1==hop2 (std-only; compiler source unchanged); full gate on rotated compiler.
 - [ ] **Step 3:** Commits `docs(std_lib): tls docs (M4)`, `chore(seed): rotate (M4)`, `docs(sdd): M4 closeout report`.
