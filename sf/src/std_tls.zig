@@ -325,7 +325,10 @@ pub fn unprotectRecord(suite: CipherSuite, key: []const u8, fixed_iv: []const u8
 // TLS 1.2 handshake (spec §5.6)
 // ---------------------------------------------------------------------------
 
-pub const TLS_HANDSHAKE_MAX: usize = 16384;
+// Reassembly cap for one handshake message. A certificate chain larger than a
+// single 16 KiB record arrives as several TLS record fragments; 64 KiB admits
+// real multi-record chains while keeping TlsSession fixed-size.
+pub const TLS_HANDSHAKE_MAX: usize = 65536;
 pub const TLS_FINISHED_LEN: usize = 12;
 const TLS_PENDING_MAX: usize = 8192;
 const TLS_APP_MAX: usize = TLS_MAX_RECORD * 2;
@@ -850,7 +853,10 @@ fn handleServerKeyExchange(sess: *TlsSession, body: []const u8) TlsError!void {
     sess.peer_pub_len = pub_len;
     copyBytes(sess.peer_pub[0..pub_len], body[4 .. 4 + pub_len]);
 
-    try verifyServerKeyExchange(sess, params, sig_alg, sig);
+    verifyServerKeyExchange(sess, params, sig_alg, sig) catch |e| {
+        if (e == error.BadSignature) return error.HandshakeFailed;
+        return e;
+    };
 }
 
 fn sendClientFlight(sess: *TlsSession) TlsError!void {
@@ -1108,6 +1114,13 @@ pub fn tlsRead(sess: *TlsSession, out: []u8) TlsError!usize {
 pub fn tlsWrite(sess: *TlsSession, data: []const u8, output: []u8) TlsError!usize {
     if (sess.state != .Established) return error.HandshakeFailed;
     if (data.len == 0) return 0;
+
+    var chunks: usize = data.len / TLS_MAX_PLAINTEXT_PER_RECORD;
+    if (data.len % TLS_MAX_PLAINTEXT_PER_RECORD != 0) chunks += 1;
+    var overhead: usize = 16;
+    if (suiteIsAesGcm(sess.suite)) overhead = 24;
+    const needed = chunks * RECORD_HEADER_LEN + data.len + chunks * overhead;
+    if (output.len < needed) return error.OutputTooSmall;
 
     var out_off: usize = 0;
     var pos: usize = 0;
