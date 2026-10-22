@@ -17,7 +17,7 @@
 - No f64 intermediates anywhere in arithmetic (x87 double-rounding class); conversions at API edges only, with edge KATs pinned.
 - R6: no clock/env reads; randomness is caller-supplied xoshiro256\*\*.
 - New files: `sf/src/std_cipher.zig`, `sf/src/std_ecc.zig`; extend `sf/src/std_crypto.zig` only; `std.zig` unchanged (by-path import).
-- Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at milestone closeout. Task 1 edits existing `std_crypto` → full gate; Tasks 2–3 are new modules → targeted-only until Task 4 closeout.
+- Gates per task (hybrid): targeted fixtures for the touched module + direct consumers + affected `run_crosscheck.sh` modules + 3× determinism. Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at milestone closeout. Task 1 edits existing `std_crypto` → full gate; Task 1C-F is a compiler fix → full compiler battery + seed rotation; Tasks 2–3 are new modules → targeted-only until Task 4 closeout.
 - Closeout rotates seed **v112** (42 lib files: +`std_cipher`, +`std_ecc`); fixed point `21c957730d268f1e7883176fa5413b65` must not move.
 - Commits `feat(std_crypto|std_cipher|std_ecc): … (Phase1 M2)`, `docs(std_lib): … (M2)`, `chore(seed): rotate (M2)`, `docs(sdd): … report`. STOP-present on any contract change.
 
@@ -50,7 +50,45 @@
 - [ ] **Step 4:** Run — PASS; full `verify_stdlib.sh` + `run_crosscheck.sh` green; existing MSE fixtures unchanged.
 - [ ] **Step 5:** Commit `feat(std_crypto): hash/PRF/RSA verify additions (Phase1 M2)`.
 
+### Task 1C-I: `const`-global rodata — investigation (report only)
+
+**Trigger:** Task 2 STOP: source `const` T-tables are emitted as writable `.bss` + one-time `__module_init` copy; plan requires C `const` rodata. This is a compiler-correctness stopper and takes priority.
+
+**Files:**
+- Create: `.superpowers/sdd/2026-10-21-phase1-m2-crypto-core-plan/task-1c-i-report.md`
+- No source/plan/spec edits in this task. Probes only under `/tmp`.
+
+**Goal:** Produce the exact, no-tech-debt design and blast radius for emitting Z98 file-scope `const` values as C89 `static const` initializers (rodata), covering arrays of scalars, structs, and multi-dimensional arrays. Non-constant `const` initializers stay `.bss` + `__module_init`.
+
+- [ ] **Step 1:** Enumerate every file-scope `const` shape in `sf/src`, `examples/z98`, `repro/mi_matrix`, and `scripts/stdlib/ref` (scalar literal, scalar constant-expression, 1-D array of scalars, multi-D array, struct/union, string literal, `const` with non-constant initializer). For each shape record today's emitted storage (`.bss`/`.rodata`/constant) and the required post-fix form.
+- [ ] **Step 2:** Trace the complete data flow with file:line: parser `var_decl.flags` bits; `main.zig` `gv_is_storage`/`gv_has_ri` and `ModuleGlobalDecl` creation; `lowerModuleInit`/`store_global`; `emitGlobalExternDecls`; `emitModuleInitCalls`/`moduleHasRuntimeInit`; `emitArrayCopyLoop`/`emitArrayByteCopyLoop`; header extern declarations.
+- [ ] **Step 3:** Specify the minimal exact design with no tech debt: how constness and initializer data reach the emitter; how C89 `static const` declarations/initializers are rendered for scalars, 1-D arrays, multi-D arrays, structs/unions, and nested combinations; how `__module_init`/`store_global` entries are skipped; how `has_runtime_init`/module-init ordering/extern headers are handled; how non-constant `const` stays `.bss`; how `const` globals referencing other consts are ordered.
+- [ ] **Step 4:** Blast radius: list every affected emitted construct and expected pin/corpus/golden/examples/stdlib movement; state whether compiler self-emission changes; specify seed rotation and fixed-point consequence. Include the M2 seed-version consequence (compiler-fix rotation vs Task 4 closeout).
+- [ ] **Step 5:** Test strategy (committed, non-vacuous): a dedicated compiler gate that asserts `nm` section type `R/r` (not `B/b`) for const scalar/array/struct/multi-D symbols, value-correct runtime fixture, negative cases where non-constant `const` remains `.bss`, header/extern `const` correctness, and full compiler battery commands. Identify exact test file locations/pattern.
+- [ ] **Step 6:** Lateral issues list: `has_runtime_init`, `moduleHasRuntimeInit`, multi-D/struct initializer syntax, string literals, extern/header declarations, empty arrays, zero-length/partial initializers, const-only modules, dependency ordering, and any others found. Mark in-scope or explicitly out-of-scope with reason.
+- [ ] **Step 7:** Commit only the report: `docs(sdd): M2 T1C-I report`.
+
+**Stop conditions:** any `const` shape that cannot be represented as a C89 constant initializer; any need to change `std.zig`, an example, or an unrelated compiler pass; any blast-radius item that contradicts the plan. STOP-present with evidence.
+
+### Task 1C-F: `const`-global rodata — fix + gates + seed rotation
+
+**Depends on:** Task 1C-I. Implement the I report design exactly; do not improvise or defer shapes the I task proves in scope.
+
+**Files (expected; final list from I report):**
+- Modify: `sf/src/lir.zig`, `sf/src/main.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig`
+- Create/modify committed compiler gate + fixture(s) from I report
+- Modify: seed scripts/counts as required for rotation
+
+- [ ] **Step 1:** Add the const/initializer representation required by the I design.
+- [ ] **Step 2:** Emit C89 `static const` initializers for all in-scope const shapes; remove their `__module_init`/`store_global` copies. Keep non-constant const as `.bss` + runtime init.
+- [ ] **Step 3:** Add the committed rodata gate and fixture(s); prove non-vacuous by mutating emitters to `.bss` (must fail) and non-constant const (must stay `.bss`).
+- [ ] **Step 4:** Full compiler battery: corpus frozen-1124 class file, goldens 5/5, mi_matrix 25+oob, examples 26/26 build+run, stdlib full gate, pins recorded old→new, markers, emit-support, hop closure. No unrelated fixes.
+- [ ] **Step 5:** Seed rotation with the I report's version assignment; record archive/manifest/binary/fixed-point and verify hop1==hop2; update affected plan seed-version references.
+- [ ] **Step 6:** Commits: `fix(c89_emit): emit file-scope const values as C89 const rodata` + `docs(sdd): M2 T1C-F report`. No push.
+
 ### Task 2: `std_cipher` — ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128-GCM
+
+**Status:** BLOCKED by Task 1C-F. Held commits `fe2c74d2` + `57181726` must be re-reviewed after the compiler fix; add the rodata `nm` assertion to this task's gate.
 
 **Files:**
 - Create: `sf/src/std_cipher.zig`
