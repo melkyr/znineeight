@@ -639,6 +639,11 @@ fn not32(c: u32) u32 {
     return c ^ 1;
 }
 
+fn shlMasked(x: u32, sh: u32) u32 {
+    var m: u32 = 0xFFFFFFFF >> sh;
+    return (x & m) << sh;
+}
+
 fn eq32(x: u32, y: u32) u32 {
     var q: u32 = x ^ y;
     return not32((q | (0 -% q)) >> 31);
@@ -777,7 +782,7 @@ fn i31Decode(x: []u32, src: []const u8) void {
     while (u > 0) {
         u -= 1;
         var b: u32 = @intCast(u32, src[u]);
-        acc |= b << acc_len;
+        acc |= shlMasked(b, acc_len);
         acc_len += 8;
         if (acc_len >= 31) {
             x[v] = acc & 0x7FFFFFFF;
@@ -808,7 +813,7 @@ fn i31DecodeMod(x: []u32, src: []const u8, m: []const u32) u32 {
         while (u < tlen) : (u += 1) {
             var b: u32 = 0;
             if (u < src.len) b = @intCast(u32, src[src.len - 1 - u]);
-            acc |= b << acc_len;
+            acc |= shlMasked(b, acc_len);
             acc_len += 8;
             if (acc_len >= 31) {
                 var xw: u32 = acc & 0x7FFFFFFF;
@@ -855,7 +860,7 @@ fn i31Encode(dst: []u8, x: []const u32) void {
             acc = w;
             acc_len = 31;
         } else {
-            var z: u32 = acc | (w << acc_len);
+            var z: u32 = acc | shlMasked(w, acc_len);
             acc_len -= 1;
             acc = w >> (31 - acc_len);
             if (len >= 4) {
@@ -882,7 +887,7 @@ fn i31Rshift(x: []u32, count: u32) void {
     var u: usize = 2;
     while (u <= len) : (u += 1) {
         var w: u32 = x[u];
-        x[u - 1] = ((w << (31 - count)) | r) & 0x7FFFFFFF;
+        x[u - 1] = (shlMasked(w, 31 - count) | r) & 0x7FFFFFFF;
         r = w >> count;
     }
     x[len] = r;
@@ -1226,6 +1231,7 @@ fn ecdsaVerify(c: u32, pub_uncompressed: []const u8, hash: []const u8, r_sig: []
     var s: [I31_LEN]u32 = undefined;
     if (i31DecodeMod(r[0..], r_sig, n[0..]) == 0) return false;
     if (i31DecodeMod(s[0..], s_sig, n[0..]) == 0) return false;
+    if (i31Iszero(r[0..]) != 0) return false;
     if (i31Iszero(s[0..]) != 0) return false;
 
     var nR2: [I31_LEN]u32 = undefined;

@@ -88,6 +88,72 @@ fn badP256(pub_hex: []const u8, hash_hex: []const u8, r_hex: []const u8, s_hex: 
     ck(!ecc.p256EcdsaVerify(&pub_key, &hash, &r, &s), what);
 }
 
+fn badP256Mut(pub_hex: []const u8, hash_hex: []const u8, r_hex: []const u8, s_hex: []const u8, mode: u32, what: []const u8) void {
+    var pub_key: [65]u8 = undefined;
+    var hash: [32]u8 = undefined;
+    var r: [32]u8 = undefined;
+    var s: [32]u8 = undefined;
+    fill(pub_hex, pub_key[0..]);
+    fill(hash_hex, hash[0..]);
+    fill(r_hex, r[0..]);
+    fill(s_hex, s[0..]);
+    if (mode == 0) {
+        pub_key[0] = 0x05;
+    } else if (mode == 1) {
+        pub_key[64] = pub_key[64] ^ 1;
+    } else {
+        var pbytes: [32]u8 = undefined;
+        fill("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff", pbytes[0..]);
+        var i: usize = 0;
+        while (i < 32) : (i += 1) {
+            if (mode == 2) {
+                pub_key[1 + i] = pbytes[i];
+            } else {
+                pub_key[33 + i] = pbytes[i];
+            }
+        }
+    }
+    ck(!ecc.p256EcdsaVerify(&pub_key, &hash, &r, &s), what);
+}
+
+fn badPrivP256(priv_hex: []const u8, peer_hex: []const u8, what: []const u8) void {
+    var priv: [32]u8 = undefined;
+    var peer: [65]u8 = undefined;
+    var out: [32]u8 = undefined;
+    fill(priv_hex, priv[0..]);
+    fill(peer_hex, peer[0..]);
+    var saw: bool = false;
+    ecc.p256Ecdh(&priv, &peer, &out) catch |err| {
+        ck(err == error.InvalidPrivateKey, what);
+        saw = true;
+    };
+    ck(saw, what);
+}
+
+fn badPeerP256(priv_hex: []const u8, peer_hex: []const u8, mode: u32, what: []const u8) void {
+    var priv: [32]u8 = undefined;
+    var peer: [65]u8 = undefined;
+    var out: [32]u8 = undefined;
+    fill(priv_hex, priv[0..]);
+    fill(peer_hex, peer[0..]);
+    if (mode == 0) {
+        peer[0] = 0x05;
+    } else if (mode == 1) {
+        peer[64] = peer[64] ^ 1;
+    } else {
+        var pbytes: [32]u8 = undefined;
+        fill("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff", pbytes[0..]);
+        var i: usize = 0;
+        while (i < 32) : (i += 1) peer[1 + i] = pbytes[i];
+    }
+    var saw: bool = false;
+    ecc.p256Ecdh(&priv, &peer, &out) catch |err| {
+        ck(err == error.InvalidPublicKey, what);
+        saw = true;
+    };
+    ck(saw, what);
+}
+
 fn goodP384(pub_hex: []const u8, hash_hex: []const u8, r_hex: []const u8, s_hex: []const u8, what: []const u8) void {
     var pub_key: [97]u8 = undefined;
     var hash: [48]u8 = undefined;
@@ -109,6 +175,28 @@ fn badP384(pub_hex: []const u8, hash_hex: []const u8, r_hex: []const u8, s_hex: 
     fill(hash_hex, hash[0..]);
     fill(r_hex, r[0..]);
     fill(s_hex, s[0..]);
+    ck(!ecc.p384EcdsaVerify(&pub_key, &hash, &r, &s), what);
+}
+
+fn badP384Mut(pub_hex: []const u8, hash_hex: []const u8, r_hex: []const u8, s_hex: []const u8, mode: u32, what: []const u8) void {
+    var pub_key: [97]u8 = undefined;
+    var hash: [48]u8 = undefined;
+    var r: [48]u8 = undefined;
+    var s: [48]u8 = undefined;
+    fill(pub_hex, pub_key[0..]);
+    fill(hash_hex, hash[0..]);
+    fill(r_hex, r[0..]);
+    fill(s_hex, s[0..]);
+    if (mode == 0) {
+        pub_key[0] = 0x05;
+    } else if (mode == 1) {
+        pub_key[96] = pub_key[96] ^ 1;
+    } else {
+        var pbytes: [48]u8 = undefined;
+        fill("fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff", pbytes[0..]);
+        var i: usize = 0;
+        while (i < 48) : (i += 1) pub_key[1 + i] = pbytes[i];
+    }
     ck(!ecc.p384EcdsaVerify(&pub_key, &hash, &r, &s), what);
 }
 
@@ -176,6 +264,106 @@ pub fn main() void {
         "202da4e4e9632bcb6bf0f6dafb7e348528d0b469d77e46b9f939e2fa946a608dd1f166bcbcde96cfad551701da69f6c2",
         "db595b49983882c48df8a396884cd98893a469c4d590e56c6a59b6150d9a0acdf142cf92151052644702ed857a5b7981",
         "cavp p384 bad S #1");
+
+    // FIPS/SEC1 range gate: r and s must both be in [1, n-1].
+    badP256(
+        "04e424dc61d4bb3cb7ef4344a7f8957a0c5134e16f7a67c074f82e6e12f49abf3c970eed7aa2bc48651545949de1dddaf0127e5965ac85d1243d6f60e7dfaee927",
+        "d1b8ef21eb4182ee270638061063a3f3c16c114e33937f69fb232cc833965a94",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "17c55095819089c2e03b9cd415abdf12444e323075d98f31920b9e0f57ec871c",
+        "range p256 r=0");
+    badP256(
+        "04e424dc61d4bb3cb7ef4344a7f8957a0c5134e16f7a67c074f82e6e12f49abf3c970eed7aa2bc48651545949de1dddaf0127e5965ac85d1243d6f60e7dfaee927",
+        "d1b8ef21eb4182ee270638061063a3f3c16c114e33937f69fb232cc833965a94",
+        "bf96b99aa49c705c910be33142017c642ff540c76349b9dab72f981fd9347f4f",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "range p256 s=0");
+    badP256(
+        "04e424dc61d4bb3cb7ef4344a7f8957a0c5134e16f7a67c074f82e6e12f49abf3c970eed7aa2bc48651545949de1dddaf0127e5965ac85d1243d6f60e7dfaee927",
+        "d1b8ef21eb4182ee270638061063a3f3c16c114e33937f69fb232cc833965a94",
+        "bf96b99aa49c705c910be33142017c642ff540c76349b9dab72f981fd9347f4f",
+        "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
+        "range p256 s=n");
+    badP256(
+        "04e424dc61d4bb3cb7ef4344a7f8957a0c5134e16f7a67c074f82e6e12f49abf3c970eed7aa2bc48651545949de1dddaf0127e5965ac85d1243d6f60e7dfaee927",
+        "d1b8ef21eb4182ee270638061063a3f3c16c114e33937f69fb232cc833965a94",
+        "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
+        "17c55095819089c2e03b9cd415abdf12444e323075d98f31920b9e0f57ec871c",
+        "range p256 r=n");
+
+    // Invalid public keys: wrong tag, off curve, coordinates >= p.
+    badP256Mut(
+        "04e424dc61d4bb3cb7ef4344a7f8957a0c5134e16f7a67c074f82e6e12f49abf3c970eed7aa2bc48651545949de1dddaf0127e5965ac85d1243d6f60e7dfaee927",
+        "d1b8ef21eb4182ee270638061063a3f3c16c114e33937f69fb232cc833965a94",
+        "bf96b99aa49c705c910be33142017c642ff540c76349b9dab72f981fd9347f4f",
+        "17c55095819089c2e03b9cd415abdf12444e323075d98f31920b9e0f57ec871c",
+        0, "p256 pub bad tag");
+    badP256Mut(
+        "04e424dc61d4bb3cb7ef4344a7f8957a0c5134e16f7a67c074f82e6e12f49abf3c970eed7aa2bc48651545949de1dddaf0127e5965ac85d1243d6f60e7dfaee927",
+        "d1b8ef21eb4182ee270638061063a3f3c16c114e33937f69fb232cc833965a94",
+        "bf96b99aa49c705c910be33142017c642ff540c76349b9dab72f981fd9347f4f",
+        "17c55095819089c2e03b9cd415abdf12444e323075d98f31920b9e0f57ec871c",
+        1, "p256 pub off curve");
+    badP256Mut(
+        "04e424dc61d4bb3cb7ef4344a7f8957a0c5134e16f7a67c074f82e6e12f49abf3c970eed7aa2bc48651545949de1dddaf0127e5965ac85d1243d6f60e7dfaee927",
+        "d1b8ef21eb4182ee270638061063a3f3c16c114e33937f69fb232cc833965a94",
+        "bf96b99aa49c705c910be33142017c642ff540c76349b9dab72f981fd9347f4f",
+        "17c55095819089c2e03b9cd415abdf12444e323075d98f31920b9e0f57ec871c",
+        2, "p256 pub x>=p");
+    badP256Mut(
+        "04e424dc61d4bb3cb7ef4344a7f8957a0c5134e16f7a67c074f82e6e12f49abf3c970eed7aa2bc48651545949de1dddaf0127e5965ac85d1243d6f60e7dfaee927",
+        "d1b8ef21eb4182ee270638061063a3f3c16c114e33937f69fb232cc833965a94",
+        "bf96b99aa49c705c910be33142017c642ff540c76349b9dab72f981fd9347f4f",
+        "17c55095819089c2e03b9cd415abdf12444e323075d98f31920b9e0f57ec871c",
+        3, "p256 pub y>=p");
+
+    // P-384 range/public-key negatives use the same generic engine.
+    badP384(
+        "04cb908b1fd516a57b8ee1e14383579b33cb154fece20c5035e2b3765195d1951d75bd78fb23e00fef37d7d064fd9af144cd99c46b5857401ddcff2cf7cf822121faf1cbad9a011bed8c551f6f59b2c360f79bfbe32adbcaa09583bdfdf7c374bb",
+        "965b83f5d34f7443eb88e78fcc23479156c9cb0080dd68334dac0ad33ba8c774100e440063db28b40b51ac37705d4d70",
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "4428bb478a43ac73ecd6de51ddf7c28ff3c2441625a081714337dd44fea8011bae71959a10947b6ea33f77e128d3c6ae",
+        "range p384 r=0");
+    badP384Mut(
+        "04cb908b1fd516a57b8ee1e14383579b33cb154fece20c5035e2b3765195d1951d75bd78fb23e00fef37d7d064fd9af144cd99c46b5857401ddcff2cf7cf822121faf1cbad9a011bed8c551f6f59b2c360f79bfbe32adbcaa09583bdfdf7c374bb",
+        "965b83f5d34f7443eb88e78fcc23479156c9cb0080dd68334dac0ad33ba8c774100e440063db28b40b51ac37705d4d70",
+        "33f64fb65cd6a8918523f23aea0bbcf56bba1daca7aff817c8791dc92428d605ac629de2e847d43cee55ba9e4a0e83ba",
+        "4428bb478a43ac73ecd6de51ddf7c28ff3c2441625a081714337dd44fea8011bae71959a10947b6ea33f77e128d3c6ae",
+        0, "p384 pub bad tag");
+    badP384Mut(
+        "04cb908b1fd516a57b8ee1e14383579b33cb154fece20c5035e2b3765195d1951d75bd78fb23e00fef37d7d064fd9af144cd99c46b5857401ddcff2cf7cf822121faf1cbad9a011bed8c551f6f59b2c360f79bfbe32adbcaa09583bdfdf7c374bb",
+        "965b83f5d34f7443eb88e78fcc23479156c9cb0080dd68334dac0ad33ba8c774100e440063db28b40b51ac37705d4d70",
+        "33f64fb65cd6a8918523f23aea0bbcf56bba1daca7aff817c8791dc92428d605ac629de2e847d43cee55ba9e4a0e83ba",
+        "4428bb478a43ac73ecd6de51ddf7c28ff3c2441625a081714337dd44fea8011bae71959a10947b6ea33f77e128d3c6ae",
+        1, "p384 pub off curve");
+    badP384Mut(
+        "04cb908b1fd516a57b8ee1e14383579b33cb154fece20c5035e2b3765195d1951d75bd78fb23e00fef37d7d064fd9af144cd99c46b5857401ddcff2cf7cf822121faf1cbad9a011bed8c551f6f59b2c360f79bfbe32adbcaa09583bdfdf7c374bb",
+        "965b83f5d34f7443eb88e78fcc23479156c9cb0080dd68334dac0ad33ba8c774100e440063db28b40b51ac37705d4d70",
+        "33f64fb65cd6a8918523f23aea0bbcf56bba1daca7aff817c8791dc92428d605ac629de2e847d43cee55ba9e4a0e83ba",
+        "4428bb478a43ac73ecd6de51ddf7c28ff3c2441625a081714337dd44fea8011bae71959a10947b6ea33f77e128d3c6ae",
+        2, "p384 pub x>=p");
+
+    // ECDH private-key range and peer-point validation negatives.
+    badPrivP256(
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "040d06ca6810483c3dba71e5bc029dff58196bf1a1edd72815f968d0af5ec018534cfd7100a03af94db0c77341f3bd7cb8736ffd8aab361129dd4e3db0f3b17ba6",
+        "ecdh p256 zero priv");
+    badPrivP256(
+        "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
+        "040d06ca6810483c3dba71e5bc029dff58196bf1a1edd72815f968d0af5ec018534cfd7100a03af94db0c77341f3bd7cb8736ffd8aab361129dd4e3db0f3b17ba6",
+        "ecdh p256 priv=n");
+    badPeerP256(
+        "c6b264fba4e5d214890c4e7659a40b5ac572fdb72e53620da5f6f3453573c07a",
+        "040d06ca6810483c3dba71e5bc029dff58196bf1a1edd72815f968d0af5ec018534cfd7100a03af94db0c77341f3bd7cb8736ffd8aab361129dd4e3db0f3b17ba6",
+        0, "ecdh p256 peer bad tag");
+    badPeerP256(
+        "c6b264fba4e5d214890c4e7659a40b5ac572fdb72e53620da5f6f3453573c07a",
+        "040d06ca6810483c3dba71e5bc029dff58196bf1a1edd72815f968d0af5ec018534cfd7100a03af94db0c77341f3bd7cb8736ffd8aab361129dd4e3db0f3b17ba6",
+        1, "ecdh p256 peer off curve");
+    badPeerP256(
+        "c6b264fba4e5d214890c4e7659a40b5ac572fdb72e53620da5f6f3453573c07a",
+        "040d06ca6810483c3dba71e5bc029dff58196bf1a1edd72815f968d0af5ec018534cfd7100a03af94db0c77341f3bd7cb8736ffd8aab361129dd4e3db0f3b17ba6",
+        2, "ecdh p256 peer x>=p");
 
     // p256Generate: deterministic for a fixed seed, and two independent key
     // pairs agree on the shared secret. The ECDH calls also validate the
