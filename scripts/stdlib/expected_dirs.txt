@@ -9,6 +9,7 @@ repro/mi_matrix/stdlib_analyzer_switch_merge_xmod
 repro/mi_matrix/stdlib_arena_xmod
 repro/mi_matrix/stdlib_array_size_builtin_xmod
 repro/mi_matrix/stdlib_array_size_struct_introspection_xmod
+repro/mi_matrix/stdlib_asn1_xmod
 repro/mi_matrix/stdlib_async_addtask_restart_cancel_xmod
 repro/mi_matrix/stdlib_async_addtask_reuse_xmod
 repro/mi_matrix/stdlib_async_addtask_single_xmod
@@ -311,6 +312,7 @@ repro/mi_matrix/stdlib_print_unrelated_ident_xmod
 repro/mi_matrix/stdlib_print_init_order_dep_xmod
 repro/mi_matrix/stdlib_tuple_model_ok_xmod
 repro/mi_matrix/stdlib_x25519_xmod
+repro/mi_matrix/stdlib_x509_parse_xmod
 repro/mi_matrix/stdlib_zstd_basic_xmod
 repro/mi_matrix/stdlib_zstd_cross_xmod
 stdlib_test/bits_buf_str_usage
