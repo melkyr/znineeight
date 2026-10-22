@@ -136,6 +136,7 @@ pub fn main() void {
     expectCorrupt(certs.malformed_indefinite_der[0..], "indefinite cert");
     expectCorrupt(certs.malformed_nested_der[0..], "nested overflow cert");
     expectCorrupt(certs.malformed_bad_oid_der[0..], "bad oid cert");
+    expectCorrupt(certs.malformed_sigalg_mismatch_der[0..], "sigalg mismatch cert");
 
     if (g_fail == 0) {
         std.io.write("x509 parse ok\n");

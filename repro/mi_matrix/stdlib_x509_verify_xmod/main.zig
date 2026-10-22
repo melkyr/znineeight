@@ -27,6 +27,9 @@ var g_store: x509.TrustStore = undefined;
 var g_rsa_buf: [8192]u8 = undefined;
 var g_rsa_arena = std.arena.init(g_rsa_buf[0..]);
 var g_rsa_only: x509.TrustStore = undefined;
+var g_security_buf: [8192]u8 = undefined;
+var g_security_arena = std.arena.init(g_security_buf[0..]);
+var g_security: x509.TrustStore = undefined;
 
 const E_EXPIRED: u8 = 1;
 const E_NOT_YET: u8 = 2;
@@ -46,6 +49,10 @@ fn ck(cond: bool, what: []const u8) void {
 
 fn expectOk(leaf: []const u8, inters: []const []const u8, host: []const u8, now: i64, what: []const u8) void {
     x509.x509VerifyChain(&g_store_arena, leaf, inters, &g_store, host, now) catch @panic(what);
+}
+
+fn expectOkStore(leaf: []const u8, inters: []const []const u8, store: *x509.TrustStore, host: []const u8, now: i64, what: []const u8) void {
+    x509.x509VerifyChain(&g_store_arena, leaf, inters, store, host, now) catch @panic(what);
 }
 
 fn expectErr(leaf: []const u8, inters: []const []const u8, store: *x509.TrustStore, host: []const u8, now: i64, want: u8, what: []const u8) void {
@@ -68,7 +75,9 @@ fn expectErr(leaf: []const u8, inters: []const []const u8, store: *x509.TrustSto
 pub fn main() void {
     x509.trustStoreLoad(&g_store_arena, vecs.store_roundtrip_bin[0..], &g_store) catch @panic("store load");
     x509.trustStoreLoad(&g_rsa_arena, vecs.store_rsa_only_bin[0..], &g_rsa_only) catch @panic("rsa store load");
+    x509.trustStoreLoad(&g_security_arena, vecs.store_security_bin[0..], &g_security) catch @panic("security store load");
     ck(g_store.anchors.len == 6, "store anchor count");
+    ck(g_security.anchors.len == 1, "security store anchor count");
 
     const ECDSA_NOW: i64 = 1735689600; // 2025-01-01T00:00:00Z
 
@@ -89,6 +98,11 @@ pub fn main() void {
     };
     var sha1_inters = [_][]const u8{certs.sha1_int_der[0..]};
     var no_inters = [_][]const u8{certs.ecdsa_leaf_der[0..]};
+    var backtrack_wrong_inters = [_][]const u8{certs.security_int_wrong_der[0..]};
+    var backtrack_inters = [_][]const u8{
+        certs.security_int_wrong_der[0..],
+        certs.security_int_correct_der[0..],
+    };
 
     expectOk(certs.ecdsa_leaf_der[0..], ecdsa_inters[0..], "leaf-verify.example.test", ECDSA_NOW, "ecdsa valid");
     expectOk(certs.ecdsa_leaf_der[0..], ecdsa_inters[0..], "LEAF-VERIFY.EXAMPLE.TEST", ECDSA_NOW, "exact case-insensitive");
@@ -111,6 +125,9 @@ pub fn main() void {
     expectErr(certs.long_leaf_der[0..], long_inters[0..], &g_store, "long-verify.example.test", ECDSA_NOW, E_TOO_LONG, "9-deep chain");
     expectErr(certs.sha1_leaf_der[0..], sha1_inters[0..], &g_store, "sha1-verify.example.test", ECDSA_NOW, E_UNSUPPORTED, "sha1 link");
     expectErr(certs.rsa1024_leaf_der[0..], no_inters[0..0], &g_store, "rsa1024-verify.example.test", ECDSA_NOW, E_UNSUPPORTED, "rsa 1024 issuer");
+    expectOkStore(certs.backtrack_leaf_der[0..], backtrack_inters[0..], &g_security, "backtrack.example.test", ECDSA_NOW, "same-subject backtracking");
+    expectErr(certs.backtrack_leaf_der[0..], backtrack_wrong_inters[0..], &g_security, "backtrack.example.test", ECDSA_NOW, E_BADSIG, "wrong same-subject intermediate");
+    expectErr(certs.rsa1024_leaf_rsa2048root_der[0..], no_inters[0..0], &g_security, "rsa1024-leaf.example.test", ECDSA_NOW, E_UNSUPPORTED, "rsa 1024 leaf key");
     expectErr(certs.ecdsa_leaf_der[0..0], no_inters[0..0], &g_store, "x", ECDSA_NOW, E_CORRUPT, "empty leaf");
 
     if (g_fail == 0) {

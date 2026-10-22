@@ -324,7 +324,7 @@ fn parseExtensions(data: []const u8, out: *Cert) X509Error!void {
     }
 }
 
-fn parseTbs(data: []const u8, out: *Cert) X509Error!void {
+fn parseTbs(data: []const u8, out: *Cert, inner_alg: *[]const u8) X509Error!void {
     var r = asn1.asn1Init(data);
     var first = asn1.asn1ReadTlv(&r) catch return error.Corrupt;
     if (first.cls == asn1.TagClass.context and first.tag == 0 and first.constructed) {
@@ -340,7 +340,8 @@ fn parseTbs(data: []const u8, out: *Cert) X509Error!void {
         if (first.data.len == 0) return error.Corrupt;
     }
 
-    _ = try parseAlgId(&r);
+    const inner_sig_alg = try parseAlgId(&r);
+    inner_alg.* = inner_sig_alg.data;
     const issuer = try expectUniversal(&r, 16, true);
     const validity = try expectUniversal(&r, 16, true);
     const subject = try expectUniversal(&r, 16, true);
@@ -381,7 +382,9 @@ pub fn x509Parse(der: []const u8, out: *Cert) X509Error!void {
     out.sig = sig;
     out.sig_alg = sigAlgFromOid(alg.data);
     out.tbs = tbs.full;
-    try parseTbs(tbs.data, out);
+    var inner_alg: []const u8 = undefined;
+    try parseTbs(tbs.data, out, &inner_alg);
+    if (!eqBytes(inner_alg, alg.data)) return error.Corrupt;
 }
 
 // ---------------------------------------------------------------------------
@@ -740,6 +743,124 @@ fn matchHostname(cert: *const Cert, hostname: []const u8) X509VerifyError!void {
     return error.HostnameMismatch;
 }
 
+const PathFailure = enum {
+    none,
+    unknown_issuer,
+    bad_signature,
+    unsupported_algorithm,
+    chain_too_long,
+};
+
+fn pathContains(path: *const [MAX_CHAIN]PathNode, depth: usize, tbs: []const u8) bool {
+    var i: usize = 0;
+    while (i < depth) : (i += 1) {
+        if (eqBytes(path[i].tbs, tbs)) return true;
+    }
+    return false;
+}
+
+fn usedContains(used: *const [MAX_CHAIN]usize, used_len: usize, idx: usize) bool {
+    var i: usize = 0;
+    while (i < used_len) : (i += 1) {
+        if (used[i] == idx) return true;
+    }
+    return false;
+}
+
+fn verifyPathSignatures(path: *const [MAX_CHAIN]PathNode, depth: usize,
+    anchor_spki: []const u8, failure: *PathFailure) X509VerifyError!bool
+{
+    var i: usize = 0;
+    while (i < depth) : (i += 1) {
+        var issuer_spki: []const u8 = undefined;
+        if (i + 1 < depth) {
+            issuer_spki = path[i + 1].spki;
+        } else {
+            issuer_spki = anchor_spki;
+        }
+        verifySignature(&path[i], issuer_spki) catch |e| {
+            if (e == error.UnsupportedAlgorithm) {
+                failure.* = .unsupported_algorithm;
+            } else {
+                failure.* = .bad_signature;
+            }
+            return false;
+        };
+    }
+    return true;
+}
+
+fn findPath(path: *[MAX_CHAIN]PathNode, used: *[MAX_CHAIN]usize, used_len: usize,
+    depth: usize, intermediates: []const []const u8, store: *TrustStore,
+    failure: *PathFailure, anchor_index: *usize,
+    found_depth: *usize) X509VerifyError!bool
+{
+    const cur_issuer = path[depth - 1].issuer;
+    var saw_candidate: bool = false;
+    var saw_bad_sig: bool = false;
+    var saw_unsupported: bool = false;
+    var saw_chain_too_long: bool = false;
+
+    var ai: usize = 0;
+    while (ai < store.anchors.len) : (ai += 1) {
+        if (!eqBytes(store.anchors[ai].subject, cur_issuer)) continue;
+        saw_candidate = true;
+        var vf: PathFailure = .none;
+        const ok = try verifyPathSignatures(path, depth, store.anchors[ai].spki, &vf);
+        if (ok) {
+            anchor_index.* = ai;
+            found_depth.* = depth;
+            return true;
+        }
+        if (vf == .unsupported_algorithm) {
+            saw_unsupported = true;
+        } else if (vf == .bad_signature) {
+            saw_bad_sig = true;
+        }
+    }
+
+    var j: usize = 0;
+    while (j < intermediates.len) : (j += 1) {
+        var ic: Cert = undefined;
+        x509Parse(intermediates[j], &ic) catch return error.Corrupt;
+        if (!eqBytes(ic.subject, cur_issuer)) continue;
+        if (!ic.is_ca) continue;
+        if (usedContains(used, used_len, j)) continue;
+        if (pathContains(path, depth, ic.tbs)) continue;
+        saw_candidate = true;
+        if (depth >= MAX_CHAIN) {
+            saw_chain_too_long = true;
+            continue;
+        }
+        pathCopy(&path[depth], &ic);
+        used[used_len] = j;
+        var child_failure: PathFailure = .none;
+        const child_ok = try findPath(path, used, used_len + 1, depth + 1,
+            intermediates, store, &child_failure, anchor_index, found_depth);
+        if (child_ok) return true;
+        if (child_failure == .unsupported_algorithm) {
+            saw_unsupported = true;
+        } else if (child_failure == .bad_signature) {
+            saw_bad_sig = true;
+        } else if (child_failure == .chain_too_long) {
+            saw_chain_too_long = true;
+        }
+    }
+
+    if (saw_bad_sig) {
+        failure.* = .bad_signature;
+    } else if (saw_unsupported) {
+        failure.* = .unsupported_algorithm;
+    } else if (saw_chain_too_long) {
+        failure.* = .chain_too_long;
+    } else if (saw_candidate) {
+        failure.* = .unknown_issuer;
+    } else {
+        failure.* = .unknown_issuer;
+    }
+    return false;
+}
+
 pub fn x509VerifyChain(arena: *arena_mod.Arena, leaf_der: []const u8,
     intermediates: []const []const u8, store: *TrustStore,
     hostname: []const u8, now_unix: i64) X509VerifyError!void
@@ -747,52 +868,35 @@ pub fn x509VerifyChain(arena: *arena_mod.Arena, leaf_der: []const u8,
     _ = arena;
     var leaf: Cert = undefined;
     x509Parse(leaf_der, &leaf) catch return error.Corrupt;
+
+    if (leaf.pk_alg == PkAlg.rsa) {
+        var alg: []const u8 = undefined;
+        var curve: []const u8 = undefined;
+        var key: []const u8 = undefined;
+        try spkiParts(leaf.spki, &alg, &curve, &key);
+        if (!eqBytes(alg, OID_RSA_ENCRYPTION[0..])) return error.UnsupportedAlgorithm;
+        var n: []const u8 = undefined;
+        var e: u32 = 0;
+        try rsaKeyParams(key, &n, &e);
+        if (effectiveBitLen(n) < 2048) return error.UnsupportedAlgorithm;
+    }
+
     var path: [MAX_CHAIN]PathNode = undefined;
     pathCopy(&path[0], &leaf);
-    var depth: usize = 1;
+    var used: [MAX_CHAIN]usize = undefined;
+    var failure: PathFailure = .none;
     var anchor_idx: usize = 0;
-
-    while (true) {
-        const cur_issuer = path[depth - 1].issuer;
-        var found_anchor: bool = false;
-        var ai: usize = 0;
-        while (ai < store.anchors.len) : (ai += 1) {
-            if (eqBytes(store.anchors[ai].subject, cur_issuer)) {
-                anchor_idx = ai;
-                found_anchor = true;
-                break;
-            }
-        }
-        if (found_anchor) break;
-
-        var chosen: bool = false;
-        var j: usize = 0;
-        while (j < intermediates.len) : (j += 1) {
-            var ic: Cert = undefined;
-            x509Parse(intermediates[j], &ic) catch return error.Corrupt;
-            if (!eqBytes(ic.subject, cur_issuer)) continue;
-            if (!ic.is_ca) continue;
-            if (depth >= MAX_CHAIN) return error.ChainTooLong;
-            pathCopy(&path[depth], &ic);
-            depth += 1;
-            chosen = true;
-            break;
-        }
-        if (!chosen) return error.UnknownIssuer;
+    var depth: usize = 1;
+    const found = try findPath(&path, &used, 0, 1, intermediates, store,
+        &failure, &anchor_idx, &depth);
+    if (!found) {
+        if (failure == .bad_signature) return error.BadSignature;
+        if (failure == .unsupported_algorithm) return error.UnsupportedAlgorithm;
+        if (failure == .chain_too_long) return error.ChainTooLong;
+        return error.UnknownIssuer;
     }
 
     var i: usize = 0;
-    while (i < depth) : (i += 1) {
-        var issuer_spki: []const u8 = undefined;
-        if (i + 1 < depth) {
-            issuer_spki = path[i + 1].spki;
-        } else {
-            issuer_spki = store.anchors[anchor_idx].spki;
-        }
-        try verifySignature(&path[i], issuer_spki);
-    }
-
-    i = 0;
     while (i < depth) : (i += 1) {
         try checkValidity(path[i].not_before, path[i].not_after, now_unix);
     }
