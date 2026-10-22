@@ -4,12 +4,14 @@
 // std_crypto.zig is a PURE (no imports, no allocation) Z98 module; this
 // fixture imports it by module basename and exercises:
 //   - hmacSha256 one-shot + HmacSha256 streaming (RFC 4231 cases 1-7)
-//   - hkdfExtract / hkdfExpand (RFC 5869 cases 1-3 and 7)
+//   - hkdfExtract / hkdfExpand (RFC 5869 A.1-A.3 SHA-256, plus a SHA-256
+//     vector using A.7's inputs; RFC A.7 itself is the SHA-1 case)
 //   - blake2sInit/Update/Final unkeyed + keyed (RFC 7693 KATs and keyed
 //     vectors)
 //   - hmacBlake2s keyed BLAKE2s (WireGuard MAC form)
 //
-// Vectors: RFC 4231, RFC 5869, RFC 7693 appendix; keyed BLAKE2s expectations
+// Vectors: RFC 4231, RFC 5869 (SHA-256 A.1-A.3 + A.7-inputs SHA-256),
+// RFC 7693 appendix; keyed BLAKE2s expectations
 // cross-checked against an independent hashlib.blake2s oracle.
 //
 // GREEN (contract): deterministic byte-exact stdout `crypto prf ok\n`
@@ -254,9 +256,9 @@ pub fn main() void {
         0xc9, 0xa7,
     };
     crypto.hkdfExtract("", key_0c22[0..], &got_prk);
-    ckBytes(got_prk[0..], prk4[0..], "rfc5869 case7 prk");
+    ckBytes(got_prk[0..], prk4[0..], "rfc5869 a7-inputs sha256 prk");
     var got_okm4: [42]u8 = undefined;
-    checkExpand(&got_prk, "", got_okm4[0..], okm4[0..], "rfc5869 case7 okm");
+    checkExpand(&got_prk, "", got_okm4[0..], okm4[0..], "rfc5869 a7-inputs sha256 okm");
 
     var blake_empty = [_]u8{
         0x69, 0x21, 0x7a, 0x30, 0x79, 0x90, 0x80, 0x94,

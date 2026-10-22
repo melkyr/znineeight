@@ -24,21 +24,23 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v113** (rotated 2026-10-22 at the Phase 1 M2 crypto-core
-closeout, plan `2026-10-21-phase1-m2-crypto-core-plan`; seed v112 → v113,
-first 42-file manifest after adding `std_cipher` and `std_ecc` — no compiler
-movement; compiler fixed point `45158dcede81125a39a2c2c58478e21e` UNCHANGED
-from v112). Archive md5 `92d39942ed3d08a6543d29d5fafc5a95`; archived binary
-md5 (= v113's rotation fixed point) `45158dcede81125a39a2c2c58478e21e`;
-`gen/` 47 `.c` + 48 `.h` (10,691,275 bytes); `lib/` 42 std `.zig` plus
-`lib/manifest.md5` (per-file std attribution pin, manifest md5
-`b4c3059de37b3f5de2948ebc019e18a9`) — `std_cipher.zig` adds
-ChaCha20/Poly1305/ChaCha20-Poly1305/AES-128-GCM, and `std_ecc.zig` adds
-X25519 / P-256 ECDH+ECDSA verify / P-384 ECDSA verify. The v112 compiler-fix
-rotation stayed two-hop; v113 adds std-only payload, so the rebuilt archive is
-two-hop (`build_from_seed.sh`: hop1 == hop2 == `F_new`). **This block is
-updated at every plan closeout that rotates the seed**; the branch's
-in-progress fixed point is recorded in the active plan's workspace ledger.
+**Current seed: v114** (rotated 2026-10-22 at the Phase 1 M2 crypto-core
+closeout, plan `2026-10-21-phase1-m2-crypto-core-plan`; v112 → v113 was the
+preliminary 42-file rotation, superseded by v114 after the RSA-PSS `-fsafe`
+top-mask fix in `std_crypto` — no compiler movement; compiler fixed point
+`45158dcede81125a39a2c2c58478e21e` UNCHANGED from v112). Archive md5
+`d65fbb411296eaae68f5abcbdf91efbd`; archived binary md5 (= v114's rotation
+fixed point) `45158dcede81125a39a2c2c58478e21e`; `gen/` 47 `.c` + 48 `.h`
+(10,691,275 bytes); `lib/` 42 std `.zig` plus `lib/manifest.md5` (per-file std
+attribution pin, manifest md5 `35c97d7f19e39aae52e082e7fc3c2fc3`) —
+`std_cipher.zig` adds ChaCha20/Poly1305/ChaCha20-Poly1305/AES-128-GCM,
+`std_ecc.zig` adds X25519 / P-256 ECDH+ECDSA verify / P-384 ECDSA verify, and
+`std_crypto.zig` carries the safe PSS masks and the new
+`scripts/stdlib/run_crypto_safe.sh` gate. The v112 compiler-fix rotation
+stayed two-hop; v114 adds std-only payload, so the rebuilt archive is two-hop
+(`build_from_seed.sh`: hop1 == hop2 == `F_new`). **This block is updated at
+every plan closeout that rotates the seed**; the branch's in-progress fixed
+point is recorded in the active plan's workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
 "seed v88 NOT rotated (closeout-only)" status at the time; the Volume II Task 22
 closeout (2026-09-30) rotated the seed to v89; the Amendment A1 closeout
@@ -184,7 +186,7 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is **320/0** on seed v113 (294/0 at M7 on v103; the two
+  pin); `verify_stdlib` is **320/0** on seed v114 (294/0 at M7 on v103; the two
   M2 `stdlib_noise_*` fixtures and the M2 crypto/cipher/ecc fixtures account
   for the current set). The z9play M7 TUI consumes this API
   (`examples/z98/z9play/ui.zig`).

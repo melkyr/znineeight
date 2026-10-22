@@ -262,8 +262,9 @@ std_crypto.hmacSha256(key[0..], msg[0..], &tag);
 **Purpose** — HKDF-Expand (RFC 5869) with HMAC-SHA256 and the caller's `info`
 string.
 
-**When to use** — second step of HKDF; call for each output block (TLS
-key schedule, WireGuard, etc.).
+**When to use** — second step of HKDF. Call **once** with `out.len` set to all
+the key material you need (TLS key schedule, WireGuard, etc.); a single call
+chains all `T(i)` blocks.
 
 **Signature** — `pub fn hkdfExpand(prk: *const [32]u8, info: []const u8, out: []u8) !void`
 
@@ -284,8 +285,10 @@ var okm: [64]u8 = undefined;
 try std_crypto.hkdfExpand(&prk, "tls13 key", okm[0..]);
 ```
 
-**Gotchas** — `out.len == 0` is valid and writes nothing. The same
-`(prk, info, out.len)` always yields the same prefix.
+**Gotchas** — `out.len == 0` is valid and writes nothing. Do not call this
+once per block and concatenate: one call already derives the entire request
+(up to 8160 bytes). The same `(prk, info, out.len)` always yields the same
+prefix.
 
 ### `Blake2s`
 
@@ -300,7 +303,9 @@ try std_crypto.hkdfExpand(&prk, "tls13 key", okm[0..]);
 - `h` — the eight-word chaining state.
 - `t` — bytes absorbed so far.
 - `buf` / `buf_len` — pending 64-byte block.
-- `out_len` — requested digest length in bytes (1–32).
+- `out_len` — requested digest length in bytes (1–32), encoded into the
+  initial state by `blake2sInit`. Note that `blake2sFinal` does **not**
+  enforce it.
 - `key_len` — key length in bytes (0 for unkeyed).
 
 **Returns** — a plain value type; `blake2sInit` returns one by value.
@@ -319,9 +324,10 @@ try std_crypto.hkdfExpand(&prk, "tls13 key", okm[0..]);
 
 **Parameters**
 - `key` — the key; `""` selects unkeyed BLAKE2s.
-- `out_len` — digest length in bytes, 1–32. Out-of-range values are clamped by
-  the caller-visible contract: pass a valid length (the `hmacBlake2s` wrapper
-  rejects `0` and `>32`).
+- `out_len` — digest length parameter in bytes, 1–32. It is mixed into the
+  initial state (BLAKE2s parameter block), so it selects the digest variant.
+  There is no init-time range check; the `hmacBlake2s` wrapper rejects `0` and
+  `>32`.
 
 **Returns** — a `Blake2s` ready for `blake2sUpdate`.
 
@@ -353,21 +359,23 @@ WireGuard MAC construction.
 
 #### `blake2sFinal`
 
-**Purpose** — finishes BLAKE2s and writes `out.len` digest bytes.
+**Purpose** — finishes BLAKE2s and writes `min(out.len, 32)` digest bytes.
 
 **Signature** — `pub fn blake2sFinal(s: *Blake2s, out: []u8) void`
 
 **Parameters**
 - `s` — the state to finish (consumed).
-- `out` — destination; its length selects the number of bytes written, up to
-  the `out_len` fixed at init.
+- `out` — destination; `min(out.len, 32)` bytes are written. `out.len == 0`
+  writes nothing; `out.len > 32` writes the first 32 bytes.
 
 **Returns** — nothing.
 
 **Errors** — none.
 
-**Gotchas** — the caller must not ask for more bytes than `blake2sInit`'s
-`out_len`.
+**Gotchas** — `blake2sFinal` does not enforce the `out_len` passed to
+`blake2sInit`; it only clamps the destination to 32 bytes. Pass a matching
+`out.len` (normally equal to `out_len`) so the emitted bytes match the
+requested BLAKE2s variant.
 
 #### `hmacBlake2s`
 
@@ -491,11 +499,12 @@ three times and byte-compares stdout and rc.
 |---|---|---|
 | SHA-384 / SHA-512 | FIPS 180-4 (empty, `abc`, 1-block, 112-byte padding boundary, multi-block; chunked == one-shot) | `stdlib_hash_sha384_512_xmod` |
 | HMAC-SHA256 | RFC 4231 cases 1–7, one-shot and streaming | `stdlib_crypto_prf_xmod` |
-| HKDF | RFC 5869 cases 1–3 and 7 | `stdlib_crypto_prf_xmod` |
+| HKDF | RFC 5869 A.1–A.3 (SHA-256) plus a SHA-256 vector using A.7's inputs (A.7 itself is the SHA-1 case) | `stdlib_crypto_prf_xmod` |
 | BLAKE2s | RFC 7693 appendix KATs plus keyed vectors (independent `hashlib.blake2s` oracle) | `stdlib_crypto_prf_xmod` |
 | HMAC-BLAKE2s | keyed BLAKE2s WireGuard MAC form | `stdlib_crypto_prf_xmod` |
 | RSA PKCS#1 v1.5 | 2048-bit key generated with OpenSSL; SHA-256 and SHA-384 good signatures; corrupted-signature negatives assert `error.BadSignature` | `stdlib_rsa_verify_xmod` |
 | RSA PSS | OpenSSL signatures, SHA-256 with salt 32 and 0; corrupted-signature negatives assert `error.BadSignature` | `stdlib_rsa_verify_xmod` |
+| RSA PSS / PKCS#1 under `-fsafe` | the same fixture emitted with the compiler default (no `-ffast`), 3 runs; this catches the PSS top-mask path that only runs under `-fsafe` | `scripts/stdlib/run_crypto_safe.sh` |
 | Existing SHA-1/SHA-256/MD5/CRC-32/RC4/modpow | RFC 3174, FIPS 180-4, RFC 1321, IEEE 802.3, RFC 6229, MSE/PE 768-bit DH | see [`codecs.md`](codecs.md) |
 
 ## See also

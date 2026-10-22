@@ -53,6 +53,16 @@ const std_file = @import("std_file");        // resolves to std_file.zig
 const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 ```
 
+## Shipped seed
+
+The committed seed is **v114** (`release/seed/zig1-seed.tgz`, archive md5
+`d65fbb411296eaae68f5abcbdf91efbd`), with **42** std files (`std.zig` +
+41 `std_*.zig`) and `lib/manifest.md5` md5
+`35c97d7f19e39aae52e082e7fc3c2fc3`. The compiler fixed point is
+`45158dcede81125a39a2c2c58478e21e` (`F_new`, unchanged since v112); v114 is
+the M2 crypto-core payload rotation (v113 was the superseded preliminary
+rotation before the RSA-PSS `-fsafe` fix).
+
 ## Layer model (L0–L6)  [updated: 2026-10-21 — M6]
 
 The library is layered so dependencies only ever point downward. Imports are
