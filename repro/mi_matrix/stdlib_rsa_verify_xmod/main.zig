@@ -231,6 +231,14 @@ pub fn main() void {
     bad4[255] = bad4[255] ^ 0x80;
     checkBadPss(n[0..], 65537, crypto.HashAlg.sha256, h256[0..], 0, bad4[0..], "pss salt0 corrupted");
 
+    // Spec-required oversized salt_len cases (u32 max and 2^31). Both MUST
+    // return BadSignature. They are non-discriminating against the pre-fix
+    // pssCheck: 0x80000000 already fails the length check, while 0xFFFFFFFF
+    // wraps hlen+sl+2 to 33 on 32-bit usize and then fails the PS scan for a
+    // real PSS encoding. A public-API KAT that only the guard rejects is
+    // impossible: every overflowing salt_len yields ps_len >= db_len, so the
+    // pre-fix code reads uninitialized db beyond the decoded DB. Making that
+    // deterministic would require exposing pssCheck or changing the API/plan.
     checkBadPss(n[0..], 65537, crypto.HashAlg.sha256, h256[0..], 0xFFFFFFFF, sig_pss_32[0..], "pss salt_len u32 max rejected");
     checkBadPss(n[0..], 65537, crypto.HashAlg.sha256, h256[0..], 0x80000000, sig_pss_32[0..], "pss salt_len 2^31 rejected");
 
