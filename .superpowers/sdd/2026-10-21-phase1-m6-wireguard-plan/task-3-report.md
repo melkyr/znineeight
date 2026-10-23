@@ -238,3 +238,47 @@ No `sf/src` changes. `progress.md` and `run.err` untouched.
   cookie-reply generation is out of scope.
 - The seed archive's recorded HEAD is `651f83a0` (the pre-closeout HEAD at
   rotation time); the rotation commit follow-up contains the archive itself.
+
+## 10. Fix round — docs accuracy (base `6463f8f2`)
+
+Docs-only corrections in `sf/docs/std_lib/wireguard.md`; no source, seed, or
+tier changes. The full gate was **not rerun** (docs-only). Minimal evidence:
+
+```text
+$ grep -n "@intCast(u64, std.time.ticksMs())\|wallClockUnix()) \* 1000000000\|2^64 - 8193\|preshared_key.*optional\|does not check .iface_pub\|jittered retry interval\|TAI64N timestamp is big-endian" sf/docs/std_lib/wireguard.md
+48:helpers, with one exception: the TAI64N timestamp is big-endian (8-byte
+125:const now_ms: u64 = @intCast(u64, std.time.ticksMs());
+126:const wall_unix_ns: u64 = @intCast(u64, std.time.wallClockUnix()) * 1000000000;
+189:| `WG_REKEY_AFTER_TIME_MS` | 120 000 ms | Once the session is 120 s old, `wgTick` starts a rekey initiation (`.send_handshake`) when the pending handshake is due — immediately if none is in flight, otherwise after the jittered retry interval. ...
+193:| `WG_REJECT_AFTER_MESSAGES` | `2^64 - 8193` | `wgSend` returns `error.SessionExpired` once `sending_counter` reaches this value. |
+437:  `preshared_key` is optional and all-zero when no PSK is configured;
+445:  or a failed X25519 operation. (`wgAddPeer` does not check `iface_pub`; the
+$ grep -n "milliTimestamp\|2^64 - 8192\|when no handshake is in flight\|preshared_key.*are required" sf/docs/std_lib/wireguard.md
+none
+$ grep -n "pub fn ticksMs\|pub fn wallClockUnix" sf/src/std_time.zig
+56:pub fn ticksMs() u32 {
+116:pub fn wallClockUnix() i64 {
+$ grep -n "WG_REJECT_AFTER_MESSAGES" sf/src/std_wireguard.zig | head -2
+49:pub const WG_REJECT_AFTER_MESSAGES: u64 = 0xFFFFFFFFFFFFFFFF - (1 << 13);
+814:        if (p.sending_counter >= WG_REJECT_AFTER_MESSAGES) return error.SessionExpired;
+$ git diff --check && echo DIFF_CHECK_OK
+DIFF_CHECK_OK
+```
+
+Fixes applied:
+
+1. Quick start now uses `@intCast(u64, std.time.ticksMs())` and
+   `@intCast(u64, std.time.wallClockUnix()) * 1000000000`.
+2. Reject-after-messages is `2^64 - 8193` (matches
+   `0xFFFFFFFFFFFFFFFF - (1 << 13)`).
+3. `preshared_key` is documented as optional/all-zero, not required.
+4. `wgAddPeer` `error.InvalidPeer` no longer claims an `iface_pub` check; the
+   uninitialised-device-key check is attributed to `wgCreateInitiation`.
+5. Rekey wording now states that a new initiation can be sent while one is
+   pending, on the jittered retry interval; “when no handshake is in flight”
+   was removed.
+6. The endianness statement is scoped: all multi-byte wire integers are
+   little-endian except the big-endian TAI64N timestamp.
+
+Fix-round commit: `docs(std_lib): fix wireguard doc accuracy (M6)`; report
+commit: `docs(sdd): M6 T3 fix round`.
