@@ -1,6 +1,6 @@
 # M7 Task 2 report — `std_tcpip` UDP + DNS + ICMP
 
-Status: COMPLETE + FIX ROUND — targeted UDP/DNS/TCP fixtures PASS (3×)
+Status: COMPLETE + FIX ROUNDS — targeted UDP/DNS/TCP fixtures PASS (3×)
 
 ## Environment
 
@@ -125,14 +125,15 @@ deferred to Task 4 closeout per brief.
   (latest wins).
 - `dnsResolve`/`icmpPing` cannot be called as blocking one-shot helpers under
   the sans-I/O signature; callers must pump between calls (see step semantics).
-- DNS supports A/IN only; CNAME chains are followed only insofar as an A record
-  is present in the same answer section, otherwise `DnsFailed`.
+- DNS supports A/IN only; CNAME chains are unsupported (CNAME-only answers
+  resolve to `DnsFailed`).
 - No DNS/ICMP socket consumes public `max_sockets` slots (internal resolver
   state is in `TcpipStack`).
 
 ## Fix round — completion contract + validation
 
-Base `a0e60a5a` (plan contract update), implementation `3abc2193`.
+Base `a0e60a5a` (plan contract update), original implementation `3abc2193`,
+fix implementation `78f4348c`.
 
 - **ICMP source validation**: `processIcmp` now receives `src_ip` and accepts an
   echo reply only when `src_ip == s.icmp_ip`, in addition to the existing
@@ -163,6 +164,33 @@ run_fixtures: 3 PASS / 0 FAIL over 3 dirs   (three separate runs)
 
 Affected crosscheck: none (same rationale as above).
 
+## Fix round 2 — coverage pins + report truth-up
+
+Base `e04678f4`, plan amendment `ee46edc6`. No source behavior changed.
+
+- **DNS CNAME rejection fixture**: added `testCname` (`alias.example` ->
+  `real.example`). The response is a CNAME-only answer with a matching
+  ID/source/QNAME; `tcpipPoll` returns terminal `.done` and the final
+  `dnsResolve` returns `DnsFailed`. This pins the updated plan/spec rule that
+  CNAME chains are not followed.
+- **ICMP timeout exactness**: added `icmpTimedOut`, which returns true only for
+  `error.Timeout`. After terminal `.done` for an exhausted probe, the test now
+  asserts the final `icmpPing` returns exactly `error.Timeout` (not merely
+  null/no reply).
+- **Report correction**: the concerns section no longer claims CNAME chains can
+  be followed; CNAME is unsupported and fails `DnsFailed`. The fix-round base
+  note now names both the original implementation (`3abc2193`) and the fix
+  implementation (`78f4348c`).
+
+3× targeted gate after fix round 2 (UDP/DNS/TCP):
+
+```
+PASS repro/mi_matrix/stdlib_tcpip_udp_xmod
+PASS repro/mi_matrix/stdlib_tcpip_dns_xmod
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 3 PASS / 0 FAIL over 3 dirs   (three separate runs)
+```
+
 ## Commits
 
 - Implementation + fixtures + pin:
@@ -170,4 +198,7 @@ Affected crosscheck: none (same rationale as above).
 - Initial report: `1c862bb9` `docs(sdd): M7 T2 report`
 - Fix round (completion + validation):
   `78f4348c` `fix(std_tcpip): DNS/ICMP completion + validation (Phase1 M7)`
-- This report: `docs(sdd): M7 T2 fix round` (this commit)
+- Fix round report: `e04678f4` `docs(sdd): M7 T2 fix round`
+- Fix round 2 (coverage + truth-up):
+  `c027fa61` `test(std_tcpip): pin CNAME rejection + ICMP timeout (Phase1 M7)`
+- This report: `docs(sdd): M7 T2 fix round 2` (this commit)
