@@ -239,3 +239,24 @@ the verified v119 closeout).
 
 Docs commit: `docs(std_lib): correct Phase 1 STOP cross-reference`.
 Report commit: `docs(sdd): M7 T4 fix round 2`.
+
+## Post-closeout final-review commits
+
+The closeout logs above keep their contemporaneous `tier_wireguard.sh`
+`5 passed, 0 failed, 0 skipped` integration subset. The current tier adds four
+pre-netns config checks plus the outer build/import checks, so it now reports
+`13 passed, 0 failed, 0 skipped` (4 config + 5 in-netns integration + 4
+build/import). The truth-up is recorded in `docs/sf/QUICK_REF.md`,
+`examples/torrent_example_defects.md`, and `wireguard_demo/NOTES.md`.
+
+- `afc87e59` `test(tier): propagate config failures + DNS source negative (Phase1 M7)`
+  — config regressions abort before `unshare`; outer counts carried into the
+  inner summary; DNS fixture rejects wrong source IP/port.
+- `7748696f` `docs(std_lib): M7 final-review truth-ups` — README tier/resource/
+  prefix truth-ups, D7.3 cross-reference correction, spec §5.8 idle `.done`.
+- `7fc85e6b` `docs(sdd): M7 final-review fix` — task-3 final-review report.
+- `6787ed35` `docs(std_lib): M7 tier count truth-up` — this count correction.
+- This report: `docs(sdd): M7 T4 fix round 3` (this commit).
+
+Docs-only; product `sf/src`, seed, compiler, fixtures, and gate behavior are
+unchanged by the count truth-up (`6787ed35`).
