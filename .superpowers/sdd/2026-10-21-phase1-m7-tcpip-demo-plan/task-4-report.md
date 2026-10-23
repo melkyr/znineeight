@@ -1,0 +1,195 @@
+# M7 Task 4 report — Phase 1 closeout
+
+Status: COMPLETE — v119 rotated; full gate and both tiers green on the rotated compiler.
+
+## Environment
+
+- Repo: `/workspace/znineeight`
+- Base: `69070dc4` (M7 T3 complete)
+- Seed v118 compiler: `/tmp/m6_t3_v118_rotated/zig1_5_clean`
+  (md5 `45158dcede81125a39a2c2c58478e21e`)
+- Portable WireGuard tools: `IP=/tmp/m7_tools/ip/bin/ip`,
+  `WG=/tmp/m7_tools/wg12/usr/bin/wg`,
+  `LD_LIBRARY_PATH=/tmp/m7_tools/libs/usr/lib/x86_64-linux-gnu`
+
+## Step 1 — seed scripts + rotation candidate
+
+Seed scripts updated for the 47-file std set (`std_tcpip.zig` added to both
+copy lists; archive `SEED_README.txt` counts updated).
+
+Candidate archive generated with the unchanged v118 compiler and its
+self-emission C:
+
+```
+$ bash scripts/seed/archive_seed.sh /tmp/m6_t3_v118_rotated/zig1_5_clean \
+    /tmp/m6_t3_v118_rotated/gen /tmp/m7_t4_v119_candidate.tgz
+[archive] gcc-only rebuild of archive C md5 (fixed point): 45158dcede81125a39a2c2c58478e21e
+[archive] wrote /tmp/m7_t4_v119_candidate.tgz (archive md5 e7ac8cd2ed7e790a4b9225a82acaf4a5)
+| seed binary md5 | `45158dcede81125a39a2c2c58478e21e` |
+| fixed point | `45158dcede81125a39a2c2c58478e21e` |
+| lib manifest | `lib/manifest.md5` (47 std files; md5 `e731a3d2a7aef913f5bbcfd8670e5a2e`) |
+| archive md5 | `e7ac8cd2ed7e790a4b9225a82acaf4a5` |
+```
+
+Archive inventory check: 47 `lib/*.zig`, includes `std_tcpip.zig`, fixed point
+unchanged.
+
+## Step 2 — rotated compiler build + full gate
+
+Built from the candidate v119 archive:
+
+```
+$ FIXED_POINT_MD5=45158dcede81125a39a2c2c58478e21e \
+    bash scripts/seed/build_from_seed.sh /tmp/m7_t4_v119_candidate.tgz \
+    /tmp/m7_t4_v119_build
+[seed] hop2 binary md5: 45158dcede81125a39a2c2c58478e21e
+[seed] two-hop closure OK: hop1 == hop2 == 45158dcede81125a39a2c2c58478e21e
+[seed] recorded fixed point OK: 45158dcede81125a39a2c2c58478e21e
+=== [seed] Done: /tmp/m7_t4_v119_build ===
+rc=0
+md5 45158dcede81125a39a2c2c58478e21e  /tmp/m7_t4_v119_build/zig1_5_clean
+lib/ = 47 files (includes std_tcpip.zig)
+```
+
+Full std gate on the rotated compiler:
+
+```
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/m7_t4_v119_build/zig1_5_clean
+...
+run_fixtures: 336 PASS / 0 FAIL over 336 dirs
+...
+run_crosscheck: 10 PASS / 0 FAIL over 10 modules
+STDLIB GATE OK
+rc=0
+```
+
+`tier_tls.sh` on the rotated compiler, with the internet smoke enabled:
+
+```
+$ ZIG=/tmp/m7_t4_v119_build/zig1_5_clean Z98_NET=1 \
+    bash examples/z98/demo/tls_demo/tests/tier_tls.sh
+ok   - internet www.google.com/ status=200 bytes=90770
+ok   - internet example.com/ status=200 bytes=577
+ok   - internet RSA-PSS TLS 1.3 aws.amazon.com ... bytes=509551
+ok   - internet ECDSA TLS 1.3 letsencrypt.org ... bytes=90353
+ok   - RAM ceiling ok: /usr/bin/time peak RSS=2504 kB (ulimit -v 32768)
+== tier_tls summary: 19 passed, 0 failed, 0 skipped ==
+TIER_TLS PASS
+rc=0
+```
+
+`tier_wireguard.sh` on the rotated compiler (portable netns tools):
+
+```
+$ ZIG=/tmp/m7_t4_v119_build/zig1_5_clean \
+    bash examples/z98/demo/wireguard_demo/tests/tier_wireguard.sh
+wireguard_demo ok bytes=100 arena_peak=275192 rss_peak=2556 cpu_ms=70
+wine -osw run: ... rss_peak=6804 cpu_ms=450
+RAM ceiling ok: peak RSS=2388 kB (ulimit -v 32768)
+== tier_wireguard summary: 5 passed, 0 failed, 0 skipped ==
+TIER_WIREGUARD PASS
+rc=0
+```
+
+Measured demo resources used in the README tables:
+
+```
+tls_demo Linux 1.2:  arena_peak=321 rss_peak=2880 cpu_ms=330
+tls_demo Linux 1.3a: arena_peak=321 rss_peak=3064 cpu_ms=260
+tls_demo Linux 1.3c: arena_peak=321 rss_peak=2908 cpu_ms=230
+tls_demo Wine 1.2:   arena_peak=321 rss_peak=6908 cpu_ms=90
+wireguard Linux DNS: bytes=100 arena_peak=275192 rss_peak=2556 cpu_ms=70
+wireguard Wine:      bytes=100 arena_peak=275192 rss_peak=6804 cpu_ms=450
+```
+
+## Step 3 — docs/truth-ups/ledger
+
+Created `sf/docs/std_lib/tcpip.md` (API, TCP policy table, DNS/ICMP completion
+semantics, fixed memory bounds). Updated both demo READMEs with measured
+Linux/Wine tables and cross-links. Truthed up `STD_README.MD`, `README.md`, and
+`docs/sf/QUICK_REF.md` to 47 files / v119 / archive md5
+`e7ac8cd2ed7e790a4b9225a82acaf4a5` / manifest
+`e731a3d2a7aef913f5bbcfd8670e5a2e`, the 336/0 gate, and the Phase 1 summary.
+Appended defect-ledger D7 (Phase 1 sweep: fixed PSS `-fsafe` mask, fixed X.509
+path/key/sigalg, open demo-worked-around emitter lvalue shape).
+
+## Step 4 — committed-archive re-verification
+
+Rebuilt from the committed `release/seed/zig1-seed.tgz` after the rotation
+commit:
+
+```
+$ FIXED_POINT_MD5=45158dcede81125a39a2c2c58478e21e \
+    bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz \
+    /tmp/m7_t4_v119_final
+[seed] hop1 binary md5: 45158dcede81125a39a2c2c58478e21e
+[seed] hop2 binary md5: 45158dcede81125a39a2c2c58478e21e
+[seed] two-hop closure OK: hop1 == hop2 == 45158dcede81125a39a2c2c58478e21e
+[seed] recorded fixed point OK: 45158dcede81125a39a2c2c58478e21e
+=== [seed] Done: /tmp/m7_t4_v119_final ===
+archive md5 e7ac8cd2ed7e790a4b9225a82acaf4a5
+lib/ = 47 files
+compiler md5 45158dcede81125a39a2c2c58478e21e
+```
+
+Full gate and both tiers on that compiler:
+
+```
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/m7_t4_v119_final/zig1_5_clean
+run_fixtures: 336 PASS / 0 FAIL over 336 dirs
+run_crosscheck: 10 PASS / 0 FAIL over 10 modules
+STDLIB GATE OK
+rc=0
+
+$ ZIG=/tmp/m7_t4_v119_final/zig1_5_clean Z98_NET=1 \
+    bash examples/z98/demo/tls_demo/tests/tier_tls.sh
+== tier_tls summary: 19 passed, 0 failed, 0 skipped ==
+TIER_TLS PASS
+rc=0
+
+$ ZIG=/tmp/m7_t4_v119_final/zig1_5_clean \
+    bash examples/z98/demo/wireguard_demo/tests/tier_wireguard.sh   # run 1
+== tier_wireguard summary: 5 passed, 0 failed, 0 skipped ==
+TIER_WIREGUARD PASS
+rc=0
+$ ... same command ...                                            # run 2
+== tier_wireguard summary: 5 passed, 0 failed, 0 skipped ==
+TIER_WIREGUARD PASS
+rc=0
+```
+
+Final-run resource samples (run-to-run variation is expected; the README
+tables record one representative closeout run):
+`wireguard_demo ok bytes=100 arena_peak=275192 rss_peak=2552 cpu_ms=70`
+(Linux) and `rss_peak=6784 cpu_ms=450` (Wine); RAM run peak 2320 KiB, second
+run 2424 KiB.
+
+## Status
+
+COMPLETE. Seed v119 = 47 std files, archive md5
+`e7ac8cd2ed7e790a4b9225a82acaf4a5`, manifest md5
+`e731a3d2a7aef913f5bbcfd8670e5a2e`, fixed point unchanged
+`45158dcede81125a39a2c2c58478e21e` (std-only rotation; `sf/src`/compiler
+untouched). Full stdlib + crosscheck gate green; both tiers green on the
+rotated compiler; no silent skips.
+
+## Concerns
+
+- D7.3 remains an **open compiler emitter defect**: an indexed aggregate-field
+  nested write (`arr[i].field[0..] = ...`) can materialise a by-value
+  temporary. `wireguard_demo` works around it with an explicit pointer; no
+  compiler change was in scope here.
+- `tier_wireguard.sh` and the demo need a distinct client tunnel IP and an
+  increasing `clock_override_unix` when reusing one kernel peer (TAI64N replay
+  protection). The tier already isolates runs.
+- DNS is A/IN only; CNAME chains are `DnsFailed` by contract.
+- The seed CHANGELOG entry records the pre-closeout HEAD `69070dc4` because the
+  archive was assembled before the docs commit; the archive itself is committed
+  in `chore(seed): rotate (M7)`.
+- `run.err` remained untracked and untouched.
+
+## Commits
+
+- `b41e12cb` `docs(std_lib): tcpip docs + Phase 1 closeout`
+- `2d4eef3c` `chore(seed): rotate (M7)`
+- this report: `docs(sdd): M7 closeout report`
