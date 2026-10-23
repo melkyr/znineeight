@@ -45,7 +45,9 @@ path:
   Cookie-reply *generation* is out of scope (initiator only).
 
 All multi-byte wire integers are little-endian via explicit load/store
-helpers; no pointer alignment is assumed. State is entirely caller-owned:
+helpers, with one exception: the TAI64N timestamp is big-endian (8-byte
+seconds followed by 4-byte nanoseconds). No pointer alignment is assumed.
+State is entirely caller-owned:
 there is no arena parameter, no allocation, and no `free` (R1 does not apply
 because nothing allocates; R6 holds because time is an explicit parameter).
 
@@ -63,8 +65,8 @@ OutputTooSmall, NoSpace, InvalidPeer}`. `Corrupt` covers length/type/mac
 failures, `AuthenticationFailed` covers AEAD and DH failures,
 `NoSession`/`SessionExpired` cover missing or expired sessions and pending
 handshakes, `OutputTooSmall` a short caller `out` slice, `NoSpace` a full peer
-slice, and `InvalidPeer` a zero/low-order static key or an uninitialised
-device key.
+slice, and `InvalidPeer` a zero/low-order static key (plus an uninitialised
+device key in `wgCreateInitiation`).
 
 ## Message flow
 
@@ -120,8 +122,8 @@ peer.allowed_ip_count = 0;
 try std_wireguard.wgAddPeer(&dev, &peer);
 
 var out: [2048]u8 = undefined;
-const now_ms: u64 = std.time.milliTimestamp();
-const wall_unix_ns: u64 = std.time.wallClockUnix() * 1000000000;
+const now_ms: u64 = @intCast(u64, std.time.ticksMs());
+const wall_unix_ns: u64 = @intCast(u64, std.time.wallClockUnix()) * 1000000000;
 
 // Poll timers: sends handshakes/keepalives; never sleeps.
 const action = try std_wireguard.wgTick(&dev, now_ms, wall_unix_ns, out[0..]);
@@ -184,11 +186,11 @@ be serviced in one pass.
 | Constant | Value | Behaviour |
 |---|---:|---|
 | `WG_KEEPALIVE_TIMEOUT_MS` | 10 000 ms | With a live session younger than `REKEY_AFTER_TIME` and no transmit for 10 s, `wgTick` emits an **empty** transport message (`.send_keepalive`). |
-| `WG_REKEY_AFTER_TIME_MS` | 120 000 ms | Once the session is 120 s old, `wgTick` starts a rekey initiation (`.send_handshake`) when no handshake is in flight. The **active session remains usable**; `wgSend` keeps using its keys, indices, counter, and replay window. |
+| `WG_REKEY_AFTER_TIME_MS` | 120 000 ms | Once the session is 120 s old, `wgTick` starts a rekey initiation (`.send_handshake`) when the pending handshake is due — immediately if none is in flight, otherwise after the jittered retry interval. The **active session remains usable**; `wgSend` keeps using its keys, indices, counter, and replay window. |
 | `WG_REJECT_AFTER_TIME_MS` | 180 000 ms | At/after 180 s the session is dead: `wgSend` returns `error.SessionExpired` and `wgReceive` rejects inbound transport with `error.SessionExpired`. `wgTick` may still send an initiation; it never keepalives or encrypts an expired session. |
 | `WG_REKEY_TIMEOUT_MS` | 5 000 ms | Base retry interval while an initiation is pending. The actual delay is `5000 + ((attempts * 137) % 334)` ms — bounded per-attempt jitter, deterministic, no RNG and no sleep. The first initiation is sent immediately; the first retry is at 5 137 ms. |
 | `WG_REKEY_AFTER_MESSAGES` | `1 << 60` | Published policy constant; the current `wgSend` guard uses `WG_REJECT_AFTER_MESSAGES` only. |
-| `WG_REJECT_AFTER_MESSAGES` | `2^64 - 8192` | `wgSend` returns `error.SessionExpired` once `sending_counter` reaches this value. |
+| `WG_REJECT_AFTER_MESSAGES` | `2^64 - 8193` | `wgSend` returns `error.SessionExpired` once `sending_counter` reaches this value. |
 
 A successful response resets `handshake_attempts` to zero, installs the new
 session, and resets the transport counter and replay window.
@@ -431,15 +433,17 @@ private key) leaves `iface_pub` all zero and later initiation fails with
 
 **Parameters**
 - `dev` — initialised device with a caller-sized `peers` slice.
-- `peer` — configuration template. `remote_static_pub` and `preshared_key`
-  are required; `endpoint_*` and `allowed_ips` are copied for the caller.
+- `peer` — configuration template. `remote_static_pub` is required;
+  `preshared_key` is optional and all-zero when no PSK is configured;
+  `endpoint_*` and `allowed_ips` are copied for the caller.
 
 **Returns** — nothing; increments `dev.peer_count` and initialises the runtime
 state of the new slot.
 
 **Errors**
-- `error.InvalidPeer` — zero `remote_static_pub`, low-order/zero DH result, or
-  an uninitialised device key (`iface_pub` all zero).
+- `error.InvalidPeer` — zero `remote_static_pub`, a low-order/zero DH result,
+  or a failed X25519 operation. (`wgAddPeer` does not check `iface_pub`; the
+  uninitialised-device-key check lives in `wgCreateInitiation`.)
 - `error.NoSpace` — `peer_count >= peers.len`.
 
 **Gotchas** — `wgAddPeer` precomputes `DH(iface_priv, remote_static_pub)` and
