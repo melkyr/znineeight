@@ -310,6 +310,14 @@ fn icmpGet(s: *tcp.TcpipStack, ip: u32, now: u64) ?u32 {
     return r;
 }
 
+fn icmpTimedOut(s: *tcp.TcpipStack, ip: u32, now: u64) bool {
+    const r = tcp.icmpPing(s, ip, now) catch |err| {
+        return err == error.Timeout;
+    };
+    _ = r;
+    return false;
+}
+
 fn icmpSeq(p: []const u8) u16 {
     return load16(p, 26);
 }
@@ -390,7 +398,7 @@ fn testIcmp(s: *tcp.TcpipStack, now: u64) void {
     n = drive(s, t3 + 3000, null);
     ck(n == 0, "icmp timeout stops after max tries");
     ck(g_done, "icmp timeout terminal done");
-    ck(icmpGet(s, PEER, t3 + 3000) == null, "icmp timeout error");
+    ck(icmpTimedOut(s, PEER, t3 + 3000), "icmp timeout error.Timeout");
     g_done = false;
     n = drive(s, t3 + 3001, null);
     ck(n == 0, "icmp no fresh probe after terminal");

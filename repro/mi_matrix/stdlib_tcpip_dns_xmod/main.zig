@@ -251,6 +251,32 @@ fn buildDnsRespDiffName(out: []u8, id: u16, qname: []const u8, ans_name: []const
     return n + 4;
 }
 
+fn buildDnsRespCname(out: []u8, id: u16, qname: []const u8, target: []const u8) usize {
+    store16(out, 0, id);
+    store16(out, 2, 0x8180);
+    store16(out, 4, 1);
+    store16(out, 6, 1);
+    store16(out, 8, 0);
+    store16(out, 10, 0);
+    var n = dnsNameWire(out, 12, qname);
+    if (n == 0) return 0;
+    store16(out, n, 1);
+    store16(out, n + 2, 1);
+    n += 4;
+    out[n] = 0xC0;
+    out[n + 1] = 0x0C;
+    n += 2;
+    store16(out, n, 5);
+    store16(out, n + 2, 1);
+    store32(out, n + 4, 300);
+    const rdpos = n + 8;
+    const rstart = n + 10;
+    const rend = dnsNameWire(out, rstart, target);
+    if (rend == 0) return 0;
+    store16(out, rdpos, @intCast(u16, rend - rstart));
+    return rend;
+}
+
 fn checkQuery(p: []const u8, name: []const u8) u16 {
     ck(ipProto(p) == 17, "dns proto udp");
     ck(load16(p, 20) == DNS_PORT, "dns source port");
@@ -380,6 +406,23 @@ fn testQname(s: *tcp.TcpipStack, now: u64) void {
     ck(dnsFailed(s, "qname.example"), "dns qname mismatch DnsFailed");
 }
 
+fn testCname(s: *tcp.TcpipStack, now: u64) void {
+    ck(dnsStart(s, "alias.example"), "dns cname start");
+    var n = drive(s, now, null);
+    ck(n > 0, "dns cname query");
+    const id = checkQuery(g_pkt[0..n], "alias.example");
+
+    var rp: [MAX_PKT]u8 = undefined;
+    var pp: [MAX_PKT]u8 = undefined;
+    const m = buildDnsRespCname(rp[0..], id, "alias.example", "real.example");
+    const pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
+    n = drive(s, now + 1, pp[0..pl]);
+    ck(n == 0, "dns cname consumed");
+    ck(g_done, "dns cname terminal done");
+    ck(dnsFailed(s, "alias.example"), "dns cname DnsFailed");
+}
+
 fn testMalformed(s: *tcp.TcpipStack, now: u64) void {
     var rp: [MAX_PKT]u8 = undefined;
     var pp: [MAX_PKT]u8 = undefined;
@@ -482,6 +525,7 @@ pub fn main() void {
     testQueryAnswer(st, 1000);
     testMismatch(st, 10000);
     testQname(st, 15000);
+    testCname(st, 18000);
     testMalformed(st, 20000);
     testRetry(st, 30000);
 
