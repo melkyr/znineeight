@@ -218,3 +218,24 @@ byte-identical to the verified v119 closeout).
 
 Docs commit: `c6036786` `docs(std_lib): Phase 1 closeout doc accuracy`.
 Report commit: `docs(sdd): M7 T4 fix round`.
+
+## Fix round 2 — STOP cross-reference correction (base `641f6948`)
+
+Docs-only; no source/seed change and no gate rerun (inputs byte-identical to
+the verified v119 closeout).
+
+- Corrected D7 STOP-2: it was resolved by **v112** (1C-F, fixed point
+  `21c95773…` → `45158dce…`) and then **v113** (Task 4), not “v113→v114”.
+- Removed the false claim that a tier/Wine run pins `tls_demo`'s Winsock
+  lifetime. `tier_tls.sh` only builds/import-gates `-osw`; no tier executes
+  `tls_demo` under Wine, and the Winsock lifetime has no automated regression
+  coverage. The manual Wine recipe in `examples/z98/demo/tls_demo/README.md` is
+  the only current check.
+- Reframed the M4 Winsock/clock items as **Medium/Low review fixes**, not
+  STOPs.
+- Root `README.md`: scoped “not executed” to **not executed by `tier_tls`**;
+  `tier_wireguard` executes its demo under Wine and `tls_demo/README.md`
+  documents a manual Wine run.
+
+Docs commit: `docs(std_lib): correct Phase 1 STOP cross-reference`.
+Report commit: `docs(sdd): M7 T4 fix round 2`.
