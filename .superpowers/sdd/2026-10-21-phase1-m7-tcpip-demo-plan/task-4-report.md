@@ -242,12 +242,14 @@ Report commit: `docs(sdd): M7 T4 fix round 2`.
 
 ## Post-closeout final-review commits
 
-The closeout logs above keep their contemporaneous `tier_wireguard.sh`
-`5 passed, 0 failed, 0 skipped` integration subset. The current tier adds four
-pre-netns config checks plus the outer build/import checks, so it now reports
-`13 passed, 0 failed, 0 skipped` (4 config + 5 in-netns integration + 4
-build/import). The truth-up is recorded in `docs/sf/QUICK_REF.md`,
-`examples/torrent_example_defects.md`, and `wireguard_demo/NOTES.md`.
+The closeout logs above report `5 passed, 0 failed, 0 skipped` because the
+earlier summary counted only the **5 in-netns integration cases**. The four
+config checks and four build/import checks already existed and ran at closeout.
+Commit `afc87e59` added config-failure propagation and carried the outer
+counts into the summary, producing `13 passed, 0 failed, 0 skipped`
+(4 config + 5 in-netns integration + 4 build/import). The truth-up is recorded
+in `docs/sf/QUICK_REF.md`, `examples/torrent_example_defects.md`, and
+`wireguard_demo/NOTES.md`.
 
 - `afc87e59` `test(tier): propagate config failures + DNS source negative (Phase1 M7)`
   — config regressions abort before `unshare`; outer counts carried into the
@@ -260,3 +262,22 @@ build/import). The truth-up is recorded in `docs/sf/QUICK_REF.md`,
 
 Docs-only; product `sf/src`, seed, compiler, fixtures, and gate behavior are
 unchanged by the count truth-up (`6787ed35`).
+
+## Fix round 4 — historical tier count context (base `3703f280`)
+
+Docs-only; no source, seed, fixture, or gate change.
+
+- Removed the false claim that the config/build checks were added after
+  closeout. The four config checks and four build/import checks already
+  existed and ran at closeout;
+  the older `5 passed, 0 failed, 0 skipped` summary counted only the
+  **5 in-netns integration cases**. Commit `afc87e59` added config-failure
+  propagation and carried the outer counts into the summary, yielding
+  `13/13` (4 config + 5 in-netns + 4 build/import).
+- Corrected `examples/torrent_example_defects.md` and
+  `examples/z98/demo/wireguard_demo/NOTES.md` to that meaning; added context
+  to the task-3 report status line; corrected this report's post-closeout
+  paragraph.
+
+Docs commit: `b19d1ef6` `docs(std_lib): correct M7 historical tier count context`.
+Report commit: `docs(sdd): M7 T4 fix round 4`.

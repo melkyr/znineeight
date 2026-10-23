@@ -1,6 +1,8 @@
 # M7 Task 3 report — `wireguard_demo` + `tier_wireguard.sh`
 
-Status: COMPLETE — tier 2× green (5/5 cases each), demo targeted checks green
+Status: COMPLETE — tier 2× green (5/5 in-netns integration cases each; the tier
+also ran 4 config + 4 build/import checks, later summarized as 13/13), demo
+targeted checks green
 
 ## Environment
 
