@@ -35,7 +35,7 @@ compiles itself to become the fully self-hosted compiler, **zig1** — the subje
 ## Current Status
 The **self-hosted milestone is complete**: `zig1` compiles itself, the compilation is
 **deterministic to a fixed point** (current self-compile binary md5 `45158dce…`; committed seed
-**v117**, `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
+**v118**, `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
 [Determinism](#determinism)), and the maintained example matrix is **25/25** dump/gcc/link. The
 mi_matrix corpus at `-s0` is enumerated by the canonical generator
 [`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the documented
@@ -89,11 +89,11 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
 
 - **Current self-compile fixed point:** self-compiled `zig1` binary md5
   `45158dcede81125a39a2c2c58478e21e` (47 module `.c` + 48 module `.h`, 0 `error[`, 0 PANIC;
-  hop1 == hop2 closure), committed seed **v117** (`release/seed/zig1-seed.tgz`, archive md5
-  `111e0474c702a582516f60c2e570a3c0`; `lib/manifest.md5` md5
-  `ef02702556fe1ae8c21e68d8f2bff141`, 45 std files). The fixed point moved to `F_new` at M2
-  T1C-F (the `const`-rodata compiler fix); the seed payload moved to v117 at the M5 TLS 1.3
-  closeout (updates `std_tls`; no new module and no compiler movement).
+  hop1 == hop2 closure), committed seed **v118** (`release/seed/zig1-seed.tgz`, archive md5
+  `9716ea682cf7eb9147b5e642ce48fc93`; `lib/manifest.md5` md5
+  `15c7bc2daeba84f892ef376df7cf4a7d`, 46 std files). The fixed point moved to `F_new` at M2
+  T1C-F (the `const`-rodata compiler fix); the seed payload moved to v118 at the M6 WireGuard
+  closeout (adds `std_wireguard`; no compiler movement).
 - **Historical fixed point (0.20.0-era):** `553a39b4…` / seed v27 (45 module `.c` + 46 module `.h`);
   the operator-approved C89-AHEAD closeout (2026-09-13) was at the earlier fixed point
   `1467d932…` / seed v10. The old N-hop chain (seed v26 `f03d8485…` → hop1/hop2 `553a39b4…`) is
@@ -344,13 +344,13 @@ To build a Z98 program on a target machine you need:
 - [README_zig0_bootstrap.md](README_zig0_bootstrap.md) — the preserved bootstrap-era (`zig0`)
   README, kept byte-verbatim.
 
-## Standard Library  [updated: 2026-10-22 — M5]
+## Standard Library  [updated: 2026-10-23 — M6]
 The Z98 standard library lives in `sf/src/std_*.zig`. Its core modules (`io`, `arena`, `str`,
 `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `buf`) are re-exported through
 `@import("std")`; the higher layers (`std_file`, `std_stdin`, `std_stream`, `std_crypto`,
-`std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_parse`, `std_map`, `std_sort`, `std_heap`,
-`std_rle`, `std_base64`, `std_hex`, `std_utf8`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
-`std_num`, `std_pathfind`, `std_hpa`, `std_physics`)
+`std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_wireguard`, `std_parse`,
+`std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`, `std_utf8`, `std_rand`,
+`std_noise`, `std_lz4`, `std_zstd`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics`)
 are imported by path. `std_crypto` provides streaming SHA-1/256/384/512, MD5, CRC-32,
 HMAC-SHA256, HKDF, BLAKE2s, RC4, modexp, and RSA PKCS#1 v1.5 / PSS verify; `std_cipher`
 provides ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128, and AES-128-GCM (const T-tables);
@@ -358,7 +358,9 @@ provides ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128, and AES-128-GCM (const 
 provides the streaming DER reader and `std_x509` certificate parsing, leaf-to-anchor chain
 verification, SAN dNSName hostname matching, and the pinned trust-store loader; `std_tls`
 provides the sans-I/O TLS 1.2/1.3 record layer and client handshakes (TLS 1.3 suites,
-x25519, HKDF-Expand-Label key schedule, ECDSA/P-384/RSA-PSS CertificateVerify). See the
+x25519, HKDF-Expand-Label key schedule, ECDSA/P-384/RSA-PSS CertificateVerify); and
+`std_wireguard` provides the sans-I/O WireGuard initiator (NoiseIK handshake, transport
+data path, timers, replay window, and cookie consumption). See the
 guide for the library's model and an index that links each domain's detailed doc:
 
 
