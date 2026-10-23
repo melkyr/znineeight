@@ -68,14 +68,14 @@
 
 **Files:**
 - Create: `examples/z98/demo/wireguard_demo/{main.zig,wg.conf.example,README.md,NOTES.md}`
-- Create: `scripts/stdlib/tier_wireguard.sh` (or tests/ placement per house tier convention)
+- Create: `examples/z98/demo/wireguard_demo/tests/tier_wireguard.sh`
 
 **Interfaces:**
 - Consumes: `std_wireguard` (M6), `std_tcpip` (T1/T2), `std_net` UDP, `std_time`, `std_arena`.
 - Produces: config-driven demo: handshake → `dnsResolve`/direct IP → `tcpConnect` to mud server tunnel IP → print banner → send one command → print reply → resource line + exit 0.
 
-- [ ] **Step 1:** Implement demo (WAV-style house CLI conventions not needed — plain console; explicit `wall_unix_ns`/`now_ms` from `std_time`; `clock_override_unix` support; precise failure text `wg: …`/`tcp: …`).
-- [ ] **Step 2:** `tier_wireguard.sh`: start Linux kernel WireGuard (`wg-quick` netns, committed tiny conf template with generated keys) + `mud_server` bound on the tunnel net; run the demo (Linux build) asserting banner bytes + resource line; Wine `-osw` run of the same demo against the same far side (tier case); `check_win9x_imports.sh 9x` gate; RAM enforcement `ulimit -v 32768` + recorded peak; loud SKIP when `wg`/`ip netns` absent.
+- [ ] **Step 1:** Implement demo (WAV-style house CLI conventions not needed — plain console; explicit `wall_unix_ns`/`now_ms` from `std_time`; `clock_override_unix` support; precise failure text `wg: …`/`tcp: …`). After `wgInit`, reseed `dev.rng = std_rand.xoshiroInit(seed)` from `std_time`/config; `wgInit` zeroes the RNG.
+- [ ] **Step 2:** `tier_wireguard.sh`: start Linux kernel WireGuard (`wg-quick` netns, committed tiny conf template with generated keys) + `mud_server` bound on the tunnel net; run the demo (Linux build) asserting banner bytes + resource line; Wine `-osw` run of the same demo against the same far side (tier case); `check_win9x_imports.sh 9x` gate; RAM enforcement `ulimit -v 32768` + recorded peak. Before SKIP, attempt a self-contained portable `wg`/`ip` binary set (no root install); if unavailable, emit a loud SKIP and record M7 integration as pending.
 - [ ] **Step 3:** Run `tier_wireguard.sh` 2× deterministic + targeted demo checks + 3×. Full gate at Task 4 closeout.
 - [ ] **Step 4:** Commits `example(z9demo): wireguard_demo (Phase1 M7)`, `test(tier): tier_wireguard (Phase1 M7)`.
 
