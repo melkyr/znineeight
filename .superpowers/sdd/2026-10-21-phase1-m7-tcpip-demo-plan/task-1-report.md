@@ -1,11 +1,11 @@
 # M7 Task 1 report — `std_tcpip` IPv4 + TCP client core
 
-Status: COMPLETE — targeted fixture PASS (3×); implementation commit below
+Status: COMPLETE + FIX ROUND — targeted fixture PASS (3×) before and after fixes
 
 ## Environment
 
 - Repo: `/workspace/znineeight`
-- Base: `ece401f4`
+- Base: `ece401f4` (initial task); fix-round base: `b47344be`
 - Seed compiler: `/tmp/m6_t3_v118_rotated/zig1_5_clean`
 - Seed md5: `45158dcede81125a39a2c2c58478e21e`
 
@@ -18,10 +18,16 @@ Created `repro/mi_matrix/stdlib_tcpip_tcp_xmod/main.zig` covering:
 - FIN close (`fin_wait` + peer FIN|ACK -> `closed`)
 - RST -> `failed`
 - dropped ACK -> re-send of the same sequence after the 1 s RTO
-- out-of-order peer segments buffered within 8 KB and delivered in order
-- MSS 1400 split of a 5 KB `tcpSend` (1400/1400/1400/800) with `tcpClose`
-  called while the whole buffer is still queued: pending data must drain
-  before FIN
+- out-of-order peer segments buffered within 8 KB and delivered in order;
+  duplicate bytes ACKed but not delivered twice
+- `cfg.mtu=1400` -> local MSS 1360 split of a 5 KB `tcpSend`
+  (1360/1360/1360/920) with `tcpClose` called while the whole buffer is still
+  queued: pending data must drain before FIN
+- peer-advertised MSS 1200 clamps outgoing segments (1200 + 100)
+- receive/send sequence + ACK wrap across 2^32
+- arena OOM at init and no-free-socket -> `OutOfMemory`
+- `OutputTooSmall` during FIN leaves the socket retryable (same FIN seq)
+- out-of-window FIN rejected, then a valid FIN -> `closed`
 - malformed IPv4/TCP checksums -> `error.Corrupt`
 
 Goldens: `expected.txt` = `tcpip tcp ok\n`, `expected.rc` = `0`.
@@ -54,11 +60,11 @@ Created `sf/src/std_tcpip.zig`:
 - `tcpConnect`, `tcpSend`, `tcpRecv`, `tcpClose`.
 - IPv4 header build (DF, TTL 64, protocol 6) + one's-complement checksum
   (`ipv4Checksum` exposed) and inbound validation.
-- TCP client FSM: SYN/SYN-ACK/ACK, seq/ack, 8 KB receive window, MSS 1400,
-  16 KB fixed send buffer, out-of-order reassembly ring, retransmit with fixed
-  1 s RTO (Karn: no RTT samples), slow start + AIMD, RTO timeout halves
-  `ssthresh` and restarts at 1 MSS, FIN close (active + passive), RST ->
-  `failed`.
+- TCP client FSM: SYN/SYN-ACK/ACK, seq/ack, 8 KB receive window,
+  MTU-derived per-socket MSS, 16 KB fixed send buffer, out-of-order reassembly
+  ring, retransmit with fixed 1 s RTO (Karn: no RTT samples), slow start +
+  AIMD, RTO timeout halves `ssthresh` and restarts at 1 MSS, FIN close (active
+  + passive), RST -> `failed`.
 - Inbound fragments (MF or non-zero offset) are dropped; UDP/ICMP and
   non-local destinations are ignored.
 
@@ -106,12 +112,49 @@ Affected crosscheck: none — `std_tcpip` is a new independent module with no
 
 Full `verify_stdlib.sh` + full crosscheck deferred to Task 4 closeout per brief.
 
+## Fix round — MTU/MSS + FIN state safety
+
+Binding long-term rule implemented:
+
+- `cfg.mtu` is the maximum inner IPv4 datagram (headers included; default 1400
+  when zero). Local MSS = `cfg.mtu - 40`.
+- `parseMssOption` reads the peer MSS option from the SYN-ACK. The per-socket
+  effective `p.mss` = `min(peer MSS, local MSS)` (local when absent). It is used
+  for the SYN MSS option, every data/retransmit segment, initial cwnd, slow
+  start/AIMD (`m*m/cwnd`), and the RTO floor/restart.
+- `buildSegment` rejects any datagram whose total size exceeds `cfg.mtu`.
+- FIN emission now builds the segment first and commits
+  `fin_wait1`/`fin_sent`/`fin_seq`/`snd_nxt` only after success, so an
+  `OutputTooSmall` poll leaves the socket retryable with the same FIN seq.
+- `handleFin` accepts a FIN only when `fin_seq - rcv_nxt` is inside the current
+  8 KB advertised receive window; an out-of-window FIN is ACKed but does not
+  poison `peer_fin_pending`, so a later valid FIN completes `.closed`.
+
+Fixture additions: local 1360 split of 5 KB, peer MSS 1200 clamp, duplicate
+inbound data, send/receive seq+ACK wrap, arena-init OOM and no-free-socket,
+`OutputTooSmall` FIN retry, and out-of-window FIN followed by a valid FIN.
+
+3× targeted gate after the fixes:
+
+```
+=== fix run 1 ===
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+=== fix run 2 ===
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+=== fix run 3 ===
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+```
+
 ## Concerns
 
-- `TcpipConfig.mtu` is retained as config (defaulted to 1400 when zero), but the
-  spec also fixes MSS = 1400. The implementation uses the fixed MSS 1400 for
-  segmentation (as required by the 5 KB split test) rather than deriving an MSS
-  from `mtu`.
+- Configuration with `mtu < 44` cannot carry a TCP SYN with the MSS option;
+  `localMss` floors at 1, but such an MTU is not a usable TCP config (not
+  exercised; valid configs are `mtu >= 44`).
+- The sequence-wrap fixture overrides the stack's deterministic client ISS
+  through the public `TcpSock` fields before the SYN (white-box setup only).
 - Passive close sends ACK then FIN when the peer initiates the FIN; the `closed`
   event is delivered after the app drains buffered data.
 - The target fixture imports the new module; the seed sibling `lib/` copy used
@@ -119,6 +162,10 @@ Full `verify_stdlib.sh` + full crosscheck deferred to Task 4 closeout per brief.
 
 ## Commits
 
-- Implementation: `6e14ce78fb8756dcb458cde9b9278b95de45133f`
+- Initial implementation: `6e14ce78fb8756dcb458cde9b9278b95de45133f`
   `feat(std_tcpip): IPv4 + TCP client (Phase1 M7)`
-- This report: `docs(sdd): M7 T1 report` (this commit)
+- Initial report: `72da436f596f109c90ed0b81ac133db08b17c2ad`
+  `docs(sdd): M7 T1 report`
+- Fix round: `5c532f83398df7a705345c8a53a7ee2308b307ef`
+  `fix(std_tcpip): MTU-derived MSS + FIN state safety (Phase1 M7)`
+- This report update: `docs(sdd): M7 T1 fix round` (this commit)
