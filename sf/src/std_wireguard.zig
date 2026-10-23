@@ -32,7 +32,23 @@ pub const WG_TAI64N_LEN: usize = 12;
 pub const WG_AUTHTAG_LEN: usize = 16;
 pub const WG_INITIATION_LEN: usize = 148;
 pub const WG_RESPONSE_LEN: usize = 92;
+pub const WG_COOKIE_REPLY_LEN: usize = 64;
+pub const WG_COOKIE_LEN: usize = 16;
+pub const WG_COOKIE_NONCE_LEN: usize = 24;
+pub const WG_TRANSPORT_HDR_LEN: usize = 16;
+pub const WG_AUTHTAG_LEN: usize = 16;
 pub const WG_MAX_ALLOWED_IPS: usize = 8;
+
+// Transport/timer policy (spec §5.7). REKEY_TIMEOUT is 5 s plus bounded
+// per-attempt jitter; no wall-clock sleep is ever used.
+pub const WG_REKEY_AFTER_TIME_MS: u64 = 120 * 1000;
+pub const WG_REJECT_AFTER_TIME_MS: u64 = 180 * 1000;
+pub const WG_REKEY_TIMEOUT_MS: u64 = 5 * 1000;
+pub const WG_KEEPALIVE_TIMEOUT_MS: u64 = 10 * 1000;
+pub const WG_REKEY_AFTER_MESSAGES: u64 = 1 << 60;
+pub const WG_REJECT_AFTER_MESSAGES: u64 = 0xFFFFFFFFFFFFFFFF - (1 << 13);
+pub const WG_REPLAY_WINDOW_BITS: usize = 2048;
+const WG_REPLAY_WORDS: usize = WG_REPLAY_WINDOW_BITS / 64;
 
 pub const WgKey = [WG_KEY_LEN]u8;
 
@@ -44,6 +60,16 @@ pub const WgError = error{
     OutputTooSmall,
     NoSpace,
     InvalidPeer,
+};
+
+// `usize` payloads are the number of bytes written to the caller's `out`.
+pub const WgAction = union(enum) {
+    none,
+    send_handshake: usize,
+    send_keepalive: usize,
+    session_up: void,
+    inner_packet: usize,
+    dropped_replay: void,
 };
 
 pub const WgAllowedIp = struct {
@@ -89,11 +115,21 @@ pub const WgPeer = struct {
     rx_key: WgKey,
     session_valid: bool,
 
-    // Timer bookkeeping reserved for Task 2.
+    // Transport counter and 2048-bit sliding replay window. `replay_counter`
+    // is the highest accepted counter; bit 0 of `replay_bitmap[0]` is that
+    // counter, bit 1 the one below, and so on.
+    sending_counter: u64,
+    replay_bitmap: [WG_REPLAY_WORDS]u64,
+    replay_counter: u64,
+    replay_valid: bool,
+
+    // Timer bookkeeping.
     last_handshake_sent_ms: u64,
     last_handshake_received_ms: u64,
     session_created_ms: u64,
     handshake_attempts: u32,
+    last_tx_ms: u64,
+    last_rx_ms: u64,
 };
 
 pub const WgDevice = struct {
@@ -355,6 +391,17 @@ pub fn wgAddPeer(dev: *WgDevice, peer: *const WgPeer) WgError!void {
     zeroBytes(slot.chaining_key[0..]);
     zeroBytes(slot.ephemeral_priv[0..]);
     zeroBytes(slot.remote_ephemeral[0..]);
+    slot.sending_counter = 0;
+    slot.replay_counter = 0;
+    slot.replay_valid = false;
+    var wi: usize = 0;
+    while (wi < WG_REPLAY_WORDS) : (wi += 1) slot.replay_bitmap[wi] = 0;
+    slot.last_handshake_sent_ms = 0;
+    slot.last_handshake_received_ms = 0;
+    slot.session_created_ms = 0;
+    slot.handshake_attempts = 0;
+    slot.last_tx_ms = 0;
+    slot.last_rx_ms = 0;
     dev.peer_count += 1;
 }
 
@@ -499,4 +546,334 @@ pub fn wgProcessResponse(dev: *WgDevice, peer: *WgPeer, msg: []const u8) WgError
     peer.session_valid = true;
     peer.hs_valid = false;
     peer.hs_initiator = false;
+}
+
+// ---------------------------------------------------------------------------
+// Transport data, replay window, timers, cookie consumption (spec §5.7)
+// ---------------------------------------------------------------------------
+
+fn store64le(p: []u8, off: usize, v: u64) void {
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        p[off + i] = @intCast(u8, (v >> @intCast(u64, i * 8)) & 0xFF);
+    }
+}
+
+fn load64le(p: []const u8, off: usize) u64 {
+    var v: u64 = 0;
+    var shift: u64 = 0;
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        v |= @intCast(u64, p[off + i]) << shift;
+        shift += 8;
+    }
+    return v;
+}
+
+fn transportNonce(counter: u64, nonce: *[12]u8) void {
+    zeroBytes(nonce[0..]);
+    store64le(nonce[0..], 4, counter);
+}
+
+fn sealTransport(key: *const [32]u8, counter: u64, pt: []const u8, ct: []u8, tag: *[16]u8) WgError!void {
+    var nonce: [12]u8 = undefined;
+    transportNonce(counter, &nonce);
+    cipher.chacha20Poly1305Seal(key, &nonce, pt[0..0], pt, ct, tag) catch return error.Corrupt;
+}
+
+fn openTransport(key: *const [32]u8, counter: u64, ct: []const u8, tag: *const [16]u8, pt: []u8) WgError!void {
+    var nonce: [12]u8 = undefined;
+    transportNonce(counter, &nonce);
+    cipher.chacha20Poly1305Open(key, &nonce, ct[0..0], ct, tag, pt) catch |err| {
+        if (err == error.AuthenticationFailed) return error.AuthenticationFailed;
+        return error.Corrupt;
+    };
+}
+
+fn replayReset(peer: *WgPeer) void {
+    var i: usize = 0;
+    while (i < WG_REPLAY_WORDS) : (i += 1) peer.replay_bitmap[i] = 0;
+    peer.replay_counter = 0;
+    peer.replay_valid = false;
+}
+
+// RFC 6479-style sliding window over 2048 bits. `counter == replay_counter`
+// is a duplicate (bit 0 is already set); counters below the window are dropped.
+fn replayAccept(peer: *WgPeer, counter: u64) bool {
+    if (!peer.replay_valid) {
+        replayReset(peer);
+        peer.replay_valid = true;
+        peer.replay_counter = counter;
+        peer.replay_bitmap[0] = 1;
+        return true;
+    }
+    if (counter > peer.replay_counter) {
+        const diff: u64 = counter - peer.replay_counter;
+        if (diff >= @intCast(u64, WG_REPLAY_WINDOW_BITS)) {
+            var i: usize = 0;
+            while (i < WG_REPLAY_WORDS) : (i += 1) peer.replay_bitmap[i] = 0;
+        } else {
+            var k: u64 = 0;
+            while (k < diff) : (k += 1) {
+                var carry: u64 = 0;
+                var w: usize = 0;
+                while (w < WG_REPLAY_WORDS) : (w += 1) {
+                    const next: u64 = peer.replay_bitmap[w] >> 63;
+                    peer.replay_bitmap[w] = (peer.replay_bitmap[w] << 1) | carry;
+                    carry = next;
+                }
+            }
+        }
+        peer.replay_bitmap[0] |= 1;
+        peer.replay_counter = counter;
+        return true;
+    }
+
+    const diff: u64 = peer.replay_counter - counter;
+    if (diff >= @intCast(u64, WG_REPLAY_WINDOW_BITS)) return false;
+    const word: usize = @intCast(usize, diff / 64);
+    const bit: u64 = diff % 64;
+    const mask: u64 = @intCast(u64, 1) << bit;
+    if ((peer.replay_bitmap[word] & mask) != 0) return false;
+    peer.replay_bitmap[word] |= mask;
+    return true;
+}
+
+fn retryDelayMs(attempts: u32) u64 {
+    var jitter: u64 = @intCast(u64, attempts) * 137;
+    jitter = jitter % 334;
+    return WG_REKEY_TIMEOUT_MS + jitter;
+}
+
+fn handshakeDue(peer: *WgPeer, now_ms: u64) bool {
+    if (!peer.hs_valid) return true;
+    if (now_ms < peer.last_handshake_sent_ms) return false;
+    return now_ms - peer.last_handshake_sent_ms >= retryDelayMs(peer.handshake_attempts);
+}
+
+fn sendInitiation(dev: *WgDevice, peer: *WgPeer, now_ms: u64, wall_unix_ns: u64, out: []u8) WgError!WgAction {
+    const n = try wgCreateInitiation(dev, peer, wall_unix_ns, out);
+    peer.last_handshake_sent_ms = now_ms;
+    if (peer.handshake_attempts < 0xFFFFFFFF) peer.handshake_attempts += 1;
+    return WgAction{ .send_handshake = n };
+}
+
+fn encryptTransport(peer: *WgPeer, now_ms: u64, inner_ip: []const u8, out: []u8) WgError!usize {
+    const padded: usize = (inner_ip.len + 15) & ~@as(usize, 15);
+    const total: usize = WG_TRANSPORT_HDR_LEN + padded + WG_AUTHTAG_LEN;
+    if (out.len < total) return error.OutputTooSmall;
+
+    zeroBytes(out[0..total]);
+    out[0] = 4;
+    store32le(out, 4, peer.remote_index);
+    store64le(out, 8, peer.sending_counter);
+    copyBytes(out[WG_TRANSPORT_HDR_LEN .. WG_TRANSPORT_HDR_LEN + inner_ip.len], inner_ip);
+
+    var tag: [16]u8 = undefined;
+    try sealTransport(&peer.tx_key, peer.sending_counter,
+        out[WG_TRANSPORT_HDR_LEN .. WG_TRANSPORT_HDR_LEN + padded],
+        out[WG_TRANSPORT_HDR_LEN .. WG_TRANSPORT_HDR_LEN + padded], &tag);
+    copyBytes(out[WG_TRANSPORT_HDR_LEN + padded .. WG_TRANSPORT_HDR_LEN + padded + WG_AUTHTAG_LEN], tag[0..]);
+    peer.sending_counter += 1;
+    peer.last_tx_ms = now_ms;
+    return total;
+}
+
+fn innerPacketLen(pt: []const u8) usize {
+    if (pt.len == 0) return 0;
+    const version: u8 = pt[0] >> 4;
+    if (version == 4) {
+        if (pt.len < 4) return pt.len;
+        const total: usize = (@intCast(usize, pt[2]) << 8) | @intCast(usize, pt[3]);
+        if (total >= 20 and total <= pt.len) return total;
+        return pt.len;
+    }
+    if (version == 6) {
+        if (pt.len < 6) return pt.len;
+        const total: usize = 40 + ((@intCast(usize, pt[4]) << 8) | @intCast(usize, pt[5]));
+        if (total <= pt.len) return total;
+        return pt.len;
+    }
+    return pt.len;
+}
+
+fn peerForHandshake(dev: *WgDevice, receiver: u32) ?*WgPeer {
+    var i: usize = 0;
+    while (i < dev.peer_count) : (i += 1) {
+        const p = &dev.peers[i];
+        if (p.hs_valid and p.hs_initiator and p.local_index == receiver) return p;
+    }
+    return null;
+}
+
+fn peerForSession(dev: *WgDevice, receiver: u32) ?*WgPeer {
+    var i: usize = 0;
+    while (i < dev.peer_count) : (i += 1) {
+        const p = &dev.peers[i];
+        if (p.session_valid and p.local_index == receiver) return p;
+    }
+    return null;
+}
+
+fn setSessionUp(peer: *WgPeer, now_ms: u64) void {
+    peer.session_created_ms = now_ms;
+    peer.last_handshake_received_ms = now_ms;
+    peer.last_tx_ms = now_ms;
+    peer.last_rx_ms = now_ms;
+    peer.sending_counter = 0;
+    peer.handshake_attempts = 0;
+    replayReset(peer);
+}
+
+fn rotl32(x: u32, n: u32) u32 {
+    const s: u32 = n % 32;
+    if (s == 0) return x;
+    return (x << s) | (x >> (32 - s));
+}
+
+fn chachaQr(x: *[16]u32, a: usize, b: usize, c: usize, d: usize) void {
+    x[a] = x[a] +% x[b];
+    x[d] = rotl32(x[d] ^ x[a], 16);
+    x[c] = x[c] +% x[d];
+    x[b] = rotl32(x[b] ^ x[c], 12);
+    x[a] = x[a] +% x[b];
+    x[d] = rotl32(x[d] ^ x[a], 8);
+    x[c] = x[c] +% x[d];
+    x[b] = rotl32(x[b] ^ x[c], 7);
+}
+
+// HChaCha20 (draft-arciszewski-xchacha §2.2) for CookieReply decryption.
+fn hchacha20(key: *const [32]u8, nonce16: []const u8, out: *[32]u8) void {
+    var s: [16]u32 = undefined;
+    s[0] = 0x61707865;
+    s[1] = 0x3320646e;
+    s[2] = 0x79622d32;
+    s[3] = 0x6b206574;
+    var i: usize = 0;
+    while (i < 8) : (i += 1) s[4 + i] = load32le(key[0..], i * 4);
+    i = 0;
+    while (i < 4) : (i += 1) s[12 + i] = load32le(nonce16, i * 4);
+
+    var r: usize = 0;
+    while (r < 10) : (r += 1) {
+        chachaQr(&s, 0, 4, 8, 12);
+        chachaQr(&s, 1, 5, 9, 13);
+        chachaQr(&s, 2, 6, 10, 14);
+        chachaQr(&s, 3, 7, 11, 15);
+        chachaQr(&s, 0, 5, 10, 15);
+        chachaQr(&s, 1, 6, 11, 12);
+        chachaQr(&s, 2, 7, 8, 13);
+        chachaQr(&s, 3, 4, 9, 14);
+    }
+
+    i = 0;
+    while (i < 4) : (i += 1) store32le(out[0..], i * 4, s[i]);
+    i = 0;
+    while (i < 4) : (i += 1) store32le(out[0..], 16 + i * 4, s[12 + i]);
+}
+
+fn xchachaOpen(key: *const [32]u8, nonce24: []const u8, ad: []const u8,
+    ct: []const u8, tag: []const u8, pt: []u8) WgError!void
+{
+    var subkey: [32]u8 = undefined;
+    hchacha20(key, nonce24[0..16], &subkey);
+    var nonce12: [12]u8 = undefined;
+    zeroBytes(nonce12[0..]);
+    copyBytes(nonce12[4..12], nonce24[16..24]);
+    var tag16: [16]u8 = undefined;
+    copyBytes(tag16[0..], tag);
+    cipher.chacha20Poly1305Open(&subkey, &nonce12, ad, ct, &tag16, pt) catch |err| {
+        if (err == error.AuthenticationFailed) return error.AuthenticationFailed;
+        return error.Corrupt;
+    };
+}
+
+pub fn wgSend(dev: *WgDevice, now_ms: u64, wall_unix_ns: u64, inner_ip: []const u8, out: []u8) WgError!usize {
+    _ = wall_unix_ns;
+    var i: usize = 0;
+    while (i < dev.peer_count) : (i += 1) {
+        const p = &dev.peers[i];
+        if (!p.session_valid) continue;
+        if (now_ms >= p.session_created_ms and now_ms - p.session_created_ms >= WG_REJECT_AFTER_TIME_MS) {
+            return error.SessionExpired;
+        }
+        if (p.sending_counter >= WG_REJECT_AFTER_MESSAGES) return error.SessionExpired;
+        return encryptTransport(p, now_ms, inner_ip, out);
+    }
+    return error.NoSession;
+}
+
+pub fn wgTick(dev: *WgDevice, now_ms: u64, wall_unix_ns: u64, out: []u8) WgError!WgAction {
+    var i: usize = 0;
+    while (i < dev.peer_count) : (i += 1) {
+        const p = &dev.peers[i];
+        if (p.session_valid) {
+            if (now_ms >= p.session_created_ms and now_ms - p.session_created_ms >= WG_REJECT_AFTER_TIME_MS) {
+                if (handshakeDue(p, now_ms)) return sendInitiation(dev, p, now_ms, wall_unix_ns, out);
+                continue;
+            }
+            if (now_ms >= p.session_created_ms and now_ms - p.session_created_ms >= WG_REKEY_AFTER_TIME_MS) {
+                if (handshakeDue(p, now_ms)) return sendInitiation(dev, p, now_ms, wall_unix_ns, out);
+                continue;
+            }
+            if (now_ms >= p.last_tx_ms and now_ms - p.last_tx_ms >= WG_KEEPALIVE_TIMEOUT_MS) {
+                const n = try encryptTransport(p, now_ms, out[0..0], out);
+                return WgAction{ .send_keepalive = n };
+            }
+        } else {
+            if (handshakeDue(p, now_ms)) return sendInitiation(dev, p, now_ms, wall_unix_ns, out);
+        }
+    }
+    return WgAction{ .none = {} };
+}
+
+pub fn wgReceive(dev: *WgDevice, now_ms: u64, udp_payload: []const u8, out: []u8) WgError!WgAction {
+    if (udp_payload.len < 4) return error.Corrupt;
+    const msg_type = udp_payload[0];
+
+    if (msg_type == 2) {
+        if (udp_payload.len != WG_RESPONSE_LEN) return error.Corrupt;
+        const receiver = load32le(udp_payload, 8);
+        const p = peerForHandshake(dev, receiver) orelse return error.NoSession;
+        try wgProcessResponse(dev, p, udp_payload);
+        setSessionUp(p, now_ms);
+        return WgAction{ .session_up = {} };
+    }
+
+    if (msg_type == 3) {
+        if (udp_payload.len != WG_COOKIE_REPLY_LEN) return error.Corrupt;
+        const receiver = load32le(udp_payload, 4);
+        const p = peerForHandshake(dev, receiver) orelse return error.NoSession;
+        var cookie: [WG_COOKIE_LEN]u8 = undefined;
+        try xchachaOpen(&p.label_cookie_key, udp_payload[8..32], p.last_mac1[0..],
+            udp_payload[32..48], udp_payload[48..64], cookie[0..]);
+        copyBytes(p.cookie[0..], cookie[0..]);
+        p.cookie_valid = true;
+        p.last_rx_ms = now_ms;
+        return WgAction{ .none = {} };
+    }
+
+    if (msg_type == 4) {
+        if (udp_payload.len < WG_TRANSPORT_HDR_LEN + WG_AUTHTAG_LEN) return error.Corrupt;
+        if ((udp_payload.len - WG_TRANSPORT_HDR_LEN - WG_AUTHTAG_LEN) % 16 != 0) return error.Corrupt;
+        const receiver = load32le(udp_payload, 4);
+        const p = peerForSession(dev, receiver) orelse return error.NoSession;
+        if (now_ms >= p.session_created_ms and now_ms - p.session_created_ms >= WG_REJECT_AFTER_TIME_MS) {
+            return error.SessionExpired;
+        }
+        const counter = load64le(udp_payload, 8);
+        const ct_len: usize = udp_payload.len - WG_TRANSPORT_HDR_LEN - WG_AUTHTAG_LEN;
+        if (out.len < ct_len) return error.OutputTooSmall;
+        var tag: [16]u8 = undefined;
+        copyBytes(tag[0..], udp_payload[WG_TRANSPORT_HDR_LEN + ct_len .. WG_TRANSPORT_HDR_LEN + ct_len + WG_AUTHTAG_LEN]);
+        try openTransport(&p.rx_key, counter,
+            udp_payload[WG_TRANSPORT_HDR_LEN .. WG_TRANSPORT_HDR_LEN + ct_len], &tag, out[0..ct_len]);
+        if (!replayAccept(p, counter)) return WgAction{ .dropped_replay = {} };
+        p.last_rx_ms = now_ms;
+        if (ct_len == 0) return WgAction{ .none = {} };
+        const n = innerPacketLen(out[0..ct_len]);
+        return WgAction{ .inner_packet = n };
+    }
+
+    return error.Corrupt;
 }

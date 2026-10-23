@@ -38,12 +38,19 @@
 #define WG_TAG_LEN 16
 #define WG_MAC_LEN 16
 #define WG_TAI64N_LEN 12
+#define WG_COOKIE_LEN 16
+#define WG_COOKIE_NONCE_LEN 24
+#define WG_COOKIE_REPLY_LEN 64
+#define WG_TRANSPORT_HDR_LEN 16
+#define WG_TRANSPORT_MAX_PT 2048
+#define WG_REJECT_AFTER_MESSAGES (0xFFFFFFFFFFFFFFFFULL - (1ULL << 13))
 
 static const uint8_t CONSTRUCTION[37] =
     "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
 static const uint8_t IDENTIFIER[34] =
     "WireGuard v1 zx2c4 Jason@zx2c4.com";
 static const uint8_t LABEL_MAC1[8] = "mac1----";
+static const uint8_t LABEL_COOKIE[8] = "cookie--";
 static const uint8_t ZERO_KEY[WG_KEY_LEN] = { 0 };
 
 void crypto_zero(void *dest, size_t len)
@@ -275,6 +282,14 @@ static uint32_t load32le(const uint8_t *p)
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
+static void store64le(uint8_t *p, uint64_t v)
+{
+    int i;
+    for (i = 0; i < 8; i++) {
+        p[i] = (uint8_t)((v >> (8u * (unsigned)i)) & 0xFFu);
+    }
+}
+
 static void aead_encrypt(uint8_t *dst, const uint8_t *src, size_t len,
                          const uint8_t *ad, size_t ad_len,
                          const uint8_t key[WG_KEY_LEN])
@@ -303,6 +318,7 @@ static void build_initiation(const uint8_t priv_i[WG_KEY_LEN],
                              const uint8_t pub_i[WG_KEY_LEN],
                              const uint8_t pub_r[WG_KEY_LEN],
                              uint64_t seed, uint64_t wall_unix_ns,
+                             const uint8_t *cookie,
                              uint8_t out[WG_INIT_LEN],
                              uint8_t timestamp[WG_TAI64N_LEN])
 {
@@ -352,7 +368,11 @@ static void build_initiation(const uint8_t priv_i[WG_KEY_LEN],
     mac_key(label_key, pub_r, LABEL_MAC1, sizeof(LABEL_MAC1));
     mac16(out + 116, out, WG_INIT_LEN - 2 * WG_MAC_LEN, label_key, WG_HASH_LEN);
 
-    for (i = 0; i < WG_MAC_LEN; i++) out[132 + i] = 0;
+    if (cookie) {
+        mac16(out + 132, out, WG_INIT_LEN - WG_MAC_LEN, cookie, WG_MAC_LEN);
+    } else {
+        for (i = 0; i < WG_MAC_LEN; i++) out[132 + i] = 0;
+    }
 
     crypto_zero(key, sizeof(key));
     crypto_zero(eph_priv, sizeof(eph_priv));
@@ -491,6 +511,123 @@ static void print_hex_only(const uint8_t *p, size_t len)
     putchar('\n');
 }
 
+static int hex_nibble(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+/* Parse a hex token into out; "-" means empty.  Returns byte length or -1. */
+static int parse_hex(const char *s, uint8_t *out, size_t out_cap)
+{
+    size_t n = 0;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '-') return 0;
+    while (s[0] && s[1] && (s[0] != ' ' && s[0] != '\t')) {
+        int hi = hex_nibble(s[0]);
+        int lo = hex_nibble(s[1]);
+        if (hi < 0 || lo < 0 || n >= out_cap) return -1;
+        out[n++] = (uint8_t)((hi << 4) | lo);
+        s += 2;
+    }
+    return (int)n;
+}
+
+/* Transport data (type 4): header, padded plaintext, ChaCha20-Poly1305 tag. */
+static size_t transport_encrypt(uint8_t *out, uint64_t counter,
+                                const uint8_t *pt, size_t pt_len,
+                                const uint8_t tx[WG_KEY_LEN], uint32_t receiver)
+{
+    size_t padded = (pt_len + 15u) & ~(size_t)15u;
+    memset(out, 0, WG_TRANSPORT_HDR_LEN + padded + WG_TAG_LEN);
+    out[0] = 4;
+    store32le(out + 4, receiver);
+    store64le(out + 8, counter);
+    if (pt_len > 0) memcpy(out + WG_TRANSPORT_HDR_LEN, pt, pt_len);
+    chacha20poly1305_encrypt(out + WG_TRANSPORT_HDR_LEN,
+                             out + WG_TRANSPORT_HDR_LEN, padded,
+                             NULL, 0, counter, tx);
+    return WG_TRANSPORT_HDR_LEN + padded + WG_TAG_LEN;
+}
+
+/* CookieReply (type 3): XChaCha20-Poly1305(enc_cookie, ad = initiation mac1). */
+static void build_cookie_reply(uint8_t out[WG_COOKIE_REPLY_LEN],
+                               const uint8_t label_cookie_key[WG_HASH_LEN],
+                               const uint8_t mac1[WG_MAC_LEN],
+                               uint32_t receiver,
+                               const uint8_t cookie_secret[WG_KEY_LEN],
+                               const uint8_t nonce[WG_COOKIE_NONCE_LEN])
+{
+    uint8_t cookie[WG_COOKIE_LEN];
+    memset(out, 0, WG_COOKIE_REPLY_LEN);
+    out[0] = 3;
+    store32le(out + 4, receiver);
+    memcpy(out + 8, nonce, WG_COOKIE_NONCE_LEN);
+    mac16(cookie, NULL, 0, cookie_secret, WG_KEY_LEN);
+    wireguard_xaead_encrypt(out + 32, cookie, WG_COOKIE_LEN,
+                            mac1, WG_MAC_LEN, nonce, label_cookie_key);
+}
+
+static int process_cookie_reply(const uint8_t label_cookie_key[WG_HASH_LEN],
+                                const uint8_t mac1[WG_MAC_LEN],
+                                uint32_t local_index,
+                                const uint8_t reply[WG_COOKIE_REPLY_LEN],
+                                uint8_t cookie[WG_COOKIE_LEN])
+{
+    if (reply[0] != 3) return 0;
+    if (load32le(reply + 4) != local_index) return 0;
+    return wireguard_xaead_decrypt(cookie, reply + 32, WG_COOKIE_LEN + WG_TAG_LEN,
+                                   mac1, WG_MAC_LEN, reply + 8,
+                                   label_cookie_key) ? 1 : 0;
+}
+
+/* Fixed exchange used by transport vectors: same keys as --vectors. */
+static void fixed_transport_keys(const uint8_t priv_i[WG_KEY_LEN],
+                                 const uint8_t pub_i[WG_KEY_LEN],
+                                 const uint8_t priv_r[WG_KEY_LEN],
+                                 const uint8_t pub_r[WG_KEY_LEN],
+                                 uint8_t tx[WG_HASH_LEN], uint8_t rx[WG_HASH_LEN])
+{
+    uint8_t init[WG_INIT_LEN];
+    uint8_t resp[WG_RESP_LEN];
+    uint8_t timestamp[WG_TAI64N_LEN];
+    uint8_t hash[WG_HASH_LEN];
+    uint8_t ck[WG_HASH_LEN];
+    uint8_t resp_ck[WG_HASH_LEN];
+    uint8_t remote_eph[WG_KEY_LEN];
+    uint8_t initiator_pub[WG_KEY_LEN];
+
+    build_initiation(priv_i, pub_i, pub_r, 0x0123456789ABCDEFULL,
+                     1800000000123456789ULL, NULL, init, timestamp);
+    if (!process_initiation(priv_r, pub_r, init, hash, ck,
+                            remote_eph, initiator_pub)) {
+        tx[0] = 0;
+        rx[0] = 0;
+        return;
+    }
+    build_response(initiator_pub, hash, ck, remote_eph,
+                   load32le(init + 4), 0xA1B2C3D4u,
+                   0x0F1E2D3C4B5A6978ULL, resp, resp_ck);
+    kdf2(tx, rx, resp_ck, NULL, 0);
+}
+
+static uint64_t parse_counter(const char *s, const char **rest)
+{
+    uint64_t v = 0;
+    int any = 0;
+    while (*s == ' ' || *s == '\t') s++;
+    while (*s >= '0' && *s <= '9') {
+        v = v * 10ULL + (uint64_t)(*s - '0');
+        s++;
+        any = 1;
+    }
+    if (!any) return 0;
+    if (rest) *rest = s;
+    return v;
+}
+
 /* RFC 7748 test keypairs (Alice, Bob); x25519 clamps internally. */
 static const uint8_t priv_i[WG_KEY_LEN] = {
     0x77,0x07,0x6d,0x0a,0x73,0x18,0xa5,0x7d,
@@ -507,27 +644,132 @@ static const uint8_t priv_r[WG_KEY_LEN] = {
 
 static int crosscheck(void)
 {
-    char line[256];
+    char line[512];
     uint8_t pub_i[WG_KEY_LEN];
     uint8_t pub_r[WG_KEY_LEN];
     uint8_t init[WG_INIT_LEN];
+    uint8_t init2[WG_INIT_LEN];
     uint8_t timestamp[WG_TAI64N_LEN];
+    uint8_t tx[WG_HASH_LEN];
+    uint8_t rx[WG_HASH_LEN];
+    uint8_t label_cookie_key[WG_HASH_LEN];
+    uint8_t pt[WG_TRANSPORT_MAX_PT];
+    uint8_t pkt[WG_TRANSPORT_HDR_LEN + WG_TRANSPORT_MAX_PT + WG_TAG_LEN];
+    uint8_t reply[WG_COOKIE_REPLY_LEN];
+    uint8_t cookie[WG_COOKIE_LEN];
 
     static_public(pub_i, priv_i);
     static_public(pub_r, priv_r);
+    fixed_transport_keys(priv_i, pub_i, priv_r, pub_r, tx, rx);
+    mac_key(label_cookie_key, pub_r, LABEL_COOKIE, sizeof(LABEL_COOKIE));
+
     while (fgets(line, (int)sizeof(line), stdin) != NULL) {
+        const char *p = line;
         uint64_t seed;
         uint64_t wall;
-        if (!parse_u64(line, &seed)) continue;
-        {
-            const char *p = line;
-            while (*p == ' ' || *p == '\t') p++;
-            while (*p >= '0' && *p <= '9') p++;
-            if (!parse_u64(p, &wall)) continue;
+        const char *rest;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == 't' && (p[1] == ' ' || p[1] == '\t')) {
+            uint64_t counter = parse_counter(p + 1, &rest);
+            int n = parse_hex(rest, pt, sizeof(pt));
+            if (n < 0) continue;
+            {
+                size_t out_len = transport_encrypt(pkt, counter, pt, (size_t)n,
+                                                   tx, 0xA1B2C3D4u);
+                print_hex_only(pkt, out_len);
+            }
+            continue;
         }
-        build_initiation(priv_i, pub_i, pub_r, seed, wall, init, timestamp);
+        if (*p == 'c' && (p[1] == ' ' || p[1] == '\t')) {
+            seed = parse_counter(p + 1, &rest);
+            wall = parse_counter(rest, &rest);
+            if (parse_hex(rest, reply, sizeof(reply)) != WG_COOKIE_REPLY_LEN) continue;
+            build_initiation(priv_i, pub_i, pub_r, seed, wall, NULL, init, timestamp);
+            if (process_cookie_reply(label_cookie_key, init + 116,
+                                     load32le(init + 4), reply, cookie)) {
+                build_initiation(priv_i, pub_i, pub_r, seed, wall, cookie,
+                                 init2, timestamp);
+                print_hex_only(init2, WG_INIT_LEN);
+            }
+            continue;
+        }
+        seed = parse_counter(p, &rest);
+        wall = parse_counter(rest, &rest);
+        build_initiation(priv_i, pub_i, pub_r, seed, wall, NULL, init, timestamp);
         print_hex_only(init, WG_INIT_LEN);
     }
+    return 0;
+}
+
+static int transport_capture(void)
+{
+    static const uint8_t pt_a[13] = {
+        0x45,0x00,0x00,0x1d,0xaa,0xbb,0xcc,0xdd,
+        0x01,0x02,0x03,0x04,0x05
+    };
+    static const uint8_t pt_b[3] = { 0xde, 0xad, 0xbe };
+    uint8_t pub_i[WG_KEY_LEN];
+    uint8_t pub_r[WG_KEY_LEN];
+    uint8_t tx[WG_HASH_LEN];
+    uint8_t rx[WG_HASH_LEN];
+    uint8_t pkt[WG_TRANSPORT_HDR_LEN + WG_TRANSPORT_MAX_PT + WG_TAG_LEN];
+    size_t n;
+
+    static_public(pub_i, priv_i);
+    static_public(pub_r, priv_r);
+    fixed_transport_keys(priv_i, pub_i, priv_r, pub_r, tx, rx);
+
+    n = transport_encrypt(pkt, 0, pt_a, sizeof(pt_a), tx, 0xA1B2C3D4u);
+    print_hex_only(pkt, n);
+    n = transport_encrypt(pkt, 1, pt_b, sizeof(pt_b), tx, 0xA1B2C3D4u);
+    print_hex_only(pkt, n);
+    n = transport_encrypt(pkt, WG_REJECT_AFTER_MESSAGES - 1, NULL, 0,
+                          tx, 0xA1B2C3D4u);
+    print_hex_only(pkt, n);
+    return 0;
+}
+
+static int cookie_capture(void)
+{
+    static const uint8_t cookie_secret[WG_KEY_LEN] = {
+        0x42,0x42,0x42,0x42,0x42,0x42,0x42,0x42,
+        0x42,0x42,0x42,0x42,0x42,0x42,0x42,0x42,
+        0x42,0x42,0x42,0x42,0x42,0x42,0x42,0x42,
+        0x42,0x42,0x42,0x42,0x42,0x42,0x42,0x42
+    };
+    static const uint8_t nonce[WG_COOKIE_NONCE_LEN] = {
+        0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,
+        0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,
+        0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17
+    };
+    uint8_t pub_i[WG_KEY_LEN];
+    uint8_t pub_r[WG_KEY_LEN];
+    uint8_t init[WG_INIT_LEN];
+    uint8_t init2[WG_INIT_LEN];
+    uint8_t reply[WG_COOKIE_REPLY_LEN];
+    uint8_t cookie[WG_COOKIE_LEN];
+    uint8_t timestamp[WG_TAI64N_LEN];
+    uint8_t label_cookie_key[WG_HASH_LEN];
+
+    static_public(pub_i, priv_i);
+    static_public(pub_r, priv_r);
+    mac_key(label_cookie_key, pub_r, LABEL_COOKIE, sizeof(LABEL_COOKIE));
+
+    build_initiation(priv_i, pub_i, pub_r, 0x0123456789ABCDEFULL,
+                     1800000000123456789ULL, NULL, init, timestamp);
+    build_cookie_reply(reply, label_cookie_key, init + 116,
+                       load32le(init + 4), cookie_secret, nonce);
+    if (!process_cookie_reply(label_cookie_key, init + 116,
+                              load32le(init + 4), reply, cookie)) {
+        fprintf(stderr, "cookie reply self-check failed\n");
+        return 1;
+    }
+    build_initiation(priv_i, pub_i, pub_r, 0x0123456789ABCDEFULL,
+                     1800000000123456789ULL, cookie, init2, timestamp);
+
+    printf("c 81985529216486895 1800000000123456789 ");
+    print_hex_only(reply, WG_COOKIE_REPLY_LEN);
+    print_hex_only(init2, WG_INIT_LEN);
     return 0;
 }
 
@@ -550,6 +792,8 @@ int main(int argc, char **argv)
     uint8_t rx[WG_HASH_LEN];
 
     if (argc <= 1 || strcmp(argv[1], "--crosscheck") == 0) return crosscheck();
+    if (argc > 1 && strcmp(argv[1], "--transport-capture") == 0) return transport_capture();
+    if (argc > 1 && strcmp(argv[1], "--cookie-capture") == 0) return cookie_capture();
     if (argc > 1 && strcmp(argv[1], "--vectors") != 0) {
         if (!parse_u64(argv[1], &seed_i)) return 2;
         if (argc > 2 && !parse_u64(argv[2], &wall_ns)) return 2;
@@ -558,7 +802,7 @@ int main(int argc, char **argv)
     static_public(pub_i, priv_i);
     static_public(pub_r, priv_r);
 
-    build_initiation(priv_i, pub_i, pub_r, seed_i, wall_ns, init, timestamp);
+    build_initiation(priv_i, pub_i, pub_r, seed_i, wall_ns, NULL, init, timestamp);
     if (!process_initiation(priv_r, pub_r, init, hash, ck,
                             remote_eph, initiator_pub)) {
         fprintf(stderr, "process initiation failed\n");
