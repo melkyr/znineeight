@@ -292,3 +292,65 @@ the ref until the seed was decimal). No compiler fix was attempted here.
 
 No ref/vector changes were needed for the rekey test; `transport.in`/`.expected`
 and `cookie.in`/`.expected` are unchanged.
+
+## 12. Minor fix round — pin replay across rekey (base `8224ceca`)
+
+Scope: test/comment gaps only; no behavior change.
+
+- `stdlib_wg_transport_xmod` now seeds the active replay window with
+  old-session counter 11 before `wgTick`, snapshots `replay_valid`,
+  `replay_counter`, and all 32 bitmap words, then asserts all three are
+  unchanged across the pending rekey initiation. The fixture also verifies
+  old-session replay behavior while rekey is pending: duplicate counter 11 is
+  `dropped_replay`, counter 12 is accepted, and `replay_counter` advances.
+- Corrected the `REKEY_SEED` comment to
+  `0x1111111111111114` (decimal `1229782938247303444` unchanged).
+- Removed the residual “Task 2” wording from the cookie/transport key comments
+  in `sf/src/std_wireguard.zig`; behavior unchanged.
+
+Mutation non-vacuity evidence (temporary mutation in the `/tmp` compiler
+`sibling lib/`, not committed): inserted `replayReset(peer);` at the start of
+`wgCreateInitiation`. The fixture fails:
+
+```text
+$ /tmp/wg_mut_dump/prog
+panic: replay valid preserved across pending
+MUT_RUN_RC=133
+```
+
+Restored the unmutated module and re-ran:
+
+```text
+$ bash scripts/stdlib/run_fixtures.sh /tmp/m2_t4_v114_build/zig1_5_clean \
+    repro/mi_matrix/stdlib_wg_transport_xmod
+PASS repro/mi_matrix/stdlib_wg_transport_xmod
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+RC=0
+```
+
+Targeted gates after restore:
+
+```text
+run1 rc=0 / run2 rc=0 / run3 rc=0
+cross1 rc=0 / cross2 rc=0 / cross3 rc=0
+PASS std_wireguard (3 vectors)
+```
+
+`-osw`:
+
+```text
+OSW_DUMP_RC=0
+ERR_BRK=0  PANIC=0  C_FILES=11
+MINGW_BUILD_RC=0
+wireguard transport ok
+WINE_RC=0
+```
+
+Verification of the corrected seed comment:
+
+```text
+$ printf '0x%x\n' 1229782938247303444
+0x1111111111111114
+```
+
+No ref/vector/docs/seed/tier/full-gate/compiler-battery changes.
