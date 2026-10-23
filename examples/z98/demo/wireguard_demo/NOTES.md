@@ -64,8 +64,9 @@ Files:
 
 ## Observed M7 host results
 
-Two consecutive `tier_wireguard.sh` invocations: `5 passed, 0 failed, 0
-skipped` each.
+Two consecutive `tier_wireguard.sh` invocations: `13 passed, 0 failed, 0
+skipped` each (4 config + 5 in-netns integration + 4 build/import checks). The
+earlier pre-config-check integration subset was `5 passed, 0 failed, 0 skipped`.
 
 - Linux DNS run: `bytes=100 arena_peak=275192 rss_peak≈2600 cpu_ms≈70`.
 - Wine -osw run: same bytes/arena, `rss_peak≈6800 cpu_ms≈440`.

@@ -41,7 +41,8 @@ hop1 == hop2 == `F_new`).
 **Phase 1 closeout:** v119 completes the TLS + WireGuard phase. On the rotated
 compiler (`45158dce…`) the full std gate is **336/0** with crosscheck
 **10/10**, `tier_tls.sh` is **19/19** (`Z98_NET=1`), and
-`tier_wireguard.sh` is **5/5** (kernel WireGuard netns, Linux + Wine). Measured
+`tier_wireguard.sh` is **13/13** (4 config checks + 5 in-netns integration
+cases + 4 build/import checks; kernel WireGuard netns, Linux + Wine). Measured
 demo RAM/CPU tables are in `examples/z98/demo/{tls_demo,wireguard_demo}/README.md`.
 
 **This block is updated at
