@@ -56,9 +56,9 @@
 - Modify: `scripts/stdlib/expected_dirs.txt`
 
 **Interfaces:**
-- Produces: `udpOpen`/`udpSendTo`/`udpRecvFrom`; `dnsResolve(name, out_ip) !void` (A records, timeout+retry via `tcpipPoll` waits); `icmpPing(ip, now_ms) !u32` (echo, RTT ms).
+- Produces: `udpOpen`/`udpSendTo`/`udpRecvFrom`; `dnsResolve(name, out_ip) !void` and `icmpPing(ip, now_ms) !u32` as pump-driven requests: pending returns `error.Timeout`, `tcpipPoll` returns `.done` on terminal state, then the final call returns IP/RTT or `DnsFailed`/terminal `error.Timeout`. Validate DNS ID/source/QNAME and ICMP source IP.
 
-- [ ] **Step 1:** Failing fixtures: UDP round-trip synthetic; DNS request/response byte-exact query + parsed A record (v4-mapped answer), malformed answers → `DnsFailed`, timeout+retry counts; ICMP echo reply parse → RTT.
+- [ ] **Step 1:** Failing fixtures: UDP round-trip synthetic; DNS request/response byte-exact query + parsed A record (v4-mapped answer), malformed answers → `DnsFailed`, QNAME mismatch → `DnsFailed`, timeout+retry counts; ICMP echo reply parse → RTT, wrong-source reply ignored, pending → terminal `.done` distinction (success RTT, failure `error.Timeout`).
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement per §5.8.
 - [ ] **Step 4:** Run — PASS + targeted `std_tcpip` UDP/DNS/ICMP fixtures + affected `run_crosscheck.sh` modules + 3×. Full gate at Task 4 closeout.
@@ -74,7 +74,7 @@
 - Consumes: `std_wireguard` (M6), `std_tcpip` (T1/T2), `std_net` UDP, `std_time`, `std_arena`.
 - Produces: config-driven demo: handshake → `dnsResolve`/direct IP → `tcpConnect` to mud server tunnel IP → print banner → send one command → print reply → resource line + exit 0.
 
-- [ ] **Step 1:** Implement demo (WAV-style house CLI conventions not needed — plain console; explicit `wall_unix_ns`/`now_ms` from `std_time`; `clock_override_unix` support; precise failure text `wg: …`/`tcp: …`). After `wgInit`, reseed `dev.rng = std_rand.xoshiroInit(seed)` from `std_time`/config; `wgInit` zeroes the RNG.
+- [ ] **Step 1:** Implement demo (WAV-style house CLI conventions not needed — plain console; explicit `wall_unix_ns`/`now_ms` from `std_time`; `clock_override_unix` support; precise failure text `wg: …`/`tcp: …`). After `wgInit`, reseed `dev.rng = std_rand.xoshiroInit(seed)` from `std_time`/config; `wgInit` zeroes the RNG. DNS is pump-driven: call `dnsResolve`; on `error.Timeout` poll `tcpipPoll` until `.done`, then call `dnsResolve` again for the IP or `DnsFailed`; direct-IP config skips DNS.
 - [ ] **Step 2:** `tier_wireguard.sh`: start Linux kernel WireGuard (`wg-quick` netns, committed tiny conf template with generated keys) + `mud_server` bound on the tunnel net; run the demo (Linux build) asserting banner bytes + resource line; Wine `-osw` run of the same demo against the same far side (tier case); `check_win9x_imports.sh 9x` gate; RAM enforcement `ulimit -v 32768` + recorded peak. Before SKIP, attempt a self-contained portable `wg`/`ip` binary set (no root install); if unavailable, emit a loud SKIP and record M7 integration as pending.
 - [ ] **Step 3:** Run `tier_wireguard.sh` 2× deterministic + targeted demo checks + 3×. Full gate at Task 4 closeout.
 - [ ] **Step 4:** Commits `example(z9demo): wireguard_demo (Phase1 M7)`, `test(tier): tier_wireguard (Phase1 M7)`.

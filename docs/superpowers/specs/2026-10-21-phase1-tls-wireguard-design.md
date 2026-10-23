@@ -382,8 +382,13 @@ receive window, retransmit with Karn's algorithm (simplified RTO), minimal Reno
 maximum inner IPv4 datagram size, headers included (default 1400). TCP MSS is
 `min(peer-advertised MSS, cfg.mtu - 40)`; if the peer advertises none, `cfg.mtu - 40`.
 Never emit an IP datagram larger than `cfg.mtu`; never fragment, inbound fragments
-dropped. DNS = UDP A-record query with timeout/retry to
-`cfg.dns_server`. ICMP = echo request/reply client. The stack emits/receives raw IPv4
+dropped. DNS = UDP A-record query with timeout/retry to `cfg.dns_server`; ICMP =
+echo request/reply client. `tcpipPoll` returns `.done` when an outstanding DNS/ICMP
+request reaches a terminal state; the caller then retrieves the result with one final
+`dnsResolve`/`icmpPing` call. While pending both return `error.Timeout`; DNS terminal
+failure is `error.DnsFailed`, ICMP terminal failure is `error.Timeout`. ICMP replies
+must come from the queried source IP; DNS answers must match query ID, source IP/port,
+and QNAME. The stack emits/receives raw IPv4
 datagrams through `tcpipPoll` — the WireGuard layer encrypts those datagrams in the
 demo. `tickMs`/`highRes` values come from the driver.
 
