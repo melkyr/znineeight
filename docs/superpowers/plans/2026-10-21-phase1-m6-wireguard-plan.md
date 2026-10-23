@@ -25,7 +25,7 @@
 1. KDF chaining error (ck/k evolution) — canned handshake vectors pin every derived key byte.
 2. TAI64N source regression (someone derives it from `now_ms`) — fixture with wall≠monotonic inputs must pin the wire timestamp bytes.
 3. Replay window off-by-one (accept/drop boundary at window edge) — negative fixtures.
-4. Rekey timer state machine: after REJECT_AFTER_TIME, `wgSend` must fail `SessionExpired`, never encrypt.
+4. Rekey continuity: a live session remains usable while a new handshake is pending (active tx/rx keys and indices unchanged); after REJECT_AFTER_TIME, `wgSend` must fail `SessionExpired`, never encrypt.
 5. mac2/cookie path untested → fixture with a CookieReply forcing mac2 inclusion.
 
 ---
@@ -59,9 +59,9 @@
 **Interfaces:**
 - Produces: `WgAction = union(enum){ none, send_handshake: usize, send_keepalive: usize, session_up: void, inner_packet: usize, dropped_replay: void }`; `wgTick`/`wgReceive` return `!WgAction`; `wgSend` returns `!usize` (transport bytes; `error.NoSession` without a live session — `wgTick` initiates); transport encrypt/decrypt with counter nonces; 2048-bit replay window; cookie store + mac2 on re-initiation.
 
-- [ ] **Step 1:** Failing fixtures: transport round-trip byte-exact vs ref (padding to 16, counter 0/1/max-before-reject); replay negatives (duplicate, too-old, in-window-not-seen); timer sweep fixture (advance `now_ms` through rekey/keepalive/reject thresholds asserting `wgTick` outputs); CookieReply → subsequent initiation carries correct mac2.
+- [ ] **Step 1:** Failing fixtures: transport round-trip byte-exact vs ref (padding to 16, counter 0/1/max-before-reject); replay negatives (duplicate, too-old, in-window-not-seen); timer sweep fixture (advance `now_ms` through rekey/keepalive/reject thresholds asserting `wgTick` outputs); rekey continuity (at 120 s `wgTick` sends a handshake while `wgSend` still emits an active-session packet and old inbound remains valid; after response the new indices/keys install); CookieReply → subsequent initiation carries correct mac2.
 - [ ] **Step 2:** Run — FAIL.
-- [ ] **Step 3:** Implement per spec §5.7; never `sleep` (pure time-parameterized).
+- [ ] **Step 3:** Implement per spec §5.7; rekey prepares pending handshake state without disturbing active tx/rx keys, indices, counters or replay; install pending on response; never `sleep` (pure time-parameterized).
 - [ ] **Step 4:** Run — PASS + targeted `std_wireguard` fixtures + affected `run_crosscheck.sh` modules + 3× + `-osw` gate. Full gate at Task 3 closeout.
 - [ ] **Step 5:** Commit `feat(std_wireguard): transport + timers (Phase1 M6)`.
 

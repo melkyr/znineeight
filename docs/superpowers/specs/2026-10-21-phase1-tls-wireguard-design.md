@@ -346,6 +346,11 @@ ChaCha20-Poly1305. Timers: `REKEY_AFTER_TIME 120 s`, `REJECT_AFTER_TIME 180 s`,
 `REKEY_TIMEOUT 5 s + jitter`, `KEEPALIVE_TIMEOUT 10 s` — driven by `wgTick` polls
 (never `sleep`). Cookie reply consumption (mac2 = keyed BLAKE2s-128) required;
 generation not required. Transport counters with sliding replay window (2048-bit).
+Rekey continuity: while a session is live, a new initiation is prepared as pending
+state (local index, ephemeral key, hash, chaining key) without disturbing the active
+tx/rx keys, session indices, counters, or replay window; `wgSend` keeps using the
+active session. A successful response installs the pending session atomically and
+returns `session_up`; the previous session remains usable until that point.
 All wire integers little-endian via explicit load/store helpers. Reference:
 `wireguard-lwip` (malloc-free C). Errors: `error.{Corrupt, AuthenticationFailed,
 NoSession, SessionExpired, OutputTooSmall}`.
