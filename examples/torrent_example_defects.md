@@ -349,19 +349,21 @@ in `stdlib_x509_verify_xmod` / `stdlib_x509_parse_xmod` (3× targeted + full
 gate).
 
 **D7.3 — `arr[i].field[0..]` write can target a by-value temporary (emitter).**
-Status: **OPEN, demo-worked-around** (found 2026-10-23 building
+Status: **OPEN / DEFERRED — demo-worked-around** (found 2026-10-23 building
 `wireguard_demo`, Phase 1 M7 T3; recorded in
-`examples/z98/demo/wireguard_demo/NOTES.md`). In the current emitter a nested
-write through an indexed aggregate field can materialise a by-value temporary,
-so the store is lost. The demo takes an explicit pointer first
-(`var pp: *wg.WgPeer = &g_peers[0];` then `pp.field[0..]`) and works. This is
-an emitter lvalue/temporary-materialisation defect in nested aggregate field
-indexing; it is a distinct family from D1 (optional-of-aggregate type identity
-and typedef ordering) and D2 (comptime-dead-arm module reachability), not an
-lvalue/address-of-lowering instance of either. No compiler fix was authorized
-in Phase 1 and `sf/src` was frozen at closeout.
-A future compiler plan should reproduce it with a minimal `arr[i].field = ...`
-fixture before fixing.
+`examples/z98/demo/wireguard_demo/NOTES.md`). Operator decision 2026-10-23:
+not worth a standalone M7.5/compiler-defect milestone now; D7.3 remains open
+until a future compiler milestone and the demo keeps the explicit-pointer
+workaround. In the current emitter a nested write through an indexed aggregate
+field can materialise a by-value temporary, so the store is lost. The demo
+takes an explicit pointer first (`var pp: *wg.WgPeer = &g_peers[0];` then
+`pp.field[0..]`) and works. This is an emitter lvalue/temporary-materialisation
+defect in nested aggregate field indexing; it is a distinct family from D1
+(optional-of-aggregate type identity and typedef ordering) and D2
+(comptime-dead-arm module reachability), not an lvalue/address-of-lowering
+instance of either. No compiler fix was authorized in Phase 1 and `sf/src` was
+frozen at closeout. A future compiler plan should reproduce it with a minimal
+`arr[i].field = ...` fixture before fixing.
 
 **Also fixed inside M7 (demo-only, not compiler defects).** The demo's base64
 accumulator needed a 24-bit mask (an unmasked `u32` corrupted key material and
