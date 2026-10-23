@@ -193,3 +193,28 @@ rotated compiler; no silent skips.
 - `b41e12cb` `docs(std_lib): tcpip docs + Phase 1 closeout`
 - `2d4eef3c` `chore(seed): rotate (M7)`
 - this report: `docs(sdd): M7 closeout report`
+
+## Fix round — docs accuracy (base `0d355391`)
+
+Docs-only corrections; no seed/source/contract change, so no gate rerun was
+required (the compiler, std sources, fixtures, and seed archive are
+byte-identical to the verified v119 closeout).
+
+- `sf/docs/std_lib/tcpip.md` memory table: `recv_seq` corrected to
+  `[TCP_RECV_WINDOW]u32` = **32 KiB**; `TcpSock` total remains 65,648 B
+  (16 KiB send + 8 KiB receive ring + 32 KiB sequence + 8 KiB validity +
+  fields).
+- `README.md` Phase 1 summary: Linux runs real HTTPS; the `-osw` builds are
+  emission/import-gated, not executed. Only `tier_wireguard` runs Wine.
+- `tcpip.md` truth-ups: removed `OutputTooSmall` from `dnsResolve` and
+  `OutOfMemory` from `tcpipPoll` (the poll does not allocate); `.done` also
+  covers the idle stack; odd checksum byte is `data[i] << 8` (high byte, zero
+  low pad); RTO sets `ssthresh = cwnd/2` (floor `2*mss`); the advertised
+  window is 8 KiB minus outstanding unread bytes (`recvWindow`); `icmpPing`
+  RTT is measured from the last retry send.
+- Defect ledger D7: added a Phase 1 STOP cross-reference (M2 const-rodata
+  STOP-1 `.bss` fallback + STOP-2 seed-rotation resolution; M4 `tls_demo`
+  Winsock-lifetime and clock-overflow fixes `e9c039df`), with no renumbering.
+
+Docs commit: `c6036786` `docs(std_lib): Phase 1 closeout doc accuracy`.
+Report commit: `docs(sdd): M7 T4 fix round`.
