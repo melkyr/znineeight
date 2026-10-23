@@ -146,12 +146,85 @@ stdlib gate and seed rotation remain Task 4 closeout per brief.
   IP or wait for far-side state cleanup. The tier isolates runs by client IP.
 - Reusing one kernel peer requires an increasing `clock_override_unix`;
   otherwise WireGuard replay protection rejects the handshake.
-- The tier uses manual `ip`/`wg` on a kernel interface rather than `wg-quick`;
-  the context explicitly allows the portable pair, and it avoids `wg-quick`'s
-  host-config/resolvconf dependencies.
+- The tier uses manual `ip`/`wg` on a kernel interface rather than `wg-quick`.
+  The amended plan/spec (`26219b62`) now explicitly allow the portable
+  `ip`/`wg` netns equivalent, so this is no longer a deviation; the pair also
+  avoids `wg-quick`'s host-config/resolvconf dependencies.
 
 ## Commits
 
 - `65c20b1c` `example(z9demo): wireguard_demo (Phase1 M7)`
 - `18fb5a10` `test(tier): tier_wireguard (Phase1 M7)`
-- This report: `docs(sdd): M7 T3 report` (this commit)
+- `ec9e8772` `docs(sdd): M7 T3 report`
+
+## Fix round — config error prefix + tier byte pin
+
+Base: `ec9e8772`; plan amendment: `26219b62` (portable kernel-WireGuard tools
+explicitly allowed).
+
+- **`fail()` routing.** `DemoError.BadConfig` previously fell through to the
+  `tcp:` fallback because only the default name was `BadConfig`; the prefix was
+  still set to `tcp: `. Added an explicit `wg:` branch. Unknown key, missing
+  required key, and malformed value now print `wg: BadConfig`; malformed key
+  material stays `wg: BadKey`.
+- **Targeted config checks.** The tier now runs four pre-netns config cases:
+  unknown key -> `wg: BadConfig`, missing required key -> `wg: BadConfig`,
+  invalid key -> `wg: BadKey`, malformed value (`mtu = not-a-number`) ->
+  `wg: BadConfig`. Each asserts nonzero exit and exact output.
+- **Tier byte pin.** `check_output` now extracts `bytes=N` and requires it to
+  equal the exact expected banner+reply byte count (currently 100), instead of
+  accepting any numeric value.
+
+Targeted checks before the full tier (3× each):
+
+```
+run1 unknown rc=1 out=wg: BadConfig
+run1 missing rc=1 out=wg: BadConfig
+run1 badkey  rc=1 out=wg: BadKey
+run1 badvalue rc=1 out=wg: BadConfig
+run2 unknown rc=1 out=wg: BadConfig
+run2 missing rc=1 out=wg: BadConfig
+run2 badkey  rc=1 out=wg: BadKey
+run2 badvalue rc=1 out=wg: BadConfig
+run3 unknown rc=1 out=wg: BadConfig
+run3 missing rc=1 out=wg: BadConfig
+run3 badkey  rc=1 out=wg: BadKey
+run3 badvalue rc=1 out=wg: BadConfig
+```
+
+Tier 2× after the fix (both green; config cases + inner integration):
+
+```
+run 1:
+ok   - config unknown -> wg: BadConfig
+ok   - config missing_required -> wg: BadConfig
+ok   - config bad_key -> wg: BadKey
+ok   - config malformed_value -> wg: BadConfig
+ok   - linux DNS run: exact banner + look reply + resource line
+       wireguard_demo ok bytes=100 arena_peak=275192 rss_peak=2576 cpu_ms=70
+ok   - linux banner/reply identical 2x
+ok   - wine -osw run: exact banner + look reply + resource line
+       wireguard_demo ok bytes=100 arena_peak=275192 rss_peak=6740 cpu_ms=450
+ok   - linux direct-IP run
+ok   - RAM ceiling ok: peak RSS=2172 kB (ulimit -v 32768)
+== tier_wireguard summary: 5 passed, 0 failed, 0 skipped ==
+TIER_WIREGUARD PASS
+
+run 2:
+ok   - config unknown -> wg: BadConfig
+ok   - config missing_required -> wg: BadConfig
+ok   - config bad_key -> wg: BadKey
+ok   - config malformed_value -> wg: BadConfig
+ok   - linux DNS run: exact banner + look reply + resource line
+       wireguard_demo ok bytes=100 arena_peak=275192 rss_peak=2500 cpu_ms=70
+ok   - linux banner/reply identical 2x
+ok   - wine -osw run: exact banner + look reply + resource line
+       wireguard_demo ok bytes=100 arena_peak=275192 rss_peak=6784 cpu_ms=450
+ok   - linux direct-IP run
+ok   - RAM ceiling ok: peak RSS=2196 kB (ulimit -v 32768)
+== tier_wireguard summary: 5 passed, 0 failed, 0 skipped ==
+TIER_WIREGUARD PASS
+```
+
+The resource byte pin uses the exact `expected.txt` length (100 bytes for the
+CRLF banner + reply); every case's `bytes=N` must equal it.
