@@ -373,5 +373,5 @@ contract.
 **Closeout evidence.** Phase 1 M7 full gate on seed v119:
 `verify_stdlib.sh` **336 PASS / 0 FAIL** + crosscheck **10 PASS / 0 FAIL**;
 `tier_tls.sh` **19/19**, `tier_wireguard.sh` **13/13** (4 config + 5 in-netns
-integration + 4 build/import checks; the earlier pre-config-check integration
-subset was 5/5); both on the rotated compiler `45158dce…`.
+integration + 4 build/import checks; the earlier summary counted only the 5
+in-netns integration cases); both on the rotated compiler `45158dce…`.
