@@ -426,8 +426,8 @@ install note, resource expectations) and a `NOTES.md` log.
   tunnel local IP, DNS server); drives `std_tcpip` + `std_wireguard` over a
   `std_net` UDP socket; connects TCP to the mud server's tunnel IP, prints the banner,
   sends one command line, prints the reply, quits with the same resource line. The
-  far side is a Linux kernel WireGuard server (`wg-quick`) with `mud_server` bound on
-  the tunnel network.
+  far side is a Linux kernel WireGuard server (`wg-quick` or equivalent portable
+  `ip`/`wg` netns) with `mud_server` bound on the tunnel network.
 
 ## 7. Testing & gates
 
@@ -447,8 +447,9 @@ Per-milestone gates (same discipline as the std-algorithms program):
    recorded transcripts (e.g. openssl s_server capture) byte-compared.
 3. Integration tiers: `tier_tls.sh` (local `openssl s_server` with a test cert +
    internet smoke against google.com/example.com, `Z98_NET=1` gate for the networked
-   part), `tier_wireguard.sh` (Linux `wg-quick` netns far side + mud_server through
-   the tunnel; skip loud if tools absent — no silent skip), Wine tier for `-osw`.
+   part), `tier_wireguard.sh` (Linux kernel WireGuard netns far side via `wg-quick`
+   or portable `ip`/`wg` + mud_server through the tunnel; skip loud if tools absent —
+   no silent skip), Wine tier for `-osw`.
 4. RAM: `/usr/bin/time -v` peak RSS + `ulimit -v 32768` (KB) hard line for demo
    runs; compiler peak RSS for the pre-flight recorded in README/QUICK_REF.
 5. Seed rotation at milestone closeout (archive + manifest; fixed point unchanged).

@@ -6,7 +6,7 @@
 
 **Architecture:** Sans-I/O `tcpipPoll` pump (spec §5.8): stack emits/receives raw IPv4 datagrams; the demo driver encrypts them through `std_wireguard` into `std_net` UDP, and feeds decrypted inner packets back. TCP client only: 3WHS, seq/ack, fixed 8 KB window, simplified Karn RTO + minimal Reno, MSS = `min(peer MSS, mtu - 40)`, drop fragments. DNS = UDP A-record to `cfg.dns_server`; ICMP echo client. Demo reads `wg.conf`, connects to the mud server's tunnel IP, prints banner + one command exchange, resource line.
 
-**Tech Stack:** Z98; M6 `std_wireguard`; existing `std_net`, `std_time`, `std_arena`; Linux `wg-quick` + repo `mud_server` as the far side (test infra); Wine for `-osw`.
+**Tech Stack:** Z98; M6 `std_wireguard`; existing `std_net`, `std_time`, `std_arena`; Linux kernel WireGuard (`wg-quick` or portable `ip`/`wg`) + repo `mud_server` as the far side (test infra); Wine for `-osw`.
 
 **Spec:** `docs/superpowers/specs/2026-10-21-phase1-tls-wireguard-design.md` §5.8, §6, §7, §8 M7 (split contingency: if size demands, 7a=stack tasks / 7b=demo+closeout, controller-call, ledgered)
 
@@ -16,7 +16,7 @@
 - Errors: `error.{Corrupt, NoRoute, ConnRefused, Timeout, DnsFailed, OutOfMemory, OutputTooSmall, Closed}` + per-socket failure via `TcpipAction.failed`.
 - Demo config `wg.conf` keys (hex/base64): private key, peer public key, endpoint host:port, allowed IPs, tunnel local IP, optional DNS server, optional `mtu` (default 1400), and `clock_override_unix`.
 - RAM: 32 MB hard ceiling / 16 MB target, enforced + recorded (`ulimit -v 32768`, `/usr/bin/time -v`); resource line `wireguard_demo ok bytes=N arena_peak=N rss_peak=N cpu_ms=N`.
-- Gates per task (hybrid): targeted `std_tcpip`/demo fixtures + affected `run_crosscheck.sh` modules + 3×; `tier_wireguard.sh` (kernel `wg-quick` netns far side + `mud_server` through tunnel; loud SKIP if `wg`/netns unavailable; never vacuous); `-osw` build + import gate (KERNEL32+WINMM+WSOCK32, no msvcrt). Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 4 closeout. `std_tcpip`/demo are new → targeted-only until closeout.
+- Gates per task (hybrid): targeted `std_tcpip`/demo fixtures + affected `run_crosscheck.sh` modules + 3×; `tier_wireguard.sh` (kernel WireGuard netns far side via `wg-quick` or portable `ip`/`wg` + `mud_server` through tunnel; loud SKIP if tools/netns unavailable; never vacuous); `-osw` build + import gate (KERNEL32+WINMM+WSOCK32, no msvcrt). Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 4 closeout. `std_tcpip`/demo are new → targeted-only until closeout.
 - Closeout rotates seed **v119** (47 lib files: +`std_tcpip`); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`; Phase 1 defect ledger entries appended to `examples/torrent_example_defects.md` (next free slot).
 - Commits `feat(std_tcpip): … (Phase1 M7)`, `example(z9demo): wireguard_demo …`, `test(tier): tier_wireguard …`, `docs(std_lib): …`, `chore(seed): rotate (M7)`, `docs(sdd): …`. STOP-present on contract change.
 
@@ -26,7 +26,7 @@
 2. The stack consuming unbounded memory per socket (fixed window/buffer asserts; OOM path tested).
 3. DNS parser on malformed answers (must `DnsFailed`, never crash) and retry/timeout behavior.
 4. Demo passing inner packets before handshake completes (`NoSession`/`SessionExpired` discipline end-to-end).
-5. tier_wireguard vacuous pass when `wg-quick` missing → loud SKIP with reason.
+5. tier_wireguard vacuous pass when kernel WireGuard tools/netns are missing → loud SKIP with reason.
 
 ---
 
@@ -75,7 +75,7 @@
 - Produces: config-driven demo: handshake → `dnsResolve`/direct IP → `tcpConnect` to mud server tunnel IP → print banner → send one command → print reply → resource line + exit 0.
 
 - [ ] **Step 1:** Implement demo (WAV-style house CLI conventions not needed — plain console; explicit `wall_unix_ns`/`now_ms` from `std_time`; `clock_override_unix` support; precise failure text `wg: …`/`tcp: …`). After `wgInit`, reseed `dev.rng = std_rand.xoshiroInit(seed)` from `std_time`/config; `wgInit` zeroes the RNG. DNS is pump-driven: call `dnsResolve`; on `error.Timeout` poll `tcpipPoll` until `.done`, then call `dnsResolve` again for the IP or `DnsFailed`; direct-IP config skips DNS.
-- [ ] **Step 2:** `tier_wireguard.sh`: start Linux kernel WireGuard (`wg-quick` netns, committed tiny conf template with generated keys) + `mud_server` bound on the tunnel net; run the demo (Linux build) asserting banner bytes + resource line; Wine `-osw` run of the same demo against the same far side (tier case); `check_win9x_imports.sh 9x` gate; RAM enforcement `ulimit -v 32768` + recorded peak. Before SKIP, attempt a self-contained portable `wg`/`ip` binary set (no root install); if unavailable, emit a loud SKIP and record M7 integration as pending.
+- [ ] **Step 2:** `tier_wireguard.sh`: start Linux kernel WireGuard (`wg-quick` netns, or equivalent portable `ip`/`wg` netns when `wg-quick` is unavailable; generated test config) + `mud_server` bound on the tunnel net; run the demo (Linux build) asserting exact banner bytes + reply + resource line (including `bytes=N`) ; Wine `-osw` run of the same demo against the same far side (tier case); `check_win9x_imports.sh 9x` gate; RAM enforcement `ulimit -v 32768` + recorded peak. Before SKIP, attempt a self-contained portable `wg`/`ip` binary set (no root install); if unavailable, emit a loud SKIP and record M7 integration as pending.
 - [ ] **Step 3:** Run `tier_wireguard.sh` 2× deterministic + targeted demo checks + 3×. Full gate at Task 4 closeout.
 - [ ] **Step 4:** Commits `example(z9demo): wireguard_demo (Phase1 M7)`, `test(tier): tier_wireguard (Phase1 M7)`.
 
