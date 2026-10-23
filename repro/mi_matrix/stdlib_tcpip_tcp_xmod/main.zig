@@ -12,8 +12,15 @@
 //   - RST -> failed event
 //   - dropped ACK -> retransmission of the same seq after the 1 s RTO
 //   - out-of-order peer segments buffered within the 8 KB window and delivered
-//     in order; a segment beyond the window is not delivered
-//   - MSS 1400 split of a 5 KB tcpSend (1400/1400/1400/800)
+//     in order; a segment beyond the window is not delivered; duplicates are
+//     ACKed but not delivered twice
+//   - cfg.mtu=1400 -> local MSS 1360 split of a 5 KB tcpSend
+//     (1360/1360/1360/920), every emitted datagram <= 1400
+//   - peer-advertised MSS 1200 clamps outgoing segments
+//   - receive/send sequence + ACK wrap across 2^32
+//   - arena OOM at init and no-free-socket -> OutOfMemory
+//   - OutputTooSmall during FIN leaves the socket retryable
+//   - out-of-window FIN rejected, then a valid FIN -> closed
 //   - malformed IPv4 and TCP checksums -> error.Corrupt
 //
 // GREEN (contract): deterministic byte-exact stdout `tcpip tcp ok\n` (RUNRC=0).
@@ -26,8 +33,11 @@ const PEER_PORT: u16 = 80;
 const PEER_ISS: u32 = 0x50000000;
 
 const MAX_PKT: usize = 2048;
+const LOCAL_MTU: usize = 1400;
+const LOCAL_MSS: usize = 1360;
 
 var g_out: [MAX_PKT]u8 = undefined;
+var g_oom_buf: [262144]u8 = undefined;
 var g_pkt: [MAX_PKT]u8 = undefined;
 var g_pkt_len: usize = 0;
 var g_connected: i32 = -1;
@@ -151,9 +161,31 @@ fn pktPayload(p: []const u8) []const u8 {
     return p[ipHdrLen(p) + tcpHdrLen(p) .. ipTotal(p)];
 }
 
+// MSS option (kind 2, len 4) from a SYN/SYN-ACK; 0 when absent.
+fn pktSynMss(p: []const u8) u16 {
+    const t = ipHdrLen(p);
+    const end = t + tcpHdrLen(p);
+    var i: usize = t + 20;
+    while (i < end) {
+        const kind = p[i];
+        if (kind == 0) break;
+        if (kind == 1) {
+            i += 1;
+            continue;
+        }
+        if (i + 1 >= end) break;
+        const len: usize = @intCast(usize, p[i + 1]);
+        if (len < 2 or i + len > end) break;
+        if (kind == 2 and len == 4) return load16(p, i + 2);
+        i += len;
+    }
+    return 0;
+}
+
 fn validatePkt(p: []const u8) void {
     ck(p.len >= 20, "min ip");
     ck((p[0] >> 4) == 4, "ip version");
+    ck(p.len <= LOCAL_MTU, "emitted datagram <= cfg.mtu");
     const ihl = ipHdrLen(p);
     ck(ihl == 20, "ihl 20");
     ck(ipTotal(p) == p.len, "ip total");
@@ -167,8 +199,10 @@ fn validatePkt(p: []const u8) void {
     ck(foldCk(pseudoSum(src, dst, seg.len) + sumWords(seg)) == 0xFFFF, "tcp checksum");
 }
 
-fn buildPeer(out: []u8, src_ip: u32, dst_ip: u32, src_port: u16, dst_port: u16, seq: u32, ack: u32, flags: u8, payload: []const u8) usize {
-    const total = 20 + 20 + payload.len;
+fn buildPeerEx(out: []u8, src_ip: u32, dst_ip: u32, src_port: u16, dst_port: u16, seq: u32, ack: u32, flags: u8, payload: []const u8, mss: u16) usize {
+    const opt_len: usize = if (mss != 0) 4 else 0;
+    const tcp_hdr = 20 + opt_len;
+    const total = 20 + tcp_hdr + payload.len;
     var i: usize = 0;
     while (i < total) : (i += 1) out[i] = 0;
 
@@ -187,16 +221,25 @@ fn buildPeer(out: []u8, src_ip: u32, dst_ip: u32, src_port: u16, dst_port: u16, 
     store16(out, t + 2, dst_port);
     store32(out, t + 4, seq);
     store32(out, t + 8, ack);
-    out[t + 12] = 5 << 4;
+    out[t + 12] = @intCast(u8, (tcp_hdr / 4) << 4);
     out[t + 13] = flags;
     store16(out, t + 14, 8192);
     store16(out, t + 16, 0);
     store16(out, t + 18, 0);
+    if (opt_len != 0) {
+        out[t + 20] = 2;
+        out[t + 21] = 4;
+        store16(out, t + 22, mss);
+    }
 
     i = 0;
-    while (i < payload.len) : (i += 1) out[t + 20 + i] = payload[i];
+    while (i < payload.len) : (i += 1) out[t + tcp_hdr + i] = payload[i];
     store16(out, t + 16, tcpCk(src_ip, dst_ip, out[t..total]));
     return total;
+}
+
+fn buildPeer(out: []u8, src_ip: u32, dst_ip: u32, src_port: u16, dst_port: u16, seq: u32, ack: u32, flags: u8, payload: []const u8) usize {
+    return buildPeerEx(out, src_ip, dst_ip, src_port, dst_port, seq, ack, flags, payload, 0);
 }
 
 fn resetEvents() void {
@@ -238,9 +281,26 @@ fn drive(s: *tcp.TcpipStack, now: u64, rx: ?[]const u8) usize {
     return 0;
 }
 
-fn doConnect(s: *tcp.TcpipStack, now: u64) Conn {
+fn slotOf(s: *tcp.TcpipStack, id: u32) usize {
+    var i: usize = 0;
+    while (i < s.socket_count) : (i += 1) {
+        if (s.sockets[i].id == id) return i;
+    }
+    return 0;
+}
+
+// peer_mss = 0 means the peer advertises no MSS option (local MSS applies).
+// client_iss = 0 keeps the stack's deterministic default ISS; otherwise the
+// fixture overrides it before the SYN is emitted (sequence-wrap scenarios).
+fn doConnectFull(s: *tcp.TcpipStack, now: u64, peer_mss: u16, peer_iss: u32, client_iss: u32) Conn {
     resetEvents();
     const id = tcp.tcpConnect(s, PEER, PEER_PORT) catch @panic("connect");
+    if (client_iss != 0) {
+        const si = slotOf(s, id);
+        s.sockets[si].iss = client_iss;
+        s.sockets[si].snd_una = client_iss;
+        s.sockets[si].snd_nxt = client_iss;
+    }
 
     var n = drive(s, now, null);
     ck(n > 0, "syn emitted");
@@ -250,19 +310,21 @@ fn doConnect(s: *tcp.TcpipStack, now: u64) Conn {
     ck(pktDstPort(g_pkt[0..n]) == PEER_PORT, "syn dst port");
     ck(load32(g_pkt[0..n], 16) == PEER, "syn dst ip");
     ck(pktPayload(g_pkt[0..n]).len == 0, "syn payload empty");
+    ck(pktSynMss(g_pkt[0..n]) == @intCast(u16, LOCAL_MSS), "syn advertises local MSS");
 
     const iss = pktSeq(g_pkt[0..n]);
+    if (client_iss != 0) ck(iss == client_iss, "client iss override");
     const lp = pktSrcPort(g_pkt[0..n]);
 
     var pp: [MAX_PKT]u8 = undefined;
-    const m = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, lp, PEER_ISS, iss +% 1, 0x12, "");
+    const m = buildPeerEx(pp[0..], PEER, LOCAL, PEER_PORT, lp, peer_iss, iss +% 1, 0x12, "", peer_mss);
     resetEvents();
     n = drive(s, now + 1, pp[0..m]);
     ck(n > 0, "handshake ack emitted");
     ck((pktFlags(g_pkt[0..n]) & 0x10) != 0, "handshake ack flag");
     ck((pktFlags(g_pkt[0..n]) & 0x02) == 0, "handshake not syn");
     ck(pktSeq(g_pkt[0..n]) == iss +% 1, "handshake seq");
-    ck(pktAck(g_pkt[0..n]) == PEER_ISS +% 1, "handshake ack no");
+    ck(pktAck(g_pkt[0..n]) == peer_iss +% 1, "handshake ack no");
 
     resetEvents();
     n = drive(s, now + 2, null);
@@ -271,6 +333,14 @@ fn doConnect(s: *tcp.TcpipStack, now: u64) Conn {
     ck(g_failed == -1, "connected not failed");
 
     return Conn{ .id = id, .iss = iss, .local_port = lp };
+}
+
+fn doConnectEx(s: *tcp.TcpipStack, now: u64, peer_mss: u16) Conn {
+    return doConnectFull(s, now, peer_mss, PEER_ISS, 0);
+}
+
+fn doConnect(s: *tcp.TcpipStack, now: u64) Conn {
+    return doConnectFull(s, now, 0, PEER_ISS, 0);
 }
 
 fn ackPacket(pp: []u8, c: Conn, peer_seq: u32, ack: u32) usize {
@@ -429,6 +499,19 @@ fn testOoo(s: *tcp.TcpipStack, now: u64) void {
     eqBytes(rb[0..lenA], a[0..], "ooo A bytes");
     eqBytes(rb[lenA..rn], b[0..], "ooo B bytes");
 
+    // A duplicate of already-received bytes is ACKed but never delivered again.
+    m = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, base, c.iss +% 1, 0x18, a[0..]);
+    resetEvents();
+    n = drive(s, now + 5, pp[0..m]);
+    ck(n > 0, "duplicate acked");
+    ck(pktAck(g_pkt[0..n]) == base +% @intCast(u32, lenA + lenB), "duplicate ack unchanged");
+    resetEvents();
+    n = drive(s, now + 6, null);
+    ck(n == 0, "duplicate idle");
+    ck(g_data == -1, "duplicate not delivered");
+    var dup: [8]u8 = undefined;
+    ck((tcp.tcpRecv(s, c.id, dup[0..]) catch @panic("recv dup")) == 0, "duplicate recv empty");
+
     // A segment wholly outside the 8 KB window must not be delivered.
     const far = base +% @intCast(u32, lenA + lenB) +% @intCast(u32, 8200);
     m = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, far, c.iss +% 1, 0x18, "x");
@@ -478,7 +561,7 @@ fn testMss(s: *tcp.TcpipStack, now: u64) void {
         ck(n > 0, "mss segment emitted");
 
         var want: usize = data.len - off;
-        if (want > 1400) want = 1400;
+        if (want > LOCAL_MSS) want = LOCAL_MSS;
         ck(pktPayload(g_pkt[0..n]).len == want, "mss segment size");
         ck(pktSeq(g_pkt[0..n]) == c.iss +% 1 +% @intCast(u32, off), "mss segment seq");
         eqBytes(pktPayload(g_pkt[0..n]), data[off .. off + want], "mss segment bytes");
@@ -508,6 +591,224 @@ fn testMss(s: *tcp.TcpipStack, now: u64) void {
     n = drive(s, now + 102, null);
     ck(n == 0, "mss close idle");
     ck(g_closed == @intCast(i32, c.id), "mss closed event");
+}
+
+fn testPeerMss(s: *tcp.TcpipStack, now: u64) void {
+    const c = doConnectEx(s, now, 1200);
+    var data: [1300]u8 = undefined;
+    var i: usize = 0;
+    while (i < data.len) : (i += 1) data[i] = @intCast(u8, (i * 17 + 3) & 0xFF);
+    const sent = tcp.tcpSend(s, c.id, data[0..]) catch @panic("send peer mss");
+    ck(sent == data.len, "peer mss send accepted");
+
+    var pp: [MAX_PKT]u8 = undefined;
+    resetEvents();
+    var n = drive(s, now + 10, null);
+    ck(n > 0, "peer mss first segment");
+    ck(pktPayload(g_pkt[0..n]).len == 1200, "peer mss clamps to 1200");
+    ck(pktSeq(g_pkt[0..n]) == c.iss +% 1, "peer mss first seq");
+    eqBytes(pktPayload(g_pkt[0..n]), data[0..1200], "peer mss first bytes");
+
+    var m = ackPacket(pp[0..], c, PEER_ISS +% 1, pktSeq(g_pkt[0..n]) +% 1200);
+    resetEvents();
+    n = drive(s, now + 11, pp[0..m]);
+    ck(n > 0, "peer mss second segment");
+    ck(pktPayload(g_pkt[0..n]).len == 100, "peer mss tail 100");
+    ck(pktSeq(g_pkt[0..n]) == c.iss +% 1 +% 1200, "peer mss tail seq");
+    eqBytes(pktPayload(g_pkt[0..n]), data[1200..1300], "peer mss tail bytes");
+
+    m = ackPacket(pp[0..], c, PEER_ISS +% 1, pktSeq(g_pkt[0..n]) +% 100);
+    resetEvents();
+    n = drive(s, now + 12, pp[0..m]);
+    ck(n == 0, "peer mss acked clean");
+
+    const mr = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, PEER_ISS +% 1, c.iss +% 1 +% 1300, 0x04, "");
+    resetEvents();
+    _ = drive(s, now + 13, pp[0..mr]);
+    ck(g_failed == @intCast(i32, c.id), "peer mss cleanup rst");
+}
+
+fn finOtsProbe(s: *tcp.TcpipStack, now: u64) bool {
+    var tiny: [16]u8 = undefined;
+    const act = tcp.tcpipPoll(s, now, null, tiny[0..]) catch |err| {
+        return err == error.OutputTooSmall;
+    };
+    _ = act;
+    return false;
+}
+
+fn testFinOts(s: *tcp.TcpipStack, now: u64) void {
+    const c = doConnect(s, now);
+    tcp.tcpClose(s, c.id) catch @panic("close fin ots");
+    ck(finOtsProbe(s, now + 10), "fin output-too-small");
+
+    // The failed FIN build must not consume state: the retry emits the same FIN.
+    resetEvents();
+    var n = drive(s, now + 11, null);
+    ck(n > 0, "fin retry emitted");
+    ck((pktFlags(g_pkt[0..n]) & 0x01) != 0, "fin retry flag");
+    ck(pktSeq(g_pkt[0..n]) == c.iss +% 1, "fin retry seq unchanged");
+    const fin_seq = pktSeq(g_pkt[0..n]);
+
+    var pp: [MAX_PKT]u8 = undefined;
+    const peer_fin = PEER_ISS +% 1;
+    const m = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, peer_fin, fin_seq +% 1, 0x11, "");
+    resetEvents();
+    n = drive(s, now + 12, pp[0..m]);
+    ck(n > 0, "fin retry acked");
+    ck(pktAck(g_pkt[0..n]) == peer_fin +% 1, "fin retry peer ack");
+    resetEvents();
+    n = drive(s, now + 13, null);
+    ck(n == 0, "fin retry close idle");
+    ck(g_closed == @intCast(i32, c.id), "fin retry closed event");
+}
+
+fn testFinWindow(s: *tcp.TcpipStack, now: u64) void {
+    const c = doConnect(s, now);
+    const valid_fin = PEER_ISS +% 1;
+    const bad_fin = valid_fin +% @intCast(u32, 8200);
+    var pp: [MAX_PKT]u8 = undefined;
+
+    // Far-outside-window FIN must be ACKed but must not poison peer_fin_pending.
+    var m = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, bad_fin, c.iss +% 1, 0x11, "");
+    resetEvents();
+    var n = drive(s, now + 10, pp[0..m]);
+    ck(n > 0, "bad fin acked");
+    ck(pktAck(g_pkt[0..n]) == valid_fin, "bad fin ack unchanged");
+    resetEvents();
+    n = drive(s, now + 11, null);
+    ck(n == 0, "bad fin idle");
+    ck(g_closed == -1, "bad fin not closed");
+
+    // The later valid FIN is accepted and completes the close.
+    m = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, valid_fin, c.iss +% 1, 0x11, "");
+    resetEvents();
+    n = drive(s, now + 12, pp[0..m]);
+    ck(n > 0, "valid fin acked");
+    ck(pktAck(g_pkt[0..n]) == valid_fin +% 1, "valid fin ack no");
+
+    resetEvents();
+    n = drive(s, now + 13, null);
+    ck(n > 0, "passive fin emitted");
+    ck((pktFlags(g_pkt[0..n]) & 0x01) != 0, "passive fin flag");
+    ck(pktSeq(g_pkt[0..n]) == c.iss +% 1, "passive fin seq");
+
+    resetEvents();
+    n = drive(s, now + 14, null);
+    ck(n == 0, "valid fin close idle");
+    ck(g_closed == @intCast(i32, c.id), "valid fin closed event");
+}
+
+fn testWrap(s: *tcp.TcpipStack, now: u64) void {
+    const CLIENT_WRAP: u32 = 0xFFFFFFF0;
+    const PEER_WRAP: u32 = 0xFFFFFF00;
+    const c = doConnectFull(s, now, 0, PEER_WRAP, CLIENT_WRAP);
+    const pbase = PEER_WRAP +% 1;
+
+    var data: [300]u8 = undefined;
+    var i: usize = 0;
+    while (i < data.len) : (i += 1) data[i] = @intCast(u8, 0xC0 + (i & 0x1F));
+
+    var pp: [MAX_PKT]u8 = undefined;
+    var m = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, pbase, c.iss +% 1, 0x18, data[0..]);
+    resetEvents();
+    var n = drive(s, now + 10, pp[0..m]);
+    ck(n > 0, "wrap peer data acked");
+    ck(pktAck(g_pkt[0..n]) == pbase +% 300, "wrap peer ack wraps");
+    resetEvents();
+    n = drive(s, now + 11, null);
+    ck(n == 0, "wrap peer data idle");
+    ck(g_data == @intCast(i32, c.id), "wrap peer data event");
+
+    var rb: [300]u8 = undefined;
+    const rn = tcp.tcpRecv(s, c.id, rb[0..]) catch @panic("recv wrap");
+    ck(rn == 300, "wrap recv length");
+    eqBytes(rb[0..rn], data[0..], "wrap peer bytes exact");
+
+    resetEvents();
+    n = drive(s, now + 12, null);
+    ck(n > 0, "wrap window update");
+
+    var msg: [32]u8 = undefined;
+    i = 0;
+    while (i < msg.len) : (i += 1) msg[i] = @intCast(u8, 0x40 + i);
+    const sent = tcp.tcpSend(s, c.id, msg[0..]) catch @panic("send wrap");
+    ck(sent == msg.len, "wrap send accepted");
+
+    resetEvents();
+    n = drive(s, now + 13, null);
+    ck(n > 0, "wrap client data emitted");
+    ck(pktSeq(g_pkt[0..n]) == c.iss +% 1, "wrap client seq");
+    eqBytes(pktPayload(g_pkt[0..n]), msg[0..], "wrap client bytes exact");
+    const dseq = pktSeq(g_pkt[0..n]);
+    const dend = dseq +% 32;
+
+    m = ackPacket(pp[0..], c, pbase +% 300, dend);
+    resetEvents();
+    n = drive(s, now + 14, pp[0..m]);
+    ck(n == 0, "wrap client acked clean");
+
+    tcp.tcpClose(s, c.id) catch @panic("close wrap");
+    resetEvents();
+    n = drive(s, now + 15, null);
+    ck(n > 0, "wrap fin emitted");
+    ck((pktFlags(g_pkt[0..n]) & 0x01) != 0, "wrap fin flag");
+    ck(pktSeq(g_pkt[0..n]) == dend, "wrap fin seq");
+    const fin_seq = pktSeq(g_pkt[0..n]);
+
+    const peer_fin = pbase +% 300;
+    m = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, peer_fin, fin_seq +% 1, 0x11, "");
+    resetEvents();
+    n = drive(s, now + 16, pp[0..m]);
+    ck(n > 0, "wrap fin acked");
+    ck(pktAck(g_pkt[0..n]) == peer_fin +% 1, "wrap peer fin ack");
+    resetEvents();
+    n = drive(s, now + 17, null);
+    ck(n == 0, "wrap close idle");
+    ck(g_closed == @intCast(i32, c.id), "wrap closed event");
+}
+
+fn initOom(cfg: *tcp.TcpipConfig) bool {
+    var tiny: [64]u8 = undefined;
+    var a = std.arena.init(tiny[0..]);
+    const p = tcp.tcpipInit(&a, cfg) catch |err| {
+        return err == error.OutOfMemory;
+    };
+    _ = p;
+    return false;
+}
+
+fn noFreeSocket() bool {
+    var a = std.arena.init(g_oom_buf[0..]);
+    var cfg = tcp.TcpipConfig{
+        .ip = LOCAL,
+        .netmask = 0xFFFFFF00,
+        .gateway = PEER,
+        .mtu = 1400,
+        .dns_server = 0x0A000003,
+        .max_sockets = 1,
+    };
+    const s = tcp.tcpipInit(&a, &cfg) catch return false;
+    const id1 = tcp.tcpConnect(s, PEER, PEER_PORT) catch return false;
+    _ = id1;
+    const id2 = tcp.tcpConnect(s, PEER, PEER_PORT) catch |err| {
+        return err == error.OutOfMemory;
+    };
+    _ = id2;
+    return false;
+}
+
+fn testAllocFailures() void {
+    var cfg = tcp.TcpipConfig{
+        .ip = LOCAL,
+        .netmask = 0xFFFFFF00,
+        .gateway = PEER,
+        .mtu = 1400,
+        .dns_server = 0x0A000003,
+        .max_sockets = 2,
+    };
+    ck(initOom(&cfg), "init arena oom");
+    ck(noFreeSocket(), "no free socket oom");
 }
 
 fn pollCorrupt(s: *tcp.TcpipStack, now: u64, pkt: []const u8) bool {
@@ -570,7 +871,12 @@ pub fn main() void {
     testRetrans(st, 20000);
     testOoo(st, 30000);
     testMss(st, 40000);
-    testChecksums(st, 50000);
+    testPeerMss(st, 45000);
+    testFinOts(st, 50000);
+    testFinWindow(st, 60000);
+    testWrap(st, 70000);
+    testAllocFailures();
+    testChecksums(st, 80000);
 
     if (g_fail == 0) {
         std.io.write("tcpip tcp ok\n");

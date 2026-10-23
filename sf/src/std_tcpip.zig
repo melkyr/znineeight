@@ -6,11 +6,14 @@
 // a socket, the clock, or the heap.
 //
 // Scope: IPv4 only, TCP client only (no listen/accept), no fragment
-// reassembly. Fixed 8 KB receive window, MSS 1400, one fixed send buffer per
-// socket, simplified fixed 1 s RTO with Karn (retransmitted segments are never
-// used for RTT samples; this implementation takes no RTT samples at all), and
-// minimal Reno congestion control (slow start + AIMD). Peer fragments are
-// dropped silently per the spec.
+// reassembly. Fixed 8 KB receive window, one fixed send buffer per socket,
+// simplified fixed 1 s RTO with Karn (retransmitted segments are never used
+// for RTT samples; this implementation takes no RTT samples at all), and
+// minimal Reno congestion control (slow start + AIMD). `cfg.mtu` is the
+// authoritative maximum inner IPv4 datagram size (headers included); the local
+// MSS is `mtu - 40`, and the effective per-socket MSS is
+// `min(peer-advertised MSS, local MSS)`. Peer fragments are dropped silently
+// per the spec.
 //
 // Errors: Corrupt (malformed/checksum-failing datagram), NoRoute, ConnRefused,
 // Timeout, DnsFailed, OutOfMemory, OutputTooSmall, Closed. A connection-level
@@ -48,7 +51,9 @@ pub const TcpipAction = union(enum) {
     done: void,
 };
 
-// TCP policy constants (spec §5.8).
+// TCP policy constants (spec §5.8). TCP_MSS is retained as the historical
+// default MSS name; the live send MSS is derived per stack/socket from cfg.mtu
+// and the peer's SYN-ACK MSS option (see localMss/p.mss).
 pub const TCP_MSS: usize = 1400;
 pub const TCP_RECV_WINDOW: usize = 8192;
 pub const TCP_RTO_MS: u64 = 1000;
@@ -87,6 +92,10 @@ pub const TcpSock = struct {
     local_port: u16,
     remote_ip: u32,
     remote_port: u16,
+
+    // Effective send MSS (bytes): local MSS at SYN time, then
+    // min(peer-advertised MSS, local MSS) after the SYN-ACK.
+    mss: u16,
 
     iss: u32,
     snd_una: u32,
@@ -164,6 +173,33 @@ pub fn tcpipInit(arena: *arena_mod.Arena, cfg: *TcpipConfig) !*TcpipStack {
     var i: usize = 0;
     while (i < count) : (i += 1) zeroSock(&socks[i]);
     return s;
+}
+
+// Local MSS: cfg.mtu is the maximum inner IPv4 datagram (20-byte IPv4 header +
+// 20-byte TCP header + payload), so the largest safe TCP payload is mtu - 40.
+fn localMss(s: *TcpipStack) u16 {
+    if (s.cfg.mtu <= 40) return 1;
+    return @intCast(u16, @intCast(usize, s.cfg.mtu) - 40);
+}
+
+// Parse the MSS option (kind 2, length 4) from a SYN/SYN-ACK. Returns 0 when
+// the option is absent or malformed.
+fn parseMssOption(tcp: []const u8, doff: usize) u16 {
+    var i: usize = TCP_HDR_LEN;
+    while (i < doff) {
+        const kind = tcp[i];
+        if (kind == 0) break;
+        if (kind == 1) {
+            i += 1;
+            continue;
+        }
+        if (i + 1 >= doff) break;
+        const len: usize = @intCast(usize, tcp[i + 1]);
+        if (len < 2 or i + len > doff) break;
+        if (kind == 2 and len == 4) return load16be(tcp, i + 2);
+        i += len;
+    }
+    return 0;
 }
 
 fn load16be(p: []const u8, off: usize) u16 {
@@ -359,6 +395,15 @@ fn handleFin(p: *TcpSock, fin_seq: u32) void {
     p.ack_needed = true;
     if (p.peer_fin_received or p.peer_fin_pending) return;
     if (seqLess(fin_seq, p.rcv_nxt)) return; // stale duplicate FIN
+
+    // Only accept a FIN whose sequence lies inside the advertised 8 KB receive
+    // window. An out-of-window FIN must not poison peer_fin_pending.
+    const outstanding = p.rcv_nxt -% p.rcv_app;
+    if (outstanding >= TCP_RECV_WINDOW) return;
+    const free = TCP_RECV_WINDOW - @intCast(usize, outstanding);
+    const off = fin_seq -% p.rcv_nxt;
+    if (off >= @intCast(u32, free)) return;
+
     p.peer_fin_pending = true;
     p.peer_fin_seq = fin_seq;
     if (p.rcv_nxt == fin_seq) _ = drainRecv(p);
@@ -403,7 +448,8 @@ fn handleAck(p: *TcpSock, ack: u32, wnd: u16, now_ms: u64) void {
         if (p.cwnd < p.ssthresh) {
             p.cwnd += a;
         } else {
-            var inc: u32 = (@intCast(u32, TCP_MSS) * @intCast(u32, TCP_MSS)) / p.cwnd;
+            const m = @intCast(u32, p.mss);
+            var inc: u32 = (m * m) / p.cwnd;
             if (inc == 0) inc = 1;
             p.cwnd += inc;
         }
@@ -424,6 +470,8 @@ fn handleAck(p: *TcpSock, ack: u32, wnd: u16, now_ms: u64) void {
 fn buildSegment(s: *TcpipStack, p: *TcpSock, out: []u8, seq: u32, ack: u32, flags: u8, payload: []const u8, with_mss: bool) ![]const u8 {
     const tcp_hdr: usize = if (with_mss) TCP_HDR_LEN + TCP_SYN_OPT_LEN else TCP_HDR_LEN;
     const total = IP_HDR_LEN + tcp_hdr + payload.len;
+    // cfg.mtu includes the IPv4 and TCP headers: never emit a larger datagram.
+    if (total > @intCast(usize, s.cfg.mtu)) return error.OutputTooSmall;
     if (out.len < total) return error.OutputTooSmall;
 
     var i: usize = 0;
@@ -454,7 +502,7 @@ fn buildSegment(s: *TcpipStack, p: *TcpSock, out: []u8, seq: u32, ack: u32, flag
     if (with_mss) {
         out[t + 20] = 2;
         out[t + 21] = 4;
-        store16be(out, t + 22, @intCast(u16, TCP_MSS));
+        store16be(out, t + 22, p.mss);
     }
 
     i = 0;
@@ -483,7 +531,14 @@ fn processTcp(s: *TcpipStack, p: *TcpSock, now_ms: u64, tcp: []const u8, doff: u
             p.rcv_nxt = seq +% 1;
             p.rcv_app = p.rcv_nxt;
             p.snd_wnd = @intCast(u32, wnd);
-            p.cwnd = @intCast(u32, TCP_MSS);
+            const local = localMss(s);
+            const peer_mss = parseMssOption(tcp, doff);
+            if (peer_mss != 0 and peer_mss < local) {
+                p.mss = peer_mss;
+            } else {
+                p.mss = local;
+            }
+            p.cwnd = @intCast(u32, p.mss);
             p.ssthresh = 65535;
             p.state = .established;
             p.need_syn = false;
@@ -569,13 +624,14 @@ pub fn tcpConnect(s: *TcpipStack, dst_ip: u32, dst_port: u16) !u32 {
             p.local_port = @intCast(u16, 49152 + @intCast(u32, i));
             p.remote_ip = dst_ip;
             p.remote_port = dst_port;
+            p.mss = localMss(s);
             p.iss = 0x12340000 + (p.id *% 0x101);
             p.snd_una = p.iss;
             p.snd_nxt = p.iss;
             p.snd_wnd = @intCast(u32, TCP_RECV_WINDOW);
             p.rcv_nxt = 0;
             p.rcv_app = 0;
-            p.cwnd = @intCast(u32, TCP_MSS);
+            p.cwnd = @intCast(u32, p.mss);
             p.ssthresh = 65535;
             p.need_syn = true;
             return p.id;
@@ -631,11 +687,12 @@ pub fn tcpClose(s: *TcpipStack, sock: u32) !void {
 
 // RTO timeout: halve ssthresh (floor 2*MSS) and restart in slow start.
 fn onRto(p: *TcpSock) void {
+    const m = @intCast(u32, p.mss);
     var ss = p.cwnd / 2;
-    const floor: u32 = @intCast(u32, 2 * TCP_MSS);
+    const floor: u32 = m * 2;
     if (ss < floor) ss = floor;
     p.ssthresh = ss;
-    p.cwnd = @intCast(u32, TCP_MSS);
+    p.cwnd = m;
 }
 
 fn serveSend(s: *TcpipStack, p: *TcpSock, now_ms: u64, out: []u8) !?[]const u8 {
@@ -676,7 +733,8 @@ fn serveSend(s: *TcpipStack, p: *TcpSock, now_ms: u64, out: []u8) !?[]const u8 {
                 return null;
             }
             var n = p.send_sent - p.send_head;
-            if (n > TCP_MSS) n = TCP_MSS;
+            const mss: usize = @intCast(usize, p.mss);
+            if (n > mss) n = mss;
             onRto(p);
             const pkt = try buildSegment(s, p, out, p.snd_una, p.rcv_nxt, FLAG_ACK | FLAG_PSH, p.send_buf[p.send_head .. p.send_head + n], false);
             p.retrans_count += 1;
@@ -704,7 +762,8 @@ fn serveSend(s: *TcpipStack, p: *TcpSock, now_ms: u64, out: []u8) !?[]const u8 {
         if (flight < limit) {
             var win = limit - flight;
             var n = p.send_tail - p.send_sent;
-            if (n > TCP_MSS) n = TCP_MSS;
+            const mss: usize = @intCast(usize, p.mss);
+            if (n > mss) n = mss;
             if (n > @intCast(usize, win)) n = @intCast(usize, win);
             if (n > 0) {
                 const pkt = try buildSegment(s, p, out, p.snd_nxt, p.rcv_nxt, FLAG_ACK | FLAG_PSH, p.send_buf[p.send_sent .. p.send_sent + n], false);
@@ -721,12 +780,15 @@ fn serveSend(s: *TcpipStack, p: *TcpSock, now_ms: u64, out: []u8) !?[]const u8 {
     }
 
     if (p.state == .established and (p.close_requested or p.peer_fin_received) and p.send_sent == p.send_tail) {
+        // Build first: OutputTooSmall must leave the socket retryable, with no
+        // fin_wait1/fin_sent/snd_nxt mutation.
+        const fin_seq = p.snd_nxt;
+        const pkt = try buildSegment(s, p, out, fin_seq, p.rcv_nxt, FLAG_FIN | FLAG_ACK, out[0..0], false);
         p.state = .fin_wait1;
         p.close_requested = false;
-        p.fin_seq = p.snd_nxt;
-        p.snd_nxt +%= 1;
+        p.fin_seq = fin_seq;
+        p.snd_nxt = fin_seq +% 1;
         p.fin_sent = true;
-        const pkt = try buildSegment(s, p, out, p.fin_seq, p.rcv_nxt, FLAG_FIN | FLAG_ACK, out[0..0], false);
         if (!p.rto_armed) {
             p.rto_deadline = now_ms + TCP_RTO_MS;
             p.rto_armed = true;
