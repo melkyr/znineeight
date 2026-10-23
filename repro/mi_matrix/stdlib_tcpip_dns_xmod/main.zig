@@ -228,6 +228,29 @@ fn buildDnsResp(out: []u8, id: u16, name: []const u8, ip: u32, flags: u16, ancou
     return n;
 }
 
+fn buildDnsRespDiffName(out: []u8, id: u16, qname: []const u8, ans_name: []const u8, ip: u32) usize {
+    store16(out, 0, id);
+    store16(out, 2, 0x8180);
+    store16(out, 4, 1);
+    store16(out, 6, 1);
+    store16(out, 8, 0);
+    store16(out, 10, 0);
+    var n = dnsNameWire(out, 12, qname);
+    if (n == 0) return 0;
+    store16(out, n, 1);
+    store16(out, n + 2, 1);
+    n += 4;
+    n = dnsNameWire(out, n, ans_name);
+    if (n == 0) return 0;
+    store16(out, n, 1);
+    store16(out, n + 2, 1);
+    store32(out, n + 4, 300);
+    store16(out, n + 8, 4);
+    n += 10;
+    store32(out, n, ip);
+    return n + 4;
+}
+
 fn checkQuery(p: []const u8, name: []const u8) u16 {
     ck(ipProto(p) == 17, "dns proto udp");
     ck(load16(p, 20) == DNS_PORT, "dns source port");
@@ -280,8 +303,10 @@ fn testQueryAnswer(s: *tcp.TcpipStack, now: u64) void {
     var m = buildDnsResp(rp[0..], id, "example.com", 0x0A000009, 0x8180, 1, 4, 4, false);
     var pp: [MAX_PKT]u8 = undefined;
     var pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
     n = drive(s, now + 1, pp[0..pl]);
     ck(n == 0, "dns answer no send");
+    ck(g_done, "dns success terminal done");
     const ip = dnsGet(s, "example.com");
     if (ip) |v| { ck(v == 0x0A000009, "dns A record parsed"); } else { ck(false, "dns A record missing"); }
 
@@ -291,10 +316,25 @@ fn testQueryAnswer(s: *tcp.TcpipStack, now: u64) void {
     const id2 = checkQuery(g_pkt[0..n], "two.example");
     m = buildDnsResp(rp[0..], id2, "two.example", 0x0A00000A, 0x8180, 1, 4, 4, false);
     pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
     n = drive(s, now + 3, pp[0..pl]);
     ck(n == 0, "dns second answer no send");
+    ck(g_done, "dns second terminal done");
     const ip2 = dnsGet(s, "two.example");
     if (ip2) |v| { ck(v == 0x0A00000A, "dns second A record"); } else { ck(false, "dns second A record missing"); }
+
+    ck(dnsStart(s, "case.example"), "dns case start");
+    n = drive(s, now + 4, null);
+    ck(n > 0, "dns case query emitted");
+    const id3 = checkQuery(g_pkt[0..n], "case.example");
+    m = buildDnsResp(rp[0..], id3, "CASE.EXAMPLE", 0x0A000010, 0x8180, 1, 4, 4, false);
+    pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
+    n = drive(s, now + 5, pp[0..pl]);
+    ck(n == 0, "dns case answer no send");
+    ck(g_done, "dns case terminal done");
+    const ip3 = dnsGet(s, "case.example");
+    if (ip3) |v| { ck(v == 0x0A000010, "dns case-insensitive QNAME"); } else { ck(false, "dns case answer missing"); }
 }
 
 fn testMismatch(s: *tcp.TcpipStack, now: u64) void {
@@ -307,16 +347,37 @@ fn testMismatch(s: *tcp.TcpipStack, now: u64) void {
     var pp: [MAX_PKT]u8 = undefined;
     var m = buildDnsResp(rp[0..], id +% 1, "id.example", 0x0A00000B, 0x8180, 1, 4, 4, false);
     var pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
     n = drive(s, now + 1, pp[0..pl]);
     ck(n == 0, "dns mismatched id ignored");
+    ck(!g_done, "dns bad id not terminal");
     ck(dnsGet(s, "id.example") == null, "dns still pending after bad id");
 
     m = buildDnsResp(rp[0..], id, "id.example", 0x0A00000B, 0x8180, 1, 4, 4, false);
     pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
     n = drive(s, now + 2, pp[0..pl]);
     ck(n == 0, "dns correct id no send");
+    ck(g_done, "dns correct id terminal done");
     const ip = dnsGet(s, "id.example");
     if (ip) |v| { ck(v == 0x0A00000B, "dns correct id answer"); } else { ck(false, "dns correct id answer missing"); }
+}
+
+fn testQname(s: *tcp.TcpipStack, now: u64) void {
+    ck(dnsStart(s, "qname.example"), "dns qname start");
+    var n = drive(s, now, null);
+    ck(n > 0, "dns qname query");
+    const id = checkQuery(g_pkt[0..n], "qname.example");
+
+    var rp: [MAX_PKT]u8 = undefined;
+    var pp: [MAX_PKT]u8 = undefined;
+    const m = buildDnsRespDiffName(rp[0..], id, "qname.example", "evil.example", 0x0A00000F);
+    const pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
+    n = drive(s, now + 1, pp[0..pl]);
+    ck(n == 0, "dns qname mismatch consumed");
+    ck(g_done, "dns qname mismatch terminal done");
+    ck(dnsFailed(s, "qname.example"), "dns qname mismatch DnsFailed");
 }
 
 fn testMalformed(s: *tcp.TcpipStack, now: u64) void {
@@ -329,8 +390,10 @@ fn testMalformed(s: *tcp.TcpipStack, now: u64) void {
     var id = checkQuery(g_pkt[0..n], "none.example");
     var m = buildDnsResp(rp[0..], id, "none.example", 0, 0x8180, 0, 0, 0, false);
     var pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
     n = drive(s, now + 1, pp[0..pl]);
     ck(n == 0, "dns no-answer consumed");
+    ck(g_done, "dns no-answer terminal done");
     ck(dnsFailed(s, "none.example"), "dns no-answer DnsFailed");
 
     ck(dnsStart(s, "rdlen.example"), "dns rdlen start");
@@ -339,8 +402,10 @@ fn testMalformed(s: *tcp.TcpipStack, now: u64) void {
     id = checkQuery(g_pkt[0..n], "rdlen.example");
     m = buildDnsResp(rp[0..], id, "rdlen.example", 0x0A00000C, 0x8180, 1, 3, 3, false);
     pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
     n = drive(s, now + 3, pp[0..pl]);
     ck(n == 0, "dns rdlen consumed");
+    ck(g_done, "dns rdlen terminal done");
     ck(dnsFailed(s, "rdlen.example"), "dns rdlen DnsFailed");
 
     ck(dnsStart(s, "trunc.example"), "dns truncated start");
@@ -349,8 +414,10 @@ fn testMalformed(s: *tcp.TcpipStack, now: u64) void {
     id = checkQuery(g_pkt[0..n], "trunc.example");
     m = buildDnsResp(rp[0..], id, "trunc.example", 0x0A00000D, 0x8180, 1, 4, 4, true);
     pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
     n = drive(s, now + 5, pp[0..pl]);
     ck(n == 0, "dns truncated consumed");
+    ck(g_done, "dns truncated terminal done");
     ck(dnsFailed(s, "trunc.example"), "dns truncated DnsFailed");
 
     ck(dnsStart(s, "rcode.example"), "dns rcode start");
@@ -359,8 +426,10 @@ fn testMalformed(s: *tcp.TcpipStack, now: u64) void {
     id = checkQuery(g_pkt[0..n], "rcode.example");
     m = buildDnsResp(rp[0..], id, "rcode.example", 0x0A00000E, 0x8183, 1, 4, 4, false);
     pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
     n = drive(s, now + 7, pp[0..pl]);
     ck(n == 0, "dns rcode consumed");
+    ck(g_done, "dns rcode terminal done");
     ck(dnsFailed(s, "rcode.example"), "dns rcode DnsFailed");
 }
 
@@ -386,9 +455,15 @@ fn testRetry(s: *tcp.TcpipStack, now: u64) void {
     ck(n > 0, "dns retry send 3");
     ck(checkQuery(g_pkt[0..n], "retry.example") == id, "dns retry id stable 3");
 
+    g_done = false;
     n = drive(s, now + 3000, null);
     ck(n == 0, "dns retry stops after max tries");
+    ck(g_done, "dns timeout terminal done");
     ck(dnsFailed(s, "retry.example"), "dns timeout DnsFailed");
+    g_done = false;
+    n = drive(s, now + 3001, null);
+    ck(n == 0, "dns no fresh query after terminal");
+    ck(g_done, "dns idle done after terminal consume");
 }
 
 pub fn main() void {
@@ -406,6 +481,7 @@ pub fn main() void {
 
     testQueryAnswer(st, 1000);
     testMismatch(st, 10000);
+    testQname(st, 15000);
     testMalformed(st, 20000);
     testRetry(st, 30000);
 

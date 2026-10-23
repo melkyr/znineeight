@@ -16,9 +16,12 @@
 // fragments are dropped silently per the spec.
 //
 // DNS and ICMP are also pump-driven. `dnsResolve`/`icmpPing` start a request and
-// return `error.Timeout` while it is outstanding; the caller polls until the
-// reply is consumed and then calls the same function again to retrieve the IPv4
-// answer or RTT. Fixed retry cadence: 1 s, 3 attempts (no wall clock).
+// return `error.Timeout` while it is outstanding. `tcpipPoll` returns `.done`
+// once the request reaches a terminal state; the final call then returns the
+// IPv4 answer / RTT, or `error.DnsFailed` / terminal `error.Timeout`. DNS
+// answers must match the query ID, source, and QNAME (case-insensitive); ICMP
+// replies must come from the queried source IP. Fixed retry cadence: 1 s,
+// 3 attempts (no wall clock).
 //
 // Errors: Corrupt (malformed/checksum-failing datagram), NoRoute, ConnRefused,
 // Timeout, DnsFailed, OutOfMemory, OutputTooSmall, Closed. A connection-level
@@ -195,6 +198,7 @@ pub const TcpipStack = struct {
     dns_query_id: u16,
     dns_query: [DNS_QUERY_CAP]u8,
     dns_query_len: usize,
+    dns_qname_len: usize,
     dns_result_ip: u32,
     dns_tries: u32,
     dns_sent: bool,
@@ -249,6 +253,7 @@ pub fn tcpipInit(arena: *arena_mod.Arena, cfg: *TcpipConfig) !*TcpipStack {
     s.dns_id = 0x4D37;
     s.dns_query_id = 0;
     s.dns_query_len = 0;
+    s.dns_qname_len = 0;
     s.dns_result_ip = 0;
     s.dns_tries = 0;
     s.dns_sent = false;
@@ -686,7 +691,7 @@ fn processPacket(s: *TcpipStack, now_ms: u64, rx: []const u8) !void {
         return;
     }
     if (rx[9] == IP_PROTO_ICMP) {
-        try processIcmp(s, now_ms, rx[ihl..total]);
+        try processIcmp(s, src_ip, now_ms, rx[ihl..total]);
         return;
     }
     if (rx[9] != IP_PROTO_TCP) return;
@@ -965,6 +970,10 @@ pub fn tcpipPoll(s: *TcpipStack, now_ms: u64, rx_ip: ?[]const u8, out: []u8) !Tc
         if (serveEvent(p)) |act| return act;
     }
 
+    if (s.dns_state == .done or s.dns_state == .failed or s.icmp_state == .done or s.icmp_state == .failed) {
+        return TcpipAction{ .done = {} };
+    }
+
     var any = false;
     var have_timer = false;
     var next_ms: u64 = 0;
@@ -989,25 +998,21 @@ pub fn tcpipPoll(s: *TcpipStack, now_ms: u64, rx_ip: ?[]const u8, out: []u8) !Tc
         }
     }
 
-    if (s.dns_state != .idle) {
+    if (s.dns_state == .pending) {
         any = true;
-        if (s.dns_state == .pending) {
-            const deadline = if (s.dns_sent) s.dns_next_ms else now_ms;
-            if (!have_timer or deadline < next_ms) {
-                next_ms = deadline;
-                have_timer = true;
-            }
+        const deadline = if (s.dns_sent) s.dns_next_ms else now_ms;
+        if (!have_timer or deadline < next_ms) {
+            next_ms = deadline;
+            have_timer = true;
         }
     }
 
-    if (s.icmp_state != .idle) {
+    if (s.icmp_state == .pending) {
         any = true;
-        if (s.icmp_state == .pending) {
-            const deadline = if (s.icmp_sent) s.icmp_next_ms else now_ms;
-            if (!have_timer or deadline < next_ms) {
-                next_ms = deadline;
-                have_timer = true;
-            }
+        const deadline = if (s.icmp_sent) s.icmp_next_ms else now_ms;
+        if (!have_timer or deadline < next_ms) {
+            next_ms = deadline;
+            have_timer = true;
         }
     }
 
@@ -1109,7 +1114,8 @@ fn buildIcmpPacket(s: *TcpipStack, out: []u8, seq: u16) ![]const u8 {
 
 fn processDnsAnswer(s: *TcpipStack, payload: []const u8) void {
     var ip: u32 = 0;
-    const r = parseDnsAnswer(payload, s.dns_query_id, &ip);
+    const expected = s.dns_query[12 .. 12 + s.dns_qname_len];
+    const r = parseDnsAnswer(payload, s.dns_query_id, expected, &ip);
     if (r == DnsParse.ok) {
         s.dns_result_ip = ip;
         s.dns_state = DnsState.done;
@@ -1151,12 +1157,13 @@ fn processUdp(s: *TcpipStack, src_ip: u32, udp: []const u8) !void {
     }
 }
 
-fn processIcmp(s: *TcpipStack, now_ms: u64, icmp: []const u8) !void {
+fn processIcmp(s: *TcpipStack, src_ip: u32, now_ms: u64, icmp: []const u8) !void {
     if (icmp.len < 8) return error.Corrupt;
     if (foldChecksum(sumWords(icmp)) != 0xFFFF) return error.Corrupt;
     if (icmp[0] != ICMP_ECHO_REPLY or icmp[1] != 0) return;
 
     if (s.icmp_state != .pending) return;
+    if (src_ip != s.icmp_ip) return;
     if (load16be(icmp, 4) != ICMP_ID) return;
     if (load16be(icmp, 6) != s.icmp_seq) return;
 
@@ -1291,8 +1298,17 @@ pub fn udpRecvFrom(s: *TcpipStack, sock: u32, out: []u8, ip: *u32, port: *u16) !
     return n;
 }
 
-fn dnsSkipName(msg: []const u8, off: *usize) bool {
+fn dnsLower(c: u8) u8 {
+    if (c >= 65 and c <= 90) return c + 32;
+    return c;
+}
+
+fn dnsNameMatches(msg: []const u8, off: *usize, expected: []const u8) bool {
     var p = off.*;
+    var ep: usize = 0;
+    var jumps: u32 = 0;
+    var have_end = false;
+    var end_off: usize = 0;
     while (true) {
         if (p >= msg.len) return false;
         const b = msg[p];
@@ -1300,25 +1316,44 @@ fn dnsSkipName(msg: []const u8, off: *usize) bool {
             if (p + 1 >= msg.len) return false;
             const ptr = (@intCast(usize, b & 0x3F) << 8) | @intCast(usize, msg[p + 1]);
             if (ptr >= p or ptr >= msg.len) return false;
-            off.* = p + 2;
-            return true;
+            if (!have_end) {
+                end_off = p + 2;
+                have_end = true;
+            }
+            p = ptr;
+            jumps += 1;
+            if (jumps > 16) return false;
+            continue;
         }
         if ((b & 0xC0) != 0) return false;
+        if (ep >= expected.len) return false;
+        if (expected[ep] != b) return false;
         const l = @intCast(usize, b);
         p += 1;
+        ep += 1;
         if (l == 0) {
-            off.* = p;
-            return true;
+            if (!have_end) {
+                end_off = p;
+                have_end = true;
+            }
+            off.* = end_off;
+            return ep == expected.len;
         }
         if (p + l > msg.len) return false;
+        if (ep + l > expected.len) return false;
+        var k: usize = 0;
+        while (k < l) : (k += 1) {
+            if (dnsLower(msg[p + k]) != dnsLower(expected[ep + k])) return false;
+        }
         p += l;
+        ep += l;
     }
     return false;
 }
 
 const DnsParse = enum { ignored, ok, failed };
 
-fn parseDnsAnswer(msg: []const u8, expect_id: u16, out_ip: *u32) DnsParse {
+fn parseDnsAnswer(msg: []const u8, expect_id: u16, expected: []const u8, out_ip: *u32) DnsParse {
     if (msg.len < 12) return .failed;
     if (load16be(msg, 0) != expect_id) return .ignored;
 
@@ -1331,7 +1366,7 @@ fn parseDnsAnswer(msg: []const u8, expect_id: u16, out_ip: *u32) DnsParse {
     if (qd != 1) return .failed;
 
     var off: usize = 12;
-    if (!dnsSkipName(msg, &off)) return .failed;
+    if (!dnsNameMatches(msg, &off, expected)) return .failed;
     if (off + 4 > msg.len) return .failed;
     if (load16be(msg, off) != 1) return .failed;
     if (load16be(msg, off + 2) != 1) return .failed;
@@ -1342,7 +1377,7 @@ fn parseDnsAnswer(msg: []const u8, expect_id: u16, out_ip: *u32) DnsParse {
     var found = false;
     var i: u32 = 0;
     while (i < an and i < DNS_MAX_ANSWERS) : (i += 1) {
-        if (!dnsSkipName(msg, &off)) return .failed;
+        if (!dnsNameMatches(msg, &off, expected)) return .failed;
         if (off + 10 > msg.len) return .failed;
         const atype = load16be(msg, off);
         const aclass = load16be(msg, off + 2);
@@ -1391,6 +1426,7 @@ fn dnsBuildQuery(s: *TcpipStack, name: []const u8) !void {
 
     s.dns_query[n] = 0;
     n += 1;
+    s.dns_qname_len = n - 12;
     store16be(s.dns_query[0..], n, 1);
     store16be(s.dns_query[0..], n + 2, 1);
     n += 4;

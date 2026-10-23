@@ -318,6 +318,7 @@ fn testIcmp(s: *tcp.TcpipStack, now: u64) void {
     ck(icmpStart(s, PEER, now), "icmp start pending");
     ck(icmpGet(s, PEER, now) == null, "icmp pending rtt null");
 
+    g_done = false;
     var n = drive(s, now, null);
     ck(n > 0, "icmp echo emitted");
     ck(ipProto(g_pkt[0..n]) == 1, "icmp proto");
@@ -329,10 +330,31 @@ fn testIcmp(s: *tcp.TcpipStack, now: u64) void {
     ck(ipTotal(g_pkt[0..n]) == 20 + 8 + 8, "icmp request length");
     ck(load32(g_pkt[0..n], 16) == PEER, "icmp dst ip");
 
+    g_done = false;
+    n = drive(s, now + 1, null);
+    ck(n == 0, "icmp pending wait");
+    ck(!g_done, "icmp pending not done");
+
     var pp: [MAX_PKT]u8 = undefined;
-    var m = buildPeerIcmp(pp[0..], PEER, LOCAL, 0, 0, ICMP_ID, seq, "z98reply", false);
+    var m = buildPeerIcmp(pp[0..], 0x0A0000FE, LOCAL, 0, 0, ICMP_ID, seq, "z98reply", false);
+    g_done = false;
+    n = drive(s, now + 3, pp[0..m]);
+    ck(n == 0, "icmp wrong source ignored");
+    ck(!g_done, "icmp wrong source not done");
+    ck(icmpGet(s, PEER, now + 3) == null, "icmp wrong source pending");
+
+    m = buildPeerIcmp(pp[0..], PEER, LOCAL, 0, 0, 0x1234, seq, "z98reply", false);
+    g_done = false;
+    n = drive(s, now + 4, pp[0..m]);
+    ck(n == 0, "icmp wrong id while pending ignored");
+    ck(!g_done, "icmp wrong id not done");
+    ck(icmpGet(s, PEER, now + 4) == null, "icmp wrong id pending");
+
+    m = buildPeerIcmp(pp[0..], PEER, LOCAL, 0, 0, ICMP_ID, seq, "z98reply", false);
+    g_done = false;
     n = drive(s, now + 7, pp[0..m]);
     ck(n == 0, "icmp reply idle");
+    ck(g_done, "icmp success terminal done");
     const rtt = icmpGet(s, PEER, now + 7);
     if (rtt) |v| { ck(v == 7, "icmp rtt 7"); } else { ck(false, "icmp rtt missing"); }
 
@@ -349,8 +371,10 @@ fn testIcmp(s: *tcp.TcpipStack, now: u64) void {
     ck(icmpSeq(g_pkt[0..n]) == seq2, "icmp retry same seq");
 
     m = buildPeerIcmp(pp[0..], PEER, LOCAL, 0, 0, ICMP_ID, seq2, "z98reply", false);
+    g_done = false;
     n = drive(s, t2 + 1004, pp[0..m]);
     ck(n == 0, "icmp retry reply idle");
+    ck(g_done, "icmp retry success terminal done");
     const rtt2 = icmpGet(s, PEER, t2 + 1004);
     if (rtt2) |v| { ck(v == 4, "icmp retry rtt 4"); } else { ck(false, "icmp retry rtt missing"); }
 
@@ -362,9 +386,15 @@ fn testIcmp(s: *tcp.TcpipStack, now: u64) void {
     ck(n > 0, "icmp timeout send 2");
     n = drive(s, t3 + 2000, null);
     ck(n > 0, "icmp timeout send 3");
+    g_done = false;
     n = drive(s, t3 + 3000, null);
     ck(n == 0, "icmp timeout stops after max tries");
+    ck(g_done, "icmp timeout terminal done");
     ck(icmpGet(s, PEER, t3 + 3000) == null, "icmp timeout error");
+    g_done = false;
+    n = drive(s, t3 + 3001, null);
+    ck(n == 0, "icmp no fresh probe after terminal");
+    ck(!g_done, "icmp idle after terminal consume");
 
     m = buildPeerIcmp(pp[0..], PEER, LOCAL, 0, 0, ICMP_ID, 77, "z98reply", true);
     ck(pollCorrupt(s, now + 9000, pp[0..m]), "icmp bad checksum Corrupt");
