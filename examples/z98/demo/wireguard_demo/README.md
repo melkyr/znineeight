@@ -216,9 +216,31 @@ wireguard_demo ok bytes=100 arena_peak=275192 rss_peak=2600 cpu_ms=70
 - `rss_peak` — Linux `VmHWM` KiB; `0` when `/proc` is unavailable.
 - `cpu_ms` — user+system CPU ms from `/proc/self/stat`; `0` when unavailable.
 
-Measured on the M7 host: Linux peak RSS about 2.3–2.6 MiB; Wine `-osw` about
-6.8 MiB; arena peak 275192 bytes. Both are far below the 16 MiB target / 32 MiB
-hard ceiling.
+Measured at Phase 1 M7 closeout on the seed-v119 compiler
+(`45158dce…`), with the portable kernel-WireGuard netns far side:
+
+| Environment | Case | `bytes` | `arena_peak` (B) | `rss_peak` (KiB) | `cpu_ms` |
+|---|---|---|---:|---:|---:|
+| Linux | DNS through the tunnel | 100 | 275192 | 2556 | 70 |
+| Linux (`ulimit -v 32768`) | DNS through the tunnel | 100 | 275192 | 2388 | — |
+| Wine `-osw` | DNS through the tunnel | 100 | 275192 | 6804 | 450 |
+
+The RAM row is `/usr/bin/time -v` peak process RSS (**2388 KiB**), not the
+demo's own field. `arena_peak` is the exact `tcpipInit` charge for
+`max_sockets = 4`: `648 + 4 * 68636 = 275192` bytes (see
+[`tcpip.md`](../../../../sf/docs/std_lib/tcpip.md#memory-bounds)). Every row is
+far below the 16 MiB target / 32 MiB hard ceiling. Wine reads the host `/proc`
+for `rss_peak`/`cpu_ms`; real Win9x hardware reports `0` when those files are
+absent.
+
+## Related demos and docs
+
+- [`tls_demo`](../tls_demo/README.md) — the Phase 1 M4/M5 HTTPS demo; same
+  Linux + `-osw` Win9x build/run shape, resource line, and RAM discipline.
+- [`sf/docs/std_lib/tcpip.md`](../../../../sf/docs/std_lib/tcpip.md) — the
+  userspace IPv4/TCP/UDP/DNS/ICMP contract driven by this demo.
+- [`sf/docs/std_lib/wireguard.md`](../../../../sf/docs/std_lib/wireguard.md) —
+  the sans-I/O WireGuard initiator used for the tunnel.
 
 ## Troubleshooting
 

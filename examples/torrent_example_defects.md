@@ -297,3 +297,56 @@ Fix commits (branch `std_algorithms_m2`): T1B `f967aeff` `fix(lexer): correctly 
 Verification (T1D, seed-built fixed compiler `21c957730d268f1e7883176fa5413b65`): `scripts/stdlib/run_crosscheck.sh <zig1> std_noise` **PASS 3/3** (Z98 == C89 ref == committed `grid.expected`, md5 `94314ebd32053089b226387770c0cd5d` UNCHANGED); `verify_stdlib` **STDLIB GATE OK 3/3** (294/0 fixtures; `stdlib_noise_basic_xmod` PGM hash `4921c94f3ec08543` re-captured byte-identical). Full detail: `.superpowers/sdd/2026-10-19-z98-std-algorithms-m2-noise-lz4-plan/task-1d-report.md`.
 
 The "Reproducer" / "Impact" paragraphs above are the historical record at intake (pre-fix). `sf/src/std_math.zig`'s bit-pattern constant style remains valid engineering (no dependency on parser precision) — only its parenthetical "the lexer's decimal-float parser is not correctly rounded" note is now historical (T1B fixed it).
+
+---
+
+## D7 — Phase 1 (TLS + WireGuard) closeout sweep
+
+**Status:** SWEPT at Phase 1 M7 closeout (2026-10-23). Two std-library defects
+were fixed during the phase; one demo workaround is retained for an open
+emitter shape. No compiler source was changed at closeout.
+
+**D7.1 — RSA-PSS top mask overflowed under `-fsafe` (std_crypto).** Status:
+FIXED (`27722aea` `fix(std_crypto): safe PSS topmask under -fsafe`,
+Phase 1 M2 fix round). `pssCheck` shifted a `u8` mask by `8 - unused`, which
+traps on an `@intCast` overflow under the default `-fsafe`; the fix computes
+the mask in `u32` and truncates. A follow-up `7a0bf60c` rejects an oversized
+PSS `salt_len` instead of reading past the encoded message. Regression gates:
+`repro/mi_matrix/stdlib_rsa_verify_xmod` under `scripts/stdlib/run_crypto_safe.sh`
+(3×, default `-fsafe`) plus the `-fsafe` crypto/ecc gates.
+
+**D7.2 — X.509 path build had no same-subject backtracking and accepted weak
+leaf keys / mismatched signature OIDs (std_x509).** Status: FIXED (`9c849209`
+`fix(std_x509): path backtracking + leaf key size + sigalg equality`,
+Phase 1 M3 security carry-over; report
+`.superpowers/sdd/2026-10-21-phase1-m4-tls12-https-plan/task-x509-security-report.md`).
+The verifier now performs a bounded DFS over same-subject intermediates,
+signature-checks each anchor candidate before acceptance, rejects an RSA leaf
+key below 2048 bits with `UnsupportedAlgorithm`, and rejects a TBS/outer
+signature-algorithm OID mismatch with `Corrupt`. Pinned by the security vectors
+in `stdlib_x509_verify_xmod` / `stdlib_x509_parse_xmod` (3× targeted + full
+gate).
+
+**D7.3 — `arr[i].field[0..]` write can target a by-value temporary (emitter).**
+Status: **OPEN, demo-worked-around** (found 2026-10-23 building
+`wireguard_demo`, Phase 1 M7 T3; recorded in
+`examples/z98/demo/wireguard_demo/NOTES.md`). In the current emitter a nested
+write through an indexed aggregate field can materialise a by-value temporary,
+so the store is lost. The demo takes an explicit pointer first
+(`var pp: *wg.WgPeer = &g_peers[0];` then `pp.field[0..]`) and works. This is a
+compiler defect of the same family as D1/D2 (lvalue/address-of lowering), but
+no compiler fix was authorized in Phase 1 and `sf/src` was frozen at closeout.
+A future compiler plan should reproduce it with a minimal `arr[i].field = ...`
+fixture before fixing.
+
+**Also fixed inside M7 (demo-only, not compiler defects).** The demo's base64
+accumulator needed a 24-bit mask (an unmasked `u32` corrupted key material and
+surfaced as `wg: InvalidPeer`), and the poll/`wgSend` output buffers had to be
+distinct (aliasing corrupted the inner packet). Both fixes and the full
+bring-up log are in `wireguard_demo/NOTES.md`; neither changes a library
+contract.
+
+**Closeout evidence.** Phase 1 M7 full gate on seed v119:
+`verify_stdlib.sh` **336 PASS / 0 FAIL** + crosscheck **10 PASS / 0 FAIL**;
+`tier_tls.sh` **19/19**, `tier_wireguard.sh` **5/5**; both on the rotated
+compiler `45158dce…`.

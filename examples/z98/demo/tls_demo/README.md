@@ -143,14 +143,35 @@ tls: HttpBadResponse
 tls: HttpFailed
 ```
 
-## RAM expectations
+## Measured resources
 
 The demo is a 32-bit program with fixed static state: `TlsSession` is 124400
-bytes (about 121.5 KiB), the store arena is 512 KiB, and the fetch arena is 4 MiB. The tier runs
-the local fetch under `ulimit -v 32768` (32 MiB hard ceiling) and records
-`/usr/bin/time -v` peak RSS; observed Linux peaks are about 2.3–2.6 MiB, well
-under the 16 MiB target. The response body itself is capped at 1 MiB by
-`std_http`.
+bytes (about 121.5 KiB), the store arena is 512 KiB, and the fetch arena is
+4 MiB. The response body itself is capped at 1 MiB by `std_http`.
+
+Measured at Phase 1 M7 closeout on the seed-v119 compiler
+(`45158dce…`). Linux rows are local `openssl s_server` fetches
+(`tier_tls.sh`, exact 14-byte body); the Wine row is the same `-osw` exe under
+32-bit Wine against the same local server on a fixed port. `arena_peak` and
+`rss_peak` are bytes/KiB from the demo resource line; `cpu_ms` is user+system
+milliseconds.
+
+| Environment | Path | `arena_peak` (B) | `rss_peak` (KiB) | `cpu_ms` |
+|---|---|---|---:|---:|
+| Linux | TLS 1.2 fallback | 321 | 2880 | 330 |
+| Linux | TLS 1.3 AES-128-GCM | 321 | 3064 | 260 |
+| Linux | TLS 1.3 ChaCha20-Poly1305 | 321 | 2908 | 230 |
+| Linux (`ulimit -v 32768`) | TLS 1.2 fallback | 321 | 2756 | 330 |
+| Wine `-osw` | TLS 1.2 fallback | 321 | 6908 | 90 |
+
+The tier also records `/usr/bin/time -v` for the Linux fetch under
+`ulimit -v 32768` (32 MiB hard ceiling): observed peak process RSS was
+**2504 KiB** at closeout. Every row is well below the 16 MiB target. Wine reads
+the host `/proc` for `rss_peak`/`cpu_ms`; real Win9x hardware reports `0` when
+those files are absent, and its memory is operator-owned.
+
+The response body is capped at 1 MiB; the largest internet body observed at
+closeout was ~510 KiB, which also fits the budget.
 
 ## Trust store
 
@@ -197,6 +218,17 @@ Common failures:
   no acceptable group (TLS 1.3 requires x25519; TLS 1.2 accepts P-256/x25519).
 - `tls: StoreRead` / `StoreCorrupt` — missing or malformed `ca_store.bin`; rerun
   `caconv` from the current Mozilla bundle.
+
+## Related demos and docs
+
+- [`wireguard_demo`](../wireguard_demo/README.md) — the Phase 1 M7 demo: a
+  userspace TCP/IP client (`std_tcpip`) over a real WireGuard tunnel to
+  `mud_server`. Same Linux + `-osw` Win9x build/run shape and the same resource
+  line.
+- [`sf/docs/std_lib/tcpip.md`](../../../../sf/docs/std_lib/tcpip.md) — the
+  userspace stack contract (TCP policy, DNS/ICMP, memory bounds).
+- [`sf/docs/std_lib/tls.md`](../../../../sf/docs/std_lib/tls.md) — the
+  sans-I/O TLS client this demo drives.
 
 ## Committed test material (`tests/certs/`)
 

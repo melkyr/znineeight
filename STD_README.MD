@@ -55,14 +55,27 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v118** (`release/seed/zig1-seed.tgz`, archive md5
-`9716ea682cf7eb9147b5e642ce48fc93`), with **46** std files (`std.zig` +
-45 `std_*.zig`) and `lib/manifest.md5` md5
-`15c7bc2daeba84f892ef376df7cf4a7d`. The compiler fixed point is
-`45158dcede81125a39a2c2c58478e21e` (`F_new`, unchanged since v112); v118 is
-the M6 WireGuard rotation (adds `std_wireguard.zig`; no compiler movement).
+The committed seed is **v119** (`release/seed/zig1-seed.tgz`, archive md5
+`e7ac8cd2ed7e790a4b9225a82acaf4a5`), with **47** std files (`std.zig` +
+46 `std_*.zig`) and `lib/manifest.md5` md5
+`e731a3d2a7aef913f5bbcfd8670e5a2e`. The compiler fixed point is
+`45158dcede81125a39a2c2c58478e21e` (`F_new`, unchanged since v112); v119 is
+the M7 TCP/IP closeout rotation (adds `std_tcpip.zig`; no compiler movement).
 
-## Layer model (L0–L6)  [updated: 2026-10-23 — M6]
+## Phase 1 result — TLS + WireGuard complete
+
+Phase 1 shipped both half-stacks and their demos: browser-grade TLS 1.2/1.3
+(`std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`,
+`std_http`), the WireGuard initiator (`std_wireguard`), and the userspace
+IPv4/TCP/UDP/DNS/ICMP stack (`std_tcpip`). Integration proof lives in
+[`tls_demo`](examples/z98/demo/tls_demo/README.md) (real HTTPS on Linux and
+`-osw` Win9x) and
+[`wireguard_demo`](examples/z98/demo/wireguard_demo/README.md) (MUD banner
+through a real Linux kernel WireGuard tunnel). Both fit the 16 MiB target /
+32 MiB hard ceiling; measured tables are in each README. Phase 1 is complete;
+deferred items are listed in the design spec (§8).
+
+## Layer model (L0–L6)  [updated: 2026-10-23 — M7]
 
 The library is layered so dependencies only ever point downward. Imports are
 strict: lower layers only, never siblings, never higher (R3).
@@ -75,7 +88,7 @@ strict: lower layers only, never siblings, never higher (R3).
 | **L2** | Data layer built on L0 — string slices and growable buffers | `std.str`, `std.buf` |
 | **L3** | Resources — owned-handle files, stdin, and sockets | `std_file`, `std_stdin`, `std.net` |
 | **L4** | Collections and byte codecs — concrete maps, sort/search, a stable min-heap, RLE, LZ4 block and zstd frame decode | `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_lz4`, `std_zstd` |
-| **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, DER/X.509 parsing and chain verification, TLS 1.2/1.3 client, WireGuard initiator protocol, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_wireguard`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
+| **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, DER/X.509 parsing and chain verification, TLS 1.2/1.3 client, WireGuard initiator protocol, userspace IPv4/TCP/UDP/DNS/ICMP stack, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_wireguard`, `std_tcpip`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
 | **L6** | Composition — coroutine-aware line and frame readers | `std_stream` |
 | async runtime | Outside L0–L6 — the cooperative scheduler and child-frame pool | `std.async` |
 
@@ -115,7 +128,7 @@ apply to its modules.
   bands also ship composed usage programs under `stdlib_test/`.
 
 
-## Which module for which job  [updated: 2026-10-23 — M6]
+## Which module for which job  [updated: 2026-10-23 — M7]
 
 | Job | Module | Domain doc |
 |---|---|---|
@@ -159,6 +172,7 @@ apply to its modules.
 | X.509 certificate parse, chain verify, hostname match, trust store | `std_x509` | [x509.md](sf/docs/std_lib/x509.md) |
 | TLS 1.2/1.3 client (sans-I/O records + handshakes) | `std_tls` | [tls.md](sf/docs/std_lib/tls.md) |
 | WireGuard initiator (NoiseIK handshake, transport, timers, replay) | `std_wireguard` | [wireguard.md](sf/docs/std_lib/wireguard.md) |
+| Userspace IPv4/TCP client, UDP, DNS A, ICMP echo | `std_tcpip` | [tcpip.md](sf/docs/std_lib/tcpip.md) |
 | Parse/format integers and fixed-point `f64` | `std_parse` | [codecs.md](sf/docs/std_lib/codecs.md) |
 
 ## Worked example
@@ -213,7 +227,7 @@ pub fn main() !void {
 }
 ```
 
-## Domain docs  [updated: 2026-10-23 — M6]
+## Domain docs  [updated: 2026-10-23 — M7]
 
 Every domain has a full doc with an overview, a quick start, and a structured
 entry for each public function. Read the one for the job at hand:
@@ -255,6 +269,9 @@ entry for each public function. Read the one for the job at hand:
 - [wireguard.md](sf/docs/std_lib/wireguard.md) — `std_wireguard`: sans-I/O
   WireGuard initiator (NoiseIK handshake, transport data path, timers,
   replay window, cookie consumption).
+- [tcpip.md](sf/docs/std_lib/tcpip.md) — `std_tcpip`: userspace IPv4, TCP
+  client policy, UDP, DNS A-record resolution, ICMP echo, and fixed memory
+  bounds.
 - [codecs.md](sf/docs/std_lib/codecs.md) — `std_base64`, `std_hex`,
   `std_utf8`, `std_parse`, `std_lz4`: encoders/decoders, number parsing, and
   raw LZ4 block decode (legacy `std_crypto` primitives are indexed in

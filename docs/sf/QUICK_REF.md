@@ -17,25 +17,33 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-23 — M6]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-23 — M7]
 
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v118** (rotated 2026-10-23 at the Phase 1 M6 WireGuard
-closeout, plan `2026-10-21-phase1-m6-wireguard-plan`; v117 → v118
-adds `std_wireguard.zig` — no new compiler source and no compiler movement;
-compiler fixed point `45158dcede81125a39a2c2c58478e21e` UNCHANGED from v117).
-Archive md5 `9716ea682cf7eb9147b5e642ce48fc93`; archived binary md5 (= v118's
+**Current seed: v119** (rotated 2026-10-23 at the Phase 1 M7 TCP/IP closeout,
+plan `2026-10-21-phase1-m7-tcpip-demo-plan`; v118 → v119 adds
+`std_tcpip.zig` — no new compiler source and no compiler movement; compiler
+fixed point `45158dcede81125a39a2c2c58478e21e` UNCHANGED from v118).
+Archive md5 `e7ac8cd2ed7e790a4b9225a82acaf4a5`; archived binary md5 (= v119's
 rotation fixed point) `45158dcede81125a39a2c2c58478e21e`; `gen/` 47 `.c` +
-48 `.h` (10,691,275 bytes); `lib/` 46 std `.zig` plus `lib/manifest.md5`
+48 `.h` (10,691,275 bytes); `lib/` 47 std `.zig` plus `lib/manifest.md5`
 (per-file std attribution pin, manifest md5
-`15c7bc2daeba84f892ef376df7cf4a7d`) — `std_wireguard.zig` adds the sans-I/O
-WireGuard initiator (NoiseIK handshake, transport data path, timers, 2048-bit
-replay window, cookie consumption). The v118 rotation is std-only payload, so
-the rebuilt archive is two-hop (`build_from_seed.sh`: hop1 == hop2 == `F_new`).
+`e731a3d2a7aef913f5bbcfd8670e5a2e`) — `std_tcpip.zig` adds the client-only
+userspace IPv4/TCP/UDP/DNS/ICMP stack (sans-I/O `tcpipPoll`, fixed 8 KiB TCP
+window, MTU-derived MSS, DNS A records, ICMP echo). The v119 rotation is
+std-only payload, so the rebuilt archive is two-hop (`build_from_seed.sh`:
+hop1 == hop2 == `F_new`).
+
+**Phase 1 closeout:** v119 completes the TLS + WireGuard phase. On the rotated
+compiler (`45158dce…`) the full std gate is **336/0** with crosscheck
+**10/10**, `tier_tls.sh` is **19/19** (`Z98_NET=1`), and
+`tier_wireguard.sh` is **5/5** (kernel WireGuard netns, Linux + Wine). Measured
+demo RAM/CPU tables are in `examples/z98/demo/{tls_demo,wireguard_demo}/README.md`.
+
 **This block is updated at
 every plan closeout that rotates the seed**; the branch's in-progress fixed
 point is recorded in the active plan's workspace ledger.
@@ -94,12 +102,12 @@ module set — 47 `.c` + 48 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v118 carries the full 46 std `.zig`** = `std.zig` plus
-45 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
+tracked seed archive **v119 carries the full 47 std `.zig`** = `std.zig` plus
+46 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
 
-**Std-module inventory:** the `sf/src` std set is **45** `std_*.zig` + `std.zig`
+**Std-module inventory:** the `sf/src` std set is **46** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
 `std_net`, `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`,
 `std_time_pal`, `std_buf`, `std_file`, `std_file_pal`, `std_stdin`,
@@ -108,10 +116,10 @@ and `SEED_README.txt`.
 `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`,
 `std_utf8`, `std_http`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
 `std_num`, `std_pathfind`, `std_hpa`, `std_physics`, `std_asn1`, `std_x509`,
-`std_tls`, `std_wireguard`). `std.zig` re-exports
+`std_tls`, `std_wireguard`, `std_tcpip`). `std.zig` re-exports
 the core **13** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/buf`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
-`scripts/seed/build_from_seed.sh` installs all 46 into the rebuilt compiler's `lib/`.
+`scripts/seed/build_from_seed.sh` installs all 47 into the rebuilt compiler's `lib/`.
 **`std_crypto` (M4):** carries streaming SHA-1/SHA-256/MD5 + CRC-32 plus RC4 (`rc4Init`/`rc4Apply`, RFC 6229 vectors) and modular exponentiation (`modpow`, fixed 32-bit limbs sized for the MSE/PE 768-bit Diffie-Hellman prime) for the encrypted handshake.
 **`std_crypto` M2 additions:** SHA-384/512, HMAC-SHA256 (one-shot + streaming), HKDF extract/expand (RFC 5869), BLAKE2s + HMAC-BLAKE2s (RFC 7693 / WireGuard MAC), and verify-only RSA PKCS#1 v1.5 / PSS (RFC 8017, generic modexp cap 4096-bit). Errors: `BadSignature` / `Corrupt` (`UnsupportedAlgorithm` is unrepresentable via `HashAlg`).
 **`std_cipher` (M2):** ChaCha20 (RFC 8439, 20 rounds unrolled), Poly1305 (donna 5×26-bit limbs, constant-time), ChaCha20-Poly1305 AEAD (`error.AuthenticationFailed`), AES-128 (FIPS-197, 4 KiB `const` T-tables `R/r` rodata), AES-128-GCM (SP800-38D, GHASH 4-bit tables). Pure, no heap/arena; fixtures `stdlib_chacha_poly_xmod` + `stdlib_aes_gcm_xmod`; T-table gate `scripts/compiler/gate_cipher_rodata.sh`. Doc: `sf/docs/std_lib/cipher.md`.
@@ -120,6 +128,7 @@ the higher-layer modules (L3-L6) are imported by path, not re-exported.
 **`std_x509` (M3):** certificate parse (`Cert`/`x509Parse`), browser-grade leaf-to-anchor chain verification (`x509VerifyChain`, depth ≤ 8, exact §5.4 error set), SAN dNSName-only hostname matching, and pinned §5.5 trust store (`trustStoreLoad`). Fixtures `stdlib_x509_parse_xmod`, `stdlib_x509_verify_xmod`, `stdlib_truststore_xmod`. Asset + converter: `examples/z98/demo/tls_demo/ca_store.bin`, `examples/z98/demo/tls_demo/caconv/`. Doc: `sf/docs/std_lib/x509.md`.
 **`std_tls` (M4/M5):** sans-I/O TLS 1.2/1.3 record layer + client handshakes — 5-byte header, 16 KiB plaintext cap, four TLS 1.2 suites (`ECDHE-{ECDSA,RSA}-{AES128-GCM,CHACHA20-POLY1305}-SHA256`) plus two TLS 1.3 suites (`AES_128_GCM_SHA256`/`CHACHA20_POLY1305_SHA256`), RFC 5288/7905 nonces, ECDHE P-256/x25519 (1.2) and x25519 key_share (1.3), SNI, `std_x509` chain validation at the caller's `now_unix`, PRF_SHA256 Finished (1.2) / HKDF-Expand-Label + 32-byte Finished (1.3), ECDSA P-256/P-384 and RSA-PSS CertificateVerify (PKCS#1 v1.5 rejected), `SendClientHello … Established`. KeyUpdate is unsupported (receipt → `error.Closed`). Fixtures `stdlib_tls_record_xmod`, `stdlib_tls12_handshake_xmod`, `stdlib_tls13_handshake_xmod`, `stdlib_tls13_auth_xmod`, `stdlib_tls13_fallback_xmod`. Demo `examples/z98/demo/tls_demo`; tier includes local 1.3 (both suites), 1.2 fallback, and a `Z98_NET=1` RSA-PSS host. Doc: `sf/docs/std_lib/tls.md`.
 **`std_wireguard` (M6):** sans-I/O WireGuard **initiator** (`WgDevice`/`WgPeer`, `wgInit`/`wgAddPeer`/`wgTick`/`wgReceive`/`wgSend`; `WgAction = union(enum){ none, send_handshake, send_keepalive, session_up, inner_packet, dropped_replay }`). NoiseIK per §5.7 with HKDF-BLAKE2s KDF and ChaCha20-Poly1305; initiation 148 B / response 92 B / transport header 16 B with zero padding to 16 and a 64-bit LE counter nonce. TAI64N comes from `wall_unix_ns` (never `now_ms` — a monotonic-derived timestamp is rejected as a replay after restart). Timers via `wgTick(now_ms)` only (no `sleep`): 120 s rekey, 180 s reject (`wgSend`/`wgReceive` → `error.SessionExpired`), 5 s + bounded jitter retry, 10 s keepalive. 2048-bit replay window (authenticate before window update), CookieReply consumption with `mac2` (generation out of scope), and rekey continuity (active session/keys/indices/counter/replay preserved while a new initiation is pending; the response installs pending state atomically and returns `.session_up`). Errors `Corrupt`/`AuthenticationFailed`/`NoSession`/`SessionExpired`/`OutputTooSmall` (+ `NoSpace`/`InvalidPeer`). Fixtures `stdlib_wg_handshake_xmod`, `stdlib_wg_transport_xmod`, crosscheck `stdlib_wireguard_cross_xmod` (3 vectors). Doc: `sf/docs/std_lib/wireguard.md`.
+**`std_tcpip` (M7):** client-only userspace IPv4 stack (`TcpipConfig`/`TcpipStack`, `tcpipInit`/`tcpipPoll`, `tcpConnect`/`tcpSend`/`tcpRecv`/`tcpClose`, `udpOpen`/`udpSendTo`/`udpRecvFrom`, `dnsResolve`, `icmpPing`; `TcpipAction = union(enum){ send_pkt, wait, connected, data, closed, failed, done }`). Sans-I/O pump: the caller feeds raw IPv4 datagrams and sends the returned datagrams. TCP client only (3WHS, fixed 8 KiB window, MTU-authoritative `mss = min(peer MSS, mtu - 40)`, fixed 1 s RTO with simplified Karn, slow start + AIMD, no SACK/scaling, no fragment reassembly); UDP one TX/RX slot per socket; DNS A/IN only (CNAME chains `DnsFailed`); ICMP echo with fixed 1 s × 3 retries. `tcpipPoll` returns `.done` on a terminal DNS/ICMP request; the final helper call returns the A record/RTT or `DnsFailed`/terminal `Timeout`. State is arena-backed and fixed: `TcpipStack` 648 B + `max_sockets × (TcpSock 65648 + UdpSock 2988)`. Fixtures `stdlib_tcpip_tcp_xmod`, `stdlib_tcpip_udp_xmod`, `stdlib_tcpip_dns_xmod`; demo `examples/z98/demo/wireguard_demo`; tier `tier_wireguard.sh`. Doc: `sf/docs/std_lib/tcpip.md`.
 **`std_http` transport (M4):** adds `HttpTransport` (read/write/close callbacks) and `httpGetOver` (GET, HTTP/1.1, `Connection: close`, identity + chunked body decode) so HTTPS is a std capability; `get()` is unchanged. The pure `parseResponse` still requires a `Content-Length` or a close-delimited body and rejects `Transfer-Encoding: chunked` with `BadResponse`; keep-alive and redirects remain **DEFERRED**. Fixture `stdlib_http_transport_xmod`.
 **`std_math` f64 (M2, z9play):** adds pure-Z98 `sqrt(x: f64) f64` (correctly rounded: exact integer square root of the significand, 0 ULP), plus `sin(x: f64) f64` / `cos(x: f64) f64` (Cody-Waite argument reduction on a split `2/pi` + fdlibm `__kernel_sin`/`__kernel_cos` minimax, one op per statement so the C89 emitter's f64 stores defeat x87 excess precision). **Pure Z98 — no libm, no `@sqrt`/`@sin`/`@cos` builtins**; the emitted C imports no math symbol (the z9play M2 tier asserts `nm -u` has no `sqrt`/`sin`/`cos`/`pow` and DT_NEEDED has no `libm`). `sin`/`cos` are valid for `|x| <= 2^20*(pi/2) ≈ 1.65e6` (fdlibm medium-reduction cap; covers the Vorbis IMDCT/window range with >60x headroom) and return NaN outside it; `sqrt` maps `x<0` to NaN and passes `0`/`inf` through. Accuracy <= 1 ULP vs a glibc/python oracle. Fixture: `repro/mi_matrix/stdlib_math_f64_xmod`; z9play gate: `examples/z98/z9play/tests/tier_math.sh`. See `sf/src/std_math.zig`.
 **`std_noise` (M2):** Kurt Spencer's **2014 OpenSimplex v1.1** (NOT OpenSimplex2) — `opensimplexInit`/`noise2d`/`noise3d`/`noiseFbm2d`, 512 B state (`perm` + `perm_grad`) seeded via `std_rand` xoshiro Fisher–Yates; f64 throughout (no f32 shortcut — it fails the visual golden). Canonical 2014-reference constant literals (`0.366025403784439` / `-0.16666666666666666`); the temporary adjacent-literal lexer workaround was removed at the M2 T1D closeout (defect D6 FIXED — T1B correctly-rounded `parseF64`). Pins: crosscheck `scripts/stdlib/vectors/std_noise/grid.expected` md5 `94314ebd32053089b226387770c0cd5d` (Z98 == C89 ref), visual golden `pgm fnv1a64 4921c94f3ec08543` (`stdlib_noise_basic_xmod`). Doc: `sf/docs/std_lib/noise.md`.
@@ -188,11 +197,12 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is **333/0** on seed v118 (294/0 at M7 on v103; the two
+  pin); `verify_stdlib` is **336/0** on seed v119 (294/0 at M7 on v103; the two
   M2 `stdlib_noise_*` fixtures, the M2 crypto/cipher/ecc fixtures, the four
   M3 `std_asn1`/`std_x509` fixtures, the three M4 `std_tls`/HTTP-transport
-  fixtures, the three M5 TLS 1.3 fixtures, and the three M6 WireGuard fixtures
-  account for the current set).
+  fixtures, the three M5 TLS 1.3 fixtures, the three M6 WireGuard fixtures,
+  and the three M7 `std_tcpip` TCP/UDP/DNS fixtures account for the current
+  set).
   The z9play M7 TUI consumes this API
   (`examples/z98/z9play/ui.zig`).
 
@@ -246,7 +256,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   via the search path: (1) importer's dir, (2) `-I`/`--lib-dir` dirs in CLI order, (3) the default
   install path `<exe_dir>/lib`, (4) CWD. To run a migrated example/repro you must first install the
   canonical std lib next to the compiler under test:
-  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_fmt.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig sf/src/std_crypto.zig sf/src/std_cipher.zig sf/src/std_ecc.zig sf/src/std_parse.zig sf/src/std_bencode.zig sf/src/std_map.zig sf/src/std_sort.zig sf/src/std_heap.zig sf/src/std_rle.zig sf/src/std_base64.zig sf/src/std_hex.zig sf/src/std_utf8.zig sf/src/std_http.zig sf/src/std_rand.zig sf/src/std_noise.zig sf/src/std_lz4.zig sf/src/std_zstd.zig sf/src/std_num.zig sf/src/std_pathfind.zig sf/src/std_physics.zig sf/src/std_hpa.zig sf/src/std_asn1.zig sf/src/std_x509.zig sf/src/std_tls.zig sf/src/std_wireguard.zig <exe_dir>/lib/`
+  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_fmt.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig sf/src/std_crypto.zig sf/src/std_cipher.zig sf/src/std_ecc.zig sf/src/std_parse.zig sf/src/std_bencode.zig sf/src/std_map.zig sf/src/std_sort.zig sf/src/std_heap.zig sf/src/std_rle.zig sf/src/std_base64.zig sf/src/std_hex.zig sf/src/std_utf8.zig sf/src/std_http.zig sf/src/std_rand.zig sf/src/std_noise.zig sf/src/std_lz4.zig sf/src/std_zstd.zig sf/src/std_num.zig sf/src/std_pathfind.zig sf/src/std_physics.zig sf/src/std_hpa.zig sf/src/std_asn1.zig sf/src/std_x509.zig sf/src/std_tls.zig sf/src/std_wireguard.zig sf/src/std_tcpip.zig <exe_dir>/lib/`
   (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The canonical set
   includes `std_fmt.zig` (the print-formatting layer, auto-imported by the compiler
   whenever a `print` is lowered); a compiler whose `lib/` predates it can resolve a
@@ -969,7 +979,7 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 - Discovery is `repro/mi_matrix/stdlib_*/` (any `stdlib_*` dir, not just
   `_xmod`) plus `stdlib_test/*/`. In discovery mode the harness asserts the
   discovered dir set EQUALS the committed baseline
-  `scripts/stdlib/expected_dirs.txt` (327 dirs today: 317
+  `scripts/stdlib/expected_dirs.txt` (336 dirs today: 326
   `repro/mi_matrix/stdlib_*` + 10 `stdlib_test/*`), so a dropped/renamed/added
   fixture FAILS the gate instead of silently shrinking coverage. Update the pin
   intentionally when a band adds/removes fixtures.
