@@ -282,3 +282,28 @@ Fixes applied:
 
 Fix-round commit: `docs(std_lib): fix wireguard doc accuracy (M6)`; report
 commit: `docs(sdd): M6 T3 fix round`.
+
+## Fix round 2
+
+Docs-only correction at `sf/docs/std_lib/wireguard.md:125`. The quick start
+now derives the monotonic `now_ms` from the high-resolution clock rather than
+`ticksMs` (u32, wraps ~49.7 days, wall-clock on POSIX):
+
+```zig
+const now_ms: u64 = std.time.highRes() / (std.time.highResFreq() / @intCast(u64, 1000));
+```
+
+No gate was rerun (docs-only). Evidence:
+
+```text
+$ grep -n "highRes()\|ticksMs" sf/docs/std_lib/wireguard.md
+125:const now_ms: u64 = std.time.highRes() / (std.time.highResFreq() / @intCast(u64, 1000));
+$ grep -n "pub fn highRes\b\|pub fn highResFreq" sf/src/std_time.zig
+72:pub fn highRes() u64 {
+100:pub fn highResFreq() u64 {
+$ git diff --check && echo DIFF_CHECK_OK
+DIFF_CHECK_OK
+```
+
+Commit: `docs(std_lib): use monotonic clock in wireguard quick start (M6)`;
+report: `docs(sdd): M6 T3 fix round 2`.
