@@ -87,6 +87,7 @@ fn resetPeer() void {
     g_peer.hs_initiator = false;
     g_peer.local_index = 0;
     g_peer.remote_index = 0;
+    g_peer.pending_local_index = 0;
     fill32(&g_peer.ephemeral_priv, 0);
     fill32(&g_peer.remote_ephemeral, 0);
     fill32(&g_peer.hash, 0);

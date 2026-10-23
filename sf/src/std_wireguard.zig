@@ -1,20 +1,21 @@
 // std_wireguard.zig — Z98 std lib: WireGuard NoiseIK initiator handshake.
 //
-// Sans-I/O protocol state. This task (Phase 1 M6 Task 1) provides the fixed-size
-// peer/device state plus the initiator half of the NoiseIK handshake:
+// Sans-I/O protocol state: the fixed-size peer/device state plus the initiator
+// half of the NoiseIK handshake and transport data path.
 //   - construction/identifier hashing and the WireGuard KDF (HMAC-BLAKE2s,
 //     paper §5.4), not the keyed-BLAKE2s MAC
 //   - initiation construction (ephemeral keygen + sender index from the
 //     caller-seeded `dev.rng`, TAI64N from `wall_unix_ns`)
 //   - encrypted static key and timestamp (ChaCha20-Poly1305, nonce 0)
-//   - mac1 (keyed BLAKE2s-128) and mac2 (cookie, zero until a CookieReply is
-//     consumed)
-//   - handshake response processing and transport key derivation
+//   - mac1 (keyed BLAKE2s-128) and mac2 (cookie after a CookieReply)
+//   - handshake response processing, transport keys/counters, timers, replay
+//   - rekey continuity: a live session keeps its active indices/keys/counter/
+//     replay window while a new initiation is prepared in pending handshake
+//     state; a successful response installs the pending session atomically
 //
 // `wall_unix_ns` is the wire timestamp source. Never feed `now_ms` here: a
 // monotonic TAI64N makes a restarted client look like a timestamp replay to the
-// responder. Timers/transport/replay/cookies are Task 2; this file stores their
-// state but does not implement them yet.
+// responder.
 //
 // Errors: Corrupt (length/type/mac), AuthenticationFailed (AEAD/DH),
 // NoSession (response with no pending initiation), OutputTooSmall, NoSpace,
@@ -36,7 +37,6 @@ pub const WG_COOKIE_REPLY_LEN: usize = 64;
 pub const WG_COOKIE_LEN: usize = 16;
 pub const WG_COOKIE_NONCE_LEN: usize = 24;
 pub const WG_TRANSPORT_HDR_LEN: usize = 16;
-pub const WG_AUTHTAG_LEN: usize = 16;
 pub const WG_MAX_ALLOWED_IPS: usize = 8;
 
 // Transport/timer policy (spec §5.7). REKEY_TIMEOUT is 5 s plus bounded
@@ -94,11 +94,17 @@ pub const WgPeer = struct {
     label_mac1_key: WgKey,
     label_cookie_key: WgKey,
 
-    // Handshake state.
-    hs_valid: bool,
-    hs_initiator: bool,
+    // Active session indices. `local_index`/`remote_index` are used by
+    // transport data and are never changed while a rekey is pending.
     local_index: u32,
     remote_index: u32,
+
+    // Pending initiation state. `hs_valid`/`hs_initiator` plus the ephemeral,
+    // hash, chaining key and mac1 describe an in-flight initiation; the
+    // pending sender index is separate from the active `local_index`.
+    hs_valid: bool,
+    hs_initiator: bool,
+    pending_local_index: u32,
     ephemeral_priv: WgKey,
     remote_ephemeral: WgKey,
     hash: WgKey,
@@ -329,7 +335,8 @@ fn nextIndex(dev: *WgDevice) u32 {
         var i: usize = 0;
         while (i < dev.peer_count) : (i += 1) {
             const p = &dev.peers[i];
-            if (p.hs_valid and p.local_index == v) used = true;
+            if (p.session_valid and p.local_index == v) used = true;
+            if (p.hs_valid and p.pending_local_index == v) used = true;
         }
         if (!used) return v;
     }
@@ -380,6 +387,7 @@ pub fn wgAddPeer(dev: *WgDevice, peer: *const WgPeer) WgError!void {
     slot.hs_initiator = false;
     slot.local_index = 0;
     slot.remote_index = 0;
+    slot.pending_local_index = 0;
     slot.has_mac1 = false;
     slot.cookie_valid = false;
     slot.session_valid = false;
@@ -468,8 +476,7 @@ pub fn wgCreateInitiation(dev: *WgDevice, peer: *WgPeer, wall_unix_ns: u64, out:
 
     peer.hs_valid = true;
     peer.hs_initiator = true;
-    peer.local_index = idx;
-    peer.remote_index = 0;
+    peer.pending_local_index = idx;
     copyBytes(peer.ephemeral_priv[0..], eph_priv[0..]);
     zeroBytes(peer.remote_ephemeral[0..]);
     copyBytes(peer.hash[0..], hash[0..]);
@@ -479,8 +486,9 @@ pub fn wgCreateInitiation(dev: *WgDevice, peer: *WgPeer, wall_unix_ns: u64, out:
     return WG_INITIATION_LEN;
 }
 
-// Process a WireGuard handshake response (type 2, 92 bytes). On success the
-// peer has `tx_key`/`rx_key` for the initiator direction and `session_valid`.
+// Process a WireGuard handshake response (type 2, 92 bytes) for the pending
+// initiation. On success the pending indices/keys are installed atomically as
+// the new active session; the previous active session is untouched until here.
 pub fn wgProcessResponse(dev: *WgDevice, peer: *WgPeer, msg: []const u8) WgError!void {
     if (msg.len != WG_RESPONSE_LEN) return error.Corrupt;
     if (msg[0] != 2 or msg[1] != 0 or msg[2] != 0 or msg[3] != 0) return error.Corrupt;
@@ -488,7 +496,7 @@ pub fn wgProcessResponse(dev: *WgDevice, peer: *WgPeer, msg: []const u8) WgError
 
     const sender = load32le(msg, 4);
     const receiver = load32le(msg, 8);
-    if (receiver != peer.local_index) return error.Corrupt;
+    if (receiver != peer.pending_local_index) return error.Corrupt;
 
     var want_mac: [WG_MAC_LEN]u8 = undefined;
     keyedMac15(dev.label_mac1_key[0..], msg[0 .. WG_RESPONSE_LEN - 2 * WG_MAC_LEN], &want_mac);
@@ -540,12 +548,18 @@ pub fn wgProcessResponse(dev: *WgDevice, peer: *WgPeer, msg: []const u8) WgError
     kdf2(&ck, empty[0..0], &rx);
     copyBytes(tx[0..], ck[0..]);
 
+    // Install the pending session atomically: indices, keys, a fresh counter
+    // and an empty replay window. The old active session was used until now.
+    peer.local_index = peer.pending_local_index;
+    peer.remote_index = sender;
     copyBytes(peer.tx_key[0..], tx[0..]);
     copyBytes(peer.rx_key[0..], rx[0..]);
-    peer.remote_index = sender;
     peer.session_valid = true;
     peer.hs_valid = false;
     peer.hs_initiator = false;
+    peer.pending_local_index = 0;
+    peer.sending_counter = 0;
+    replayReset(peer);
 }
 
 // ---------------------------------------------------------------------------
@@ -701,7 +715,7 @@ fn peerForHandshake(dev: *WgDevice, receiver: u32) ?*WgPeer {
     var i: usize = 0;
     while (i < dev.peer_count) : (i += 1) {
         const p = &dev.peers[i];
-        if (p.hs_valid and p.hs_initiator and p.local_index == receiver) return p;
+        if (p.hs_valid and p.hs_initiator and p.pending_local_index == receiver) return p;
     }
     return null;
 }

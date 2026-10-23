@@ -14,6 +14,9 @@
 //   - 2048-bit replay window: duplicate, too-old, in-window-not-seen
 //   - timers: keepalive at 10 s, rekey at 120 s, retry at 5 s + jitter,
 //     rejected session never encrypts at 180 s
+//   - rekey continuity: pending initiation does not disturb the active
+//     session; sends and old inbound transports keep working; the response
+//     installs the pending indices/keys atomically
 //   - CookieReply consumption -> subsequent initiation carries mac2
 //
 // GREEN (contract): deterministic byte-exact stdout `wireguard transport ok\n`
@@ -31,6 +34,18 @@ const COOKIE_INIT_HEX = "01000000cf5492ac5ac39f7a9b74c617f2c191c2a9504e5dc0a0bb5
 const TX0_HEX = "04000000d4c3b2a100000000000000003c1d454b2ffa5e2b2c6cfb1330b8d3d02ad4aee303176f955a423c2c40cbfaa9";
 const TX1_HEX = "04000000d4c3b2a10100000000000000c9a3a70c59fb5a3e7e518aabcab9564a437c3cdcef1f9b0d9bf948393c00b489";
 const TXMAX_HEX = "04000000d4c3b2a1fedfffffffffffff0fde66cda55701a5e7adac8d8e9f313d";
+
+// Active session after the initial canned exchange (ref --vectors defaults).
+const OLD_TX_HEX = "1e30248f17e1a28a0eaaf896edf32830d0167347942393c15018c9585912bca6";
+const OLD_RX_HEX = "b5eba4b4c280d30d0033299eda36840bc75e96dcfb842ed0e4f49cd3b6baa370";
+
+// Pending rekey initiation with seed 0x1111222233334444 at the same wall
+// time, and the responder's canned response/keys (ref seed wall capture).
+const REKEY_SEED: u64 = 1229782938247303444;
+const REKEY_INIT_HEX = "010000007b9fea413691b44c69fab740e72d9838a0ae577c0175f2d12ee8958795413c8fbf153e6c1d30888a7125342be839cb17712bdd013e37a8c52e66eaedabe7d6697a0e53ac5f56427d24173713fcbe97e6c80b0f86579865bbbd6120c1139963a995760ce583ea78face3b2cebe0a926057df6204b8b8dd9c8899d4cd4391f4dae00000000000000000000000000000000";
+const REKEY_RESP_HEX = "02000000d4c3b2a17b9fea41a2627451101c3cf13a244ee3403409481612fc8d37b2e6b222e8c1769e7cb478d7af4f066d5f618b2fe86f4894e5f5a5db2154812a4cad5bfc05ff95332d17b900000000000000000000000000000000";
+const REKEY_TX_HEX = "75ce467faeb7c56b31bce7d450f9169c934b9dde3991bf0719605a362f4cf303";
+const REKEY_RX_HEX = "8b3fe6a9a02faf940332aaceb0ae6c498d5e0aec7f628bc463a73c45b488630d";
 
 const SEED_I: u64 = 0x0123456789ABCDEF;
 const WALL_NS: u64 = 1800000000123456789;
@@ -69,6 +84,12 @@ fn ckHex(got: []const u8, hex: []const u8, what: []const u8) void {
     while (i < n) : (i += 1) ck(got[i] == want[i], what);
 }
 
+fn ckBytes(got: []const u8, want: []const u8, what: []const u8) void {
+    ck(got.len == want.len, what);
+    var i: usize = 0;
+    while (i < want.len) : (i += 1) ck(got[i] == want[i], what);
+}
+
 fn fill32(p: *[32]u8, v: u8) void {
     var i: usize = 0;
     while (i < 32) : (i += 1) p[i] = v;
@@ -88,6 +109,7 @@ fn resetPeer() void {
     g_peer.hs_initiator = false;
     g_peer.local_index = 0;
     g_peer.remote_index = 0;
+    g_peer.pending_local_index = 0;
     fill32(&g_peer.ephemeral_priv, 0);
     fill32(&g_peer.remote_ephemeral, 0);
     fill32(&g_peer.hash, 0);
@@ -370,6 +392,85 @@ pub fn main() void {
     switch (act) {
         .none => {},
         else => ck(false, "expired pending handshake no keepalive"),
+    }
+
+    // ---- rekey continuity: pending initiation must not disturb active session ----
+    var dev_rk: wg.WgDevice = undefined;
+    setupSession(&dev_rk, &priv_i);
+    const old_local = dev_rk.peers[0].local_index;
+    const old_remote = dev_rk.peers[0].remote_index;
+    var old_tx: [32]u8 = undefined;
+    var old_rx: [32]u8 = undefined;
+    var ri: usize = 0;
+    while (ri < 32) : (ri += 1) {
+        old_tx[ri] = dev_rk.peers[0].tx_key[ri];
+        old_rx[ri] = dev_rk.peers[0].rx_key[ri];
+    }
+    dev_rk.peers[0].sending_counter = 7;
+    dev_rk.peers[0].session_created_ms = 0;
+    dev_rk.peers[0].last_tx_ms = wg.WG_REKEY_AFTER_TIME_MS;
+    dev_rk.rng = rand.xoshiroInit(REKEY_SEED);
+
+    var rk_init: [wg.WG_INITIATION_LEN]u8 = undefined;
+    act = wg.wgTick(&dev_rk, wg.WG_REKEY_AFTER_TIME_MS, WALL_NS, rk_init[0..]) catch @panic("rekey tick");
+    switch (act) {
+        .send_handshake => |m| {
+            ck(m == wg.WG_INITIATION_LEN, "rekey tick length");
+            ckHex(rk_init[0..m], REKEY_INIT_HEX, "rekey pending initiation");
+        },
+        else => ck(false, "rekey tick action"),
+    }
+    const pending_idx = wg.load32le(rk_init[0..], 4);
+    ck(dev_rk.peers[0].pending_local_index == pending_idx, "pending local index");
+    ck(dev_rk.peers[0].local_index == old_local, "active local index preserved");
+    ck(dev_rk.peers[0].remote_index == old_remote, "active remote index preserved");
+    ckHex(dev_rk.peers[0].tx_key[0..], OLD_TX_HEX, "active tx key preserved");
+    ckHex(dev_rk.peers[0].rx_key[0..], OLD_RX_HEX, "active rx key preserved");
+    ck(dev_rk.peers[0].sending_counter == 7, "active counter preserved");
+
+    n = wg.wgSend(&dev_rk, wg.WG_REKEY_AFTER_TIME_MS, 0, inner[0..], out[0..]) catch @panic("rekey active send");
+    var want_pkt: [wg.WG_TRANSPORT_HDR_LEN + 2048 + wg.WG_AUTHTAG_LEN]u8 = undefined;
+    var want_n = makeTransport(&old_tx, old_remote, 7, inner[0..], want_pkt[0..]);
+    ck(n == want_n, "rekey active send length");
+    ckBytes(out[0..n], want_pkt[0..want_n], "rekey active send bytes");
+    ck(dev_rk.peers[0].sending_counter == 8, "rekey active counter advances");
+    ck(dev_rk.peers[0].local_index == old_local, "active index after send");
+
+    n = makeTransport(&old_rx, old_local, 11, inner[0..], pkt[0..]);
+    act = wg.wgReceive(&dev_rk, wg.WG_REKEY_AFTER_TIME_MS, pkt[0..n], plain[0..]) catch @panic("rekey old inbound");
+    switch (act) {
+        .inner_packet => {},
+        else => ck(false, "old inbound accepted during rekey"),
+    }
+    ck(dev_rk.peers[0].local_index == old_local, "active index after old inbound");
+    ck(dev_rk.peers[0].rx_key[0] == old_rx[0], "active rx after old inbound");
+
+    var rk_resp: [wg.WG_RESPONSE_LEN]u8 = undefined;
+    _ = unhex(REKEY_RESP_HEX, rk_resp[0..]);
+    act = wg.wgReceive(&dev_rk, wg.WG_REKEY_AFTER_TIME_MS, rk_resp[0..], plain[0..]) catch @panic("rekey response");
+    switch (act) {
+        .session_up => {},
+        else => ck(false, "rekey response session_up"),
+    }
+    ck(!dev_rk.peers[0].hs_valid, "pending cleared after install");
+    ck(dev_rk.peers[0].pending_local_index == 0, "pending index cleared");
+    ck(dev_rk.peers[0].local_index == pending_idx, "pending local index installed");
+    ck(dev_rk.peers[0].remote_index == RESP_SENDER, "pending remote index installed");
+    ckHex(dev_rk.peers[0].tx_key[0..], REKEY_TX_HEX, "new tx key installed");
+    ckHex(dev_rk.peers[0].rx_key[0..], REKEY_RX_HEX, "new rx key installed");
+    ck(dev_rk.peers[0].sending_counter == 0, "new counter reset");
+    ck(!dev_rk.peers[0].replay_valid and dev_rk.peers[0].replay_counter == 0, "new replay reset");
+
+    n = wg.wgSend(&dev_rk, wg.WG_REKEY_AFTER_TIME_MS, 0, inner[0..], out[0..]) catch @panic("new session send");
+    want_n = makeTransport(&dev_rk.peers[0].tx_key, RESP_SENDER, 0, inner[0..], want_pkt[0..]);
+    ck(n == want_n, "new session send length");
+    ckBytes(out[0..n], want_pkt[0..want_n], "new session send bytes");
+
+    n = makeTransport(&dev_rk.peers[0].rx_key, pending_idx, 0, inner[0..], pkt[0..]);
+    act = wg.wgReceive(&dev_rk, wg.WG_REKEY_AFTER_TIME_MS, pkt[0..n], plain[0..]) catch @panic("new session inbound");
+    switch (act) {
+        .inner_packet => {},
+        else => ck(false, "new inbound accepted after install"),
     }
 
     // ---- CookieReply consumption -> mac2 on subsequent initiation ----
