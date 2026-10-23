@@ -358,7 +358,7 @@ NoSession, SessionExpired, OutputTooSmall}`.
 ### 5.8 `std_tcpip` (userspace stack; client-only)
 
 ```zig
-pub const TcpipConfig = struct { ip: u32, netmask: u32, gateway: u32, mtu: u16,   // default 1400
+pub const TcpipConfig = struct { ip: u32, netmask: u32, gateway: u32, mtu: u16,   // default 1400 (inner IPv4 MTU)
     dns_server: u32, max_sockets: u32 };
 pub const TcpipStack = struct { ... };        // arena-allocated at init
 pub fn tcpipInit(arena: *std_arena.Arena, cfg: *TcpipConfig) !*TcpipStack
@@ -378,8 +378,11 @@ pub fn icmpPing(s: *TcpipStack, ip: u32, now_ms: u64) !u32                // ech
 
 IPv4 only. TCP client only (no listen/accept): 3-way handshake, seq/ack, fixed 8 KB
 receive window, retransmit with Karn's algorithm (simplified RTO), minimal Reno
-(slow start + AIMD; no SACK, no window scaling — window < 64 KB). MSS 1400, never
-fragment, inbound fragments dropped. DNS = UDP A-record query with timeout/retry to
+(slow start + AIMD; no SACK, no window scaling — window < 64 KB). `cfg.mtu` is the
+maximum inner IPv4 datagram size, headers included (default 1400). TCP MSS is
+`min(peer-advertised MSS, cfg.mtu - 40)`; if the peer advertises none, `cfg.mtu - 40`.
+Never emit an IP datagram larger than `cfg.mtu`; never fragment, inbound fragments
+dropped. DNS = UDP A-record query with timeout/retry to
 `cfg.dns_server`. ICMP = echo request/reply client. The stack emits/receives raw IPv4
 datagrams through `tcpipPoll` — the WireGuard layer encrypts those datagrams in the
 demo. `tickMs`/`highRes` values come from the driver.

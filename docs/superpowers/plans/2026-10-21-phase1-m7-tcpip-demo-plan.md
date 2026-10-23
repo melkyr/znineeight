@@ -12,9 +12,9 @@
 
 ## Global Constraints
 
-- Sans-I/O stack per §5.8 signatures (`tcpipInit` arena-allocated, `TcpipAction` union, socket ids `u32`); client-only (no listen); no fragment reassembly; no SACK/scaling.
+- Sans-I/O stack per §5.8 signatures (`tcpipInit` arena-allocated, `TcpipAction` union, socket ids `u32`); client-only (no listen); no fragment reassembly; no SACK/scaling. `cfg.mtu` is the authoritative inner IPv4 MTU (default 1400); MSS = `min(peer-advertised MSS, cfg.mtu - 40)` (or `cfg.mtu - 40` if none); every emitted datagram ≤ `mtu`.
 - Errors: `error.{Corrupt, NoRoute, ConnRefused, Timeout, DnsFailed, OutOfMemory, OutputTooSmall, Closed}` + per-socket failure via `TcpipAction.failed`.
-- Demo config `wg.conf` keys (hex/base64): private key, peer public key, endpoint host:port, allowed IPs, tunnel local IP, optional DNS server + `clock_override_unix`.
+- Demo config `wg.conf` keys (hex/base64): private key, peer public key, endpoint host:port, allowed IPs, tunnel local IP, optional DNS server, optional `mtu` (default 1400), and `clock_override_unix`.
 - RAM: 32 MB hard ceiling / 16 MB target, enforced + recorded (`ulimit -v 32768`, `/usr/bin/time -v`); resource line `wireguard_demo ok bytes=N arena_peak=N rss_peak=N cpu_ms=N`.
 - Gates per task (hybrid): targeted `std_tcpip`/demo fixtures + affected `run_crosscheck.sh` modules + 3×; `tier_wireguard.sh` (kernel `wg-quick` netns far side + `mud_server` through tunnel; loud SKIP if `wg`/netns unavailable; never vacuous); `-osw` build + import gate (KERNEL32+WINMM+WSOCK32, no msvcrt). Full `verify_stdlib.sh` + full crosscheck is mandatory immediately after any change to existing module functions, shared harness/`expected_dirs.txt`, `std.zig`, or a cross-module contract, and at Task 4 closeout. `std_tcpip`/demo are new → targeted-only until closeout.
 - Closeout rotates seed **v119** (47 lib files: +`std_tcpip`); fixed point unchanged `45158dcede81125a39a2c2c58478e21e`; Phase 1 defect ledger entries appended to `examples/torrent_example_defects.md` (next free slot).
@@ -41,9 +41,9 @@
 - Consumes: `std_arena`, `std_time` values (params only).
 - Produces (spec §5.8): `TcpipConfig`, `TcpipStack`, `tcpipInit`, `TcpipAction`, `tcpipPoll`, `tcpConnect`, `tcpSend`, `tcpRecv`, `tcpClose`. IPv4 header build/check (checksum), TCP client FSM.
 
-- [ ] **Step 1:** Failing fixture: scripted packet-exchange tests driving `tcpipPoll` with synthetic peer bytes — 3WHS, data both ways (byte-exact), FIN close, RST → `failed`, retransmission after dropped ACK (assert re-sent seq), out-of-order segment buffering (within 8 KB), MSS 1400 split of a 5 KB `tcpSend`.
+- [ ] **Step 1:** Failing fixture: scripted packet-exchange tests driving `tcpipPoll` with synthetic peer bytes — 3WHS, data both ways (byte-exact), FIN close, RST → `failed`, retransmission after dropped ACK (assert re-sent seq), out-of-order segment buffering (within 8 KB), `cfg.mtu=1400` → local MSS 1360 split of a 5 KB `tcpSend`, peer-advertised MSS 1200 clamps outgoing segments, duplicate/seq-wrap handling, OOM/no-free-socket, `OutputTooSmall` during FIN with retry, and an out-of-window FIN followed by a valid FIN → `.closed`.
 - [ ] **Step 2:** Run — FAIL.
-- [ ] **Step 3:** Implement IPv4 + TCP client (8 KB window, simplified RTO 1 s + Karn, slow-start/AIMD; fixed scratch; no fragmentation).
+- [ ] **Step 3:** Implement IPv4 + TCP client (8 KB window, simplified RTO 1 s + Karn, slow-start/AIMD; fixed scratch; no fragmentation). `cfg.mtu` is authoritative (default 1400, headers included); MSS = `min(peer-advertised MSS, cfg.mtu - 40)` (or `cfg.mtu - 40` if none); every emitted IP datagram ≤ `cfg.mtu`.
 - [ ] **Step 4:** Run — PASS + targeted `std_tcpip` TCP fixtures + affected `run_crosscheck.sh` modules + 3×. Full gate at Task 4 closeout.
 - [ ] **Step 5:** Commit `feat(std_tcpip): IPv4 + TCP client (Phase1 M7)`.
 
