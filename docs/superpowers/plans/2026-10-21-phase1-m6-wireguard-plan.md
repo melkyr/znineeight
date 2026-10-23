@@ -53,9 +53,11 @@
 - Modify: `sf/src/std_wireguard.zig`
 - Test: `repro/mi_matrix/stdlib_wg_transport_xmod/{main.zig,expected.txt,expected.rc}`
 - Modify: `scripts/stdlib/expected_dirs.txt`
+- Modify: `scripts/stdlib/ref/std_wireguard/ref.c` (transport + CookieReply capture modes)
+- Create: `scripts/stdlib/vectors/std_wireguard/{transport,cookie}.{in,expected}`
 
 **Interfaces:**
-- Produces: `wgTick(dev, now_ms, wall_unix_ns, out) !WgAction`, `wgReceive(dev, now_ms, udp_payload, out) !WgAction`, `wgSend(dev, now_ms, wall_unix_ns, inner_ip, out) !usize`; transport encrypt/decrypt with counter nonces; 2048-bit replay window; cookie store + mac2 on re-initiation; `WgAction` variants (send handshake / send keepalive / session up / inner packet available / dropped-replay).
+- Produces: `WgAction = union(enum){ none, send_handshake: usize, send_keepalive: usize, session_up: void, inner_packet: usize, dropped_replay: void }`; `wgTick`/`wgReceive` return `!WgAction`; `wgSend` returns `!usize` (transport bytes; `error.NoSession` without a live session — `wgTick` initiates); transport encrypt/decrypt with counter nonces; 2048-bit replay window; cookie store + mac2 on re-initiation.
 
 - [ ] **Step 1:** Failing fixtures: transport round-trip byte-exact vs ref (padding to 16, counter 0/1/max-before-reject); replay negatives (duplicate, too-old, in-window-not-seen); timer sweep fixture (advance `now_ms` through rekey/keepalive/reject thresholds asserting `wgTick` outputs); CookieReply → subsequent initiation carries correct mac2.
 - [ ] **Step 2:** Run — FAIL.

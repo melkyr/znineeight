@@ -326,10 +326,12 @@ pub const WgPeer = struct { static_priv: [32]u8, remote_static_pub: [32]u8,
 pub const WgDevice = struct { iface_priv: [32]u8, iface_pub: [32]u8, peers: []WgPeer, ... };
 pub fn wgInit(dev: *WgDevice, iface_priv: *const [32]u8) void
 pub fn wgAddPeer(dev: *WgDevice, peer: *WgPeer) !void
+pub const WgAction = union(enum) { none, send_handshake: usize,
+    send_keepalive: usize, session_up: void, inner_packet: usize, dropped_replay: void };
 pub fn wgTick(dev: *WgDevice, now_ms: u64, wall_unix_ns: u64, out: []u8) !WgAction
 pub fn wgReceive(dev: *WgDevice, now_ms: u64, udp_payload: []const u8, out: []u8) !WgAction
 pub fn wgSend(dev: *WgDevice, now_ms: u64, wall_unix_ns: u64, inner_ip: []const u8,
-    out: []u8) !usize          // transport data; may trigger a handshake
+    out: []u8) !usize          // transport data; requires a live session, else error.NoSession; wgTick owns handshake initiation
 ```
 
 `wall_unix_ns` (Unix time in nanoseconds; second-resolution callers pass `sec * 1e9`)
