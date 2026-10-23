@@ -354,9 +354,12 @@ Status: **OPEN, demo-worked-around** (found 2026-10-23 building
 `examples/z98/demo/wireguard_demo/NOTES.md`). In the current emitter a nested
 write through an indexed aggregate field can materialise a by-value temporary,
 so the store is lost. The demo takes an explicit pointer first
-(`var pp: *wg.WgPeer = &g_peers[0];` then `pp.field[0..]`) and works. This is a
-compiler defect of the same family as D1/D2 (lvalue/address-of lowering), but
-no compiler fix was authorized in Phase 1 and `sf/src` was frozen at closeout.
+(`var pp: *wg.WgPeer = &g_peers[0];` then `pp.field[0..]`) and works. This is
+an emitter lvalue/temporary-materialisation defect in nested aggregate field
+indexing; it is a distinct family from D1 (optional-of-aggregate type identity
+and typedef ordering) and D2 (comptime-dead-arm module reachability), not an
+lvalue/address-of-lowering instance of either. No compiler fix was authorized
+in Phase 1 and `sf/src` was frozen at closeout.
 A future compiler plan should reproduce it with a minimal `arr[i].field = ...`
 fixture before fixing.
 

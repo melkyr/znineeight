@@ -188,14 +188,15 @@ The tier creates `unshare -Urn` kernel WireGuard (`wg`/`ip` portable tools
 preferred), starts `mud_server` and a tunnel A-record DNS responder, then runs:
 
 - Linux DNS path (exact banner + `look` reply + resource line);
-- the same Linux case again (deterministic banner/reply, resource line
-  ignored);
+- the same Linux case again (deterministic banner/reply; the resource line is
+  still validated, but excluded from the determinism comparison);
 - the `-osw` Wine build against the same far side;
 - a Linux direct-IP config that skips DNS;
 - a Linux run under `ulimit -v 32768` with `/usr/bin/time -v` peak RSS;
 - `check_win9x_imports.sh 9x`.
 
-It repeats the tier twice for determinism. If kernel WireGuard/netns or the
+Each tier invocation runs the Linux DNS case twice for determinism (the M7
+report ran the whole tier twice). If kernel WireGuard/netns or the
 portable tools are unavailable it prints a loud `SKIP - ...` and
 `TIER_WIREGUARD SKIP` (never a vacuous pass). `wg-quick` is not required by the
 tier; the portable `ip`/`wg` pair configures the same kernel interface.
@@ -257,5 +258,5 @@ absent.
   far side is not forwarding the tunnel subnet, or `mud_server` is not running.
 - Repeated runs against the same kernel peer need a strictly increasing
   `clock_override_unix` (WireGuard replay protection).
-- On Win9x, `tcp: SocketFailed` or no UDP path usually means the Winsock 2
+- On Win9x, `wg: SocketFailed` or no UDP path usually means the Winsock 2
   update is missing.

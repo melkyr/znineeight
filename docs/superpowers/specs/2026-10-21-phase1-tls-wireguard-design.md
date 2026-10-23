@@ -385,7 +385,8 @@ Never emit an IP datagram larger than `cfg.mtu`; never fragment, inbound fragmen
 dropped. DNS = UDP A-record query with timeout/retry to `cfg.dns_server`; CNAME
 chains are not followed (a non-direct answer is `error.DnsFailed`); ICMP =
 echo request/reply client. `tcpipPoll` returns `.done` when an outstanding DNS/ICMP
-request reaches a terminal state; the caller then retrieves the result with one final
+request reaches a terminal state, or when the stack is idle (no live socket and no
+pending request); the caller then retrieves the result with one final
 `dnsResolve`/`icmpPing` call. While pending both return `error.Timeout`; DNS terminal
 failure is `error.DnsFailed`, ICMP terminal failure is `error.Timeout`. ICMP replies
 must come from the queried source IP; DNS answers must match query ID, source IP/port,
