@@ -286,26 +286,56 @@ if [ "${Z98_NET:-}" = "1" ]; then
             head -5 "$OUT/net_$tag.err" 2>/dev/null | sed 's/^/       /'
         fi
     }
+    TLS_AUTH_DETAIL=""
+    tls13_auth_ok() {
+        local host="$1" want="$2" tag="$3"
+        timeout 30 openssl s_client -connect "$host:443" -servername "$host" \
+            -tls1_3 </dev/null >"$OUT/net_${tag}_tls13.out" \
+            2>"$OUT/net_${tag}_tls13.err"
+        local rc=$?
+        local neg
+        neg="$(grep -m1 'New, TLSv1.3, Cipher is' \
+            "$OUT/net_${tag}_tls13.out" 2>/dev/null)"
+        local sig
+        sig="$(grep -m1 'Peer signature type:' \
+            "$OUT/net_${tag}_tls13.out" 2>/dev/null)"
+        if [ "$rc" -eq 0 ] && [ -n "$neg" ] \
+           && [ "$sig" = "Peer signature type: $want" ]; then
+            return 0
+        fi
+        TLS_AUTH_DETAIL="openssl rc=$rc neg='$neg' sig='$sig'"
+        return 1
+    }
     net_pair() {
-        local label="$1" primary="$2" ptag="$3" fallback="$4" ftag="$5"
-        if net_ok "$primary" "$ptag"; then
-            pass_case "internet $label $primary status=200 bytes=$NET_BYTES"
+        local label="$1" auth="$2" primary="$3" ptag="$4" fallback="$5" ftag="$6"
+        local primary_detail="auth ok"
+        if ! tls13_auth_ok "$primary" "$auth" "$ptag"; then
+            primary_detail="tls13: $TLS_AUTH_DETAIL"
+        elif net_ok "$primary" "$ptag"; then
+            pass_case "internet $label $primary (TLS 1.3 $auth) status=200 bytes=$NET_BYTES"
             return
+        else
+            primary_detail="$NET_DETAIL"
         fi
-        local primary_detail="$NET_DETAIL"
-        if net_ok "$fallback" "$ftag"; then
-            pass_case "internet $label fallback $fallback status=200 bytes=$NET_BYTES"
+        local fallback_detail="auth ok"
+        if ! tls13_auth_ok "$fallback" "$auth" "$ftag"; then
+            fallback_detail="tls13: $TLS_AUTH_DETAIL"
+        elif net_ok "$fallback" "$ftag"; then
+            echo "note - $label primary $primary failed ($primary_detail); using fallback"
+            pass_case "internet $label fallback $fallback (TLS 1.3 $auth) status=200 bytes=$NET_BYTES"
             return
+        else
+            fallback_detail="$NET_DETAIL"
         fi
-        fail_case "internet $label ($primary: $primary_detail; $fallback: $NET_DETAIL)"
+        fail_case "internet $label ($primary: $primary_detail; $fallback: $fallback_detail)"
     }
     net_case www.google.com google
     net_case example.com example
     # RSA-2048 leaf + RSA-PSS CertificateVerify over TLS 1.3. Microsoft's
     # 200 block page is rejected by the marker check; AWS is a real page.
-    net_pair "RSA-PSS TLS 1.3" aws.amazon.com aws_rsa www.mozilla.org mozilla_rsa
+    net_pair "RSA-PSS TLS 1.3" RSA-PSS aws.amazon.com aws_rsa www.mozilla.org mozilla_rsa
     # ECDSA P-256 leaf + ECDSA CertificateVerify over TLS 1.3.
-    net_pair "ECDSA TLS 1.3" letsencrypt.org letsencrypt_ecdsa example.com example_ecdsa
+    net_pair "ECDSA TLS 1.3" ECDSA letsencrypt.org letsencrypt_ecdsa example.com example_ecdsa
 else
     skip_case "Z98_NET unset: internet smoke SKIPPED (set Z98_NET=1 to run google.com + example.com + RSA-PSS/ECDSA TLS 1.3 hosts)"
 fi

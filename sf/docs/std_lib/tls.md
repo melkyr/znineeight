@@ -564,7 +564,7 @@ pub const TlsError = error{
 | `BadAction` | the caller invoked the state machine in a way that cannot produce an action (reserved; `tlsStep` currently uses the specific errors below). |
 | `AppTooLarge` | decrypted application bytes would overflow the 32 KiB session buffer. |
 | `OutputTooSmall` | the caller's `output` cannot hold the pending flight or a `tlsWrite` record set. |
-| `BadConfig` | empty hostname or hostname longer than 255 bytes. |
+| `BadConfig` | empty hostname, hostname longer than 255 bytes, or `min_version > max_version`. |
 | `HandshakeFailed` | wrong message kind/order, bad Finished, a PKCS#1 v1.5 CertificateVerify, non-`close_notify` alert, or use before `Established`. |
 | `UnsupportedVersion` | the configured range does not intersect TLS 1.2/1.3, or the peer selected an unsupported version. |
 | `UnsupportedSuite` | server selected a suite ID that was not offered. |

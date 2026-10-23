@@ -23,8 +23,13 @@ Commits: `a16dd0d6` docs, `48a3b8b5` seed rotation, final `docs(sdd)` report.
 - local TLS 1.3 happy paths for `TLS_AES_128_GCM_SHA256` and
   `TLS_CHACHA20_POLY1305_SHA256` (`openssl s_server -tls1_3 -ciphersuites …`);
 - a second run of each 1.3 suite and byte comparison of status/body/bytes;
-- `Z98_NET=1` smoke: google.com, example.com, and
-  `www.microsoft.com/en-us/` (RSA-2048 cert, RSA-PSS CertificateVerify);
+- `Z98_NET=1` smoke: google.com + example.com, RSA-PSS TLS 1.3 via
+  `aws.amazon.com` (fallback `www.mozilla.org`), and ECDSA TLS 1.3 via
+  `letsencrypt.org` (fallback `example.com`);
+- internet cases reject `Your request has been blocked`, `Just a moment`, and
+  `captcha` markers even on status 200, and the RSA-PSS/ECDSA endpoints have a
+  host-level `openssl s_client -tls1_3` assertion of the negotiated version
+  and `Peer signature type`;
 - unchanged expired/wrong-host/untrusted negatives, clock-overflow guard,
   RAM ceiling, `-osw` build and Win9x import gate.
 
@@ -54,7 +59,7 @@ ok   - local TLS 1.3 AES-128-GCM fetch: status=200, exact body, bytes=14
 ok   - local TLS 1.3 ChaCha20-Poly1305 fetch: status=200, exact body, bytes=14
 ok   - TLS 1.3 AES-128-GCM status/body/bytes identical 2x
 ok   - TLS 1.3 ChaCha20-Poly1305 status/body/bytes identical 2x
-SKIP - Z98_NET unset: internet smoke SKIPPED (set Z98_NET=1 to run google.com + example.com + microsoft.com)
+SKIP - Z98_NET unset: internet smoke SKIPPED (set Z98_NET=1 to run google.com + example.com + RSA-PSS/ECDSA TLS 1.3 hosts)
 ok   - RAM ceiling ok: /usr/bin/time peak RSS=2780 kB (ulimit -v 32768)
 ok   - -osw emit + mingw build produced tls_demo.exe
 ok   - file: PE32 i386
@@ -63,41 +68,13 @@ ok   - check_win9x_imports.sh 9x whitelist PASS
 TIER_TLS PASS
 ```
 
-Command (network, run 1):
+The original network runs used `www.microsoft.com/en-us/`; that endpoint was a
+200 soft-block page and was replaced by the Task 2-I endpoint fix. Current
+network evidence (including host-level TLS 1.3 auth assertions) is in §9.
 
-```text
-$ OUT=/tmp/tier_tls_m5b Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
-```
-
-Observed:
-
-```text
-ok   - internet www.google.com/ status=200 bytes=91735
-ok   - internet example.com/ status=200 bytes=577
-ok   - internet www.microsoft.com/en-us/ status=200 bytes=201253
-== tier_tls summary: 18 passed, 0 failed, 0 skipped ==
-TIER_TLS PASS
-```
-
-Command (network, run 2):
-
-```text
-$ OUT=/tmp/tier_tls_m5c Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
-```
-
-Observed:
-
-```text
-ok   - internet www.google.com/ status=200 bytes=90747
-ok   - internet example.com/ status=200 bytes=577
-ok   - internet www.microsoft.com/en-us/ status=200 bytes=201253
-== tier_tls summary: 18 passed, 0 failed, 0 skipped ==
-TIER_TLS PASS
-```
-
-Both network runs kept the local 1.2 fallback and both 1.3 suites green; the
-local status/body/bytes comparisons were byte-identical within each run. The
-`-osw` import gate reported only `KERNEL32.DLL` and `WSOCK32.DLL`.
+The local 1.2 fallback and both 1.3 suites stayed green, and the local
+status/body/bytes comparisons were byte-identical within each run. The `-osw`
+import gate reported only `KERNEL32.DLL` and `WSOCK32.DLL`.
 
 ## 4. Docs commit
 
@@ -190,18 +167,9 @@ run_crosscheck: 9 PASS / 0 FAIL over 9 modules
 STDLIB GATE OK
 ```
 
-Tier on the rotated compiler (network enabled):
-
-```text
-$ OUT=/tmp/tier_tls_m5_v117 ZIG=/tmp/m5_t2_v117/zig1_5_clean Z98_NET=1 \
-    bash examples/z98/demo/tls_demo/tests/tier_tls.sh
-...
-ok   - internet www.google.com/ status=200 bytes=91536
-ok   - internet example.com/ status=200 bytes=577
-ok   - internet www.microsoft.com/en-us/ status=200 bytes=201253
-== tier_tls summary: 18 passed, 0 failed, 0 skipped ==
-TIER_TLS PASS
-```
+The pre-endpoint-fix rotated-compiler network run used the Microsoft endpoint;
+it is superseded by the post-fix network evidence in §9 (same fixed-point
+compiler binary, `45158dce…`).
 
 ## 7. Files changed (Task 2)
 
@@ -242,6 +210,11 @@ Changes in `examples/z98/demo/tls_demo/tests/tier_tls.sh`:
 - Internet cases now fail when the response body/title contains
   `Your request has been blocked`, `Just a moment`, or `captcha`, in addition
   to the existing status=200 / bytes>0 checks.
+- Each RSA-PSS/ECDSA pair additionally runs
+  `openssl s_client -connect <host>:443 -servername <host> -tls1_3` and
+  requires `New, TLSv1.3, Cipher is …` plus
+  `Peer signature type: RSA-PSS`/`ECDSA` before the demo fetch is accepted.
+  The fallback is used only when the primary fails this assertion or the fetch.
 - Local TLS 1.3 both-suite cases and the local TLS 1.2 fallback are unchanged.
 - `examples/z98/demo/tls_demo/README.md` updated; local ECDSA test leaves were
   deliberately deferred (no source/seed changes in this fix).
@@ -249,11 +222,11 @@ Changes in `examples/z98/demo/tls_demo/tests/tier_tls.sh`:
 Network tier run 1:
 
 ```text
-$ OUT=/tmp/tier_tls_fix1 Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
-ok   - internet www.google.com/ status=200 bytes=91532
+$ OUT=/tmp/tier_tls_auth1 Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
+ok   - internet www.google.com/ status=200 bytes=90447
 ok   - internet example.com/ status=200 bytes=577
-ok   - internet RSA-PSS TLS 1.3 aws.amazon.com status=200 bytes=509641
-ok   - internet ECDSA TLS 1.3 letsencrypt.org status=200 bytes=90353
+ok   - internet RSA-PSS TLS 1.3 aws.amazon.com (TLS 1.3 RSA-PSS) status=200 bytes=509641
+ok   - internet ECDSA TLS 1.3 letsencrypt.org (TLS 1.3 ECDSA) status=200 bytes=90353
 ok   - check_win9x_imports.sh 9x whitelist PASS
 == tier_tls summary: 19 passed, 0 failed, 0 skipped ==
 TIER_TLS PASS
@@ -262,13 +235,23 @@ TIER_TLS PASS
 Network tier run 2:
 
 ```text
-$ OUT=/tmp/tier_tls_fix2 Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
-ok   - internet www.google.com/ status=200 bytes=91500
+$ OUT=/tmp/tier_tls_auth2 Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
+ok   - internet www.google.com/ status=200 bytes=90749
 ok   - internet example.com/ status=200 bytes=577
-ok   - internet RSA-PSS TLS 1.3 aws.amazon.com status=200 bytes=509641
-ok   - internet ECDSA TLS 1.3 letsencrypt.org status=200 bytes=90353
+ok   - internet RSA-PSS TLS 1.3 aws.amazon.com (TLS 1.3 RSA-PSS) status=200 bytes=509641
+ok   - internet ECDSA TLS 1.3 letsencrypt.org (TLS 1.3 ECDSA) status=200 bytes=90353
 ok   - check_win9x_imports.sh 9x whitelist PASS
 == tier_tls summary: 19 passed, 0 failed, 0 skipped ==
+TIER_TLS PASS
+```
+
+Loud-SKIP path (network unset):
+
+```text
+$ OUT=/tmp/tier_tls_auth_skip bash examples/z98/demo/tls_demo/tests/tier_tls.sh
+SKIP - Z98_NET unset: internet smoke SKIPPED (set Z98_NET=1 to run google.com + example.com + RSA-PSS/ECDSA TLS 1.3 hosts)
+ok   - check_win9x_imports.sh 9x whitelist PASS
+== tier_tls summary: 15 passed, 0 failed, 1 skipped ==
 TIER_TLS PASS
 ```
 
