@@ -122,7 +122,7 @@ peer.allowed_ip_count = 0;
 try std_wireguard.wgAddPeer(&dev, &peer);
 
 var out: [2048]u8 = undefined;
-const now_ms: u64 = @intCast(u64, std.time.ticksMs());
+const now_ms: u64 = std.time.highRes() / (std.time.highResFreq() / @intCast(u64, 1000));
 const wall_unix_ns: u64 = @intCast(u64, std.time.wallClockUnix()) * 1000000000;
 
 // Poll timers: sends handshakes/keepalives; never sleeps.
