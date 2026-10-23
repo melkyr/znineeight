@@ -1,19 +1,24 @@
-// std_tcpip.zig — Z98 std lib: userspace IPv4 + TCP client stack (spec §5.8).
+// std_tcpip.zig — Z98 std lib: userspace IPv4 + TCP/UDP/DNS/ICMP stack (spec §5.8).
 //
 // Sans-I/O pump: `tcpipPoll` receives raw IPv4 datagrams from the driver and
 // emits raw IPv4 datagrams back through `TcpipAction.send_pkt`. The driver (the
 // WireGuard demo) encrypts/decrypts those datagrams; this module never touches
 // a socket, the clock, or the heap.
 //
-// Scope: IPv4 only, TCP client only (no listen/accept), no fragment
-// reassembly. Fixed 8 KB receive window, one fixed send buffer per socket,
-// simplified fixed 1 s RTO with Karn (retransmitted segments are never used
-// for RTT samples; this implementation takes no RTT samples at all), and
-// minimal Reno congestion control (slow start + AIMD). `cfg.mtu` is the
-// authoritative maximum inner IPv4 datagram size (headers included); the local
-// MSS is `mtu - 40`, and the effective per-socket MSS is
-// `min(peer-advertised MSS, local MSS)`. Peer fragments are dropped silently
-// per the spec.
+// Scope: IPv4 only, TCP client only (no listen/accept), UDP, DNS A-record
+// resolution and ICMP echo client; no fragment reassembly. Fixed 8 KB receive
+// window, one fixed send buffer per TCP socket, simplified fixed 1 s RTO with
+// Karn (retransmitted segments are never used for RTT samples; this
+// implementation takes no RTT samples at all), and minimal Reno congestion
+// control (slow start + AIMD). `cfg.mtu` is the authoritative maximum inner
+// IPv4 datagram size (headers included); the local MSS is `mtu - 40`, and the
+// effective per-socket MSS is `min(peer-advertised MSS, local MSS)`. Peer
+// fragments are dropped silently per the spec.
+//
+// DNS and ICMP are also pump-driven. `dnsResolve`/`icmpPing` start a request and
+// return `error.Timeout` while it is outstanding; the caller polls until the
+// reply is consumed and then calls the same function again to retrieve the IPv4
+// answer or RTT. Fixed retry cadence: 1 s, 3 attempts (no wall clock).
 //
 // Errors: Corrupt (malformed/checksum-failing datagram), NoRoute, ConnRefused,
 // Timeout, DnsFailed, OutOfMemory, OutputTooSmall, Closed. A connection-level
@@ -65,7 +70,26 @@ const TCP_SYN_OPT_LEN: usize = 4;
 const RECV_MASK: usize = TCP_RECV_WINDOW - 1;
 
 const IP_PROTO_TCP: u8 = 6;
+const IP_PROTO_ICMP: u8 = 1;
 
+const IP_PROTO_UDP: u8 = 17;
+const UDP_HDR_LEN: usize = 8;
+pub const UDP_MAX_PAYLOAD: usize = 1472;
+
+const DNS_QUERY_CAP: usize = 512;
+const DNS_NAME_MAX: usize = 255;
+const DNS_LOCAL_PORT: u16 = 40000;
+const DNS_SERVER_PORT: u16 = 53;
+const DNS_RETRY_MS: u64 = 1000;
+const DNS_MAX_TRIES: u32 = 3;
+const DNS_MAX_ANSWERS: u32 = 32;
+
+const ICMP_ECHO_REQ: u8 = 8;
+const ICMP_ECHO_REPLY: u8 = 0;
+const ICMP_ID: u16 = 0x5A39;
+const ICMP_PAYLOAD_LEN: usize = 8;
+const ICMP_RETRY_MS: u64 = 1000;
+const ICMP_MAX_TRIES: u32 = 3;
 const FLAG_FIN: u8 = 0x01;
 const FLAG_SYN: u8 = 0x02;
 const FLAG_RST: u8 = 0x04;
@@ -137,6 +161,26 @@ pub const TcpSock = struct {
     ev_failed: bool,
 };
 
+const DnsState = enum { idle, pending, done, failed };
+const IcmpState = enum { idle, pending, done, failed };
+
+pub const UdpSock = struct {
+    in_use: bool,
+    id: u32,
+    local_ip: u32,
+    local_port: u16,
+    rx_valid: bool,
+    rx_ip: u32,
+    rx_port: u16,
+    rx_len: usize,
+    rx_buf: [UDP_MAX_PAYLOAD]u8,
+    tx_pending: bool,
+    tx_ip: u32,
+    tx_port: u16,
+    tx_len: usize,
+    tx_buf: [UDP_MAX_PAYLOAD]u8,
+};
+
 pub const TcpipStack = struct {
     cfg: TcpipConfig,
     arena: *arena_mod.Arena,
@@ -144,6 +188,25 @@ pub const TcpipStack = struct {
     socket_count: usize,
     ip_id: u16,
     next_id: u32,
+    udp_sockets: [*]UdpSock,
+    udp_count: usize,
+    dns_state: DnsState,
+    dns_id: u16,
+    dns_query_id: u16,
+    dns_query: [DNS_QUERY_CAP]u8,
+    dns_query_len: usize,
+    dns_result_ip: u32,
+    dns_tries: u32,
+    dns_sent: bool,
+    dns_next_ms: u64,
+    icmp_state: IcmpState,
+    icmp_ip: u32,
+    icmp_seq: u16,
+    icmp_tries: u32,
+    icmp_sent: bool,
+    icmp_next_ms: u64,
+    icmp_last_sent_ms: u64,
+    icmp_rtt: u32,
 };
 
 fn zeroSock(p: *TcpSock) void {
@@ -151,6 +214,15 @@ fn zeroSock(p: *TcpSock) void {
     var i: usize = 0;
     while (i < @sizeOf(TcpSock)) : (i += 1) raw[i] = 0;
     p.state = .closed;
+}
+
+fn zeroUdp(p: *UdpSock) void {
+    var raw: [*]u8 = @ptrCast([*]u8, p);
+    var i: usize = 0;
+    while (i < @sizeOf(UdpSock)) : (i += 1) raw[i] = 0;
+    p.in_use = false;
+    p.rx_valid = false;
+    p.tx_pending = false;
 }
 
 pub fn tcpipInit(arena: *arena_mod.Arena, cfg: *TcpipConfig) !*TcpipStack {
@@ -161,6 +233,8 @@ pub fn tcpipInit(arena: *arena_mod.Arena, cfg: *TcpipConfig) !*TcpipStack {
     var s: *TcpipStack = @ptrCast(*TcpipStack, stack_raw);
     const socks_raw = arena_mod.alloc(arena, count * @sizeOf(TcpSock)) catch return error.OutOfMemory;
     var socks: [*]TcpSock = @ptrCast([*]TcpSock, socks_raw);
+    const udp_raw = arena_mod.alloc(arena, count * @sizeOf(UdpSock)) catch return error.OutOfMemory;
+    var udp: [*]UdpSock = @ptrCast([*]UdpSock, udp_raw);
 
     s.cfg = cfg.*;
     if (s.cfg.mtu == 0) s.cfg.mtu = 1400;
@@ -169,9 +243,30 @@ pub fn tcpipInit(arena: *arena_mod.Arena, cfg: *TcpipConfig) !*TcpipStack {
     s.socket_count = count;
     s.ip_id = 1;
     s.next_id = 1;
+    s.udp_sockets = udp;
+    s.udp_count = count;
+    s.dns_state = .idle;
+    s.dns_id = 0x4D37;
+    s.dns_query_id = 0;
+    s.dns_query_len = 0;
+    s.dns_result_ip = 0;
+    s.dns_tries = 0;
+    s.dns_sent = false;
+    s.dns_next_ms = 0;
+    s.icmp_state = .idle;
+    s.icmp_ip = 0;
+    s.icmp_seq = 0;
+    s.icmp_tries = 0;
+    s.icmp_sent = false;
+    s.icmp_next_ms = 0;
+    s.icmp_last_sent_ms = 0;
+    s.icmp_rtt = 0;
 
     var i: usize = 0;
-    while (i < count) : (i += 1) zeroSock(&socks[i]);
+    while (i < count) : (i += 1) {
+        zeroSock(&socks[i]);
+        zeroUdp(&udp[i]);
+    }
     return s;
 }
 
@@ -582,11 +677,19 @@ fn processPacket(s: *TcpipStack, now_ms: u64, rx: []const u8) !void {
     const frag = load16be(rx, 6);
     if ((frag & 0x3FFF) != 0) return;
 
-    if (rx[9] != IP_PROTO_TCP) return;
-
     const dst_ip = load32be(rx, 16);
     if (dst_ip != s.cfg.ip) return;
     const src_ip = load32be(rx, 12);
+
+    if (rx[9] == IP_PROTO_UDP) {
+        try processUdp(s, src_ip, rx[ihl..total]);
+        return;
+    }
+    if (rx[9] == IP_PROTO_ICMP) {
+        try processIcmp(s, now_ms, rx[ihl..total]);
+        return;
+    }
+    if (rx[9] != IP_PROTO_TCP) return;
 
     const tcp = rx[ihl..total];
     if (tcp.len < TCP_HDR_LEN) return error.Corrupt;
@@ -851,6 +954,10 @@ pub fn tcpipPoll(s: *TcpipStack, now_ms: u64, rx_ip: ?[]const u8, out: []u8) !Tc
         if (maybe) |pkt| return TcpipAction{ .send_pkt = pkt };
     }
 
+    if (try serveUdp(s, now_ms, out)) |pkt| return TcpipAction{ .send_pkt = pkt };
+    if (try serveDns(s, now_ms, out)) |pkt| return TcpipAction{ .send_pkt = pkt };
+    if (try serveIcmp(s, now_ms, out)) |pkt| return TcpipAction{ .send_pkt = pkt };
+
     i = 0;
     while (i < s.socket_count) : (i += 1) {
         const p = &s.sockets[i];
@@ -874,6 +981,36 @@ pub fn tcpipPoll(s: *TcpipStack, now_ms: u64, rx_ip: ?[]const u8, out: []u8) !Tc
         }
     }
 
+    i = 0;
+    while (i < s.udp_count) : (i += 1) {
+        if (s.udp_sockets[i].in_use) {
+            any = true;
+            break;
+        }
+    }
+
+    if (s.dns_state != .idle) {
+        any = true;
+        if (s.dns_state == .pending) {
+            const deadline = if (s.dns_sent) s.dns_next_ms else now_ms;
+            if (!have_timer or deadline < next_ms) {
+                next_ms = deadline;
+                have_timer = true;
+            }
+        }
+    }
+
+    if (s.icmp_state != .idle) {
+        any = true;
+        if (s.icmp_state == .pending) {
+            const deadline = if (s.icmp_sent) s.icmp_next_ms else now_ms;
+            if (!have_timer or deadline < next_ms) {
+                next_ms = deadline;
+                have_timer = true;
+            }
+        }
+    }
+
     if (!any) return TcpipAction{ .done = {} };
     if (have_timer) {
         if (next_ms <= now_ms) return TcpipAction{ .wait = 1 };
@@ -882,4 +1019,439 @@ pub fn tcpipPoll(s: *TcpipStack, now_ms: u64, rx_ip: ?[]const u8, out: []u8) !Tc
         return TcpipAction{ .wait = @intCast(u32, d) };
     }
     return TcpipAction{ .wait = DEFAULT_WAIT_MS };
+}
+
+fn getUdp(s: *TcpipStack, id: u32) ?*UdpSock {
+    var i: usize = 0;
+    while (i < s.udp_count) : (i += 1) {
+        if (s.udp_sockets[i].in_use and s.udp_sockets[i].id == id) return &s.udp_sockets[i];
+    }
+    return null;
+}
+
+fn writeIpv4Header(s: *TcpipStack, out: []u8, total: usize, proto: u8, dst_ip: u32) void {
+    out[0] = 0x45;
+    out[1] = 0;
+    store16be(out, 2, @intCast(u16, total));
+    store16be(out, 4, s.ip_id);
+    s.ip_id +%= 1;
+    store16be(out, 6, 0x4000);
+    out[8] = 64;
+    out[9] = proto;
+    store32be(out, 12, s.cfg.ip);
+    store32be(out, 16, dst_ip);
+    store16be(out, 10, ipv4Checksum(out[0..IP_HDR_LEN]));
+}
+
+fn pseudoSumFor(src: u32, dst: u32, seg_len: usize, proto: u8) u32 {
+    var sum: u32 = 0;
+    sum += (src >> 16) & 0xFFFF;
+    sum += src & 0xFFFF;
+    sum += (dst >> 16) & 0xFFFF;
+    sum += dst & 0xFFFF;
+    sum += @intCast(u32, proto);
+    sum += @intCast(u32, seg_len);
+    return sum;
+}
+
+fn udpChecksum(src: u32, dst: u32, seg: []const u8) u16 {
+    return ~foldChecksum(pseudoSumFor(src, dst, seg.len, IP_PROTO_UDP) + sumWords(seg));
+}
+
+fn udpChecksumValid(src: u32, dst: u32, seg: []const u8) bool {
+    if (load16be(seg, 6) == 0) return true;
+    return foldChecksum(pseudoSumFor(src, dst, seg.len, IP_PROTO_UDP) + sumWords(seg)) == 0xFFFF;
+}
+
+fn buildUdpPacket(s: *TcpipStack, out: []u8, dst_ip: u32, dst_port: u16, local_port: u16, payload: []const u8) ![]const u8 {
+    const total = IP_HDR_LEN + UDP_HDR_LEN + payload.len;
+    if (total > @intCast(usize, s.cfg.mtu)) return error.OutputTooSmall;
+    if (out.len < total) return error.OutputTooSmall;
+    if (UDP_HDR_LEN + payload.len > 65535) return error.OutputTooSmall;
+
+    var i: usize = 0;
+    while (i < total) : (i += 1) out[i] = 0;
+    writeIpv4Header(s, out, total, IP_PROTO_UDP, dst_ip);
+
+    const u = IP_HDR_LEN;
+    store16be(out, u, local_port);
+    store16be(out, u + 2, dst_port);
+    store16be(out, u + 4, @intCast(u16, UDP_HDR_LEN + payload.len));
+
+    i = 0;
+    while (i < payload.len) : (i += 1) out[u + UDP_HDR_LEN + i] = payload[i];
+
+    var ck = udpChecksum(s.cfg.ip, dst_ip, out[u..total]);
+    if (ck == 0) ck = 0xFFFF;
+    store16be(out, u + 6, ck);
+    return out[0..total];
+}
+
+fn buildIcmpPacket(s: *TcpipStack, out: []u8, seq: u16) ![]const u8 {
+    const total = IP_HDR_LEN + 8 + ICMP_PAYLOAD_LEN;
+    if (total > @intCast(usize, s.cfg.mtu)) return error.OutputTooSmall;
+    if (out.len < total) return error.OutputTooSmall;
+
+    var i: usize = 0;
+    while (i < total) : (i += 1) out[i] = 0;
+    writeIpv4Header(s, out, total, IP_PROTO_ICMP, s.icmp_ip);
+
+    const m = IP_HDR_LEN;
+    out[m] = ICMP_ECHO_REQ;
+    out[m + 1] = 0;
+    store16be(out, m + 4, ICMP_ID);
+    store16be(out, m + 6, seq);
+    i = 0;
+    while (i < ICMP_PAYLOAD_LEN) : (i += 1) out[m + 8 + i] = @intCast(u8, (0x50 + i) & 0xFF);
+    store16be(out, m + 2, ipv4Checksum(out[m..total]));
+    return out[0..total];
+}
+
+fn processDnsAnswer(s: *TcpipStack, payload: []const u8) void {
+    var ip: u32 = 0;
+    const r = parseDnsAnswer(payload, s.dns_query_id, &ip);
+    if (r == DnsParse.ok) {
+        s.dns_result_ip = ip;
+        s.dns_state = DnsState.done;
+    } else if (r == DnsParse.failed) {
+        s.dns_state = DnsState.failed;
+    }
+}
+
+fn processUdp(s: *TcpipStack, src_ip: u32, udp: []const u8) !void {
+    if (udp.len < UDP_HDR_LEN) return error.Corrupt;
+    const ulen: usize = @intCast(usize, load16be(udp, 4));
+    if (ulen < UDP_HDR_LEN or ulen > udp.len) return error.Corrupt;
+
+    const seg = udp[0..ulen];
+    if (!udpChecksumValid(src_ip, s.cfg.ip, seg)) return error.Corrupt;
+
+    const src_port = load16be(seg, 0);
+    const dst_port = load16be(seg, 2);
+    const payload = seg[UDP_HDR_LEN..];
+
+    if (dst_port == DNS_LOCAL_PORT and src_ip == s.cfg.dns_server and src_port == DNS_SERVER_PORT and s.dns_state == .pending) {
+        processDnsAnswer(s, payload);
+        return;
+    }
+
+    var i: usize = 0;
+    while (i < s.udp_count) : (i += 1) {
+        const p = &s.udp_sockets[i];
+        if (!p.in_use or p.local_port != dst_port) continue;
+        var n = payload.len;
+        if (n > UDP_MAX_PAYLOAD) n = UDP_MAX_PAYLOAD;
+        var k: usize = 0;
+        while (k < n) : (k += 1) p.rx_buf[k] = payload[k];
+        p.rx_valid = true;
+        p.rx_ip = src_ip;
+        p.rx_port = src_port;
+        p.rx_len = n;
+        return;
+    }
+}
+
+fn processIcmp(s: *TcpipStack, now_ms: u64, icmp: []const u8) !void {
+    if (icmp.len < 8) return error.Corrupt;
+    if (foldChecksum(sumWords(icmp)) != 0xFFFF) return error.Corrupt;
+    if (icmp[0] != ICMP_ECHO_REPLY or icmp[1] != 0) return;
+
+    if (s.icmp_state != .pending) return;
+    if (load16be(icmp, 4) != ICMP_ID) return;
+    if (load16be(icmp, 6) != s.icmp_seq) return;
+
+    var rtt: u32 = 0;
+    if (now_ms >= s.icmp_last_sent_ms) {
+        const d = now_ms - s.icmp_last_sent_ms;
+        if (d > 0xFFFFFFFF) {
+            rtt = 0xFFFFFFFF;
+        } else {
+            rtt = @intCast(u32, d);
+        }
+    }
+    s.icmp_rtt = rtt;
+    s.icmp_state = .done;
+}
+
+fn serveUdp(s: *TcpipStack, now_ms: u64, out: []u8) !?[]const u8 {
+    _ = now_ms;
+    var i: usize = 0;
+    while (i < s.udp_count) : (i += 1) {
+        const p = &s.udp_sockets[i];
+        if (!p.in_use or !p.tx_pending) continue;
+        const pkt = try buildUdpPacket(s, out, p.tx_ip, p.tx_port, p.local_port, p.tx_buf[0..p.tx_len]);
+        p.tx_pending = false;
+        return pkt;
+    }
+    return null;
+}
+
+fn serveDns(s: *TcpipStack, now_ms: u64, out: []u8) !?[]const u8 {
+    if (s.dns_state != .pending) return null;
+
+    if (!s.dns_sent) {
+        const pkt = try buildUdpPacket(s, out, s.cfg.dns_server, DNS_SERVER_PORT, DNS_LOCAL_PORT, s.dns_query[0..s.dns_query_len]);
+        s.dns_sent = true;
+        s.dns_tries = 1;
+        s.dns_next_ms = now_ms + DNS_RETRY_MS;
+        return pkt;
+    }
+
+    if (now_ms >= s.dns_next_ms) {
+        if (s.dns_tries >= DNS_MAX_TRIES) {
+            s.dns_state = .failed;
+            return null;
+        }
+        const pkt = try buildUdpPacket(s, out, s.cfg.dns_server, DNS_SERVER_PORT, DNS_LOCAL_PORT, s.dns_query[0..s.dns_query_len]);
+        s.dns_tries += 1;
+        s.dns_next_ms = now_ms + DNS_RETRY_MS;
+        return pkt;
+    }
+    return null;
+}
+
+fn serveIcmp(s: *TcpipStack, now_ms: u64, out: []u8) !?[]const u8 {
+    if (s.icmp_state != .pending) return null;
+
+    if (!s.icmp_sent) {
+        const pkt = try buildIcmpPacket(s, out, s.icmp_seq);
+        s.icmp_sent = true;
+        s.icmp_tries = 1;
+        s.icmp_last_sent_ms = now_ms;
+        s.icmp_next_ms = now_ms + ICMP_RETRY_MS;
+        return pkt;
+    }
+
+    if (now_ms >= s.icmp_next_ms) {
+        if (s.icmp_tries >= ICMP_MAX_TRIES) {
+            s.icmp_state = .failed;
+            return null;
+        }
+        const pkt = try buildIcmpPacket(s, out, s.icmp_seq);
+        s.icmp_tries += 1;
+        s.icmp_last_sent_ms = now_ms;
+        s.icmp_next_ms = now_ms + ICMP_RETRY_MS;
+        return pkt;
+    }
+    return null;
+}
+
+pub fn udpOpen(s: *TcpipStack, local_port: u16) !u32 {
+    var i: usize = 0;
+    while (i < s.udp_count) : (i += 1) {
+        if (!s.udp_sockets[i].in_use) {
+            const p = &s.udp_sockets[i];
+            zeroUdp(p);
+            p.in_use = true;
+            p.id = s.next_id;
+            s.next_id +%= 1;
+            if (s.next_id == 0) s.next_id = 1;
+            p.local_ip = s.cfg.ip;
+            if (local_port == 0) {
+                p.local_port = @intCast(u16, (49152 + @intCast(u32, i)) & 0xFFFF);
+            } else {
+                p.local_port = local_port;
+            }
+            return p.id;
+        }
+    }
+    return error.OutOfMemory;
+}
+
+pub fn udpSendTo(s: *TcpipStack, sock: u32, ip: u32, port: u16, data: []const u8) !void {
+    const p = getUdp(s, sock) orelse return error.Closed;
+    if (!routeOk(s, ip)) return error.NoRoute;
+    if (data.len > UDP_MAX_PAYLOAD) return error.OutputTooSmall;
+    if (IP_HDR_LEN + UDP_HDR_LEN + data.len > @intCast(usize, s.cfg.mtu)) return error.OutputTooSmall;
+    if (p.tx_pending) return error.OutputTooSmall;
+
+    var i: usize = 0;
+    while (i < data.len) : (i += 1) p.tx_buf[i] = data[i];
+    p.tx_len = data.len;
+    p.tx_ip = ip;
+    p.tx_port = port;
+    p.tx_pending = true;
+}
+
+pub fn udpRecvFrom(s: *TcpipStack, sock: u32, out: []u8, ip: *u32, port: *u16) !usize {
+    const p = getUdp(s, sock) orelse return error.Closed;
+    if (!p.rx_valid) {
+        ip.* = 0;
+        port.* = 0;
+        return 0;
+    }
+
+    var n = p.rx_len;
+    if (n > out.len) n = out.len;
+    var i: usize = 0;
+    while (i < n) : (i += 1) out[i] = p.rx_buf[i];
+    p.rx_valid = false;
+    ip.* = p.rx_ip;
+    port.* = p.rx_port;
+    return n;
+}
+
+fn dnsSkipName(msg: []const u8, off: *usize) bool {
+    var p = off.*;
+    while (true) {
+        if (p >= msg.len) return false;
+        const b = msg[p];
+        if ((b & 0xC0) == 0xC0) {
+            if (p + 1 >= msg.len) return false;
+            const ptr = (@intCast(usize, b & 0x3F) << 8) | @intCast(usize, msg[p + 1]);
+            if (ptr >= p or ptr >= msg.len) return false;
+            off.* = p + 2;
+            return true;
+        }
+        if ((b & 0xC0) != 0) return false;
+        const l = @intCast(usize, b);
+        p += 1;
+        if (l == 0) {
+            off.* = p;
+            return true;
+        }
+        if (p + l > msg.len) return false;
+        p += l;
+    }
+    return false;
+}
+
+const DnsParse = enum { ignored, ok, failed };
+
+fn parseDnsAnswer(msg: []const u8, expect_id: u16, out_ip: *u32) DnsParse {
+    if (msg.len < 12) return .failed;
+    if (load16be(msg, 0) != expect_id) return .ignored;
+
+    const flags = load16be(msg, 2);
+    if ((flags & 0x8000) == 0) return .ignored;
+    if ((flags & 0x000F) != 0) return .failed;
+
+    const qd = load16be(msg, 4);
+    const an = load16be(msg, 6);
+    if (qd != 1) return .failed;
+
+    var off: usize = 12;
+    if (!dnsSkipName(msg, &off)) return .failed;
+    if (off + 4 > msg.len) return .failed;
+    if (load16be(msg, off) != 1) return .failed;
+    if (load16be(msg, off + 2) != 1) return .failed;
+    off += 4;
+
+    if (an == 0) return .failed;
+
+    var found = false;
+    var i: u32 = 0;
+    while (i < an and i < DNS_MAX_ANSWERS) : (i += 1) {
+        if (!dnsSkipName(msg, &off)) return .failed;
+        if (off + 10 > msg.len) return .failed;
+        const atype = load16be(msg, off);
+        const aclass = load16be(msg, off + 2);
+        const rdlen: usize = @intCast(usize, load16be(msg, off + 8));
+        off += 10;
+        if (off + rdlen > msg.len) return .failed;
+        if (atype == 1 and aclass == 1 and rdlen == 4) {
+            if (!found) {
+                out_ip.* = load32be(msg, off);
+                found = true;
+            }
+        }
+        off += rdlen;
+    }
+
+    if (!found) return .failed;
+    return .ok;
+}
+
+fn dnsBuildQuery(s: *TcpipStack, name: []const u8) !void {
+    var n: usize = 12;
+    var wire: usize = 0;
+    var i: usize = 0;
+    while (i < name.len) {
+        var j = i;
+        while (j < name.len and name[j] != '.') j += 1;
+        const l = j - i;
+        if (l == 0) {
+            if (j == name.len) break;
+            return error.DnsFailed;
+        }
+        if (l > 63) return error.DnsFailed;
+        if (n + 1 + l + 1 + 4 > DNS_QUERY_CAP) return error.DnsFailed;
+        if (wire + 1 + l + 1 > DNS_NAME_MAX) return error.DnsFailed;
+        s.dns_query[n] = @intCast(u8, l);
+        n += 1;
+        var k: usize = 0;
+        while (k < l) : (k += 1) s.dns_query[n + k] = name[i + k];
+        n += l;
+        wire += 1 + l;
+        i = j;
+        if (i < name.len and name[i] == '.') i += 1;
+        if (i == name.len) break;
+    }
+    if (n == 12) return error.DnsFailed;
+
+    s.dns_query[n] = 0;
+    n += 1;
+    store16be(s.dns_query[0..], n, 1);
+    store16be(s.dns_query[0..], n + 2, 1);
+    n += 4;
+
+    s.dns_id +%= 1;
+    if (s.dns_id == 0) s.dns_id = 1;
+    const id = s.dns_id;
+    store16be(s.dns_query[0..], 0, id);
+    store16be(s.dns_query[0..], 2, 0x0100);
+    store16be(s.dns_query[0..], 4, 1);
+    store16be(s.dns_query[0..], 6, 0);
+    store16be(s.dns_query[0..], 8, 0);
+    store16be(s.dns_query[0..], 10, 0);
+
+    s.dns_query_id = id;
+    s.dns_query_len = n;
+    s.dns_result_ip = 0;
+}
+
+pub fn dnsResolve(s: *TcpipStack, name: []const u8, out_ip: *u32) !void {
+    if (s.dns_state == .done) {
+        out_ip.* = s.dns_result_ip;
+        s.dns_state = .idle;
+        return;
+    }
+    if (s.dns_state == .failed) {
+        s.dns_state = .idle;
+        return error.DnsFailed;
+    }
+    if (s.dns_state == .pending) return error.Timeout;
+    if (!routeOk(s, s.cfg.dns_server)) return error.NoRoute;
+
+    try dnsBuildQuery(s, name);
+    s.dns_state = .pending;
+    s.dns_sent = false;
+    s.dns_tries = 0;
+    s.dns_next_ms = 0;
+    return error.Timeout;
+}
+
+pub fn icmpPing(s: *TcpipStack, ip: u32, now_ms: u64) !u32 {
+    if (s.icmp_state == .done) {
+        const rtt = s.icmp_rtt;
+        s.icmp_state = .idle;
+        return rtt;
+    }
+    if (s.icmp_state == .failed) {
+        s.icmp_state = .idle;
+        return error.Timeout;
+    }
+    if (s.icmp_state == .pending) return error.Timeout;
+    if (!routeOk(s, ip)) return error.NoRoute;
+
+    s.icmp_ip = ip;
+    s.icmp_seq +%= 1;
+    if (s.icmp_seq == 0) s.icmp_seq = 1;
+    s.icmp_state = .pending;
+    s.icmp_sent = false;
+    s.icmp_tries = 0;
+    s.icmp_last_sent_ms = now_ms;
+    s.icmp_next_ms = now_ms;
+    s.icmp_rtt = 0;
+    return error.Timeout;
 }
