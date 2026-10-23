@@ -50,8 +50,9 @@ browser-grade TLS 1.2/1.3 client (`std_tls` over `std_crypto`/`std_cipher`/
 (`std_wireguard`), and the client-only userspace IPv4/TCP/UDP/DNS/ICMP stack
 (`std_tcpip`). On Linux the closeout tiers run real HTTPS and a MUD session
 through a real Linux kernel WireGuard tunnel; the `-osw` builds are
-emission/import-gated (not executed), and only `tier_wireguard` additionally
-runs the demo under Wine. Measured RAM/CPU tables are in the two demo READMEs.
+emission/import-gated and are **not executed by `tier_tls`**. `tier_wireguard`
+additionally executes its demo under Wine, while `tls_demo/README.md` documents
+a manual Wine run. Measured RAM/CPU tables are in the two demo READMEs.
 
 ## Key Features
 **Language-wins builtins & semantics** (the zig1 feature set):
