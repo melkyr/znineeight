@@ -219,3 +219,76 @@ changed.
 - A real re-initiation while a handshake is pending chooses a fresh unique
   index (T1 rule); the cookie fixture abandons the old pending handshake first
   so it stays byte-exact against the ref capture.
+
+## 11. Fix round — rekey continuity (base `a4c06008`)
+
+Operator ruling: option 1, dual current/pending session state. Fixes in
+`sf/src/std_wireguard.zig`:
+
+- Added `pending_local_index`; `hs_valid`/`hs_initiator` plus pending
+  ephemeral/hash/chaining key/mac1 now describe an in-flight initiation.
+- `wgCreateInitiation` writes only pending state. It no longer changes active
+  `local_index`, `remote_index`, `tx_key`, `rx_key`, `sending_counter`, or the
+  replay window.
+- `nextIndex` avoids both the active local index and the pending index.
+- `wgSend` continues to use the active session while a rekey is pending.
+- `wgReceive` matches type 2/CookieReply by `pending_local_index`; type 4
+  transport still matches the active `local_index`.
+- `wgProcessResponse` verifies the pending receiver index, derives into
+  locals, then installs pending local/remote indices and tx/rx keys
+  atomically, clears pending, resets `sending_counter`, and clears replay.
+- Removed duplicate `WG_AUTHTAG_LEN`; updated the stale top-of-file comment.
+
+Fixture addition (`stdlib_wg_transport_xmod`, rekey continuity):
+- At 120 s `wgTick` returns `send_handshake` with a deterministic pending
+  initiation (ref seed `1229782938247303444`, same wall time).
+- Active local/remote indices, tx/rx keys, and `sending_counter` stay
+  unchanged after the pending initiation.
+- `wgSend` still emits the expected active-session packet (old key, old remote
+  index, counter 7) and advances only the active counter.
+- An old inbound transport (old rx key, old receiver index, counter 11) is
+  accepted while rekey is pending.
+- The canned response returns `session_up` and installs the pending local
+  index, responder index, new tx/rx keys; counter/replay reset.
+- Subsequent send is byte-exact under the new tx key/index/counter 0, and a
+  transport under the new rx key/index is accepted.
+
+Observed:
+
+```text
+$ bash scripts/stdlib/run_fixtures.sh /tmp/m2_t4_v114_build/zig1_5_clean \
+    repro/mi_matrix/stdlib_wg_handshake_xmod \
+    repro/mi_matrix/stdlib_wg_transport_xmod \
+    repro/mi_matrix/stdlib_wireguard_cross_xmod
+PASS repro/mi_matrix/stdlib_wg_handshake_xmod
+PASS repro/mi_matrix/stdlib_wg_transport_xmod
+PASS repro/mi_matrix/stdlib_wireguard_cross_xmod
+run_fixtures: 3 PASS / 0 FAIL over 3 dirs
+RC=0
+```
+
+3× fixture and crosscheck:
+
+```text
+run1 rc=0 / run2 rc=0 / run3 rc=0
+cross1 rc=0 / cross2 rc=0 / cross3 rc=0
+PASS std_wireguard (3 vectors)
+```
+
+`-osw`:
+
+```text
+OSW_DUMP_RC=0
+ERR_BRK=0  PANIC=0  C_FILES=11
+MINGW_BUILD_RC=0
+wireguard transport ok
+WINE_RC=0
+```
+
+Fix-round concern: the rekey fixture seed is written as decimal
+`1229782938247303444`, not its hex form, because the current compiler
+mis-handles that >2^60 `u64` hex literal (captured initiation diverged from
+the ref until the seed was decimal). No compiler fix was attempted here.
+
+No ref/vector changes were needed for the rekey test; `transport.in`/`.expected`
+and `cookie.in`/`.expected` are unchanged.
