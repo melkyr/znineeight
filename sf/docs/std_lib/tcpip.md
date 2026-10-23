@@ -92,11 +92,11 @@ pub fn main() !void {
 | Local MSS | `cfg.mtu - 40` (20-byte IPv4 + 20-byte TCP); floored at 1 |
 | Effective MSS | `min(peer-advertised MSS, local MSS)`; local MSS when the peer advertises none |
 | SYN option | MSS option emitted on the initial SYN only |
-| Receive window | Fixed 8 KiB (`TCP_RECV_WINDOW = 8192`), advertised on every segment |
+| Receive window | 8 KiB minus outstanding unread bytes (`recvWindow`), advertised on every segment |
 | Window scaling / SACK | None |
 | Initial cwnd | One MSS |
 | Initial `ssthresh` | 65535 |
-| Congestion control | Slow start while `cwnd < ssthresh`, then additive increase (`mss*mss/cwnd` per ACK); RTO halves `ssthresh` (floor `2*mss`) and restarts slow start |
+| Congestion control | Slow start while `cwnd < ssthresh`, then additive increase (`mss*mss/cwnd` per ACK); RTO sets `ssthresh = cwnd/2` (floor `2*mss`) and restarts slow start |
 | RTT / Karn | No RTT samples are taken; retransmitted segments can never bias an RTT estimate (simplified Karn) |
 | RTO | Fixed 1 s (`TCP_RTO_MS = 1000`) |
 | Retry caps | SYN: 8 retries; data/FIN: 12 retries, then `.failed` |
@@ -121,7 +121,8 @@ signatures carry no receive argument:
 2. The driver calls `tcpipPoll` with the current monotonic `now_ms`. The poll
    emits the request, retransmits on a fixed 1 s cadence (3 attempts total), and
    parses the reply. It returns `.done` when the request reaches a terminal
-   state.
+   state, and also when the stack has no live sockets or pending requests
+   (idle).
 3. After `.done`, call the same helper again. `dnsResolve` returns the IPv4 A
    record; a terminal failure returns `error.DnsFailed`. `icmpPing` returns the
    RTT in milliseconds; a terminal failure returns `error.Timeout`.
@@ -229,7 +230,8 @@ still surface through the action union.
 - `data` — socket id with buffered receive data (`tcpRecv`).
 - `closed` — socket id whose FIN exchange completed.
 - `failed` — socket id that was reset or exhausted retries.
-- `done` — a DNS/ICMP request reached a terminal state; call the helper again.
+- `done` — a DNS/ICMP request reached a terminal state (call the helper
+  again), or the stack is idle: no live socket and no pending request.
 
 **Returns** — A tagged action value.
 
@@ -243,7 +245,8 @@ if (act == .send_pkt) send_to_peer(act.send_pkt);
 
 **Gotchas** — `send_pkt` aliases the caller's `out`; copy it before the next
 call if the driver needs to keep it. `done` does not identify which request
-completed, so do not overlap a DNS and ICMP request in one driver.
+completed (and is also the idle result), so do not overlap a DNS and ICMP
+request in one driver.
 
 ### TCP_MSS / TCP_RECV_WINDOW / TCP_RTO_MS
 
@@ -367,8 +370,8 @@ zero. Also used for the ICMP header.
 - `header` — bytes to sum; for IPv4 pass exactly the 20-byte header with the
   checksum field zeroed.
 
-**Returns** — The checksum in host byte order; an odd trailing byte is padded
-with a zero high byte.
+**Returns** — The checksum in host byte order; an odd trailing byte is shifted
+into the high byte (`data[i] << 8`), with a zero low pad byte.
 
 **Errors** — none.
 
@@ -498,7 +501,7 @@ same FIN sequence.
 ### tcpipPoll
 
 **Purpose** — Advances the stack by one step: consume one received datagram,
-emit one datagram, deliver one socket event, or report a wait/terminal state.
+emit one datagram, deliver one socket event, or report a wait or idle state.
 
 **When to use** — Every driver loop iteration, with the current monotonic
 milliseconds.
@@ -514,11 +517,12 @@ milliseconds.
 
 **Returns** — One `TcpipAction`. The order is: process `rx_ip`; serve TCP sends
 (slot order); serve UDP, DNS, then ICMP sends; serve socket events; return
-`.done` for a terminal DNS/ICMP state; otherwise a `wait` (at most 1000 ms).
+`.done` for a terminal DNS/ICMP state or when the stack is idle; otherwise a
+`wait` (at most 1000 ms).
 
 **Errors** — `error.Corrupt` for a malformed received datagram;
-`error.OutputTooSmall` if a datagram cannot fit `out`/`cfg.mtu`;
-`error.OutOfMemory` from socket allocation paths.
+`error.OutputTooSmall` if a datagram cannot fit `out`/`cfg.mtu`. The poll does
+not allocate, so it cannot return `error.OutOfMemory`.
 
 **Example**
 ```zig
@@ -632,8 +636,7 @@ and on the starting call.
 
 **Errors** — `error.NoRoute` if the DNS server is unroutable;
 `error.DnsFailed` for a malformed name or terminal resolver failure;
-`error.Timeout` while pending; `error.OutputTooSmall` from the query/transport
-path.
+`error.Timeout` while pending.
 
 **Example**
 ```zig
@@ -659,7 +662,8 @@ ID and local port are deterministic; retries reuse the identical payload/ID.
 **Parameters**
 - `s` — live stack.
 - `ip` — echo destination.
-- `now_ms` — monotonic time used only to timestamp the first send.
+- `now_ms` — monotonic time used to timestamp each send; the returned RTT is
+  measured from the last retry send.
 
 **Returns** — RTT in milliseconds on the final call; `error.Timeout` while
 pending or on terminal failure.
@@ -690,7 +694,7 @@ or per-connection heap allocation. Measured on the 32-bit seed compiler:
 | Record | Bytes |
 |---|---:|
 | `TcpipStack` (fixed state, including the 512-byte DNS query buffer) | 648 |
-| `TcpSock` (16 KiB send + 8 KiB receive ring + 8 KiB sequence + 8 KiB validity + fields) | 65648 |
+| `TcpSock` (16 KiB send + 8 KiB receive ring + 32 KiB sequence + 8 KiB validity + fields) | 65648 |
 | `UdpSock` (one 1472-byte RX + one 1472-byte TX buffer + fields) | 2988 |
 
 `tcpipInit` therefore reserves:

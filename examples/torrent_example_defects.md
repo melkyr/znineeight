@@ -306,6 +306,23 @@ The "Reproducer" / "Impact" paragraphs above are the historical record at intake
 were fixed during the phase; one demo workaround is retained for an open
 emitter shape. No compiler source was changed at closeout.
 
+**Phase 1 STOP cross-reference (historical, not renumbered).** The earlier
+Phase 1 STOP items are covered here rather than as new entries:
+
+- **M2 const-rodata STOP-1** — a non-first-member union const initializer is
+  not representable as a single C89 constant initializer, so the specified
+  `.bss` + field-store fallback was kept. Zero occurrences in the M2 corpus
+  trees; the decision and evidence are in
+  `.superpowers/sdd/2026-10-21-phase1-m2-crypto-core-plan/task-1c-i-report.md`
+  §7 (STOP-1). Documented behavior, not a shipped defect. The companion
+  **STOP-2** (plan fixed-point anchor vs compiler-fix seed rotation) was
+  resolved by the M2 v113→v114 rotations recorded in the seed CHANGELOG.
+- **M4 demo STOPs** — `tls_demo`'s Winsock lifetime and clock-overflow handling
+  were fixed inside Phase 1 M4 (`e9c039df` `fix(demo): tls_demo Winsock
+  lifetime + clock overflow (Phase1 M4)`). The tier pins both: the Wine local
+  fetch exercises the Winsock lifetime and an overflowing clock override must
+  return `tls: BadArgs` (never trap under `-fsafe`).
+
 **D7.1 — RSA-PSS top mask overflowed under `-fsafe` (std_crypto).** Status:
 FIXED (`27722aea` `fix(std_crypto): safe PSS topmask under -fsafe`,
 Phase 1 M2 fix round). `pssCheck` shifted a `u8` mask by `8 - unused`, which
