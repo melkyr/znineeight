@@ -39,7 +39,7 @@ const TXMAX_HEX = "04000000d4c3b2a1fedfffffffffffff0fde66cda55701a5e7adac8d8e9f3
 const OLD_TX_HEX = "1e30248f17e1a28a0eaaf896edf32830d0167347942393c15018c9585912bca6";
 const OLD_RX_HEX = "b5eba4b4c280d30d0033299eda36840bc75e96dcfb842ed0e4f49cd3b6baa370";
 
-// Pending rekey initiation with seed 0x1111222233334444 at the same wall
+// Pending rekey initiation with seed 0x1111111111111114 at the same wall
 // time, and the responder's canned response/keys (ref seed wall capture).
 const REKEY_SEED: u64 = 1229782938247303444;
 const REKEY_INIT_HEX = "010000007b9fea413691b44c69fab740e72d9838a0ae577c0175f2d12ee8958795413c8fbf153e6c1d30888a7125342be839cb17712bdd013e37a8c52e66eaedabe7d6697a0e53ac5f56427d24173713fcbe97e6c80b0f86579865bbbd6120c1139963a995760ce583ea78face3b2cebe0a926057df6204b8b8dd9c8899d4cd4391f4dae00000000000000000000000000000000";
@@ -406,6 +406,21 @@ pub fn main() void {
         old_tx[ri] = dev_rk.peers[0].tx_key[ri];
         old_rx[ri] = dev_rk.peers[0].rx_key[ri];
     }
+
+    // Seed the active replay window with old-session counter 11. The pending
+    // rekey initiation must leave this state untouched.
+    n = makeTransport(&old_rx, old_local, 11, inner[0..], pkt[0..]);
+    act = wg.wgReceive(&dev_rk, wg.WG_REKEY_AFTER_TIME_MS, pkt[0..n], plain[0..]) catch @panic("rekey replay seed");
+    switch (act) {
+        .inner_packet => {},
+        else => ck(false, "rekey replay seed accepted"),
+    }
+    ck(dev_rk.peers[0].replay_valid, "replay seeded valid");
+    ck(dev_rk.peers[0].replay_counter == 11, "replay seeded counter");
+    var replay_before: [32]u64 = undefined;
+    var rb: usize = 0;
+    while (rb < 32) : (rb += 1) replay_before[rb] = dev_rk.peers[0].replay_bitmap[rb];
+
     dev_rk.peers[0].sending_counter = 7;
     dev_rk.peers[0].session_created_ms = 0;
     dev_rk.peers[0].last_tx_ms = wg.WG_REKEY_AFTER_TIME_MS;
@@ -427,6 +442,12 @@ pub fn main() void {
     ckHex(dev_rk.peers[0].tx_key[0..], OLD_TX_HEX, "active tx key preserved");
     ckHex(dev_rk.peers[0].rx_key[0..], OLD_RX_HEX, "active rx key preserved");
     ck(dev_rk.peers[0].sending_counter == 7, "active counter preserved");
+    ck(dev_rk.peers[0].replay_valid, "replay valid preserved across pending");
+    ck(dev_rk.peers[0].replay_counter == 11, "replay counter preserved across pending");
+    rb = 0;
+    while (rb < 32) : (rb += 1) {
+        ck(dev_rk.peers[0].replay_bitmap[rb] == replay_before[rb], "replay bitmap preserved across pending");
+    }
 
     n = wg.wgSend(&dev_rk, wg.WG_REKEY_AFTER_TIME_MS, 0, inner[0..], out[0..]) catch @panic("rekey active send");
     var want_pkt: [wg.WG_TRANSPORT_HDR_LEN + 2048 + wg.WG_AUTHTAG_LEN]u8 = undefined;
@@ -437,11 +458,20 @@ pub fn main() void {
     ck(dev_rk.peers[0].local_index == old_local, "active index after send");
 
     n = makeTransport(&old_rx, old_local, 11, inner[0..], pkt[0..]);
+    act = wg.wgReceive(&dev_rk, wg.WG_REKEY_AFTER_TIME_MS, pkt[0..n], plain[0..]) catch @panic("rekey old duplicate");
+    switch (act) {
+        .dropped_replay => {},
+        else => ck(false, "old-session duplicate dropped during rekey"),
+    }
+    ck(dev_rk.peers[0].replay_counter == 11, "old replay counter after duplicate");
+
+    n = makeTransport(&old_rx, old_local, 12, inner[0..], pkt[0..]);
     act = wg.wgReceive(&dev_rk, wg.WG_REKEY_AFTER_TIME_MS, pkt[0..n], plain[0..]) catch @panic("rekey old inbound");
     switch (act) {
         .inner_packet => {},
         else => ck(false, "old inbound accepted during rekey"),
     }
+    ck(dev_rk.peers[0].replay_counter == 12, "old replay advances during rekey");
     ck(dev_rk.peers[0].local_index == old_local, "active index after old inbound");
     ck(dev_rk.peers[0].rx_key[0] == old_rx[0], "active rx after old inbound");
 

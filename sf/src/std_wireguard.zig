@@ -112,11 +112,11 @@ pub const WgPeer = struct {
     last_mac1: [WG_MAC_LEN]u8,
     has_mac1: bool,
 
-    // Cookie received in a CookieReply (Task 2 consumes the reply).
+    // Cookie received in a CookieReply; consumed by wgReceive.
     cookie: [WG_MAC_LEN]u8,
     cookie_valid: bool,
 
-    // Derived transport keys (Task 2 encrypts/decrypts with these).
+    // Derived transport keys used by wgSend/wgReceive.
     tx_key: WgKey,
     rx_key: WgKey,
     session_valid: bool,
