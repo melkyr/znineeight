@@ -318,6 +318,8 @@ repro/mi_matrix/stdlib_tls13_fallback_xmod
 repro/mi_matrix/stdlib_tls13_handshake_xmod
 repro/mi_matrix/stdlib_tls_record_xmod
 repro/mi_matrix/stdlib_tuple_model_ok_xmod
+repro/mi_matrix/stdlib_wg_handshake_xmod
+repro/mi_matrix/stdlib_wireguard_cross_xmod
 repro/mi_matrix/stdlib_x25519_xmod
 repro/mi_matrix/stdlib_x509_parse_xmod
 repro/mi_matrix/stdlib_x509_verify_xmod
