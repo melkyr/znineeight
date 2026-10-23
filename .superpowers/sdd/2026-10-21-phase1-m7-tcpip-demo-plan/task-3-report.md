@@ -228,3 +228,69 @@ TIER_WIREGUARD PASS
 
 The resource byte pin uses the exact `expected.txt` length (100 bytes for the
 CRLF banner + reply); every case's `bytes=N` must equal it.
+
+## Final-review fix — config failure propagation + DNS source negative
+
+Base: `0d9d3874` (current tree also carries the M7 complete ledger `e8f171fe`).
+
+- **Tier config-failure propagation.** After the four `check_config_exit` calls
+  the outer stage now checks `FAILS` and exits nonzero with
+  `TIER_WIREGUARD FAIL` before `unshare`. A config regression can no longer be
+  masked by the inner 5/5 integration summary. The outer pass/fail/skip counts
+  are also carried into the inner summary, so the final summary reflects all
+  pre-netns and in-netns cases (13 passed in the green runs).
+- **DNS wrong-source negative.** Added `testSource` to
+  `repro/mi_matrix/stdlib_tcpip_dns_xmod/main.zig`: a valid A answer from the
+  wrong source IP is ignored, then a valid answer from the configured server on
+  the wrong source port is ignored; the pending request stays pending and
+  returns no wrong IP, and the real `DNS:53` answer still completes with the
+  expected address.
+- **README truth-ups.** The tier runs once per invocation (the report ran the
+  whole tier twice); the second Linux resource line is validated and only
+  excluded from the determinism comparison; Win9x socket failures are
+  `wg: SocketFailed`.
+- **D7.3 cross-reference.** Replaced the incorrect D1/D2 "lvalue/address-of
+  lowering" comparison: D7.3 is an emitter lvalue/temporary-materialisation
+  defect in nested aggregate field indexing, explicitly a distinct family from
+  D1 (optional-of-aggregate identity/ordering) and D2 (dead-arm reachability).
+- **Spec §5.8 truth-up.** `tcpipPoll` `.done` now also covers the idle state
+  (no live socket and no pending request), matching `std_tcpip` and
+  `sf/docs/std_lib/tcpip.md`.
+
+Targeted DNS/TCP fixtures 3× (v119 compiler):
+
+```
+=== run 1 ===
+PASS repro/mi_matrix/stdlib_tcpip_dns_xmod
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 2 PASS / 0 FAIL over 2 dirs
+=== run 2 ===
+PASS repro/mi_matrix/stdlib_tcpip_dns_xmod
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 2 PASS / 0 FAIL over 2 dirs
+=== run 3 ===
+PASS repro/mi_matrix/stdlib_tcpip_dns_xmod
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 2 PASS / 0 FAIL over 2 dirs
+```
+
+Tier 2× after the fix (v119 compiler, portable tools):
+
+```
+run 1: 13 passed, 0 failed, 0 skipped; TIER_WIREGUARD PASS
+  linux DNS bytes=100 rss_peak=2600 cpu_ms=70
+  wine -osw bytes=100 rss_peak=6808 cpu_ms=440
+  RAM peak_rss_kb=2428
+run 2: 13 passed, 0 failed, 0 skipped; TIER_WIREGUARD PASS
+  linux DNS bytes=100 rss_peak=2536 cpu_ms=70
+  wine -osw bytes=100 rss_peak=6876 cpu_ms=450
+  RAM peak_rss_kb=2364
+```
+
+Scope: product `sf/src` unchanged; no seed/compiler changes. Commits below.
+
+Final-review commits:
+
+- `afc87e59` `test(tier): propagate config failures + DNS source negative (Phase1 M7)`
+- `7748696f` `docs(std_lib): M7 final-review truth-ups`
+- This report: `docs(sdd): M7 final-review fix` (this commit)
