@@ -56,9 +56,9 @@
 - Modify: `scripts/stdlib/expected_dirs.txt`
 
 **Interfaces:**
-- Produces: `udpOpen`/`udpSendTo`/`udpRecvFrom`; `dnsResolve(name, out_ip) !void` and `icmpPing(ip, now_ms) !u32` as pump-driven requests: pending returns `error.Timeout`, `tcpipPoll` returns `.done` on terminal state, then the final call returns IP/RTT or `DnsFailed`/terminal `error.Timeout`. Validate DNS ID/source/QNAME and ICMP source IP.
+- Produces: `udpOpen`/`udpSendTo`/`udpRecvFrom`; `dnsResolve(name, out_ip) !void` and `icmpPing(ip, now_ms) !u32` as pump-driven requests: pending returns `error.Timeout`, `tcpipPoll` returns `.done` on terminal state, then the final call returns IP/RTT or `DnsFailed`/terminal `error.Timeout`. Validate DNS ID/source/QNAME and ICMP source IP; CNAME chains are not followed (`DnsFailed`).
 
-- [ ] **Step 1:** Failing fixtures: UDP round-trip synthetic; DNS request/response byte-exact query + parsed A record (v4-mapped answer), malformed answers → `DnsFailed`, QNAME mismatch → `DnsFailed`, timeout+retry counts; ICMP echo reply parse → RTT, wrong-source reply ignored, pending → terminal `.done` distinction (success RTT, failure `error.Timeout`).
+- [ ] **Step 1:** Failing fixtures: UDP round-trip synthetic; DNS request/response byte-exact query + parsed A record (v4-mapped answer), malformed answers → `DnsFailed`, QNAME mismatch → `DnsFailed`, CNAME-only answer → `DnsFailed`, timeout+retry counts; ICMP echo reply parse → RTT, wrong-source reply ignored, pending → terminal `.done` distinction (success RTT, failure `error.Timeout`).
 - [ ] **Step 2:** Run — FAIL.
 - [ ] **Step 3:** Implement per §5.8.
 - [ ] **Step 4:** Run — PASS + targeted `std_tcpip` UDP/DNS/ICMP fixtures + affected `run_crosscheck.sh` modules + 3×. Full gate at Task 4 closeout.
