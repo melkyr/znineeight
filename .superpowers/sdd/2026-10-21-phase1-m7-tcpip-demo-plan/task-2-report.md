@@ -1,6 +1,6 @@
 # M7 Task 2 report — `std_tcpip` UDP + DNS + ICMP
 
-Status: COMPLETE — targeted UDP/DNS/TCP fixtures PASS (3×)
+Status: COMPLETE + FIX ROUND — targeted UDP/DNS/TCP fixtures PASS (3×)
 
 ## Environment
 
@@ -130,8 +130,44 @@ deferred to Task 4 closeout per brief.
 - No DNS/ICMP socket consumes public `max_sockets` slots (internal resolver
   state is in `TcpipStack`).
 
+## Fix round — completion contract + validation
+
+Base `a0e60a5a` (plan contract update), implementation `3abc2193`.
+
+- **ICMP source validation**: `processIcmp` now receives `src_ip` and accepts an
+  echo reply only when `src_ip == s.icmp_ip`, in addition to the existing
+  pending/ID/sequence checks.
+- **Completion contract**: `tcpipPoll` returns `.done` as soon as DNS or ICMP is
+  in terminal `done`/`failed`. Pending requests still make
+  `dnsResolve`/`icmpPing` return `error.Timeout`; the final call consumes the
+  terminal state and returns the IPv4 answer / RTT or `DnsFailed` / terminal
+  `error.Timeout`. A terminal ICMP failure is consumed without starting a new
+  probe (fixture asserts no echo is emitted on the following poll).
+- **DNS QNAME validation**: added case-insensitive, compression-aware
+  `dnsNameMatches`; the response question and answer owner names must match the
+  stored query QNAME. Mismatch -> `DnsFailed`. ID/source IP/port checks remain.
+- **Fixtures**: wrong-source ICMP ignored; wrong-ID while pending ignored;
+  pending vs terminal `.done` asserted for ICMP success and timeout; DNS QNAME
+  mismatch -> `DnsFailed`; case-insensitive QNAME accepted; DNS terminal
+  `.done` asserted for success and failures; no fresh DNS/ICMP request after
+  terminal consumption. TCP/MTU fixture unchanged and green.
+
+3× targeted gate after the fix (UDP/DNS/TCP):
+
+```
+PASS repro/mi_matrix/stdlib_tcpip_udp_xmod
+PASS repro/mi_matrix/stdlib_tcpip_dns_xmod
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 3 PASS / 0 FAIL over 3 dirs   (three separate runs)
+```
+
+Affected crosscheck: none (same rationale as above).
+
 ## Commits
 
 - Implementation + fixtures + pin:
   `3abc2193` `feat(std_tcpip): UDP + DNS + ICMP (Phase1 M7)`
-- This report: `docs(sdd): M7 T2 report` (this commit)
+- Initial report: `1c862bb9` `docs(sdd): M7 T2 report`
+- Fix round (completion + validation):
+  `78f4348c` `fix(std_tcpip): DNS/ICMP completion + validation (Phase1 M7)`
+- This report: `docs(sdd): M7 T2 fix round` (this commit)
