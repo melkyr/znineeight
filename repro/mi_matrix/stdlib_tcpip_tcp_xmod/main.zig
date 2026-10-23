@@ -16,11 +16,16 @@
 //     ACKed but not delivered twice
 //   - cfg.mtu=1400 -> local MSS 1360 split of a 5 KB tcpSend
 //     (1360/1360/1360/920), every emitted datagram <= 1400
+//   - cfg.mtu=600 -> local MSS 560, 2xMSS tcpSend splits 560/560 and every
+//     emitted datagram <= 600
+//   - initial cwnd == MSS: with 2xMSS buffered only one segment goes out
+//     before an ACK; the second is emitted after the ACK
 //   - peer-advertised MSS 1200 clamps outgoing segments
 //   - receive/send sequence + ACK wrap across 2^32
 //   - arena OOM at init and no-free-socket -> OutOfMemory
 //   - OutputTooSmall during FIN leaves the socket retryable
-//   - out-of-window FIN rejected, then a valid FIN -> closed
+//   - out-of-window FIN (boundary off == 8192) rejected, then a valid FIN ->
+//     closed
 //   - malformed IPv4 and TCP checksums -> error.Corrupt
 //
 // GREEN (contract): deterministic byte-exact stdout `tcpip tcp ok\n` (RUNRC=0).
@@ -33,11 +38,11 @@ const PEER_PORT: u16 = 80;
 const PEER_ISS: u32 = 0x50000000;
 
 const MAX_PKT: usize = 2048;
-const LOCAL_MTU: usize = 1400;
 const LOCAL_MSS: usize = 1360;
 
 var g_out: [MAX_PKT]u8 = undefined;
 var g_oom_buf: [262144]u8 = undefined;
+var g_mtu_buf: [262144]u8 = undefined;
 var g_pkt: [MAX_PKT]u8 = undefined;
 var g_pkt_len: usize = 0;
 var g_connected: i32 = -1;
@@ -182,10 +187,10 @@ fn pktSynMss(p: []const u8) u16 {
     return 0;
 }
 
-fn validatePkt(p: []const u8) void {
+fn validatePkt(p: []const u8, mtu: usize) void {
     ck(p.len >= 20, "min ip");
     ck((p[0] >> 4) == 4, "ip version");
-    ck(p.len <= LOCAL_MTU, "emitted datagram <= cfg.mtu");
+    ck(p.len <= mtu, "emitted datagram <= cfg.mtu");
     const ihl = ipHdrLen(p);
     ck(ihl == 20, "ihl 20");
     ck(ipTotal(p) == p.len, "ip total");
@@ -263,7 +268,7 @@ fn drive(s: *tcp.TcpipStack, now: u64, rx: ?[]const u8) usize {
                 var i: usize = 0;
                 while (i < pkt.len) : (i += 1) g_pkt[i] = pkt[i];
                 g_pkt_len = pkt.len;
-                validatePkt(g_pkt[0..g_pkt_len]);
+                validatePkt(g_pkt[0..g_pkt_len], @intCast(usize, s.cfg.mtu));
                 return g_pkt_len;
             },
             .wait => return 0,
@@ -310,7 +315,8 @@ fn doConnectFull(s: *tcp.TcpipStack, now: u64, peer_mss: u16, peer_iss: u32, cli
     ck(pktDstPort(g_pkt[0..n]) == PEER_PORT, "syn dst port");
     ck(load32(g_pkt[0..n], 16) == PEER, "syn dst ip");
     ck(pktPayload(g_pkt[0..n]).len == 0, "syn payload empty");
-    ck(pktSynMss(g_pkt[0..n]) == @intCast(u16, LOCAL_MSS), "syn advertises local MSS");
+    const want_mss: u16 = if (s.cfg.mtu <= 40) 1 else @intCast(u16, @intCast(usize, s.cfg.mtu) - 40);
+    ck(pktSynMss(g_pkt[0..n]) == want_mss, "syn advertises local MSS");
 
     const iss = pktSeq(g_pkt[0..n]);
     if (client_iss != 0) ck(iss == client_iss, "client iss override");
@@ -628,6 +634,98 @@ fn testPeerMss(s: *tcp.TcpipStack, now: u64) void {
     ck(g_failed == @intCast(i32, c.id), "peer mss cleanup rst");
 }
 
+fn testMtu600(now: u64) void {
+    var a = std.arena.init(g_mtu_buf[0..]);
+    var cfg = tcp.TcpipConfig{
+        .ip = LOCAL,
+        .netmask = 0xFFFFFF00,
+        .gateway = PEER,
+        .mtu = 600,
+        .dns_server = 0x0A000003,
+        .max_sockets = 1,
+    };
+    const s = tcp.tcpipInit(&a, &cfg) catch @panic("mtu600 init");
+    const c = doConnect(s, now); // SYN MSS option is asserted as mtu - 40 = 560
+
+    const si = slotOf(s, c.id);
+    ck(s.sockets[si].cwnd == 560, "mtu600 initial cwnd 560");
+
+    var data: [1120]u8 = undefined;
+    var i: usize = 0;
+    while (i < data.len) : (i += 1) data[i] = @intCast(u8, (i * 13 + 5) & 0xFF);
+    const sent = tcp.tcpSend(s, c.id, data[0..]) catch @panic("mtu600 send");
+    ck(sent == data.len, "mtu600 send accepted 2xMSS");
+
+    var pp: [MAX_PKT]u8 = undefined;
+    resetEvents();
+    var n = drive(s, now + 10, null);
+    ck(n > 0, "mtu600 first segment");
+    ck(n <= 600, "mtu600 datagram <= 600");
+    ck(pktPayload(g_pkt[0..n]).len == 560, "mtu600 first 560");
+    ck(pktSeq(g_pkt[0..n]) == c.iss +% 1, "mtu600 first seq");
+    eqBytes(pktPayload(g_pkt[0..n]), data[0..560], "mtu600 first bytes");
+    const first_seq = pktSeq(g_pkt[0..n]);
+
+    var m = ackPacket(pp[0..], c, PEER_ISS +% 1, first_seq +% 560);
+    resetEvents();
+    n = drive(s, now + 11, pp[0..m]);
+    ck(n > 0, "mtu600 second segment");
+    ck(n <= 600, "mtu600 second datagram <= 600");
+    ck(pktPayload(g_pkt[0..n]).len == 560, "mtu600 second 560");
+    ck(pktSeq(g_pkt[0..n]) == c.iss +% 1 +% 560, "mtu600 second seq");
+    eqBytes(pktPayload(g_pkt[0..n]), data[560..1120], "mtu600 second bytes");
+
+    m = ackPacket(pp[0..], c, PEER_ISS +% 1, c.iss +% 1 +% 1120);
+    resetEvents();
+    n = drive(s, now + 12, pp[0..m]);
+    ck(n == 0, "mtu600 acked clean");
+
+    const mr = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, PEER_ISS +% 1, c.iss +% 1 +% 1120, 0x04, "");
+    resetEvents();
+    _ = drive(s, now + 13, pp[0..mr]);
+    ck(g_failed == @intCast(i32, c.id), "mtu600 cleanup rst");
+}
+
+fn testCwnd(s: *tcp.TcpipStack, now: u64) void {
+    const c = doConnect(s, now);
+    const si = slotOf(s, c.id);
+    ck(s.sockets[si].cwnd == @intCast(u32, LOCAL_MSS), "initial cwnd == MSS");
+
+    const len: usize = 2 * LOCAL_MSS;
+    var data: [2 * LOCAL_MSS]u8 = undefined;
+    var i: usize = 0;
+    while (i < data.len) : (i += 1) data[i] = @intCast(u8, (i * 29 + 11) & 0xFF);
+    const sent = tcp.tcpSend(s, c.id, data[0..]) catch @panic("cwnd send");
+    ck(sent == len, "cwnd send accepted 2xMSS");
+
+    // Initial cwnd == 1 MSS: only one segment may go out before an ACK.
+    resetEvents();
+    var n = drive(s, now + 10, null);
+    ck(n > 0, "cwnd first segment");
+    ck(pktPayload(g_pkt[0..n]).len == LOCAL_MSS, "cwnd first MSS");
+    ck(pktSeq(g_pkt[0..n]) == c.iss +% 1, "cwnd first seq");
+    const first_seq = pktSeq(g_pkt[0..n]);
+
+    resetEvents();
+    n = drive(s, now + 11, null);
+    ck(n == 0, "cwnd holds second segment before ACK");
+    ck(g_failed == -1, "cwnd no failure before ACK");
+
+    var pp: [MAX_PKT]u8 = undefined;
+    const m = ackPacket(pp[0..], c, PEER_ISS +% 1, first_seq +% @intCast(u32, LOCAL_MSS));
+    resetEvents();
+    n = drive(s, now + 12, pp[0..m]);
+    ck(n > 0, "cwnd second segment after ACK");
+    ck(pktPayload(g_pkt[0..n]).len == LOCAL_MSS, "cwnd second MSS");
+    ck(pktSeq(g_pkt[0..n]) == first_seq +% @intCast(u32, LOCAL_MSS), "cwnd second seq");
+    eqBytes(pktPayload(g_pkt[0..n]), data[LOCAL_MSS..], "cwnd second bytes");
+
+    const mr = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, PEER_ISS +% 1, c.iss +% 1 +% @intCast(u32, len), 0x04, "");
+    resetEvents();
+    _ = drive(s, now + 13, pp[0..mr]);
+    ck(g_failed == @intCast(i32, c.id), "cwnd cleanup rst");
+}
+
 fn finOtsProbe(s: *tcp.TcpipStack, now: u64) bool {
     var tiny: [16]u8 = undefined;
     const act = tcp.tcpipPoll(s, now, null, tiny[0..]) catch |err| {
@@ -666,10 +764,11 @@ fn testFinOts(s: *tcp.TcpipStack, now: u64) void {
 fn testFinWindow(s: *tcp.TcpipStack, now: u64) void {
     const c = doConnect(s, now);
     const valid_fin = PEER_ISS +% 1;
-    const bad_fin = valid_fin +% @intCast(u32, 8200);
+    // Exactly one past the 8 KB window: off == 8192 must be rejected.
+    const bad_fin = valid_fin +% @intCast(u32, 8192);
     var pp: [MAX_PKT]u8 = undefined;
 
-    // Far-outside-window FIN must be ACKed but must not poison peer_fin_pending.
+    // Boundary-outside FIN must be ACKed but must not poison peer_fin_pending.
     var m = buildPeer(pp[0..], PEER, LOCAL, PEER_PORT, c.local_port, bad_fin, c.iss +% 1, 0x11, "");
     resetEvents();
     var n = drive(s, now + 10, pp[0..m]);
@@ -871,7 +970,9 @@ pub fn main() void {
     testRetrans(st, 20000);
     testOoo(st, 30000);
     testMss(st, 40000);
+    testMtu600(42000);
     testPeerMss(st, 45000);
+    testCwnd(st, 47000);
     testFinOts(st, 50000);
     testFinWindow(st, 60000);
     testWrap(st, 70000);
