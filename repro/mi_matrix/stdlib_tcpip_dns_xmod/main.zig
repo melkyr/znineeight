@@ -389,6 +389,44 @@ fn testMismatch(s: *tcp.TcpipStack, now: u64) void {
     if (ip) |v| { ck(v == 0x0A00000B, "dns correct id answer"); } else { ck(false, "dns correct id answer missing"); }
 }
 
+fn testSource(s: *tcp.TcpipStack, now: u64) void {
+    ck(dnsStart(s, "source.example"), "dns source start");
+    var n = drive(s, now, null);
+    ck(n > 0, "dns source query");
+    const id = checkQuery(g_pkt[0..n], "source.example");
+
+    var rp: [MAX_PKT]u8 = undefined;
+    var pp: [MAX_PKT]u8 = undefined;
+
+    // A syntactically valid answer from the wrong source IP is ignored.
+    var m = buildDnsResp(rp[0..], id, "source.example", 0x0A0000BB, 0x8180, 1, 4, 4, false);
+    var pl = buildPeerUdp(pp[0..], PEER, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
+    n = drive(s, now + 1, pp[0..pl]);
+    ck(n == 0, "dns wrong source ip no send");
+    ck(!g_done, "dns wrong source ip not terminal");
+    ck(dnsGet(s, "source.example") == null, "dns wrong source ip not accepted");
+
+    // A valid answer from the configured server on the wrong port is ignored.
+    m = buildDnsResp(rp[0..], id, "source.example", 0x0A0000CC, 0x8180, 1, 4, 4, false);
+    pl = buildPeerUdp(pp[0..], DNS, LOCAL, 5353, DNS_PORT, rp[0..m]);
+    g_done = false;
+    n = drive(s, now + 2, pp[0..pl]);
+    ck(n == 0, "dns wrong source port no send");
+    ck(!g_done, "dns wrong source port not terminal");
+    ck(dnsGet(s, "source.example") == null, "dns wrong source port not accepted");
+
+    // The real server/port answer still completes the pending request.
+    m = buildDnsResp(rp[0..], id, "source.example", 0x0A0000DD, 0x8180, 1, 4, 4, false);
+    pl = buildPeerUdp(pp[0..], DNS, LOCAL, 53, DNS_PORT, rp[0..m]);
+    g_done = false;
+    n = drive(s, now + 3, pp[0..pl]);
+    ck(n == 0, "dns real source no send");
+    ck(g_done, "dns real source terminal done");
+    const ip = dnsGet(s, "source.example");
+    if (ip) |v| { ck(v == 0x0A0000DD, "dns real source answer"); } else { ck(false, "dns real source answer missing"); }
+}
+
 fn testQname(s: *tcp.TcpipStack, now: u64) void {
     ck(dnsStart(s, "qname.example"), "dns qname start");
     var n = drive(s, now, null);
@@ -524,6 +562,7 @@ pub fn main() void {
 
     testQueryAnswer(st, 1000);
     testMismatch(st, 10000);
+    testSource(st, 12000);
     testQname(st, 15000);
     testCname(st, 18000);
     testMalformed(st, 20000);

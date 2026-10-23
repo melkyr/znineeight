@@ -35,9 +35,9 @@ M7_TOOLS="${M7_TOOLS:-/tmp/m7_tools}"
 ENTRY="$DEMO_DIR/main.zig"
 MUD_ENTRY="$ROOT/examples/z98/mud_server/main.zig"
 
-PASSES=0
-FAILS=0
-SKIPS=0
+PASSES=${OUTER_PASSES:-0}
+FAILS=${OUTER_FAILS:-0}
+SKIPS=${OUTER_SKIPS:-0}
 pass_case() { echo "ok   - $1"; PASSES=$((PASSES + 1)); }
 fail_case() { echo "FAIL - $1"; FAILS=$((FAILS + 1)); }
 skip_case() { echo "SKIP - $1"; SKIPS=$((SKIPS + 1)); }
@@ -185,6 +185,10 @@ EOF
     check_config_exit missing_required "$OUT/cfg_missing.conf" "wg: BadConfig"
     check_config_exit bad_key "$OUT/cfg_badkey.conf" "wg: BadKey"
     check_config_exit malformed_value "$OUT/cfg_badvalue.conf" "wg: BadConfig"
+    if [ "$FAILS" -ne 0 ]; then
+        echo "TIER_WIREGUARD FAIL"
+        exit 1
+    fi
 
     echo "== build wireguard_demo (-osw) + Win9x import gate =="
     mkdir -p "$OUT/win_emit"
@@ -216,6 +220,7 @@ EOF
     unshare -Urn env \
         Z98_WG_INNER=1 OUT="$OUT" ZIG="$ZIG" IP="$IP" WG="$WG" \
         PATH="$PATH" LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" HAVE_WINE="$HAVE_WINE" \
+        OUTER_PASSES="$PASSES" OUTER_FAILS="$FAILS" OUTER_SKIPS="$SKIPS" \
         bash "$0"
     rc=$?
     if [ "$rc" -ne 0 ]; then echo "TIER_WIREGUARD FAIL"; else echo "TIER_WIREGUARD PASS"; fi
