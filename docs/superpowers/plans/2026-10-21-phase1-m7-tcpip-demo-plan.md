@@ -4,7 +4,7 @@
 
 **Goal:** The userspace tunnel-side stack (`std_tcpip`: IPv4 + TCP client + UDP + DNS + ICMP) and the `wireguard_demo` — a real Linux kernel WireGuard far side with `mud_server` behind it, banner visible through the tunnel from the Z98 client — plus Phase 1 closeout.
 
-**Architecture:** Sans-I/O `tcpipPoll` pump (spec §5.8): stack emits/receives raw IPv4 datagrams; the demo driver encrypts them through `std_wireguard` into `std_net` UDP, and feeds decrypted inner packets back. TCP client only: 3WHS, seq/ack, fixed 8 KB window, simplified Karn RTO + minimal Reno, MSS 1400, drop fragments. DNS = UDP A-record to `cfg.dns_server`; ICMP echo client. Demo reads `wg.conf`, connects to the mud server's tunnel IP, prints banner + one command exchange, resource line.
+**Architecture:** Sans-I/O `tcpipPoll` pump (spec §5.8): stack emits/receives raw IPv4 datagrams; the demo driver encrypts them through `std_wireguard` into `std_net` UDP, and feeds decrypted inner packets back. TCP client only: 3WHS, seq/ack, fixed 8 KB window, simplified Karn RTO + minimal Reno, MSS = `min(peer MSS, mtu - 40)`, drop fragments. DNS = UDP A-record to `cfg.dns_server`; ICMP echo client. Demo reads `wg.conf`, connects to the mud server's tunnel IP, prints banner + one command exchange, resource line.
 
 **Tech Stack:** Z98; M6 `std_wireguard`; existing `std_net`, `std_time`, `std_arena`; Linux `wg-quick` + repo `mud_server` as the far side (test infra); Wine for `-osw`.
 
