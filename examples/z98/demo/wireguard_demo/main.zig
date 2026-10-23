@@ -631,6 +631,8 @@ fn fail(e: DemoError) noreturn {
         name = "NoSpace";
     } else if (e == DemoError.WgInvalidPeer) {
         name = "InvalidPeer";
+    } else if (e == DemoError.BadConfig) {
+        name = "BadConfig";
     } else {
         prefix = "tcp: ";
         if (e == DemoError.DnsFailed) {

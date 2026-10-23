@@ -136,6 +136,56 @@ if [ "${Z98_WG_INNER:-0}" != "1" ]; then
         exit 1
     fi
 
+    echo "== targeted config errors =="
+    ZERO64="0000000000000000000000000000000000000000000000000000000000000000"
+    check_config_exit() {
+        local label="$1" conf="$2" want="$3"
+        local rc got err
+        timeout 10 "$OUT/wireguard_demo" "$conf" \
+            >"$OUT/cfg_$label.out" 2>"$OUT/cfg_$label.err"
+        rc=$?
+        got="$(cat "$OUT/cfg_$label.out" "$OUT/cfg_$label.err" 2>/dev/null)"
+        err="$(cat "$OUT/cfg_$label.err" 2>/dev/null)"
+        if [ "$rc" -ne 0 ] && [ "$got" = "$want" ]; then
+            pass_case "config $label -> $want"
+        else
+            fail_case "config $label (rc=$rc, got '$got' want '$want', err='$err')"
+        fi
+    }
+    cat >"$OUT/cfg_unknown.conf" <<EOF
+private_key = $ZERO64
+peer_public_key = $ZERO64
+endpoint = 127.0.0.1:1
+address = 10.7.0.2/24
+mud_ip = 10.7.0.1
+bogus_key = 1
+EOF
+    cat >"$OUT/cfg_missing.conf" <<EOF
+private_key = $ZERO64
+endpoint = 127.0.0.1:1
+address = 10.7.0.2/24
+mud_ip = 10.7.0.1
+EOF
+    cat >"$OUT/cfg_badkey.conf" <<EOF
+private_key = definitely-not-a-key
+peer_public_key = $ZERO64
+endpoint = 127.0.0.1:1
+address = 10.7.0.2/24
+mud_ip = 10.7.0.1
+EOF
+    cat >"$OUT/cfg_badvalue.conf" <<EOF
+private_key = $ZERO64
+peer_public_key = $ZERO64
+endpoint = 127.0.0.1:1
+address = 10.7.0.2/24
+mud_ip = 10.7.0.1
+mtu = not-a-number
+EOF
+    check_config_exit unknown "$OUT/cfg_unknown.conf" "wg: BadConfig"
+    check_config_exit missing_required "$OUT/cfg_missing.conf" "wg: BadConfig"
+    check_config_exit bad_key "$OUT/cfg_badkey.conf" "wg: BadKey"
+    check_config_exit malformed_value "$OUT/cfg_badvalue.conf" "wg: BadConfig"
+
     echo "== build wireguard_demo (-osw) + Win9x import gate =="
     mkdir -p "$OUT/win_emit"
     EXE="$OUT/wireguard_demo.exe"
@@ -275,7 +325,7 @@ EXPECTED_LEN="$(wc -c <"$OUT/expected.txt" | tr -d ' ')"
 
 check_output() {
     local label="$1" outfile="$2" prefix="$3"
-    local res
+    local res res_bytes
     res="$(grep '^wireguard_demo ok ' "$outfile" 2>/dev/null | tail -1)"
     if [ ! -s "$outfile" ]; then
         fail_case "$label: no output"
@@ -290,6 +340,11 @@ check_output() {
     if ! printf '%s\n' "$res" | grep -Eq \
         '^wireguard_demo ok bytes=[0-9]+ arena_peak=[0-9]+ rss_peak=[0-9]+ cpu_ms=[0-9]+$'; then
         fail_case "$label: resource line missing/malformed ('$res')"
+        return 1
+    fi
+    res_bytes="$(printf '%s\n' "$res" | sed -n 's/^wireguard_demo ok bytes=\([0-9][0-9]*\) .*/\1/p')"
+    if [ "$res_bytes" != "$EXPECTED_LEN" ]; then
+        fail_case "$label: resource bytes=$res_bytes != expected banner+reply bytes=$EXPECTED_LEN"
         return 1
     fi
     return 0
