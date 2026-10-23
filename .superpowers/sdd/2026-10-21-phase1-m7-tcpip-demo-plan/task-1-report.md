@@ -1,6 +1,6 @@
 # M7 Task 1 report — `std_tcpip` IPv4 + TCP client core
 
-Status: COMPLETE + FIX ROUND — targeted fixture PASS (3×) before and after fixes
+Status: COMPLETE + FIX ROUND 2 — targeted fixture PASS (3×) after coverage additions
 
 ## Environment
 
@@ -148,6 +148,38 @@ PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
 run_fixtures: 1 PASS / 0 FAIL over 1 dirs
 ```
 
+## Fix round 2 — coverage pins (fixture only)
+
+No source changes; the scoped review found only a test-coverage gap. Added:
+
+- `testMtu600`: separate stack with `cfg.mtu=600`; SYN advertises local MSS
+  560, `cwnd == 560`, a 2×MSS (1120-byte) `tcpSend` splits into 560 + 560, and
+  every emitted IPv4 datagram is checked `<= 600` (validator now takes the
+  stack's configured MTU rather than a fixture-global 1400).
+- `testCwnd`: at `mtu=1400` the post-handshake socket `cwnd == MSS == 1360`;
+  with 2×MSS (2720 bytes) buffered, only one 1360-byte segment is emitted
+  before an ACK (the next poll returns wait), then the second 1360-byte segment
+  is emitted after the ACK.
+- `testFinWindow`: bad FIN changed to the exact window boundary
+  `off == 8192` (one past the 8 KB window); it is rejected, and the later valid
+  FIN still yields `.closed`.
+- `doConnectFull` now asserts the SYN MSS option against `cfg.mtu - 40` instead
+  of the hard-coded 1360, so the same handshake helper works for mtu 600.
+
+3× targeted gate:
+
+```
+=== r2 run 1 ===
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+=== r2 run 2 ===
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+=== r2 run 3 ===
+PASS repro/mi_matrix/stdlib_tcpip_tcp_xmod
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+```
+
 ## Concerns
 
 - Configuration with `mtu < 44` cannot carry a TCP SYN with the MSS option;
@@ -168,4 +200,8 @@ run_fixtures: 1 PASS / 0 FAIL over 1 dirs
   `docs(sdd): M7 T1 report`
 - Fix round: `5c532f83398df7a705345c8a53a7ee2308b307ef`
   `fix(std_tcpip): MTU-derived MSS + FIN state safety (Phase1 M7)`
-- This report update: `docs(sdd): M7 T1 fix round` (this commit)
+- Fix round report: `415c4e688ea9c3de550750644499c2fde4d3d3ea`
+  `docs(sdd): M7 T1 fix round`
+- Fix round 2 (coverage): `48ab8bd2daf3fc73ef4761827c09f074685c6aab`
+  `test(std_tcpip): pin MTU authority and cwnd (Phase1 M7)`
+- This report update: `docs(sdd): M7 T1 fix round 2` (this commit)
