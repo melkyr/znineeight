@@ -27,6 +27,8 @@ FIX="$Z9DIR/tests/fixtures"
 EXP="$Z9DIR/tests/expected"
 HELLO="$FIX/hello/main_BDA8D6C7"
 FIB="$FIX/fibonacci/main_4DFBF9C3"
+LIVE_REL="examples/z98/z9dbg/tests/fixtures/live/main.zig"
+PE_DIR="$OUT/pe"
 DUMP1="/tmp/z9dbg_core_snap.txt"
 DUMP2="/tmp/z9dbg_core_snap2.txt"
 REGS="$OUT/dump_regs.txt"
@@ -101,6 +103,29 @@ check_mode map_hello "$EXP/map_hello.txt" map-hello "$HELLO"
 before=$FAILS
 check_mode map_fib "$EXP/map_fib.txt" map-fib "$FIB"
 [ "$FAILS" -eq "$before" ] && pass_case "map-fib assertions"
+
+echo "== structural COFF debug blob (spec §15.1) =="
+before=$FAILS
+if "$H" coff . >"$OUT/coff.out" 2>"$OUT/coff.err"; then
+    :
+else
+    fail_case "structural COFF run rc"
+    tail -20 "$OUT/coff.err" | sed 's/^/       /'
+fi
+cat "$OUT/coff.out" | sed 's/^/       /'
+[ "$FAILS" -eq "$before" ] && pass_case "structural COFF rows/funcs/normalization"
+
+echo "== CRLF source display =="
+printf 'line one\r\nint b;\r\n' >"$OUT/crlf.c"
+before=$FAILS
+if "$H" source-crlf . "$OUT/crlf.c" >"$OUT/crlf.out" 2>"$OUT/crlf.err"; then
+    :
+else
+    fail_case "crlf read rc"
+    tail -10 "$OUT/crlf.err" | sed 's/^/       /'
+fi
+cat "$OUT/crlf.out" | sed 's/^/       /'
+[ "$FAILS" -eq "$before" ] && pass_case "CRLF source line"
 
 echo "== optional .cnames (spec §7.2) =="
 NOC="$OUT/nocnames_fixture"
@@ -346,6 +371,37 @@ else
         fi
         rm -f "$DUMP1" "$DUMP2"
     fi
+fi
+
+echo "== real mingw PE + DWARF-in-PE parse (Linux, no Wine) =="
+if command -v i686-w64-mingw32-gcc >/dev/null 2>&1; then
+    mkdir -p "$PE_DIR"
+    if ( cd "$ROOT" && timeout 300 "$ZIG" -q -osw --output-dir "$PE_DIR" "$LIVE_REL" ) \
+            >"$PE_DIR/zig.log" 2>&1; then
+        if ( cd "$PE_DIR" && timeout 300 sh -c \
+                'i686-w64-mingw32-gcc -m32 -std=c89 -O0 -g -gdwarf-2 -DZIG_NO_CRT -I . -c *.c' ) \
+                >"$PE_DIR/gcc.log" 2>&1 &&
+           ( cd "$PE_DIR" && timeout 120 i686-w64-mingw32-gcc -m32 -nostdlib \
+                -Wl,-e,_mainCRTStartup *.o -o prog.exe -lgcc -lkernel32 ) >>"$PE_DIR/gcc.log" 2>&1; then
+            before=$FAILS
+            if "$H" pe . "$PE_DIR/prog.exe" >"$OUT/pe.out" 2>"$OUT/pe.err"; then
+                :
+            else
+                fail_case "PE/DWARF parse rc"
+                tail -20 "$OUT/pe.err" | sed 's/^/       /'
+            fi
+            cat "$OUT/pe.out" | sed 's/^/       /'
+            [ "$FAILS" -eq "$before" ] && pass_case "PE/DWARF rows/funcs"
+        else
+            fail_case "mingw PE fixture build"
+            tail -20 "$PE_DIR/gcc.log" | sed 's/^/       /'
+        fi
+    else
+        fail_case "mingw PE emission"
+        tail -20 "$PE_DIR/zig.log" | sed 's/^/       /'
+    fi
+else
+    echo "skip - mingw PE fixture (i686-w64-mingw32-gcc not found)"
 fi
 
 echo "== corrupt / truncated / missing maps fail cleanly =="

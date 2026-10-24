@@ -19,6 +19,7 @@ const dbg_core = @import("dbg_core.zig");
 const backend = @import("backend.zig");
 const backend_select = @import("backend_select.zig");
 const dwarf = @import("dwarf_lines.zig");
+const pe_debug = @import("pe_debug.zig");
 
 // std_io writes through C stdio (fwrite), so z9dbg must flush before every
 // resume: otherwise the debuggee's inherited/reopened stdout can appear ahead
@@ -27,7 +28,10 @@ const dwarf = @import("dwarf_lines.zig");
 extern "c" fn fflush(stream: *void) i32;
 
 fn flushOut() void {
-    _ = fflush(@ptrCast(*void, @intToPtr(*void, 0)));
+    // The Win9x no-CRT shim has no fflush; its fwrite path is unbuffered.
+    if (!@isWindows()) {
+        _ = fflush(@ptrCast(*void, @intToPtr(*void, 0)));
+    }
 }
 
 const SUFFIX_SYMS: []const u8 = ".z98dbg.syms";
@@ -70,8 +74,21 @@ fn openMap(arena: *std.arena.Arena, prefix: []const u8) ?map_reader.MapReader {
     return map_reader.open(arena, prefix) catch return null;
 }
 
-fn openDwarf(arena: *std.arena.Arena, exe: []const u8) ?dwarf.DebugInfo {
-    return dwarf.open(arena, exe) catch return null;
+fn openDebug(arena: *std.arena.Arena, exe: []const u8) ?dwarf.DebugInfo {
+    var f = file_mod.open(arena, exe, file_mod.Mode.Read) catch return null;
+    var magic: [4]u8 = undefined;
+    var got = file_mod.read(&f, magic[0..]) catch {
+        file_mod.close(&f);
+        return null;
+    };
+    file_mod.close(&f);
+    if (got >= 4 and magic[0] == 0x7f and magic[1] == 'E' and magic[2] == 'L' and magic[3] == 'F') {
+        return dwarf.open(arena, exe) catch return null;
+    }
+    if (got >= 2 and magic[0] == 'M' and magic[1] == 'Z') {
+        return pe_debug.open(arena, exe) catch return null;
+    }
+    return null;
 }
 
 pub fn defaultDumpPath(buf: []u8, counter: u32) []u8 {
@@ -1045,19 +1062,31 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     };
 
     var di: dwarf.DebugInfo = undefined;
-    var di_opt = openDwarf(&ar, exe);
+    var di_opt = openDebug(&ar, exe);
     if (di_opt) |d| {
         di = d;
     } else {
-        std.io.write("z9dbg: cannot read the debuggee ELF\n");
+        std.io.write("z9dbg: cannot read the debuggee ELF or PE image\n");
         be.detach_fn(be.state) catch {};
         os.exit(1);
     }
     g_di = di;
     g_has_di = g_di.has_line;
-    var bias_ok = dwarf.setLoadBase(&g_di, exe, be.pid_fn(be.state));
-    if (!bias_ok) {
-        errStr("z9dbg: cannot resolve PIE load bias; breakpoint addresses may be wrong\n");
+    if (g_di.e_type == 0) {
+        // PE: rows/functions are link-time VAs; bias by the runtime image base.
+        var runtime_base = be.imageBase_fn(be.state);
+        if (runtime_base == 0) {
+            g_di.base = 0;
+            g_di.bias_unknown = true;
+            errStr("z9dbg: cannot resolve PE runtime image base; breakpoint addresses may be wrong\n");
+        } else {
+            g_di.base = runtime_base -% g_di.image_base;
+        }
+    } else {
+        var bias_ok = dwarf.setLoadBase(&g_di, exe, be.pid_fn(be.state));
+        if (!bias_ok) {
+            errStr("z9dbg: cannot resolve PIE load bias; breakpoint addresses may be wrong\n");
+        }
     }
     if (!g_has_di and g_di.unsupported_version) {
         errStr("z9dbg: debug info present but unsupported DWARF version (only 2/3/4); using function-entry breakpoints\n");

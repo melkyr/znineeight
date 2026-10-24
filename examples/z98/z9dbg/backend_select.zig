@@ -6,11 +6,11 @@
 
 const backend = @import("backend.zig");
 const linux = @import("backend_linux.zig");
+const win98 = @import("backend_win98.zig");
 
 pub fn select() backend.Backend {
     if (@isWindows()) {
-        // M4: return the Win32 Debug-API backend here.
-        return linux.linuxBackend();
+        return win98.win98Backend();
     }
     return linux.linuxBackend();
 }

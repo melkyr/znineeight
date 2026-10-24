@@ -16,6 +16,7 @@
 
 const std = @import("std");
 const file_mod = @import("std_file");
+const dwarf = @import("dwarf_lines.zig");
 
 const HEADER_LEN: usize = 20;
 
@@ -376,9 +377,15 @@ fn isPathSuffix(path: []const u8, query: []const u8) bool {
 }
 
 fn fileScore(path: []const u8, query: []const u8) u8 {
-    if (std.str.eql(path, query)) return 3;
-    if (isPathSuffix(path, query)) return 2;
-    if (std.str.eql(basename(path), basename(query))) return 1;
+    // Spec §15.3: normalize separators/drive prefixes and fold case on Windows
+    // before comparing map paths with compiler/COFF/DWARF file strings.
+    var pb: [1024]u8 = undefined;
+    var qb: [1024]u8 = undefined;
+    var p = dwarf.normalizePath(pb[0..], path);
+    var q = dwarf.normalizePath(qb[0..], query);
+    if (std.str.eql(p, q)) return 3;
+    if (isPathSuffix(p, q)) return 2;
+    if (std.str.eql(basename(p), basename(q))) return 1;
     return 0;
 }
 

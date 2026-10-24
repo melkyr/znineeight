@@ -481,6 +481,66 @@ before=$FAILS
 smoke_set z9torr "$OUT/z9torr/prog"
 [ "$FAILS" -eq "$before" ] && pass_case "z9torr test-set"
 
+echo "== Win98/Wine: Debug-API backend + DWARF-in-PE =="
+if command -v wine >/dev/null 2>&1 && command -v i686-w64-mingw32-gcc >/dev/null 2>&1 &&
+   command -v i686-w64-mingw32-objdump >/dev/null 2>&1; then
+    W="$OUT/win98"
+    mkdir -p "$W/bin" "$W/live"
+    if ( cd "$ROOT" && timeout 180 "$ZIG" -osw -o "$W/bin" examples/z98/z9dbg/main.zig ) \
+            >"$W/bin/zig.log" 2>&1 &&
+       sh "$W/bin/build_target.sh" mingw "$W/bin/z9dbg.exe" >"$W/bin/build.log" 2>&1; then
+        if sh "$ROOT/scripts/win32_cross/check_win9x_imports.sh" "$W/bin/z9dbg.exe" 9x >"$W/import.log" 2>&1; then
+            pass_case "Win98 import gate (9x)"
+        else
+            fail_case "Win98 import gate (9x)"
+            tail -20 "$W/import.log" | sed 's/^/       /'
+        fi
+        if ( cd "$ROOT" && timeout 300 "$ZIG" -q -d -osw --output-dir "$W/live" "$LIVE_REL" ) \
+                >"$W/live/zig.log" 2>&1 &&
+           ( cd "$W/live" && timeout 300 sh -c \
+                'i686-w64-mingw32-gcc -m32 -std=c89 -O0 -g -gdwarf-2 -DZIG_NO_CRT -I . -c *.c' ) \
+                >"$W/live/gcc.log" 2>&1 &&
+           ( cd "$W/live" && timeout 120 i686-w64-mingw32-gcc -m32 -nostdlib \
+                -Wl,-e,_mainCRTStartup *.o -o prog.exe -lgcc -lkernel32 ) >>"$W/live/gcc.log" 2>&1; then
+            win_case() {
+                wc_name="$1"; wc_in="$2"; wc_exp="$3"
+                sed "s|@LIVE@|$LIVE_REL|g" "$wc_exp" >"$W/$wc_name.exp"
+                wc_i=1
+                while [ "$wc_i" -le 2 ]; do
+                    ( cd "$ROOT" && WINEDEBUG=-all timeout 90 wine "$W/bin/z9dbg.exe" "$W/live/prog.exe" ) \
+                        <"$wc_in" >"$W/$wc_name.$wc_i.out" 2>"$W/$wc_name.$wc_i.err"
+                    wc_rc=$?
+                    [ "$wc_rc" -eq 0 ] || fail_case "$wc_name run $wc_i rc"
+                    if cmp -s "$W/$wc_name.exp" "$W/$wc_name.$wc_i.out"; then
+                        :
+                    else
+                        fail_case "$wc_name run $wc_i output"
+                        diff -u "$W/$wc_name.exp" "$W/$wc_name.$wc_i.out" | sed 's/^/       /'
+                    fi
+                    if [ "$wc_i" -gt 1 ]; then
+                        cmp -s "$W/$wc_name.1.out" "$W/$wc_name.$wc_i.out" || fail_case "$wc_name run $wc_i determinism"
+                    fi
+                    wc_i=$((wc_i + 1))
+                done
+            }
+            before=$FAILS
+            win_case win98_break "$Z9DIR/tests/session_live_break.in" "$EXP/live_break.txt"
+            [ "$FAILS" -eq "$before" ] && pass_case "Win98 break+backtrace session"
+            before=$FAILS
+            win_case win98_step "$Z9DIR/tests/session_live_step.in" "$EXP/live_step.txt"
+            [ "$FAILS" -eq "$before" ] && pass_case "Win98 step+backtrace session"
+        else
+            fail_case "Win98 debuggee PE build"
+            tail -20 "$W/live/gcc.log" "$W/live/zig.log" | sed 's/^/       /'
+        fi
+    else
+        fail_case "Win98 z9dbg.exe build"
+        tail -20 "$W/bin/build.log" "$W/bin/zig.log" | sed 's/^/       /'
+    fi
+else
+    echo "skip - Win98/Wine section (wine or i686-w64-mingw32 toolchain not found)"
+fi
+
 # cleanup any detached long-running smoke children
 pkill -9 -x prog >/dev/null 2>&1 || true
 

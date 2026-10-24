@@ -256,6 +256,11 @@ pub fn pidOf(state: *void) i32 {
     return st.pid;
 }
 
+pub fn imageBaseOf(state: *void) u32 {
+    _ = state;
+    return 0;
+}
+
 fn waitRaw(st: *State) backend.BackendError!backend.StopEvent {
     var status: i32 = 0;
     var r = os.waitpid(st.pid, &status, 0);
@@ -477,5 +482,6 @@ pub fn linuxBackend() backend.Backend {
         .restoreAll_fn = restoreAll,
         .installAllExcept_fn = installAllExceptAddr,
         .pid_fn = pidOf,
+        .imageBase_fn = imageBaseOf,
     };
 }

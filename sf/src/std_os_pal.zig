@@ -46,3 +46,22 @@ pub extern "c" fn open(path: [*]const u8, flags: i32, mode: i32) i32;
 pub extern "c" fn dup2(old_fd: i32, new_fd: i32) i32;
 pub extern "c" fn close(fd: i32) i32;
 pub extern "c" fn __errno_location() *i32;
+
+// --- Win32 Debug API (P3-M4, spec §15.5) -----------------------------------
+//
+// Declared in the std-side PAL and called only through the @isWindows()
+// wrappers in std_os.zig, so a Linux emission references none of these. The
+// debugger passes raw DEBUG_EVENT (96 B), CONTEXT_i386 (716 B) and
+// STARTUPINFOA/PROCESS_INFORMATION buffers rather than struct definitions, to
+// avoid Win9x/Wine ABI drift; <windows.h> in std_os_prelude.h supplies the
+// real prototypes and constants for the emitted C.
+pub extern "stdcall" fn CreateProcessA(lpApplicationName: *const void, lpCommandLine: [*]u8, lpProcessAttributes: *void, lpThreadAttributes: *void, bInheritHandles: i32, dwCreationFlags: u32, lpEnvironment: *void, lpCurrentDirectory: *const void, lpStartupInfo: *void, lpProcessInformation: *void) i32;
+pub extern "stdcall" fn WaitForDebugEvent(lpDebugEvent: *void, dwMilliseconds: u32) i32;
+pub extern "stdcall" fn ContinueDebugEvent(dwProcessId: u32, dwThreadId: u32, dwContinueStatus: u32) i32;
+pub extern "stdcall" fn GetThreadContext(hThread: *void, lpContext: *void) i32;
+pub extern "stdcall" fn SetThreadContext(hThread: *void, lpContext: *const void) i32;
+pub extern "stdcall" fn ReadProcessMemory(hProcess: *void, lpBaseAddress: *const void, lpBuffer: *void, nSize: usize, lpNumberOfBytesRead: *usize) i32;
+pub extern "stdcall" fn WriteProcessMemory(hProcess: *void, lpBaseAddress: *const void, lpBuffer: *const void, nSize: usize, lpNumberOfBytesWritten: *usize) i32;
+pub extern "stdcall" fn FlushInstructionCache(hProcess: *void, lpBaseAddress: *const void, dwSize: usize) i32;
+pub extern "stdcall" fn TerminateProcess(hProcess: *void, uExitCode: u32) i32;
+pub extern "stdcall" fn CloseHandle(hObject: *void) i32;

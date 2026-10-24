@@ -37,6 +37,9 @@ pub const DebugInfo = struct {
     arena: *std.arena.Arena,
     data: []const u8,
     base: u32,
+    // Link-time PE image base (0 for ELF): the session layer computes the
+    // runtime bias as imageBase_fn() - image_base.
+    image_base: u32,
     e_type: u16,
     rows: [*]Row,
     row_n: usize,
@@ -183,6 +186,44 @@ pub fn basename(path: []const u8) []const u8 {
     return path;
 }
 
+// Spec §15.3: every file string is compared after this normalization —
+// `\` -> `/`, strip an `X:` drive prefix and a leading `./`, strip a trailing
+// CR, and fold ASCII case when the debugger runs on Windows.
+pub fn normalizePath(out: []u8, path: []const u8) []const u8 {
+    var i: usize = 0;
+    var had_drive = false;
+    if (path.len >= 2 and path[1] == ':') {
+        var c0 = path[0];
+        if ((c0 >= 'A' and c0 <= 'Z') or (c0 >= 'a' and c0 <= 'z')) {
+            i = 2;
+            had_drive = true;
+        }
+    }
+    if (had_drive) {
+        while (i < path.len and (path[i] == '/' or path[i] == '\\')) : (i += 1) {}
+    }
+    while (i + 1 < path.len and path[i] == '.' and
+        (path[i + 1] == '/' or path[i + 1] == '\\')) : (i += 2) {}
+    var n: usize = 0;
+    while (i < path.len and n < out.len) : (i += 1) {
+        var c = path[i];
+        if (c == '\\') c = '/';
+        if (@isWindows() and c >= 'A' and c <= 'Z') c = c + 32;
+        out[n] = c;
+        n += 1;
+    }
+    while (n > 0 and (out[n - 1] == '\r' or out[n - 1] == '\n')) n -= 1;
+    return out[0..n];
+}
+
+fn isPathSuffix(path: []const u8, query: []const u8) bool {
+    if (query.len >= path.len) return false;
+    var start = path.len - query.len;
+    if (!nameEql(path[start..], query)) return false;
+    if (start == 0) return true;
+    return path[start - 1] == '/';
+}
+
 fn nameEql(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
     var i: usize = 0;
@@ -244,7 +285,13 @@ fn growFuncs(p: *Parser) DwarfError!void {
 
 fn addFile(p: *Parser, name: []const u8) DwarfError!void {
     try growFiles(p);
-    p.files[p.file_n] = name;
+    var tmp: [1024]u8 = undefined;
+    var norm = normalizePath(tmp[0..], name);
+    var raw = std.arena.alloc(p.arena, norm.len) catch return error.OutOfMemory;
+    var dst = @ptrCast([*]u8, raw);
+    var i: usize = 0;
+    while (i < norm.len) : (i += 1) dst[i] = norm[i];
+    p.files[p.file_n] = dst[0..norm.len];
     p.file_n += 1;
 }
 
@@ -254,7 +301,7 @@ fn addFunc(p: *Parser, addr: u32, size: u32, name: []const u8) DwarfError!void {
     p.func_n += 1;
 }
 
-fn emitRow(p: *Parser, st: *LState, file_base: u32, file_count: *u32, end: bool) DwarfError!void {
+fn emitRow(p: *Parser, st: *LState, file_base: u32, file_count: *u32, end: bool, addr_bias: u32) DwarfError!void {
     try growRows(p);
     var line: u32 = 0;
     if (st.line > 0 and st.line <= 4294967295) line = @intCast(u32, st.line);
@@ -262,7 +309,7 @@ fn emitRow(p: *Parser, st: *LState, file_base: u32, file_count: *u32, end: bool)
     if (st.file >= 1 and st.file <= file_count.*) {
         gidx = file_base + (st.file - 1);
     }
-    p.rows[p.row_n] = Row{ .addr = st.addr, .line = line, .file = gidx, .end = end };
+    p.rows[p.row_n] = Row{ .addr = st.addr +% addr_bias, .line = line, .file = gidx, .end = end };
     p.row_n += 1;
 }
 
@@ -278,7 +325,7 @@ fn applyAddrAdvance(st: *LState, min_inst: u8, max_ops: u8, op_adv: u32) void {
     st.op_index = total % mo;
 }
 
-fn parseProgram(p: *Parser, prog_start: usize, unit_end: usize, version: u16, min_inst: u8, max_ops: u8, default_is_stmt: bool, line_base: i8, line_range: u8, opcode_base: u8, op_lengths: []const u8, file_base: u32, file_count: *u32) DwarfError!void {
+fn parseProgram(p: *Parser, prog_start: usize, unit_end: usize, version: u16, min_inst: u8, max_ops: u8, default_is_stmt: bool, line_base: i8, line_range: u8, opcode_base: u8, op_lengths: []const u8, file_base: u32, file_count: *u32, addr_bias: u32) DwarfError!void {
     var st = LState{ .addr = 0, .file = 1, .line = 1, .is_stmt = default_is_stmt, .op_index = 0 };
     var pos = prog_start;
     while (pos < unit_end) {
@@ -292,7 +339,7 @@ fn parseProgram(p: *Parser, prog_start: usize, unit_end: usize, version: u16, mi
             var sub = try u8At(p.data, pos);
             pos += 1;
             if (sub == 1) {
-                try emitRow(p, &st, file_base, file_count, true);
+                try emitRow(p, &st, file_base, file_count, true, addr_bias);
                 st.addr = 0;
                 st.file = 1;
                 st.line = 1;
@@ -321,7 +368,7 @@ fn parseProgram(p: *Parser, prog_start: usize, unit_end: usize, version: u16, mi
         }
         if (op < opcode_base) {
             if (op == 1) {
-                try emitRow(p, &st, file_base, file_count, false);
+                try emitRow(p, &st, file_base, file_count, false, addr_bias);
             } else if (op == 2) {
                 var adv = try ulebUsize(p.data, &pos, unit_end);
                 applyAddrAdvance(&st, min_inst, max_ops, @intCast(u32, adv));
@@ -370,12 +417,12 @@ fn parseProgram(p: *Parser, prog_start: usize, unit_end: usize, version: u16, mi
         st.line = st.line +% line_inc;
         var oadv = adjusted / lr;
         applyAddrAdvance(&st, min_inst, max_ops, oadv);
-        try emitRow(p, &st, file_base, file_count, false);
+        try emitRow(p, &st, file_base, file_count, false, addr_bias);
     }
     _ = version;
 }
 
-fn parseLineTable(p: *Parser, sec: Section) DwarfError!void {
+fn parseLineTable(p: *Parser, sec: Section, addr_bias: u32) DwarfError!void {
     var start: usize = @intCast(usize, sec.sh_offset);
     var size: usize = @intCast(usize, sec.sh_size);
     if (start > p.data.len or p.data.len - start < size) return error.Corrupt;
@@ -454,7 +501,7 @@ fn parseLineTable(p: *Parser, sec: Section) DwarfError!void {
             _ = try readUleb(p.data, &pos, prog_start);
             _ = try readUleb(p.data, &pos, prog_start);
         }
-        try parseProgram(p, prog_start, unit_end, version, min_inst, max_ops, default_is_stmt != 0, line_base, line_range, opcode_base, op_lengths[0..], file_base, &file_count);
+        try parseProgram(p, prog_start, unit_end, version, min_inst, max_ops, default_is_stmt != 0, line_base, line_range, opcode_base, op_lengths[0..], file_base, &file_count, addr_bias);
         pos = unit_end;
     }
 }
@@ -617,7 +664,7 @@ pub fn open(arena: *std.arena.Arena, exe: []const u8) DwarfError!DebugInfo {
 
     var line_sec = try findSectionName(data, shoff, @intCast(usize, shentsize), @intCast(usize, shnum), @intCast(usize, shstrndx), ".debug_line");
     if (line_sec) |ls| {
-        parseLineTable(&p, ls) catch {
+        parseLineTable(&p, ls, 0) catch {
             p.row_n = 0;
             p.file_n = 0;
         };
@@ -639,6 +686,7 @@ pub fn open(arena: *std.arena.Arena, exe: []const u8) DwarfError!DebugInfo {
         .arena = arena,
         .data = data,
         .base = 0,
+        .image_base = 0,
         .e_type = e_type,
         .rows = p.rows,
         .row_n = p.row_n,
@@ -648,6 +696,132 @@ pub fn open(arena: *std.arena.Arena, exe: []const u8) DwarfError!DebugInfo {
         .func_n = p.func_n,
         .has_line = p.row_n > 0,
         .unsupported_version = p.unsupported,
+        .bias_unknown = false,
+    };
+}
+
+// Section-agnostic entry: interpret a raw .debug_line section (PE or any
+// container) and return the common DebugInfo. Function entries are injected by
+// the container reader (injectFuncs), so the DWARF parser never names ELF.
+pub fn openSections(arena: *std.arena.Arena, data: []const u8, line_data: []const u8, image_base: u32) DwarfError!DebugInfo {
+    var p = Parser{
+        .arena = arena,
+        .data = line_data,
+        .rows = undefined,
+        .row_n = 0,
+        .row_cap = 0,
+        .files = undefined,
+        .file_n = 0,
+        .file_cap = 0,
+        .funcs = undefined,
+        .func_n = 0,
+        .func_cap = 0,
+        .unsupported = false,
+    };
+    var sec = Section{
+        .name_off = 0,
+        .sh_type = 0,
+        .sh_offset = 0,
+        .sh_size = @intCast(u32, line_data.len),
+        .sh_link = 0,
+        .sh_entsize = 0,
+    };
+    parseLineTable(&p, sec, 0) catch {
+        p.row_n = 0;
+        p.file_n = 0;
+    };
+    if (p.row_n > 1) sortRows(p.rows, p.row_n);
+    return DebugInfo{
+        .arena = arena,
+        .data = data,
+        .base = 0,
+        .image_base = image_base,
+        .e_type = 0,
+        .rows = p.rows,
+        .row_n = p.row_n,
+        .files = p.files,
+        .file_n = p.file_n,
+        .funcs = p.funcs,
+        .func_n = p.func_n,
+        .has_line = p.row_n > 0,
+        .unsupported_version = p.unsupported,
+        .bias_unknown = false,
+    };
+}
+
+// PE/COFF symbol tables often carry no function size. After sorting, give a
+// zero-size entry the span up to the next function so frame return addresses
+// (ret-1) resolve; the last entry stays exact-match only.
+fn fillFuncSizes(funcs: [*]Func, n: usize) void {
+    if (n < 2) return;
+    var i: usize = 0;
+    while (i + 1 < n) : (i += 1) {
+        if (funcs[i].size == 0 and funcs[i + 1].addr > funcs[i].addr) {
+            funcs[i].size = funcs[i + 1].addr - funcs[i].addr;
+        }
+    }
+}
+
+pub fn injectFuncs(di: *DebugInfo, funcs: []const Func) DwarfError!void {
+    if (funcs.len == 0) {
+        di.func_n = 0;
+        return;
+    }
+    var raw = std.arena.alloc(di.arena, @sizeOf(Func) * funcs.len) catch return error.OutOfMemory;
+    var dst = @ptrCast([*]Func, raw);
+    var i: usize = 0;
+    while (i < funcs.len) : (i += 1) dst[i] = funcs[i];
+    di.funcs = dst;
+    di.func_n = funcs.len;
+    if (funcs.len > 1) {
+        sortFuncs(dst, funcs.len);
+        fillFuncSizes(dst, funcs.len);
+    }
+}
+
+// COFF line tables are not DWARF: their reader builds rows/files/funcs itself
+// and hands the common arrays here (copies -> stable arena ownership).
+pub fn buildInfo(arena: *std.arena.Arena, data: []const u8, image_base: u32, in_rows: []const Row, in_files: []const []const u8, in_funcs: []const Func) DwarfError!DebugInfo {
+    var rows: [*]Row = undefined;
+    if (in_rows.len > 0) {
+        var raw = std.arena.alloc(arena, @sizeOf(Row) * in_rows.len) catch return error.OutOfMemory;
+        rows = @ptrCast([*]Row, raw);
+        var i: usize = 0;
+        while (i < in_rows.len) : (i += 1) rows[i] = in_rows[i];
+        if (in_rows.len > 1) sortRows(rows, in_rows.len);
+    }
+    var files: [*][]const u8 = undefined;
+    if (in_files.len > 0) {
+        var fraw = std.arena.alloc(arena, @sizeOf([]const u8) * in_files.len) catch return error.OutOfMemory;
+        files = @ptrCast([*][]const u8, fraw);
+        var j: usize = 0;
+        while (j < in_files.len) : (j += 1) files[j] = in_files[j];
+    }
+    var funcs: [*]Func = undefined;
+    if (in_funcs.len > 0) {
+        var graw = std.arena.alloc(arena, @sizeOf(Func) * in_funcs.len) catch return error.OutOfMemory;
+        funcs = @ptrCast([*]Func, graw);
+        var k: usize = 0;
+        while (k < in_funcs.len) : (k += 1) funcs[k] = in_funcs[k];
+        if (in_funcs.len > 1) {
+            sortFuncs(funcs, in_funcs.len);
+            fillFuncSizes(funcs, in_funcs.len);
+        }
+    }
+    return DebugInfo{
+        .arena = arena,
+        .data = data,
+        .base = 0,
+        .image_base = image_base,
+        .e_type = 0,
+        .rows = rows,
+        .row_n = in_rows.len,
+        .files = files,
+        .file_n = in_files.len,
+        .funcs = funcs,
+        .func_n = in_funcs.len,
+        .has_line = in_rows.len > 0,
+        .unsupported_version = false,
         .bias_unknown = false,
     };
 }
@@ -794,7 +968,13 @@ pub fn setLoadBase(di: *DebugInfo, exe: []const u8, pid: i32) bool {
 
 fn fileMatches(di: *const DebugInfo, idx: u32, out_file: []const u8) bool {
     if (idx >= di.file_n) return false;
-    return nameEql(basename(di.files[@intCast(usize, idx)]), basename(out_file));
+    var sb: [1024]u8 = undefined;
+    var qb: [1024]u8 = undefined;
+    var stored = normalizePath(sb[0..], di.files[@intCast(usize, idx)]);
+    var query = normalizePath(qb[0..], out_file);
+    if (nameEql(stored, query)) return true;
+    if (isPathSuffix(stored, query)) return true;
+    return nameEql(basename(stored), basename(query));
 }
 
 pub fn addrForLine(di: *const DebugInfo, out_file: []const u8, out_line: u32, out: []u32) usize {

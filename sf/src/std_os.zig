@@ -170,6 +170,73 @@ pub fn ptraceNull() *void {
     return nullVoid();
 }
 
+fn nullConst() *const void {
+    return @ptrCast(*const void, @intToPtr(*void, 0));
+}
+
+// --- Win32 Debug API wrappers (P3-M4) --------------------------------------
+//
+// Same policy as the POSIX surface: the backend owns argv/event sequencing,
+// std_os only guards the extern calls by target. On Linux they return failure
+// without referencing the stdcall symbols.
+pub fn createProcessA(app: *const void, cmd: [*]u8, startup: *void, info: *void) i32 {
+    if (@isWindows()) {
+        return pal.CreateProcessA(app, cmd, nullVoid(), nullVoid(), @intCast(i32, 0), @intCast(u32, 0x00000002), nullVoid(), nullConst(), startup, info);
+    }
+    return 0;
+}
+
+pub fn waitForDebugEvent(event: *void, ms: u32) i32 {
+    if (@isWindows()) return pal.WaitForDebugEvent(event, ms);
+    return 0;
+}
+
+pub fn continueDebugEvent(pid: u32, tid: u32, status: u32) i32 {
+    if (@isWindows()) return pal.ContinueDebugEvent(pid, tid, status);
+    return 0;
+}
+
+pub fn getThreadContext(thread: *void, ctx: *void) i32 {
+    if (@isWindows()) return pal.GetThreadContext(thread, ctx);
+    return 0;
+}
+
+pub fn setThreadContext(thread: *void, ctx: *const void) i32 {
+    if (@isWindows()) return pal.SetThreadContext(thread, ctx);
+    return 0;
+}
+
+pub fn readProcessMemory(process: *void, addr: *const void, dst: *void, len: usize) i32 {
+    if (@isWindows()) {
+        var got: usize = 0;
+        return pal.ReadProcessMemory(process, addr, dst, len, &got);
+    }
+    return 0;
+}
+
+pub fn writeProcessMemory(process: *void, addr: *const void, src: *const void, len: usize) i32 {
+    if (@isWindows()) {
+        var wrote: usize = 0;
+        return pal.WriteProcessMemory(process, addr, src, len, &wrote);
+    }
+    return 0;
+}
+
+pub fn flushInstructionCache(process: *void, addr: *const void, len: usize) i32 {
+    if (@isWindows()) return pal.FlushInstructionCache(process, addr, len);
+    return 0;
+}
+
+pub fn terminateProcess(process: *void, code: u32) i32 {
+    if (@isWindows()) return pal.TerminateProcess(process, code);
+    return 0;
+}
+
+pub fn closeHandle(handle: *void) i32 {
+    if (@isWindows()) return pal.CloseHandle(handle);
+    return 0;
+}
+
 pub fn cwd(arena: *arena_mod.Arena) OsError![]u8 {
     const buf: [*]u8 = @ptrCast([*]u8, try arena_mod.alloc(arena, CWD_BUF));
     if (@isWindows()) {

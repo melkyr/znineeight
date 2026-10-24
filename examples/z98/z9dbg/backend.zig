@@ -75,6 +75,10 @@ pub const Backend = struct {
     restoreAll_fn: fn (*void) void,
     installAllExcept_fn: fn (*void, u32) void,
     pid_fn: fn (*void) i32,
+    // Runtime load address of the debuggee image. Linux/Win32-ELF return 0
+    // (the ELF path uses /proc/<pid>/maps); the Win32 backend returns
+    // CREATE_PROCESS_DEBUG_INFO.lpBaseOfImage so PE rows can be biased.
+    imageBase_fn: fn (*void) u32,
 };
 
 fn stubLaunch(state: *void, exe: []const u8, args: [][]const u8) BackendError!void {
@@ -160,6 +164,11 @@ fn stubPid(state: *void) i32 {
     return -1;
 }
 
+fn stubImageBase(state: *void) u32 {
+    _ = state;
+    return 0;
+}
+
 // The M2 backend: a well-formed vtable whose every operation is unsupported.
 // M3 installs backend_linux's functions here; the upper layer is unchanged.
 pub fn stubBackend() Backend {
@@ -181,5 +190,6 @@ pub fn stubBackend() Backend {
         .restoreAll_fn = stubRestoreAll,
         .installAllExcept_fn = stubInstallAllExcept,
         .pid_fn = stubPid,
+        .imageBase_fn = stubImageBase,
     };
 }

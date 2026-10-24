@@ -10,8 +10,12 @@ const map_reader = @import("../map_reader.zig");
 const dbg_core = @import("../dbg_core.zig");
 const dbg_main = @import("../main.zig");
 const backend = @import("../backend.zig");
+const dwarf = @import("../dwarf_lines.zig");
+const coff = @import("../coff_lines.zig");
+const pe = @import("../pe_debug.zig");
 
 var g_arena_buf: [1048576]u8 = undefined;
+var g_img: [8192]u8 = undefined;
 var g_fail: u32 = 0;
 var g_mock_step_index: u32 = 0;
 var g_mock_lines: [8]u32 = undefined;
@@ -72,6 +76,21 @@ fn expectTrue(name: []const u8, cond: bool) void {
     } else {
         fail(name);
     }
+}
+
+fn strContains(hay: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return true;
+    if (needle.len > hay.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= hay.len) : (i += 1) {
+        var j: usize = 0;
+        var same = true;
+        while (j < needle.len) : (j += 1) {
+            if (hay[i + j] != needle[j]) same = false;
+        }
+        if (same) return true;
+    }
+    return false;
 }
 
 fn modeMapHello(arena: *std.arena.Arena, prefix: []const u8) void {
@@ -437,6 +456,197 @@ fn modeBench(arena: *std.arena.Arena, prefix: []const u8, full: bool) void {
     expectTrue("bench cnameFor", cn != null);
 }
 
+fn imgZero(n: usize) void {
+    var i: usize = 0;
+    while (i < n and i < g_img.len) : (i += 1) g_img[i] = 0;
+}
+
+fn imgU16(off: usize, v: u16) void {
+    g_img[off] = @intCast(u8, v & @intCast(u16, 0xff));
+    g_img[off + 1] = @intCast(u8, v >> @intCast(u16, 8));
+}
+
+fn imgU32(off: usize, v: u32) void {
+    g_img[off] = @intCast(u8, v & @intCast(u32, 0xff));
+    g_img[off + 1] = @intCast(u8, (v >> @intCast(u32, 8)) & @intCast(u32, 0xff));
+    g_img[off + 2] = @intCast(u8, (v >> @intCast(u32, 16)) & @intCast(u32, 0xff));
+    g_img[off + 3] = @intCast(u8, v >> @intCast(u32, 24));
+}
+
+fn imgStr(off: usize, s: []const u8) void {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) g_img[off + i] = s[i];
+}
+
+// One-section PE32 with a Type-1 COFF debug directory blob, built strictly to
+// the documented §15.1 layout: FILE aux (C:\src\hello.c + CRLF), a STATIC
+// .text section definition owning four line records, and one EXTERNAL
+// function (_hello). No real compiler output is involved.
+fn buildCoffImage() void {
+    imgZero(2048);
+    imgU16(0, 0x5a4d);
+    imgU32(0x3c, 0x80);
+    imgStr(0x80, "PE");
+    // COFF header at 0x84.
+    imgU16(0x84, 0x014c);
+    imgU16(0x86, 1);
+    imgU16(0x94, 0x00e0);
+    imgU16(0x96, 0x0102);
+    // PE32 optional header at 0x98.
+    imgU16(0x98, 0x010b);
+    imgU32(0xb4, 0x00400000);
+    imgU32(0xf4, 16);
+    imgU32(0x128, 0x00001000);
+    imgU32(0x12c, 28);
+    // Section table at 0x178.
+    imgStr(0x178, ".text");
+    imgU32(0x180, 0x00001000);
+    imgU32(0x184, 0x00001000);
+    imgU32(0x188, 0x00000200);
+    imgU32(0x18c, 0x00000400);
+    // Debug directory entry at file 0x400 (RVA 0x1000).
+    imgU32(0x40c, 1);
+    imgU32(0x410, 148);
+    imgU32(0x414, 0x0000101c);
+    imgU32(0x418, 0x0000041c);
+    // IMAGE_COFF_SYMBOLS_HEADER at 0x41c.
+    imgU32(0x41c, 6);
+    imgU32(0x420, 16);
+    imgU32(0x424, 4);
+    imgU32(0x428, 124);
+    // Symbol 0: FILE, aux format 4 names the source file.
+    imgStr(0x42c, ".file");
+    imgU16(0x438, 0xfffe);
+    g_img[0x43c] = 103;
+    g_img[0x43d] = 1;
+    imgStr(0x43e, "C:\\src\\hello.c\r");
+    // Symbol 2: STATIC section definition, aux carries nlnno=4.
+    imgStr(0x450, ".text");
+    imgU16(0x45c, 1);
+    g_img[0x460] = 3;
+    g_img[0x461] = 1;
+    imgU32(0x462, 0x00000100);
+    imgU16(0x468, 4);
+    // Symbol 4: EXTERNAL function, aux format 1 carries TotalSize.
+    imgStr(0x474, "_hello");
+    imgU16(0x480, 1);
+    imgU16(0x482, 0x0020);
+    g_img[0x484] = 2;
+    g_img[0x485] = 1;
+    imgU32(0x48a, 0x00000100);
+    // Line records at blob+124 (0x498): header, then three rows.
+    imgU32(0x498, 4);
+    imgU16(0x49c, 0);
+    imgU32(0x49e, 0x10);
+    imgU16(0x4a2, 2);
+    imgU32(0x4a4, 0x14);
+    imgU16(0x4a8, 3);
+    imgU32(0x4aa, 0x18);
+    imgU16(0x4ae, 3);
+}
+
+fn modeCoff(arena: *std.arena.Arena) void {
+    buildCoffImage();
+    var di = coff.openBytes(arena, g_img[0..], 0x00400000) catch {
+        fail("coff open");
+        return;
+    };
+    expectTrue("coff has line", di.has_line);
+    expectU32("coff image base", di.image_base, 0x00400000);
+    expectUsize("coff row count", di.row_n, 3);
+    expectUsize("coff file count", di.file_n, 1);
+    expectUsize("coff func count", di.func_n, 1);
+    if (di.row_n >= 3) {
+        expectU32("coff row0 addr", di.rows[0].addr, 0x00401010);
+        expectU32("coff row0 line", di.rows[0].line, 2);
+        expectU32("coff row2 addr", di.rows[2].addr, 0x00401018);
+    } else {
+        fail("coff rows");
+    }
+    if (di.file_n >= 1) {
+        expectStr("coff file normalized", di.files[0], "src/hello.c");
+    } else {
+        fail("coff files");
+    }
+    if (di.func_n >= 1) {
+        expectStr("coff func underscore stripped", di.funcs[0].name, "hello");
+        expectU32("coff func addr", di.funcs[0].addr, 0x00401000);
+        expectU32("coff func size", di.funcs[0].size, 0x100);
+    } else {
+        fail("coff funcs");
+    }
+    di.base = 0;
+    var out: [8]u32 = undefined;
+    var n = dwarf.addrForLine(&di, "hello.c", 2, out[0..]);
+    if (n >= 1) {
+        expectU32("coff addrForLine line 2", out[0], 0x00401010);
+    } else {
+        fail("coff addrForLine line 2");
+    }
+    var n2 = dwarf.addrForLine(&di, "C:\\src\\hello.c", 3, out[0..]);
+    expectTrue("coff addrForLine drive path", n2 >= 2);
+    var f = dwarf.funcByAddr(&di, 0x00401005);
+    if (f) |fv| {
+        expectStr("coff funcByAddr", fv.name, "hello");
+    } else {
+        fail("coff funcByAddr");
+    }
+}
+
+fn modePe(arena: *std.arena.Arena, path: []const u8) void {
+    var di = pe.open(arena, path) catch {
+        fail("pe open");
+        return;
+    };
+    expectTrue("pe has line", di.has_line);
+    expectTrue("pe image base nonzero", di.image_base != 0);
+    expectTrue("pe rows", di.row_n > 0);
+    expectTrue("pe files", di.file_n > 0);
+    expectTrue("pe funcs", di.func_n > 0);
+    // The session layer applies runtime_base - image_base; use a runtime image
+    // base equal to the link image base (bias 0) to query link-time VAs.
+    di.base = 0;
+    var out: [64]u32 = undefined;
+    var pick: usize = 0;
+    var found = false;
+    var i: usize = 0;
+    while (i < di.row_n) : (i += 1) {
+        var nm = dwarf.rowFileName(&di, di.rows[i]);
+        if (strContains(nm, "main_")) {
+            pick = i;
+            found = true;
+            break;
+        }
+    }
+    var fname = dwarf.rowFileName(&di, di.rows[pick]);
+    var line = di.rows[pick].line;
+    var n = dwarf.addrForLine(&di, fname, line, out[0..]);
+    expectTrue("pe addrForLine generated C row", n > 0);
+    if (found) {
+        expectTrue("pe main module line table", n > 0);
+    } else {
+        fail("pe main module line table");
+    }
+    if (di.row_n > 0) {
+        expectTrue("pe row file nonempty", dwarf.rowFileName(&di, di.rows[0]).len > 0);
+        expectTrue("pe row link VA", di.rows[0].addr >= di.image_base);
+        var rr = dwarf.rowForAddr(&di, di.rows[0].addr);
+        expectTrue("pe rowForAddr", rr != null);
+    }
+    if (di.func_n > 0) {
+        var a = dwarf.funcAddr(&di, di.funcs[0].name);
+        expectTrue("pe funcAddr first name", a != null);
+    }
+}
+
+fn modeSourceCrlf(arena: *std.arena.Arena, path: []const u8) void {
+    var text = dbg_core.readSourceLine(arena, path, 2) orelse {
+        fail("crlf read");
+        return;
+    };
+    expectStr("crlf trailing byte stripped", text, "int b;");
+}
+
 fn modeOpenError(arena: *std.arena.Arena, prefix: []const u8) void {
     var r = map_reader.open(arena, prefix) catch {
         ok("open rejected");
@@ -479,6 +689,20 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             os.exit(2);
         }
         modeDumpRegs(&arena, prefix, os.argv(3));
+    } else if (std.str.eql(mode, "coff")) {
+        modeCoff(&arena);
+    } else if (std.str.eql(mode, "pe")) {
+        if (os.argc() < 4) {
+            writeLine("usage: dbg_test pe <ignored> <pe-path>");
+            os.exit(2);
+        }
+        modePe(&arena, os.argv(3));
+    } else if (std.str.eql(mode, "source-crlf")) {
+        if (os.argc() < 4) {
+            writeLine("usage: dbg_test source-crlf <ignored> <source-path>");
+            os.exit(2);
+        }
+        modeSourceCrlf(&arena, os.argv(3));
     } else if (std.str.eql(mode, "open-error")) {
         modeOpenError(&arena, prefix);
     } else {
