@@ -377,3 +377,60 @@ contract.
 `tier_tls.sh` **19/19**, `tier_wireguard.sh` **13/13** (4 config + 5 in-netns
 integration + 4 build/import checks; the earlier summary counted only the 5
 in-netns integration cases); both on the rotated compiler `45158dce…`.
+
+---
+
+## D8 — stdout is split across two layers: compiler builtins emit C stdio, `std.fmt` uses the PAL
+
+**Found:** 2026-10-24 (Phase 2 P3-M3, while reviewing `z9dbg` output). **Status:
+OPEN / DEFERRED — documented, no emission change** (operator ruling A,
+2026-10-24: keep the current paths; document the two stdout stacks, fix the
+misleading "no cstdio" comments, and cover the CRT/no-CRT story in the M4 docs
+task. Changing the builtins' emission would re-baseline every pin/golden and is
+therefore a separate mini-plan if strict PAL purity is ever required.)
+
+**Symptom / inconsistency.** `std.io.write` / `writeByte` / `writeStr` /
+`printInt` route through the compiler builtins `@stdoutWrite` / `@putChar`, and
+those builtins are lowered to **C stdio**, not to the PAL:
+
+- `.builtin_stdout_write` → `fwrite(..., stdout)`; `.builtin_stderr_write` →
+  `fwrite(..., stderr)`; `.builtin_get_char` → `getchar()`; `@putChar` →
+  `putchar` (`sf/src/c89_emit.zig:8341-8365`).
+- `#include <stdio.h>` is emitted per module whenever one of those builtins
+  appears (`sf/src/c89_emit.zig:2208-2211`, `2100-2140`).
+- In contrast, formatted `std.io.print` goes through `std_fmt`, which calls
+  `pal_print_stdout` (PAL; `WriteConsoleA`/`WriteFile` on Windows, `write(1)`
+  on POSIX) — see `sf/src/std_fmt.zig:12-28` and
+  `sf/src/include/zig_pal.c:100-112`.
+- `std.io` **file** I/O is PAL (`pal_file_*`), so the inconsistency is confined
+  to **stdout/stderr and getchar**.
+
+The comments at `sf/src/std_io.zig:63` and `sf/src/std_debug.zig:3` say "no
+cstdio"; they mean "no direct `@cInclude`", not "no C stdio in the emitted C".
+`std_fmt.zig:15` already records the split: PAL stdout is unbuffered, the
+`@stdoutWrite` builtin is buffered `fwrite`.
+
+**Impact.** Mixing the two stacks on the same stream can reorder output because
+`fwrite` is buffered while `pal_print_stdout` is not; buffered stdout can also
+be lost on a trap/abnormal exit. This bit P3-M2: `z9dbg` switched
+`std.fmt.printU32` → `std.io.printInt` so all its writes stay on the buffered
+builtin path (the deviation is recorded in that fix report). On the no-CRT
+Win9x path the shim's `fwrite` writes straight to `WriteFile`, so the ordering
+window is narrower there.
+
+**Windows / CRT consequence.** Default Win9x builds (mingw/MSVC/Watcom) link
+their CRT, so `fwrite`/`putchar`/`getchar` require the normal CRT (msvcrt on
+mingw/MSVC). **No msvcrt is required under `ZIG_NO_CRT`:** the emitted
+`build_target.sh` sets `-DZIG_NO_CRT` (`sf/src/c89_emit.zig:9177,9221,9277`),
+`sf/src/include/zig_nocrt.c` shims `fwrite`, `getchar`, `fgetc`, `putchar`,
+`fputc`, `getenv`, `time` over `GetStdHandle`/`WriteFile`, and
+`zig_runtime.c` shims `strlen`/`memcpy`/`memset`. The no-CRT harness is
+`scripts/win32_cross/cross_nocrt.sh`. Any CRT symbol outside that shim set
+would still need the CRT.
+
+**Fix direction (not authorized now).** Either route the stdout/stderr/getchar
+builtins through the PAL (`pal_print_stdout`/`pal_print_stderr` + a PAL
+getchar), or unify `std_fmt` onto `@stdoutWrite`. Both change emitted C for
+every `std.io` user, so they need their own plan + pin/golden re-baseline and a
+seed rotation. Until then: document, and keep mixed `print`/`write` usage out
+of latency-sensitive or panic-path output.
