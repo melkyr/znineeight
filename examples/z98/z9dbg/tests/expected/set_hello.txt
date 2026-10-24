@@ -5,6 +5,12 @@ at main
   2: pub fn main() void {
 > 3:     greetings.sayHello();
   4: }
+(z9dbg) Stopped at examples/z98/hello/greetings.zig:3
+at sayHello
+  1: const std = @import("std");
+  2: pub fn sayHello() void {
+> 3:     std.io.print("Hello, world!\n", .{});
+  4: }
 (z9dbg) break: set at line 3
 (z9dbg) Stopped at examples/z98/hello/greetings.zig:3
 at sayHello
@@ -15,10 +21,5 @@ at sayHello
 (z9dbg) #0 sayHello at examples/z98/hello/greetings.zig:3
 #1 main at examples/z98/hello/main.zig:2 (decl)
 (z9dbg) dump: wrote @SNAP@
-Stopped at examples/z98/hello/greetings.zig:3
-at sayHello
-  1: const std = @import("std");
-  2: pub fn sayHello() void {
-> 3:     std.io.print("Hello, world!\n", .{});
-  4: }
+z9dbg: debuggee exited
 (z9dbg) z9dbg: exiting

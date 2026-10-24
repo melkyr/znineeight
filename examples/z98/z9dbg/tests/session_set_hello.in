@@ -1,3 +1,4 @@
+step
 break greetings.zig:3
 continue
 backtrace
