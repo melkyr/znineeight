@@ -628,6 +628,8 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
       dbg_spans: [*]lir_mod.DebugSpanEntry,
       dbg_spans_len: usize,
       dbg_src_file_id: u32,
+      dbg_src_len: u32,
+      dbg_fn_span: u32,
    };
 
 pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, classif: *type_resolver.EmissionClassification, plan: *c89_plan.C89SpellPlan, safe_checks: bool) C89Emitter {
@@ -704,6 +706,8 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
            .dbg_spans = undefined,
            .dbg_spans_len = @intCast(usize, 0),
            .dbg_src_file_id = @intCast(u32, 0),
+           .dbg_src_len = @intCast(u32, 0),
+           .dbg_fn_span = @intCast(u32, 0),
        };
 }
 
@@ -1991,10 +1995,12 @@ fn debugFillFnSpans(emitter: *C89Emitter, func: *LirFunction, span: u32) void {
 // reset per function by the emit driver). Off when `debug_map` is null.
 fn debugLoadFnSpans(emitter: *C89Emitter, slot: lir_mod.LirSlot, module_id: u32, func: *LirFunction) void {
     emitter.dbg_spans_len = @intCast(usize, 0);
+    emitter.dbg_fn_span = @intCast(u32, 0);
     if (emitter.debug_map == null or emitter.debug_store == null) return;
     var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
     if (@intCast(usize, module_id) < mods.len) {
         emitter.dbg_src_file_id = mods[@intCast(usize, module_id)].source_file_id;
+        emitter.dbg_src_len = @intCast(u32, sm_mod.sourceManagerGetSourceContent(emitter.diag.source_manager, emitter.dbg_src_file_id).len);
     }
     var got: u8 = @intCast(u8, 0);
     if (emitter.debug_store) |dbg_store| {
@@ -2010,8 +2016,8 @@ fn debugLoadFnSpans(emitter: *C89Emitter, slot: lir_mod.LirSlot, module_id: u32,
             }
         }
     }
-    if (got != @intCast(u8, 0)) return;
-    // Async driver/step fallback: find the source function symbol by name.
+    // Function declaration span (used by async synthetic fallback and by
+    // hoisted declarations whose owning inst has no usable source span).
     // `__Z98Step_<f>` strips to `<f>`; a driver keeps the original name.
     if (emitter.debug_symbols) |syms| {
         var fname = interner_mod.stringInternerGet(emitter.interner, func.name_id);
@@ -2026,8 +2032,24 @@ fn debugLoadFnSpans(emitter: *C89Emitter, slot: lir_mod.LirSlot, module_id: u32,
             if (same != @intCast(u8, 0)) src_name = fname[prefix.len..fname.len];
         }
         if (debug_map.debugSymbolFindFn(syms, module_id, src_name, emitter.interner)) |sym| {
-            if (sym.decl_span != @intCast(u32, 0)) debugFillFnSpans(emitter, func, sym.decl_span);
+            emitter.dbg_fn_span = sym.decl_span;
+            if (got == @intCast(u8, 0) and sym.decl_span != @intCast(u32, 0)) debugFillFnSpans(emitter, func, sym.decl_span);
         }
+    }
+}
+
+// P3-M1: add one output-line run (line_before+1 .. writer.line) mapped to the
+// Z98 source line of `span`. Shared by the inst hook and hoisted declarations.
+fn debugMapAddSpanRun(emitter: *C89Emitter, span: u32, line_before: u32) void {
+    if (emitter.debug_map == null) return;
+    if (span == @intCast(u32, 0)) return;
+    if (span >= emitter.dbg_src_len) return;
+    if (emitter.writer.line <= line_before) return;
+    var loc = sm_mod.sourceManagerGetLocation(emitter.diag.source_manager, emitter.dbg_src_file_id, span);
+    if (loc.line == @intCast(u32, 0)) return;
+    var line_count = emitter.writer.line - line_before;
+    if (emitter.debug_map) |dbg_writer| {
+        debug_map.debugMapWriterAddRun(dbg_writer, loc.line, line_before + @intCast(u32, 1), line_count);
     }
 }
 
@@ -2036,15 +2058,31 @@ fn debugLoadFnSpans(emitter: *C89Emitter, slot: lir_mod.LirSlot, module_id: u32,
 // emitInst, so they produce no row (spec §7.3).
 fn debugMapEmitInst(emitter: *C89Emitter, bb: usize, ii: usize, line_before: u32) void {
     if (emitter.debug_map == null) return;
-    if (emitter.writer.line <= line_before) return;
     if (emitter.dbg_spans_len == @intCast(usize, 0)) return;
     var span = debug_map.debugSpanLookup(emitter.dbg_spans[0..emitter.dbg_spans_len], @intCast(u32, bb), @intCast(u32, ii));
-    if (span == @intCast(u32, 0)) return;
-    var loc = sm_mod.sourceManagerGetLocation(emitter.diag.source_manager, emitter.dbg_src_file_id, span);
-    if (loc.line == @intCast(u32, 0)) return;
-    var line_count = emitter.writer.line - line_before;
-    if (emitter.debug_map) |dbg_writer| {
-        debug_map.debugMapWriterAddRun(dbg_writer, loc.line, line_before + @intCast(u32, 1), line_count);
+    debugMapAddSpanRun(emitter, span, line_before);
+}
+
+// P3-M1: the temp a LIR inst defines (0xFFFFFFFF when it defines none).
+// Mirrors `dceResultPos`'s extra set plus the shared-result arms and the
+// side-table calls, so hoisted declarations find their owning inst's span.
+fn debugInstDefTemp(inst: lir_mod.LirInst, lir_fn: *LirFunction) u32 {
+    switch (inst) {
+        .decl_temp => |d| { return d.temp; },
+        .decl_local => |d| { return d.temp; },
+        .call => |c| { return c.result; },
+        .call_direct => |slot| { return lir_mod.lirSideGetCallDirect(lir_fn, slot).result; },
+        .tail_call => |slot| { return lir_mod.lirSideGetTailCall(lir_fn, slot).result; },
+        .int_cast_checked => |c| { return c.result; },
+        .width_wrap => |w| { return w.result; },
+        .add_with_overflow => |o| { return o.result; },
+        .sub_with_overflow => |o| { return o.result; },
+        .mul_with_overflow => |o| { return o.result; },
+        .shl_with_overflow => |o| { return o.result; },
+        .neg_with_overflow => |o| { return o.result; },
+        .overflow_flag => |o| { return o.result; },
+        .va_arg => |va| { return va.result; },
+        else => { return instSharedResultTemp(inst); },
     }
 }
 
@@ -3040,6 +3078,42 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         written_arr[@intCast(usize, tp)] = @intCast(u8, 0);
         poison_arr[@intCast(usize, tp)] = @intCast(u8, 0);
     }
+    // P3-M1 (review F2): map every hoisted declaration to the span of the inst
+    // that owns/defines its temp (spec §7.3 "row = owning statement"). Off by
+    // default: no table, no scan, no allocation.
+    var temp_span: [*]u32 = undefined;
+    if (emitter.debug_map != null) {
+        var raw_ts = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
+        temp_span = @ptrCast([*]u32, raw_ts);
+        var ts_i: u32 = 0;
+        while (ts_i < max_temp) : (ts_i += @intCast(u32, 1)) { temp_span[@intCast(usize, ts_i)] = @intCast(u32, 0xFFFFFFFF); }
+        var src_len = @intCast(usize, emitter.dbg_src_len);
+        if (emitter.dbg_spans_len > @intCast(usize, 0)) {
+            var ds_bi: usize = @intCast(usize, 0);
+            while (ds_bi < lir_fn.blocks.len) : (ds_bi += @intCast(usize, 1)) {
+                var ds_bb = &lir_fn.blocks.items[ds_bi];
+                var ds_ii: usize = @intCast(usize, 0);
+                while (ds_ii < ds_bb.insts.len) : (ds_ii += @intCast(usize, 1)) {
+                    var ds_t = debugInstDefTemp(ds_bb.insts.items[ds_ii], lir_fn);
+                    if (ds_t < max_temp and temp_span[@intCast(usize, ds_t)] == @intCast(u32, 0xFFFFFFFF)) {
+                        var ds_sp = debug_map.debugSpanLookup(emitter.dbg_spans[0..emitter.dbg_spans_len], @intCast(u32, ds_bi), @intCast(u32, ds_ii));
+                        if (ds_sp != @intCast(u32, 0) and @intCast(usize, ds_sp) < src_len) temp_span[@intCast(usize, ds_t)] = ds_sp;
+                    }
+                }
+            }
+        }
+        // Synthetic/EOF-only defs: attribute to the function declaration line
+        // rather than emitting an out-of-file line number.
+        if (emitter.dbg_fn_span != @intCast(u32, 0)) {
+            var fb_i: usize = @intCast(usize, 0);
+            while (fb_i < lir_fn.hoisted_temps.len) : (fb_i += @intCast(usize, 1)) {
+                var fb_t = lir_fn.hoisted_temps.items[fb_i].temp_id;
+                if (fb_t < max_temp and temp_span[@intCast(usize, fb_t)] == @intCast(u32, 0xFFFFFFFF)) {
+                    temp_span[@intCast(usize, fb_t)] = emitter.dbg_fn_span;
+                }
+            }
+        }
+    }
     hti = @intCast(usize, 0);
     while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
         var htd = lir_fn.hoisted_temps.items[hti];
@@ -3703,6 +3777,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         var dsep: []const u8 = ":"; pal.markerWrite(dsep);
         pal.markerWrite(c_type);
         var dnl: []const u8 = "\n"; pal.markerWrite(dnl);
+        var decl_line_before = emitter.writer.line;
         if (eff_type != @intCast(u32, 1)) {
         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
         bufferedWriterWrite(&emitter.writer, c_type);
@@ -3731,6 +3806,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             var mtp_dm: []const u8 = "T"; pal.markerWriteInt(mtp_dm, eff_type);
             var mtp_nl: []const u8 = " "; pal.markerWrite(mtp_nl);
         }
+        if (emitter.debug_map != null and td.temp_id < max_temp) {
+            debugMapAddSpanRun(emitter, temp_span[@intCast(usize, td.temp_id)], decl_line_before);
+        }
      }
      if (lir_fn.poison_uninit != @intCast(u8, 0)) {
          var poison_i: usize = @intCast(usize, 0);
@@ -3738,6 +3816,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
              if (poison_arr[@intCast(usize, poison_i)] != @intCast(u8, 0)) {
                  var ptd = lir_fn.hoisted_temps.items[poison_i];
                  var ptn = nm_mod.nameManglerMintTemp(emitter.mangler, ptd.temp_id);
+                 var poison_line_before = emitter.writer.line;
                  bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                  var pf0: []const u8 = "zig_poison_fill((void*)&";
                  bufferedWriterWrite(&emitter.writer, pf0);
@@ -3747,6 +3826,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                  bufferedWriterWrite(&emitter.writer, ptn);
                  var pf2: []const u8 = ");\n";
                  bufferedWriterWrite(&emitter.writer, pf2);
+                 if (emitter.debug_map != null and ptd.temp_id < max_temp) {
+                     debugMapAddSpanRun(emitter, temp_span[@intCast(usize, ptd.temp_id)], poison_line_before);
+                 }
              }
          }
      }

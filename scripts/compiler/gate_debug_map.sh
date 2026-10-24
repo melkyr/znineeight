@@ -123,6 +123,77 @@ else
     note "ok .syms main row"
 fi
 
+# ---- 2b. hoisted declarations are mapped (spec §7.3) ----
+# `fibonacci` forces hoisted `zT_*` temporaries. Every contiguous hoisted
+# declaration line at the top of an emitted function must be covered by a
+# `.lines` run whose src_line is a real line of the probe source.
+HOIST_ENTRY="examples/z98/fibonacci/main.zig"
+HOIST_SRC="$ROOT/$HOIST_ENTRY"
+mkdir -p "$WORK/hoist"
+( cd "$ROOT" && timeout 120 "$ZIG1" -q -d -o "$WORK/hoist" "$HOIST_ENTRY" ) \
+    >"$WORK/hoist.stdout" 2>"$WORK/hoist.stderr" || bad "hoisted probe -d compile failed"
+HLINES=$(find "$WORK/hoist" -maxdepth 1 -name '*.z98dbg.lines' | head -1)
+HC=$(grep -l 'int zT_1;' "$WORK/hoist"/*.c 2>/dev/null | head -1)
+if [ -z "$HLINES" ] || [ -z "$HC" ]; then
+    bad "hoisted probe did not emit a map file and/or a hoisted-decl C file"
+else
+    od -An -v -tu1 "$HLINES" | awk '
+    { for (i = 1; i <= NF; i++) b[++n] = $i }
+    END {
+        off = 21
+        while (off < n) {
+            sl = b[off] + 256*b[off+1]; off += 2; sf = ""
+            for (i = 0; i < sl; i++) { sf = sf sprintf("%c", b[off]); off += 1 }
+            ol = b[off] + 256*b[off+1]; off += 2; of = ""
+            for (i = 0; i < ol; i++) { of = of sprintf("%c", b[off]); off += 1 }
+            rn = b[off] + 256*b[off+1] + 65536*b[off+2] + 16777216*b[off+3]; off += 4
+            for (r = 0; r < rn; r++) {
+                src = b[off] + 256*b[off+1] + 65536*b[off+2] + 16777216*b[off+3]
+                os = b[off+4] + 256*b[off+5] + 65536*b[off+6] + 16777216*b[off+7]
+                oc = b[off+8] + 256*b[off+9] + 65536*b[off+10] + 16777216*b[off+11]
+                off += 12
+                print sf "\t" src "\t" of "\t" os "\t" oc
+            }
+        }
+    }' >"$WORK/hoist.rows"
+    awk '
+    { line[NR] = $0 }
+    END {
+        infn = 0
+        for (ln = 1; ln <= NR; ln++) {
+            if (line[ln] ~ /\{[[:space:]]*$/) {
+                infn = 1
+            } else if (infn == 1) {
+                if (line[ln] ~ /zT_[0-9]+/ && line[ln] ~ /;[[:space:]]*$/ &&
+                    (line[ln] !~ /=/ || line[ln] ~ /= 0;[[:space:]]*$/ || line[ln] ~ /= \{0\};[[:space:]]*$/)) {
+                    print ln
+                } else {
+                    infn = 0
+                }
+            }
+        }
+    }' "$HC" >"$WORK/hoist.decls"
+    HOIST_OUT="$(basename "$HC")"
+    SRC_LINES=$(awk 'END { print NR }' "$HOIST_SRC")
+    DHIT=0
+    DMISS=0
+    while IFS= read -r dline; do
+        [ -n "$dline" ] || continue
+        DHIT=$((DHIT + 1))
+        awk -F'\t' -v d="$dline" -v of="$HOIST_OUT" -v lim="$SRC_LINES" '
+            $3 == of && d >= $4 && d < $4 + $5 && $2 >= 1 && $2 <= lim { ok = 1 }
+            END { exit !ok }' "$WORK/hoist.rows" || {
+            bad "hoisted declaration line $HOIST_OUT:$dline is not mapped to a plausible src_line"
+            DMISS=$((DMISS + 1))
+        }
+    done <"$WORK/hoist.decls"
+    if [ "$DHIT" -eq 0 ]; then
+        bad "hoisted probe emitted no hoisted declaration lines to check"
+    elif [ "$DMISS" -eq 0 ]; then
+        note "ok hoisted declarations mapped ($DHIT lines)"
+    fi
+fi
+
 # ---- 3. determinism (3x) ----
 for i in 2 3; do
     mkdir -p "$WORK/d$i"

@@ -159,6 +159,9 @@ pub const CompilerContext = struct {
     debug_spans: debug_map.DebugSpanStore,
     debug_symbols: debug_map.DebugSymbolList,
     debug_map: debug_map.DebugMapWriter,
+    // P3-M1 review F3: one reusable per-function span buffer (emission arena),
+    // independent of the async_pending scratch-reset gate.
+    debug_span_buf: lir_mod.DebugSpanArrayList,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -421,6 +424,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .debug_spans = debug_map.debugSpanStoreInit(),
         .debug_symbols = debug_map.debugSymbolListInit(&compiler_alloc.emission),
         .debug_map = debug_map.debugMapWriterInit(),
+        .debug_span_buf = lir_mod.debugSpanArrayListInit(&compiler_alloc.emission),
     };
     runCompiler(&ctx);
 }
@@ -1047,6 +1051,10 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                                 .decl_span = decl.span_start,
                             });
                         }
+                        if (ctx.cli.debug) {
+                            lowerer.debug_spans = ctx.debug_span_buf;
+                            lowerer.debug_spans.len = 0;
+                        }
                         var lf = lower_mod.lowerFn(&lowerer, decl_idx);
                         if (async_analysis.asyncIsSuspending(&ctx.suspending_fns, lf.module_id, lf.name_id)) {
                             // Phase A: compute + publish the layout, retain the LIR
@@ -1065,6 +1073,10 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                                 debug_map.debugSpanStoreAppend(&ctx.debug_spans, slot.disk_offset, lowerer.debug_spans.items[0..lowerer.debug_spans.len]);
                             }
                             if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
+                        }
+                        if (ctx.cli.debug) {
+                            ctx.debug_span_buf = lowerer.debug_spans;
+                            ctx.debug_span_buf.len = 0;
                         }
                     } else {
                 if (decl.kind == AstKind.var_decl) {
@@ -1209,11 +1221,17 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         ilowerer.module_id = mods[mi].id;
         ilowerer.module_reg = ctx.module_reg;
         ilowerer.debug_enabled = @intCast(u8, if (ctx.cli.debug) 1 else 0);
+        if (ctx.cli.debug) {
+            ilowerer.debug_spans = ctx.debug_span_buf;
+            ilowerer.debug_spans.len = 0;
+        }
         var imf = lower_mod.lowerModuleInit(&ilowerer, mods[mi].ast_root, mods[mi].id, &ctx.module_init_deps);
         var islot = lir_stream.lirStreamAppend(&ctx.lir_stream, imf);
         lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, islot);
         if (ctx.cli.debug) {
             debug_map.debugSpanStoreAppend(&ctx.debug_spans, islot.disk_offset, ilowerer.debug_spans.items[0..ilowerer.debug_spans.len]);
+            ctx.debug_span_buf = ilowerer.debug_spans;
+            ctx.debug_span_buf.len = 0;
         }
         if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
     }
