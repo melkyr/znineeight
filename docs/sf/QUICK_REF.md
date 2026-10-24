@@ -280,12 +280,11 @@ cd <dump> && timeout 120 sh build_target.sh mingw
 ```
 - Harness wrapper: `scripts/win32_cross/cross_build_run.sh <zig1> <entry> <workdir> <exe> [-lwsock32]` — `cross_build_run.sh` links `-lwsock32` unconditionally (Amendment A0), so no extra flag is needed.
 
-### Compiler RSS/arena — Phase 1 M1 measured baseline (fixed point `21c957…`)
+### Compiler RSS/arena — historical Phase 1 M1 baseline (v111)
 
-One run on the build machine at seed v111 / fixed point
-`21c957730d268f1e7883176fa5413b65`, fixed-point binary `/tmp/m1_build/zig1_5_clean`, under
-`/usr/bin/time -v` (one run, not 3× medians). Compiler-only rows — do **not** use
-whole-build/whole-gate process-tree maxima (they include gcc) as compiler RSS:
+**These figures are historical.** They were measured at seed v111 / fixed point
+`21c957…`; the current seed is v119 / `45158dce…` and has not been re-measured
+here. Do not present the v111 numbers as current.
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
 |---|---:|---:|---|
@@ -293,14 +292,13 @@ whole-build/whole-gate process-tree maxima (they include gcc) as compiler RSS:
 | (b) full stdlib gate, compiler-only max (321 invocations) | 28836 | 0.32 | not exposed |
 | (c) z9play `main.zig` `-fsafe` emit | 8140 | 0.36 | pool=4609K, total=2032K |
 
-Row (b): **0.32 s is the largest single compiler invocation's wall, not the full gate wall**
-(~153 s including gcc). Arena `total` is `perm + mod + scr`; `pool` is separate.
-
-Exact recipe, runnable from the repo root:
+Row (b): **0.32 s is the largest single compiler invocation's wall, not the full
+gate wall** (~153 s including gcc). Arena `total` is `perm + mod + scr`; `pool`
+is separate. Re-measure against the current seed before making current claims:
 
 ```bash
-FIXED_POINT_MD5=21c957730d268f1e7883176fa5413b65 \
-  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m1_build
+rm -rf /tmp/m1_build
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m1_build
 rm -rf /tmp/m1_emit && mkdir -p /tmp/m1_emit
 /usr/bin/time -v /tmp/m1_build/zig1_5_clean -ffast --dump-c89 \
   --output-dir /tmp/m1_emit sf/src/main.zig
@@ -309,9 +307,9 @@ rm -rf /tmp/m1_emit_arena && mkdir -p /tmp/m1_emit_arena
   --output-dir /tmp/m1_emit_arena sf/src/main.zig 2>&1 | grep 'track-memory:'
 ```
 
-**Compiler target:** **<16 MB goal; current peak recorded above; tracked per Phase 1 milestone.**
-The current fixed-point self-emission fails on both axes: 20792 KiB RSS (20.3 MB; +4.3 MB over)
-and pool 18871K (18.4 MB; +2.4 MB over).
+**Compiler target:** **<16 MB goal**; current peak must be re-measured for the
+active seed. The historical v111 baseline failed both RSS and pool.
+
 
 **Demo RAM budget (Phase 1):** **16 MB target / 32 MB hard ceiling, enforced with
 `ulimit -v 32768` + recorded peak RSS**.
@@ -747,31 +745,22 @@ Self-recursion TCO: emitted C must contain a `z_bb_0:` label in the recursive fn
 `goto z_bb_0;` back-edge (NO retained self `call`). Deep recursion (100k) must run with O(1) stack.
 
 ```bash
-# tco_factorial (self-recursion, i32)
-sf/build/out_release/zig1 --dump-c89 examples/z98/tco_factorial/main.zig > /tmp/tf.c ; echo "dump rc=$?"
-grep -n "goto z_bb_0;" /tmp/tf.c            # expect: fact() has rebind assigns + back-edge
-grep -c "zF_.*_fact(" /tmp/tf.c             # fwd-decl + def + main call sites only; NO self-call in fact body
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
-    /tmp/tf.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/tf ; echo "gcc rc=$?"
-/tmp/tf ; echo "run rc=$?"                  # expect: "fact(10) = 3628800" then "deep ok", rc=0
-
-# tco_return_try (self-recursion through E!i32 try)
-sf/build/out_release/zig1 --dump-c89 examples/z98/tco_return_try/main.zig > /tmp/tr.c ; echo "dump rc=$?"
-grep -n "goto z_bb_0;" /tmp/tr.c             # expect: count() back-edge (try-CFG eliminated)
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
-    /tmp/tr.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/tr ; echo "gcc rc=$?"
-/tmp/tr ; echo "run rc=$?"                  # expect: "count(10) = 10" then "count(100000) = 100000", rc=0
-
-# tco_defer (self-recursion with defer — defer fires ONCE at terminal return, not per-iteration)
-# [updated: 2026-08-03]
-sf/build/out_release/zig1 --dump-c89 examples/z98/tco_defer/main.zig > /tmp/td.c ; echo "dump rc=$?"
-grep -n "goto z_bb_0;" /tmp/td.c               # expect: back-edge present
-# Verify defer body NOT in the self-TCO rebind/jump block (nop'd by lower.zig:3641-3645)
-# Verify defer body PRESENT in terminal-return path before the final `return` (emitted at lowerFn:4457)
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
-    /tmp/td.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/td ; echo "gcc rc=$?"
-/tmp/td ; echo "run rc=$?"                     # expect: defer fires exactly once at end, rc=0
+ZIG=${ZIG:-<out_dir>/zig1_5_clean}
+for ex in tco_factorial tco_return_try tco_defer; do
+  OUT=/tmp/tco_$ex
+  rm -rf "$OUT" && mkdir -p "$OUT"
+  "$ZIG" -fsafe -o "$OUT" examples/z98/$ex/main.zig || exit 1
+  (cd "$OUT" && sh build_target.sh linux prog) || exit 1
+  grep -R -n "goto z_bb_0;" "$OUT"/*.c || exit 1
+  "$OUT/prog" || exit 1
+done
 ```
+
+Expected: each program prints its documented result and exits 0; the recursive
+function has a `z_bb_0:` back-edge and no retained self-call. `tco_defer` fires
+its defer exactly once at terminal return.
+
+
 
 Gate: dump rc=0, gcc rc=0, run rc=0, `goto z_bb_0;` present, no self-call retained in the emitted
 recursive fn. A compiler ICE shows as `dump rc=134` with a `PANIC:` line (may land on stdout).
@@ -827,122 +816,57 @@ immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transfor
 ---
 
 
-### Canonical Examples vs Oracle Examples
+### Canonical Examples vs Legacy Oracle Examples
 
-- **Canonical examples** under `examples/z98/` — use `@cInclude` + `extern fn` (valid Z98 syntax).
-- **Oracle examples** under `examples/zig0/` — use zig0-compatible syntax. Only for oracle comparison against `zig0` output, not as working-example reference.
-- The gcc compile recipe includes `-I sf/src/include` which auto-declares bootstrap functions (`__bootstrap_print` etc.) from `zig_runtime.h`.
+- **Canonical examples** live under `examples/z98/` and use current Z98 syntax
+  (`@cInclude` + `extern fn`).
+- `examples/zig0/` is legacy oracle material only; do not use it as the current
+  build/example reference.
 
-
-## Bootstrap Build (zig0 → zig1)
-
-
-```bash
-cd /workspace/znineeight
-rm -rf out_release && mkdir -p out_release
-./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
-gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
-```
-
-Debug build:
-```bash
-gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
-```
-
-## LISP refactor testing building zig1 pipeline
-
-How the LISP / sema-refactor work actually builds and tests `zig1` (differential vs `zig0`).
-`zig1` is fully determined by **`sf/src/main.zig` (+ its imports)** and **`sf/build/zig0`** — the
-output directory and gcc *warning* flags do NOT change the resulting compiler.
-
-**1. Build zig1 from the current source (isolated output dir):**
-```bash
-OUT=/tmp/z1
-rm -rf "$OUT" && mkdir -p "$OUT"          # always clean: stale .c/.h cause false Slice_* type errors
-./sf/build/zig0 --header-priority-include -o "$OUT/zig1.c" sf/src/main.zig   # emits 35 per-module .c
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign "$OUT"/*.c sf/src/include/zig_pal.c -o "$OUT/zig1"
-```
-Debug build (for GDB): append `-g -O0 -Wno-implicit-function-declaration` to the gcc line.
-
-- zig0 emits **35 per-module `.c` files** into `$OUT` (gcc globs `"$OUT"/*.c`; there is no single `zig1.c` object).
-- The bootstrap `-Iinclude` above is **stale** (no root `include/` dir exists) — omit it. `-Wno-pointer-sign`
-  only mutes warnings. Gate on the `error:` count, never warnings.
-- Always build from the **repo** `sf/src/main.zig`, never a `/tmp` `git worktree` (those hold older source = a different/older zig1).
-
-**2. Compile + run an example with that zig1:**
-```bash
-"$OUT/zig1" --dump-c89 examples/zig0/lisp_interpreter_curr/main.zig > /tmp/lisp.c
-gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Isf/src/include \
-    /tmp/lisp.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/lisp 2>&1 | grep -c 'error:'
-# use `gcc -c` (no link) for no-main repros; pre-F6 mud_server examples need net_runtime.c (F6-migrated z98 mud_server does not)
-```
-
-**3. Differential / gate (what "passing" means):**
-- `zig0` is the reference oracle: `./sf/build/zig0 -o DIR/out.c repro.zig` (emits per-module `repro.c` in `DIR`).
-- Refactor gate: `man/gol/mud/lisp --dump-c89` **byte-identical** to baselines + `lisp` `error:` count == `12` + self-host gcc `0` errors.
-- Current baselines (HEAD `c3d61919`): `man c379bd194d73d06a9dbac02431a82b2d`, `gol 8aa260ce9d467995f657e46552712fb1`,
-  `mud 35051e34cd0ba883a08ff60569ae262f`, `lisp 74a721caef6f121fe6d744870dbb7c37`; `zig1` ≈ `621772` bytes.
-- Markers: `"$OUT/zig1" --markers --dump-c89 <entry> 2>mk` then `grep -ac '^PREFIX' mk`
-  (watch prefix collisions: `FS:C`/`FS:CK`, `IFST:K`/`IFST:K2` → use the `:N` variant).
-
-## Compile Examples with zig1
+### Compile + run an example with the seed-built compiler
 
 ```bash
-./out_release/zig1 --dump-c89 examples/zig0/mandelbrot/mandelbrot.zig > out.c
-./out_release/zig1 --dump-c89 examples/zig0/game_of_life/main_lin.zig > out.c
-./out_release/zig1 --dump-c89 examples/zig0/mud_server/main.zig > out.c
+ZIG=${ZIG:-<out_dir>/zig1_5_clean}
+OUT=/tmp/z1ex
+rm -rf "$OUT" && mkdir -p "$OUT"
+"$ZIG" -fsafe -o "$OUT" examples/z98/json_parser/main.zig
+(cd "$OUT" && sh build_target.sh linux prog)
 ```
 
-With markers (diagnostic output to stderr):
+For diagnostics:
 ```bash
-./out_release/zig1 --markers --dump-c89 examples/zig0/mud_server/main.zig > out.c 2>diag.txt
+"$ZIG" --markers --dump-c89 --output-dir /tmp/z1ex \
+  examples/z98/mud_server/main.zig 2> /tmp/z1ex/markers.txt
 ```
 
-## Compile Z98 Examples (@cInclude)
+`--dump-c89` requires a pre-created `--output-dir`. The emitted directory
+contains its own build scripts and runtime support; prefer
+`build_target.sh linux` over hand-assembling a gcc link line.
 
-```bash
-./out_release/zig1 --dump-c89 examples/z98/json_parser/main.zig > out.c
-gcc -m32 -std=c89 -Wno-pointer-sign -Isf/src/include out.c \
-    sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o app
-```
+### Build mud_server
 
-## GCC Compile + Link
+Use the same `-fsafe -o <out>` + `build_target.sh linux` recipe on
+`examples/z98/mud_server/main.zig`. There is no current zig0 build cycle.
 
-```bash
-gcc -m32 -std=c89 -Wno-pointer-sign \
-  -Iout_release -Isf/src/include \
-  out.c \
-  sf/src/include/zig_runtime.c \
-  sf/src/include/zig_pal.c \
-  -o app
-```
+### Historical zig0 build sections
 
-## Build mud_server (full cycle)
+The old `Bootstrap Build (zig0 → zig1)` and decimal LISP-pipeline recipes were
+removed: zig0 no longer builds current `sf/src`. Use the seed recipe at the top
+of this file.
 
-```bash
-cd /workspace/znineeight
-rm -rf out_release && mkdir -p out_release
-./sf/build/zig0 --header-priority-include -o out_release/zig1.c sf/src/main.zig
-gcc -m32 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
-./out_release/zig1 --dump-c89 examples/zig0/mud_server/main.zig > /tmp/mud.c
-gcc -m32 -std=c89 -Wno-pointer-sign -Iout_release -Isf/src/include \
-  /tmp/mud.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c \
-  sf/src/include/net_runtime.c -o /tmp/mud
-```
 
-Check error count:
-```bash
-gcc ... 2>&1 | grep -c "error:"
-```
 
-## Build and Run Tests
+## Run tests
+
+Current coverage is the stdlib fixture/crosscheck harness; `build_test.sh` is a
+legacy, pre-existing broken path and is not the gate.
 
 ```bash
-cd /workspace/znineeight && ./sf/scripts/build_test.sh
+bash scripts/stdlib/verify_stdlib.sh <out_dir>/zig1_5_clean
+bash scripts/stdlib/run_fixtures.sh <out_dir>/zig1_5_clean <fixture-dir>
+bash scripts/stdlib/run_crosscheck.sh <out_dir>/zig1_5_clean <module>
 ```
 
-Note: `build_test.sh` links `sf/src/include/zig_pal.c` into each test binary (required since
-`pal.zig` gained the `pal_file_*` file-I/O externs; without it every test binary fails to link).
 
 ## Std-lib Runtime Gate
 
@@ -1022,36 +946,31 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 requires it to pass.
 
 
-## Debug with GDB on zig1
+## Debug with GDB on the seed-built compiler
 
-### Build with debug symbols
+The current compiler is `<out_dir>/zig1_5_clean` from
+`scripts/seed/build_from_seed.sh`; `sf/build/out_release/zig1` is retired.
+
+### Emit + build with debug symbols
 ```bash
-gcc -m32 -g -O0 -std=c89 -Wno-long-long -Iinclude out_release/*.c sf/src/include/zig_pal.c -o out_release/zig1
+ZIG=${ZIG:-<out_dir>/zig1_5_clean}
+mkdir -p /tmp/z1dbg
+"$ZIG" --dump-c89 --output-dir /tmp/z1dbg <entry.zig>
+gcc -m32 -g -O0 -std=c89 -Wno-long-long -Wno-pointer-sign \
+    -I /tmp/z1dbg /tmp/z1dbg/*.c -o /tmp/z1dbg/prog
 ```
 
-### Find function in generated C
+### Find a function or line in generated C
 ```bash
-grep -n "function_name_part" out_release/semantic_analyzer.c | head -5
+grep -n "function_name_part" /tmp/z1dbg/semantic_analyzer_*.c | head
+grep -n "keyword" /tmp/z1dbg/semantic_analyzer_*.c | head
 ```
 
-### Find line for breakpoint
-```bash
-grep -n "keyword" out_release/semantic_analyzer.c | head -20
-```
+Generated C has **no `#line` directives**. Break on `zF_*`/`zT_*` symbols or
+the module file/line; use the debugger sidecar once available. Run
+`gdb --args /tmp/z1dbg/prog ...` with the same arguments as the original
+program.
 
-### GDB with batch script
-```bash
-cat > /tmp/gdb.txt <<'EOF'
-set pagination off
-break out_release/semantic_analyzer.c:LINENO
-run examples/zig0/mud_server/main.zig > /dev/null 2> /dev/null
-print varname
-print another_var
-continue
-quit
-EOF
-gdb -batch -x /tmp/gdb.txt --args ./out_release/zig1 --dump-c89
-```
 
 ### Filter output to variable values
 ```bash
@@ -1068,51 +987,38 @@ gdb -batch ... 2>&1 | grep "^\$"
 | TYPE_VOID return | ~2267 | `return zC_..._TYPE_VOID;` |
 | Loop exit | ~2275 | `__loop_0_end:` label |
 
-### Verify zig0 C89 variable corruption theory
-Replace suspect scalar variable with `[1]u32` box array. If behavior unchanged → corruption theory disproven. Example:
+
+### Diagnostic markers
+
+Use `pal.markerWrite` / `pal.markerWriteInt` with a named or direct string
+literal (string literals coerce to `[]const u8`; no zig0 workaround needed):
+
 ```zig
-// Before: var unified: u32 = 0;
-// After:  var un_box: [1]u32 = [1]u32{0};   // use un_box[0] everywhere
+var m: []const u8 = "LABEL:n";
+pal.markerWriteInt(m, val);
 ```
 
-### itoa-based diagnostic markers — use palMarkerWriteInt
-```zig
-// BEFORE (15+ local vars, zig0 C89 budget risk):
-var m: []const u8 = "LABEL:n"; pal_mod.markerWrite(m);
-var nb: [10]u8 = undefined; var nl = itoa_mod.itoa(val, nb[0..]);
-var ns: usize = @intCast(usize, 9) - @intCast(usize, nl);
-pal_mod.markerWrite(nb[ns..@intCast(usize, 9)]);
-var e: []const u8 = "\n"; pal_mod.markerWrite(e);
-
-// AFTER (2 local vars, safe everywhere):
-// IMPORTANT: zig0 C89 cannot pass string literal directly as []const u8 argument.
-// Always use named var before markerWriteInt call.
-var m: []const u8 = "LABEL:n"; pal_mod.markerWriteInt(m, val);
-```
-palMarkerWriteInt defined at pal.zig:99-106. Uses internal 12-byte buf + itoa_mod.itoa.
-Output: `LABEL:n<value>\n`.
+`palMarkerWriteInt` writes `LABEL:n<value>\n`.
 
 ### Marker extraction — use `grep -a`, NOT `strings`
 
-**CRITICAL:** `strings` strips null bytes and can silently drop entries.
-Always use `grep -a` (binary-as-text) on the raw stderr file.
+`strings` strips null bytes and can silently drop entries. Capture with the
+seed-built compiler:
 
 ```bash
-# Capture markers to file
-./out_release/zig1 --markers --dump-c89 examples/zig0/mud_server/main.zig > out.c 2>/tmp/markers.bin
-
-# Extract specific markers
+ZIG=${ZIG:-<out_dir>/zig1_5_clean}
+"$ZIG" --markers --dump-c89 --output-dir /tmp/z1mk \
+  examples/z98/mud_server/main.zig 2> /tmp/markers.bin
 grep -a "^PREFIX:" /tmp/markers.bin
+```
 
-# Count entries (reliable)
+Further filters:
+```bash
 grep -a -c "^PREFIX:" /tmp/markers.bin
-
-# Sort unique numeric values
 grep -a "^PREFIX:" /tmp/markers.bin | sed 's/PREFIX: *//' | sort -n
-
-# Multi-prefix extraction preserving order
 grep -a "^IFST:\|^PBD:\|^EBLK:" /tmp/markers.bin
 ```
+
 
 ### Common marker labels in sema.zig (all use markerWriteInt)
 
@@ -1141,7 +1047,7 @@ grep -a "^IFST:\|^PBD:\|^EBLK:" /tmp/markers.bin
 | PBD:N | resolveSwitchExpr prong body node | PBD:N   753 |
 | PBD:K | resolveSwitchExpr prong body kind | PBD:K    76 |
 
-## DISPROVEN zig0 C89 Bugs
+## Historical DISPROVEN zig0 C89 Bugs (retired)
 
 Theories that were investigated and ruled out. Do NOT re-investigate.
 
@@ -1155,7 +1061,7 @@ Theories that were investigated and ruled out. Do NOT re-investigate.
 | **TokenKind value mismatch between zig0 and C header** | C header enum values match Z98 enum order exactly (kw_var=54, kw_const=53, kw_return=68, kw_if=63). Verified via GDB + C define grep. | 2026-06-12 |
 | **`strings` vs `grep -a`** — `strings` silently drops marker entries | Confirmed: `strings` strips null bytes. Use `grep -a "^PREFIX:" /tmp/markers.bin` instead. | 2026-06-12 |
 
-## zig0 C89 Compilation Errors — Import/Missing Module Checklist
+## Historical zig0 C89 Compilation Errors (retired)
 
 **DO NOT blame zig0 C89 limitations first.** When zig0 emits `use of undeclared identifier`, `unable to infer type`, or similar compile errors, follow this checklist IN ORDER before considering zig0 bugs:
 
@@ -1181,9 +1087,9 @@ time chasing them.
 | **game_of_life: literal ANSI / terminal-clear escape codes appear in the output** | `system("clear")` writes terminal escape sequences to stdout. When output is piped or captured (not a live TTY), those sequences show up as literal bytes. **Both zig0 AND zig1 behave this way** — it is terminal behavior, not codegen. | Whether the patterns (glider, blinker, block, beehive, LWSS) and the `Generation: N` lines render correctly. The presence of escape codes is irrelevant. |
 | **gcc *warnings* (as opposed to errors)** | Build commands intentionally suppress noise via `-Wno-long-long`, `-Wno-pointer-sign`, `-Wno-implicit-function-declaration`. Any remaining gcc *warnings* do not affect correctness of the produced binary. | Only the `error:` count matters. Gate builds on `gcc ... 2>&1 \| grep -c "error:"` equal to `0`. |
 
-**Differential rule:** `zig0` is the reference oracle. A `zig1`-compiled
-example is "correct" when its runtime output matches `zig0`'s output, modulo
-the terminal-clear artifact described above.
+**Comparison rule:** do not use zig0 as an oracle. Validate against the frozen
+corpus classification, pinned goldens, and the seed/fixed-point closure; emitted
+C is not byte-compatible with legacy zig0 output.
 
 ## Memory Recall (DEPRECATED — use mnemoria instead)
 
@@ -1291,22 +1197,16 @@ The **superpowers `writing-plans` skill** produces bite-sized, TDD, task-by-task
 implementation plans. Load it via the `skill` tool when you have a spec/requirements
 for a multi-step task, before touching code.
 
-- **Where plans are saved:** `.opencode/plans/YYYY-MM-DD-<feature-name>.md`
-  (this overrides the skill's default `docs/superpowers/plans/`). This directory is
-  **git-ignored / untracked** — writing a plan there alters nothing in the tracked
-  project; it is a scratch/handoff artifact.
-- **Plan mode is READ-ONLY for CODE/PROJECT/SYSTEM state only.** Per the durable
-  operator decision (mnemoria, 2026-06-26 "m1213", tags `plan-mode,memory-tool,compress,allowed`),
-  the following ARE permitted while in plan mode, on the operator's request:
-  - Writing/updating **plan `.md` files** under `.opencode/plans/` (untracked, benign).
-  - Storing memories via **`mnemoria add`** (a benign collaboration side-channel).
-  - Running **`compress`** (context-management meta-op).
-- **Still forbidden in plan mode:** source/code edits (`edit`/`fastedit`/`write` on
-  tracked project files), shell file-manipulation, `git commit`, `git checkout`,
-  config changes — i.e. any real project/code/system mutation.
-- **Do not re-litigate this.** If unsure whether a specific plan-mode write is allowed,
-  search mnemoria (`--path .opencode/memory search "plan mode memory-tool allowed"`)
-  and follow the operator's standing authorization rather than looping.
+- **Where plans are saved:** `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`.
+  Current plans are **tracked**; write them in build mode.
+- `.opencode/plans/` is a legacy/untracked scratch area, not the current plan
+  location.
+- **Plan mode is READ-ONLY for tracked project/code state.** Memory writes via
+  `mnemoria add` and `compress` are permitted; editing tracked files, committing,
+  or other project/system mutations are not.
+- **Do not re-litigate this.** If unsure, search
+  `mnemoria --path .opencode/memory search "plan mode memory-tool allowed"`.
+
 
 ## Code Review via Superpowers Skill
 
@@ -1333,12 +1233,12 @@ Trigger the requesting-code-review skill when auditing completed changes.
 
 **Full policy:** `docs/sf/AGENTS.md` §2.5 (post-incident, 2026-07-17).
 
-## zig0 Runtime h/c Architecture
+## Historical zig0 Runtime h/c Architecture (retired)
 
-The zig0 bootstrap compiler has a two-tier runtime that supports **both**
-the compilation of zig1 itself (zig0 → C89 → gcc link) and the programs
-compiled *by* zig1 (zig1 → C89 → gcc link). Understanding this split is
-critical when adding new runtime functions or debugging linker errors.
+> **Historical only.** zig0 no longer builds current `sf/src`; the current
+> runtime/support source is `sf/src/include/*` plus `sf/src/emit_support.zig`
+> (mirrored by `scripts/check_emit_support.sh`). The zig0 notes below are kept
+> for archaeology, not for current changes.
 
 ### File Layout
 
