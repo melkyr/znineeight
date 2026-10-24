@@ -49,6 +49,10 @@ pub const STOP_SIGNAL: u8 = 3;
 pub const STOP_EXITED: u8 = 4;
 
 pub const Backend = struct {
+    // true for a real process backend (backend_linux): the command loop then
+    // waits for and displays stops after continue/dump. Stub/mock backends in
+    // the M2 headless tests keep live = false, preserving their scripted UX.
+    live: bool,
     state: *void,
     launch_fn: fn (*void, []const u8, [][]const u8) BackendError!void,
     wait_fn: fn (*void) BackendError!StopEvent,
@@ -124,6 +128,7 @@ fn stubTerminate(state: *void) BackendError!void {
 // M3 installs backend_linux's functions here; the upper layer is unchanged.
 pub fn stubBackend() Backend {
     return Backend{
+        .live = false,
         .state = @ptrCast(*void, @intToPtr(*void, 0)),
         .launch_fn = stubLaunch,
         .wait_fn = stubWait,

@@ -46,6 +46,12 @@ pub fn breakTableInit() BreakTable {
     return BreakTable{ .items = undefined, .len = 0 };
 }
 
+// Add a line discovered during machine-address snapping (the DWARF/ELF layer
+// can move past the map-level snap). Existing entries are left untouched.
+pub fn breakTableForceAdd(table: *BreakTable, file: []const u8, line: u32) void {
+    _ = breakTableAdd(table, file, line);
+}
+
 fn breakTableFind(table: *BreakTable, file: []const u8, line: u32) bool {
     var i: usize = 0;
     while (i < table.len) : (i += 1) {
@@ -96,7 +102,7 @@ fn isWhitespaceOnly(s: []const u8) bool {
     return true;
 }
 
-fn nextFunctionLine(reader: *map_reader.MapReader, file: []const u8, after: u32) ?u32 {
+pub fn nextFunctionLine(reader: *map_reader.MapReader, file: []const u8, after: u32) ?u32 {
     var best: u32 = 0;
     var found = false;
     var i: usize = 0;
@@ -216,6 +222,11 @@ pub fn stepInto(reader: *map_reader.MapReader, be: *backend.Backend, resolve_sta
         if (ev.reason == backend.STOP_EXITED) return .exited;
         var st: StopState = undefined;
         if (!resolve_fn(resolve_state, ev.eip, &st)) continue;
+        // M2 review minor (a): compare canonical map paths, not whatever
+        // spelling the resolver produced (absolute vs map-relative), so the
+        // same mapped line is never mistaken for a new one.
+        var canon = map_reader.resolveFile(reader, st.src_file);
+        if (canon) |c| st.src_file = c;
         var changed = !std.str.eql(st.src_file, current.src_file) or st.src_line != current.src_line;
         if (!changed) continue;
         if (map_reader.lineAt(reader, st.src_file, st.src_line) != null) {

@@ -1,0 +1,19 @@
+Z98 debugger has started...
+Stopped at @LIVE@:22
+at main
+  20:
+  21: pub fn main(argc: i32, argv: [*][*]u8) void {
+> 22:     var x = middle(5);
+  23:     x = addTwo(x);
+  24:     counter = x;
+(z9dbg) break: no debug info
+(z9dbg) Stopped at @LIVE@:10
+at addTwo
+  8: var counter: u32 = 0;
+  9:
+> 10: fn addTwo(n: u32) u32 {
+  11:     const a = n + 1;
+  12:     const b = a + 1;
+(z9dbg) #0 addTwo at @LIVE@:10
+#1 main at @LIVE@:21
+(z9dbg) z9dbg: exiting

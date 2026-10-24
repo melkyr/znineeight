@@ -85,6 +85,74 @@ pub fn env(name: []const u8) ?[]const u8 {
     return null;
 }
 
+// --- POSIX process/debug surface (P3-M3) -----------------------------------
+//
+// Thin wrappers over the std-side PAL. Win32 returns failure/no-op values; the
+// @isWindows() guards keep the POSIX extern calls out of win32 emission (the
+// Win32 Debug API bindings are M4). These are deliberately low-level: policy
+// (argv construction, ptrace request sequencing, wait-status decoding) lives
+// in the debugger backend, not here.
+
+fn nullVoid() *void {
+    return @ptrCast(*void, @intToPtr(*void, 0));
+}
+
+pub fn fork() i32 {
+    if (@isWindows()) return -1;
+    return pal.fork();
+}
+
+pub fn execv(path: [*]const u8, arg_values: [*]const [*]const u8) i32 {
+    if (@isWindows()) return -1;
+    return pal.execv(path, arg_values);
+}
+
+pub fn waitpid(pid: i32, status: *i32, options: i32) i32 {
+    if (@isWindows()) return -1;
+    return pal.waitpid(pid, status, options);
+}
+
+pub fn ptrace(request: i32, pid: i32, addr: *void, data: *void) i32 {
+    if (@isWindows()) return -1;
+    return pal.ptrace(request, pid, addr, data);
+}
+
+pub fn getpid() i32 {
+    if (@isWindows()) return -1;
+    return pal.getpid();
+}
+
+pub fn kill(pid: i32, sig: i32) i32 {
+    if (@isWindows()) return -1;
+    return pal.kill(pid, sig);
+}
+
+pub fn errno() i32 {
+    if (@isWindows()) return 0;
+    return pal.__errno_location().*;
+}
+
+pub fn clearErrno() void {
+    if (@isWindows()) return;
+    pal.__errno_location().* = 0;
+}
+
+// Detach the debuggee's stdin from the debugger's command stream. A debugger
+// owns fd 0 for commands; the debuggee gets /dev/null (a debuggee that reads
+// stdin sees EOF, matching a non-interactive debug session). Stdout/stderr are
+// inherited so program output remains visible on the terminal.
+pub fn debuggeeStdinNull() void {
+    if (@isWindows()) return;
+    const fd = pal.open("/dev/null", @intCast(i32, 0), @intCast(i32, 0));
+    if (fd < 0) return;
+    _ = pal.dup2(fd, @intCast(i32, 0));
+    if (fd != 0) _ = pal.close(fd);
+}
+
+pub fn ptraceNull() *void {
+    return nullVoid();
+}
+
 pub fn cwd(arena: *arena_mod.Arena) OsError![]u8 {
     const buf: [*]u8 = @ptrCast([*]u8, try arena_mod.alloc(arena, CWD_BUF));
     if (@isWindows()) {

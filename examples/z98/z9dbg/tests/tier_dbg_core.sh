@@ -296,7 +296,7 @@ else
         i=1
         while [ "$i" -le 3 ]; do
             rm -f "$DUMP1" "$DUMP2"
-            if "$EXEDIR/prog" "$EXEDIR/prog" <"$Z9DIR/tests/session_hello.in" >"$OUT/bin_session.$i.out" 2>"$OUT/bin_session.$i.err"; then
+            if Z9DBG_STUB=1 "$EXEDIR/prog" "$EXEDIR/prog" <"$Z9DIR/tests/session_hello.in" >"$OUT/bin_session.$i.out" 2>"$OUT/bin_session.$i.err"; then
                 :
             else
                 fail_case "z9dbg binary session run $i rc"
@@ -327,7 +327,7 @@ else
         cp "$FIX/hello/main_BDA8D6C7.z98dbg.syms" "$EXEDIR_NC/"
         cp "$FIX/hello/main_BDA8D6C7.z98dbg.lines" "$EXEDIR_NC/"
         rm -f "$DUMP1" "$DUMP2"
-        if "$EXEDIR_NC/prog" "$EXEDIR_NC/prog" <"$Z9DIR/tests/session_hello.in" >"$OUT/bin_nocnames.out" 2>"$OUT/bin_nocnames.err"; then
+        if Z9DBG_STUB=1 "$EXEDIR_NC/prog" "$EXEDIR_NC/prog" <"$Z9DIR/tests/session_hello.in" >"$OUT/bin_nocnames.out" 2>"$OUT/bin_nocnames.err"; then
             :
         else
             fail_case "z9dbg binary no-cnames session rc"

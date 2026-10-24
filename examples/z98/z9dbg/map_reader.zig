@@ -36,6 +36,18 @@ pub const LineRow = struct {
     out_line: u32,
 };
 
+// One exact run of emitted lines sharing a single source line. The M3 address
+// resolver needs the full [out_start, out_start+out_count) range so it can
+// plant an int3 at every machine address mapped to the source line (spec §14);
+// lineRowsAt() intentionally keeps returning one row per run for M2 callers.
+pub const LineSpan = struct {
+    src_file: []const u8,
+    out_file: []const u8,
+    src_line: u32,
+    out_start: u32,
+    out_count: u32,
+};
+
 const Group = struct {
     src_file: []const u8,
     out_file: []const u8,
@@ -612,6 +624,75 @@ pub fn lineRowsAt(self: *MapReader, file_query: []const u8, line: u32, out: []Li
         }
     }
     return count;
+}
+
+pub fn lineSpansAt(self: *MapReader, file_query: []const u8, line: u32, out: []LineSpan) usize {
+    var file = resolveFile(self, file_query) orelse return 0;
+    var count: usize = 0;
+    var i: usize = 0;
+    while (i < self.group_len) : (i += 1) {
+        var g = self.groups[i];
+        if (!std.str.eql(g.src_file, file)) continue;
+        var j: usize = 0;
+        while (j < @intCast(usize, g.run_count)) : (j += 1) {
+            var r = readRun(self, g, j) orelse return count;
+            if (r.src_line == line) {
+                if (count < out.len) {
+                    out[count] = LineSpan{
+                        .src_file = g.src_file,
+                        .out_file = g.out_file,
+                        .src_line = r.src_line,
+                        .out_start = r.out_start,
+                        .out_count = r.out_count,
+                    };
+                }
+                count += 1;
+            }
+        }
+    }
+    return count;
+}
+
+// Nearest map row at or before an emitted C line. The C compiler's line table
+// can report a line inside an emitted statement whose exact .lines run starts a
+// few C lines earlier (macro helpers, call setup); the nearest preceding run is
+// the source statement that produced it. Exact containment is preferred when a
+// run covers out_line.
+pub fn reverseNearestAt(self: *MapReader, out_query: []const u8, out_line: u32) ?LineRow {
+    var out_file = resolveOutFile(self, out_query) orelse return null;
+    var best: ?LineRow = null;
+    var best_start: u32 = 0;
+    var i: usize = 0;
+    while (i < self.group_len) : (i += 1) {
+        var g = self.groups[i];
+        if (!std.str.eql(g.out_file, out_file)) continue;
+        var j: usize = 0;
+        while (j < @intCast(usize, g.run_count)) : (j += 1) {
+            var r = readRun(self, g, j) orelse return best;
+            if (r.out_start > out_line) continue;
+            if (r.out_count != 0 and out_line - r.out_start < r.out_count) {
+                return LineRow{ .src_file = g.src_file, .out_file = g.out_file, .src_line = r.src_line, .out_line = out_line };
+            }
+            if (best == null or r.out_start > best_start) {
+                best = LineRow{ .src_file = g.src_file, .out_file = g.out_file, .src_line = r.src_line, .out_line = out_line };
+                best_start = r.out_start;
+            }
+        }
+    }
+    return best;
+}
+
+pub fn srcNameForCname(self: *MapReader, mangled: []const u8) ?[]const u8 {
+    if (!loadCnames(self)) return null;
+    var i: usize = 0;
+    while (i < self.cname_count) : (i += 1) {
+        var off = @intCast(usize, self.cname_offs[i]);
+        var next: usize = 0;
+        var name = readStr16(self.cnames, off, &next) catch continue;
+        var cname = readStr16(self.cnames, next, &next) catch continue;
+        if (std.str.eql(cname, mangled)) return name;
+    }
+    return null;
 }
 
 pub fn reverseRowAt(self: *MapReader, out_query: []const u8, out_line: u32) ?LineRow {
