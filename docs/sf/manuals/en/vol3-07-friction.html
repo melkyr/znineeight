@@ -165,9 +165,10 @@ pass</td>
 <td valign="top">the seed recipe in <a href="vol3-00-title.html">chapter&nbsp;0, How to read this</a></td>
 </tr>
 <tr>
-<td valign="top">There is no debugger UI</td>
-<td valign="top">build the generated C with <tt>-g</tt> and run gdb; the
-compiler's own <tt>--markers</tt> trace is for bugs in the compiler</td>
+<td valign="top">There is no debugger window in the default output</td>
+<td valign="top">build the generated C with <tt>-g</tt> and run gdb, or opt in
+with <tt>zig1 -d</tt> + <tt>z9dbg</tt>; the compiler's own <tt>--markers</tt>
+trace is for bugs in the compiler</td>
 <td valign="top"><a href="vol3-15-debugger-workflow.html">chapter&nbsp;15, The debugger workflow</a></td>
 </tr>
 <tr>
@@ -317,14 +318,15 @@ without needing a second compiler to start from. The two-hop cost is the floor
 under compiler work, not the cost of using the compiler.
 </p>
 
-<h3>There is no debugger UI</h3>
+<h3>The default has no debugger window</h3>
 <p>
 A modern workflow puts a debugger in the editor: click in the margin, set a
-breakpoint, step, and watch the variable. Z98 has no such thing. It ships no
-debugger UI, and &mdash; a correction the manual makes against the original
-blueprint &mdash; it ships no sidecar debugger either; there is no
-<tt>.z98dbg</tt> format anywhere in the toolchain. The compiler's job ends when
-it has written the C89.
+breakpoint, step, and watch the variable. Z98 has no such window, and its
+default output is still the C89 it emitted. It does have an <b>opt-in</b>
+source-level path: <tt>zig1 -d</tt> writes <tt>.z98dbg.*</tt> map sidecars and
+the command-line debugger <tt>z9dbg</tt> consumes them with the debuggee's
+DWARF (ELF/PE) or embedded COFF. Without <tt>-d</tt>, the compiler's job still
+ends when it has written the C89.
 </p>
 <p>
 What you have instead is the C compiler's debugger, pointed at the generated C.
@@ -360,8 +362,9 @@ compiler's internal phase trace to the marker channel, which is how you watch a
 program make its way through the pipeline. The full workflow &mdash; the
 <tt>cd</tt> rule that keeps the emitted headers resolvable, the absolute
 include path, gdb, and markers &mdash; is
-<a href="vol3-15-debugger-workflow.html">chapter&nbsp;15</a>. There is no debugger UI today; there is gdb
-on code you can read.
+<a href="vol3-15-debugger-workflow.html">chapter&nbsp;15</a>. There is gdb on
+code you can read, and an opt-in <tt>z9dbg</tt> when you want source-level
+stops.
 </p>
 
 <h3>The error messages are numbered but sparse</h3>
@@ -575,8 +578,8 @@ path you have, ship with the path you can.</li>
 <tt>scripts/seed/build_from_seed.sh</tt>, read the closure line, and remember
 it is the price of a compiler proved deterministic &mdash; paid only when you
 change the compiler.</li>
-<li><b>No debugger UI?</b> gdb on the generated C; <tt>--markers</tt> for the
-compiler.</li>
+<li><b>No debugger window?</b> gdb on the generated C, or opt in with
+<tt>zig1 -d</tt> + <tt>z9dbg</tt>; <tt>--markers</tt> for the compiler.</li>
 <li><b>Sparse errors?</b> Read the location, code, message, and caret; then the
 Language Spec and Volume&nbsp;I chapter&nbsp;13.</li>
 <li><b>No forum?</b> <a href="search.html">Search</a>, the
@@ -610,10 +613,11 @@ compiler deterministic. Run the script and read the <tt>hop1 == hop2</tt> line;
 a rebuild that skips the gate is not a verification, it is a hope.
 </p>
 <p>
-<b>Hunting for a debugger that is not there.</b> There is no Z98 debugger UI
-and no sidecar debugger. The debugging surface is the generated C: build it
-with <tt>-g</tt> and use gdb. Wishing for a debugger window costs time that
-reading the generated file would have spent well.
+<b>Hunting for <tt>.z98dbg</tt> without <tt>-d</tt>.</b> The sidecars are
+opt-in: <tt>zig1 -d --output-dir DIR src.zig</tt> writes them and
+<tt>z9dbg</tt> uses them. A normal build writes none; its debugging surface is
+the generated C with <tt>-g</tt> and gdb. Reaching for a debugger window that
+does not exist costs time the generated file would have spent well.
 </p>
 <p>
 <b>Fixing the first message and ignoring the caret.</b> A diagnostic is precise

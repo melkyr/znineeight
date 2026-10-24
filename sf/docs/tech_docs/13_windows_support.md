@@ -150,3 +150,32 @@ non-bootstrap 64-bit base type.
 - The manual HTML snapshots under `docs/sf/manuals/en/**` quote pre-T5.3 script
   bodies; the old script names still resolve through the aliases, so the
   references remain valid but the quoted text is stale.
+
+## 9. Win32 Debug API backend + 9x imports [added: 2026-10-24 — P3-M4]
+
+`examples/z98/z9dbg/backend_win98.zig` drives the debuggee with
+`CreateProcessA(DEBUG_ONLY_THIS_PROCESS)` and a 50 ms `WaitForDebugEvent`
+pump, then `ContinueDebugEvent` (DBG_CONTINUE), `Get/SetThreadContext`
+(CONTEXT_i386, raw 716-byte buffer), `Read/WriteProcessMemory`, and
+`FlushInstructionCache`. Breakpoints are `int3` bytes planted through
+`WriteProcessMemory`; a hit restores the original byte, rewinds EIP to the int3
+address, and leaves the event pending for `continue`. Single-step sets
+EFlags.TF (0x100) and clears it on the single-step exception. The loader's
+initial breakpoint is skipped because it has no planted reach at EIP-1.
+`quit`/`detach` is terminate-on-quit (restore bytes + `TerminateProcess`); the
+9x profile has no detach/reattach API, and `DebugActiveProcessStop` is not
+imported.
+
+The std-side split is unchanged: `sf/src/std_os_pal.zig` declares the
+`extern "stdcall"` bindings and `sf/src/std_os.zig` exposes target-guarded
+wrappers (`@isWindows()`), so a Linux dump references none of them.
+`std_os_prelude.h` already includes `<windows.h>` under `_WIN32`, which supplies
+the real prototypes.
+
+`scripts/win32_cross/check_win9x_imports.sh`'s 9x KERNEL32 whitelist gains
+**exactly** these names (P3-M4 amendment A1): `CreateProcessA`,
+`WaitForDebugEvent`, `ContinueDebugEvent`, `GetThreadContext`,
+`SetThreadContext`, `ReadProcessMemory`, `WriteProcessMemory`,
+`FlushInstructionCache`. No `msvcrt`, no `DebugActiveProcessStop`. The emitted
+`z9dbg.exe` (mingw 9x no-CRT `-osw`) passes the gate and runs under Wine; real
+Win98 hardware verification remains operator-owned.

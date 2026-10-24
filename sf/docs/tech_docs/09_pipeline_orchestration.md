@@ -998,3 +998,19 @@ validate the extern-C print surface, not the compiler pipeline.
 A minimal link-check entry: imports `pal.zig` and writes `"zig1\n"` to stderr. (P1 deleted its
 former `name_mangler.zig` stub imports/discard — the stub is now the real minting authority, see
 doc 08 §3.) It runs no pipeline phase.
+
+---
+
+## 12. Debug-map CLI routing (`-d` / `--debug`) [added: 2026-10-24 — P3-M1/M4]
+
+`CompilerCli.debug` is set by `-d`/`--debug`. The flag is validated before the
+pipeline: without `--output-dir`/`-o`, `runCompiler` prints
+`error: --debug/-d requires --output-dir`, exits `rc=2`, and emits neither C nor
+map files (operator ruling A). With an output directory the flag is handed to
+`phase_C89Emission`, which opens the three `<root-stem>.z98dbg.*` files and
+feeds `debug_map.DebugMapWriter` (doc 08 §8). No other phase reads `debug`.
+Off-path output is byte-identical to the pre-`-d` compiler; the M1 gate asserts
+that while also checking map determinism (3× byte-identical). The sidecars are
+consumed by the example debugger `z9dbg`, whose ELF/PE dispatch
+(`examples/z98/z9dbg/main.zig:openDebug`) is application code, not a compiler
+phase.

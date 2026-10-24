@@ -24,19 +24,18 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v119** (rotated 2026-10-23 at the Phase 1 M7 TCP/IP closeout,
-plan `2026-10-21-phase1-m7-tcpip-demo-plan`; v118 → v119 adds
-`std_tcpip.zig` — no new compiler source and no compiler movement; compiler
-fixed point `45158dcede81125a39a2c2c58478e21e` UNCHANGED from v118).
-Archive md5 `e7ac8cd2ed7e790a4b9225a82acaf4a5`; archived binary md5 (= v119's
-rotation fixed point) `45158dcede81125a39a2c2c58478e21e`; `gen/` 47 `.c` +
-48 `.h` (10,691,275 bytes); `lib/` 47 std `.zig` plus `lib/manifest.md5`
-(per-file std attribution pin, manifest md5
-`e731a3d2a7aef913f5bbcfd8670e5a2e`) — `std_tcpip.zig` adds the client-only
-userspace IPv4/TCP/UDP/DNS/ICMP stack (sans-I/O `tcpipPoll`, fixed 8 KiB TCP
-window, MTU-derived MSS, DNS A records, ICMP echo). The v119 rotation is
-std-only payload, so the rebuilt archive is two-hop (`build_from_seed.sh`:
-hop1 == hop2 == `F_new`).
+**Current seed: v120** (rotated 2026-10-24 at the Phase 2 P3 z98-debugger
+closeout, plan `2026-10-24-phase2-z98-debugger-plan`; v119 → v120 folds the
+P3-M1..M4 compiler/std work: opt-in `-d` debug-map emission, the `z9dbg`
+readers/backends, and the Win32 Debug-API std_os surface). New compiler fixed
+point `11de43a053bdde3be3ddc61caac31df6` (v119's archived binary was
+`45158dce…`); archive md5 `ba69e96d17c5554d19f01224ca3d7274`; archived binary
+md5 (= v120's rotation fixed point) `11de43a053bdde3be3ddc61caac31df6`;
+`gen/` 48 `.c` + 49 `.h` (10,844,907 bytes); `lib/` 47 std `.zig` plus
+`lib/manifest.md5` (per-file std attribution pin, manifest md5
+`7ef5c6b66a2975b51847515fe91fff41`). The rebuilt archive is two-hop
+(`build_from_seed.sh`: hop1 == hop2 == `F_new`); the compiler↔std separation
+means the v120 `lib/` payload does not move the fixed point.
 
 **Phase 1 closeout:** v119 completes the TLS + WireGuard phase. On the rotated
 compiler (`45158dce…`) the full std gate is **336/0** with crosscheck
@@ -99,11 +98,11 @@ unchanged `21c957730d268f1e7883176fa5413b65`; `lib/` 34 files; manifest md5
 `cc2ea2be17d018556b4b7dd9f365a73b`).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
-module set — 47 `.c` + 48 `.h`, including `zig_special_types.h`; the emitted
+module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v119 carries the full 47 std `.zig`** = `std.zig` plus
+tracked seed archive **v120 carries the full 47 std `.zig`** = `std.zig` plus
 46 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -185,6 +184,39 @@ point is unmoved), via
 `release/seed/CHANGELOG.md`). The seed lives at `release/seed/` (tracked), never `/tmp`.
 
 
+### Opt-in debug map + `z9dbg` (P3-M1..M4)  [added: 2026-10-24]
+
+- **Emit the map (opt-in; default output unchanged):**
+  `ZIG -d --output-dir <dir> <entry.zig>` writes
+  `<root-stem>.z98dbg.{syms,lines,cnames}` beside the generated C. `-d` without
+  `--output-dir` is a clean `rc=2` error (no C, no map). The sidecars are
+  compiler-development tooling, not part of normal builds.
+- **Debug-build recipes (debuggee):**
+  - Linux: `gcc -m32 -std=c89 -O0 -g -gdwarf-2 -fno-omit-frame-pointer -I sf/src/include -c *.c`
+  - mingw/DWARF-in-PE: `i686-w64-mingw32-gcc -m32 -std=c89 -O0 -g -gdwarf-2 -DZIG_NO_CRT -I . -c *.c`
+    then link `-nostdlib -Wl,-e,_mainCRTStartup *.o -lgcc -lkernel32`.
+  - MSVC 6 embedded COFF: `cl /Z7 /c *.c` + `link /DEBUG /DEBUGTYPE:COFF ...`
+    (plain `/DEBUG` gives CodeView/PDB, deliberately not consumed).
+  - OpenWatcom: `wcc386 -d2` (default DWARF) + `wlink debug all`.
+- **Build/run z9dbg:**
+  ```sh
+  ZIG -o /tmp/z9d examples/z98/z9dbg/main.zig
+  ( cd /tmp/z9d && sh build_target.sh linux prog )
+  /tmp/z9d/prog <debuggee>
+  # Win98: ZIG -osw -o /tmp/z9w examples/z98/z9dbg/main.zig
+  #        sh /tmp/z9w/build_target.sh mingw /tmp/z9w/z9dbg.exe
+  #        wine /tmp/z9w/z9dbg.exe <debuggee.exe>
+  ```
+- **Commands:** `break <file>:<line>`, `continue`, `step`, `backtrace`,
+  `dump variables [path]`, `quit`. Linux quit detaches (debuggee lives); Win98
+  quit is terminate-on-quit.
+- **Gates:** `examples/z98/z9dbg/tests/tier_dbg.sh` (Linux + Win98/Wine when
+  `wine`/mingw exist) and `tier_dbg_core.sh` (COFF + PE/DWARF parsing);
+  `scripts/win32_cross/check_win9x_imports.sh <z9dbg.exe> 9x` must PASS.
+- **Limits:** DWARF 2/3/4 only (DWARF 5 and DWARF64 out); no PDB/CodeView;
+  frame-pointer backtraces only; Win98 single-thread debuggee. Docs:
+  `sf/docs/std_lib/z9dbg.md`, `sf/docs/std_lib/debug_map.md`.
+
 ### `std_file` directory iteration (M7)  [added: 2026-10-19]
 
 - **API (`sf/src/std_file.zig`):** `pub const DirEntry = struct { name: []const u8, is_dir: bool };`,
@@ -198,7 +230,7 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is **336/0** on seed v119 (294/0 at M7 on v103; the two
+  pin); `verify_stdlib` is **336/0** on seed v120 (294/0 at M7 on v103; the two
   M2 `stdlib_noise_*` fixtures, the M2 crypto/cipher/ecc fixtures, the four
   M3 `std_asn1`/`std_x509` fixtures, the three M4 `std_tls`/HTTP-transport
   fixtures, the three M5 TLS 1.3 fixtures, the three M6 WireGuard fixtures,
@@ -283,7 +315,7 @@ cd <dump> && timeout 120 sh build_target.sh mingw
 ### Compiler RSS/arena — historical Phase 1 M1 baseline (v111)
 
 **These figures are historical.** They were measured at seed v111 / fixed point
-`21c957…`; the current seed is v119 / `45158dce…` and has not been re-measured
+`21c957…`; the current seed is v120 / `11de43a…` and has not been re-measured
 here. Do not present the v111 numbers as current.
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
@@ -383,11 +415,12 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (v119, 2026-10-24, Phase 2 P3-M1 re-baseline).**
+**8-pin table (v119 M1 baseline, 2026-10-24; not re-run at v120).**
 Measured with the seed-built M1 compiler (fixed point
 `f963c2c49ab4ca66ac340917d5634494`; seed v119 archive md5
 `e7ac8cd2ed7e790a4b9225a82acaf4a5`; values equal the pre-M1 archived-seed
-baseline 8/8):
+baseline 8/8). The v120 rotation did **not** re-run the pin/golden/corpus
+battery (operator gating amendment: only compiler-source tasks run it):
 `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum` from the repo root. The
 absolute pin values are **compiler-build dependent** (each compiler build pairs a `lib/` std
 set; the binary's own path is irrelevant — verified), so only same-build comparisons are

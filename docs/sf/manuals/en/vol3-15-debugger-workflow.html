@@ -5,7 +5,7 @@
 <title>Z98 Manual: The Debugger Workflow</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual volume III debugger workflow gdb generated C gcc -g breakpoints mangled names zF_ hash suffix module_init backtrace cd DIR gotcha absolute -I include path net_prelude markers marker channel DC INT FWD P0 FE X IRP read markers track-memory no debugger UI no z98dbg compiler trace">
+<meta name="keywords" content="Z98 manual volume III debugger workflow gdb generated C gcc -g breakpoints mangled names zF_ hash suffix module_init backtrace cd DIR gotcha absolute -I include path net_prelude markers marker channel DC INT FWD P0 FE X IRP read markers track-memory z9dbg debug map -d win98 dwarf coff compiler trace">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -125,11 +125,12 @@ and the method is small.
 <p>
 A modern toolchain ships the debugger with the language: the compiler knows the
 source format, so the debugger knows it too, and the two agree on file names,
-line numbers, and variable names. Z98 breaks that assumption on purpose. It
-does not ship a debugger, and &mdash; the correction this manual makes against
-the original blueprint &mdash; it does not ship a sidecar debugger either:
-there is no <tt>.z98dbg</tt> format anywhere in the toolchain. What it ships is
-a program in C89.
+line numbers, and variable names. Z98's default output is still a program in
+C89, and that C is the debugging surface. It also has an <b>opt-in</b>
+source-level path: <tt>zig1 -d</tt> writes <tt>.z98dbg.*</tt> map sidecars and
+the example debugger <tt>z9dbg</tt> consumes them with the debuggee's DWARF
+(ELF or PE) or embedded COFF. Without <tt>-d</tt>, no sidecar is written and
+nothing about the emitted C changes.
 </p>
 <p>
 That is not a loss to work around; it is a change of instrument. The generated
@@ -144,7 +145,7 @@ existed for decades.
 </p>
 <p>
 The habit this chapter teaches is the one <a href="vol3-07-friction.html">chapter&nbsp;7</a>
-named as the way over its "no debugger UI" friction: treat the generated C as
+named as the way over its "no debugger window" friction: treat the generated C as
 the debugging surface. The compiler has already done the hard part. It moved
 your program into C; the rest is standard C tooling.
 </p>
@@ -617,20 +618,46 @@ debugger UI; it requires a trace and the discipline to read it.
 <table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
 <tr>
 <td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
-<td><b>Honest note.</b> There is no debugger UI in Z98, and there is no
-sidecar debugger: there is no <tt>.z98dbg</tt>. If you came expecting a window
-with a variable pane and a call stack you can click, this toolchain does not
-have one and will not grow one soon. What it has instead is a generated C file
-that reads like the C a 1998 programmer wrote, and a marker stream that shows
-the compiler thinking. Both are seams rather than products: you point the
-tooling and read the output rather than clicking through a front end. That is
-the same trade <a href="vol3-07-friction.html">chapter&nbsp;7</a> named, and it
-is worth naming here one more time because debugging is where the absence is
-felt most. The compensation is real, though: the C you debug is the code you
-could ship, so the thing you learn in the debugger is knowledge about the
-binary, not knowledge about a source map.</td>
+<td><b>Honest note.</b> There is no windowed debugger UI in Z98. What there is:
+a generated C file that reads like the C a 1998 programmer wrote, a marker
+stream that shows the compiler thinking, and an <b>opt-in command-line
+debugger</b> (<tt>z9dbg</tt>) for source-line stops on Linux and Win9x. The
+latter needs <tt>zig1 -d</tt> for the map sidecars and a debug build of the
+debuggee; it is compiler-development tooling, not part of the default output.
+Both paths are seams rather than products: you point the tooling and read the
+output rather than clicking through a front end. The compensation is real: the
+C you debug is the code you could ship, and <tt>z9dbg</tt> maps those generated
+lines back to the Z98 source when you ask for the map.</td>
 </tr>
 </table>
+
+<h2>Opt-in source-level debugging with <tt>z9dbg</tt></h2>
+<p>
+The generated-C workflow above needs nothing from the compiler. Source-level
+stops need two opt-ins: <tt>zig1 -d</tt> for the map sidecars, and a debug build
+of the debuggee. The map is written beside the root C stem and never without
+<tt>-d</tt>:
+</p>
+<pre>
+$ zig1 -d --output-dir /tmp/dbg_out hello.z98
+$ ls /tmp/dbg_out/*.z98dbg.*
+hello_&lt;HASH&gt;.z98dbg.syms  hello_&lt;HASH&gt;.z98dbg.lines  hello_&lt;HASH&gt;.z98dbg.cnames
+</pre>
+<p>
+Supported debug-info shapes: ELF/DWARF 2/3/4 on Linux; DWARF-in-PE for mingw
+(<tt>-g -gdwarf-2</tt>) and OpenWatcom (<tt>wcc386 -d2</tt> plus
+<tt>wlink debug all</tt>); embedded COFF for MSVC 6 (<tt>cl /Z7</tt> plus
+<tt>link /DEBUG /DEBUGTYPE:COFF</tt>). PDB/CodeView and DWARF 5 are out of v1.
+The Win9x backend uses the 9x KERNEL32 Debug API and <tt>quit</tt> is
+terminate-on-quit; Linux detaches and leaves the debuggee alive.
+</p>
+<p>
+<tt>z9dbg</tt> commands: <tt>break &lt;file&gt;:&lt;line&gt;</tt>,
+<tt>continue</tt>, <tt>step</tt>, <tt>backtrace</tt>,
+<tt>dump variables [path]</tt>, <tt>quit</tt>. See
+<tt>sf/docs/std_lib/z9dbg.md</tt> and <tt>debug_map.md</tt> for the full
+contract. The default build and emitted C are unchanged.
+</p>
 
 <h2>Common mistakes</h2>
 <p>
@@ -672,9 +699,11 @@ Find the function's mangled name with <tt>grep</tt> in the generated file and
 break on that.
 </p>
 <p>
-<b>Hunting for <tt>.z98dbg</tt>.</b> The blueprint once imagined a sidecar
-debugger format; it does not exist. No file, no format, no tool. The debugging
-surface is the generated C.
+<b>Hunting for <tt>.z98dbg</tt> without <tt>-d</tt>.</b> The sidecars are
+opt-in: <tt>zig1 -d --output-dir DIR src.zig</tt> writes
+<tt>DIR/&lt;stem&gt;.z98dbg.{syms,lines,cnames}</tt>. A normal build writes
+none; with them, <tt>z9dbg</tt> adds <tt>break</tt>/<tt>step</tt>/<tt>backtrace</tt>
+on Linux and Win9x (Win98 <tt>quit</tt> is terminate-on-quit).
 </p>
 <p>
 <b>Using <tt>--markers</tt> to find a bug in the program.</b> The markers trace
@@ -703,7 +732,7 @@ The ingredient this chapter relies on is the one
 <a href="vol3-03-when-c89.html">chapter&nbsp;3</a> made load-bearing: Z98
 emits C89, so the C toolchain &mdash; and its debugger &mdash; applies. The
 friction this chapter answers is <a href="vol3-07-friction.html">chapter&nbsp;7</a>'s
-"no debugger UI," and the build it starts from is
+"no debugger window," and the build it starts from is
 <a href="vol3-08-win9x.html">chapter&nbsp;8</a>, where the same emitted tree
 and build script appear for the Win9x target. When the fix is to make the
 emitted C faster or tighter, the hand-off to hand-written assembly is

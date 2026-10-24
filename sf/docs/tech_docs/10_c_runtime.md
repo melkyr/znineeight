@@ -207,3 +207,26 @@ rebuild MUST include it in the gcc line, else the link fails with `undefined ref
 - **`optstar_repro.h` is a repro stub** referencing `extFn` and `fopen` with mangled types; it is included by no live TU.
 - **`extern_c_z98.zig` is dead.** It is not imported by the 40-module build, and its `@cInclude("pal.h")` names a header that is not present in the tree.
 - **`usize` is 32-bit even on 64-bit hosts**, so a 64-bit Windows `HANDLE` cannot round-trip through `PlatFile`/`usize`; the supported target is 32-bit Windows 9x/NT.
+
+---
+
+## D8 — stdout is split across two runtime layers [documented: 2026-10-24 — P3-M3/M4]
+
+The stdout/stderr/getchar **builtins** lower to C stdio (`fwrite`/`putchar`/
+`getchar`, with `<stdio.h>` emitted per module), while `std.fmt`/`std.io.print`
+go through the PAL (`pal_print_stdout`/`pal_print_stderr`). The PAL path is
+unbuffered; the builtin `fwrite` path is buffered, so mixing the two on one
+stream can reorder output. The comments in `std_io.zig`/`std_debug.zig` saying
+"no cstdio" mean "no direct `@cInclude`", not "no C stdio in the emitted C".
+
+On the Win9x no-CRT profile `sf/src/include/zig_nocrt.c` shims `fwrite`,
+`putchar`, `getchar`, etc. over `GetStdHandle`/`WriteFile`, so **no msvcrt is
+needed**. `z9dbg` keeps all of its own output on the buffered builtin path and
+its `flushOut()` is compile-time guarded on Windows (`if (!@isWindows())`): the
+no-CRT shim has no `fflush`, and its `fwrite` is already unbuffered.
+
+Operator ruling A (2026-10-24): **no emission change**. Unifying the two paths
+would re-baseline every pin/golden and needs its own plan + seed rotation.
+Until then, document the split and avoid mixed `print`/`write` usage on
+latency-sensitive or panic-path output. Full record:
+`examples/torrent_example_defects.md` D8.

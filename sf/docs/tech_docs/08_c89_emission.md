@@ -1517,3 +1517,23 @@ Networking is now the **std_net extern surface**: target-selected `extern "c"` b
 and the `createTcpClient` factory — see `sf/src/std_net.zig` and the QUICK_REF
 "Post-netbind baseline". `emitBuiltinIncludes` now covers only stdio/exit/sleep/console
 gating; there is no socket emission path in `c89_emit.zig`.
+
+---
+
+## 8. Opt-in debug-map emission (`-d` / `--debug`) [added: 2026-10-24 — P3-M1/M4]
+
+`-d` is a compiler-development switch. It does **not** change emitted C: the
+emitter's debug pointers (`debug_map`, `debug_store`, `debug_symbols`) default
+null and every hook returns immediately when they are null (no allocation, no
+scan). With `-d`, `phase_C89Emission` opens `<root-stem>.z98dbg.{syms,lines,cnames}`
+in the `--output-dir` and `debugMapAddSpanRun` / `debugMapEmitInst` record the
+source-to-emitted-C line runs plus the symbol and c-name tables
+(`sf/src/debug_map.zig`, `debug_map.DebugMapWriter`). The map is committed next
+to the root module's C stem and honours `--output-dir`; `-d` without an output
+directory is a clean `rc=2` error with no C and no map (operator ruling A).
+
+Cost (measured M1, `-q -ffast`, 3 runs): ≈+0.2 MB RSS on small programs and
+≈+880 KiB on the largest function set (z9torr). The per-function span buffer is
+reused/reset on every function so async spans do not accumulate
+(`debug_span_buf`). The debug map is consumed only by `z9dbg`; see
+`sf/docs/std_lib/debug_map.md` and `z9dbg.md`.

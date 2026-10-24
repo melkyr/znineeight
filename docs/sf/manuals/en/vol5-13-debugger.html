@@ -5,7 +5,7 @@
 <title>Z98 Manual: Debug the Generated C</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual volume V HOWTO debug gdb generated C -g -O0 cd DIR include path net_prelude.h --markers marker stream z98dbg no debugger breakpoint zF_ name mangling">
+<meta name="keywords" content="Z98 manual volume V HOWTO debug gdb generated C -g -O0 cd DIR include path net_prelude.h --markers marker stream z9dbg z98dbg opt-in debug map breakpoint zF_ name mangling">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -96,18 +96,21 @@ debugged this way. The emitted tree and its build script are explained in
 <a href="vol5-05-target-linux.html">Target Linux</a>.</li>
 </ul>
 <p>
-There is no Z98 debugger, and there is no <tt>.z98dbg</tt> sidecar format
-anywhere in the toolchain. What the compiler ships is a program in C89; that C
-is the debugging surface.
+By default the compiler ships a program in C89, and that C is the debugging
+surface. It also has an <b>opt-in</b> source-level debugger path: <tt>zig1 -d</tt>
+writes <tt>.z98dbg.*</tt> map sidecars beside the output, and the example
+debugger <tt>z9dbg</tt> consumes them with the debuggee's DWARF or embedded
+COFF. The default output is unchanged; no sidecar is written without <tt>-d</tt>.
 </p>
 
 <h2>The instrument: the generated C</h2>
 <p>
 A modern toolchain ships the debugger with the language, and the two agree on
-file names, line numbers, and variable names. Z98 breaks that assumption on
-purpose. It does not ship a debugger; it ships the generated C. The generated C
-is the C a 1998 programmer would have written by hand: one plain function per
-Z98 function, a struct per struct, a file per module. It carries no
+file names, line numbers, and variable names. Z98's default is still the
+generated C; the opt-in <tt>z9dbg</tt> map path covers source-level stops when
+you ask for it. The generated C is the C a 1998 programmer would have written
+by hand: one plain function per Z98 function, a struct per struct, a file per
+module. It carries no
 <tt>#line</tt> directives, so <tt>gdb</tt> reports the generated file names and
 line numbers directly, and those are stable across builds. You debug a language
 you can read, with a debugger that has existed for decades.
@@ -407,6 +410,44 @@ see those, the debugging surface is the generated C and the compiler trace is
 one flag away.
 </p>
 
+<h2>Opt-in source-level debugging with <tt>z9dbg</tt></h2>
+<p>
+When you want Z98 source lines instead of generated-C lines, ask the compiler
+for the map and build the debuggee with debug information. The map is written
+only with <tt>-d</tt>:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -d --output-dir /tmp/dbg_out hello.z98
+$ ls /tmp/dbg_out/*.z98dbg.*
+hello_&lt;HASH&gt;.z98dbg.syms  hello_&lt;HASH&gt;.z98dbg.lines  hello_&lt;HASH&gt;.z98dbg.cnames
+</pre>
+<p>
+Linux (DWARF-in-ELF), mingw (DWARF-in-PE), and MSVC 6 (embedded COFF) are the
+three supported debug-info shapes; OpenWatcom emits DWARF-in-PE by default:
+</p>
+<pre>
+# Linux
+gcc -m32 -std=c89 -O0 -g -gdwarf-2 -fno-omit-frame-pointer -I . -c *.c
+# mingw 9x ABI (DWARF-in-PE)
+i686-w64-mingw32-gcc -m32 -std=c89 -O0 -g -gdwarf-2 -DZIG_NO_CRT -I . -c *.c
+# MSVC 6 (embedded COFF line records, not PDB)
+cl /Z7 /c *.c  &amp;&amp;  link /DEBUG /DEBUGTYPE:COFF ...
+</pre>
+<p>
+Then run <tt>z9dbg &lt;prog&gt;</tt>. Commands are
+<tt>break &lt;file&gt;:&lt;line&gt;</tt>, <tt>continue</tt>, <tt>step</tt>,
+<tt>backtrace</tt>, <tt>dump variables [path]</tt>, and <tt>quit</tt>; the
+session stops at the entry source line first. Linux detaches on quit; the Win9x
+backend restores breakpoint bytes and terminates the debuggee
+(terminate-on-quit). PDB/CodeView and DWARF 5 are out of scope and degrade to
+<tt>break: no debug info</tt> plus function-entry breakpoints.
+</p>
+<p>
+The full contract is in <tt>sf/docs/std_lib/z9dbg.md</tt> and
+<tt>sf/docs/std_lib/debug_map.md</tt>. None of this changes the default output:
+without <tt>-d</tt> the compiler emits the same C and no sidecars.
+</p>
+
 <h2>Common mistakes</h2>
 <ul>
 <li><b>Running the compile from the wrong directory.</b> The emitted headers are
@@ -431,9 +472,11 @@ instead.</li>
 the generated names &mdash; <tt>arena_F3DC0DA4.c</tt>, not <tt>arena.z98</tt>.
 There are no <tt>#line</tt> directives, so the debugger never pretends
 otherwise.</li>
-<li><b>Hunting for <tt>.z98dbg</tt>.</b> The blueprint once imagined a sidecar
-debugger format; it does not exist. No file, no format, no tool. The debugging
-surface is the generated C.</li>
+<li><b>Hunting for <tt>.z98dbg</tt> without <tt>-d</tt>.</b> The sidecars are
+opt-in: <tt>zig1 -d --output-dir DIR src.zig</tt> writes them; a normal build
+writes none and the debugging surface is the generated C. With the map in place,
+<tt>z9dbg</tt> gives source-level <tt>break</tt>/<tt>step</tt>/<tt>backtrace</tt>
+on Linux and Win9x (Win98 <tt>quit</tt> is terminate-on-quit).</li>
 <li><b>Using <tt>--markers</tt> to find a bug in the program.</b> The markers
 trace the compiler as it builds your program; by the time the program runs they
 are long gone. They answer compiler questions, not program questions.</li>
