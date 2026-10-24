@@ -577,3 +577,74 @@ commit. No sed/perl/python/awk was used this round.
    DWARF 5/64 degrade with a notice, multi-address step-over is capped at 64
    instructions, the debuggee ELF is read whole into the arena, and
    waitpid/ptrace/open/dup2 rely on implicit C prototypes.
+
+---
+
+# Fix round 2
+
+**Status:** DONE
+**Code commit:** `a61b7ec1` `fix(z9dbg): hello test-set session exercises step
+(Phase2 P3-M3)`
+**Docs commit:** this appended section.
+
+## R2.1 F1 completion — hello step
+
+`session_set_hello.in` now starts with `step`, so the hello test-set session
+actually exercises step-into as the tier label claims:
+
+```
+step
+break greetings.zig:3
+continue
+backtrace
+dump variables @SNAP@
+quit
+```
+
+The step advances from the entry stop at `main.zig:3` into
+`greetings.zig:3` (a different mapped line); the subsequent break/continue
+re-hits that line, backtrace lists `sayHello` + `main (decl)`, and the dump
+auto-resumes to completion (`z9dbg: debuggee exited`). The tier label
+`hello break/continue/step/dump session` is now truthful; the other three
+test-set sessions are unchanged.
+
+`tests/expected/set_hello.txt` now contains the step stop display before the
+breakpoint hit and the post-dump completion message instead of the old
+post-dump stop.
+
+## R2.2 Report correction (Minor)
+
+The fix-round-1 section (R1.4) said
+"`tests/tier_dbg.sh` ... unchanged this round". That sentence was wrong: the
+fix-round-1 diff changed `tier_dbg.sh` substantially to add the F1 test-set
+sessions, honesty checks, and the 2× harness. This fix-round-2 section records
+the correction rather than rewriting the earlier text.
+
+## R2.3 Verification
+
+```bash
+ZIG=/tmp/z98_m3r2/zig1_5_clean OUT=/tmp/z9dbg_fix2_run1 \
+  bash examples/z98/z9dbg/tests/tier_dbg.sh    # 35 passed, 0 failed
+ZIG=/tmp/z98_m3r2/zig1_5_clean OUT=/tmp/z9dbg_fix2_run2 \
+  bash examples/z98/z9dbg/tests/tier_dbg.sh    # 35 passed, 0 failed
+```
+
+Normalized whole-gate logs are byte-identical:
+`20db94a8157a30b1d8fd0ae0f980e564` both runs. `tier_dbg_core.sh` remains
+23 passed / 0 failed. `git diff --check` clean before the commit.
+
+No `sf/src/std_os*.zig` or compiler-source change was made this round, so the
+std gates were not re-run; the fixed point remains
+`11de43a053bdde3be3ddc61caac31df6`.
+
+## R2.4 Files
+
+- `examples/z98/z9dbg/tests/session_set_hello.in`
+- `examples/z98/z9dbg/tests/expected/set_hello.txt`
+- this report
+
+## R2.5 Concerns
+
+No new concerns. The hello step lands on `greetings.zig:3` and the dump runs
+to completion in this session; the test-support `Z9DBG_CHILD_OUT=/dev/null`
+behaviour and the fix-round-1 concerns are unchanged.
