@@ -44,8 +44,9 @@ out-of-process debugger closes that gap for Win98 first and Linux for testing.
 ## 3. Goals
 
 1. **G1 — Compiler-emitted map.** Opt-in `--debug`/`-d` flag emits a compact streamed
-   sidecar map. Default (no flag) output is **byte-identical** to today's output; the seed
-   fixed point must not move.
+   sidecar map. Default (no flag) compilation output is **byte-identical** to today's
+   output (corpus/pins/goldens stable); the compiler fixed point moves (compiler source
+   changes) and the seed rotates at closeout, per the 1C-F precedent.
 2. **G2 — Two-link chain.** Map gives Z98 ↔ generated-source (this project). Machine
    addresses come from the C compiler's own debug info (`gcc -g` DWARF / MSVC `/Z7` or
    Watcom `-d2` embedded COFF) or the post-link symbol table — **not** reinvented here.
