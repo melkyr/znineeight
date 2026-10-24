@@ -275,6 +275,55 @@ pub fn lirSideEntryArrayListGetSlice(self: *LirSideEntryArrayList) []LirSideEntr
     return self.items[0..self.len];
 }
 
+// P3-M1 debug map: per-inst source-span side table. Kept OUT of LirInst (the
+// 32 B contract) and OUT of the lir_stream record format; lowering serializes
+// this list to a parallel debug spill keyed by LirSlot.disk_offset.
+pub const DebugSpanEntry = struct {
+    bb: u32,
+    inst: u32,
+    span_start: u32,
+};
+
+pub const DebugSpanArrayList = struct {
+    items: [*]DebugSpanEntry,
+    len: usize,
+    capacity: usize,
+    allocator: *Sand,
+};
+
+pub fn debugSpanArrayListInit(allocator: *Sand) DebugSpanArrayList {
+    return DebugSpanArrayList{
+        .items = undefined,
+        .len = @intCast(usize, 0),
+        .capacity = @intCast(usize, 0),
+        .allocator = allocator,
+    };
+}
+
+pub fn debugSpanArrayListEnsureCapacity(self: *DebugSpanArrayList, new_capacity: usize) void {
+    if (new_capacity <= self.capacity) return;
+    var new_cap = new_capacity;
+    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
+    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+    var raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, @sizeOf(DebugSpanEntry)) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var new_items = @ptrCast([*]DebugSpanEntry, raw);
+    for (self.items[0..self.len]) |item, i| {
+        new_items[i] = item;
+    }
+    self.items = new_items;
+    self.capacity = new_cap;
+}
+
+pub fn debugSpanArrayListAppend(self: *DebugSpanArrayList, value: DebugSpanEntry) void {
+    debugSpanArrayListEnsureCapacity(self, self.len + 1);
+    self.items[self.len] = value;
+    self.len += 1;
+}
+
+pub fn debugSpanArrayListGetSlice(self: *DebugSpanArrayList) []DebugSpanEntry {
+    return self.items[0..self.len];
+}
+
 pub const LirInstArrayList = struct {
     items: [*]LirInst,
     len: usize,

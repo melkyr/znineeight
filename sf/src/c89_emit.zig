@@ -31,6 +31,8 @@ const LirParam = @import("lir.zig").LirParam;
 const lir_stream_mod = @import("lir_stream.zig");
 const lir_opt_mod = @import("lir_opt_pass.zig");
 const emit_support = @import("emit_support.zig");
+const debug_map = @import("debug_map.zig");
+const sm_mod = @import("source_manager.zig");
 
 pub const WinProfile = enum(u8) {
     win9x,
@@ -41,14 +43,17 @@ pub const BufferedWriter = struct {
     buf: [4096]u8,
     pos: usize,
     fd: usize,
+    // P3-M1: count of `\n` bytes written so far. 0-based; the active output
+    // line is `line + 1`. The counter is output-neutral (no allocation).
+    line: u32,
 };
 
 pub fn bufferedWriterInit() BufferedWriter {
-    return BufferedWriter{ .buf = undefined, .pos = @intCast(usize, 0), .fd = @intCast(usize, 1) };
+    return BufferedWriter{ .buf = undefined, .pos = @intCast(usize, 0), .fd = @intCast(usize, 1), .line = @intCast(u32, 0) };
 }
 
 pub fn bufferedWriterInitFd(fd: usize) BufferedWriter {
-    return BufferedWriter{ .buf = undefined, .pos = @intCast(usize, 0), .fd = fd };
+    return BufferedWriter{ .buf = undefined, .pos = @intCast(usize, 0), .fd = fd, .line = @intCast(u32, 0) };
 }
 
 pub fn bufferedWriterFlush(self: *BufferedWriter) void {
@@ -67,6 +72,7 @@ pub fn bufferedWriterFlush(self: *BufferedWriter) void {
         var i: usize = @intCast(usize, 0);
         while (i < copy_len) : (i += @intCast(usize, 1)) {
             self.buf[self.pos + i] = remaining[i];
+            if (remaining[i] == @intCast(u8, '\n')) self.line += @intCast(u32, 1);
         }
         self.pos += copy_len;
         remaining = remaining[copy_len..];
@@ -78,6 +84,7 @@ pub fn bufferedWriterWriteByte(self: *BufferedWriter, byte: u8) void {
     if (self.pos == 4096) bufferedWriterFlush(self);
     self.buf[self.pos] = byte;
     self.pos += @intCast(usize, 1);
+    if (byte == @intCast(u8, '\n')) self.line += @intCast(u32, 1);
 }
 
 pub fn bufferedWriterWriteIndent(self: *BufferedWriter, level: u32) void {
@@ -613,6 +620,14 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
       module_init_order: [*]u32,
       module_init_order_len: usize,
       safe_checks: bool,
+      // P3-M1 debug map. Null/0 when `--debug` is off: the emit path is
+      // byte- and work-identical to the pre-map compiler.
+      debug_map: ?*debug_map.DebugMapWriter,
+      debug_store: ?*debug_map.DebugSpanStore,
+      debug_symbols: ?*debug_map.DebugSymbolList,
+      dbg_spans: [*]lir_mod.DebugSpanEntry,
+      dbg_spans_len: usize,
+      dbg_src_file_id: u32,
    };
 
 pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, classif: *type_resolver.EmissionClassification, plan: *c89_plan.C89SpellPlan, safe_checks: bool) C89Emitter {
@@ -683,6 +698,12 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
            .module_init_order = undefined,
            .module_init_order_len = @intCast(usize, 0),
            .safe_checks = safe_checks,
+           .debug_map = null,
+           .debug_store = null,
+           .debug_symbols = null,
+           .dbg_spans = undefined,
+           .dbg_spans_len = @intCast(usize, 0),
+           .dbg_src_file_id = @intCast(u32, 0),
        };
 }
 
@@ -1941,6 +1962,92 @@ fn faultIn(emitter: *C89Emitter, idx: usize) LirFunction {
     return lir_stream_mod.lirStreamReadFunction(emitter.spill, emitter.fn_slots[emitter.fn_slots_start + idx], emitter.spill_arena);
 }
 
+// P3-M1: async synthesis does not pass through emitInst, so step/driver
+// functions have no stored per-inst spans. Attribute every inst in such a
+// function to the suspending function's declaration line (spec §7.3 caveat).
+fn debugFillFnSpans(emitter: *C89Emitter, func: *LirFunction, span: u32) void {
+    var count: usize = @intCast(usize, 0);
+    var bi: usize = @intCast(usize, 0);
+    while (bi < func.blocks.len) : (bi += @intCast(usize, 1)) {
+        count += func.blocks.items[bi].insts.len;
+    }
+    if (count == @intCast(usize, 0)) return;
+    var raw = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, @sizeOf(lir_mod.DebugSpanEntry)) * count, @intCast(usize, 4)) catch unreachable;
+    var spans = @ptrCast([*]lir_mod.DebugSpanEntry, raw);
+    var n: usize = @intCast(usize, 0);
+    bi = @intCast(usize, 0);
+    while (bi < func.blocks.len) : (bi += @intCast(usize, 1)) {
+        var ii: usize = @intCast(usize, 0);
+        while (ii < func.blocks.items[bi].insts.len) : (ii += @intCast(usize, 1)) {
+            spans[n] = lir_mod.DebugSpanEntry{ .bb = @intCast(u32, bi), .inst = @intCast(u32, ii), .span_start = span };
+            n += @intCast(usize, 1);
+        }
+    }
+    emitter.dbg_spans = spans;
+    emitter.dbg_spans_len = n;
+}
+
+// P3-M1: fault in exactly one function's span side table (emitter.alloc is
+// reset per function by the emit driver). Off when `debug_map` is null.
+fn debugLoadFnSpans(emitter: *C89Emitter, slot: lir_mod.LirSlot, module_id: u32, func: *LirFunction) void {
+    emitter.dbg_spans_len = @intCast(usize, 0);
+    if (emitter.debug_map == null or emitter.debug_store == null) return;
+    var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
+    if (@intCast(usize, module_id) < mods.len) {
+        emitter.dbg_src_file_id = mods[@intCast(usize, module_id)].source_file_id;
+    }
+    var got: u8 = @intCast(u8, 0);
+    if (emitter.debug_store) |dbg_store| {
+        var rec_opt = debug_map.debugSpanStoreLookup(dbg_store, slot.disk_offset);
+        if (rec_opt) |rec| {
+            if (rec.count != @intCast(u32, 0)) {
+                var count = @intCast(usize, rec.count);
+                var raw = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, @sizeOf(lir_mod.DebugSpanEntry)) * count, @intCast(usize, 4)) catch unreachable;
+                emitter.dbg_spans = @ptrCast([*]lir_mod.DebugSpanEntry, raw);
+                emitter.dbg_spans_len = count;
+                debug_map.debugSpanStoreRead(dbg_store, rec, emitter.dbg_spans[0..count]);
+                got = @intCast(u8, 1);
+            }
+        }
+    }
+    if (got != @intCast(u8, 0)) return;
+    // Async driver/step fallback: find the source function symbol by name.
+    // `__Z98Step_<f>` strips to `<f>`; a driver keeps the original name.
+    if (emitter.debug_symbols) |syms| {
+        var fname = interner_mod.stringInternerGet(emitter.interner, func.name_id);
+        var prefix: []const u8 = "__Z98Step_";
+        var src_name = fname;
+        if (fname.len >= prefix.len) {
+            var same: u8 = @intCast(u8, 1);
+            var pi: usize = @intCast(usize, 0);
+            while (pi < prefix.len) : (pi += @intCast(usize, 1)) {
+                if (fname[pi] != prefix[pi]) { same = @intCast(u8, 0); break; }
+            }
+            if (same != @intCast(u8, 0)) src_name = fname[prefix.len..fname.len];
+        }
+        if (debug_map.debugSymbolFindFn(syms, module_id, src_name, emitter.interner)) |sym| {
+            if (sym.decl_span != @intCast(u32, 0)) debugFillFnSpans(emitter, func, sym.decl_span);
+        }
+    }
+}
+
+// P3-M1: after one inst is emitted, add its (possibly multi-line) run to the
+// active `.lines` group. RLE is in the writer; DCE/nest skips never reach
+// emitInst, so they produce no row (spec §7.3).
+fn debugMapEmitInst(emitter: *C89Emitter, bb: usize, ii: usize, line_before: u32) void {
+    if (emitter.debug_map == null) return;
+    if (emitter.writer.line <= line_before) return;
+    if (emitter.dbg_spans_len == @intCast(usize, 0)) return;
+    var span = debug_map.debugSpanLookup(emitter.dbg_spans[0..emitter.dbg_spans_len], @intCast(u32, bb), @intCast(u32, ii));
+    if (span == @intCast(u32, 0)) return;
+    var loc = sm_mod.sourceManagerGetLocation(emitter.diag.source_manager, emitter.dbg_src_file_id, span);
+    if (loc.line == @intCast(u32, 0)) return;
+    var line_count = emitter.writer.line - line_before;
+    if (emitter.debug_map) |dbg_writer| {
+        debug_map.debugMapWriterAddRun(dbg_writer, loc.line, line_before + @intCast(u32, 1), line_count);
+    }
+}
+
 fn moduleHasVaInsts(emitter: *C89Emitter) u8 {
     var vi: usize = @intCast(usize, 0);
     while (vi < emitter.fn_slots_len) : (vi += @intCast(usize, 1)) {
@@ -2709,6 +2816,7 @@ fn emitFunctionSet(emitter: *C89Emitter, module_id: u32, all: u8) void {
         }
         emitter.switch_cases = &func.switch_cases;
         if (func.is_extern == @intCast(u8, 0)) {
+            debugLoadFnSpans(emitter, emitter.fn_slots[emitter.fn_slots_start + i], func.module_id, &func);
             lir_opt_mod.lirOptRun(emitter.alloc, emitter.registry, &func);
             emitFunctionSignature(emitter, &func);
             emitHoistedDecls(emitter, &func);
@@ -8900,7 +9008,9 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
                     if (nt < emitter.nest_max and emitter.nest_inl[@intCast(usize, nt)] == @intCast(u8, 1)) { continue; }
                 }
             }
+            var dbg_line_before = emitter.writer.line;
             emitInst(emitter, inst, bb_idx, inst_idx);
+            debugMapEmitInst(emitter, bb_idx, inst_idx, dbg_line_before);
         }
     }
     emitter.indent -= @intCast(u32, 1);

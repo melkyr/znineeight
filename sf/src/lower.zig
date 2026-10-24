@@ -398,6 +398,10 @@ pub const LirLowerer = struct {
     _fn_ret_type: u32,
     _ctx_node_idx: u32,
     _ctx_node_kind: u32,
+    // P3-M1 debug map: when off (default) emitInst does no span work and the
+    // side list stays empty. Main sets this from `--debug`/`-d`.
+    debug_enabled: u8,
+    debug_spans: lir_mod.DebugSpanArrayList,
     capture_shadow: hash_mod.U32ToU32Map,
     synth_name_counter: u32,
     current_label: u32,
@@ -554,6 +558,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         ._fn_ret_type = @intCast(u32, 0),
         ._ctx_node_idx = @intCast(u32, 0),
         ._ctx_node_kind = @intCast(u32, 0),
+        .debug_enabled = @intCast(u8, 0),
+        .debug_spans = lir_mod.debugSpanArrayListInit(alloc),
         .capture_shadow = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 32)),
         .synth_name_counter = @intCast(u32, 1),
         .current_label = @intCast(u32, 0),
@@ -572,11 +578,26 @@ fn markTerminated(blocks: *lir_mod.BasicBlockArrayList, bb_id: u32) void {
 }
 
 pub fn emitInst(self: *LirLowerer, inst: LirInst) void {
+    // P3-M1: capture the current AST node's source span for this inst's
+    // (bb, inst) ordinal BEFORE the append. Off by default: no lookup, no list
+    // work. span_start == 0 means "no source mapping" and is not recorded.
+    var dbg_bb: u32 = self.current_bb;
+    var dbg_inst: u32 = @intCast(u32, self.func.blocks.items[@intCast(usize, self.current_bb)].insts.len);
+    var dbg_span: u32 = @intCast(u32, 0);
+    if (self.debug_enabled != @intCast(u8, 0)) {
+        if (@intCast(usize, self._ctx_node_idx) < self.ctx.store.nodes.len) {
+            var dbg_node = ast_mod.astStoreNodeAt(self.ctx.store, self._ctx_node_idx);
+            dbg_span = dbg_node.span_start;
+        }
+    }
     // P6 (Decision-vs-spelling): record the semantic facts on the inst at the
     // OWNING phase (field identity, operation semantic type) before it joins
     // the stream. The emitter spells from these records only.
     var rec = lowerRecordFacts(self, inst);
     lir_mod.lirInstArrayListAppend(&self.func.blocks.items[self.current_bb].insts, rec);
+    if (self.debug_enabled != @intCast(u8, 0) and dbg_span != @intCast(u32, 0)) {
+        lir_mod.debugSpanArrayListAppend(&self.debug_spans, lir_mod.DebugSpanEntry{ .bb = dbg_bb, .inst = dbg_inst, .span_start = dbg_span });
+    }
     // A18: arbitrary-width `binary`/`unary` results get the former emitter-side
     // in-place width normalization as a backend-neutral `width_wrap` op. This
     // mirrors exactly where the emitter used to call `emitWidthWrapStmt`

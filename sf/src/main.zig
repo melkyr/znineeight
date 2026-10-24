@@ -31,6 +31,7 @@ const LirLowerer = lower_mod.LirLowerer;
 const lir_mod = @import("lir.zig");
 const LirSlotArrayList = lir_mod.LirSlotArrayList;
 const lir_stream = @import("lir_stream.zig");
+const debug_map = @import("debug_map.zig");
 const resolved_type_table = @import("resolved_type_table.zig");
 const hash_mod = @import("util/hash.zig");
 const ga_mod = @import("growable_array.zig");
@@ -80,6 +81,7 @@ pub const CompilerCli = struct {
     error_format: ErrorFormat,
     warnings_as_errors: bool,
     quiet: bool,
+    debug: bool,
     test_mode: bool,
     sanity_test_mode: bool,
     track_memory: bool,
@@ -153,6 +155,10 @@ pub const CompilerContext = struct {
     // emission order derived from them.
     module_init_deps: hash_mod.U64ToU32Map,
     module_init_order: ga_mod.U32ArrayList,
+    // P3-M1: empty/no-op unless `--debug`/`-d` is set.
+    debug_spans: debug_map.DebugSpanStore,
+    debug_symbols: debug_map.DebugSymbolList,
+    debug_map: debug_map.DebugMapWriter,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -161,6 +167,21 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     pal.markerWrite(startmsg);
      var cli = parseArgs();
      if (cli.show_markers) { pal.markersEnabled(@intCast(u32, 1)); }
+     if (!cli.quiet) {
+        if (cli.debug) {
+            var bon: []const u8 = "Z98 Compiler 2026 (map: on)\n";
+            pal.stderr_write(bon);
+        } else {
+            var boff: []const u8 = "Z98 Compiler 2026 (map: off)\n";
+            pal.stderr_write(boff);
+        }
+     }
+     if (cli.debug and !cli.output_dir_set) {
+        var dmsg: []const u8 = "error: --debug/-d requires --output-dir\n";
+        pal.stderr_write(dmsg);
+        pal.exit(@intCast(u8, 2));
+        return;
+     }
      if (cli.sanity_test_mode) {
         var compiler_alloc = alloc_mod.initCompilerAlloc();
          var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, 4);
@@ -397,6 +418,9 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         // call order.
         .module_init_deps = hash_mod.u64ToU32MapInit(&compiler_alloc.module),
         .module_init_order = ga_mod.u32ArrayListInit(&compiler_alloc.emission),
+        .debug_spans = debug_map.debugSpanStoreInit(),
+        .debug_symbols = debug_map.debugSymbolListInit(&compiler_alloc.emission),
+        .debug_map = debug_map.debugMapWriterInit(),
     };
     runCompiler(&ctx);
 }
@@ -915,6 +939,23 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     var ti: usize = @intCast(usize, 0);
     while (ti < tmp_name.len and sp_len < @intCast(usize, 511)) : (ti += @intCast(usize, 1)) { spill_path[sp_len] = tmp_name[ti]; sp_len += @intCast(usize, 1); }
     lir_stream.lirStreamBeginWrite(&ctx.lir_stream, spill_path[0..sp_len], &ctx.alloc.emission);
+    if (ctx.cli.debug) {
+        var dbg_path: [512]u8 = undefined;
+        var dp: usize = @intCast(usize, 0);
+        if (ctx.cli.output_dir_set) {
+            var odb = ctx.cli.output_dir;
+            var oib: usize = @intCast(usize, 0);
+            while (oib < odb.len and dp < @intCast(usize, 511)) : (oib += @intCast(usize, 1)) { dbg_path[dp] = odb[oib]; dp += @intCast(usize, 1); }
+            dbg_path[dp] = @intCast(u8, '/'); dp += @intCast(usize, 1);
+        } else {
+            dbg_path[dp] = @intCast(u8, '.'); dp += @intCast(usize, 1);
+            dbg_path[dp] = @intCast(u8, '/'); dp += @intCast(usize, 1);
+        }
+        var dbg_name: []const u8 = ".zig1_dbg.tmp";
+        var dni: usize = @intCast(usize, 0);
+        while (dni < dbg_name.len and dp < @intCast(usize, 511)) : (dni += @intCast(usize, 1)) { dbg_path[dp] = dbg_name[dni]; dp += @intCast(usize, 1); }
+        debug_map.debugSpanStoreOpen(&ctx.debug_spans, &ctx.alloc.emission, dbg_path[0..dp]);
+    }
     var sem_ctx: SemanticContext = SemanticContext{
         .store = ctx.store,
         .registry = ctx.typereg,
@@ -991,6 +1032,21 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
                         lowerer.module_id = mods[mi].id;
                         lowerer.module_reg = ctx.module_reg;
+                        lowerer.debug_enabled = @intCast(u8, if (ctx.cli.debug) 1 else 0);
+                        if (ctx.cli.debug) {
+                            var f_sym_proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decl_idx))];
+                            var f_sym_loc = sm_mod.sourceManagerGetLocation(ctx.source_man, mods[mi].source_file_id, decl.span_start);
+                            debug_map.debugSymbolListAppend(&ctx.debug_symbols, debug_map.DebugSymbol{
+                                .kind = @intCast(u8, 0),
+                                .is_extern = @intCast(u8, if ((@intCast(u16, decl.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) 1 else 0),
+                                .name_id = f_sym_proto.name_id,
+                                .module_id = mods[mi].id,
+                                .type_id = @intCast(u32, 0),
+                                .src_line = f_sym_loc.line,
+                                .src_file_id = mods[mi].source_file_id,
+                                .decl_span = decl.span_start,
+                            });
+                        }
                         var lf = lower_mod.lowerFn(&lowerer, decl_idx);
                         if (async_analysis.asyncIsSuspending(&ctx.suspending_fns, lf.module_id, lf.name_id)) {
                             // Phase A: compute + publish the layout, retain the LIR
@@ -1005,6 +1061,9 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         } else {
                             var slot = lir_stream.lirStreamAppend(&ctx.lir_stream, lf);
                             lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, slot);
+                            if (ctx.cli.debug) {
+                                debug_map.debugSpanStoreAppend(&ctx.debug_spans, slot.disk_offset, lowerer.debug_spans.items[0..lowerer.debug_spans.len]);
+                            }
                             if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
                         }
                     } else {
@@ -1068,6 +1127,19 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                                         .const_init = gv_ctree,
                                         .link_visible = gv_lv,
                                     });
+                                    if (ctx.cli.debug) {
+                                        var g_sym_loc = sm_mod.sourceManagerGetLocation(ctx.source_man, mods[mi].source_file_id, decl.span_start);
+                                        debug_map.debugSymbolListAppend(&ctx.debug_symbols, debug_map.DebugSymbol{
+                                            .kind = @intCast(u8, 1),
+                                            .is_extern = @intCast(u8, 0),
+                                            .name_id = gv_name,
+                                            .module_id = mods[mi].id,
+                                            .type_id = gv_tid2,
+                                            .src_line = g_sym_loc.line,
+                                            .src_file_id = mods[mi].source_file_id,
+                                            .decl_span = decl.span_start,
+                                        });
+                                    }
                                 } else {
                                 var gv_is_storage: u8 = @intCast(u8, 0);
                                 if ((@intCast(u16, decl.flags) & @intCast(u16, 0x01)) != @intCast(u16, 0)) {
@@ -1111,6 +1183,19 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                                         .const_init = @intCast(u32, 0xFFFFFFFF),
                                         .link_visible = gv_lv2,
                                     });
+                                    if (ctx.cli.debug) {
+                                        var g2_sym_loc = sm_mod.sourceManagerGetLocation(ctx.source_man, mods[mi].source_file_id, decl.span_start);
+                                        debug_map.debugSymbolListAppend(&ctx.debug_symbols, debug_map.DebugSymbol{
+                                            .kind = @intCast(u8, 1),
+                                            .is_extern = @intCast(u8, 0),
+                                            .name_id = gv_name,
+                                            .module_id = mods[mi].id,
+                                            .type_id = gv_tid,
+                                            .src_line = g2_sym_loc.line,
+                                            .src_file_id = mods[mi].source_file_id,
+                                            .decl_span = decl.span_start,
+                                        });
+                                    }
                                 }
                                 }
                             }
@@ -1123,9 +1208,13 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         var ilowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
         ilowerer.module_id = mods[mi].id;
         ilowerer.module_reg = ctx.module_reg;
+        ilowerer.debug_enabled = @intCast(u8, if (ctx.cli.debug) 1 else 0);
         var imf = lower_mod.lowerModuleInit(&ilowerer, mods[mi].ast_root, mods[mi].id, &ctx.module_init_deps);
         var islot = lir_stream.lirStreamAppend(&ctx.lir_stream, imf);
         lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, islot);
+        if (ctx.cli.debug) {
+            debug_map.debugSpanStoreAppend(&ctx.debug_spans, islot.disk_offset, ilowerer.debug_spans.items[0..ilowerer.debug_spans.len]);
+        }
         if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
     }
     var amods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
@@ -1383,6 +1472,21 @@ fn phase_EmissionClassification(ctx: *CompilerContext) void {
     c89_plan.spellPlanPlanTypeOrder(&ctx.spell_plan, &ctx.alloc.permanent, ctx.typereg);
 }
 
+fn buildDebugMapPath(buf: []u8, od: []const u8, stem: []const u8, ext: []const u8) usize {
+    var p: usize = @intCast(usize, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < od.len and p < @intCast(usize, 510)) : (i += @intCast(usize, 1)) { buf[p] = od[i]; p += @intCast(usize, 1); }
+    buf[p] = @intCast(u8, '/'); p += @intCast(usize, 1);
+    i = @intCast(usize, 0);
+    var es: []const u8 = ".z98dbg.";
+    while (i < stem.len and p < @intCast(usize, 510)) : (i += @intCast(usize, 1)) { buf[p] = stem[i]; p += @intCast(usize, 1); }
+    i = @intCast(usize, 0);
+    while (i < es.len and p < @intCast(usize, 511)) : (i += @intCast(usize, 1)) { buf[p] = es[i]; p += @intCast(usize, 1); }
+    i = @intCast(usize, 0);
+    while (i < ext.len and p < @intCast(usize, 511)) : (i += @intCast(usize, 1)) { buf[p] = ext[i]; p += @intCast(usize, 1); }
+    return p;
+}
+
 fn phase_C89Emission(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "C\n"; pal.markerWrite(p_msg);
     if (!ctx.cli.dump_c89 and !ctx.cli.output_dir_set) return;
@@ -1422,6 +1526,11 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     emitter.fn_slots_start = @intCast(usize, 0);
     emitter.fn_slots_len = ctx.lir_slots.len;
     emitter.spill_arena = &ctx.alloc.lir_read;
+    if (ctx.cli.debug) {
+        emitter.debug_map = &ctx.debug_map;
+        emitter.debug_store = &ctx.debug_spans;
+        emitter.debug_symbols = &ctx.debug_symbols;
+    }
     lir_stream.lirStreamBeginRead(&ctx.lir_stream, &ctx.alloc.emission);
     var module_name: []const u8 = "output";
 
@@ -1584,6 +1693,19 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     emitter.reachable = reachable;
 
     if (ctx.cli.output_dir_set) {
+        if (ctx.cli.debug) {
+            var dbg_root_stem = c89_mod.moduleQualifiedName(&emitter, 0);
+            var dbg_p1: [512]u8 = undefined;
+            var dbg_p2: [512]u8 = undefined;
+            var dbg_p3: [512]u8 = undefined;
+            var dbg_e1: []const u8 = "syms";
+            var dbg_e2: []const u8 = "lines";
+            var dbg_e3: []const u8 = "cnames";
+            var dbg_n1 = buildDebugMapPath(dbg_p1[0..], ctx.cli.output_dir, dbg_root_stem, dbg_e1);
+            var dbg_n2 = buildDebugMapPath(dbg_p2[0..], ctx.cli.output_dir, dbg_root_stem, dbg_e2);
+            var dbg_n3 = buildDebugMapPath(dbg_p3[0..], ctx.cli.output_dir, dbg_root_stem, dbg_e3);
+            debug_map.debugMapWriterOpen(&ctx.debug_map, &ctx.alloc.emission, dbg_p1[0..dbg_n1], dbg_p2[0..dbg_n2], dbg_p3[0..dbg_n3]);
+        }
         // P4 fix round 2: the classification state (`ctx.emission_classif`) is
         // completed at the pre-emit `phase_EmissionClassification` boundary and
         // loaded at `c89EmitterInit` (the emitter reads only).
@@ -1749,10 +1871,19 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
             var cw: c89_mod.BufferedWriter = undefined;
             cw = c89_mod.bufferedWriterInitFd(cfd);
             emitter.writer = cw;
+            if (ctx.cli.debug) {
+                var dbg_src_file = sm_mod.sourceManagerGetFileName(ctx.source_man, m.source_file_id);
+                debug_map.debugMapWriterBeginLineGroup(&ctx.debug_map, dbg_src_file, base);
+            }
             c89_mod.emitModuleFile(&emitter, m.id, base);
+            if (ctx.cli.debug) { debug_map.debugMapWriterEndLineGroup(&ctx.debug_map); }
             c89_mod.bufferedWriterFlush(&emitter.writer);
             pal.fileClose(cfd);
             var ff2_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff2_m);
+        }
+        if (ctx.cli.debug) {
+            debug_map.debugMapWriterClose(&ctx.debug_map, &ctx.alloc.emission, ctx.debug_symbols.items[0..ctx.debug_symbols.len], ctx.source_man, &mangler, ctx.interner, ctx.module_reg, ctx.typereg);
+            debug_map.debugSpanStoreClose(&ctx.debug_spans);
         }
         c89_mod.emitBuildScripts(&emitter, od, ctx.cli.target_is_windows, ctx.cli.target_win_profile);
         lir_stream.lirStreamEndRead(&ctx.lir_stream);
@@ -1790,6 +1921,7 @@ fn parseArgs() CompilerCli {
         .error_format = ErrorFormat.human,
         .warnings_as_errors = false,
         .quiet = false,
+        .debug = false,
         .test_mode = false,
         .sanity_test_mode = false,
         .track_memory = false,
@@ -1815,6 +1947,8 @@ fn parseArgs() CompilerCli {
     const s_max_errors: []const u8 = "--max-errors";
     const s_output_dir: []const u8 = "--output-dir";
     const s_quiet: []const u8 = "--quiet";
+    const s_debug: []const u8 = "--debug";
+    const s_d: []const u8 = "-d";
     const s_test: []const u8 = "--test";
     const s_sanity_test: []const u8 = "--sanity-test";
     const s_warnings: []const u8 = "--warnings-as-errors";
@@ -1880,6 +2014,8 @@ fn parseArgs() CompilerCli {
                 }
             } else if (matchFlag(arg, s_quiet) or matchFlag(arg, s_q)) {
                 cli.quiet = true;
+            } else if (matchFlag(arg, s_debug) or matchFlag(arg, s_d)) {
+                cli.debug = true;
             } else if (matchFlag(arg, s_test)) {
                 cli.test_mode = true;
             } else if (matchFlag(arg, s_sanity_test)) {
@@ -2197,6 +2333,8 @@ fn printUsage() void {
     pal.stderr_write(fast_help);
     const c89_help: []const u8 = "  --dump-c89                emit C89 into the output directory\n";
     pal.stderr_write(c89_help);
+    const dbg_help: []const u8 = "  -d, --debug               emit <stem>.z98dbg.{syms,lines,cnames} (requires --output-dir)\n";
+    pal.stderr_write(dbg_help);
     const help_help: []const u8 = "  --help                    show this help\n";
     pal.stderr_write(help_help);
 }
