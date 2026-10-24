@@ -47,6 +47,9 @@ pub const STOP_BREAKPOINT: u8 = 1;
 pub const STOP_SINGLE_STEP: u8 = 2;
 pub const STOP_SIGNAL: u8 = 3;
 pub const STOP_EXITED: u8 = 4;
+// The process terminated because of a signal (WIFSIGNALED), as opposed to a
+// signal-delivery stop (STOP_SIGNAL) from which it can still continue.
+pub const STOP_SIGNALED_EXIT: u8 = 5;
 
 pub const Backend = struct {
     // true for a real process backend (backend_linux): the command loop then
@@ -64,6 +67,14 @@ pub const Backend = struct {
     continue_fn: fn (*void) BackendError!void,
     detach_fn: fn (*void) BackendError!void,
     terminate_fn: fn (*void) BackendError!void,
+    // Machine-breakpoint ops (M3 fix round 1): the upper layer owns the
+    // source mapping, but it must not name a concrete backend for int3
+    // planting/restoration or the child pid (PIE bias lookup).
+    plant_fn: fn (*void, u32) BackendError!void,
+    removeBreak_fn: fn (*void, u32) void,
+    restoreAll_fn: fn (*void) void,
+    installAllExcept_fn: fn (*void, u32) void,
+    pid_fn: fn (*void) i32,
 };
 
 fn stubLaunch(state: *void, exe: []const u8, args: [][]const u8) BackendError!void {
@@ -124,6 +135,31 @@ fn stubTerminate(state: *void) BackendError!void {
     return error.Unsupported;
 }
 
+fn stubPlant(state: *void, addr: u32) BackendError!void {
+    _ = state;
+    _ = addr;
+    return error.Unsupported;
+}
+
+fn stubRemoveBreak(state: *void, addr: u32) void {
+    _ = state;
+    _ = addr;
+}
+
+fn stubRestoreAll(state: *void) void {
+    _ = state;
+}
+
+fn stubInstallAllExcept(state: *void, skip: u32) void {
+    _ = state;
+    _ = skip;
+}
+
+fn stubPid(state: *void) i32 {
+    _ = state;
+    return -1;
+}
+
 // The M2 backend: a well-formed vtable whose every operation is unsupported.
 // M3 installs backend_linux's functions here; the upper layer is unchanged.
 pub fn stubBackend() Backend {
@@ -140,5 +176,10 @@ pub fn stubBackend() Backend {
         .continue_fn = stubContinue,
         .detach_fn = stubDetach,
         .terminate_fn = stubTerminate,
+        .plant_fn = stubPlant,
+        .removeBreak_fn = stubRemoveBreak,
+        .restoreAll_fn = stubRestoreAll,
+        .installAllExcept_fn = stubInstallAllExcept,
+        .pid_fn = stubPid,
     };
 }

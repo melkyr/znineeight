@@ -17,14 +17,34 @@ const stdin_mod = @import("std_stdin");
 const map_reader = @import("map_reader.zig");
 const dbg_core = @import("dbg_core.zig");
 const backend = @import("backend.zig");
-const backend_linux = @import("backend_linux.zig");
+const backend_select = @import("backend_select.zig");
 const dwarf = @import("dwarf_lines.zig");
+
+// std_io writes through C stdio (fwrite), so z9dbg must flush before every
+// resume: otherwise the debuggee's inherited/reopened stdout can appear ahead
+// of the already-printed stop display, and the forked child inherits any
+// pending parent buffer. fflush(NULL) flushes every output stream.
+extern "c" fn fflush(stream: *void) i32;
+
+fn flushOut() void {
+    _ = fflush(@ptrCast(*void, @intToPtr(*void, 0)));
+}
 
 const SUFFIX_SYMS: []const u8 = ".z98dbg.syms";
 const SUFFIX_SYMS_LEN: usize = 12;
 
-const MAX_ADDRS: usize = 128;
-const MAX_MACHINE_BREAKS: usize = 512;
+// Fix F5 caps. Observed worst case in the test set / self-host maps: 215
+// emitted C lines for one Z98 source line (z9torr), each with a few DWARF
+// addresses. 4096 addresses per line and 65536 machine breakpoints (256 source
+// lines x 256 addresses) hold the "int3 at every address" binding with a wide
+// margin. Memory: main's g_bp is ~1 MiB BSS, the backend table ~512 KiB BSS;
+// untouched pages do not count toward RSS.
+const MAX_ADDRS: usize = 4096;
+const MAX_MACHINE_BREAKS: usize = 65536;
+// One source line can have many emitted-line runs; 1024 covers the observed
+// maximum (215) with margin. Overflow is reported, not indexed past (F4).
+const MAX_SPANS: usize = 1024;
+const MAX_FRAMES: usize = 16;
 
 var g_arena_buf: [16777216]u8 = undefined;
 
@@ -34,6 +54,8 @@ var g_arena_buf: [16777216]u8 = undefined;
 var g_di: dwarf.DebugInfo = undefined;
 var g_has_di: bool = false;
 var g_reader: *map_reader.MapReader = undefined;
+var g_entry_t0_us: u64 = 0;
+var g_entry_timing: bool = false;
 
 const BreakAddr = struct {
     addr: u32,
@@ -88,16 +110,22 @@ pub fn defaultDumpPath(buf: []u8, counter: u32) []u8 {
     return buf[0..n];
 }
 
+// Exact M2 stub text (headless harness expectations).
 fn printBackendUnavailable() void {
     std.io.write("z9dbg: no live backend (M2)\n");
+}
+
+// Real live-backend failure (never claim the M2 stub is missing).
+fn printBackendFailure() void {
+    std.io.write("z9dbg: backend operation failed\n");
 }
 
 fn errStr(s: []const u8) void {
     @stderrWrite(s.ptr, s.len);
 }
 
-fn errU32(v: u32) void {
-    var tmp: [10]u8 = undefined;
+fn errU64(v: u64) void {
+    var tmp: [20]u8 = undefined;
     var n: usize = 0;
     var x = v;
     if (x == 0) {
@@ -109,12 +137,21 @@ fn errU32(v: u32) void {
             n += 1;
         }
     }
-    var out: [10]u8 = undefined;
+    var out: [20]u8 = undefined;
     var i: usize = 0;
     while (i < n) : (i += 1) {
         out[i] = tmp[n - 1 - i];
     }
     @stderrWrite(&out[0], n);
+}
+
+// Monotonic high-resolution microseconds (fix round 1 latency method).
+fn nowUs() u64 {
+    var f = std.time.highResFreq();
+    var h = std.time.highRes();
+    if (f == 0) return @intCast(u64, std.time.ticksMs()) *% 1000;
+    if (f >= 1000000) return h / (f / 1000000);
+    return (h *% 1000000) / f;
 }
 
 fn parseU32(s: []const u8, out: *u32) bool {
@@ -164,8 +201,12 @@ fn functionEntryAddr(reader: *map_reader.MapReader, di: *dwarf.DebugInfo, functi
 
 // All runtime addresses whose emitted C lines belong to the mapped source line.
 fn resolveAddrsForLine(reader: *map_reader.MapReader, di: *dwarf.DebugInfo, file: []const u8, line: u32, out: []u32) usize {
-    var spans: [64]map_reader.LineSpan = undefined;
-    var ns = map_reader.lineSpansAt(reader, file, line, spans[0..]);
+    var spans: [MAX_SPANS]map_reader.LineSpan = undefined;
+    var overflow = false;
+    var ns = map_reader.lineSpansAt(reader, file, line, spans[0..], &overflow);
+    if (overflow) {
+        errStr("z9dbg: source line maps to more than the span cap; breakpoint may be incomplete\n");
+    }
     var n: usize = 0;
     var si: usize = 0;
     while (si < ns) : (si += 1) {
@@ -239,7 +280,7 @@ fn plantMachine(be: *backend.Backend, reader: *map_reader.MapReader, addrs: []co
     while (i < n) : (i += 1) {
         if (i >= addrs.len) return;
         bpAdd(addrs[i], file, line);
-        backend_linux.plant(be.state, addrs[i]) catch {};
+        be.plant_fn(be.state, addrs[i]) catch {};
     }
 }
 
@@ -285,7 +326,10 @@ fn handleBreak(line: []const u8, reader: *map_reader.MapReader, table: *dbg_core
     }
     if (!g_has_di) {
         var sym = map_reader.symbolAt(reader, res.src_file, res.line) orelse {
-            dbg_core.printBreakResult(res);
+            dbg_core.breakTableRemove(table, res.src_file, res.line);
+            std.io.write("break: cannot resolve function entry for line ");
+            std.io.printInt(@intCast(i32, n));
+            std.io.write("\n");
             return;
         };
         var addr_opt = functionEntryAddr(reader, &g_di, sym.src_name);
@@ -293,7 +337,10 @@ fn handleBreak(line: []const u8, reader: *map_reader.MapReader, table: *dbg_core
         if (addr_opt) |a| {
             addr = a;
         } else {
-            dbg_core.printBreakResult(res);
+            dbg_core.breakTableRemove(table, res.src_file, res.line);
+            std.io.write("break: cannot resolve function entry for line ");
+            std.io.printInt(@intCast(i32, n));
+            std.io.write("\n");
             return;
         }
         std.io.write("break: no debug info\n");
@@ -353,6 +400,12 @@ fn presentEvent(reader: *map_reader.MapReader, arena: *std.arena.Arena, ev: back
         std.io.write("z9dbg: debuggee exited\n");
         return false;
     }
+    if (ev.reason == backend.STOP_SIGNALED_EXIT) {
+        std.io.write("z9dbg: debuggee terminated by signal ");
+        std.io.printInt(@intCast(i32, ev.signo));
+        std.io.write("\n");
+        return false;
+    }
     var st: dbg_core.StopState = undefined;
     var have = false;
     if (ev.reason == backend.STOP_BREAKPOINT) {
@@ -389,6 +442,7 @@ fn presentEvent(reader: *map_reader.MapReader, arena: *std.arena.Arena, ev: back
 // and CONT. Breakpoints disabled by the last wait are restored by restoreAll.
 fn resumeAndShow(reader: *map_reader.MapReader, arena: *std.arena.Arena, be: *backend.Backend, out_stop: *dbg_core.StopState) bool {
     if (be.live) {
+        flushOut();
         var regs: backend.Registers = undefined;
         var have_regs = true;
         be.getRegs_fn(be.state, &regs) catch {
@@ -399,16 +453,25 @@ fn resumeAndShow(reader: *map_reader.MapReader, arena: *std.arena.Arena, be: *ba
         if (at_idx) |cur_idx| {
             var cur_file = g_bp[cur_idx].src_file;
             var cur_line = g_bp[cur_idx].src_line;
-            backend_linux.restoreAll(be.state);
+            be.restoreAll_fn(be.state);
+            var cur_eip = regs.eip;
+            var stepped_addr = regs.eip;
             var guard: u32 = 0;
             while (guard < 64) : (guard += 1) {
+                stepped_addr = cur_eip;
                 be.singleStep_fn(be.state) catch break;
                 var sev = be.wait_fn(be.state) catch {
-                    printBackendUnavailable();
+                    printBackendFailure();
                     return false;
                 };
                 if (sev.reason == backend.STOP_EXITED) {
                     std.io.write("z9dbg: debuggee exited\n");
+                    return false;
+                }
+                if (sev.reason == backend.STOP_SIGNALED_EXIT) {
+                    std.io.write("z9dbg: debuggee terminated by signal ");
+                    std.io.printInt(@intCast(i32, sev.signo));
+                    std.io.write("\n");
                     return false;
                 }
                 if (sev.reason == backend.STOP_SIGNAL and sev.signo != 5) {
@@ -423,9 +486,10 @@ fn resumeAndShow(reader: *map_reader.MapReader, arena: *std.arena.Arena, be: *ba
                     r2_ok = false;
                 };
                 if (!r2_ok) break;
+                cur_eip = r2.eip;
                 if (bpFind(r2.eip)) |idx2| {
                     if (sameSourceLine(idx2, cur_file, cur_line)) continue;
-                    backend_linux.installAllExceptAddr(be.state, r2.eip);
+                    be.installAllExcept_fn(be.state, r2.eip);
                     var st2 = stopFromBp(reader, idx2);
                     out_stop.* = st2;
                     dbg_core.printStop(reader, arena, st2);
@@ -440,36 +504,31 @@ fn resumeAndShow(reader: *map_reader.MapReader, arena: *std.arena.Arena, be: *ba
                 }
                 break;
             }
-            var r3: backend.Registers = undefined;
-            var r3_ok = true;
-            be.getRegs_fn(be.state, &r3) catch {
-                r3_ok = false;
-            };
-            if (r3_ok) {
-                backend_linux.installAllExceptAddr(be.state, r3.eip);
-            } else {
-                backend_linux.installAllExceptAddr(be.state, 0);
-            }
+            // F3: re-arm every breakpoint except the instruction we actually
+            // stepped over. If the current PC is a different same-line
+            // address it is re-armed here (rather than left disabled).
+            be.installAllExcept_fn(be.state, stepped_addr);
         }
     }
     var timing = os.env("Z9DBG_TIMING") != null;
-    var t0: u32 = 0;
-    if (timing) t0 = std.time.ticksMs();
+    var t0: u64 = 0;
+    if (timing) t0 = nowUs();
     be.continue_fn(be.state) catch {
-        printBackendUnavailable();
+        printBackendFailure();
         return false;
     };
     var ev = be.wait_fn(be.state) catch {
-        printBackendUnavailable();
+        printBackendFailure();
         return false;
     };
-    if (timing and ev.reason != backend.STOP_EXITED) {
-        var dt = std.time.ticksMs() -% t0;
+    var shown = presentEvent(reader, arena, ev, out_stop);
+    if (timing and shown) {
+        var dt = nowUs() -% t0;
         errStr("z9dbg: breakpoint latency ");
-        errU32(dt);
-        errStr(" ms\n");
+        errU64(dt);
+        errStr(" us\n");
     }
-    return presentEvent(reader, arena, ev, out_stop);
+    return shown;
 }
 
 fn handleDump(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *backend.Backend, stop: *dbg_core.StopState, counter: *u32, path_opt: ?[]const u8) bool {
@@ -486,7 +545,11 @@ fn handleDump(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *backe
     be.getRegs_fn(be.state, &regs) catch {
         regs_ok = false;
     };
-    if (dbg_core.writeDump(reader, arena, stop.*, path, regs, regs_ok)) {
+    var frames: [MAX_FRAMES]dbg_core.DumpFrame = undefined;
+    var unreliable = false;
+    var no_cnames = false;
+    var frame_n = collectFrames(reader, be, stop.*, frames[0..], &unreliable, &no_cnames);
+    if (dbg_core.writeDumpFrames(reader, arena, stop.*, path, regs, regs_ok, frames[0..frame_n])) {
         std.io.write("dump: wrote ");
         std.io.write(path);
         std.io.write("\n");
@@ -511,8 +574,7 @@ fn readU32Le(buf: []const u8, off: usize) u32 {
     return b0 | (b1 << @intCast(u32, 8)) | (b2 << @intCast(u32, 16)) | (b3 << @intCast(u32, 24));
 }
 
-fn printFrame(reader: *map_reader.MapReader, depth: u32, name: []const u8, file: []const u8, line: u32) void {
-    _ = reader;
+fn printFrame(depth: u32, name: []const u8, file: []const u8, line: u32, decl: bool) void {
     std.io.write("#");
     std.io.printInt(@intCast(i32, depth));
     std.io.write(" ");
@@ -521,45 +583,93 @@ fn printFrame(reader: *map_reader.MapReader, depth: u32, name: []const u8, file:
     std.io.write(file);
     std.io.write(":");
     std.io.printInt(@intCast(i32, line));
+    if (decl) std.io.write(" (decl)");
     std.io.write("\n");
 }
 
-fn handleBacktrace(reader: *map_reader.MapReader, be: *backend.Backend, stop: dbg_core.StopState) void {
-    printFrame(reader, 0, stop.function_name, stop.src_file, stop.src_line);
-    if (!be.live) return;
+// Shared backtrace/dump frame walk. Caller frames carry the function's map
+// declaration line (decl = true); `unreliable` is set for the review's clearly
+// broken chain cases, `no_cnames` when the optional map file is absent.
+fn collectFrames(reader: *map_reader.MapReader, be: *backend.Backend, stop: dbg_core.StopState, frames: []dbg_core.DumpFrame, unreliable: *bool, no_cnames: *bool) usize {
+    unreliable.* = false;
+    no_cnames.* = false;
+    frames[0] = dbg_core.DumpFrame{ .name = stop.function_name, .src_file = stop.src_file, .src_line = stop.src_line, .decl = false };
+    if (!be.live) return 1;
+    if (map_reader.cnameCount(reader) == 0) {
+        no_cnames.* = true;
+        return 1;
+    }
     var regs: backend.Registers = undefined;
-    be.getRegs_fn(be.state, &regs) catch return;
+    be.getRegs_fn(be.state, &regs) catch {
+        unreliable.* = true;
+        return 1;
+    };
     var ebp = regs.ebp;
-    var depth: u32 = 1;
-    while (depth < 16) : (depth += 1) {
+    var n: usize = 1;
+    while (n < frames.len) {
         var buf: [8]u8 = undefined;
-        be.readMemory_fn(be.state, ebp, buf[0..]) catch return;
+        be.readMemory_fn(be.state, ebp, buf[0..]) catch {
+            unreliable.* = true;
+            break;
+        };
         var prev = readU32Le(buf[0..], 0);
         var ret = readU32Le(buf[0..], 4);
-        if (prev == 0 or prev <= ebp or ret == 0) return;
+        if (prev == 0 or prev <= ebp or ret == 0) {
+            unreliable.* = true;
+            break;
+        }
         var f_opt = dwarf.funcByAddr(&g_di, ret - 1);
         var f: dwarf.Func = undefined;
         if (f_opt) |v| {
             f = v;
         } else {
-            return;
+            // Return address outside every STT_FUNC range: libc is normally
+            // reached only through the emitted C `main` wrapper, which is an
+            // STT_FUNC and is stopped at below. Anything else is corruption.
+            unreliable.* = true;
+            break;
         }
         var sname_opt = map_reader.srcNameForCname(reader, f.name);
+        if (sname_opt == null) {
+            // The plain C `main` wrapper is the ordinary end of the Z98 stack.
+            if (std.str.eql(f.name, "main")) break;
+            unreliable.* = true;
+            break;
+        }
         var sname: []const u8 = undefined;
         if (sname_opt) |v| {
             sname = v;
         } else {
-            return;
+            break;
         }
         var sym_opt = map_reader.functionByName(reader, sname);
         var sym: map_reader.Symbol = undefined;
         if (sym_opt) |v| {
             sym = v;
         } else {
-            return;
+            unreliable.* = true;
+            break;
         }
-        printFrame(reader, depth, sname, sym.src_file, sym.src_line);
+        frames[n] = dbg_core.DumpFrame{ .name = sname, .src_file = sym.src_file, .src_line = sym.src_line, .decl = true };
+        n += 1;
         ebp = prev;
+    }
+    return n;
+}
+
+fn handleBacktrace(reader: *map_reader.MapReader, be: *backend.Backend, stop: dbg_core.StopState) void {
+    var frames: [MAX_FRAMES]dbg_core.DumpFrame = undefined;
+    var unreliable = false;
+    var no_cnames = false;
+    var n = collectFrames(reader, be, stop, frames[0..], &unreliable, &no_cnames);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        printFrame(@intCast(u32, i), frames[i].name, frames[i].src_file, frames[i].src_line, frames[i].decl);
+    }
+    if (no_cnames) {
+        std.io.write("backtrace limited: no .cnames\n");
+    } else if (unreliable) {
+        std.io.write("backtrace: frame chain unreliable; build with -fno-omit-frame-pointer\n");
     }
 }
 
@@ -574,6 +684,13 @@ pub fn runSession(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *b
     var start = start_in;
     std.io.write("Z98 debugger has started...\n");
     dbg_core.printStop(reader, arena, start);
+    if (g_entry_timing) {
+        var dt = nowUs() -% g_entry_t0_us;
+        errStr("z9dbg: entry latency ");
+        errU64(dt);
+        errStr(" us\n");
+        g_entry_timing = false;
+    }
     var table = dbg_core.breakTableInit();
     var stopped = true;
     var counter: u32 = 1;
@@ -592,7 +709,8 @@ pub fn runSession(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *b
         if (std.str.eql(line, "quit")) {
             std.io.write("z9dbg: exiting\n");
             if (be.live) {
-                backend_linux.restoreAll(be.state);
+                flushOut();
+                be.restoreAll_fn(be.state);
             }
             be.detach_fn(be.state) catch {};
             return;
@@ -622,7 +740,8 @@ pub fn runSession(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *b
         if (std.str.eql(line, "step")) {
             var out: dbg_core.StopState = start;
             if (be.live) {
-                backend_linux.restoreAll(be.state);
+                flushOut();
+                be.restoreAll_fn(be.state);
             }
             var res = dbg_core.stepInto(reader, be, resolve_state, resolve_fn, start, 100000, &out);
             switch (res) {
@@ -635,7 +754,7 @@ pub fn runSession(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *b
                         be.getRegs_fn(be.state, &regs) catch {
                             ok = false;
                         };
-                        if (ok) backend_linux.installAllExceptAddr(be.state, regs.eip);
+                        if (ok) be.installAllExcept_fn(be.state, regs.eip);
                     }
                     dbg_core.printStop(reader, arena, start);
                 },
@@ -643,8 +762,16 @@ pub fn runSession(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *b
                     std.io.write("z9dbg: debuggee exited\n");
                     stopped = false;
                 },
+                .signaled => {
+                    std.io.write("z9dbg: debuggee terminated by signal while stepping\n");
+                    stopped = false;
+                },
                 .unavailable => {
-                    printBackendUnavailable();
+                    if (be.live) {
+                        printBackendFailure();
+                    } else {
+                        printBackendUnavailable();
+                    }
                 },
                 else => {
                     std.io.write("z9dbg: step limit reached\n");
@@ -699,14 +826,45 @@ fn appendParts(arena: *std.arena.Arena, a: []const u8, b: []const u8) ?[]u8 {
     return raw[0..total];
 }
 
-fn findMapPrefix(arena: *std.arena.Arena, exe: []const u8) ?[]const u8 {
+fn baseName(path: []const u8) []const u8 {
+    var i: usize = path.len;
+    while (i > 0) {
+        i -= 1;
+        if (path[i] == '/') return path[i + 1 ..];
+    }
+    return path;
+}
+
+fn stemOf(path: []const u8) []const u8 {
+    var name = baseName(path);
+    var i: usize = name.len;
+    while (i > 0) {
+        i -= 1;
+        if (name[i] == '.') return name[0..i];
+    }
+    return name;
+}
+
+const MapFind = struct {
+    prefix: ?[]const u8,
+    ambiguous: bool,
+    count: u32,
+};
+
+// Map discovery (fix honest-minor 11): prefer the sidecar whose stem matches
+// the executable stem, otherwise accept a single unambiguous sidecar. Multiple
+// candidates with no match are reported as ambiguous instead of silently
+// picking the last directory entry.
+fn findMapPrefix(arena: *std.arena.Arena, exe: []const u8) MapFind {
     var dir = dirnameOf(exe);
-    var d = file_mod.openDir(arena, dir) catch return null;
-    var found: ?[]const u8 = null;
+    var d = file_mod.openDir(arena, dir) catch return MapFind{ .prefix = null, .ambiguous = false, .count = 0 };
+    var cands: [8][]const u8 = undefined;
+    var n: usize = 0;
+    var total: u32 = 0;
     while (true) {
         var entry_opt = file_mod.readDir(arena, &d) catch {
             file_mod.closeDir(&d);
-            return null;
+            return MapFind{ .prefix = null, .ambiguous = total > 1, .count = total };
         };
         var entry: file_mod.DirEntry = undefined;
         if (entry_opt) |e| {
@@ -716,21 +874,27 @@ fn findMapPrefix(arena: *std.arena.Arena, exe: []const u8) ?[]const u8 {
         }
         if (entry.is_dir) continue;
         if (!std.str.endsWith(entry.name, SUFFIX_SYMS)) continue;
+        total += 1;
+        if (n >= 8) continue;
         var stem = entry.name[0 .. entry.name.len - SUFFIX_SYMS_LEN];
         var sep: []const u8 = "/";
         if (std.str.eql(dir, "/")) sep = "";
-        var prefix = appendParts(arena, dir, sep) orelse {
-            file_mod.closeDir(&d);
-            return null;
-        };
-        var full = appendParts(arena, prefix, stem) orelse {
-            file_mod.closeDir(&d);
-            return null;
-        };
-        found = full;
+        var prefix = appendParts(arena, dir, sep) orelse continue;
+        var full = appendParts(arena, prefix, stem) orelse continue;
+        cands[n] = full;
+        n += 1;
     }
     file_mod.closeDir(&d);
-    return found;
+    if (total == 0) return MapFind{ .prefix = null, .ambiguous = false, .count = 0 };
+    var want = stemOf(exe);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        if (std.str.eql(stemOf(cands[i]), want)) {
+            return MapFind{ .prefix = cands[i], .ambiguous = false, .count = total };
+        }
+    }
+    if (total == 1 and n >= 1) return MapFind{ .prefix = cands[0], .ambiguous = false, .count = 1 };
+    return MapFind{ .prefix = null, .ambiguous = true, .count = total };
 }
 
 fn liveEntryStop(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *backend.Backend, start_in: dbg_core.StopState) bool {
@@ -757,9 +921,12 @@ fn liveEntryStop(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *ba
     }
     var i: usize = 0;
     while (i < naddr) : (i += 1) {
-        backend_linux.plant(be.state, addrs[i]) catch {};
+        be.plant_fn(be.state, addrs[i]) catch {};
     }
-    var t0 = std.time.ticksMs();
+    var timing = os.env("Z9DBG_TIMING") != null;
+    var t0: u64 = 0;
+    if (timing) t0 = nowUs();
+    flushOut();
     be.continue_fn(be.state) catch {
         std.io.write("z9dbg: cannot resume debuggee\n");
         return false;
@@ -770,18 +937,39 @@ fn liveEntryStop(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *ba
     };
     i = 0;
     while (i < naddr) : (i += 1) {
-        backend_linux.removeBreak(be.state, addrs[i]);
+        be.removeBreak_fn(be.state, addrs[i]);
     }
     if (ev.reason == backend.STOP_EXITED) {
         std.io.write("z9dbg: debuggee exited before entry stop\n");
         return false;
     }
-    if (os.env("Z9DBG_TIMING") != null) {
-        var dt = std.time.ticksMs() -% t0;
-        errStr("z9dbg: entry latency ");
-        errU32(dt);
-        errStr(" ms\n");
+    if (ev.reason == backend.STOP_SIGNALED_EXIT) {
+        std.io.write("z9dbg: debuggee terminated by signal ");
+        std.io.printInt(@intCast(i32, ev.signo));
+        std.io.write(" before entry breakpoint\n");
+        return false;
     }
+    if (ev.reason == backend.STOP_SIGNAL) {
+        std.io.write("z9dbg: debuggee stopped by signal ");
+        std.io.printInt(@intCast(i32, ev.signo));
+        std.io.write(" before entry breakpoint\n");
+        return false;
+    }
+    if (ev.reason != backend.STOP_BREAKPOINT) {
+        std.io.write("z9dbg: unexpected stop before entry breakpoint\n");
+        return false;
+    }
+    var matched = false;
+    i = 0;
+    while (i < naddr) : (i += 1) {
+        if (ev.eip == addrs[i]) matched = true;
+    }
+    if (!matched) {
+        std.io.write("z9dbg: unexpected stop before entry breakpoint\n");
+        return false;
+    }
+    g_entry_t0_us = t0;
+    g_entry_timing = timing;
     runSessionLive(arena, reader, be, start);
     return true;
 }
@@ -800,11 +988,17 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var ar = std.arena.init(g_arena_buf[0..]);
     var exe = os.argv(1);
     var prefix: []const u8 = "";
-    var prefix_opt = findMapPrefix(&ar, exe);
-    if (prefix_opt) |p| {
+    var mf = findMapPrefix(&ar, exe);
+    if (mf.prefix) |p| {
         prefix = p;
     } else {
-        std.io.write("z9dbg: no .z98dbg.syms next to the executable\n");
+        if (mf.ambiguous) {
+            std.io.write("z9dbg: ambiguous debug map: ");
+            std.io.printInt(@intCast(i32, mf.count));
+            std.io.write(" .z98dbg.syms candidates next to the executable\n");
+        } else {
+            std.io.write("z9dbg: no .z98dbg.syms next to the executable\n");
+        }
         os.exit(1);
     }
     var reader_opt = openMap(&ar, prefix);
@@ -841,7 +1035,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         na += 1;
     }
 
-    var be = backend_linux.linuxBackend();
+    var be = backend_select.select();
+    flushOut();
     be.launch_fn(be.state, exe, child_args[0..na]) catch {
         std.io.write("z9dbg: cannot launch ");
         std.io.write(exe);
@@ -860,7 +1055,13 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     }
     g_di = di;
     g_has_di = g_di.has_line;
-    dwarf.setLoadBase(&g_di, exe, backend_linux.pidOf(be.state));
+    var bias_ok = dwarf.setLoadBase(&g_di, exe, be.pid_fn(be.state));
+    if (!bias_ok) {
+        errStr("z9dbg: cannot resolve PIE load bias; breakpoint addresses may be wrong\n");
+    }
+    if (!g_has_di and g_di.unsupported_version) {
+        errStr("z9dbg: debug info present but unsupported DWARF version (only 2/3/4); using function-entry breakpoints\n");
+    }
     g_reader = &reader;
 
     bpClear();

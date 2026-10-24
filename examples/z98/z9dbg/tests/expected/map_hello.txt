@@ -16,6 +16,8 @@ ok - hello lineAt basename
 ok - hello lineRowsAt 16 count
 ok - hello lineRowsAt 16 row0
 ok - hello lineRowsAt 16 row1
+ok - hello lineSpansAt clamp count
+ok - hello lineSpansAt overflow
 ok - hello reverseRowAt 28 src line
 ok - hello reverseRowAt 28 out line
 ok - hello lineAt absent null

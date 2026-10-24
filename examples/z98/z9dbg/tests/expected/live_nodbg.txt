@@ -6,6 +6,8 @@ at main
 > 22:     var x = middle(5);
   23:     x = addTwo(x);
   24:     counter = x;
+(z9dbg) break: cannot resolve function entry for line 8
+(z9dbg) break: cannot resolve function entry for line 8
 (z9dbg) break: no debug info
 (z9dbg) Stopped at @LIVE@:10
 at addTwo
@@ -15,5 +17,5 @@ at addTwo
   11:     const a = n + 1;
   12:     const b = a + 1;
 (z9dbg) #0 addTwo at @LIVE@:10
-#1 main at @LIVE@:21
+#1 main at @LIVE@:21 (decl)
 (z9dbg) z9dbg: exiting

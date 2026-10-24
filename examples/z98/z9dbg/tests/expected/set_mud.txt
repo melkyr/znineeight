@@ -1,0 +1,35 @@
+Z98 debugger has started...
+Stopped at examples/z98/mud_server/main.zig:77
+at main
+  75: }
+  76:
+> 77: pub fn main() !void {
+  78:     initRooms();
+  79:
+(z9dbg) break: set at line 50
+(z9dbg) break: set at line 54
+(z9dbg) Stopped at examples/z98/mud_server/main.zig:54
+at initRooms
+  52:         .north = @intCast(u8, 0),
+  53:         .south = @intCast(u8, 0),
+> 54:         .east = @intCast(u8, 0),
+  55:         .west = @intCast(u8, 0)
+  56:     };
+(z9dbg) Stopped at examples/z98/mud_server/main.zig:55
+at initRooms
+  53:         .south = @intCast(u8, 0),
+  54:         .east = @intCast(u8, 0),
+> 55:         .west = @intCast(u8, 0)
+  56:     };
+  57: }
+(z9dbg) #0 initRooms at examples/z98/mud_server/main.zig:55
+#1 main at examples/z98/mud_server/main.zig:77 (decl)
+(z9dbg) dump: wrote @SNAP@
+Stopped at examples/z98/mud_server/main.zig:50
+at initRooms
+  48:         .west = @intCast(u8, 0)
+  49:     };
+> 50:     rooms[1] = Room {
+  51:         .desc = "A sunny clearing. Exits: south back to forest.\r\n",
+  52:         .north = @intCast(u8, 0),
+(z9dbg) z9dbg: exiting

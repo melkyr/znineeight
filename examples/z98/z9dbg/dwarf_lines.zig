@@ -45,6 +45,12 @@ pub const DebugInfo = struct {
     funcs: [*]Func,
     func_n: usize,
     has_line: bool,
+    // A .debug_line unit used DWARF 5 or DWARF64 (both out of v1 scope).
+    unsupported_version: bool,
+    // ET_DYN executable whose runtime load bias could not be found in
+    // /proc/<pid>/maps (renamed/symlinked exe); row/func addresses stay
+    // link-time and the caller must warn.
+    bias_unknown: bool,
 };
 
 const Parser = struct {
@@ -59,6 +65,7 @@ const Parser = struct {
     funcs: [*]Func,
     func_n: usize,
     func_cap: usize,
+    unsupported: bool,
 };
 
 const Section = struct {
@@ -247,12 +254,12 @@ fn addFunc(p: *Parser, addr: u32, size: u32, name: []const u8) DwarfError!void {
     p.func_n += 1;
 }
 
-fn emitRow(p: *Parser, st: *LState, file_base: u32, file_count: u32, end: bool) DwarfError!void {
+fn emitRow(p: *Parser, st: *LState, file_base: u32, file_count: *u32, end: bool) DwarfError!void {
     try growRows(p);
     var line: u32 = 0;
     if (st.line > 0 and st.line <= 4294967295) line = @intCast(u32, st.line);
     var gidx: u32 = 0xFFFFFFFF;
-    if (st.file >= 1 and st.file <= file_count) {
+    if (st.file >= 1 and st.file <= file_count.*) {
         gidx = file_base + (st.file - 1);
     }
     p.rows[p.row_n] = Row{ .addr = st.addr, .line = line, .file = gidx, .end = end };
@@ -271,7 +278,7 @@ fn applyAddrAdvance(st: *LState, min_inst: u8, max_ops: u8, op_adv: u32) void {
     st.op_index = total % mo;
 }
 
-fn parseProgram(p: *Parser, prog_start: usize, unit_end: usize, version: u16, min_inst: u8, max_ops: u8, default_is_stmt: bool, line_base: i8, line_range: u8, opcode_base: u8, op_lengths: []const u8, file_base: u32, file_count: u32) DwarfError!void {
+fn parseProgram(p: *Parser, prog_start: usize, unit_end: usize, version: u16, min_inst: u8, max_ops: u8, default_is_stmt: bool, line_base: i8, line_range: u8, opcode_base: u8, op_lengths: []const u8, file_base: u32, file_count: *u32) DwarfError!void {
     var st = LState{ .addr = 0, .file = 1, .line = 1, .is_stmt = default_is_stmt, .op_index = 0 };
     var pos = prog_start;
     while (pos < unit_end) {
@@ -304,7 +311,10 @@ fn parseProgram(p: *Parser, prog_start: usize, unit_end: usize, version: u16, mi
                 _ = try readUleb(p.data, &pos, sub_end);
                 _ = try readUleb(p.data, &pos, sub_end);
                 _ = try readUleb(p.data, &pos, sub_end);
-                if (fname.len > 0) try addFile(p, fname);
+                if (fname.len > 0) {
+                    try addFile(p, fname);
+                    file_count.* += 1;
+                }
             }
             pos = sub_end;
             continue;
@@ -374,7 +384,10 @@ fn parseLineTable(p: *Parser, sec: Section) DwarfError!void {
     while (pos + 4 <= end) {
         var unit_len = try u32At(p.data, pos);
         pos += 4;
-        if (unit_len == 0xffffffff) return;
+        if (unit_len == 0xffffffff) {
+            p.unsupported = true;
+            return;
+        }
         if (unit_len == 0) return;
         var ulen: usize = @intCast(usize, unit_len);
         if (pos > end or end - pos < ulen) return error.Corrupt;
@@ -383,6 +396,7 @@ fn parseLineTable(p: *Parser, sec: Section) DwarfError!void {
         var version = try u16At(p.data, pos);
         pos += 2;
         if (version < 2 or version > 4) {
+            p.unsupported = true;
             pos = unit_end;
             continue;
         }
@@ -440,7 +454,7 @@ fn parseLineTable(p: *Parser, sec: Section) DwarfError!void {
             _ = try readUleb(p.data, &pos, prog_start);
             _ = try readUleb(p.data, &pos, prog_start);
         }
-        try parseProgram(p, prog_start, unit_end, version, min_inst, max_ops, default_is_stmt != 0, line_base, line_range, opcode_base, op_lengths[0..], file_base, file_count);
+        try parseProgram(p, prog_start, unit_end, version, min_inst, max_ops, default_is_stmt != 0, line_base, line_range, opcode_base, op_lengths[0..], file_base, &file_count);
         pos = unit_end;
     }
 }
@@ -598,6 +612,7 @@ pub fn open(arena: *std.arena.Arena, exe: []const u8) DwarfError!DebugInfo {
         .funcs = undefined,
         .func_n = 0,
         .func_cap = 0,
+        .unsupported = false,
     };
 
     var line_sec = try findSectionName(data, shoff, @intCast(usize, shentsize), @intCast(usize, shnum), @intCast(usize, shstrndx), ".debug_line");
@@ -632,6 +647,8 @@ pub fn open(arena: *std.arena.Arena, exe: []const u8) DwarfError!DebugInfo {
         .funcs = p.funcs,
         .func_n = p.func_n,
         .has_line = p.row_n > 0,
+        .unsupported_version = p.unsupported,
+        .bias_unknown = false,
     };
 }
 
@@ -709,14 +726,16 @@ fn readProcMaps(arena: *std.arena.Arena, pid: i32) ?[]const u8 {
     return buf[0..used];
 }
 
-pub fn setLoadBase(di: *DebugInfo, exe: []const u8, pid: i32) void {
+pub fn setLoadBase(di: *DebugInfo, exe: []const u8, pid: i32) bool {
     if (di.e_type != 3) {
         di.base = 0;
-        return;
+        di.bias_unknown = false;
+        return true;
     }
     var maps = readProcMaps(di.arena, pid) orelse {
         di.base = 0;
-        return;
+        di.bias_unknown = true;
+        return false;
     };
     var want = basename(exe);
     var ls: usize = 0;
@@ -753,7 +772,8 @@ pub fn setLoadBase(di: *DebugInfo, exe: []const u8, pid: i32) void {
             var base = start_a -% offset;
             if (offset == 0) {
                 di.base = base;
-                return;
+                di.bias_unknown = false;
+                return true;
             }
             if (!have_fallback) {
                 fallback = base;
@@ -762,7 +782,14 @@ pub fn setLoadBase(di: *DebugInfo, exe: []const u8, pid: i32) void {
         }
         ls = le + 1;
     }
-    if (have_fallback) di.base = fallback;
+    if (have_fallback) {
+        di.base = fallback;
+        di.bias_unknown = false;
+        return true;
+    }
+    di.base = 0;
+    di.bias_unknown = true;
+    return false;
 }
 
 fn fileMatches(di: *const DebugInfo, idx: u32, out_file: []const u8) bool {

@@ -52,6 +52,20 @@ pub fn breakTableForceAdd(table: *BreakTable, file: []const u8, line: u32) void 
     _ = breakTableAdd(table, file, line);
 }
 
+// Remove a source line again when machine-address resolution fails after the
+// map-level snap (no-debug false-success fix): the table must not retain a
+// breakpoint that was never planted.
+pub fn breakTableRemove(table: *BreakTable, file: []const u8, line: u32) void {
+    var i: usize = 0;
+    while (i < table.len) : (i += 1) {
+        if (table.items[i].line == line and std.str.eql(table.items[i].src_file, file)) {
+            table.len -= 1;
+            table.items[i] = table.items[table.len];
+            return;
+        }
+    }
+}
+
 fn breakTableFind(table: *BreakTable, file: []const u8, line: u32) bool {
     var i: usize = 0;
     while (i < table.len) : (i += 1) {
@@ -208,7 +222,7 @@ pub fn entryStop(reader: *map_reader.MapReader, arena: *std.arena.Arena) ?StopSt
 
 pub const ResolveFn = fn (*void, u32, *StopState) bool;
 
-pub const StepOutcome = enum { stepped, unavailable, exited, exhausted };
+pub const StepOutcome = enum { stepped, unavailable, exited, signaled, exhausted };
 
 // Step-into: single-step through the backend until a resolved stop lands on a
 // mapped Z98 line different from `current` (unmapped C / same-line stops are
@@ -220,6 +234,7 @@ pub fn stepInto(reader: *map_reader.MapReader, be: *backend.Backend, resolve_sta
         be.singleStep_fn(be.state) catch return .unavailable;
         var ev = be.wait_fn(be.state) catch return .unavailable;
         if (ev.reason == backend.STOP_EXITED) return .exited;
+        if (ev.reason == backend.STOP_SIGNALED_EXIT) return .signaled;
         var st: StopState = undefined;
         if (!resolve_fn(resolve_state, ev.eip, &st)) continue;
         // M2 review minor (a): compare canonical map paths, not whatever
@@ -335,7 +350,22 @@ fn tbHex8(tb: *TextBuf, v: u32) void {
     }
 }
 
+// One snapshot frame. Current-frame callers leave `decl` false; caller frames
+// use the map declaration line and set `decl` so the annotation is explicit.
+pub const DumpFrame = struct {
+    name: []const u8,
+    src_file: []const u8,
+    src_line: u32,
+    decl: bool,
+};
+
 pub fn writeDump(reader: *map_reader.MapReader, arena: *std.arena.Arena, stop: StopState, path: []const u8, regs: backend.Registers, regs_ok: bool) bool {
+    // M2 caller: preserve the exact current-frame-only snapshot.
+    var empty: [1]DumpFrame = undefined;
+    return writeDumpFrames(reader, arena, stop, path, regs, regs_ok, empty[0..0]);
+}
+
+pub fn writeDumpFrames(reader: *map_reader.MapReader, arena: *std.arena.Arena, stop: StopState, path: []const u8, regs: backend.Registers, regs_ok: bool, frames: []const DumpFrame) bool {
     var raw = std.arena.alloc(arena, 65536) catch return false;
     var tb = TextBuf{ .data = raw[0..65536], .len = 0 };
     tbAppend(&tb, "Z98 debugger variables v1\n");
@@ -376,13 +406,29 @@ pub fn writeDump(reader: *map_reader.MapReader, arena: *std.arena.Arena, stop: S
         tbAppend(&tb, "  unavailable\n");
     }
     tbAppend(&tb, "call stack\n");
-    tbAppend(&tb, "  #0 ");
-    tbAppend(&tb, stop.function_name);
-    tbAppend(&tb, " at ");
-    tbAppend(&tb, stop.src_file);
-    tbAppend(&tb, ":");
-    tbU32(&tb, stop.src_line);
-    tbAppend(&tb, "\n");
+    if (frames.len == 0) {
+        tbAppend(&tb, "  #0 ");
+        tbAppend(&tb, stop.function_name);
+        tbAppend(&tb, " at ");
+        tbAppend(&tb, stop.src_file);
+        tbAppend(&tb, ":");
+        tbU32(&tb, stop.src_line);
+        tbAppend(&tb, "\n");
+    } else {
+        var fi: usize = 0;
+        while (fi < frames.len) : (fi += 1) {
+            tbAppend(&tb, "  #");
+            tbU32(&tb, @intCast(u32, fi));
+            tbAppend(&tb, " ");
+            tbAppend(&tb, frames[fi].name);
+            tbAppend(&tb, " at ");
+            tbAppend(&tb, frames[fi].src_file);
+            tbAppend(&tb, ":");
+            tbU32(&tb, frames[fi].src_line);
+            if (frames[fi].decl) tbAppend(&tb, " (decl)");
+            tbAppend(&tb, "\n");
+        }
+    }
     tbAppend(&tb, "globals\n");
     var any: bool = false;
     var i: usize = 0;

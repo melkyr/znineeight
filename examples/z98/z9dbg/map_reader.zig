@@ -626,7 +626,10 @@ pub fn lineRowsAt(self: *MapReader, file_query: []const u8, line: u32, out: []Li
     return count;
 }
 
-pub fn lineSpansAt(self: *MapReader, file_query: []const u8, line: u32, out: []LineSpan) usize {
+// Returns the number of spans STORED (never more than out.len). `overflow` is
+// set when the source line has more runs than the caller's buffer, so the
+// caller can report the cap instead of indexing past the slice (fix F4).
+pub fn lineSpansAt(self: *MapReader, file_query: []const u8, line: u32, out: []LineSpan, overflow: *bool) usize {
     var file = resolveFile(self, file_query) orelse return 0;
     var count: usize = 0;
     var i: usize = 0;
@@ -645,8 +648,10 @@ pub fn lineSpansAt(self: *MapReader, file_query: []const u8, line: u32, out: []L
                         .out_start = r.out_start,
                         .out_count = r.out_count,
                     };
+                    count += 1;
+                } else {
+                    overflow.* = true;
                 }
-                count += 1;
             }
         }
     }

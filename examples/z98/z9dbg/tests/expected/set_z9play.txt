@@ -1,0 +1,33 @@
+Z98 debugger has started...
+Stopped at examples/z98/z9play/main.zig:401
+at main
+  399:
+  400: pub fn main(argc: i32, argv: [*][*]u8) void {
+> 401:     var args: cli.Args = cli.parseArgs(argc, argv);
+  402:
+  403:     var arena = std.arena.init(arena_buf[0..]);
+(z9dbg) break: set at line 435
+(z9dbg) Stopped at examples/z98/z9play/main.zig:435
+at main
+  433:
+  434:     if (args.mode == cli.MODE_INFO) {
+> 435:         var os: ogg_stream.OggStream = ogg_stream.oggStreamOpen(&arena, args.path) catch |e| {
+  436:             if (e == error.OutOfMemory) {
+  437:                 var msg: []const u8 = "z9play: out of memory\n";
+(z9dbg) Stopped at examples/z98/z9play/main.zig:453
+at main
+  451:         ogg_stream.oggStreamClose(&os);
+  452:
+> 453:         var last: u64 = ogg_stream.oggStreamLastGranule(&arena, args.path, serial) catch {
+  454:             var msg: []const u8 = "z9play: cannot locate the audio granule\n";
+  455:             std.io.write(msg);
+(z9dbg) #0 main at examples/z98/z9play/main.zig:453
+(z9dbg) dump: wrote @SNAP@
+Stopped at examples/z98/z9play/main.zig:435
+at main
+  433:
+  434:     if (args.mode == cli.MODE_INFO) {
+> 435:         var os: ogg_stream.OggStream = ogg_stream.oggStreamOpen(&arena, args.path) catch |e| {
+  436:             if (e == error.OutOfMemory) {
+  437:                 var msg: []const u8 = "z9play: out of memory\n";
+(z9dbg) z9dbg: exiting

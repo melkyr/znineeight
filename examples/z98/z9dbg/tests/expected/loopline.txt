@@ -1,0 +1,38 @@
+Z98 debugger has started...
+Stopped at examples/z98/z9dbg/tests/fixtures/loopline/main.zig:6
+at main
+  4:
+  5: pub fn main() void {
+> 6:     while (n < 3) { n = n + 1; }
+  7:     n = 99;
+  8: }
+(z9dbg) break: set at line 6
+(z9dbg) Stopped at examples/z98/z9dbg/tests/fixtures/loopline/main.zig:6
+at main
+  4:
+  5: pub fn main() void {
+> 6:     while (n < 3) { n = n + 1; }
+  7:     n = 99;
+  8: }
+(z9dbg) Stopped at examples/z98/z9dbg/tests/fixtures/loopline/main.zig:6
+at main
+  4:
+  5: pub fn main() void {
+> 6:     while (n < 3) { n = n + 1; }
+  7:     n = 99;
+  8: }
+(z9dbg) Stopped at examples/z98/z9dbg/tests/fixtures/loopline/main.zig:6
+at main
+  4:
+  5: pub fn main() void {
+> 6:     while (n < 3) { n = n + 1; }
+  7:     n = 99;
+  8: }
+(z9dbg) Stopped at examples/z98/z9dbg/tests/fixtures/loopline/main.zig:6
+at main
+  4:
+  5: pub fn main() void {
+> 6:     while (n < 3) { n = n + 1; }
+  7:     n = 99;
+  8: }
+(z9dbg) z9dbg: exiting

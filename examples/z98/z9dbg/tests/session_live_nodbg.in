@@ -1,3 +1,5 @@
+break main.zig:8
+break main.zig:8
 break main.zig:12
 continue
 backtrace

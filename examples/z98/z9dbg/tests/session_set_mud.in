@@ -1,0 +1,7 @@
+break main.zig:50
+break main.zig:54
+continue
+step
+backtrace
+dump variables @SNAP@
+quit

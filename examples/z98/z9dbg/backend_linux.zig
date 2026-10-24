@@ -32,7 +32,10 @@ const DETACH: i32 = 17;
 
 const SIGTRAP: i32 = 5;
 
-const MAX_BREAKS: usize = 256;
+// Sized for the raised upper-layer caps: 256 source breakpoints x ~256
+// addresses, or 16 huge lines at the 4096-address per-line cap. 8 B/entry =
+// 512 KiB of BSS; pages are touched only as breakpoints are planted.
+const MAX_BREAKS: usize = 65536;
 
 // i386 struct user_regs_struct: 17 x u32, kernel order (spec task brief).
 const UserRegs = struct {
@@ -89,6 +92,16 @@ fn wIfStopped(status: i32) bool {
 
 fn wStopSig(status: i32) i32 {
     return (status & 0xff00) >> 8;
+}
+
+fn wIfSignaled(status: i32) bool {
+    var sig = status & 0x7f;
+    if (sig == 0 or sig == 0x7f) return false;
+    return true;
+}
+
+fn wTermSig(status: i32) i32 {
+    return status & 0x7f;
 }
 
 fn nullPtr() *void {
@@ -253,6 +266,13 @@ fn waitRaw(st: *State) backend.BackendError!backend.StopEvent {
         st.alive = false;
         return backend.StopEvent{ .reason = backend.STOP_EXITED, .signo = 0, .eip = 0 };
     }
+    if (wIfSignaled(status)) {
+        var termsig = wTermSig(status);
+        st.exited = true;
+        st.exit_code = 128 + termsig;
+        st.alive = false;
+        return backend.StopEvent{ .reason = backend.STOP_SIGNALED_EXIT, .signo = termsig, .eip = 0 };
+    }
     if (wIfStopped(status)) {
         var signo = wStopSig(status);
         var regs = try getRegsRaw(st);
@@ -323,7 +343,7 @@ fn launch(state: *void, exe: []const u8, args: [][]const u8) backend.BackendErro
     if (pid < 0) return error.LaunchFailed;
     if (pid == 0) {
         _ = os.ptrace(TRACEME, 0, nullPtr(), nullPtr());
-        os.debuggeeStdinNull();
+        os.debuggeeStdio();
         _ = os.execv(@ptrCast([*]const u8, &path_buf[0]), @ptrCast([*]const [*]const u8, &arg_ptrs[0]));
         os.exit(127);
     }
@@ -452,5 +472,10 @@ pub fn linuxBackend() backend.Backend {
         .continue_fn = continueFn,
         .detach_fn = detachFn,
         .terminate_fn = terminateFn,
+        .plant_fn = plant,
+        .removeBreak_fn = removeBreak,
+        .restoreAll_fn = restoreAll,
+        .installAllExcept_fn = installAllExceptAddr,
+        .pid_fn = pidOf,
     };
 }

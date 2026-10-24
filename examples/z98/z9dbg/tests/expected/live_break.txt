@@ -15,8 +15,8 @@ at addTwo
   13:     return b;
   14: }
 (z9dbg) #0 addTwo at @LIVE@:12
-#1 middle at @LIVE@:16
-#2 main at @LIVE@:21
+#1 middle at @LIVE@:16 (decl)
+#2 main at @LIVE@:21 (decl)
 (z9dbg) break: no executable code at line 15
 (z9dbg) break: moved to line 17
 (z9dbg) z9dbg: exiting

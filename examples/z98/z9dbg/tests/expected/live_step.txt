@@ -22,6 +22,6 @@ at addTwo
   14: }
   15:
 (z9dbg) #0 addTwo at @LIVE@:13
-#1 middle at @LIVE@:16
-#2 main at @LIVE@:21
+#1 middle at @LIVE@:16 (decl)
+#2 main at @LIVE@:21 (decl)
 (z9dbg) z9dbg: exiting

@@ -134,6 +134,12 @@ fn modeMapHello(arena: *std.arena.Arena, prefix: []const u8) void {
         fail("hello lineRowsAt 16 rows");
     }
 
+    var one_span: [1]map_reader.LineSpan = undefined;
+    var span_overflow = false;
+    var nspan = map_reader.lineSpansAt(&r, "main.zig", 16, one_span[0..], &span_overflow);
+    expectUsize("hello lineSpansAt clamp count", nspan, 1);
+    expectTrue("hello lineSpansAt overflow", span_overflow);
+
     var rev = map_reader.reverseRowAt(&r, "main_BDA8D6C7.c", 28);
     if (rev) |rv| {
         expectU32("hello reverseRowAt 28 src line", rv.src_line, 16);

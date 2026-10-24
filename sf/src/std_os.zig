@@ -137,16 +137,33 @@ pub fn clearErrno() void {
     pal.__errno_location().* = 0;
 }
 
-// Detach the debuggee's stdin from the debugger's command stream. A debugger
-// owns fd 0 for commands; the debuggee gets /dev/null (a debuggee that reads
-// stdin sees EOF, matching a non-interactive debug session). Stdout/stderr are
-// inherited so program output remains visible on the terminal.
-pub fn debuggeeStdinNull() void {
+// Debuggee standard streams: stdin always becomes /dev/null (the debugger
+// owns fd 0 for commands). Z9DBG_CHILD_OUT optionally redirects the debuggee's
+// stdout+stderr to a path (e.g. /dev/null or a log file); the scripted tier
+// uses this to keep debugger output free of program output while still
+// exercising continue/dump on programs that print.
+pub fn debuggeeStdio() void {
     if (@isWindows()) return;
     const fd = pal.open("/dev/null", @intCast(i32, 0), @intCast(i32, 0));
-    if (fd < 0) return;
-    _ = pal.dup2(fd, @intCast(i32, 0));
-    if (fd != 0) _ = pal.close(fd);
+    if (fd >= 0) {
+        _ = pal.dup2(fd, @intCast(i32, 0));
+        if (fd != 0) _ = pal.close(fd);
+    }
+    var out_opt = env("Z9DBG_CHILD_OUT");
+    if (out_opt) |path| {
+        if (path.len >= 4096) return;
+        var nbuf: [4096]u8 = undefined;
+        var i: usize = 0;
+        while (i < path.len) : (i += 1) nbuf[i] = path[i];
+        nbuf[path.len] = 0;
+        // O_WRONLY|O_CREAT|O_TRUNC, 0644 (i386 Linux values).
+        const ofd = pal.open(@ptrCast([*]const u8, &nbuf[0]), @intCast(i32, 0x241), @intCast(i32, 0x1a4));
+        if (ofd >= 0) {
+            _ = pal.dup2(ofd, @intCast(i32, 1));
+            _ = pal.dup2(ofd, @intCast(i32, 2));
+            if (ofd > 2) _ = pal.close(ofd);
+        }
+    }
 }
 
 pub fn ptraceNull() *void {
