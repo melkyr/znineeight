@@ -366,3 +366,214 @@ Docs commit: this report.
 11. **Memory model:** the debuggee ELF is read whole into the z9dbg arena
     (16 MB cap), not section-lazy; test-set RSS stayed ≤ 8.2 MB, but a
     self-host-sized debug ELF should be re-measured in M4.
+
+---
+
+# Fix round 1
+
+**Status:** DONE_WITH_CONCERNS
+**Code commit:** `91b47abd` `fix(z9dbg): vtable isolation, caps, breakpoint
+re-arm, span clamp, honesty minors (Phase2 P3-M3)`
+**Docs commit:** this appended section.
+**Compiler:** `/tmp/z98_m3r2` rebuilt from the v119 seed with the final std
+payload; `hop1 == hop2 == 11de43a053bdde3be3ddc61caac31df6`. `sf/src/std_os.zig`
+changed this round (debuggee-stdio helper), so the std gates were re-run;
+`std_os_pal.zig` and all compiler modules are unchanged.
+
+## R1.1 Findings
+
+### F1 — §8.3 test-set sessions
+
+`tier_dbg.sh` now builds and runs a full scripted session on each required
+test-set program, with exact byte goldens compared twice:
+
+| Program | Session | Commands exercised |
+|---|---|---|
+| hello | `session_set_hello.in` | break, continue, backtrace, dump, quit |
+| mud_server | `session_set_mud.in` | break (x2), continue, step, backtrace, dump, quit |
+| lisp_interpreter_curr | `session_set_lisp.in` | break, continue, step, backtrace, dump, quit |
+| z9play (`--info short.ogg`) | `session_set_z9play.in` | break, continue, step, backtrace, dump, quit |
+
+The child's stdout/stderr are redirected to `/dev/null` for these sessions via
+the new `Z9DBG_CHILD_OUT` test-support env (see concerns), so the goldens are
+only debugger output. Detached test-set debuggees are killed with
+`pkill -9 -x prog`; no `pkill -f` pattern can match the harness shell.
+Snapshot content is asserted for each session (stop line + function).
+
+### F2 — vtable isolation
+
+`backend.zig` vtable additions: `plant_fn`, `removeBreak_fn`, `restoreAll_fn`,
+`installAllExcept_fn`, `pid_fn`; `stubBackend()` implements them
+(Unsupported/no-op/-1) and `backend_linux` installs the real functions.
+`main.zig` no longer imports `backend_linux`; backend construction goes through
+the new `backend_select.zig` (compile-time `@isWindows()` guard; M4 edits that
+module only). `grep backend_linux main.zig` is empty.
+
+### F3 — same-line step-over re-arm
+
+`resumeAndShow` tracks `stepped_addr` (the instruction actually executed) and
+finishes with `installAllExcept_fn(stepped_addr)`, so the current PC is re-armed
+when it was not the stepped instruction; only a self-loop address is left
+disabled (and `continue_fn` skips only that current PC). New fixture
+`tests/fixtures/loopline/main.zig` puts the whole `while` loop on one source
+line and the tier asserts four consecutive hits (`loopline breakpoint re-arm
+(4 hits)`), which would run free under the old code.
+
+### F4 — `lineSpansAt` clamp
+
+`lineSpansAt` now takes an `overflow: *bool`, stores at most `out.len` spans,
+returns the stored count, and sets overflow. `resolveAddrsForLine` uses a
+1024-span buffer (`MAX_SPANS`) and prints
+`z9dbg: source line maps to more than the span cap; breakpoint may be
+incomplete` on overflow. The core harness adds a 1-entry-buffer clamp assertion
+on the two-run hello line 16 (`lineSpansAt clamp count` + overflow).
+
+### F5 — raised caps
+
+- `MAX_ADDRS` (per source line): **4096** (observed worst map: 215 emitted C
+  lines for one Z9 source line; each C line contributes a few addresses).
+- `MAX_BREAKS` (backend machine table) and `g_bp` (upper layer):
+  **65536** (supports 256 source lines x 256 addresses, or 16 huge lines at
+  the per-line cap).
+- `MAX_SPANS`: **1024** emitted-line runs per source line (observed max 215).
+
+Memory: `g_bp` is 1 MiB BSS, the backend table 512 KiB BSS, and the 16 MiB
+arena still dominates; `size` reports BSS 18,350,276 B (~17.5 MiB virtual,
+all under the 32 MB `ulimit`), while measured z9dbg RSS is 1.5–8.3 MB.
+No warning-only truncation path was added; the caps are the bound.
+
+## R1.2 Folded minors
+
+1. **Caller frames** print the map declaration line with a ` (decl)` suffix;
+   current-frame output is unchanged. Goldens updated.
+2. **Entry-stop honesty:** `liveEntryStop` verifies the stop reason and EIP.
+   Pre-entry exit prints `z9dbg: debuggee exited before entry stop`; a signal
+   prints `z9dbg: debuggee stopped by signal N before entry breakpoint`;
+   anything else prints `z9dbg: unexpected stop before entry breakpoint`.
+   Fixtures `earlyexit` (exit 7 in module init) and `crashinit` (null deref in
+   module init, SIGSEGV 11) cover both.
+3. **Backend-unavailable text:** real backend failures now print
+   `z9dbg: backend operation failed`; the exact M2 stub string is retained only
+   for the headless stub path.
+4. **`dump variables` call stack:** `dbg_core.writeDumpFrames` writes the
+   collected current + caller frames; the M2 `writeDump` wrapper still passes an
+   empty slice and is byte-identical. Live dump snapshots now include
+   `#1 ... (decl)`.
+6. **DWARF:** `DW_LNE_define_file` entries now increment the unit's
+   `file_count`, so later `set_file` indices resolve. `DebugInfo` carries
+   `unsupported_version`; when line info is unusable and a DWARF 5/DWARF64 unit
+   was seen, stderr gets
+   `z9dbg: debug info present but unsupported DWARF version (only 2/3/4);
+   using function-entry breakpoints` while `break: no debug info` degradation
+   is unchanged. The tier builds a `-gdwarf-5` fixture and asserts both.
+9. **Latency:** high-resolution monotonic `nowUs()` (std.time.highRes) is used;
+   entry timing is printed after the entry stop display, and breakpoint timing
+   after the stop display. Output is `... latency N us`.
+   Measured: source-line break 337–358 us; entries 204–1114 us (< 100 ms).
+11. **Map discovery + PIE bias:** discovery prefers a sidecar whose stem matches
+    the executable stem, accepts a single candidate, and reports
+    `z9dbg: ambiguous debug map: N .z98dbg.syms candidates next to the
+    executable` otherwise. `setLoadBase` returns failure for an unresolvable
+    ET_DYN bias and main warns
+    `z9dbg: cannot resolve PIE load bias; breakpoint addresses may be wrong`.
+    Tier covers stem preference, two-candidate ambiguity, and a symlinked exe.
+12. **Missing `.cnames`:** backtrace prints
+    `backtrace limited: no .cnames` instead of silently stopping after `#0`.
+    Tier runs a syms+lines-only copy and asserts the notice.
+- **WIFSIGNALED:** `waitRaw` decodes signalled termination into the new
+  `STOP_SIGNALED_EXIT` (`exit_code = 128 + signo`, `alive = false`,
+  `exited = true`), and the session prints
+  `z9dbg: debuggee terminated by signal N`; no "signal 0"/stale state.
+- **No-debug false success:** if function-entry resolution fails, the break
+  table entry is removed and the session prints
+  `break: cannot resolve function entry for line <requested line>`; the
+  no-debug golden exercises this twice (`break main.zig:8`).
+- **FPO warning:** `collectFrames` flags `prev == 0`, `prev <= ebp`,
+  unreadable frame memory, a return address outside every STT_FUNC range, or a
+  missing non-wrapper map symbol, and backtrace prints
+  `backtrace: frame chain unreliable; build with -fno-omit-frame-pointer`.
+  Normal chains stop silently at the emitted C `main` wrapper. Tier builds an
+  `-O2 -fomit-frame-pointer` fixture and asserts the warning.
+
+## R1.3 Verification
+
+```bash
+ZIG=/tmp/z98_m3r2/zig1_5_clean OUT=/tmp/z9dbg_fix_run1 \
+  bash examples/z98/z9dbg/tests/tier_dbg.sh    # 35 passed, 0 failed
+ZIG=/tmp/z98_m3r2/zig1_5_clean OUT=/tmp/z9dbg_fix_run2 \
+  bash examples/z98/z9dbg/tests/tier_dbg.sh    # 35 passed, 0 failed
+```
+
+Normalized whole-gate logs (RSS/latency values masked) are byte-identical:
+`20db94a8157a30b1d8fd0ae0f980e564` both runs. Each reported session is also
+run twice and compared internally.
+
+```bash
+ZIG=/tmp/z98_m3r2/zig1_5_clean \
+  bash examples/z98/z9dbg/tests/tier_dbg_core.sh
+== tier_dbg_core summary: 23 passed, 0 failed ==
+
+bash scripts/stdlib/verify_stdlib.sh /tmp/z98_m3r2/zig1_5_clean
+run_fixtures: 336 PASS / 0 FAIL over 336 dirs
+run_crosscheck: 10 PASS / 0 FAIL over 10 modules
+STDLIB GATE OK
+
+bash scripts/check_emit_support.sh /tmp/z98_m3r2/zig1_5_clean
+OK: 8/8 support files byte-identical to canonical
+```
+
+Latency / RSS (two runs; latency measured through the stop display):
+
+| Program | Lat run1 | RSS run1 | Lat run2 | RSS run2 |
+|---|---|---|---|---|
+| source-line break (`live`:12) | 358 us | — | 337 us | — |
+| hello | 204 us | 1,536 KB | 204 us | 1,900 KB |
+| mud_server | 425 us | 2,112 KB | 392 us | 2,284 KB |
+| lisp_interpreter_curr | 499 us | 2,308 KB | 444 us | 2,540 KB |
+| z9torr (stress) | 1,114 us | 8,060 KB | 1,028 us | 8,260 KB |
+
+All < 100 ms and < 32 MB; max RSS 8.3 MB. `git diff --check` clean before the
+commit. No sed/perl/python/awk was used this round.
+
+## R1.4 Files (fix round)
+
+- `backend.zig`, `backend_linux.zig`, `backend_select.zig` (new), `main.zig`
+  (vtable ops, select, caps, F3, honesty paths, timing, flush, map/PIE)
+- `dbg_core.zig` (dump frames), `dwarf_lines.zig` (define_file, unsupported
+  notice, bias status), `map_reader.zig` (span clamp)
+- `sf/src/std_os.zig` (debuggee stdio + `Z9DBG_CHILD_OUT`, WIFSIGNALED support
+  is backend-side)
+- `tests/tier_dbg.sh`, `tests/tier_dbg_core.sh` unchanged this round (core
+  harness gained the span-clamp assertion in `tests/dbg_test.zig`)
+- `tests/session_set_{hello,mud,lisp,z9play}.in`,
+  `tests/session_loopline.in`, `tests/session_live_nodbg.in`,
+  `tests/expected/set_{hello,mud,lisp,z9play}.txt`, `loopline.txt`,
+  updated `live_{break,step,nodbg}.txt` and `map_hello.txt`
+- fixtures `loopline`, `earlyexit`, `crashinit`
+
+## R1.5 Concerns / deferred
+
+1. **Test-set dump stops:** on heavily mapped test-set code a `dump` auto-resume
+   may stop at another machine address of the same/next source line instead of
+   exiting (e.g. hello line 3, z9play line 435). This is the planted-every-
+   address contract, not a debugger wedge; the exact goldens capture the
+   resulting stops. The live-fixture dump case still proves completion.
+2. **`Z9DBG_CHILD_OUT` is a test-support env**, not a user command: it redirects
+   the debuggee's stdout/stderr (the tier uses `/dev/null`). It keeps the
+   goldens deterministic and prevents post-quit child output from racing the
+   comparison.
+3. **Backtrace caller lines** are still function declaration lines, now marked
+   `(decl)`; call-site recovery is deferred.
+4. **Libc boundary:** a normal chain stops at the emitted C `main` wrapper; a
+   return address that is inside executable text but outside every STT_FUNC
+   range (or unreadable/zero/backward frame pointers) is treated as unreliable
+   and warned, per the review.
+5. **PIE bias** is matched by exe basename in `/proc/<pid>/maps`; a renamed or
+   symlinked exe warns and degrades rather than silently using 0.
+6. **Map stem preference** cannot match the compiler's root-module stem in
+   general; a single sidecar is accepted, multiple non-matching sidecars are
+   reported as ambiguous.
+7. **Prior concerns still apply:** FPO builds are unsupported (now warned),
+   DWARF 5/64 degrade with a notice, multi-address step-over is capped at 64
+   instructions, the debuggee ELF is read whole into the arena, and
+   waitpid/ptrace/open/dup2 rely on implicit C prototypes.
