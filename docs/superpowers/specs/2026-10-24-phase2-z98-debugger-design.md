@@ -306,3 +306,110 @@ Recorded as decided (builder-check piles 1–2; operator accepted the calls):
   tests compare stdout/files only. Compiler banner string is
   `Z98 Compiler 2026 (map: on|off)` — no runtime seed number (a baked seed constant would
   have to be choreographed through every rotation; documented as a settlement call).
+
+---
+
+## 15. Amendment A1 (2026-10-24) — Win98 machine-address readers (COFF + DWARF-in-PE)
+
+**Status:** operator-approved, 2026-10-24. Supersedes §7.6 and §13 item 11 where they
+conflict. Trigger: the M4 pre-dispatch toolchain check — the build host has only
+`i686-w64-mingw32-gcc` + `wine` (no `cl`/`wcc386`), and mingw `-g` emits DWARF in PE,
+not COFF line records. A COFF-only reader would therefore lock out OpenWatcom entirely.
+
+### 15.1 Documented formats (research record)
+
+- **MSVC 6 path.** `cl /Z7` keeps debug in the `.obj` COFF symbol table; the **linker switch
+  that embeds COFF debug in the image is `/DEBUG /DEBUGTYPE:COFF`** (`/DEBUGTYPE` accepts
+  `both|coff|cv|fixup|map|pdata`; `coff`/`both` are obsolete-with-warning on modern
+  linkers but valid on VC6 — our target). Then, per the Microsoft PE/COFF specification
+  (`learn.microsoft.com/windows/win32/debug/pe-format`):
+  - debug-directory entry `Type = IMAGE_DEBUG_TYPE_COFF (1)` = "COFF debug information
+    (line numbers, symbol table, and string table)", raw data =
+    `IMAGE_COFF_SYMBOLS_HEADER` (NumberOfSymbols, LvaToFirstSymbol,
+    NumberOfLinenumbers, LvaToFirstLinenumber). The two `Lva*` fields are **offsets from
+    the start of the debug-data blob**, not RVAs (Wine `dbghelp/coff.c` reads
+    `blob + LvaToFirst...`; confirmed against the PE/COFF layout);
+  - line records are **6 bytes**: `Type` (union `SymbolTableIndex` when
+    `Linenumber == 0` — the function header; `VirtualAddress` = code **RVA** when
+    `Linenumber` is nonzero) + `Linenumber` u16, one-based. Records with
+    `Linenumber == 0` are group headers and are skipped, not mapped;
+  - symbol table = 18-byte `SYMENT` records + trailing string table (names > 8 bytes by
+    offset); auxiliary format 1 (function definition: TotalSize, PointerToLinenumber) and
+    format 2 (`.bf`/`.ef`/`.lf` with line counts). Storage class FILE (103) + aux format 4
+    name the current source file; a STATIC section-definition symbol's aux gives that
+    file's text extent and line-table slice. File attribution is by those groups (the
+    format carries no per-line file index). Function VA =
+    `ImageBase + section.VirtualAddress + symbol.Value`.
+  - The spec calls COFF line numbers "deprecated" because modern linkers stopped emitting
+    them; VC6 does emit them under `/DEBUGTYPE:COFF`.
+- **OpenWatcom path.** Debug format is selected by `-dh{w,d,c}` = WATCOM / **DWARF** /
+  CodeView, and **the default since OW 10.7 is DWARF** (current OW 2.0 too). `wlink debug`
+  accepts `watcom | codeview | dwarf`. OpenWatcom does **not** emit COFF line records.
+  Its own WD debugger consumes Watcom/DWARF and MS CodeView CV4/CV5.
+- **mingw path.** `-g` emits DWARF in PE (`.debug_info`/`.debug_line`), same family as
+  OpenWatcom's default.
+
+### 15.2 Binding contract (replaces "COFF only")
+
+Win98 source-line addresses come from **two first-class readers**, one per era toolchain;
+neither is a fallback and neither forces a specific C compiler:
+
+1. **`coff_lines.zig`** — COFF symbol table + line records per §15.1, for
+   **MSVC `/Z7` + `link /DEBUG /DEBUGTYPE:COFF`**. This remains the blueprint's embedded
+   COFF path.
+2. **`pe_debug.zig`** — PE container reader (DOS/PE headers, section table, optional-header
+   debug directory) that locates DWARF sections/symtab and drives the **existing**
+   `dwarf_lines.zig` 2/3/4 line-program interpreter, for **OpenWatcom `-d2` (default
+   DWARF) + `wlink debug all`** and **mingw `-g`**.
+
+Both readers produce the common `dwarf.DebugInfo` (rows + functions) consumed by the
+session layer. PE rows are link-time VAs (`ImageBase + RVA`); the session layer applies the
+runtime bias from the backend's `CREATE_PROCESS_DEBUG_INFO.lpBaseOfImage`.
+
+Out of v1: PDB/CodeView (`/DEBUGTYPE:CV`, `-dhc`), DWARF 5/64. Those degrade to
+`break: no debug info` + function-entry breakpoints from the symbol table.
+
+Debug builds are documented (not emitted by default):
+MSVC `cl /Z7` + `link /DEBUG /DEBUGTYPE:COFF` (plain `/DEBUG` gives CodeView/PDB —
+deliberately not consumed); OpenWatcom `wcc386 -d2` (default DWARF) + `wlink debug all`;
+mingw `-g -gdwarf-2`.
+
+### 15.3 Path and line-ending normalization (binding)
+
+Every file string — map `src_file`, COFF/DWARF file names, `break <file>:<line>` — is
+normalized before comparison: `\` → `/`; strip a `X:` drive prefix and a leading `./`;
+match by basename or path-suffix; case-insensitive when the debugger runs on Windows.
+Source-line display strips a trailing `\r`. Fixtures must cover both separators, drive
+letters, and CRLF source files. This is a contract, not a per-test workaround.
+
+### 15.4 Fixtures and validation split
+
+- **COFF**: a structural sample built strictly from the documented §15.1 layout (unit
+  tests prove the parser matches the specification; it is not a substitute for compiler
+  output).
+- **DWARF**: a real mingw-built PE debuggee (`-g -gdwarf-2`) — real compiler output.
+- **Real-toolchain validation is operator-run**: `lin_bin/instructions.txt` gains exact
+  MSVC (`cl /Z7 /c` + `link /DEBUG /DEBUGTYPE:COFF`) and OpenWatcom (`wcc386 -d2` +
+  `wlink debug all`) recipes plus the session transcript to send back. Any quirk those
+  expose is an M4 follow-up, not a reason to pre-fake the format.
+
+### 15.5 Plan delta (Task 4)
+
+- **Create:** `examples/z98/z9dbg/coff_lines.zig` **and** `examples/z98/z9dbg/pe_debug.zig`
+  (PE container → DWARF via the refactored `dwarf_lines.zig`); `backend_win98.zig` is the
+  already-planned Win32 backend and gains `imageBase_fn`.
+- **Interfaces:** `dwarf_lines.zig` gains a section-agnostic `openSections` plus injected
+  functions; `main.zig` dispatches ELF vs PE and applies the PE runtime bias from
+  `imageBase_fn`. On Windows, `flushOut()` is compile-time guarded (`if (!@isWindows())`)
+  because the no-CRT shim has no `fflush` (Win9x output is unbuffered `fwrite`).
+- **Tests:** structural COFF sample + a mingw-built PE/DWARF fixture; `tier_dbg.sh` Win98
+  path gains a DWARF-in-PE session runnable under Wine; `check_win9x_imports.sh 9x`.
+  The 9x KERNEL32 whitelist adds exactly: `CreateProcessA`, `WaitForDebugEvent`,
+  `ContinueDebugEvent`, `GetThreadContext`, `SetThreadContext`, `ReadProcessMemory`,
+  `WriteProcessMemory`, `FlushInstructionCache`.
+- **Docs:** QUICK_REF/tech docs gain the three debug-build recipes and the
+  `/DEBUGTYPE:COFF` requirement; D8 stdout split documented (operator ruling A).
+- **Closeout:** F_new re-measured (the M1 fix round moved the compiler after
+  `f963c2c4`), then seed rotate v119 → v120 with `hop2 == hop3`; no corpus/goldens/
+  pins/markers/examples re-run (operator-approved gating amendment: the full compiler
+  battery runs only after compiler-source changes, and M1 was the only such task).

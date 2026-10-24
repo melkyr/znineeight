@@ -93,21 +93,24 @@
 - [ ] **Step 3:** Run `tier_dbg.sh` 2× deterministic + full `verify_stdlib.sh` + crosscheck (std_os touched) — PASS. Record breakpoint latency and RSS on `hello`/`mud_server`/`lisp_interpreter_curr` + the chosen stress program.
 - [ ] **Step 4:** Commit `feat(z9dbg): ptrace backend + DWARF lines (Phase2 P3-M3)` + `docs(sdd): P3-M3 report`.
 
-### Task 4: M4 — Win98 backend + COFF reader + docs + closeout
+### Task 4: M4 — Win98 backend + COFF + DWARF-in-PE + docs + closeout
 
 **Files:**
-- Create: `examples/z98/z9dbg/backend_win98.zig` (CreateProcess(DEBUG_ONLY_THIS_PROCESS), WaitForDebugEvent 50 ms timeout pump, ContinueDebugEvent, Get/SetThreadContext, Read/WriteProcessMemory, int3 + trap-flag single-step re-insert, terminate-on-quit)
-- Create: `examples/z98/z9dbg/coff_lines.zig` (embedded COFF symbol + line-number records reader; **no PDB**)
-- Modify: `sf/src/std_os.zig` (Win32 debug API bindings)
-- Test: `examples/z98/z9dbg/tests/tier_dbg.sh` Win98 path (Wine where possible + `check_win9x_imports.sh 9x`); real hardware operator-owned
-- Docs: `sf/docs/std_lib/` map + z9dbg page; truth-up `docs/sf/manuals/en/vol3-15-debugger-workflow.html`, `vol5-13-debugger.html`, `vol3-07-friction.html` (sidecar = opt-in compiler-dev tooling; no `#line`; default output unchanged); QUICK_REF `-d` recipe + debuggee flags; `examples/torrent_example_defects.md` if any new defects
-- Rotate: `release/seed/` → **v120** (compiler source changed; new fixed point `F_new`, hop2==hop3, corpus/pins/goldens stable)
+- Create: `examples/z98/z9dbg/backend_win98.zig` (CreateProcess(DEBUG_ONLY_THIS_PROCESS), WaitForDebugEvent 50 ms timeout pump, ContinueDebugEvent, Get/SetThreadContext, Read/WriteProcessMemory, FlushInstructionCache, int3 + trap-flag single-step re-insert, terminate-on-quit, imageBase)
+- Create: `examples/z98/z9dbg/coff_lines.zig` (embedded COFF symbol + line-number records per spec §15.1; no PDB)
+- Create: `examples/z98/z9dbg/pe_debug.zig` (PE container → DWARF `.debug_line` via the refactored `dwarf_lines.zig`; COFF symbol table → functions; no PDB)
+- Modify: `examples/z98/z9dbg/dwarf_lines.zig` (section-agnostic `openSections` + injected functions; ELF `open` behavior unchanged), `examples/z98/z9dbg/main.zig` (ELF/PE dispatch, PE load bias, `if (!@isWindows()) flushOut()`), `examples/z98/z9dbg/backend.zig` + `backend_select.zig` (`imageBase_fn`; Windows arm)
+- Modify: `sf/src/std_os.zig` + `sf/src/std_os_pal.zig` (Win32 debug API bindings, `extern "stdcall"`)
+- Modify: `scripts/win32_cross/check_win9x_imports.sh` (add the eight KERNEL32 9x names in spec §15.5/decision 2)
+- Test: `examples/z98/z9dbg/tests/tier_dbg.sh` Win98 path (Wine session + `check_win9x_imports.sh 9x`); `tier_dbg_core.sh` structural COFF + real mingw PE/DWARF parse; real hardware operator-owned
+- Docs: `docs/sf/QUICK_REF.md` (`-d` recipe + debuggee flags), `sf/docs/std_lib/z9dbg.md` + `debug_map.md`, tech docs 08/09/10/13 (`-d` cost, D8 stdout split, Win32 debug API), truth-up `docs/sf/manuals/en/vol3-15-debugger-workflow.html`, `vol5-13-debugger.html`, `vol3-07-friction.html` (sidecar = opt-in compiler-dev tooling; no `#line`; default output unchanged), `lin_bin/instructions.txt` MSVC/OpenWatcom recipes; `examples/torrent_example_defects.md` if any new defects
+- Rotate: `release/seed/` → **v120** (compiler source changed in M1; new fixed point `F_new`, hop2==hop3)
 
 **Interfaces:**
-- Consumes: Task 2 core + `backend.zig` vtable; embedded COFF from `/Z7` or Watcom `-d2` builds.
-- Produces: Win98 parity of the M3 command set; Wine + import gates green; docs honest.
+- Consumes: Task 2 core + `backend.zig` vtable; Task 3 `dwarf_lines.zig` line-program interpreter; map sidecars from M1.
+- Produces: Win98 parity of the M3 command set; COFF `/Z7` and DWARF-in-PE source-line readers; Wine + import gates green; docs honest.
 
-- [ ] **Step 1:** RED: Wine-driven session smoke (same assertions as M3 happy path where Wine allows) + `check_win9x_imports.sh 9x` on `z9dbg.exe` + a COFF-reader fixture against a committed `/Z7`-built object.
-- [ ] **Step 2:** Implement `backend_win98.zig` + `std_os` Win32 debug bindings + `coff_lines.zig`; 50 ms `WaitForDebugEvent` timeout keeps the terminal pumping (Win98 has no `MsgWaitForMultipleObjects` for debug events).
-- [ ] **Step 3:** Run gates: tier_dbg Linux 2× still green; Wine smoke + import gate; full standing battery (corpus/goldens/pins recorded/markers/examples/stdlib + crosscheck); seed rotate v119 → **v120** (archive + manifest; `lib/` std count unchanged at 47 — `std_os.zig` grows in place; `debug_map.zig` is compiler `gen/`, not `lib/`; record `F_new`, hop2==hop3); docs truth-up complete; `git diff --check` clean.
-- [ ] **Step 4:** Commits `feat(z9dbg): Win98 backend + COFF lines (Phase2 P3-M4)` (or split code/docs), `docs(manuals): debug map + z9dbg truth-up`, `chore(seed): rotate (Phase2 P3)`, `docs(sdd): P4-M4 closeout report`.
+- [ ] **Step 1:** RED: structural COFF fixture (spec §15.1 layout, `.file`/section-def/function/line records, `C:\...` + CRLF) fails to parse; real mingw `-g -gdwarf-2` PE fails PE/DWARF parse; `-osw` z9dbg.exe Wine smoke (entry/break/step/quit) and `check_win9x_imports.sh 9x` fail before implementation.
+- [ ] **Step 2:** Implement `backend_win98.zig` + `std_os`/`std_os_pal` Win32 debug bindings + `coff_lines.zig` + `pe_debug.zig` + `dwarf_lines` `openSections` + `main` dispatch/bias/fflush guard; 50 ms `WaitForDebugEvent` timeout pump; skip the loader's initial breakpoint; terminate-on-quit.
+- [ ] **Step 3:** Run gates: `tier_dbg.sh` Linux 2× still green + Win98/Wine section; `tier_dbg_core.sh`; `verify_stdlib` + `crosscheck` (std_os changed); `check_win9x_imports.sh 9x`; seed rotate v119 → **v120** (re-measure `F_new`; archive + manifest; `lib/` std count unchanged at 47 — `std_os.zig` grows in place; record hop2==hop3); docs truth-up complete; `git diff --check` clean. **No corpus/goldens/pins/markers/examples re-run** (operator gating amendment; M1 was the only compiler-source task).
+- [ ] **Step 4:** Commits `feat(z9dbg): Win98 backend + COFF/DWARF-in-PE (Phase2 P3-M4)`, `docs(manuals|std_lib): debug map + z9dbg truth-up`, `chore(seed): rotate v120 (Phase2 P3)`, `docs(sdd): P3-M4 closeout report`.
