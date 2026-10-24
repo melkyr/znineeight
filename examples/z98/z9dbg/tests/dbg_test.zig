@@ -13,6 +13,9 @@ const backend = @import("../backend.zig");
 
 var g_arena_buf: [1048576]u8 = undefined;
 var g_fail: u32 = 0;
+var g_mock_step_index: u32 = 0;
+var g_mock_lines: [8]u32 = undefined;
+var g_mock_line_count: u32 = 0;
 
 fn write(s: []const u8) void {
     std.io.write(s);
@@ -244,6 +247,13 @@ fn modeSnap(arena: *std.arena.Arena, prefix: []const u8) void {
     snapCase(&r, &table, arena, "missing.zig", 9);
 }
 
+fn noResolve(state: *void, eip: u32, out: *dbg_core.StopState) bool {
+    _ = state;
+    _ = eip;
+    _ = out;
+    return false;
+}
+
 fn modeSession(arena: *std.arena.Arena, prefix: []const u8) void {
     var r = map_reader.open(arena, prefix) catch {
         fail("session open");
@@ -254,7 +264,8 @@ fn modeSession(arena: *std.arena.Arena, prefix: []const u8) void {
         return;
     };
     var be = backend.stubBackend();
-    dbg_main.runSession(arena, &r, &be, start);
+    var no_state: *void = @intToPtr(*void, 0);
+    dbg_main.runSession(arena, &r, &be, start, no_state, noResolve);
 }
 
 fn testContinue(state: *void) backend.BackendError!void {
@@ -263,6 +274,29 @@ fn testContinue(state: *void) backend.BackendError!void {
 
 fn testDetach(state: *void) backend.BackendError!void {
     _ = state;
+}
+
+fn mockSingleStep(state: *void) backend.BackendError!void {
+    _ = state;
+}
+
+fn mockWait(state: *void) backend.BackendError!backend.StopEvent {
+    _ = state;
+    var idx = g_mock_step_index;
+    g_mock_step_index += 1;
+    return backend.StopEvent{ .reason = backend.STOP_SINGLE_STEP, .signo = 0, .eip = idx };
+}
+
+fn mockResolve(state: *void, eip: u32, out: *dbg_core.StopState) bool {
+    _ = state;
+    var idx: usize = @intCast(usize, eip);
+    if (idx >= @intCast(usize, g_mock_line_count)) return false;
+    out.* = dbg_core.StopState{
+        .src_file = "examples/z98/z9dbg/tests/fixtures/hello/main.zig",
+        .src_line = g_mock_lines[idx],
+        .function_name = "main",
+    };
+    return true;
 }
 
 fn modeSessionRunning(arena: *std.arena.Arena, prefix: []const u8) void {
@@ -278,7 +312,31 @@ fn modeSessionRunning(arena: *std.arena.Arena, prefix: []const u8) void {
     be.continue_fn = testContinue;
     be.singleStep_fn = testContinue;
     be.detach_fn = testDetach;
-    dbg_main.runSession(arena, &r, &be, start);
+    var no_state: *void = @intToPtr(*void, 0);
+    dbg_main.runSession(arena, &r, &be, start, no_state, noResolve);
+}
+
+fn modeSessionStep(arena: *std.arena.Arena, prefix: []const u8) void {
+    var r = map_reader.open(arena, prefix) catch {
+        fail("step session open");
+        return;
+    };
+    var start = dbg_core.entryStop(&r, arena) orelse {
+        fail("step session entryStop");
+        return;
+    };
+    g_mock_step_index = 0;
+    g_mock_line_count = 3;
+    g_mock_lines[0] = 14;
+    g_mock_lines[1] = 15;
+    g_mock_lines[2] = 16;
+    var be = backend.stubBackend();
+    be.singleStep_fn = mockSingleStep;
+    be.wait_fn = mockWait;
+    be.continue_fn = testContinue;
+    be.detach_fn = testDetach;
+    var no_state: *void = @intToPtr(*void, 0);
+    dbg_main.runSession(arena, &r, &be, start, no_state, mockResolve);
 }
 
 fn modeDumpRegs(arena: *std.arena.Arena, prefix: []const u8, path: []const u8) void {
@@ -309,6 +367,70 @@ fn modeDumpRegs(arena: *std.arena.Arena, prefix: []const u8, path: []const u8) v
     }
 }
 
+fn modeMapNoCnames(arena: *std.arena.Arena, prefix: []const u8) void {
+    var r = map_reader.open(arena, prefix) catch {
+        fail("nocnames open");
+        return;
+    };
+    expectUsize("nocnames symbol count 3", map_reader.symbolCount(&r), 3);
+    expectUsize("nocnames group count 1", map_reader.groupCount(&r), 1);
+    expectUsize("nocnames line run count 6", map_reader.lineRunCount(&r), 6);
+    expectUsize("nocnames cname count 0", map_reader.cnameCount(&r), 0);
+    expectTrue("nocnames cnameFor null", map_reader.cnameFor(&r, "main") == null);
+    var sym = map_reader.symbolAt(&r, "main.zig", 14);
+    if (sym) |s| {
+        expectStr("nocnames symbolAt main", s.src_name, "main");
+    } else {
+        fail("nocnames symbolAt main");
+    }
+    var row = map_reader.lineAt(&r, "main.zig", 16);
+    expectTrue("nocnames lineAt 16", row != null);
+    var start = dbg_core.entryStop(&r, arena);
+    if (start) |st| {
+        expectU32("nocnames entryStop line", st.src_line, 14);
+    } else {
+        fail("nocnames entryStop");
+    }
+}
+
+fn modeBench(arena: *std.arena.Arena, prefix: []const u8, full: bool) void {
+    var r = map_reader.open(arena, prefix) catch {
+        fail("bench open");
+        return;
+    };
+    write("bench counts symbols=");
+    std.io.printInt(@intCast(i32, map_reader.symbolCount(&r)));
+    write(" groups=");
+    std.io.printInt(@intCast(i32, map_reader.groupCount(&r)));
+    write(" runs=");
+    std.io.printInt(@intCast(i32, map_reader.lineRunCount(&r)));
+    write(" cnames=");
+    std.io.printInt(@intCast(i32, map_reader.cnameCount(&r)));
+    write("\n");
+    if (!full) {
+        ok("bench open");
+        return;
+    }
+    var start = dbg_core.entryStop(&r, arena) orelse {
+        fail("bench entryStop");
+        return;
+    };
+    var rows: [8]map_reader.LineRow = undefined;
+    var nrows = map_reader.lineRowsAt(&r, start.src_file, start.src_line, rows[0..]);
+    expectTrue("bench lineRowsAt", nrows > 0);
+    var row = map_reader.lineAt(&r, start.src_file, start.src_line);
+    var rev_ok = false;
+    if (row) |rv| {
+        var back = map_reader.reverseRowAt(&r, rv.out_file, rv.out_line);
+        rev_ok = back != null;
+    }
+    expectTrue("bench reverseRowAt", rev_ok);
+    var sym = map_reader.symbolAt(&r, start.src_file, start.src_line);
+    expectTrue("bench symbolAt", sym != null);
+    var cn = map_reader.cnameFor(&r, "main");
+    expectTrue("bench cnameFor", cn != null);
+}
+
 fn modeOpenError(arena: *std.arena.Arena, prefix: []const u8) void {
     var r = map_reader.open(arena, prefix) catch {
         ok("open rejected");
@@ -337,6 +459,14 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         modeSession(&arena, prefix);
     } else if (std.str.eql(mode, "session-running")) {
         modeSessionRunning(&arena, prefix);
+    } else if (std.str.eql(mode, "session-step")) {
+        modeSessionStep(&arena, prefix);
+    } else if (std.str.eql(mode, "map-nocnames")) {
+        modeMapNoCnames(&arena, prefix);
+    } else if (std.str.eql(mode, "bench-open")) {
+        modeBench(&arena, prefix, false);
+    } else if (std.str.eql(mode, "bench-full")) {
+        modeBench(&arena, prefix, true);
     } else if (std.str.eql(mode, "dump-regs")) {
         if (os.argc() < 4) {
             writeLine("usage: dbg_test dump-regs <map-prefix> <path>");

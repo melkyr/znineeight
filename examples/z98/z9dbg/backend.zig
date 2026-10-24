@@ -42,6 +42,12 @@ pub const StopEvent = struct {
     eip: u32,
 };
 
+pub const STOP_ENTRY: u8 = 0;
+pub const STOP_BREAKPOINT: u8 = 1;
+pub const STOP_SINGLE_STEP: u8 = 2;
+pub const STOP_SIGNAL: u8 = 3;
+pub const STOP_EXITED: u8 = 4;
+
 pub const Backend = struct {
     state: *void,
     launch_fn: fn (*void, []const u8, [][]const u8) BackendError!void,

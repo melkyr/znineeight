@@ -102,6 +102,32 @@ before=$FAILS
 check_mode map_fib "$EXP/map_fib.txt" map-fib "$FIB"
 [ "$FAILS" -eq "$before" ] && pass_case "map-fib assertions"
 
+echo "== optional .cnames (spec §7.2) =="
+NOC="$OUT/nocnames_fixture"
+mkdir -p "$NOC"
+cp "$FIX/hello/main_BDA8D6C7.z98dbg.syms" "$NOC/"
+cp "$FIX/hello/main_BDA8D6C7.z98dbg.lines" "$NOC/"
+i=1
+while [ "$i" -le 3 ]; do
+    if "$H" map-nocnames "$NOC/main_BDA8D6C7" >"$OUT/nocnames.$i.out" 2>"$OUT/nocnames.$i.err"; then
+        :
+    else
+        fail_case "map-nocnames run $i rc"
+        tail -10 "$OUT/nocnames.$i.err" | sed 's/^/       /'
+    fi
+    if cmp -s "$EXP/map_nocnames.txt" "$OUT/nocnames.$i.out"; then
+        :
+    else
+        fail_case "map-nocnames run $i output"
+        diff -u "$EXP/map_nocnames.txt" "$OUT/nocnames.$i.out" | sed 's/^/       /'
+    fi
+    if [ "$i" -gt 1 ]; then
+        cmp -s "$OUT/nocnames.1.out" "$OUT/nocnames.$i.out" || fail_case "map-nocnames run $i determinism"
+    fi
+    i=$((i + 1))
+done
+[ "$FAILS" -eq 0 ] && pass_case "map-nocnames 3x"
+
 echo "== breakpoint classification / snap =="
 before=$FAILS
 check_mode snap_hello "$EXP/snap_hello.txt" snap "$HELLO"
@@ -201,6 +227,37 @@ while [ "$i" -le 3 ]; do
 done
 [ "$FAILS" -eq 0 ] && pass_case "session-default 3x"
 
+echo "== step-into next mapped line + dump resume state =="
+STEPDUMP="/tmp/z9dbg_step_dump.txt"
+i=1
+while [ "$i" -le 3 ]; do
+    rm -f "$STEPDUMP"
+    if "$H" session-step "$HELLO" <"$Z9DIR/tests/session_step.in" >"$OUT/step.$i.out" 2>"$OUT/step.$i.err"; then
+        :
+    else
+        fail_case "session-step run $i rc"
+        tail -10 "$OUT/step.$i.err" | sed 's/^/       /'
+    fi
+    if cmp -s "$EXP/session_step.txt" "$OUT/step.$i.out"; then
+        :
+    else
+        fail_case "session-step run $i output"
+        diff -u "$EXP/session_step.txt" "$OUT/step.$i.out" | sed 's/^/       /'
+    fi
+    if cmp -s "$EXP/dump_step.txt" "$STEPDUMP"; then
+        :
+    else
+        fail_case "session-step run $i dump content"
+        diff -u "$EXP/dump_step.txt" "$STEPDUMP" | sed 's/^/       /'
+    fi
+    if [ "$i" -gt 1 ]; then
+        cmp -s "$OUT/step.1.out" "$OUT/step.$i.out" || fail_case "session-step run $i determinism"
+    fi
+    i=$((i + 1))
+done
+[ "$FAILS" -eq 0 ] && pass_case "session-step 3x"
+rm -f "$STEPDUMP"
+
 echo "== dump writer with formatted registers =="
 i=1
 while [ "$i" -le 3 ]; do
@@ -262,6 +319,31 @@ else
             i=$((i + 1))
         done
         [ "$FAILS" -eq 0 ] && pass_case "z9dbg binary session 3x"
+        rm -f "$DUMP1" "$DUMP2"
+
+        EXEDIR_NC="$OUT/exedir_nocnames"
+        mkdir -p "$EXEDIR_NC"
+        cp "$BINOUT/prog" "$EXEDIR_NC/prog"
+        cp "$FIX/hello/main_BDA8D6C7.z98dbg.syms" "$EXEDIR_NC/"
+        cp "$FIX/hello/main_BDA8D6C7.z98dbg.lines" "$EXEDIR_NC/"
+        rm -f "$DUMP1" "$DUMP2"
+        if "$EXEDIR_NC/prog" "$EXEDIR_NC/prog" <"$Z9DIR/tests/session_hello.in" >"$OUT/bin_nocnames.out" 2>"$OUT/bin_nocnames.err"; then
+            :
+        else
+            fail_case "z9dbg binary no-cnames session rc"
+            tail -10 "$OUT/bin_nocnames.err" | sed 's/^/       /'
+        fi
+        if cmp -s "$EXP/session_hello.txt" "$OUT/bin_nocnames.out"; then
+            pass_case "z9dbg binary no-cnames session"
+        else
+            fail_case "z9dbg binary no-cnames session output"
+            diff -u "$EXP/session_hello.txt" "$OUT/bin_nocnames.out" | sed 's/^/       /'
+        fi
+        if cmp -s "$EXP/dump_hello.txt" "$DUMP1"; then
+            :
+        else
+            fail_case "z9dbg binary no-cnames dump content"
+        fi
         rm -f "$DUMP1" "$DUMP2"
     fi
 fi

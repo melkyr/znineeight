@@ -1,15 +1,18 @@
 // map_reader.zig — reader for the three compiler-emitted `.z98dbg.*` files.
 //
-// Byte layout is owned by sf/src/debug_map.zig (P3-M1); this module validates
-// and indexes it without trusting its counts. Files are loaded once into the
-// caller's arena; records are decoded lazily from their stored offsets, and
-// every string is a zero-copy slice into the loaded bytes. Corrupt or
-// truncated input returns a MapError (never traps).
+// Byte layout is owned by sf/src/debug_map.zig (P3-M1). This reader is
+// file-backed and sectioned (spec §5 / plan R4): open reads only the 20-byte
+// headers and the `.lines` group headers; a group's runs are read on demand,
+// and `.syms` / `.cnames` contents are loaded only when first queried. It
+// never retains the whole `.lines` run stream.
 //
 // `.syms` is sorted by (src_file, src_line, name); `.cnames` by src_name.
 // `.lines` is grouped per output file in emission order, with runs sorted by
 // out_line_start. Forward queries match the map `src_file` by exact path,
 // path suffix, or basename; reverse queries do the same for `out_file`.
+//
+// `.cnames` is optional (spec §7.2): a missing file means no C names, not an
+// error. Its header/records are still validated when the file is present.
 
 const std = @import("std");
 const file_mod = @import("std_file");
@@ -36,27 +39,42 @@ pub const LineRow = struct {
 const Group = struct {
     src_file: []const u8,
     out_file: []const u8,
-    runs_off: usize,
+    runs_off: u32,
     run_count: u32,
 };
 
-const ParsedLines = struct {
-    groups: [*]Group,
-    group_len: usize,
-    run_len: usize,
+const Run = struct {
+    src_line: u32,
+    out_start: u32,
+    out_count: u32,
+};
+
+const Header = struct {
+    count: u32,
+    size: usize,
 };
 
 pub const MapReader = struct {
+    arena: *std.arena.Arena,
+    syms_file: file_mod.File,
+    lines_file: file_mod.File,
+    cnames_file: file_mod.File,
+    has_cnames: bool,
+    syms_size: usize,
+    lines_size: usize,
+    cnames_size: usize,
+    sym_count: usize,
+    line_run_count: usize,
+    cname_count: usize,
+    syms_loaded: bool,
     syms: []const u8,
-    lines: []const u8,
-    cnames: []const u8,
     sym_offs: [*]u32,
-    sym_len: usize,
     groups: [*]Group,
     group_len: usize,
-    run_len: usize,
+    group_cap: usize,
+    cnames_loaded: bool,
+    cnames: []const u8,
     cname_offs: [*]u32,
-    cname_len: usize,
 };
 
 fn readU16At(data: []const u8, off: usize) MapError!u16 {
@@ -84,21 +102,114 @@ fn readStr16(data: []const u8, off: usize, next: *usize) MapError![]const u8 {
     return data[start .. start + len];
 }
 
-fn checkMagic(data: []const u8, magic: []const u8) MapError!void {
-    if (data.len < HEADER_LEN) return error.Corrupt;
-    var i: usize = 0;
-    while (i < 8) : (i += 1) {
-        if (data[i] != magic[i]) return error.Corrupt;
+fn readExact(f: *file_mod.File, buf: []u8) MapError!void {
+    var got: usize = 0;
+    while (got < buf.len) {
+        var n = file_mod.read(f, buf[got..]) catch return error.OpenFailed;
+        if (n == 0) return error.Corrupt;
+        got += n;
     }
 }
 
-fn headerCount(data: []const u8) MapError!u32 {
-    if (data.len < HEADER_LEN) return error.Corrupt;
-    var ver = try readU32At(data, 8);
+fn readAt(f: *file_mod.File, off: usize, buf: []u8) MapError!void {
+    _ = file_mod.seek(f, @intCast(i64, off), file_mod.SeekWhence.Set) catch return error.OpenFailed;
+    try readExact(f, buf);
+}
+
+fn readU16AtFile(f: *file_mod.File, off: usize) MapError!u16 {
+    var b: [2]u8 = undefined;
+    try readAt(f, off, b[0..]);
+    var lo: u32 = @intCast(u32, b[0]);
+    var hi: u32 = @intCast(u32, b[1]);
+    return @intCast(u16, lo | (hi << @intCast(u32, 8)));
+}
+
+fn readU32AtFile(f: *file_mod.File, off: usize) MapError!u32 {
+    var b: [4]u8 = undefined;
+    try readAt(f, off, b[0..]);
+    var b0: u32 = @intCast(u32, b[0]);
+    var b1: u32 = @intCast(u32, b[1]);
+    var b2: u32 = @intCast(u32, b[2]);
+    var b3: u32 = @intCast(u32, b[3]);
+    return b0 | (b1 << @intCast(u32, 8)) | (b2 << @intCast(u32, 16)) | (b3 << @intCast(u32, 24));
+}
+
+fn readStr16Alloc(arena: *std.arena.Arena, f: *file_mod.File, off: usize, limit: usize, next: *usize) MapError![]const u8 {
+    var n = try readU16AtFile(f, off);
+    var len = @intCast(usize, n);
+    var start = off + 2;
+    if (start > limit or limit - start < len) return error.Corrupt;
+    next.* = start + len;
+    if (len == 0) {
+        var empty: []const u8 = "";
+        return empty;
+    }
+    var raw = std.arena.alloc(arena, len) catch return error.OutOfMemory;
+    try readAt(f, start, raw[0..len]);
+    return raw[0..len];
+}
+
+fn skipStr16(f: *file_mod.File, off: usize, limit: usize, next: *usize) MapError!void {
+    var n = try readU16AtFile(f, off);
+    var len = @intCast(usize, n);
+    var start = off + 2;
+    if (start > limit or limit - start < len) return error.Corrupt;
+    next.* = start + len;
+}
+
+fn readHeader(f: *file_mod.File, magic: []const u8) MapError!Header {
+    var size_i = file_mod.size(f) catch return error.OpenFailed;
+    if (size_i < @intCast(i64, 0) or size_i > @intCast(i64, 4294967295)) return error.Corrupt;
+    var size = @intCast(usize, size_i);
+    if (size < HEADER_LEN) return error.Corrupt;
+    var hdr: [HEADER_LEN]u8 = undefined;
+    try readAt(f, 0, hdr[0..]);
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        if (hdr[i] != magic[i]) return error.Corrupt;
+    }
+    var ver = try readU32At(hdr[0..], 8);
     if (ver != 1) return error.UnsupportedVersion;
-    var total = try readU32At(data, 16);
-    if (@intCast(usize, total) != data.len) return error.Corrupt;
-    return try readU32At(data, 12);
+    var total = try readU32At(hdr[0..], 16);
+    if (@intCast(usize, total) != size) return error.Corrupt;
+    return Header{ .count = try readU32At(hdr[0..], 12), .size = size };
+}
+
+fn validateSyms(f: *file_mod.File, size: usize, count: u32) MapError!void {
+    var n = @intCast(usize, count);
+    if (size < HEADER_LEN or n > (size - HEADER_LEN) / 11) return error.Corrupt;
+    var off: usize = HEADER_LEN;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        if (off > size or size - off < 5) return error.Corrupt;
+        var head: [5]u8 = undefined;
+        try readAt(f, off, head[0..]);
+        if (head[0] > 1) return error.Corrupt;
+        off += 5;
+        var next: usize = 0;
+        try skipStr16(f, off, size, &next);
+        off = next;
+        try skipStr16(f, off, size, &next);
+        off = next;
+        try skipStr16(f, off, size, &next);
+        off = next;
+    }
+    if (off != size) return error.Corrupt;
+}
+
+fn validateCnames(f: *file_mod.File, size: usize, count: u32) MapError!void {
+    var n = @intCast(usize, count);
+    if (size < HEADER_LEN or n > (size - HEADER_LEN) / 4) return error.Corrupt;
+    var off: usize = HEADER_LEN;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        var next: usize = 0;
+        try skipStr16(f, off, size, &next);
+        off = next;
+        try skipStr16(f, off, size, &next);
+        off = next;
+    }
+    if (off != size) return error.Corrupt;
 }
 
 fn allocU32(arena: *std.arena.Arena, count: usize) MapError![*]u32 {
@@ -110,7 +221,6 @@ fn allocU32(arena: *std.arena.Arena, count: usize) MapError![*]u32 {
 fn parseSyms(arena: *std.arena.Arena, data: []const u8, count: u32) MapError![*]u32 {
     var n = @intCast(usize, count);
     if (data.len < HEADER_LEN) return error.Corrupt;
-    // Smallest record: u8 kind + u32 line + three empty str16s.
     if (n > (data.len - HEADER_LEN) / 11) return error.Corrupt;
     var offs = try allocU32(arena, n);
     var off: usize = HEADER_LEN;
@@ -154,76 +264,86 @@ fn parseCnames(arena: *std.arena.Arena, data: []const u8, count: u32) MapError![
     return offs;
 }
 
-fn countLineGroups(data: []const u8) MapError!usize {
+fn groupsEnsure(self: *MapReader, need: usize) MapError!void {
+    if (need <= self.group_cap) return;
+    var cap = self.group_cap;
+    if (cap == 0) cap = 8;
+    while (cap < need) : (cap *= 2) {}
+    var raw = std.arena.alloc(self.arena, @intCast(usize, @sizeOf(Group)) * cap) catch return error.OutOfMemory;
+    var dst = @ptrCast([*]Group, raw);
+    var i: usize = 0;
+    while (i < self.group_len) : (i += 1) {
+        dst[i] = self.groups[i];
+    }
+    self.groups = dst;
+    self.group_cap = cap;
+}
+
+fn buildGroups(self: *MapReader, expected_runs: u32) MapError!void {
     var off: usize = HEADER_LEN;
-    var count: usize = 0;
-    while (off < data.len) {
+    var total: usize = 0;
+    while (off < self.lines_size) {
+        try groupsEnsure(self, self.group_len + 1);
         var next: usize = 0;
-        _ = try readStr16(data, off, &next);
+        var sf = try readStr16Alloc(self.arena, &self.lines_file, off, self.lines_size, &next);
         off = next;
-        _ = try readStr16(data, off, &next);
+        var of = try readStr16Alloc(self.arena, &self.lines_file, off, self.lines_size, &next);
         off = next;
-        var rc = try readU32At(data, off);
+        var rc = try readU32AtFile(&self.lines_file, off);
         off += 4;
         var run_n = @intCast(usize, rc);
-        if (off > data.len or run_n > (data.len - off) / 12) return error.Corrupt;
+        if (off > self.lines_size or run_n > (self.lines_size - off) / 12) return error.Corrupt;
+        if (off > 4294967295) return error.Corrupt;
+        self.groups[self.group_len] = Group{
+            .src_file = sf,
+            .out_file = of,
+            .runs_off = @intCast(u32, off),
+            .run_count = rc,
+        };
+        self.group_len += 1;
         off += run_n * 12;
-        count += 1;
+        total += run_n;
     }
-    if (off != data.len) return error.Corrupt;
-    return count;
+    if (off != self.lines_size) return error.Corrupt;
+    if (total != @intCast(usize, expected_runs)) return error.Corrupt;
 }
 
-fn parseLines(arena: *std.arena.Arena, data: []const u8, expected_runs: u32) MapError!ParsedLines {
-    if (data.len < HEADER_LEN) return error.Corrupt;
-    var group_count = try countLineGroups(data);
-    var groups: [*]Group = undefined;
-    if (group_count > 0) {
-        var raw = std.arena.alloc(arena, @intCast(usize, @sizeOf(Group)) * group_count) catch return error.OutOfMemory;
-        groups = @ptrCast([*]Group, raw);
-    }
-    var off: usize = HEADER_LEN;
-    var gi: usize = 0;
-    var total_runs: usize = 0;
-    while (off < data.len) {
-        var next: usize = 0;
-        var sf = try readStr16(data, off, &next);
-        off = next;
-        var of = try readStr16(data, off, &next);
-        off = next;
-        var rc = try readU32At(data, off);
-        off += 4;
-        var runs_off = off;
-        var run_n = @intCast(usize, rc);
-        if (ioverflow(runs_off, run_n)) return error.Corrupt;
-        if (runs_off > data.len or run_n > (data.len - runs_off) / 12) return error.Corrupt;
-        var j: usize = 0;
-        var prev_start: u32 = 0;
-        var prev_end: u32 = 0;
-        while (j < run_n) : (j += 1) {
-            var sl = try readU32At(data, off);
-            var st = try readU32At(data, off + 4);
-            var ct = try readU32At(data, off + 8);
-            off += 12;
-            if (sl == 0 or ct == 0) return error.Corrupt;
-            if (st > 4294967295 - ct) return error.Corrupt;
-            if (j > 0) {
-                if (st <= prev_start or st < prev_end) return error.Corrupt;
-            }
-            prev_start = st;
-            prev_end = st + ct;
-        }
-        groups[gi] = Group{ .src_file = sf, .out_file = of, .runs_off = runs_off, .run_count = rc };
-        gi += 1;
-        total_runs += run_n;
-    }
-    if (off != data.len) return error.Corrupt;
-    if (total_runs != @intCast(usize, expected_runs)) return error.Corrupt;
-    return ParsedLines{ .groups = groups, .group_len = gi, .run_len = total_runs };
+fn readWhole(self: *MapReader, f: *file_mod.File, size: usize) MapError![]u8 {
+    var raw = std.arena.alloc(self.arena, size) catch return error.OutOfMemory;
+    if (size > 0) try readAt(f, 0, raw[0..size]);
+    return raw[0..size];
 }
 
-fn ioverflow(a: usize, b: usize) bool {
-    return a > 4294967295 - b;
+fn loadSyms(self: *MapReader) bool {
+    if (self.syms_loaded) return true;
+    var data = readWhole(self, &self.syms_file, self.syms_size) catch return false;
+    var offs = parseSyms(self.arena, data, @intCast(u32, self.sym_count)) catch return false;
+    self.syms = data;
+    self.sym_offs = offs;
+    self.syms_loaded = true;
+    return true;
+}
+
+fn loadCnames(self: *MapReader) bool {
+    if (!self.has_cnames) return false;
+    if (self.cnames_loaded) return true;
+    var data = readWhole(self, &self.cnames_file, self.cnames_size) catch return false;
+    var offs = parseCnames(self.arena, data, @intCast(u32, self.cname_count)) catch return false;
+    self.cnames = data;
+    self.cname_offs = offs;
+    self.cnames_loaded = true;
+    return true;
+}
+
+fn readRun(self: *MapReader, g: Group, idx: usize) ?Run {
+    var off = @intCast(usize, g.runs_off) + idx * 12;
+    var b: [12]u8 = undefined;
+    readAt(&self.lines_file, off, b[0..]) catch return null;
+    return Run{
+        .src_line = readU32At(b[0..], 0) catch return null,
+        .out_start = readU32At(b[0..], 4) catch return null,
+        .out_count = readU32At(b[0..], 8) catch return null,
+    };
 }
 
 fn basename(path: []const u8) []const u8 {
@@ -260,45 +380,68 @@ fn appendPath(arena: *std.arena.Arena, prefix: []const u8, suffix: []const u8) M
     return raw[0..total];
 }
 
+fn nullFile(arena: *std.arena.Arena) file_mod.File {
+    return file_mod.File{
+        .handle = @intToPtr(*void, 0),
+        .size_cache = @intCast(i64, -1),
+        .arena = arena,
+    };
+}
+
 pub fn open(arena: *std.arena.Arena, prefix: []const u8) MapError!MapReader {
     var syms_path = try appendPath(arena, prefix, ".z98dbg.syms");
     var lines_path = try appendPath(arena, prefix, ".z98dbg.lines");
     var cnames_path = try appendPath(arena, prefix, ".z98dbg.cnames");
-    var syms = file_mod.readAll(arena, syms_path) catch return error.OpenFailed;
-    var lines = file_mod.readAll(arena, lines_path) catch return error.OpenFailed;
-    var cnames = file_mod.readAll(arena, cnames_path) catch return error.OpenFailed;
+    var syms_file = file_mod.open(arena, syms_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    var lines_file = file_mod.open(arena, lines_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    var has_cnames = file_mod.exists(cnames_path);
+    var cnames_file = nullFile(arena);
+    if (has_cnames) {
+        cnames_file = file_mod.open(arena, cnames_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    }
 
     var msyms: []const u8 = "Z98DBGsy";
     var mlines: []const u8 = "Z98DBGln";
     var mcnames: []const u8 = "Z98DBGcn";
-    try checkMagic(syms, msyms);
-    try checkMagic(lines, mlines);
-    try checkMagic(cnames, mcnames);
+    var sym_hdr = try readHeader(&syms_file, msyms);
+    var line_hdr = try readHeader(&lines_file, mlines);
+    var cname_hdr = Header{ .count = 0, .size = 0 };
+    if (has_cnames) {
+        cname_hdr = try readHeader(&cnames_file, mcnames);
+    }
 
-    var sym_count = try headerCount(syms);
-    var line_runs = try headerCount(lines);
-    var cname_count = try headerCount(cnames);
+    try validateSyms(&syms_file, sym_hdr.size, sym_hdr.count);
+    if (has_cnames) try validateCnames(&cnames_file, cname_hdr.size, cname_hdr.count);
 
-    var sym_offs = try parseSyms(arena, syms, sym_count);
-    var parsed_lines = try parseLines(arena, lines, line_runs);
-    var cname_offs = try parseCnames(arena, cnames, cname_count);
-
-    return MapReader{
-        .syms = syms,
-        .lines = lines,
-        .cnames = cnames,
-        .sym_offs = sym_offs,
-        .sym_len = @intCast(usize, sym_count),
-        .groups = parsed_lines.groups,
-        .group_len = parsed_lines.group_len,
-        .run_len = parsed_lines.run_len,
-        .cname_offs = cname_offs,
-        .cname_len = @intCast(usize, cname_count),
+    var empty: []const u8 = "";
+    var r = MapReader{
+        .arena = arena,
+        .syms_file = syms_file,
+        .lines_file = lines_file,
+        .cnames_file = cnames_file,
+        .has_cnames = has_cnames,
+        .syms_size = sym_hdr.size,
+        .lines_size = line_hdr.size,
+        .cnames_size = cname_hdr.size,
+        .sym_count = @intCast(usize, sym_hdr.count),
+        .line_run_count = @intCast(usize, line_hdr.count),
+        .cname_count = @intCast(usize, cname_hdr.count),
+        .syms_loaded = false,
+        .syms = empty,
+        .sym_offs = undefined,
+        .groups = undefined,
+        .group_len = 0,
+        .group_cap = 0,
+        .cnames_loaded = false,
+        .cnames = empty,
+        .cname_offs = undefined,
     };
+    try buildGroups(&r, line_hdr.count);
+    return r;
 }
 
 pub fn symbolCount(self: *MapReader) usize {
-    return self.sym_len;
+    return self.sym_count;
 }
 
 pub fn groupCount(self: *MapReader) usize {
@@ -306,15 +449,17 @@ pub fn groupCount(self: *MapReader) usize {
 }
 
 pub fn lineRunCount(self: *MapReader) usize {
-    return self.run_len;
+    return self.line_run_count;
 }
 
 pub fn cnameCount(self: *MapReader) usize {
-    return self.cname_len;
+    if (!self.has_cnames) return 0;
+    return self.cname_count;
 }
 
 pub fn symbolByIndex(self: *MapReader, idx: usize) ?Symbol {
-    if (idx >= self.sym_len) return null;
+    if (idx >= self.sym_count) return null;
+    if (!loadSyms(self)) return null;
     var off = @intCast(usize, self.sym_offs[idx]);
     if (off >= self.syms.len) return null;
     var kind = self.syms[off];
@@ -337,13 +482,15 @@ pub fn resolveFile(self: *MapReader, query: []const u8) ?[]const u8 {
             best = self.groups[i].src_file;
         }
     }
-    i = 0;
-    while (i < self.sym_len) : (i += 1) {
-        var sym = symbolByIndex(self, i) orelse continue;
-        var s2 = fileScore(sym.src_file, query);
-        if (s2 > best_score) {
-            best_score = s2;
-            best = sym.src_file;
+    if (best_score < 3 and loadSyms(self)) {
+        i = 0;
+        while (i < self.sym_count) : (i += 1) {
+            var sym = symbolByIndex(self, i) orelse continue;
+            var s2 = fileScore(sym.src_file, query);
+            if (s2 > best_score) {
+                best_score = s2;
+                best = sym.src_file;
+            }
         }
     }
     return best;
@@ -365,10 +512,11 @@ pub fn resolveOutFile(self: *MapReader, query: []const u8) ?[]const u8 {
 
 pub fn symbolAt(self: *MapReader, file_query: []const u8, line: u32) ?Symbol {
     var file = resolveFile(self, file_query) orelse return null;
+    if (!loadSyms(self)) return null;
     var best: ?Symbol = null;
     var best_line: u32 = 0;
     var i: usize = 0;
-    while (i < self.sym_len) : (i += 1) {
+    while (i < self.sym_count) : (i += 1) {
         var sym = symbolByIndex(self, i) orelse continue;
         if (sym.kind != 0) continue;
         if (!std.str.eql(sym.src_file, file)) continue;
@@ -382,8 +530,9 @@ pub fn symbolAt(self: *MapReader, file_query: []const u8, line: u32) ?Symbol {
 }
 
 pub fn functionByName(self: *MapReader, name: []const u8) ?Symbol {
+    if (!loadSyms(self)) return null;
     var i: usize = 0;
-    while (i < self.sym_len) : (i += 1) {
+    while (i < self.sym_count) : (i += 1) {
         var sym = symbolByIndex(self, i) orelse continue;
         if (sym.kind != 0) continue;
         if (std.str.eql(sym.src_name, name)) return sym;
@@ -392,8 +541,9 @@ pub fn functionByName(self: *MapReader, name: []const u8) ?Symbol {
 }
 
 pub fn cnameFor(self: *MapReader, src_name: []const u8) ?[]const u8 {
+    if (!loadCnames(self)) return null;
     var i: usize = 0;
-    while (i < self.cname_len) : (i += 1) {
+    while (i < self.cname_count) : (i += 1) {
         var off = @intCast(usize, self.cname_offs[i]);
         var next: usize = 0;
         var name = readStr16(self.cnames, off, &next) catch continue;
@@ -409,14 +559,11 @@ pub fn lineAt(self: *MapReader, file_query: []const u8, line: u32) ?LineRow {
     while (i < self.group_len) : (i += 1) {
         var g = self.groups[i];
         if (!std.str.eql(g.src_file, file)) continue;
-        var off = g.runs_off;
         var j: usize = 0;
         while (j < @intCast(usize, g.run_count)) : (j += 1) {
-            var sl = readU32At(self.lines, off) catch return null;
-            var st = readU32At(self.lines, off + 4) catch return null;
-            off += 12;
-            if (sl == line) {
-                return LineRow{ .src_file = g.src_file, .out_file = g.out_file, .src_line = sl, .out_line = st };
+            var r = readRun(self, g, j) orelse return null;
+            if (r.src_line == line) {
+                return LineRow{ .src_file = g.src_file, .out_file = g.out_file, .src_line = r.src_line, .out_line = r.out_start };
             }
         }
     }
@@ -431,14 +578,12 @@ pub fn nextMappedLine(self: *MapReader, file_query: []const u8, after: u32) ?u32
     while (i < self.group_len) : (i += 1) {
         var g = self.groups[i];
         if (!std.str.eql(g.src_file, file)) continue;
-        var off = g.runs_off;
         var j: usize = 0;
         while (j < @intCast(usize, g.run_count)) : (j += 1) {
-            var sl = readU32At(self.lines, off) catch return null;
-            off += 12;
-            if (sl >= after) {
-                if (!found or sl < best) {
-                    best = sl;
+            var r = readRun(self, g, j) orelse return null;
+            if (r.src_line >= after) {
+                if (!found or r.src_line < best) {
+                    best = r.src_line;
                     found = true;
                 }
             }
@@ -455,15 +600,12 @@ pub fn lineRowsAt(self: *MapReader, file_query: []const u8, line: u32, out: []Li
     while (i < self.group_len) : (i += 1) {
         var g = self.groups[i];
         if (!std.str.eql(g.src_file, file)) continue;
-        var off = g.runs_off;
         var j: usize = 0;
         while (j < @intCast(usize, g.run_count)) : (j += 1) {
-            var sl = readU32At(self.lines, off) catch return count;
-            var st = readU32At(self.lines, off + 4) catch return count;
-            off += 12;
-            if (sl == line) {
+            var r = readRun(self, g, j) orelse return count;
+            if (r.src_line == line) {
                 if (count < out.len) {
-                    out[count] = LineRow{ .src_file = g.src_file, .out_file = g.out_file, .src_line = sl, .out_line = st };
+                    out[count] = LineRow{ .src_file = g.src_file, .out_file = g.out_file, .src_line = r.src_line, .out_line = r.out_start };
                 }
                 count += 1;
             }
@@ -478,15 +620,17 @@ pub fn reverseRowAt(self: *MapReader, out_query: []const u8, out_line: u32) ?Lin
     while (i < self.group_len) : (i += 1) {
         var g = self.groups[i];
         if (!std.str.eql(g.out_file, out_file)) continue;
-        var off = g.runs_off;
-        var j: usize = 0;
-        while (j < @intCast(usize, g.run_count)) : (j += 1) {
-            var sl = readU32At(self.lines, off) catch return null;
-            var st = readU32At(self.lines, off + 4) catch return null;
-            var ct = readU32At(self.lines, off + 8) catch return null;
-            off += 12;
-            if (out_line >= st and out_line < st + ct) {
-                return LineRow{ .src_file = g.src_file, .out_file = g.out_file, .src_line = sl, .out_line = out_line };
+        var lo: usize = 0;
+        var hi: usize = @intCast(usize, g.run_count);
+        while (lo < hi) {
+            var mid = lo + (hi - lo) / 2;
+            var r = readRun(self, g, mid) orelse return null;
+            if (out_line < r.out_start) {
+                hi = mid;
+            } else if (out_line - r.out_start >= r.out_count) {
+                lo = mid + 1;
+            } else {
+                return LineRow{ .src_file = g.src_file, .out_file = g.out_file, .src_line = r.src_line, .out_line = out_line };
             }
         }
     }

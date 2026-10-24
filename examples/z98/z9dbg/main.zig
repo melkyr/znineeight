@@ -107,7 +107,7 @@ fn handleBreak(line: []const u8, reader: *map_reader.MapReader, table: *dbg_core
     dbg_core.printBreakResult(res);
 }
 
-fn handleDump(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *backend.Backend, stop: dbg_core.StopState, counter: *u32, path_opt: ?[]const u8) void {
+fn handleDump(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *backend.Backend, stop: dbg_core.StopState, counter: *u32, path_opt: ?[]const u8) bool {
     var nbuf: [64]u8 = undefined;
     var path: []const u8 = undefined;
     if (path_opt) |p| {
@@ -130,11 +130,20 @@ fn handleDump(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *backe
     }
     be.continue_fn(be.state) catch {
         printBackendUnavailable();
-        return;
+        return false;
     };
+    return true;
 }
 
-pub fn runSession(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *backend.Backend, start: dbg_core.StopState) void {
+fn noResolve(state: *void, eip: u32, out: *dbg_core.StopState) bool {
+    _ = state;
+    _ = eip;
+    _ = out;
+    return false;
+}
+
+pub fn runSession(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *backend.Backend, start_in: dbg_core.StopState, resolve_state: *void, resolve_fn: dbg_core.ResolveFn) void {
+    var start = start_in;
     std.io.write("Z98 debugger has started...\n");
     dbg_core.printStop(reader, arena, start);
     var table = dbg_core.breakTableInit();
@@ -175,11 +184,25 @@ pub fn runSession(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *b
             continue;
         }
         if (std.str.eql(line, "step")) {
-            be.singleStep_fn(be.state) catch {
-                printBackendUnavailable();
-                continue;
-            };
-            stopped = false;
+            var out: dbg_core.StopState = start;
+            var res = dbg_core.stepInto(reader, be, resolve_state, resolve_fn, start, 100000, &out);
+            switch (res) {
+                .stepped => {
+                    start = out;
+                    stopped = true;
+                    dbg_core.printStop(reader, arena, start);
+                },
+                .exited => {
+                    std.io.write("z9dbg: debuggee exited\n");
+                    stopped = false;
+                },
+                .unavailable => {
+                    printBackendUnavailable();
+                },
+                else => {
+                    std.io.write("z9dbg: step limit reached\n");
+                },
+            }
             continue;
         }
         if (std.str.eql(line, "backtrace")) {
@@ -193,12 +216,12 @@ pub fn runSession(arena: *std.arena.Arena, reader: *map_reader.MapReader, be: *b
             continue;
         }
         if (std.str.eql(line, "dump variables")) {
-            handleDump(arena, reader, be, start, &counter, null);
+            if (handleDump(arena, reader, be, start, &counter, null)) stopped = false;
             continue;
         }
         if (std.str.startsWith(line, "dump variables ")) {
             var p = line[15..];
-            handleDump(arena, reader, be, start, &counter, p);
+            if (handleDump(arena, reader, be, start, &counter, p)) stopped = false;
             continue;
         }
         if (std.str.startsWith(line, "dump")) {
@@ -294,5 +317,6 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         os.exit(1);
     }
     var be = backend.stubBackend();
-    runSession(&ar, &reader, &be, start);
+    var no_state: *void = @intToPtr(*void, 0);
+    runSession(&ar, &reader, &be, start, no_state, noResolve);
 }

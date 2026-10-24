@@ -73,6 +73,7 @@ pub fn readSourceLine(arena: *std.arena.Arena, path: []const u8, line: u32) ?[]c
         var at_nl = false;
         if (!at_end) at_nl = data[i] == '\n';
         if (at_end or at_nl) {
+            if (at_end and data.len > 0 and start == data.len) return null;
             if (cur == line) {
                 var end = i;
                 if (end > start and data[end - 1] == '\r') end -= 1;
@@ -197,6 +198,32 @@ pub fn entryStop(reader: *map_reader.MapReader, arena: *std.arena.Arena) ?StopSt
         if (line >= nf) return null;
     }
     return StopState{ .src_file = sym.src_file, .src_line = line, .function_name = sym.src_name };
+}
+
+pub const ResolveFn = fn (*void, u32, *StopState) bool;
+
+pub const StepOutcome = enum { stepped, unavailable, exited, exhausted };
+
+// Step-into: single-step through the backend until a resolved stop lands on a
+// mapped Z98 line different from `current` (unmapped C / same-line stops are
+// skipped). Resolution of a machine stop to a source line is supplied by the
+// caller (M3 wires DWARF; the M2 tests script it).
+pub fn stepInto(reader: *map_reader.MapReader, be: *backend.Backend, resolve_state: *void, resolve_fn: ResolveFn, current: StopState, max_steps: u32, out: *StopState) StepOutcome {
+    var steps: u32 = 0;
+    while (steps < max_steps) : (steps += 1) {
+        be.singleStep_fn(be.state) catch return .unavailable;
+        var ev = be.wait_fn(be.state) catch return .unavailable;
+        if (ev.reason == backend.STOP_EXITED) return .exited;
+        var st: StopState = undefined;
+        if (!resolve_fn(resolve_state, ev.eip, &st)) continue;
+        var changed = !std.str.eql(st.src_file, current.src_file) or st.src_line != current.src_line;
+        if (!changed) continue;
+        if (map_reader.lineAt(reader, st.src_file, st.src_line) != null) {
+            out.* = st;
+            return .stepped;
+        }
+    }
+    return .exhausted;
 }
 
 fn printSourceLine(arena: *std.arena.Arena, file: []const u8, line: u32, current: bool) void {
