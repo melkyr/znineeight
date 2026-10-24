@@ -208,14 +208,28 @@ pub fn parseBlob(arena: *std.arena.Arena, data: []const u8, blob_off: usize, blo
     var avail = (end - line_start) / 6;
     if (line_cap > avail) line_cap = avail;
 
+    // The COFF string table follows the symbol records (u32 size including
+    // itself). Long names store a zero first dword and a string-table offset
+    // in the second. If the table is absent/truncated, leave it empty.
+    var sym_end = sym_start + nsym * 18;
+    var strtab: usize = 0;
+    var str_size: usize = 0;
+    if (sym_end <= end and end - sym_end >= 4) {
+        var ssz: usize = @intCast(usize, try u32At(data, sym_end));
+        if (ssz >= 4 and sym_end <= end and end - sym_end >= ssz) {
+            strtab = sym_end;
+            str_size = ssz;
+        }
+    }
+
     var pe = Pe{
         .image_base = image_base,
         .sec_off = sec_off,
         .sec_count = sec_count,
         .symtab = 0,
         .nsym = 0,
-        .strtab = 0,
-        .str_size = 0,
+        .strtab = strtab,
+        .str_size = str_size,
         .debug_off = blob_off,
         .debug_size = blob_len,
     };
@@ -256,10 +270,10 @@ pub fn parseBlob(arena: *std.arena.Arena, data: []const u8, blob_off: usize, blo
             while (flen < 18 and data[aux + flen] != 0) : (flen += 1) {}
             try addFileName(arena, files, &file_n, data[aux .. aux + flen]);
             if (file_n > 0) file_idx = @intCast(u32, file_n - 1);
-        } else if (cls == STORAGE_STATIC and snum > 0 and naux >= 1) {
+        } else if (cls == STORAGE_STATIC and typ == 0 and snum > 0 and naux >= 1) {
+            // Section definition: its aux carries the line-record count.
             var aux = off + 18;
             var nlnno: usize = @intCast(try u16At(data, aux + 6));
-            var secva = sectionVa(data, &pe, @intCast(usize, snum - 1));
             var k: usize = 0;
             while (k < nlnno) : (k += 1) {
                 if (line_cursor > end or end - line_cursor < 6) return error.Corrupt;
@@ -267,37 +281,32 @@ pub fn parseBlob(arena: *std.arena.Arena, data: []const u8, blob_off: usize, blo
                 var ln = try u16At(data, line_cursor + 4);
                 line_cursor += 6;
                 if (ln == 0) continue;
-                if (secva) |sv| {
-                    if (row_n >= row_cap) return error.Corrupt;
-                    rows[row_n] = dwarf.Row{
-                        .addr = image_base +% sv +% va,
-                        .line = @intCast(u32, ln),
-                        .file = file_idx,
-                        .end = false,
-                    };
-                    row_n += 1;
-                }
+                if (row_n >= row_cap) return error.Corrupt;
+                // §15.1: a line record's VirtualAddress is the code RVA.
+                rows[row_n] = dwarf.Row{
+                    .addr = image_base +% va,
+                    .line = @intCast(u32, ln),
+                    .file = file_idx,
+                    .end = false,
+                };
+                row_n += 1;
             }
-        } else if (snum > 0) {
-            var is_func = false;
-            if (cls == STORAGE_EXTERNAL and (typ & @intCast(u16, 0x20)) != 0) is_func = true;
-            if (cls == STORAGE_STATIC and naux == 0) is_func = true;
-            if (is_func) {
-                var secva = sectionVa(data, &pe, @intCast(usize, snum - 1));
-                if (secva) |sv| {
-                    var nm = stripUnderscore(symName(data, &pe, off));
-                    if (nm.len > 0 and func_n < func_cap) {
-                        var size: u32 = 0;
-                        if (naux >= 1 and (typ & @intCast(u16, 0x20)) != 0) {
-                            size = u32At(data, off + 18 + 4) catch 0;
-                        }
-                        funcs[func_n] = dwarf.Func{
-                            .addr = image_base +% sv +% value,
-                            .size = size,
-                            .name = nm,
-                        };
-                        func_n += 1;
+        } else if ((cls == STORAGE_EXTERNAL or cls == STORAGE_STATIC) and
+            (typ & @intCast(u16, 0x20)) != 0 and snum > 0) {
+            var secva = sectionVa(data, &pe, @intCast(usize, snum - 1));
+            if (secva) |sv| {
+                var nm = stripUnderscore(symName(data, &pe, off));
+                if (nm.len > 0 and func_n < func_cap) {
+                    var size: u32 = 0;
+                    if (cls == STORAGE_EXTERNAL and naux >= 1 and (typ & @intCast(u16, 0x20)) != 0) {
+                        size = u32At(data, off + 18 + 4) catch 0;
                     }
+                    funcs[func_n] = dwarf.Func{
+                        .addr = image_base +% sv +% value,
+                        .size = size,
+                        .name = nm,
+                    };
+                    func_n += 1;
                 }
             }
         }

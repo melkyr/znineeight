@@ -480,8 +480,11 @@ fn imgStr(off: usize, s: []const u8) void {
 
 // One-section PE32 with a Type-1 COFF debug directory blob, built strictly to
 // the documented §15.1 layout: FILE aux (C:\src\hello.c + CRLF), a STATIC
-// .text section definition owning four line records, and one EXTERNAL
-// function (_hello). No real compiler output is involved.
+// .text section definition owning four line records, an EXTERNAL function with
+// a format-1 aux, a STATIC function with an aux, a STATIC data symbol (Type 0,
+// no aux) that must be ignored, and an EXTERNAL long name resolved through the
+// COFF string table. Line Records carry code RVAs. No real compiler output is
+// involved.
 fn buildCoffImage() void {
     imgZero(2048);
     imgU16(0, 0x5a4d);
@@ -504,23 +507,23 @@ fn buildCoffImage() void {
     imgU32(0x184, 0x00001000);
     imgU32(0x188, 0x00000200);
     imgU32(0x18c, 0x00000400);
-    // Debug directory entry at file 0x400 (RVA 0x1000).
+    // Debug directory entry at file 0x400 (RVA 0x1000); blob at 0x41c.
     imgU32(0x40c, 1);
-    imgU32(0x410, 148);
+    imgU32(0x410, 262);
     imgU32(0x414, 0x0000101c);
     imgU32(0x418, 0x0000041c);
-    // IMAGE_COFF_SYMBOLS_HEADER at 0x41c.
-    imgU32(0x41c, 6);
+    // IMAGE_COFF_SYMBOLS_HEADER at 0x41c: 11 symbols, 4 line records.
+    imgU32(0x41c, 11);
     imgU32(0x420, 16);
     imgU32(0x424, 4);
-    imgU32(0x428, 124);
+    imgU32(0x428, 238);
     // Symbol 0: FILE, aux format 4 names the source file.
     imgStr(0x42c, ".file");
     imgU16(0x438, 0xfffe);
     g_img[0x43c] = 103;
     g_img[0x43d] = 1;
     imgStr(0x43e, "C:\\src\\hello.c\r");
-    // Symbol 2: STATIC section definition, aux carries nlnno=4.
+    // Symbol 2: STATIC section definition (Type 0), aux carries nlnno=4.
     imgStr(0x450, ".text");
     imgU16(0x45c, 1);
     g_img[0x460] = 3;
@@ -534,15 +537,40 @@ fn buildCoffImage() void {
     g_img[0x484] = 2;
     g_img[0x485] = 1;
     imgU32(0x48a, 0x00000100);
-    // Line records at blob+124 (0x498): header, then three rows.
-    imgU32(0x498, 4);
-    imgU16(0x49c, 0);
-    imgU32(0x49e, 0x10);
-    imgU16(0x4a2, 2);
-    imgU32(0x4a4, 0x14);
-    imgU16(0x4a8, 3);
-    imgU32(0x4aa, 0x18);
-    imgU16(0x4ae, 3);
+    // Symbol 6: STATIC function (Type 0x20) with an aux; size stays 0.
+    imgStr(0x498, "_sfunc");
+    imgU32(0x4a0, 0x40);
+    imgU16(0x4a4, 1);
+    imgU16(0x4a6, 0x0020);
+    g_img[0x4a8] = 3;
+    g_img[0x4a9] = 1;
+    // Symbol 8: STATIC data (Type 0, no aux) — must NOT become a function.
+    imgStr(0x4bc, "_sdata");
+    imgU32(0x4c4, 0x20);
+    imgU16(0x4c8, 1);
+    g_img[0x4cc] = 3;
+    g_img[0x4cd] = 0;
+    // Symbol 9: EXTERNAL long name via the string table at offset 4.
+    imgU32(0x4ce, 0);
+    imgU32(0x4d2, 4);
+    imgU32(0x4d6, 0x80);
+    imgU16(0x4da, 1);
+    imgU16(0x4dc, 0x0020);
+    g_img[0x4de] = 2;
+    g_img[0x4df] = 1;
+    imgU32(0x4e4, 0x80);
+    // COFF string table immediately after the symbol records (size + names).
+    imgU32(0x4f2, 24);
+    imgStr(0x4f6, "_zF_LONGNAME_hello");
+    // Line records at blob+238 (0x50a): header, then three code-RVA rows.
+    imgU32(0x50a, 4);
+    imgU16(0x50e, 0);
+    imgU32(0x510, 0x1010);
+    imgU16(0x514, 2);
+    imgU32(0x516, 0x1014);
+    imgU16(0x51a, 3);
+    imgU32(0x51c, 0x1018);
+    imgU16(0x520, 3);
 }
 
 fn modeCoff(arena: *std.arena.Arena) void {
@@ -555,7 +583,7 @@ fn modeCoff(arena: *std.arena.Arena) void {
     expectU32("coff image base", di.image_base, 0x00400000);
     expectUsize("coff row count", di.row_n, 3);
     expectUsize("coff file count", di.file_n, 1);
-    expectUsize("coff func count", di.func_n, 1);
+    expectUsize("coff func count", di.func_n, 3);
     if (di.row_n >= 3) {
         expectU32("coff row0 addr", di.rows[0].addr, 0x00401010);
         expectU32("coff row0 line", di.rows[0].line, 2);
@@ -568,12 +596,23 @@ fn modeCoff(arena: *std.arena.Arena) void {
     } else {
         fail("coff files");
     }
-    if (di.func_n >= 1) {
+    if (di.func_n >= 3) {
         expectStr("coff func underscore stripped", di.funcs[0].name, "hello");
         expectU32("coff func addr", di.funcs[0].addr, 0x00401000);
         expectU32("coff func size", di.funcs[0].size, 0x100);
+        expectStr("coff static function with aux", di.funcs[1].name, "sfunc");
+        expectU32("coff static function addr", di.funcs[1].addr, 0x00401040);
+        expectStr("coff long name via string table", di.funcs[2].name, "zF_LONGNAME_hello");
+        expectU32("coff long function addr", di.funcs[2].addr, 0x00401080);
     } else {
         fail("coff funcs");
+    }
+    expectTrue("coff static data excluded", dwarf.funcAddr(&di, "sdata") == null);
+    var long_addr = dwarf.funcAddr(&di, "zF_LONGNAME_hello");
+    if (long_addr) |la| {
+        expectU32("coff long func lookup", la, 0x00401080);
+    } else {
+        fail("coff long func lookup");
     }
     di.base = 0;
     var out: [8]u32 = undefined;
@@ -603,6 +642,11 @@ fn modePe(arena: *std.arena.Arena, path: []const u8) void {
     expectTrue("pe rows", di.row_n > 0);
     expectTrue("pe files", di.file_n > 0);
     expectTrue("pe funcs", di.func_n > 0);
+    // Real mingw symbol table: _g_atexit_fns is STATIC Type-0 data with no aux
+    // (must be excluded); _zig_ovf_sext is a STATIC function carrying an aux
+    // (must be included).
+    expectTrue("pe static data excluded", dwarf.funcAddr(&di, "g_atexit_fns") == null);
+    expectTrue("pe static function with aux included", dwarf.funcAddr(&di, "zig_ovf_sext") != null);
     // The session layer applies runtime_base - image_base; use a runtime image
     // base equal to the link image base (bias 0) to query link-time VAs.
     di.base = 0;

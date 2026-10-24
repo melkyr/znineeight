@@ -29,7 +29,7 @@ closeout, plan `2026-10-24-phase2-z98-debugger-plan`; v119 → v120 folds the
 P3-M1..M4 compiler/std work: opt-in `-d` debug-map emission, the `z9dbg`
 readers/backends, and the Win32 Debug-API std_os surface). New compiler fixed
 point `11de43a053bdde3be3ddc61caac31df6` (v119's archived binary was
-`45158dce…`); archive md5 `ba69e96d17c5554d19f01224ca3d7274`; archived binary
+`45158dce…`); archive md5 `18c21ebfc18f3014f0ccab2f10f38688`; archived binary
 md5 (= v120's rotation fixed point) `11de43a053bdde3be3ddc61caac31df6`;
 `gen/` 48 `.c` + 49 `.h` (10,844,907 bytes); `lib/` 47 std `.zig` plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5

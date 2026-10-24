@@ -243,26 +243,22 @@ fn collectFuncs(arena: *std.arena.Arena, data: []const u8, p: *const Pe) dwarf.D
         var cls = data[off + 16];
         var naux: usize = @intCast(usize, data[off + 17]);
         if (i + 1 + naux > p.nsym) break;
-        if (snum > 0) {
-            var is_func = false;
-            if (cls == STORAGE_EXTERNAL and (typ & @intCast(u16, 0x20)) != 0) is_func = true;
-            if (cls == STORAGE_STATIC and naux == 0) is_func = true;
-            if (is_func) {
-                var sv = sectionVa(data, p, @intCast(usize, snum - 1));
-                if (sv) |s| {
-                    var nm = stripUnderscore(symName(data, p, off));
-                    if (nm.len > 0 and n < p.nsym) {
-                        var size: u32 = 0;
-                        if (naux >= 1 and (typ & @intCast(u16, 0x20)) != 0) {
-                            size = u32At(data, off + 18 + 4) catch 0;
-                        }
-                        funcs[n] = dwarf.Func{
-                            .addr = p.image_base +% s +% value,
-                            .size = size,
-                            .name = nm,
-                        };
-                        n += 1;
+        if ((cls == STORAGE_EXTERNAL or cls == STORAGE_STATIC) and
+            (typ & @intCast(u16, 0x20)) != 0 and snum > 0) {
+            var sv = sectionVa(data, p, @intCast(usize, snum - 1));
+            if (sv) |s| {
+                var nm = stripUnderscore(symName(data, p, off));
+                if (nm.len > 0 and n < p.nsym) {
+                    var size: u32 = 0;
+                    if (cls == STORAGE_EXTERNAL and naux >= 1 and (typ & @intCast(u16, 0x20)) != 0) {
+                        size = u32At(data, off + 18 + 4) catch 0;
                     }
+                    funcs[n] = dwarf.Func{
+                        .addr = p.image_base +% s +% value,
+                        .size = size,
+                        .name = nm,
+                    };
+                    n += 1;
                 }
             }
         }
