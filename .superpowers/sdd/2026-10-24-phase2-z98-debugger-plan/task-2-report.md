@@ -288,3 +288,158 @@ Docs commit: this report.
    error/selection rule in M3.
 6. **Fixed caps:** breakpoint table 256, dump text buffer 64 KB, main arena
    4 MB. Adequate for the M2 fixture workload; revisit with the M3 test set.
+
+---
+
+# Fix round 1
+
+**Status:** DONE
+**Commit:** `99b2c1cf` `fix(z9dbg): optional cnames, lazy map sections, dump/step semantics (Phase2 P3-M2)`
+**Docs commit:** this appended section.
+
+## F1 — `.cnames` is optional (spec §7.2)
+
+`map_reader.open` no longer requires `.cnames`:
+
+- if the file is absent, `has_cnames = false`, `cnameCount()` returns 0 and
+  `cnameFor()` returns null;
+- if the file is present, its header and record walk are still validated at
+  open (corrupt/truncated `.cnames` is still a clean `MapError`).
+
+New tests:
+
+- `map-nocnames` (harness) opens a syms+lines-only map and asserts symbol
+  lookup, line lookup, entry stop, `cnameCount == 0`, and `cnameFor == null`;
+- the standalone `z9dbg` binary is run in a second executable directory that
+  contains syms+lines but no cnames, using the full `session_hello.in` scripted
+  session; stdout/dump files match the normal session byte-for-byte.
+
+```
+ok   - map-nocnames 3x
+ok   - z9dbg binary no-cnames session
+```
+
+## F2 — lazy/sectioned map loading (spec §5 / plan R4)
+
+`map_reader` is now file-backed and sectioned:
+
+- open reads only the 20-byte headers, validates the symbol/cname record
+  boundaries by streaming (no content retained), and reads the `.lines` group
+  headers. `.lines` run payloads are **not** read at open.
+- A group's runs are read on demand (`readRun`, 12 bytes at a time);
+  `reverseRowAt` binary-searches a group's runs instead of scanning.
+- `.syms` and `.cnames` contents are loaded only on first symbol/cname query
+  (`loadSyms` / `loadCnames`), then decoded zero-copy from their arena section.
+- The whole `.lines` run stream (the large section) is never resident.
+- Forward (`lineAt`, `lineRowsAt`, `nextMappedLine`) and reverse
+  (`reverseRowAt`) behavior is preserved and covered by the existing fixtures.
+
+Self-host map / memory evidence (reviewer's exact map sizes reproduced):
+
+```bash
+mkdir -p /tmp/z9dbg_self
+/tmp/z98_m2/zig1_5_clean -q -d -o /tmp/z9dbg_self sf/src/main.zig
+H=/tmp/z9dbg_core_tier/prog
+bash -c 'ulimit -v 32768; /usr/bin/time -v \
+  $H bench-full /tmp/z9dbg_self/main_9472B9CB'
+```
+
+```
+syms 144,666 B   lines 1,101,257 B   cnames 102,445 B
+2,089 symbols   48 groups / 91,565 runs   2,089 cnames
+
+bench counts symbols=2089 groups=48 runs=91565 cnames=2089
+Maximum resident set size (kbytes): 1476 / 1340 / 1568   (3 runs)
+```
+
+`bench-open` (headers + group headers only, no syms/cnames/run payloads):
+`1244 / 1232 / 1380 KB`. The previous whole-load measurement was
+**3,084 KB**; new peak is ~1.3–1.6 MB with all sections exercised. Most of
+that remaining footprint is process/runtime + the 1 MB harness arena; the
+91,565-run `.lines` stream is not retained.
+
+## F3 — dump resume state
+
+`handleDump` now returns whether the resume succeeded; `runSession` clears
+`stopped` on a successful `dump variables` resume, so `break` is rejected
+after a dump has resumed the debuggee. The `session-step` scripted test does:
+`step` → `break` (accepted) → `dump variables` → `break` (rejected) →
+`continue` → `break` (rejected).
+
+```
+ok   - session-step 3x
+```
+
+## F4 — `step` is step-into next mapped Z98 line
+
+- `dbg_core.stepInto` loops over the backend vtable: `singleStep_fn` +
+  `wait_fn`, resolving each stop through a caller-supplied `ResolveFn`.
+  Unmapped C stops and stops on the same Z98 line are skipped; the loop
+  returns on the first mapped line different from the current stop, or on
+  exit/exhaustion.
+- `main` calls this for `step`, updates the session stop, redraws the stop
+  display, and keeps `stopped = true` (the old one-instruction path left the
+  session looking "running").
+- The harness mock backend scripts stops at lines 14 (same), 15 (unmapped),
+  16 (mapped), proving the loop steps through unmapped C and lands on 16.
+  M3 only needs to supply the DWARF-backed resolver + real backend.
+
+## Verification (fix round)
+
+```bash
+for i in 1 2 3; do
+  ZIG=/tmp/z98_m2/zig1_5_clean OUT=/tmp/z9dbg_fix1_$i \
+    bash examples/z98/z9dbg/tests/tier_dbg_core.sh \
+    > /tmp/z9dbg_fix1_$i.log 2>&1
+  echo "run$i rc=$?"
+done
+md5sum /tmp/z9dbg_fix1_*.log
+```
+
+```
+run1 rc=0
+run2 rc=0
+run3 rc=0
+8912f662d547c11d110925caf6983089  /tmp/z9dbg_fix1_1.log
+8912f662d547c11d110925caf6983089  /tmp/z9dbg_fix1_2.log
+8912f662d547c11d110925caf6983089  /tmp/z9dbg_fix1_3.log
+```
+
+Gate summary: `23 passed, 0 failed` per run; `git diff --check` clean.
+`std_os` and the compiler remain untouched; map format/Task 1 artifacts
+unchanged.
+
+## Files (fix commit `99b2c1cf`)
+
+- `examples/z98/z9dbg/map_reader.zig` — file-backed sectioned reader,
+  optional cnames, on-demand runs, lazy syms/cnames sections.
+- `examples/z98/z9dbg/dbg_core.zig` — `stepInto` loop + `ResolveFn`; phantom
+  line after a trailing newline no longer reported.
+- `examples/z98/z9dbg/main.zig` — dump resume state, step loop/resolver,
+  `runSession` resolver parameters.
+- `examples/z98/z9dbg/backend.zig` — backend-neutral stop-reason constants.
+- `examples/z98/z9dbg/tests/dbg_test.zig` — no-cnames, step-session, and
+  bench-open/bench-full modes; mock step backend/resolver.
+- `examples/z98/z9dbg/tests/tier_dbg_core.sh` — no-cnames, step/dump-state,
+  standalone no-cnames checks.
+- `examples/z98/z9dbg/tests/session_step.in` +
+  `tests/expected/{session_step,dump_step,map_nocnames}.txt`.
+
+## Fix-round concerns
+
+1. `.lines` run payloads are no longer validated at open (that would read the
+   whole run stream eagerly, defeating the lazy-run requirement). Truncated
+   files, bad group headers/counts/strings, and bad magic/version still fail
+   at open; a corrupted run field is bounds-checked on read and never traps,
+   but is not reported as an open-time error. This is the deliberate trade for
+   on-demand group runs.
+2. `.syms`/`.cnames` are validated by streaming at open but loaded as whole
+   sections on first use (144,666 B / 102,445 B on self-host). They are one
+   section each in the current format; no per-record residency.
+3. `stepInto`'s resolver is caller-supplied; M2 main passes a no-resolve
+   callback (so the M2 stub still reports "no live backend"), and M3 wires the
+   DWARF resolver. The loop itself is fully exercised by the mock test.
+4. `dump variables` resume still updates only the stopped flag; M3 owns the
+   real wait/stop path after resume.
+5. Source reads still re-read the source file per lookup (unchanged from
+   round 0); unrelated to the map residency fix.
