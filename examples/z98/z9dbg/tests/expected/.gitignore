@@ -1,0 +1,2 @@
+# Golden outputs are source (the repository root ignores *.txt as app output).
+!*.txt

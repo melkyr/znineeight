@@ -1,0 +1,26 @@
+Z98 debugger has started...
+Stopped at examples/z98/z9dbg/tests/fixtures/hello/main.zig:14
+at main
+  12:
+  13: pub fn main() void {
+> 14:     var c = Counter{ .value = 41 };
+  15:     // Comment between statements; a break here snaps to the next statement.
+  16:     c.value = addOne(c.value);
+(z9dbg) break: moved to line 16
+(z9dbg) break: no executable code at line 2
+(z9dbg) break: no executable code at line 4
+(z9dbg) break: already set at line 16
+(z9dbg) break: already set at line 16
+(z9dbg) break: set at line 9
+(z9dbg) break: expected <file>:<line>
+(z9dbg) break: expected <file>:<line>
+(z9dbg) unknown command: run
+(z9dbg) z9dbg: no live backend (M2)
+(z9dbg) z9dbg: no live backend (M2)
+(z9dbg) unknown command: notacommand
+(z9dbg) #0 main at examples/z98/z9dbg/tests/fixtures/hello/main.zig:14
+(z9dbg) dump: wrote /tmp/z9dbg_core_snap.txt
+z9dbg: no live backend (M2)
+(z9dbg) dump: wrote /tmp/z9dbg_core_snap2.txt
+z9dbg: no live backend (M2)
+(z9dbg) z9dbg: exiting

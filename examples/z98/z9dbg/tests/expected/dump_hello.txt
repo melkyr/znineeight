@@ -1,0 +1,9 @@
+Z98 debugger variables v1
+stopped at examples/z98/z9dbg/tests/fixtures/hello/main.zig:14
+function main
+registers
+  unavailable
+call stack
+  #0 main at examples/z98/z9dbg/tests/fixtures/hello/main.zig:14
+globals
+  counter_value examples/z98/z9dbg/tests/fixtures/hello/main.zig:1 module main_BDA8D6C7

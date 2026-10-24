@@ -1,0 +1,27 @@
+ok - hello symbol count 3
+ok - hello group count 1
+ok - hello line run count 6
+ok - hello cname count 3
+ok - hello resolveFile basename
+ok - hello resolveFile suffix
+ok - hello symbolAt main name
+ok - hello symbolAt main line
+ok - hello symbolAt addOne name
+ok - hello symbolAt addOne line
+ok - hello symbolAt before first null
+ok - hello lineAt 14 out line
+ok - hello lineAt 14 out file
+ok - hello lineAt 14 src line
+ok - hello lineAt basename
+ok - hello lineRowsAt 16 count
+ok - hello lineRowsAt 16 row0
+ok - hello lineRowsAt 16 row1
+ok - hello reverseRowAt 28 src line
+ok - hello reverseRowAt 28 out line
+ok - hello lineAt absent null
+ok - hello cname main
+ok - hello cname global
+ok - hello entryStop line
+ok - hello entryStop function
+ok - hello default dump name
+ok - hello global init line 1 mapped
