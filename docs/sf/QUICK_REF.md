@@ -383,10 +383,11 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (v103, 2026-10-19, std-algorithms M1 closeout; values unchanged vs the v102 table).**
-Measured with the rotated seed-built fixed compiler
-(`b299b4b435e624d0ddbd2edde681cbc3`; v103 archive md5
-`c4d1e7a6f3d7403dee2c683a3a5ab438`):
+**8-pin table (v119, 2026-10-24, Phase 2 P3-M1 re-baseline).**
+Measured with the seed-built M1 compiler (fixed point
+`f963c2c49ab4ca66ac340917d5634494`; seed v119 archive md5
+`e7ac8cd2ed7e790a4b9225a82acaf4a5`; values equal the pre-M1 archived-seed
+baseline 8/8):
 `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum` from the repo root. The
 absolute pin values are **compiler-build dependent** (each compiler build pairs a `lib/` std
 set; the binary's own path is irrelevant — verified), so only same-build comparisons are
@@ -395,12 +396,12 @@ re-baseline only.
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `35ec8c8c1158e260c328212ac5fdc013` | `3203868ad4b435e8c1968fedf9284695` |
-| `examples/z98/game_of_life/main.zig` | `4a963f79e08c67329f4fff46530090e4` | `03a18737b641a6a95c67aec71daed3f7` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `4939b6e20eb4ee3d519fc3fd91e6e0d6` | `a2afe23d87d35eb741464423a382c0f8` |
-| `examples/z98/json_parser/main.zig` | `95f82c77058e2f5647f9711a14448a79` | `96fdbc4c6e6e76209cc2b27a6b959482` |
+| `examples/z98/mud_server/main.zig` | `76c05e6e35ec0357dd61e330bd825c99` | `3611017bb1ae0806288107347395a5e8` |
+| `examples/z98/game_of_life/main.zig` | `f83316ad82c40077553cb25fbec7620b` | `d1bc475b1e088475e3b527e0c06d13f1` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `e51e62ddb5d1c099c3d67f972a7181a8` | `21339525dc1d2aab1b539b19b8375872` |
+| `examples/z98/json_parser/main.zig` | `b3f05fbea0b8dc5ca34a8ca0b73dbb09` | `cf25f6ecf323bca4ad7789e161be0bf6` |
 
-All 8 pin values are **unchanged vs v99/v100**: fix rounds 1–2 are confined to
+Historical (pre-v119): the 8 pins were **unchanged vs v99/v100**: fix rounds 1–2 are confined to
 the OpenWatcom mapping and the Windows-only no-CRT `memset` shim (both dead
 under the GCC/mingw Linux gate), so the GCC-emitted C is byte-identical. The
 v99 movement remains the intended T5.3 movement: the
