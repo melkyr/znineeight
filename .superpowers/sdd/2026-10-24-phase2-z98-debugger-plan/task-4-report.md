@@ -272,3 +272,92 @@ too. Controller ruling: accepted, no revert.
 built `z9dbg.exe` still passes
 `scripts/win32_cross/check_win9x_imports.sh <exe> 9x`; the full tiers were not
 re-run because only the seed stamp/archive changed, not code.
+
+---
+
+## Fix round 2 — COFF reader correctness (review Critical 1-2, Important 3-4)
+
+**Commit:** `9519eece` `fix(z9dbg): COFF line RVA, string table, function
+classification (Phase2 P3-M4)`
+
+### Critical 1 — line-record RVA double-counted section VA
+
+**Finding.** `coff_lines.parseBlob` computed line rows as
+`image_base + section.VirtualAddress + line.VirtualAddress`. §15.1 defines a
+line record's `VirtualAddress`/`Type` as the **code RVA** when
+`Linenumber != 0`, so the section VA must not be added again. Real MSVC rows
+would be 0x1000+ too high (breakpoints at wrong addresses). The synthetic
+fixture hid it because its line records were section-relative and the section
+VA was 0x1000.
+
+**Fix.** Row VA is now `image_base +% va` (`coff_lines.zig`). The fixture's
+line records now store code RVAs `0x1010/0x1014/0x1018` while the expected
+final VAs remain `0x401010/0x401014/0x401018`, so re-adding the section VA
+would fail the test.
+
+### Critical 2 — COFF debug-blob string table never parsed
+
+**Finding.** `parseBlob` left `pe.strtab/str_size = 0`, so long symbol names
+(first dword zero, second dword a string-table offset) resolved to `""` and
+were dropped. Z98 C names (`zF_<hash>_<name>`) are long, so the MSVC path had
+no function names.
+
+**Fix.** After the symbol records (`sym_end = sym_start + nsym*18`), the reader
+reads the u32 string-table size when four bytes are available, validates
+`str_size >= 4` and `sym_end + str_size <= end`, and sets
+`pe.strtab = sym_end`, `pe.str_size = str_size`; an absent/truncated table
+stays 0/0. Line-table placement is not required to be before or after the
+string table; both are independently bounded. The fixture now adds a separate
+string table at the end of the symbol records and an EXTERNAL long-named symbol
+(`_zF_LONGNAME_hello`, offset 4); the test asserts the name resolves and
+`funcAddr("zF_LONGNAME_hello") == 0x401080`.
+
+### Important 3 — function classification too broad
+
+**Finding.** Both readers treated any STATIC+section+naux symbol as a section
+definition (misreading static functions with aux), treated any STATIC+naux==0
+symbol as a function (turning static data Type 0 into functions), and could
+misread `.bf/.ef/.lf`.
+
+**Fix (both `coff_lines.zig` and `pe_debug.zig`):**
+
+- section definition: `cls == STATIC && typ == 0 && snum > 0 && naux >= 1`;
+- function: `(cls == EXTERNAL || cls == STATIC) && (typ & 0x20) != 0 && snum > 0`;
+- `TotalSize` only from a format-1 aux on an EXTERNAL function
+  (`cls == EXTERNAL && typ & 0x20 && naux >= 1`); otherwise the next-symbol
+  size derivation remains;
+- storage class FUNCTION (101) is excluded (it matches neither constant).
+
+The structural COFF fixture now adds a STATIC function with an aux (`_sfunc`)
+and STATIC Type-0 data with no aux (`_sdata`): exact function count is 3
+(`hello`, `sfunc`, `zF_LONGNAME_hello`) and `funcAddr("sdata") == null`.
+The real mingw PE fixture asserts the equivalent shape from its symbol table:
+`g_atexit_fns` (STATIC Type 0, no aux) is excluded and `zig_ovf_sext` (STATIC
+function with aux) is included.
+
+### Important 4 — stale v120 archive md5 in QUICK_REF
+
+`docs/sf/QUICK_REF.md` now records the corrected archive md5
+`18c21ebfc18f3014f0ccab2f10f38688` (matches
+`release/seed/CHANGELOG.md` and the committed archive).
+
+### Test evidence
+
+```text
+tier_dbg_core.sh   26 passed, 0 failed   TIER_DBG_CORE PASS  (new COFF assertions green)
+tier_dbg.sh run 1  38 passed, 0 failed   TIER_DBG PASS
+tier_dbg.sh run 2  38 passed, 0 failed   TIER_DBG PASS
+check_win9x_imports.sh <z9dbg.exe> 9x   IMPORT GATE PASS (9x)
+git diff --check                        clean
+```
+
+The regenerated Win98 `z9dbg.exe` also passes the 9x import gate. The deferred
+review minors (5-10) were intentionally left untouched.
+
+### Residual concerns
+
+- The COFF fixture remains structural (spec §15.4 permits this); real MSVC 6
+  output is still operator-run via `lin_bin/instructions.txt`.
+- The real-PE static-data/static-function assertions name symbols from the
+  current emitted runtime (`g_atexit_fns`, `zig_ovf_sext`); a future rename in
+  the runtime would require updating those two test names.
