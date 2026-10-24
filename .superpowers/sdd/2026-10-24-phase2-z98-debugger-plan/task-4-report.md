@@ -215,3 +215,60 @@ three manuals now describe the opt-in sidecar instead of denying it.
    `sed` uses are the pre-existing test-time expected-output rendering in the
    tier scripts; no untracked P4 docs, `run.err`, or `.opencode/memory` files
    were touched.
+
+---
+
+## Fix round 1 — v120 provenance HEAD correction
+
+**Finding (Important).** The first v120 rotation was produced from the working
+tree while `HEAD` was still `1ef863eb`, then committed as `eba1afee`. Both
+`release/seed/CHANGELOG.md` and the archive's `zig1-seed/SEED_README.txt`
+therefore said `HEAD 1ef863eb`, but the archived `lib/std_os.zig` was already
+the M4 version (md5 `c62dda9e00c126d58f55496d792823c7`), which does not exist at
+`1ef863eb`. `scripts/seed/archive_seed.sh` defines the pinned HEAD as the
+committed source state the archive was built from, so the stamp must name a
+commit that contains the M4 source.
+
+**Reproduction (non-destructive clone; workspace untouched):**
+
+```sh
+git clone /workspace/znineeight /tmp/m4_prov
+git -C /tmp/m4_prov checkout 5981b560
+cd /tmp/m4_prov
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m4_prov_build
+# hop1 == hop2 == 11de43a053bdde3be3ddc61caac31df6
+bash scripts/seed/archive_seed.sh /tmp/m4_prov_build/zig1_5_clean \
+     /tmp/m4_prov_build/gen release/seed/zig1-seed.tgz --update-changelog
+```
+
+The clone's archive was then copied into the workspace and only the v120
+CHANGELOG entry was replaced (v119 and older untouched; the resulting
+CHANGELOG is byte-identical to the clone's).
+
+**Corrected provenance evidence:**
+
+```text
+SEED_README.txt: Pinned HEAD: 5981b560
+lib/std_os.zig md5: c62dda9e00c126d58f55496d792823c7
+lib std files: 47
+lib manifest md5: 7ef5c6b66a2975b51847515fe91fff41
+seed binary md5: 11de43a053bdde3be3ddc61caac31df6
+fixed point: 11de43a053bdde3be3ddc61caac31df6
+archive md5: 18c21ebfc18f3014f0ccab2f10f38688
+```
+
+The reproduced fixed point is unchanged (`11de43a...`, re-measured from the
+v119 seed at `5981b560`); the archive md5 changes because `SEED_README.txt`
+carries the corrected HEAD stamp.
+
+**Scope disclosure — `map_reader.zig`.** The feat commit `7cd7e26f` also edits
+`examples/z98/z9dbg/map_reader.zig`, which is not explicitly enumerated in the
+Task-4 file list. The edit is limited to `fileScore`: it routes map `src_file`
+and query comparisons through `dwarf.normalizePath` so spec §15.3's
+`\`→`/`, drive/`./` stripping, and Windows case folding apply to map matching
+too. Controller ruling: accepted, no revert.
+
+**Verification for this fix round:** `git diff --check` is clean; the already
+built `z9dbg.exe` still passes
+`scripts/win32_cross/check_win9x_imports.sh <exe> 9x`; the full tiers were not
+re-run because only the seed stamp/archive changed, not code.
