@@ -328,3 +328,142 @@ Code commit `4df9a753`:
 - `scripts/compiler/gate_debug_map.sh` (new, 191 lines, mode 100755)
 
 Docs commit: this report.
+
+---
+
+# Fix round 1
+
+**Status:** DONE_WITH_CONCERNS
+**Commit:** `d7882717` `fix(c89_emit): hoisted-decl rows + per-function span reuse (Phase2 P3-M1)`
+**Final seed-built compiler:** `/tmp/z98_build/zig1_5_clean`; closure
+`hop1 == hop2 == 11de43a053bdde3be3ddc61caac31df6`.
+
+## F2 — hoisted declarations now produce map rows
+
+- `emitHoistedDecls` builds a per-function `temp_span[]` (temp id -> source
+  span) from the faulted-in `(bb, inst)` debug spans and the first inst that
+  defines each temp. `debugInstDefTemp` mirrors `dceResultPos`'s extra result
+  arms (`width_wrap`, overflow ops, `int_cast_checked`, `va_arg`) and adds
+  `call`, `call_direct`, `tail_call`, `decl_temp`, `decl_local`.
+- Each hoisted declaration output line (including `zig_poison_fill` lines) now
+  adds a `.lines` run mapped to that owning statement's Z98 line via the shared
+  `debugMapAddSpanRun`. Map byte format is unchanged.
+- Temps whose def span is synthetic/EOF-only fall back to the function
+  declaration span instead of emitting an out-of-file line; body rows whose
+  span is at/after the source content length are dropped.
+- The temp table/scan/allocation are behind `emitter.debug_map != null`; the
+  no-`-d` path allocates and scans nothing.
+
+Gate extension (written before the fix, RED observed first): compiles
+`examples/z98/fibonacci/main.zig` with `-d`, extracts every contiguous
+`zT_*` hoisted declaration line at the top of emitted functions, and requires
+each one to be covered by a `.lines` run whose `src_line` is a real source
+line.
+
+RED (old build, before fix; rc=1, relevant lines):
+
+```
+[gate_debug_map] ok .syms main row
+[gate_debug_map] FAIL: hoisted declaration line main_65487C87.c:4 is not mapped to a plausible src_line
+[gate_debug_map] FAIL: hoisted declaration line main_65487C87.c:5 is not mapped to a plausible src_line
+...
+[gate_debug_map] FAIL: hoisted declaration line main_65487C87.c:53 is not mapped to a plausible src_line
+DEBUG_MAP GATE FAILED
+```
+
+GREEN (final build):
+
+```
+bash scripts/compiler/gate_debug_map.sh \
+  /tmp/z98_build/zig1_5_clean /tmp/z98_seed/zig1-seed/zig1
+[gate_debug_map] ok .syms main row
+[gate_debug_map] ok hoisted declarations mapped (22 lines)
+[gate_debug_map] determinism: 3x map byte-identical
+[gate_debug_map] purity: no-'-d' .c set byte-identical to pre-change baseline
+[gate_debug_map] banner on/off + --quiet suppression ok
+DEBUG_MAP GATE OK
+```
+
+Independent `.lines` row validation after the fix (source line within source
+file, output run within emitted `.c`):
+
+| Program | rows | bad |
+|---|---:|---:|
+| mud_server | 885 | 0 |
+| lisp_interpreter_curr | 1520 | 0 |
+| z9torr | 13922 | 0 |
+
+## F3 — per-function span storage reused regardless of `async_pending`
+
+- `CompilerContext.debug_span_buf` is one reusable `DebugSpanArrayList` on the
+  emission arena. Every function/module-init lowering starts with
+  `lowerer.debug_spans = ctx.debug_span_buf; len = 0`, and immediately after
+  lowering the (possibly grown) list is copied back and `len` reset — before
+  the async/scratch-reset branch. Map span memory is therefore bounded by the
+  largest single function (plus geometric growth slack), not by every function
+  after the first async one.
+- Async synthetic step/driver rows still use the F2 declaration-span fallback.
+- The map spill itself remains streamed and keyed by `LirSlot.disk_offset`.
+
+## Off-path neutrality / pins
+
+- No-`-d` output bytes: gate purity PASS vs the archived pre-change seed binary.
+- 8 dump-MD5 pins re-run on the final build; `diff` vs the pre-change archived
+  seed baseline is EMPTY (8/8 unchanged):
+
+```
+mud_server          -fsafe 76c05e6e35ec0357dd61e330bd825c99   -ffast 3611017bb1ae0806288107347395a5e8
+game_of_life        -fsafe f83316ad82c40077553cb25fbec7620b   -ffast d1bc475b1e088475e3b527e0c06d13f1
+lisp_interpreter_curr -fsafe e51e62ddb5d1c099c3d67f972a7181a8 -ffast 21339525dc1d2aab1b539b19b8375872
+json_parser         -fsafe b3f05fbea0b8dc5ca34a8ca0b73dbb09   -ffast cf25f6ecf323bca4ad7789e161be0bf6
+```
+
+- `scripts/check_emit_support.sh /tmp/z98_build/zig1_5_clean`
+  → `OK: 8/8 support files byte-identical to canonical` (rc 0).
+- The diff is gated by `debug_map != null` / `cli.debug` everywhere except the
+  shared `BufferedWriter.line` counter added in round 0; no full battery was
+  re-run because no off-path code changed. (The gate still re-checks no-`-d`
+  purity against the archived seed.)
+
+## RSS before/after (`-q -ffast`, 3 runs, `/usr/bin/time -v`)
+
+"Before" = round-0 build measured before this fix; "after" = final build.
+
+| Program | mode | before max RSS (KiB) | after max RSS (KiB) |
+|---|---|---|---|
+| hello | off | 6088 / 6096 / 6168 | 6280 / 6256 / 6428 |
+| hello | on | 6388 / 6192 / 6320 | 6376 / 6476 / 6580 |
+| mud_server | off | 8088 / 8172 / 8092 | 8000 / 8176 / 8104 |
+| mud_server | on | 8580 / 8600 / 8324 | 8428 / 8408 / 8472 |
+| lisp_interpreter_curr | off | 6288 / 6388 / 6552 | 6496 / 6448 / 6484 |
+| lisp_interpreter_curr | on | 6588 / 6716 / 6456 | 6816 / 6864 / 6512 |
+| z9torr | off | 20728 / 20248 / 20764 | 20768 / 20516 / 20460 |
+| z9torr | on | 22076 / 22332 / 22008 | 21408 / 21312 / 21396 |
+
+z9torr `-d` median: **22,076 → 21,396 KiB** (−680 KiB). The dedicated
+per-function buffer removes the post-first-async accumulation, leaving the
+largest function's own O(one function) span table plus map/symbol state.
+`-d` delta vs the same-build off run is ≈880 KiB (21,396 − 20,516 median)
+instead of ≈1,348 KiB before (22,076 − 20,728). Wall time unchanged within
+noise (z9torr 1.07–1.08 s on vs 1.02–1.04 s off).
+
+## Files changed (fix commit `d7882717`)
+
+- `sf/src/c89_emit.zig` (+102/−10): hoisted-decl temp spans/rows, function
+  declaration fallback, span/source-length filtering, shared run helper.
+- `sf/src/main.zig` (+18): reusable `debug_span_buf`; per-function reset/copy
+  independent of `async_pending`.
+- `scripts/compiler/gate_debug_map.sh` (+71): hoisted-declaration case.
+
+## Fix-round concerns
+
+1. The hoisted gate uses `fibonacci` (an existing example) rather than a new
+   fixture, so no corpus-universe change was introduced.
+2. Async rows remain function-declaration-granular, not suspension-statement
+   granular (spec §7.3 caveat).
+3. Temps with synthetic/EOF-only def spans are attributed to the function
+   declaration line; the alternative was an unmapped declaration line or an
+   out-of-file line number.
+4. F1 banner behavior untouched, as adjudicated.
+5. Tech docs remain untouched per the task's explicit file list (same
+   outstanding note as round 0).
