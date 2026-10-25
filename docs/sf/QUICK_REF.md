@@ -17,25 +17,41 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-23 — M7]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-24 — seed v121]
 
-**Seed location + contents:** the committed rotating seed is
-`release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
-`release/seed/CHANGELOG.md`, full recipes + current md5s in
-`release/seed/SEED_README.txt`).
+**Seed location + contents:** the committed rotating seeds are
+`release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
+`release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
+provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
+current md5s in `release/seed/SEED_README.txt` and the v121 CHANGELOG entry.
 
-**Current seed: v120** (rotated 2026-10-24 at the Phase 2 P3 z98-debugger
-closeout, plan `2026-10-24-phase2-z98-debugger-plan`; v119 → v120 folds the
-P3-M1..M4 compiler/std work: opt-in `-d` debug-map emission, the `z9dbg`
-readers/backends, and the Win32 Debug-API std_os surface). New compiler fixed
-point `11de43a053bdde3be3ddc61caac31df6` (v119's archived binary was
-`45158dce…`); archive md5 `18c21ebfc18f3014f0ccab2f10f38688`; archived binary
-md5 (= v120's rotation fixed point) `11de43a053bdde3be3ddc61caac31df6`;
-`gen/` 48 `.c` + 49 `.h` (10,844,907 bytes); `lib/` 47 std `.zig` plus
+**Current seed: v121** (rotated 2026-10-24 at the seed Win9x-zip
+infrastructure closeout; the Linux compiler fixed point is unchanged from v120,
+`11de43a053bdde3be3ddc61caac31df6`). New archive md5 and new Win9x zip md5 are
+recorded in the v121 entry of `release/seed/CHANGELOG.md`; archived binary md5
+(= v120/v121 rotation fixed point) `11de43a053bdde3be3ddc61caac31df6`; `gen/`
+48 `.c` + 49 `.h` (10,844,907 bytes); `lib/` 47 std `.zig` plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
 `7ef5c6b66a2975b51847515fe91fff41`). The rebuilt archive is two-hop
 (`build_from_seed.sh`: hop1 == hop2 == `F_new`); the compiler↔std separation
-means the v120 `lib/` payload does not move the fixed point.
+means the v121 `lib/` payload does not move the fixed point.
+
+**Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
+`zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is a full Windows-target
+`zig1 -osw` compiler dump with the compiler's own emitted scripts, no prebuilt
+`zig1.exe`. To build the compiler on the era machine:
+
+```bat
+cd zig1-seed-w9\win
+build_owc_crt.bat ..\zig1.exe
+```
+
+or one of `build_owc_nocrt.bat`, `build_target_crt.bat`,
+`build_target_nocrt.bat`; `..\lib\` is the standard library. `_crt` = static
+CRT (`/MT` / OpenWatcom static CLIB), no `msvcrt.dll`, single EXE, may import
+KERNEL32 names beyond the strict 9x whitelist; `_nocrt` = KERNEL32/WSOCK32-only.
+Emitted programs default to no-CRT. The zip is not a fixed-point artifact;
+`archive_seed.sh` packs it deterministically with python3 `zipfile`.
 
 **Phase 1 closeout:** v119 completes the TLS + WireGuard phase. On the rotated
 compiler (`45158dce…`) the full std gate is **336/0** with crosscheck
@@ -179,9 +195,10 @@ archived binary md5 the result must equal, are in `release/seed/SEED_README.txt`
 self-emission fixed point **or changed the archive's `lib/` payload** (the archive embeds the
 std `.zig` set, so a plan that adds/removes std modules rotates the seed even when the fixed
 point is unmoved), via
-`bash scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`
+`bash scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> release/seed/zig1-seed.tgz --update-changelog --win9x-zip release/seed/zig1_seed_w9.zip`
 (gcc-rebuilds the archive C self-contained to the NEW fixed point + prepends the provenance entry to
-`release/seed/CHANGELOG.md`). The seed lives at `release/seed/` (tracked), never `/tmp`.
+`release/seed/CHANGELOG.md`, and packs the Win9x companion). The seeds live at `release/seed/`
+(tracked), never `/tmp`.
 
 
 ### Opt-in debug map + `z9dbg` (P3-M1..M4)  [added: 2026-10-24]

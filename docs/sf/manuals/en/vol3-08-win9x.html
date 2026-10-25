@@ -109,8 +109,8 @@ $ /tmp/manual_seed/zig1_5_clean -osw -o out hello.z98
 Windows target. The flag is target selection, not code generation: the C89
 emitted for a given program is the same shape in both cases, and the guard
 macros discussed below are what the target adds. In the output directory you
-now find the emitted translation units and headers, the runtime pair, and
-<b>three</b> build scripts, one per era toolchain:
+now find the emitted translation units and headers, the runtime pair, and one
+script per toolchain and CRT profile:
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -122,20 +122,41 @@ now find the emitted translation units and headers, the runtime pair, and
 <td valign="top"><tt>build_target.sh</tt></td>
 <td valign="top">gcc (Linux) or mingw (Windows)</td>
 <td valign="top">one script, two targets; the default is the Linux host, and
-<tt>sh build_target.sh mingw</tt> cross-compiles the Windows binary</td>
+<tt>sh build_target.sh mingw</tt> cross-compiles the no-CRT Windows binary</td>
 </tr>
 <tr>
-<td valign="top"><tt>build_target.bat</tt></td>
+<td valign="top"><tt>build_target_nocrt.bat</tt></td>
 <td valign="top">MSVC <tt>cl</tt></td>
-<td valign="top">the Windows command-prompt build, compiled with
-<tt>cl</tt> and linked with <tt>link</tt></td>
+<td valign="top">the Win9x default: no-CRT, KERNEL32/WSOCK32-only, single EXE</td>
 </tr>
 <tr>
-<td valign="top"><tt>build_owc.bat</tt></td>
+<td valign="top"><tt>build_target_crt.bat</tt></td>
+<td valign="top">MSVC <tt>cl</tt></td>
+<td valign="top">static <tt>/MT</tt> CRT alternative: no <tt>msvcrt.dll</tt>,
+single EXE, KERNEL32 imports may exceed the strict 9x whitelist</td>
+</tr>
+<tr>
+<td valign="top"><tt>build_owc_nocrt.bat</tt></td>
 <td valign="top">OpenWatcom <tt>wcc386</tt>/<tt>wlink</tt></td>
-<td valign="top">the OpenWatcom 32-bit build, the classic era toolchain</td>
+<td valign="top">the Win9x default for the classic era toolchain: no-CRT,
+KERNEL32/WSOCK32-only</td>
+</tr>
+<tr>
+<td valign="top"><tt>build_owc_crt.bat</tt></td>
+<td valign="top">OpenWatcom <tt>wcc386</tt>/<tt>wlink</tt></td>
+<td valign="top">static CLIB alternative: no runtime DLL, single EXE,
+KERNEL32 imports may exceed the strict 9x whitelist</td>
 </tr>
 </table>
+<p>
+The old names <tt>build_target.bat</tt> and <tt>build_owc.bat</tt> remain as
+emitted aliases: the first calls the <tt>_nocrt</tt> script in a 9x dump, and
+the matching OpenWatcom alias does the same. Programs the compiler emits default
+to the no-CRT profile. If you are building the compiler itself on the era
+machine rather than one program, start from
+<tt>release/seed/zig1_seed_w9.zip</tt>: unzip it, <tt>cd win</tt>, and run one of
+the four scripts to produce <tt>..\zig1.exe</tt> with <tt>lib\</tt> beside it.
+</p>
 <p>
 The mingw branch is the one this host can actually run, and the flags matter
 because they are the contract between the emitted C and the compiler that
@@ -144,9 +165,9 @@ builds it. The branch reads:
 <pre>
   mingw)
     CC=i686-w64-mingw32-gcc
-    CFLAGS="-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I ."
-    LDFLAGS="-m32"
-    LIBS="-lwsock32"
+    CFLAGS="-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -DZIG_NO_CRT -I ."
+    LDFLAGS="-m32 -nostdlib -Wl,-e,_mainCRTStartup"
+    LIBS="-lgcc -lkernel32 -lwinmm -lwsock32"
     [ -n "$OUT" ] || OUT=prog.exe
     ;;
 </pre>
@@ -167,26 +188,29 @@ references Winsock even though the program never opens a socket. A program whose
 emitted set omits <tt>std_net</tt> needs no socket library.
 </p>
 <p>
-The MSVC and OpenWatcom scripts encode the same idea with the era's own flags.
-The MSVC script compiles with <tt>cl /c /Za /W3 /WX /DZIG_WIN32 /I .</tt> and
-links with <tt>link /subsystem:console kernel32.lib &hellip; wsock32.lib</tt>.
-The OpenWatcom script uses <tt>wcc386 /za /we /dZIG_WIN32 /i=.</tt> and
-<tt>wlink system console op q opt stack=65536 &hellip; library wsock32</tt>.
-<tt>/Za</tt> and <tt>/za</tt> are the two compilers' "strict ANSI" switches, the
-counterparts of <tt>-std=c89</tt>; <tt>/WX</tt> and <tt>/we</tt> are their
-warnings-as-errors switches, and both scripts say so in a comment so a warning
-can be downgraded without giving up the build. The <tt>/DZIG_WIN32</tt> and
-<tt>/dZIG_WIN32</tt> are the target guard, which is the next section. The
-MSVC <tt>link</tt> line and the OpenWatcom <tt>wlink</tt> line both pull
-<tt>wsock32.lib</tt> for the same reason the mingw branch carries
-<tt>-lwsock32</tt>.
+The four native scripts encode the same idea with the era's own flags.
+<tt>build_target_nocrt.bat</tt> compiles with <tt>cl /c /Za /W3 /WX
+/DZIG_WIN32 /DZIG_NO_CRT /Zl /I .</tt>, links with <tt>/NODEFAULTLIB</tt> and
+<tt>kernel32.lib winmm.lib wsock32.lib</tt>, and is the 9x default.
+<tt>build_target_crt.bat</tt> is the same build with static <tt>/MT</tt>
+instead of <tt>/DZIG_NO_CRT /Zl</tt>. The OpenWatcom pair uses <tt>wcc386 /za
+/we /dZIG_WIN32 &hellip; /i=.</tt> and <tt>wlink system nt</tt>;
+<tt>build_owc_nocrt.bat</tt> adds <tt>/dZIG_NO_CRT /zl</tt> with
+<tt>option nodefaultlibs</tt>, while <tt>build_owc_crt.bat</tt> uses the
+default static CLIB. <tt>/Za</tt> and <tt>/za</tt> are the two compilers'
+"strict ANSI" switches, the counterparts of <tt>-std=c89</tt>; <tt>/WX</tt> and
+<tt>/we</tt> are their warnings-as-errors switches, and both scripts say so in
+a comment so a warning can be downgraded without giving up the build. The
+<tt>/DZIG_WIN32</tt> and <tt>/dZIG_WIN32</tt> are the target guard, which is the
+next section. All four links pull <tt>wsock32</tt> for the same reason the mingw
+branch carries <tt>-lwsock32</tt>.
 </p>
 <p>
 One more thing about the script set is worth saying plainly, because it is the
 boundary of everything that follows. The emitted scripts are the interface to
 three toolchains. On this development host, exactly one of those toolchains is
 installed. <tt>i686-w64-mingw32-gcc</tt> is present and is used below;
-<tt>cl</tt> is not runnable here, and neither is <tt>wcc386</tt>. The two
+<tt>cl</tt> is not runnable here, and neither is <tt>wcc386</tt>. The four
 Windows-only scripts are therefore <b>emitted and documented, not executed</b>
 in this chapter's evidence. The chapter shows their exact text and their flags so
 you can run them on the era machine; it does not pretend it ran them.
@@ -457,39 +481,51 @@ compiler built from the committed seed.</td>
 
 <h2>OpenWatcom, <tt>cl</tt>, and the era toolchains</h2>
 <p>
-The reason there are three build scripts instead of one is that the era had more
+The reason there are four build scripts instead of one is that the era had more
 than one C compiler, and the one you used depended on what you already owned.
 MSVC <tt>cl</tt> came with Visual C++; Borland had its own; and OpenWatcom's
 <tt>wcc386</tt>/<tt>wlink</tt> pair was the tool many people reached for because
-it was cheap, fast, and produced tight 32-bit code. Z98 emits a script for each
-so the program can be built on whichever toolchain is on the machine. The
-OpenWatcom script is the one the volume's later chapters lean on, so read it in
-full:
+it was cheap, fast, and produced tight 32-bit code. Z98 emits a no-CRT and a
+static-CRT script for each of the two toolchains it supports natively:
+<tt>build_target_nocrt.bat</tt>, <tt>build_target_crt.bat</tt>,
+<tt>build_owc_nocrt.bat</tt>, and <tt>build_owc_crt.bat</tt>. The OpenWatcom
+no-CRT script is the one the volume's later chapters lean on; its shape is:
 </p>
 <pre>
 @echo off
-REM build_owc.bat - generated by zig1 (OpenWatcom wcc386/wlink)
-setlocal
-if "%~1"=="" (set OUT=prog.exe) else (set OUT=%~1)
+REM build_owc_nocrt.bat - generated by zig1 (OpenWatcom, Win9x no-CRT DEFAULT)
+set OUT=prog.exe
+if not "%1"=="" goto z98_have_out
+goto z98_out_ready
+:z98_have_out
+set OUT=%1
+:z98_out_ready
 echo Compiling...
-wcc386 /za /we /dZIG_WIN32 /i=. hello_9C12B390.c
-wcc386 /za /we /dZIG_WIN32 /i=. std_io_59DB29D9.c
-wcc386 /za /we /dZIG_WIN32 /i=. std_net_A15200CC.c
-wcc386 /za /we /dZIG_WIN32 /i=. zig_runtime.c
-wcc386 /za /we /dZIG_WIN32 /i=. zig_pal.c
-wcc386 /za /we /dZIG_WIN32 /i=. c_exit.c
+wcc386 /za /we /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. hello_9C12B390.c
+...
 echo Linking...
-wlink system console op q opt stack=65536 file hello_9C12B390.obj,std_io_59DB29D9.obj,std_net_A15200CC.obj,zig_runtime.obj,zig_pal.obj,c_exit.obj library wsock32 name %OUT%
+wlink @z98_link.lnk
 echo Built: %OUT%
 </pre>
 <p>
 <tt>/za</tt> is strict ANSI, <tt>/we</tt> turns warnings into errors,
-<tt>/dZIG_WIN32</tt> is the target guard, and <tt>/i=.</tt> makes the current
-directory the include root. The link asks for a console subsystem, a 64 KB
-stack, and <tt>wsock32</tt>. For an OpenWatcom user this is the build, start to
-finish, and it is the script the socket-using samples in
+<tt>/dZIG_WIN32</tt> is the target guard, <tt>/dZIG_NO_CRT /zl</tt> selects the
+no-CRT profile, and <tt>/i=.</tt> makes the current directory the include root.
+The link file asks for the NT console subsystem, no default libraries, the
+<tt>_mainCRTStartup</tt> entry, a 2 MB stack, and <tt>wsock32</tt>. For an
+OpenWatcom user this is the build, start to finish, and it is the script the
+socket-using samples in
 <a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a> and
 <a href="vol3-12-winsock.html">chapter&nbsp;12</a> are built with on the real machine.
+</p>
+<p>
+To build the <i>compiler</i> itself on that machine, do not start from an
+emitted program tree. Unzip <tt>release/seed/zig1_seed_w9.zip</tt>, change into
+its <tt>win</tt> folder, and run one of those four scripts naming
+<tt>..\zig1.exe</tt>; the zip's <tt>lib\</tt> folder is the standard library
+that belongs beside it. The zip carries the compiler's Windows-target C89 and
+these scripts as the compiler emitted them; it does not carry a prebuilt
+<tt>zig1.exe</tt>.
 </p>
 <p>
 And here is where the chapter has to be exact about its own evidence.
@@ -497,7 +533,8 @@ And here is where the chapter has to be exact about its own evidence.
 above is emitted by the compiler, quoted from the actual output directory, and
 verified as text; it is not executed. Nothing in this manual should be read as
 saying OpenWatcom was run. The same applies to MSVC's <tt>cl</tt>: the
-<tt>build_target.bat</tt> is emitted and quoted, and it is not executed here.
+<tt>build_target_nocrt.bat</tt> and <tt>build_target_crt.bat</tt> are emitted and
+quoted, and they are not executed here.
 Only the mingw cross-build and the wine run above were executed. This is the
 honest split the whole volume uses: the mechanism is verified on the host, the
 era toolchain is documented and deferred to the machine.
@@ -564,8 +601,8 @@ comes with its own rules.
 </p>
 <p>
 <b>Claiming OpenWatcom or MSVC was run because the script exists.</b> The
-compiler emits all three scripts on every <tt>-osw</tt> emit, whether or not the
-toolchain is installed. On a Linux host only the mingw branch is runnable.
+compiler emits all four native scripts on every <tt>-osw</tt> emit, whether or
+not the toolchain is installed. On a Linux host only the mingw branch is runnable.
 Quote the scripts as documentation; do not describe them as executed.
 </p>
 <p>

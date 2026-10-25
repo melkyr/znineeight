@@ -42,6 +42,38 @@ Single gzip tarball, committed. Contents (top-level dir `zig1-seed/`):
 
 `sf/src` `.zig` sources are NOT duplicated in the archive: the pinned `HEAD` sha recorded in `CHANGELOG.md` identifies the source; the source lives in git.
 
+### Windows 9x companion seed (amendment 2026-10-24, seed v121)
+
+Every seed rotation now produces **two** committed artifacts:
+
+1. `release/seed/zig1-seed.tgz` — the canonical Linux/gcc fixed-point seed
+   described above. Its md5 remains the rotation gate.
+2. `release/seed/zig1_seed_w9.zip` — a Win9x companion seed for a machine that
+   has no `bash` and no `gcc`.
+
+The companion is generated from the **same seed binary** with
+`zig1 -osw -o <dir> sf/src/main.zig`, so its C is the compiler's Windows-target
+self-emission, not the Linux `gen/` set. It carries the compiler's own current
+emitted scripts — `build_target.sh`, `build_target_nocrt.bat`,
+`build_target_crt.bat`, `build_owc_nocrt.bat`, `build_owc_crt.bat`, and the
+alias scripts — never hand-written replacements, and no prebuilt `zig1.exe`.
+The zip is therefore **not** a fixed-point artifact: its C is not gcc-rebuilt
+or md5-gated like the Linux seed. It unpacks to `zig1-seed-w9/{README.txt,
+lib/, win/}`; `win/` is the full `-osw` dump and `lib/` is the compiler's
+47-file standard library plus `manifest.md5`.
+
+CRT truth recorded in the zip README and manuals: `_crt` means a static CRT
+(`/MT` for MSVC 6, OpenWatcom static CLIB) — no `msvcrt.dll`, one EXE — and it
+may import KERNEL32 names beyond the strict 9x whitelist, so the result is
+validated on the era machine. `_nocrt` is the KERNEL32/WSOCK32-only portable
+profile. Programs emitted by the compiler default to no-CRT.
+
+Packing is deterministic: `archive_seed.sh` uses python3 `zipfile` (not the
+absent `zip` command) with sorted entries and a fixed `ZipInfo.date_time`, and
+records the zip path, md5, `win/` C count, lib count, four script names, and
+HEAD/date in the same `release/seed/CHANGELOG.md` entry as the Linux archive
+md5.
+
 ### Rebuild recipes (recorded verbatim in SEED_README.txt)
 
 - **Rebuild from the seed binary (primary, forward path):** `./zig1-seed/zig1 --dump-c89 --output-dir <fresh> sf/src/main.zig` from the repo root (current `sf/src`), then `cd <fresh>`, `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <repo>/sf/src/include -c *.c`, link `*.o` + `zig_runtime.c` + `zig_pal.c` + `c_exit.c` → next zig1. Verify two-hop fixed-point closure.

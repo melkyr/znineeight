@@ -1,31 +1,24 @@
 @echo off
-REM build_owc.bat - build the manual's Z98 example programs for Win9x with
-REM OpenWatcom. This is the Win9x companion to build_linux.sh.
+REM build_owc.bat - example-only Win9x companion for the manual's programs.
+REM This is NOT the seed builder. To build the compiler itself on Win9x,
+REM unzip release/seed/zig1_seed_w9.zip, change into its win\ folder, and run
+REM one of the scripts emitted there:
+REM     build_owc_crt.bat ..\zig1.exe
+REM     build_owc_nocrt.bat ..\zig1.exe
+REM     build_target_crt.bat ..\zig1.exe
+REM     build_target_nocrt.bat ..\zig1.exe
 REM
-REM Emit the Windows-target C89 for an example first:
+REM For an example program, emit the Windows target first:
 REM     zig1 -osw -o out hello.z98
-REM zig1 writes a self-contained tree into out\ and, because the target is
-REM Windows, its own build_target.bat (MSVC) and build_owc.bat (OpenWatcom).
-REM This companion follows those emitted conventions; run it from inside an
-REM emitted output directory to compile every .c and link one console exe:
-REM
-REM     cd out
-REM     build_owc.bat [OUT]
-REM
-REM wcc386 /za /we /dZIG_WIN32 /i=.  strict ANSI C, warnings as errors
-REM wlink system console op q opt stack=65536 ... library wsock32
-REM wsock32 matches the emitted build_owc.bat: the seed emits std_net_*.c for
-REM every @import("std") program, so the socket symbols must resolve.
-setlocal
-if "%~1"=="" (set OUT=prog.exe) else (set OUT=%~1)
-echo Compiling...
-wcc386 /za /we /dZIG_WIN32 /i=. *.c
-if errorlevel 1 goto fail
-echo Linking...
-wlink system console op q opt stack=65536 file {*.obj} library wsock32 name %OUT%
-if errorlevel 1 goto fail
-echo Built: %OUT%
-goto :eof
-:fail
-echo Build failed.
-exit /b 1
+REM The compiler writes its own command.com-safe scripts into out\. Prefer
+REM those: build_owc_nocrt.bat is the Win9x no-CRT default and
+REM build_owc_crt.bat is the static-CLIB alternate. This file only forwards
+REM to the emitted no-CRT OpenWatcom script so older manual text has a
+REM command.com-safe entry point; do not use it as a seed recipe.
+if exist build_owc_nocrt.bat goto emitted
+echo This is an example companion; run it from a -osw emitted output folder.
+echo Emit first: zig1 -osw -o out hello.z98
+goto done
+:emitted
+call build_owc_nocrt.bat %1
+:done

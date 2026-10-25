@@ -179,16 +179,32 @@ pipeline works.
 <h2>Path two: the compiler on Windows 95 or 98</h2>
 <p>
 On the target machine there is no <tt>bash</tt> and no <tt>gcc</tt>, so you do
-not run the seed script there. The seed archive also carries the compiler's own
-C89 source and the runtime it needs, and that source is the same for every
-target. On Windows 95 or 98 you build the compiler from it: unpack the archive,
-compile that C89 with OpenWatcom's <tt>wcc386</tt>, and link a console
-<tt>zig1.exe</tt> with <tt>wlink</tt>, following the conventions the companion
-<tt>src/build_owc.bat</tt> uses for programs. Keep the standard library in a
-<tt>lib</tt> folder beside <tt>zig1.exe</tt>; that is the compiler's default
-library location. As on Linux, nothing is installed system-wide and nothing is
-placed on <tt>PATH</tt>. Run the compiler from inside its folder, or give its
-full path.
+not run the seed script there. The disk also carries the Win9x companion seed,
+<tt>release/seed/zig1_seed_w9.zip</tt>. Unzip it; it unpacks to a
+<tt>zig1-seed-w9</tt> folder holding <tt>README.txt</tt>, the standard library
+in <tt>lib\</tt>, and the compiler's Windows-target C89 and emitted build
+scripts in <tt>win\</tt>. Change into <tt>win</tt> and run one of the four
+emitted scripts to build <tt>..\zig1.exe</tt>:
+</p>
+<pre>
+C:\Z98\zig1-seed-w9&gt; cd win
+C:\Z98\zig1-seed-w9\win&gt; build_owc_crt.bat ..\zig1.exe
+</pre>
+<p>
+The other three are <tt>build_owc_nocrt.bat</tt>,
+<tt>build_target_crt.bat</tt>, and <tt>build_target_nocrt.bat</tt>. The
+<tt>_crt</tt> scripts use a static CRT (<tt>/MT</tt> for MSVC 6, OpenWatcom's
+static CLIB): the result is a single EXE with no <tt>msvcrt.dll</tt>, but it may
+import KERNEL32 names beyond the strict 9x whitelist, so validate it on the era
+machine. The <tt>_nocrt</tt> scripts are the strict portable profile, importing
+only KERNEL32 (and WSOCK32 when the program uses sockets). Programs the compiler
+emits default to no-CRT.
+</p>
+<p>
+Keep the standard library in the <tt>lib</tt> folder beside <tt>zig1.exe</tt>;
+that is the compiler's default library location. As on Linux, nothing is
+installed system-wide and nothing is placed on <tt>PATH</tt>. Run the compiler
+from inside its folder, or give its full path.
 </p>
 <table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
 <tr>
@@ -202,12 +218,14 @@ full path.
 The confirmation is the same test as on Linux: run <tt>zig1.exe</tt> with no
 arguments and it prints its usage. As on Linux, the compiler finds the standard
 library in the <tt>lib</tt> folder beside it, so a program that imports
-<tt>std</tt> builds with no extra option. The companion
-<tt>src/build_owc.bat</tt>, run from inside the emitted tree, then compiles the
-Windows-target C89 and links a console program. The bundled example builds there
-the same way and prints the same line as on Linux. OpenWatcom is not installed on
-the development host, so this <tt>build_owc.bat</tt> path is emitted and
-documented, not run here; the pending screenshot is the evidence.
+<tt>std</tt> builds with no extra option. To build a program, emit the Windows
+tree and run the emitted script that matches the toolchain on the machine:
+<tt>zig1.exe -osw -o out hello.z98</tt>, then from inside <tt>out</tt> one of
+<tt>build_owc_crt.bat</tt>, <tt>build_owc_nocrt.bat</tt>,
+<tt>build_target_crt.bat</tt>, or <tt>build_target_nocrt.bat</tt>. The bundled
+example builds there the same way and prints the same line as on Linux. OpenWatcom
+and MSVC are not installed on the development host, so those four paths are
+emitted and documented, not run here; the pending screenshot is the evidence.
 </p>
 <table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
 <tr>

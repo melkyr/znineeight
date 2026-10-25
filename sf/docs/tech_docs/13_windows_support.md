@@ -179,3 +179,30 @@ the real prototypes.
 `FlushInstructionCache`. No `msvcrt`, no `DebugActiveProcessStop`. The emitted
 `z9dbg.exe` (mingw 9x no-CRT `-osw`) passes the gate and runs under Wine; real
 Win98 hardware verification remains operator-owned.
+
+## 10. Win9x companion seed zip [added: 2026-10-24 — seed v121]
+
+Every seed rotation now writes two committed artifacts: the canonical Linux
+fixed-point seed `release/seed/zig1-seed.tgz` and the Win9x companion
+`release/seed/zig1_seed_w9.zip`. The zip is produced by
+`scripts/seed/archive_seed.sh --win9x-zip` from the same seed binary, using
+`zig1 -osw -o <dir> sf/src/main.zig`; its `win/` tree is the compiler's
+Windows-target self-emission, not the Linux `gen/` C. It contains no prebuilt
+`zig1.exe`.
+
+The zip unpacks to `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` carries the
+module `.c`/`.h`, `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c`, `c_exit.c`, the
+headers, and the compiler's own emitted scripts: `build_target.sh` plus the four
+native scripts `build_target_nocrt.bat`, `build_target_crt.bat`,
+`build_owc_nocrt.bat`, `build_owc_crt.bat` (and the `build_target.bat` /
+`build_owc.bat` aliases). `lib/` is the 47-file standard library plus
+`manifest.md5`. Packing uses python3 `zipfile` with sorted entries and a fixed
+`ZipInfo.date_time` because `zip` is not installed; the zip is not a
+fixed-point artifact.
+
+CRT truth: `_crt` means a static CRT (`/MT` for MSVC 6, OpenWatcom static
+CLIB) with no `msvcrt.dll` and a single EXE; it may import KERNEL32 names beyond
+the strict 9x whitelist, so validate on the era machine. `_nocrt` is the
+KERNEL32/WSOCK32-only strict profile. Programs emitted by the compiler default
+to no-CRT. The zip README, `zig1-seed/SEED_README.txt`, and the manuals record
+the same split.
