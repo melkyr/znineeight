@@ -153,12 +153,15 @@ The old names <tt>build_target.bat</tt> and <tt>build_owc.bat</tt> remain as
 emitted aliases: the first calls the <tt>_nocrt</tt> script in a 9x dump, and
 the matching OpenWatcom alias does the same. Programs the compiler emits default
 to the no-CRT profile. If you are building the compiler itself on the era
-machine rather than one program, start from
+machine rather than one program, start from the v121
 <tt>release/seed/zig1_seed_w9.zip</tt>: unzip it, <tt>cd win</tt>, and run one of
 its two static-CRT scripts (<tt>build_target_crt.bat</tt> or
 <tt>build_owc_crt.bat</tt>) to produce <tt>..\zig1.exe</tt> with <tt>lib\</tt>
-beside it. The compiler's own no-CRT build is deferred until the asm_x86
-backend; emitted programs still default to no-CRT.
+beside it. The compiler source in the zip is <tt>-fsafe</tt>-clean. The
+Windows-hosted compiler still fails <tt>std_async.zig:259</tt> (field
+resolution), a Win9x layout/ABI failure that remains under investigation, so
+this compiler build is not app-ready. The compiler's own no-CRT build is
+deferred until the asm_x86 backend; emitted programs still default to no-CRT.
 </p>
 <p>
 The mingw branch is the one this host can actually run, and the flags matter

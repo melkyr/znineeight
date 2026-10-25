@@ -180,7 +180,7 @@ the real prototypes.
 `z9dbg.exe` (mingw 9x no-CRT `-osw`) passes the gate and runs under Wine; real
 Win98 hardware verification remains operator-owned.
 
-## 10. Win9x companion seed zip [added: 2026-10-24 — seed v121]
+## 10. Win9x companion seed zip [added: 2026-10-24 — seed v121; updated: 2026-10-25]
 
 Every seed rotation now writes two committed artifacts: the canonical Linux
 fixed-point seed `release/seed/zig1-seed.tgz` and the Win9x companion
@@ -201,6 +201,14 @@ only**: `build_target_crt.bat` (MSVC `/MT`) and `build_owc_crt.bat`
 47-file standard library plus `manifest.md5`. Packing uses python3 `zipfile`
 with sorted entries and a fixed `ZipInfo.date_time` because `zip` is not
 installed; the zip is not a fixed-point artifact.
+
+v121 zip: md5 `1f65ea9ccc57bf31d21af190497274ea`; it is a CRT-only compiler
+build. The compiler source is **`-fsafe`-clean** (12 intentional wraps + 3 real
+safe-mode defects fixed in `5dbd2444`). The Windows-hosted compiler still rejects
+std-using programs at `std_async.zig:259` (field resolution) — a Win9x
+layout/ABI failure that remains under investigation, so this compiler build is
+**not app-ready**. The no-CRT compiler build stays deferred to `asm_x86`;
+programs the compiler emits still default to no-CRT.
 
 CRT truth: `_crt` means a static CRT (`/MT` for MSVC 6, OpenWatcom static
 CLIB) with no `msvcrt.dll` and a single EXE; it may import KERNEL32 names beyond

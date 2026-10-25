@@ -17,7 +17,7 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-24 — seed v121]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-25 — seed v121]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
@@ -25,16 +25,18 @@ in the next section; that is the only supported path.
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
 current md5s in `release/seed/SEED_README.txt` and the v121 CHANGELOG entry.
 
-**Current seed: v121** (rotated 2026-10-24 at the seed Win9x-zip
-infrastructure closeout; the Linux compiler fixed point is unchanged from v120,
-`11de43a053bdde3be3ddc61caac31df6`). New archive md5 and new Win9x zip md5 are
-recorded in the v121 entry of `release/seed/CHANGELOG.md`; archived binary md5
-(= v120/v121 rotation fixed point) `11de43a053bdde3be3ddc61caac31df6`; `gen/`
-48 `.c` + 49 `.h` (10,844,907 bytes); `lib/` 47 std `.zig` plus
-`lib/manifest.md5` (per-file std attribution pin, manifest md5
-`7ef5c6b66a2975b51847515fe91fff41`). The rebuilt archive is two-hop
-(`build_from_seed.sh`: hop1 == hop2 == `F_new`); the compiler↔std separation
-means the v121 `lib/` payload does not move the fixed point.
+**Current seed: v121** (rotated 2026-10-25 at HEAD `076403ea`, combining the
+Win9x seed packaging with the `-fsafe`-clean compiler source fixes). Archived
+binary md5 (= fixed point) `dcfc9e70e475a8a08c0487dafd2e6b45`; archive md5
+`0d000eb5cf2c83754cbe5aac38cb1740`; Win9x zip md5
+`1f65ea9ccc57bf31d21af190497274ea`; `gen/` 48 `.c` + 49 `.h` (10,845,563
+bytes); `lib/` 47 std `.zig` plus `lib/manifest.md5` (per-file std attribution
+pin, manifest md5 `7ef5c6b66a2975b51847515fe91fff41`). The rebuilt archive is
+two-hop (`build_from_seed.sh`: hop1 == hop2 == `F_new`); the compiler↔std
+separation means the `lib/` payload does not move the fixed point. The compiler
+source is now **`-fsafe`-clean** (12 intentional wraps + 3 real safe-mode
+defects fixed). Markers (`--markers --dump-c89` on `mud_server`): **3252 lines
+/ 37293 B**.
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
 `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
@@ -49,7 +51,10 @@ build_owc_crt.bat ..\zig1.exe
 
 or `build_target_crt.bat ..\zig1.exe`; `..\lib\` is the standard library. Both
 use a static CRT (`/MT` / OpenWatcom static CLIB), no `msvcrt.dll`, single EXE,
-and may import KERNEL32 names beyond the strict 9x whitelist. The compiler's own
+and may import KERNEL32 names beyond the strict 9x whitelist. The compiler
+source in the zip is `-fsafe`-clean, but it still fails `std_async.zig:259`
+(Win9x field-resolution/layout ABI) — that failure remains **under
+investigation**, so this compiler build is **not app-ready**. The compiler's own
 no-CRT build is deferred until the asm_x86 backend; emitted programs still
 default to no-CRT. The zip is not a fixed-point artifact; `archive_seed.sh`
 packs it deterministically with python3 `zipfile`.
@@ -119,7 +124,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v120 carries the full 47 std `.zig`** = `std.zig` plus
+tracked seed archive **v121 carries the full 47 std `.zig`** = `std.zig` plus
 46 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -248,7 +253,7 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is **336/0** on seed v120 (294/0 at M7 on v103; the two
+  pin); `verify_stdlib` is **336/0** on seed v121 (294/0 at M7 on v103; the two
   M2 `stdlib_noise_*` fixtures, the M2 crypto/cipher/ecc fixtures, the four
   M3 `std_asn1`/`std_x509` fixtures, the three M4 `std_tls`/HTTP-transport
   fixtures, the three M5 TLS 1.3 fixtures, the three M6 WireGuard fixtures,
@@ -333,7 +338,7 @@ cd <dump> && timeout 120 sh build_target.sh mingw
 ### Compiler RSS/arena — historical Phase 1 M1 baseline (v111)
 
 **These figures are historical.** They were measured at seed v111 / fixed point
-`21c957…`; the current seed is v120 / `11de43a…` and has not been re-measured
+`21c957…`; the current seed is v121 / `dcfc9e70…` and has not been re-measured
 here. Do not present the v111 numbers as current.
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
@@ -433,24 +438,29 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (v119 M1 baseline, 2026-10-24; not re-run at v120).**
-Measured with the seed-built M1 compiler (fixed point
-`f963c2c49ab4ca66ac340917d5634494`; seed v119 archive md5
-`e7ac8cd2ed7e790a4b9225a82acaf4a5`; values equal the pre-M1 archived-seed
-baseline 8/8). The v120 rotation did **not** re-run the pin/golden/corpus
-battery (operator gating amendment: only compiler-source tasks run it):
-`<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum` from the repo root. The
-absolute pin values are **compiler-build dependent** (each compiler build pairs a `lib/` std
-set; the binary's own path is irrelevant — verified), so only same-build comparisons are
-meaningful. Runtime goldens below are byte-identical PRE↔POST, so this is an emitted-C
-re-baseline only.
+**8-pin table (v121, 2026-10-25).**
+Measured with the seed-built v121 compiler (fixed point
+`dcfc9e70e475a8a08c0487dafd2e6b45`; archive md5
+`0d000eb5cf2c83754cbe5aac38cb1740`) from the repo root with relative entry
+paths: `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`. The
+`-ffast` battery re-measured all **8/8 unchanged** vs the v120 seed baseline
+(same-build comparison); runtime goldens are byte-identical. The absolute pin
+values are **compiler-build dependent** (each compiler build pairs a `lib/` std
+set; the binary's own path is irrelevant — verified), so only same-build
+comparisons are meaningful.
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `76c05e6e35ec0357dd61e330bd825c99` | `3611017bb1ae0806288107347395a5e8` |
-| `examples/z98/game_of_life/main.zig` | `f83316ad82c40077553cb25fbec7620b` | `d1bc475b1e088475e3b527e0c06d13f1` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `e51e62ddb5d1c099c3d67f972a7181a8` | `21339525dc1d2aab1b539b19b8375872` |
-| `examples/z98/json_parser/main.zig` | `b3f05fbea0b8dc5ca34a8ca0b73dbb09` | `cf25f6ecf323bca4ad7789e161be0bf6` |
+| `examples/z98/mud_server/main.zig` | `bab44607cce6323e98bce50989eae4b2` | `0436db2738291f82a39e376ec7d88596` |
+| `examples/z98/game_of_life/main.zig` | `738c7ca45b305f91578c76a396e6950b` | `222fab7c86c27e4421fbe045245959e8` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `7facfa7c06c5c9870a07bf5c6fd6de68` | `de8f1afdee58ec1be1af5011f31a3c4d` |
+| `examples/z98/json_parser/main.zig` | `452e8875a5ddcf298d1b4eeb2a113137` | `f4f19376c197083db782d1b023bba368` |
+
+Historical 8-pin table (v119 M1 baseline, 2026-10-24; superseded above):
+measured with the seed-built M1 compiler (`f963c2c49ab4ca66ac340917d5634494`;
+seed v119 archive md5 `e7ac8cd2ed7e790a4b9225a82acaf4a5`); mud
+`76c05e6e…`/`3611017b…`, gol `f83316ad…`/`d1bc475b…`, lisp
+`e51e62dd…`/`21339525…`, json `b3f05fbe…`/`cf25f6ec…`.
 
 Historical (pre-v119): the 8 pins were **unchanged vs v99/v100**: fix rounds 1–2 are confined to
 the OpenWatcom mapping and the Windows-only no-CRT `memset` shim (both dead

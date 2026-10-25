@@ -75,6 +75,16 @@ validated on the era machine. `_nocrt` is the KERNEL32/WSOCK32-only portable
 profile for emitted programs; it is not yet available for building the
 compiler itself.
 
+The v121 zip (md5 `1f65ea9ccc57bf31d21af190497274ea`) ships the **CRT-only**
+compiler build from `-fsafe`-clean source (12 intentional wraps + 3 real
+safe-mode defects fixed in `5dbd2444`). A fully `-fsafe`-clean source still
+fails `std_async.zig:259` (field resolution) in the Windows-hosted compiler;
+that Win9x layout/ABI failure remains under investigation and the build is
+**not app-ready**. The no-CRT compiler build remains deferred to `asm_x86`;
+programs the compiler emits still default to no-CRT. The canonical Linux seed
+at this rotation is archive md5 `0d000eb5cf2c83754cbe5aac38cb1740`, fixed point
+`dcfc9e70e475a8a08c0487dafd2e6b45` (HEAD `076403ea`).
+
 Packing is deterministic: `archive_seed.sh` uses python3 `zipfile` (not the
 absent `zip` command) with sorted entries and a fixed `ZipInfo.date_time`, and
 records the zip path, md5, `win/` C count, lib count, the two static-CRT

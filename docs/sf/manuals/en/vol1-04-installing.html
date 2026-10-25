@@ -180,7 +180,7 @@ pipeline works.
 <p>
 On the target machine there is no <tt>bash</tt> and no <tt>gcc</tt>, so you do
 not run the seed script there. The disk also carries the Win9x companion seed,
-<tt>release/seed/zig1_seed_w9.zip</tt>. Unzip it; it unpacks to a
+<tt>release/seed/zig1_seed_w9.zip</tt> (v121). Unzip it; it unpacks to a
 <tt>zig1-seed-w9</tt> folder holding <tt>README.txt</tt>, the standard library
 in <tt>lib\</tt>, and the compiler's Windows-target C89 and static-CRT build
 scripts in <tt>win\</tt>. Change into <tt>win</tt> and run one of the two
@@ -194,9 +194,12 @@ C:\Z98\zig1-seed-w9\win&gt; build_owc_crt.bat ..\zig1.exe
 The other is <tt>build_target_crt.bat</tt>. Both use a static CRT (<tt>/MT</tt>
 for MSVC 6, OpenWatcom's static CLIB): the result is a single EXE with no
 <tt>msvcrt.dll</tt>, but it may import KERNEL32 names beyond the strict 9x
-whitelist, so validate it on the era machine. The compiler's own no-CRT build is
-deferred until the asm_x86 backend; programs the compiler emits still default to
-no-CRT.
+whitelist, so validate it on the era machine. The compiler source shipped in the
+zip is <tt>-fsafe</tt>-clean. The Windows-hosted compiler still fails
+<tt>std_async.zig:259</tt> (field resolution), a Win9x layout/ABI failure that
+remains under investigation, so this compiler build is not app-ready. The
+compiler's own no-CRT build is deferred until the asm_x86 backend; programs the
+compiler emits still default to no-CRT.
 </p>
 <p>
 Keep the standard library in the <tt>lib</tt> folder beside <tt>zig1.exe</tt>;

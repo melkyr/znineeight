@@ -239,8 +239,18 @@ library. Run zig1.exe with no arguments to see usage.
 
 CRT note
 --------
-The compiler build here is CRT-only. The compiler's own no-CRT build is
-deferred until the asm_x86 backend; emitted programs still default to no-CRT.
+The compiler build here is CRT-only: build_target_crt.bat / build_owc_crt.bat
+use a static CRT (/MT or OpenWatcom static CLIB), producing a single EXE with
+no msvcrt.dll. The compiler's own no-CRT build is deferred until the asm_x86
+backend; emitted programs still default to no-CRT.
+
+Compiler status
+---------------
+The compiler source in win/ is -fsafe-clean (all intentional wraps and the
+three real safe-mode defects fixed). The Windows-hosted compiler still rejects
+std-using programs at std_async.zig:259 (field resolution); that Win9x
+layout/ABI failure remains under investigation, so this compiler build is not
+app-ready.
 
 Build a program
 ---------------
@@ -323,7 +333,7 @@ zig1-seed/lib/manifest.md5  per-file md5 of every lib/*.zig (47 std files,
                       the std attribution pin)
 zig1-seed/SEED_README.txt  this file
 
-Companion Win9x seed: release/seed/zig1_seed_w9.zip (Windows-target compiler C + emitted build scripts; CRT compiler build, no-CRT zig1 deferred to asm_x86)
+Companion Win9x seed: release/seed/zig1_seed_w9.zip (Windows-target compiler C + emitted build scripts; CRT-only compiler build via build_target_crt.bat/build_owc_crt.bat with static CRT and no msvcrt.dll; compiler source -fsafe-clean; no-CRT zig1 deferred to asm_x86; the Win9x std_async field-resolution failure remains under investigation, so it is not app-ready)
 
 (net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT
 included: 0 references in any emitted gen/*.c|*.h for a linux -osl gcc-only
@@ -451,7 +461,9 @@ if [ -n "$WIN9X_ZIP" ]; then
 | zip md5 | \`$WIN9X_ZIP_MD5\` |
 | win/ C | $WIN9X_WIN_C_COUNT \`.c\` + $WIN9X_WIN_H_COUNT \`.h\` (full \`zig1 -osw\` compiler dump; no-CRT scripts, aliases, and \`build_target.sh\` removed) |
 | compiler build scripts | \`build_target_crt.bat\`, \`build_owc_crt.bat\` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | \`-fsafe\`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
 | no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted \`std_async.zig:259\` field-resolution failure remains under investigation; not app-ready |
 | lib | $LIB_COUNT std \`.zig\` + \`manifest.md5\` |
 | HEAD/date | \`$HEAD\` / $DATE |
 EOF
