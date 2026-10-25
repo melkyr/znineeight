@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # usage:
-#   scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> <out_tgz> [--update-changelog]
+#   scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> <out_tgz> \
+#       [--update-changelog] [--win9x-zip <out.zip>]
 #
 # Assemble a fresh zig1-seed/ tree (spec layout: docs/superpowers/specs/
 # 2026-09-07-seed-bootstrap-migration-design.md) and pack <out_tgz>. Used at
 # every future plan closeout to rotate the committed seed
 # (release/seed/zig1-seed.tgz). Idempotent — deterministic given the same
 # inputs.
+#
+# --win9x-zip additionally packs the Win9x companion seed: a full
+# `zig1 -osw -o <dir> sf/src/main.zig` Windows-target dump (module C plus the
+# compiler's current emitted MSVC/OpenWatcom CRT and no-CRT build scripts),
+# lib/, and README.txt under top-level dir zig1-seed-w9/. No prebuilt .exe and
+# no hand-written scripts. `zip` is not required: python3's zipfile packs the
+# archive deterministically (sorted entries, fixed date_time, deflate).
 #
 # Tree assembled from the given inputs + the repo:
 #   zig1        copy of <zig1_binary>
@@ -46,23 +54,46 @@ set -euo pipefail
 # self-emission fixed-point md5.
 #
 # The CHANGELOG.md entry (date, HEAD sha, binary md5, C count, fixed-point md5,
-# archive md5) is always printed to stdout. With --update-changelog it is also
-# prepended to the rotation changelog (default release/seed/CHANGELOG.md;
-# override with env SEED_CHANGELOG for testing) — newest-first, after the
-# file's preamble header.
+# archive md5; plus the zip path, zip md5, win/ C count, lib count and the four
+# emitted script names when --win9x-zip is used) is always printed to stdout.
+# With --update-changelog it is also prepended to the rotation changelog
+# (default release/seed/CHANGELOG.md; override with env SEED_CHANGELOG for
+# testing) — newest-first, after the file's preamble header.
 
 die() { echo "error: $*" >&2; exit 1; }
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 UPDATE_CHANGELOG=0
-if [ "${4:-}" = "--update-changelog" ]; then UPDATE_CHANGELOG=1; fi
-[ "$#" -ge 3 ] || die "usage: archive_seed.sh <zig1_binary> <gen_dir> <out_tgz> [--update-changelog]"
-BIN="$1"
-GENDIR="$2"
-OUTTGZ="$3"
+WIN9X_ZIP=""
+POSITIONAL=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --update-changelog)
+            UPDATE_CHANGELOG=1
+            shift
+            ;;
+        --win9x-zip)
+            [ "$#" -ge 2 ] || die "--win9x-zip requires an output path"
+            WIN9X_ZIP="$2"
+            shift 2
+            ;;
+        -*)
+            die "unknown option '$1'"
+            ;;
+        *)
+            POSITIONAL[${#POSITIONAL[@]}]="$1"
+            shift
+            ;;
+    esac
+done
+[ "${#POSITIONAL[@]}" -ge 3 ] || die "usage: archive_seed.sh <zig1_binary> <gen_dir> <out_tgz> [--update-changelog] [--win9x-zip <out.zip>]"
+BIN="${POSITIONAL[0]}"
+GENDIR="${POSITIONAL[1]}"
+OUTTGZ="${POSITIONAL[2]}"
 
 [ -x "$BIN" ] || die "zig1 binary '$BIN' not found or not executable"
+BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
 [ -d "$GENDIR" ] || die "gen dir '$GENDIR' not found"
 C_COUNT=$(ls "$GENDIR"/*.c 2>/dev/null | wc -l)
 H_COUNT=$(ls "$GENDIR"/*.h 2>/dev/null | wc -l)
@@ -72,6 +103,13 @@ H_COUNT=$(ls "$GENDIR"/*.h 2>/dev/null | wc -l)
 DATE=$(date +%Y-%m-%d)
 HEAD=$(git -C "$ROOT" rev-parse --short HEAD)
 BIN_MD5=$(md5sum "$BIN" | cut -d' ' -f1)
+CHANGELOG="${SEED_CHANGELOG:-$ROOT/release/seed/CHANGELOG.md}"
+NEXT=0
+if [ -f "$CHANGELOG" ]; then
+    CUR=$(grep -oE 'seed v[0-9]+' "$CHANGELOG" | grep -oE '[0-9]+' | sort -n | tail -1) || true
+    if [ -n "$CUR" ]; then NEXT=$((CUR + 1)); fi
+fi
+SEED_VERSION="v$NEXT"
 
 STAGE=$(mktemp -d /tmp/zig1-seed-archive.XXXXXX)
 trap 'rm -rf "$STAGE"' EXIT
@@ -141,6 +179,99 @@ cp "$SEED"/runtime/zig_runtime.c "$SEED"/runtime/zig_pal.c "$SEED"/runtime/zig_n
 FP_MD5=$(md5sum "$STAGE/check/zig1_fromC" | cut -d' ' -f1)
 echo "[archive] gcc-only rebuild of archive C md5 (fixed point): $FP_MD5"
 
+# --- Win9x companion zip (Windows-target self-emission + emitted scripts) ---
+WIN9X_ZIP_MD5=""
+WIN9X_WIN_C_COUNT=0
+WIN9X_WIN_H_COUNT=0
+if [ -n "$WIN9X_ZIP" ]; then
+    command -v python3 >/dev/null 2>&1 || die "python3 is required to pack --win9x-zip"
+    WIN9X_WIN="$STAGE/win"
+    mkdir -p "$WIN9X_WIN"
+    ( cd "$ROOT" && timeout 300 "$BIN" -osw -o "$WIN9X_WIN" sf/src/main.zig ) \
+        || die "Windows-target self-emission dump failed"
+    rm -f "$WIN9X_WIN"/.zig1_*.tmp
+    WIN9X_WIN_C_COUNT=$(ls "$WIN9X_WIN"/*.c 2>/dev/null | wc -l)
+    WIN9X_WIN_H_COUNT=$(ls "$WIN9X_WIN"/*.h 2>/dev/null | wc -l)
+    [ "$WIN9X_WIN_C_COUNT" -gt 0 ] || die "no Windows-target *.c emitted into $WIN9X_WIN"
+    for s in build_target_nocrt.bat build_target_crt.bat build_owc_nocrt.bat build_owc_crt.bat; do
+        [ -f "$WIN9X_WIN/$s" ] || die "emitted Windows-target script missing: $s"
+    done
+    WIN9X_STAGE="$STAGE/zig1-seed-w9"
+    mkdir -p "$WIN9X_STAGE"
+    cp -r "$WIN9X_WIN" "$WIN9X_STAGE/win"
+    cp -r "$SEED/lib" "$WIN9X_STAGE/lib"
+    cat > "$WIN9X_STAGE/README.txt" <<EOF
+Z98 Win9x companion seed ($SEED_VERSION)
+========================================
+
+Pinned HEAD: $HEAD
+Capture date: $DATE
+
+This is the Windows-target companion to the Linux seed
+release/seed/zig1-seed.tgz. It contains no prebuilt compiler executable.
+win/ is a full zig1 -osw compiler dump: the compiler's Windows-target C89
+plus the build scripts the compiler itself emitted. Do not use the Linux
+gen/ C for Win9x.
+
+Build the compiler on the Win9x machine
+---------------------------------------
+cd win
+then run one of:
+
+  build_owc_crt.bat ..\\zig1.exe
+  build_owc_nocrt.bat ..\\zig1.exe
+  build_target_crt.bat ..\\zig1.exe
+  build_target_nocrt.bat ..\\zig1.exe
+
+..\\zig1.exe sits beside ..\\lib\\. That lib/ is the compiler's standard
+library. Run zig1.exe with no arguments to see usage.
+
+CRT profiles
+------------
+_crt = static CRT (/MT for MSVC 6, OpenWatcom static CLIB): no msvcrt.dll,
+single EXE. It may import KERNEL32 names beyond the strict 9x whitelist;
+validate the result on the era machine.
+_nocrt = KERNEL32/WSOCK32-only; strict portable profile.
+The compiler's output programs default to no-CRT.
+
+Build a program
+---------------
+zig1.exe -osw -o out hello.z98
+then run out\\build_owc_crt.bat (or build_target_crt.bat), or the _nocrt
+variant, then out\\hello.exe.
+
+If a toolchain rejects the C, report the exact error.
+EOF
+    mkdir -p "$(dirname "$WIN9X_ZIP")"
+    rm -f "$WIN9X_ZIP"
+    python3 - "$WIN9X_STAGE" "$WIN9X_ZIP" <<'PY'
+import os
+import sys
+import zipfile
+
+stage, out = sys.argv[1], sys.argv[2]
+base = os.path.dirname(os.path.abspath(stage))
+entries = []
+for root, dirs, files in os.walk(stage):
+    dirs.sort()
+    for name in sorted(files):
+        path = os.path.join(root, name)
+        arcname = os.path.relpath(path, base).replace(os.sep, "/")
+        entries.append((arcname, path))
+entries.sort()
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+    for arcname, path in entries:
+        info = zipfile.ZipInfo(arcname, date_time=(2026, 10, 24, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.create_system = 0
+        info.external_attr = 0
+        with open(path, "rb") as fh:
+            zf.writestr(info, fh.read())
+PY
+    WIN9X_ZIP_MD5=$(md5sum "$WIN9X_ZIP" | cut -d' ' -f1)
+    echo "[archive] wrote $WIN9X_ZIP (Windows-target C $WIN9X_WIN_C_COUNT .c + $WIN9X_WIN_H_COUNT .h; zip md5 $WIN9X_ZIP_MD5)"
+fi
+
 # --- SEED_README.txt ---
 cat > "$SEED/SEED_README.txt" <<EOF
 SEED - zig1 bootstrap seed (zig0-independent rebuild path)
@@ -183,6 +314,8 @@ zig1-seed/lib/        the 47 std .zig (std.zig, std_io.zig, std_fmt.zig,
 zig1-seed/lib/manifest.md5  per-file md5 of every lib/*.zig (47 std files,
                       the std attribution pin)
 zig1-seed/SEED_README.txt  this file
+
+Companion Win9x seed: release/seed/zig1_seed_w9.zip (Windows-target compiler C + emitted build scripts)
 
 (net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT
 included: 0 references in any emitted gen/*.c|*.h for a linux -osl gcc-only
@@ -298,15 +431,26 @@ ARCHIVE_MD5=$(md5sum "$OUTTGZ" | cut -d' ' -f1)
 echo "[archive] wrote $OUTTGZ (archive md5 $ARCHIVE_MD5)"
 
 # --- CHANGELOG entry (printed always; prepended with --update-changelog) ---
-CHANGELOG="${SEED_CHANGELOG:-$ROOT/release/seed/CHANGELOG.md}"
-NEXT=0
-if [ -f "$CHANGELOG" ]; then
-    CUR=$(grep -oE 'seed v[0-9]+' "$CHANGELOG" | grep -oE '[0-9]+' | sort -n | tail -1) || true
-    if [ -n "$CUR" ]; then NEXT=$((CUR + 1)); fi
+WIN9X_ENTRY_SECTION=""
+if [ -n "$WIN9X_ZIP" ]; then
+    WIN9X_ENTRY_SECTION=$(cat <<EOF
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | \`$WIN9X_ZIP\` |
+| zip md5 | \`$WIN9X_ZIP_MD5\` |
+| win/ C | $WIN9X_WIN_C_COUNT \`.c\` + $WIN9X_WIN_H_COUNT \`.h\` (full \`zig1 -osw\` compiler dump, .zig1_*.tmp removed) |
+| emitted scripts | \`build_target_nocrt.bat\`, \`build_target_crt.bat\`, \`build_owc_nocrt.bat\`, \`build_owc_crt.bat\` |
+| lib | $LIB_COUNT std \`.zig\` + \`manifest.md5\` |
+| HEAD/date | \`$HEAD\` / $DATE |
+EOF
+)
 fi
 ENTRY="$STAGE/changelog_entry.txt"
 cat > "$ENTRY" <<EOF
-## $DATE — seed v$NEXT (HEAD $HEAD)
+## $DATE — seed $SEED_VERSION (HEAD $HEAD)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
 \`zig1-seed/\` with \`zig1\`, \`gen/\` ($C_COUNT \`.c\` + $H_COUNT \`.h\` incl.
@@ -322,7 +466,7 @@ emitted \`zig_special_types.h\`, $GEN_BYTES bytes), \`c_exit.c\` (top level),
 | fixed point | \`$FP_MD5\` |
 | lib manifest | \`lib/manifest.md5\` ($LIB_COUNT std files; md5 \`$MANIFEST_MD5\`) |
 | archive md5 | \`$ARCHIVE_MD5\` |
-
+${WIN9X_ENTRY_SECTION}
 Provenance note: the archived binary (md5 $BIN_MD5) was captured by
 scripts/seed/archive_seed.sh at HEAD $HEAD; gcc of the archive's self-emission
 C reproduces the self-emission fixed point \`$FP_MD5\` — both are the same
