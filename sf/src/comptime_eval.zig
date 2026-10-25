@@ -366,7 +366,7 @@ pub fn ciToU64(v: ComptimeInt) u64 {
     var m: u64 = @intCast(u64, 0);
     if (v.len > @intCast(u8, 0)) { m = @intCast(u64, v.mag[0]); }
     if (v.len > @intCast(u8, 1)) { m = m | (@intCast(u64, v.mag[1]) << @intCast(u64, 32)); }
-    if (v.neg) { m = @intCast(u64, 0) - m; }
+    if (v.neg) { m = @intCast(u64, 0) -% m; }
     return m;
 }
 
@@ -480,7 +480,7 @@ fn ciMagSubOne(a: ComptimeInt, out: *ComptimeInt) bool {
     var i: usize = 0;
     while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) {
         var av: u32 = a.mag[i];
-        var d: u32 = av - borrow;
+        var d: u32 = av -% borrow;
         if (av < borrow) { borrow = @intCast(u32, 1); } else { borrow = @intCast(u32, 0); }
         out.mag[i] = d;
     }
@@ -585,7 +585,7 @@ pub fn ciDivMod(a: ComptimeInt, b: ComptimeInt, q: *ComptimeInt, r: *ComptimeInt
         var carry: u32 = @intCast(u32, 0);
         k = 0;
         while (k < @intCast(usize, 9)) : (k += 1) {
-            var nv: u32 = (rem[k] << 1) | carry;
+            var nv: u32 = (rem[k] *% @intCast(u32, 2)) | carry;
             carry = rem[k] >> 31;
             rem[k] = nv;
         }

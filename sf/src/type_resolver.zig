@@ -400,6 +400,10 @@ fn layoutCompute(registry: *TypeRegistry, tid: u32) void {
         ty.alignment = @intCast(u16, max_align);
         if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u16, 1); }
         registry.types_items[idx] = ty;
+    } else if (ty.kind == TypeKind.error_set_type) {
+        ty.size = @intCast(u32, 4);
+        ty.alignment = @intCast(u16, 4);
+        registry.types_items[idx] = ty;
     }
 }
 

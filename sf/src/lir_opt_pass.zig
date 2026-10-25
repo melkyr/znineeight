@@ -187,7 +187,7 @@ const Ctx = struct {
 };
 
 fn lowMask(w: u32) u64 {
-    if (w >= @intCast(u32, 64)) return @intCast(u64, 0) - @intCast(u64, 1);
+    if (w >= @intCast(u32, 64)) return 0xFFFFFFFFFFFFFFFF;
     return (@intCast(u64, 1) << @intCast(u64, w)) - @intCast(u64, 1);
 }
 
@@ -1847,7 +1847,7 @@ fn tryFoldBinaryOp(c: *Ctx, inst: LirInst, out_value: *u64, out_is_bool: *u8) u8
         if (resDeclIntType(c, res, &rw, &rs) == @intCast(u8, 0)) return @intCast(u8, 0);
         if (rw != ow or rs != os) return @intCast(u8, 0);
         if (op == @intCast(u8, 0) or op == @intCast(u8, 3)) {
-            var v: u64 = (@intCast(u64, 0) - obits) & om;
+            var v: u64 = (@intCast(u64, 0) -% obits) & om;
             out_value.* = v;
             out_is_bool.* = @intCast(u8, 0);
             return @intCast(u8, 1);
@@ -1990,7 +1990,7 @@ fn tryFoldIntCast(c: *Ctx, inst: LirInst, out_value: *u64) u8 {
             var tm = lowMask(tw);
             var v: u64 = @intCast(u64, 0);
             if (is_neg != @intCast(u8, 0)) {
-                v = (@intCast(u64, 0) - mag) & tm;
+                v = (@intCast(u64, 0) -% mag) & tm;
             } else {
                 v = mag & tm;
             }

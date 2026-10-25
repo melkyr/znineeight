@@ -3503,7 +3503,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         while (ai < args_n) : (ai += 1) {
             var expected: u32 = @intCast(u32, 0);
             if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
-                var cpp_key = (@intCast(u32, decl_cap) << @intCast(u32, 16)) | @intCast(u32, ai);
+                var cpp_key = ((@intCast(u32, decl_cap) & @intCast(u32, 0xFFFF)) << @intCast(u32, 16)) | @intCast(u32, ai);
                 expected = type_mod.TYPE_UNDEFINED;
                 if (hash_mod.u32ToU32MapGet(self.call_param_map, cpp_key)) |cpp_v| { expected = cpp_v; } else { expected = self.registry.xt_items[@intCast(usize, pstart) + ai]; }
                 hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), expected);

@@ -594,8 +594,7 @@ fn parseU64(text: []const u8, base: u8) u64 {
 
         var base_u64 = @intCast(u64, @intCast(u32, base));
         if (digit >= base_u64) break;
-        var max_u64: u64 = @intCast(u64, 0);
-        max_u64 -= 1;
+        var max_u64: u64 = 0xFFFFFFFFFFFFFFFF;
         var max_before_mul = max_u64 / base_u64;
         if (result > max_before_mul) return max_u64;
         result = result * base_u64;
@@ -854,10 +853,10 @@ fn parseF64(text: []const u8) f64 {
         if (!isDigit(c)) { i -= 1; break; }
         if (h.num_digits < 800) {
             h.digits[@intCast(usize, h.num_digits)] = c - @intCast(u8, '0');
+            h.num_digits += 1;
         } else {
             if (c != '0') h.truncated = true;
         }
-        h.num_digits += 1;
         int_digits += 1;
     }
 
@@ -871,10 +870,10 @@ fn parseF64(text: []const u8) f64 {
             if (!isDigit(c)) break;
             if (h.num_digits < 800) {
                 h.digits[@intCast(usize, h.num_digits)] = c - @intCast(u8, '0');
+                h.num_digits += 1;
             } else {
                 if (c != '0') h.truncated = true;
             }
-            h.num_digits += 1;
         }
     }
 
@@ -944,7 +943,7 @@ fn parseF64(text: []const u8) f64 {
                     var hl: u64 = m_hi * p_lo;
                     var hh: u64 = m_hi * p_hi;
                     var mid: u64 = (ll >> 32) + (lh & 0xFFFFFFFF) + (hl & 0xFFFFFFFF);
-                    var lo: u64 = (mid << 32) | (ll & 0xFFFFFFFF);
+                    var lo: u64 = ((mid & 0xFFFFFFFF) << 32) | (ll & 0xFFFFFFFF);
                     var hi: u64 = hh + (lh >> 32) + (hl >> 32) + (mid >> 32);
                     return fastRound(hi, lo, false, e, h.negative);
                 } else {

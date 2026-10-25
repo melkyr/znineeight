@@ -1078,7 +1078,7 @@ pub fn typeRegistryGetOrCreateErrorSet(self: *TypeRegistry, tags_start: u32, tag
     var ki: u16 = 0;
     while (ki < tags_count) : (ki += 1) {
         var tag = self.xn_items[@intCast(usize, tags_start + @intCast(u32, ki))];
-        key = (key ^ @intCast(u64, tag)) * @intCast(u64, 1099511628211);
+        key = (key ^ @intCast(u64, tag)) *% @intCast(u64, 1099511628211);
     }
     if (hash_mod.u64ToU32MapGet(&self.es_cache, key)) |existing| return existing;
     esAppend(self, ErrorSetPayload{ .tags_start = tags_start, .tags_count = tags_count });

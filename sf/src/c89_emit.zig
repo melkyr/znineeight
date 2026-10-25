@@ -934,7 +934,7 @@ fn cnameDedupKey(cname: []const u8) u32 {
     var dedup_key: u32 = @intCast(u32, 0);
     var h_ci: usize = @intCast(usize, 0);
     while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
-        dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
+        dedup_key = dedup_key *% @intCast(u32, 31) +% @intCast(u32, cname[h_ci]);
     }
     return dedup_key;
 }
@@ -4421,7 +4421,7 @@ fn writeIntConstRvalue(emitter: *C89Emitter, value: u64, temp_type_id: u32, pref
                 var wbm2 = @intCast(u64, 1) << @intCast(u64, width_bits);
                 magnitude = wbm2 - masked;
             } else {
-                magnitude = @intCast(u64, 0) - masked;
+                magnitude = @intCast(u64, 0) -% masked;
             }
             neg_magnitude = @intCast(u8, 1);
             if (!writeMinSignedIntLiteral(emitter, temp_type_id, width_bits, magnitude)) {
@@ -4751,7 +4751,7 @@ fn satMaxULitBound(width_bits: u32, buf: []u8) []const u8 {
     if (width_bits < @intCast(u32, 64)) {
         um = (@intCast(u64, 1) << @intCast(u64, width_bits)) - @intCast(u64, 1);
     } else {
-        um = @intCast(u64, 0) - @intCast(u64, 1);
+        um = 0xFFFFFFFFFFFFFFFF;
     }
     return writeSatUnsDecimal(um, buf);
 }
@@ -4761,7 +4761,7 @@ fn writeWidthMaskString(writer: *BufferedWriter, width_bits: u32) void {
     if (width_bits < @intCast(u32, 64)) {
         mask = (@intCast(u64, 1) << @intCast(u64, width_bits)) - @intCast(u64, 1);
     } else {
-        mask = @intCast(u64, 0) - @intCast(u64, 1);
+        mask = 0xFFFFFFFFFFFFFFFF;
     }
     var ib: [24]u8 = undefined;
     var il = itoa_mod.itoa64(mask, ib[0..]);
