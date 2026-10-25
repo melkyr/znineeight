@@ -10,12 +10,16 @@ set -euo pipefail
 # (release/seed/zig1-seed.tgz). Idempotent — deterministic given the same
 # inputs.
 #
-# --win9x-zip additionally packs the Win9x companion seed: a full
+# --win9x-zip additionally packs the Win9x companion seed: a
 # `zig1 -osw -o <dir> sf/src/main.zig` Windows-target dump (module C plus the
-# compiler's current emitted MSVC/OpenWatcom CRT and no-CRT build scripts),
-# lib/, and README.txt under top-level dir zig1-seed-w9/. No prebuilt .exe and
-# no hand-written scripts. `zip` is not required: python3's zipfile packs the
-# archive deterministically (sorted entries, fixed date_time, deflate).
+# runtime) with only the compiler's two static-CRT build scripts,
+# build_target_crt.bat (MSVC /MT) and build_owc_crt.bat (OpenWatcom static
+# CLIB), lib/, and README.txt under top-level dir zig1-seed-w9/. No prebuilt
+# .exe and no hand-written scripts. The no-CRT compiler scripts are not
+# shipped: a no-CRT zig1 build is deferred to the asm_x86 backend (emitted
+# programs still default to no-CRT). `zip` is not required: python3's zipfile
+# packs the archive deterministically (sorted entries, fixed date_time,
+# deflate).
 #
 # Tree assembled from the given inputs + the repo:
 #   zig1        copy of <zig1_binary>
@@ -54,8 +58,9 @@ set -euo pipefail
 # self-emission fixed-point md5.
 #
 # The CHANGELOG.md entry (date, HEAD sha, binary md5, C count, fixed-point md5,
-# archive md5; plus the zip path, zip md5, win/ C count, lib count and the four
-# emitted script names when --win9x-zip is used) is always printed to stdout.
+# archive md5; plus the zip path, zip md5, win/ C count, lib count and the two
+# static-CRT compiler script names when --win9x-zip is used) is always printed
+# to stdout.
 # With --update-changelog it is also prepended to the rotation changelog
 # (default release/seed/CHANGELOG.md; override with env SEED_CHANGELOG for
 # testing) — newest-first, after the file's preamble header.
@@ -190,12 +195,15 @@ if [ -n "$WIN9X_ZIP" ]; then
     ( cd "$ROOT" && timeout 300 "$BIN" -osw -o "$WIN9X_WIN" sf/src/main.zig ) \
         || die "Windows-target self-emission dump failed"
     rm -f "$WIN9X_WIN"/.zig1_*.tmp
+    for s in build_target_crt.bat build_owc_crt.bat; do
+        [ -f "$WIN9X_WIN/$s" ] || die "emitted Windows-target static-CRT script missing: $s"
+    done
+    for s in build_target_nocrt.bat build_owc_nocrt.bat build_target.bat build_owc.bat build_target.sh; do
+        rm -f "$WIN9X_WIN/$s"
+    done
     WIN9X_WIN_C_COUNT=$(ls "$WIN9X_WIN"/*.c 2>/dev/null | wc -l)
     WIN9X_WIN_H_COUNT=$(ls "$WIN9X_WIN"/*.h 2>/dev/null | wc -l)
     [ "$WIN9X_WIN_C_COUNT" -gt 0 ] || die "no Windows-target *.c emitted into $WIN9X_WIN"
-    for s in build_target_nocrt.bat build_target_crt.bat build_owc_nocrt.bat build_owc_crt.bat; do
-        [ -f "$WIN9X_WIN/$s" ] || die "emitted Windows-target script missing: $s"
-    done
     WIN9X_STAGE="$STAGE/zig1-seed-w9"
     mkdir -p "$WIN9X_STAGE"
     cp -r "$WIN9X_WIN" "$WIN9X_STAGE/win"
@@ -209,9 +217,10 @@ Capture date: $DATE
 
 This is the Windows-target companion to the Linux seed
 release/seed/zig1-seed.tgz. It contains no prebuilt compiler executable.
-win/ is a full zig1 -osw compiler dump: the compiler's Windows-target C89
-plus the build scripts the compiler itself emitted. Do not use the Linux
-gen/ C for Win9x.
+win/ is a zig1 -osw compiler dump: the compiler's Windows-target C89,
+runtime support, and the two static-CRT build scripts the compiler emitted.
+It ships no no-CRT compiler scripts: a no-CRT zig1 build is deferred to the
+asm_x86 backend. Do not use the Linux gen/ C for Win9x.
 
 Build the compiler on the Win9x machine
 ---------------------------------------
@@ -219,26 +228,25 @@ cd win
 then run one of:
 
   build_owc_crt.bat ..\\zig1.exe
-  build_owc_nocrt.bat ..\\zig1.exe
   build_target_crt.bat ..\\zig1.exe
-  build_target_nocrt.bat ..\\zig1.exe
+
+Both use a static CRT (/MT for MSVC 6, OpenWatcom static CLIB): a single EXE
+with no msvcrt.dll. They may import KERNEL32 names beyond the strict 9x
+whitelist; validate the result on the era machine.
 
 ..\\zig1.exe sits beside ..\\lib\\. That lib/ is the compiler's standard
 library. Run zig1.exe with no arguments to see usage.
 
-CRT profiles
-------------
-_crt = static CRT (/MT for MSVC 6, OpenWatcom static CLIB): no msvcrt.dll,
-single EXE. It may import KERNEL32 names beyond the strict 9x whitelist;
-validate the result on the era machine.
-_nocrt = KERNEL32/WSOCK32-only; strict portable profile.
-The compiler's output programs default to no-CRT.
+CRT note
+--------
+The compiler build here is CRT-only. The compiler's own no-CRT build is
+deferred until the asm_x86 backend; emitted programs still default to no-CRT.
 
 Build a program
 ---------------
 zig1.exe -osw -o out hello.z98
-then run out\\build_owc_crt.bat (or build_target_crt.bat), or the _nocrt
-variant, then out\\hello.exe.
+then run out\\build_owc_crt.bat (or build_target_crt.bat), or the emitted
+_nocrt variant, then out\\hello.exe.
 
 If a toolchain rejects the C, report the exact error.
 EOF
@@ -315,7 +323,7 @@ zig1-seed/lib/manifest.md5  per-file md5 of every lib/*.zig (47 std files,
                       the std attribution pin)
 zig1-seed/SEED_README.txt  this file
 
-Companion Win9x seed: release/seed/zig1_seed_w9.zip (Windows-target compiler C + emitted build scripts)
+Companion Win9x seed: release/seed/zig1_seed_w9.zip (Windows-target compiler C + emitted build scripts; CRT compiler build, no-CRT zig1 deferred to asm_x86)
 
 (net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT
 included: 0 references in any emitted gen/*.c|*.h for a linux -osl gcc-only
@@ -441,8 +449,9 @@ if [ -n "$WIN9X_ZIP" ]; then
 |---|---|
 | zip | \`$WIN9X_ZIP\` |
 | zip md5 | \`$WIN9X_ZIP_MD5\` |
-| win/ C | $WIN9X_WIN_C_COUNT \`.c\` + $WIN9X_WIN_H_COUNT \`.h\` (full \`zig1 -osw\` compiler dump, .zig1_*.tmp removed) |
-| emitted scripts | \`build_target_nocrt.bat\`, \`build_target_crt.bat\`, \`build_owc_nocrt.bat\`, \`build_owc_crt.bat\` |
+| win/ C | $WIN9X_WIN_C_COUNT \`.c\` + $WIN9X_WIN_H_COUNT \`.h\` (full \`zig1 -osw\` compiler dump; no-CRT scripts, aliases, and \`build_target.sh\` removed) |
+| compiler build scripts | \`build_target_crt.bat\`, \`build_owc_crt.bat\` (static CRT; no msvcrt.dll; single EXE) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
 | lib | $LIB_COUNT std \`.zig\` + \`manifest.md5\` |
 | HEAD/date | \`$HEAD\` / $DATE |
 EOF
@@ -467,6 +476,7 @@ emitted \`zig_special_types.h\`, $GEN_BYTES bytes), \`c_exit.c\` (top level),
 | lib manifest | \`lib/manifest.md5\` ($LIB_COUNT std files; md5 \`$MANIFEST_MD5\`) |
 | archive md5 | \`$ARCHIVE_MD5\` |
 ${WIN9X_ENTRY_SECTION}
+
 Provenance note: the archived binary (md5 $BIN_MD5) was captured by
 scripts/seed/archive_seed.sh at HEAD $HEAD; gcc of the archive's self-emission
 C reproduces the self-emission fixed point \`$FP_MD5\` — both are the same
