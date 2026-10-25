@@ -100,7 +100,7 @@ The host builds the compiler from <tt>release/seed/zig1-seed.tgz</tt> with
 <tt>gcc</tt>. A Windows&nbsp;9x machine has neither <tt>bash</tt> nor
 <tt>gcc</tt>, so the same rotation also ships the companion
 <tt>release/seed/zig1_seed_w9.zip</tt>. Unzip it, change into the
-<tt>win</tt> folder, and run one emitted script to produce
+<tt>win</tt> folder, and run one of the two static-CRT scripts to produce
 <tt>..\zig1.exe</tt>:
 </p>
 <pre>
@@ -108,15 +108,14 @@ C:\Z98\zig1-seed-w9&gt; cd win
 C:\Z98\zig1-seed-w9\win&gt; build_owc_crt.bat ..\zig1.exe
 </pre>
 <p>
-The four native scripts are <tt>build_owc_crt.bat</tt>,
-<tt>build_owc_nocrt.bat</tt>, <tt>build_target_crt.bat</tt>, and
-<tt>build_target_nocrt.bat</tt>. The <tt>_crt</tt> pair uses a static CRT
-(<tt>/MT</tt> for MSVC 6, OpenWatcom static CLIB): no <tt>msvcrt.dll</tt>, one
-EXE, but it may import KERNEL32 names beyond the strict 9x whitelist, so the
-result is validated on the era machine. The <tt>_nocrt</tt> pair is the
-KERNEL32/WSOCK32-only strict profile. The zip's <tt>lib\</tt> folder is the
-standard library that belongs beside <tt>zig1.exe</tt>; the zip has no prebuilt
-executable.
+The two compiler build scripts are <tt>build_owc_crt.bat</tt> and
+<tt>build_target_crt.bat</tt>. Both use a static CRT (<tt>/MT</tt> for MSVC 6,
+OpenWatcom static CLIB): no <tt>msvcrt.dll</tt>, one EXE, but they may import
+KERNEL32 names beyond the strict 9x whitelist, so the result is validated on
+the era machine. The compiler's own no-CRT build is deferred until the asm_x86
+backend; emitted programs still default to no-CRT. The zip's <tt>lib\</tt>
+folder is the standard library that belongs beside <tt>zig1.exe</tt>; the zip
+has no prebuilt executable.
 </p>
 
 <h2>The sample</h2>

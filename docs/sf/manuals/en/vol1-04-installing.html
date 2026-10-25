@@ -182,8 +182,8 @@ On the target machine there is no <tt>bash</tt> and no <tt>gcc</tt>, so you do
 not run the seed script there. The disk also carries the Win9x companion seed,
 <tt>release/seed/zig1_seed_w9.zip</tt>. Unzip it; it unpacks to a
 <tt>zig1-seed-w9</tt> folder holding <tt>README.txt</tt>, the standard library
-in <tt>lib\</tt>, and the compiler's Windows-target C89 and emitted build
-scripts in <tt>win\</tt>. Change into <tt>win</tt> and run one of the four
+in <tt>lib\</tt>, and the compiler's Windows-target C89 and static-CRT build
+scripts in <tt>win\</tt>. Change into <tt>win</tt> and run one of the two
 emitted scripts to build <tt>..\zig1.exe</tt>:
 </p>
 <pre>
@@ -191,14 +191,12 @@ C:\Z98\zig1-seed-w9&gt; cd win
 C:\Z98\zig1-seed-w9\win&gt; build_owc_crt.bat ..\zig1.exe
 </pre>
 <p>
-The other three are <tt>build_owc_nocrt.bat</tt>,
-<tt>build_target_crt.bat</tt>, and <tt>build_target_nocrt.bat</tt>. The
-<tt>_crt</tt> scripts use a static CRT (<tt>/MT</tt> for MSVC 6, OpenWatcom's
-static CLIB): the result is a single EXE with no <tt>msvcrt.dll</tt>, but it may
-import KERNEL32 names beyond the strict 9x whitelist, so validate it on the era
-machine. The <tt>_nocrt</tt> scripts are the strict portable profile, importing
-only KERNEL32 (and WSOCK32 when the program uses sockets). Programs the compiler
-emits default to no-CRT.
+The other is <tt>build_target_crt.bat</tt>. Both use a static CRT (<tt>/MT</tt>
+for MSVC 6, OpenWatcom's static CLIB): the result is a single EXE with no
+<tt>msvcrt.dll</tt>, but it may import KERNEL32 names beyond the strict 9x
+whitelist, so validate it on the era machine. The compiler's own no-CRT build is
+deferred until the asm_x86 backend; programs the compiler emits still default to
+no-CRT.
 </p>
 <p>
 Keep the standard library in the <tt>lib</tt> folder beside <tt>zig1.exe</tt>;
@@ -224,8 +222,8 @@ tree and run the emitted script that matches the toolchain on the machine:
 <tt>build_owc_crt.bat</tt>, <tt>build_owc_nocrt.bat</tt>,
 <tt>build_target_crt.bat</tt>, or <tt>build_target_nocrt.bat</tt>. The bundled
 example builds there the same way and prints the same line as on Linux. OpenWatcom
-and MSVC are not installed on the development host, so those four paths are
-emitted and documented, not run here; the pending screenshot is the evidence.
+and MSVC are not installed on the development host, so those four program paths
+are emitted and documented, not run here; the pending screenshot is the evidence.
 </p>
 <table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
 <tr>

@@ -155,7 +155,10 @@ the matching OpenWatcom alias does the same. Programs the compiler emits default
 to the no-CRT profile. If you are building the compiler itself on the era
 machine rather than one program, start from
 <tt>release/seed/zig1_seed_w9.zip</tt>: unzip it, <tt>cd win</tt>, and run one of
-the four scripts to produce <tt>..\zig1.exe</tt> with <tt>lib\</tt> beside it.
+its two static-CRT scripts (<tt>build_target_crt.bat</tt> or
+<tt>build_owc_crt.bat</tt>) to produce <tt>..\zig1.exe</tt> with <tt>lib\</tt>
+beside it. The compiler's own no-CRT build is deferred until the asm_x86
+backend; emitted programs still default to no-CRT.
 </p>
 <p>
 The mingw branch is the one this host can actually run, and the flags matter
@@ -521,11 +524,13 @@ socket-using samples in
 <p>
 To build the <i>compiler</i> itself on that machine, do not start from an
 emitted program tree. Unzip <tt>release/seed/zig1_seed_w9.zip</tt>, change into
-its <tt>win</tt> folder, and run one of those four scripts naming
-<tt>..\zig1.exe</tt>; the zip's <tt>lib\</tt> folder is the standard library
-that belongs beside it. The zip carries the compiler's Windows-target C89 and
-these scripts as the compiler emitted them; it does not carry a prebuilt
-<tt>zig1.exe</tt>.
+its <tt>win</tt> folder, and run one of its two static-CRT scripts naming
+<tt>..\zig1.exe</tt>: <tt>build_target_crt.bat</tt> (MSVC <tt>/MT</tt>) or
+<tt>build_owc_crt.bat</tt> (OpenWatcom static CLIB). The zip's <tt>lib\</tt>
+folder is the standard library that belongs beside it. The zip carries the
+compiler's Windows-target C89 and these scripts as the compiler emitted them;
+it does not carry a prebuilt <tt>zig1.exe</tt>, and its no-CRT compiler scripts
+are withheld until the asm_x86 backend.
 </p>
 <p>
 And here is where the chapter has to be exact about its own evidence.

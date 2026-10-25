@@ -2,11 +2,11 @@
 REM build_owc.bat - example-only Win9x companion for the manual's programs.
 REM This is NOT the seed builder. To build the compiler itself on Win9x,
 REM unzip release/seed/zig1_seed_w9.zip, change into its win\ folder, and run
-REM one of the scripts emitted there:
+REM one of its two static-CRT scripts:
 REM     build_owc_crt.bat ..\zig1.exe
-REM     build_owc_nocrt.bat ..\zig1.exe
 REM     build_target_crt.bat ..\zig1.exe
-REM     build_target_nocrt.bat ..\zig1.exe
+REM The compiler's own no-CRT build is deferred until the asm_x86 backend;
+REM emitted programs still default to no-CRT.
 REM
 REM For an example program, emit the Windows target first:
 REM     zig1 -osw -o out hello.z98

@@ -37,21 +37,22 @@ recorded in the v121 entry of `release/seed/CHANGELOG.md`; archived binary md5
 means the v121 `lib/` payload does not move the fixed point.
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
-`zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is a full Windows-target
-`zig1 -osw` compiler dump with the compiler's own emitted scripts, no prebuilt
-`zig1.exe`. To build the compiler on the era machine:
+`zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
+`zig1 -osw` compiler C/runtime with only the two emitted static-CRT compiler
+build scripts, no prebuilt `zig1.exe`. To build the compiler on the era
+machine:
 
 ```bat
 cd zig1-seed-w9\win
 build_owc_crt.bat ..\zig1.exe
 ```
 
-or one of `build_owc_nocrt.bat`, `build_target_crt.bat`,
-`build_target_nocrt.bat`; `..\lib\` is the standard library. `_crt` = static
-CRT (`/MT` / OpenWatcom static CLIB), no `msvcrt.dll`, single EXE, may import
-KERNEL32 names beyond the strict 9x whitelist; `_nocrt` = KERNEL32/WSOCK32-only.
-Emitted programs default to no-CRT. The zip is not a fixed-point artifact;
-`archive_seed.sh` packs it deterministically with python3 `zipfile`.
+or `build_target_crt.bat ..\zig1.exe`; `..\lib\` is the standard library. Both
+use a static CRT (`/MT` / OpenWatcom static CLIB), no `msvcrt.dll`, single EXE,
+and may import KERNEL32 names beyond the strict 9x whitelist. The compiler's own
+no-CRT build is deferred until the asm_x86 backend; emitted programs still
+default to no-CRT. The zip is not a fixed-point artifact; `archive_seed.sh`
+packs it deterministically with python3 `zipfile`.
 
 **Phase 1 closeout:** v119 completes the TLS + WireGuard phase. On the rotated
 compiler (`45158dce…`) the full std gate is **336/0** with crosscheck

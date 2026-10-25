@@ -53,26 +53,33 @@ Every seed rotation now produces **two** committed artifacts:
 
 The companion is generated from the **same seed binary** with
 `zig1 -osw -o <dir> sf/src/main.zig`, so its C is the compiler's Windows-target
-self-emission, not the Linux `gen/` set. It carries the compiler's own current
-emitted scripts — `build_target.sh`, `build_target_nocrt.bat`,
-`build_target_crt.bat`, `build_owc_nocrt.bat`, `build_owc_crt.bat`, and the
-alias scripts — never hand-written replacements, and no prebuilt `zig1.exe`.
+self-emission, not the Linux `gen/` set. It ships the compiler's own emitted
+**static-CRT compiler build scripts only** — `build_target_crt.bat` (MSVC
+`/MT`) and `build_owc_crt.bat` (OpenWatcom static CLIB) — never hand-written
+replacements, and no prebuilt `zig1.exe`. The no-CRT compiler scripts
+(`build_target_nocrt.bat`, `build_owc_nocrt.bat`), the aliases, and
+`build_target.sh` are removed from the zip's `win/`; a no-CRT zig1 build is
+deferred to the asm_x86 backend. The compiler's own output programs keep the
+no-CRT default.
+
 The zip is therefore **not** a fixed-point artifact: its C is not gcc-rebuilt
 or md5-gated like the Linux seed. It unpacks to `zig1-seed-w9/{README.txt,
-lib/, win/}`; `win/` is the full `-osw` dump and `lib/` is the compiler's
-47-file standard library plus `manifest.md5`.
+lib/, win/}`; `win/` holds the `-osw` compiler C/runtime plus the two
+static-CRT scripts, and `lib/` is the compiler's 47-file standard library plus
+`manifest.md5`.
 
 CRT truth recorded in the zip README and manuals: `_crt` means a static CRT
 (`/MT` for MSVC 6, OpenWatcom static CLIB) — no `msvcrt.dll`, one EXE — and it
 may import KERNEL32 names beyond the strict 9x whitelist, so the result is
 validated on the era machine. `_nocrt` is the KERNEL32/WSOCK32-only portable
-profile. Programs emitted by the compiler default to no-CRT.
+profile for emitted programs; it is not yet available for building the
+compiler itself.
 
 Packing is deterministic: `archive_seed.sh` uses python3 `zipfile` (not the
 absent `zip` command) with sorted entries and a fixed `ZipInfo.date_time`, and
-records the zip path, md5, `win/` C count, lib count, four script names, and
-HEAD/date in the same `release/seed/CHANGELOG.md` entry as the Linux archive
-md5.
+records the zip path, md5, `win/` C count, lib count, the two static-CRT
+script names, and HEAD/date in the same `release/seed/CHANGELOG.md` entry as
+the Linux archive md5.
 
 ### Rebuild recipes (recorded verbatim in SEED_README.txt)
 

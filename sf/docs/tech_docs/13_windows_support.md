@@ -192,17 +192,19 @@ Windows-target self-emission, not the Linux `gen/` C. It contains no prebuilt
 
 The zip unpacks to `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` carries the
 module `.c`/`.h`, `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c`, `c_exit.c`, the
-headers, and the compiler's own emitted scripts: `build_target.sh` plus the four
-native scripts `build_target_nocrt.bat`, `build_target_crt.bat`,
-`build_owc_nocrt.bat`, `build_owc_crt.bat` (and the `build_target.bat` /
-`build_owc.bat` aliases). `lib/` is the 47-file standard library plus
-`manifest.md5`. Packing uses python3 `zipfile` with sorted entries and a fixed
-`ZipInfo.date_time` because `zip` is not installed; the zip is not a
-fixed-point artifact.
+headers, and the compiler's own emitted **static-CRT compiler build scripts
+only**: `build_target_crt.bat` (MSVC `/MT`) and `build_owc_crt.bat`
+(OpenWatcom static CLIB). The no-CRT compiler scripts
+(`build_target_nocrt.bat`, `build_owc_nocrt.bat`), the `build_target.bat` /
+`build_owc.bat` aliases, and `build_target.sh` are removed from the zip's
+`win/`: a no-CRT zig1 build is deferred to the asm_x86 backend. `lib/` is the
+47-file standard library plus `manifest.md5`. Packing uses python3 `zipfile`
+with sorted entries and a fixed `ZipInfo.date_time` because `zip` is not
+installed; the zip is not a fixed-point artifact.
 
 CRT truth: `_crt` means a static CRT (`/MT` for MSVC 6, OpenWatcom static
 CLIB) with no `msvcrt.dll` and a single EXE; it may import KERNEL32 names beyond
-the strict 9x whitelist, so validate on the era machine. `_nocrt` is the
-KERNEL32/WSOCK32-only strict profile. Programs emitted by the compiler default
-to no-CRT. The zip README, `zig1-seed/SEED_README.txt`, and the manuals record
-the same split.
+the strict 9x whitelist, so validate on the era machine. `_nocrt` remains the
+KERNEL32/WSOCK32-only strict profile for programs emitted by the compiler,
+which still default to no-CRT. The zip README, `zig1-seed/SEED_README.txt`, and
+the manuals record the same split.
