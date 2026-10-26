@@ -214,6 +214,15 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         pal.exit(@intCast(u8, 1));
         return;
     }
+    if (path_mod.isReservedDosDeviceName(cli.input_file)) {
+        const msg: []const u8 = "error: reserved DOS device name in input file path: ";
+        pal.stderr_write(msg);
+        pal.stderr_write(cli.input_file);
+        const nl: []const u8 = "\n";
+        pal.stderr_write(nl);
+        pal.exit(@intCast(u8, 2));
+        return;
+    }
     var compiler_alloc = alloc_mod.initCompilerAlloc();
     compiler_alloc.max_mem = cli.max_mem;
     spill_store_mod.spillSetLevel(cli.spill_level); // set the immutable spill flag prefix before runCompiler

@@ -51,7 +51,7 @@
 //   bool=.{ true, 7 }
 const std = @import("std");
 const colors = @import("colors.zig");
-const aux = @import("aux.zig");
+const aux = @import("auxmod.zig");
 
 const Pair = struct { a: i32, b: i32 };
 const Inner = struct { a: i32, b: i32 };
