@@ -2179,15 +2179,112 @@ fn lowerExprDepthGuard(self: *LirLowerer) void {
     }
 }
 
-// Task 1 (iterative lowering): thin driver that brackets the depth guard
-// around the existing recursive `lowerExpr`. Tasks 2-3 replace the body with
-// the `expr_stack` trampoline; this task keeps behaviour byte-identical.
-// On a guard trip the elevated counter is left in place and the caller
-// unwinds with the TEMP_NONE "no value" sentinel.
+// Task 2 (iterative lowering): the LEX entry markers, factored out of
+// `lowerExpr` so `lowerExprStep` writes them exactly once per node frame
+// (same bytes, same position in the marker stream as the old recursive
+// `lowerExpr` entry).
+fn lowerExprLexMarkers(self: *LirLowerer, node_idx: u32) void {
+    var lex_node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var lex_m: []const u8 = "LEX:n"; pal.markerWrite(lex_m);
+    var lex_nb: [10]u8 = undefined; var lex_nl = itoa_mod.itoa(node_idx, lex_nb[0..]); var lex_ns: usize = @intCast(usize, 9) - @intCast(usize, lex_nl); pal.markerWrite(lex_nb[lex_ns..@intCast(usize, 9)]);
+    var lex_km: []const u8 = "k"; pal.markerWrite(lex_km);
+    var lex_kb: [10]u8 = undefined; var lex_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(lex_node.kind)), lex_kb[0..]); var lex_ks: usize = @intCast(usize, 9) - @intCast(usize, lex_kl); pal.markerWrite(lex_kb[lex_ks..@intCast(usize, 9)]);
+    var lex_nl2: []const u8 = "\n"; pal.markerWrite(lex_nl2);
+}
+
+// Task 2 (iterative lowering): the per-node coercion block, factored out of
+// `lowerExpr` unchanged. `lowerExpr` applies it to the ROOT result; the
+// driver applies it to each completed CHILD before delivering its temp to the
+// parent frame (so a parent's slots hold exactly what the recursive
+// `lowerExpr(child)` used to return).
+fn lowerExprCoerceResult(self: *LirLowerer, node_idx: u32, result: u32) u32 {
+    var res: u32 = result;
+    var ce = coercion_mod.coercionTableGet(self.ctx.coercions, node_idx);
+    if (ce) |coercion| {
+        var cep_m: []const u8 = "CEP:n"; pal.markerWrite(cep_m);
+        var cep_nb: [10]u8 = undefined; var cep_nl = itoa_mod.itoa(node_idx, cep_nb[0..]); var cep_ns: usize = @intCast(usize, 9) - @intCast(usize, cep_nl); pal.markerWrite(cep_nb[cep_ns..@intCast(usize, 9)]);
+        var cep_km: []const u8 = "k"; pal.markerWrite(cep_km);
+        var cep_kb: [10]u8 = undefined; var cep_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(coercion.kind)), cep_kb[0..]); var cep_ks: usize = @intCast(usize, 9) - @intCast(usize, cep_kl); pal.markerWrite(cep_kb[cep_ks..@intCast(usize, 9)]);
+        var cep_nl2: []const u8 = "\n"; pal.markerWrite(cep_nl2);
+        // Task 8 fix round: `result` may be the TEMP_NONE "no value"
+        // sentinel (a void value-`if`). There is no value to coerce, so skip
+        // the recorded coercion (a void->EU/optional layer) and return the
+        // sentinel to the consumer, which handles it (e.g. `return_stmt`
+        // emits a valueless return / EU(void) wrap). Pre-fix the wrapper
+        // passed TEMP_NONE into `applyCoercion` -> `materializeInto`, which
+        // dereferenced it with `getTempType` and ICEd (`error[3043] invalid
+        // temp index 294967295`) for `fn f(c: bool) !void { return if (c)
+        // foo(); }` before `return_stmt` was reached.
+        if (res != TEMP_NONE) {
+            res = applyCoercion(self, res, coercion);
+        }
+    } else {
+        var cem_m: []const u8 = "CEM:n"; pal.markerWrite(cem_m);
+        var cem_nb: [10]u8 = undefined; var cem_nl = itoa_mod.itoa(node_idx, cem_nb[0..]); var cem_ns: usize = @intCast(usize, 9) - @intCast(usize, cem_nl); pal.markerWrite(cem_nb[cem_ns..@intCast(usize, 9)]);
+        var cem_nl2: []const u8 = "\n"; pal.markerWrite(cem_nl2);
+    }
+    return res;
+}
+
+// Task 2 (iterative lowering): the `expr_stack` trampoline. Brackets the depth
+// guard, pushes the root frame, then runs `lowerExprStep` over the stack until
+// the root completes. A step that suspends re-pushes its frame (with the resume
+// phase) plus a fresh child frame via `lowerExprPushChild`; on child completion
+// the driver runs the child's coercion block and writes the temp into the
+// parent frame's next free result slot (slot0..slot7 scan on the TEMP_NONE
+// sentinel), then re-enters the parent at its saved phase. The root result is
+// returned uncoerced — `lowerExpr` applies the root coercion block on it.
+// Nested drivers (unconverted arms call `lowerExpr` recursively) floor their
+// loop at the stack length on entry. On a depth-guard trip the loop unwinds to
+// that floor and returns TEMP_NONE with the guard left elevated.
 fn lowerExprDriver(self: *LirLowerer, root: u32) u32 {
     lowerExprDepthGuard(self);
     if (self.expr_guard > EXPR_GUARD_MAX) return TEMP_NONE;
-    var result = lowerExpr(self, root);
+    var base_len: usize = self.expr_stack.len;
+    var root_frame: ExprFrame = ExprFrame{
+        .node_idx = root,
+        .phase = @intCast(u16, 0),
+        .kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, root).kind)),
+        .slot0 = TEMP_NONE,
+        .slot1 = TEMP_NONE,
+        .slot2 = TEMP_NONE,
+        .slot3 = TEMP_NONE,
+        .slot4 = TEMP_NONE,
+        .slot5 = TEMP_NONE,
+        .slot6 = TEMP_NONE,
+        .slot7 = TEMP_NONE,
+    };
+    exprFrameArrayListAppend(&self.expr_stack, root_frame);
+    var result: u32 = TEMP_NONE;
+    while (true) {
+        var before: usize = self.expr_stack.len;
+        var done_node: u32 = self.expr_stack.items[before - @intCast(usize, 1)].node_idx;
+        var r: u32 = lowerExprStep(self);
+        if (self.expr_guard > EXPR_GUARD_MAX) {
+            self.expr_stack.len = base_len;
+            self.expr_guard -= @intCast(u32, 1);
+            return TEMP_NONE;
+        }
+        if (before == self.expr_stack.len + @intCast(usize, 1)) {
+            // frame completed (popped, not re-pushed)
+            if (before == base_len + @intCast(usize, 1)) {
+                result = r;
+                break;
+            }
+            var child_res: u32 = lowerExprCoerceResult(self, done_node, r);
+            var pidx: usize = self.expr_stack.len - @intCast(usize, 1);
+            var parent: *ExprFrame = &self.expr_stack.items[pidx];
+            if (parent.slot0 == TEMP_NONE) { parent.slot0 = child_res; }
+            else if (parent.slot1 == TEMP_NONE) { parent.slot1 = child_res; }
+            else if (parent.slot2 == TEMP_NONE) { parent.slot2 = child_res; }
+            else if (parent.slot3 == TEMP_NONE) { parent.slot3 = child_res; }
+            else if (parent.slot4 == TEMP_NONE) { parent.slot4 = child_res; }
+            else if (parent.slot5 == TEMP_NONE) { parent.slot5 = child_res; }
+            else if (parent.slot6 == TEMP_NONE) { parent.slot6 = child_res; }
+            else { parent.slot7 = child_res; }
+        }
+        // else the step suspended: a child frame is now on top; loop.
+    }
     self.expr_guard -= @intCast(u32, 1);
     return result;
 }
@@ -2215,38 +2312,1145 @@ fn lowerExprPushChild(self: *LirLowerer, parent: *ExprFrame, child: u32, phase: 
     exprFrameArrayListAppend(&self.expr_stack, fresh);
 }
 
-pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
-    var lex_node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
-    var lex_m: []const u8 = "LEX:n"; pal.markerWrite(lex_m);
-    var lex_nb: [10]u8 = undefined; var lex_nl = itoa_mod.itoa(node_idx, lex_nb[0..]); var lex_ns: usize = @intCast(usize, 9) - @intCast(usize, lex_nl); pal.markerWrite(lex_nb[lex_ns..@intCast(usize, 9)]);
-    var lex_km: []const u8 = "k"; pal.markerWrite(lex_km);
-    var lex_kb: [10]u8 = undefined; var lex_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(lex_node.kind)), lex_kb[0..]); var lex_ks: usize = @intCast(usize, 9) - @intCast(usize, lex_kl); pal.markerWrite(lex_kb[lex_ks..@intCast(usize, 9)]);
-    var lex_nl2: []const u8 = "\n"; pal.markerWrite(lex_nl2);
-    var result = lowerExprImpl(self, node_idx);
-    var ce = coercion_mod.coercionTableGet(self.ctx.coercions, node_idx);
-    if (ce) |coercion| {
-        var cep_m: []const u8 = "CEP:n"; pal.markerWrite(cep_m);
-        var cep_nb: [10]u8 = undefined; var cep_nl = itoa_mod.itoa(node_idx, cep_nb[0..]); var cep_ns: usize = @intCast(usize, 9) - @intCast(usize, cep_nl); pal.markerWrite(cep_nb[cep_ns..@intCast(usize, 9)]);
-        var cep_km: []const u8 = "k"; pal.markerWrite(cep_km);
-        var cep_kb: [10]u8 = undefined; var cep_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(coercion.kind)), cep_kb[0..]); var cep_ks: usize = @intCast(usize, 9) - @intCast(usize, cep_kl); pal.markerWrite(cep_kb[cep_ks..@intCast(usize, 9)]);
-        var cep_nl2: []const u8 = "\n"; pal.markerWrite(cep_nl2);
-        // Task 8 fix round: `result` may be the TEMP_NONE "no value"
-        // sentinel (a void value-`if`). There is no value to coerce, so skip
-        // the recorded coercion (a void->EU/optional layer) and return the
-        // sentinel to the consumer, which handles it (e.g. `return_stmt`
-        // emits a valueless return / EU(void) wrap). Pre-fix the wrapper
-        // passed TEMP_NONE into `applyCoercion` -> `materializeInto`, which
-        // dereferenced it with `getTempType` and ICEd (`error[3043] invalid
-        // temp index 294967295`) for `fn f(c: bool) !void { return if (c)
-        // foo(); }` before `return_stmt` was reached.
-        if (result != TEMP_NONE) {
-            result = applyCoercion(self, result, coercion);
+// Task 2 (iterative lowering): the per-node entry prologue factored out of
+// `lowerExprImpl`'s head — context node (read by `nextTemp`/`emitInst` marker
+// paths) + the GBL/R/M/BB:i marker prefix. Called exactly once per node: from
+// `lowerExprStep` at a converted frame's phase-0 entry (NOT on resume, so a
+// resumed parent keeps the last child's ctx exactly like a recursive return),
+// or from `lowerExprImpl`'s head on the fallback path.
+fn lowerExprPrologue(self: *LirLowerer, node_idx: u32) void {
+    self._ctx_node_idx = node_idx;
+    self._ctx_node_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, node_idx).kind));
+    var gb_im: []const u8 = "GBL:i"; pal.markerWrite(gb_im);
+    var gb_ib: [10]u8 = undefined; var gb_il = itoa_mod.itoa(node_idx, gb_ib[0..]); var gb_is: usize = @intCast(usize, 9) - @intCast(usize, gb_il); pal.markerWrite(gb_ib[gb_is..@intCast(usize, 9)]);
+    var gb_km: []const u8 = "k"; pal.markerWrite(gb_km);
+    var gb_kb: [10]u8 = undefined; var gb_kl = itoa_mod.itoa(self._ctx_node_kind, gb_kb[0..]); var gb_ks: usize = @intCast(usize, 9) - @intCast(usize, gb_kl); pal.markerWrite(gb_kb[gb_ks..@intCast(usize, 9)]);
+    var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+    if (rt) |trt| {
+        var gb_h: []const u8 = "R"; pal.markerWrite(gb_h);
+        var gb_rb: [10]u8 = undefined; var gb_rl = itoa_mod.itoa(trt, gb_rb[0..]); var gb_rs: usize = @intCast(usize, 9) - @intCast(usize, gb_rl); pal.markerWrite(gb_rb[gb_rs..@intCast(usize, 9)]);
+    } else {
+        var gb_m: []const u8 = "M"; pal.markerWrite(gb_m);
+    }
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (node.kind == AstKind.struct_init) {
+        var bb_m: []const u8 = "BB:i"; pal.markerWrite(bb_m);
+        var bb_ib: [10]u8 = undefined; var bb_il = itoa_mod.itoa(node_idx, bb_ib[0..]); var bb_is: usize = @intCast(usize, 9) - @intCast(usize, bb_il); pal.markerWrite(bb_ib[bb_is..@intCast(usize, 9)]);
+        var bb_bm: []const u8 = "b"; pal.markerWrite(bb_bm);
+        var bb_bb: [10]u8 = undefined; var bb_bl = itoa_mod.itoa(self.current_bb, bb_bb[0..]); var bb_bs: usize = @intCast(usize, 9) - @intCast(usize, bb_bl); pal.markerWrite(bb_bb[bb_bs..@intCast(usize, 9)]);
+        var bb_nl: []const u8 = "\n"; pal.markerWrite(bb_nl);
+    }
+}
+
+// Task 2 (iterative lowering): the per-kind resumable step. Pops the top frame
+// (the driver re-delivers completed results into the parent's slots), writes
+// the LEX markers, then dispatches. A converted arm either completes with its
+// result temp or suspends via `lowerExprPushChild` (which re-pushes the frame
+// with its resume phase plus a fresh child frame) and returns; the driver
+// detects the suspend by stack growth. Kinds not yet converted fall back to
+// the recursive `lowerExprImpl` arm (byte-identical, unflattened).
+// Task 2 (iterative lowering): phase machines for the post-order expression
+// arms. Each machine takes the popped frame; phase 0 runs the arm's pre-child
+// work (resolve/fold — inline, non-recursive), saves pre-child values needed
+// later into slot7+ (child results fill slot0/slot1 in order), and suspends via
+// `lowerExprPushChild`. Resume phases receive the delivered child temp(s) in
+// the next free slots and run the original emit block verbatim (order of
+// markers/emits relative to the child evaluations preserved exactly).
+fn lowerAddStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node_idx: u32 = f.node_idx;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
+        f.slot7 = rtype;
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 2));
+        return TEMP_NONE;
+    }
+    var rtype: u32 = f.slot7;
+    var lhs: u32 = f.slot0;
+    var rhs: u32 = f.slot1;
+    var lhs_type = getTempType(self, lhs);
+    if (lhs_type != type_mod.TYPE_UNDEFINED) {
+        var lty = self.ctx.registry.types_items[@intCast(usize, lhs_type)];
+        if (lty.kind == type_mod.TypeKind.slice_type) {
+            var am: []const u8 = "A:"; pal.markerWriteInt(am, lhs_type);
+        }
+    }
+    var tid = nextTemp(self, rtype);
+    var m4a_m: []const u8 = "M4a:r"; pal.markerWrite(m4a_m);
+    var m4a_b: [20]u8 = undefined; var m4a_l = itoa_mod.itoa(rtype, m4a_b[0..]); var m4a_s: usize = @intCast(usize, 19) - @intCast(usize, m4a_l); pal.markerWrite(m4a_b[m4a_s..@intCast(usize, 19)]);
+    var m4a_nl: []const u8 = "\n"; pal.markerWrite(m4a_nl);
+    emitArith(self, lir_mod.CHECK_OP_ADD, BIN_ADD, lhs, rhs, tid, rtype);
+    return tid;
+}
+
+fn lowerAddLikeStep(self: *LirLowerer, f: *ExprFrame, opm: []const u8, check_op: u8, bin_op: u8) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node_idx: u32 = f.node_idx;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
+        f.slot7 = rtype;
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 2));
+        return TEMP_NONE;
+    }
+    var rtype: u32 = f.slot7;
+    var lhs: u32 = f.slot0;
+    var rhs: u32 = f.slot1;
+    var tid = nextTemp(self, rtype);
+    var m4s_m: []const u8 = opm; pal.markerWrite(m4s_m);
+    var m4s_b: [20]u8 = undefined; var m4s_l = itoa_mod.itoa(rtype, m4s_b[0..]); var m4s_s: usize = @intCast(usize, 19) - @intCast(usize, m4s_l); pal.markerWrite(m4s_b[m4s_s..@intCast(usize, 19)]);
+    var m4s_nl: []const u8 = "\n"; pal.markerWrite(m4s_nl);
+    emitArith(self, check_op, bin_op, lhs, rhs, tid, rtype);
+    return tid;
+}
+
+fn lowerDivModStep(self: *LirLowerer, f: *ExprFrame, bin_op: u8) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node_idx: u32 = f.node_idx;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
+        f.slot7 = rtype;
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 2));
+        return TEMP_NONE;
+    }
+    var rtype: u32 = f.slot7;
+    var lhs: u32 = f.slot0;
+    var rhs: u32 = f.slot1;
+    var tid = nextTemp(self, rtype);
+    emitSafeCheckDivMod(self, lhs, rhs);
+    emitInst(self, LirInst{ .binary = .{ .op = bin_op, .lhs = lhs, .rhs = rhs, .result = tid } });
+    return tid;
+}
+
+fn lowerShlStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node_idx: u32 = f.node_idx;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
+        f.slot7 = rtype;
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 2));
+        return TEMP_NONE;
+    }
+    var node_idx: u32 = f.node_idx;
+    var rtype: u32 = f.slot7;
+    var lhs: u32 = f.slot0;
+    var rhs: u32 = f.slot1;
+    lhs = materializeShiftLhs(self, node_idx, lhs, rtype);
+    var tid = nextTemp(self, rtype);
+    emitSafeCheckShift(self, lhs, rhs);
+    emitArith(self, lir_mod.CHECK_OP_SHL, BIN_SHL, lhs, rhs, tid, getTempType(self, lhs));
+    return tid;
+}
+
+fn lowerShrStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node_idx: u32 = f.node_idx;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
+        f.slot7 = rtype;
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 2));
+        return TEMP_NONE;
+    }
+    var rtype: u32 = f.slot7;
+    var lhs: u32 = f.slot0;
+    var rhs: u32 = f.slot1;
+    var tid = nextTemp(self, rtype);
+    emitSafeCheckShift(self, lhs, rhs);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs, .rhs = rhs, .result = tid } });
+    return tid;
+}
+
+fn lowerBinaryArmStep(self: *LirLowerer, f: *ExprFrame, op: u8) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node_idx: u32 = f.node_idx;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
+        f.slot7 = rtype;
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 2));
+        return TEMP_NONE;
+    }
+    var rtype: u32 = f.slot7;
+    var lhs: u32 = f.slot0;
+    var rhs: u32 = f.slot1;
+    var tid = nextTemp(self, rtype);
+    emitInst(self, LirInst{ .binary = .{ .op = op, .lhs = lhs, .rhs = rhs, .result = tid } });
+    return tid;
+}
+
+fn lowerCmpSimpleStep(self: *LirLowerer, f: *ExprFrame, bin_op: u8) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 2));
+        return TEMP_NONE;
+    }
+    var lhs: u32 = f.slot0;
+    var rhs: u32 = f.slot1;
+    var tid = nextTemp(self, type_mod.TYPE_BOOL);
+    emitInst(self, LirInst{ .binary = .{ .op = bin_op, .lhs = lhs, .rhs = rhs, .result = tid } });
+    return tid;
+}
+
+fn lowerCmpEqStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    var node_idx: u32 = f.node_idx;
+    if (f.phase == @intCast(u16, 0)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        var c0n = ast_mod.astStoreNodeAt(self.ctx.store, node.child_0);
+        var c1n = ast_mod.astStoreNodeAt(self.ctx.store, node.child_1);
+        var is_opt_null: u8 = @intCast(u8, 0);
+        var opt_child: u32 = @intCast(u32, 0);
+        if (c0n.kind == AstKind.null_literal and c1n.kind != AstKind.null_literal) {
+            opt_child = node.child_1; is_opt_null = @intCast(u8, 1);
+        } else if (c1n.kind == AstKind.null_literal and c0n.kind != AstKind.null_literal) {
+            opt_child = node.child_0; is_opt_null = @intCast(u8, 1);
+        }
+        if (is_opt_null != @intCast(u8, 0)) {
+            var opt_ty = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, opt_child);
+            if (opt_ty) |ot| {
+                if (self.ctx.registry.types_items[@intCast(usize, ot)].kind == type_mod.TypeKind.optional_type) {
+                    lowerExprPushChild(self, f, opt_child, @intCast(u16, 1));
+                    return TEMP_NONE;
+                }
+            }
+        }
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 2));
+        return TEMP_NONE;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        var opt_val: u32 = f.slot0;
+        var has_val = nextTemp(self, type_mod.TYPE_U8);
+        emitInst(self, LirInst{ .check_optional = .{ .value = opt_val, .result = has_val } });
+        if (node.kind == AstKind.cmp_eq) {
+            var result = nextTemp(self, type_mod.TYPE_BOOL);
+            emitInst(self, LirInst{ .unary = .{ .op = UN_NOT, .operand = has_val, .result = result } });
+            return result;
+        } else {
+            return has_val;
+        }
+    }
+    if (f.phase == @intCast(u16, 2)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 3));
+        return TEMP_NONE;
+    }
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var lhs: u32 = f.slot0;
+    var rhs: u32 = f.slot1;
+    var tid = nextTemp(self, type_mod.TYPE_BOOL);
+    if (node.kind == AstKind.cmp_eq) {
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_EQ, .lhs = lhs, .rhs = rhs, .result = tid } });
+    } else {
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_NE, .lhs = lhs, .rhs = rhs, .result = tid } });
+    }
+    return tid;
+}
+
+fn lowerNegateStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node_idx: u32 = f.node_idx;
+        var rt_ng = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var ng_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        if (rt_ng) |t| { if (t != type_mod.TYPE_UNDEFINED) { ng_box[0] = t; } } else { var rtm_ng: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ng); var rtmb_ng: [10]u8 = undefined; var rtml_ng = itoa_mod.itoa(node_idx, rtmb_ng[0..]); var rtms_ng: usize = @intCast(usize, 9) - @intCast(usize, rtml_ng); pal.markerWrite(rtmb_ng[rtms_ng..@intCast(usize, 9)]); var rtmnl_ng: []const u8 = "\n"; pal.markerWrite(rtmnl_ng); }
+        if (lowerFoldedIntConst(self, node_idx, ng_box[0], @intCast(u8, 1))) |fctid| { return fctid; }
+        f.slot7 = ng_box[0];
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    var val: u32 = f.slot0;
+    var tid = nextTemp(self, f.slot7);
+    emitArithNeg(self, val, tid, f.slot7);
+    return tid;
+}
+
+fn lowerWrapNegateStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node_idx: u32 = f.node_idx;
+        var rt_wn = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var wn_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        if (rt_wn) |t| { if (t != type_mod.TYPE_UNDEFINED) { wn_box[0] = t; } }
+        f.slot7 = wn_box[0];
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    var wn_val: u32 = f.slot0;
+    var wn_tid = nextTemp(self, f.slot7);
+    emitInst(self, LirInst{ .unary = .{ .op = UN_WNEG, .operand = wn_val, .result = wn_tid } });
+    return wn_tid;
+}
+
+fn lowerBoolNotStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    var val: u32 = f.slot0;
+    var tid = nextTemp(self, type_mod.TYPE_BOOL);
+    emitInst(self, LirInst{ .unary = .{ .op = UN_NOT, .operand = val, .result = tid } });
+    return tid;
+}
+
+fn lowerBitNotStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node_idx: u32 = f.node_idx;
+        var rt_bn = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var bn_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+        if (rt_bn) |t| { if (t != type_mod.TYPE_UNDEFINED) { bn_box[0] = t; } }
+        if (lowerFoldedIntConst(self, node_idx, bn_box[0], @intCast(u8, 0))) |fctid| { return fctid; }
+        f.slot7 = bn_box[0];
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    var val: u32 = f.slot0;
+    var tid = nextTemp(self, f.slot7);
+    emitInst(self, LirInst{ .unary = .{ .op = UN_BNOT, .operand = val, .result = tid } });
+    return tid;
+}
+
+fn lowerDerefStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    var node_idx: u32 = f.node_idx;
+    var ptr_temp: u32 = f.slot0;
+    var rt_dr = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+    var dr_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+    if (rt_dr) |t| { if (t != type_mod.TYPE_UNDEFINED) { dr_box[0] = t; } } else { var rtm_dr: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_dr); var rtmb_dr: [10]u8 = undefined; var rtml_dr = itoa_mod.itoa(node_idx, rtmb_dr[0..]); var rtms_dr: usize = @intCast(usize, 9) - @intCast(usize, rtml_dr); pal.markerWrite(rtmb_dr[rtms_dr..@intCast(usize, 9)]); var rtmnl_dr: []const u8 = "\n"; pal.markerWrite(rtmnl_dr); }
+    if (dr_box[0] == type_mod.TYPE_VOID) { var vflow_drv: []const u8 = "VFLOW:drv\n"; pal.markerWrite(vflow_drv); }
+    var tid = nextTemp(self, dr_box[0]);
+    emitInst(self, LirInst{ .load = .{ .ptr = ptr_temp, .result = tid } });
+    return tid;
+}
+
+fn lowerTryExprRest(self: *LirLowerer, node_idx: u32, inner_temp: u32) u32 {
+    var eu_box: [1]u32 = [1]u32{euTypeOfTemp(self, inner_temp)};
+    if (eu_box[0] != type_mod.TYPE_UNDEFINED) {
+        var is_err_temp = nextTemp(self, type_mod.TYPE_U8);
+        emitInst(self, LirInst{ .check_error = .{ .value = inner_temp, .result = is_err_temp } });
+        var err_bb = createBlock(self);
+        var ok_bb = createBlock(self);
+        var join_bb = createBlock(self);
+        emitInst(self, LirInst{ .branch = .{ .cond = is_err_temp, .then_bb = err_bb, .else_bb = ok_bb } });
+        self.current_bb = err_bb;
+        expandDefers(self, @intCast(u32, 0), @intCast(u8, 1), @intCast(u8, 0));
+        var do_rewrap: u8 = @intCast(u8, 0);
+        {
+            var rt_ret = self.func.return_type;
+            if (rt_ret != type_mod.TYPE_UNDEFINED) {
+                if (rt_ret != eu_box[0]) {
+                    var rtt = self.ctx.registry.types_items[@intCast(usize, rt_ret)];
+                    if (rtt.kind == type_mod.TypeKind.error_union_type) {
+                        do_rewrap = @intCast(u8, 1);
+                    }
+                }
+            }
+        }
+        if (do_rewrap != @intCast(u8, 0)) {
+            var prop_code = nextTemp(self, type_mod.TYPE_I32);
+            emitInst(self, LirInst{ .unwrap_error_code = .{ .value = inner_temp, .result = prop_code } });
+            var prop_rewrapped = nextTemp(self, self.func.return_type);
+            emitInst(self, LirInst{ .wrap_error_err = .{ .value = prop_code, .result = prop_rewrapped, .type_id = self.func.return_type } });
+            emitInst(self, LirInst{ .ret = prop_rewrapped });
+        } else {
+            emitInst(self, LirInst{ .ret = inner_temp });
+        }
+        self.block_terminated = @intCast(u8, 1);
+        self.current_bb = ok_bb;
+        self.block_terminated = @intCast(u8, 0);
+        var result = nextTemp(self, euPayloadOf(self, eu_box[0]));
+        emitInst(self, LirInst{ .unwrap_error_payload = .{ .value = inner_temp, .result = result } });
+        if (self.block_terminated == @intCast(u8, 0)) {
+            emitInst(self, LirInst{ .jump = join_bb });
+        }
+        self.current_bb = join_bb;
+        return result;
+    } else {
+        return inner_temp;
+    }
+}
+
+fn lowerTryExprStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    return lowerTryExprRest(self, f.node_idx, f.slot0);
+}
+
+fn lowerCompoundAssignStep(self: *LirLowerer, f: *ExprFrame, check_op: u8, bin_op: u8, mode: u8, stmt_add_markers: u8) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        if (stmt_add_markers != @intCast(u8, 0)) {
+            var ade_m: []const u8 = "ADE:p\n"; pal.markerWrite(ade_m);
+        }
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 2));
+        return TEMP_NONE;
+    }
+    return lowerCompoundAssignRest(self, f.node_idx, f.slot0, f.slot1, check_op, bin_op, mode, stmt_add_markers);
+}
+
+fn lowerPlainAssignStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var node_idx: u32 = f.node_idx;
+        var store = self.ctx.store;
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        var child_node = ast_mod.astStoreNodeAt(store, node.child_0);
+        var coe_m: []const u8 = "COE:k"; pal.markerWrite(coe_m);
+        var co2_m: []const u8 = "CO2:p\n"; pal.markerWrite(co2_m);
+        var coe_kb: [10]u8 = undefined; var coe_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(child_node.kind)), coe_kb[0..]); var coe_ks: usize = @intCast(usize, 9) - @intCast(usize, coe_kl); pal.markerWrite(coe_kb[coe_ks..@intCast(usize, 9)]);
+        var coe_nm: []const u8 = "n"; pal.markerWrite(coe_nm);
+        var coe_nb: [10]u8 = undefined; var coe_nl = itoa_mod.itoa(node_idx, coe_nb[0..]); var coe_ns: usize = @intCast(usize, 9) - @intCast(usize, coe_nl); pal.markerWrite(coe_nb[coe_ns..@intCast(usize, 9)]);
+        var coe_nl2: []const u8 = "\n"; pal.markerWrite(coe_nl2);
+        f.slot7 = @intCast(u32, self.block_terminated);
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    return lowerPlainAssignRest(self, f.node_idx, f.slot0, @intCast(u8, f.slot7));
+}
+
+fn lowerIndexAccessStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 0)) {
+        var cnode = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        // FX5: `pa.*[i]` indexes the dereferenced array; lower the POINTER so
+        // the emitter renders `(*pa)[i]` instead of gcc-invalid `zT = *pa;`.
+        var base_node_idx = indexBaseAfterArrayDeref(self, cnode.child_0);
+        lowerExprPushChild(self, f, base_node_idx, @intCast(u16, 1));
+        return TEMP_NONE;
+    }
+    var node_idx: u32 = f.node_idx;
+    var store = self.ctx.store;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (f.phase == @intCast(u16, 1)) {
+        var base_temp: u32 = f.slot0;
+        // FB (D4): a tuple base reads its sema-folded ordinal through the same
+        // field mechanism as `.0`/`._0`; no runtime index is evaluated.
+        var ixt_bt = getTempType(self, base_temp);
+        if (ixt_bt != type_mod.TYPE_UNDEFINED and ixt_bt != type_mod.TYPE_VOID and @intCast(usize, ixt_bt) < self.ctx.registry.types_len) {
+            if (self.ctx.registry.types_items[@intCast(usize, ixt_bt)].kind == type_mod.TypeKind.tuple_type) {
+                if (hash_mod.u32ToU32MapGet(self.ctx.tuple_index_table, node_idx)) |ixt_ord| {
+                    return lowerTupleElemRead(self, base_temp, ixt_bt, ixt_ord);
+                }
+            }
+        }
+        var idxk: [1]u32 = [1]u32{@intCast(u32, 0)};
+        var idxb = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
+        if (idxb != type_mod.TYPE_UNDEFINED) { var idxbt = self.ctx.registry.types_items[@intCast(usize, idxb)]; idxk[0] = @intCast(u32, @enumToInt(idxbt.kind)); }
+        var idx_m: []const u8 = "IDX:b"; pal.markerWrite(idx_m);
+        var idx_bb: [10]u8 = undefined; var idx_bl = itoa_mod.itoa(base_temp, idx_bb[0..]); var idx_bs: usize = @intCast(usize, 9) - @intCast(usize, idx_bl); pal.markerWrite(idx_bb[idx_bs..@intCast(usize, 9)]);
+        var idx_km: []const u8 = "k"; pal.markerWrite(idx_km);
+        var idx_kb: [10]u8 = undefined; var idx_kl = itoa_mod.itoa(idxk[0], idx_kb[0..]); var idx_ks: usize = @intCast(usize, 9) - @intCast(usize, idx_kl); pal.markerWrite(idx_kb[idx_ks..@intCast(usize, 9)]);
+        var idx_nl: []const u8 = "\n"; pal.markerWrite(idx_nl);
+        var msp_m: []const u8 = "MSP:b"; pal.markerWrite(msp_m);
+        var msp_bb: [10]u8 = undefined; var msp_bl = itoa_mod.itoa(base_temp, msp_bb[0..]); var msp_bs: usize = @intCast(usize, 9) - @intCast(usize, msp_bl); pal.markerWrite(msp_bb[msp_bs..@intCast(usize, 9)]);
+        var msp_nm: []const u8 = "n"; pal.markerWrite(msp_nm);
+        var msp_nb: [10]u8 = undefined; var msp_nl = itoa_mod.itoa(node.child_0, msp_nb[0..]); var msp_ns: usize = @intCast(usize, 9) - @intCast(usize, msp_nl); pal.markerWrite(msp_nb[msp_ns..@intCast(usize, 9)]);
+        var li_orig_base = base_temp;
+        base_temp = maybeExtractSlicePtr(self, node.child_0, base_temp);
+        var msp2_m: []const u8 = "p"; pal.markerWrite(msp2_m);
+        var msp2b: [10]u8 = undefined; var msp2l = itoa_mod.itoa(base_temp, msp2b[0..]); var msp2s: usize = @intCast(usize, 9) - @intCast(usize, msp2l); pal.markerWrite(msp2b[msp2s..@intCast(usize, 9)]);
+        var msp_nl2: []const u8 = "\n"; pal.markerWrite(msp_nl2);
+        f.slot7 = base_temp;
+        _ = li_orig_base;
+        lowerExprPushChild(self, f, node.child_1, @intCast(u16, 2));
+        return TEMP_NONE;
+    }
+    return lowerIndexAccessRest(self, node_idx, f.slot7, f.slot0, f.slot1);
+}
+
+fn lowerFieldAccessStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 1)) {
+        return lowerFieldAccessRest(self, f.node_idx, f.slot0);
+    }
+    var node_idx: u32 = f.node_idx;
+    var store = self.ctx.store;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var field_name_id: u32 = ast_mod.astStoreNodePayload(store, node_idx);
+    var base_node = ast_mod.astStoreNodeAt(store, node.child_0);
+    if (base_node.kind == AstKind.field_access) {
+        var npl_tid = lowerTryNestedPackedLeafRead(self, node_idx);
+        if (npl_tid != TEMP_NONE) return npl_tid;
+    }
+    if (base_node.kind == AstKind.ident_expr and self.ctx.has_symbols != @intCast(u8, 0)) {
+        var base_name_id = ast_mod.astStoreIdentifier(store, node.child_0);
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, base_name_id);
+        if (sym) |s| {
+            if (s.kind == sym_mod.SymbolKind.type_alias) {
+                var key: u64 = @intCast(u64, self.module_id) * @intCast(u64, 4294967296) + @intCast(u64, base_name_id);
+                var lt = type_mod.nameCacheGet(self.ctx.registry, key);
+                if (lt) |type_id| {
+                    var f3s: []const u8 = "F3:1\n"; pal.markerWrite(f3s);
+                    var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
+                    if (ty.kind == type_mod.TypeKind.tagged_union_type) {
+                        var tp = self.ctx.registry.tu_items[@intCast(usize, ty.payload_idx)];
+                        var fstart: usize = @intCast(usize, tp.fields_start);
+                        var fcount: usize = @intCast(usize, tp.fields_count);
+                        var fi: usize = 0;
+                        while (fi < fcount) : (fi += 1) {
+                            if (self.ctx.registry.fe_items[fstart + fi].name_id == field_name_id) {
+                                var ft_box: [1]u32 = [1]u32{tp.tag_type};
+                                 var ftrt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+                                 var eff_type: [1]u32 = [1]u32{type_id};
+                                 if (ftrt) |t2| { if (t2 != type_mod.TYPE_UNDEFINED and t2 != type_mod.TYPE_VOID) { eff_type[0] = t2; } }
+                                 _ = ft_box;
+                                 return emitTaggedUnionInit(self, eff_type[0], @intCast(u32, fi));
+                            }
+                        }
+                    }
+                    if (ty.kind == type_mod.TypeKind.enum_type) {
+                        var ep = self.ctx.registry.en_items[@intCast(usize, ty.payload_idx)];
+                        var estart: usize = @intCast(usize, ep.members_start);
+                        var ecount: usize = @intCast(usize, ep.members_count);
+                        var ei: usize = 0;
+                        while (ei < ecount) : (ei += 1) {
+                            var member = self.ctx.registry.em_items[estart + ei];
+                            if (member.name_id == field_name_id) {
+                                var eftid = nextTemp(self, type_id);
+                                emitInst(self, LirInst{ .enum_const = .{ .value = @bitCast(u64, member.value), .result = eftid, .type_id = type_id, .member_name_id = member.name_id } });
+                                var enl_m: []const u8 = "ENLF:t"; pal.markerWrite(enl_m);
+                                var enl_tb: [10]u8 = undefined; var enl_tl = itoa_mod.itoa(type_id, enl_tb[0..]); var enl_ts: usize = @intCast(usize, 9) - @intCast(usize, enl_tl); pal.markerWrite(enl_tb[enl_ts..@intCast(usize, 9)]);
+                                var enl_cm: []const u8 = "c"; pal.markerWrite(enl_cm);
+                                var enl_cb: [24]u8 = undefined; var enl_cl = itoa_mod.itoa64(@bitCast(u64, member.value), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 23) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 23)]);
+                                var enl_nl: []const u8 = "\n"; pal.markerWrite(enl_nl);
+                                return eftid;
+                            }
+                        }
+                    }
+                     if (ty.kind == type_mod.TypeKind.error_set_type) {
+                        var ordinal = type_mod.typeRegistryErrorSetMemberIndex(self.ctx.registry, type_id, field_name_id);
+                        if (ordinal != @intCast(u32, 0xFFFFFFFF)) {
+                            var reg_code = hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, field_name_id);
+                            var eftid = nextTemp(self, type_id);
+                            emitInst(self, LirInst{ .enum_const = .{
+                                .value = @intCast(u64, reg_code),
+                                .result = eftid,
+                                .type_id = type_id,
+                                .member_name_id = field_name_id,
+                            }});
+                            return eftid;
+                        }
+                    }
+                }
+            }
+            if (s.kind == sym_mod.SymbolKind.module) {
+                var target_mod = s.module_id;
+                var mod_mem = lowerModuleMemberValue(self, target_mod, field_name_id);
+                if (mod_mem != TEMP_NONE) return mod_mem;
+            }
+        }
+    }
+    // Task 2a-F: a nested module-alias base (or a module-typed global) is
+    // not a value expression; resolve the owning module and emit the member
+    // directly, mirroring the direct-module ident path above.
+    if (self.ctx.has_symbols != @intCast(u8, 0)) {
+        var mod_base = resolveModuleBase(self, node.child_0);
+        if (mod_base != @intCast(u32, 0)) {
+            var mod_base_mem = lowerModuleMemberValue(self, mod_base, field_name_id);
+            if (mod_base_mem != TEMP_NONE) return mod_base_mem;
+        }
+    }
+    lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
+    return TEMP_NONE;
+}
+
+fn lowerBlockValueStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    if (f.phase == @intCast(u16, 1)) {
+        expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
+        popScopeDepth(self);
+        return f.slot0;
+    }
+    var node_idx: u32 = f.node_idx;
+    var blk_n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
+    if (blk_n > @intCast(u32, 0)) {
+        var blk_last = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, blk_n - @intCast(u32, 1));
+        var blk_last_nd = ast_mod.astStoreNodeAt(self.ctx.store, blk_last);
+        if (!lowerIsNoValueStmtKind(blk_last_nd.kind)) {
+            pushScopeDepth(self);
+            var blj: usize = 0;
+            while (blj < @intCast(usize, blk_n) - 1) : (blj += 1) {
+                self.block_terminated = @intCast(u8, 0);
+                lowerStmt(self, ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, blj)));
+            }
+            self.block_terminated = @intCast(u8, 0);
+            lowerExprPushChild(self, f, blk_last, @intCast(u16, 1));
+            return TEMP_NONE;
+        }
+    }
+    var void_temp = nextTemp(self, type_mod.TYPE_VOID);
+    lowerStmtBody(self, node_idx);
+    return void_temp;
+}
+
+// Task 2 (iterative lowering): "casts" — the builtin cast tail of the
+// `builtin_call` arm (`@intCast`/`@floatCast`/`@intToFloat`/`@ptrCast`/
+// `@volatileCast`/`@intToPtr`/`@intToEnum`/`@as`), which has the post-order
+// shape (pre-child markers, one child value, then the target-type resolve +
+// emit). `lowerBuiltinIsCastPath` mirrors the ORIGINAL arm's dispatch order:
+// every earlier name key (ptrtoint, ptr_from_int, field_parent_ptr, bitcast,
+// size_of family, enumtoint, cva*, putchar/IO, async_*, exit, panic, sleep,
+// console_*) is disjoint from these eight names and returns unconditionally
+// for its name, so predicate-true implies the original reaches the cast tail;
+// a comptime fold routes to the (unchanged) fold path first, so the predicate
+// requires no fold. Everything else keeps the recursive fallback.
+fn lowerBuiltinIsCastPath(self: *LirLowerer, node_idx: u32) bool {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (node.kind != AstKind.builtin_call) return false;
+    if (ce_mod.comptimeFoldTableGet(self.ctx.comptime_folds, node_idx)) |_| { return false; }
+    var store = self.ctx.store;
+    var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(store, node_idx));
+    if (node.child_0 == self.intcast_name_id and ec_n == @intCast(usize, 1)) return true;
+    if (ec_n < @intCast(usize, 2)) return false;
+    if (node.child_0 == self.intcast_name_id) return true;
+    if (node.child_0 == self.floatcast_name_id) return true;
+    if (node.child_0 == self.inttofloat_name_id) return true;
+    if (node.child_0 == self.ptrcast_name_id) return true;
+    if (node.child_0 == self.volatilecast_name_id) return true;
+    if (node.child_0 == self.inttoptr_name_id) return true;
+    if (node.child_0 == self.inttoenum_name_id) return true;
+    if (node.child_0 == self.as_name_id) return true;
+    return false;
+}
+
+fn lowerBuiltinCastStep(self: *LirLowerer, f: *ExprFrame) u32 {
+    var node_idx: u32 = f.node_idx;
+    var store = self.ctx.store;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(store, node_idx));
+    if (f.phase == @intCast(u16, 0)) {
+        // Task 7: a one-argument `@intCast(expr)` (Zig 0.15.2 infers the
+        // target from context) is typed by sema's single-argument builtin
+        // fallback as the operand's own type, so lower the operand value —
+        // the consumer applies any needed context conversion. Previously it
+        // fell through to the void-temp default below, and the emitter
+        // (which never declares void temps) left the consumer referencing
+        // an undeclared `zT_<n>` in the emitted C (emit rc=0, gcc failure).
+        if (node.child_0 == self.intcast_name_id and ec_n == @intCast(usize, 1)) {
+            lowerExprPushChild(self, f, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u16, 1));
+            return TEMP_NONE;
+        }
+        if (ec_n >= 2) {
+            var elm: []const u8 = "B"; pal.markerWrite(elm);
+            if (node.child_0 == self.intcast_name_id) { var bm: []const u8 = "I"; pal.markerWrite(bm); }
+            else if (node.child_0 == self.ptrcast_name_id) { var bm: []const u8 = "P"; pal.markerWrite(bm); }
+            else { var bm: []const u8 = "F"; pal.markerWrite(bm); }
+            lowerExprPushChild(self, f, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)), @intCast(u16, 2));
+            return TEMP_NONE;
+        }
+        return nextTemp(self, type_mod.TYPE_VOID);
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        return f.slot0;
+    }
+    var t_target: u32 = @intCast(u32, 10);
+    var val_temp: u32 = f.slot0;
+    var ty_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
+    t_target = type_mod.TYPE_U32;
+    if (ty_node.kind == AstKind.fn_type) {
+        var fc_env = lowerTypeResolveEnv(self, null);
+        var fc_t = type_resolver.resolveTypeExprFull(&fc_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
+        if (fc_t != type_mod.TYPE_UNDEFINED) {
+            t_target = fc_t;
+            var fc_inner = self.ctx.registry.types_items[@intCast(usize, fc_t)];
+            if (fc_inner.kind == type_mod.TypeKind.ptr_type) {
+                var fc_pp = self.ctx.registry.ptr_items[@intCast(usize, fc_inner.payload_idx)];
+                type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, fc_pp.base);
+            } else {
+                type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, fc_t);
+            }
+            var fcm: []const u8 = "FNT:t"; pal.markerWrite(fcm);
         }
     } else {
-        var cem_m: []const u8 = "CEM:n"; pal.markerWrite(cem_m);
-        var cem_nb: [10]u8 = undefined; var cem_nl = itoa_mod.itoa(node_idx, cem_nb[0..]); var cem_ns: usize = @intCast(usize, 9) - @intCast(usize, cem_nl); pal.markerWrite(cem_nb[cem_ns..@intCast(usize, 9)]);
-        var cem_nl2: []const u8 = "\n"; pal.markerWrite(cem_nl2);
+        var ct_env = lowerTypeResolveEnv(self, null);
+        var ct = type_resolver.resolveTypeExprFull(&ct_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
+        if (ct != type_mod.TYPE_UNDEFINED) { t_target = ct; }
     }
+    if (t_target == type_mod.TYPE_U32) { var cdm: []const u8 = "CASTDFLT:n"; pal.markerWriteInt(cdm, node_idx); var cdk: []const u8 = "CASTDFLT:k"; pal.markerWriteInt(cdk, @intCast(u32, @enumToInt(ty_node.kind))); }
+    var result = nextTemp(self, t_target);
+    if (node.child_0 == self.intcast_name_id) {
+        var src_ty = getTempType(self, val_temp);
+        var src_bits = intCastTypeBits(self.ctx.registry, src_ty);
+        var dst_bits = intCastTypeBits(self.ctx.registry, t_target);
+        var chk: u8 = @intCast(u8, 0);
+        if (self.ctx.safe_checks and src_bits > @intCast(u32, 0) and dst_bits > @intCast(u32, 0)) {
+            if (src_bits > dst_bits) {
+                chk = @intCast(u8, 1);
+            } else {
+                var src_s = intCastTypeIsSigned(self.ctx.registry, src_ty);
+                var dst_s = intCastTypeIsSigned(self.ctx.registry, t_target);
+                if (src_bits == dst_bits) {
+                    if (src_s != dst_s) { chk = @intCast(u8, 1); }
+                } else if (src_s and !dst_s) {
+                    chk = @intCast(u8, 1);
+                }
+            }
+        }
+        if (chk != @intCast(u8, 0)) {
+            var src_s: u8 = intCastTypeIsSigned(self.ctx.registry, src_ty);
+            var dst_s: u8 = intCastTypeIsSigned(self.ctx.registry, t_target);
+            emitInst(self, LirInst{ .int_cast_checked = .{
+                .value = val_temp, .target = t_target, .result = result,
+                .src_signed = src_s, .src_width = @intCast(u8, src_bits),
+                .dst_signed = dst_s, .dst_width = @intCast(u8, dst_bits),
+            } });
+        } else {
+            emitInst(self, LirInst{ .int_cast = .{
+                .value = val_temp, .target = t_target, .result = result,
+            } });
+        }
+    } else if (node.child_0 == self.floatcast_name_id) {
+        emitInst(self, LirInst{ .float_cast = .{
+            .value = val_temp, .target = t_target, .result = result,
+        } });
+    } else if (node.child_0 == self.inttofloat_name_id) {
+        emitInst(self, LirInst{ .int_to_float = .{
+            .value = val_temp, .target = t_target, .result = result,
+        } });
+    } else if (node.child_0 == self.ptrcast_name_id) {
+        emitInst(self, LirInst{ .ptr_cast = .{
+            .value = val_temp, .target = t_target, .result = result,
+        } });
+    } else if (node.child_0 == self.volatilecast_name_id) {
+        emitInst(self, LirInst{ .ptr_cast = .{
+            .value = val_temp, .target = t_target, .result = result,
+        } });
+    } else if (node.child_0 == self.inttoptr_name_id) {
+        emitInst(self, LirInst{ .int_to_ptr = .{
+            .value = val_temp, .target = t_target, .result = result,
+        } });
+    } else if (node.child_0 == self.inttoenum_name_id) {
+        emitInst(self, LirInst{ .int_cast = .{
+            .value = val_temp, .target = t_target, .result = result,
+        } });
+    } else if (node.child_0 == self.as_name_id) {
+        emitInst(self, LirInst{ .int_cast = .{
+            .value = val_temp, .target = t_target, .result = result,
+        } });
+    }
+    return result;
+}
+
+fn lowerExprStep(self: *LirLowerer) u32 {
+    var f: ExprFrame = self.expr_stack.items[self.expr_stack.len - @intCast(usize, 1)];
+    self.expr_stack.len -= @intCast(usize, 1);
+    lowerExprLexMarkers(self, f.node_idx);
+    var k: u32 = f.kind;
+    if (k == @intCast(u32, @enumToInt(AstKind.builtin_call))) {
+        if (lowerBuiltinIsCastPath(self, f.node_idx)) {
+            return lowerBuiltinCastStep(self, &f);
+        }
+        return lowerExprImpl(self, f.node_idx);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.int_literal))) {
+        lowerExprPrologue(self, f.node_idx);
+        var val = ast_mod.astStoreIntValue(self.ctx.store, f.node_idx);
+        var tid = nextTemp(self, type_mod.TYPE_INT_LIT);
+        emitIntConst(self, val, tid);
+        var _rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, f.node_idx);
+        var il_m: []const u8 = "ILR:i"; pal.markerWrite(il_m);
+        var il_ib: [10]u8 = undefined; var il_il = itoa_mod.itoa(f.node_idx, il_ib[0..]); var il_is: usize = @intCast(usize, 9) - @intCast(usize, il_il); pal.markerWrite(il_ib[il_is..@intCast(usize, 9)]);
+        var il_vm: []const u8 = "v"; pal.markerWriteInt64(il_vm, val);
+        if (_rt) |trt| {
+            var il_rm: []const u8 = "R"; pal.markerWrite(il_rm);
+            var il_rb: [10]u8 = undefined; var il_rl = itoa_mod.itoa(trt, il_rb[0..]); var il_rs: usize = @intCast(usize, 9) - @intCast(usize, il_rl); pal.markerWrite(il_rb[il_rs..@intCast(usize, 9)]);
+        } else {
+            var il_mm: []const u8 = "M"; pal.markerWrite(il_mm);
+        }
+        var il_nl2: []const u8 = "\n"; pal.markerWrite(il_nl2);
+        return tid;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.float_literal))) {
+        lowerExprPrologue(self, f.node_idx);
+        var store = self.ctx.store;
+        var val = store.float_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, f.node_idx))];
+        var tid = nextTemp(self, type_mod.TYPE_F64);
+        emitInst(self, LirInst{ .float_const = .{ .value = val, .result = tid } });
+        return tid;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.string_literal))) {
+        lowerExprPrologue(self, f.node_idx);
+        var store = self.ctx.store;
+        var str_id = store.string_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, f.node_idx))];
+        // Track4 S22 F-M4 (A1): mirror the semantic type `*const [N]u8` so the
+        // length travels in the temp type (the emitter appends the NUL).
+        var sl_bytes = si_mod.stringInternerGet(self.ctx.registry.interner, str_id);
+        var sl_arr = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, type_mod.TYPE_U8, @intCast(u32, sl_bytes.len));
+        var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, sl_arr, true);
+        var tid = nextTemp(self, ptr_type);
+        emitInst(self, LirInst{ .string_const = .{ .string_id = str_id, .result = tid } });
+        return tid;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.char_literal))) {
+        lowerExprPrologue(self, f.node_idx);
+        var val = ast_mod.astStoreIntValue(self.ctx.store, f.node_idx);
+        var tid = nextTemp(self, type_mod.TYPE_U8);
+        emitIntConst(self, val, tid);
+        return tid;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.bool_literal))) {
+        lowerExprPrologue(self, f.node_idx);
+        var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        var val = @intCast(u8, node.flags & @intCast(u8, 1));
+        var tid = nextTemp(self, type_mod.TYPE_BOOL);
+        emitInst(self, LirInst{ .bool_const = .{ .value = val, .result = tid } });
+        return tid;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.null_literal))) {
+        lowerExprPrologue(self, f.node_idx);
+        var node_idx: u32 = f.node_idx;
+        var nul_ce = coercion_mod.coercionTableGet(self.ctx.coercions, node_idx);
+        if (nul_ce) |nce| {
+            var nul_routes_null: u8 = @intCast(u8, 0);
+            if (nce.kind == CoercionKind.wrap_optional_null or nce.kind == CoercionKind.wrap_optional or nce.kind == CoercionKind.wrap_error_success) {
+                nul_routes_null = @intCast(u8, 1);
+            }
+            if (nul_routes_null != @intCast(u8, 0) and nce.target_type != @intCast(u32, 0) and nce.target_type != type_mod.TYPE_UNDEFINED) {
+                var opt_layer: u32 = @intCast(u32, 0);
+                var cur_ty: u32 = nce.target_type;
+                var walk_guard: usize = @intCast(usize, 0);
+                while (walk_guard < @intCast(usize, 8)) : (walk_guard += @intCast(usize, 1)) {
+                    if (@intCast(usize, cur_ty) >= self.ctx.registry.types_len) break;
+                    var ck = self.ctx.registry.types_items[@intCast(usize, cur_ty)];
+                    if (ck.kind == type_mod.TypeKind.optional_type) { opt_layer = cur_ty; break; }
+                    if (ck.kind == type_mod.TypeKind.error_union_type) {
+                        if (@intCast(usize, ck.payload_idx) >= self.ctx.registry.eu_len) break;
+                        cur_ty = self.ctx.registry.eu_items[@intCast(usize, ck.payload_idx)].payload;
+                        continue;
+                    }
+                    break;
+                }
+                if (opt_layer != @intCast(u32, 0)) {
+                    var otid = nextTemp(self, opt_layer);
+                    var nco_om: []const u8 = "NCO:opt"; pal.markerWriteInt(nco_om, otid);
+                    var nco_ol: []const u8 = "\n"; pal.markerWrite(nco_ol);
+                    emitInst(self, LirInst{ .set_optional_null = .{ .result = otid, .type_id = opt_layer } });
+                    return otid;
+                }
+            }
+        }
+        var tid = nextTemp(self, type_mod.TYPE_NULL);
+        var nco_m: []const u8 = "NCO:ti"; pal.markerWriteInt(nco_m, tid);
+        var nco_nl: []const u8 = "\n"; pal.markerWrite(nco_nl);
+        emitInst(self, LirInst{ .null_const = .{ .result = tid } });
+        return tid;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.undefined_literal))) {
+        lowerExprPrologue(self, f.node_idx);
+        var node_idx: u32 = f.node_idx;
+        var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
+        var und_ud_m: []const u8 = "UND:udLt"; pal.markerWrite(und_ud_m);
+        var und_ud_tb: [10]u8 = undefined; var und_ud_tl = itoa_mod.itoa(tid, und_ud_tb[0..]); var und_ud_ts: usize = @intCast(usize, 9) - @intCast(usize, und_ud_tl); pal.markerWrite(und_ud_tb[und_ud_ts..@intCast(usize, 9)]);
+        var und_ud_nl: []const u8 = "\n"; pal.markerWrite(und_ud_nl);
+        if (self.ctx.safe_checks) {
+            emitInst(self, LirInst{ .poison_init = .{ .result = tid } });
+        } else {
+            emitInst(self, LirInst{ .undefined_const = .{ .result = tid, .type_id = type_mod.TYPE_UNDEFINED } });
+        }
+        var uds_m: []const u8 = "UDS:t"; pal.markerWrite(uds_m);
+        var uds_tb: [10]u8 = undefined; var uds_tl = itoa_mod.itoa(tid, uds_tb[0..]); var uds_ts: usize = @intCast(usize, 9) - @intCast(usize, uds_tl); pal.markerWrite(uds_tb[uds_ts..@intCast(usize, 9)]);
+        var uds_nl: []const u8 = "\n"; pal.markerWrite(uds_nl);
+        return tid;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.enum_literal))) {
+        lowerExprPrologue(self, f.node_idx);
+        var node_idx: u32 = f.node_idx;
+        var ev_val: u64 = @intCast(u64, ast_mod.astStoreNodePayload(self.ctx.store, node_idx));
+        var evptr: u32 = @intCast(u32, @ptrToInt(self.ctx.enum_value_table));
+        var evpb: [20]u8 = undefined;
+        var evpl = itoa_mod.itoa(evptr, evpb[0..]);
+        var evps: usize = @intCast(usize, 19) - @intCast(usize, evpl);
+        var evR: []const u8 = "ER"; pal.markerWrite(evR);
+        pal.markerWrite(evpb[evps..@intCast(usize, 19)]);
+        var evgc2 = self.ctx.enum_value_table.count;
+        var eg2b: [20]u8 = undefined;
+        var eg2l = itoa_mod.itoa(@intCast(u32, evgc2), eg2b[0..]);
+        var eg2s: usize = @intCast(usize, 19) - @intCast(usize, eg2l);
+        var eRc: []const u8 = "c="; pal.markerWrite(eRc);
+        pal.markerWrite(eg2b[eg2s..@intCast(usize, 19)]);
+        var eRs: []const u8 = " "; pal.markerWrite(eRs);
+        var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
+        var enum_type: [1]u32 = [1]u32{literalTempType(self, node_idx)};
+        if (ev) |v| { ev_val = @intCast(u64, v); var we1: []const u8 = "WE"; pal.markerWrite(we1);
+            var enum_ty = enum_type[0];
+            if (enum_ty != type_mod.TYPE_INT_LIT and enum_ty != type_mod.TYPE_UNDEFINED and enum_ty != type_mod.TYPE_VOID) {
+                var enum_ti = self.ctx.registry.types_items[@intCast(usize, enum_ty)];
+                if (enum_ti.kind == type_mod.TypeKind.tagged_union_type) {
+                    var tu_result = emitTaggedUnionInit(self, enum_ty, @intCast(u32, ev_val));
+                    var enl_m: []const u8 = "ENL:t"; pal.markerWrite(enl_m);
+                    var enl_tb: [10]u8 = undefined; var enl_tl = itoa_mod.itoa(enum_type[0], enl_tb[0..]); var enl_ts: usize = @intCast(usize, 9) - @intCast(usize, enl_tl); pal.markerWrite(enl_tb[enl_ts..@intCast(usize, 9)]);
+                    var enl_cm: []const u8 = "c"; pal.markerWrite(enl_cm);
+                    var enl_cb: [20]u8 = undefined; var enl_cl = itoa_mod.itoa(@intCast(u32, ev_val), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 19) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 19)]);
+                    var enl_nl: []const u8 = "\n"; pal.markerWrite(enl_nl);
+                    return tu_result;
+                }
+            }
+        }
+        else { var we1: []const u8 = "wE"; pal.markerWrite(we1); }
+        var tid = nextTemp(self, enum_type[0]);
+        emitIntConst(self, ev_val, tid);
+        var enl_m: []const u8 = "ENL:t"; pal.markerWrite(enl_m);
+        var enl_tb: [10]u8 = undefined; var enl_tl = itoa_mod.itoa(enum_type[0], enl_tb[0..]); var enl_ts: usize = @intCast(usize, 9) - @intCast(usize, enl_tl); pal.markerWrite(enl_tb[enl_ts..@intCast(usize, 9)]);
+        var enl_cm: []const u8 = "c"; pal.markerWrite(enl_cm);
+        var enl_cb: [20]u8 = undefined; var enl_cl = itoa_mod.itoa(@intCast(u32, ev_val), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 19) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 19)]);
+        var enl_nl: []const u8 = "\n"; pal.markerWrite(enl_nl);
+        return tid;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.error_literal))) {
+        lowerExprPrologue(self, f.node_idx);
+        var node_idx: u32 = f.node_idx;
+        var name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, node_idx);
+        var reg_code: u32 = hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, name_id);
+        var val = @intCast(u64, reg_code);
+        var ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx);
+        if (ev) |v| { val = @intCast(u64, v); }
+        var rtype = literalTempType(self, node_idx);
+        var rty = self.ctx.registry.types_items[@intCast(usize, rtype)];
+        if (rty.kind == type_mod.TypeKind.error_union_type) {
+            var code_temp = nextTemp(self, type_mod.TYPE_I32);
+            emitIntConst(self, val, code_temp);
+            var eu_temp = nextTemp(self, rtype);
+            emitInst(self, LirInst{ .wrap_error_err = .{ .value = code_temp, .result = eu_temp, .type_id = rtype } });
+            return eu_temp;
+        }
+        var tid = nextTemp(self, rtype);
+        emitIntConst(self, val, tid);
+        return tid;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.unreachable_expr))) {
+        lowerExprPrologue(self, f.node_idx);
+        emitInst(self, LirInst{ .trap = {} });
+        self.block_terminated = @intCast(u8, 1);
+        return @intCast(u32, 0);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.import_expr))) {
+        lowerExprPrologue(self, f.node_idx);
+        return @intCast(u32, 0);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.paren_expr))) {
+        if (f.phase == @intCast(u16, 0)) {
+            lowerExprPrologue(self, f.node_idx);
+            var pnode = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+            lowerExprPushChild(self, &f, pnode.child_0, @intCast(u16, 1));
+            return TEMP_NONE;
+        }
+        return f.slot0;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.add))) {
+        return lowerAddStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.sub))) {
+        return lowerAddLikeStep(self, &f, "M4s:r", lir_mod.CHECK_OP_SUB, BIN_SUB);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.mul))) {
+        return lowerAddLikeStep(self, &f, "M4m:r", lir_mod.CHECK_OP_MUL, BIN_MUL);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.div))) {
+        return lowerDivModStep(self, &f, BIN_DIV);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.mod_op))) {
+        return lowerDivModStep(self, &f, BIN_MOD);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.shl))) {
+        return lowerShlStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.shr))) {
+        return lowerShrStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.wrap_add))) {
+        return lowerBinaryArmStep(self, &f, lowerWrapArithOp(AstKind.wrap_add));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.wrap_sub))) {
+        return lowerBinaryArmStep(self, &f, lowerWrapArithOp(AstKind.wrap_sub));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.wrap_mul))) {
+        return lowerBinaryArmStep(self, &f, lowerWrapArithOp(AstKind.wrap_mul));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.sat_add))) {
+        return lowerBinaryArmStep(self, &f, lowerSatArithOp(AstKind.sat_add));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.sat_sub))) {
+        return lowerBinaryArmStep(self, &f, lowerSatArithOp(AstKind.sat_sub));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.sat_mul))) {
+        return lowerBinaryArmStep(self, &f, lowerSatArithOp(AstKind.sat_mul));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.sat_shl))) {
+        return lowerBinaryArmStep(self, &f, lowerSatArithOp(AstKind.sat_shl));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.bit_and))) {
+        return lowerBinaryArmStep(self, &f, BIN_AND);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.bit_or))) {
+        return lowerBinaryArmStep(self, &f, BIN_OR);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.bit_xor))) {
+        return lowerBinaryArmStep(self, &f, BIN_XOR);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.cmp_eq)) or k == @intCast(u32, @enumToInt(AstKind.cmp_ne))) {
+        return lowerCmpEqStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.cmp_lt))) {
+        return lowerCmpSimpleStep(self, &f, BIN_LT);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.cmp_le))) {
+        return lowerCmpSimpleStep(self, &f, BIN_LE);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.cmp_gt))) {
+        return lowerCmpSimpleStep(self, &f, BIN_GT);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.cmp_ge))) {
+        return lowerCmpSimpleStep(self, &f, BIN_GE);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.negate))) {
+        return lowerNegateStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.wrap_negate))) {
+        return lowerWrapNegateStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.bool_not))) {
+        return lowerBoolNotStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.bit_not))) {
+        return lowerBitNotStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.deref))) {
+        return lowerDerefStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.plain_assign))) {
+        return lowerPlainAssignStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.index_access))) {
+        return lowerIndexAccessStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.field_access))) {
+        return lowerFieldAccessStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.address_of))) {
+        lowerExprPrologue(self, f.node_idx);
+        var node_idx: u32 = f.node_idx;
+        var rt_ao = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+        var ao_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
+        if (rt_ao) |t| { if (t != type_mod.TYPE_UNDEFINED) { ao_box[0] = t; } } else { var rtm_ao: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ao); var rtmb_ao: [10]u8 = undefined; var rtml_ao = itoa_mod.itoa(node_idx, rtmb_ao[0..]); var rtms_ao: usize = @intCast(usize, 9) - @intCast(usize, rtml_ao); pal.markerWrite(rtmb_ao[rtms_ao..@intCast(usize, 9)]); var rtmnl_ao: []const u8 = "\n"; pal.markerWrite(rtmnl_ao); }
+        var anode = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        return lowerLValueAddr(self, anode.child_0, ao_box[0]);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.try_expr))) {
+        return lowerTryExprStep(self, &f);
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.add_assign))) {
+        return lowerCompoundAssignStep(self, &f, lir_mod.CHECK_OP_ADD, BIN_ADD, @intCast(u8, 0), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.sub_assign))) {
+        return lowerCompoundAssignStep(self, &f, lir_mod.CHECK_OP_SUB, BIN_SUB, @intCast(u8, 0), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.mul_assign))) {
+        return lowerCompoundAssignStep(self, &f, lir_mod.CHECK_OP_MUL, BIN_MUL, @intCast(u8, 0), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.wrap_add_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_WADD, @intCast(u8, 4), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.wrap_sub_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_WSUB, @intCast(u8, 4), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.wrap_mul_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_WMUL, @intCast(u8, 4), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.sat_add_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_SADD, @intCast(u8, 4), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.sat_sub_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_SSUB, @intCast(u8, 4), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.sat_mul_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_SMUL, @intCast(u8, 4), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.sat_shl_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_SSHL, @intCast(u8, 4), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.div_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_DIV, @intCast(u8, 1), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.mod_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_MOD, @intCast(u8, 1), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.shl_assign))) {
+        return lowerCompoundAssignStep(self, &f, lir_mod.CHECK_OP_SHL, BIN_SHL, @intCast(u8, 2), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.shr_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_SHR, @intCast(u8, 3), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.and_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_AND, @intCast(u8, 4), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.xor_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_XOR, @intCast(u8, 4), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.or_assign))) {
+        return lowerCompoundAssignStep(self, &f, @intCast(u8, 0), BIN_OR, @intCast(u8, 4), @intCast(u8, 0));
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.block))) {
+        return lowerBlockValueStep(self, &f);
+    }
+    return lowerExprImpl(self, f.node_idx);
+}
+
+pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
+    // Task 2 (iterative lowering): the LEX entry markers moved into
+    // `lowerExprStep` (once per node frame, same stream position); the body is
+    // now the `expr_stack` trampoline instead of the recursive
+    // `lowerExprImpl` call. The coercion block below is unchanged and still
+    // applies to the returned temp (the root result).
+    var result = lowerExprDriver(self, node_idx);
+    result = lowerExprCoerceResult(self, node_idx, result);
     return result;
 }
 
@@ -2821,13 +4025,7 @@ fn lowerLoopClose(self: *LirLowerer, cond_bb: u32, exit_bb: u32, saved_label: u3
 // temp-allocation order and emitted ops of the former per-arm copies are
 // preserved. `stmt_add_markers` reproduces the statement-only add_assign
 // ADE/BIO marker pair at the identical stream position.
-fn lowerCompoundAssign(self: *LirLowerer, node_idx: u32, check_op: u8, bin_op: u8, mode: u8, stmt_add_markers: u8) u32 {
-    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
-    if (stmt_add_markers != @intCast(u8, 0)) {
-        var ade_m: []const u8 = "ADE:p\n"; pal.markerWrite(ade_m);
-    }
-    var lhs_val = lowerExpr(self, node.child_0);
-    var rhs_val = lowerExpr(self, node.child_1);
+fn lowerCompoundAssignRest(self: *LirLowerer, node_idx: u32, lhs_val: u32, rhs_val: u32, check_op: u8, bin_op: u8, mode: u8, stmt_add_markers: u8) u32 {
     var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
     var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
     if (op_rt) |t| { op_r_box[0] = t; }
@@ -2856,6 +4054,451 @@ fn lowerCompoundAssign(self: *LirLowerer, node_idx: u32, check_op: u8, bin_op: u
     }
     lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     return op_r;
+}
+
+fn lowerFieldAccessRest(self: *LirLowerer, node_idx: u32, base_temp_in: u32) u32 {
+    var store = self.ctx.store;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var field_name_id: u32 = ast_mod.astStoreNodePayload(store, node_idx);
+    var base_node = ast_mod.astStoreNodeAt(store, node.child_0);
+    var base_temp: u32 = base_temp_in;
+    if (base_temp == TEMP_NONE or base_temp >= @intCast(u32, self.hoisted_temps.len)) {
+
+        var np_msg: []const u8 = "non-value base expression in field access";
+        _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3042),
+            @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), np_msg);
+        var dummy = nextTemp(self, type_mod.TYPE_VOID);
+        return dummy;
+
+    }
+    var base_ty = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
+    if (base_ty != type_mod.TYPE_UNDEFINED) {
+        var bty = self.ctx.registry.types_items[@intCast(usize, base_ty)];
+        if (bty.kind == type_mod.TypeKind.error_set_type) {
+            var es_ordinal = type_mod.typeRegistryErrorSetMemberIndex(self.ctx.registry, base_ty, field_name_id);
+            if (es_ordinal != @intCast(u32, 0xFFFFFFFF)) {
+                var reg_code = hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, field_name_id);
+                var eftid2 = nextTemp(self, base_ty);
+                emitInst(self, LirInst{ .enum_const = .{
+                    .value = @intCast(u64, reg_code),
+                    .result = eftid2,
+                    .type_id = base_ty,
+                    .member_name_id = field_name_id,
+                }});
+                return eftid2;
+            }
+        }
+        // Task B2: a function-local enum's member access (`E.A`) reaches this
+        // generic base-type path (the module-level `type_alias` symbol arm
+        // above only covers module types).
+        if (bty.kind == type_mod.TypeKind.enum_type) {
+            var ep2 = self.ctx.registry.en_items[@intCast(usize, bty.payload_idx)];
+            var estart2: usize = @intCast(usize, ep2.members_start);
+            var ecount2: usize = @intCast(usize, ep2.members_count);
+            var ei2: usize = 0;
+            while (ei2 < ecount2) : (ei2 += 1) {
+                var member2 = self.ctx.registry.em_items[estart2 + ei2];
+                if (member2.name_id == field_name_id) {
+                    var eftid3 = nextTemp(self, base_ty);
+                    emitInst(self, LirInst{ .enum_const = .{ .value = @bitCast(u64, member2.value), .result = eftid3, .type_id = base_ty, .member_name_id = member2.name_id } });
+                    return eftid3;
+                }
+            }
+        }
+    }
+    var gape_fac: []const u8 = "GAPE:fac\n"; pal.markerWrite(gape_fac);
+    var fabs_m: []const u8 = "FABS:bt"; pal.markerWrite(fabs_m);
+    var fabs_b: [10]u8 = undefined; var fabs_tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, base_temp)].type_id, fabs_b[0..]); var fabs_ts: usize = @intCast(usize, 9) - @intCast(usize, fabs_tl); pal.markerWrite(fabs_b[fabs_ts..@intCast(usize, 9)]);
+    var fabs_nl: []const u8 = "\n"; pal.markerWrite(fabs_nl);
+    var resolved_base = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+    // Plan C Task 1b-F: same unanalyzed-continue-expression fallback as the
+    // field-store path — the lowered base temp carries the declared type.
+    if (resolved_base == null) {
+        if (base_ty != type_mod.TYPE_UNDEFINED and base_ty != type_mod.TYPE_VOID and @intCast(usize, base_ty) < self.ctx.registry.types_len) {
+            resolved_base = base_ty;
+        }
+    }
+    // Task 11N: `.len` on a struct/union array field. The field access base
+    // decays to a bare pointer, so the array `.len` arm below is unreachable;
+    // recover the declared field length and emit it as a compile-time const.
+    var lv_len_id = si_mod.stringInternerIntern(self.ctx.registry.interner, "len");
+    if (field_name_id == lv_len_id) {
+        if (fieldStaticLenForBase(self, node.child_0)) |lv_alen| {
+            var lv_lt = nextTemp(self, type_mod.TYPE_USIZE);
+            emitIntConst(self, @intCast(u64, lv_alen), lv_lt);
+            return lv_lt;
+        }
+    }
+    if (resolved_base) |_| { var f4s: []const u8 = "F4:H\n"; pal.markerWrite(f4s); } else { var f4m_f: []const u8 = "F4:Mf"; pal.markerWrite(f4m_f); var f4m_fb: [10]u8 = undefined; var f4m_fl = itoa_mod.itoa(node_idx, f4m_fb[0..]); var f4m_fs: usize = @intCast(usize, 9) - @intCast(usize, f4m_fl); pal.markerWrite(f4m_fb[f4m_fs..@intCast(usize, 9)]); var f4m_bm: []const u8 = "b"; pal.markerWrite(f4m_bm); var f4m_bb: [10]u8 = undefined; var f4m_bl = itoa_mod.itoa(node.child_0, f4m_bb[0..]); var f4m_bs: usize = @intCast(usize, 9) - @intCast(usize, f4m_bl); pal.markerWrite(f4m_bb[f4m_bs..@intCast(usize, 9)]); var f4mnl2: []const u8 = "\n"; pal.markerWrite(f4mnl2); }
+    var rt_fa = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+    var fa_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+    if (rt_fa) |t| { if (t != type_mod.TYPE_UNDEFINED) { fa_box[0] = t; } } else { var rtm_fa: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_fa); var rtmb_fa: [10]u8 = undefined; var rtml_fa = itoa_mod.itoa(node_idx, rtmb_fa[0..]); var rtms_fa: usize = @intCast(usize, 9) - @intCast(usize, rtml_fa); pal.markerWrite(rtmb_fa[rtms_fa..@intCast(usize, 9)]); var rtmnl_fa: []const u8 = "\n"; pal.markerWrite(rtmnl_fa); }
+    if (fa_box[0] == type_mod.TYPE_VOID) { var gape_fav: []const u8 = "GAPE:fav\n"; pal.markerWrite(gape_fav); }
+    var d1f: []const u8 = "D1:FADr"; pal.markerWrite(d1f);
+    var d1fb: [20]u8 = undefined;
+    if (rt_fa) |d1t| { var d1fl = itoa_mod.itoa(d1t, d1fb[0..]); var d1fs: usize = @intCast(usize, 19) - @intCast(usize, d1fl); pal.markerWrite(d1fb[d1fs..@intCast(usize, 19)]); }
+    else { var d1z: []const u8 = "NULL"; pal.markerWrite(d1z); }
+    var d1fn: []const u8 = "fn"; pal.markerWrite(d1fn);
+    var d1fnb: [20]u8 = undefined; var d1fnl = itoa_mod.itoa(field_name_id, d1fnb[0..]); var d1fns: usize = @intCast(usize, 19) - @intCast(usize, d1fnl); pal.markerWrite(d1fnb[d1fns..@intCast(usize, 19)]);
+    var d1nl: []const u8 = " "; pal.markerWrite(d1nl);
+    var fa_ty = self.ctx.registry.types_items[@intCast(usize, fa_box[0])];
+    if (fa_ty.kind == type_mod.TypeKind.fn_type) {
+        if (base_node.kind == AstKind.ident_expr and self.ctx.has_symbols != @intCast(u8, 0)) {
+            var fr_base_name = ast_mod.astStoreIdentifier(store, node.child_0);
+            var fr_base_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, fr_base_name);
+            if (fr_base_sym) |frbsym| {
+                if (frbsym.module_id != @intCast(u32, 0) and frbsym.module_id != self.module_id) {
+                    var fr_tmod = frbsym.module_id;
+                    var fr_fsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, fr_tmod, field_name_id);
+                    if (fr_fsym) |frfsym| {
+                        if (frfsym.kind == @intCast(u8, 3)) {
+                            var fr_res = materializeFnRef(self, frfsym);
+                            var frm_m: []const u8 = "FREF:n"; pal.markerWrite(frm_m);
+                            var frm_b: [10]u8 = undefined; var frm_l = itoa_mod.itoa(frfsym.name_id, frm_b[0..]); var frm_s: usize = @intCast(usize, 9) - @intCast(usize, frm_l); pal.markerWrite(frm_b[frm_s..@intCast(usize, 9)]);
+                            var frm_nl: []const u8 = "\n"; pal.markerWrite(frm_nl);
+                            return fr_res;
+                        }
+                    }
+                }
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    if (fa_ty.kind == type_mod.TypeKind.module_type) {
+        return @intCast(u32, 0);
+    }
+    var fas_m: []const u8 = "FAS:n"; pal.markerWrite(fas_m);
+    var fas_b: [20]u8 = undefined; var fas_l = itoa_mod.itoa(field_name_id, fas_b[0..]); var fas_s: usize = @intCast(usize, 19) - @intCast(usize, fas_l); pal.markerWrite(fas_b[fas_s..@intCast(usize, 19)]);
+    var fas_tn: []const u8 = "t"; pal.markerWrite(fas_tn);
+    var fas_tb: [20]u8 = undefined; var fas_tl = itoa_mod.itoa(fa_box[0], fas_tb[0..]); var fas_ts: usize = @intCast(usize, 19) - @intCast(usize, fas_tl); pal.markerWrite(fas_tb[fas_ts..@intCast(usize, 19)]);
+    var fas_nl: []const u8 = " "; pal.markerWrite(fas_nl);
+    var tid = nextTemp(self, fa_box[0]);
+    if (resolved_base) |type_id| {
+        var ty = self.ctx.registry.types_items[@intCast(usize, type_id)];
+        var kind = ty.kind;
+        var type_box: [1]u32 = [1]u32{type_id};
+        if (kind == type_mod.TypeKind.ptr_type or kind == type_mod.TypeKind.many_ptr_type) {
+            type_box[0] = self.ctx.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+            ty = self.ctx.registry.types_items[@intCast(usize, type_box[0])];
+            kind = ty.kind;
+            var fad2_m: []const u8 = "FAD2:k"; pal.markerWrite(fad2_m);
+            var fad2_kb: [10]u8 = undefined; var fad2_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(kind)), fad2_kb[0..]); var fad2_ks: usize = @intCast(usize, 9) - @intCast(usize, fad2_kl); pal.markerWrite(fad2_kb[fad2_ks..@intCast(usize, 9)]);
+            var fad2_nl: []const u8 = "\n"; pal.markerWrite(fad2_nl);
+        }
+        if (kind == type_mod.TypeKind.slice_type) {
+            var elem = self.ctx.registry.slice_items[@intCast(usize, ty.payload_idx)].elem;
+            var len_s: []const u8 = "len";
+            var len_id = si_mod.stringInternerIntern(self.ctx.registry.interner, len_s);
+            if (field_name_id == len_id) {
+                var f4sl: []const u8 = "F4SL\n"; pal.markerWrite(f4sl);
+                tid = nextTemp(self, type_mod.TYPE_USIZE);
+                var sl_nid = nameMapGet(self, base_temp);
+                emitInst(self, LirInst{ .load_field = .{ .name_id = sl_nid, .base = base_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = tid } });
+            } else {
+                var pty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem, false);
+                tid = nextTemp(self, pty);
+                var pm: []const u8 = "P:"; pal.markerWriteInt(pm, @intCast(u32, pty));
+                var psm: []const u8 = "Ps:"; pal.markerWriteInt(psm, tid);
+                var sp_nid = nameMapGet(self, base_temp);
+                emitInst(self, LirInst{ .load_field = .{ .name_id = sp_nid, .base = base_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = tid } });
+            }
+            return tid;
+        } else if (kind == type_mod.TypeKind.array_type) {
+            var len_s: []const u8 = "len";
+            var len_id = si_mod.stringInternerIntern(self.ctx.registry.interner, len_s);
+            if (field_name_id == len_id) {
+                var ap = self.ctx.registry.array_items[@intCast(usize, ty.payload_idx)];
+                var fam_m: []const u8 = "FAM:ALEN\n"; pal.markerWrite(fam_m);
+                tid = nextTemp(self, type_mod.TYPE_USIZE);
+                emitIntConst(self, @intCast(u64, ap.length), tid);
+            }
+            return tid;
+        } else if (kind == type_mod.TypeKind.tuple_type) {
+            // FB (D4): `.N`/`._0` read; the ordinal is decoded from the
+            // canonicalized name text on a tuple base only.
+            var fa_tord = type_mod.typeRegistryTupleOrdinalFromNameId(self.ctx.registry, field_name_id);
+            if (fa_tord) |fato| {
+                return lowerTupleElemRead(self, base_temp, type_box[0], fato);
+            }
+            return tid;
+        } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.packed_union_type or kind == type_mod.TypeKind.tagged_union_type) {
+            var gape_fkb: []const u8 = "GAPE:fkb\n"; pal.markerWrite(gape_fkb);
+            if (kind == type_mod.TypeKind.tagged_union_type) {
+                // FX16-F (A2/P1): a pointer base auto-derefs in sema
+                // (`p.tag`/`p.member`), but this arm used to load the field
+                // from the pointer temp itself (`zT = p`); load the pointee
+                // first (the type_box base) so the field access is on a value.
+                if (@intCast(usize, base_temp) < self.hoisted_temps.len) {
+                    var tu_bp_tid = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
+                    if (tu_bp_tid != type_mod.TYPE_UNDEFINED and tu_bp_tid != type_mod.TYPE_VOID and @intCast(usize, tu_bp_tid) < self.ctx.registry.types_len) {
+                        var tu_bp_ty = self.ctx.registry.types_items[@intCast(usize, tu_bp_tid)];
+                        if (tu_bp_ty.kind == type_mod.TypeKind.ptr_type or tu_bp_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                            var tu_ld = nextTemp(self, type_box[0]);
+                            emitInst(self, LirInst{ .load = .{ .ptr = base_temp, .result = tu_ld } });
+                            base_temp = tu_ld;
+                        }
+                    }
+                }
+                var tp2 = self.ctx.registry.tu_items[@intCast(usize, ty.payload_idx)];
+                var tstart: usize = @intCast(usize, tp2.fields_start);
+                var tcount: usize = @intCast(usize, tp2.fields_count);
+                var tfi: usize = 0;
+                var is_type_base: u8 = @intCast(u8, 0);
+                if (self.ctx.has_symbols != @intCast(u8, 0)) {
+                    if (base_node.kind == AstKind.ident_expr) {
+                        var bb_name = ast_mod.astStoreIdentifier(store, node.child_0);
+                        var bsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, bb_name);
+                        if (bsym) |bs| {
+                            if (bs.kind == sym_mod.SymbolKind.type_alias) {
+                                is_type_base = @intCast(u8, 1);
+                            } else if (bs.kind == sym_mod.SymbolKind.global) {
+                                if (bs.type_id < @intCast(u32, self.ctx.registry.types_len)) {
+                                    var bst = self.ctx.registry.types_items[@intCast(usize, bs.type_id)];
+                                    if (bst.name_id != @intCast(u32, 0) and bst.name_id == bb_name) { is_type_base = @intCast(u8, 1); }
+                                }
+                            }
+                        }
+                    } else if (base_node.kind == AstKind.field_access) {
+                        var fb_base = ast_mod.astStoreNodeAt(store, base_node.child_0);
+                        if (fb_base.kind == AstKind.ident_expr) {
+                            var fb_name = ast_mod.astStoreIdentifier(store, base_node.child_0);
+                            var fbsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, fb_name);
+                            if (fbsym) |fs| {
+                                if (fs.kind == sym_mod.SymbolKind.module) {
+                                    var mbr = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, fs.module_id, ast_mod.astStoreNodePayload(store, node.child_0));
+                                    if (mbr) |ms| {
+                                        if (ms.kind == sym_mod.SymbolKind.type_alias) {
+                                            is_type_base = @intCast(u8, 1);
+                                        } else if (ms.kind == sym_mod.SymbolKind.global) {
+                                            if (ms.type_id < @intCast(u32, self.ctx.registry.types_len)) {
+                                                var mst = self.ctx.registry.types_items[@intCast(usize, ms.type_id)];
+                                                if (mst.name_id != @intCast(u32, 0) and mst.name_id == ast_mod.astStoreNodePayload(store, node.child_0)) { is_type_base = @intCast(u8, 1); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // FX16-F fix round 1 (I2): sema's field-access tag arm makes
+                // the synthetic `.tag` shadow a real member named `tag` on a
+                // union VALUE, so the read must agree — check the synthetic
+                // tag BEFORE the member walk. A type-base member reference
+                // (`U.tag`) keeps the member walk (sema's type_alias arm
+                // resolves it as a member) and the post-walk fallback below.
+                var tag_s: []const u8 = "tag";
+                var tag_id = si_mod.stringInternerIntern(self.ctx.registry.interner, tag_s);
+                if (field_name_id == tag_id and is_type_base == @intCast(u8, 0)) {
+                    var gape_ftgv: []const u8 = "GAPE:ftg\n"; pal.markerWrite(gape_ftgv);
+                    var sf_nid = nameMapGet(self, base_temp);
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_TAG, .result = tid } });
+                    return tid;
+                }
+                while (tfi < tcount) : (tfi += 1) {
+                    if (self.ctx.registry.fe_items[tstart + tfi].name_id == field_name_id) {
+                        var gape_fki: []const u8 = "GAPE:fki"; pal.markerWriteInt(gape_fki, @intCast(u32, tfi));
+                        var var_fe = self.ctx.registry.fe_items[tstart + tfi];
+                        if (var_fe.type_id != type_mod.TYPE_VOID and is_type_base == @intCast(u8, 0)) {
+                            var payload_temp = nextTemp(self, var_fe.type_id);
+                            var sf_nid = nameMapGet(self, base_temp);
+                            emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp } });
+                            return payload_temp;
+                        }
+                        // FX16-F (A3/R1): an A+ member operand records its
+                        // ordinal in enum_value_table and retypes itself to
+                        // the u32 tag; emit a plain integer constant then
+                        // (this also makes cross-module qualified relational
+                        // compares gcc-valid). Existing whole-union member
+                        // expressions have no table entry and keep the
+                        // union-tag init.
+                        var r1_init_ty = type_box[0];
+                        if (hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx) != null) {
+                            if (fa_box[0] != type_mod.TYPE_UNDEFINED and fa_box[0] != type_mod.TYPE_VOID) { r1_init_ty = fa_box[0]; }
+                        }
+                        return emitTaggedUnionInit(self, r1_init_ty, @intCast(u32, tfi));
+                    }
+                }
+                var gape_fno: []const u8 = "GAPE:fno\n"; pal.markerWrite(gape_fno);
+                var payload_s: []const u8 = "payload";
+                var payload_id = si_mod.stringInternerIntern(self.ctx.registry.interner, payload_s);
+                if (field_name_id == payload_id and fa_box[0] != type_mod.TYPE_VOID) {
+                    var gape_fpl: []const u8 = "GAPE:fpl\n"; pal.markerWrite(gape_fpl);
+                    var sf_nid = nameMapGet(self, base_temp);
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .result = tid } });
+                    return tid;
+                }
+                if (field_name_id == tag_id) {
+                    var gape_ftg: []const u8 = "GAPE:ftg\n"; pal.markerWrite(gape_ftg);
+                    var sf_nid = nameMapGet(self, base_temp);
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_TAG, .result = tid } });
+                    return tid;
+                }
+            } else {
+            var fields: []FieldEntry = undefined;
+            if (kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.packed_union_type) {
+                type_mod.typeRegistryGetUnionFields(self.ctx.registry, type_box[0], &fields);
+            } else {
+                type_mod.typeRegistryGetStructFields(self.ctx.registry, type_box[0], &fields);
+            }
+            var gape_flen: []const u8 = "GAPE:flen"; pal.markerWriteInt(gape_flen, @intCast(u32, fields.len));
+            var fi: usize = 0;
+            while (fi < fields.len) : (fi += 1) {
+                if (fields[fi].name_id == field_name_id) {
+                    var gape_fki: []const u8 = "GAPE:fki"; pal.markerWriteInt(gape_fki, @intCast(u32, fi));
+                    var sf_nid = nameMapGet(self, base_temp);
+                    if (kind == type_mod.TypeKind.struct_type) {
+                        var pk_rs_msg: []const u8 = "cannot read a whole packed-struct value out of a nested packed-struct field (bit-slice load not supported)";
+                        if (lowerPackedMemberLoad(self, type_box[0], @intCast(u32, fi), base_temp, tid, sf_nid, @intCast(u8, 0), pk_rs_msg) != @intCast(u8, 0)) return tid;
+                    } else if (kind == type_mod.TypeKind.packed_union_type) {
+                        var pk_ru_msg: []const u8 = "cannot read a whole packed-struct value out of a packed union member (bit-slice load not supported)";
+                        if (lowerPackedMemberLoad(self, type_box[0], @intCast(u32, fi), base_temp, tid, sf_nid, @intCast(u8, 1), pk_ru_msg) != @intCast(u8, 0)) return tid;
+                    }
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = @intCast(u32, fi), .result = tid } });
+                    return tid;
+                }
+        var gape_fno: []const u8 = "GAPE:fno\n"; pal.markerWrite(gape_fno);
+        }
+            }
+        } else if (kind == type_mod.TypeKind.enum_type) {
+            var ep2 = self.ctx.registry.en_items[@intCast(usize, ty.payload_idx)];
+            var estart2: usize = @intCast(usize, ep2.members_start);
+            var ecount2: usize = @intCast(usize, ep2.members_count);
+            var ei2: usize = 0;
+            while (ei2 < ecount2) : (ei2 += 1) {
+                var member2 = self.ctx.registry.em_items[estart2 + ei2];
+                if (member2.name_id == field_name_id) {
+                    var eftid2 = nextTemp(self, type_id);
+                    emitInst(self, LirInst{ .enum_const = .{ .value = @bitCast(u64, member2.value), .result = eftid2, .type_id = type_id, .member_name_id = member2.name_id } });
+                    return eftid2;
+                }
+            }
+        }
+    }
+    if (fa_box[0] == type_mod.TYPE_VOID) { var gape_frt: []const u8 = "GAPE:frt\n"; pal.markerWrite(gape_frt); }
+    return tid;
+}
+
+fn lowerIndexAccessRest(self: *LirLowerer, node_idx: u32, base_temp: u32, li_orig_base: u32, idx_temp: u32) u32 {
+    var store = self.ctx.store;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    emitSafeCheckIndex(self, li_orig_base, node.child_0, idx_temp);
+     var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
+     var rt_ix = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+     if (rt_ix) |t| { if (t != type_mod.TYPE_UNDEFINED) { elem_type[0] = t; var ixh: []const u8 = "IXH"; pal.markerWrite(ixh); var ixhtb: [10]u8 = undefined; var ixhtl = itoa_mod.itoa(t, ixhtb[0..]); var ixhts: usize = @intCast(usize, 9) - @intCast(usize, ixhtl); pal.markerWrite(ixhtb[ixhts..@intCast(usize, 9)]); } }
+     else {
+     var ixm2: []const u8 = "IXM"; pal.markerWrite(ixm2);
+     var reg = self.ctx.registry;
+     var bt = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
+     if (bt != type_mod.TYPE_UNDEFINED) {
+         var bty = reg.types_items[@intCast(usize, bt)];
+         var ix_elem = type_mod.typeRegistryIndexedElemType(reg, bt);
+         if (ix_elem != type_mod.TYPE_UNDEFINED) {
+             elem_type[0] = ix_elem;
+         }
+     }
+     }
+    // Task 2f-F: when the indexed element is itself a fixed array (a
+    // multi-dimensional row), materializing an array-typed temp would emit
+    // an illegal array-to-array C assignment. Decay the row to a pointer to
+    // the element array instead; the emitter renders `&base[idx]` (or
+    // `&(*base)[idx]`) and downstream indexing uses `(*base)[idx]`.
+    var ix_decay: u8 = @intCast(u8, 0);
+    var ix_tid_type = elem_type[0];
+    if (elem_type[0] != type_mod.TYPE_UNDEFINED and elem_type[0] != type_mod.TYPE_VOID) {
+        var ix_ety = self.ctx.registry.types_items[@intCast(usize, elem_type[0])];
+        if (ix_ety.kind == type_mod.TypeKind.array_type) {
+            // Base expression is itself a fixed-array value (a decayed
+            // multi-dimensional row) -> index within the pointed-to array
+            // (`&(*base)[idx]`). Otherwise the base's indexed element IS the
+            // array (`&base[idx]`, also correct for a genuine `*[N]T`).
+            var ix_c0_is_array: u8 = @intCast(u8, 0);
+            var ix_c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+            if (ix_c0_rt) |ix_c0_t| {
+                if (ix_c0_t != type_mod.TYPE_UNDEFINED and ix_c0_t != type_mod.TYPE_VOID) {
+                    var ix_c0_ty = self.ctx.registry.types_items[@intCast(usize, ix_c0_t)];
+                    if (ix_c0_ty.kind == type_mod.TypeKind.array_type) ix_c0_is_array = @intCast(u8, 1);
+                }
+            }
+            if (ix_c0_is_array != @intCast(u8, 0) and tempTypeIsPtrToArray(self, base_temp) != @intCast(u8, 0)) {
+                ix_decay = @intCast(u8, 1);
+            } else {
+                ix_decay = @intCast(u8, 2);
+            }
+            ix_tid_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false);
+        }
+    }
+    var tid = nextTemp(self, ix_tid_type);
+    var li_ni: u32 = @intCast(u32, 0);
+    var src_ni = resolved_mod.resolvedSourceTableGet(self.ctx.resolved_types, node.child_0);
+    if (src_ni) |sn| {
+        li_ni = sn;
+        var slr: []const u8 = "SLR:n"; pal.markerWrite(slr);
+        var slr_b: [10]u8 = undefined; var slr_l = itoa_mod.itoa(sn, slr_b[0..]); var slr_s: usize = @intCast(usize, 9) - @intCast(usize, slr_l); pal.markerWrite(slr_b[slr_s..@intCast(usize, 9)]);
+        var slr_nl: []const u8 = "\n"; pal.markerWrite(slr_nl);
+    } else {
+    if (ast_mod.astStoreNodeAt(store, node.child_0).kind == AstKind.ident_expr) {
+        var c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+        var is_slice: u8 = @intCast(u8, 0);
+        if (c0_rt) |t| { var c0_ty = self.ctx.registry.types_items[@intCast(usize, t)]; if (@enumToInt(c0_ty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.slice_type))) { is_slice = @intCast(u8, 1); } }
+        if (is_slice == @intCast(u8, 0)) { li_ni = ast_mod.astStoreIdentifier(store, node.child_0); }
+    }
+    }
+    if (base_temp != li_orig_base) { li_ni = @intCast(u32, 0); }
+    emitInst(self, LirInst{ .load_index = .{ .name_id = li_ni, .base = base_temp, .index = idx_temp, .result = tid, .decay = ix_decay } });
+    var cli_m: []const u8 = "CLI:b"; pal.markerWrite(cli_m);
+    var cli_bb: [10]u8 = undefined; var cli_bl = itoa_mod.itoa(base_temp, cli_bb[0..]); var cli_bs: usize = @intCast(usize, 9) - @intCast(usize, cli_bl); pal.markerWrite(cli_bb[cli_bs..@intCast(usize, 9)]);
+    var cli_nm: []const u8 = "n"; pal.markerWrite(cli_nm);
+    var cli_nb: [10]u8 = undefined; var cli_nl = itoa_mod.itoa(li_ni, cli_nb[0..]); var cli_ns: usize = @intCast(usize, 9) - @intCast(usize, cli_nl); pal.markerWrite(cli_nb[cli_ns..@intCast(usize, 9)]);
+    var cli_nl2: []const u8 = "\n"; pal.markerWrite(cli_nl2);
+    return tid;
+}
+
+fn lowerPlainAssignRest(self: *LirLowerer, node_idx: u32, src: u32, bd_before_assign: u8) u32 {
+    var store = self.ctx.store;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (src == TEMP_NONE) {
+        var rhs_node = ast_mod.astStoreNodeAt(store, node.child_1);
+        var is_resolved: u8 = @intCast(u8, 0);
+        if (rhs_node.kind == AstKind.ident_expr) {
+            var rhs_name = ast_mod.astStoreIdentifier(store, node.child_1);
+            if (findLocalTemp(self, rhs_name) != null) { is_resolved = @intCast(u8, 1); }
+        }
+        if (is_resolved == @intCast(u8, 0)) {
+            var vfpa0_m: []const u8 = "VFLOW:paS0\n"; pal.markerWrite(vfpa0_m);
+            return @intCast(u32, 0);
+        }
+    }
+    if (self.block_terminated != 0 and bd_before_assign == 0) { return src; }
+    // Task 8: `_ = foo();` — discarding a void call — ICEd with
+    // `error[3043] invalid temp index 0 (len 0)`. A known-direct void
+    // call lowers with result temp 0 (its "no result" marker, not the
+    // void-`if` TEMP_NONE sentinel handled above), which the pre-fix
+    // `getTempType(self, 0)` below ran off the end of the temp table:
+    // out of bounds while the table was still empty, and a spurious
+    // `(void)zT_0;` naming an unrelated temp otherwise. A void-typed
+    // RHS has no value to store, so skip the l-value store when the
+    // lowering produced the no-value 0 marker. (A void value-`if`
+    // returns TEMP_NONE and returns in the branch above; a void
+    // `catch` block lowers to a real temp and keeps its store.)
+    if (src == @intCast(u32, 0)) {
+        if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1)) |rhs_vt| {
+            if (rhs_vt == type_mod.TYPE_VOID) { return src; }
+        }
+    }
+    lowerAssignLValue(self, node.child_0, src, node_idx);
+
+    return src;
+}
+
+fn lowerCompoundAssign(self: *LirLowerer, node_idx: u32, check_op: u8, bin_op: u8, mode: u8, stmt_add_markers: u8) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (stmt_add_markers != @intCast(u8, 0)) {
+        var ade_m: []const u8 = "ADE:p\n"; pal.markerWrite(ade_m);
+    }
+    var lhs_val = lowerExpr(self, node.child_0);
+    var rhs_val = lowerExpr(self, node.child_1);
+    return lowerCompoundAssignRest(self, node_idx, lhs_val, rhs_val, check_op, bin_op, mode, stmt_add_markers);
 }
 
 fn lowerCompoundLValueStore(self: *LirLowerer, node_idx: u32, lhs_val: u32, op_r: u32) void {
@@ -4675,28 +6318,9 @@ fn lowerModuleMemberValue(self: *LirLowerer, target_mod: u32, field_name_id: u32
 }
 
 fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
-    self._ctx_node_idx = node_idx;
-    self._ctx_node_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, node_idx).kind));
-    var gb_im: []const u8 = "GBL:i"; pal.markerWrite(gb_im);
-    var gb_ib: [10]u8 = undefined; var gb_il = itoa_mod.itoa(node_idx, gb_ib[0..]); var gb_is: usize = @intCast(usize, 9) - @intCast(usize, gb_il); pal.markerWrite(gb_ib[gb_is..@intCast(usize, 9)]);
-    var gb_km: []const u8 = "k"; pal.markerWrite(gb_km);
-    var gb_kb: [10]u8 = undefined; var gb_kl = itoa_mod.itoa(self._ctx_node_kind, gb_kb[0..]); var gb_ks: usize = @intCast(usize, 9) - @intCast(usize, gb_kl); pal.markerWrite(gb_kb[gb_ks..@intCast(usize, 9)]);
-    var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-    if (rt) |trt| {
-        var gb_h: []const u8 = "R"; pal.markerWrite(gb_h);
-        var gb_rb: [10]u8 = undefined; var gb_rl = itoa_mod.itoa(trt, gb_rb[0..]); var gb_rs: usize = @intCast(usize, 9) - @intCast(usize, gb_rl); pal.markerWrite(gb_rb[gb_rs..@intCast(usize, 9)]);
-    } else {
-        var gb_m: []const u8 = "M"; pal.markerWrite(gb_m);
-    }
+    lowerExprPrologue(self, node_idx);
     var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     var store = self.ctx.store;
-    if (node.kind == AstKind.struct_init) {
-        var bb_m: []const u8 = "BB:i"; pal.markerWrite(bb_m);
-        var bb_ib: [10]u8 = undefined; var bb_il = itoa_mod.itoa(node_idx, bb_ib[0..]); var bb_is: usize = @intCast(usize, 9) - @intCast(usize, bb_il); pal.markerWrite(bb_ib[bb_is..@intCast(usize, 9)]);
-        var bb_bm: []const u8 = "b"; pal.markerWrite(bb_bm);
-        var bb_bb: [10]u8 = undefined; var bb_bl = itoa_mod.itoa(self.current_bb, bb_bb[0..]); var bb_bs: usize = @intCast(usize, 9) - @intCast(usize, bb_bl); pal.markerWrite(bb_bb[bb_bs..@intCast(usize, 9)]);
-        var bb_nl: []const u8 = "\n"; pal.markerWrite(bb_nl);
-    }
     var t_target: u32 = @intCast(u32, 10);
     if (node.kind == AstKind.int_literal) {
         var val = ast_mod.astStoreIntValue(self.ctx.store, node_idx);
@@ -5090,38 +6714,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          var coe_nl2: []const u8 = "\n"; pal.markerWrite(coe_nl2);
           var bd_before_assign: u8 = self.block_terminated;
            var src = lowerExpr(self, node.child_1);
-           if (src == TEMP_NONE) {
-               var rhs_node = ast_mod.astStoreNodeAt(store, node.child_1);
-               var is_resolved: u8 = @intCast(u8, 0);
-               if (rhs_node.kind == AstKind.ident_expr) {
-                   var rhs_name = ast_mod.astStoreIdentifier(store, node.child_1);
-                   if (findLocalTemp(self, rhs_name) != null) { is_resolved = @intCast(u8, 1); }
-               }
-               if (is_resolved == @intCast(u8, 0)) {
-                   var vfpa0_m: []const u8 = "VFLOW:paS0\n"; pal.markerWrite(vfpa0_m);
-                   return @intCast(u32, 0);
-               }
-           }
-            if (self.block_terminated != 0 and bd_before_assign == 0) { return src; }
-            // Task 8: `_ = foo();` — discarding a void call — ICEd with
-            // `error[3043] invalid temp index 0 (len 0)`. A known-direct void
-            // call lowers with result temp 0 (its "no result" marker, not the
-            // void-`if` TEMP_NONE sentinel handled above), which the pre-fix
-            // `getTempType(self, 0)` below ran off the end of the temp table:
-            // out of bounds while the table was still empty, and a spurious
-            // `(void)zT_0;` naming an unrelated temp otherwise. A void-typed
-            // RHS has no value to store, so skip the l-value store when the
-            // lowering produced the no-value 0 marker. (A void value-`if`
-            // returns TEMP_NONE and returns in the branch above; a void
-            // `catch` block lowers to a real temp and keeps its store.)
-            if (src == @intCast(u32, 0)) {
-                if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1)) |rhs_vt| {
-                    if (rhs_vt == type_mod.TYPE_VOID) { return src; }
-                }
-            }
-        lowerAssignLValue(self, node.child_0, src, node_idx);
-
-        return src;
+        return lowerPlainAssignRest(self, node_idx, src, bd_before_assign);
     } else if (node.kind == AstKind.deref) {
         var ptr_temp = lowerExpr(self, node.child_0);
         var rt_dr = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -5168,76 +6761,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var msp2b: [10]u8 = undefined; var msp2l = itoa_mod.itoa(base_temp, msp2b[0..]); var msp2s: usize = @intCast(usize, 9) - @intCast(usize, msp2l); pal.markerWrite(msp2b[msp2s..@intCast(usize, 9)]);
         var msp_nl2: []const u8 = "\n"; pal.markerWrite(msp_nl2);
         var idx_temp = lowerExpr(self, node.child_1);
-        emitSafeCheckIndex(self, li_orig_base, node.child_0, idx_temp);
-         var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
-         var rt_ix = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-         if (rt_ix) |t| { if (t != type_mod.TYPE_UNDEFINED) { elem_type[0] = t; var ixh: []const u8 = "IXH"; pal.markerWrite(ixh); var ixhtb: [10]u8 = undefined; var ixhtl = itoa_mod.itoa(t, ixhtb[0..]); var ixhts: usize = @intCast(usize, 9) - @intCast(usize, ixhtl); pal.markerWrite(ixhtb[ixhts..@intCast(usize, 9)]); } }
-         else {
-         var ixm2: []const u8 = "IXM"; pal.markerWrite(ixm2);
-         var reg = self.ctx.registry;
-         var bt = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
-         if (bt != type_mod.TYPE_UNDEFINED) {
-             var bty = reg.types_items[@intCast(usize, bt)];
-             var ix_elem = type_mod.typeRegistryIndexedElemType(reg, bt);
-             if (ix_elem != type_mod.TYPE_UNDEFINED) {
-                 elem_type[0] = ix_elem;
-             }
-         }
-         }
-        // Task 2f-F: when the indexed element is itself a fixed array (a
-        // multi-dimensional row), materializing an array-typed temp would emit
-        // an illegal array-to-array C assignment. Decay the row to a pointer to
-        // the element array instead; the emitter renders `&base[idx]` (or
-        // `&(*base)[idx]`) and downstream indexing uses `(*base)[idx]`.
-        var ix_decay: u8 = @intCast(u8, 0);
-        var ix_tid_type = elem_type[0];
-        if (elem_type[0] != type_mod.TYPE_UNDEFINED and elem_type[0] != type_mod.TYPE_VOID) {
-            var ix_ety = self.ctx.registry.types_items[@intCast(usize, elem_type[0])];
-            if (ix_ety.kind == type_mod.TypeKind.array_type) {
-                // Base expression is itself a fixed-array value (a decayed
-                // multi-dimensional row) -> index within the pointed-to array
-                // (`&(*base)[idx]`). Otherwise the base's indexed element IS the
-                // array (`&base[idx]`, also correct for a genuine `*[N]T`).
-                var ix_c0_is_array: u8 = @intCast(u8, 0);
-                var ix_c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-                if (ix_c0_rt) |ix_c0_t| {
-                    if (ix_c0_t != type_mod.TYPE_UNDEFINED and ix_c0_t != type_mod.TYPE_VOID) {
-                        var ix_c0_ty = self.ctx.registry.types_items[@intCast(usize, ix_c0_t)];
-                        if (ix_c0_ty.kind == type_mod.TypeKind.array_type) ix_c0_is_array = @intCast(u8, 1);
-                    }
-                }
-                if (ix_c0_is_array != @intCast(u8, 0) and tempTypeIsPtrToArray(self, base_temp) != @intCast(u8, 0)) {
-                    ix_decay = @intCast(u8, 1);
-                } else {
-                    ix_decay = @intCast(u8, 2);
-                }
-                ix_tid_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false);
-            }
-        }
-        var tid = nextTemp(self, ix_tid_type);
-        var li_ni: u32 = @intCast(u32, 0);
-        var src_ni = resolved_mod.resolvedSourceTableGet(self.ctx.resolved_types, node.child_0);
-        if (src_ni) |sn| {
-            li_ni = sn;
-            var slr: []const u8 = "SLR:n"; pal.markerWrite(slr);
-            var slr_b: [10]u8 = undefined; var slr_l = itoa_mod.itoa(sn, slr_b[0..]); var slr_s: usize = @intCast(usize, 9) - @intCast(usize, slr_l); pal.markerWrite(slr_b[slr_s..@intCast(usize, 9)]);
-            var slr_nl: []const u8 = "\n"; pal.markerWrite(slr_nl);
-        } else {
-        if (ast_mod.astStoreNodeAt(store, node.child_0).kind == AstKind.ident_expr) {
-            var c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
-            var is_slice: u8 = @intCast(u8, 0);
-            if (c0_rt) |t| { var c0_ty = self.ctx.registry.types_items[@intCast(usize, t)]; if (@enumToInt(c0_ty.kind) == @intCast(u32, @enumToInt(type_mod.TypeKind.slice_type))) { is_slice = @intCast(u8, 1); } }
-            if (is_slice == @intCast(u8, 0)) { li_ni = ast_mod.astStoreIdentifier(store, node.child_0); }
-        }
-        }
-        if (base_temp != li_orig_base) { li_ni = @intCast(u32, 0); }
-        emitInst(self, LirInst{ .load_index = .{ .name_id = li_ni, .base = base_temp, .index = idx_temp, .result = tid, .decay = ix_decay } });
-        var cli_m: []const u8 = "CLI:b"; pal.markerWrite(cli_m);
-        var cli_bb: [10]u8 = undefined; var cli_bl = itoa_mod.itoa(base_temp, cli_bb[0..]); var cli_bs: usize = @intCast(usize, 9) - @intCast(usize, cli_bl); pal.markerWrite(cli_bb[cli_bs..@intCast(usize, 9)]);
-        var cli_nm: []const u8 = "n"; pal.markerWrite(cli_nm);
-        var cli_nb: [10]u8 = undefined; var cli_nl = itoa_mod.itoa(li_ni, cli_nb[0..]); var cli_ns: usize = @intCast(usize, 9) - @intCast(usize, cli_nl); pal.markerWrite(cli_nb[cli_ns..@intCast(usize, 9)]);
-        var cli_nl2: []const u8 = "\n"; pal.markerWrite(cli_nl2);
-        return tid;
+        return lowerIndexAccessRest(self, node_idx, base_temp, li_orig_base, idx_temp);
     } else if (node.kind == AstKind.ident_expr) {
         var name_id = ast_mod.astStoreIdentifier(store, node_idx);
         var shadow = hash_mod.u32ToU32MapGet(&self.capture_shadow, name_id);
@@ -5562,6 +7086,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         var base_temp = lowerExpr(self, node.child_0);
+        return lowerFieldAccessRest(self, node_idx, base_temp);
         if (base_temp == TEMP_NONE or base_temp >= @intCast(u32, self.hoisted_temps.len)) {
 
             var np_msg: []const u8 = "non-value base expression in field access";

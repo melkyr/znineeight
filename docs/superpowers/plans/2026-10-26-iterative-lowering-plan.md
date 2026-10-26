@@ -154,7 +154,9 @@ Scope of this task: the **129 post-order arms** — the shape `lhs = lowerExpr(c
 
 - [ ] **Step 1: Write the failing test**
 
-Extend `gate_lower_depth.sh` with case 6: a generated **runtime-valued, not literal-folded** 300-term left-deep `+` chain compiles rc=0 under `ulimit -s 1024`, and its `--dump-c89` md5 equals the same source compiled by `/tmp/lowerfix_base/zig1_5_clean` at 8 MB stack. (RED: today it dies at 1 MB.)
+Extend `gate_lower_depth.sh` with case 6: a generated **runtime-valued, not literal-folded** **120-term** left-deep `+` chain compiles rc=0 under `ulimit -s 1024`, and its `--dump-c89` md5 equals the same source compiled by the baseline at 64 MB stack. (RED: today it dies at 1 MB.)
+
+**Why 120 and not 300 (operator ruling 2026-10-26):** the lowering trampoline handles arbitrary depth, but the **semantic analyzer** is still recursive and caps at ~135 terms on a 1 MB stack (`semanticAnalyzerResolveExpr`, `sf/src/semantic_analyzer.zig`, ~7.7 KB/level — see `examples/torrent_example_defects.md` **D9**). 120 sits under that wall so case 6 proves *lowering* depth-safety, which is this plan's goal. Full iterative conversion of the semantic analyzer is deferred. A companion depth guard makes the sema ceiling produce a clean `error[...]` instead of a segfault.
 
 Fixture shape (validated): each term is a `u32` local seeded from a function call (`var aN: u32 = @intCast(u32, getv(7));` where `fn getv(x: u32) u32 { return x; }`) so `lowerFoldedIntConst` (`sf/src/lower.zig:4006`) cannot fold the chain — a literal-only chain folds to one const and proves nothing. Measured RED: 300 terms segfaults at **both** 8 MB and 1 MB; 30 terms is the 1 MB threshold, 120 terms the 8 MB threshold.
 

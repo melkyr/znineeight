@@ -434,3 +434,109 @@ getchar), or unify `std_fmt` onto `@stdoutWrite`. Both change emitted C for
 every `std.io` user, so they need their own plan + pin/golden re-baseline and a
 seed rotation. Until then: document, and keep mixed `print`/`write` usage out
 of latency-sensitive or panic-path output.
+
+---
+
+## D9 — Semantic analysis recurses on the C stack; deep expressions segfault instead of erroring
+
+**Status:** OPEN — mitigated this milestone by a depth guard (clean `error[...]` instead of a
+segfault) plus a documented ceiling. Full iterative conversion of the semantic analyzer is
+**deferred** per operator ruling 2026-10-26 ("we can visit that later if needed but now it is
+not"). Found 2026-10-26 while validating the iterative-lowering milestone
+(`docs/superpowers/plans/2026-10-26-iterative-lowering-plan.md`), Task 2.
+
+**Symptom.** A long left-deep expression chain (e.g. `a0 + a1 + … + aN` over runtime-valued
+locals) crashes the compiler with SIGSEGV (rc=139) rather than producing a diagnostic. The
+crash is a C-stack overflow, not a trap or a clean error.
+
+**Root cause.** `semanticAnalyzerResolveExpr` (`sf/src/semantic_analyzer.zig`) recurses — 86
+call sites, in mutual recursion with helpers such as
+`semanticAnalyzerResolveArithmetic` (`:2445`), `semanticAnalyzerResolveBitwise` (`:2477`) and
+`semanticAnalyzerResolveFieldAccess` (`:1734`). Each AST level costs ~7.7 KB of C stack
+(measured: passes at 130 terms, fails at 140, under `ulimit -s 1024`). Analysis runs **before**
+lowering, so it is a separate wall from the lowerer's (which is now fixed — see below).
+
+**Measured ceilings** (left-deep `+` chain over runtime-valued locals, `-ffast`):
+
+| stack | ceiling |
+|---|---|
+| 1 MB (Win9x MSVC default `/STACK`) | ~135 terms |
+| 2 MB (MinGW `SizeOfStackReserve`) | ~270 terms |
+| 8 MB (Linux default) | ~1080 terms |
+
+**Real-world incidence: low.** Scanned every real Z98 source in the repo — the compiler itself
+(10k+ lines), the std library, all `examples/`, and all 1188 corpus dirs:
+
+| chain length | where | real code? |
+|---|---|---|
+| 35 ops | `repro/mi_matrix/emission_sibling_payload_xmod/main.zig` | synthetic fixture (the original repro) |
+| 10 ops | `sf/src/std_ecc.zig` curve polynomial multiplies | yes |
+| 9 ops | `sf/src/lexer.zig` keyword-match `and` chains | yes |
+
+Distribution: 27 lines with ≥5 operators of one kind, 13 with ≥10, **1 with ≥20, 0 with ≥40**.
+Production code tops out at ~10 terms, so the 1 MB ceiling has ~3.8x headroom over real code.
+Expression *nesting* is a separate axis and is already capped at 12 by the parser
+(`sf/src/parser.zig:373-378`, `expr_depth > 12` → `panic: max expression recursion depth exceeded`).
+
+**Minimal reproducer** (`probe.zig`; each `aN` seeded from a function call so the compiler
+cannot constant-fold the chain):
+
+```zig
+const std = @import("std");
+fn getv(x: u32) u32 { return x; }
+pub fn main() void {
+    var argvc: u32 = getv(7);
+    var a0: u32 = @intCast(u32, argvc);
+    // … a1 .. a139 …
+    var r: u32 = a0 + a1 + /* … */ + a139;
+    std.io.printInt(@intCast(i32, r));
+}
+```
+
+130 terms: compiles. 140 terms: SIGSEGV. Same source at `ulimit -s 8192` compiles at 300 terms.
+
+**Relationship to the lowerer fix.** The lowerer had the same defect class
+(`lowerExpr` ↔ `lowerExprImpl`, ~70 KB/frame) and was converted to an explicit continuation
+stack in the iterative-lowering milestone; `repro/mi_matrix/emission_sibling_payload_xmod`
+now compiles at 1 MB (it did not before). The remaining wall for chains beyond ~135 terms is
+this semantic-analyzer recursion, not the lowerer.
+
+**Mitigation now (authorized, landed).** A depth guard at `semanticAnalyzerResolveExpr`,
+mirroring `lowerExprDepthGuard` (which the same milestone added for the lowerer): a counter
+that emits a clean `error[3043] expression nesting too deep for semantic analysis (limit 128)`
+past the cap instead of recursing into a segfault, emitting no `.c`. The cap is
+`SEMA_GUARD_MAX = 128` (`sf/src/semantic_analyzer.zig`). It is deliberately sized under the
+1 MB wall (~136) so it fires *before* the stack blows on Win9x. The ceiling is documented in
+`docs/sf/QUICK_REF.md`. The guard does **not** raise the ceiling — it makes the failure honest.
+
+**Decisions deferred — recorded, NOT executed (operator ruling 2026-10-26).** Two refinements
+were considered and deliberately left out to avoid scope creep, because the wall is hard to
+reach in real code:
+
+1. **Raise `SEMA_GUARD_MAX` to ~200.** The 128 cap is a flat count and does not scale with
+   available stack, so on Linux (8 MB, natural ceiling ~1080) it discards most of the
+   achievable depth — a 300-term chain compiled fine before the guard and is now rejected.
+   A cap of ~200 keeps margin over the 136 wall while being less tight. Not executed.
+2. **Move the guard to a limit-family error code.** It currently uses `ERR_9001_ICE`, which
+   renders `error[3043]`, and `error[3043]` is in the corpus classifier's `ICE_RE`
+   (`scripts/corpus/classify:31`) — so a program hitting the user-facing depth limit
+   buckets as **ICE**, not FAIL. A depth limit is not an internal compiler error. Not
+   executed; the ICE classification is accepted for now.
+
+**Real fix (deferred, the actual solution).** Convert `semanticAnalyzerResolveExpr` to the
+explicit continuation-stack pattern the lowerer now uses. That removes the ceiling rather
+than guarding it. It is a refactor of comparable size to the lowerer one and needs its own
+plan + byte-identity/pin proof.
+
+**Why defer at all.** Every real Z98 source in the repo was scanned statement by statement:
+the compiler itself (`sf/src/`) has **no** operator chain over 8 terms; the longest real
+chains anywhere are 22 ops (`examples/z98/z9play/tests/fmt_test.zig`) and 10
+(`sf/src/std_ecc.zig`); the only statement over 64 ops is the synthetic repro fixture at 70;
+**0 statements reach 128**. Production code tops out at ~10 terms, so the 128 guard has an
+order of magnitude of headroom over real code. The wall is real but unreachable in practice,
+so documenting it and moving on is the right trade.
+
+**Fix direction (not authorized now).** Convert `semanticAnalyzerResolveExpr` to the same
+explicit continuation-stack pattern the lowerer now uses. That is a refactor of comparable size
+to the lowerer one and would need its own plan + byte-identity/pin proof. Deferred until a real
+workload needs chains deeper than ~135 terms.

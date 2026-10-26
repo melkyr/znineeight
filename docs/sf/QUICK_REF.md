@@ -281,6 +281,53 @@ The string interner imposes **no** ceiling: its buckets auto-migrate u16→u32 w
 u16 range is exhausted (`sf/src/string_interner.zig`), so a wide program keeps interning.
 No `Type`-column user ceiling remains in practice.
 
+### Compiler limits — expression / recursion depth  [added: 2026-10-26]
+
+Two independent depth ceilings exist. Both are documented in
+`examples/torrent_example_defects.md` (D9 covers the semantic analyzer).
+
+**1. Parser — expression *nesting* cap: 12.** `sf/src/parser.zig:373-378` increments
+`expr_depth` per nested expression and emits `panic: max expression recursion depth
+exceeded` past 12. This bounds *nesting* (`f(g(h(x)))`, `if (c) if (c) …`), not chain
+length. A chain `a0 + a1 + … + aN` is left-associative and parses at depth 1, so it is
+unaffected by this cap.
+
+**2. Semantic analyzer — expression *chain* ceiling.**
+`semanticAnalyzerResolveExpr` (`sf/src/semantic_analyzer.zig`, 86 recursive call sites)
+recurses per AST level at ~7.7 KB of C stack.
+
+**Effective ceiling is a fixed 128 terms on every platform** — `SEMA_GUARD_MAX`
+(`sf/src/semantic_analyzer.zig`), a depth guard added 2026-10-26. Past it the compiler
+reports a clean `error[3043] expression nesting too deep for semantic analysis (limit 128)`
+and emits no `.c`. The guard is a flat count, so it does **not** scale with available
+stack. The table below is the *natural* stack-derived ceiling the guard is sized under;
+on a large-stack platform the guard is what actually binds, not the stack.
+
+| stack | natural ceiling (terms) | effective |
+|---|---|---|
+| 1 MB — Win9x MSVC default `/STACK` | ~135 | **128** (guard) |
+| 2 MB — MinGW `SizeOfStackReserve` | ~270 | **128** (guard) |
+| 8 MB — Linux default | ~1080 | **128** (guard) |
+
+**The guard does not raise the ceiling** — it makes the failure honest instead of a
+stack-overflow SIGSEGV. Raising it needs `semanticAnalyzerResolveExpr` converted to the
+explicit continuation stack the lowerer now uses (deferred; see D9). Two further
+refinements are recorded but **not executed** in D9: a higher cap (~200, margin over the
+136 wall) and moving the guard to a limit-family error code so it classifies as FAIL in
+the corpus rather than ICE (`error[3043]` is in the classifier's `ICE_RE`).
+
+**Real-world incidence is low.** Every real Z98 source in the repo was scanned — the
+compiler itself, the std library, all `examples/`, all 1188 corpus dirs. Longest operator
+chains: 35 ops (a synthetic repro fixture), 10 (`std_ecc.zig` curve polynomial multiplies),
+9 (`lexer.zig` keyword-match `and` chains). Distribution: 1 line ≥20 ops, **0 lines ≥40**.
+Production code tops out at ~10 terms, so the tightest platform (Win9x, 1 MB) has ~3.8x
+headroom over real code.
+
+**The lowerer is no longer depth-limited.** It was converted to an explicit continuation
+stack in the iterative-lowering milestone (2026-10-26), so lowering no longer consumes C
+stack per expression level. `repro/mi_matrix/emission_sibling_payload_xmod` (the original
+70-term repro) compiles at 1 MB stack; it did not before.
+
 ### Calling convention (Win9x) — `extern "stdcall"` / `extern "cdecl"`  [added: 2026-09-14]
 
 - **Surface:** a calling convention may be written on an extern fn declaration and on a function-pointer type — `extern "stdcall" fn(...) T`, `extern "cdecl" fn(...) T`, `extern "c" fn(...) T`; a bare `fn(...) T` is default cdecl. Accepted names: `"c"`/`"cdecl"` → cdecl (byte-identical to no string), `"stdcall"` → stdcall. Unknown → `error[3045]`; variadic `stdcall` → `error[3012]`; assigning a cross-convention fn-pointer → `error[3000]` (all clean: rc=2, 0 `.c`).
