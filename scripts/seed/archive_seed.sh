@@ -247,10 +247,11 @@ backend; emitted programs still default to no-CRT.
 Compiler status
 ---------------
 The compiler source in win/ is -fsafe-clean (all intentional wraps and the
-three real safe-mode defects fixed). The Windows-hosted compiler still rejects
-std-using programs at std_async.zig:259 (field resolution); that Win9x
-layout/ABI failure remains under investigation, so this compiler build is not
-app-ready.
+three real safe-mode defects fixed). The Windows-hosted compiler previously
+rejected std-using programs at std_async.zig:259 (field resolution); that was
+root-caused to a C89 update-stream fseek elision in spill_store.zig and fixed,
+so the Windows-hosted compiler matches the Linux one on the 1188-dir corpus
+(1186/1188 identical classes) and this CRT build is app-ready.
 
 Build a program
 ---------------
@@ -333,7 +334,7 @@ zig1-seed/lib/manifest.md5  per-file md5 of every lib/*.zig (47 std files,
                       the std attribution pin)
 zig1-seed/SEED_README.txt  this file
 
-Companion Win9x seed: release/seed/zig1_seed_w9.zip (Windows-target compiler C + emitted build scripts; CRT-only compiler build via build_target_crt.bat/build_owc_crt.bat with static CRT and no msvcrt.dll; compiler source -fsafe-clean; no-CRT zig1 deferred to asm_x86; the Win9x std_async field-resolution failure remains under investigation, so it is not app-ready)
+Companion Win9x seed: release/seed/zig1_seed_w9.zip (Windows-target compiler C + emitted build scripts; CRT-only compiler build via build_target_crt.bat/build_owc_crt.bat with static CRT and no msvcrt.dll; compiler source -fsafe-clean; no-CRT zig1 deferred to asm_x86; the Win9x std_async field-resolution failure was root-caused to a C89 update-stream fseek elision in spill_store.zig and fixed, so the CRT build is app-ready)
 
 (net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT
 included: 0 references in any emitted gen/*.c|*.h for a linux -osl gcc-only
@@ -463,7 +464,7 @@ if [ -n "$WIN9X_ZIP" ]; then
 | compiler build scripts | \`build_target_crt.bat\`, \`build_owc_crt.bat\` (static CRT; no msvcrt.dll; single EXE) |
 | compiler source | \`-fsafe\`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
 | no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
-| status | Windows-hosted \`std_async.zig:259\` field-resolution failure remains under investigation; not app-ready |
+| status | Windows-hosted \`std_async.zig:259\` field-resolution failure root-caused to a C89 update-stream fseek elision in \`spill_store.zig\` and fixed; CRT build app-ready |
 | lib | $LIB_COUNT std \`.zig\` + \`manifest.md5\` |
 | HEAD/date | \`$HEAD\` / $DATE |
 EOF
