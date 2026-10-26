@@ -1689,21 +1689,29 @@ fn emitErrorCodePrologue(emitter: *C89Emitter) void {
     if (emitter.error_code_registry.count == @intCast(usize, 0)) return;
     var tag_hdr: []const u8 = "/* Error tags */\n";
     bufferedWriterWrite(&emitter.writer, tag_hdr);
-    var cap: usize = emitter.error_code_registry.capacity;
-    var i: usize = @intCast(usize, 0);
-    while (i < cap) : (i += @intCast(usize, 1)) {
-        if (emitter.error_code_registry.occupied[i] != @intCast(u8, 0)) {
-            var name_id = emitter.error_code_registry.keys[i];
-            var code = emitter.error_code_registry.values[i];
-            var name = interner_mod.stringInternerGet(emitter.interner, name_id);
-            var ecp_pre: []const u8 = "ERROR_";
-            var ecp_empty: []const u8 = "";
-            emitDefineMacro(emitter, ecp_pre, ecp_empty, name, code);
+    // Task 1 ruling 2: emit in dense reg_code order (GetOrAddDense assigns
+    // 1..count), not hash-bucket order, so the shared header line order is
+    // deterministic regardless of interner name_id layout. Name->value
+    // bindings are unchanged; only the order is.
+    var code: u32 = @intCast(u32, 1);
+    while (code <= @intCast(u32, emitter.error_code_registry.count)) : (code += @intCast(u32, 1)) {
+        var cap: usize = emitter.error_code_registry.capacity;
+        var i: usize = @intCast(usize, 0);
+        while (i < cap) : (i += @intCast(usize, 1)) {
+            if (emitter.error_code_registry.occupied[i] != @intCast(u8, 0)) {
+                if (emitter.error_code_registry.values[i] == code) {
+                    var name_id = emitter.error_code_registry.keys[i];
+                    var name = interner_mod.stringInternerGet(emitter.interner, name_id);
+                    var ecp_pre: []const u8 = "ERROR_";
+                    var ecp_empty: []const u8 = "";
+                    emitDefineMacro(emitter, ecp_pre, ecp_empty, name, code);
+                    break;
+                }
+            }
         }
     }
     var nl2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl2);
 }
-
 
 fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];

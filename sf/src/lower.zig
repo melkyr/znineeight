@@ -69,6 +69,12 @@ const UN_BNOT  = @intCast(u8, 2);
 const UN_WNEG  = @intCast(u8, 3);
 const TEMP_NONE: u32 = 0xFFFFFFFF;
 
+// Task 1 (iterative lowering): recursion-depth ceiling for
+// `lowerExprDepthGuard`. The trampoline (Tasks 2-4) drives expression lowering
+// on `expr_stack`; this counter is the safety net for any path still recursing
+// on the C stack. It must never fire on legal input in the final state.
+const EXPR_GUARD_MAX: u32 = 2048;
+
 pub const DeferAction = struct {
     kind: u8,
     ast_node: u32,
@@ -172,6 +178,60 @@ pub fn deferActionArrayListAppend(self: *DeferActionArrayList, value: DeferActio
 }
 
 pub fn deferActionArrayListGetSlice(self: *DeferActionArrayList) []DeferAction {
+    return self.items[0..self.len];
+}
+
+// Task 1 (iterative lowering): one resumable continuation frame for the
+// expression trampoline (Tasks 2-4 convert the recursive arms onto it).
+// `node_idx` is the expression node being lowered; `phase` is the resume point
+// within its arm (0 = not yet entered); `kind` caches the AstKind as u32 to
+// avoid a re-fetch; `slot0..slot7` hold child temps/locals saved across a
+// child call. 8 result slots (controller ruling 2026-10-26): enough for
+// `bool_and` (lhs + 3 createBlock results + result) and `fn_call`
+// (`args_start`), so Tasks 2-3 never change this struct.
+pub const ExprFrame = struct {
+    node_idx: u32,
+    phase: u16,
+    kind: u32,
+    slot0: u32,
+    slot1: u32,
+    slot2: u32,
+    slot3: u32,
+    slot4: u32,
+    slot5: u32,
+    slot6: u32,
+    slot7: u32,
+};
+
+pub const ExprFrameArrayList = struct {
+    items: [*]ExprFrame,
+    len: usize,
+    capacity: usize,
+    allocator: *Sand,
+};
+
+pub fn exprFrameArrayListInit(allocator: *Sand) ExprFrameArrayList {
+    return ExprFrameArrayList{
+        .items = undefined,
+        .len = @intCast(usize, 0),
+        .capacity = @intCast(usize, 0),
+        .allocator = allocator,
+    };
+}
+
+pub fn exprFrameArrayListEnsureCapacity(self: *ExprFrameArrayList, new_capacity: usize) void {
+    var cur: [*]u8 = @ptrCast([*]u8, self.items);
+    var nb = arrayListEnsureCapacityBytes(self.allocator, cur, self.len, &self.capacity, @sizeOf(ExprFrame), new_capacity);
+    self.items = @ptrCast([*]ExprFrame, nb);
+}
+
+pub fn exprFrameArrayListAppend(self: *ExprFrameArrayList, value: ExprFrame) void {
+    exprFrameArrayListEnsureCapacity(self, self.len + 1);
+    self.items[self.len] = value;
+    self.len += 1;
+}
+
+pub fn exprFrameArrayListGetSlice(self: *ExprFrameArrayList) []ExprFrame {
     return self.items[0..self.len];
 }
 
@@ -394,6 +454,10 @@ pub const LirLowerer = struct {
     scope_nodes: ScopeNodeArrayList,
     cur_scope: u32,
     pending_scope: u32,
+    // Task 1 (iterative lowering): explicit continuation stack for the
+    // expression trampoline (Tasks 2-4) + its depth-guard counter.
+    expr_stack: ExprFrameArrayList,
+    expr_guard: u32,
     fn_seq: u32,
     _fn_ret_type: u32,
     _ctx_node_idx: u32,
@@ -554,6 +618,8 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .scope_nodes = scopeNodeArrayListInit(alloc),
         .cur_scope = @intCast(u32, 0),
         .pending_scope = TEMP_NONE,
+        .expr_stack = exprFrameArrayListInit(alloc),
+        .expr_guard = @intCast(u32, 0),
         .fn_seq = @intCast(u32, 0),
         ._fn_ret_type = @intCast(u32, 0),
         ._ctx_node_idx = @intCast(u32, 0),
@@ -2097,6 +2163,56 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
         var sid4 = si_mod.stringInternerIntern(self.ctx.registry.interner, sg4);
         emitInst(self, LirInst{ .print_str = .{ .string_id = sid4 } });
     }
+}
+
+// Task 1 (iterative lowering): recursion-depth safety net. Increments
+// `expr_guard`; above `EXPR_GUARD_MAX` it reports a clean level-0 diagnostic
+// (ERR_9001_ICE, the code the emitter's own nesting-depth cap uses at
+// `c89_emit.zig` nestFail) and leaves the guard elevated so the caller
+// unwinds. Never fires on legal input in the final state; it only bounds
+// paths not yet converted to the trampoline.
+fn lowerExprDepthGuard(self: *LirLowerer) void {
+    self.expr_guard += @intCast(u32, 1);
+    if (self.expr_guard > EXPR_GUARD_MAX) {
+        var msg: []const u8 = "expression lowering depth limit exceeded";
+        diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+    }
+}
+
+// Task 1 (iterative lowering): thin driver that brackets the depth guard
+// around the existing recursive `lowerExpr`. Tasks 2-3 replace the body with
+// the `expr_stack` trampoline; this task keeps behaviour byte-identical.
+// On a guard trip the elevated counter is left in place and the caller
+// unwinds with the TEMP_NONE "no value" sentinel.
+fn lowerExprDriver(self: *LirLowerer, root: u32) u32 {
+    lowerExprDepthGuard(self);
+    if (self.expr_guard > EXPR_GUARD_MAX) return TEMP_NONE;
+    var result = lowerExpr(self, root);
+    self.expr_guard -= @intCast(u32, 1);
+    return result;
+}
+
+// Task 1 (iterative lowering): used from Task 2 onward. Saves `parent` back
+// onto `expr_stack` with `phase` set, then pushes a fresh frame for `child`
+// with `phase = 0` (kind cached; result slots start at the TEMP_NONE "no
+// saved value" sentinel).
+fn lowerExprPushChild(self: *LirLowerer, parent: *ExprFrame, child: u32, phase: u16) void {
+    parent.phase = phase;
+    exprFrameArrayListAppend(&self.expr_stack, parent.*);
+    var fresh: ExprFrame = ExprFrame{
+        .node_idx = child,
+        .phase = @intCast(u16, 0),
+        .kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, child).kind)),
+        .slot0 = TEMP_NONE,
+        .slot1 = TEMP_NONE,
+        .slot2 = TEMP_NONE,
+        .slot3 = TEMP_NONE,
+        .slot4 = TEMP_NONE,
+        .slot5 = TEMP_NONE,
+        .slot6 = TEMP_NONE,
+        .slot7 = TEMP_NONE,
+    };
+    exprFrameArrayListAppend(&self.expr_stack, fresh);
 }
 
 pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {

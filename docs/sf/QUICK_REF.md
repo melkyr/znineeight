@@ -438,16 +438,29 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (v121, 2026-10-25).**
-Measured with the seed-built v121 compiler (fixed point
-`dcfc9e70e475a8a08c0487dafd2e6b45`; archive md5
-`0d000eb5cf2c83754cbe5aac38cb1740`) from the repo root with relative entry
-paths: `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`. The
-`-ffast` battery re-measured all **8/8 unchanged** vs the v120 seed baseline
-(same-build comparison); runtime goldens are byte-identical. The absolute pin
-values are **compiler-build dependent** (each compiler build pairs a `lib/` std
-set; the binary's own path is irrelevant — verified), so only same-build
-comparisons are meaningful.
+**8-pin table (v122+, 2026-10-26 — one-time `ERROR_*` order re-baseline).**
+Measured with the seed-built compiler (working-tree fixed point
+`c8c3d5df90a4ed7b17bc388f89e5b99f`) from the repo root with relative entry
+paths: `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`.
+
+**All 8 moved once**, by design: `emitErrorCodePrologue` now emits the
+`ERROR_*` macro block in dense `reg_code` order instead of `error_code_registry`
+hash-bucket order (bucket order was interner-`name_id`-fragile — any added
+interned string shuffled it). Runtime behavior is unchanged: all emitted `.c`
+byte-identical, `zig_special_types.h` name->value maps set-identical, and
+build+run stdout/exit byte-identical on all 6 gate entries. Only the macro line
+order moved. Previous values (v121, bucket order) are the historical table
+below. The absolute pin values are **compiler-build dependent**, so only
+same-build comparisons are meaningful.
+
+| Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
+|---|---|---|
+| `examples/z98/mud_server/main.zig` | `1b259bcd0584256029af931a53a03ae3` | `e295d1c85dc837163c5de4898b03b8d4` |
+| `examples/z98/game_of_life/main.zig` | `5be7b43b8f5bc5cc454aa1b434819ab1` | `1e091c84f97280d1ae765597a0a61d84` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `12b75058c92aa866ef9ce99ea2a401dd` | `82b721b588adddda63e2dc30e96bbfcb` |
+| `examples/z98/json_parser/main.zig` | `b5be954dc2d6b7c46c46bd90d910fc95` | `048c2547541c2b1038556564a0706abb` |
+
+Historical 8-pin table (v121, 2026-10-25; `ERROR_*` in hash-bucket order, superseded above):
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|
