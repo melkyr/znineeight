@@ -49,6 +49,20 @@ set -euo pipefail
 #      -- never rc=139/133. Without the depth guard
 #      (`semanticAnalyzerResolveExprDepthGuard`, sf/src/semantic_analyzer.zig)
 #      this input segfaults at 1 MB (D9).
+#   8. a call whose ARGUMENT is a 120-term RUNTIME-VALUED left-deep `+` chain
+#      (`sink(a0 + a1 + ...)`, same locals as case 6) compiles rc=0 under
+#      `ulimit -s 1024` (Task 3 fn_call arm) and its `--dump-c89` md5 equals
+#      the BASELINE compiler's emit at 64 MB. The call-argument shape parses
+#      at depth 2; nested `f(g(h(...)))` is parser-blocked at depth 12 and a
+#      120-arg call hits MAX_FN_PARAMS (64), so this is the shape that drives
+#      the fn_call arm's interleaved prealloc/arg lowering. 120 terms sit under
+#      SEMA_GUARD_MAX (128).
+#   9. an `if` EXPRESSION with 120-term RUNTIME-VALUED `+` chains in both
+#      arms (`var r: u32 = if (c) <chain> else <chain>;`, `var c: bool = true;`
+#      -- a u32 condition is error[3058]) compiles rc=0 under `ulimit -s 1024`
+#      (Task 3 if_expr arm) and its `--dump-c89` md5 equals the BASELINE
+#      compiler's emit at 64 MB. Nested if-expressions are parser-blocked at
+#      depth 12; the branch-chain shape parses at depth 3.
 #
 # With second arg `known-red`, cases 1 and 2 are reported as KNOWN-RED (pending
 # Tasks 2/4) and do not fail the gate. Their REAL rc is always printed; the
@@ -367,6 +381,115 @@ if [ "$c7_ok" -eq 1 ]; then
     echo "case 7: rc=$c7rc PASS (clean error, guard message, 0 .c)"
 else
     echo "case 7: rc=$c7rc FAIL (want clean non-signal error, 0 .c)"
+fi
+
+# ---- 8. call whose argument is a 120-term runtime `+` chain (Task 3) ----
+# `sink(a0 + a1 + ... + a119)`: the deep-+-inside-a-call shape parses at depth
+# 2 (nested f(g(h(...))) is parser-blocked at depth 12, MAX_FN_PARAMS caps a
+# wide call at 64) and drives the `fn_call` arm's interleaved prealloc/arg
+# ordering while the arg recurses through the chain. 120 terms, same
+# runtime-valued locals as case 6 (seeded through `@intCast(u32, argvc)` so
+# lowerFoldedIntConst cannot fold), under SEMA_GUARD_MAX (128). Must compile
+# rc=0 at 1 MB and its `--dump-c89` md5 must equal the BASELINE compiler's
+# emit at 64 MB.
+C8_TERMS="a0"
+_c8=1
+while [ "$_c8" -lt 120 ]; do C8_TERMS="$C8_TERMS + a$_c8"; _c8=$((_c8 + 1)); done
+{
+    printf '%s\n' 'const std = @import("std");'
+    printf '%s\n' 'fn getv(x: u32) u32 { return x; }'
+    printf '%s\n' 'fn sink(x: u32) u32 { return x; }'
+    printf '%s\n' 'pub fn main() void {'
+    printf '%s\n' '    var argvc: u32 = getv(7);'
+    _c8=0
+    while [ "$_c8" -lt 120 ]; do
+        printf '    var a%s: u32 = @intCast(u32, argvc);\n' "$_c8"
+        _c8=$((_c8 + 1))
+    done
+    printf '    var r: u32 = sink(%s);\n' "$C8_TERMS"
+    printf '%s\n' '    std.io.printInt(@intCast(i32, r));'
+    printf '%s\n' '}'
+} >"$WORK/callchain120.zig"
+
+run1mb c8 "$WORK/callchain120.zig"
+c8rc="$RC"
+if [ "$RC" -ne 0 ]; then
+    report_case 8 "$RC" "FAIL (want rc=0; call(arg=120-term chain) must compile at 1MB)"
+    bad "case 8: callchain120 rc=$RC want 0 under ulimit -s 1024"
+else
+    report_case 8 "$RC" "PASS (call(arg=120-term runtime + chain) @ 1MB)"
+fi
+
+# ---- 9. if expression with 120-term runtime `+` chains in both arms (T3) ----
+# `var r: u32 = if (c) <chain> else <chain>;` with `var c: bool = true;` (a
+# u32 condition is error[3058]) and the same runtime-valued locals as case 6.
+# Nested if-expressions are parser-blocked at depth 12; the branch-chain shape
+# parses at depth 3 and drives the `if` arm's interleaved cond/branch lowering.
+# 120 terms per branch, under SEMA_GUARD_MAX. rc=0 at 1 MB, `--dump-c89` md5
+# equals the BASELINE compiler's emit at 64 MB.
+{
+    printf '%s\n' 'const std = @import("std");'
+    printf '%s\n' 'fn getv(x: u32) u32 { return x; }'
+    printf '%s\n' 'pub fn main() void {'
+    printf '%s\n' '    var argvc: u32 = getv(7);'
+    _c8=0
+    while [ "$_c8" -lt 120 ]; do
+        printf '    var a%s: u32 = @intCast(u32, argvc);\n' "$_c8"
+        _c8=$((_c8 + 1))
+    done
+    printf '%s\n' '    var c: bool = true;'
+    printf '    var r: u32 = if (c) %s else %s;\n' "$C8_TERMS" "$C8_TERMS"
+    printf '%s\n' '    std.io.printInt(@intCast(i32, r));'
+    printf '%s\n' '}'
+} >"$WORK/ifchain120.zig"
+
+run1mb c9 "$WORK/ifchain120.zig"
+c9rc="$RC"
+if [ "$RC" -ne 0 ]; then
+    report_case 9 "$RC" "FAIL (want rc=0; if-expr with 120-term chain arms must compile at 1MB)"
+    bad "case 9: ifchain120 rc=$RC want 0 under ulimit -s 1024"
+else
+    report_case 9 "$RC" "PASS (if-expr chain arms @ 1MB)"
+fi
+
+# md5 reference for cases 8/9: the BASELINE compiler at 64 MB (same recipe and
+# $GATE_BASELINE_ZIG1 as case 6; its pre-Task-2 lowerExpr needs >8 MB on these
+# fixtures). Compare live: new@1MB must equal baseline@64MB.
+if [ ! -x "$BASE_ZIG1" ]; then
+    bad "cases 8/9: baseline zig1 '$BASE_ZIG1' missing (set GATE_BASELINE_ZIG1)"
+    echo "case 8: md5 FAIL (no baseline)"; echo "case 9: md5 FAIL (no baseline)"
+else
+    for _pc in 8 9; do
+        if [ "$_pc" = "8" ]; then _pf="$WORK/callchain120.zig"; _pn="c8"; else _pf="$WORK/ifchain120.zig"; _pn="c9"; fi
+        set +e
+        ( ulimit -s 65536 && timeout 180 "$BASE_ZIG1" -ffast --dump-c89 "$_pf" ) \
+            >"$WORK/${_pn}_base.c" 2>"$WORK/${_pn}_base.err"
+        brc=$?
+        set -e
+        if [ "$brc" -ne 0 ]; then
+            bad "case $_pc: baseline reference emit rc=$brc at 64MB"
+            echo "case $_pc: md5 FAIL (baseline reference rc=$brc)"
+        else
+            set +e
+            ( ulimit -s 1024 && timeout 180 "$ZIG1" -ffast --dump-c89 "$_pf" ) \
+                >"$WORK/${_pn}_new.c" 2>"$WORK/${_pn}_new.err"
+            nrc=$?
+            set -e
+            if [ "$nrc" -ne 0 ]; then
+                bad "case $_pc: new --dump-c89 rc=$nrc at 1MB"
+                echo "case $_pc: md5 FAIL (dump rc=$nrc)"
+            else
+                bmd5="$(md5sum <"$WORK/${_pn}_base.c" | cut -d' ' -f1)"
+                nmd5="$(md5sum <"$WORK/${_pn}_new.c" | cut -d' ' -f1)"
+                if [ "$bmd5" = "$nmd5" ]; then
+                    echo "case $_pc: md5 PASS ($nmd5 == baseline@64MB)"
+                else
+                    bad "case $_pc: dump md5 mismatch: new=$nmd5 baseline=$bmd5"
+                    echo "case $_pc: md5 FAIL (new=$nmd5 baseline=$bmd5)"
+                fi
+            fi
+        fi
+    done
 fi
 
 if [ "$fail" -eq 0 ]; then
