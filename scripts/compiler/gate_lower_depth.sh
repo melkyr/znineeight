@@ -63,6 +63,22 @@ set -euo pipefail
 #      (Task 3 if_expr arm) and its `--dump-c89` md5 equals the BASELINE
 #      compiler's emit at 64 MB. Nested if-expressions are parser-blocked at
 #      depth 12; the branch-chain shape parses at depth 3.
+#  10. 300-deep nested blocks `{ { { ... } } }` as statements compiles rc=0
+#      under `ulimit -s 1024` (Task 4 statement trampoline) and its
+#      `--dump-c89` md5 equals the BASELINE compiler's emit at 64 MB.
+#      Statement nesting is a different axis from the parser's expr_depth>12
+#      cap; measured parser C-stack ceiling at 1 MB (syntax-error-at-innermost
+#      isolation): blocks ~500, if-statements ~315, mixed labeled/while ~320
+#      -- 300 sits under all three. No source-level statement-depth cap exists.
+#  11. 300-deep nested `if` STATEMENTS (`if (c) { if (c) { ... } }`, runtime
+#      cond `c` seeded via `getb(1)` so comptimeFoldBool cannot fold it) rc=0
+#      at 1 MB + md5 == baseline@64MB.
+#  12. 300-deep nested labeled/loop statements (alternating `lN: { ... }` /
+#      `while (c) { ... }`, 150 of each) rc=0 at 1 MB + md5 ==
+#      baseline@64MB. Exercises the labeled_stmt machine and both LoopInfo
+#      shapes (is_loop=0 labeled blocks, is_loop=1 while loops).
+#  10-12 must never trip error[3043] (SEMA_GUARD_MAX guards EXPRESSION
+#  chains, not statement nesting) -- a trip is a STOP, not a fixture to shrink.
 #
 # With second arg `known-red`, cases 1 and 2 are reported as KNOWN-RED (pending
 # Tasks 2/4) and do not fail the gate. Their REAL rc is always printed; the
@@ -461,6 +477,136 @@ if [ ! -x "$BASE_ZIG1" ]; then
 else
     for _pc in 8 9; do
         if [ "$_pc" = "8" ]; then _pf="$WORK/callchain120.zig"; _pn="c8"; else _pf="$WORK/ifchain120.zig"; _pn="c9"; fi
+        set +e
+        ( ulimit -s 65536 && timeout 180 "$BASE_ZIG1" -ffast --dump-c89 "$_pf" ) \
+            >"$WORK/${_pn}_base.c" 2>"$WORK/${_pn}_base.err"
+        brc=$?
+        set -e
+        if [ "$brc" -ne 0 ]; then
+            bad "case $_pc: baseline reference emit rc=$brc at 64MB"
+            echo "case $_pc: md5 FAIL (baseline reference rc=$brc)"
+        else
+            set +e
+            ( ulimit -s 1024 && timeout 180 "$ZIG1" -ffast --dump-c89 "$_pf" ) \
+                >"$WORK/${_pn}_new.c" 2>"$WORK/${_pn}_new.err"
+            nrc=$?
+            set -e
+            if [ "$nrc" -ne 0 ]; then
+                bad "case $_pc: new --dump-c89 rc=$nrc at 1MB"
+                echo "case $_pc: md5 FAIL (dump rc=$nrc)"
+            else
+                bmd5="$(md5sum <"$WORK/${_pn}_base.c" | cut -d' ' -f1)"
+                nmd5="$(md5sum <"$WORK/${_pn}_new.c" | cut -d' ' -f1)"
+                if [ "$bmd5" = "$nmd5" ]; then
+                    echo "case $_pc: md5 PASS ($nmd5 == baseline@64MB)"
+                else
+                    bad "case $_pc: dump md5 mismatch: new=$nmd5 baseline=$bmd5"
+                    echo "case $_pc: md5 FAIL (new=$nmd5 baseline=$bmd5)"
+                fi
+            fi
+        fi
+    done
+fi
+
+# ---- 10. 300-deep nested blocks (Task 4 statement trampoline) ----
+# `{ { { ... } } }` 300 deep as STATEMENTS. Statement nesting is a different
+# axis from the parser's expr_depth>12 cap; measured parser C-stack ceiling at
+# 1 MB (syntax-error-at-innermost isolation): blocks ~500, ifs ~315, mixed
+# labeled/while ~320 -- 300 sits under all three, so the fixture parses at
+# 1 MB and RED today is pure lowering recursion (18 KB lowerStmt frame x 300).
+# Must compile rc=0 at 1 MB and its --dump-c89 md5 must equal the BASELINE
+# compiler's emit at 64 MB. SEMA_GUARD_MAX (128) guards EXPRESSION chains;
+# these are statements and must never trip error[3043] (a trip is a STOP,
+# not a fixture to shrink).
+B300="{ }"
+_b3=0
+while [ "$_b3" -lt 299 ]; do B300="{ $B300 }"; _b3=$((_b3 + 1)); done
+cat >"$WORK/block300.zig" <<EOF
+pub fn main() void {
+    $B300
+}
+EOF
+
+# ---- 11. 300-deep nested if STATEMENTS ----
+# `if (c) { if (c) { ... } }` 300 deep with a runtime cond (`getb(1)`; an ident
+# cond never comptime-folds, so the NORMAL if path is exercised, not the fold
+# path). rc=0 at 1 MB + md5 == baseline@64MB.
+I300="{ }"
+_i3=0
+while [ "$_i3" -lt 300 ]; do I300="if (c) { $I300 }"; _i3=$((_i3 + 1)); done
+cat >"$WORK/if300.zig" <<EOF
+fn getb(x: u32) bool { return x != 0; }
+pub fn main() void {
+    var c: bool = getb(1);
+    $I300
+}
+EOF
+
+# ---- 12. 300-deep nested labeled/loop statements ----
+# Alternating `lN: { ... }` / `while (c) { ... }` (300 levels, 150 of each):
+# exercises the labeled_stmt machine and BOTH LoopInfo shapes (is_loop=0 for
+# labeled blocks, is_loop=1 for while). Runtime cond as case 11. rc=0 at
+# 1 MB + md5 == baseline@64MB.
+L300="{ }"
+_l3=299
+while [ "$_l3" -ge 0 ]; do
+    if [ $((_l3 % 2)) -eq 0 ]; then L300="l$_l3: { $L300 }"; else L300="while (c) { $L300 }"; fi
+    _l3=$((_l3 - 1))
+done
+cat >"$WORK/lab300.zig" <<EOF
+fn getb(x: u32) bool { return x != 0; }
+pub fn main() void {
+    var c: bool = getb(1);
+    $L300
+}
+EOF
+
+run1mb c10 "$WORK/block300.zig"
+c10rc="$RC"
+if [ "$c10rc" -ne 0 ]; then
+    report_case 10 "$c10rc" "FAIL (want rc=0; 300-deep nested blocks must compile at 1MB)"
+    bad "case 10: block300 rc=$c10rc want 0 under ulimit -s 1024"
+else
+    report_case 10 "$c10rc" "PASS (300-deep nested blocks @ 1MB)"
+fi
+
+run1mb c11 "$WORK/if300.zig"
+c11rc="$RC"
+if [ "$c11rc" -ne 0 ]; then
+    report_case 11 "$c11rc" "FAIL (want rc=0; 300-deep nested if statements must compile at 1MB)"
+    bad "case 11: if300 rc=$c11rc want 0 under ulimit -s 1024"
+else
+    report_case 11 "$c11rc" "PASS (300-deep nested if statements @ 1MB)"
+fi
+
+run1mb c12 "$WORK/lab300.zig"
+c12rc="$RC"
+if [ "$c12rc" -ne 0 ]; then
+    report_case 12 "$c12rc" "FAIL (want rc=0; 300-deep nested labeled/loop statements must compile at 1MB)"
+    bad "case 12: lab300 rc=$c12rc want 0 under ulimit -s 1024"
+else
+    report_case 12 "$c12rc" "PASS (300-deep nested labeled/loop statements @ 1MB)"
+fi
+
+# error[3043] (sema depth guard) is about EXPRESSION chains; cases 10-12 are
+# statements and must not trip it. A trip is a STOP signal, not a fixture bug.
+for _g in c10 c11 c12; do
+    if grep -q 'error\[3043\]' "$WORK/$_g.err" 2>/dev/null; then
+        bad "case 10-12: $_g tripped error[3043] (sema guard) on statement nesting -- STOP"
+    fi
+done
+
+# md5 reference for cases 10-12: the BASELINE compiler at 64 MB (same recipe
+# and $GATE_BASELINE_ZIG1 as cases 6/8/9; the pre-T4 recursive lowerStmt needs
+# ~5.4 MB at 300 deep). Compare live: new@1MB must equal baseline@64MB.
+if [ ! -x "$BASE_ZIG1" ]; then
+    bad "cases 10-12: baseline zig1 '$BASE_ZIG1' missing (set GATE_BASELINE_ZIG1)"
+    echo "case 10: md5 FAIL (no baseline)"; echo "case 11: md5 FAIL (no baseline)"; echo "case 12: md5 FAIL (no baseline)"
+else
+    for _pc in 10 11 12; do
+        if [ "$_pc" = "10" ]; then _pf="$WORK/block300.zig"; _pn="c10"
+        elif [ "$_pc" = "11" ]; then _pf="$WORK/if300.zig"; _pn="c11"
+        else _pf="$WORK/lab300.zig"; _pn="c12"; fi
         set +e
         ( ulimit -s 65536 && timeout 180 "$BASE_ZIG1" -ffast --dump-c89 "$_pf" ) \
             >"$WORK/${_pn}_base.c" 2>"$WORK/${_pn}_base.err"

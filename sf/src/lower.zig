@@ -235,6 +235,56 @@ pub fn exprFrameArrayListGetSlice(self: *ExprFrameArrayList) []ExprFrame {
     return self.items[0..self.len];
 }
 
+// Task 4 (iterative lowering): statement continuation frames. Mirrors
+// `ExprFrame` on the separate `stmt_stack`; `node_idx` is the statement node
+// being lowered; `phase` is the resume point (0 = not yet entered); `fk`
+// selects the step path (0 = the lowerStmt arm dispatch, 1 = the
+// lowerStmtBody wrapper); `kind` caches the AstKind as u32; `slot0..slot7`
+// hold values saved across a child statement lowering (statement children are
+// void -- no result delivery).
+pub const StmtFrame = struct {
+    node_idx: u32,
+    phase: u16,
+    fk: u16,
+    kind: u32,
+    slot0: u32,
+    slot1: u32,
+    slot2: u32,
+    slot3: u32,
+    slot4: u32,
+    slot5: u32,
+    slot6: u32,
+    slot7: u32,
+};
+
+pub const StmtFrameArrayList = struct {
+    items: [*]StmtFrame,
+    len: usize,
+    capacity: usize,
+    allocator: *Sand,
+};
+
+pub fn stmtFrameArrayListInit(allocator: *Sand) StmtFrameArrayList {
+    return StmtFrameArrayList{
+        .items = undefined,
+        .len = @intCast(usize, 0),
+        .capacity = @intCast(usize, 0),
+        .allocator = allocator,
+    };
+}
+
+pub fn stmtFrameArrayListEnsureCapacity(self: *StmtFrameArrayList, new_capacity: usize) void {
+    var cur: [*]u8 = @ptrCast([*]u8, self.items);
+    var nb = arrayListEnsureCapacityBytes(self.allocator, cur, self.len, &self.capacity, @sizeOf(StmtFrame), new_capacity);
+    self.items = @ptrCast([*]StmtFrame, nb);
+}
+
+pub fn stmtFrameArrayListAppend(self: *StmtFrameArrayList, value: StmtFrame) void {
+    stmtFrameArrayListEnsureCapacity(self, self.len + 1);
+    self.items[self.len] = value;
+    self.len += 1;
+}
+
 pub const LoopInfoArrayList = struct {
     items: [*]LoopInfo,
     len: usize,
@@ -458,6 +508,8 @@ pub const LirLowerer = struct {
     // expression trampoline (Tasks 2-4) + its depth-guard counter.
     expr_stack: ExprFrameArrayList,
     expr_guard: u32,
+    // Task 4 (iterative lowering): the statement continuation stack.
+    stmt_stack: StmtFrameArrayList,
     fn_seq: u32,
     _fn_ret_type: u32,
     _ctx_node_idx: u32,
@@ -620,6 +672,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .pending_scope = TEMP_NONE,
         .expr_stack = exprFrameArrayListInit(alloc),
         .expr_guard = @intCast(u32, 0),
+        .stmt_stack = stmtFrameArrayListInit(alloc),
         .fn_seq = @intCast(u32, 0),
         ._fn_ret_type = @intCast(u32, 0),
         ._ctx_node_idx = @intCast(u32, 0),
@@ -11414,6 +11467,902 @@ fn lowerIsNoValueStmtKind(kind: AstKind) bool {
 // return/break/continue arm is a statement, not a value: lower it through
 // lowerStmt so its terminator is emitted (lowerExpr would silently drop it).
 // Block arms and value expressions keep the existing lowerExpr path.
+// Task 4 (iterative lowering): statement continuation-stack trampoline.
+// Mirrors the Task 2 `expr_stack` machinery on a separate `stmt_stack`:
+// `lowerStmtDriverRoot` pushes a root frame and runs `lowerStmtStep` until the
+// root completes; a step suspends via `lowerStmtPushChild` (re-pushes the
+// frame with its resume phase plus a fresh child frame) and the driver loops.
+// Statement children are void, so a completed child delivers nothing to the
+// parent -- the parent simply resumes at its saved phase. Nested drivers
+// (`pub lowerStmt`/`lowerStmtBody` called from expression arms, expandDefers,
+// lowerExprOrBlock/lowerIfArmValue) floor their loop at the stack length on
+// entry, exactly like `lowerExprDriver`.
+fn lowerStmtDriverRoot(self: *LirLowerer, root: u32, fk: u16) void {
+    var base_len: usize = self.stmt_stack.len;
+    var root_frame: StmtFrame = StmtFrame{
+        .node_idx = root,
+        .phase = @intCast(u16, 0),
+        .fk = fk,
+        .kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, root).kind)),
+        .slot0 = @intCast(u32, 0),
+        .slot1 = @intCast(u32, 0),
+        .slot2 = @intCast(u32, 0),
+        .slot3 = @intCast(u32, 0),
+        .slot4 = @intCast(u32, 0),
+        .slot5 = @intCast(u32, 0),
+        .slot6 = @intCast(u32, 0),
+        .slot7 = @intCast(u32, 0),
+    };
+    stmtFrameArrayListAppend(&self.stmt_stack, root_frame);
+    while (true) {
+        var before: usize = self.stmt_stack.len;
+        lowerStmtStep(self);
+        if (before == self.stmt_stack.len + @intCast(usize, 1)) {
+            // frame completed (popped, not re-pushed); nothing to deliver.
+            if (before == base_len + @intCast(usize, 1)) {
+                break;
+            }
+        }
+        // else the step suspended: a child frame is now on top; loop.
+    }
+}
+
+// Task 4: saves `parent` back onto `stmt_stack` with `phase` set, then pushes
+// a fresh frame for `child` with `phase = 0` (`fk` selects the stmt-arm
+// dispatch or the lowerStmtBody wrapper; slots start at 0 -- statement frames
+// have no result-delivery sentinel).
+fn lowerStmtPushChild(self: *LirLowerer, parent: *StmtFrame, child: u32, phase: u16, fk: u16) void {
+    parent.phase = phase;
+    stmtFrameArrayListAppend(&self.stmt_stack, parent.*);
+    var fresh: StmtFrame = StmtFrame{
+        .node_idx = child,
+        .phase = @intCast(u16, 0),
+        .fk = fk,
+        .kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, child).kind)),
+        .slot0 = @intCast(u32, 0),
+        .slot1 = @intCast(u32, 0),
+        .slot2 = @intCast(u32, 0),
+        .slot3 = @intCast(u32, 0),
+        .slot4 = @intCast(u32, 0),
+        .slot5 = @intCast(u32, 0),
+        .slot6 = @intCast(u32, 0),
+        .slot7 = @intCast(u32, 0),
+    };
+    stmtFrameArrayListAppend(&self.stmt_stack, fresh);
+}
+
+// Task 4: the per-statement entry prologue factored out of `lowerStmt`'s
+// head -- context node + the STK:n marker line. Called exactly once per
+// statement frame: from `lowerStmtStep` at a converted frame's phase-0 entry
+// (NOT on resume, so a resumed parent keeps the last child's ctx exactly like
+// a recursive return), or from `lowerStmtLeafStep`'s arm chain fallthrough
+// path via the same step entry.
+fn lowerStmtPrologue(self: *LirLowerer, node_idx: u32) void {
+    self._ctx_node_idx = node_idx;
+    self._ctx_node_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, node_idx).kind));
+    var stkm: []const u8 = "STK:n"; pal.markerWrite(stkm);
+    var stknb: [10]u8 = undefined; var stknl = itoa_mod.itoa(node_idx, stknb[0..]); var stkns: usize = @intCast(usize, 9) - @intCast(usize, stknl); pal.markerWrite(stknb[stkns..@intCast(usize, 9)]);
+    var stkkm: []const u8 = "k"; pal.markerWrite(stkkm);
+    var stkkb: [10]u8 = undefined; var stkkl = itoa_mod.itoa(self._ctx_node_kind, stkkb[0..]); var stkks: usize = @intCast(usize, 9) - @intCast(usize, stkkl); pal.markerWrite(stkkb[stkks..@intCast(usize, 9)]);
+    var stknl2: []const u8 = "\n"; pal.markerWrite(stknl2);
+}
+
+// Task 4: the per-child BLC:n marker line from `lowerStmtBody`'s block loop.
+fn lowerStmtBlcMarker(self: *LirLowerer, ec_i: u32) void {
+    var blc_node = ast_mod.astStoreNodeAt(self.ctx.store, ec_i);
+    var blc_m: []const u8 = "BLC:n"; pal.markerWrite(blc_m);
+    var blc_nb: [10]u8 = undefined; var blc_nl = itoa_mod.itoa(ec_i, blc_nb[0..]); var blc_ns: usize = @intCast(usize, 9) - @intCast(usize, blc_nl); pal.markerWrite(blc_nb[blc_ns..@intCast(usize, 9)]);
+    var blc_km: []const u8 = "k"; pal.markerWrite(blc_km);
+    var blc_kb: [10]u8 = undefined; var blc_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(blc_node.kind)), blc_kb[0..]); var blc_ks: usize = @intCast(usize, 9) - @intCast(usize, blc_kl); pal.markerWrite(blc_kb[blc_ks..@intCast(usize, 9)]);
+    var blc_nl2: []const u8 = "\n"; pal.markerWrite(blc_nl2);
+}
+
+// Task 4: the per-statement resumable step. Pops the top frame (statement
+// children are void -- no result delivery), runs the prologue at phase-0
+// entry, then dispatches: fk=1 (lowerStmtBody wrapper), the seven converted
+// recursive arms (block/labeled/if/while/for/swt/expr_stmt) as phase machines,
+// everything else through the pre-T4 `lowerStmtLeafStep` chain.
+fn lowerStmtStep(self: *LirLowerer) void {
+    var f: StmtFrame = self.stmt_stack.items[self.stmt_stack.len - @intCast(usize, 1)];
+    self.stmt_stack.len -= @intCast(usize, 1);
+    if (f.fk == @intCast(u16, 1)) {
+        lowerStmtBodyStep(self, &f);
+        return;
+    }
+    if (f.phase == @intCast(u16, 0)) {
+        lowerStmtPrologue(self, f.node_idx);
+    }
+    var k: u32 = f.kind;
+    if (k == @intCast(u32, @enumToInt(AstKind.block))) {
+        lowerBlockStmtStep(self, &f);
+        return;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.labeled_stmt))) {
+        lowerStmtLabeledStep(self, &f);
+        return;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.if_stmt))) {
+        lowerIfStmtStep(self, &f);
+        return;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.while_stmt))) {
+        lowerWhileStmtStep(self, &f);
+        return;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.for_stmt))) {
+        lowerForStmtStep(self, &f);
+        return;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.swt_ex))) {
+        lowerSwtStmtStep(self, &f);
+        return;
+    }
+    if (k == @intCast(u32, @enumToInt(AstKind.expr_stmt))) {
+        lowerExprStmtStep(self, &f);
+        return;
+    }
+    lowerStmtLeafStep(self, f.node_idx);
+}
+
+// Task 4: `lowerStmtBody` on the stack. phase 0 = pushScopeDepth + first
+// child (BLC marker + block_terminated=0, matching the original loop order
+// exactly); phase 1 (slot0 = completed child index) = next child or the
+// expandDefers/popScopeDepth epilogue; phase 2 = epilogue after the non-block
+// body's single statement frame completes.
+fn lowerStmtBodyStep(self: *LirLowerer, f: *StmtFrame) void {
+    var node_idx: u32 = f.node_idx;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (f.phase == @intCast(u16, 2)) {
+        expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
+        popScopeDepth(self);
+        return;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var ec_n1 = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
+        var i1: usize = @intCast(usize, f.slot0) + @intCast(usize, 1);
+        if (i1 < ec_n1) {
+            var ec_i1 = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, i1));
+            lowerStmtBlcMarker(self, ec_i1);
+            self.block_terminated = @intCast(u8, 0);
+            f.slot0 = @intCast(u32, i1);
+            lowerStmtPushChild(self, f, ec_i1, @intCast(u16, 1), @intCast(u16, 0));
+            return;
+        }
+        expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
+        popScopeDepth(self);
+        return;
+    }
+    pushScopeDepth(self);
+    if (node.kind == AstKind.block) {
+        var ec_n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
+        if (ec_n > @intCast(u32, 0)) {
+            var ec_i = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, 0));
+            lowerStmtBlcMarker(self, ec_i);
+            self.block_terminated = @intCast(u8, 0);
+            f.slot0 = @intCast(u32, 0);
+            lowerStmtPushChild(self, f, ec_i, @intCast(u16, 1), @intCast(u16, 0));
+            return;
+        }
+        expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
+        popScopeDepth(self);
+        return;
+    }
+    lowerStmtPushChild(self, f, node_idx, @intCast(u16, 2), @intCast(u16, 0));
+}
+
+// Task 4: the `block` arm on the stack (lowerStmt semantics: NO BLC marker,
+// NO per-child block_terminated reset). phase 0 = pushScopeDepth + child 0;
+// phase 1 (slot0 = completed child index) = next child or the
+// expandDefers/popScopeDepth epilogue.
+fn lowerBlockStmtStep(self: *LirLowerer, f: *StmtFrame) void {
+    var node_idx: u32 = f.node_idx;
+    if (f.phase == @intCast(u16, 1)) {
+        var ec_n1 = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
+        var i1: usize = @intCast(usize, f.slot0) + @intCast(usize, 1);
+        if (i1 < ec_n1) {
+            var ec_i1 = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, i1));
+            f.slot0 = @intCast(u32, i1);
+            lowerStmtPushChild(self, f, ec_i1, @intCast(u16, 1), @intCast(u16, 0));
+            return;
+        }
+        expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
+        popScopeDepth(self);
+        return;
+    }
+    pushScopeDepth(self);
+    var ec_n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
+    if (ec_n > @intCast(u32, 0)) {
+        var ec_i = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, 0));
+        f.slot0 = @intCast(u32, 0);
+        lowerStmtPushChild(self, f, ec_i, @intCast(u16, 1), @intCast(u16, 0));
+        return;
+    }
+    expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
+    popScopeDepth(self);
+}
+
+// Task 4: the `labeled_stmt` arm on the stack. slot0 = saved_label,
+// slot1 = ls_exit_bb, slot2 = 1 when the child is a block (LoopInfo pushed,
+// jump/exit epilogue at the resume). phase 0 = label/LoopInfo setup + child
+// frame; phase 1 = the original post-child block (jump if unterminated,
+// current_bb = exit, loop_stack pop) + label restore.
+fn lowerStmtLabeledStep(self: *LirLowerer, f: *StmtFrame) void {
+    var node_idx: u32 = f.node_idx;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (f.phase == @intCast(u16, 1)) {
+        if (f.slot2 != @intCast(u32, 0)) {
+            if (self.block_terminated == @intCast(u8, 0)) {
+                emitInst(self, LirInst{ .jump = f.slot1 });
+            }
+            self.current_bb = f.slot1;
+            self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+        }
+        self.current_label = f.slot0;
+        return;
+    }
+    var saved_label = self.current_label;
+    self.current_label = ast_mod.astStoreNodePayload(self.ctx.store, node_idx);
+    if (node.child_0 != @intCast(u32, 0)) {
+        var ls_child = ast_mod.astStoreNodeAt(self.ctx.store, node.child_0);
+        if (ls_child.kind == AstKind.block) {
+            var ls_exit_bb = createBlock(self);
+            var ls_loop_info = LoopInfo{ .header_bb = ls_exit_bb, .exit_bb = ls_exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 0) };
+            loopInfoArrayListAppend(&self.loop_stack, ls_loop_info);
+            self.current_label = @intCast(u32, 0);
+            f.slot0 = saved_label;
+            f.slot1 = ls_exit_bb;
+            f.slot2 = @intCast(u32, 1);
+            lowerStmtPushChild(self, f, node.child_0, @intCast(u16, 1), @intCast(u16, 0));
+            return;
+        } else {
+            f.slot0 = saved_label;
+            f.slot1 = @intCast(u32, 0);
+            f.slot2 = @intCast(u32, 0);
+            lowerStmtPushChild(self, f, node.child_0, @intCast(u16, 1), @intCast(u16, 0));
+            return;
+        }
+    }
+    self.current_label = saved_label;
+}
+
+// Task 4: the `if_stmt` arm on the stack. slot0 = else_bb, slot1 = join_bb.
+// phase 0 = fold path (suspend at phase 10) or the normal pre (cond lowering,
+// branch emit, capture bind, IFB marker) + then-body frame (phase 1);
+// phase 1 = post-then (jump join if unterminated) + else-body frame (phase 2)
+// or the no-else epilogue; phase 2 = post-else; phase 10 = fold epilogue.
+fn lowerIfStmtStep(self: *LirLowerer, f: *StmtFrame) void {
+    var node_idx: u32 = f.node_idx;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (f.phase == @intCast(u16, 10)) {
+        self.block_terminated = @intCast(u8, 0);
+        return;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        if (self.block_terminated == @intCast(u8, 0)) {
+            emitInst(self, LirInst{ .jump = f.slot1 });
+        }
+        if (f.slot0 != @intCast(u32, 0)) {
+            self.current_bb = f.slot0;
+            self.block_terminated = @intCast(u8, 0);
+            lowerStmtPushChild(self, f, node.child_2, @intCast(u16, 2), @intCast(u16, 1));
+            return;
+        }
+        self.block_terminated = @intCast(u8, 0);
+        self.current_bb = f.slot1;
+        return;
+    }
+    if (f.phase == @intCast(u16, 2)) {
+        if (self.block_terminated == @intCast(u8, 0)) {
+            emitInst(self, LirInst{ .jump = f.slot1 });
+        }
+        self.block_terminated = @intCast(u8, 0);
+        self.current_bb = f.slot1;
+        return;
+    }
+    var if_fold = comptimeFoldBool(self, node.child_0);
+    if (if_fold) |ifv| {
+        if (ast_mod.astStoreNodePayload(store, node_idx) == @intCast(u32, 0)) {
+            if (ifv) {
+                self.block_terminated = @intCast(u8, 0);
+                lowerStmtPushChild(self, f, node.child_1, @intCast(u16, 10), @intCast(u16, 1));
+                return;
+            } else {
+                self.block_terminated = @intCast(u8, 0);
+                if (node.child_2 != @intCast(u32, 0)) {
+                    lowerStmtPushChild(self, f, node.child_2, @intCast(u16, 10), @intCast(u16, 1));
+                    return;
+                }
+            }
+            self.block_terminated = @intCast(u8, 0);
+            return;
+        }
+    }
+    var if_c0: []const u8 = "IF:c0="; pal.markerWrite(if_c0);
+    var if_c0b: [10]u8 = undefined; var if_c0l = itoa_mod.itoa(node.child_0, if_c0b[0..]); var if_c0s: usize = @intCast(usize, 9) - @intCast(usize, if_c0l); pal.markerWrite(if_c0b[if_c0s..@intCast(usize, 9)]);
+    var if_kh: []const u8 = " k="; pal.markerWrite(if_kh);
+    if (node.child_0 != @intCast(u32, 0)) {
+        var cond_n = ast_mod.astStoreNodeAt(self.ctx.store, node.child_0);
+        var if_ckl = itoa_mod.itoa(@intCast(u32, @enumToInt(cond_n.kind)), if_c0b[0..]); var if_cks: usize = @intCast(usize, 9) - @intCast(usize, if_ckl); pal.markerWrite(if_c0b[if_cks..@intCast(usize, 9)]);
+    } else {
+        var if_z: []const u8 = "ZERO"; pal.markerWrite(if_z);
+    }
+    var if_nl: []const u8 = "\n"; pal.markerWrite(if_nl);
+    var cond_temp = TEMP_NONE;
+    var orig_cond_temp = TEMP_NONE;
+    var cond_node = ast_mod.astStoreNodeAt(self.ctx.store, node.child_0);
+    if (cond_node.kind == AstKind.field_access) {
+        var fa_base_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, cond_node.child_0);
+        if (fa_base_rt) |fbrt| {
+            var fbrt_ty = self.ctx.registry.types_items[@intCast(usize, fbrt)];
+            if (fbrt_ty.kind == type_mod.TypeKind.tagged_union_type) {
+                var tu_tp = self.ctx.registry.tu_items[@intCast(usize, fbrt_ty.payload_idx)];
+                var tstart: usize = @intCast(usize, tu_tp.fields_start);
+                var tcount: usize = @intCast(usize, tu_tp.fields_count);
+                var tfi: usize = 0;
+                while (tfi < tcount) : (tfi += 1) {
+                    if (self.ctx.registry.fe_items[tstart + tfi].name_id == ast_mod.astStoreNodePayload(store, node.child_0)) { break; }
+                }
+                if (tfi < tcount) {
+                    var tu_base = lowerExpr(self, cond_node.child_0);
+                    var tg_nid = nameMapGet(self, tu_base);
+                    var tag_temp = nextTemp(self, type_mod.TYPE_U32);
+                    emitInst(self, LirInst{ .load_field = .{ .name_id = tg_nid, .base = tu_base, .field_id = type_mod.TU_FIELD_TAG, .result = tag_temp } });
+                    var vidx_temp = nextTemp(self, type_mod.TYPE_U32);
+                    emitIntConst(self, @intCast(u64, tfi), vidx_temp);
+                    var tcond = nextTemp(self, type_mod.TYPE_BOOL);
+                    emitInst(self, LirInst{ .binary = .{ .op = BIN_EQ, .lhs = tag_temp, .rhs = vidx_temp, .result = tcond } });
+                    cond_temp = tcond;
+                    orig_cond_temp = tu_base;
+                }
+            }
+        }
+    }
+    if (cond_temp == TEMP_NONE) {
+        cond_temp = lowerExpr(self, node.child_0);
+        orig_cond_temp = cond_temp;
+    }
+    var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+    if (cond_ty_id) |ct| {
+        var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+        if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
+            var a3b: []const u8 = "F3bT"; pal.markerWrite(a3b);
+            var tag_temp = nextTemp(self, type_mod.TYPE_U32);
+            var tgn2 = nameMapGet(self, cond_temp);
+            emitInst(self, LirInst{ .load_field = .{ .name_id = tgn2, .base = cond_temp, .field_id = type_mod.TU_FIELD_TAG, .result = tag_temp } });
+            cond_temp = tag_temp;
+        }
+    }
+    if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
+        var cond_t = getTempType(self, cond_temp);
+        if (cond_t != type_mod.TYPE_UNDEFINED) {
+            var cond_ty = self.ctx.registry.types_items[@intCast(usize, cond_t)];
+            if (cond_ty.kind == type_mod.TypeKind.optional_type) {
+                var gapc_ci3: []const u8 = "GAPC:ci3\n"; pal.markerWrite(gapc_ci3);
+                var has_val = nextTemp(self, type_mod.TYPE_U8);
+                emitInst(self, LirInst{ .check_optional = .{ .value = cond_temp, .result = has_val } });
+                var gapc_ci4: []const u8 = "GAPC:ci4\n"; pal.markerWrite(gapc_ci4);
+                cond_temp = has_val;
+            }
+        }
+    }
+    if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
+    var d10m: []const u8 = "D10:k"; pal.markerWrite(d10m);
+    var cond_node_k = ast_mod.astStoreNodeAt(self.ctx.store, node.child_0);
+    var d10kb: [20]u8 = undefined; var d10kl = itoa_mod.itoa(@intCast(u32, @enumToInt(cond_node_k.kind)), d10kb[0..]); var d10ks: usize = @intCast(usize, 19) - @intCast(usize, d10kl); pal.markerWrite(d10kb[d10ks..@intCast(usize, 19)]);
+    var d10mc: []const u8 = "c"; pal.markerWrite(d10mc);
+    var d10cb: [20]u8 = undefined; var d10cl = itoa_mod.itoa(cond_temp, d10cb[0..]); var d10cs: usize = @intCast(usize, 19) - @intCast(usize, d10cl); pal.markerWrite(d10cb[d10cs..@intCast(usize, 19)]);
+    var d10t: []const u8 = "t"; pal.markerWrite(d10t);
+    var d10tb: [20]u8 = undefined; var d10tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, cond_temp)].type_id, d10tb[0..]); var d10ts: usize = @intCast(usize, 19) - @intCast(usize, d10tl); pal.markerWrite(d10tb[d10ts..@intCast(usize, 19)]);
+    var d10nl: []const u8 = "\n"; pal.markerWrite(d10nl);
+    }
+    var then_bb = createBlock(self);
+    var else_bb: u32 = 0;
+    var join_bb = createBlock(self);
+    if (node.child_2 != 0) {
+        else_bb = createBlock(self);
+    }
+    var fallthrough = if (else_bb != 0) else_bb else join_bb;
+    emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = then_bb, .else_bb = fallthrough } });
+    self.current_bb = then_bb;
+    self.block_terminated = @intCast(u8, 0);
+    if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) {
+        var icap_idx = ast_mod.astStoreNodePayload(store, node_idx);
+        var icapn = ast_mod.astStoreNodeAt(self.ctx.store, icap_idx);
+        if (icapn.kind == AstKind.if_capture) {
+            bindOptionalCapture(self, icap_idx, orig_cond_temp);
+        }
+    }
+    var ifb_m: []const u8 = "IFB:b"; pal.markerWrite(ifb_m);
+    var ifb_bb: [10]u8 = undefined; var ifb_bl = itoa_mod.itoa(node.child_1, ifb_bb[0..]); var ifb_bs: usize = @intCast(usize, 9) - @intCast(usize, ifb_bl); pal.markerWrite(ifb_bb[ifb_bs..@intCast(usize, 9)]);
+    var ifb_nl: []const u8 = "\n"; pal.markerWrite(ifb_nl);
+    f.slot0 = else_bb;
+    f.slot1 = join_bb;
+    lowerStmtPushChild(self, f, node.child_1, @intCast(u16, 1), @intCast(u16, 1));
+}
+
+// Task 4: the `while_stmt` arm on the stack. slot0 = cond_bb, slot1 = body_bb
+// (WBK marker operand at the resume), slot2 = cont_bb, slot3 = exit_bb,
+// slot4 = saved_label. phase 0 = markers + LoopInfo push + cond lowering +
+// branch/capture + WBT marker + body frame (phase 1); phase 1 = WBK/WEK +
+// continue block + INC markers + child_2 frame (phase 2) or the epilogue;
+// phase 2 = epilogue (jump cond if unterminated, exit_bb, loop_stack pop,
+// label restore).
+fn lowerWhileStmtStep(self: *LirLowerer, f: *StmtFrame) void {
+    var node_idx: u32 = f.node_idx;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (f.phase == @intCast(u16, 2)) {
+        if (self.block_terminated == @intCast(u8, 0)) {
+            emitInst(self, LirInst{ .jump = f.slot0 });
+        }
+        self.current_bb = f.slot3;
+        self.block_terminated = @intCast(u8, 0);
+        self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+        self.current_label = f.slot4;
+        return;
+    }
+    if (f.phase == @intCast(u16, 1)) {
+        var wbk_m: []const u8 = "WBK:"; pal.markerWrite(wbk_m);
+        var wbk_bb: [10]u8 = undefined; var wbk_bl = itoa_mod.itoa(f.slot1, wbk_bb[0..]); var wbk_bs: usize = @intCast(usize, 9) - @intCast(usize, wbk_bl); pal.markerWrite(wbk_bb[wbk_bs..@intCast(usize, 9)]);
+        var wbk_cb: [10]u8 = undefined; var wbk_cl = itoa_mod.itoa(self.current_bb, wbk_cb[0..]); var wbk_cs: usize = @intCast(usize, 9) - @intCast(usize, wbk_cl); pal.markerWrite(wbk_cb[wbk_cs..@intCast(usize, 9)]);
+        var wbk_t: []const u8 = "t"; pal.markerWrite(wbk_t);
+        var wbk_tb: [5]u8 = undefined; var wbk_tl = itoa_mod.itoa(@intCast(u32, self.block_terminated), wbk_tb[0..]); var wbk_ts: usize = @intCast(usize, 4) - @intCast(usize, wbk_tl); pal.markerWrite(wbk_tb[wbk_ts..@intCast(usize, 4)]);
+        var wbk_nl: []const u8 = "\n"; pal.markerWrite(wbk_nl);
+        if (self.block_terminated == @intCast(u8, 0)) {
+            var wek_m: []const u8 = "WEK:"; pal.markerWrite(wek_m);
+            var wek_nl: []const u8 = "\n"; pal.markerWrite(wek_nl);
+            emitInst(self, LirInst{ .jump = f.slot2 });
+        }
+        self.current_bb = f.slot2;
+        self.block_terminated = @intCast(u8, 0);
+        var inc_m: []const u8 = "INC:c"; pal.markerWrite(inc_m);
+        var inc_cb: [10]u8 = undefined; var inc_cl = itoa_mod.itoa(node.child_2, inc_cb[0..]); var inc_cs: usize = @intCast(usize, 9) - @intCast(usize, inc_cl); pal.markerWrite(inc_cb[inc_cs..@intCast(usize, 9)]);
+        var inc_nm: []const u8 = "n"; pal.markerWrite(inc_nm);
+        var inc_nb: [10]u8 = undefined; var inc_nl2 = itoa_mod.itoa(node_idx, inc_nb[0..]); var inc_ns2: usize = @intCast(usize, 9) - @intCast(usize, inc_nl2); pal.markerWrite(inc_nb[inc_ns2..@intCast(usize, 9)]);
+        var inc_nl: []const u8 = "\n"; pal.markerWrite(inc_nl);
+        if (node.child_2 != @intCast(u32, 0)) {
+            lowerStmtPushChild(self, f, node.child_2, @intCast(u16, 2), @intCast(u16, 1));
+            return;
+        }
+        if (self.block_terminated == @intCast(u8, 0)) {
+            emitInst(self, LirInst{ .jump = f.slot0 });
+        }
+        self.current_bb = f.slot3;
+        self.block_terminated = @intCast(u8, 0);
+        self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+        self.current_label = f.slot4;
+        return;
+    }
+    var mw_m: []const u8 = "MW:en"; pal.markerWrite(mw_m);
+    var mw_b: [20]u8 = undefined; var mw_l = itoa_mod.itoa(node.child_0, mw_b[0..]); var mw_s: usize = @intCast(usize, 19) - @intCast(usize, mw_l); pal.markerWrite(mw_b[mw_s..@intCast(usize, 19)]);
+    var mw_nl: []const u8 = "\n"; pal.markerWrite(mw_nl);
+    var mwc2: []const u8 = "ZW2:"; pal.markerWrite(mwc2);
+    var mwc2b: [10]u8 = undefined; var mwc2l = itoa_mod.itoa(node.child_2, mwc2b[0..]); var mwc2s: usize = @intCast(usize, 9) - @intCast(usize, mwc2l); pal.markerWrite(mwc2b[mwc2s..@intCast(usize, 9)]);
+    var mwc2n: []const u8 = "\n"; pal.markerWrite(mwc2n);
+    var mwp: []const u8 = "MW:pl"; pal.markerWrite(mwp);
+    var mwpb: [10]u8 = undefined; var mwpl = itoa_mod.itoa(ast_mod.astStoreNodePayload(store, node_idx), mwpb[0..]); var mwps: usize = @intCast(usize, 9) - @intCast(usize, mwpl); pal.markerWrite(mwpb[mwps..@intCast(usize, 9)]);
+    var mwpn: []const u8 = "\n"; pal.markerWrite(mwpn);
+    var entry_bb = self.current_bb;
+    var cond_bb = createBlock(self);
+    var body_bb = createBlock(self);
+    var exit_bb = createBlock(self);
+    var cont_bb = createBlock(self);
+    var saved_label = self.current_label;
+    var loop_info = LoopInfo{
+        .header_bb = cont_bb,
+        .exit_bb = exit_bb,
+        .scope_depth = self.scope_depth,
+        .label_id = self.current_label,
+        .is_loop = @intCast(u8, 1),
+    };
+    loopInfoArrayListAppend(&self.loop_stack, loop_info);
+    self.current_label = @intCast(u32, 0);
+    emitInst(self, LirInst{ .jump = cond_bb });
+    markTerminated(&self.func.blocks, entry_bb);
+    self.current_bb = cond_bb;
+    var cond_temp = lowerExpr(self, node.child_0);
+    var orig_cond_temp = cond_temp;
+    var mwc_m: []const u8 = "MW:c"; pal.markerWrite(mwc_m);
+    var mwc_b: [20]u8 = undefined; var mwc_l = itoa_mod.itoa(cond_temp, mwc_b[0..]); var mwc_s: usize = @intCast(usize, 19) - @intCast(usize, mwc_l); pal.markerWrite(mwc_b[mwc_s..@intCast(usize, 19)]);
+    if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
+        var mwc_t: []const u8 = "t"; pal.markerWrite(mwc_t);
+        var mwc_tb: [20]u8 = undefined; var mwc_tl = itoa_mod.itoa(self.hoisted_temps.items[@intCast(usize, cond_temp)].type_id, mwc_tb[0..]); var mwc_ts: usize = @intCast(usize, 19) - @intCast(usize, mwc_tl); pal.markerWrite(mwc_tb[mwc_ts..@intCast(usize, 19)]);
+    }
+    var mwc_nl: []const u8 = "\n"; pal.markerWrite(mwc_nl);
+    if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
+        var cond_t = getTempType(self, cond_temp);
+        if (cond_t != type_mod.TYPE_UNDEFINED) {
+            var cond_ty = self.ctx.registry.types_items[@intCast(usize, cond_t)];
+            if (cond_ty.kind == type_mod.TypeKind.optional_type) {
+                var has_val = nextTemp(self, type_mod.TYPE_U8);
+                emitInst(self, LirInst{ .check_optional = .{ .value = cond_temp, .result = has_val } });
+                cond_temp = has_val;
+            }
+        }
+    }
+    emitInst(self, LirInst{ .branch = .{ .cond = cond_temp, .then_bb = body_bb, .else_bb = exit_bb } });
+    self.current_bb = body_bb;
+    self.block_terminated = @intCast(u8, 0);
+    if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) {
+        var wcap_idx = ast_mod.astStoreNodePayload(store, node_idx);
+        var wcapn = ast_mod.astStoreNodeAt(self.ctx.store, wcap_idx);
+        if (wcapn.kind == AstKind.while_capture) {
+            var wck_tid = getTempType(self, cond_temp);
+            var wck_kind: u32 = @intCast(u32, 0);
+            if (@intCast(usize, wck_tid) < self.ctx.registry.types_len) { wck_kind = @intCast(u32, @enumToInt(self.ctx.registry.types_items[@intCast(usize, wck_tid)].kind)); }
+            var wck_m: []const u8 = "WCAPKIND:"; pal.markerWriteInt(wck_m, wck_kind);
+            bindOptionalCapture(self, wcap_idx, orig_cond_temp);
+        }
+    }
+    var wbt_m: []const u8 = "WBT:"; pal.markerWrite(wbt_m);
+    f.slot0 = cond_bb;
+    f.slot1 = body_bb;
+    f.slot2 = cont_bb;
+    f.slot3 = exit_bb;
+    f.slot4 = saved_label;
+    lowerStmtPushChild(self, f, node.child_1, @intCast(u16, 1), @intCast(u16, 1));
+}
+
+// Task 4: the `for_stmt` arm on the stack. phase 0 = common header lowering +
+// branch: range path stores fr_* in slot0=cond/slot1=exit/slot2=step/
+// slot3=saved + start_temp in slot4 and suspends at phase 10; iter path does
+// the same for it_*/idx_temp and suspends at phase 20. Resume phases run the
+// original post-body blocks verbatim against the slots (lowerLoopToStep, the
+// INSTC increment, lowerLoopClose).
+fn lowerForStmtStep(self: *LirLowerer, f: *StmtFrame) void {
+    var node_idx: u32 = f.node_idx;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (f.phase == @intCast(u16, 10)) {
+        lowerLoopToStep(self, f.slot2);
+        var fbi_m: []const u8 = "FBI:n"; pal.markerWrite(fbi_m);
+        var fbi_nb: [10]u8 = undefined; var fbi_nl = itoa_mod.itoa(node.child_1, fbi_nb[0..]); var fbi_ns: usize = @intCast(usize, 9) - @intCast(usize, fbi_nl); pal.markerWrite(fbi_nb[fbi_ns..@intCast(usize, 9)]);
+        var fbi_nl2: []const u8 = "\n"; pal.markerWrite(fbi_nl2);
+        var one_r = nextTemp(self, type_mod.TYPE_U32);
+        emitIntConst(self, @intCast(u64, 1), one_r);
+        var nxt = nextTemp(self, type_mod.TYPE_U32);
+        var instc_fr_m: []const u8 = "INSTC:flr\n"; pal.markerWrite(instc_fr_m);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = f.slot4, .rhs = one_r, .result = nxt } });
+        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = f.slot4, .src = nxt } });
+        f.slot4 = nxt;
+        lowerLoopClose(self, f.slot0, f.slot1, f.slot3);
+        self.block_terminated = @intCast(u8, 0);
+        return;
+    }
+    if (f.phase == @intCast(u16, 20)) {
+        lowerLoopToStep(self, f.slot2);
+        var one_s = nextTemp(self, type_mod.TYPE_USIZE);
+        emitIntConst(self, @intCast(u64, 1), one_s);
+        var nxt_idx = nextTemp(self, type_mod.TYPE_USIZE);
+        var instc_fs_m: []const u8 = "INSTC:fls\n"; pal.markerWrite(instc_fs_m);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = f.slot4, .rhs = one_s, .result = nxt_idx } });
+        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = f.slot4, .src = nxt_idx } });
+        f.slot4 = nxt_idx;
+        lowerLoopClose(self, f.slot0, f.slot1, f.slot3);
+        return;
+    }
+    var forx_m: []const u8 = "FORX\n"; pal.markerWrite(forx_m);
+    var pattern = ast_mod.astStoreNodeAt(store, node.child_0);
+    // Task 11 (Part II): `for (iterable, start..)` / `(iterable, start..end)`
+    // wraps the iterable and the explicit index range in a `for_index_range`
+    // pattern; lower the iterable instead and make the index capture
+    // `start + j` (j = the 0-based sequence counter).
+    var iter_node = node.child_0;
+    var idx_range: u8 = @intCast(u8, 0);
+    var idx_start_node: u32 = @intCast(u32, 0);
+    var idx_end_node: u32 = @intCast(u32, 0);
+    if (pattern.kind == AstKind.for_index_range) {
+        iter_node = pattern.child_0;
+        idx_start_node = pattern.child_1;
+        idx_end_node = pattern.child_2;
+        idx_range = @intCast(u8, 1);
+    }
+    var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
+     var pat_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+     var a6_m: []const u8 = "A6:"; pal.markerWrite(a6_m);
+     var a6_cb: [20]u8 = undefined; var a6_cl = itoa_mod.itoa(node.child_0, a6_cb[0..]); var a6_cs: usize = @intCast(usize, 19) - @intCast(usize, a6_cl); pal.markerWrite(a6_cb[a6_cs..@intCast(usize, 19)]);
+     if (pat_type) |pt| {
+         var a6_hm: []const u8 = "H"; pal.markerWrite(a6_hm);
+         var a6_hb: [20]u8 = undefined; var a6_hl = itoa_mod.itoa(pt, a6_hb[0..]); var a6_hs: usize = @intCast(usize, 19) - @intCast(usize, a6_hl); pal.markerWrite(a6_hb[a6_hs..@intCast(usize, 19)]);
+         var pt_ty = self.ctx.registry.types_items[@intCast(usize, pt)];
+         if (pt_ty.kind == type_mod.TypeKind.slice_type) {
+             var sp = self.ctx.registry.slice_items[@intCast(usize, pt_ty.payload_idx)];
+             elem_type[0] = sp.elem;
+         } else if (pt_ty.kind == type_mod.TypeKind.array_type) {
+             var ap = self.ctx.registry.array_items[@intCast(usize, pt_ty.payload_idx)];
+             elem_type[0] = ap.elem;
+         } else if (pt_ty.kind == type_mod.TypeKind.ptr_type) {
+             // FI (operator ruling A): a pointer-to-array iterable is
+             // iterated by its pointee array's element type.
+             if (@intCast(usize, pt_ty.payload_idx) < self.ctx.registry.ptr_len) {
+                 var fp_pointee = self.ctx.registry.ptr_items[@intCast(usize, pt_ty.payload_idx)].base;
+                 if (@intCast(usize, fp_pointee) < self.ctx.registry.types_len) {
+                     var fp_pty = self.ctx.registry.types_items[@intCast(usize, fp_pointee)];
+                     if (fp_pty.kind == type_mod.TypeKind.array_type) {
+                         elem_type[0] = self.ctx.registry.array_items[@intCast(usize, fp_pty.payload_idx)].elem;
+                     }
+                 }
+             }
+         }
+     } else {
+         var a6_mm: []const u8 = "M"; pal.markerWrite(a6_mm);
+     }
+      if (pattern.kind == AstKind.range_exclusive or pattern.kind == AstKind.range_inclusive) {
+          var start_temp = lowerExpr(self, pattern.child_0);
+          var cap_type = if (pat_type) |pt| pt else type_mod.TYPE_U32;
+          var end_temp = lowerExpr(self, pattern.child_1);
+          if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) {
+              var fcapr = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(store, node_idx), cap_type); bindCapture(self, fcapr, fcapr, cap_type, start_temp, self.scope_depth + @intCast(u32, 1));
+          }
+      var fr_cond: u32 = @intCast(u32, 0);
+      var fr_body: u32 = @intCast(u32, 0);
+      var fr_exit: u32 = @intCast(u32, 0);
+      var fr_step: u32 = @intCast(u32, 0);
+      var fr_saved: u32 = @intCast(u32, 0);
+      lowerLoopOpen(self, &fr_cond, &fr_body, &fr_exit, &fr_step, &fr_saved);
+      var cmp_op = if (pattern.kind == AstKind.range_inclusive) BIN_LE else BIN_LT;
+      var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
+      emitInst(self, LirInst{ .binary = .{ .op = cmp_op, .lhs = start_temp, .rhs = end_temp, .result = cmp_temp } });
+      lowerLoopBranchBody(self, cmp_temp, fr_body, fr_exit);
+      var fbr_m: []const u8 = "FBR:"; pal.markerWrite(fbr_m);
+      f.slot0 = fr_cond;
+      f.slot1 = fr_exit;
+      f.slot2 = fr_step;
+      f.slot3 = fr_saved;
+      f.slot4 = start_temp;
+      lowerStmtPushChild(self, f, node.child_1, @intCast(u16, 10), @intCast(u16, 1));
+      return;
+      } else {
+          // Task 11 fix round (review Important I1): evaluate the for-header
+          // inputs in SOURCE order — iterable, then start, then end (official
+          // Zig). Lowering start/end first was observable for side-effecting
+          // header expressions (`for (tickA(), tickB()..tickC())`).
+          var slice_temp = lowerExpr(self, iter_node);
+          var start_temp: u32 = @intCast(u32, 0);
+          var end_temp: u32 = @intCast(u32, 0);
+          if (idx_range == @intCast(u8, 1)) {
+              start_temp = lowerExpr(self, idx_start_node);
+              if (idx_end_node != @intCast(u32, 0)) { end_temp = lowerExpr(self, idx_end_node); }
+          }
+          var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
+          var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
+          if (pat_type) |pt2| {
+              var pt_ty2 = self.ctx.registry.types_items[@intCast(usize, pt2)];
+              var ptr_arr_len: u32 = @intCast(u32, 0);
+              var ptr_arr_have: u8 = @intCast(u8, 0);
+              if (pt_ty2.kind == type_mod.TypeKind.ptr_type) {
+                  // FI (operator ruling A): a pointer-to-array is its own
+                  // element pointer (`(*base)[idx]` at emission) and iterates
+                  // the pointee array's compile-time length.
+                  if (@intCast(usize, pt_ty2.payload_idx) < self.ctx.registry.ptr_len) {
+                      var fp_pointee = self.ctx.registry.ptr_items[@intCast(usize, pt_ty2.payload_idx)].base;
+                      if (@intCast(usize, fp_pointee) < self.ctx.registry.types_len) {
+                          var fp_pty = self.ctx.registry.types_items[@intCast(usize, fp_pointee)];
+                          if (fp_pty.kind == type_mod.TypeKind.array_type) {
+                              ptr_arr_len = self.ctx.registry.array_items[@intCast(usize, fp_pty.payload_idx)].length;
+                              ptr_arr_have = @intCast(u8, 1);
+                          }
+                      }
+                  }
+              }
+              if (pt_ty2.kind == type_mod.TypeKind.array_type) {
+                  var ap2 = self.ctx.registry.array_items[@intCast(usize, pt_ty2.payload_idx)];
+                  ptr_temp = slice_temp;
+                  emitIntConst(self, @intCast(u64, ap2.length), len_temp);
+              } else if (ptr_arr_have != @intCast(u8, 0)) {
+                  // Cast the pointer-to-array down to its element pointer so
+                  // the item load and the by-value array-row copy behave
+                  // exactly like the plain-array decay path (whose temp is
+                  // already an element pointer).
+                  var fa_ep = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false);
+                  ptr_temp = nextTemp(self, fa_ep);
+                  emitInst(self, LirInst{ .ptr_cast = .{ .value = slice_temp, .target = fa_ep, .result = ptr_temp } });
+                  emitIntConst(self, @intCast(u64, ptr_arr_len), len_temp);
+              } else {
+                  var ms_nid = nameMapGet(self, slice_temp);
+                  emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = ptr_temp } });
+                  emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = len_temp } });
+              }
+          } else {
+              var ms_nid = nameMapGet(self, slice_temp);
+              emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = ptr_temp } });
+              emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = len_temp } });
+          }
+          if (idx_range == @intCast(u8, 1) and idx_end_node != @intCast(u32, 0)) {
+              // Zig 0.15.2: an explicit index range and its iterable must
+              // have equal lengths. The span is a checked `usize`
+              // subtraction (under -fsafe it traps on `end < start`, Zig's
+              // integer-overflow panic); the length equality is a
+              // safety-mode-only runtime check (Zig's ReleaseFast disables
+              // it too).
+              var span_temp = nextTemp(self, type_mod.TYPE_USIZE);
+              emitArith(self, lir_mod.CHECK_OP_SUB, BIN_SUB, end_temp, start_temp, span_temp, type_mod.TYPE_USIZE);
+              if (self.ctx.safe_checks) {
+                  var span_eq = nextTemp(self, type_mod.TYPE_BOOL);
+                  emitInst(self, LirInst{ .binary = .{ .op = BIN_EQ, .lhs = span_temp, .rhs = len_temp, .result = span_eq } });
+                  emitInst(self, LirInst{ .check_trap = .{ .cond = span_eq, .kind = @intCast(u8, 8) } });
+              }
+          }
+          var idx_temp = nextTemp(self, type_mod.TYPE_USIZE);
+          emitIntConst(self, @intCast(u64, 0), idx_temp);
+          var it_cond: u32 = @intCast(u32, 0);
+          var it_body: u32 = @intCast(u32, 0);
+          var it_exit: u32 = @intCast(u32, 0);
+          var it_step: u32 = @intCast(u32, 0);
+          var it_saved: u32 = @intCast(u32, 0);
+          lowerLoopOpen(self, &it_cond, &it_body, &it_exit, &it_step, &it_saved);
+          var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
+          emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = idx_temp, .rhs = len_temp, .result = cmp_temp } });
+          lowerLoopBranchBody(self, cmp_temp, it_body, it_exit);
+          // Task 2g-F (a) + fix round 1: a for-loop item that is itself a
+          // fixed array (a multi-dimensional row) is a BY-VALUE copy (real
+          // Zig `for |row|` semantics). Materialize an array-typed temp and
+          // emit `load_index{decay=3}` (a byte-wise element copy) instead of
+          // an illegal array-to-array C assignment. The item is then a real
+          // array value, so indexing, whole-row copies (`var r: [N]T = row`)
+          // and nested `for` all work.
+          var item_decay: u8 = @intCast(u8, 0);
+          var item_tid_type = elem_type[0];
+          if (elem_type[0] != type_mod.TYPE_UNDEFINED and elem_type[0] != type_mod.TYPE_VOID) {
+              var it_ety = self.ctx.registry.types_items[@intCast(usize, elem_type[0])];
+              if (it_ety.kind == type_mod.TypeKind.array_type) {
+                  item_decay = @intCast(u8, 3);
+              }
+          }
+          var item_temp = nextTemp(self, item_tid_type);
+          emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp, .decay = item_decay } });
+          if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) { var fcaps = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(store, node_idx), item_tid_type); bindCapture(self, fcaps, fcaps, item_tid_type, item_temp, self.scope_depth + @intCast(u32, 1)); }
+          var idx_cap_temp = idx_temp;
+          if (idx_range == @intCast(u8, 1) and node.child_2 != @intCast(u32, 0)) {
+              idx_cap_temp = nextTemp(self, type_mod.TYPE_USIZE);
+              emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = idx_temp, .result = idx_cap_temp } });
+          }
+          if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); bindCapture(self, icaps, icaps, type_mod.TYPE_USIZE, idx_cap_temp, self.scope_depth + @intCast(u32, 1)); }
+          self.block_terminated = @intCast(u8, 0);
+          f.slot0 = it_cond;
+          f.slot1 = it_exit;
+          f.slot2 = it_step;
+          f.slot3 = it_saved;
+          f.slot4 = idx_temp;
+          lowerStmtPushChild(self, f, node.child_1, @intCast(u16, 20), @intCast(u16, 1));
+          return;
+       }
+}
+
+// Task 4: shared swt prong-begin (the original while-loop body up to the
+// lowerStmtBody call): fetch prong pi from slot5, set prong bb/terminated,
+// run the capture-binding block verbatim (tu_base_box2/tu_type_box2
+// reconstituted from slot2/slot3), then suspend on the prong body (phase 1).
+fn lowerSwtProngBegin(self: *LirLowerer, f: *StmtFrame) void {
+    var node_idx: u32 = f.node_idx;
+    var store = self.ctx.store;
+    var tu_base_box2: [1]u32 = [1]u32{f.slot2};
+    var tu_type_box2: [1]u32 = [1]u32{f.slot3};
+    var pi: usize = @intCast(usize, f.slot5);
+    var prong_start: u32 = f.slot1;
+    var prong_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi));
+    var prong_node = ast_mod.astStoreNodeAt(store, prong_idx);
+    var prong_bb_id = prong_start + @intCast(u32, pi);
+    self.current_bb = prong_bb_id;
+    self.block_terminated = @intCast(u8, 0);
+    if ((prong_node.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
+        var capture_name = prong_node.child_1;
+         if (tu_type_box2[0] != @intCast(u32, 0)) {
+             var scap2_n: []const u8 = "SCAP2:n"; pal.markerWriteInt(scap2_n, capture_name);
+             var tu_ty2 = self.ctx.registry.types_items[@intCast(usize, tu_type_box2[0])];
+             if (tu_ty2.kind == type_mod.TypeKind.tagged_union_type) {
+             var tp2 = self.ctx.registry.tu_items[@intCast(usize, tu_ty2.payload_idx)];
+             var case_n2 = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
+             if (@intCast(usize, case_n2) > @intCast(usize, 0)) {
+                 var ev4 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, ast_mod.astStoreNodeExtraChildAt(store, prong_idx, @intCast(u32, 0)));
+                 if (ev4) |idx| {
+                     var fe2: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp2.fields_start) + @intCast(usize, idx)];
+                      capture_name = maybeDisambiguateCapture(self, capture_name, fe2.type_id);
+                      var payload_temp2 = nextTemp(self, fe2.type_id);
+                     _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp2, @intCast(u32, 0));
+                     emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp2 } });
+                       bindCapture(self, capture_name, capture_name, fe2.type_id, payload_temp2, self.scope_depth + @intCast(u32, 1));
+                      var scap2_d: []const u8 = "SCAP2:d"; pal.markerWriteInt(scap2_d, capture_name);
+                  }
+             } else {
+                  bindCapture(self, capture_name, capture_name, tu_type_box2[0], tu_base_box2[0], self.scope_depth + @intCast(u32, 1));
+             }
+             } else {
+                 // FE (D11): non-tagged-union operand (enum) binds a
+                 // COPY of the switch operand value Zig-style; never
+                 // index the tagged-union payload table for it. A
+                 // fresh temp keeps the capture's C name from aliasing
+                 // the switch condition.
+                 var enum_cap_temp2 = nextTemp(self, tu_type_box2[0]);
+                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = enum_cap_temp2, .src = tu_base_box2[0] } });
+                 bindCapture(self, capture_name, capture_name, tu_type_box2[0], enum_cap_temp2, self.scope_depth + @intCast(u32, 1));
+             }
+         }
+     }
+    lowerStmtPushChild(self, f, prong_node.child_0, @intCast(u16, 1), @intCast(u16, 1));
+}
+
+// Task 4: the `swt_ex` statement arm on the stack. slot0 = exit_bb,
+// slot1 = prong_start, slot2 = tu_base, slot3 = tu_type, slot4 = exit_preds
+// accumulator, slot5 = current prong index. phase 0 = cond lowering +
+// lowerSwitchDispatch + prong 0 begin; phase 1 (resume after a prong body) =
+// the original post (exit_preds++/jump exit when unterminated) + next prong
+// begin or the SWEXIT epilogue.
+fn lowerSwtStmtStep(self: *LirLowerer, f: *StmtFrame) void {
+    var node_idx: u32 = f.node_idx;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (f.phase == @intCast(u16, 1)) {
+        if (self.block_terminated == @intCast(u8, 0)) {
+            f.slot4 += @intCast(u32, 1);
+            emitInst(self, LirInst{ .jump = f.slot0 });
+        }
+        var prong_n1 = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
+        var pi1: usize = @intCast(usize, f.slot5) + @intCast(usize, 1);
+        if (pi1 < prong_n1) {
+            f.slot5 = @intCast(u32, pi1);
+            lowerSwtProngBegin(self, f);
+            return;
+        }
+        var swx_p: []const u8 = "SWEXIT:preds"; pal.markerWriteInt(swx_p, f.slot4);
+        var swx_b: []const u8 = "SWEXIT:bt"; pal.markerWriteInt(swx_b, @intCast(u32, self.block_terminated));
+        self.current_bb = f.slot0;
+        self.block_terminated = @intCast(u8, 0);
+        return;
+    }
+    var swt_m: []const u8 = "SWT:s\n"; pal.markerWrite(swt_m);
+    var swtn_m: []const u8 = "SWT:n"; pal.markerWriteInt(swtn_m, node_idx);
+     var cond_temp = lowerExpr(self, node.child_0);
+     var tu_base_box2: [1]u32 = [1]u32{cond_temp};
+     var tu_type_box2: [1]u32 = [1]u32{@intCast(u32, 0)};
+     var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+     if (cond_ty_id) |ct| {
+         var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+         tu_type_box2[0] = ct;
+         if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
+            var tag_temp = nextTemp(self, type_mod.TYPE_U32);
+           var tgn2 = nameMapGet(self, cond_temp);
+           emitInst(self, LirInst{ .load_field = .{ .name_id = tgn2, .base = cond_temp, .field_id = type_mod.TU_FIELD_TAG, .result = tag_temp } });
+           cond_temp = tag_temp;
+       }
+    }
+    var prong_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
+    var prong_start: u32 = @intCast(u32, 0);
+    var else_bb: u32 = @intCast(u32, 0);
+    var exit_bb: u32 = @intCast(u32, 0);
+    var cases_start: u32 = @intCast(u32, 0);
+    var else_target: u32 = @intCast(u32, 0);
+    lowerSwitchDispatch(self, node_idx, cond_temp, cond_ty_id, &prong_start, &else_bb, &exit_bb, &cases_start, &else_target);
+    var exit_preds: u32 = @intCast(u32, 0);
+
+    if (@intCast(usize, 0) < prong_n) {
+        f.slot0 = exit_bb;
+        f.slot1 = prong_start;
+        f.slot2 = tu_base_box2[0];
+        f.slot3 = tu_type_box2[0];
+        f.slot4 = exit_preds;
+        f.slot5 = @intCast(u32, 0);
+        lowerSwtProngBegin(self, f);
+        return;
+    }
+    var swx_p: []const u8 = "SWEXIT:preds"; pal.markerWriteInt(swx_p, exit_preds);
+    var swx_b: []const u8 = "SWEXIT:bt"; pal.markerWriteInt(swx_b, @intCast(u32, self.block_terminated));
+    self.current_bb = exit_bb;
+    self.block_terminated = @intCast(u8, 0);
+}
+
+// Task 4: the `expr_stmt` arm on the stack -- the arm is exactly one
+// lowerStmtBody(child_0) call, so phase 0 pushes the body wrapper and phase 1
+// completes.
+fn lowerExprStmtStep(self: *LirLowerer, f: *StmtFrame) void {
+    if (f.phase == @intCast(u16, 1)) {
+        return;
+    }
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+    lowerStmtPushChild(self, f, node.child_0, @intCast(u16, 1), @intCast(u16, 1));
+}
+
 fn lowerIfArmValue(self: *LirLowerer, node_idx: u32) u32 {
     var nd = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     if (nd.kind == AstKind.return_stmt or nd.kind == AstKind.break_stmt or nd.kind == AstKind.continue_stmt) {
@@ -11452,37 +12401,29 @@ fn lowerExprOrBlock(self: *LirLowerer, node_idx: u32) u32 {
 }
 
 fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
-    pushScopeDepth(self);
-    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
-    if (node.kind == AstKind.block) {
-        var ec_n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
-        var i: usize = 0;
-        while (i < @intCast(usize, ec_n)) : (i += 1) {
-            var ec_i = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, i));
-            var blc_node = ast_mod.astStoreNodeAt(self.ctx.store, ec_i);
-            var blc_m: []const u8 = "BLC:n"; pal.markerWrite(blc_m);
-            var blc_nb: [10]u8 = undefined; var blc_nl = itoa_mod.itoa(ec_i, blc_nb[0..]); var blc_ns: usize = @intCast(usize, 9) - @intCast(usize, blc_nl); pal.markerWrite(blc_nb[blc_ns..@intCast(usize, 9)]);
-            var blc_km: []const u8 = "k"; pal.markerWrite(blc_km);
-            var blc_kb: [10]u8 = undefined; var blc_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(blc_node.kind)), blc_kb[0..]); var blc_ks: usize = @intCast(usize, 9) - @intCast(usize, blc_kl); pal.markerWrite(blc_kb[blc_ks..@intCast(usize, 9)]);
-            var blc_nl2: []const u8 = "\n"; pal.markerWrite(blc_nl2);
-            self.block_terminated = @intCast(u8, 0);
-            lowerStmt(self, ec_i);
-        }
-    } else {
-        lowerStmt(self, node_idx);
-    }
-    expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
-    popScopeDepth(self);
+    // Task 4 (iterative lowering): the body wrapper runs on the
+    // `stmt_stack` (fk=1) instead of recursing; `lowerStmtBodyStep` keeps the
+    // original pushScopeDepth / BLC-marker loop / expandDefers / popScopeDepth
+    // order exactly, suspending on each child statement frame.
+    lowerStmtDriverRoot(self, node_idx, @intCast(u16, 1));
 }
 
 pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
-    self._ctx_node_idx = node_idx;
-    self._ctx_node_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, node_idx).kind));
-    var stkm: []const u8 = "STK:n"; pal.markerWrite(stkm);
-    var stknb: [10]u8 = undefined; var stknl = itoa_mod.itoa(node_idx, stknb[0..]); var stkns: usize = @intCast(usize, 9) - @intCast(usize, stknl); pal.markerWrite(stknb[stkns..@intCast(usize, 9)]);
-    var stkkm: []const u8 = "k"; pal.markerWrite(stkkm);
-    var stkkb: [10]u8 = undefined; var stkkl = itoa_mod.itoa(self._ctx_node_kind, stkkb[0..]); var stkks: usize = @intCast(usize, 9) - @intCast(usize, stkkl); pal.markerWrite(stkkb[stkks..@intCast(usize, 9)]);
-    var stknl2: []const u8 = "\n"; pal.markerWrite(stknl2);
+    // Task 4 (iterative lowering): statement lowering runs on the
+    // `stmt_stack` trampoline instead of the C stack. `lowerStmtStep`
+    // dispatches the seven recursive arms to phase machines and everything
+    // else to `lowerStmtLeafStep`.
+    lowerStmtDriverRoot(self, node_idx, @intCast(u16, 0));
+}
+
+// Task 4 (iterative lowering): the pre-T4 `lowerStmt` chain kept verbatim as
+// the leaf step (no prologue -- `lowerStmtStep` runs it at phase-0 entry).
+// The recursive arms below (block/labeled/if/while/for/swt/expr_stmt) are
+// dispatched to their phase machines before this step runs, so they are
+// unreachable here; they remain as a byte-identical semantic fallback should
+// an arm ever fall through the dispatch (their `lowerStmt`/`lowerStmtBody`
+// calls are the same driver entries, so the fallback is correct).
+fn lowerStmtLeafStep(self: *LirLowerer, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     var store = self.ctx.store;
     if (node.kind == AstKind.block) {
