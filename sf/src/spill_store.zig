@@ -87,6 +87,7 @@ pub const SpillStore = struct {
     cap: u32,              // allocated Ram buffer bytes
     len: u32,              // logical high-water (highest byte written + 1)
     cur: u32,              // last I/O end offset (Disk fseek elision; Ram cursor)
+    last_dir: u8,          // Disk I/O direction: 0 = none/just-seeked, 1 = wrote, 2 = read
     alloc: *Sand,          // arena backing the Ram buffer (unused on Disk)
 };
 
@@ -99,6 +100,7 @@ pub fn spillStoreInit() SpillStore {
         .cap = @intCast(u32, 0),
         .len = @intCast(u32, 0),
         .cur = @intCast(u32, 0),
+        .last_dir = @intCast(u8, 0),
         .alloc = undefined,
     };
 }
@@ -135,6 +137,7 @@ fn ramEnsure(s: *SpillStore, need: u32) void {
 pub fn spillOpen(s: *SpillStore, backend: SpillBackend, path: []const u8, alloc: *Sand, mode: [*]const u8) void {
     s.backend = backend;
     s.cur = @intCast(u32, 0);
+    s.last_dir = @intCast(u8, 0);
     if (backend == SpillBackend.disk) {
         s.handle = pal.streamOpen(path, mode);
         if (s.handle == null) {
@@ -177,6 +180,7 @@ pub fn spillSeek(s: *SpillStore, off: u32) void {
         pal.streamSeek(h, @intCast(i32, off));
     }
     s.cur = off;
+    s.last_dir = @intCast(u8, 0);
 }
 
 pub fn spillWriteAt(s: *SpillStore, off: u32, bytes: []const u8) void {
@@ -203,9 +207,13 @@ pub fn spillWriteAt(s: *SpillStore, off: u32, bytes: []const u8) void {
             panic_mod.panicHandler(emsg, ef, 187);
             return;
         };
-        if (s.cur != off) pal.streamSeek(h, @intCast(i32, off));
+        // C89 7.9.5.3: on an update stream, input<->output needs an intervening
+        // fseek even when the offset already matches; glibc tolerates the skip,
+        // msvcrt discards the pending write buffer. Same-direction stays elided.
+        if (s.cur != off or s.last_dir == @intCast(u8, 2)) pal.streamSeek(h, @intCast(i32, off));
         pal.streamWrite(h, bytes);
         s.cur = end;
+        s.last_dir = @intCast(u8, 1);
     }
 }
 
@@ -238,8 +246,10 @@ pub fn spillReadAt(s: *SpillStore, off: u32, dst: []u8) void {
             panic_mod.panicHandler(emsg, ef, 221);
             return;
         };
-        if (s.cur != off) pal.streamSeek(h, @intCast(i32, off));
+        // C89 7.9.5.3: same intervening-fseek rule as spillWriteAt at a flip.
+        if (s.cur != off or s.last_dir == @intCast(u8, 1)) pal.streamSeek(h, @intCast(i32, off));
         pal.streamRead(h, dst);
         s.cur = end;
+        s.last_dir = @intCast(u8, 2);
     }
 }
