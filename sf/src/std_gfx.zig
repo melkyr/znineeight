@@ -4,7 +4,8 @@
 // drawing surface: gfxOpen/gfxOpenMemory/gfxPollEvent/gfxBeginFrame/
 // gfxEndFrame/gfxClear/gfxFillRect/gfxDrawText/gfxCharSize/gfxBufferSize/
 // gfxDumpGrid/gfxClipboardSet/gfxClipboardGet/gfxClose. All coordinates are
-// CELLS. Colors are VGA palette indices 0..15.
+// CELLS. Colors are 16-color palette indices 0..15 (see
+// std_gfx_pal.paletteRgb; the DirectDraw surface itself is 32-bit).
 //
 // The Win9x backend (window class/pump, glyph atlas, DirectDraw7, clipboard)
 // lives in std_gfx_pal.zig; this module owns the cell grid, the font metrics,

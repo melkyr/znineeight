@@ -93,25 +93,30 @@ fn rgb(r: u32, g: u32, b: u32) u32 {
     return (r & 255) | ((g & 255) << 8) | ((b & 255) << 16);
 }
 
-// Standard VGA 16-color palette (0..15). Unknown indices wrap (idx & 15).
+// Editor 16-color palette (dark theme). The DirectDraw surfaces are 32-bit;
+// these 16 RGB values are the app's whole color vocabulary (the glyph atlas
+// bakes them once at open). Index roles are stable for z9edit: 0 bg, 1 panel
+// bg, 2 fg, 3 comment, 4 fill bg, 5 green, 6 brown, 7 status bg, 8 alt bg,
+// 9-12 syntax accents, 13 accent/selection, 14 warning/gold, 15 bright.
+// Unknown indices wrap (idx & 15).
 fn paletteRgb(idx: u8) u32 {
     const PAL: [16]u32 = [16]u32{
-        rgb(0, 0, 0),
-        rgb(0, 0, 170),
-        rgb(0, 170, 0),
-        rgb(0, 170, 170),
-        rgb(170, 0, 0),
-        rgb(170, 0, 170),
-        rgb(170, 85, 0),
-        rgb(170, 170, 170),
-        rgb(85, 85, 85),
-        rgb(85, 85, 255),
-        rgb(85, 255, 85),
-        rgb(85, 255, 255),
-        rgb(255, 85, 85),
-        rgb(255, 85, 255),
-        rgb(255, 255, 85),
-        rgb(255, 255, 255),
+        rgb(0x0b, 0x0f, 0x14),
+        rgb(0x1f, 0x3a, 0x5f),
+        rgb(0xc9, 0xd1, 0xd9),
+        rgb(0x6e, 0x76, 0x81),
+        rgb(0x3a, 0x1f, 0x2b),
+        rgb(0x2d, 0x5a, 0x3d),
+        rgb(0x5a, 0x3d, 0x1f),
+        rgb(0x8b, 0x94, 0x9e),
+        rgb(0x16, 0x1b, 0x22),
+        rgb(0x79, 0xc0, 0xff),
+        rgb(0x56, 0xd3, 0x64),
+        rgb(0x7e, 0xe7, 0x87),
+        rgb(0xff, 0x7b, 0x72),
+        rgb(0x38, 0x8b, 0xfd),
+        rgb(0xe3, 0xb3, 0x41),
+        rgb(0xff, 0xff, 0xff),
     };
     return PAL[@intCast(usize, idx & 15)];
 }
