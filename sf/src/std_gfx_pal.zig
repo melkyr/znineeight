@@ -437,6 +437,7 @@ pub extern "stdcall" fn DefWindowProcA(hwnd: *void, msg: u32, wparam: u32, lpara
 pub extern "stdcall" fn ShowWindow(hwnd: *void, cmd: i32) i32;
 pub extern "stdcall" fn UpdateWindow(hwnd: *void) i32;
 pub extern "stdcall" fn SetForegroundWindow(hwnd: *void) i32;
+pub extern "stdcall" fn SetWindowTextA(hwnd: *void, s: [*]const u8) i32;
 pub extern "stdcall" fn DestroyWindow(hwnd: *void) i32;
 pub extern "stdcall" fn UnregisterClassA(name: [*]const u8, inst: *void) i32;
 pub extern "stdcall" fn LoadCursorA(inst: *void, name: *void) *void;
@@ -543,6 +544,14 @@ fn copyCstr(s: []const u8, out: []u8) void {
     var i: usize = 0;
     while (i < n) : (i += 1) out[i] = s[i];
     out[n] = 0;
+}
+
+// Update the top-level window title (z9edit keeps its dirty `*` current).
+pub fn setTitle(st: *State, title: []const u8) bool {
+    if (isNull(st.hwnd)) return false;
+    var buf: [128]u8 = undefined;
+    copyCstr(title, buf[0..]);
+    return SetWindowTextA(st.hwnd, @ptrCast([*]const u8, &buf[0])) != 0;
 }
 
 fn releaseSurface(p: *void) void {

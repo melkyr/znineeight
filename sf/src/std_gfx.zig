@@ -307,3 +307,11 @@ pub fn gfxClose(g: *Gfx) void {
     }
     s.mem_only = true;
 }
+
+// Additive P4-M3 helper: refresh the real window title (dirty `*`). A memory
+// Gfx has no window, so it returns false and the cell grid is unchanged.
+pub fn gfxSetTitle(g: *Gfx, title: []const u8) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    return pal.setTitle(&s.st, title);
+}
