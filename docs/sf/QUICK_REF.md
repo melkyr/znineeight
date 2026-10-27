@@ -23,28 +23,29 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-27 — seed v123]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-27 — seed v124]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in `release/seed/SEED_README.txt` and the v123 CHANGELOG entry.
+current md5s in `release/seed/SEED_README.txt` and the v124 CHANGELOG entry.
 
-**Current seed: v123** (rotated 2026-10-27 at HEAD `8dcda630`, the
-iterative-lowering milestone: the lowerer no longer recurses on the C stack —
-statement/expression lowering runs on continuation stacks — and the two T3
-phase-machine TEMP_NONE slot-resume bugs are fixed). Archived
-binary md5 (= fixed point) `a567926c223492787786dd460563f32a`; archive md5
-`3e0094f480a29a73fdcb200670b7c8d2`; Win9x zip md5
-`f2968cd6ac20438bc49665d2860cf999`; `gen/` 48 `.c` + 49 `.h` (12,118,809
-bytes); `lib/` 47 std `.zig` plus `lib/manifest.md5` (per-file std attribution
-pin, manifest md5 `7ef5c6b66a2975b51847515fe91fff41`). The rebuilt archive is
-two-hop (`build_from_seed.sh`: hop1 == hop2 == `a567926c…`); the compiler↔std
+**Current seed: v124** (rotated 2026-10-27 at HEAD `3c0c5f45`, the Phase 2 P4
+closeout: the std payload gained `std_gfx`/`std_gfx_pal`; the compiler fixed
+point is the pre-P4 leaf-tail cleanup `60e3a916` state — P4 adds no compiler
+source change). Archived binary md5 (= fixed point)
+`2fc64ffedb3ba5f4e8adf35896729e54`; archive md5
+`205ce0860b438765ed90f6268686852e`; Win9x zip md5
+`32d5d9945b89f653c78c4da8de65f648`; `gen/` 48 `.c` + 49 `.h` (11,913,427
+bytes); `lib/` **49** std `.zig` (47 prior + `std_gfx.zig` +
+`std_gfx_pal.zig`) plus `lib/manifest.md5` (per-file std attribution pin,
+manifest md5 `51f628e55aad45388efe23c14205fdb3`). The rebuilt archive is
+two-hop (`build_from_seed.sh`: hop1 == hop2 == `2fc64ffe…`); the compiler↔std
 separation means the `lib/` payload does not move the fixed point. The compiler
 source is **`-fsafe`-clean** (12 intentional wraps + 3 real safe-mode
 defects fixed). Markers (`--markers --dump-c89` on `mud_server`): **3252 lines
-/ 37293 B**.
+/ 37293 B** (unchanged by P4; no compiler source change).
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
 `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
@@ -132,12 +133,12 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v123 carries the full 47 std `.zig`** = `std.zig` plus
-46 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
+tracked seed archive **v124 carries the full 49 std `.zig`** = `std.zig` plus
+48 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
 
-**Std-module inventory:** the `sf/src` std set is **46** `std_*.zig` + `std.zig`
+**Std-module inventory:** the `sf/src` std set is **48** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
 `std_net`, `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`,
 `std_time_pal`, `std_buf`, `std_file`, `std_file_pal`, `std_stdin`,
@@ -146,10 +147,10 @@ and `SEED_README.txt`.
 `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`,
 `std_utf8`, `std_http`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
 `std_num`, `std_pathfind`, `std_hpa`, `std_physics`, `std_asn1`, `std_x509`,
-`std_tls`, `std_wireguard`, `std_tcpip`). `std.zig` re-exports
+`std_tls`, `std_wireguard`, `std_tcpip`, `std_gfx`, `std_gfx_pal`). `std.zig` re-exports
 the core **13** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/buf`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
-`scripts/seed/build_from_seed.sh` installs all 47 into the rebuilt compiler's `lib/`.
+`scripts/seed/build_from_seed.sh` installs all 49 into the rebuilt compiler's `lib/`.
 **`std_crypto` (M4):** carries streaming SHA-1/SHA-256/MD5 + CRC-32 plus RC4 (`rc4Init`/`rc4Apply`, RFC 6229 vectors) and modular exponentiation (`modpow`, fixed 32-bit limbs sized for the MSE/PE 768-bit Diffie-Hellman prime) for the encrypted handshake.
 **`std_crypto` M2 additions:** SHA-384/512, HMAC-SHA256 (one-shot + streaming), HKDF extract/expand (RFC 5869), BLAKE2s + HMAC-BLAKE2s (RFC 7693 / WireGuard MAC), and verify-only RSA PKCS#1 v1.5 / PSS (RFC 8017, generic modexp cap 4096-bit). Errors: `BadSignature` / `Corrupt` (`UnsupportedAlgorithm` is unrepresentable via `HashAlg`).
 **`std_cipher` (M2):** ChaCha20 (RFC 8439, 20 rounds unrolled), Poly1305 (donna 5×26-bit limbs, constant-time), ChaCha20-Poly1305 AEAD (`error.AuthenticationFailed`), AES-128 (FIPS-197, 4 KiB `const` T-tables `R/r` rodata), AES-128-GCM (SP800-38D, GHASH 4-bit tables). Pure, no heap/arena; fixtures `stdlib_chacha_poly_xmod` + `stdlib_aes_gcm_xmod`; T-table gate `scripts/compiler/gate_cipher_rodata.sh`. Doc: `sf/docs/std_lib/cipher.md`.
@@ -449,14 +450,17 @@ Real hardware is the operator's Win98 session.
 Real Win98 keystroke→screen and runtime RSS are **not measured** here
 (operator hardware).
 
-### Compiler RSS/arena — current measured (seed v123 / fixed point `a567926c…`)  [updated: 2026-10-27]
+### Compiler RSS/arena — seed v123 baseline, carried into v124 (not re-measured) [updated: 2026-10-27]
 
-**These figures are current.** Measured 2026-10-27 at the current seed v123
-/ fixed point `a567926c223492787786dd460563f32a` (two-hop closure
-hop1 == hop2). Every RSS/wall figure is the median of 3 `/usr/bin/time -v`
-runs in fresh scratch dirs; arena figures come from a separate `--markers
---track-memory` run (3×, identical). The v111 figures below are historical —
-do not present them as current.
+**These are the last full compiler measurements.** They were taken
+2026-10-27 at seed v123 / fixed point `a567926c223492787786dd460563f32a`
+(two-hop closure hop1 == hop2). Seed v124 differs only by (i) the std payload
+(`std_gfx`/`std_gfx_pal`) and (ii) the already-landed pre-P4 leaf-tail cleanup
+that moved the fixed point to `2fc64ffe…`; P4 added no compiler source change,
+and the compiler RSS was **not re-measured** for v124. Every RSS/wall figure is
+the median of 3 `/usr/bin/time -v` runs in fresh scratch dirs; arena figures
+come from a separate `--markers --track-memory` run (3×, identical). The v111
+figures below are historical — do not present them as current.
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
 |---|---:|---:|---|
