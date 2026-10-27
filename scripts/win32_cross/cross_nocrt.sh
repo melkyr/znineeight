@@ -40,7 +40,7 @@
 # timeout-guarded.
 #
 # Env overrides: ROOT, ZIG1, CROSS_GCC, TIMEOUT_DUMP, TIMEOUT_CC, EXTRA_LIBS,
-#                EXTRA_CSRC.
+#                EXTRA_CSRC, DUMP_TARGET.
 set -u
 
 ROOT=${ROOT:-/workspace/znineeight}
@@ -49,6 +49,10 @@ TIMEOUT_DUMP=${TIMEOUT_DUMP:-300}
 TIMEOUT_CC=${TIMEOUT_CC:-240}
 EXTRA_LIBS=${EXTRA_LIBS:-}
 EXTRA_CSRC=${EXTRA_CSRC:-}
+# Optional target flag for the Z98 dump (e.g. -osw). Empty keeps every existing
+# caller byte-identical; GUI programs that import std_time/std_os need -osw so
+# the emitted C takes the win32 branches instead of the POSIX ones.
+DUMP_TARGET=${DUMP_TARGET:-}
 
 ZIG1=${1:?usage: cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]}
 ENTRY=${2:?usage: cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]}
@@ -70,7 +74,7 @@ fail() {
 
 # ---- Step 1: dump C89 (fresh dir, repo-root CWD) ---------------------------
 (
-    cd "$ROOT" && timeout "$TIMEOUT_DUMP" "$ZIG1" --dump-c89 --output-dir "$DUMPDIR" "$ENTRY"
+    cd "$ROOT" && timeout "$TIMEOUT_DUMP" "$ZIG1" $DUMP_TARGET --dump-c89 --output-dir "$DUMPDIR" "$ENTRY"
 ) >"$DUMPDIR/dump.log" 2>&1
 DUMP_RC=$?
 NERR=$(grep -c 'error\[' "$DUMPDIR/dump.log" 2>/dev/null || true)

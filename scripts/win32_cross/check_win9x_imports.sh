@@ -32,7 +32,7 @@ MSVCRT_ALL="__getmainargs __initenv __p__acmdln __p__commode __p__fmode __set_ap
 # probe and then trimmed to exactly the symbols the real no-CRT exe imports.
 DDRAW_ALL="DirectDrawCreate"
 GDI32_ALL="BitBlt CreateBitmap CreateCompatibleBitmap CreateCompatibleDC CreateSolidBrush DeleteDC DeleteObject GetStockObject GetTextMetricsA SelectObject SetBkMode SetTextColor TextOutA"
-USER32_ALL="AdjustWindowRect ClientToScreen CloseClipboard CreateWindowExA DefWindowProcA DestroyWindow DispatchMessageA EmptyClipboard FillRect GetClientRect GetClipboardData GetDC GetKeyState LoadCursorA OpenClipboard PeekMessageA PostQuitMessage RegisterClassA ReleaseDC SetClipboardData SetForegroundWindow SetWindowPos ShowWindow TranslateMessage UnregisterClassA UpdateWindow"
+USER32_ALL="AdjustWindowRect ClientToScreen CloseClipboard CreateWindowExA DefWindowProcA DestroyWindow DispatchMessageA EmptyClipboard FillRect GetClientRect GetClipboardData GetDC GetKeyState LoadCursorA OpenClipboard PeekMessageA PostQuitMessage RegisterClassA ReleaseDC SetClipboardData SetForegroundWindow SetWindowPos SetWindowTextA ShowWindow TranslateMessage UnregisterClassA UpdateWindow"
 
 in_list() {
     local name=$1 list=$2

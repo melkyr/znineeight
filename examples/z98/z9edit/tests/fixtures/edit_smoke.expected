@@ -1,0 +1,8 @@
+const answer = 42;
+// comment: const ignored
+fn add(a: u32, b: u32) u32 {
+    const tmp = error[3000]; // note 7
+    return a + b;
+}
+var text = "hello";
+var bad = error[3000];
