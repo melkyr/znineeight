@@ -16,14 +16,17 @@
 #   <exe_out> path of the resulting PE32 .exe
 #   extra args: extra -D defs appended to every compile (e.g. a program flag)
 #
-# Link form (updated T5.3, RECORDED):
+# Link form (updated T5.3, RECORDED; P4-M1 adds additive EXTRA_LIBS):
 #   i686-w64-mingw32-gcc -m32 -nostdlib -o <exe_out> <all emitted objs> \
-#       -Wl,-e,_mainCRTStartup -lgcc -lkernel32
+#       -Wl,-e,_mainCRTStartup -lgcc -lkernel32 $EXTRA_LIBS
 #   - -nostdlib        excludes mingw crt2.o (its mainCRTStartup would collide
 #                      with the pal startup) and the default msvcrt libs.
 #   - -e,_mainCRTStartup  sets the PE entry to the pal startup (COFF decoration:
 #                      C fn mainCRTStartup is the linker symbol _mainCRTStartup).
 #   - shim symbols come from the emitted zig_nocrt.c / c_exit.c.
+#   - EXTRA_LIBS (default empty) is appended verbatim/word-split, so callers
+#     that do not set it keep the exact historical link line. The GUI tier sets
+#     EXTRA_LIBS="-luser32 -lgdi32 -lddraw".
 #   - Program choice: the dump MUST be no-CRT-clean. examples/z98/hello is the
 #     proven candidate; game_of_life is NOT (its emitted main calls system("cls")
 #     -> unresolved msvcrt `system`). See task-WIN32-report.md ## Task 4.
@@ -32,13 +35,14 @@
 # dump summary. Exit status mirrors XRUNRC (0 / 1). Every sub-run is
 # timeout-guarded.
 #
-# Env overrides: ROOT, ZIG1, CROSS_GCC, TIMEOUT_DUMP, TIMEOUT_CC.
+# Env overrides: ROOT, ZIG1, CROSS_GCC, TIMEOUT_DUMP, TIMEOUT_CC, EXTRA_LIBS.
 set -u
 
 ROOT=${ROOT:-/workspace/znineeight}
 CROSS_GCC=${CROSS_GCC:-i686-w64-mingw32-gcc}
 TIMEOUT_DUMP=${TIMEOUT_DUMP:-300}
 TIMEOUT_CC=${TIMEOUT_CC:-240}
+EXTRA_LIBS=${EXTRA_LIBS:-}
 
 ZIG1=${1:?usage: cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]}
 ENTRY=${2:?usage: cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]}
@@ -129,9 +133,9 @@ for f in "$DUMPDIR"/*.o; do
 done
 if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -nostdlib -o "$EXE_OUT" \
     "${LINK_OBJS[@]}" "${RT_OBJS[@]}" \
-    -Wl,-e,_mainCRTStartup -lgcc -lkernel32 \
+    -Wl,-e,_mainCRTStartup -lgcc -lkernel32 $EXTRA_LIBS \
     >>"$DUMPDIR/ld.log" 2>&1; then
-    echo "no-crt link failed (entry -e,_mainCRTStartup, -nostdlib -lgcc -lkernel32)"
+    echo "no-crt link failed (entry -e,_mainCRTStartup, -nostdlib -lgcc -lkernel32 $EXTRA_LIBS)"
     tail -20 "$DUMPDIR/ld.log"
     fail LINKFAIL
 fi
