@@ -112,19 +112,22 @@ ok   - windowed --smoke 30 exited 0
 TIER_GFX PASS
 ```
 
-Import table of the real exe:
+Import table of the real exe (current):
 
 ```
 DLL DDRAW.DLL   DirectDrawCreate
-DLL GDI32.DLL   CreateSolidBrush DeleteObject GetStockObject GetTextMetricsA
-                SelectObject SetBkMode SetTextColor TextOutA
+DLL GDI32.DLL   BitBlt CreateBitmap CreateCompatibleBitmap CreateCompatibleDC
+                CreateSolidBrush DeleteDC DeleteObject GetStockObject
+                GetTextMetricsA SelectObject SetBkMode SetTextColor TextOutA
 DLL KERNEL32.DLL (existing kernel32 set + clipboard GlobalAlloc/GlobalFree/
-                GlobalLock/GlobalUnlock)
-DLL USER32.DLL  CloseClipboard CreateWindowExA DefWindowProcA DispatchMessageA
-                EmptyClipboard FillRect GetClipboardData GetDC GetKeyState
-                LoadCursorA OpenClipboard PeekMessageA PostMessageA
-                PostQuitMessage RegisterClassA ReleaseDC SetClipboardData
-                SetForegroundWindow ShowWindow TranslateMessage UpdateWindow
+                GlobalLock/GlobalSize/GlobalUnlock)
+DLL USER32.DLL  AdjustWindowRect ClientToScreen CloseClipboard CreateWindowExA
+                DefWindowProcA DestroyWindow DispatchMessageA EmptyClipboard
+                FillRect GetClientRect GetClipboardData GetDC GetKeyState
+                LoadCursorA OpenClipboard PeekMessageA PostQuitMessage
+                RegisterClassA ReleaseDC SetClipboardData SetForegroundWindow
+                SetWindowPos ShowWindow TranslateMessage UnregisterClassA
+                UpdateWindow
 ```
 
 No `MSVCRT.DLL`. `check_win9x_imports.sh 9x` PASS.
@@ -226,8 +229,9 @@ Status: **DONE**. Base for this round: `41dca492`.
    surface DC).
 5. **WM_SIZE resize (Important 5).** `WM_SIZE` calls `resizeBack` (releases and
    recreates the offscreen `CreateSurface(resize)`), updates `st.cols/rows`,
-   and `gfxPollEvent` resizes the cell grid. `--smoke` posts a real `WM_SIZE`
-   via `gfxTestPostResize(..., 70, 22)`; the tier asserts the delivered event.
+   and `gfxPollEvent` resizes the cell grid. (Round 1 used posted `WM_SIZE`;
+   round 2 replaces that with the real sent-message WndProc path and
+   `gfxTestResize`.)
 6. **Glyph cache (Important 6).** Built once at `gfxOpen`: a 95x16 color atlas
    plus a monochrome mask atlas (GDI offscreen bitmaps, `SYSTEM_FIXED_FONT`,
    ASCII 32..126 x palette rows). `drawText` presents each cell with
@@ -313,5 +317,113 @@ the golden md5 is unchanged (`ef5f8632...`): the memory path keeps the fixed
   once at open, per-cell present from the atlas).
 - Runtime RSS is Wine-hosted (includes Wine's own footprint), so it is recorded
   rather than gated; the Z98 compile RSS is the gated <16 MB number.
-- `gfxTestPostResize` is a test-only additive affordance used by `--smoke` to
+- `gfxTestResize` is a test-only additive affordance used by `--smoke` to
   drive the real `WM_SIZE` path; the binding API is otherwise unchanged.
+
+## Fix round 2
+
+Status: **DONE**. Base for this round: `20e2b1d7`.
+- Code fix commit: `b9583012` (WM_SIZE via WndProc + 1:1 client blit).
+- Report commit: `docs(sdd): P4-M1 fix round 2 report` (this file).
+- `b83df7e9` / `41dca492` / `422dfa92` / `20e2b1d7` were not amended.
+
+### Open Important 5 — WM_SIZE via WndProc
+
+`WM_SIZE` is SENT, so the poll loop can never see it in `PeekMessageA`. Z98
+cannot define a `stdcall` callback (`extern "stdcall" fn` with a body is treated
+as an extern declaration; `export fn` is cdecl), so the callback lives in a
+small C shim:
+
+- `sf/src/include/zig_gfx_wndproc.c` owns `z98_gfx_wndproc` (stdcall). It
+  records `WM_SIZE` client `width/height` + `resize_pending` and
+  `WM_CLOSE`/`WM_DESTROY` in C globals, then forwards every message to the
+  default-proc address installed by the PAL. It references no user32 symbol
+  itself, so non-GUI no-CRT programs gain no import.
+- `cross_nocrt.sh` gained an additive `EXTRA_CSRC` hook (default empty) that
+  compiles the shim with the same flags and links its object. Existing callers
+  are unchanged when unset. The GUI tier sets
+  `EXTRA_CSRC=sf/src/include/zig_gfx_wndproc.c`.
+- `std_gfx_pal.zig` installs the WndProc via
+  `z98_gfx_wndproc_addr()` / `z98_gfx_set_defproc(DefWindowProcA)` at
+  `gfxOpen`; `gfxPollEvent` takes the pending client size, recreates the
+  offscreen surface, updates `cols/rows`, and emits the resize Event.
+- **Real-resize proof:** `gfxTestResize` calls `AdjustWindowRect` +
+  `SetWindowPos` on the actual window (no posted `WM_SIZE`). `--smoke` performs
+  two real resizes; Windows SENDs `WM_SIZE` to the WndProc each time.
+
+Window log (verbatim):
+
+```
+RESIZE 79x28 px=632x453        <- real WM_SIZE during CreateWindowEx
+present 1:1 client=632x453 back=632x453 dest=(4,23)
+RESIZE 70x22 px=560x352        <- real SetWindowPos resize #1
+present 1:1 client=560x352 back=560x352 dest=(4,23)
+RESIZE 100x37 px=800x592       <- real SetWindowPos resize #2
+present 1:1 client=800x592 back=800x592 dest=(4,23)
+```
+
+### New Important — 1:1 client present
+
+`endFrame` now uses `GetClientRect` plus `ClientToScreen`, passes a destination
+rect in **screen coordinates**, and a source rect of the back-buffer client
+region (`0,0..client`). The old NULL/NULL `Blt` (which stretched the resized
+back across the primary) is gone. The log line above records the client→back
+identity.
+
+Screenshot evidence from the tier:
+
+```
+shot.png  : full 1024x768, mean/stddev/colors 0.08258 / 0.170868 / 124
+            non-black trim bbox = 560x352+4+23
+shot2.png : full 1024x768, mean/stddev/colors 0.199762 / 0.187578 / 124
+            non-black trim bbox = 800x592+4+23
+```
+
+The non-black bbox exactly equals the client size (560x352 and 800x592) at the
+client screen origin (4,23): no stretch. (The demo paints the whole client with
+palette index 8 so the bbox is observable; this does not change the ASCII
+golden.)
+
+### Minors
+
+- Numpad VKs `0x60..0x69 -> '0'..'9'`; `0x6A..0x6F -> '*','+','-','-','.','/'`
+  in `virtualToChar`, and the range is in `isCharKey`.
+- The report import-table block was updated to the real current imports
+  (`BitBlt`, `CreateBitmap`, `CreateCompatibleBitmap`, `CreateCompatibleDC`,
+  `DeleteDC`, `GlobalSize`, `DestroyWindow`, `UnregisterClassA`,
+  `AdjustWindowRect`, `ClientToScreen`, `GetClientRect`, `SetWindowPos`; no
+  `PostMessageA`).
+- `cross_nocrt.sh` keeps empty-default `EXTRA_CSRC`/`EXTRA_LIBS`, so the hello
+  no-CRT build still links/imports exactly as before (rechecked: `TIER` import
+  gate PASS, KERNEL32 only).
+
+### Fix-round 2 evidence (two deterministic tier runs)
+
+Run A and run B: both rc 0, **20 passed / 0 failed**, `TIER_GFX PASS`.
+
+```
+Z98 compile max RSS < 16 MB (6180 kB / 5896 kB)
+check_win9x_imports.sh 9x PASS (no MSVCRT.DLL)
+wheel mapping 120->3, -240->-6
+runtime RSS (Wine-hosted): 17212 kB / 17324 kB
+grid.txt md5 ef5f8632fa1212a792020cbe1352e0f5 (unchanged)
+real window resizes SEND WM_SIZE -> 70x22/560x352 and 100x37/800x592
+1:1 client present after both resizes (client==back, screen dest)
+screenshot 1 (560x352) mean/stddev/colors 0.08258 / 0.170868 / 124
+screenshot 2 (800x592) mean/stddev/colors 0.199762 / 0.187578 / 124
+```
+
+`git diff --check` is clean. The golden was not regenerated (ASCII cell output
+did not change). The `--smoke` `RESIZE 64x20 px=512x320` line in the headless
+run is the memory-mode synthetic resize; the window run uses only real WM_SIZE
+events.
+
+### Fix-round 2 concerns
+
+- The C WndProc shim is a build dependency for std_gfx consumers: the GUI link
+  now needs `EXTRA_CSRC=sf/src/include/zig_gfx_wndproc.c` in addition to
+  `EXTRA_LIBS`. This is the only way to define a stdcall callback without
+  changing the compiler emitter (which would rotate the seed fixed point).
+- The 800x600 request lands at 800x592 client under Wine's window metrics
+  (100x37 cells); the actual client size is what the tier and report record.
+- Runtime RSS remains Wine-hosted and recorded, not gated.
