@@ -135,6 +135,17 @@ because the COM-in-C89 material is exactly what a reader needs before touching
 any DirectX (or DirectShow, or any other COM) header, and because the header pain
 is real work that the rest of the volume's rules already tell you how to do.
 </p>
+<p>
+<b>Phase&nbsp;2 P4 update (2026-10-27).</b> The tree now ships a minimal
+windowed DirectDraw layer, <tt>std_gfx</tt> (<tt>sf/docs/std_lib/gfx.md</tt>),
+and two programs built on it: <tt>examples/z98/gfx_demo/</tt> and the
+single-file editor <tt>examples/z98/z9edit/</tt> (<tt>sf/docs/std_lib/z9edit.md</tt>).
+They build no-CRT against mingw's <tt>ddraw.h</tt> and are smoke-run under
+Wine/Xvfb, so the windowed <tt>DDSCL_NORMAL</tt> + <tt>Blt</tt> path now has a
+tree gate. The boundary on this page is unchanged: that is Wine evidence, not a
+period-driver or era-hardware measurement, and this chapter still shows no
+<tt>src/vol3/</tt> sample and makes no pixel or display-mode claim.
+</p>
 
 <h2>DirectX on the 1998 machine</h2>
 <p>
@@ -573,7 +584,9 @@ account of what this page is and is not.
 </tr>
 <tr>
 <td>That any of it draws, plays, or flips on the target</td>
-<td><b>Not claimed here.</b> No DirectX sample and no figure; the proof is a real machine with a period driver</td>
+<td><b>Not claimed here.</b> The tree's <tt>std_gfx</tt>/<tt>z9edit</tt> tiers
+provide Wine/Xvfb smoke evidence only (no era-hardware capture and no figure);
+the proof is a real machine with a period driver</td>
 </tr>
 </table>
 <p>

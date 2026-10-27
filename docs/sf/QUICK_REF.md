@@ -390,6 +390,65 @@ cd <dump> && timeout 120 sh build_target.sh mingw
 ```
 - Harness wrapper: `scripts/win32_cross/cross_build_run.sh <zig1> <entry> <workdir> <exe> [-lwsock32]` — `cross_build_run.sh` links `-lwsock32` unconditionally (Amendment A0), so no extra flag is needed.
 
+### GUI (`std_gfx`) no-CRT build + Xvfb/Wine smoke — `gfx_demo` / `z9edit` [added: 2026-10-27]
+
+`std_gfx` is a std module pair (`sf/src/std_gfx.zig` + `std_gfx_pal.zig`) with a
+Win9x window + windowed DirectDraw7 backend. GUI programs are built with the
+no-CRT harness and three additive hooks:
+
+```bash
+cd /workspace/znineeight
+DUMP_TARGET="-osw" \
+EXTRA_LIBS="-luser32 -lgdi32 -lddraw" \
+EXTRA_CSRC="$PWD/sf/src/include/zig_gfx_wndproc.c" \
+  bash scripts/win32_cross/cross_nocrt.sh <zig1> \
+    examples/z98/z9edit/main.zig /tmp/z9edit/work /tmp/z9edit/z9edit.exe
+
+bash scripts/win32_cross/check_win9x_imports.sh /tmp/z9edit/z9edit.exe 9x
+# PASS: DDRAW/GDI32/USER32/KERNEL32, no MSVCRT
+```
+
+- `DUMP_TARGET="-osw"` is required when the program imports `std_time`/`std_os`
+  (z9edit does, for the 2 s ident-idle timer); without it the emitted C takes
+  the POSIX branches and the mingw link fails on `gettimeofday`/`fork`. The
+  env var is empty by default, so every pre-existing caller is unchanged.
+- `EXTRA_CSRC` supplies the stdcall WndProc trampoline (`Z98` cannot define a
+  stdcall callback). `EXTRA_LIBS` adds DDraw/GDI/User32.
+- The gate is `examples/z98/z9edit/tests/tier_edit_gui.sh` (build + import
+  gate + compile RSS + Xvfb/Wine `--smoke` 2× save-byte golden). `gfx_demo` has
+  the layer-only `examples/z98/gfx_demo/tests/tier_gfx.sh`.
+
+**Xvfb + Wine smoke recipe** (evidence, never a pixel gate):
+
+```bash
+Xvfb :77 -screen 0 1024x768x24 -nolisten tcp &
+export DISPLAY=:77 WINEPREFIX=/tmp/z9edit/wineprefix WINEARCH=win32 WINEDEBUG=-all
+wineboot -i
+cd /tmp/z9edit && wine ./z9edit.exe --smoke in.z98 out.tmp &   # prints flushed READY
+# wait for READY, then:
+import -window root shot.png
+wineserver -k; kill %1
+cmp out.tmp edit_smoke.expected
+```
+
+The app paints a few frames before the scripted sequence so windowed DDraw has
+presented (an immediate capture during the first idle can be black). Pixel
+output is Wine/font-specific; the save-byte golden and exit 0 are the gates.
+Real hardware is the operator's Win98 session.
+
+**Measured on this test box (P4-M3, 2026-10-27):**
+
+| Metric | Value | Notes |
+|:--|--:|:--|
+| `z9edit/main.zig` compile max RSS (`-osw --dump-c89`) | **7,012–7,304 KiB** | < 16 MB target |
+| `z9edit` runtime RSS under Wine | **≈35.4 MiB** | recorded, not gated (Wine overhead) |
+| Open 100 KB (native core `bufLoad` + `identScan`) | **≈40 ms** | 3,414 lines |
+| `--smoke` save bytes | md5 `974243c97df614039f01da3b86c67b3c` | 2× byte-identical |
+| Xvfb screenshot | 1024×768, mean 0.0280 / 222 colors | evidence only |
+
+Real Win98 keystroke→screen and runtime RSS are **not measured** here
+(operator hardware).
+
 ### Compiler RSS/arena — current measured (seed v123 / fixed point `a567926c…`)  [updated: 2026-10-27]
 
 **These figures are current.** Measured 2026-10-27 at the current seed v123
