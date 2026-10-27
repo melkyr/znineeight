@@ -1,10 +1,15 @@
 // buffer.zig — z9edit headless core: gap buffer over one file.
 //
 // Z98 subset only. Direct imports (no `std` barrel); arena-backed; GUI-free.
-// The raw file bytes are stored exactly as loaded (CRLF stays CRLF), so
-// load -> save with no edit is byte-identical. `bufInsert` rewrites a bare LF
-// to CRLF when the loaded file used CRLF endings, so edits keep the file's
-// ending. Line/col indexes here are 0-based; the GUI adds 1 for its status bar.
+// INTERNAL BYTES ARE ALWAYS CANONICAL LF. `bufLoad` folds every CRLF to LF and
+// remembers the file's ending in `uses_crlf`; `bufInsert` folds CRLF in its
+// input the same way; `bufSave` expands every canonical LF back to CRLF when
+// `uses_crlf` is set. Pure CRLF and pure LF files therefore load -> save with
+// no edit byte-identically. A mixed file is classified CRLF when it contains
+// any CRLF and is saved with CRLF endings (documented choice); it is not
+// byte-identical across a mixed-ending round trip. `bufLen` and every position
+// the API returns/counts are canonical-LF byte offsets. Line/col indexes are
+// 0-based; the GUI adds 1 for its status bar.
 //
 // Gap layout: bytes [0, gap_start) then the gap [gap_start, gap_end) then bytes
 // [gap_end, cap). Content length is tracked in `len`; the gap size is
@@ -80,6 +85,15 @@ fn hasCrlf(data: []const u8) bool {
         if (data[i] == '\r' and data[i + 1] == '\n') return true;
     }
     return false;
+}
+
+fn countCrlf(data: []const u8) usize {
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i + 1 < data.len) : (i += 1) {
+        if (data[i] == '\r' and data[i + 1] == '\n') n += 1;
+    }
+    return n;
 }
 
 fn ensureGap(st: *BufState, need: usize) BufError!void {
@@ -161,7 +175,6 @@ fn lineStartOf(st: *BufState, line: usize) usize {
 fn lineContentEnd(st: *BufState, start: usize) usize {
     var e = start;
     while (e < st.len and bufByteAtState(st, e) != '\n') : (e += 1) {}
-    if (e > start and bufByteAtState(st, e - 1) == '\r') e -= 1;
     return e;
 }
 
@@ -177,16 +190,24 @@ pub fn bufLoad(arena: *arena_mod.Arena, path: []const u8) BufError!*GapBuffer {
         return error.ReadFailed;
     };
     if (data.len > MAX_BUF) return error.TooLarge;
-    var cap = data.len + MIN_GAP;
+    const canon_len = data.len - countCrlf(data);
+    var cap = canon_len + MIN_GAP;
     if (cap < MIN_CAP) cap = MIN_CAP;
     const wrap = try newGapBuffer(arena, cap);
     const st = state(wrap);
-    var i: usize = 0;
-    while (i < data.len) : (i += 1) {
-        st.buf[i] = data[i];
+    var src: usize = 0;
+    var dst: usize = 0;
+    while (src < data.len) {
+        // On CRLF, skip only the CR; the following LF is copied.
+        if (data[src] == '\r' and src + 1 < data.len and data[src + 1] == '\n') {
+            src += 1;
+        }
+        st.buf[dst] = data[src];
+        dst += 1;
+        src += 1;
     }
-    st.len = data.len;
-    st.gap_start = data.len;
+    st.len = dst;
+    st.gap_start = dst;
     st.gap_end = cap;
     st.uses_crlf = hasCrlf(data);
     st.dirty = false;
@@ -195,12 +216,28 @@ pub fn bufLoad(arena: *arena_mod.Arena, path: []const u8) BufError!*GapBuffer {
 
 pub fn bufSave(b: *GapBuffer, path: []const u8) BufError!void {
     const st = state(b);
-    const tmp = try allocBytes(st.arena, st.len + 1);
-    var i: usize = 0;
-    while (i < st.len) : (i += 1) {
-        tmp[i] = bufByteAtState(st, i);
+    var out_len = st.len;
+    if (st.uses_crlf) {
+        var i: usize = 0;
+        while (i < st.len) : (i += 1) {
+            if (bufByteAtState(st, i) == '\n' and
+                (i == 0 or bufByteAtState(st, i - 1) != '\r')) out_len += 1;
+        }
     }
-    file_mod.writeAll(path, tmp[0..st.len]) catch |e| {
+    const tmp = try allocBytes(st.arena, out_len + 1);
+    var src: usize = 0;
+    var dst: usize = 0;
+    while (src < st.len) : (src += 1) {
+        const c = bufByteAtState(st, src);
+        if (st.uses_crlf and c == '\n' and
+            (src == 0 or bufByteAtState(st, src - 1) != '\r')) {
+            tmp[dst] = '\r';
+            dst += 1;
+        }
+        tmp[dst] = c;
+        dst += 1;
+    }
+    file_mod.writeAll(path, tmp[0..dst]) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
         return error.WriteFailed;
     };
@@ -219,69 +256,45 @@ pub fn bufDirty(b: *GapBuffer) bool {
     return state(b).dirty;
 }
 
+fn insertCanonical(st: *BufState, at: usize, bytes: []const u8) BufError!void {
+    try ensureGap(st, bytes.len);
+    moveGapTo(st, at);
+    var i: usize = 0;
+    while (i < bytes.len) : (i += 1) {
+        st.buf[st.gap_start + i] = bytes[i];
+    }
+    st.gap_start += bytes.len;
+    st.len += bytes.len;
+    st.dirty = true;
+}
+
 pub fn bufInsert(b: *GapBuffer, pos: usize, bytes: []const u8) BufError!void {
     const st = state(b);
     var at = pos;
     if (at > st.len) at = st.len;
 
-    // CRLF files: a bare LF in `bytes` becomes CRLF. Existing CR already in
-    // `bytes` (or immediately before `at`) is not doubled.
-    var extra: usize = 0;
-    if (st.uses_crlf) {
-        var i: usize = 0;
-        while (i < bytes.len) : (i += 1) {
-            if (bytes[i] == '\n') {
-                if (i == 0) {
-                    if (at == 0 or bufByteAtState(st, at - 1) != '\r') extra += 1;
-                } else if (bytes[i - 1] != '\r') {
-                    extra += 1;
-                }
-            }
-        }
-    }
-    if (extra == 0) {
-        try ensureGap(st, bytes.len);
-        moveGapTo(st, at);
-        var i: usize = 0;
-        while (i < bytes.len) : (i += 1) {
-            st.buf[st.gap_start + i] = bytes[i];
-        }
-        st.gap_start += bytes.len;
-        st.len += bytes.len;
-        st.dirty = true;
+    // Canonicalize both directions: every CRLF in the input becomes one LF.
+    // Internal bytes stay LF regardless of the file's stored ending.
+    const cr = countCrlf(bytes);
+    if (cr == 0) {
+        try insertCanonical(st, at, bytes);
         return;
     }
-
-    const out_len = bytes.len + extra;
-    if (st.len + out_len > MAX_BUF) return error.TooLarge;
-    const tmp = try allocBytes(st.arena, out_len + 1);
+    const canon_len = bytes.len - cr;
+    if (st.len + canon_len > MAX_BUF) return error.TooLarge;
+    const tmp = try allocBytes(st.arena, canon_len + 1);
     var src: usize = 0;
     var dst: usize = 0;
-    while (src < bytes.len) : (src += 1) {
-        if (bytes[src] == '\n') {
-            var needs_cr = false;
-            if (src == 0) {
-                needs_cr = at == 0 or bufByteAtState(st, at - 1) != '\r';
-            } else {
-                needs_cr = bytes[src - 1] != '\r';
-            }
-            if (needs_cr) {
-                tmp[dst] = '\r';
-                dst += 1;
-            }
+    while (src < bytes.len) {
+        // On CRLF, skip only the CR; the following LF is copied.
+        if (bytes[src] == '\r' and src + 1 < bytes.len and bytes[src + 1] == '\n') {
+            src += 1;
         }
         tmp[dst] = bytes[src];
         dst += 1;
+        src += 1;
     }
-    try ensureGap(st, dst);
-    moveGapTo(st, at);
-    src = 0;
-    while (src < dst) : (src += 1) {
-        st.buf[st.gap_start + src] = tmp[src];
-    }
-    st.gap_start += dst;
-    st.len += dst;
-    st.dirty = true;
+    try insertCanonical(st, at, tmp[0..dst]);
 }
 
 pub fn bufDelete(b: *GapBuffer, pos: usize, count: usize) BufError!void {

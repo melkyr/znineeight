@@ -140,6 +140,23 @@ fn tCrlfNoEdit() bool {
     return eq(got, "a\r\nb\r\n");
 }
 
+fn tLfCrlfInsertNormalized() bool {
+    if (!writeFile(P_LF_IN, "a\nb\n")) return false;
+    const b = buffer.bufLoad(&arena, P_LF_IN) catch {
+        return false;
+    };
+    const end = buffer.bufLen(b);
+    buffer.bufInsert(b, end, "\r\n") catch {
+        return false;
+    };
+    if (buffer.bufUsesCrlf(b)) return false;
+    buffer.bufSave(b, P_LF_OUT) catch {
+        return false;
+    };
+    const got = readFile(P_LF_OUT) orelse return false;
+    return eq(got, "a\nb\n\n");
+}
+
 fn tLfPreserved() bool {
     if (!writeFile(P_LF_IN, "a\nb\n")) return false;
     const b = buffer.bufLoad(&arena, P_LF_IN) catch {
@@ -196,6 +213,8 @@ pub fn main() void {
     report("lf_preserved", tLfPreserved());
     arena_mod.reset(&arena);
     report("crlf_preserved_after_insert", tCrlfAfterInsert());
+    arena_mod.reset(&arena);
+    report("lf_file_crlf_insert_normalized", tLfCrlfInsertNormalized());
     arena_mod.reset(&arena);
     report("load_missing_error", tLoadMissing());
 

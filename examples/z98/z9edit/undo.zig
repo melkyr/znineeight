@@ -60,6 +60,18 @@ pub fn undoInit(arena: *arena_mod.Arena) *Undo {
 
 var g_dummy_byte: [1]u8 = undefined;
 
+fn countCrlf(bytes: []const u8) usize {
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i + 1 < bytes.len) : (i += 1) {
+        if (bytes[i] == '\r' and bytes[i + 1] == '\n') n += 1;
+    }
+    return n;
+}
+
+// Undo records canonical-LF bytes only. `bufInsert` folds CRLF to LF, so the
+// record must fold the same way or an insert-undo would delete the wrong length
+// (and leave a bare LF) in a CRLF file.
 fn push(u: *Undo, kind: Kind, pos: usize, bytes: []const u8) buffer.BufError!void {
     const st = u.opaque;
     const raw_rec = arena_mod.alloc(st.arena, @sizeOf(Record)) catch {
@@ -67,15 +79,31 @@ fn push(u: *Undo, kind: Kind, pos: usize, bytes: []const u8) buffer.BufError!voi
     };
     const rec: *Record = @ptrCast(*Record, raw_rec);
     var copy: [*]u8 = @ptrCast([*]u8, &g_dummy_byte[0]);
-    if (bytes.len > 0) {
-        copy = arena_mod.alloc(st.arena, bytes.len) catch {
+    const cr = countCrlf(bytes);
+    const canon_len = bytes.len - cr;
+    if (canon_len > 0) {
+        copy = arena_mod.alloc(st.arena, canon_len) catch {
             return error.OutOfMemory;
         };
-        mem_mod.copyU8(copy, bytes.ptr, bytes.len);
+        if (cr == 0) {
+            mem_mod.copyU8(copy, bytes.ptr, bytes.len);
+        } else {
+            var src: usize = 0;
+            var dst: usize = 0;
+            while (src < bytes.len) {
+                // On CRLF, skip only the CR; the following LF is copied.
+                if (bytes[src] == '\r' and src + 1 < bytes.len and bytes[src + 1] == '\n') {
+                    src += 1;
+                }
+                copy[dst] = bytes[src];
+                dst += 1;
+                src += 1;
+            }
+        }
     }
     rec.kind = kind;
     rec.pos = pos;
-    rec.blen = bytes.len;
+    rec.blen = canon_len;
     rec.bytes = copy;
     rec.next = st.top;
     st.top = rec;

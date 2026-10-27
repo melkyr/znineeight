@@ -98,6 +98,7 @@ check_case buffer_test offset_linecol_roundtrip
 check_case buffer_test crlf_preserved_noedit
 check_case buffer_test lf_preserved
 check_case buffer_test crlf_preserved_after_insert
+check_case buffer_test lf_file_crlf_insert_normalized
 check_case buffer_test load_missing_error
 
 check_case lexer_test keyword_string_comment_number
@@ -119,6 +120,8 @@ check_case match_test unbalanced_closer
 check_case undo_test undo_insert_inverse
 check_case undo_test undo_delete_inverse
 check_case undo_test undo_empty_false
+check_case undo_test undo_insert_crlf_exact
+check_case undo_test crlf_file_undo_delete_exact
 
 check_case errtab_test known_code_message
 check_case errtab_test unknown_null
