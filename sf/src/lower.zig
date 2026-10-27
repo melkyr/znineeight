@@ -2327,6 +2327,13 @@ fn lowerExprDriver(self: *LirLowerer, root: u32) u32 {
             var child_res: u32 = lowerExprCoerceResult(self, done_node, r);
             var pidx: usize = self.expr_stack.len - @intCast(usize, 1);
             var parent: *ExprFrame = &self.expr_stack.items[pidx];
+            // Invariant: a child result of TEMP_NONE (void/"no value") is never
+            // delivered into a fixed-arity machine's slot. Fixed-arity machines
+            // (lowerAddStep and siblings) do not reset slot0 between pushes, so a
+            // TEMP_NONE child would be indistinguishable from child_0's value and
+            // would swap the operands. This holds because typed operands are
+            // required by semantic analysis before lowering runs; a void-typed
+            // operand cannot reach here.
             if (parent.slot0 == TEMP_NONE) { parent.slot0 = child_res; }
             else if (parent.slot1 == TEMP_NONE) { parent.slot1 = child_res; }
             else if (parent.slot2 == TEMP_NONE) { parent.slot2 = child_res; }
@@ -2368,9 +2375,8 @@ fn lowerExprPushChild(self: *LirLowerer, parent: *ExprFrame, child: u32, phase: 
 // Task 2 (iterative lowering): the per-node entry prologue factored out of
 // `lowerExprImpl`'s head — context node (read by `nextTemp`/`emitInst` marker
 // paths) + the GBL/R/M/BB:i marker prefix. Called exactly once per node: from
-// `lowerExprStep` at a converted frame's phase-0 entry (NOT on resume, so a
-// resumed parent keeps the last child's ctx exactly like a recursive return),
-// or from `lowerExprImpl`'s head on the fallback path.
+// `lowerExprStep` at a frame's phase-0 entry (NOT on resume, so a
+// resumed parent keeps the last child's ctx exactly like a recursive return).
 fn lowerExprPrologue(self: *LirLowerer, node_idx: u32) void {
     self._ctx_node_idx = node_idx;
     self._ctx_node_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, node_idx).kind));
@@ -3542,6 +3548,17 @@ fn lowerFnCallStep(self: *LirLowerer, f: *ExprFrame) u32 {
         return lowerFnCallCTail(self, node_idx, store, ec_n, call_ns, f.slot4, f.slot5, f.slot6, is_ex);
     }
     if (f.phase == @intCast(u16, 7)) {
+        return lowerFnCallStep7(self, f);
+    }
+    return lowerFnCallStep0(self, f);
+}
+
+fn lowerFnCallStep7(self: *LirLowerer, f: *ExprFrame) u32 {
+    var node_idx: u32 = f.node_idx;
+    var store = self.ctx.store;
+    var node = ast_mod.astStoreNodeAt(store, node_idx);
+    var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(store, node_idx));
+    if (f.phase == @intCast(u16, 7)) {
         // Path D arg loop.
         var args_start: u32 = f.slot1;
         var ai: usize = @intCast(usize, f.slot2);
@@ -3569,6 +3586,14 @@ fn lowerFnCallStep(self: *LirLowerer, f: *ExprFrame) u32 {
         }
         return lowerFnCallDTail(self, node_idx, store, ec_n, args_start, f.slot4, f.slot5, f.slot6, f.slot7, is_ex);
     }
+    return lowerFnCallStep0(self, f);
+}
+
+fn lowerFnCallStep0(self: *LirLowerer, f: *ExprFrame) u32 {
+    var node_idx: u32 = f.node_idx;
+    var store = self.ctx.store;
+    var node = ast_mod.astStoreNodeAt(store, node_idx);
+    var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(store, node_idx));
     // Phase 0: sub-path dispatch, up to the first child lowering.
     var d9m: []const u8 = "D9:FCk"; pal.markerWrite(d9m);
     var callee_head = ast_mod.astStoreNodeAt(store, node.child_0);
@@ -5036,6 +5061,9 @@ fn lowerExprStep(self: *LirLowerer) u32 {
     var f: ExprFrame = self.expr_stack.items[self.expr_stack.len - @intCast(usize, 1)];
     self.expr_stack.len -= @intCast(usize, 1);
     lowerExprLexMarkers(self, f.node_idx);
+    if (f.phase == @intCast(u16, 0)) {
+        lowerExprPrologue(self, f.node_idx);
+    }
     var k: u32 = f.kind;
     if (k == @intCast(u32, @enumToInt(AstKind.builtin_call))) {
         if (lowerBuiltinIsCastPath(self, f.node_idx)) {
@@ -5044,7 +5072,6 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         return lowerExprImpl(self, f.node_idx);
     }
     if (k == @intCast(u32, @enumToInt(AstKind.int_literal))) {
-        lowerExprPrologue(self, f.node_idx);
         var val = ast_mod.astStoreIntValue(self.ctx.store, f.node_idx);
         var tid = nextTemp(self, type_mod.TYPE_INT_LIT);
         emitIntConst(self, val, tid);
@@ -5062,7 +5089,6 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         return tid;
     }
     if (k == @intCast(u32, @enumToInt(AstKind.float_literal))) {
-        lowerExprPrologue(self, f.node_idx);
         var store = self.ctx.store;
         var val = store.float_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, f.node_idx))];
         var tid = nextTemp(self, type_mod.TYPE_F64);
@@ -5070,7 +5096,6 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         return tid;
     }
     if (k == @intCast(u32, @enumToInt(AstKind.string_literal))) {
-        lowerExprPrologue(self, f.node_idx);
         var store = self.ctx.store;
         var str_id = store.string_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, f.node_idx))];
         // Track4 S22 F-M4 (A1): mirror the semantic type `*const [N]u8` so the
@@ -5083,14 +5108,12 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         return tid;
     }
     if (k == @intCast(u32, @enumToInt(AstKind.char_literal))) {
-        lowerExprPrologue(self, f.node_idx);
         var val = ast_mod.astStoreIntValue(self.ctx.store, f.node_idx);
         var tid = nextTemp(self, type_mod.TYPE_U8);
         emitIntConst(self, val, tid);
         return tid;
     }
     if (k == @intCast(u32, @enumToInt(AstKind.bool_literal))) {
-        lowerExprPrologue(self, f.node_idx);
         var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
         var val = @intCast(u8, node.flags & @intCast(u8, 1));
         var tid = nextTemp(self, type_mod.TYPE_BOOL);
@@ -5098,7 +5121,6 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         return tid;
     }
     if (k == @intCast(u32, @enumToInt(AstKind.null_literal))) {
-        lowerExprPrologue(self, f.node_idx);
         var node_idx: u32 = f.node_idx;
         var nul_ce = coercion_mod.coercionTableGet(self.ctx.coercions, node_idx);
         if (nul_ce) |nce| {
@@ -5137,7 +5159,6 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         return tid;
     }
     if (k == @intCast(u32, @enumToInt(AstKind.undefined_literal))) {
-        lowerExprPrologue(self, f.node_idx);
         var node_idx: u32 = f.node_idx;
         var tid = nextTemp(self, type_mod.TYPE_UNDEFINED);
         var und_ud_m: []const u8 = "UND:udLt"; pal.markerWrite(und_ud_m);
@@ -5154,7 +5175,6 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         return tid;
     }
     if (k == @intCast(u32, @enumToInt(AstKind.enum_literal))) {
-        lowerExprPrologue(self, f.node_idx);
         var node_idx: u32 = f.node_idx;
         var ev_val: u64 = @intCast(u64, ast_mod.astStoreNodePayload(self.ctx.store, node_idx));
         var evptr: u32 = @intCast(u32, @ptrToInt(self.ctx.enum_value_table));
@@ -5198,7 +5218,6 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         return tid;
     }
     if (k == @intCast(u32, @enumToInt(AstKind.error_literal))) {
-        lowerExprPrologue(self, f.node_idx);
         var node_idx: u32 = f.node_idx;
         var name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, node_idx);
         var reg_code: u32 = hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, name_id);
@@ -5219,18 +5238,15 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         return tid;
     }
     if (k == @intCast(u32, @enumToInt(AstKind.unreachable_expr))) {
-        lowerExprPrologue(self, f.node_idx);
         emitInst(self, LirInst{ .trap = {} });
         self.block_terminated = @intCast(u8, 1);
         return @intCast(u32, 0);
     }
     if (k == @intCast(u32, @enumToInt(AstKind.import_expr))) {
-        lowerExprPrologue(self, f.node_idx);
         return @intCast(u32, 0);
     }
     if (k == @intCast(u32, @enumToInt(AstKind.paren_expr))) {
         if (f.phase == @intCast(u16, 0)) {
-            lowerExprPrologue(self, f.node_idx);
             var pnode = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
             lowerExprPushChild(self, &f, pnode.child_0, @intCast(u16, 1));
             return TEMP_NONE;
@@ -5328,7 +5344,6 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         return lowerFieldAccessStep(self, &f);
     }
     if (k == @intCast(u32, @enumToInt(AstKind.address_of))) {
-        lowerExprPrologue(self, f.node_idx);
         var node_idx: u32 = f.node_idx;
         var rt_ao = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ao_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
@@ -8313,10 +8328,159 @@ fn lowerModuleMemberValue(self: *LirLowerer, target_mod: u32, field_name_id: u32
 }
 
 fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
-    lowerExprPrologue(self, node_idx);
     var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     var store = self.ctx.store;
     var t_target: u32 = @intCast(u32, 10);
+    if (node.kind == AstKind.int_literal) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.float_literal) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.string_literal) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.char_literal) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.bool_literal) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.null_literal) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.undefined_literal) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.enum_literal) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.error_literal) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.unreachable_expr) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.paren_expr) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.import_expr) {
+        return lowerExprLit(self, node_idx);
+    } else if (node.kind == AstKind.add) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.sub) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.mul) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add or node.kind == AstKind.wrap_sub or node.kind == AstKind.wrap_mul) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.sat_add or node.kind == AstKind.sat_sub or node.kind == AstKind.sat_mul or node.kind == AstKind.sat_shl) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.div) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.mod_op) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.bit_and) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.bit_or) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.bit_xor) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.shl) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.shr) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.cmp_eq or node.kind == AstKind.cmp_ne) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_lt) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_le) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_gt) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_ge) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.bool_or) {
+        return lowerExprBool(self, node_idx);
+    } else if (node.kind == AstKind.bool_and) {
+        return lowerExprBool(self, node_idx);
+    } else if (node.kind == AstKind.negate) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.wrap_negate) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.bool_not) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.bit_not) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.plain_assign) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.deref) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.address_of) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.index_access) {
+        return lowerExprIndex(self, node_idx);
+    } else if (node.kind == AstKind.ident_expr) {
+        return lowerExprIdent(self, node_idx);
+    } else if (node.kind == AstKind.field_access) {
+        return lowerExprField(self, node_idx);
+    } else if (node.kind == AstKind.fn_call) {
+        return lowerExprCall(self, node_idx);
+    } else if (node.kind == AstKind.builtin_call) {
+        return lowerExprBuiltin(self, node_idx);
+    } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprLit(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
     if (node.kind == AstKind.int_literal) {
         var val = ast_mod.astStoreIntValue(self.ctx.store, node_idx);
         var tid = nextTemp(self, type_mod.TYPE_INT_LIT);
@@ -8476,6 +8640,132 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.import_expr) {
         return @intCast(u32, 0);
     } else if (node.kind == AstKind.add) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.sub) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.mul) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add or node.kind == AstKind.wrap_sub or node.kind == AstKind.wrap_mul) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.sat_add or node.kind == AstKind.sat_sub or node.kind == AstKind.sat_mul or node.kind == AstKind.sat_shl) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.div) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.mod_op) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.bit_and) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.bit_or) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.bit_xor) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.shl) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.shr) {
+        return lowerExprBinary(self, node_idx);
+    } else if (node.kind == AstKind.cmp_eq or node.kind == AstKind.cmp_ne) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_lt) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_le) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_gt) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_ge) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.bool_or) {
+        return lowerExprBool(self, node_idx);
+    } else if (node.kind == AstKind.bool_and) {
+        return lowerExprBool(self, node_idx);
+    } else if (node.kind == AstKind.negate) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.wrap_negate) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.bool_not) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.bit_not) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.plain_assign) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.deref) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.address_of) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.index_access) {
+        return lowerExprIndex(self, node_idx);
+    } else if (node.kind == AstKind.ident_expr) {
+        return lowerExprIdent(self, node_idx);
+    } else if (node.kind == AstKind.field_access) {
+        return lowerExprField(self, node_idx);
+    } else if (node.kind == AstKind.fn_call) {
+        return lowerExprCall(self, node_idx);
+    } else if (node.kind == AstKind.builtin_call) {
+        return lowerExprBuiltin(self, node_idx);
+    } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprBinary(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.add) {
         var rtype: u32 = resolveRtypeOrU32(self, node_idx);
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
@@ -8563,6 +8853,108 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.cmp_eq or node.kind == AstKind.cmp_ne) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_lt) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_le) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_gt) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.cmp_ge) {
+        return lowerExprCmp(self, node_idx);
+    } else if (node.kind == AstKind.bool_or) {
+        return lowerExprBool(self, node_idx);
+    } else if (node.kind == AstKind.bool_and) {
+        return lowerExprBool(self, node_idx);
+    } else if (node.kind == AstKind.negate) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.wrap_negate) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.bool_not) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.bit_not) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.plain_assign) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.deref) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.address_of) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.index_access) {
+        return lowerExprIndex(self, node_idx);
+    } else if (node.kind == AstKind.ident_expr) {
+        return lowerExprIdent(self, node_idx);
+    } else if (node.kind == AstKind.field_access) {
+        return lowerExprField(self, node_idx);
+    } else if (node.kind == AstKind.fn_call) {
+        return lowerExprCall(self, node_idx);
+    } else if (node.kind == AstKind.builtin_call) {
+        return lowerExprBuiltin(self, node_idx);
+    } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprCmp(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.cmp_eq or node.kind == AstKind.cmp_ne) {
         var c0n = ast_mod.astStoreNodeAt(self.ctx.store, node.child_0);
         var c1n = ast_mod.astStoreNodeAt(self.ctx.store, node.child_1);
         var is_opt_null: u8 = @intCast(u8, 0);
@@ -8623,6 +9015,98 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .binary = .{ .op = BIN_GE, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.bool_or) {
+        return lowerExprBool(self, node_idx);
+    } else if (node.kind == AstKind.bool_and) {
+        return lowerExprBool(self, node_idx);
+    } else if (node.kind == AstKind.negate) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.wrap_negate) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.bool_not) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.bit_not) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.plain_assign) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.deref) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.address_of) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.index_access) {
+        return lowerExprIndex(self, node_idx);
+    } else if (node.kind == AstKind.ident_expr) {
+        return lowerExprIdent(self, node_idx);
+    } else if (node.kind == AstKind.field_access) {
+        return lowerExprField(self, node_idx);
+    } else if (node.kind == AstKind.fn_call) {
+        return lowerExprCall(self, node_idx);
+    } else if (node.kind == AstKind.builtin_call) {
+        return lowerExprBuiltin(self, node_idx);
+    } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprBool(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.bool_or) {
         var lhs_tid = lowerExpr(self, node.child_0);
         var rhs_bb = createBlock(self);
         var true_bb = createBlock(self);
@@ -8669,6 +9153,94 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.block_terminated = @intCast(u8, 0);
         return result;
     } else if (node.kind == AstKind.negate) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.wrap_negate) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.bool_not) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.bit_not) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.plain_assign) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.deref) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.address_of) {
+        return lowerExprUnary(self, node_idx);
+    } else if (node.kind == AstKind.index_access) {
+        return lowerExprIndex(self, node_idx);
+    } else if (node.kind == AstKind.ident_expr) {
+        return lowerExprIdent(self, node_idx);
+    } else if (node.kind == AstKind.field_access) {
+        return lowerExprField(self, node_idx);
+    } else if (node.kind == AstKind.fn_call) {
+        return lowerExprCall(self, node_idx);
+    } else if (node.kind == AstKind.builtin_call) {
+        return lowerExprBuiltin(self, node_idx);
+    } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprUnary(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.negate) {
         var rt_ng = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ng_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
         if (rt_ng) |t| { if (t != type_mod.TYPE_UNDEFINED) { ng_box[0] = t; } } else { var rtm_ng: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ng); var rtmb_ng: [10]u8 = undefined; var rtml_ng = itoa_mod.itoa(node_idx, rtmb_ng[0..]); var rtms_ng: usize = @intCast(usize, 9) - @intCast(usize, rtml_ng); pal.markerWrite(rtmb_ng[rtms_ng..@intCast(usize, 9)]); var rtmnl_ng: []const u8 = "\n"; pal.markerWrite(rtmnl_ng); }
@@ -8725,6 +9297,80 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (rt_ao) |t| { if (t != type_mod.TYPE_UNDEFINED) { ao_box[0] = t; } } else { var rtm_ao: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ao); var rtmb_ao: [10]u8 = undefined; var rtml_ao = itoa_mod.itoa(node_idx, rtmb_ao[0..]); var rtms_ao: usize = @intCast(usize, 9) - @intCast(usize, rtml_ao); pal.markerWrite(rtmb_ao[rtms_ao..@intCast(usize, 9)]); var rtmnl_ao: []const u8 = "\n"; pal.markerWrite(rtmnl_ao); }
         return lowerLValueAddr(self, node.child_0, ao_box[0]);
     } else if (node.kind == AstKind.index_access) {
+        return lowerExprIndex(self, node_idx);
+    } else if (node.kind == AstKind.ident_expr) {
+        return lowerExprIdent(self, node_idx);
+    } else if (node.kind == AstKind.field_access) {
+        return lowerExprField(self, node_idx);
+    } else if (node.kind == AstKind.fn_call) {
+        return lowerExprCall(self, node_idx);
+    } else if (node.kind == AstKind.builtin_call) {
+        return lowerExprBuiltin(self, node_idx);
+    } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprIndex(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.index_access) {
         // FX5: `pa.*[i]` indexes the dereferenced array; lower the POINTER so
         // the emitter renders `(*pa)[i]` instead of gcc-invalid `zT = *pa;`.
         var base_temp = lowerExpr(self, indexBaseAfterArrayDeref(self, node.child_0));
@@ -8758,6 +9404,78 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var idx_temp = lowerExpr(self, node.child_1);
         return lowerIndexAccessRest(self, node_idx, base_temp, li_orig_base, idx_temp);
     } else if (node.kind == AstKind.ident_expr) {
+        return lowerExprIdent(self, node_idx);
+    } else if (node.kind == AstKind.field_access) {
+        return lowerExprField(self, node_idx);
+    } else if (node.kind == AstKind.fn_call) {
+        return lowerExprCall(self, node_idx);
+    } else if (node.kind == AstKind.builtin_call) {
+        return lowerExprBuiltin(self, node_idx);
+    } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprIdent(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.ident_expr) {
         var name_id = ast_mod.astStoreIdentifier(store, node_idx);
         var shadow = hash_mod.u32ToU32MapGet(&self.capture_shadow, name_id);
         if (shadow) |syn| { if (captureShadowShouldRedirect(self, name_id, syn)) { name_id = syn; } }
@@ -8997,6 +9715,76 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .load_local = .{ .name_id = name_id, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.field_access) {
+        return lowerExprField(self, node_idx);
+    } else if (node.kind == AstKind.fn_call) {
+        return lowerExprCall(self, node_idx);
+    } else if (node.kind == AstKind.builtin_call) {
+        return lowerExprBuiltin(self, node_idx);
+    } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprField(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.field_access) {
         var field_name_id: u32 = ast_mod.astStoreNodePayload(store, node_idx);
         var base_node = ast_mod.astStoreNodeAt(store, node.child_0);
         if (base_node.kind == AstKind.field_access) {
@@ -9398,6 +10186,74 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (fa_box[0] == type_mod.TYPE_VOID) { var gape_frt: []const u8 = "GAPE:frt\n"; pal.markerWrite(gape_frt); }
         return tid;
     } else if (node.kind == AstKind.fn_call) {
+        return lowerExprCall(self, node_idx);
+    } else if (node.kind == AstKind.builtin_call) {
+        return lowerExprBuiltin(self, node_idx);
+    } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprCall(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.fn_call) {
         var d9m: []const u8 = "D9:FCk"; pal.markerWrite(d9m);
         var callee_head = ast_mod.astStoreNodeAt(store, node.child_0);
         var ck_val: u8 = @intCast(u8, @enumToInt(callee_head.kind));
@@ -9549,6 +10405,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                  }
              }
           }
+        return lowerExprCallFieldPath(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprCallFieldPath(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(store, node_idx));
+    if (node.kind == AstKind.fn_call) {
         var callee_node = ast_mod.astStoreNodeAt(store, node.child_0);
         if (callee_node.kind == @enumToInt(AstKind.field_access)) {
             var dfa: []const u8 = "DFA:ck="; pal.markerWrite(dfa);
@@ -9792,6 +10659,73 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         } });
         return result;
         } else if (node.kind == AstKind.builtin_call) {
+        return lowerExprBuiltin(self, node_idx);
+    } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprBuiltin(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    var t_target: u32 = @intCast(u32, 10);
+    if (node.kind == AstKind.builtin_call) {
          var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(store, node_idx));
             if (node.child_0 == self.ptrtoint_name_id or node.child_0 == self.int_from_ptr_name_id) {
                 if (ec_n >= 1) {
@@ -10048,6 +10982,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitIntConst(self, fs_val, afs_res);
                 return afs_res;
             }
+        return lowerExprBuiltinAsync(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprBuiltinAsync(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    var t_target: u32 = @intCast(u32, 10);
+    var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(store, node_idx));
+    if (node.kind == AstKind.builtin_call) {
             if (node.child_0 == self.async_init_name_id) {
                 var ai_ptr_void = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_VOID, false);
                 var ai_ctx: u32 = @intCast(u32, 0);
@@ -10399,6 +11345,70 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             return nextTemp(self, type_mod.TYPE_VOID);
     } else if (node.kind == AstKind.try_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.catch_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.orelse_expr) {
+        return lowerExprTryCatch(self, node_idx);
+    } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprTryCatch(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.try_expr) {
         var inner_temp = lowerExpr(self, node.child_0);
         var eu_box: [1]u32 = [1]u32{euTypeOfTemp(self, inner_temp)};
         if (eu_box[0] != type_mod.TYPE_UNDEFINED) {
@@ -10588,6 +11598,64 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.current_bb = join_bb;
         return join_temp;
     } else if (node.kind == AstKind.if_expr) {
+        return lowerExprIf(self, node_idx);
+    } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprIf(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.if_expr) {
         var ie_rt3 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ie_rtype3: u32 = if (ie_rt3) |t| t else type_mod.TYPE_UNDEFINED;
         // T4 (spec §4): a comptime-selected `@import` `if` (the
@@ -10738,6 +11806,62 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return result;
 
       } else if (node.kind == AstKind.array_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.struct_init) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.tuple_literal) {
+        return lowerExprStructInit(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprStructInit(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.array_init) {
          var ec_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
          var rt_arr = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
          var arr_tid: u32 = if (rt_arr) |it| it else @intCast(u32, 0);
@@ -10996,6 +12120,56 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         return lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
     } else if (node.kind == AstKind.swt_ex) {
+        return lowerExprSwitch(self, node_idx);
+    } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprSwitch(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.swt_ex) {
         var swe_m: []const u8 = "SWE:s\n"; pal.markerWrite(swe_m);
         var cond_temp = lowerExpr(self, node.child_0);
         var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
@@ -11171,6 +12345,54 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.block_terminated = @intCast(u8, 0);
         return result_temp;
      } else if (node.kind == AstKind.slice_expr) {
+        return lowerExprSlice(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprSlice(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.slice_expr) {
          var se_base = lowerExpr(self, node.child_0);
          var se_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
          var sem_m: []const u8 = "SEM:bt"; pal.markerWrite(sem_m);
@@ -11333,6 +12555,52 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
           iceSliceUnsupported(self, node_idx);
           return @intCast(u32, 0);
     } else if (node.kind == AstKind.add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.block) {
+        return lowerExprMisc(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        return lowerExprMisc(self, node_idx);
+    } else {
+        return @intCast(u32, 0);
+    }
+}
+
+fn lowerExprMisc(self: *LirLowerer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.add_assign) {
         return lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_ADD, BIN_ADD, @intCast(u8, 0), @intCast(u8, 0));
     } else if (node.kind == AstKind.sub_assign) {
         return lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_SUB, BIN_SUB, @intCast(u8, 0), @intCast(u8, 0));
@@ -12427,6 +13695,74 @@ fn lowerStmtLeafStep(self: *LirLowerer, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     var store = self.ctx.store;
     if (node.kind == AstKind.block) {
+        lowerStmtLeafBlock(self, node_idx);
+    } else if (node.kind == AstKind.labeled_stmt) {
+        lowerStmtLeafBlock(self, node_idx);
+    } else if (node.kind == AstKind.defer_stmt) {
+        lowerStmtLeafBlock(self, node_idx);
+    } else if (node.kind == AstKind.errdefer_stmt) {
+        lowerStmtLeafBlock(self, node_idx);
+    } else if (node.kind == AstKind.if_stmt) {
+        lowerStmtLeafIf(self, node_idx);
+    } else if (node.kind == AstKind.while_stmt) {
+        lowerStmtLeafWhile(self, node_idx);
+    } else if (node.kind == AstKind.for_stmt) {
+        lowerStmtLeafFor(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        lowerStmtLeafSwitch(self, node_idx);
+    } else if (node.kind == AstKind.return_stmt) {
+        lowerStmtLeafReturn(self, node_idx);
+    } else if (node.kind == AstKind.break_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.continue_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.var_decl) {
+        lowerStmtLeafVarDecl(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.expr_stmt) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else {
+        lowerStmtLeafMisc(self, node_idx);
+    }
+}
+
+fn lowerStmtLeafBlock(self: *LirLowerer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.block) {
         pushScopeDepth(self);
         var ec_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
         var i: usize = 0;
@@ -12461,6 +13797,66 @@ fn lowerStmtLeafStep(self: *LirLowerer, node_idx: u32) void {
     } else if (node.kind == AstKind.errdefer_stmt) {
         pushDefer(self, @intCast(u8, 1), node.child_0);
     } else if (node.kind == AstKind.if_stmt) {
+        lowerStmtLeafIf(self, node_idx);
+    } else if (node.kind == AstKind.while_stmt) {
+        lowerStmtLeafWhile(self, node_idx);
+    } else if (node.kind == AstKind.for_stmt) {
+        lowerStmtLeafFor(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        lowerStmtLeafSwitch(self, node_idx);
+    } else if (node.kind == AstKind.return_stmt) {
+        lowerStmtLeafReturn(self, node_idx);
+    } else if (node.kind == AstKind.break_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.continue_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.var_decl) {
+        lowerStmtLeafVarDecl(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.expr_stmt) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else {
+        lowerStmtLeafMisc(self, node_idx);
+    }
+}
+
+fn lowerStmtLeafIf(self: *LirLowerer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.if_stmt) {
         var if_fold = comptimeFoldBool(self, node.child_0);
         if (if_fold) |ifv| {
             if (ast_mod.astStoreNodePayload(store, node_idx) == @intCast(u32, 0)) {
@@ -12592,6 +13988,64 @@ fn lowerStmtLeafStep(self: *LirLowerer, node_idx: u32) void {
         }
         self.current_bb = join_bb;
     } else if (node.kind == AstKind.while_stmt) {
+        lowerStmtLeafWhile(self, node_idx);
+    } else if (node.kind == AstKind.for_stmt) {
+        lowerStmtLeafFor(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        lowerStmtLeafSwitch(self, node_idx);
+    } else if (node.kind == AstKind.return_stmt) {
+        lowerStmtLeafReturn(self, node_idx);
+    } else if (node.kind == AstKind.break_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.continue_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.var_decl) {
+        lowerStmtLeafVarDecl(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.expr_stmt) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else {
+        lowerStmtLeafMisc(self, node_idx);
+    }
+}
+
+fn lowerStmtLeafWhile(self: *LirLowerer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.while_stmt) {
         var mw_m: []const u8 = "MW:en"; pal.markerWrite(mw_m);
         var mw_b: [20]u8 = undefined; var mw_l = itoa_mod.itoa(node.child_0, mw_b[0..]); var mw_s: usize = @intCast(usize, 19) - @intCast(usize, mw_l); pal.markerWrite(mw_b[mw_s..@intCast(usize, 19)]);
         var mw_nl: []const u8 = "\n"; pal.markerWrite(mw_nl);
@@ -12684,6 +14138,62 @@ fn lowerStmtLeafStep(self: *LirLowerer, node_idx: u32) void {
         self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
         self.current_label = saved_label;
      } else if (node.kind == AstKind.for_stmt) {
+        lowerStmtLeafFor(self, node_idx);
+    } else if (node.kind == AstKind.swt_ex) {
+        lowerStmtLeafSwitch(self, node_idx);
+    } else if (node.kind == AstKind.return_stmt) {
+        lowerStmtLeafReturn(self, node_idx);
+    } else if (node.kind == AstKind.break_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.continue_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.var_decl) {
+        lowerStmtLeafVarDecl(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.expr_stmt) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else {
+        lowerStmtLeafMisc(self, node_idx);
+    }
+}
+
+fn lowerStmtLeafFor(self: *LirLowerer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.for_stmt) {
           var forx_m: []const u8 = "FORX\n"; pal.markerWrite(forx_m);
           var pattern = ast_mod.astStoreNodeAt(store, node.child_0);
           // Task 11 (Part II): `for (iterable, start..)` / `(iterable, start..end)`
@@ -12881,6 +14391,60 @@ fn lowerStmtLeafStep(self: *LirLowerer, node_idx: u32) void {
             lowerLoopClose(self, it_cond, it_exit, it_saved);
          }
      } else if (node.kind == AstKind.swt_ex) {
+        lowerStmtLeafSwitch(self, node_idx);
+    } else if (node.kind == AstKind.return_stmt) {
+        lowerStmtLeafReturn(self, node_idx);
+    } else if (node.kind == AstKind.break_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.continue_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.var_decl) {
+        lowerStmtLeafVarDecl(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.expr_stmt) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else {
+        lowerStmtLeafMisc(self, node_idx);
+    }
+}
+
+fn lowerStmtLeafSwitch(self: *LirLowerer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.swt_ex) {
          var swt_m: []const u8 = "SWT:s\n"; pal.markerWrite(swt_m);
          var swtn_m: []const u8 = "SWT:n"; pal.markerWriteInt(swtn_m, node_idx);
           var cond_temp = lowerExpr(self, node.child_0);
@@ -12960,6 +14524,58 @@ fn lowerStmtLeafStep(self: *LirLowerer, node_idx: u32) void {
         self.current_bb = exit_bb;
         self.block_terminated = @intCast(u8, 0);
     } else if (node.kind == AstKind.return_stmt) {
+        lowerStmtLeafReturn(self, node_idx);
+    } else if (node.kind == AstKind.break_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.continue_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.var_decl) {
+        lowerStmtLeafVarDecl(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.expr_stmt) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else {
+        lowerStmtLeafMisc(self, node_idx);
+    }
+}
+
+fn lowerStmtLeafReturn(self: *LirLowerer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.return_stmt) {
         var pre_defer_bb = self.current_bb;
         var pre_defer_blk_p = &self.func.blocks.items[@intCast(usize, pre_defer_bb)];
         var pre_defer_len: usize = pre_defer_blk_p.insts.len;
@@ -13137,6 +14753,56 @@ fn lowerStmtLeafStep(self: *LirLowerer, node_idx: u32) void {
             self.block_terminated = @intCast(u8, 1);
         }
     } else if (node.kind == AstKind.break_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.continue_stmt) {
+        lowerStmtLeafJump(self, node_idx);
+    } else if (node.kind == AstKind.var_decl) {
+        lowerStmtLeafVarDecl(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.expr_stmt) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else {
+        lowerStmtLeafMisc(self, node_idx);
+    }
+}
+
+fn lowerStmtLeafJump(self: *LirLowerer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.break_stmt) {
         if (self.loop_stack.len == @intCast(usize, 0)) { return; }
         var label_id: u32 = ast_mod.astStoreNodePayload(store, node_idx);
         var exit_target: u32 = @intCast(u32, 0);
@@ -13198,6 +14864,52 @@ fn lowerStmtLeafStep(self: *LirLowerer, node_idx: u32) void {
             self.block_terminated = @intCast(u8, 1);
         }
     } else if (node.kind == AstKind.var_decl) {
+        lowerStmtLeafVarDecl(self, node_idx);
+    } else if (node.kind == AstKind.add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.expr_stmt) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else {
+        lowerStmtLeafMisc(self, node_idx);
+    }
+}
+
+fn lowerStmtLeafVarDecl(self: *LirLowerer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.var_decl) {
         // Task B2: a function-local named type binding (`const T = struct/...`)
         // is a first-class `type` value with no runtime initializer. Emit a
         // storage slot of the registered type (mirroring the module-level
@@ -13373,6 +15085,50 @@ fn lowerStmtLeafStep(self: *LirLowerer, node_idx: u32) void {
             pal.markerWrite(und4);
         }
     } else if (node.kind == AstKind.add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_add_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.div_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.mod_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shl_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.shr_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.and_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.xor_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.or_assign) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else if (node.kind == AstKind.expr_stmt) {
+        lowerStmtLeafMisc(self, node_idx);
+    } else {
+        lowerStmtLeafMisc(self, node_idx);
+    }
+}
+
+fn lowerStmtLeafMisc(self: *LirLowerer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var store = self.ctx.store;
+    if (node.kind == AstKind.add_assign) {
         _ = lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_ADD, BIN_ADD, @intCast(u8, 0), @intCast(u8, 1));
     } else if (node.kind == AstKind.sub_assign) {
         _ = lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_SUB, BIN_SUB, @intCast(u8, 0), @intCast(u8, 0));

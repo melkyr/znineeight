@@ -453,14 +453,14 @@ crash is a C-stack overflow, not a trap or a clean error.
 call sites, in mutual recursion with helpers such as
 `semanticAnalyzerResolveArithmetic` (`:2445`), `semanticAnalyzerResolveBitwise` (`:2477`) and
 `semanticAnalyzerResolveFieldAccess` (`:1734`). Each AST level costs ~7.7 KB of C stack
-(measured: passes at 130 terms, fails at 140, under `ulimit -s 1024`). Analysis runs **before**
+(measured: ~135 — 136 terms compiles, 137 fails, under `ulimit -s 1024`). Analysis runs **before**
 lowering, so it is a separate wall from the lowerer's (which is now fixed — see below).
 
 **Measured ceilings** (left-deep `+` chain over runtime-valued locals, `-ffast`):
 
 | stack | ceiling |
 |---|---|
-| 1 MB (Win9x MSVC default `/STACK`) | ~135 terms |
+| 1 MB (Win9x MSVC default `/STACK`) | ~135 terms (measured 136 compiles / 137 fails) |
 | 2 MB (MinGW `SizeOfStackReserve`) | ~270 terms |
 | 8 MB (Linux default) | ~1080 terms |
 
@@ -470,11 +470,15 @@ lowering, so it is a separate wall from the lowerer's (which is now fixed — se
 | chain length | where | real code? |
 |---|---|---|
 | 35 ops | `repro/mi_matrix/emission_sibling_payload_xmod/main.zig` | synthetic fixture (the original repro) |
+| 22 ops | `examples/z98/z9play/tests/fmt_test.zig` | test code |
 | 10 ops | `sf/src/std_ecc.zig` curve polynomial multiplies | yes |
 | 9 ops | `sf/src/lexer.zig` keyword-match `and` chains | yes |
 
 Distribution: 27 lines with ≥5 operators of one kind, 13 with ≥10, **1 with ≥20, 0 with ≥40**.
-Production code tops out at ~10 terms, so the 1 MB ceiling has ~3.8x headroom over real code.
+Production code tops out at ~10 terms (`sf/src/std_ecc.zig` curve polynomial multiplies,
+`sf/src/lexer.zig` keyword-match chains); the longest chain anywhere is 22 ops, and that is
+test code (`examples/z98/z9play/tests/fmt_test.zig`). Against that real maximum the 1 MB
+ceiling (~135) has ~6x headroom — the honest margin.
 Expression *nesting* is a separate axis and is already capped at 12 by the parser
 (`sf/src/parser.zig:373-378`, `expr_depth > 12` → `panic: max expression recursion depth exceeded`).
 
@@ -493,7 +497,7 @@ pub fn main() void {
 }
 ```
 
-130 terms: compiles. 140 terms: SIGSEGV. Same source at `ulimit -s 8192` compiles at 300 terms.
+136 terms: compiles. 137 terms: SIGSEGV. Same source at `ulimit -s 8192` compiles at 300 terms.
 
 **Relationship to the lowerer fix.** The lowerer had the same defect class
 (`lowerExpr` ↔ `lowerExprImpl`, ~70 KB/frame) and was converted to an explicit continuation
@@ -506,7 +510,7 @@ mirroring `lowerExprDepthGuard` (which the same milestone added for the lowerer)
 that emits a clean `error[3043] expression nesting too deep for semantic analysis (limit 128)`
 past the cap instead of recursing into a segfault, emitting no `.c`. The cap is
 `SEMA_GUARD_MAX = 128` (`sf/src/semantic_analyzer.zig`). It is deliberately sized under the
-1 MB wall (~136) so it fires *before* the stack blows on Win9x. The ceiling is documented in
+1 MB wall (~135) so it fires *before* the stack blows on Win9x. The ceiling is documented in
 `docs/sf/QUICK_REF.md`. The guard does **not** raise the ceiling — it makes the failure honest.
 
 **Decisions deferred — recorded, NOT executed (operator ruling 2026-10-26).** Two refinements
@@ -530,11 +534,12 @@ plan + byte-identity/pin proof.
 
 **Why defer at all.** Every real Z98 source in the repo was scanned statement by statement:
 the compiler itself (`sf/src/`) has **no** operator chain over 8 terms; the longest real
-chains anywhere are 22 ops (`examples/z98/z9play/tests/fmt_test.zig`) and 10
-(`sf/src/std_ecc.zig`); the only statement over 64 ops is the synthetic repro fixture at 70;
-**0 statements reach 128**. Production code tops out at ~10 terms, so the 128 guard has an
-order of magnitude of headroom over real code. The wall is real but unreachable in practice,
-so documenting it and moving on is the right trade.
+chains anywhere are 22 ops in test code (`examples/z98/z9play/tests/fmt_test.zig`) and 10
+ops in production code (`sf/src/std_ecc.zig` curve polynomial multiplies, `sf/src/lexer.zig`
+keyword-match chains); the only statement over 64 ops is the synthetic repro fixture at 70;
+**0 statements reach 128**. The 128 guard's true margin is against the 22-op real maximum
+(~6x headroom), not against the ~10-term production figure. The wall is real but unreachable
+in practice, so documenting it and moving on is the right trade.
 
 **Fix direction (not authorized now).** Convert `semanticAnalyzerResolveExpr` to the same
 explicit continuation-stack pattern the lowerer now uses. That is a refactor of comparable size
