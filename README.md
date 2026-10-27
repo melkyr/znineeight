@@ -152,7 +152,7 @@ RSS = "Maximum resident set size (kbytes)". All runs: rc=0, 0 `error[`, 0 PANIC.
 | D | zig1 `-s0` self-compile → C89 | 3.90 | 16,376 | 16.0 | 45 module (48 full) |
 | E | gcc -m32 compile+link of zig1's self-emitted C89 → zig1_5 | 5.87 | 160,712 | 157.0 | (48 in; 45 module) |
 
-> **Note:** Rows A/B/C are historical 0.20.0-era bootstrap measurements (`zig0` retired; not re-measurable). Rows D/E were current at fixed point `553a39b4…` (historical; superseded by the Phase 1 M1 measurements below): their Wall/Peak RSS figures are the medians at that fixed point and their emitted `.c` counts are 45 module (48 full) for D and 48 full (45 module) for E.
+> **Note:** Rows A/B/C are historical 0.20.0-era bootstrap measurements (`zig0` retired; not re-measurable). Rows D/E were current at fixed point `553a39b4…` (historical; superseded by the current fixed-point measurements below): their Wall/Peak RSS figures are the medians at that fixed point and their emitted `.c` counts are 45 module (48 full) for D and 48 full (45 module) for E.
 
 > **The gcc caveat (~80 MB and ~157 MB, both measured).** The gcc backend is the memory hotspot of
 > building the compiler from source, and both gcc steps are measured here. Row C — gcc over the gen-0 C89 that zig0 emitted
@@ -166,16 +166,78 @@ RSS = "Maximum resident set size (kbytes)". All runs: rc=0, 0 `error[`, 0 PANIC.
 > release ships prebuilt `zig0` binaries (no `zig0` source archive). Rows B (~46 MB) and D (~16 MB)
 > fit comfortably in era-class RAM.
 
-Supporting data for row D at fixed point `553a39b4…`: `zig1 -s0 --markers --track-memory` self-compile reported
-`pool=14145K` (~13.8 MB pool) with RSS ~16.0 MB — that older build **met** the "~16 MB at `-s0`" figure (pool 14,145 K = 2,239 K under; RSS 16,376 kB = 8 kB under, at the boundary). At the **M1 measured** fixed point `21c957…`, the measured peak is 20792 KiB RSS with pool 18871K (below).
+Supporting data for row D at fixed point `553a39b4…` (historical): `zig1 -s0 --markers --track-memory` self-compile reported
+`pool=14145K` (~13.8 MB pool) with RSS ~16.0 MB — that older build **met** the "~16 MB at `-s0`" figure (pool 14,145 K = 2,239 K under; RSS 16,376 kB = 8 kB under, at the boundary). At the **M1 measured** fixed point `21c957…` (historical; see the M1 section below), the measured peak is 20792 KiB RSS with pool 18871K.
+
+### Current measured compiler peak (fixed point `a567926c…`)  [measured 2026-10-27]
+
+**These figures are CURRENT.** Measured 2026-10-27 at the current fixed point
+`a567926c223492787786dd460563f32a` (seed v122, soon v123), fixed-point binary
+`/tmp/memfix_build/zig1_5_clean` built by
+`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/memfix_build`
+(two-hop closure hop1 == hop2 == `a567926c…`). Every RSS/wall figure is the
+**median of 3 runs** under `/usr/bin/time -v` in fresh scratch dirs; arena
+figures come from a separate `--markers --track-memory` run (3×, identical).
+All raw runs: `.superpowers/sdd/2026-10-26-iterative-lowering-plan/memory-measurements.md`.
+
+| Workload | Max RSS (KiB) | Wall (s) | Arena |
+|---|---:|---:|---|
+| (a) fixed-point self-emission (`-ffast --dump-c89`) | 20348 | 6.65 | pool=18416K, total=2795K |
+| (b) full stdlib gate, compiler-only max (346 invocations) | 16960 | 0.55 | not exposed |
+| (c) z9play `main.zig` `-fsafe` emit | 8368 | 0.38 | pool=4993K, total=2190K |
+
+Row (b) is the maximum over the 346 compiler invocations of a full
+`scripts/stdlib/verify_stdlib.sh` gate pass (336 fixtures + 10 crosscheck
+modules; each compiler call timed through a wrapper), median of 3 gate passes;
+**0.55 s is that largest invocation's wall (`stdlib_tls13_handshake_xmod`),
+not the full gate wall**. Whole-build and whole-gate process-tree maxima
+include gcc and are **not** compiler RSS. Arena `total` is `perm + mod + scr`;
+`pool` is reported separately (not part of `total`). No regression vs the
+historical M1 figures below: (a) 20348 vs 20792 KiB (0.98×), (b) 16960 vs
+28836 KiB (0.59×), (c) 8368 vs 8140 KiB (1.03×).
+
+#### Current spill ladder (`-s0` … `-s6`), self-emission
+
+Pool from `--markers --track-memory` (3× identical); max RSS / wall are 3×
+medians of `-s<N> -ffast --dump-c89` self-emission runs:
+
+| Level | Arena pool | Max RSS (KiB) | Wall (s) | Notes |
+|---|---:|---:|---:|---|
+| `-s0` | 18416K (18.0 MB) | 20344 | 6.84 | all disk; fits default `-mm` |
+| `-s1` | 51407K (50.2 MB) | 45732 | 7.51 | fits default `-mm` |
+| `-s2` | 120400K (117.6 MB) | 95764 | 7.70 | needs `-mm128` |
+| `-s3` | 120400K (117.6 MB) | 95816 | 7.78 | needs `-mm128` |
+| `-s4` | 124496K (121.6 MB) | 99232 | 7.72 | needs `-mm128` |
+| `-s5` | 127568K (124.6 MB) | 101664 | 7.78 | needs `-mm128` |
+| `-s6` | 130640K (127.6 MB) | 103008 | 7.84 | all RAM; needs `-mm128` |
+
+`-s2`+ abort with `memory limit exceeded` rc=3 under the default 64 MB `-mm`
+budget; all ladder figures at `-s2`+ were measured with `-mm128`. Emission is
+byte-identical in every mode (known property; not re-verified here).
+
+#### Deep-input win (iterative lowering) — 1 MB-stack compiles that used to SIGSEGV
+
+| Shape | rc @ `ulimit -s 1024` | Max RSS (KiB) | Wall (s) | Pre-milestone |
+|---|---:|---:|---:|---|
+| 120-term runtime-valued `+` chain | 0 | 7084 | 0.05 | rc=139 (SIGSEGV) |
+| 300-deep nested blocks `{ { { … } } }` | 0 | 4704 | ~0.00 | rc=139 (SIGSEGV) |
+
+The iterative-lowering milestone (continuation stacks for the lowerer) means
+these shapes now compile at 1 MB stack (`ulimit -s 1024`, rc=0) where the
+pre-milestone lowerer SIGSEGV'd (rc=139). Mechanism: C-stack recursion →
+explicit continuation stacks — the lowerer's C stack is now O(1) instead of
+~70 KB + ~18 KB per nesting level. Fixtures are the
+`scripts/compiler/gate_lower_depth.sh` case 6 / case 10 shapes, run 3× each
+(rc identical every run).
 
 ### Phase 1 M1 measured compiler peak (historical fixed point `21c957…`)
 
 One run on the build machine at the **M1 measured** seed v111 / fixed point
 `21c957730d268f1e7883176fa5413b65`, fixed-point binary `/tmp/m1_build/zig1_5_clean`, under
-`/usr/bin/time -v` (not the 3× medians used for the historical table above). This is an M1
-measurement; the compiler fixed point moved to `45158dce…` at M2 T1C-F, and no new memory
-measurement is claimed here.
+`/usr/bin/time -v` (not the 3× medians used for the historical table above). **This section is
+historical.** The compiler fixed point has since moved on (M2 T1C-F `45158dce…`, then the
+iterative-lowering milestone); the current fixed point `a567926c…` is measured in the section
+above.
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
 |---|---:|---:|---|
@@ -192,7 +254,7 @@ Exact recipe, runnable from the repo root:
 
 ```bash
 # build the fixed-point binary first
-# M1 historical measurement; current fixed point is 45158dcede81125a39a2c2c58478e21e
+# M1 historical measurement; current fixed point is a567926c223492787786dd460563f32a (measured above)
 FIXED_POINT_MD5=21c957730d268f1e7883176fa5413b65 \
   bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m1_build
 
@@ -207,10 +269,11 @@ rm -rf /tmp/m1_emit_arena && mkdir -p /tmp/m1_emit_arena
   --output-dir /tmp/m1_emit_arena sf/src/main.zig 2>&1 | grep 'track-memory:'
 ```
 
-**Compiler target:** **<16 MB goal; M1 measured peak recorded above; tracked per Phase 1
-milestone.** The M1 measured fixed-point self-emission failed on both axes: 20792 KiB RSS
-(20.3 MB; +4.3 MB over) and pool 18871K (18.4 MB; +2.4 MB over). The current fixed point is
-`45158dce…` (M2 T1C-F); its memory numbers are not re-measured here.
+**Compiler target:** **<16 MB goal; tracked per Phase 1 milestone.** The current measured
+fixed-point self-emission (fixed point `a567926c…`) fails on both axes: 20348 KiB RSS
+(19.9 MB; +3.9 MB over) and pool 18416K (18.0 MB; +2.0 MB over). Historical M1 (`21c957…`)
+also failed on both axes: 20792 KiB RSS (20.3 MB; +4.3 MB over) and pool 18871K (18.4 MB;
++2.4 MB over).
 
 **Demo RAM budget (Phase 1):** **16 MB target / 32 MB hard ceiling, enforced with
 `ulimit -v 32768` + recorded peak RSS**.
@@ -218,12 +281,12 @@ milestone.** The M1 measured fixed-point self-emission failed on both axes: 2079
 ## Minimum Requirements
 | Requirement | Linux | Windows 9x / MinGW |
 |---|---|---|
-| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 9-file `lib/` std set next to it (auto-discovered); **~20.3 MB RSS / ~18.4 MB pool at `-s0` on the M1 measured Linux fixed point (16 MB goal not met; current fixed point `45158dce…` not re-measured)** | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); ~16 MB RAM at `-s0` (historical; not re-measured in Phase 1 M1) |
+| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 9-file `lib/` std set next to it (auto-discovered); **~19.9 MB RSS / ~18.0 MB pool at `-s0` on the current measured Linux fixed point `a567926c…` (16 MB goal not met; measured 2026-10-27)** | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); ~16 MB RAM at `-s0` (historical; not re-measured) |
 | **BUILDING the compiler from source** | gcc (C89) for the emitted C — gcc backend **~80 MB** peak (measured ~85 MB); + g++ ~182 MB if also rebuilding the `zig0` bootstrap from scratch | mingw gcc for the emitted C — gcc backend dominates (mingw cross measured ~168 MB on the reference machine) |
 
-> **At the M1 measured fixed point `21c957…`, Linux `zig1` self-build peaked at ~20.3 MB RSS / ~18.4 MB
-> pool at `-s0` — the <16 MB compiler goal was not met. Current fixed point `45158dce…` was not
-> re-measured. Building the compiler from source remains
+> **At the current measured fixed point `a567926c…`, Linux `zig1` self-build peaked at ~19.9 MB RSS / ~18.0 MB
+> pool at `-s0` — the <16 MB compiler goal is not met (historical M1 `21c957…`: ~20.3 MB RSS / ~18.4 MB
+> pool, also not met). Building the compiler from source remains
 > dominated by the gcc backend (historical self-host gcc step ~157 MB; see the gcc caveat above),
 > so a 16 MB machine cannot build it from source.** Running (compiling programs) and building
 > (recompiling the compiler) have different memory profiles; do not assume a small-RAM era machine
@@ -301,7 +364,7 @@ the build script is `sf/scripts/build_release.sh`. Release binaries (`zig1_linux
 | `--target <linux\|windows>` | Alias for the target OS |
 | `-fsafe` | **Default.** Enable the six runtime checks (cast / div-mod / shift-count / null-unwrap / index-OOB / integer-overflow) and the `undefined` `0xAA` poison fill |
 | `-ffast` | Disable the six runtime checks and poison fill (used for the compiler self-build). `unreachable`/`@panic` still trap in both modes |
-| `-s<N>` | Spill level 0–6 (default `-s0`): how many of the six compiler-state spills live in RAM instead of `.zig1_*.tmp` disk files. Deactivation order S-AST → S-LIR → S-HASH → S-RES → S-SIDE → S-EXTRA. Higher `-s` = more RAM, less disk I/O; emission byte-identical in every mode. **Historical ladder at fixed point `553a39b4…`:** `-s0` ≈ 13.8 MB pool (all disk); `-s1` ≈ 33.1 MB; `-s2`/`-s3` ≈ 70.0 MB; `-s4` ≈ 73.0 MB; `-s5` ≈ 74.0 MB (S-EXTRA still on disk); `-s6` ≈ 77.0 MB (all RAM). **M1 measured fixed point `21c957…`:** `-s0` pool=18871K (18.4 MB); `-s1`–`-s6` not re-measured here; current fixed point `45158dce…` not re-measured. Bare/non-digit/out-of-range `-s` = error rc=1 |
+| `-s<N>` | Spill level 0–6 (default `-s0`): how many of the six compiler-state spills live in RAM instead of `.zig1_*.tmp` disk files. Deactivation order S-AST → S-LIR → S-HASH → S-RES → S-SIDE → S-EXTRA. Higher `-s` = more RAM, less disk I/O; emission byte-identical in every mode. **Current measured ladder (fixed point `a567926c…`, self-emission `--markers --track-memory` pool):** `-s0` pool=18416K (18.0 MB, all disk); `-s1` pool=51407K (50.2 MB); `-s2`/`-s3` pool=120400K (117.6 MB); `-s4` pool=124496K (121.6 MB); `-s5` pool=127568K (124.6 MB); `-s6` pool=130640K (127.6 MB, all RAM). Historical (superseded): `553a39b4…` ≈ 13.8/33.1/70.0/73.0/74.0/77.0 MB pool, M1 `21c957…` `-s0` pool=18871K. Bare/non-digit/out-of-range `-s` = error rc=1 |
 | `-mm<N>` | Hard pool budget in MB (default 64). Levels whose pool exceeds the budget abort with `memory limit exceeded` rc=3 (e.g. `-s2`+ need `-mm128`) |
 | `-m <size>` / `--max-mem <size>` | Pool memory budget with k/M/G suffix |
 | `--track-memory`, `--markers` | Memory tracking / pipeline markers (e.g. the `pool=` report line) |

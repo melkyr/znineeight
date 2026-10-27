@@ -382,11 +382,62 @@ cd <dump> && timeout 120 sh build_target.sh mingw
 ```
 - Harness wrapper: `scripts/win32_cross/cross_build_run.sh <zig1> <entry> <workdir> <exe> [-lwsock32]` — `cross_build_run.sh` links `-lwsock32` unconditionally (Amendment A0), so no extra flag is needed.
 
+### Compiler RSS/arena — current measured (seed v122 / fixed point `a567926c…`)  [updated: 2026-10-27]
+
+**These figures are current.** Measured 2026-10-27 at the current seed v122
+(soon v123) / fixed point `a567926c223492787786dd460563f32a` (two-hop closure
+hop1 == hop2). Every RSS/wall figure is the median of 3 `/usr/bin/time -v`
+runs in fresh scratch dirs; arena figures come from a separate `--markers
+--track-memory` run (3×, identical). The v111 figures below are historical —
+do not present them as current.
+
+| Workload | Max RSS (KiB) | Wall (s) | Arena |
+|---|---:|---:|---|
+| (a) fixed-point self-emission (`-ffast --dump-c89`) | 20348 | 6.65 | pool=18416K, total=2795K |
+| (b) full stdlib gate, compiler-only max (346 invocations) | 16960 | 0.55 | not exposed |
+| (c) z9play `main.zig` `-fsafe` emit | 8368 | 0.38 | pool=4993K, total=2190K |
+
+Row (b): **0.55 s is the largest single compiler invocation's wall
+(`stdlib_tls13_handshake_xmod`), not the full gate wall**; 346 compiler
+invocations per gate pass (336 fixtures + 10 crosscheck), each timed through a
+wrapper; max taken over 3 gate passes. Arena `total` is `perm + mod + scr`;
+`pool` is separate. No regression vs the historical M1 baseline below
+((a) 0.98×, (b) 0.59×, (c) 1.03×).
+
+**Deep-input win (iterative lowering):** the 120-term runtime-valued `+` chain
+and 300-deep nested blocks now compile at 1 MB stack (`ulimit -s 1024`, rc=0)
+where the pre-milestone lowerer SIGSEGV'd (rc=139). Mechanism: C-stack
+recursion → explicit continuation stacks — the lowerer's C stack is now O(1)
+instead of ~70 KB + ~18 KB per nesting level. (chain120 max RSS 7084 KiB /
+0.05 s; block300 4704 KiB / ~0.00 s.)
+
+Current `-s<N>` self-emission ladder (pool from `--markers --track-memory`;
+`-s2`+ need `-mm128`): `-s0` 18416K; `-s1` 51407K; `-s2`/`-s3` 120400K; `-s4`
+124496K; `-s5` 127568K; `-s6` 130640K. Full ladder table with max RSS/wall:
+README "Current measured compiler peak" section.
+
+Recipe (current), from the repo root:
+
+```bash
+rm -rf /tmp/memfix_build
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/memfix_build
+rm -rf /tmp/m1_emit && mkdir -p /tmp/m1_emit
+/usr/bin/time -v /tmp/memfix_build/zig1_5_clean -ffast --dump-c89 \
+  --output-dir /tmp/m1_emit sf/src/main.zig
+rm -rf /tmp/m1_emit_arena && mkdir -p /tmp/m1_emit_arena
+/tmp/memfix_build/zig1_5_clean --markers --track-memory -ffast --dump-c89 \
+  --output-dir /tmp/m1_emit_arena sf/src/main.zig 2>&1 | grep 'track-memory:'
+```
+
+**Compiler target:** **<16 MB goal**; current measured peak 20348 KiB RSS /
+18416K pool (target not met). The historical v111 baseline below also failed
+both RSS and pool.
+
 ### Compiler RSS/arena — historical Phase 1 M1 baseline (v111)
 
 **These figures are historical.** They were measured at seed v111 / fixed point
-`21c957…`; the current seed is v121 / `dcfc9e70…` and has not been re-measured
-here. Do not present the v111 numbers as current.
+`21c957…`. Do not present the v111 numbers as current; the current figures are
+in the section above.
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
 |---|---:|---:|---|
@@ -396,38 +447,28 @@ here. Do not present the v111 numbers as current.
 
 Row (b): **0.32 s is the largest single compiler invocation's wall, not the full
 gate wall** (~153 s including gcc). Arena `total` is `perm + mod + scr`; `pool`
-is separate. Re-measure against the current seed before making current claims:
-
-```bash
-rm -rf /tmp/m1_build
-bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m1_build
-rm -rf /tmp/m1_emit && mkdir -p /tmp/m1_emit
-/usr/bin/time -v /tmp/m1_build/zig1_5_clean -ffast --dump-c89 \
-  --output-dir /tmp/m1_emit sf/src/main.zig
-rm -rf /tmp/m1_emit_arena && mkdir -p /tmp/m1_emit_arena
-/tmp/m1_build/zig1_5_clean --markers --track-memory -ffast --dump-c89 \
-  --output-dir /tmp/m1_emit_arena sf/src/main.zig 2>&1 | grep 'track-memory:'
-```
-
-**Compiler target:** **<16 MB goal**; current peak must be re-measured for the
-active seed. The historical v111 baseline failed both RSS and pool.
+is separate.
 
 
 **Demo RAM budget (Phase 1):** **16 MB target / 32 MB hard ceiling, enforced with
 `ulimit -v 32768` + recorded peak RSS**.
 
-### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [updated: 2026-09-17]
+### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [updated: 2026-10-27]
 
 `-s<N>` picks how many of the six spills live in RAM instead of the `.zig1_*.tmp` disk files.
 Default `-s0` = all on disk. Deactivation order (oldest-spill-first): **S-AST → S-LIR → S-HASH →
 S-RES → S-SIDE → S-EXTRA** — `-s1` moves AST to RAM, `-s2` also LIR, ... `-s6` = all RAM (no spill
 files). S-EXTRA is the AST index-side `extra_children`/`extra_ranges` write-through pool pair
 (`.zig1_extra_ec.tmp` / `.zig1_extra_er.tmp`). Higher `-s` = more RAM, less disk I/O; emission is
-**byte-identical in every mode** (same data, different storage). Measured self-compile
-(self-hosted binary, `--markers --track-memory`, seed v89): `-s0` pool &asymp; 20.6 MB (all disk);
-`-s1` pool 57.4 MB with 18.4 MB live; `-s6` (all RAM) 130.6 MB. `-s0` fits the 64 MB `-mm` default;
-`-s2`–`-s5` must be paired with `-mm128` (else `memory limit exceeded`, rc=3), and `-s6` needs the
-larger `-mm0` cap. Range 0..6; bare
+**byte-identical in every mode** (same data, different storage). **Current measured
+ladder (fixed point `a567926c…`, self-emission `--markers --track-memory` pool,
+measured 2026-10-27):** `-s0` pool=18416K (18.0 MB, all disk); `-s1` pool=51407K
+(50.2 MB); `-s2`/`-s3` pool=120400K (117.6 MB); `-s4` pool=124496K (121.6 MB);
+`-s5` pool=127568K (124.6 MB); `-s6` pool=130640K (127.6 MB, all RAM). `-s0`
+and `-s1` fit the 64 MB `-mm` default; `-s2`–`-s6` must be paired with `-mm128`
+(else `memory limit exceeded`, rc=3). Historical (superseded): seed v89 ≈
+20.6/57.4/…/130.6 MB pool; `553a39b4…` ≈ 13.8/33.1/70.0/73.0/74.0/77.0 MB;
+M1 `21c957…` `-s0` pool=18871K. Range 0..6; bare
 `-s` / non-digit / out-of-range (`-s7`) error rc=1. Per-level smoke: `.zig1_ast.tmp` absent at
 `-s1`, `.zig1_lir.tmp` absent at `-s2`, ..., `.zig1_extra_ec.tmp`/`.zig1_extra_er.tmp` absent at
 `-s6` — the spill-file ladder is the mode marker.
