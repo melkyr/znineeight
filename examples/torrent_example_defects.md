@@ -545,3 +545,38 @@ in practice, so documenting it and moving on is the right trade.
 explicit continuation-stack pattern the lowerer now uses. That is a refactor of comparable size
 to the lowerer one and would need its own plan + byte-identity/pin proof. Deferred until a real
 workload needs chains deeper than ~135 terms.
+
+---
+
+## D10 — No first-class calling conventions: callbacks need a C trampoline
+
+**Status:** OPEN — worked around in P4-M1 with a C shim; language feature deferred. Found
+2026-10-27 while building the P4 GUI layer (`docs/superpowers/plans/2026-10-24-phase2-gfx-editor-plan.md`),
+Task 1.
+
+**Symptom.** Z98 cannot declare a function or function type with a non-default calling
+convention, so it cannot supply a callback to an ABI that requires one. On Win32 this blocks
+`WNDPROC` (`stdcall`). The same gap blocks audio callbacks, timer/enum callbacks, COM
+callbacks, and callbacks for non-Win32 ABIs — a real wall for a game or any callback-driven
+API written in Z98 alone.
+
+**Root cause.** `fn` types and `extern fn` declarations carry no calling-convention syntax,
+and the emitter has no per-function convention annotation for Z98-defined functions.
+`Z98_STDCALL` exists only for fn-pointer *types* (see `emitFnPtrType`); a Z98-defined
+`stdcall` callback cannot be expressed. This is therefore two things: a compiler defect
+(the callback cannot be written) and a language feature (first-class calling conventions).
+
+**Workaround (P4-M1).** `sf/src/include/zig_gfx_wndproc.c` — a ~30-line C trampoline with the
+`stdcall` WndProc (records `WM_SIZE`/`WM_CLOSE`, forwards to the PAL-supplied
+`DefWindowProcA`). The build harness gained `EXTRA_CSRC` (default empty) to link it. The shim
+imports nothing of its own (`nm -u` empty); Z98 remains the host (`main.zig`), C is a leaf.
+
+**Feature to investigate (not scheduled).** Calling-convention support on `fn` types and
+`extern fn` declarations (at least `cdecl`/`stdcall`/`fastcall`), plus the ability to define
+and pass callbacks across ABIs without C glue. Touches the parser (convention syntax), sema
+(type identity includes convention), and LIR/emitter (extend `Z98_STDCALL` to Z98-defined
+functions), plus a fixture proving a Z98-defined `stdcall` function is callable by Win32.
+
+**Impact.** Cosmetic for the editor (one shim); structural for future game/audio/COM work.
+Left here as the "feature to investigate" so it is not lost when the language is pushed
+beyond console programs.
