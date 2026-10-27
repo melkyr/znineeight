@@ -44,6 +44,7 @@ const UiImpl = struct {
     b: *buffer.GapBuffer,
     u: *undo.Undo,
     ids: *idents.IdentSet,
+    ids_arena: arena_mod.Arena,
     path: []const u8,
     save_path: []const u8,
     cols: u32,
@@ -194,7 +195,8 @@ fn markEdited(st: *UiImpl) void {
 }
 
 fn rebuildIdents(st: *UiImpl) void {
-    st.ids = idents.identScan(st.arena, st.b) catch {
+    arena_mod.reset(&st.ids_arena);
+    st.ids = idents.identScan(&st.ids_arena, st.b) catch {
         setErr(st, 1);
         return;
     };
@@ -606,7 +608,11 @@ pub fn uiInit(arena: *arena_mod.Arena, g: *gfx.Gfx, b: *buffer.GapBuffer, path: 
     st.edit_pending = false;
     st.title_len = 0;
     st.err = 0;
-    st.ids = idents.identScan(arena, b) catch {
+    const id_cap = buffer.bufLen(b) + 768 * 1024;
+    const raw_ids = try allocBytes(arena, id_cap);
+    st.ids_arena = arena_mod.init(raw_ids[0..id_cap]);
+    arena_mod.reset(&st.ids_arena);
+    st.ids = idents.identScan(&st.ids_arena, b) catch {
         return error.OutOfMemory;
     };
     refreshTitle(st);
