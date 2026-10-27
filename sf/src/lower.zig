@@ -2327,13 +2327,21 @@ fn lowerExprDriver(self: *LirLowerer, root: u32) u32 {
             var child_res: u32 = lowerExprCoerceResult(self, done_node, r);
             var pidx: usize = self.expr_stack.len - @intCast(usize, 1);
             var parent: *ExprFrame = &self.expr_stack.items[pidx];
-            // Invariant: a child result of TEMP_NONE (void/"no value") is never
-            // delivered into a fixed-arity machine's slot. Fixed-arity machines
-            // (lowerAddStep and siblings) do not reset slot0 between pushes, so a
-            // TEMP_NONE child would be indistinguishable from child_0's value and
-            // would swap the operands. This holds because typed operands are
-            // required by semantic analysis before lowering runs; a void-typed
-            // operand cannot reach here.
+            // Delivery invariant: a child result MAY legitimately be the
+            // TEMP_NONE "no value" sentinel (void/noreturn-shaped expressions
+            // lower to no temp, exactly what the recursive `lowerExpr(child)`
+            // local used to hold), and each child consumes exactly one
+            // delivery into the parent frame. The scan below fills the first
+            // slot still at the TEMP_NONE init sentinel, so it stays
+            // positionally exact only under the discipline the machines keep:
+            // sequential-slot machines (lowerAddStep and siblings) push only
+            // sema-typed operands, whose children never lower to TEMP_NONE;
+            // machines whose children CAN be TEMP_NONE (fn_call args, if/swt
+            // arms, plain_assign RHS) clear slot0 before every push and read
+            // slot0 back verbatim. Consumers must handle a delivered TEMP_NONE
+            // the way the pre-continuation recursive arm handled its local
+            // (e.g. `lowerPlainAssignRest`'s VFLOW:paS0 path), and must never
+            // read a never-written slot as a value.
             if (parent.slot0 == TEMP_NONE) { parent.slot0 = child_res; }
             else if (parent.slot1 == TEMP_NONE) { parent.slot1 = child_res; }
             else if (parent.slot2 == TEMP_NONE) { parent.slot2 = child_res; }
@@ -4137,14 +4145,14 @@ fn lowerIfExprStep(self: *LirLowerer, f: *ExprFrame) u32 {
             }
         }
         pushScopeDepth(self);
+        f.slot4 = result;
+        f.slot5 = else_bb;
+        f.slot6 = join_bb;
         var then_nd = ast_mod.astStoreNodeAt(store, node.child_1);
         if (then_nd.kind == AstKind.return_stmt or then_nd.kind == AstKind.break_stmt or then_nd.kind == AstKind.continue_stmt) {
             var then_val = lowerIfArmValue(self, node.child_1);
             return lowerIfExprThenRest(self, f, then_val);
         }
-        f.slot4 = result;
-        f.slot5 = else_bb;
-        f.slot6 = join_bb;
         f.slot0 = TEMP_NONE;
         lowerExprPushChild(self, f, node.child_1, @intCast(u16, 2));
         return TEMP_NONE;
@@ -4530,7 +4538,7 @@ fn lowerTupleLiteralLoop(self: *LirLowerer, f: *ExprFrame, have_val: u8, val_in:
         if (val_temp == TEMP_NONE) {
             f.slot5 = @intCast(u32, ei);
             f.slot0 = TEMP_NONE;
-            lowerExprPushChild(self, f, elem_node, @intCast(u16, 1));
+            lowerExprPushChild(self, f, elem_node, @intCast(u16, 3));
             return TEMP_NONE;
         }
         emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, ei), .src = val_temp } });
@@ -4542,10 +4550,13 @@ fn lowerTupleLiteralStep(self: *LirLowerer, f: *ExprFrame) u32 {
     var node_idx: u32 = f.node_idx;
     var store = self.ctx.store;
     if (f.phase == @intCast(u16, 1)) {
-        return lowerTupleLiteralLoop(self, f, @intCast(u8, 1), f.slot0);
+        return lowerArrayElemLoop(self, f, @intCast(u8, 1), f.slot0);
     }
     if (f.phase == @intCast(u16, 2)) {
         return f.slot0;
+    }
+    if (f.phase == @intCast(u16, 3)) {
+        return lowerTupleLiteralLoop(self, f, @intCast(u8, 1), f.slot0);
     }
     var ec_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
     var tupm: []const u8 = "TUP\n"; pal.markerWrite(tupm);
