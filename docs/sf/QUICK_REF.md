@@ -10,6 +10,12 @@ exact, verified commands. Do not improvise flags or rediscover linking — copy 
 > them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**).
 > `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`).
 
+> **CWD collision hazard:** `zig1` writes shared `.zig1_*.tmp` spill files in the CWD. Two `zig1`
+> runs in the same directory collide — parallel invocations can emit empty or corrupt dumps, and a
+> byte-identity/pin md5 taken from such a run is meaningless. Run gate/compile invocations
+> **sequentially**, or give each run its own CWD. Measured 2026-10-27: two parallel dumps in one CWD
+> produced empty stdout (md5 `d41d8cd98f00b204e9800998ecf8427e`); sequential reruns were clean.
+
 ### Build zig1 (the compiler under test)
 
 zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
