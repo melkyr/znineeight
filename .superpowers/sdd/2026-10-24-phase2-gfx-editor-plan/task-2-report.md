@@ -6,7 +6,8 @@ Base: `505c9a4f` (branch `zig1_improvements`)
 ## Commits
 
 - `0065371b` — `example(z9edit): headless editor core (Phase2 P4-M2)`
-- (`docs(sdd): P4-M2 report` — this file, second commit)
+- `bc5b61ca` — `fix(z9edit): canonical-LF core so CRLF insert/undo is exact (Phase2 P4-M2)`
+- (`docs(sdd): P4-M2 fix round 1 report` — this file, third commit)
 
 ## Deliverables
 
@@ -23,41 +24,44 @@ barrel in any core module or test.
 
 ## Test summary
 
-25/25 binding cases green. Tier checks: 34 passed / 0 failed (25 cases + six
-exit-0 checks + GUI-free grep + 3x determinism + compile-RSS gate). The full
-tier was run three times; all runs exited 0 and the lexer dump md5 was identical
-all nine binary invocations.
+28/28 binding cases green (25 original + 3 fix-round-1 regressions). Tier
+checks: 37 passed / 0 failed (28 cases + six exit-0 checks + GUI-free grep + 3x
+determinism + compile-RSS gate). The full tier was run three times after the
+fix; all runs exited 0 and the lexer dump md5 was identical all nine binary
+invocations.
 
-### Verbatim tier tail (run 1; runs 2 and 3 identical except RSS noise)
+### Verbatim tier tail (fix round 1, run 1; runs 2 and 3 identical except RSS noise)
 
 ```
-== tier_edit summary: 34 passed, 0 failed ==
+== tier_edit summary: 37 passed, 0 failed ==
 lexer md5 3x: dcc81009e9a36c86e4d90e104c439871 dcc81009e9a36c86e4d90e104c439871 dcc81009e9a36c86e4d90e104c439871
-compile max RSS: 6040 KiB
+compile max RSS: 6052 KiB
 TIER_EDIT PASS
 ```
 
-Tier invocations:
+Tier invocations (fix round 1):
 
 | run | summary | compile max RSS | lexer md5 (3x) |
 |-----|---------|-----------------|----------------|
-| 1 | 34 passed, 0 failed | 6040 KiB | `dcc81009e9a36c86e4d90e104c439871` |
-| 2 | 34 passed, 0 failed | 5856 KiB | `dcc81009e9a36c86e4d90e104c439871` |
-| 3 | 34 passed, 0 failed | 6164 KiB | `dcc81009e9a36c86e4d90e104c439871` |
+| 1 | 37 passed, 0 failed | 6052 KiB | `dcc81009e9a36c86e4d90e104c439871` |
+| 2 | 37 passed, 0 failed | 6212 KiB | `dcc81009e9a36c86e4d90e104c439871` |
+| 3 | 37 passed, 0 failed | 5788 KiB | `dcc81009e9a36c86e4d90e104c439871` |
 
 ### Case evidence
 
 ```
 buffer_test:  insert_delete_roundtrip, line_index_after_insert,
               offset_linecol_roundtrip, crlf_preserved_noedit, lf_preserved,
-              crlf_preserved_after_insert, load_missing_error
+              crlf_preserved_after_insert, lf_file_crlf_insert_normalized,
+              load_missing_error
 lexer_test:   keyword_string_comment_number, block_comment_state_carry,
               multiline_string_state_carry, builtin_and_type, errcode_token,
               errcode_at_col
 idents_test:  decl_const_var_fn_collected, use_without_decl_not_collected
 match_test:   pair_simple, pair_cross_line, nested_ok,
               unbalanced_opener_line, unbalanced_closer
-undo_test:    undo_insert_inverse, undo_delete_inverse, undo_empty_false
+undo_test:    undo_insert_inverse, undo_delete_inverse, undo_empty_false,
+              undo_insert_crlf_exact, crlf_file_undo_delete_exact
 errtab_test:  known_code_message, unknown_null
 ```
 
@@ -86,8 +90,10 @@ the exact body): `buffer.bufInit/bufInsert`, `lexer.lexLine/lexErrCodeAt`,
 `idents.identScan/identHas`, `match.matchPairAt/matchUnbalanced`,
 `undo.undoInit/undoRecordInsert/undoApply`, `errtab.errtabMessage`.
 
-Results: **6040 / 5856 / 6164 KiB** across the three tier runs (max **6164
-KiB**, well under 16384 KiB). The RSS probe rc was 0 in every run.
+Results after fix round 1: **6052 / 6212 / 5788 KiB** across the three tier runs
+(max **6212 KiB**, well under 16384 KiB). The RSS probe rc was 0 in every run.
+(Pre-fix runs measured 6040 / 5856 / 6164 KiB; the fix did not materially move
+compile cost.)
 
 ## std_str / std_mem additions
 
@@ -98,10 +104,13 @@ additions or rewrites were made.
 
 - Buffer lines/cols are **0-based**; `match.Unbalance.line` is **1-based** as
   specified. The shell should add 1 to `bufLineColOf` for `line,col` status.
-- Raw bytes are retained on load. `bufInsert` expands a bare LF to CRLF when
-  `bufUsesCrlf` is true, so `crlf_preserved_after_insert` and undo of normal
-  edits restore the file's ending. `bufSave` writes the retained bytes and
-  clears `bufDirty`.
+- **Internal bytes are canonical LF.** `bufLoad` folds every CRLF to LF and
+  stores the file ending in `uses_crlf`; `bufInsert` folds CRLF in its input the
+  same way; `bufSave` expands every canonical LF back to CRLF when
+  `bufUsesCrlf` is true, else writes LF. Pure CRLF and pure LF files are
+  byte-identical across load -> save with no edit. `bufLen` and all positions
+  are canonical-LF offsets. Insert-undo is exact in both endings because the
+  undo records canonical bytes/lengths. `bufSave` clears `bufDirty`.
 - `LexState` carries block-comment depth and an unterminated quoted string.
 - `identScan` lexes real lines, so comments/strings cannot seed declarations;
   only names after `const`/`var`/`fn` are collected.
@@ -117,10 +126,10 @@ additions or rewrites were made.
 2. **Bracket balance is a raw byte scan.** Brackets inside strings/comments
    count toward balance. The v1 spec asks for adjacent-pair inversion and
    `unbalanced <ch> from line N`; it does not require lexical filtering.
-3. **Mixed-ending files + undo.** A pure CRLF (or LF) file round-trips and
-   undoes exactly. If a CRLF file also contains a bare LF that gets deleted, the
-   undo inverse reinserts it through `bufInsert`, which normalizes it to CRLF.
-   No v1 test fixture uses mixed endings; behavior is documented here.
+3. **Mixed-ending files are classified as CRLF if they contain any CRLF.** They
+   round-trip to a uniform CRLF file on save (documented choice, per the fix
+   direction); pure CRLF and pure LF files are byte-identical across a no-edit
+   round trip. Insert and undo are exact for both pure endings.
 4. Tests use `std_io` (write) and `std_os` (exit) directly, never the `std`
    barrel. Core modules import only `std_arena`, `std_file`, `std_str`,
    `std_mem`; `std_time` was not needed by these six.
@@ -129,6 +138,40 @@ additions or rewrites were made.
    tests + tier.
 6. `errtab` includes code 3047 (`WARN_3047_ASYNC_FRAME_LARGE`) because it lies
    in the seeded 30xx range; all other entries are `ERR_30xx`.
+
+## Fix round 1 — I-1 CRLF insert/undo contract
+
+Reviewer finding (Important): the original buffer stored raw CRLF bytes and
+expanded LF on insert, so `undoRecordInsert` recorded the pre-expansion length.
+Undoing an insert of `\n` at the end of `a\r\nb\r\n` deleted the inserted `\r`
+instead of the inserted `\r\n` and left `a\r\nb\r\n\n`; inserting `\r\n` into an
+LF file also left mixed endings. The report's claim that undo restored exact
+prior bytes was false for that path.
+
+Fix (binding signatures unchanged):
+
+1. `bufLoad` folds every `\r\n` to `\n`; `uses_crlf` records the file ending
+   (any CRLF means CRLF; pure LF means LF).
+2. `bufInsert` folds `\r\n` to `\n` in its input before inserting, so both
+   directions normalize and internal bytes are always LF.
+3. `bufSave` expands every canonical LF to `\r\n` when `uses_crlf` and writes
+   LF otherwise; it does not double-expand an existing CR.
+4. `undo.zig` stores canonical-LF bytes and canonical lengths for both record
+   kinds, so insert-undo deletes exactly what `bufInsert` inserted and
+   delete-undo reinserts the exact canonical bytes.
+
+New regression cases (all green):
+
+- `undo_insert_crlf_exact` — pure CRLF `a\r\nb\r\n`, insert `\n` at end, undo,
+  save -> exactly `a\r\nb\r\n` (the reviewer's reproducer).
+- `lf_file_crlf_insert_normalized` — LF `a\nb\n`, insert `\r\n`, save ->
+  `a\nb\n\n` (no CRLF in an LF file).
+- `crlf_file_undo_delete_exact` — pure CRLF file, delete canonical `b\n`,
+  undo, save -> exactly the original bytes.
+
+A first attempt at the fold loops skipped the LF as well as the CR (dropping
+every folded newline); the CRLF cases caught it immediately, and the loops now
+skip only the CR and copy the following LF.
 
 ## Findings during implementation (kept for the record)
 
