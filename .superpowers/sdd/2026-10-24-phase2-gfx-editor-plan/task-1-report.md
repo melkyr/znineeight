@@ -194,3 +194,124 @@ cell 20,8; the last line is frame 29's status after wheel +3 / resize / q):
 4. During an early manual smoke I let Wine create its default `$HOME/.wine`
    prefix before switching to the isolated recipe; all final/tier runs use
    isolated prefixes. No repo artifact is affected.
+
+## Fix round 1
+
+Status: **DONE**. Base for this round: `41dca492`.
+- Code fix commit: `422dfa92` (WM_CHAR + wheel-lines + event init +
+  WM_SIZE/glyph cache).
+- Report commit: `docs(sdd): P4-M1 fix round 1 report` (this file).
+- `b83df7e9` / `41dca492` were not amended.
+
+### Findings addressed
+
+1. **WM_CHAR typed character (Critical 1).** `pollEvent` now waits for
+   `WM_CHAR` for character-producing VKs (letters/digits/punctuation/space/
+   enter/tab/backspace/delete/escape), so `ch` is the actual typed character
+   (uppercase/shifted punctuation included). Ctrl+letter takes the VK base
+   character immediately (`Ctrl+S -> 's'`, mods bit1). Non-character keys
+   (arrows/F-keys) emit `key_down` with `ch=0`. A deferred key_up covers the
+   no-WM_CHAR case.
+2. **Wheel lines (Critical 2).** `wheelLines(raw_delta)` returns
+   `(delta / WHEEL_DELTA) * 3`; `WM_MOUSEWHEEL` uses it. Exposed as
+   `gfxWheelLines` and exercised by `--smoke` (`gfxWheelLines(120)`) and a
+   `--selftest` (`120 -> 3`, `-240 -> -6`). Z98 lowers signed `/` through an
+   unsigned divisor, so the helper does the negative case on the positive
+   magnitude (comment in the PAL).
+3. **RawEvent init (Critical 3).** Every return path zeroes all `RawEvent`
+   fields (`zeroRaw`), including deferred key-up and close/resize/wheel events;
+   all `Event` fields are copied. No undefined payload reaches the app.
+4. **ReleaseDC (Critical 4).** `gfxClose` uses
+   `surfaceVtbl(st.back).ReleaseDC(...)` (never Win32 `ReleaseDC` on the
+   surface DC).
+5. **WM_SIZE resize (Important 5).** `WM_SIZE` calls `resizeBack` (releases and
+   recreates the offscreen `CreateSurface(resize)`), updates `st.cols/rows`,
+   and `gfxPollEvent` resizes the cell grid. `--smoke` posts a real `WM_SIZE`
+   via `gfxTestPostResize(..., 70, 22)`; the tier asserts the delivered event.
+6. **Glyph cache (Important 6).** Built once at `gfxOpen`: a 95x16 color atlas
+   plus a monochrome mask atlas (GDI offscreen bitmaps, `SYSTEM_FIXED_FONT`,
+   ASCII 32..126 x palette rows). `drawText` presents each cell with
+   `BitBlt(SRCAND mask)` + `BitBlt(SRCPAINT color)`. `gfxOpenMemory` builds no
+   atlas. Logs `glyph-atlas built ...` once and `glyph-atlas present active`
+   when the first atlas cell is presented.
+7. **HRESULT evidence (Important 7).** Windowed `gfxOpen`/`gfxEndFrame` log
+   `DirectDrawCreate`, `QueryInterface(IID_IDirectDraw7)`,
+   `SetCooperativeLevel(DDSCL_NORMAL)`, primary/offscreen `CreateSurface`, and
+   every present `Blt` (plus resize/atlas/clipper lines). The tier asserts the
+   six required `hr=0x00000000` lines.
+8. **Brushes before failure-close (Important 8).** All 16 brush slots are
+   null-initialized before window creation, so the `CreateWindowExA` failure
+   path cannot `DeleteObject` garbage. Brush creation failures now fail open.
+
+Minors:
+- `Gfx` is opaque: `pub const Gfx = struct { opaque: *GfxState }` with the
+  private `GfxState` holding the cells/dump/PAL state.
+- All unused vtable slots are `extern "stdcall" fn() void`.
+- `close` uses `DestroyWindow` + `UnregisterClassA` (no stale window/class).
+- Clipboard NUL scan is bounded by `GlobalSize`.
+- `GetTextMetricsA`, `CreateSolidBrush`, `SetCooperativeLevel`,
+  `SetClipper`/`SetHWND` results are checked/logged.
+- `gfxBeginFrame`/`gfxEndFrame` failures now exit the demo nonzero.
+- Tier checks the `--dump-c89` RSS probe rc and records Wine-hosted runtime
+  RSS; it asserts the atlas/HRESULT/resize/wheel evidence.
+- `.gitignore` now has
+  `!examples/z98/gfx_demo/tests/golden/grid.txt` (no `git add -f`).
+
+### Fix-round evidence (two deterministic tier runs)
+
+Run A (`/tmp/gfx_fix_tier_a.log`) and run B (`/tmp/gfx_fix_tier_b.log`) both
+rc 0, **18 passed / 0 failed**, `TIER_GFX PASS`.
+
+```
+ok   - Z98 compile max RSS < 16 MB (6160 kB / 6028 kB)
+ok   - check_win9x_imports.sh 9x PASS
+       DLL DDRAW.DLL / GDI32.DLL / KERNEL32.DLL / USER32.DLL
+       IMPORT GATE PASS (9x): /tmp/gfx_tier/gfx_demo.exe
+ok   - no MSVCRT.DLL import
+ok   - wheel mapping helper 120->3, -240->-6 (real wheelLines)
+       WHEELMAP 120=3 -240=-6
+       WHEELMAP OK
+ok   - runtime RSS recorded (Wine-hosted, includes Wine): 17128 kB / 17208 kB
+ok   - grid.txt written (md5 ef5f8632fa1212a792020cbe1352e0f5, 377 bytes)
+ok   - grid.txt matches golden byte-for-byte
+ok   - screenshot saved: (mean/stddev/colors: 0.0485363 0.177475 124)
+ok   - windowed --smoke 30 exited 0
+ok   - DDraw HRESULT log present (create/QI/coop/surfaces/Blt all 0x0)
+ok   - glyph atlas built once at open and used for per-cell present
+ok   - WM_SIZE resize delivered through the pump (70x22 cells)
+```
+
+Windowed HRESULT log (verbatim):
+
+```
+DirectDrawCreate hr=0x00000000
+QueryInterface(IID_IDirectDraw7) hr=0x00000000
+SetCooperativeLevel(DDSCL_NORMAL) hr=0x00000000
+CreateSurface(primary) hr=0x00000000
+CreateSurface(offscreen) hr=0x00000000
+glyph-atlas built (95x16 GDI color+mask)
+glyph-atlas present active
+CreateClipper hr=0x00000000
+SetHWnd(clipper) hr=0x00000000
+SetClipper(primary) hr=0x00000000
+Blt(primary<-offscreen) hr=0x00000000
+...
+CreateSurface(resize) hr=0x00000000
+RESIZE 70x22 px=560x352
+```
+
+The headless run prints `RESIZE 64x20 px=512x320` for the scripted resize, but
+the golden md5 is unchanged (`ef5f8632...`): the memory path keeps the fixed
+64x20 grid so the deterministic payload is stable. `git diff --check` is clean.
+
+### Fix-round notes / concerns
+
+- The glyph cache is materialized as two GDI offscreen atlases (color + mask)
+  rather than a DirectDraw surface: per-cell present is a GDI `BitBlt` into the
+  offscreen DC that is already acquired, which avoids `Blt`-while-DC-acquired
+  undefined behavior. This still satisfies the binding cache requirement (built
+  once at open, per-cell present from the atlas).
+- Runtime RSS is Wine-hosted (includes Wine's own footprint), so it is recorded
+  rather than gated; the Z98 compile RSS is the gated <16 MB number.
+- `gfxTestPostResize` is a test-only additive affordance used by `--smoke` to
+  drive the real `WM_SIZE` path; the binding API is otherwise unchanged.
