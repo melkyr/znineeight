@@ -30,8 +30,10 @@ const io = @import("std_io.zig");
 const WS_OVERLAPPEDWINDOW: u32 = 0x00CF0000;
 const CW_USEDEFAULT: i32 = -2147483648;
 const SW_SHOW: i32 = 5;
+const SWP_NOMOVE: u32 = 0x0002;
+const SWP_NOZORDER: u32 = 0x0004;
+const SWP_NOACTIVATE: u32 = 0x0010;
 const WM_DESTROY: u32 = 0x0002;
-const WM_SIZE: u32 = 0x0005;
 const WM_CLOSE: u32 = 0x0010;
 const WM_QUIT: u32 = 0x0012;
 const WM_KEYDOWN: u32 = 0x0100;
@@ -147,6 +149,22 @@ fn logHr(label: []const u8, hr: u32) void {
 fn logLine(s: []const u8) void {
     io.write(s);
     io.write("\n");
+}
+
+fn logPresent(w: u32, h: u32, bw: u32, bh: u32, x: i32, y: i32) void {
+    io.write("present 1:1 client=");
+    io.printInt(@intCast(i32, w));
+    io.write("x");
+    io.printInt(@intCast(i32, h));
+    io.write(" back=");
+    io.printInt(@intCast(i32, bw));
+    io.write("x");
+    io.printInt(@intCast(i32, bh));
+    io.write(" dest=(");
+    io.printInt(x);
+    io.write(",");
+    io.printInt(y);
+    io.write(")\n");
 }
 
 // --- Win32 / COM struct mirrors (i386, natural layout) ---------------------
@@ -420,9 +438,12 @@ pub extern "stdcall" fn LoadCursorA(inst: *void, name: *void) *void;
 pub extern "stdcall" fn PeekMessageA(msg: *void, hwnd: *void, min: u32, max: u32, remove: u32) i32;
 pub extern "stdcall" fn TranslateMessage(msg: *const void) i32;
 pub extern "stdcall" fn DispatchMessageA(msg: *const void) i32;
-pub extern "stdcall" fn PostMessageA(hwnd: *void, msg: u32, wparam: u32, lparam: i32) i32;
 pub extern "stdcall" fn PostQuitMessage(code: i32) void;
 pub extern "stdcall" fn GetKeyState(vk: i32) i16;
+pub extern "stdcall" fn GetClientRect(hwnd: *void, rc: *void) i32;
+pub extern "stdcall" fn ClientToScreen(hwnd: *void, pt: *void) i32;
+pub extern "stdcall" fn AdjustWindowRect(rc: *void, style: u32, menu: i32) i32;
+pub extern "stdcall" fn SetWindowPos(hwnd: *void, after: *void, x: i32, y: i32, w: i32, h: i32, flags: u32) i32;
 pub extern "stdcall" fn GetDC(hwnd: *void) *void;
 pub extern "stdcall" fn ReleaseDC(hwnd: *void, hdc: *void) i32;
 pub extern "stdcall" fn FillRect(hdc: *void, rc: *const void, brush: *void) i32;
@@ -450,6 +471,15 @@ pub extern "stdcall" fn GlobalUnlock(mem: *void) i32;
 pub extern "stdcall" fn GlobalFree(mem: *void) *void;
 pub extern "stdcall" fn GlobalSize(mem: *void) u32;
 
+// C runtime trampoline (zig_nocrt.c): owns the stdcall WndProc and records
+// SENT WM_SIZE/WM_CLOSE messages for this poll loop. cdecl; the emitted C uses
+// C89 implicit declarations for these helpers (32-bit pointer/int compatible).
+extern "c" fn z98_gfx_set_defproc(p: *void) void;
+extern "c" fn z98_gfx_wndproc_addr() usize;
+extern "c" fn z98_gfx_reset() void;
+extern "c" fn z98_gfx_resize_take(w: *u32, h: *u32) i32;
+extern "c" fn z98_gfx_close_take() i32;
+
 // --- PAL state -------------------------------------------------------------
 pub const State = struct {
     hwnd: *void,
@@ -475,6 +505,8 @@ pub const State = struct {
     ch: u32,
     bufw: u32,
     bufh: u32,
+    present_w: u32,
+    present_h: u32,
     pending: bool,
     pend_code: u16,
     pend_mods: u8,
@@ -664,6 +696,8 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.ch = 16;
     st.bufw = OFFSCREEN_W;
     st.bufh = OFFSCREEN_H;
+    st.present_w = 0;
+    st.present_h = 0;
     st.pending = false;
     st.pend_code = 0;
     st.pend_mods = 0;
@@ -681,9 +715,19 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     const hinst = GetModuleHandleA(nullVoid());
     st.hinst = hinst;
 
+    // The WndProc is the C trampoline (Z98 cannot define a stdcall function).
+    // It records SENT WM_SIZE/WM_CLOSE messages for this poll loop and forwards
+    // everything to DefWindowProcA (address supplied here, no user32 import in
+    // the runtime shim itself).
+    z98_gfx_reset();
+    z98_gfx_set_defproc(@ptrCast(*void, DefWindowProcA));
+    const wnd_addr = z98_gfx_wndproc_addr();
+    const wnd_void: *void = @intToPtr(*void, wnd_addr);
+    const wnd_proc: WndProc = @ptrCast(WndProc, wnd_void);
+
     var wc: WndClassA = WndClassA{
         .style = 0,
-        .lpfnWndProc = DefWindowProcA,
+        .lpfnWndProc = wnd_proc,
         .cbClsExtra = 0,
         .cbWndExtra = 0,
         .hInstance = hinst,
@@ -863,9 +907,37 @@ pub fn endFrame(st: *State) bool {
         _ = surfaceVtbl(st.back).ReleaseDC(st.back, st.hdc);
         st.hdc = nullVoid();
     }
-    if (isNull(st.primary) or isNull(st.back)) return false;
-    const hr = surfaceVtbl(st.primary).Blt(st.primary, nullVoid(), st.back,
-        nullVoid(), DDBLT_WAIT, nullVoid());
+    if (isNull(st.primary) or isNull(st.back) or isNull(st.hwnd)) return false;
+
+    var crc: Rect = undefined;
+    if (GetClientRect(st.hwnd, @ptrCast(*void, &crc)) == 0) return false;
+    var origin = Point{ .x = crc.left, .y = crc.top };
+    if (ClientToScreen(st.hwnd, @ptrCast(*void, &origin)) == 0) return false;
+
+    var cw: i32 = crc.right - crc.left;
+    var ch: i32 = crc.bottom - crc.top;
+    const bw: i32 = @intCast(i32, st.bufw);
+    const bh: i32 = @intCast(i32, st.bufh);
+    if (cw > bw) cw = bw;
+    if (ch > bh) ch = bh;
+    if (cw <= 0 or ch <= 0) return false;
+
+    var dest = Rect{
+        .left = origin.x,
+        .top = origin.y,
+        .right = origin.x + cw,
+        .bottom = origin.y + ch,
+    };
+    var src = Rect{ .left = 0, .top = 0, .right = cw, .bottom = ch };
+    const uw: u32 = @intCast(u32, cw);
+    const uh: u32 = @intCast(u32, ch);
+    if (st.present_w != uw or st.present_h != uh or st.bufw != uw or st.bufh != uh) {
+        st.present_w = uw;
+        st.present_h = uh;
+        logPresent(uw, uh, st.bufw, st.bufh, origin.x, origin.y);
+    }
+    const hr = surfaceVtbl(st.primary).Blt(st.primary, @ptrCast(*void, &dest),
+        st.back, @ptrCast(*void, &src), DDBLT_WAIT, nullVoid());
     logHr("Blt(primary<-offscreen)", hr);
     return hr == S_OK;
 }
@@ -941,6 +1013,13 @@ pub fn drawText(st: *State, px: i32, py: i32, s: []const u8, fg: u8, bg: u8, cw:
 fn virtualToChar(vk: u16) u8 {
     if (vk >= 0x30 and vk <= 0x39) return @intCast(u8, vk);
     if (vk >= 0x41 and vk <= 0x5A) return @intCast(u8, vk + 32);
+    if (vk >= 0x60 and vk <= 0x69) return @intCast(u8, vk - 0x60 + 48);
+    if (vk == 0x6A) return 42; // '*'
+    if (vk == 0x6B) return 43; // '+'
+    if (vk == 0x6C) return 45; // separator '-' (kept in the requested set)
+    if (vk == 0x6D) return 45; // '-'
+    if (vk == 0x6E) return 46; // '.'
+    if (vk == 0x6F) return 47; // '/'
     if (vk == 0x20) return 32;
     if (vk == 0x0D) return 13;
     if (vk == 0x09) return 9;
@@ -951,11 +1030,12 @@ fn virtualToChar(vk: u16) u8 {
 }
 
 // Keys whose typed character arrives through WM_CHAR (letters, digits,
-// punctuation, space, enter/tab/backspace/delete/escape). Arrows/F-keys do
-// not, so they emit key_down immediately with ch = 0.
+// punctuation, numpad, space, enter/tab/backspace/delete/escape). Arrows/F-keys
+// do not, so they emit key_down immediately with ch = 0.
 fn isCharKey(vk: u16) bool {
     if (vk >= 0x30 and vk <= 0x39) return true;
     if (vk >= 0x41 and vk <= 0x5A) return true;
+    if (vk >= 0x60 and vk <= 0x6F) return true;
     if (vk >= 0xBA and vk <= 0xE2) return true;
     if (vk == 0x20 or vk == 0x0D or vk == 0x09) return true;
     if (vk == 0x1B or vk == 0x08 or vk == 0x2E) return true;
@@ -994,14 +1074,22 @@ fn deferKeyUp(st: *State, code: u16, ch: u8, mods: u8) void {
     st.def_mods = mods;
 }
 
-pub fn postResize(st: *State, cols: u32, rows: u32) bool {
+// Test-only: resize the real top-level window so Windows sends WM_SIZE to the
+// WndProc (the production path). AdjustWindowRect converts the requested
+// client size into the outer window size; the poll loop then takes the recorded
+// client size and resizes the back buffer/grid.
+pub fn testResizeClient(st: *State, cols: u32, rows: u32) bool {
     if (isNull(st.hwnd)) return false;
     if (cols == 0 or rows == 0) return false;
     const w: u32 = cols * st.cw;
     const h: u32 = rows * st.ch;
-    if (w > 0xFFFF or h > 0xFFFF) return false;
-    const lp: u32 = (h << 16) | (w & 0xFFFF);
-    return PostMessageA(st.hwnd, WM_SIZE, 0, @bitCast(i32, lp)) != 0;
+    if (w == 0 or h == 0 or w > 0x7FFF or h > 0x7FFF) return false;
+    var rc = Rect{ .left = 0, .top = 0, .right = @intCast(i32, w), .bottom = @intCast(i32, h) };
+    if (AdjustWindowRect(@ptrCast(*void, &rc), WS_OVERLAPPEDWINDOW, 0) == 0) return false;
+    const ow: i32 = rc.right - rc.left;
+    const oh: i32 = rc.bottom - rc.top;
+    const flags: u32 = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE;
+    return SetWindowPos(st.hwnd, nullVoid(), 0, 0, ow, oh, flags) != 0;
 }
 
 fn modsNow() u8 {
@@ -1014,6 +1102,36 @@ fn modsNow() u8 {
 pub fn pollEvent(st: *State, raw: *RawEvent) bool {
     if (isNull(st.hwnd)) return false;
     if (fillDeferred(st, raw)) return true;
+    if (z98_gfx_close_take() != 0) {
+        zeroRaw(raw);
+        raw.kind = EK_CLOSE;
+        return true;
+    }
+    var rw: u32 = 0;
+    var rh: u32 = 0;
+    if (z98_gfx_resize_take(&rw, &rh) != 0) {
+        zeroRaw(raw);
+        var cols: u32 = st.cols;
+        var rows: u32 = st.rows;
+        var pw: u32 = st.bufw;
+        var ph: u32 = st.bufh;
+        if (rw > 0 and rh > 0) {
+            if (resizeBack(st, rw, rh)) {
+                pw = rw;
+                ph = rh;
+                cols = if (st.cw == 0) 1 else rw / st.cw;
+                rows = if (st.ch == 0) 1 else rh / st.ch;
+                st.cols = cols;
+                st.rows = rows;
+            }
+        }
+        raw.kind = EK_RESIZE;
+        raw.x = pw;
+        raw.y = ph;
+        raw.cols = cols;
+        raw.rows = rows;
+        return true;
+    }
     zeroRaw(raw);
     var msg: Msg = undefined;
     while (PeekMessageA(@ptrCast(*void, &msg), nullVoid(), 0, 0, PM_REMOVE) != 0) {
@@ -1038,31 +1156,6 @@ pub fn pollEvent(st: *State, raw: *RawEvent) bool {
         if (m == WM_CLOSE or m == WM_DESTROY) {
             raw.kind = EK_CLOSE;
             _ = PostQuitMessage(0);
-            return true;
-        }
-        if (m == WM_SIZE) {
-            const wp = @intCast(u32, msg.lParam & 0xFFFF);
-            const hp = @intCast(u32, (msg.lParam >> 16) & 0xFFFF);
-            var cols: u32 = st.cols;
-            var rows: u32 = st.rows;
-            var pw: u32 = st.bufw;
-            var ph: u32 = st.bufh;
-            if (wp > 0 and hp > 0) {
-                if (resizeBack(st, wp, hp)) {
-                    pw = wp;
-                    ph = hp;
-                    cols = if (st.cw == 0) 1 else wp / st.cw;
-                    rows = if (st.ch == 0) 1 else hp / st.ch;
-                    st.cols = cols;
-                    st.rows = rows;
-                }
-            }
-            raw.kind = EK_RESIZE;
-            raw.x = pw;
-            raw.y = ph;
-            raw.cols = cols;
-            raw.rows = rows;
-            _ = DispatchMessageA(@ptrCast(*const void, &msg));
             return true;
         }
         if (m == WM_KEYDOWN) {

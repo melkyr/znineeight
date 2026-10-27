@@ -164,17 +164,17 @@ pub fn gfxPollEvent(g: *Gfx, ev: *Event) bool {
     return true;
 }
 
-// Test affordance: post a real WM_SIZE through the window pump (window mode)
-// or resize the headless grid directly. Used by --smoke to exercise the actual
-// WM_SIZE surface+grid resize path.
-pub fn gfxTestPostResize(g: *Gfx, cols: u32, rows: u32) bool {
+// Test affordance: resize the real window (window mode) so Windows SENDs
+// WM_SIZE to the WndProc, or resize the headless grid directly. Used by
+// --smoke to exercise the actual WM_SIZE surface+grid resize path.
+pub fn gfxTestResize(g: *Gfx, cols: u32, rows: u32) bool {
     const s = g.opaque;
     if (cols == 0 or rows == 0 or cols > MAX_COLS or rows > MAX_ROWS) return false;
     if (s.mem_only) {
         resizeGrid(s, cols, rows);
         return true;
     }
-    return pal.postResize(&s.st, cols, rows);
+    return pal.testResizeClient(&s.st, cols, rows);
 }
 
 pub fn gfxBeginFrame(g: *Gfx) bool {

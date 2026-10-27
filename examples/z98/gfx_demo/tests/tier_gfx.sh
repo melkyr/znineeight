@@ -77,6 +77,7 @@ echo "== (a) no-CRT build + import gate =="
 BUILD_LOG="$OUT/build.log"
 COMPILE_RSS="n/a"
 EXTRA_LIBS="-luser32 -lgdi32 -lddraw" \
+EXTRA_CSRC="$ROOT/sf/src/include/zig_gfx_wndproc.c" \
     bash "$CROSS" "$ZIG" "$ENTRY" "$OUT/work" "$EXE" >"$BUILD_LOG" 2>&1
 BUILD_RC=$?
 # The 16 MB target is the Z98 compile (dump) of the demo, not the host gcc
@@ -256,9 +257,18 @@ else
             && [ -s "$SHOT_DIR/shot.png" ]; then
             STATS="$(identify -format '%[fx:mean] %[fx:standard_deviation] %k' \
                 "$SHOT_DIR/shot.png" 2>/dev/null)"
-            pass_case "screenshot saved: $SHOT_DIR/shot.png (mean/stddev/colors: $STATS)"
+            pass_case "screenshot 1 (560x352 client) saved: $SHOT_DIR/shot.png (mean/stddev/colors: $STATS)"
         else
-            fail_case "screenshot capture failed (see $SHOT_DIR/import.log)"
+            fail_case "screenshot 1 capture failed (see $SHOT_DIR/import.log)"
+        fi
+        sleep 0.5
+        if timeout 30 import -window root "$SHOT_DIR/shot2.png" >"$SHOT_DIR/import2.log" 2>&1 \
+            && [ -s "$SHOT_DIR/shot2.png" ]; then
+            STATS2="$(identify -format '%[fx:mean] %[fx:standard_deviation] %k' \
+                "$SHOT_DIR/shot2.png" 2>/dev/null)"
+            pass_case "screenshot 2 (800x592 client) saved: $SHOT_DIR/shot2.png (mean/stddev/colors: $STATS2)"
+        else
+            fail_case "screenshot 2 capture failed (see $SHOT_DIR/import2.log)"
         fi
         wait "$WINE_PID" 2>/dev/null
         APP_RC=$?
@@ -291,10 +301,21 @@ else
         else
             fail_case "glyph atlas evidence missing, built more than once, or never used (count=$ATLAS_COUNT)"
         fi
-        if grep -q '^RESIZE 70x22 ' "$SHOT_DIR/app.log"; then
-            pass_case "WM_SIZE resize delivered through the pump (70x22 cells)"
+        RESIZE_OK=1
+        grep -q '^RESIZE 70x22 px=560x352$' "$SHOT_DIR/app.log" || RESIZE_OK=0
+        grep -q '^RESIZE 100x37 px=800x592$' "$SHOT_DIR/app.log" || RESIZE_OK=0
+        if [ "$RESIZE_OK" -eq 1 ]; then
+            pass_case "real window resizes SEND WM_SIZE -> events 70x22/560x352 and 100x37/800x592"
         else
-            fail_case "WM_SIZE resize evidence missing (see $SHOT_DIR/app.log)"
+            fail_case "real WM_SIZE resize evidence missing (see $SHOT_DIR/app.log)"
+        fi
+        PRESENT_OK=1
+        grep -Fq 'present 1:1 client=560x352 back=560x352 dest=(' "$SHOT_DIR/app.log" || PRESENT_OK=0
+        grep -Fq 'present 1:1 client=800x592 back=800x592 dest=(' "$SHOT_DIR/app.log" || PRESENT_OK=0
+        if [ "$PRESENT_OK" -eq 1 ]; then
+            pass_case "1:1 client present after both resizes (client==back, screen dest)"
+        else
+            fail_case "1:1 present evidence missing (see $SHOT_DIR/app.log)"
         fi
         sed 's/^/       /' "$SHOT_DIR/app.log"
         WINE_PID=""

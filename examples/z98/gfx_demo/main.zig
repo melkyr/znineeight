@@ -124,7 +124,7 @@ fn putInt(buf: []u8, pos_in: usize, v_in: i32) usize {
 }
 
 fn paint(g: *gfx.Gfx, app: *App) void {
-    gfx.gfxClear(g, 0);
+    gfx.gfxClear(g, 8);
 
     gfx.gfxFillRect(g, 0, 0, COLS, 1, 15, 1);
     gfx.gfxDrawText(g, 1, 0, TITLE, 15, 1);
@@ -195,9 +195,15 @@ fn scripted(app: *App, g: *gfx.Gfx, idx: u32, total: u32, mem_only: bool) void {
             ev.y = ROWS * 16;
             _ = handleEvent(app, &ev);
         } else {
-            // Real WM_SIZE through the pump: the PAL resizes the offscreen
-            // surface and std_gfx resizes the cell grid.
-            _ = gfx.gfxTestPostResize(g, 70, 22);
+            // Real window resize: Windows SENDs WM_SIZE to the WndProc; the
+            // PAL poll loop then resizes the offscreen surface and grid.
+            _ = gfx.gfxTestResize(g, 70, 22);
+        }
+        return;
+    }
+    if (idx == 8) {
+        if (!mem_only) {
+            _ = gfx.gfxTestResize(g, 100, 37);
         }
         return;
     }

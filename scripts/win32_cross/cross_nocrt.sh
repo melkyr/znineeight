@@ -27,6 +27,10 @@
 #   - EXTRA_LIBS (default empty) is appended verbatim/word-split, so callers
 #     that do not set it keep the exact historical link line. The GUI tier sets
 #     EXTRA_LIBS="-luser32 -lgdi32 -lddraw".
+#   - EXTRA_CSRC (default empty) is a space-separated list of extra C sources
+#     compiled with the same no-CRT flags and linked after the emitted objects.
+#     The GUI tier passes sf/src/include/zig_gfx_wndproc.c (the stdcall WndProc
+#     trampoline Z98 cannot express). Unset keeps every other caller unchanged.
 #   - Program choice: the dump MUST be no-CRT-clean. examples/z98/hello is the
 #     proven candidate; game_of_life is NOT (its emitted main calls system("cls")
 #     -> unresolved msvcrt `system`). See task-WIN32-report.md ## Task 4.
@@ -35,7 +39,8 @@
 # dump summary. Exit status mirrors XRUNRC (0 / 1). Every sub-run is
 # timeout-guarded.
 #
-# Env overrides: ROOT, ZIG1, CROSS_GCC, TIMEOUT_DUMP, TIMEOUT_CC, EXTRA_LIBS.
+# Env overrides: ROOT, ZIG1, CROSS_GCC, TIMEOUT_DUMP, TIMEOUT_CC, EXTRA_LIBS,
+#                EXTRA_CSRC.
 set -u
 
 ROOT=${ROOT:-/workspace/znineeight}
@@ -43,6 +48,7 @@ CROSS_GCC=${CROSS_GCC:-i686-w64-mingw32-gcc}
 TIMEOUT_DUMP=${TIMEOUT_DUMP:-300}
 TIMEOUT_CC=${TIMEOUT_CC:-240}
 EXTRA_LIBS=${EXTRA_LIBS:-}
+EXTRA_CSRC=${EXTRA_CSRC:-}
 
 ZIG1=${1:?usage: cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]}
 ENTRY=${2:?usage: cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]}
@@ -123,6 +129,27 @@ if [ -n "$CC_FAIL" ]; then
     fail GCCFAIL
 fi
 
+# ---- Step 2b: optional extra C sources (EXTRA_CSRC) ------------------------
+EXTRA_OBJS=()
+if [ -n "$EXTRA_CSRC" ]; then
+    for src in $EXTRA_CSRC; do
+        if [ ! -f "$src" ]; then
+            echo "extra C source missing: $src"
+            fail GCCFAIL
+        fi
+        obj="$WORK/extra_$(basename "$src" .c).o"
+        if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
+            -Wall -Wno-long-long -Wno-pointer-sign -I "$CC_INC" \
+            "${EXTRA_DEFS[@]}" -c "$src" -o "$obj" \
+            >>"$DUMPDIR/cc.log" 2>&1; then
+            echo "extra C compile failed: $src"
+            tail -20 "$DUMPDIR/cc.log"
+            fail GCCFAIL
+        fi
+        EXTRA_OBJS+=("$obj")
+    done
+fi
+
 # ---- Step 3: mingw no-CRT link (entry = emitted mainCRTStartup) ------------
 # All emitted objects (including c_exit.o and zig_nocrt.o) are linked; the
 # emitted shims provide exit/atexit/strlen/memcpy/strncmp/stdio/env/time.
@@ -132,7 +159,7 @@ for f in "$DUMPDIR"/*.o; do
     LINK_OBJS+=("$f")
 done
 if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -nostdlib -o "$EXE_OUT" \
-    "${LINK_OBJS[@]}" "${RT_OBJS[@]}" \
+    "${LINK_OBJS[@]}" "${RT_OBJS[@]}" "${EXTRA_OBJS[@]}" \
     -Wl,-e,_mainCRTStartup -lgcc -lkernel32 $EXTRA_LIBS \
     >>"$DUMPDIR/ld.log" 2>&1; then
     echo "no-crt link failed (entry -e,_mainCRTStartup, -nostdlib -lgcc -lkernel32 $EXTRA_LIBS)"
