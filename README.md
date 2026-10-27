@@ -34,8 +34,8 @@ compiles itself to become the fully self-hosted compiler, **zig1** — the subje
 
 ## Current Status
 The **self-hosted milestone is complete**: `zig1` compiles itself, the compilation is
-**deterministic to a fixed point** (current self-compile binary md5 `45158dce…`; committed seed
-**v119**, `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
+**deterministic to a fixed point** (current self-compile binary md5 `a567926c223492787786dd460563f32a`; committed seed
+**v123**, `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
 [Determinism](#determinism)), and the maintained example matrix is **25/25** dump/gcc/link. The
 mi_matrix corpus at `-s0` is enumerated by the canonical generator
 [`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the documented
@@ -98,18 +98,21 @@ The self-hosted compiler is deterministic end-to-end. Successive self-host hops 
 C89** and rebuild **byte-identical binaries** — the self-compile fixed point is closed.
 
 - **Current self-compile fixed point:** self-compiled `zig1` binary md5
-  `45158dcede81125a39a2c2c58478e21e` (47 module `.c` + 48 module `.h`, 0 `error[`, 0 PANIC;
-  hop1 == hop2 closure), committed seed **v119** (`release/seed/zig1-seed.tgz`, archive md5
-  `e7ac8cd2ed7e790a4b9225a82acaf4a5`; `lib/manifest.md5` md5
-  `e731a3d2a7aef913f5bbcfd8670e5a2e`, 47 std files). The fixed point moved to `F_new` at M2
-  T1C-F (the `const`-rodata compiler fix); the seed payload moved to v119 at the M7 TCP/IP
-  closeout (adds `std_tcpip`; no compiler movement).
+  `a567926c223492787786dd460563f32a` (48 module `.c` + 49 module `.h`, 0 `error[`, 0 PANIC;
+  hop1 == hop2 closure), committed seed **v123** (`release/seed/zig1-seed.tgz`, archive md5
+  `3e0094f480a29a73fdcb200670b7c8d2`; `lib/manifest.md5` md5
+  `7ef5c6b66a2975b51847515fe91fff41`, 47 std files). The fixed point moved to `45158dce…` at M2
+  T1C-F (the `const`-rodata compiler fix) and to the current `a567926c…` at the
+  iterative-lowering milestone (continuation-stack lowerer + TEMP_NONE fix); the seed payload
+  moved to v119 at the M7 TCP/IP
+  closeout (adds `std_tcpip`; no compiler movement) and rotated to the current v123 with the
+  iterative-lowering closeout.
 - **Historical fixed point (0.20.0-era):** `553a39b4…` / seed v27 (45 module `.c` + 46 module `.h`);
   the operator-approved C89-AHEAD closeout (2026-09-13) was at the earlier fixed point
   `1467d932…` / seed v10. The old N-hop chain (seed v26 `f03d8485…` → hop1/hop2 `553a39b4…`) is
   retained here as history only. zig0 is retired; the seed model
   (`scripts/seed/build_from_seed.sh`) is the only rebuild path.
-- **Self-emission byte-identity:** the 47-module `.c` + 48 `.h` self-emission set is byte-identical on
+- **Self-emission byte-identity:** the 48-module `.c` + 49 `.h` self-emission set is byte-identical on
   every successive hop (only hidden `.zig1_*.tmp` spill scratch is non-deterministic — compare
   emitted `.c`/`.h` only). Output is byte-identical at every `-s0`…`-s6` spill level and under
   both target flavours (linux / `-osw`).
@@ -172,7 +175,7 @@ Supporting data for row D at fixed point `553a39b4…` (historical): `zig1 -s0 -
 ### Current measured compiler peak (fixed point `a567926c…`)  [measured 2026-10-27]
 
 **These figures are CURRENT.** Measured 2026-10-27 at the current fixed point
-`a567926c223492787786dd460563f32a` (seed v122, soon v123), fixed-point binary
+`a567926c223492787786dd460563f32a` (seed v123), fixed-point binary
 `/tmp/memfix_build/zig1_5_clean` built by
 `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/memfix_build`
 (two-hop closure hop1 == hop2 == `a567926c…`). Every RSS/wall figure is the

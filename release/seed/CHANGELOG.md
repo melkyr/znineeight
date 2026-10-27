@@ -11,6 +11,46 @@ Each completed plan that moves the self-emission fixed point rotates the seed
 (new zig1 binary + new self-emission C), overwriting the archive and appending
 a provenance entry here. Prior seeds remain recoverable in git history.
 
+## 2026-10-27 — seed v123 (HEAD 8dcda630)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12118809 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-10-27 |
+| HEAD | `8dcda630` |
+| seed binary md5 | `a567926c223492787786dd460563f32a` |
+| self-emission C | 48 `.c` + 49 `.h` (12118809 bytes) |
+| fixed point | `a567926c223492787786dd460563f32a` |
+| lib manifest | `lib/manifest.md5` (47 std files; md5 `7ef5c6b66a2975b51847515fe91fff41`) |
+| archive md5 | `3e0094f480a29a73fdcb200670b7c8d2` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `f2968cd6ac20438bc49665d2860cf999` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; no-CRT scripts, aliases, and `build_target.sh` removed) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 47 std `.zig` + `manifest.md5` |
+| HEAD/date | `8dcda630` / 2026-10-27 |
+
+Provenance note: the archived binary (md5 a567926c223492787786dd460563f32a) was captured by
+scripts/seed/archive_seed.sh at HEAD 8dcda630; gcc of the archive's self-emission
+C reproduces the self-emission fixed point `a567926c223492787786dd460563f32a` — both are the same
+compiler state at HEAD 8dcda630. The compiler self-build uses `-ffast` (user
+programs default to `-fsafe`), so the recorded fixed point is the `-ffast`
+binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
 ## 2026-10-26 — seed v122 (HEAD 4805a742)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir

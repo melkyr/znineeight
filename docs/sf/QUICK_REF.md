@@ -17,24 +17,26 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-25 — seed v121]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-27 — seed v123]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in `release/seed/SEED_README.txt` and the v121 CHANGELOG entry.
+current md5s in `release/seed/SEED_README.txt` and the v123 CHANGELOG entry.
 
-**Current seed: v121** (rotated 2026-10-25 at HEAD `076403ea`, combining the
-Win9x seed packaging with the `-fsafe`-clean compiler source fixes). Archived
-binary md5 (= fixed point) `dcfc9e70e475a8a08c0487dafd2e6b45`; archive md5
-`0d000eb5cf2c83754cbe5aac38cb1740`; Win9x zip md5
-`1f65ea9ccc57bf31d21af190497274ea`; `gen/` 48 `.c` + 49 `.h` (10,845,563
+**Current seed: v123** (rotated 2026-10-27 at HEAD `8dcda630`, the
+iterative-lowering milestone: the lowerer no longer recurses on the C stack —
+statement/expression lowering runs on continuation stacks — and the two T3
+phase-machine TEMP_NONE slot-resume bugs are fixed). Archived
+binary md5 (= fixed point) `a567926c223492787786dd460563f32a`; archive md5
+`3e0094f480a29a73fdcb200670b7c8d2`; Win9x zip md5
+`f2968cd6ac20438bc49665d2860cf999`; `gen/` 48 `.c` + 49 `.h` (12,118,809
 bytes); `lib/` 47 std `.zig` plus `lib/manifest.md5` (per-file std attribution
 pin, manifest md5 `7ef5c6b66a2975b51847515fe91fff41`). The rebuilt archive is
-two-hop (`build_from_seed.sh`: hop1 == hop2 == `F_new`); the compiler↔std
+two-hop (`build_from_seed.sh`: hop1 == hop2 == `a567926c…`); the compiler↔std
 separation means the `lib/` payload does not move the fixed point. The compiler
-source is now **`-fsafe`-clean** (12 intentional wraps + 3 real safe-mode
+source is **`-fsafe`-clean** (12 intentional wraps + 3 real safe-mode
 defects fixed). Markers (`--markers --dump-c89` on `mud_server`): **3252 lines
 / 37293 B**.
 
@@ -52,9 +54,9 @@ build_owc_crt.bat ..\zig1.exe
 or `build_target_crt.bat ..\zig1.exe`; `..\lib\` is the standard library. Both
 use a static CRT (`/MT` / OpenWatcom static CLIB), no `msvcrt.dll`, single EXE,
 and may import KERNEL32 names beyond the strict 9x whitelist. The compiler
-source in the zip is `-fsafe`-clean, but it still fails `std_async.zig:259`
-(Win9x field-resolution/layout ABI) — that failure remains **under
-investigation**, so this compiler build is **not app-ready**. The compiler's own
+source in the zip is `-fsafe`-clean; the Windows-hosted `std_async.zig:259`
+field-resolution failure was root-caused to a C89 update-stream fseek elision
+in `spill_store.zig` and fixed, so this CRT build is **app-ready**. The compiler's own
 no-CRT build is deferred until the asm_x86 backend; emitted programs still
 default to no-CRT. The zip is not a fixed-point artifact; `archive_seed.sh`
 packs it deterministically with python3 `zipfile`.
@@ -124,7 +126,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v121 carries the full 47 std `.zig`** = `std.zig` plus
+tracked seed archive **v123 carries the full 47 std `.zig`** = `std.zig` plus
 46 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -253,7 +255,7 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is **336/0** on seed v121 (294/0 at M7 on v103; the two
+  pin); `verify_stdlib` is **336/0** on seed v123 (294/0 at M7 on v103; the two
   M2 `stdlib_noise_*` fixtures, the M2 crypto/cipher/ecc fixtures, the four
   M3 `std_asn1`/`std_x509` fixtures, the three M4 `std_tls`/HTTP-transport
   fixtures, the three M5 TLS 1.3 fixtures, the three M6 WireGuard fixtures,
@@ -382,10 +384,10 @@ cd <dump> && timeout 120 sh build_target.sh mingw
 ```
 - Harness wrapper: `scripts/win32_cross/cross_build_run.sh <zig1> <entry> <workdir> <exe> [-lwsock32]` — `cross_build_run.sh` links `-lwsock32` unconditionally (Amendment A0), so no extra flag is needed.
 
-### Compiler RSS/arena — current measured (seed v122 / fixed point `a567926c…`)  [updated: 2026-10-27]
+### Compiler RSS/arena — current measured (seed v123 / fixed point `a567926c…`)  [updated: 2026-10-27]
 
-**These figures are current.** Measured 2026-10-27 at the current seed v122
-(soon v123) / fixed point `a567926c223492787786dd460563f32a` (two-hop closure
+**These figures are current.** Measured 2026-10-27 at the current seed v123
+/ fixed point `a567926c223492787786dd460563f32a` (two-hop closure
 hop1 == hop2). Every RSS/wall figure is the median of 3 `/usr/bin/time -v`
 runs in fresh scratch dirs; arena figures come from a separate `--markers
 --track-memory` run (3×, identical). The v111 figures below are historical —
