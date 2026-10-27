@@ -6,15 +6,15 @@
 // gfxDumpGrid/gfxClipboardSet/gfxClipboardGet/gfxClose. All coordinates are
 // CELLS. Colors are VGA palette indices 0..15.
 //
-// The Win9x backend (window class/pump, DirectDraw7, GDI text, clipboard) lives
-// in std_gfx_pal.zig; this module owns the cell grid (the glyph/cell cache), the
-// font metrics, the ASCII sanitisation (32..126, otherwise '?'), and the
+// The Win9x backend (window class/pump, glyph atlas, DirectDraw7, clipboard)
+// lives in std_gfx_pal.zig; this module owns the cell grid, the font metrics,
+// the ASCII sanitisation (32..126, otherwise '?'), resize bookkeeping, and the
 // headless gfxOpenMemory path. A memory Gfx never creates a window and its
 // grid is the deterministic `--dump-grid` payload; a windowed Gfx mirrors the
 // same cells while painting the real offscreen surface.
 //
-// Single instance by design (the v1 layer drives one window): the opaque Gfx is
-// a module-global static returned by pointer, so no CRT allocator is needed.
+// Gfx is opaque: the public type is one pointer to the private GfxState, so no
+// cell buffer or raw COM pointer is reachable through the app-facing type.
 
 const pal = @import("std_gfx_pal.zig");
 const arena_mod = @import("std_arena.zig");
@@ -54,8 +54,9 @@ const MAX_DUMP: usize = MAX_CELLS + 100 + 2;
 const MEM_CW: u32 = 8;
 const MEM_CH: u32 = 16;
 const TEXT_CHUNK: usize = 256;
+const EK_RESIZE: u8 = 6;
 
-pub const Gfx = struct {
+const GfxState = struct {
     cells: [MAX_CELLS]u8,
     dump: [MAX_DUMP]u8,
     cols: u32,
@@ -66,15 +67,23 @@ pub const Gfx = struct {
     st: pal.State,
 };
 
+pub const Gfx = struct { opaque: *GfxState };
+
+var g_state: GfxState = undefined;
 var g_gfx: Gfx = undefined;
 
-fn initGrid(g: *Gfx, cols: u32, rows: u32) void {
-    g.cols = cols;
-    g.rows = rows;
+fn initGrid(s: *GfxState, cols: u32, rows: u32) void {
+    s.cols = cols;
+    s.rows = rows;
     var i: usize = 0;
     while (i < MAX_CELLS) : (i += 1) {
-        g.cells[i] = 32;
+        s.cells[i] = 32;
     }
+}
+
+fn resizeGrid(s: *GfxState, cols: u32, rows: u32) void {
+    if (cols == 0 or rows == 0 or cols > MAX_COLS or rows > MAX_ROWS) return;
+    initGrid(s, cols, rows);
 }
 
 fn sanitize(b: u8) u8 {
@@ -86,29 +95,37 @@ pub fn gfxOpen(title: []const u8, cols: u32, rows: u32) GfxError!*Gfx {
     if (cols == 0 or rows == 0 or cols > MAX_COLS or rows > MAX_ROWS) {
         return error.OpenFailed;
     }
-    const g = &g_gfx;
-    initGrid(g, cols, rows);
-    g.cw = MEM_CW;
-    g.ch = MEM_CH;
-    g.mem_only = false;
-    if (!pal.open(title, cols, rows, &g.st)) {
+    const s = &g_state;
+    initGrid(s, cols, rows);
+    s.cw = MEM_CW;
+    s.ch = MEM_CH;
+    s.mem_only = false;
+    if (!pal.open(title, cols, rows, &s.st)) {
         return error.OpenFailed;
     }
-    g.cw = g.st.cw;
-    g.ch = g.st.ch;
-    return g;
+    s.cw = s.st.cw;
+    s.ch = s.st.ch;
+    g_gfx.opaque = s;
+    return &g_gfx;
 }
 
 pub fn gfxOpenMemory(cols: u32, rows: u32) GfxError!*Gfx {
     if (cols == 0 or rows == 0 or cols > MAX_COLS or rows > MAX_ROWS) {
         return error.OpenFailed;
     }
-    const g = &g_gfx;
-    initGrid(g, cols, rows);
-    g.cw = MEM_CW;
-    g.ch = MEM_CH;
-    g.mem_only = true;
-    return g;
+    const s = &g_state;
+    initGrid(s, cols, rows);
+    s.cw = MEM_CW;
+    s.ch = MEM_CH;
+    s.mem_only = true;
+    g_gfx.opaque = s;
+    return &g_gfx;
+}
+
+// Raw wheel delta -> app lines (3 lines/notch, spec §7.1/§7.2). Exposed so the
+// demo/tier exercises the real mapping instead of injecting a pre-mapped 3.
+pub fn gfxWheelLines(raw_delta: i32) i32 {
+    return pal.wheelLines(raw_delta);
 }
 
 fn kindFromU8(k: u8) EventKind {
@@ -123,9 +140,17 @@ fn kindFromU8(k: u8) EventKind {
 }
 
 pub fn gfxPollEvent(g: *Gfx, ev: *Event) bool {
-    if (g.mem_only) return false;
+    const s = g.opaque;
+    if (s.mem_only) return false;
     var raw: pal.RawEvent = undefined;
-    if (!pal.pollEvent(&g.st, &raw)) return false;
+    if (!pal.pollEvent(&s.st, &raw)) return false;
+    if (raw.kind == EK_RESIZE) {
+        resizeGrid(s, raw.cols, raw.rows);
+        if (s.cols != 0 and s.rows != 0) {
+            raw.cols = s.cols;
+            raw.rows = s.rows;
+        }
+    }
     ev.kind = kindFromU8(raw.kind);
     ev.ch = raw.ch;
     ev.code = raw.code;
@@ -139,83 +164,103 @@ pub fn gfxPollEvent(g: *Gfx, ev: *Event) bool {
     return true;
 }
 
+// Test affordance: post a real WM_SIZE through the window pump (window mode)
+// or resize the headless grid directly. Used by --smoke to exercise the actual
+// WM_SIZE surface+grid resize path.
+pub fn gfxTestPostResize(g: *Gfx, cols: u32, rows: u32) bool {
+    const s = g.opaque;
+    if (cols == 0 or rows == 0 or cols > MAX_COLS or rows > MAX_ROWS) return false;
+    if (s.mem_only) {
+        resizeGrid(s, cols, rows);
+        return true;
+    }
+    return pal.postResize(&s.st, cols, rows);
+}
+
 pub fn gfxBeginFrame(g: *Gfx) bool {
-    if (g.mem_only) return true;
-    return pal.beginFrame(&g.st);
+    const s = g.opaque;
+    if (s.mem_only) return true;
+    return pal.beginFrame(&s.st);
 }
 
 pub fn gfxEndFrame(g: *Gfx) bool {
-    if (g.mem_only) return true;
-    return pal.endFrame(&g.st);
+    const s = g.opaque;
+    if (s.mem_only) return true;
+    return pal.endFrame(&s.st);
 }
 
 pub fn gfxClear(g: *Gfx, bg: Color) void {
+    const s = g.opaque;
     var i: usize = 0;
     while (i < MAX_CELLS) : (i += 1) {
-        g.cells[i] = 32;
+        s.cells[i] = 32;
     }
-    if (!g.mem_only) {
-        pal.fillRect(&g.st, 0, 0,
-            @intCast(i32, g.cols * g.cw), @intCast(i32, g.rows * g.ch), bg, bg);
+    if (!s.mem_only) {
+        pal.fillRect(&s.st, 0, 0,
+            @intCast(i32, s.cols * s.cw), @intCast(i32, s.rows * s.ch), bg, bg);
     }
 }
 
 pub fn gfxFillRect(g: *Gfx, x: u32, y: u32, w: u32, h: u32, fg: Color, bg: Color) void {
-    if (x >= g.cols or y >= g.rows) return;
+    const s = g.opaque;
+    if (x >= s.cols or y >= s.rows) return;
     var x1: u32 = x + w;
-    if (x1 > g.cols) x1 = g.cols;
+    if (x1 > s.cols) x1 = s.cols;
     var y1: u32 = y + h;
-    if (y1 > g.rows) y1 = g.rows;
+    if (y1 > s.rows) y1 = s.rows;
     if (x1 <= x or y1 <= y) return;
     var yy: u32 = y;
     while (yy < y1) : (yy += 1) {
         var xx: u32 = x;
         while (xx < x1) : (xx += 1) {
-            g.cells[@intCast(usize, yy * g.cols + xx)] = 32;
+            s.cells[@intCast(usize, yy * s.cols + xx)] = 32;
         }
     }
-    if (!g.mem_only) {
-        pal.fillRect(&g.st,
-            @intCast(i32, x * g.cw), @intCast(i32, y * g.ch),
-            @intCast(i32, (x1 - x) * g.cw), @intCast(i32, (y1 - y) * g.ch),
+    if (!s.mem_only) {
+        pal.fillRect(&s.st,
+            @intCast(i32, x * s.cw), @intCast(i32, y * s.ch),
+            @intCast(i32, (x1 - x) * s.cw), @intCast(i32, (y1 - y) * s.ch),
             fg, bg);
     }
 }
 
-pub fn gfxDrawText(g: *Gfx, x: u32, y: u32, s: []const u8, fg: Color, bg: Color) void {
-    if (y >= g.rows or x >= g.cols) return;
-    var maxn: usize = s.len;
-    const room: usize = @intCast(usize, g.cols - x);
+pub fn gfxDrawText(g: *Gfx, x: u32, y: u32, s_in: []const u8, fg: Color, bg: Color) void {
+    const s = g.opaque;
+    if (y >= s.rows or x >= s.cols) return;
+    var maxn: usize = s_in.len;
+    const room: usize = @intCast(usize, s.cols - x);
     if (maxn > room) maxn = room;
     var i: usize = 0;
     while (i < maxn) : (i += 1) {
-        g.cells[@intCast(usize, y * g.cols + x + @intCast(u32, i))] = sanitize(s[i]);
+        s.cells[@intCast(usize, y * s.cols + x + @intCast(u32, i))] = sanitize(s_in[i]);
     }
-    if (g.mem_only) return;
+    if (s.mem_only) return;
     var off: usize = 0;
     var buf: [TEXT_CHUNK]u8 = undefined;
     while (off < maxn) {
         var n: usize = maxn - off;
         if (n > TEXT_CHUNK) n = TEXT_CHUNK;
         var j: usize = 0;
-        while (j < n) : (j += 1) buf[j] = sanitize(s[off + j]);
-        pal.drawText(&g.st,
-            @intCast(i32, (x + @intCast(u32, off)) * g.cw), @intCast(i32, y * g.ch),
-            buf[0..n], fg, bg, g.cw, g.ch);
+        while (j < n) : (j += 1) buf[j] = sanitize(s_in[off + j]);
+        pal.drawText(&s.st,
+            @intCast(i32, (x + @intCast(u32, off)) * s.cw), @intCast(i32, y * s.ch),
+            buf[0..n], fg, bg, s.cw, s.ch);
         off += n;
     }
 }
 
 // Per-cell pixel size (fixed font metrics on a window, 8x16 in memory mode).
 pub fn gfxCharSize(g: *Gfx, w: *u32, h: *u32) void {
-    w.* = g.cw;
-    h.* = g.ch;
+    const s = g.opaque;
+    w.* = s.cw;
+    h.* = s.ch;
 }
 
 // Pixel size of the cols x rows cell area.
 pub fn gfxBufferSize(g: *Gfx, w: *u32, h: *u32) void {
-    w.* = g.cols * g.cw;
-    h.* = g.rows * g.ch;
+    const s = g.opaque;
+    w.* = s.cols * s.cw;
+    h.* = s.rows * s.ch;
 }
 
 // Row-major ASCII snapshot: one line per row, '\n' after each row (including
@@ -223,37 +268,41 @@ pub fn gfxBufferSize(g: *Gfx, w: *u32, h: *u32) void {
 // whitespace; leading spaces keep cell columns. Non-printable drawn bytes are
 // already '?'.
 pub fn gfxDumpGrid(g: *Gfx) []u8 {
+    const s = g.opaque;
     var p: usize = 0;
     var y: u32 = 0;
-    while (y < g.rows) : (y += 1) {
+    while (y < s.rows) : (y += 1) {
         const row_start = p;
         var x: u32 = 0;
-        while (x < g.cols) : (x += 1) {
-            g.dump[p] = g.cells[@intCast(usize, y * g.cols + x)];
+        while (x < s.cols) : (x += 1) {
+            s.dump[p] = s.cells[@intCast(usize, y * s.cols + x)];
             p += 1;
         }
-        while (p > row_start and g.dump[p - 1] == 32) {
+        while (p > row_start and s.dump[p - 1] == 32) {
             p -= 1;
         }
-        g.dump[p] = 10;
+        s.dump[p] = 10;
         p += 1;
     }
-    return g.dump[0..p];
+    return s.dump[0..p];
 }
 
-pub fn gfxClipboardSet(g: *Gfx, s: []const u8) bool {
-    if (g.mem_only) return false;
-    return pal.clipboardSet(&g.st, s);
+pub fn gfxClipboardSet(g: *Gfx, s_in: []const u8) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    return pal.clipboardSet(&s.st, s_in);
 }
 
 pub fn gfxClipboardGet(g: *Gfx, arena: *arena_mod.Arena) ?[]u8 {
-    if (g.mem_only) return null;
-    return pal.clipboardGet(&g.st, arena);
+    const s = g.opaque;
+    if (s.mem_only) return null;
+    return pal.clipboardGet(&s.st, arena);
 }
 
 pub fn gfxClose(g: *Gfx) void {
-    if (!g.mem_only) {
-        pal.close(&g.st);
+    const s = g.opaque;
+    if (!s.mem_only) {
+        pal.close(&s.st);
     }
-    g.mem_only = true;
+    s.mem_only = true;
 }

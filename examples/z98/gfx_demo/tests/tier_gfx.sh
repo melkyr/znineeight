@@ -87,8 +87,12 @@ if command -v /usr/bin/time >/dev/null 2>&1; then
     /usr/bin/time -v -o "$OUT/zig_time.log" \
         "$ZIG" --dump-c89 --output-dir "$OUT/rss_dump" "$ENTRY" \
         >"$OUT/zig_dump.log" 2>&1
+    RSS_RC=$?
     COMPILE_RSS=$(sed -n 's/.*Maximum resident set size (kbytes): //p' "$OUT/zig_time.log" | tail -1)
     [ -n "$COMPILE_RSS" ] || COMPILE_RSS="n/a"
+    if [ "$RSS_RC" -ne 0 ]; then
+        fail_case "Z98 --dump-c89 RSS probe failed (rc=$RSS_RC; see $OUT/zig_dump.log)"
+    fi
 fi
 tail -3 "$BUILD_LOG" | sed 's/^/       /'
 if [ "$BUILD_RC" -eq 0 ] && [ -f "$EXE" ]; then
@@ -139,16 +143,40 @@ else
     pass_case "no MSVCRT.DLL import"
 fi
 
-# ---- (b) headless grid golden --------------------------------------------
+# ---- (b) headless grid golden + wheel mapping + runtime RSS --------------
 echo "== (b) headless grid golden (gfxOpenMemory) =="
+SELFTEST_LOG="$OUT/selftest.log"
+if timeout 120 wine "$EXE" --selftest >"$SELFTEST_LOG" 2>&1 \
+    && grep -q 'WHEELMAP OK' "$SELFTEST_LOG"; then
+    pass_case "wheel mapping helper 120->3, -240->-6 (real wheelLines)"
+else
+    fail_case "wheel mapping selftest failed (see $SELFTEST_LOG)"
+fi
+sed 's/^/       /' "$SELFTEST_LOG"
 GRID_DIR="$OUT/grid"
 mkdir -p "$GRID_DIR"
-if ( cd "$GRID_DIR" && timeout 120 wine "$EXE" --smoke 30 --dump-grid ) \
-    >"$OUT/grid_run.log" 2>&1; then
+RUNTIME_RSS="n/a"
+if command -v /usr/bin/time >/dev/null 2>&1; then
+    ( cd "$GRID_DIR" && /usr/bin/time -v -o "$OUT/runtime_time.log" \
+        timeout 120 wine "$EXE" --smoke 30 --dump-grid ) \
+        >"$OUT/grid_run.log" 2>&1
+    GRID_RC=$?
+    RUNTIME_RSS=$(sed -n 's/.*Maximum resident set size (kbytes): //p' "$OUT/runtime_time.log" | tail -1)
+    [ -n "$RUNTIME_RSS" ] || RUNTIME_RSS="n/a"
+else
+    ( cd "$GRID_DIR" && timeout 120 wine "$EXE" --smoke 30 --dump-grid ) \
+        >"$OUT/grid_run.log" 2>&1
+    GRID_RC=$?
+fi
+if [ "$GRID_RC" -eq 0 ]; then
     pass_case "headless --smoke 30 --dump-grid exited 0"
 else
-    GRID_RC=$?
     fail_case "headless --smoke 30 --dump-grid failed (rc=$GRID_RC; see $OUT/grid_run.log)"
+fi
+if [ "$RUNTIME_RSS" = "n/a" ]; then
+    echo "operator-hardware: runtime RSS not measured (/usr/bin/time absent)"
+else
+    pass_case "runtime RSS recorded (Wine-hosted, includes Wine): ${RUNTIME_RSS} kB"
 fi
 sed 's/^/       /' "$OUT/grid_run.log"
 if [ -f "$GRID_DIR/grid.txt" ]; then
@@ -240,6 +268,33 @@ else
             pass_case "windowed --smoke 30 exited 0"
         else
             fail_case "windowed --smoke 30 exited $APP_RC (see $SHOT_DIR/app.log)"
+        fi
+        HR_MISSING=""
+        for pat in \
+            'DirectDrawCreate hr=0x00000000' \
+            'QueryInterface(IID_IDirectDraw7) hr=0x00000000' \
+            'SetCooperativeLevel(DDSCL_NORMAL) hr=0x00000000' \
+            'CreateSurface(primary) hr=0x00000000' \
+            'CreateSurface(offscreen) hr=0x00000000' \
+            'Blt(primary<-offscreen) hr=0x00000000'; do
+            grep -Fq "$pat" "$SHOT_DIR/app.log" || HR_MISSING="$HR_MISSING [$pat]"
+        done
+        if [ -z "$HR_MISSING" ]; then
+            pass_case "DDraw HRESULT log present (create/QI/coop/surfaces/Blt all 0x0)"
+        else
+            fail_case "missing DDraw HRESULT log line(s):$HR_MISSING"
+        fi
+        ATLAS_COUNT=$(grep -cF 'glyph-atlas built (95x16 GDI color+mask)' "$SHOT_DIR/app.log" 2>/dev/null || true)
+        if [ "$ATLAS_COUNT" = "1" ] \
+            && grep -Fq 'glyph-atlas present active' "$SHOT_DIR/app.log"; then
+            pass_case "glyph atlas built once at open and used for per-cell present"
+        else
+            fail_case "glyph atlas evidence missing, built more than once, or never used (count=$ATLAS_COUNT)"
+        fi
+        if grep -q '^RESIZE 70x22 ' "$SHOT_DIR/app.log"; then
+            pass_case "WM_SIZE resize delivered through the pump (70x22 cells)"
+        else
+            fail_case "WM_SIZE resize evidence missing (see $SHOT_DIR/app.log)"
         fi
         sed 's/^/       /' "$SHOT_DIR/app.log"
         WINE_PID=""

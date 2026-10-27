@@ -72,6 +72,15 @@ fn handleEvent(app: *App, ev: *const gfx.Event) bool {
         app.resized = true;
         app.disp_cols = ev.cols;
         app.disp_rows = ev.rows;
+        io.write("RESIZE ");
+        io.printInt(@intCast(i32, ev.cols));
+        io.write("x");
+        io.printInt(@intCast(i32, ev.rows));
+        io.write(" px=");
+        io.printInt(@intCast(i32, ev.x));
+        io.write("x");
+        io.printInt(@intCast(i32, ev.y));
+        io.write("\n");
     }
     return true;
 }
@@ -162,7 +171,7 @@ fn paint(g: *gfx.Gfx, app: *App) void {
     gfx.gfxDrawText(g, cx, cy, "X", 0, 13);
 }
 
-fn scripted(app: *App, idx: u32, total: u32) void {
+fn scripted(app: *App, g: *gfx.Gfx, idx: u32, total: u32, mem_only: bool) void {
     if (idx == 1) {
         var ev = evBase(.mouse_down);
         ev.x = 20;
@@ -173,17 +182,23 @@ fn scripted(app: *App, idx: u32, total: u32) void {
     }
     if (idx == 2) {
         var ev = evBase(.wheel);
-        ev.wheel = 3;
+        ev.wheel = gfx.gfxWheelLines(120);
         _ = handleEvent(app, &ev);
         return;
     }
     if (idx == 3) {
-        var ev = evBase(.resize);
-        ev.cols = COLS;
-        ev.rows = ROWS;
-        ev.x = COLS * 8;
-        ev.y = ROWS * 16;
-        _ = handleEvent(app, &ev);
+        if (mem_only) {
+            var ev = evBase(.resize);
+            ev.cols = COLS;
+            ev.rows = ROWS;
+            ev.x = COLS * 8;
+            ev.y = ROWS * 16;
+            _ = handleEvent(app, &ev);
+        } else {
+            // Real WM_SIZE through the pump: the PAL resizes the offscreen
+            // surface and std_gfx resizes the cell grid.
+            _ = gfx.gfxTestPostResize(g, 70, 22);
+        }
         return;
     }
     if (total > 4 and idx + 1 == total) {
@@ -231,6 +246,7 @@ fn dumpGrid(g: *gfx.Gfx) bool {
 pub fn main(argc: i32, argv: [*][*]u8) void {
     var smoke: bool = false;
     var dump: bool = false;
+    var selftest: bool = false;
     var smoke_n: u32 = 0;
     var i: i32 = 1;
     while (i < argc) : (i += 1) {
@@ -244,7 +260,26 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             if (smoke_n == 0) smoke_n = 1;
         } else if (strEq(a, "--dump-grid")) {
             dump = true;
+        } else if (strEq(a, "--selftest")) {
+            selftest = true;
         }
+    }
+
+    if (selftest) {
+        const w1 = gfx.gfxWheelLines(120);
+        const w2 = gfx.gfxWheelLines(-240);
+        io.write("WHEELMAP 120=");
+        io.printInt(w1);
+        io.write(" -240=");
+        io.printInt(w2);
+        io.write("\n");
+        if (w1 == 3 and w2 == -6) {
+            io.write("WHEELMAP OK\n");
+        } else {
+            io.write("WHEELMAP FAIL\n");
+            @exit(@intCast(u8, 1));
+        }
+        return;
     }
 
     var app = App{
@@ -284,9 +319,19 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 if (!handleEvent(&app, &ev)) break;
             }
             if (app.quit) break;
-            _ = gfx.gfxBeginFrame(g);
+            if (!gfx.gfxBeginFrame(g)) {
+                gfx.gfxClose(g);
+                io.write("gfx_demo: begin frame failed\n");
+                @exit(@intCast(u8, 1));
+                return;
+            }
             paint(g, &app);
-            _ = gfx.gfxEndFrame(g);
+            if (!gfx.gfxEndFrame(g)) {
+                gfx.gfxClose(g);
+                io.write("gfx_demo: end frame failed (Blt)\n");
+                @exit(@intCast(u8, 1));
+                return;
+            }
             app.frames += 1;
             io.sleepMs(16);
         }
@@ -297,16 +342,26 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var ready: bool = false;
     var f: u32 = 0;
     while (f < smoke_n) : (f += 1) {
-        scripted(&app, f, smoke_n);
+        scripted(&app, g, f, smoke_n, dump);
         if (!app.quit) {
             var ev: gfx.Event = undefined;
             while (gfx.gfxPollEvent(g, &ev)) {
                 _ = handleEvent(&app, &ev);
             }
         }
-        _ = gfx.gfxBeginFrame(g);
+        if (!gfx.gfxBeginFrame(g)) {
+            gfx.gfxClose(g);
+            io.write("gfx_demo: begin frame failed\n");
+            @exit(@intCast(u8, 1));
+            return;
+        }
         paint(g, &app);
-        _ = gfx.gfxEndFrame(g);
+        if (!gfx.gfxEndFrame(g)) {
+            gfx.gfxClose(g);
+            io.write("gfx_demo: end frame failed (Blt)\n");
+            @exit(@intCast(u8, 1));
+            return;
+        }
         app.frames += 1;
         if (!ready) {
             io.write("READY\n");

@@ -54,6 +54,7 @@ test_runner_batch*
 !expected.txt
 !expected_dirs.txt
 !ports.txt
+!examples/z98/gfx_demo/tests/golden/grid.txt
 
 # Temporary binaries
 test_multi_file

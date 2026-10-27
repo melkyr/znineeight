@@ -9,9 +9,10 @@
 //
 // Every COM call goes through a hand-written vtable struct whose fields are
 // `extern "stdcall"` fn-pointer TYPES (the QUICK_REF convention rule). The
-// unused slots are `fn() void` so the field indices match ddraw.h
-// exactly; a wrong slot would silently call another method. Slot order was
-// taken from /usr/i686-w64-mingw32/include/ddraw.h (IDirectDraw7 at :1798,
+// unused slots are also `extern "stdcall" fn() void` so the field indices
+// match ddraw.h exactly AND a future caller keeps the Win32 convention; a
+// wrong slot would silently call another method. Slot order was taken from
+// /usr/i686-w64-mingw32/include/ddraw.h (IDirectDraw7 at :1798,
 // IDirectDrawSurface7 at :2503, IDirectDrawClipper at :1335).
 //
 // The C prototypes for the Win32/GDI/DDraw symbols come from <windows.h> and
@@ -20,6 +21,7 @@
 // need the dxguid data library.
 
 const arena_mod = @import("std_arena.zig");
+const io = @import("std_io.zig");
 
 @cInclude("<windows.h>");
 @cInclude("<ddraw.h>");
@@ -34,6 +36,7 @@ const WM_CLOSE: u32 = 0x0010;
 const WM_QUIT: u32 = 0x0012;
 const WM_KEYDOWN: u32 = 0x0100;
 const WM_KEYUP: u32 = 0x0101;
+const WM_CHAR: u32 = 0x0102;
 const WM_MOUSEMOVE: u32 = 0x0200;
 const WM_LBUTTONDOWN: u32 = 0x0201;
 const WM_LBUTTONUP: u32 = 0x0202;
@@ -45,6 +48,8 @@ const IDC_ARROW: u32 = 32512;
 const SYSTEM_FIXED_FONT: i32 = 16;
 const BLACK_BRUSH: i32 = 4;
 const TRANSPARENT: i32 = 1;
+const SRCAND: u32 = 0x008800C6;
+const SRCPAINT: u32 = 0x00EE0086;
 const CF_TEXT: u32 = 1;
 const GMEM_MOVEABLE: u32 = 0x0002;
 const DDSCL_NORMAL: u32 = 0x00000008;
@@ -57,6 +62,11 @@ const DDBLT_WAIT: u32 = 0x01000000;
 const OFFSCREEN_W: u32 = 640;
 const OFFSCREEN_H: u32 = 480;
 const WHEEL_DELTA: i32 = 120;
+const WHEEL_LINES: i32 = 3;
+const GLYPH_FIRST: u32 = 32;
+const GLYPH_LAST: u32 = 126;
+const GLYPH_COUNT: u32 = GLYPH_LAST - GLYPH_FIRST + 1;
+const ATLAS_COLORS: u32 = 16;
 const S_OK: u32 = 0;
 
 // Event kinds, matching std_gfx.EventKind's declaration order.
@@ -102,6 +112,41 @@ fn paletteRgb(idx: u8) u32 {
         rgb(255, 255, 255),
     };
     return PAL[@intCast(usize, idx & 15)];
+}
+
+// Raw wheel delta (WM_MOUSEWHEEL high word) -> app lines. Spec §7.1 says the
+// event delta is in lines; §7.2 fixes the editor at 3 lines/notch.
+pub fn wheelLines(raw_delta: i32) i32 {
+    // Z98's signed `/` lowers the divisor through an unsigned cast; do the
+    // negative case on the positive magnitude so -240 -> -6 is exact.
+    if (raw_delta >= 0) {
+        return (raw_delta / WHEEL_DELTA) * WHEEL_LINES;
+    }
+    return 0 - (((0 - raw_delta) / WHEEL_DELTA) * WHEEL_LINES);
+}
+
+// --- HRESULT logging (stdout via std_io/PAL, no printf) --------------------
+fn logHr(label: []const u8, hr: u32) void {
+    io.write(label);
+    io.write(" hr=0x");
+    const shifts: [8]u32 = [8]u32{ 28, 24, 20, 16, 12, 8, 4, 0 };
+    var buf: [8]u8 = undefined;
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        const nib: u32 = (hr >> shifts[i]) & 15;
+        if (nib < 10) {
+            buf[i] = @intCast(u8, 48 + nib);
+        } else {
+            buf[i] = @intCast(u8, 87 + nib);
+        }
+    }
+    io.write(buf[0..8]);
+    io.write("\n");
+}
+
+fn logLine(s: []const u8) void {
+    io.write(s);
+    io.write("\n");
 }
 
 // --- Win32 / COM struct mirrors (i386, natural layout) ---------------------
@@ -250,92 +295,92 @@ fn zeroDesc() DdSurfaceDesc2 {
 
 const DdVtbl = struct {
     QueryInterface: extern "stdcall" fn(iface: *void, riid: *const void, out: **void) u32,
-    AddRef: fn() void,
+    AddRef: extern "stdcall" fn() void,
     Release: extern "stdcall" fn(iface: *void) u32,
 };
 
 const Dd7Vtbl = struct {
     QueryInterface: extern "stdcall" fn(iface: *void, riid: *const void, out: **void) u32,
-    AddRef: fn() void,
+    AddRef: extern "stdcall" fn() void,
     Release: extern "stdcall" fn(iface: *void) u32,
-    Compact: fn() void,
+    Compact: extern "stdcall" fn() void,
     CreateClipper: extern "stdcall" fn(iface: *void, flags: u32, out: **void, outer: *void) u32,
-    CreatePalette: fn() void,
+    CreatePalette: extern "stdcall" fn() void,
     CreateSurface: extern "stdcall" fn(iface: *void, desc: *void, out: **void, outer: *void) u32,
-    DuplicateSurface: fn() void,
-    EnumDisplayModes: fn() void,
-    EnumSurfaces: fn() void,
-    FlipToGDISurface: fn() void,
-    GetCaps: fn() void,
-    GetDisplayMode: fn() void,
-    GetFourCCCodes: fn() void,
-    GetGDISurface: fn() void,
-    GetMonitorFrequency: fn() void,
-    GetScanLine: fn() void,
-    GetVerticalBlankStatus: fn() void,
-    Initialize: fn() void,
-    RestoreDisplayMode: fn() void,
+    DuplicateSurface: extern "stdcall" fn() void,
+    EnumDisplayModes: extern "stdcall" fn() void,
+    EnumSurfaces: extern "stdcall" fn() void,
+    FlipToGDISurface: extern "stdcall" fn() void,
+    GetCaps: extern "stdcall" fn() void,
+    GetDisplayMode: extern "stdcall" fn() void,
+    GetFourCCCodes: extern "stdcall" fn() void,
+    GetGDISurface: extern "stdcall" fn() void,
+    GetMonitorFrequency: extern "stdcall" fn() void,
+    GetScanLine: extern "stdcall" fn() void,
+    GetVerticalBlankStatus: extern "stdcall" fn() void,
+    Initialize: extern "stdcall" fn() void,
+    RestoreDisplayMode: extern "stdcall" fn() void,
     SetCooperativeLevel: extern "stdcall" fn(iface: *void, hwnd: *void, flags: u32) u32,
-    SetDisplayMode: fn() void,
-    WaitForVerticalBlank: fn() void,
-    GetAvailableVidMem: fn() void,
-    GetSurfaceFromDC: fn() void,
-    RestoreAllSurfaces: fn() void,
-    TestCooperativeLevel: fn() void,
-    GetDeviceIdentifier: fn() void,
-    StartModeTest: fn() void,
-    EvaluateMode: fn() void,
+    SetDisplayMode: extern "stdcall" fn() void,
+    WaitForVerticalBlank: extern "stdcall" fn() void,
+    GetAvailableVidMem: extern "stdcall" fn() void,
+    GetSurfaceFromDC: extern "stdcall" fn() void,
+    RestoreAllSurfaces: extern "stdcall" fn() void,
+    TestCooperativeLevel: extern "stdcall" fn() void,
+    GetDeviceIdentifier: extern "stdcall" fn() void,
+    StartModeTest: extern "stdcall" fn() void,
+    EvaluateMode: extern "stdcall" fn() void,
 };
 
 const ClipperVtbl = struct {
     QueryInterface: extern "stdcall" fn(iface: *void, riid: *const void, out: **void) u32,
-    AddRef: fn() void,
+    AddRef: extern "stdcall" fn() void,
     Release: extern "stdcall" fn(iface: *void) u32,
-    GetClipList: fn() void,
-    GetHWnd: fn() void,
-    Initialize: fn() void,
-    IsClipListChanged: fn() void,
-    SetClipList: fn() void,
+    GetClipList: extern "stdcall" fn() void,
+    GetHWnd: extern "stdcall" fn() void,
+    Initialize: extern "stdcall" fn() void,
+    IsClipListChanged: extern "stdcall" fn() void,
+    SetClipList: extern "stdcall" fn() void,
     SetHWnd: extern "stdcall" fn(iface: *void, flags: u32, hwnd: *void) u32,
 };
 
 const Surface7Vtbl = struct {
-    QueryInterface: fn() void,
-    AddRef: fn() void,
+    QueryInterface: extern "stdcall" fn() void,
+    AddRef: extern "stdcall" fn() void,
     Release: extern "stdcall" fn(iface: *void) u32,
-    AddAttachedSurface: fn() void,
-    AddOverlayDirtyRect: fn() void,
+    AddAttachedSurface: extern "stdcall" fn() void,
+    AddOverlayDirtyRect: extern "stdcall" fn() void,
     Blt: extern "stdcall" fn(iface: *void, dest: *void, src: *void, src_rect: *void, flags: u32, fx: *void) u32,
-    BltBatch: fn() void,
-    BltFast: fn() void,
-    DeleteAttachedSurface: fn() void,
-    EnumAttachedSurfaces: fn() void,
-    EnumOverlayZOrders: fn() void,
-    Flip: fn() void,
-    GetAttachedSurface: fn() void,
-    GetBltStatus: fn() void,
-    GetCaps: fn() void,
-    GetClipper: fn() void,
-    GetColorKey: fn() void,
+    BltBatch: extern "stdcall" fn() void,
+    BltFast: extern "stdcall" fn() void,
+    DeleteAttachedSurface: extern "stdcall" fn() void,
+    EnumAttachedSurfaces: extern "stdcall" fn() void,
+    EnumOverlayZOrders: extern "stdcall" fn() void,
+    Flip: extern "stdcall" fn() void,
+    GetAttachedSurface: extern "stdcall" fn() void,
+    GetBltStatus: extern "stdcall" fn() void,
+    GetCaps: extern "stdcall" fn() void,
+    GetClipper: extern "stdcall" fn() void,
+    GetColorKey: extern "stdcall" fn() void,
     GetDC: extern "stdcall" fn(iface: *void, out: **void) u32,
-    GetFlipStatus: fn() void,
-    GetOverlayPosition: fn() void,
-    GetPalette: fn() void,
-    GetPixelFormat: fn() void,
-    GetSurfaceDesc: fn() void,
-    Initialize: fn() void,
-    IsLost: fn() void,
-    Lock: fn() void,
+    GetFlipStatus: extern "stdcall" fn() void,
+    GetOverlayPosition: extern "stdcall" fn() void,
+    GetPalette: extern "stdcall" fn() void,
+    GetPixelFormat: extern "stdcall" fn() void,
+    GetSurfaceDesc: extern "stdcall" fn() void,
+    Initialize: extern "stdcall" fn() void,
+    IsLost: extern "stdcall" fn() void,
+    Lock: extern "stdcall" fn() void,
     ReleaseDC: extern "stdcall" fn(iface: *void, hdc: *void) u32,
     Restore: extern "stdcall" fn(iface: *void) u32,
     SetClipper: extern "stdcall" fn(iface: *void, clipper: *void) u32,
-    SetColorKey: fn() void,
-    SetOverlayPosition: fn() void,
-    SetPalette: fn() void,
-    Unlock: fn() void,
-    UpdateOverlay: fn() void,
-    UpdateOverlayDisplay: fn() void,
-    UpdateOverlayZOrder: fn() void,
+    SetColorKey: extern "stdcall" fn(iface: *void, flags: u32, key: *void) u32,
+    SetOverlayPosition: extern "stdcall" fn() void,
+    SetPalette: extern "stdcall" fn() void,
+    Unlock: extern "stdcall" fn() void,
+    UpdateOverlay: extern "stdcall" fn() void,
+    UpdateOverlayDisplay: extern "stdcall" fn() void,
+    UpdateOverlayZOrder: extern "stdcall" fn() void,
 };
 
 const DdObj = struct { vtbl: *const DdVtbl };
@@ -369,6 +414,8 @@ pub extern "stdcall" fn DefWindowProcA(hwnd: *void, msg: u32, wparam: u32, lpara
 pub extern "stdcall" fn ShowWindow(hwnd: *void, cmd: i32) i32;
 pub extern "stdcall" fn UpdateWindow(hwnd: *void) i32;
 pub extern "stdcall" fn SetForegroundWindow(hwnd: *void) i32;
+pub extern "stdcall" fn DestroyWindow(hwnd: *void) i32;
+pub extern "stdcall" fn UnregisterClassA(name: [*]const u8, inst: *void) i32;
 pub extern "stdcall" fn LoadCursorA(inst: *void, name: *void) *void;
 pub extern "stdcall" fn PeekMessageA(msg: *void, hwnd: *void, min: u32, max: u32, remove: u32) i32;
 pub extern "stdcall" fn TranslateMessage(msg: *const void) i32;
@@ -387,6 +434,11 @@ pub extern "stdcall" fn SetBkMode(hdc: *void, mode: i32) i32;
 pub extern "stdcall" fn SetTextColor(hdc: *void, color: u32) u32;
 pub extern "stdcall" fn GetTextMetricsA(hdc: *void, tm: *void) i32;
 pub extern "stdcall" fn TextOutA(hdc: *void, x: i32, y: i32, s: [*]const u8, len: i32) i32;
+pub extern "stdcall" fn CreateCompatibleDC(hdc: *void) *void;
+pub extern "stdcall" fn CreateCompatibleBitmap(hdc: *void, w: i32, h: i32) *void;
+pub extern "stdcall" fn CreateBitmap(w: i32, h: i32, planes: u32, bits: u32, data: *void) *void;
+pub extern "stdcall" fn BitBlt(dest: *void, x: i32, y: i32, w: i32, h: i32, src: *void, sx: i32, sy: i32, rop: u32) i32;
+pub extern "stdcall" fn DeleteDC(dc: *void) i32;
 pub extern "stdcall" fn OpenClipboard(hwnd: *void) i32;
 pub extern "stdcall" fn EmptyClipboard() i32;
 pub extern "stdcall" fn CloseClipboard() i32;
@@ -396,14 +448,23 @@ pub extern "stdcall" fn GlobalAlloc(flags: u32, bytes: u32) *void;
 pub extern "stdcall" fn GlobalLock(mem: *void) *void;
 pub extern "stdcall" fn GlobalUnlock(mem: *void) i32;
 pub extern "stdcall" fn GlobalFree(mem: *void) *void;
+pub extern "stdcall" fn GlobalSize(mem: *void) u32;
 
 // --- PAL state -------------------------------------------------------------
 pub const State = struct {
     hwnd: *void,
+    hinst: *void,
     dd: *void,
     dd7: *void,
     primary: *void,
     back: *void,
+    atlas_color_dc: *void,
+    atlas_mask_dc: *void,
+    atlas_color_bmp: *void,
+    atlas_mask_bmp: *void,
+    atlas_old_color: *void,
+    atlas_old_mask: *void,
+    atlas_used: bool,
     clipper: *void,
     hdc: *void,
     font: *void,
@@ -412,6 +473,16 @@ pub const State = struct {
     rows: u32,
     cw: u32,
     ch: u32,
+    bufw: u32,
+    bufh: u32,
+    pending: bool,
+    pend_code: u16,
+    pend_mods: u8,
+    deferred: bool,
+    def_kind: u8,
+    def_ch: u8,
+    def_code: u16,
+    def_mods: u8,
     title: [128]u8,
     class_name: [32]u8,
 };
@@ -461,12 +532,129 @@ fn releaseDd(p: *void) void {
     }
 }
 
+fn makeSurface(st: *State, w: u32, h: u32, primary: bool, label: []const u8) *void {
+    var ddsd = zeroDesc();
+    if (primary) {
+        ddsd.dwFlags = DDSD_CAPS;
+        ddsd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
+    } else {
+        ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
+        ddsd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN;
+        ddsd.dwWidth = w;
+        ddsd.dwHeight = h;
+    }
+    var raw: *void = nullVoid();
+    const hr = dd7Vtbl(st.dd7).CreateSurface(st.dd7, @ptrCast(*void, &ddsd), &raw, nullVoid());
+    logHr(label, hr);
+    if (hr != S_OK) return nullVoid();
+    return raw;
+}
+
+fn resizeBack(st: *State, w: u32, h: u32) bool {
+    if (w == 0 or h == 0) return false;
+    releaseSurface(st.back);
+    st.back = nullVoid();
+    const nb = makeSurface(st, w, h, false, "CreateSurface(resize)");
+    if (isNull(nb)) return false;
+    st.back = nb;
+    st.bufw = w;
+    st.bufh = h;
+    return true;
+}
+
+fn releaseAtlas(st: *State) void {
+    if (!isNull(st.atlas_color_dc)) {
+        if (!isNull(st.atlas_old_color)) {
+            _ = SelectObject(st.atlas_color_dc, st.atlas_old_color);
+        }
+        _ = DeleteDC(st.atlas_color_dc);
+        st.atlas_color_dc = nullVoid();
+    }
+    if (!isNull(st.atlas_mask_dc)) {
+        if (!isNull(st.atlas_old_mask)) {
+            _ = SelectObject(st.atlas_mask_dc, st.atlas_old_mask);
+        }
+        _ = DeleteDC(st.atlas_mask_dc);
+        st.atlas_mask_dc = nullVoid();
+    }
+    if (!isNull(st.atlas_color_bmp)) {
+        _ = DeleteObject(st.atlas_color_bmp);
+        st.atlas_color_bmp = nullVoid();
+    }
+    if (!isNull(st.atlas_mask_bmp)) {
+        _ = DeleteObject(st.atlas_mask_bmp);
+        st.atlas_mask_bmp = nullVoid();
+    }
+    st.atlas_old_color = nullVoid();
+    st.atlas_old_mask = nullVoid();
+    st.atlas_used = false;
+}
+
+fn buildAtlas(st: *State) bool {
+    const aw: u32 = GLYPH_COUNT * st.cw;
+    const ah: u32 = ATLAS_COLORS * st.ch;
+    const wdc = GetDC(st.hwnd);
+    if (isNull(wdc)) {
+        logLine("GetDC(window) for glyph-atlas failed");
+        return false;
+    }
+    st.atlas_color_bmp = CreateCompatibleBitmap(wdc, @intCast(i32, aw), @intCast(i32, ah));
+    st.atlas_mask_bmp = CreateBitmap(@intCast(i32, aw), @intCast(i32, ah), 1, 1, nullVoid());
+    st.atlas_color_dc = CreateCompatibleDC(wdc);
+    st.atlas_mask_dc = CreateCompatibleDC(wdc);
+    _ = ReleaseDC(st.hwnd, wdc);
+    if (isNull(st.atlas_color_bmp) or isNull(st.atlas_mask_bmp)
+        or isNull(st.atlas_color_dc) or isNull(st.atlas_mask_dc)) {
+        logLine("glyph-atlas allocation failed");
+        releaseAtlas(st);
+        return false;
+    }
+    st.atlas_old_color = SelectObject(st.atlas_color_dc, st.atlas_color_bmp);
+    st.atlas_old_mask = SelectObject(st.atlas_mask_dc, st.atlas_mask_bmp);
+
+    var full = Rect{ .left = 0, .top = 0, .right = @intCast(i32, aw), .bottom = @intCast(i32, ah) };
+    _ = FillRect(st.atlas_color_dc, @ptrCast(*const void, &full), brushFor(st, 0));
+    _ = FillRect(st.atlas_mask_dc, @ptrCast(*const void, &full), brushFor(st, 15));
+    _ = SelectObject(st.atlas_color_dc, st.font);
+    _ = SelectObject(st.atlas_mask_dc, st.font);
+    _ = SetBkMode(st.atlas_color_dc, TRANSPARENT);
+    _ = SetBkMode(st.atlas_mask_dc, TRANSPARENT);
+
+    var fg: u32 = 0;
+    while (fg < ATLAS_COLORS) : (fg += 1) {
+        _ = SetTextColor(st.atlas_color_dc, paletteRgb(@intCast(u8, fg)));
+        // Mask: black glyph on white -> SRCAND clears glyph pixels, keeps bg.
+        _ = SetTextColor(st.atlas_mask_dc, 0);
+        var idx: u32 = 0;
+        while (idx < GLYPH_COUNT) : (idx += 1) {
+            var ch: [1]u8 = undefined;
+            ch[0] = @intCast(u8, GLYPH_FIRST + idx);
+            _ = TextOutA(st.atlas_color_dc,
+                @intCast(i32, idx * st.cw), @intCast(i32, fg * st.ch),
+                @ptrCast([*]const u8, &ch[0]), 1);
+            _ = TextOutA(st.atlas_mask_dc,
+                @intCast(i32, idx * st.cw), @intCast(i32, fg * st.ch),
+                @ptrCast([*]const u8, &ch[0]), 1);
+        }
+    }
+    logLine("glyph-atlas built (95x16 GDI color+mask)");
+    return true;
+}
+
 pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.hwnd = nullVoid();
+    st.hinst = nullVoid();
     st.dd = nullVoid();
     st.dd7 = nullVoid();
     st.primary = nullVoid();
     st.back = nullVoid();
+    st.atlas_color_dc = nullVoid();
+    st.atlas_mask_dc = nullVoid();
+    st.atlas_color_bmp = nullVoid();
+    st.atlas_mask_bmp = nullVoid();
+    st.atlas_old_color = nullVoid();
+    st.atlas_old_mask = nullVoid();
+    st.atlas_used = false;
     st.clipper = nullVoid();
     st.hdc = nullVoid();
     st.font = nullVoid();
@@ -474,11 +662,24 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.rows = rows;
     st.cw = 8;
     st.ch = 16;
+    st.bufw = OFFSCREEN_W;
+    st.bufh = OFFSCREEN_H;
+    st.pending = false;
+    st.pend_code = 0;
+    st.pend_mods = 0;
+    st.deferred = false;
+    st.def_kind = 0;
+    st.def_ch = 0;
+    st.def_code = 0;
+    st.def_mods = 0;
+    var bi: usize = 0;
+    while (bi < 16) : (bi += 1) st.brushes[bi] = nullVoid();
     copyCstr(title, st.title[0..]);
     var cls: []const u8 = "z98gfxwnd";
     copyCstr(cls, st.class_name[0..]);
 
     const hinst = GetModuleHandleA(nullVoid());
+    st.hinst = hinst;
 
     var wc: WndClassA = WndClassA{
         .style = 0,
@@ -513,92 +714,111 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     if (!isNull(mdc)) {
         const old = SelectObject(mdc, st.font);
         var tm: TextMetricA = undefined;
-        _ = GetTextMetricsA(mdc, @ptrCast(*void, &tm));
+        if (GetTextMetricsA(mdc, @ptrCast(*void, &tm)) == 0) {
+            logLine("GetTextMetricsA failed; using 8x16 fallback");
+        } else {
+            if (tm.tmAveCharWidth > 0) st.cw = @intCast(u32, tm.tmAveCharWidth);
+            if (tm.tmHeight > 0) st.ch = @intCast(u32, tm.tmHeight);
+        }
         _ = SelectObject(mdc, old);
         _ = ReleaseDC(st.hwnd, mdc);
-        if (tm.tmAveCharWidth > 0) st.cw = @intCast(u32, tm.tmAveCharWidth);
-        if (tm.tmHeight > 0) st.ch = @intCast(u32, tm.tmHeight);
+    } else {
+        logLine("GetDC(window) failed; using 8x16 fallback");
     }
 
     var i: usize = 0;
     while (i < 16) : (i += 1) {
         st.brushes[i] = CreateSolidBrush(paletteRgb(@intCast(u8, i)));
+        if (isNull(st.brushes[i])) {
+            logLine("CreateSolidBrush failed");
+            close(st);
+            return false;
+        }
     }
 
     // DirectDraw: v1 create, then upgrade to v7 (the T0-pre gotcha).
     var dd_raw: *void = nullVoid();
     var hr = DirectDrawCreate(nullVoid(), &dd_raw, nullVoid());
+    logHr("DirectDrawCreate", hr);
     if (hr != S_OK) {
         close(st);
         return false;
     }
     if (isNull(dd_raw)) {
+        logLine("DirectDrawCreate returned null v1 interface");
         close(st);
         return false;
     }
     st.dd = dd_raw;
     var dd7_raw: *void = nullVoid();
     hr = ddVtbl(st.dd).QueryInterface(st.dd, @ptrCast(*const void, &IID_DD7), &dd7_raw);
+    logHr("QueryInterface(IID_IDirectDraw7)", hr);
     if (hr != S_OK) {
         close(st);
         return false;
     }
     if (isNull(dd7_raw)) {
+        logLine("QueryInterface(IID_IDirectDraw7) returned null");
         close(st);
         return false;
     }
     st.dd7 = dd7_raw;
-    _ = dd7Vtbl(st.dd7).SetCooperativeLevel(st.dd7, st.hwnd, DDSCL_NORMAL);
-
-    var ddsd = zeroDesc();
-    ddsd.dwFlags = DDSD_CAPS;
-    ddsd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
-    var prim_raw: *void = nullVoid();
-    hr = dd7Vtbl(st.dd7).CreateSurface(st.dd7, @ptrCast(*void, &ddsd), &prim_raw, nullVoid());
+    hr = dd7Vtbl(st.dd7).SetCooperativeLevel(st.dd7, st.hwnd, DDSCL_NORMAL);
+    logHr("SetCooperativeLevel(DDSCL_NORMAL)", hr);
     if (hr != S_OK) {
         close(st);
         return false;
     }
-    if (isNull(prim_raw)) {
-        close(st);
-        return false;
-    }
-    st.primary = prim_raw;
 
-    ddsd = zeroDesc();
-    ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
-    ddsd.ddsCaps.dwCaps = DDSCAPS_OFFSCREENPLAIN;
-    ddsd.dwWidth = OFFSCREEN_W;
-    ddsd.dwHeight = OFFSCREEN_H;
-    var back_raw: *void = nullVoid();
-    hr = dd7Vtbl(st.dd7).CreateSurface(st.dd7, @ptrCast(*void, &ddsd), &back_raw, nullVoid());
-    if (hr != S_OK) {
+    st.primary = makeSurface(st, OFFSCREEN_W, OFFSCREEN_H, true, "CreateSurface(primary)");
+    if (isNull(st.primary)) {
         close(st);
         return false;
     }
-    if (isNull(back_raw)) {
+    st.back = makeSurface(st, OFFSCREEN_W, OFFSCREEN_H, false, "CreateSurface(offscreen)");
+    if (isNull(st.back)) {
         close(st);
         return false;
     }
-    st.back = back_raw;
+
+    // Binding glyph cache: one offscreen color+mask atlas of ASCII 32..126 x
+    // 16 palette colors, built once at open with SYSTEM_FIXED_FONT. Per-cell
+    // drawText then GDI-BitBlts the atlas cell (mask SRCAND + color SRCPAINT).
+    if (!buildAtlas(st)) {
+        logLine("glyph atlas build failed");
+        close(st);
+        return false;
+    }
 
     // Best-effort clipper (windowed Blt still works without it; T0-pre proved
     // the primary<-offscreen path under DDSCL_NORMAL).
     var clip_raw: *void = nullVoid();
     hr = dd7Vtbl(st.dd7).CreateClipper(st.dd7, 0, &clip_raw, nullVoid());
+    logHr("CreateClipper", hr);
     if (hr == S_OK and !isNull(clip_raw)) {
         st.clipper = clip_raw;
-        _ = clipperVtbl(st.clipper).SetHWnd(st.clipper, 0, st.hwnd);
-        _ = surfaceVtbl(st.primary).SetClipper(st.primary, st.clipper);
+        hr = clipperVtbl(st.clipper).SetHWnd(st.clipper, 0, st.hwnd);
+        logHr("SetHWnd(clipper)", hr);
+        if (hr == S_OK) {
+            hr = surfaceVtbl(st.primary).SetClipper(st.primary, st.clipper);
+            logHr("SetClipper(primary)", hr);
+        }
+        if (hr != S_OK) {
+            releaseClipper(st.clipper);
+            st.clipper = nullVoid();
+        }
     }
     return true;
 }
 
 pub fn close(st: *State) void {
     if (!isNull(st.hdc)) {
-        _ = ReleaseDC(st.back, st.hdc);
+        if (!isNull(st.back)) {
+            _ = surfaceVtbl(st.back).ReleaseDC(st.back, st.hdc);
+        }
         st.hdc = nullVoid();
     }
+    releaseAtlas(st);
     releaseSurface(st.back);
     releaseSurface(st.primary);
     releaseClipper(st.clipper);
@@ -617,8 +837,12 @@ pub fn close(st: *State) void {
         }
     }
     if (!isNull(st.hwnd)) {
-        _ = PostMessageA(st.hwnd, WM_CLOSE, 0, 0);
+        _ = DestroyWindow(st.hwnd);
         st.hwnd = nullVoid();
+    }
+    if (!isNull(st.hinst)) {
+        _ = UnregisterClassA(@ptrCast([*]const u8, &st.class_name[0]), st.hinst);
+        st.hinst = nullVoid();
     }
 }
 
@@ -642,6 +866,7 @@ pub fn endFrame(st: *State) bool {
     if (isNull(st.primary) or isNull(st.back)) return false;
     const hr = surfaceVtbl(st.primary).Blt(st.primary, nullVoid(), st.back,
         nullVoid(), DDBLT_WAIT, nullVoid());
+    logHr("Blt(primary<-offscreen)", hr);
     return hr == S_OK;
 }
 
@@ -670,16 +895,43 @@ pub fn fillRect(st: *State, px: i32, py: i32, pw: i32, ph: i32, fg: u8, bg: u8) 
 
 pub fn drawText(st: *State, px: i32, py: i32, s: []const u8, fg: u8, bg: u8, cw: u32, ch: u32) void {
     if (s.len == 0) return;
-    if (!isNull(st.hdc)) {
-        var bgrc = Rect{
-            .left = px,
-            .top = py,
-            .right = px + @intCast(i32, cw) * @intCast(i32, s.len),
-            .bottom = py + @intCast(i32, ch),
-        };
-        _ = FillRect(st.hdc, @ptrCast(*const void, &bgrc), brushFor(st, bg));
+    if (isNull(st.hdc)) return;
+    var bgrc = Rect{
+        .left = px,
+        .top = py,
+        .right = px + @intCast(i32, cw) * @intCast(i32, s.len),
+        .bottom = py + @intCast(i32, ch),
+    };
+    _ = FillRect(st.hdc, @ptrCast(*const void, &bgrc), brushFor(st, bg));
+    if (isNull(st.atlas_color_dc) or isNull(st.atlas_mask_dc) or cw == 0 or ch == 0) {
         _ = SetTextColor(st.hdc, paletteRgb(fg));
         _ = TextOutA(st.hdc, px, py, s.ptr, @intCast(i32, s.len));
+        return;
+    }
+    const color: u32 = @intCast(u32, fg & 15);
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        var code: u32 = @intCast(u32, s[i]);
+        if (code < GLYPH_FIRST or code > GLYPH_LAST) code = 63; // '?'
+        const gi: u32 = code - GLYPH_FIRST;
+        const dx: i32 = px + @intCast(i32, @intCast(u32, i) * cw);
+        const sx: i32 = @intCast(i32, gi * cw);
+        const sy: i32 = @intCast(i32, color * ch);
+        const iw: i32 = @intCast(i32, cw);
+        const ih: i32 = @intCast(i32, ch);
+        // Clear the glyph pixels (mask is black there), then OR the colored
+        // glyph (foreground pixels; black elsewhere). Both come from the one
+        // atlas built at gfxOpen.
+        if (BitBlt(st.hdc, dx, py, iw, ih, st.atlas_mask_dc, sx, sy, SRCAND) == 0
+            or BitBlt(st.hdc, dx, py, iw, ih, st.atlas_color_dc, sx, sy, SRCPAINT) == 0) {
+            _ = SetTextColor(st.hdc, paletteRgb(fg));
+            _ = TextOutA(st.hdc, px, py, s.ptr, @intCast(i32, s.len));
+            return;
+        }
+        if (!st.atlas_used) {
+            st.atlas_used = true;
+            logLine("glyph-atlas present active");
+        }
     }
 }
 
@@ -698,6 +950,60 @@ fn virtualToChar(vk: u16) u8 {
     return 0;
 }
 
+// Keys whose typed character arrives through WM_CHAR (letters, digits,
+// punctuation, space, enter/tab/backspace/delete/escape). Arrows/F-keys do
+// not, so they emit key_down immediately with ch = 0.
+fn isCharKey(vk: u16) bool {
+    if (vk >= 0x30 and vk <= 0x39) return true;
+    if (vk >= 0x41 and vk <= 0x5A) return true;
+    if (vk >= 0xBA and vk <= 0xE2) return true;
+    if (vk == 0x20 or vk == 0x0D or vk == 0x09) return true;
+    if (vk == 0x1B or vk == 0x08 or vk == 0x2E) return true;
+    return false;
+}
+
+fn zeroRaw(raw: *RawEvent) void {
+    raw.kind = 0;
+    raw.ch = 0;
+    raw.code = 0;
+    raw.x = 0;
+    raw.y = 0;
+    raw.button = 0;
+    raw.wheel = 0;
+    raw.cols = 0;
+    raw.rows = 0;
+    raw.mods = 0;
+}
+
+fn fillDeferred(st: *State, raw: *RawEvent) bool {
+    if (!st.deferred) return false;
+    zeroRaw(raw);
+    raw.kind = st.def_kind;
+    raw.ch = st.def_ch;
+    raw.code = st.def_code;
+    raw.mods = st.def_mods;
+    st.deferred = false;
+    return true;
+}
+
+fn deferKeyUp(st: *State, code: u16, ch: u8, mods: u8) void {
+    st.deferred = true;
+    st.def_kind = EK_KEY_UP;
+    st.def_ch = ch;
+    st.def_code = code;
+    st.def_mods = mods;
+}
+
+pub fn postResize(st: *State, cols: u32, rows: u32) bool {
+    if (isNull(st.hwnd)) return false;
+    if (cols == 0 or rows == 0) return false;
+    const w: u32 = cols * st.cw;
+    const h: u32 = rows * st.ch;
+    if (w > 0xFFFF or h > 0xFFFF) return false;
+    const lp: u32 = (h << 16) | (w & 0xFFFF);
+    return PostMessageA(st.hwnd, WM_SIZE, 0, @bitCast(i32, lp)) != 0;
+}
+
 fn modsNow() u8 {
     var m: u8 = 0;
     if (GetKeyState(VK_SHIFT) < 0) m = m | 1;
@@ -707,9 +1013,24 @@ fn modsNow() u8 {
 
 pub fn pollEvent(st: *State, raw: *RawEvent) bool {
     if (isNull(st.hwnd)) return false;
+    if (fillDeferred(st, raw)) return true;
+    zeroRaw(raw);
     var msg: Msg = undefined;
     while (PeekMessageA(@ptrCast(*void, &msg), nullVoid(), 0, 0, PM_REMOVE) != 0) {
         const m = msg.message;
+        if (m == WM_CHAR) {
+            if (st.pending) {
+                zeroRaw(raw);
+                raw.kind = EK_KEY_DOWN;
+                raw.code = st.pend_code;
+                raw.ch = @intCast(u8, msg.wParam & 0xFF);
+                raw.mods = st.pend_mods;
+                st.pending = false;
+                return true;
+            }
+            continue;
+        }
+        zeroRaw(raw);
         if (m == WM_QUIT) {
             raw.kind = EK_CLOSE;
             return true;
@@ -722,21 +1043,74 @@ pub fn pollEvent(st: *State, raw: *RawEvent) bool {
         if (m == WM_SIZE) {
             const wp = @intCast(u32, msg.lParam & 0xFFFF);
             const hp = @intCast(u32, (msg.lParam >> 16) & 0xFFFF);
+            var cols: u32 = st.cols;
+            var rows: u32 = st.rows;
+            var pw: u32 = st.bufw;
+            var ph: u32 = st.bufh;
+            if (wp > 0 and hp > 0) {
+                if (resizeBack(st, wp, hp)) {
+                    pw = wp;
+                    ph = hp;
+                    cols = if (st.cw == 0) 1 else wp / st.cw;
+                    rows = if (st.ch == 0) 1 else hp / st.ch;
+                    st.cols = cols;
+                    st.rows = rows;
+                }
+            }
             raw.kind = EK_RESIZE;
-            raw.x = wp;
-            raw.y = hp;
-            raw.cols = if (st.cw == 0) 1 else wp / st.cw;
-            raw.rows = if (st.ch == 0) 1 else hp / st.ch;
+            raw.x = pw;
+            raw.y = ph;
+            raw.cols = cols;
+            raw.rows = rows;
             _ = DispatchMessageA(@ptrCast(*const void, &msg));
             return true;
         }
-        if (m == WM_KEYDOWN or m == WM_KEYUP) {
+        if (m == WM_KEYDOWN) {
             const vk = @intCast(u16, msg.wParam & 0xFFFF);
-            raw.kind = if (m == WM_KEYDOWN) EK_KEY_DOWN else EK_KEY_UP;
+            const mods = modsNow();
+            const ctrl = (mods & 2) != 0;
+            if (ctrl) {
+                raw.kind = EK_KEY_DOWN;
+                raw.code = vk;
+                raw.ch = virtualToChar(vk);
+                raw.mods = mods;
+                _ = TranslateMessage(@ptrCast(*const void, &msg));
+                _ = DispatchMessageA(@ptrCast(*const void, &msg));
+                return true;
+            }
+            if (isCharKey(vk)) {
+                st.pending = true;
+                st.pend_code = vk;
+                st.pend_mods = mods;
+                _ = TranslateMessage(@ptrCast(*const void, &msg));
+                _ = DispatchMessageA(@ptrCast(*const void, &msg));
+                continue;
+            }
+            raw.kind = EK_KEY_DOWN;
+            raw.code = vk;
+            raw.ch = 0;
+            raw.mods = mods;
+            _ = TranslateMessage(@ptrCast(*const void, &msg));
+            _ = DispatchMessageA(@ptrCast(*const void, &msg));
+            return true;
+        }
+        if (m == WM_KEYUP) {
+            const vk = @intCast(u16, msg.wParam & 0xFFFF);
+            const mods = modsNow();
+            if (st.pending and st.pend_code == vk) {
+                deferKeyUp(st, vk, virtualToChar(vk), mods);
+                raw.kind = EK_KEY_DOWN;
+                raw.code = st.pend_code;
+                raw.ch = 0;
+                raw.mods = st.pend_mods;
+                st.pending = false;
+                _ = DispatchMessageA(@ptrCast(*const void, &msg));
+                return true;
+            }
+            raw.kind = EK_KEY_UP;
             raw.code = vk;
             raw.ch = virtualToChar(vk);
-            raw.mods = modsNow();
-            _ = TranslateMessage(@ptrCast(*const void, &msg));
+            raw.mods = mods;
             _ = DispatchMessageA(@ptrCast(*const void, &msg));
             return true;
         }
@@ -757,13 +1131,22 @@ pub fn pollEvent(st: *State, raw: *RawEvent) bool {
             var delta: i32 = @intCast(i32, (msg.wParam >> 16) & 0xFFFF);
             if (delta > 32767) delta = delta - 65536;
             raw.kind = EK_WHEEL;
-            raw.wheel = delta / WHEEL_DELTA;
+            raw.wheel = wheelLines(delta);
             raw.mods = modsNow();
             _ = DispatchMessageA(@ptrCast(*const void, &msg));
             return true;
         }
         _ = TranslateMessage(@ptrCast(*const void, &msg));
         _ = DispatchMessageA(@ptrCast(*const void, &msg));
+    }
+    if (st.pending) {
+        zeroRaw(raw);
+        raw.kind = EK_KEY_DOWN;
+        raw.code = st.pend_code;
+        raw.ch = 0;
+        raw.mods = st.pend_mods;
+        st.pending = false;
+        return true;
     }
     return false;
 }
@@ -813,8 +1196,9 @@ pub fn clipboardGet(st: *State, arena: *arena_mod.Arena) ?[]u8 {
         return null;
     }
     const sp: [*]const u8 = @ptrCast([*]const u8, src);
+    const cap: usize = @intCast(usize, GlobalSize(mem));
     var n: usize = 0;
-    while (sp[n] != 0) : (n += 1) {}
+    while (n < cap and sp[n] != 0) : (n += 1) {}
     var out = arena_mod.alloc(arena, n) catch {
         _ = GlobalUnlock(mem);
         _ = CloseClipboard();
