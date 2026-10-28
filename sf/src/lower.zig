@@ -188,11 +188,15 @@ pub fn deferActionArrayListGetSlice(self: *DeferActionArrayList) []DeferAction {
 // avoid a re-fetch; `slot0..slot7` hold child temps/locals saved across a
 // child call. 8 result slots (controller ruling 2026-10-26): enough for
 // `bool_and` (lhs + 3 createBlock results + result) and `fn_call`
-// (`args_start`), so Tasks 2-3 never change this struct.
+// (`args_start`), so Tasks 2-3 never change this struct. `arity` (Phase 2.5
+// Task 1 delivery-scan guard) is 0 for machines on the cleared/verbatim slot
+// discipline (TEMP_NONE child deliveries legal) and N>0 for fixed-arity
+// operand machines (lowerAddStep and siblings; set at their push sites).
 pub const ExprFrame = struct {
     node_idx: u32,
     phase: u16,
     kind: u32,
+    arity: u16,
     slot0: u32,
     slot1: u32,
     slot2: u32,
@@ -2298,6 +2302,7 @@ fn lowerExprDriver(self: *LirLowerer, root: u32) u32 {
         .node_idx = root,
         .phase = @intCast(u16, 0),
         .kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, root).kind)),
+        .arity = @intCast(u16, 0),
         .slot0 = TEMP_NONE,
         .slot1 = TEMP_NONE,
         .slot2 = TEMP_NONE,
@@ -2341,7 +2346,16 @@ fn lowerExprDriver(self: *LirLowerer, root: u32) u32 {
             // slot0 back verbatim. Consumers must handle a delivered TEMP_NONE
             // the way the pre-continuation recursive arm handled its local
             // (e.g. `lowerPlainAssignRest`'s VFLOW:paS0 path), and must never
-            // read a never-written slot as a value.
+            // read a never-written slot as a value. Phase 2.5 Task 1 guard: a
+            // fixed-arity operand machine (ExprFrame `arity != 0` —
+            // lowerAddStep and siblings, marked at their push sites) must
+            // never receive a TEMP_NONE delivery; there the sentinel is
+            // indistinguishable from child_0's value and swaps operands, so
+            // the scan panics. Cleared-slot machines (`arity == 0`) keep the
+            // legal void/noreturn deliveries above.
+            if (child_res == TEMP_NONE and parent.arity != @intCast(u16, 0)) {
+                @panic("TEMP_NONE delivered to fixed-arity machine");
+            }
             if (parent.slot0 == TEMP_NONE) { parent.slot0 = child_res; }
             else if (parent.slot1 == TEMP_NONE) { parent.slot1 = child_res; }
             else if (parent.slot2 == TEMP_NONE) { parent.slot2 = child_res; }
@@ -2368,6 +2382,7 @@ fn lowerExprPushChild(self: *LirLowerer, parent: *ExprFrame, child: u32, phase: 
         .node_idx = child,
         .phase = @intCast(u16, 0),
         .kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, child).kind)),
+        .arity = @intCast(u16, 0),
         .slot0 = TEMP_NONE,
         .slot1 = TEMP_NONE,
         .slot2 = TEMP_NONE,
@@ -2430,6 +2445,7 @@ fn lowerAddStep(self: *LirLowerer, f: *ExprFrame) u32 {
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         f.slot7 = rtype;
         var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2463,6 +2479,7 @@ fn lowerAddLikeStep(self: *LirLowerer, f: *ExprFrame, opm: []const u8, check_op:
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         f.slot7 = rtype;
         var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2489,6 +2506,7 @@ fn lowerDivModStep(self: *LirLowerer, f: *ExprFrame, bin_op: u8) u32 {
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         f.slot7 = rtype;
         var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2513,6 +2531,7 @@ fn lowerShlStep(self: *LirLowerer, f: *ExprFrame) u32 {
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         f.slot7 = rtype;
         var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2539,6 +2558,7 @@ fn lowerShrStep(self: *LirLowerer, f: *ExprFrame) u32 {
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         f.slot7 = rtype;
         var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2563,6 +2583,7 @@ fn lowerBinaryArmStep(self: *LirLowerer, f: *ExprFrame, op: u8) u32 {
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         f.slot7 = rtype;
         var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2582,6 +2603,7 @@ fn lowerBinaryArmStep(self: *LirLowerer, f: *ExprFrame, op: u8) u32 {
 fn lowerCmpSimpleStep(self: *LirLowerer, f: *ExprFrame, bin_op: u8) u32 {
     if (f.phase == @intCast(u16, 0)) {
         var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2614,11 +2636,13 @@ fn lowerCmpEqStep(self: *LirLowerer, f: *ExprFrame) u32 {
             var opt_ty = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, opt_child);
             if (opt_ty) |ot| {
                 if (self.ctx.registry.types_items[@intCast(usize, ot)].kind == type_mod.TypeKind.optional_type) {
+                    f.arity = @intCast(u16, 1);
                     lowerExprPushChild(self, f, opt_child, @intCast(u16, 1));
                     return TEMP_NONE;
                 }
             }
         }
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 2));
         return TEMP_NONE;
     }
@@ -2661,6 +2685,7 @@ fn lowerNegateStep(self: *LirLowerer, f: *ExprFrame) u32 {
         if (lowerFoldedIntConst(self, node_idx, ng_box[0], @intCast(u8, 1))) |fctid| { return fctid; }
         f.slot7 = ng_box[0];
         var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        f.arity = @intCast(u16, 1);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2678,6 +2703,7 @@ fn lowerWrapNegateStep(self: *LirLowerer, f: *ExprFrame) u32 {
         if (rt_wn) |t| { if (t != type_mod.TYPE_UNDEFINED) { wn_box[0] = t; } }
         f.slot7 = wn_box[0];
         var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        f.arity = @intCast(u16, 1);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2690,6 +2716,7 @@ fn lowerWrapNegateStep(self: *LirLowerer, f: *ExprFrame) u32 {
 fn lowerBoolNotStep(self: *LirLowerer, f: *ExprFrame) u32 {
     if (f.phase == @intCast(u16, 0)) {
         var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        f.arity = @intCast(u16, 1);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2708,6 +2735,7 @@ fn lowerBitNotStep(self: *LirLowerer, f: *ExprFrame) u32 {
         if (lowerFoldedIntConst(self, node_idx, bn_box[0], @intCast(u8, 0))) |fctid| { return fctid; }
         f.slot7 = bn_box[0];
         var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        f.arity = @intCast(u16, 1);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2720,6 +2748,7 @@ fn lowerBitNotStep(self: *LirLowerer, f: *ExprFrame) u32 {
 fn lowerDerefStep(self: *LirLowerer, f: *ExprFrame) u32 {
     if (f.phase == @intCast(u16, 0)) {
         var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        f.arity = @intCast(u16, 1);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2796,6 +2825,7 @@ fn lowerCompoundAssignStep(self: *LirLowerer, f: *ExprFrame, check_op: u8, bin_o
             var ade_m: []const u8 = "ADE:p\n"; pal.markerWrite(ade_m);
         }
         var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -2832,6 +2862,7 @@ fn lowerIndexAccessStep(self: *LirLowerer, f: *ExprFrame) u32 {
         // FX5: `pa.*[i]` indexes the dereferenced array; lower the POINTER so
         // the emitter renders `(*pa)[i]` instead of gcc-invalid `zT = *pa;`.
         var base_node_idx = indexBaseAfterArrayDeref(self, cnode.child_0);
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, base_node_idx, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -3157,6 +3188,7 @@ fn lowerBuiltinCastStep(self: *LirLowerer, f: *ExprFrame) u32 {
 fn lowerBoolOrStep(self: *LirLowerer, f: *ExprFrame) u32 {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
     if (f.phase == @intCast(u16, 0)) {
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
@@ -3197,6 +3229,7 @@ fn lowerBoolOrStep(self: *LirLowerer, f: *ExprFrame) u32 {
 fn lowerBoolAndStep(self: *LirLowerer, f: *ExprFrame) u32 {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, f.node_idx);
     if (f.phase == @intCast(u16, 0)) {
+        f.arity = @intCast(u16, 2);
         lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
         return TEMP_NONE;
     }
