@@ -226,11 +226,13 @@ point is unmoved), via
   compiler-development tooling, not part of normal builds.
 - **Debug-build recipes (debuggee):**
   - Linux: `gcc -m32 -std=c89 -O0 -g -gdwarf-2 -fno-omit-frame-pointer -I sf/src/include -c *.c`
-  - mingw/DWARF-in-PE: `i686-w64-mingw32-gcc -m32 -std=c89 -O0 -g -gdwarf-2 -DZIG_NO_CRT -I . -c *.c`
+  - mingw/DWARF-in-PE: `i686-w64-mingw32-gcc -m32 -std=c89 -O0 -g -gdwarf-2 -fno-omit-frame-pointer -DZIG_NO_CRT -I . -c *.c`
     then link `-nostdlib -Wl,-e,_mainCRTStartup *.o -lgcc -lkernel32`.
-  - MSVC 6 embedded COFF: `cl /Z7 /c *.c` + `link /DEBUG /DEBUGTYPE:COFF ...`
-    (plain `/DEBUG` gives CodeView/PDB, deliberately not consumed).
-  - OpenWatcom: `wcc386 -d2` (default DWARF) + `wlink debug all`.
+  - MSVC 6 embedded COFF: `cl /Z7 /Oy- /c *.c` + `link /DEBUG /DEBUGTYPE:COFF ...`
+    (plain `/DEBUG` gives CodeView/PDB, deliberately not consumed; `/Oy-` is
+    MSVC's `-fno-omit-frame-pointer` equivalent).
+  - OpenWatcom: `wcc386 -d2` (default DWARF; keep the frame pointer — the
+    OpenWatcom equivalent of `-fno-omit-frame-pointer`) + `wlink debug all`.
 - **Build/run z9dbg:**
   ```sh
   ZIG -o /tmp/z9d examples/z98/z9dbg/main.zig
@@ -306,28 +308,29 @@ unaffected by this cap.
 `semanticAnalyzerResolveExpr` (`sf/src/semantic_analyzer.zig`, 86 recursive call sites)
 recurses per AST level at ~7.7 KB of C stack.
 
-**Effective ceiling is a fixed 128 terms on every platform** — `SEMA_GUARD_MAX`
+**Effective ceiling is a fixed 130 terms on every platform** — `SEMA_GUARD_MAX`
 (`sf/src/semantic_analyzer.zig`), a depth guard added 2026-10-26. Past it the compiler
-reports a clean `error[3043] expression nesting too deep for semantic analysis (limit 128)`
+reports a clean `error[3077] expression nesting too deep for semantic analysis (limit 130)`
 and emits no `.c`. The guard is a flat count, so it does **not** scale with available
 stack. The table below is the *natural* stack-derived ceiling the guard is sized under;
 on a large-stack platform the guard is what actually binds, not the stack.
 
 | stack | natural ceiling (terms) | effective |
 |---|---|---|
-| 1 MB — Win9x MSVC default `/STACK` | ~135 | **128** (guard) |
-| 2 MB — MinGW `SizeOfStackReserve` | ~270 | **128** (guard) |
-| 8 MB — Linux default | ~1080 | **128** (guard) |
+| 1 MB — Win9x MSVC default `/STACK` | ~139 | **130** (guard) |
+| 2 MB — MinGW `SizeOfStackReserve` | ~270 | **130** (guard) |
+| 8 MB — Linux default | ~1080 | **130** (guard) |
 
 **The guard does not raise the ceiling** — it makes the failure honest instead of a
-stack-overflow SIGSEGV. Raising it needs `semanticAnalyzerResolveExpr` converted to the
-explicit continuation stack the lowerer now uses (deferred; see D9). Two further
-refinements are recorded but **not executed** in D9: a higher cap (~200, margin over the
-136 wall) and moving the guard to a limit-family error code so it classifies as FAIL in
-the corpus rather than ICE (`error[3043]` is in the classifier's `ICE_RE`).
+stack-overflow SIGSEGV. Phase 2.5 Task 2 executed both D9 refinements: the cap was
+re-measured and raised 128 -> 130 (1 MB wall ~139 terms; 131 trips with an 8-frame
+margin) and the diagnostic moved to the limit-family `error[3077]`
+(`ERR_3077_EXPR_NESTING_LIMIT`, outside the corpus `ICE_RE`), so a guard trip classifies
+as FAIL rather than ICE. Raising it further still needs `semanticAnalyzerResolveExpr`
+converted to the explicit continuation stack the lowerer uses (deferred; see D9).
 
 **Real-world incidence is low.** Every real Z98 source in the repo was scanned — the
-compiler itself, the std library, all `examples/`, all 1188 corpus dirs. Longest operator
+compiler itself, the std library, all `examples/`, all 1190 corpus dirs. Longest operator
 chains: 35 ops (a synthetic repro fixture), 10 (`std_ecc.zig` curve polynomial multiplies),
 9 (`lexer.zig` keyword-match `and` chains). Distribution: 1 line ≥20 ops, **0 lines ≥40**.
 Production code tops out at ~10 terms, so the tightest platform (Win9x, 1 MB) has ~3.8x

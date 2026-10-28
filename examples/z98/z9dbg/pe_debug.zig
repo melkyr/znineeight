@@ -281,6 +281,14 @@ pub fn open(arena: *std.arena.Arena, exe: []const u8) dwarf.DwarfError!dwarf.Deb
         if (vsize != 0 and @intCast(usize, vsize) < size) size = @intCast(usize, vsize);
         if (raw_ptr > data.len or data.len - raw_ptr < size) return error.Corrupt;
         var di = try dwarf.openSections(arena, data, data[raw_ptr .. raw_ptr + size], p.image_base);
+        // A `.debug_line` section can exist but be unusable for this reader
+        // (DWARF 5, DWARF64, or a corrupt unit): `openSections` yields no
+        // rows. When MSVC also embedded a COFF debug blob
+        // (`/DEBUGTYPE:COFF`), fall back to it instead of returning a
+        // no-line result.
+        if (!di.has_line and p.dbg_off != 0) {
+            return coff.parseBlob(arena, data, p.dbg_off, p.dbg_size, p.image_base, p.sec_off, p.sec_count);
+        }
         try dwarf.injectFuncs(&di, funcs);
         return di;
     }

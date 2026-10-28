@@ -49,7 +49,7 @@ $ZIG -osw -o /tmp/z9w examples/z98/z9dbg/main.zig
 sh /tmp/z9w/build_target.sh mingw /tmp/z9w/z9dbg.exe
 $ZIG -q -d -osw --output-dir /tmp/z9w/demo <entry.zig>
 ( cd /tmp/z9w/demo && i686-w64-mingw32-gcc -m32 -std=c89 -O0 -g -gdwarf-2 \
-    -DZIG_NO_CRT -I . -c *.c && i686-w64-mingw32-gcc -m32 -nostdlib \
+    -fno-omit-frame-pointer -DZIG_NO_CRT -I . -c *.c && i686-w64-mingw32-gcc -m32 -nostdlib \
     -Wl,-e,_mainCRTStartup *.o -o prog.exe -lgcc -lkernel32 )
 wine /tmp/z9w/z9dbg.exe /tmp/z9w/demo/prog.exe
 ```

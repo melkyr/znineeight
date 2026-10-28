@@ -33,7 +33,7 @@ set -euo pipefail
 #      compiler at 64 MB stack. Each term is a `u32` local seeded via
 #      `@intCast(u32, argvc)` where `argvc = getv(7)`, so `lowerFoldedIntConst`
 #      cannot fold the chain. 120 terms sits UNDER the semantic-analyzer wall
-#      (~135 terms at 1 MB, D9) and under SEMA_GUARD_MAX (128), so this case is
+#      (~139 terms at 1 MB, D9) and under SEMA_GUARD_MAX (130), so this case is
 #      green without tripping either. The baseline CANNOT emit the reference at
 #      8 MB (measured: 115 terms OK, 118 SEGV -- its pre-Task-2 `lowerExpr`
 #      costs ~70 KB/level; 30 the 1 MB threshold), so the reference run uses
@@ -46,8 +46,8 @@ set -euo pipefail
 #      SKIPPED with a clear message -- never a bogus md5 mismatch -- and the
 #      rc/guard/frame-size asserts still run.
 #   7. a generated 200-term RUNTIME-VALUED left-deep `+` chain (same shape as
-#      case 6) is OVER the semantic-analyzer ceiling (~135 terms at 1 MB) and
-#      over SEMA_GUARD_MAX (128). It must fail as a CLEAN `error[...]`
+#      case 6) is OVER the semantic-analyzer ceiling (~139 terms at 1 MB) and
+#      over SEMA_GUARD_MAX (130). It must fail as a CLEAN `error[3077]`
 #      diagnostic (non-zero rc < 128, stderr carries the guard message, 0 `.c`)
 #      -- never rc=139/133. Without the depth guard
 #      (`semanticAnalyzerResolveExprDepthGuard`, sf/src/semantic_analyzer.zig)
@@ -59,7 +59,7 @@ set -euo pipefail
 #      at depth 2; nested `f(g(h(...)))` is parser-blocked at depth 12 and a
 #      120-arg call hits MAX_FN_PARAMS (64), so this is the shape that drives
 #      the fn_call arm's interleaved prealloc/arg lowering. 120 terms sit under
-#      SEMA_GUARD_MAX (128).
+#      SEMA_GUARD_MAX (130).
 #   9. an `if` EXPRESSION with 120-term RUNTIME-VALUED `+` chains in both
 #      arms (`var r: u32 = if (c) <chain> else <chain>;`, `var c: bool = true;`
 #      -- a u32 condition is error[3058]) compiles rc=0 under `ulimit -s 1024`
@@ -80,7 +80,7 @@ set -euo pipefail
 #      `while (c) { ... }`, 150 of each) rc=0 at 1 MB + md5 ==
 #      baseline@64MB. Exercises the labeled_stmt machine and both LoopInfo
 #      shapes (is_loop=0 labeled blocks, is_loop=1 while loops).
-#  10-12 must never trip error[3043] (SEMA_GUARD_MAX guards EXPRESSION
+#  10-12 must never trip error[3077] (SEMA_GUARD_MAX guards EXPRESSION
 #  chains, not statement nesting) -- a trip is a STOP, not a fixture to shrink.
 #  13. lowerer C frame sizes: emit sf/src/lower.zig with the tested zig1,
 #      compile the emitted lowerer C (lower_*.c) with
@@ -91,6 +91,12 @@ set -euo pipefail
 #      (one C89 frame for every arm local of the fallback chain). Task 5
 #      splits it (and `lowerStmtLeafStep` 17,856 / `lowerFnCallStep` 8,944)
 #      into per-kind functions so no lowerer frame reaches 8 KB.
+#  14. a runtime-valued left-deep `+` chain at SEMA_GUARD_MAX+1 terms (131 at
+#      the current cap 130, same shape as case 7) must be rejected by the sema
+#      depth guard as a CLEAN limit diagnostic -- rc exactly 2, stderr carries
+#      `error[3077] expression nesting too deep for semantic analysis (limit
+#      130)`, 0 `.c` emitted, and no `error[3043]`/ICE or signal death
+#      (rc>=128). This pins the raised cap and the new limit-family code.
 #
 # With second arg `known-red`, cases 1 and 2 are reported as KNOWN-RED (pending
 # Tasks 2/4) and do not fail the gate. Their REAL rc is always printed; the
@@ -358,11 +364,13 @@ fi
 
 # ---- 7. sema depth guard: 200-term chain -> clean error[...], no segfault ----
 # Same fixture shape as case 6 at 200 terms -- over the semantic-analyzer
-# ceiling (~135 terms at 1 MB, D9) and over SEMA_GUARD_MAX (128). The guard at
+# ceiling (~139 terms at 1 MB, D9) and over SEMA_GUARD_MAX (130). The guard at
 # `semanticAnalyzerResolveExprDepthGuard` (sf/src/semantic_analyzer.zig) must
-# stop recursion at the cap and report a clean `error[...]`; the run must die
+# stop recursion at the cap and report a clean `error[3077]`; the run must die
 # on rc=0-free, signal-free exit with 0 `.c` emitted.
 SEMA_GUARD_MSG="expression nesting too deep for semantic analysis"
+SEMA_GUARD_CODE="error\\[3077\\]"
+SEMA_GUARD_LIMIT="(limit 130)"
 C7_TERMS="a0"
 _c7=1
 while [ "$_c7" -lt 200 ]; do C7_TERMS="$C7_TERMS + a$_c7"; _c7=$((_c7 + 1)); done
@@ -396,9 +404,17 @@ if ! grep -q "$SEMA_GUARD_MSG" "$WORK/c7.err" 2>/dev/null; then
     c7_ok=0
     bad "case 7: stderr lacks the sema guard message '$SEMA_GUARD_MSG'"
 fi
-if ! grep -q "error\[[0-9]*\]" "$WORK/c7.err" 2>/dev/null; then
+if ! grep -q "$SEMA_GUARD_CODE" "$WORK/c7.err" 2>/dev/null; then
     c7_ok=0
-    bad "case 7: no clean error[...] diagnostic on stderr"
+    bad "case 7: stderr lacks the limit-family diagnostic '$SEMA_GUARD_CODE'"
+fi
+if ! grep -qF "$SEMA_GUARD_LIMIT" "$WORK/c7.err" 2>/dev/null; then
+    c7_ok=0
+    bad "case 7: stderr lacks the raised cap '$SEMA_GUARD_LIMIT'"
+fi
+if grep -q 'error\[3043\]' "$WORK/c7.err" 2>/dev/null; then
+    c7_ok=0
+    bad "case 7: sema guard still classified as ICE (error[3043])"
 fi
 if [ -n "$(find "$WORK/c7" -name '*.c' -print -quit 2>/dev/null)" ]; then
     c7_ok=0
@@ -416,7 +432,7 @@ fi
 # wide call at 64) and drives the `fn_call` arm's interleaved prealloc/arg
 # ordering while the arg recurses through the chain. 120 terms, same
 # runtime-valued locals as case 6 (seeded through `@intCast(u32, argvc)` so
-# lowerFoldedIntConst cannot fold), under SEMA_GUARD_MAX (128). Must compile
+# lowerFoldedIntConst cannot fold), under SEMA_GUARD_MAX (130). Must compile
 # rc=0 at 1 MB and its `--dump-c89` md5 must equal the BASELINE compiler's
 # emit at 64 MB.
 C8_TERMS="a0"
@@ -526,8 +542,8 @@ fi
 # labeled/while ~320 -- 300 sits under all three, so the fixture parses at
 # 1 MB and RED today is pure lowering recursion (18 KB lowerStmt frame x 300).
 # Must compile rc=0 at 1 MB and its --dump-c89 md5 must equal the BASELINE
-# compiler's emit at 64 MB. SEMA_GUARD_MAX (128) guards EXPRESSION chains;
-# these are statements and must never trip error[3043] (a trip is a STOP,
+# compiler's emit at 64 MB. SEMA_GUARD_MAX (130) guards EXPRESSION chains;
+# these are statements and must never trip error[3077] (a trip is a STOP,
 # not a fixture to shrink).
 B300="{ }"
 _b3=0
@@ -599,11 +615,11 @@ else
     report_case 12 "$c12rc" "PASS (300-deep nested labeled/loop statements @ 1MB)"
 fi
 
-# error[3043] (sema depth guard) is about EXPRESSION chains; cases 10-12 are
+# error[3077] (sema depth guard) is about EXPRESSION chains; cases 10-12 are
 # statements and must not trip it. A trip is a STOP signal, not a fixture bug.
 for _g in c10 c11 c12; do
-    if grep -q 'error\[3043\]' "$WORK/$_g.err" 2>/dev/null; then
-        bad "case 10-12: $_g tripped error[3043] (sema guard) on statement nesting -- STOP"
+    if grep -q 'error\[3077\]' "$WORK/$_g.err" 2>/dev/null; then
+        bad "case 10-12: $_g tripped error[3077] (sema guard) on statement nesting -- STOP"
     fi
 done
 
@@ -690,6 +706,65 @@ else
             bad "case 13: largest lowerer frame $c13max >= 8192 (want < 8192)"
         fi
     fi
+fi
+
+# ---- 14. sema cap boundary: SEMA_GUARD_MAX+1 -> clean limit diagnostic ----
+# 131 terms (the current cap is 130) is the first rejected depth. It must stop
+# ONE level above the cap with rc exactly 2, the new limit-family code, the
+# raised limit text, no ICE classification and 0 `.c` -- never a SIGSEGV.
+C14_TERMS="a0"
+_c14=1
+while [ "$_c14" -lt 131 ]; do C14_TERMS="$C14_TERMS + a$_c14"; _c14=$((_c14 + 1)); done
+{
+    printf '%s\n' 'const std = @import("std");'
+    printf '%s\n' 'fn getv(x: u32) u32 { return x; }'
+    printf '%s\n' 'pub fn main() void {'
+    printf '%s\n' '    var argvc: u32 = getv(7);'
+    _c14=0
+    while [ "$_c14" -lt 131 ]; do
+        printf '    var a%s: u32 = @intCast(u32, argvc);\n' "$_c14"
+        _c14=$((_c14 + 1))
+    done
+    printf '    var r: u32 = %s;\n' "$C14_TERMS"
+    printf '%s\n' '    std.io.printInt(@intCast(i32, r));'
+    printf '%s\n' '}'
+} >"$WORK/chain131.zig"
+
+run1mb c14 "$WORK/chain131.zig"
+c14rc="$RC"
+c14_ok=1
+if [ "$c14rc" -ne 2 ]; then
+    c14_ok=0
+    bad "case 14: 131-term chain rc=$c14rc want exactly 2 (clean limit diagnostic)"
+fi
+if [ "$c14rc" -ge 128 ]; then
+    c14_ok=0
+    bad "case 14: 131-term chain died on signal (rc=$c14rc) want clean error[3077]"
+fi
+if ! grep -q "$SEMA_GUARD_MSG" "$WORK/c14.err" 2>/dev/null; then
+    c14_ok=0
+    bad "case 14: stderr lacks the sema guard message '$SEMA_GUARD_MSG'"
+fi
+if ! grep -q "$SEMA_GUARD_CODE" "$WORK/c14.err" 2>/dev/null; then
+    c14_ok=0
+    bad "case 14: stderr lacks the limit-family diagnostic '$SEMA_GUARD_CODE'"
+fi
+if ! grep -qF "$SEMA_GUARD_LIMIT" "$WORK/c14.err" 2>/dev/null; then
+    c14_ok=0
+    bad "case 14: stderr lacks the raised cap '$SEMA_GUARD_LIMIT'"
+fi
+if grep -q 'error\[3043\]' "$WORK/c14.err" 2>/dev/null; then
+    c14_ok=0
+    bad "case 14: sema guard still classified as ICE (error[3043])"
+fi
+if [ -n "$(find "$WORK/c14" -name '*.c' -print -quit 2>/dev/null)" ]; then
+    c14_ok=0
+    bad "case 14: .c emitted despite the limit diagnostic"
+fi
+if [ "$c14_ok" -eq 1 ]; then
+    echo "case 14: rc=$c14rc PASS (error[3077] $SEMA_GUARD_LIMIT, 0 .c)"
+else
+    echo "case 14: rc=$c14rc FAIL (want rc=2 clean limit diagnostic, 0 .c)"
 fi
 
 if [ "$fail" -eq 0 ]; then

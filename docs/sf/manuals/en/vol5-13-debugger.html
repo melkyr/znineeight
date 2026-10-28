@@ -429,9 +429,9 @@ three supported debug-info shapes; OpenWatcom emits DWARF-in-PE by default:
 # Linux
 gcc -m32 -std=c89 -O0 -g -gdwarf-2 -fno-omit-frame-pointer -I . -c *.c
 # mingw 9x ABI (DWARF-in-PE)
-i686-w64-mingw32-gcc -m32 -std=c89 -O0 -g -gdwarf-2 -DZIG_NO_CRT -I . -c *.c
-# MSVC 6 (embedded COFF line records, not PDB)
-cl /Z7 /c *.c  &amp;&amp;  link /DEBUG /DEBUGTYPE:COFF ...
+i686-w64-mingw32-gcc -m32 -std=c89 -O0 -g -gdwarf-2 -fno-omit-frame-pointer -DZIG_NO_CRT -I . -c *.c
+# MSVC 6 (embedded COFF line records, not PDB; /Oy- keeps frame pointers)
+cl /Z7 /Oy- /c *.c  &amp;&amp;  link /DEBUG /DEBUGTYPE:COFF ...
 </pre>
 <p>
 Then run <tt>z9dbg &lt;prog&gt;</tt>. Commands are

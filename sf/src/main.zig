@@ -54,6 +54,10 @@ const AstStore = ast_mod.AstStore;
 const LirFunction = @import("lir.zig").LirFunction;
 const cinclude = @import("cinclude.zig");
 const spill_store_mod = @import("spill_store.zig");
+// C89 `remove` (the compiler already links libc through pal's fopen family).
+// Used to drop the `-d` `.zig1_dbg.tmp` span spool after the debug map is
+// written; a missing file is ignored (nonzero rc, result discarded).
+extern "c" fn remove(path: [*]const u8) i32;
 
 pub const ColorMode = enum(u8) {
     auto,
@@ -1911,6 +1915,20 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         if (ctx.cli.debug) {
             debug_map.debugMapWriterClose(&ctx.debug_map, &ctx.alloc.emission, ctx.debug_symbols.items[0..ctx.debug_symbols.len], ctx.source_man, &mangler, ctx.interner, ctx.module_reg, ctx.typereg);
             debug_map.debugSpanStoreClose(&ctx.debug_spans);
+            // The span spool is scratch: unlink it now that the sidecar maps
+            // are written (the other `.zig1_*.tmp` spills are read back in the
+            // same run and are left for the caller's cleanup). Absence/racing
+            // is fine -- remove's rc is intentionally ignored.
+            var dbg_rm_path: [512]u8 = undefined;
+            var drp: usize = @intCast(usize, 0);
+            var dori: usize = @intCast(usize, 0);
+            while (dori < od.len and drp < @intCast(usize, 510)) : (dori += 1) { dbg_rm_path[drp] = od[dori]; drp += 1; }
+            dbg_rm_path[drp] = @intCast(u8, '/'); drp += 1;
+            var drname: []const u8 = ".zig1_dbg.tmp";
+            var dri: usize = @intCast(usize, 0);
+            while (dri < drname.len and drp < @intCast(usize, 511)) : (dri += 1) { dbg_rm_path[drp] = drname[dri]; drp += 1; }
+            dbg_rm_path[drp] = 0;
+            _ = remove(@ptrCast([*]const u8, &dbg_rm_path[0]));
         }
         c89_mod.emitBuildScripts(&emitter, od, ctx.cli.target_is_windows, ctx.cli.target_win_profile);
         lir_stream.lirStreamEndRead(&ctx.lir_stream);

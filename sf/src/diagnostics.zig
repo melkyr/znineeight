@@ -269,6 +269,17 @@ pub const ErrorCode = enum(u16) {
     // "unable to infer type of enum literal in comparison with a numeric
     // operand"; span on the enum literal; rejects with 0 `.c`.
     ERR_3076_ENUM_LITERAL_NUMERIC_COMPARE = 3076,
+    // D9 refinement (Phase 2.5 Task 2): the semantic analyzer's expression
+    // depth guard tripped. A resource LIMIT, not an internal compiler error:
+    // `semanticAnalyzerResolveExpr` is still recursive and the 1 MB C-stack
+    // wall is ~139 AST levels, so above `SEMA_GUARD_MAX` the resolver reports
+    // this clean limit diagnostic and stops instead of overflowing the C
+    // stack. Explicit `= 3077` keeps every existing member's number stable.
+    // The rendered code (`error[3077]`) is deliberately outside the corpus
+    // `ICE_RE` (`error\[(48|9001|3043)\]`), so a guard trip buckets as an
+    // ordinary FAIL rather than an ICE. `ERR_9001_ICE` keeps its genuine
+    // users (emitter nesting cap, lowering temp/index invariants).
+    ERR_3077_EXPR_NESTING_LIMIT = 3077,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

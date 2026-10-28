@@ -265,9 +265,15 @@ pub fn parseBlob(arena: *std.arena.Arena, data: []const u8, blob_off: usize, blo
         var naux: usize = @intCast(usize, data[off + 17]);
         if (i + 1 + naux > nsym) return error.Corrupt;
         if (cls == STORAGE_FILE and naux >= 1) {
+            // MSVC FILE aux format 4: each aux record carries up to 18 name
+            // bytes; a path whose name fills a record continues in the next
+            // aux record(s). Concatenate through the first NUL (or all aux
+            // records when the name exactly fills them) before normalizing.
             var aux = off + 18;
+            var aux_bytes = naux * 18;
+            if (aux > end or end - aux < aux_bytes) return error.Corrupt;
             var flen: usize = 0;
-            while (flen < 18 and data[aux + flen] != 0) : (flen += 1) {}
+            while (flen < aux_bytes and data[aux + flen] != 0) : (flen += 1) {}
             try addFileName(arena, files, &file_n, data[aux .. aux + flen]);
             if (file_n > 0) file_idx = @intCast(u32, file_n - 1);
         } else if (cls == STORAGE_STATIC and typ == 0 and snum > 0 and naux >= 1) {

@@ -26,21 +26,24 @@ const ce_mod = @import("comptime_eval.zig");
 
 // Task 2b (iterative lowering, D9 mitigation): recursion-depth ceiling for
 // `semanticAnalyzerResolveExprDepthGuard`. `semanticAnalyzerResolveExpr` is
-// mutual recursion with its helpers at ~7.7 KB of C stack per AST level (D9:
-// a runtime-valued left-deep `+` chain passes at 136 terms and SIGSEGVs at
-// 137 under `ulimit -s 1024`) and was explicitly NOT converted to a trampoline
-// (operator ruling 2026-10-26) -- this guard turns the deep-expression
-// segfault into a clean `error[9001]`. The cap sits at the real C-stack wall,
-// not at `EXPR_GUARD_MAX` (2048, lower.zig): the guard check runs only AFTER
-// the trip frame is allocated, so a cap above the wall could never fire before
+// mutual recursion with its helpers at ~7.7 KB of C stack per AST level and
+// was explicitly NOT converted to a trampoline (operator ruling 2026-10-26)
+// -- this guard turns the deep-expression segfault into a clean limit-family
+// diagnostic (`error[3077]`). The cap sits at the real C-stack wall, not at
+// `EXPR_GUARD_MAX` (2048, lower.zig): the guard check runs only AFTER the
+// trip frame is allocated, so a cap above the wall could never fire before
 // the segfault, and a 2048 cap would leave case `gate_lower_depth.sh` 7
-// (200-term chain) dead on rc=139. 128 keeps the 120-term gate fixture green
-// (8 frames of headroom) and trips at depth 129, >=5 frames below every
-// observed wall (the wall moves +-2 terms with argv/env size). The lowerer's
-// 2048 is a must-never-fire net over an already-iterative walker; this one
-// bounds live C-stack recursion. It does not raise the ceiling -- it makes the
-// failure honest (docs/sf/QUICK_REF.md "expression / recursion depth").
-const SEMA_GUARD_MAX: u32 = 128;
+// (200-term chain) dead on rc=139. Re-measured for Phase 2.5 Task 2 at 1 MB
+// (guard temporarily disabled): the runtime-valued left-deep `+` chain is
+// green through 138 terms, dies intermittently at 139 and reliably at 140
+// (the wall moves +-2 terms with argv/env size); the call-argument variant
+// survives 140. 130 trips at depth 131, an 8-frame data-dependent margin
+// below the shallowest observed wall, and keeps the 120-term gate fixtures
+// green. The lowerer's 2048 is a must-never-fire net over an already-iterative
+// walker; this one bounds live C-stack recursion. It does not raise the
+// ceiling -- it makes the failure honest (docs/sf/QUICK_REF.md
+// "expression / recursion depth").
+const SEMA_GUARD_MAX: u32 = 130;
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -71,8 +74,8 @@ pub const SemanticAnalyzer = struct {
     // `lowerExprDepthGuard` (sf/src/lower.zig). Incremented on entry to
     // `semanticAnalyzerResolveExpr`, decremented on every exit path (the
     // wrapper pairs it around the body); above `SEMA_GUARD_MAX` the resolver
-    // reports a clean `error[9001]` and stops recursing instead of
-    // overflowing the C stack.
+    // reports a clean `error[3077]` limit diagnostic and stops recursing
+    // instead of overflowing the C stack.
     expr_guard: u32,
     coercion_table: *coercion_mod.CoercionTable,
     enum_value_table: *hash_mod.U32ToU32Map,
@@ -5104,15 +5107,16 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
 // Task 2b (iterative lowering, D9 mitigation): recursion-depth safety net,
 // mirroring `lowerExprDepthGuard` (sf/src/lower.zig:2174). Increments
 // `expr_guard`; above `SEMA_GUARD_MAX` it reports a clean level-0 diagnostic
-// (ERR_9001_ICE -- the same code `lowerExprDepthGuard` and the emitter's own
-// nesting-depth cap use) and stops recursing. Never fires on legal input in
-// the final state; it only converts the D9 deep-expression segfault into an
+// (ERR_3077_EXPR_NESTING_LIMIT, a limit-family reject -- NOT the
+// ERR_9001_ICE used by `lowerExprDepthGuard` and the emitter's own
+// nesting-depth cap) and stops recursing. Never fires on legal input in the
+// final state; it only converts the D9 deep-expression segfault into an
 // honest error.
 fn semanticAnalyzerResolveExprDepthGuard(self: *SemanticAnalyzer) void {
     self.expr_guard += @intCast(u32, 1);
     if (self.expr_guard > SEMA_GUARD_MAX) {
-        var msg: []const u8 = "expression nesting too deep for semantic analysis (limit 128)";
-        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+        var msg: []const u8 = "expression nesting too deep for semantic analysis (limit 130)";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3077_EXPR_NESTING_LIMIT)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
     }
 }
 

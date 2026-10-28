@@ -133,7 +133,16 @@ mkdir -p "$WORK/hoist"
 ( cd "$ROOT" && timeout 120 "$ZIG1" -q -d -o "$WORK/hoist" "$HOIST_ENTRY" ) \
     >"$WORK/hoist.stdout" 2>"$WORK/hoist.stderr" || bad "hoisted probe -d compile failed"
 HLINES=$(find "$WORK/hoist" -maxdepth 1 -name '*.z98dbg.lines' | head -1)
-HC=$(grep -l 'int zT_1;' "$WORK/hoist"/*.c 2>/dev/null | head -1)
+# Pipefail-safe lookup: `grep -l | head -1` exits 1 (killing the script under
+# `set -euo pipefail`) when nothing matches, instead of reaching the explicit
+# FAIL branch below. Scan the glob directly; an empty dir leaves HC empty.
+HC=""
+for _hc in "$WORK/hoist"/*.c; do
+    if [ -f "$_hc" ] && grep -q 'int zT_1;' "$_hc" 2>/dev/null; then
+        HC="$_hc"
+        break
+    fi
+done
 if [ -z "$HLINES" ] || [ -z "$HC" ]; then
     bad "hoisted probe did not emit a map file and/or a hoisted-decl C file"
 else

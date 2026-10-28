@@ -89,6 +89,71 @@ fn writeU32(p: [*]u8, v: u32) void {
     p[3] = @intCast(u8, v >> @intCast(u32, 24));
 }
 
+// Win32 CreateProcessA command-line quoting, matching the CRT's argv parser:
+// a token is wrapped in double quotes when it is empty or contains a space,
+// tab or quote. Inside the quotes, N backslashes before a quote become 2N+1
+// (so the quote is not swallowed) and N trailing backslashes before the
+// closing quote become 2N; backslashes not before a quote pass through.
+// Truncation keeps the existing fixed-buffer strategy (always leave the NUL).
+fn appendCmdToken(cmd: *[8192]u8, n: *usize, s: []const u8) void {
+    var need_quote: bool = s.len == @intCast(usize, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < s.len) : (i += 1) {
+        if (s[i] == ' ' or s[i] == '\t' or s[i] == '"') need_quote = true;
+    }
+    if (!need_quote) {
+        i = @intCast(usize, 0);
+        while (i < s.len and n.* + 1 < cmd.len) : (i += 1) {
+            cmd[n.*] = s[i];
+            n.* += 1;
+        }
+        return;
+    }
+    if (n.* + 1 < cmd.len) {
+        cmd[n.*] = '"';
+        n.* += 1;
+    }
+    var backslashes: usize = @intCast(usize, 0);
+    i = @intCast(usize, 0);
+    while (i < s.len) : (i += 1) {
+        var c = s[i];
+        if (c == '\\') {
+            backslashes += 1;
+        } else if (c == '"') {
+            var b: usize = @intCast(usize, 0);
+            while (b < backslashes * 2 + 1 and n.* + 1 < cmd.len) : (b += 1) {
+                cmd[n.*] = '\\';
+                n.* += 1;
+            }
+            if (n.* + 1 < cmd.len) {
+                cmd[n.*] = '"';
+                n.* += 1;
+            }
+            backslashes = @intCast(usize, 0);
+        } else {
+            while (backslashes > 0 and n.* + 1 < cmd.len) {
+                cmd[n.*] = '\\';
+                n.* += 1;
+                backslashes -= 1;
+            }
+            if (n.* + 1 < cmd.len) {
+                cmd[n.*] = c;
+                n.* += 1;
+            }
+            backslashes = @intCast(usize, 0);
+        }
+    }
+    var t: usize = @intCast(usize, 0);
+    while (t < backslashes * 2 and n.* + 1 < cmd.len) : (t += 1) {
+        cmd[n.*] = '\\';
+        n.* += 1;
+    }
+    if (n.* + 1 < cmd.len) {
+        cmd[n.*] = '"';
+        n.* += 1;
+    }
+}
+
 fn continueEvent(st: *State) backend.BackendError!void {
     if (os.continueDebugEvent(st.pid, st.tid, DBG_CONTINUE) == 0) return error.ContinueFailed;
 }
@@ -332,22 +397,13 @@ fn launch(state: *void, exe: []const u8, args: [][]const u8) backend.BackendErro
 
     var cmd: [8192]u8 = undefined;
     var n: usize = 0;
-    var i: usize = 0;
-    while (i < exe.len and n + 1 < cmd.len) : (i += 1) {
-        cmd[n] = exe[i];
-        n += 1;
-    }
+    appendCmdToken(&cmd, &n, exe);
     var ai: usize = 0;
     while (ai < args.len) : (ai += 1) {
         if (n + 1 >= cmd.len) break;
         cmd[n] = ' ';
         n += 1;
-        var s = args[ai];
-        var j: usize = 0;
-        while (j < s.len and n + 1 < cmd.len) : (j += 1) {
-            cmd[n] = s[j];
-            n += 1;
-        }
+        appendCmdToken(&cmd, &n, args[ai]);
     }
     cmd[n] = 0;
 
