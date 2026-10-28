@@ -20,12 +20,12 @@ set -euo pipefail
 #      safety net (EXPR_GUARD_MAX) that must not fire on legal input; when it
 #      does not trip this case passes with a note;
 #   5. the four 8-pin entries still emit and their `-fsafe`/`-ffast`
-#      `--dump-c89` md5s match the authoritative 8-pin table (post-`ERROR_*`
-#      dense-order re-baseline, ruling (iii)):
-#        mud  1b259bcd0584256029af931a53a03ae3 / e295d1c85dc837163c5de4898b03b8d4
-#        gol  5be7b43b8f5bc5cc454aa1b434819ab1 / 1e091c84f97280d1ae765597a0a61d84
-#        lisp 12b75058c92aa866ef9ce99ea2a401dd / 82b721b588adddda63e2dc30e96bbfcb
-#        json b5be954dc2d6b7c46c46bd90d910fc95 / 048c2547541c2b1038556564a0706abb
+#      `--dump-c89` md5s match the authoritative 8-pin table (Phase 2.5
+#      Task 9 warning-clean-emission re-baseline, both modes moved):
+#        mud  acc5ab7f68460815b11aa166240c1771 / b38f54f4137ff9c45ef4825749cb6a14
+#        gol  34ec050bc1b1815d12c62f52050b7285 / b1693ac1a7b1a042c5d8653b944b9bc1
+#        lisp 0613c6fe7444ab0268f98268cc6fbfcb / e4c1c144ef57163689a3035d1a014a2f
+#        json 4b88304ae606bbe71d96a66f5e2b5569 / a952b3fac10d3cc88d1224d7a7cc8ca8
 #      (left = `-fsafe`, right = `-ffast`);
 #   6. a generated 120-term RUNTIME-VALUED (not literal-folded) left-deep `+`
 #      chain compiles rc=0 under `ulimit -s 1024` (Task 2 trampoline) and its
@@ -281,13 +281,13 @@ pin_check() {
 }
 
 pin_check "examples/z98/mud_server/main.zig" \
-    "1b259bcd0584256029af931a53a03ae3" "e295d1c85dc837163c5de4898b03b8d4" mud_server
+    "acc5ab7f68460815b11aa166240c1771" "b38f54f4137ff9c45ef4825749cb6a14" mud_server
 pin_check "examples/z98/game_of_life/main.zig" \
-    "5be7b43b8f5bc5cc454aa1b434819ab1" "1e091c84f97280d1ae765597a0a61d84" game_of_life
+    "34ec050bc1b1815d12c62f52050b7285" "b1693ac1a7b1a042c5d8653b944b9bc1" game_of_life
 pin_check "examples/z98/lisp_interpreter_curr/main.zig" \
-    "12b75058c92aa866ef9ce99ea2a401dd" "82b721b588adddda63e2dc30e96bbfcb" lisp_interpreter_curr
+    "0613c6fe7444ab0268f98268cc6fbfcb" "e4c1c144ef57163689a3035d1a014a2f" lisp_interpreter_curr
 pin_check "examples/z98/json_parser/main.zig" \
-    "b5be954dc2d6b7c46c46bd90d910fc95" "048c2547541c2b1038556564a0706abb" json_parser
+    "4b88304ae606bbe71d96a66f5e2b5569" "a952b3fac10d3cc88d1224d7a7cc8ca8" json_parser
 
 # ---- 6. 120-term runtime-valued left-deep `+` chain (Task 2 RED->GREEN) ----
 # Fixture (validated shape): each term is a u32 local seeded through

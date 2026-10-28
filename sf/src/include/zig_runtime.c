@@ -80,6 +80,144 @@ zu64 std_checked_cast_u64(zu64 val) {
    c_char is char; not typedef'd in zig_compat.h, so typedef'd here. */
 typedef char c_char;
 
+/* -fsafe integer-overflow helpers (A15): single external definition.
+   zig_runtime.h only declares these, so emitted modules no longer carry
+   a per-TU static copy (warning-clean at the origin). */
+z64 zig_ovf_sext(zu64 x, unsigned int w) {
+    zu64 m;
+    if (w == 0u) return 0;
+    if (w >= 64u) return (z64)x;
+    m = (Z98_U64_C(1) << w) - Z98_U64_C(1);
+    x = x & m;
+    if ((x & (Z98_U64_C(1) << (w - 1u))) != Z98_U64_C(0)) x = x | (~m);
+    return (z64)x;
+}
+zu64 zig_ovf_mask(zu64 x, unsigned int w) {
+    if (w == 0u) return 0;
+    if (w >= 64u) return x;
+    return x & ((Z98_U64_C(1) << w) - Z98_U64_C(1));
+}
+zu64 zig_ovf_maxu(unsigned int w) {
+    if (w >= 64u) return Z98_U64_MAX;
+    return (Z98_U64_C(1) << w) - Z98_U64_C(1);
+}
+z64 zig_ovf_maxs(unsigned int w) {
+    if (w >= 64u) return Z98_I64_MAX;
+    return (z64)((Z98_U64_C(1) << (w - 1u)) - Z98_U64_C(1));
+}
+z64 zig_ovf_mins(unsigned int w) {
+    if (w >= 64u) return Z98_I64_MIN;
+    return -(z64)(Z98_U64_C(1) << (w - 1u));
+}
+z64 zig_wrap_add_s(z64 a, z64 b, unsigned int w) {
+    return zig_ovf_sext((zu64)a + (zu64)b, w);
+}
+z64 zig_wrap_sub_s(z64 a, z64 b, unsigned int w) {
+    return zig_ovf_sext((zu64)a - (zu64)b, w);
+}
+z64 zig_wrap_mul_s(z64 a, z64 b, unsigned int w) {
+    return zig_ovf_sext((zu64)a * (zu64)b, w);
+}
+z64 zig_wrap_shl_s(z64 a, z64 b, unsigned int w) {
+    return zig_ovf_sext(((zu64)a) << (((zu64)b) & Z98_U64_C(63)), w);
+}
+z64 zig_wrap_neg_s(z64 a, unsigned int w) {
+    return zig_ovf_sext((zu64)0 - (zu64)a, w);
+}
+zu64 zig_wrap_add_u(zu64 a, zu64 b, unsigned int w) {
+    return zig_ovf_mask(a + b, w);
+}
+zu64 zig_wrap_sub_u(zu64 a, zu64 b, unsigned int w) {
+    return zig_ovf_mask(a - b, w);
+}
+zu64 zig_wrap_mul_u(zu64 a, zu64 b, unsigned int w) {
+    return zig_ovf_mask(a * b, w);
+}
+zu64 zig_wrap_shl_u(zu64 a, zu64 b, unsigned int w) {
+    return zig_ovf_mask(a << (b & Z98_U64_C(63)), w);
+}
+zu64 zig_wrap_neg_u(zu64 a, unsigned int w) {
+    return zig_ovf_mask((zu64)0 - a, w);
+}
+int zig_overflow_flag_add_s(z64 a, z64 b, unsigned int w) {
+    z64 maxs = zig_ovf_maxs(w);
+    z64 mins = zig_ovf_mins(w);
+    if (b > 0 && a > maxs - b) return 1;
+    if (b < 0 && a < mins - b) return 1;
+    return 0;
+}
+int zig_overflow_flag_add_u(zu64 a, zu64 b, unsigned int w) {
+    return a > zig_ovf_maxu(w) - b;
+}
+int zig_overflow_flag_sub_s(z64 a, z64 b, unsigned int w) {
+    z64 maxs = zig_ovf_maxs(w);
+    z64 mins = zig_ovf_mins(w);
+    if (b < 0 && a > maxs + b) return 1;
+    if (b > 0 && a < mins + b) return 1;
+    return 0;
+}
+int zig_overflow_flag_sub_u(zu64 a, zu64 b, unsigned int w) {
+    (void)w;
+    return a < b;
+}
+int zig_overflow_flag_mul_s(z64 a, z64 b, unsigned int w) {
+    z64 maxs = zig_ovf_maxs(w);
+    z64 mins = zig_ovf_mins(w);
+    if (a == 0 || b == 0) return 0;
+    if (a > 0) {
+        if (b > 0) return a > maxs / b;
+        return b < mins / a;
+    }
+    if (b > 0) return a < mins / b;
+    return a < maxs / b;
+}
+int zig_overflow_flag_mul_u(zu64 a, zu64 b, unsigned int w) {
+    if (b == Z98_U64_C(0)) return 0;
+    return a > zig_ovf_maxu(w) / b;
+}
+int zig_overflow_flag_shl_s(z64 a, z64 b, unsigned int w) {
+    z64 maxs = zig_ovf_maxs(w);
+    z64 mins = zig_ovf_mins(w);
+    if (a == 0 || b <= 0) return 0;
+    if (b >= (z64)w) return 1;
+    return a > (maxs >> b) || a < (mins >> b);
+}
+int zig_overflow_flag_shl_u(zu64 a, zu64 b, unsigned int w) {
+    if (a == Z98_U64_C(0) || b == Z98_U64_C(0)) return 0;
+    if (b >= (zu64)w) return 1;
+    return a > (zig_ovf_maxu(w) >> b);
+}
+int zig_overflow_flag_neg_s(z64 a, unsigned int w) {
+    return a == zig_ovf_mins(w);
+}
+int zig_overflow_flag_neg_u(zu64 a, unsigned int w) {
+    (void)w;
+    return a != Z98_U64_C(0);
+}
+z64 zig_cast_checked_s(zu64 v, unsigned int sw, unsigned int ss, unsigned int dw) {
+    z64 r;
+    if (ss != 0u) r = zig_ovf_sext(v, sw); else r = (z64)zig_ovf_mask(v, sw);
+    if (dw == 0u || dw > 64u) dw = 64u;
+    if (dw >= 64u) {
+        if (ss == 0u && r < 0) std_panic("integer cast overflow in @intCast");
+        return r;
+    }
+    if (r < zig_ovf_mins(dw) || r > zig_ovf_maxs(dw)) std_panic("integer cast overflow in @intCast");
+    return r;
+}
+zu64 zig_cast_checked_u(zu64 v, unsigned int sw, unsigned int ss, unsigned int dw) {
+    z64 r;
+    zu64 m;
+    if (ss != 0u) r = zig_ovf_sext(v, sw); else r = (z64)zig_ovf_mask(v, sw);
+    if (ss != 0u) m = (zu64)r; else m = zig_ovf_mask(v, sw);
+    if (dw == 0u || dw >= 64u) {
+        if (ss != 0u && r < 0) std_panic("integer cast overflow in @intCast");
+        return m;
+    }
+    if (r < 0 || (zu64)r > zig_ovf_maxu(dw)) std_panic("integer cast overflow in @intCast");
+    return m;
+}
+
 usize __bootstrap_usize_from_i64(i64 x) {
     if (x < 0) std_panic("integer cast overflow in @intCast");
     return (usize)x;

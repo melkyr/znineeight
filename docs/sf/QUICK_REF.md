@@ -612,27 +612,25 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (v122+, 2026-10-26 — one-time `ERROR_*` order re-baseline).**
-Measured with the seed-built compiler (working-tree fixed point
-`c8c3d5df90a4ed7b17bc388f89e5b99f`) from the repo root with relative entry
+**8-pin table (2026-10-28 — Phase 2.5 Task 9 warning-clean emission re-baseline).**
+Measured with the seed-built compiler from the repo root with relative entry
 paths: `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`.
 
-**All 8 moved once**, by design: `emitErrorCodePrologue` now emits the
-`ERROR_*` macro block in dense `reg_code` order instead of `error_code_registry`
-hash-bucket order (bucket order was interner-`name_id`-fragile — any added
-interned string shuffled it). Runtime behavior is unchanged: all emitted `.c`
-byte-identical, `zig_special_types.h` name->value maps set-identical, and
-build+run stdout/exit byte-identical on all 6 gate entries. Only the macro line
-order moved. Previous values (v121, bucket order) are the historical table
-below. The absolute pin values are **compiler-build dependent**, so only
-same-build comparisons are meaningful.
+**All 8 moved once**, by design: Task 9 fixes the emitted C at the origin
+(string-literal/field pointer casts, C89 extern declarations for modules without
+`@cInclude`, `label: ;` after terminal basic blocks, non-`static` const-init
+globals, and the split `build_target.sh` template), so both `-fsafe` and
+`-ffast` dump bytes move. Runtime behavior is unchanged: goldens 5/5
+byte-identical and corpus classification 0 movers. Previous values are the
+historical tables below. The absolute pin values are **compiler-build
+dependent**, so only same-build comparisons are meaningful.
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `1b259bcd0584256029af931a53a03ae3` | `e295d1c85dc837163c5de4898b03b8d4` |
-| `examples/z98/game_of_life/main.zig` | `5be7b43b8f5bc5cc454aa1b434819ab1` | `1e091c84f97280d1ae765597a0a61d84` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `12b75058c92aa866ef9ce99ea2a401dd` | `82b721b588adddda63e2dc30e96bbfcb` |
-| `examples/z98/json_parser/main.zig` | `b5be954dc2d6b7c46c46bd90d910fc95` | `048c2547541c2b1038556564a0706abb` |
+| `examples/z98/mud_server/main.zig` | `acc5ab7f68460815b11aa166240c1771` | `b38f54f4137ff9c45ef4825749cb6a14` |
+| `examples/z98/game_of_life/main.zig` | `34ec050bc1b1815d12c62f52050b7285` | `b1693ac1a7b1a042c5d8653b944b9bc1` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `0613c6fe7444ab0268f98268cc6fbfcb` | `e4c1c144ef57163689a3035d1a014a2f` |
+| `examples/z98/json_parser/main.zig` | `4b88304ae606bbe71d96a66f5e2b5569` | `a952b3fac10d3cc88d1224d7a7cc8ca8` |
 
 Historical 8-pin table (v121, 2026-10-25; `ERROR_*` in hash-bucket order, superseded above):
 

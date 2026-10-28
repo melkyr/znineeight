@@ -1987,6 +1987,158 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     bufferedWriterWrite(&emitter.writer, rp);
 }
 
+// Warning-clean origin for `extern "c" fn`: a module that carries no @cInclude
+// has no platform header to supply the C prototype (e.g. the compiler's own
+// pal.zig calls fopen/fwrite/... directly). Emit a C89 old-style declaration
+// (return type + `()`), which is the conforming way to declare an external
+// function whose platform prototype is not visible: it resolves
+// -Wimplicit-function-declaration, cannot conflict with a libc built-in
+// (fwrite's real first parameter is `const void*`, not the Z98 `[*]const u8`),
+// and stays ABI-correct because every such extern takes only promotion-stable
+// types (pointers, ints, doubles). Modules WITH @cInclude keep relying on their
+// platform headers (std_os_prelude.h / net_prelude.h / <stdio.h> etc.), exactly
+// as the preludes document.
+fn emitExternDeclFor(emitter: *C89Emitter, name_id: u32, return_type: u32, call_conv: u8) void {
+    var ret_c = getCTypeName(emitter.registry, emitter.mangler, return_type);
+    if (return_type < @intCast(u32, emitter.registry.types_len)) {
+        var ret_ty = emitter.registry.types_items[@intCast(usize, return_type)];
+        if (ret_ty.kind == type_mod.TypeKind.optional_type) {
+            // A Z98 optional-C-ABI return is the payload itself (fopen's
+            // `?*void` is a plain `void*`); the optional struct is a Z98
+            // value-model detail, not the C ABI return type.
+            var ret_pay = emitter.registry.opt_items[@intCast(usize, ret_ty.payload_idx)].payload;
+            if (ret_pay < @intCast(u32, emitter.registry.types_len) and
+                emitter.registry.types_items[@intCast(usize, ret_pay)].kind == type_mod.TypeKind.void_type)
+            {
+                var rv: []const u8 = "void";
+                bufferedWriterWrite(&emitter.writer, rv);
+            } else {
+                var rpc = getCTypeName(emitter.registry, emitter.mangler, ret_pay);
+                bufferedWriterWrite(&emitter.writer, rpc);
+            }
+        } else {
+            bufferedWriterWrite(&emitter.writer, ret_c);
+        }
+    } else {
+        bufferedWriterWrite(&emitter.writer, ret_c);
+    }
+    var sp: []const u8 = " ";
+    bufferedWriterWrite(&emitter.writer, sp);
+    emitCallConv(emitter, call_conv);
+    var orig = interner_mod.stringInternerGet(emitter.interner, name_id);
+    bufferedWriterWrite(&emitter.writer, orig);
+    var op: []const u8 = "();\n";
+    bufferedWriterWrite(&emitter.writer, op);
+}
+
+// A module's header transitively includes its dependency headers, so a
+// dependency's @cInclude (net_prelude.h, <stdio.h>, ...) is visible in this
+// module's .c too. Only a dependency-closure with no @cInclude at all is safe
+// for emitter-supplied extern declarations.
+fn moduleClosureHasCIncludes(emitter: *C89Emitter, module_id: u32) bool {
+    var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
+    var n: usize = mods.len;
+    if (n > @intCast(usize, 256)) return true;
+    var seen: [256]u8 = undefined;
+    var stack: [256]u32 = undefined;
+    var zi: usize = @intCast(usize, 0);
+    while (zi < n) : (zi += @intCast(usize, 1)) { seen[zi] = @intCast(u8, 0); }
+    var sp: usize = @intCast(usize, 0);
+    seen[@intCast(usize, module_id)] = @intCast(u8, 1);
+    stack[sp] = module_id;
+    sp += @intCast(usize, 1);
+    while (sp > @intCast(usize, 0)) {
+        sp -= @intCast(usize, 1);
+        var mid = stack[sp];
+        var m = mods[@intCast(usize, mid)];
+        if (m.c_includes.len != @intCast(usize, 0)) return true;
+        var ei: usize = @intCast(usize, m.imports_start) + @intCast(usize, m.import_count);
+        var si: usize = @intCast(usize, m.imports_start);
+        while (si < ei) : (si += @intCast(usize, 1)) {
+            var dep = emitter.module_reg.import_edges_items[si];
+            if (dep < n and seen[@intCast(usize, dep)] == @intCast(u8, 0)) {
+                seen[@intCast(usize, dep)] = @intCast(u8, 1);
+                if (sp < @intCast(usize, 256)) {
+                    stack[sp] = dep;
+                    sp += @intCast(usize, 1);
+                }
+            }
+        }
+    }
+    return false;
+}
+
+fn externCallIsVariadic(emitter: *C89Emitter, fn_type_id: u32) bool {
+    if (fn_type_id == @intCast(u32, 0xFFFFFFFF) or fn_type_id >= @intCast(u32, emitter.registry.types_len)) return false;
+    var fty = emitter.registry.types_items[@intCast(usize, fn_type_id)];
+    if (fty.kind != type_mod.TypeKind.fn_type) return false;
+    var fp = emitter.registry.fn_items[@intCast(usize, fty.payload_idx)];
+    return (fp.flags_packed & type_mod.FN_FLAG_VARIADIC) != @intCast(u8, 0);
+}
+
+fn u32ListContains(list: []const u32, v: u32) bool {
+    var i: usize = @intCast(usize, 0);
+    while (i < list.len) : (i += @intCast(usize, 1)) {
+        if (list[i] == v) return true;
+    }
+    return false;
+}
+
+// Multi-file only: declare every extern function this module CALLS in its own
+// .c (never in the shared header, which other TUs pull in alongside libc
+// headers, where an old-style `void* fopen()` would conflict with <stdio.h>'s
+// `FILE* fopen(...)`). Calls may target an extern owned by another module
+// (pal.zig calls extern_c.write), so the usage scan reads call sites, not the
+// module's own declarations. A module that carries @cInclude relies on its
+// platform headers and is skipped entirely.
+fn emitModuleExternDecls(emitter: *C89Emitter, module_id: u32) void {
+    if (moduleClosureHasCIncludes(emitter, module_id)) return;
+    // Variadic externs already have a full prototype in the module header.
+    // Collect their names BEFORE the per-function scan: `faultIn` returns
+    // slices into one shared spill arena, so it must not be called while a
+    // previously read function is still being traversed.
+    var var_names: [128]u32 = undefined;
+    var var_n: usize = @intCast(usize, 0);
+    var vi: usize = @intCast(usize, 0);
+    while (vi < emitter.fn_slots_len) : (vi += @intCast(usize, 1)) {
+        var vf = faultIn(emitter, vi);
+        if (vf.is_extern != @intCast(u8, 0) and vf.is_variadic != @intCast(u8, 0)) {
+            if (var_n < @intCast(usize, 128)) {
+                var_names[var_n] = vf.name_id;
+                var_n += @intCast(usize, 1);
+            }
+        }
+    }
+    var i: usize = @intCast(usize, 0);
+    while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
+        var f = faultIn(emitter, i);
+        if (f.module_id != module_id) continue;
+        var bi: usize = @intCast(usize, 0);
+        while (bi < f.blocks.len) : (bi += @intCast(usize, 1)) {
+            var bb = &f.blocks.items[bi];
+            var ii: usize = @intCast(usize, 0);
+            while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+                var inst = bb.insts.items[ii];
+                switch (inst) {
+                    .call_direct => |slot| {
+                        var cd = lir_mod.lirSideGetCallDirect(&f, slot);
+                        if (cd.is_extern != @intCast(u8, 0) and !externCallIsVariadic(emitter, cd.fn_type_id) and !u32ListContains(var_names[0..var_n], cd.name_id)) {
+                            emitExternDeclFor(emitter, cd.name_id, cd.return_type, cd.call_conv);
+                        }
+                    },
+                    .tail_call => |slot| {
+                        var tc = lir_mod.lirSideGetTailCall(&f, slot);
+                        if (tc.is_extern != @intCast(u8, 0) and tc.is_indirect == @intCast(u8, 0) and !externCallIsVariadic(emitter, tc.fn_type_id) and !u32ListContains(var_names[0..var_n], tc.callee)) {
+                            emitExternDeclFor(emitter, tc.callee, tc.return_type, tc.call_conv);
+                        }
+                    },
+                    else => {},
+                }
+            }
+        }
+    }
+}
+
 fn faultIn(emitter: *C89Emitter, idx: usize) LirFunction {
     return lir_stream_mod.lirStreamReadFunction(emitter.spill, emitter.fn_slots[emitter.fn_slots_start + idx], emitter.spill_arena);
 }
@@ -2240,7 +2392,11 @@ fn emitBuiltinIncludes(emitter: *C89Emitter) void {
         bufferedWriterWrite(&emitter.writer, stdlib_inc);
     }
     if (moduleHasSleepBuiltin(emitter) != @intCast(u8, 0)) {
-        var swin: []const u8 = "#ifdef _WIN32\n#include <windows.h>\n#else\n#include <unistd.h>\n#endif\n";
+        // `usleep` is hidden by glibc under strict -std=c89 (no _DEFAULT_SOURCE
+        // feature request); declare the C89 external form so the emitted
+        // @sleepMs call is not an implicit declaration. The old-style form is
+        // compatible with the header prototype when a build opts into POSIX.
+        var swin: []const u8 = "#ifdef _WIN32\n#include <windows.h>\n#else\n#include <unistd.h>\nextern int usleep();\n#endif\n";
         bufferedWriterWrite(&emitter.writer, swin);
     }
     if (moduleHasConsoleBuiltin(emitter) != @intCast(u8, 0)) {
@@ -2703,10 +2859,12 @@ fn emitGlobalExternDecls(emitter: *C89Emitter, module_id: u32, all: u8, want_ext
                 continue;
             }
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 0));
-            if (g.link_visible == @intCast(u8, 0)) {
-                var cst: []const u8 = "static ";
-                bufferedWriterWrite(&emitter.writer, cst);
-            }
+            // Const-init globals use external linkage like the storage globals
+            // below: a module-private Z98 const may be folded away at every use
+            // site, and a `static` C definition would then be "defined but not
+            // used" (-Wunused-const-variable). The mangled name already carries
+            // the owning module id, so linkage stays collision-free; the header
+            // still hides non-link-visible consts.
             bufferedWriterWrite(&emitter.writer, gtype);
             var csp2: []const u8 = " const ";
             bufferedWriterWrite(&emitter.writer, csp2);
@@ -3044,6 +3202,7 @@ pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8
     bufferedWriterWrite(&emitter.writer, h1);
     emitStdargInclude(emitter);
     emitBuiltinIncludes(emitter);
+    emitModuleExternDecls(emitter, module_id);
     emitGlobalDecls(emitter, module_id, @intCast(u8, 0));
     alloc_mod.sandReset(emitter.alloc);
     emitGeneratedPrinters(emitter);
@@ -4254,7 +4413,9 @@ fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32, de
         },
         .ptr_cast => |pc| {
             var ctype = getCTypeName(emitter.registry, emitter.mangler, pc.target);
-            emitCastRvalue(emitter, ctype, pc.value, depth, "");
+            var pc_mid: []const u8 = "";
+            if (castNeedsIntBridge(emitter, pc.target, hoistedTypeOf(emitter, pc.value))) { pc_mid = "(unsigned int)"; }
+            emitCastRvalue(emitter, ctype, pc.value, depth, pc_mid);
         },
         .float_cast => |fc| {
             var ctype = getCTypeName(emitter.registry, emitter.mangler, fc.target);
@@ -7380,6 +7541,22 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
               bufferedWriterWrite(&emitter.writer, result);
               var s: []const u8 = " = ";
               bufferedWriterWrite(&emitter.writer, s);
+              // Slice `.ptr` is `unsigned char*` in the layout model, while a
+              // Z98 @ptrCast may land it in a `char*` temp; cast to the result
+              // type so the assignment is pointer-sign clean.
+              if (lf.field_id == type_mod.SLICE_FIELD_PTR and lf_res_ty != type_mod.TYPE_UNDEFINED and lf_res_ty != @intCast(u32, 0xFFFFFFFF)) {
+                  if (lf_res_ty < @intCast(u32, emitter.registry.types_len)) {
+                      var lf_cty = emitter.registry.types_items[@intCast(usize, lf_res_ty)];
+                      if (lf_cty.kind == type_mod.TypeKind.ptr_type or lf_cty.kind == type_mod.TypeKind.many_ptr_type) {
+                          var lf_cn = getCTypeName(emitter.registry, emitter.mangler, lf_res_ty);
+                          var lf_cp0: []const u8 = "(";
+                          bufferedWriterWrite(&emitter.writer, lf_cp0);
+                          bufferedWriterWrite(&emitter.writer, lf_cn);
+                          var lf_cp1: []const u8 = ")";
+                          bufferedWriterWrite(&emitter.writer, lf_cp1);
+                      }
+                  }
+              }
               bufferedWriterWrite(&emitter.writer, base);
               var field_name_resolved: u8 = @intCast(u8, 0);
               var lf_base_ty = hoistedTypeOf(emitter, lf.base);
@@ -7764,6 +7941,21 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s);
+            // A C string literal has type `char*`; cast it to the destination
+            // pointer spelling (normally `unsigned char*`) at the origin so the
+            // emitted assignment is pointer-sign clean.
+            var sc_tid = getTempTypeByIndex(emitter, sc.result);
+            if (sc_tid != @intCast(u32, 0xFFFFFFFF)) {
+                var sc_ty = emitter.registry.types_items[@intCast(usize, sc_tid)];
+                if (sc_ty.kind == type_mod.TypeKind.ptr_type or sc_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                    var sc_ct = getCTypeName(emitter.registry, emitter.mangler, sc_tid);
+                    var sc_c0: []const u8 = "(";
+                    bufferedWriterWrite(&emitter.writer, sc_c0);
+                    bufferedWriterWrite(&emitter.writer, sc_ct);
+                    var sc_c1: []const u8 = ")";
+                    bufferedWriterWrite(&emitter.writer, sc_c1);
+                }
+            }
             emitCStringLiteralEx(&emitter.writer, str, kStrEscConst);
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
@@ -8489,7 +8681,9 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
         },
         .ptr_cast => |pc| {
             var ctype = getCTypeName(emitter.registry, emitter.mangler, pc.target);
-            emitCastStmt(emitter, pc.result, ctype, pc.value, "");
+            var pc_mid: []const u8 = "";
+            if (castNeedsIntBridge(emitter, pc.target, hoistedTypeOf(emitter, pc.value))) { pc_mid = "(unsigned int)"; }
+            emitCastStmt(emitter, pc.result, ctype, pc.value, pc_mid);
         },
         .check_error => |e| {
             var dst = resolveTempName(emitter, e.result);
@@ -9103,7 +9297,10 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
                 var si: usize = @intCast(usize, ns);
                 var ei: usize = @intCast(usize, 15);
                 bufferedWriterWrite(&emitter.writer, nb[si..ei]);
-                var l2: []const u8 = ":\n";
+                // C89 requires a statement after a label; a basic block that
+                // ends the function/compound statement would otherwise trip
+                // -Wpedantic ("label at end of compound statement").
+                var l2: []const u8 = ": ;\n";
                 bufferedWriterWrite(&emitter.writer, l2);
             }
         }
@@ -9198,8 +9395,19 @@ fn writeReachableModuleList(writer: *BufferedWriter, emitter: *C89Emitter, prefi
 }
 
 pub fn emitBuildTargetSh(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
-    var h0: []const u8 = "#!/bin/sh\nchmod +x \"$0\" 2>/dev/null || true\n# build_target.sh - generated by zig1\n# usage: sh build_target.sh [TARGET] [OUT]\n#   TARGET: linux (default) or mingw\n#   OUT:    output binary (default: prog on linux, prog.exe on mingw)\n# REDISTRIBUTION: on mingw this is the Win9x DEFAULT no-CRT build: a single EXE\n#   importing only KERNEL32 (+WINMM/WSOCK32 when used), no msvcrt.dll.\n#   A CRT-linked NT build is emitted by the compiler's `-osw nt` profile (this\n#   script then carries -DZIG_WIN_NT and does not use -nostdlib).\n# Status: design-verified; hardware verification pending.\n# WARNING POLICY: this script does NOT enable warnings-as-errors (no -Werror here),\n# so compiler warnings are non-fatal and the build still produces the binary.\n# If the build stops with a hard error, the emitted C is invalid for this toolchain:\n# please report it as a bug (include the failing compiler output above).\n# If you add -Werror yourself, drop it to see the warning without failing.\nset -e\ncd \"$(dirname \"$0\")\"\nTARGET=${1:-linux}\nOUT=$2\ncase \"$TARGET\" in\n  linux)\n    CC=gcc\n    CFLAGS=\"-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I .\"\n    LDFLAGS=\"-m32 -O0\"\n    LIBS=\"\"\n    [ -n \"$OUT\" ] || OUT=prog\n    ;;\n";
-    bufferedWriterWrite(writer, h0);
+    // Split the 1255-byte script template at the source so neither emitted C
+    // string constant exceeds C90's 509-character minimum: gcc's
+    // -Woverlength-strings counts the post-concatenation length, so emitting
+    // adjacent literals is not enough. The two writes concatenate in the
+    // emitted script byte-for-byte.
+    var h0a: []const u8 = "#!/bin/sh\nchmod +x \"$0\" 2>/dev/null || true\n# build_target.sh - generated by zig1\n# usage: sh build_target.sh [TARGET] [OUT]\n#   TARGET: linux (default) or mingw\n#   OUT:    output binary (default: prog on linux, prog.exe on mingw)\n# REDISTRIBUTION: on mingw this is the Win9x DEFAULT no-CRT build: a single EXE\n#   importing only KERNEL32 (+WINMM/WSOCK32 when used), no msvcrt.dll.\n";
+    bufferedWriterWrite(writer, h0a);
+    var h0b: []const u8 = "#   A CRT-linked NT build is emitted by the compiler's `-osw nt` profile (this\n#   script then carries -DZIG_WIN_NT and does not use -nostdlib).\n# Status: design-verified; hardware verification pending.\n";
+    bufferedWriterWrite(writer, h0b);
+    var h0c: []const u8 = "# WARNING POLICY: this script does NOT enable warnings-as-errors (no -Werror here),\n# so compiler warnings are non-fatal and the build still produces the binary.\n# If the build stops with a hard error, the emitted C is invalid for this toolchain:\n# please report it as a bug (include the failing compiler output above).\n# If you add -Werror yourself, drop it to see the warning without failing.\n";
+    bufferedWriterWrite(writer, h0c);
+    var h0d: []const u8 = "set -e\ncd \"$(dirname \"$0\")\"\nTARGET=${1:-linux}\nOUT=$2\ncase \"$TARGET\" in\n  linux)\n    CC=gcc\n    CFLAGS=\"-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I .\"\n    LDFLAGS=\"-m32 -O0\"\n    LIBS=\"\"\n    [ -n \"$OUT\" ] || OUT=prog\n    ;;\n";
+    bufferedWriterWrite(writer, h0d);
     var h1: []const u8 = "  mingw)\n    CC=i686-w64-mingw32-gcc\n    CFLAGS=\"";
     bufferedWriterWrite(writer, h1);
     var sh_flags: []const u8 = "-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -DZIG_NO_CRT -I .";
@@ -9596,6 +9804,37 @@ fn writtenTempType(written_type: [*]u32, written_flag: [*]u8, lir_fn: *LirFuncti
 
 // Task 2b3 D3-8: cast emission. `(ctype)mid<value>` rvalue and
 // `dst = (ctype)mid<value>;` statement, byte-identical to the prior arms.
+// ISO C forbids converting between function pointers and object pointers via a
+// cast. Route those conversions through `unsigned int` (the frozen 32-bit
+// pointer width) so -pedantic stays clean; the bit pattern is unchanged.
+fn typeIsFnLike(emitter: *C89Emitter, tid: u32) bool {
+    if (tid == @intCast(u32, 0) or tid == @intCast(u32, 0xFFFFFFFF)) return false;
+    if (tid >= @intCast(u32, emitter.registry.types_len)) return false;
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    if (ty.kind == type_mod.TypeKind.fn_type) return true;
+    if (ty.kind == type_mod.TypeKind.ptr_type) {
+        var pp = emitter.registry.ptr_items[@intCast(usize, ty.payload_idx)];
+        if (pp.base < @intCast(u32, emitter.registry.types_len)) {
+            return emitter.registry.types_items[@intCast(usize, pp.base)].kind == type_mod.TypeKind.fn_type;
+        }
+    }
+    return false;
+}
+
+fn typeIsObjPtr(emitter: *C89Emitter, tid: u32) bool {
+    if (tid == @intCast(u32, 0) or tid == @intCast(u32, 0xFFFFFFFF)) return false;
+    if (tid >= @intCast(u32, emitter.registry.types_len)) return false;
+    var kind = emitter.registry.types_items[@intCast(usize, tid)].kind;
+    if (kind != type_mod.TypeKind.ptr_type and kind != type_mod.TypeKind.many_ptr_type) return false;
+    return !typeIsFnLike(emitter, tid);
+}
+
+fn castNeedsIntBridge(emitter: *C89Emitter, target_tid: u32, src_tid: u32) bool {
+    if (typeIsFnLike(emitter, src_tid) and typeIsObjPtr(emitter, target_tid)) return true;
+    if (typeIsFnLike(emitter, target_tid) and typeIsObjPtr(emitter, src_tid)) return true;
+    return false;
+}
+
 fn emitCastRvalue(emitter: *C89Emitter, ctype: []const u8, src_temp: u32, depth: u32, mid: []const u8) void {
     var lp: []const u8 = "(";
     bufferedWriterWrite(&emitter.writer, lp);
