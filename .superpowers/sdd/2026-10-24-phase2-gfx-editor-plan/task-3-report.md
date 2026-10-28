@@ -215,3 +215,60 @@ was not committed.
 6. **First screenshot was black**: the initial smoke captured before windowed
    DDraw had presented. Fixed by presenting frames for ~1.2 s after `READY`;
    final screenshots are non-black (210 colors) and show the editor.
+
+## Fix round 1
+
+### Finding I-1 — save failure killed the session
+
+Reported: `uiPaint` returned the sticky `st.err` every frame, `doSave` set
+`st.err` to `SaveFailed`/`OutOfMemory`, and `main.zig` treated any paint error
+as fatal. A read-only/locked/full-disk save therefore exited the editor and
+lost unsaved text.
+
+### What changed (example-only)
+
+- `examples/z98/z9edit/ui.zig`
+  - `UiImpl.err` is now only the unrecoverable OOM state (`0 none`,
+    `1 OutOfMemory`); added `save_failed: bool`.
+  - `doSave` no longer calls `setErr`. On `bufSave` failure it sets
+    `save_failed = true`, leaves the buffer dirty, and returns. A successful
+    save clears `save_failed` and refreshes the title/idents as before.
+  - `uiPaint` no longer returns `error.SaveFailed` (the `st.err == 2` path is
+    gone); save failure is not sticky and does not stop the frame loop.
+  - `paintStatus` appends `save failed (Ctrl+S retries)` while `save_failed`
+    is set; the next `Ctrl+S` retries and a success clears it.
+  - No signature, fixture, or golden changed.
+- `examples/z98/z9edit/tests/tier_edit_gui.sh`
+  - Added Run 3: `--smoke` saves to a path that is a **directory**
+    (`fail_save/out.tmp`), so `CreateFile`-for-write fails deterministically.
+    The editor must exit 0 (session survived) and must not replace the
+    directory. This covers the save-failure path without touching the happy
+    golden.
+
+Seed v124 is unchanged (z9edit is an example; no compiler/std change).
+`edit_smoke.expected` is unchanged (`974243c9…`).
+
+### Covering test command + output
+
+```
+ZIG=/tmp/p4_newcheck/zig1_5_clean OUT=/tmp/z9tier_i1a \
+  sh examples/z98/z9edit/tests/tier_edit_gui.sh
+...
+ok   - run 1 save bytes match edit_smoke.expected (md5 974243c97df614039f01da3b86c67b3c)
+ok   - run 2 save bytes match edit_smoke.expected (md5 974243c97df614039f01da3b86c67b3c)
+ok   - save bytes byte-identical 2x (974243c97df614039f01da3b86c67b3c)
+ok   - save-failure run exited 0 (session survived)
+ok   - read-only save target untouched (failure was real)
+== tier_edit_gui summary: 18 passed, 0 failed ==
+compile max RSS: 6976 KiB
+TIER_EDIT_GUI PASS
+```
+
+Second identical run (`OUT=/tmp/z9tier_i1b`): **18 passed, 0 failed**,
+`TIER_EDIT_GUI PASS`, compile max RSS **7052 KiB**, same save md5.
+
+### I-2 waiver
+
+I-2 (process violation: `sed`/`python3` used during the original diagnosis)
+is **waived by the operator**. No code change was made for it; the waiver is
+recorded here as instructed.
