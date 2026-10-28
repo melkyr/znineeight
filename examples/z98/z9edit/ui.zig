@@ -750,7 +750,7 @@ fn paintTokens(st: *UiImpl, row: u32, line_start: usize, line: []const u8,
                 fg = COL_BRIGHT;
                 bg = COL_SEL;
             } else if (have_br and (abs == br1 or abs == br2)) {
-                fg = COL_FG;
+                fg = COL_BG;
                 bg = COL_SEL;
             }
             const x = st.gutter + screen_col;

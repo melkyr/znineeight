@@ -740,7 +740,7 @@ fn releaseAtlasRes(a: *AtlasRes) void {
     a.old_mask = nullVoid();
 }
 
-fn buildAtlasInto(st: *State, theme: u8, brushes: []*void, a: *AtlasRes) bool {
+fn buildAtlasInto(st: *State, theme: u8, a: *AtlasRes) bool {
     const aw: u32 = GLYPH_COUNT * st.cw;
     const ah: u32 = ATLAS_COLORS * st.ch;
     const wdc = GetDC(st.hwnd);
@@ -763,7 +763,10 @@ fn buildAtlasInto(st: *State, theme: u8, brushes: []*void, a: *AtlasRes) bool {
     a.old_mask = SelectObject(a.mask_dc, a.mask_bmp);
 
     var full = Rect{ .left = 0, .top = 0, .right = @intCast(i32, aw), .bottom = @intCast(i32, ah) };
-    _ = FillRect(a.color_dc, @ptrCast(*const void, &full), brushes[0]);
+    // The color atlas must be black outside the glyph: drawText supplies the
+    // actual cell background with a per-cell FillRect, then SRCPAINTs this
+    // glyph. Index 0 is only black in the dark theme, so use the stock brush.
+    _ = FillRect(a.color_dc, @ptrCast(*const void, &full), GetStockObject(BLACK_BRUSH));
     // The mask must always be white-background regardless of the theme's
     // index 15 (white theme's bright is black): use the stock WHITE_BRUSH.
     _ = FillRect(a.mask_dc, @ptrCast(*const void, &full), GetStockObject(WHITE_BRUSH));
@@ -795,7 +798,7 @@ fn buildAtlasInto(st: *State, theme: u8, brushes: []*void, a: *AtlasRes) bool {
 
 fn buildAtlas(st: *State) bool {
     var a = nullAtlasRes();
-    if (!buildAtlasInto(st, st.theme, st.brushes[0..], &a)) return false;
+    if (!buildAtlasInto(st, st.theme, &a)) return false;
     st.atlas_color_dc = a.color_dc;
     st.atlas_mask_dc = a.mask_dc;
     st.atlas_color_bmp = a.color_bmp;
@@ -828,7 +831,7 @@ pub fn setTheme(st: *State, theme_in: u8) bool {
     }
 
     var a = nullAtlasRes();
-    if (!buildAtlasInto(st, theme, new_brushes[0..], &a)) {
+    if (!buildAtlasInto(st, theme, &a)) {
         i = 0;
         while (i < 16) : (i += 1) {
             _ = DeleteObject(new_brushes[i]);
