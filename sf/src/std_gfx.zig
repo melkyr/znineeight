@@ -178,6 +178,31 @@ pub fn gfxTestResize(g: *Gfx, cols: u32, rows: u32) bool {
     return pal.testResizeClient(&s.st, cols, rows);
 }
 
+// Test-only drivers for the live-pump regressions (no-op in memory mode).
+pub fn gfxTestMinimize(g: *Gfx) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    return pal.testMinimize(&s.st);
+}
+
+pub fn gfxTestRestore(g: *Gfx) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    return pal.testRestore(&s.st);
+}
+
+pub fn gfxTestClose(g: *Gfx) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    return pal.testClose(&s.st);
+}
+
+pub fn gfxTestKey(g: *Gfx, vk: u16) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    return pal.testKey(&s.st, vk);
+}
+
 pub fn gfxBeginFrame(g: *Gfx) bool {
     const s = g.opaque;
     if (s.mem_only) return true;

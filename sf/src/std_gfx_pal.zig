@@ -30,6 +30,8 @@ const io = @import("std_io.zig");
 const WS_OVERLAPPEDWINDOW: u32 = 0x00CF0000;
 const CW_USEDEFAULT: i32 = -2147483648;
 const SW_SHOW: i32 = 5;
+const SW_MINIMIZE: i32 = 6;
+const SW_RESTORE: i32 = 9;
 const SWP_NOMOVE: u32 = 0x0002;
 const SWP_NOZORDER: u32 = 0x0004;
 const SWP_NOACTIVATE: u32 = 0x0010;
@@ -445,6 +447,7 @@ pub extern "stdcall" fn PeekMessageA(msg: *void, hwnd: *void, min: u32, max: u32
 pub extern "stdcall" fn TranslateMessage(msg: *const void) i32;
 pub extern "stdcall" fn DispatchMessageA(msg: *const void) i32;
 pub extern "stdcall" fn PostQuitMessage(code: i32) void;
+pub extern "stdcall" fn PostMessageA(hwnd: *void, msg: u32, wparam: u32, lparam: i32) i32;
 pub extern "stdcall" fn GetKeyState(vk: i32) i16;
 pub extern "stdcall" fn GetClientRect(hwnd: *void, rc: *void) i32;
 pub extern "stdcall" fn ClientToScreen(hwnd: *void, pt: *void) i32;
@@ -513,6 +516,8 @@ pub const State = struct {
     bufh: u32,
     present_w: u32,
     present_h: u32,
+    blt_logged: bool,
+    blt_failed: bool,
     pending: bool,
     pend_code: u16,
     pend_mods: u8,
@@ -712,6 +717,8 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.bufh = OFFSCREEN_H;
     st.present_w = 0;
     st.present_h = 0;
+    st.blt_logged = false;
+    st.blt_failed = false;
     st.pending = false;
     st.pend_code = 0;
     st.pend_mods = 0;
@@ -934,7 +941,9 @@ pub fn endFrame(st: *State) bool {
     const bh: i32 = @intCast(i32, st.bufh);
     if (cw > bw) cw = bw;
     if (ch > bh) ch = bh;
-    if (cw <= 0 or ch <= 0) return false;
+    // Minimized/0x0 client: there is nothing to present, but this is not an
+    // error. The next restore produces a normal WM_SIZE and frame.
+    if (cw <= 0 or ch <= 0) return true;
 
     var dest = Rect{
         .left = origin.x,
@@ -945,14 +954,29 @@ pub fn endFrame(st: *State) bool {
     var src = Rect{ .left = 0, .top = 0, .right = cw, .bottom = ch };
     const uw: u32 = @intCast(u32, cw);
     const uh: u32 = @intCast(u32, ch);
+    var geom_changed = false;
     if (st.present_w != uw or st.present_h != uh or st.bufw != uw or st.bufh != uh) {
         st.present_w = uw;
         st.present_h = uh;
+        geom_changed = true;
         logPresent(uw, uh, st.bufw, st.bufh, origin.x, origin.y);
     }
     const hr = surfaceVtbl(st.primary).Blt(st.primary, @ptrCast(*void, &dest),
         st.back, @ptrCast(*void, &src), DDBLT_WAIT, nullVoid());
-    logHr("Blt(primary<-offscreen)", hr);
+    // Keep the evidence useful without per-frame stdout spam: log the first
+    // success and every geometry change, plus failures once per failure run.
+    if (hr != S_OK) {
+        if (!st.blt_failed) {
+            logHr("Blt(primary<-offscreen)", hr);
+            st.blt_failed = true;
+        }
+    } else {
+        st.blt_failed = false;
+        if (!st.blt_logged or geom_changed) {
+            logHr("Blt(primary<-offscreen)", hr);
+            st.blt_logged = true;
+        }
+    }
     return hr == S_OK;
 }
 
@@ -1044,15 +1068,16 @@ fn virtualToChar(vk: u16) u8 {
 }
 
 // Keys whose typed character arrives through WM_CHAR (letters, digits,
-// punctuation, numpad, space, enter/tab/backspace/delete/escape). Arrows/F-keys
-// do not, so they emit key_down immediately with ch = 0.
+// punctuation, numpad, space, enter/tab/backspace/escape). Arrows/F-keys and
+// VK_DELETE do not (Win32 emits no WM_CHAR for Delete), so those emit key_down
+// immediately with the virtualToChar mapping (Delete -> 127).
 fn isCharKey(vk: u16) bool {
     if (vk >= 0x30 and vk <= 0x39) return true;
     if (vk >= 0x41 and vk <= 0x5A) return true;
     if (vk >= 0x60 and vk <= 0x6F) return true;
     if (vk >= 0xBA and vk <= 0xE2) return true;
     if (vk == 0x20 or vk == 0x0D or vk == 0x09) return true;
-    if (vk == 0x1B or vk == 0x08 or vk == 0x2E) return true;
+    if (vk == 0x1B or vk == 0x08) return true;
     return false;
 }
 
@@ -1104,6 +1129,33 @@ pub fn testResizeClient(st: *State, cols: u32, rows: u32) bool {
     const oh: i32 = rc.bottom - rc.top;
     const flags: u32 = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE;
     return SetWindowPos(st.hwnd, nullVoid(), 0, 0, ow, oh, flags) != 0;
+}
+
+// Test-only window-state drivers for the live-pump regressions.
+pub fn testMinimize(st: *State) bool {
+    if (isNull(st.hwnd)) return false;
+    _ = ShowWindow(st.hwnd, SW_MINIMIZE);
+    // Bare Xvfb/Wine has no window manager, so also drive the client to 0x0
+    // explicitly; this is the same GetClientRect path a real minimize takes.
+    _ = SetWindowPos(st.hwnd, nullVoid(), 0, 0, 0, 0,
+        SWP_NOZORDER | SWP_NOACTIVATE);
+    return true;
+}
+
+pub fn testRestore(st: *State) bool {
+    if (isNull(st.hwnd)) return false;
+    _ = ShowWindow(st.hwnd, SW_RESTORE);
+    return testResizeClient(st, st.cols, st.rows);
+}
+
+pub fn testClose(st: *State) bool {
+    if (isNull(st.hwnd)) return false;
+    return PostMessageA(st.hwnd, WM_CLOSE, 0, 0) != 0;
+}
+
+pub fn testKey(st: *State, vk: u16) bool {
+    if (isNull(st.hwnd)) return false;
+    return PostMessageA(st.hwnd, WM_KEYDOWN, @intCast(u32, vk), 0) != 0;
 }
 
 fn modsNow() u8 {
@@ -1195,7 +1247,7 @@ pub fn pollEvent(st: *State, raw: *RawEvent) bool {
             }
             raw.kind = EK_KEY_DOWN;
             raw.code = vk;
-            raw.ch = 0;
+            raw.ch = virtualToChar(vk);
             raw.mods = mods;
             _ = TranslateMessage(@ptrCast(*const void, &msg));
             _ = DispatchMessageA(@ptrCast(*const void, &msg));
@@ -1262,7 +1314,14 @@ pub fn clipboardSet(st: *State, s: []const u8) bool {
     if (isNull(st.hwnd)) return false;
     if (OpenClipboard(st.hwnd) == 0) return false;
     _ = EmptyClipboard();
-    const n: u32 = @intCast(u32, s.len + 1);
+    // CF_TEXT is CRLF text: expand canonical LF here while the editor's
+    // internal copy stays LF (so --smoke save bytes are unchanged).
+    var extra: usize = 0;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        if (s[i] == '\n' and (i == 0 or s[i - 1] != '\r')) extra += 1;
+    }
+    const n: u32 = @intCast(u32, s.len + extra + 1);
     const mem = GlobalAlloc(GMEM_MOVEABLE, n);
     if (isNull(mem)) {
         _ = CloseClipboard();
@@ -1275,9 +1334,17 @@ pub fn clipboardSet(st: *State, s: []const u8) bool {
         return false;
     }
     const dp: [*]u8 = @ptrCast([*]u8, dst);
-    var i: usize = 0;
-    while (i < s.len) : (i += 1) dp[i] = s[i];
-    dp[s.len] = 0;
+    var di: usize = 0;
+    i = 0;
+    while (i < s.len) : (i += 1) {
+        if (s[i] == '\n' and (i == 0 or s[i - 1] != '\r')) {
+            dp[di] = '\r';
+            di += 1;
+        }
+        dp[di] = s[i];
+        di += 1;
+    }
+    dp[di] = 0;
     _ = GlobalUnlock(mem);
     const owned = SetClipboardData(CF_TEXT, mem);
     if (isNull(owned)) {
