@@ -5541,7 +5541,12 @@ fn semanticAnalyzerResolveExprImpl(self: *SemanticAnalyzer, node_idx: u32) u32 {
        } else if (node.kind == AstKind.for_stmt) {
            semanticAnalyzerResolveForHeader(self, node_idx);
            if (node.child_1 != 0) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
-           result = type_mod.TYPE_VOID;
+           // Task 3 (Phase 2.5): do NOT fall through to the generic tail write
+           // (`resolvedTypeTableSet(node_idx, TYPE_VOID)`): the mutable-capture
+           // channel writes the pointer type at this same `for_stmt` node inside
+           // `semanticAnalyzerResolveForHeader`, and the tail would clobber it.
+           // The for_stmt node has no value consumer, so the tail write is dead.
+           return type_mod.TYPE_VOID;
       } else if (node.kind == AstKind.while_stmt) {
           semanticAnalyzerResolveWhileHeader(self, node_idx);
           if (node.child_1 != 0) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
@@ -6182,6 +6187,15 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
         semanticAnalyzerReportForIndexRange(self, node_idx, node.span_start, node.span_start + @intCast(u32, node.span_len), "explicit index range requires an index capture ('|item, index|')");
     }
     var fs_ck_m: []const u8 = "FS:CK"; pal_mod.markerWriteInt(fs_ck_m, @intCast(u32, @enumToInt(cnode.kind)));
+    // Task 3 (Phase 2.5): `|*item|` mutable capture. The pointer type is built
+    // from the element type and the pointee constness; the same type id is
+    // published at the for_stmt node for Task 4's lowering channel.
+    var is_mut_item = (node.flags & @intCast(u8, 0x10)) != @intCast(u8, 0);
+    var mut_iter_node: u32 = node.child_0;
+    if (is_mut_item) {
+        if (cnode.kind == AstKind.for_index_range) { mut_iter_node = cnode.child_0; }
+        mut_iter_node = semaUnwrapParens(self, mut_iter_node);
+    }
     var it_tid = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
     if (it_tid) |tid| {
         var fs_tid_m: []const u8 = "FS:T"; pal_mod.markerWriteInt(fs_tid_m, tid);
@@ -6205,12 +6219,56 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
             }
         }
         else if (cnode.kind == AstKind.range_exclusive or cnode.kind == AstKind.range_inclusive) { elem_box[0] = tid; }
-        if (ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
+        var mut_reject: bool = false;
+        if (is_mut_item) {
+            if (cnode.kind == AstKind.range_exclusive or cnode.kind == AstKind.range_inclusive) {
+                // A range item is a loop value, not storage: there is no element
+                // to take the address of. (The `for_index_range` form stays legal.)
+                mut_reject = true;
+            } else if (ty.kind == type_mod.TypeKind.array_type) {
+                // An array iterable is addressable only when it aliases storage:
+                // a local/global binding or a module-member field. Everything
+                // else (call result, array literal, deref, struct field, index)
+                // lowers to a copy temp, so `&base[idx]` would mutate the copy.
+                var mut_aliases: bool = false;
+                if (mut_iter_node != @intCast(u32, 0)) {
+                    var mi_node = ast_mod.astStoreNodeAt(self.store, mut_iter_node);
+                    if (mi_node.kind == AstKind.ident_expr) {
+                        mut_aliases = true;
+                    } else if (mi_node.kind == AstKind.field_access) {
+                        if (rtt_mod.resolvedTypeTableGet(self.type_table, mi_node.child_0)) |mi_base_t| {
+                            if (@intCast(usize, mi_base_t) < self.registry.types_len) {
+                                if (self.registry.types_items[@intCast(usize, mi_base_t)].kind == type_mod.TypeKind.module_type) {
+                                    mut_aliases = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!mut_aliases) { mut_reject = true; }
+            }
+            if (mut_reject) {
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED)), self.source_file_id, for_item_s, for_item_e, "mutable for-item capture requires an addressable element (a range or a copied array value has none)");
+            }
+        }
+        if (!mut_reject and ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
             var fs_p_m: []const u8 = "FS:P"; pal_mod.markerWriteInt(fs_p_m, ast_mod.astStoreNodePayload(self.store, node_idx));
             var fs_e_m: []const u8 = "FS:E"; pal_mod.markerWriteInt(fs_e_m, elem_box[0]);
             semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, node_idx), for_item_s, for_item_e);
             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-            semanticAnalyzerRegisterLocalDeclWrite(self, ast_mod.astStoreNodePayload(self.store, node_idx), elem_box[0], @intCast(u8, 1), for_item_s, for_item_e);
+            if (is_mut_item) {
+                var elem_is_const: bool = false;
+                if (ty.kind == type_mod.TypeKind.slice_type or ty.kind == type_mod.TypeKind.ptr_type) {
+                    elem_is_const = (ty.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+                } else if (ty.kind == type_mod.TypeKind.array_type) {
+                    elem_is_const = semanticAnalyzerIsLValueConst(self, mut_iter_node);
+                }
+                var mut_ptr_tid = type_mod.typeRegistryGetOrCreatePtr(self.registry, elem_box[0], elem_is_const);
+                semanticAnalyzerRegisterLocalDeclWrite(self, ast_mod.astStoreNodePayload(self.store, node_idx), mut_ptr_tid, @intCast(u8, 1), for_item_s, for_item_e);
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, mut_ptr_tid);
+            } else {
+                semanticAnalyzerRegisterLocalDeclWrite(self, ast_mod.astStoreNodePayload(self.store, node_idx), elem_box[0], @intCast(u8, 1), for_item_s, for_item_e);
+            }
             var d4f_n: []const u8 = "D4F:N"; pal_mod.markerWriteInt(d4f_n, ast_mod.astStoreNodePayload(self.store, node_idx));
             var d4f_t: []const u8 = "D4F:T"; pal_mod.markerWriteInt(d4f_t, elem_box[0]);
         }

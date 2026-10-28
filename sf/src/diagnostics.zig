@@ -280,6 +280,11 @@ pub const ErrorCode = enum(u16) {
     // ordinary FAIL rather than an ICE. `ERR_9001_ICE` keeps its genuine
     // users (emitter nesting cap, lowering temp/index invariants).
     ERR_3077_EXPR_NESTING_LIMIT = 3077,
+    // Task 3 (Phase 2.5): a mutable for-item capture (`|*item|`) over an
+    // iterable with no writable addressable element: a range (its item is a
+    // value, not storage) or an array value that lowering would copy. The item
+    // is not registered; the optional index capture is still registered.
+    ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED = 3078,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

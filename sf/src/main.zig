@@ -78,6 +78,7 @@ pub const CompilerCli = struct {
     dump_types: bool,
     dump_lir: bool,
     dump_c89: bool,
+    check: bool,
     max_mem: u32,
     spill_level: u32, // -s<N> spill level (0 = all on disk .. SPILL_COUNT = all in RAM)
     max_errors: u32,
@@ -458,6 +459,7 @@ fn runCompiler(ctx: *CompilerContext) void {
     var t2: []const u8 = "t2\n"; pal.markerWrite(t2);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        if (ctx.cli.check) { resolved_type_table.resolvedTypeTableClose(ctx.resolved_types); }
         pal.exit(2);
     }
     alloc_mod.checkCombinedPeak(ctx.alloc);
@@ -466,16 +468,33 @@ fn runCompiler(ctx: *CompilerContext) void {
     phase_SemanticAnalysis(ctx);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        if (ctx.cli.check) { resolved_type_table.resolvedTypeTableClose(ctx.resolved_types); }
         pal.exit(2);
     }
     phase_StaticAnalyzers(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+        if (ctx.cli.check) { resolved_type_table.resolvedTypeTableClose(ctx.resolved_types); }
         pal.exit(2);
     }
     phase_AsyncFrameSize(ctx);
     phase_ConstInit(ctx);
+    if (ctx.cli.check) {
+        // Task 3 (Phase 2.5): sema-only mode. All semantic/static/const-init
+        // diagnostics are in hand; rc=0 predicts a clean compile. Nothing is
+        // lowered or emitted (no `.c`/`.h`/scripts/.zig1_lir.tmp); the usual
+        // scratch spills were created by earlier phases and are left for the
+        // caller's cleanup, exactly like a normal run.
+        if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
+            diag_mod.diagnosticCollectorPrintAll(ctx.diag);
+            resolved_type_table.resolvedTypeTableClose(ctx.resolved_types);
+            pal.exit(2);
+        }
+        resolved_type_table.resolvedTypeTableClose(ctx.resolved_types);
+        pal.exit(0);
+        return;
+    }
     phase_LIRLowering(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
@@ -1959,6 +1978,7 @@ fn parseArgs() CompilerCli {
         .dump_types = false,
         .dump_lir = false,
         .dump_c89 = false,
+        .check = false,
         .max_mem = @intCast(u32, alloc_mod.DEFAULT_MAX_MEM_KB),
         .spill_level = @intCast(u32, 0), // -s0 (default): all spills on disk
         .max_errors = @intCast(u32, 256),
@@ -1987,6 +2007,7 @@ fn parseArgs() CompilerCli {
     const s_dump_types: []const u8 = "--dump-types";
     const s_dump_lir: []const u8 = "--dump-lir";
     const s_dump_c89: []const u8 = "--dump-c89";
+    const s_check: []const u8 = "--check";
     const s_help: []const u8 = "--help";
     const s_max_mem: []const u8 = "--max-mem";
     const s_max_errors: []const u8 = "--max-errors";
@@ -2034,6 +2055,8 @@ fn parseArgs() CompilerCli {
                 return cli;
             } else if (matchFlag(arg, s_dump_c89)) {
                 cli.dump_c89 = true;
+            } else if (matchFlag(arg, s_check)) {
+                cli.check = true;
             } else if (matchFlag(arg, s_max_mem) or matchFlag(arg, s_m)) {
                 i += 1;
                 if (i < argc) {
@@ -2378,6 +2401,8 @@ fn printUsage() void {
     pal.stderr_write(fast_help);
     const c89_help: []const u8 = "  --dump-c89                emit C89 into the output directory\n";
     pal.stderr_write(c89_help);
+    const check_help: []const u8 = "  --check                   run import/type/sema/static/const-init only; no emission (rc=0/2)\n";
+    pal.stderr_write(check_help);
     const dbg_help: []const u8 = "  -d, --debug               emit <stem>.z98dbg.{syms,lines,cnames} (requires --output-dir)\n";
     pal.stderr_write(dbg_help);
     const help_help: []const u8 = "  --help                    show this help\n";

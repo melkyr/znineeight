@@ -120,7 +120,8 @@ pub const AstKind = enum(u8) {
 pub const AstNode = struct {
     kind: AstKind,    // u8  — offset 0
     flags: u8,        // u8  — offset 1 (bit0=is_const, bit1=is_pub, bit2=is_extern,
-                      //        bit3=is_export, bit4=has_capture, bit5=has_index_capture,
+                      //        bit3=is_export, bit4=has_capture (switch prong) /
+                      //        mutable item capture 0x10 (for_stmt), bit5=has_index_capture,
                       //        bit6=is_inclusive, bit7=is_mutable)
     span_len: u32,    // u32 — offset 4 (byte length; span_end = span_start + span_len)
     span_start: u32,  // u32 — offset 8

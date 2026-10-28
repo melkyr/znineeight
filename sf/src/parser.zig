@@ -2032,9 +2032,23 @@ fn parserParseForStmt(self: *Parser) ParserError!u32 {
 
     var capture_name: u32 = 0;
     var index_name: u32 = 0;
+    var for_flags: u8 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
-        var cap = try parserParseCaptureName(self);
-        capture_name = cap.name_id;
+        // Task 3 (Phase 2.5): `|*item|` / `|*item, index|` / `|*_|` mutable
+        // item capture. The `*` is accepted at the for site only; the shared
+        // `parserParseCaptureName` keeps the other capture callers unchanged.
+        _ = parserAdvance(self);
+        if (parserPeek(self).kind == TokenKind.star) {
+            _ = parserAdvance(self);
+            for_flags = for_flags | @intCast(u8, 0x10);
+        }
+        var name_tok: ParseToken = undefined;
+        if (parserPeek(self).kind == TokenKind.underscore) {
+            name_tok = try parserExpect(self, TokenKind.underscore);
+        } else {
+            name_tok = try parserExpect(self, TokenKind.identifier);
+        }
+        capture_name = parserInternParseToken(self, name_tok);
         if (parserPeek(self).kind == TokenKind.comma) {
             _ = parserAdvance(self);
             var idx_tok = try parserExpect(self, TokenKind.identifier);
@@ -2057,7 +2071,7 @@ fn parserParseForStmt(self: *Parser) ParserError!u32 {
         var last = self.last_tok;
         end_pos = last.span_start + @intCast(u32, last.span_len);
     } else end_pos = kw.span_start;
-    return ast_mod.astStoreAddNode(self.store, AstKind.for_stmt, 0,
+    return ast_mod.astStoreAddNode(self.store, AstKind.for_stmt, for_flags,
         kw.span_start, end_pos, pattern, body, index_name, capture_name);
 }
 fn parserParseSwitchStmt(self: *Parser) ParserError!u32 {
