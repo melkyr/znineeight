@@ -46,7 +46,19 @@ is `z9edit — <basename>`.
 Test affordance: `z9edit --smoke <in> <out>` loads `<in>`, feeds a scripted
 `Event` sequence through the same `uiStep` the real pump uses, saves to `<out>`
 via `Ctrl+S`, and exits 0. It prints a flushed `READY` before the scripted
-frames so the Xvfb runner can key off it.
+frames so the Xvfb runner can key off it. `--theme-test` prints the config
+selection, exercises the memory-mode theme API, and cycles `F2` through
+`uiStep` without opening a window.
+
+### Theme config
+
+At startup `z9edit` reads `z9edit.ini`, then `z9edit.cfg`, looking in the exe
+directory first and the current working directory second. A line
+`theme=white|solarized|dark` is matched case-insensitively (surrounding
+whitespace is ignored). A missing file, missing key, unknown value, or
+malformed theme line selects **white** (the default) and never crashes. `F2`
+cycles white → solarized → dark → white for the session only; it does **not**
+rewrite the config.
 
 ## Key map
 
@@ -61,6 +73,7 @@ frames so the Xvfb runner can key off it.
 | `Ctrl+Z` | undo (no redo) |
 | `Ctrl+S` | save (clears dirty) |
 | `Ctrl+Q` / close box | quit |
+| `F2` | cycle theme white → solarized → dark → white |
 | type / `Backspace` / `Delete` | insert / delete; with a selection, replaces it |
 | mouse click | move caret to the clicked cell |
 | mouse drag | select from anchor to cursor |
@@ -81,8 +94,10 @@ Typing any printable ASCII inserts it.
   bracket scan finds an unmatched opener/closer, and `error[NNNN] <message>`
   when the cursor is inside an error code. The message table is the editor's
   own, seeded from `sf/src/diagnostics.zig` (no compiler import).
-- Cursor adjacent to `()[]{}` inverts the matching pair (cross-line works).
-- Selection is drawn inverted; cursor is a bright block.
+- Cursor adjacent to `()[]{}` inverts the matching pair (cross-line works);
+  the bracket character itself is drawn in the foreground role for readability.
+- Selection is drawn inverted (`15` on `13`); cursor is a bright block
+  (`0` on `15`). The same role indices are used on all three themes.
 
 The declared-identifier table is rebuilt at load, at save, and after **2 s of
 edit idle** (`std_time.ticksMs` in the event loop). It is never rebuilt on the

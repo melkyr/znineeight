@@ -22,11 +22,13 @@ against the offscreen surface between `gfxBeginFrame` and `gfxEndFrame`; the
 end of a frame blits the offscreen to the primary surface 1:1 over the client
 area.
 
-`Color` is a `u8` palette index `0..15`. The palette is a tuned dark theme
-(`std_gfx_pal.paletteRgb`): `0` background, `1` panel, `2` foreground,
-`3` comment, `7` status, `9..12` syntax accents, `13` selection/accent,
-`14` warning/gold, `15` bright. Token-to-index mapping is the app's choice;
-tests assert kinds, never pixels. Unknown indices wrap (`idx & 15`).
+`Color` is a `u8` palette index `0..15`. Three 16-color themes ship in
+`std_gfx_pal` — **white (default)**, **solarized (light)**, and **dark**:
+`0` background, `1` panel, `2` foreground, `3` comment, `4` fill background,
+`5` green, `6` brown, `7` status background, `8` alternate background,
+`9..12` syntax accents, `13` selection/accent, `14` warning/gold, `15` bright.
+Token-to-index mapping is the app's choice; tests assert kinds, never pixels.
+Unknown indices wrap (`idx & 15`).
 
 ### DirectDraw7 discipline
 
@@ -86,6 +88,7 @@ stdcall callback). The exe imports `DDRAW.DLL`, `GDI32.DLL`, `USER32.DLL`, and
 
 ```zig
 pub const Color = u8;
+pub const Theme = enum(u8) { white, solarized, dark };
 pub const GfxError = error{ OpenFailed, OutOfMemory, SurfaceFailed, ClipboardFailed };
 pub const Gfx = struct { opaque: *GfxState };            // opaque
 pub const EventKind = enum { key_down, key_up, mouse_move, mouse_down,
@@ -116,7 +119,26 @@ tests are deterministic; drawing updates the same cells the windowed path uses.
 window title (`z9edit` uses it to keep the dirty `*` current). Returns `false`
 for a memory Gfx.
 
+**`gfxSetTheme(g, theme) bool`** — P4-M4: switch the active palette. A windowed
+Gfx rebuilds all 16 brushes **and** the glyph atlas (the atlas bakes the
+palette colors); the new resources are built before the old ones are released,
+so a failed rebuild returns `false` and keeps the old theme. A memory Gfx has no
+window or atlas: the call **succeeds, records the theme for `gfxGetTheme`, and
+leaves the cell grid unchanged** (cells are ASCII with no color payload).
+
+**`gfxGetTheme(g) Theme`** — the active theme (`white` by default).
+
 **`gfxClose(g) void`** — release surfaces, atlas, brushes, and the window.
+
+### Themes
+
+The three 16-entry RGB tables live in `std_gfx_pal` and are selected by
+`Theme`; **white is the default** so a fresh window opens light. A theme change
+does not touch the cell grid or the surface geometry — it releases the old
+color/mask atlases and brushes and builds the new ones (keeping the old theme
+on allocation failure). The PAL mask atlas always uses a stock white brush for
+its background, independent of the palette's index 15, because the white
+theme's bright is black.
 
 ### Frame + primitives
 
@@ -201,7 +223,7 @@ DirectDraw is out of scope here.
 ## Limits
 
 - ASCII 32..126 only; other bytes render as `?`.
-- One window, one fixed-pitch font, 16 palette indices.
+- One window, one fixed-pitch font, 16 palette indices, three fixed themes.
 - No general offscreen-bitmap API, no line/curve primitive, no scrollbar widget.
 - The clipboard is `CF_TEXT` (ANSI) only.
 - Win9x is the only backend; Wine is the Linux story.

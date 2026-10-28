@@ -417,8 +417,17 @@ bash scripts/win32_cross/check_win9x_imports.sh /tmp/z9edit/z9edit.exe 9x
 - `EXTRA_CSRC` supplies the stdcall WndProc trampoline (`Z98` cannot define a
   stdcall callback). `EXTRA_LIBS` adds DDraw/GDI/User32.
 - The gate is `examples/z98/z9edit/tests/tier_edit_gui.sh` (build + import
-  gate + compile RSS + Xvfb/Wine `--smoke` 2× save-byte golden). `gfx_demo` has
-  the layer-only `examples/z98/gfx_demo/tests/tier_gfx.sh`.
+  gate + compile RSS + Xvfb/Wine `--smoke` 2× save-byte golden + all three
+  theme screenshots/save bytes + F2 cycle + bad-config fallback). `gfx_demo` has
+  the layer-only `examples/z98/gfx_demo/tests/tier_gfx.sh` (also runs
+  `--theme-test` for the memory-safe theme API).
+- **Themes (P4-M4):** `std_gfx.Theme = { white, solarized, dark }`, default
+  **white**; `gfxSetTheme` rebuilds the PAL brushes + glyph atlas (old theme
+  kept on failure). z9edit reads `z9edit.ini` then `z9edit.cfg` (exe dir first,
+  then CWD) for `theme=white|solarized|dark`, case-insensitive; unknown/missing/
+  malformed -> white. `F2` cycles white -> solarized -> dark -> white for the
+  session only (it never rewrites the config). A memory Gfx accepts
+  `gfxSetTheme` and leaves the grid unchanged.
 
 **Xvfb + Wine smoke recipe** (evidence, never a pixel gate):
 
