@@ -245,14 +245,14 @@ REM
 REM     cd out
 REM     build_owc.bat [OUT]
 REM
-REM wcc386 /dZIG_WIN32 /W3 /i=.  target guard + warnings (not fatal)
+REM wcc386 /dZIG_WIN32 /bt=nt /sg /i=.  target guard
 REM wlink system console op q opt stack=65536 ... library wsock32
 REM wsock32 matches the emitted build_owc.bat: the seed emits std_net_*.c for
 REM every @import("std") program, so the socket symbols must resolve.
 setlocal
 if "%~1"=="" (set OUT=prog.exe) else (set OUT=%~1)
 echo Compiling...
-wcc386 /dZIG_WIN32 /W3 /i=. *.c
+wcc386 /dZIG_WIN32 /bt=nt /sg /i=. *.c
 if errorlevel 1 goto fail
 echo Linking...
 wlink system console op q opt stack=65536 file {*.obj} library wsock32 name %OUT%
@@ -266,12 +266,13 @@ exit /b 1
 <p>
 Read the flags as the dialect in miniature, the way
 <a href="vol3-07-friction.html">chapter&nbsp;7</a> read the emitted per-module
-lines. <tt>/dZIG_WIN32</tt> selects the Windows code path; <tt>/W3</tt> asks
-for warnings without promoting them to errors; <tt>/i=.</tt> makes the current
-directory the include root, which is why the companion must be run from inside
-the emitted tree. The strict-ANSI switch (<tt>/za</tt>) and warnings-as-errors
-(<tt>/we</tt>) are deliberately not shipped: the emitted C is written to the
-strict-C89 intersection, and an ordinary warning must not break a build. The link asks for a
+lines. <tt>/dZIG_WIN32</tt> selects the Windows code path; <tt>/bt=nt</tt>
+targets the NT console subsystem; <tt>/sg</tt> controls code generation;
+<tt>/i=.</tt> makes the current directory the include root, which is why the
+companion must be run from inside the emitted tree. The strict-ANSI switch
+(<tt>/za</tt>) and warnings-as-errors (<tt>/we</tt>) are deliberately not
+shipped: the emitted C is written to the strict-C89 intersection, and an
+ordinary warning must not break a build. The link asks for a
 console subsystem, a 64&nbsp;KB stack, and <tt>wsock32</tt>, and
 <tt>stack=65536</tt> is the same figure the emitted per-program script uses.
 </p>
@@ -281,18 +282,18 @@ out. Its compile lines and link line look like this, with the path-derived
 suffixes the tree above showed:
 </p>
 <pre>
-wcc386 /dZIG_WIN32 /W3 /i=. hello_F63FD80A.c
-wcc386 /dZIG_WIN32 /W3 /i=. std_io_59DB29D9.c
-wcc386 /dZIG_WIN32 /W3 /i=. std_net_A15200CC.c
-wcc386 /dZIG_WIN32 /W3 /i=. zig_runtime.c
-wcc386 /dZIG_WIN32 /W3 /i=. zig_pal.c
-wcc386 /dZIG_WIN32 /W3 /i=. c_exit.c
+wcc386 /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. hello_F63FD80A.c
+wcc386 /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. std_io_59DB29D9.c
+wcc386 /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. std_net_A15200CC.c
+wcc386 /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. zig_runtime.c
+wcc386 /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. zig_pal.c
+wcc386 /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. c_exit.c
 wlink system console op q opt stack=65536 file hello_F63FD80A.obj,std_io_59DB29D9.obj,std_net_A15200CC.obj,zig_runtime.obj,zig_pal.obj,c_exit.obj library wsock32 name prog.exe
 </pre>
 <p>
-Both scripts carry a warning-policy comment at the top, and it is worth reading
-before you edit anything: <tt>/W3</tt> is a request for warnings, not a
-promise that every warning is fatal. Read the warning and fix the emitted C;
+The emitted scripts do not carry a warning-policy comment: MSVC keeps
+<tt>/W3</tt> (warnings requested, not fatal), while the OpenWatcom compile
+lines carry no warning-level switch. Read any warning and fix the emitted C;
 if a hard error remains, it is not valid for OpenWatcom and should be reported
 as a bug rather than papered over.
 </p>
@@ -349,7 +350,7 @@ The mingw and gcc branches use the flag vocabulary of the gcc family
 (<tt>-m32 -std=c89 -O0 -Wall</tt> and three <tt>-Wno-</tt> flags for the small
 extensions strict C89 lacks); the MSVC script uses <tt>/c /W3 /DZIG_WIN32</tt>
 and links <tt>kernel32.lib</tt> and <tt>wsock32.lib</tt>; the OpenWatcom script
-uses <tt>/dZIG_WIN32 /W3</tt> and links <tt>wsock32</tt>. All three compile the same emitted C89 and produce the same
+uses <tt>/dZIG_WIN32 /bt=nt /sg</tt> and links <tt>wsock32</tt>. All three compile the same emitted C89 and produce the same
 program, which is the load-bearing fact of <a href="vol3-03-when-c89.html">
 chapter&nbsp;3</a>: because Z98 emits C89, the release is portable across the
 era's C compilers without the program knowing which one will build it.

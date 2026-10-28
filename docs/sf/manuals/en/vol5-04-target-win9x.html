@@ -278,8 +278,9 @@ default static CLIB. The old names <tt>build_target.bat</tt> and
 <tt>_nocrt</tt> script in a 9x dump.
 </p>
 <p>
-<tt>/W3</tt> requests warnings without promoting them to errors; the strict-ANSI
-switches (<tt>/Za</tt>, <tt>/za</tt>) and warnings-as-errors (<tt>/WX</tt>,
+MSVC keeps <tt>/W3</tt> (warnings requested, not fatal); the OpenWatcom
+compile lines carry no warning-level switch. The strict-ANSI switches
+(<tt>/Za</tt>, <tt>/za</tt>) and warnings-as-errors (<tt>/WX</tt>,
 <tt>/we</tt>) are deliberately not shipped. <tt>/DZIG_WIN32</tt> and
 <tt>/dZIG_WIN32</tt> are the target guard the scripts define; and all four
 native links pull in <tt>wsock32</tt>.

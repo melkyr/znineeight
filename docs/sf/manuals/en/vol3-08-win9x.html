@@ -200,13 +200,14 @@ The four native scripts encode the same idea with the era's own flags.
 <tt>kernel32.lib winmm.lib wsock32.lib</tt>, and is the 9x default.
 <tt>build_target_crt.bat</tt> is the same build with static <tt>/MT</tt>
 instead of <tt>/DZIG_NO_CRT /Zl</tt>. The OpenWatcom pair uses <tt>wcc386
-/dZIG_WIN32 &hellip; /W3 /i=.</tt> and <tt>wlink system nt</tt>;
+/dZIG_WIN32 &hellip; /i=.</tt> and <tt>wlink system nt</tt>;
 <tt>build_owc_nocrt.bat</tt> adds <tt>/dZIG_NO_CRT /zl</tt> with
 <tt>option nodefaultlibs</tt>, while <tt>build_owc_crt.bat</tt> uses the
-default static CLIB. <tt>/W3</tt> requests warnings without promoting them to
-errors. The strict-ANSI switches (<tt>/Za</tt>, <tt>/za</tt>) and the
-warnings-as-errors switches (<tt>/WX</tt>, <tt>/we</tt>) are deliberately not
-shipped: the emitted C is written to the strict-C89 intersection, and an
+default static CLIB. MSVC keeps <tt>/W3</tt> (warnings requested, not fatal);
+the OpenWatcom compile lines carry no warning-level switch and do not promote
+warnings to errors. The strict-ANSI switches (<tt>/Za</tt>, <tt>/za</tt>) and
+the warnings-as-errors switches (<tt>/WX</tt>, <tt>/we</tt>) are deliberately
+not shipped: the emitted C is written to the strict-C89 intersection, and an
 ordinary warning must not break a build. The <tt>/DZIG_WIN32</tt> and
 <tt>/dZIG_WIN32</tt> are the target guard, which is the next section. All four links pull <tt>wsock32</tt> for the same reason the mingw
 branch carries <tt>-lwsock32</tt>.
@@ -507,16 +508,16 @@ goto z98_out_ready
 set OUT=%1
 :z98_out_ready
 echo Compiling...
-wcc386 /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /W3 /i=. hello_9C12B390.c
+wcc386 /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. hello_9C12B390.c
 ...
 echo Linking...
 wlink @z98_link.lnk
 echo Built: %OUT%
 </pre>
 <p>
-<tt>/dZIG_WIN32</tt> is the target guard, <tt>/W3</tt> requests warnings
-without making them fatal, <tt>/dZIG_NO_CRT /zl</tt> selects the no-CRT
-profile, and <tt>/i=.</tt> makes the current directory the include root.
+<tt>/dZIG_WIN32</tt> is the target guard, <tt>/dZIG_NO_CRT /zl</tt> selects the
+no-CRT profile, <tt>/bt=nt</tt> targets the NT console subsystem, and
+<tt>/i=.</tt> makes the current directory the include root.
 The link file asks for the NT console subsystem, no default libraries, the
 <tt>_mainCRTStartup</tt> entry, a 2 MB stack, and <tt>wsock32</tt>. For an
 OpenWatcom user this is the build, start to finish, and it is the script the
