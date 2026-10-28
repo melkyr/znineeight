@@ -154,6 +154,22 @@ else
     fail_case "wheel mapping selftest failed (see $SELFTEST_LOG)"
 fi
 sed 's/^/       /' "$SELFTEST_LOG"
+
+# Theme evidence: default white + all three themes in memory mode (no window
+# or atlas; the cell grid is unchanged by a theme change).
+THEME_LOG="$OUT/theme.log"
+if timeout 120 wine "$EXE" --theme-test >"$THEME_LOG" 2>&1 \
+    && grep -qx 'THEME default white' "$THEME_LOG" \
+    && grep -qx 'THEME solarized solarized' "$THEME_LOG" \
+    && grep -qx 'THEME dark dark' "$THEME_LOG" \
+    && grep -qx 'THEME white white' "$THEME_LOG" \
+    && grep -qx 'THEMETEST OK' "$THEME_LOG"; then
+    pass_case "theme default white + solarized/dark/white cycle (memory safe)"
+else
+    fail_case "theme selftest failed (see $THEME_LOG)"
+fi
+sed 's/^/       /' "$THEME_LOG"
+
 GRID_DIR="$OUT/grid"
 mkdir -p "$GRID_DIR"
 RUNTIME_RSS="n/a"

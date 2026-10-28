@@ -458,6 +458,97 @@ else
             fail_case "read-error path did not fail safely (rc=$BAD_RC; see $OUT/badload.log)"
         fi
 
+        # ---- P4-M4 theme coverage: config-selected screenshots + save bytes.
+        THEME_SAVE_OK=1
+        for th in white solarized dark; do
+            TDIR="$OUT/theme_$th"
+            mkdir -p "$TDIR"
+            cp "$FIXTURE" "$TDIR/edit_smoke.z98"
+            if [ "$th" = "white" ]; then
+                rm -f "$TDIR/z9edit.ini" "$TDIR/z9edit.cfg"
+            else
+                printf 'theme=%s\n' "$th" >"$TDIR/z9edit.ini"
+            fi
+            ( cd "$TDIR" && timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
+                >"$TDIR/app.log" 2>&1 &
+            WINE_PID=$!
+            READY_T=0
+            i=0
+            while [ "$i" -lt 200 ]; do
+                if grep -q '^READY$' "$TDIR/app.log" 2>/dev/null; then
+                    READY_T=1
+                    break
+                fi
+                sleep 0.1
+                i=$((i + 1))
+            done
+            if [ "$READY_T" -eq 1 ] && grep -qx "THEME $th" "$TDIR/app.log"; then
+                pass_case "theme $th selected at startup (THEME $th)"
+            else
+                fail_case "theme $th not selected (see $TDIR/app.log)"
+            fi
+            sleep 0.5
+            if timeout 30 import -window root "$TDIR/shot.png" >"$TDIR/import.log" 2>&1 \
+                && [ -s "$TDIR/shot.png" ]; then
+                TSTATS="$(identify -format '%[fx:mean] %[fx:standard_deviation] %k' \
+                    "$TDIR/shot.png" 2>/dev/null)"
+                pass_case "theme $th screenshot: $TDIR/shot.png (mean/stddev/colors: $TSTATS)"
+            else
+                fail_case "theme $th screenshot failed (see $TDIR/import.log)"
+            fi
+            wait "$WINE_PID" 2>/dev/null
+            TRC=$?
+            WINE_PID=""
+            if [ "$TRC" -eq 0 ] && [ -f "$TDIR/out.tmp" ] \
+                && cmp -s "$TDIR/out.tmp" "$EXPECTED"; then
+                TMD="$(md5sum "$TDIR/out.tmp" | cut -d' ' -f1)"
+                pass_case "theme $th save bytes match expected (md5 $TMD)"
+            else
+                fail_case "theme $th save failed/differed (rc=$TRC)"
+                THEME_SAVE_OK=0
+            fi
+        done
+
+        # F2 cycle white -> solarized -> dark -> white (session-only). The
+        # --theme-test mode drives uiStep on a memory Gfx (no window/atlas).
+        CYCLE_DIR="$OUT/theme_cycle"
+        mkdir -p "$CYCLE_DIR"
+        rm -f "$CYCLE_DIR/z9edit.ini" "$CYCLE_DIR/z9edit.cfg"
+        ( cd "$CYCLE_DIR" && timeout 60 wine "$CONSOLE_EXE" --theme-test ) \
+            >"$CYCLE_DIR/app.log" 2>&1
+        CYCLE_RC=$?
+        if [ "$CYCLE_RC" -eq 0 ] \
+            && grep -qx 'THEME initial white' "$CYCLE_DIR/app.log" \
+            && grep -qx 'THEME cycle solarized' "$CYCLE_DIR/app.log" \
+            && grep -qx 'THEME cycle dark' "$CYCLE_DIR/app.log" \
+            && grep -qx 'THEME cycle white' "$CYCLE_DIR/app.log" \
+            && grep -qx 'THEMETEST OK' "$CYCLE_DIR/app.log"; then
+            pass_case "F2 cycles white->solarized->dark->white (THEMETEST OK)"
+        else
+            fail_case "F2 theme cycle failed (rc=$CYCLE_RC; see $CYCLE_DIR/app.log)"
+        fi
+
+        # Unknown/malformed theme value must fall back to white without crashing.
+        BADTH="$OUT/theme_bad"
+        mkdir -p "$BADTH"
+        printf 'theme=purple\n' >"$BADTH/z9edit.ini"
+        ( cd "$BADTH" && timeout 60 wine "$CONSOLE_EXE" --theme-test ) \
+            >"$BADTH/app.log" 2>&1
+        BADTH_RC=$?
+        if [ "$BADTH_RC" -eq 0 ] \
+            && grep -qx 'THEME initial white' "$BADTH/app.log" \
+            && grep -qx 'THEME memory white' "$BADTH/app.log"; then
+            pass_case "unknown theme value falls back to white (no crash)"
+        else
+            fail_case "unknown theme value did not fall back to white (see $BADTH/app.log)"
+        fi
+
+        if [ "$THEME_SAVE_OK" -eq 1 ]; then
+            pass_case "save-byte golden unchanged in all three themes"
+        else
+            fail_case "save-byte golden changed in at least one theme"
+        fi
+
         sed 's/^/       /' "$RUN1/app.log" | tail -8
 
         wineserver -k >/dev/null 2>&1 || true
