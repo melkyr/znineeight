@@ -195,20 +195,20 @@ emitted set omits <tt>std_net</tt> needs no socket library.
 </p>
 <p>
 The four native scripts encode the same idea with the era's own flags.
-<tt>build_target_nocrt.bat</tt> compiles with <tt>cl /c /Za /W3 /WX
+<tt>build_target_nocrt.bat</tt> compiles with <tt>cl /c /W3
 /DZIG_WIN32 /DZIG_NO_CRT /Zl /I .</tt>, links with <tt>/NODEFAULTLIB</tt> and
 <tt>kernel32.lib winmm.lib wsock32.lib</tt>, and is the 9x default.
 <tt>build_target_crt.bat</tt> is the same build with static <tt>/MT</tt>
-instead of <tt>/DZIG_NO_CRT /Zl</tt>. The OpenWatcom pair uses <tt>wcc386 /za
-/we /dZIG_WIN32 &hellip; /i=.</tt> and <tt>wlink system nt</tt>;
+instead of <tt>/DZIG_NO_CRT /Zl</tt>. The OpenWatcom pair uses <tt>wcc386
+/dZIG_WIN32 &hellip; /W3 /i=.</tt> and <tt>wlink system nt</tt>;
 <tt>build_owc_nocrt.bat</tt> adds <tt>/dZIG_NO_CRT /zl</tt> with
 <tt>option nodefaultlibs</tt>, while <tt>build_owc_crt.bat</tt> uses the
-default static CLIB. <tt>/Za</tt> and <tt>/za</tt> are the two compilers'
-"strict ANSI" switches, the counterparts of <tt>-std=c89</tt>; <tt>/WX</tt> and
-<tt>/we</tt> are their warnings-as-errors switches, and both scripts say so in
-a comment so a warning can be downgraded without giving up the build. The
-<tt>/DZIG_WIN32</tt> and <tt>/dZIG_WIN32</tt> are the target guard, which is the
-next section. All four links pull <tt>wsock32</tt> for the same reason the mingw
+default static CLIB. <tt>/W3</tt> requests warnings without promoting them to
+errors. The strict-ANSI switches (<tt>/Za</tt>, <tt>/za</tt>) and the
+warnings-as-errors switches (<tt>/WX</tt>, <tt>/we</tt>) are deliberately not
+shipped: the emitted C is written to the strict-C89 intersection, and an
+ordinary warning must not break a build. The <tt>/DZIG_WIN32</tt> and
+<tt>/dZIG_WIN32</tt> are the target guard, which is the next section. All four links pull <tt>wsock32</tt> for the same reason the mingw
 branch carries <tt>-lwsock32</tt>.
 </p>
 <p>
@@ -507,16 +507,16 @@ goto z98_out_ready
 set OUT=%1
 :z98_out_ready
 echo Compiling...
-wcc386 /za /we /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. hello_9C12B390.c
+wcc386 /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /W3 /i=. hello_9C12B390.c
 ...
 echo Linking...
 wlink @z98_link.lnk
 echo Built: %OUT%
 </pre>
 <p>
-<tt>/za</tt> is strict ANSI, <tt>/we</tt> turns warnings into errors,
-<tt>/dZIG_WIN32</tt> is the target guard, <tt>/dZIG_NO_CRT /zl</tt> selects the
-no-CRT profile, and <tt>/i=.</tt> makes the current directory the include root.
+<tt>/dZIG_WIN32</tt> is the target guard, <tt>/W3</tt> requests warnings
+without making them fatal, <tt>/dZIG_NO_CRT /zl</tt> selects the no-CRT
+profile, and <tt>/i=.</tt> makes the current directory the include root.
 The link file asks for the NT console subsystem, no default libraries, the
 <tt>_mainCRTStartup</tt> entry, a 2 MB stack, and <tt>wsock32</tt>. For an
 OpenWatcom user this is the build, start to finish, and it is the script the
@@ -530,10 +530,12 @@ emitted program tree. Unzip <tt>release/seed/zig1_seed_w9.zip</tt>, change into
 its <tt>win</tt> folder, and run one of its two static-CRT scripts naming
 <tt>..\zig1.exe</tt>: <tt>build_target_crt.bat</tt> (MSVC <tt>/MT</tt>) or
 <tt>build_owc_crt.bat</tt> (OpenWatcom static CLIB). The zip's <tt>lib\</tt>
-folder is the standard library that belongs beside it. The zip carries the
-compiler's Windows-target C89 and these scripts as the compiler emitted them;
-it does not carry a prebuilt <tt>zig1.exe</tt>, and its no-CRT compiler scripts
-are withheld until the asm_x86 backend.
+folder is the standard library that belongs beside it. It also ships the MinGW
+fallback pair <tt>build_mingw_crt.bat</tt> and <tt>build_mingw_nocrt.bat</tt>
+for a Windows-hosted gcc. The zip carries the compiler's Windows-target C89 and
+these scripts as the compiler emitted them; it does not carry a prebuilt
+<tt>zig1.exe</tt>, and its MSVC/OpenWatcom no-CRT compiler scripts are withheld
+until the asm_x86 backend.
 </p>
 <p>
 And here is where the chapter has to be exact about its own evidence.
@@ -551,9 +553,9 @@ era toolchain is documented and deferred to the machine.
 It is also why the OpenWatcom dialect is named as friction in
 <a href="vol3-07-friction.html">chapter&nbsp;7</a>. <tt>wcc386</tt> accepts C89,
 not gcc's dialect, and the emitted C89 is written to the intersection so a
-strict C89 compiler can read it. That is the same reason the flags include
-<tt>/Za</tt> and <tt>-std=c89</tt>: the target is the strict dialect, not the
-convenient one.
+strict C89 compiler can read it. That is the same reason the emitted C targets
+<tt>-std=c89</tt> even though the shipped MSVC/OpenWatcom scripts leave off the
+strict-ANSI switches: the target is the strict dialect, not the convenient one.
 </p>
 
 <h2>Running it on the era machine</h2>

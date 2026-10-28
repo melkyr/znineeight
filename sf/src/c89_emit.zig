@@ -46,14 +46,24 @@ pub const BufferedWriter = struct {
     // P3-M1: count of `\n` bytes written so far. 0-based; the active output
     // line is `line + 1`. The counter is output-neutral (no allocation).
     line: u32,
+    // Windows text mode: normalize every written `\n` to `\r\n`. Enabled only
+    // for .bat writers (and any future .lnk/.rsp writer); POSIX shell scripts
+    // and C sources stay LF.
+    crlf: u8,
 };
 
 pub fn bufferedWriterInit() BufferedWriter {
-    return BufferedWriter{ .buf = undefined, .pos = @intCast(usize, 0), .fd = @intCast(usize, 1), .line = @intCast(u32, 0) };
+    return BufferedWriter{ .buf = undefined, .pos = @intCast(usize, 0), .fd = @intCast(usize, 1), .line = @intCast(u32, 0), .crlf = @intCast(u8, 0) };
 }
 
 pub fn bufferedWriterInitFd(fd: usize) BufferedWriter {
-    return BufferedWriter{ .buf = undefined, .pos = @intCast(usize, 0), .fd = fd, .line = @intCast(u32, 0) };
+    return BufferedWriter{ .buf = undefined, .pos = @intCast(usize, 0), .fd = fd, .line = @intCast(u32, 0), .crlf = @intCast(u8, 0) };
+}
+
+// Windows-facing text artifacts (.bat) are CRLF. A dedicated constructor keeps
+// the ~40 generated-script template literals untouched.
+pub fn bufferedWriterInitFdCrlf(fd: usize) BufferedWriter {
+    return BufferedWriter{ .buf = undefined, .pos = @intCast(usize, 0), .fd = fd, .line = @intCast(u32, 0), .crlf = @intCast(u8, 1) };
 }
 
 pub fn bufferedWriterFlush(self: *BufferedWriter) void {
@@ -65,6 +75,15 @@ pub fn bufferedWriterFlush(self: *BufferedWriter) void {
 }
 
  pub fn bufferedWriterWrite(self: *BufferedWriter, data: []const u8) void {
+    if (self.crlf != @intCast(u8, 0)) {
+        var ci: usize = @intCast(usize, 0);
+        while (ci < data.len) : (ci += @intCast(usize, 1)) {
+            var cb = data[ci];
+            if (cb == @intCast(u8, '\n')) bufferedWriterWriteByte(self, @intCast(u8, '\r'));
+            bufferedWriterWriteByte(self, cb);
+        }
+        return;
+    }
     var remaining = data;
     while (remaining.len > @intCast(usize, 0)) {
         var space = 4096 - self.pos;
@@ -566,7 +585,6 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
       d4_lread: [*]u8,
        bb_used: [*]u8,
        bb_used_count: u32,
-       dl_hoisted: u8,
        nest_ok: u8,
        nest_max: u32,
        nest_inl: [*]u8,
@@ -665,7 +683,6 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .d4_lread = undefined,
          .bb_used = undefined,
          .bb_used_count = @intCast(u32, 0),
-         .dl_hoisted = @intCast(u8, 0),
          .nest_ok = @intCast(u8, 0),
          .nest_max = @intCast(u32, 0),
          .nest_inl = undefined,
@@ -2870,7 +2887,6 @@ fn emitFunctionSet(emitter: *C89Emitter, module_id: u32, all: u8) void {
             if (ft.kind == type_mod.TypeKind.slice_type) {
                 var rm: []const u8 = "R:"; pal.markerWriteInt(rm, func.name_id);
             }
-            emitter.dl_hoisted = @intCast(u8, 0);
             emitFunctionBody(emitter, &func);
         }
         if (func.is_pub == @intCast(u8, 1)) {
@@ -3038,6 +3054,7 @@ pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8
 pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     emitter.current_fn = lir_fn;
     emitter.current_fn_scope = nm_mod.nameManglerFnScope(emitter.mangler, lir_fn.name_id, lir_fn.module_id);
+    emitter.dedup_count = @intCast(u32, 0);
     var max_temp: u32 = @intCast(u32, 256);
     var hti: usize = @intCast(usize, 0);
     while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
@@ -3818,6 +3835,70 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             debugMapAddSpanRun(emitter, temp_span[@intCast(usize, td.temp_id)], decl_line_before);
         }
      }
+    // D11: local-name declarations are part of the function's declaration
+    // section, so emit them here (after the hoisted temps, before the
+    // zig_poison_fill preamble and every real statement). The name_id dedup is
+    // whole-function and was already so in the former body prelude; it keeps at
+    // most one C declaration per Z98 name, so moving the declarations to the
+    // function top introduces no scope-shadowing collision.
+    var dlb_idx: usize = @intCast(usize, 0);
+    while (dlb_idx < lir_fn.blocks.len) : (dlb_idx += @intCast(usize, 1)) {
+        var dlb = &lir_fn.blocks.items[dlb_idx];
+        var dli: usize = @intCast(usize, 0);
+        while (dli < dlb.insts.len) : (dli += @intCast(usize, 1)) {
+            var dl_inst = dlb.insts.items[dli];
+            switch (dl_inst) {
+                .decl_local => |dl| {
+                    var dl_is_dup: u8 = @intCast(u8, 0);
+                    var dl_lc: u32 = @intCast(u32, 0);
+                    while (@intCast(usize, dl_lc) < @intCast(usize, emitter.dedup_count)) : (dl_lc += @intCast(u32, 1)) {
+                        if (emitter.dedup_names[@intCast(usize, dl_lc)] == dl.name_id) { dl_is_dup = @intCast(u8, 1); break; }
+                    }
+                    if (dl_is_dup != @intCast(u8, 0)) { var da: []const u8 = "DxA:s\n"; pal.markerWrite(da); continue; }
+                    if (isDeadLocalName(emitter, dl.name_id) != @intCast(u8, 0)) { var dld: []const u8 = "DLD:s\n"; pal.markerWrite(dld); continue; }
+                    if (emitter.dedup_count >= emitter.dedup_cap) {
+                        var nb = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.persist_alloc, @intCast(usize, emitter.dedup_cap * @intCast(u32, 2)) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
+                        var ci: u32 = @intCast(u32, 0);
+                        while (ci < emitter.dedup_count) : (ci += @intCast(u32, 1)) {
+                            nb[@intCast(usize, ci)] = emitter.dedup_names[@intCast(usize, ci)];
+                        }
+                        emitter.dedup_names = nb;
+                        emitter.dedup_cap = emitter.dedup_cap * @intCast(u32, 2);
+                    }
+                    emitter.dedup_names[@intCast(usize, emitter.dedup_count)] = dl.name_id;
+                    emitter.dedup_count += @intCast(u32, 1);
+                    var p1m: []const u8 = "P1:t"; pal.markerWrite(p1m);
+                    var p1tb: [10]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 9) - @intCast(usize, p1tl); pal.markerWrite(p1tb[p1ts..@intCast(usize, 9)]);
+                    var p1im: []const u8 = "T"; pal.markerWrite(p1im);
+                    var p1ib: [10]u8 = undefined; var p1il = itoa_mod.itoa(@intCast(u32, dl.type_id), p1ib[0..]); var p1is: usize = @intCast(usize, 9) - @intCast(usize, p1il); pal.markerWrite(p1ib[p1is..@intCast(usize, 9)]);
+                    var p1nm: []const u8 = "N"; pal.markerWriteInt(p1nm, dl.name_id);
+                    var dl_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
+                    var vfdl_tm: []const u8 = "VFLOW:dlT"; pal.markerWriteInt(vfdl_tm, dl.type_id);
+                    if (dl.type_id == @intCast(u32, 1)) {
+                        var t4u_dl_m: []const u8 = "T4U:dl\n"; pal.markerWrite(t4u_dl_m);
+                        var instb_ed_m: []const u8 = "INSTB:edl\n"; pal.markerWrite(instb_ed_m);
+                    }
+                    var dl_name = nm_mod.nameManglerMintLocal(emitter.mangler, dl.name_id, emitter.current_fn_scope);
+                    if (dl.type_id != @intCast(u32, 1)) {
+                        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                        bufferedWriterWrite(&emitter.writer, dl_type);
+                        var sp1: []const u8 = " ";
+                        bufferedWriterWrite(&emitter.writer, sp1);
+                        bufferedWriterWrite(&emitter.writer, dl_name);
+                        var sm1: []const u8 = ";\n";
+                        bufferedWriterWrite(&emitter.writer, sm1);
+                    }
+                },
+                .tail_call => {},
+                .va_start => {},
+                .va_arg => {},
+                .va_end => {},
+                .load_bitfield => {},
+                .store_bitfield => {},
+                else => {},
+            }
+        }
+    }
      if (lir_fn.poison_uninit != @intCast(u8, 0)) {
          var poison_i: usize = @intCast(usize, 0);
          while (poison_i < lir_fn.hoisted_temps.len) : (poison_i += @intCast(usize, 1)) {
@@ -8960,67 +9041,6 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
             }
         }
     }
-    if (emitter.dl_hoisted == @intCast(u8, 0)) {
-        var bb_idx: usize = @intCast(usize, 0);
-        while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
-            var bb = &lir_fn.blocks.items[bb_idx];
-            var ii: usize = @intCast(usize, 0);
-            while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
-                var inst = bb.insts.items[ii];
-                switch (inst) {
-                    .decl_local => |dl| {
-                        var dl_is_dup: u8 = @intCast(u8, 0);
-                        var dl_lc: u32 = @intCast(u32, 0);
-                        while (@intCast(usize, dl_lc) < @intCast(usize, emitter.dedup_count)) : (dl_lc += @intCast(u32, 1)) {
-                            if (emitter.dedup_names[@intCast(usize, dl_lc)] == dl.name_id) { dl_is_dup = @intCast(u8, 1); break; }
-                        }
-                        if (dl_is_dup != @intCast(u8, 0)) { var da: []const u8 = "DxA:s\n"; pal.markerWrite(da); continue; }
-                        if (isDeadLocalName(emitter, dl.name_id) != @intCast(u8, 0)) { var dld: []const u8 = "DLD:s\n"; pal.markerWrite(dld); continue; }
-                        if (emitter.dedup_count >= emitter.dedup_cap) {
-                            var nb = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.persist_alloc, @intCast(usize, emitter.dedup_cap * @intCast(u32, 2)) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
-                            var ci: u32 = @intCast(u32, 0);
-                            while (ci < emitter.dedup_count) : (ci += @intCast(u32, 1)) {
-                                nb[@intCast(usize, ci)] = emitter.dedup_names[@intCast(usize, ci)];
-                            }
-                            emitter.dedup_names = nb;
-                            emitter.dedup_cap = emitter.dedup_cap * @intCast(u32, 2);
-                        }
-                        emitter.dedup_names[@intCast(usize, emitter.dedup_count)] = dl.name_id;
-                        emitter.dedup_count += @intCast(u32, 1);
-                         var p1m: []const u8 = "P1:t"; pal.markerWrite(p1m);
-                         var p1tb: [10]u8 = undefined; var p1tl = itoa_mod.itoa(dl.temp, p1tb[0..]); var p1ts: usize = @intCast(usize, 9) - @intCast(usize, p1tl); pal.markerWrite(p1tb[p1ts..@intCast(usize, 9)]);
-                         var p1im: []const u8 = "T"; pal.markerWrite(p1im);
-                         var p1ib: [10]u8 = undefined; var p1il = itoa_mod.itoa(@intCast(u32, dl.type_id), p1ib[0..]); var p1is: usize = @intCast(usize, 9) - @intCast(usize, p1il); pal.markerWrite(p1ib[p1is..@intCast(usize, 9)]);
-                         var p1nm: []const u8 = "N"; pal.markerWriteInt(p1nm, dl.name_id);
-                         var dl_type = getCTypeName(emitter.registry, emitter.mangler, dl.type_id);
-                         var vfdl_tm: []const u8 = "VFLOW:dlT"; pal.markerWriteInt(vfdl_tm, dl.type_id);
-                         if (dl.type_id == @intCast(u32, 1)) {
-                             var t4u_dl_m: []const u8 = "T4U:dl\n"; pal.markerWrite(t4u_dl_m);
-                             var instb_ed_m: []const u8 = "INSTB:edl\n"; pal.markerWrite(instb_ed_m);
-                         }
-                         var dl_name = nm_mod.nameManglerMintLocal(emitter.mangler, dl.name_id, emitter.current_fn_scope);
-                        if (dl.type_id != @intCast(u32, 1)) {
-                        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                        bufferedWriterWrite(&emitter.writer, dl_type);
-                        var sp1: []const u8 = " ";
-                        bufferedWriterWrite(&emitter.writer, sp1);
-                        bufferedWriterWrite(&emitter.writer, dl_name);
-                        var sm1: []const u8 = ";\n";
-                        bufferedWriterWrite(&emitter.writer, sm1);
-                        }
-                    },
-                    .tail_call => {},
-                    .va_start => {},
-                    .va_arg => {},
-                    .va_end => {},
-                    .load_bitfield => {},
-                    .store_bitfield => {},
-                    else => {},
-                }
-            }
-        }
-        emitter.dl_hoisted = @intCast(u8, 1);
-    }
     var bb_used_cap: u32 = @intCast(u32, 1);
     var bbcap_idx: usize = @intCast(usize, 0);
     while (bbcap_idx < lir_fn.blocks.len) : (bbcap_idx += @intCast(usize, 1)) {
@@ -9226,9 +9246,9 @@ pub fn emitBuildTargetSh(writer: *BufferedWriter, emitter: *C89Emitter, net_emit
 pub fn emitBuildTargetNocrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
     var h0: []const u8 = "@echo off\nREM build_target_nocrt.bat - generated by zig1 (MSVC cl, Win9x no-CRT DEFAULT)\nREM REDISTRIBUTION: single EXE, no msvcrt.dll. Imports only OS DLLs.\nREM Status: design-verified; hardware verification pending.\nREM usage: build_target_nocrt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\nset CFLAGS=";
     bufferedWriterWrite(writer, h0);
-    var bat_flags: []const u8 = "/c /Za /W3 /WX /DZIG_WIN32 /DZIG_NO_CRT /Zl /I .";
+    var bat_flags: []const u8 = "/c /W3 /DZIG_WIN32 /DZIG_NO_CRT /Zl /I .";
     if (win_profile == WinProfile.nt) {
-        bat_flags = "/c /Za /W3 /WX /DZIG_WIN32 /DZIG_WIN_NT /DZIG_NO_CRT /Zl /I .";
+        bat_flags = "/c /W3 /DZIG_WIN32 /DZIG_WIN_NT /DZIG_NO_CRT /Zl /I .";
     }
     bufferedWriterWrite(writer, bat_flags);
     var h0b: []const u8 = "\necho Compiling...\n";
@@ -9254,9 +9274,9 @@ pub fn emitBuildTargetNocrtBat(writer: *BufferedWriter, emitter: *C89Emitter, ne
 pub fn emitBuildTargetCrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
     var h0: []const u8 = "@echo off\nREM build_target_crt.bat - generated by zig1 (MSVC cl, static-CRT ALTERNATE)\nREM REDISTRIBUTION: single EXE, no DLL dependency (static /MT CRT).\nREM Imports only KERNEL32 (+WINMM/WSOCK32 when used); no msvcrt.dll.\nREM Status: design-verified; hardware verification pending.\nREM usage: build_target_crt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\nset CFLAGS=";
     bufferedWriterWrite(writer, h0);
-    var bat_flags: []const u8 = "/c /Za /W3 /WX /DZIG_WIN32 /MT /I .";
+    var bat_flags: []const u8 = "/c /W3 /DZIG_WIN32 /MT /I .";
     if (win_profile == WinProfile.nt) {
-        bat_flags = "/c /Za /W3 /WX /DZIG_WIN32 /DZIG_WIN_NT /MT /I .";
+        bat_flags = "/c /W3 /DZIG_WIN32 /DZIG_WIN_NT /MT /I .";
     }
     bufferedWriterWrite(writer, bat_flags);
     var h0b: []const u8 = "\necho Compiling...\n";
@@ -9282,9 +9302,9 @@ pub fn emitBuildTargetCrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_
 pub fn emitBuildOwcNocrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
     var h0: []const u8 = "@echo off\nREM build_owc_nocrt.bat - generated by zig1 (OpenWatcom, Win9x no-CRT DEFAULT)\nREM REDISTRIBUTION: single EXE, no runtime DLL dependency. Imports only OS DLLs.\nREM Status: design-verified; hardware verification pending.\nREM usage: build_owc_nocrt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\necho Compiling...\n";
     bufferedWriterWrite(writer, h0);
-    var owc_flags: []const u8 = "wcc386 /za /we /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. ";
+    var owc_flags: []const u8 = "wcc386 /dZIG_WIN32 /dZIG_NO_CRT /bt=nt /zl /sg /i=. ";
     if (win_profile == WinProfile.nt) {
-        owc_flags = "wcc386 /za /we /dZIG_WIN32 /dZIG_WIN_NT /dZIG_NO_CRT /bt=nt /zl /sg /i=. ";
+        owc_flags = "wcc386 /dZIG_WIN32 /dZIG_WIN_NT /dZIG_NO_CRT /bt=nt /zl /sg /i=. ";
     }
     var owc_cpre: []const u8 = owc_flags;
     var owc_csuf: []const u8 = ".c\n";
@@ -9317,9 +9337,9 @@ pub fn emitBuildOwcNocrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_e
 pub fn emitBuildOwcCrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
     var h0: []const u8 = "@echo off\nREM build_owc_crt.bat - generated by zig1 (OpenWatcom, static-runtime ALTERNATE)\nREM REDISTRIBUTION: single EXE, no runtime DLL dependency (static clib).\nREM Imports only KERNEL32 (+WINMM/WSOCK32 when used).\nREM Status: design-verified; hardware verification pending.\nREM usage: build_owc_crt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\necho Compiling...\n";
     bufferedWriterWrite(writer, h0);
-    var owc_flags: []const u8 = "wcc386 /za /we /dZIG_WIN32 /bt=nt /sg /i=. ";
+    var owc_flags: []const u8 = "wcc386 /dZIG_WIN32 /bt=nt /sg /i=. ";
     if (win_profile == WinProfile.nt) {
-        owc_flags = "wcc386 /za /we /dZIG_WIN32 /dZIG_WIN_NT /bt=nt /sg /i=. ";
+        owc_flags = "wcc386 /dZIG_WIN32 /dZIG_WIN_NT /bt=nt /sg /i=. ";
     }
     var owc_cpre: []const u8 = owc_flags;
     var owc_csuf: []const u8 = ".c\n";
@@ -9346,6 +9366,61 @@ pub fn emitBuildOwcCrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emi
         bufferedWriterWrite(writer, wl);
     }
     var tail: []const u8 = " >> z98_link.lnk\necho name %OUT% >> z98_link.lnk\nwlink @z98_link.lnk\necho Built: %OUT%\n";
+    bufferedWriterWrite(writer, tail);
+}
+
+// MinGW fallback scripts (Windows-hosted gcc). They are emitted with every
+// -osw dump and shipped in the Win9x seed's win/ so a gcc fallback always
+// exists when MSVC 6 / OpenWatcom are unavailable.
+pub fn emitBuildMingwCrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
+    var h0: []const u8 = "@echo off\nREM build_mingw_crt.bat - generated by zig1 (MinGW gcc, CRT-linked)\nREM REDISTRIBUTION: CRT-linked fallback build; use build_mingw_nocrt.bat for\nREM the single-EXE no-CRT shape.\nREM usage: build_mingw_crt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\nset CFLAGS=-O2 -std=c89 -DZIG_WIN32 -I.\n";
+    if (win_profile == WinProfile.nt) {
+        h0 = "@echo off\nREM build_mingw_crt.bat - generated by zig1 (MinGW gcc, CRT-linked)\nREM REDISTRIBUTION: CRT-linked fallback build; use build_mingw_nocrt.bat for\nREM the single-EXE no-CRT shape.\nREM usage: build_mingw_crt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\nset CFLAGS=-O2 -std=c89 -DZIG_WIN32 -DZIG_WIN_NT -I.\n";
+    }
+    bufferedWriterWrite(writer, h0);
+    var h0b: []const u8 = "echo Compiling...\n";
+    bufferedWriterWrite(writer, h0b);
+    var cpre: []const u8 = "gcc %CFLAGS% -c ";
+    var csuf: []const u8 = ".c\n";
+    writeReachableModuleList(writer, emitter, cpre, csuf);
+    var rt: []const u8 = "gcc %CFLAGS% -c zig_runtime.c\ngcc %CFLAGS% -c zig_pal.c\ngcc %CFLAGS% -c zig_nocrt.c\ngcc %CFLAGS% -c c_exit.c\necho Linking...\ngcc -o %OUT%";
+    bufferedWriterWrite(writer, rt);
+    var lpre: []const u8 = " ";
+    var lsuf: []const u8 = ".o";
+    writeReachableModuleList(writer, emitter, lpre, lsuf);
+    var ltail: []const u8 = " zig_runtime.o zig_pal.o zig_nocrt.o c_exit.o -lkernel32 -lwinmm";
+    bufferedWriterWrite(writer, ltail);
+    if (net_emitted != @intCast(u8, 0)) {
+        var wl: []const u8 = " -lwsock32";
+        bufferedWriterWrite(writer, wl);
+    }
+    var tail: []const u8 = "\necho Built: %OUT%\n";
+    bufferedWriterWrite(writer, tail);
+}
+
+pub fn emitBuildMingwNocrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
+    var h0: []const u8 = "@echo off\nREM build_mingw_nocrt.bat - generated by zig1 (MinGW gcc, Win9x no-CRT)\nREM REDISTRIBUTION: -nostdlib single EXE; entry is the emitted\nREM mainCRTStartup. Mirrors scripts/win32_cross/cross_nocrt.sh.\nREM usage: build_mingw_nocrt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\nset CFLAGS=-O2 -std=c89 -DZIG_WIN32 -DZIG_NO_CRT -nostdlib -I.\n";
+    if (win_profile == WinProfile.nt) {
+        h0 = "@echo off\nREM build_mingw_nocrt.bat - generated by zig1 (MinGW gcc, Win9x no-CRT)\nREM REDISTRIBUTION: -nostdlib single EXE; entry is the emitted\nREM mainCRTStartup. Mirrors scripts/win32_cross/cross_nocrt.sh.\nREM usage: build_mingw_nocrt.bat [OUT]   (run from the emitted output dir)\nset OUT=prog.exe\nif not \"%1\"==\"\" goto z98_have_out\ngoto z98_out_ready\n:z98_have_out\nset OUT=%1\n:z98_out_ready\nset CFLAGS=-O2 -std=c89 -DZIG_WIN32 -DZIG_WIN_NT -DZIG_NO_CRT -nostdlib -I.\n";
+    }
+    bufferedWriterWrite(writer, h0);
+    var h0b: []const u8 = "echo Compiling...\n";
+    bufferedWriterWrite(writer, h0b);
+    var cpre: []const u8 = "gcc %CFLAGS% -c ";
+    var csuf: []const u8 = ".c\n";
+    writeReachableModuleList(writer, emitter, cpre, csuf);
+    var rt: []const u8 = "gcc %CFLAGS% -c zig_runtime.c\ngcc %CFLAGS% -c zig_pal.c\ngcc %CFLAGS% -c zig_nocrt.c\ngcc %CFLAGS% -c c_exit.c\necho Linking...\ngcc -o %OUT%";
+    bufferedWriterWrite(writer, rt);
+    var lpre: []const u8 = " ";
+    var lsuf: []const u8 = ".o";
+    writeReachableModuleList(writer, emitter, lpre, lsuf);
+    var ltail: []const u8 = " zig_runtime.o zig_pal.o zig_nocrt.o c_exit.o -Wl,-e,_mainCRTStartup -lgcc -lkernel32";
+    bufferedWriterWrite(writer, ltail);
+    if (net_emitted != @intCast(u8, 0)) {
+        var wl: []const u8 = " -lwsock32";
+        bufferedWriterWrite(writer, wl);
+    }
+    var tail: []const u8 = "\necho Built: %OUT%\n";
     bufferedWriterWrite(writer, tail);
 }
 
@@ -9400,35 +9475,45 @@ pub fn emitBuildScripts(emitter: *C89Emitter, dir_path: []const u8, target_is_wi
     pal.fileClose(fd0);
     if (target_is_windows) {
         var fd1: usize = openSupportOutputFile(dir_path, "build_target_nocrt.bat");
-        var w1: BufferedWriter = bufferedWriterInitFd(fd1);
+        var w1: BufferedWriter = bufferedWriterInitFdCrlf(fd1);
         emitBuildTargetNocrtBat(&w1, emitter, net_emitted, win_profile);
         bufferedWriterFlush(&w1);
         pal.fileClose(fd1);
         var fd2: usize = openSupportOutputFile(dir_path, "build_target_crt.bat");
-        var w2: BufferedWriter = bufferedWriterInitFd(fd2);
+        var w2: BufferedWriter = bufferedWriterInitFdCrlf(fd2);
         emitBuildTargetCrtBat(&w2, emitter, net_emitted, win_profile);
         bufferedWriterFlush(&w2);
         pal.fileClose(fd2);
         var fd3: usize = openSupportOutputFile(dir_path, "build_owc_nocrt.bat");
-        var w3: BufferedWriter = bufferedWriterInitFd(fd3);
+        var w3: BufferedWriter = bufferedWriterInitFdCrlf(fd3);
         emitBuildOwcNocrtBat(&w3, emitter, net_emitted, win_profile);
         bufferedWriterFlush(&w3);
         pal.fileClose(fd3);
         var fd4: usize = openSupportOutputFile(dir_path, "build_owc_crt.bat");
-        var w4: BufferedWriter = bufferedWriterInitFd(fd4);
+        var w4: BufferedWriter = bufferedWriterInitFdCrlf(fd4);
         emitBuildOwcCrtBat(&w4, emitter, net_emitted, win_profile);
         bufferedWriterFlush(&w4);
         pal.fileClose(fd4);
         var fd5: usize = openSupportOutputFile(dir_path, "build_target.bat");
-        var w5: BufferedWriter = bufferedWriterInitFd(fd5);
+        var w5: BufferedWriter = bufferedWriterInitFdCrlf(fd5);
         emitBuildTargetAliasBat(&w5, win_profile == WinProfile.nt);
         bufferedWriterFlush(&w5);
         pal.fileClose(fd5);
         var fd6: usize = openSupportOutputFile(dir_path, "build_owc.bat");
-        var w6: BufferedWriter = bufferedWriterInitFd(fd6);
+        var w6: BufferedWriter = bufferedWriterInitFdCrlf(fd6);
         emitBuildOwcAliasBat(&w6, win_profile == WinProfile.nt);
         bufferedWriterFlush(&w6);
         pal.fileClose(fd6);
+        var fd7: usize = openSupportOutputFile(dir_path, "build_mingw_crt.bat");
+        var w7: BufferedWriter = bufferedWriterInitFdCrlf(fd7);
+        emitBuildMingwCrtBat(&w7, emitter, net_emitted, win_profile);
+        bufferedWriterFlush(&w7);
+        pal.fileClose(fd7);
+        var fd8: usize = openSupportOutputFile(dir_path, "build_mingw_nocrt.bat");
+        var w8: BufferedWriter = bufferedWriterInitFdCrlf(fd8);
+        emitBuildMingwNocrtBat(&w8, emitter, net_emitted, win_profile);
+        bufferedWriterFlush(&w8);
+        pal.fileClose(fd8);
     }
 }
 

@@ -144,5 +144,9 @@ __asm__(".text");
 #endif
 
 #else
+#if defined(_MSC_VER) || defined(__WATCOMC__)
+int zig_nocrt_dummy;
+#else
 typedef int zig_nocrt_dummy;
+#endif
 #endif

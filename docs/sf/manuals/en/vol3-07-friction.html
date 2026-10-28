@@ -151,7 +151,7 @@ cannot be reproduced on this host are marked as observed.
 <tr>
 <td valign="top">OpenWatcom's C89 dialect is not gcc's</td>
 <td valign="top">the emitted <tt>build_owc.bat</tt> names the flags
-(<tt>/za</tt>, <tt>/we</tt>, <tt>/dZIG_WIN32</tt>) and
+(<tt>/dZIG_WIN32</tt>, <tt>/W3</tt>) and
 <tt>zig_compat.h</tt> carries the compiler branches; develop on the gcc/mingw
 path</td>
 <td valign="top"><a href="vol3-08-win9x.html">chapter&nbsp;8, Building for Win9x</a>,
@@ -212,14 +212,16 @@ gcc/mingw, <tt>build_target.bat</tt> for MSVC's <tt>cl</tt>, and
 module with a command of exactly this shape:
 </p>
 <pre>
-wcc386 /za /we /dZIG_WIN32 /i=. hello_F63FD80A.c
+wcc386 /dZIG_WIN32 /W3 /i=. hello_F63FD80A.c
 </pre>
 <p>
 and links with <tt>wlink system console op q opt stack=65536 &hellip; library
-wsock32</tt>. Read the flags as the dialect in miniature. <tt>/za</tt> turns
-OpenWatcom's language extensions <i>off</i>, asking for strict ANSI C;
-<tt>/we</tt> promotes every warning to an error; <tt>/dZIG_WIN32</tt> selects
-the Windows code path. The mingw script uses a completely different vocabulary
+wsock32</tt>. Read the flags as the dialect in miniature. <tt>/dZIG_WIN32</tt>
+selects the Windows code path; <tt>/W3</tt> asks for warnings but does not turn
+them into errors. The strict-ANSI switch (<tt>/za</tt>) and warnings-as-errors
+(<tt>/we</tt>) are deliberately not shipped: the emitted C is written to the
+strict-C89 intersection, and an ordinary warning must not break a build. The
+mingw script uses a completely different vocabulary
 &mdash; <tt>-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration</tt> &mdash; and the fact that it needs three
 <tt>-Wno-</tt> flags tells you the emitted C leans on a small set of extensions
@@ -247,10 +249,10 @@ tested on your machine.
 The way over is built into the thing that causes the friction. The emitter
 already carries the per-compiler branches and already writes a script for each
 compiler, with the correct flags for that compiler baked in. The OpenWatcom
-script even carries its own warning policy: if <tt>/we</tt> fails the build on
-a warning you believe is harmless, you remove <tt>/we</tt> and see the warning
-without the failure; if a hard error remains after that, the emitted C is
-invalid for OpenWatcom and should be reported as a compiler bug. That is the
+script even carries its own warning policy: <tt>/W3</tt> surfaces warnings
+without failing the build, so you read the warning and fix the emitted C; if a
+hard error remains, the emitted C is invalid for OpenWatcom and should be
+reported as a compiler bug. That is the
 right division of labor. You develop and test on the gcc/mingw path, which is
 the path this manual verified end to end, and you build the shipping Win9x
 binary with OpenWatcom on a machine that has it. If you do not have OpenWatcom,
@@ -632,11 +634,10 @@ the examples; in a self-hosting compiler the source tree is part of the
 documentation.
 </p>
 <p>
-<b>Loosening <tt>/we</tt> to make a warning go away.</b> The OpenWatcom script
-invites you to drop <tt>/we</tt> to <i>see</i> a warning, not to ship past a
-hard error. If a real error remains after the warnings are visible, the emitted
-C is wrong for that compiler and the correct move is to report it, not to
-disable the check that found it.
+<b>Ignoring a warning because it is no longer fatal.</b> The shipped OpenWatcom
+script asks for warnings (<tt>/W3</tt>) without promoting them to errors; that
+is not permission to ship past a real diagnostic. If the warning names
+emitted C that is wrong for that compiler, report it, do not silence it.
 </p>
 <p>
 <b>Rebuilding from source when a built compiler already exists.</b> The seed

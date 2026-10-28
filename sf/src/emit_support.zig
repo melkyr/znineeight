@@ -395,7 +395,11 @@ pub fn emitZigNocrtCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#endif\n");
     c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "#else\n");
+    c89_mod.bufferedWriterWrite(writer, "#if defined(_MSC_VER) || defined(__WATCOMC__)\n");
+    c89_mod.bufferedWriterWrite(writer, "int zig_nocrt_dummy;\n");
+    c89_mod.bufferedWriterWrite(writer, "#else\n");
     c89_mod.bufferedWriterWrite(writer, "typedef int zig_nocrt_dummy;\n");
+    c89_mod.bufferedWriterWrite(writer, "#endif\n");
     c89_mod.bufferedWriterWrite(writer, "#endif\n");
 }
 

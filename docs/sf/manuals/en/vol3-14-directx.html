@@ -485,13 +485,14 @@ OpenWatcom is a capable C compiler, but it is not the compiler the SDK was
 written for, and it has no DirectX headers of its own: you point its include
 path at the SDK's <tt>include</tt> directory and its linker at the SDK's import
 libraries. The emitted OpenWatcom script that <a href="vol3-08-win9x.html">chapter&nbsp;8</a>
-describes, <tt>build_owc.bat</tt>, calls <tt>wcc386</tt> with the language
-extensions turned off (<tt>/za</tt>) and warnings promoted to errors
-(<tt>/we</tt>) &mdash; both good defaults for the compiler's own output, and both
-unfriendly to headers that rely on extensions. <i>Era opinion, marked as such:</i>
-the combination is where most of the "DirectX under Watcom" frustration comes
-from. It is not that DirectX cannot be used from OpenWatcom; it is that the
-header path is a negotiation.
+describes, <tt>build_owc.bat</tt>, calls <tt>wcc386</tt> with the Windows
+target guard (<tt>/dZIG_WIN32</tt>) and warnings requested but not fatal
+(<tt>/W3</tt>). The strict-ANSI switch (<tt>/za</tt>) and warnings-as-errors
+(<tt>/we</tt>) are deliberately not shipped for the compiler's own output,
+which is friendlier to headers that rely on extensions. <i>Era opinion, marked
+as such:</i> the header path is where most of the "DirectX under Watcom"
+frustration comes from. It is not that DirectX cannot be used from OpenWatcom;
+it is that the header path is a negotiation.
 </p>
 <p>
 The way over it is the one this volume has been teaching since

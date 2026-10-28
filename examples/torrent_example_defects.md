@@ -580,3 +580,30 @@ functions), plus a fixture proving a Z98-defined `stdcall` function is callable 
 **Impact.** Cosmetic for the editor (one shim); structural for future game/audio/COM work.
 Left here as the "feature to investigate" so it is not lost when the language is pushed
 beyond console programs.
+
+---
+
+## D11 — Local declarations are emitted after statements (not strict C89)
+
+**Status:** FIXED at root cause (2026-10-28, Phase 2.5 Task 7, commit `56350635` base + Task-7
+change; found 2026-10-28 in the Win9x/OpenWatcom conformance audit).
+
+**Symptom.** In an emitted function, the hoisted temp declarations come first, but the
+`decl_local` declarations for Z98 `var`/`const` bindings were emitted from the function-body
+pass — after the `zig_poison_fill(...)` preamble statements. Strict C89 forbids declarations
+after a statement, so `cl /Za` and `wcc386 /za` rejected the output (`E1123`-class build
+breaks), and `gcc -std=c89 -pedantic -Werror=declaration-after-statement` failed.
+
+**Root cause.** `emitHoistedDecls` emitted the hoisted temps and then the poison preamble;
+`emitFunctionBody` reset `emitter.dl_hoisted = 0` and emitted the collected `.decl_local`
+declarations in its body prelude, i.e. after the poison statements. Example: emitted
+`std_io_*.c` showed `zig_poison_fill` rows followed by `c_path`/`i`/`fd` declarations.
+
+**Fix.** The whole-function `decl_local` declaration pass moved into `emitHoistedDecls`, after
+the hoisted temps and before the poison preamble / any real statement, and the body pass no
+longer re-declares them. The existing whole-function name_id dedup (one C declaration per Z98
+name) is kept, so moving declarations to the function top introduces no C scope-shadowing
+collision. The P3-M1 hoisted-decl debug-map rows stay on their existing temp declarations.
+`gcc -std=c89 -pedantic -Werror=declaration-after-statement` over the full self-emitted
+compiler C is clean. The dump bytes move (declaration order), so the 8-pin re-baseline happens
+once at the end of Task 9; runtime behavior and corpus classes are unchanged.

@@ -12,12 +12,14 @@ set -euo pipefail
 #
 # --win9x-zip additionally packs the Win9x companion seed: a
 # `zig1 -osw -o <dir> sf/src/main.zig` Windows-target dump (module C plus the
-# runtime) with only the compiler's two static-CRT build scripts,
+# runtime) with the compiler's two static-CRT build scripts,
 # build_target_crt.bat (MSVC /MT) and build_owc_crt.bat (OpenWatcom static
-# CLIB), lib/, and README.txt under top-level dir zig1-seed-w9/. No prebuilt
-# .exe and no hand-written scripts. The no-CRT compiler scripts are not
-# shipped: a no-CRT zig1 build is deferred to the asm_x86 backend (emitted
-# programs still default to no-CRT). `zip` is not required: python3's zipfile
+# CLIB), the MinGW fallback pair build_mingw_crt.bat/build_mingw_nocrt.bat,
+# lib/, and README.txt under top-level dir zig1-seed-w9/. No prebuilt
+# .exe and no hand-written scripts. The MSVC/OpenWatcom no-CRT compiler
+# scripts are not shipped: a no-CRT MSVC/OWC zig1 build is deferred to the
+# asm_x86 backend (emitted programs still default to no-CRT). `zip` is not
+# required: python3's zipfile
 # packs the archive deterministically (sorted entries, fixed date_time,
 # deflate).
 #
@@ -67,6 +69,21 @@ set -euo pipefail
 # testing) — newest-first, after the file's preamble header.
 
 die() { echo "error: $*" >&2; exit 1; }
+
+# Windows-facing text ships CRLF. Rewrite in place with shell builtins only
+# (no sed/perl/python/awk transforms): drop any existing trailing CR, then
+# append CRLF per line. Preserves line content and order.
+crlf_normalize() {
+    local f="$1" tmp line
+    [ -f "$f" ] || return 0
+    tmp="$f.crlf.$$"
+    : > "$tmp"
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        printf '%s\r\n' "$line" >> "$tmp"
+    done < "$f"
+    mv "$tmp" "$f"
+}
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
@@ -196,11 +213,16 @@ if [ -n "$WIN9X_ZIP" ]; then
     ( cd "$ROOT" && timeout 300 "$BIN" -osw -o "$WIN9X_WIN" sf/src/main.zig ) \
         || die "Windows-target self-emission dump failed"
     rm -f "$WIN9X_WIN"/.zig1_*.tmp
-    for s in build_target_crt.bat build_owc_crt.bat; do
-        [ -f "$WIN9X_WIN/$s" ] || die "emitted Windows-target static-CRT script missing: $s"
+    for s in build_target_crt.bat build_owc_crt.bat build_mingw_crt.bat build_mingw_nocrt.bat; do
+        [ -f "$WIN9X_WIN/$s" ] || die "emitted Windows-target build script missing: $s"
     done
     for s in build_target_nocrt.bat build_owc_nocrt.bat build_target.bat build_owc.bat build_target.sh; do
         rm -f "$WIN9X_WIN/$s"
+    done
+    # Windows text artifacts are CRLF in the shipped zip; .lnk/.rsp are only
+    # present if a build ran in place before packing, so normalize if found.
+    for f in "$WIN9X_WIN"/*.bat "$WIN9X_WIN"/*.lnk "$WIN9X_WIN"/*.rsp; do
+        [ -e "$f" ] && crlf_normalize "$f"
     done
     WIN9X_WIN_C_COUNT=$(ls "$WIN9X_WIN"/*.c 2>/dev/null | wc -l)
     WIN9X_WIN_H_COUNT=$(ls "$WIN9X_WIN"/*.h 2>/dev/null | wc -l)
@@ -219,8 +241,9 @@ Capture date: $DATE
 This is the Windows-target companion to the Linux seed
 release/seed/zig1-seed.tgz. It contains no prebuilt compiler executable.
 win/ is a zig1 -osw compiler dump: the compiler's Windows-target C89,
-runtime support, and the two static-CRT build scripts the compiler emitted.
-It ships no no-CRT compiler scripts: a no-CRT zig1 build is deferred to the
+runtime support, the two static-CRT build scripts the compiler emitted, and
+the MinGW fallback pair (build_mingw_crt.bat/build_mingw_nocrt.bat). It ships
+no MSVC/OpenWatcom no-CRT compiler scripts: that build is deferred to the
 asm_x86 backend. Do not use the Linux gen/ C for Win9x.
 
 Build the compiler on the Win9x machine
@@ -231,9 +254,16 @@ then run one of:
   build_owc_crt.bat ..\\zig1.exe
   build_target_crt.bat ..\\zig1.exe
 
-Both use a static CRT (/MT for MSVC 6, OpenWatcom static CLIB): a single EXE
-with no msvcrt.dll. They may import KERNEL32 names beyond the strict 9x
-whitelist; validate the result on the era machine.
+MinGW fallback (Windows-hosted gcc), if MSVC 6 / OpenWatcom are unavailable:
+
+  build_mingw_crt.bat ..\\zig1.exe
+  build_mingw_nocrt.bat ..\\zig1.exe
+
+The MSVC/OpenWatcom scripts use a static CRT (/MT for MSVC 6, OpenWatcom
+static CLIB): a single EXE with no msvcrt.dll. They may import KERNEL32 names
+beyond the strict 9x whitelist; validate the result on the era machine.
+build_mingw_nocrt.bat is the -nostdlib single-EXE fallback; build_mingw_crt.bat
+is CRT-linked.
 
 ..\\zig1.exe sits beside ..\\lib\\. That lib/ is the compiler's standard
 library. Run zig1.exe with no arguments to see usage.
@@ -262,6 +292,7 @@ _nocrt variant, then out\\hello.exe.
 
 If a toolchain rejects the C, report the exact error.
 EOF
+    crlf_normalize "$WIN9X_STAGE/README.txt"
     mkdir -p "$(dirname "$WIN9X_ZIP")"
     rm -f "$WIN9X_ZIP"
     python3 - "$WIN9X_STAGE" "$WIN9X_ZIP" <<'PY'
@@ -446,6 +477,8 @@ Archive inventory (sizes from sf/src at HEAD $HEAD):
   = $GEN_BYTES bytes.
 EOF
 
+crlf_normalize "$SEED/SEED_README.txt"
+
 rm -f "$OUTTGZ"
 tar -czf "$OUTTGZ" -C "$STAGE" zig1-seed
 ARCHIVE_MD5=$(md5sum "$OUTTGZ" | cut -d' ' -f1)
@@ -462,7 +495,7 @@ if [ -n "$WIN9X_ZIP" ]; then
 |---|---|
 | zip | \`$WIN9X_ZIP\` |
 | zip md5 | \`$WIN9X_ZIP_MD5\` |
-| win/ C | $WIN9X_WIN_C_COUNT \`.c\` + $WIN9X_WIN_H_COUNT \`.h\` (full \`zig1 -osw\` compiler dump; no-CRT scripts, aliases, and \`build_target.sh\` removed) |
+| win/ C | $WIN9X_WIN_C_COUNT \`.c\` + $WIN9X_WIN_H_COUNT \`.h\` (full \`zig1 -osw\` compiler dump; MSVC/OWC no-CRT scripts, aliases, and \`build_target.sh\` removed; MinGW fallback pair shipped) |
 | compiler build scripts | \`build_target_crt.bat\`, \`build_owc_crt.bat\` (static CRT; no msvcrt.dll; single EXE) |
 | compiler source | \`-fsafe\`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
 | no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
