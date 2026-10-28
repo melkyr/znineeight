@@ -18,10 +18,18 @@ const ui = @import("ui.zig");
 const io = @import("std_io.zig");
 const os = @import("std_os.zig");
 
+@cInclude("<windows.h>");
+
+// The config lives beside the exe (first) or in the CWD. GetModuleFileNameA is
+// the Win9x-safe way to find the exe directory; <windows.h> supplies the
+// prototype (Z98 emits no extern prototypes).
+pub extern "stdcall" fn GetModuleFileNameA(hModule: *void, lpFilename: [*]u8, nSize: u32) u32;
+
 const COLS: u32 = 80;
 const ROWS: u32 = 25;
 const ARENA_SIZE: usize = 12 * 1024 * 1024;
 const TITLE_MAX: usize = 200;
+const PATH_MAX: usize = 512;
 
 var g_arena_buf: [ARENA_SIZE]u8 = undefined;
 
@@ -49,6 +57,138 @@ fn putBytes(out: []u8, pos_in: usize, s: []const u8) usize {
         pos += 1;
     }
     return pos;
+}
+
+fn nullVoid() *void {
+    return @ptrCast(*void, @intToPtr(*void, 0));
+}
+fn isSpace(c: u8) bool {
+    return c == 32 or c == 9 or c == 13 or c == 10;
+}
+
+fn eqIgnoreCase(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        var ca = a[i];
+        var cb = b[i];
+        if (ca >= 'A' and ca <= 'Z') ca = @intCast(u8, ca + 32);
+        if (cb >= 'A' and cb <= 'Z') cb = @intCast(u8, cb + 32);
+        if (ca != cb) return false;
+    }
+    return true;
+}
+
+fn themeName(t: gfx.Theme) []const u8 {
+    if (t == .solarized) return "solarized";
+    if (t == .dark) return "dark";
+    return "white";
+}
+
+// Parse one config line: 0 = not a theme assignment, 1 = white, 2 = solarized,
+// 3 = dark. A recognized theme key with an unknown/malformed value is white.
+fn parseThemeLine(line: []const u8) u8 {
+    var a: usize = 0;
+    var b: usize = line.len;
+    while (a < b and isSpace(line[a])) a += 1;
+    while (b > a and isSpace(line[b - 1])) b -= 1;
+    var eq: usize = a;
+    while (eq < b and line[eq] != '=') eq += 1;
+    if (eq >= b) return 0;
+    var kb = eq;
+    while (kb > a and isSpace(line[kb - 1])) kb -= 1;
+    if (!eqIgnoreCase(line[a..kb], "theme")) return 0;
+    var va = eq + 1;
+    var vb = b;
+    while (va < vb and isSpace(line[va])) va += 1;
+    while (vb > va and isSpace(line[vb - 1])) vb -= 1;
+    if (eqIgnoreCase(line[va..vb], "white")) return 1;
+    if (eqIgnoreCase(line[va..vb], "solarized")) return 2;
+    if (eqIgnoreCase(line[va..vb], "dark")) return 3;
+    return 1;
+}
+
+fn themeFromCode(c: u8) gfx.Theme {
+    if (c == 2) return .solarized;
+    if (c == 3) return .dark;
+    return .white;
+}
+
+fn parseThemeFile(data: []const u8) gfx.Theme {
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i < data.len) : (i += 1) {
+        if (data[i] == '\n') {
+            const c = parseThemeLine(data[start..i]);
+            if (c != 0) return themeFromCode(c);
+            start = i + 1;
+        }
+    }
+    if (start < data.len) {
+        const c = parseThemeLine(data[start..data.len]);
+        if (c != 0) return themeFromCode(c);
+    }
+    return .white;
+}
+
+// Exe directory with a trailing separator (empty on failure/non-Windows).
+fn exeDir(out: []u8) usize {
+    if (!@isWindows()) return 0;
+    var buf: [PATH_MAX]u8 = undefined;
+    const n = GetModuleFileNameA(nullVoid(), &buf[0], PATH_MAX);
+    if (n == 0 or n >= PATH_MAX) return 0;
+    var i: usize = @intCast(usize, n);
+    while (i > 0) {
+        i -= 1;
+        if (buf[i] == '\\' or buf[i] == '/') {
+            var p: usize = 0;
+            while (p <= i and p < out.len) : (p += 1) out[p] = buf[p];
+            return p;
+        }
+    }
+    return 0;
+}
+
+// Read a config path into `out`; false means absent/unreadable.
+fn themeFromPath(arena: *arena_mod.Arena, path: []const u8, out: *gfx.Theme) bool {
+    if (!file_mod.exists(path)) return false;
+    const data = file_mod.readAll(arena, path) catch {
+        return false;
+    };
+    out.* = parseThemeFile(data);
+    return true;
+}
+
+fn themeFromDir(arena: *arena_mod.Arena, dir: []const u8, name: []const u8, out: *gfx.Theme) bool {
+    var pbuf: [PATH_MAX]u8 = undefined;
+    var p = putBytes(pbuf[0..], 0, dir);
+    p = putBytes(pbuf[0..], p, name);
+    return themeFromPath(arena, pbuf[0..p], out);
+}
+
+// Search z9edit.ini then z9edit.cfg (exe directory first, then CWD). Missing,
+// unreadable, unknown, or malformed -> white.
+fn readThemeConfig(arena: *arena_mod.Arena) gfx.Theme {
+    var t: gfx.Theme = .white;
+    var ebuf: [PATH_MAX]u8 = undefined;
+    const elen = exeDir(ebuf[0..]);
+    if (elen > 0) {
+        if (themeFromDir(arena, ebuf[0..elen], "z9edit.ini", &t)) return t;
+    }
+    if (themeFromPath(arena, "z9edit.ini", &t)) return t;
+    if (elen > 0) {
+        if (themeFromDir(arena, ebuf[0..elen], "z9edit.cfg", &t)) return t;
+    }
+    if (themeFromPath(arena, "z9edit.cfg", &t)) return t;
+    return .white;
+}
+
+fn applyConfigTheme(g: *gfx.Gfx, arena: *arena_mod.Arena) void {
+    const t = readThemeConfig(arena);
+    _ = gfx.gfxSetTheme(g, t);
+    io.write("THEME ");
+    io.write(themeName(gfx.gfxGetTheme(g)));
+    io.write("\n");
 }
 
 fn basenameOf(path: []const u8) []const u8 {
@@ -141,6 +281,7 @@ fn runSmoke(in_path: []const u8, out_path: []const u8) void {
         fail("z9edit: gfxOpen failed");
         return;
     };
+    applyConfigTheme(g, &arena);
     const st = ui.uiInit(&arena, g, b, in_path) catch {
         gfx.gfxClose(g);
         fail("z9edit: uiInit failed");
@@ -235,6 +376,7 @@ fn startWindow(arena: *arena_mod.Arena, path: []const u8, b: *buffer.GapBuffer, 
         fail("z9edit: gfxOpen failed");
         return;
     };
+    applyConfigTheme(g, arena);
     const st = ui.uiInit(arena, g, b, path) catch {
         gfx.gfxClose(g);
         fail("z9edit: uiInit failed");
@@ -426,6 +568,49 @@ fn runClipTest() void {
     }
 }
 
+// Headless theme evidence: config selection, memory-mode safety, and the F2
+// cycle through uiStep (no window/atlas in memory mode).
+fn runThemeTest() void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    const cfg = readThemeConfig(&arena);
+    io.write("THEME initial ");
+    io.write(themeName(cfg));
+    io.write("\n");
+    const g = gfx.gfxOpenMemory(80, 25) catch {
+        fail("z9edit: theme-test gfxOpenMemory failed");
+        return;
+    };
+    if (!gfx.gfxSetTheme(g, cfg)) {
+        gfx.gfxClose(g);
+        fail("z9edit: theme-test gfxSetTheme failed");
+        return;
+    }
+    io.write("THEME memory ");
+    io.write(themeName(gfx.gfxGetTheme(g)));
+    io.write("\n");
+    const b = buffer.bufInit(&arena, 64) catch {
+        gfx.gfxClose(g);
+        fail("z9edit: theme-test buffer init failed");
+        return;
+    };
+    const st = ui.uiInit(&arena, g, b, "theme-test") catch {
+        gfx.gfxClose(g);
+        fail("z9edit: theme-test uiInit failed");
+        return;
+    };
+    var k: usize = 0;
+    while (k < 4) : (k += 1) {
+        var ev = evBase(.key_down);
+        ev.code = 0x71;
+        _ = ui.uiStep(st, &ev);
+        io.write("THEME cycle ");
+        io.write(themeName(gfx.gfxGetTheme(g)));
+        io.write("\n");
+    }
+    gfx.gfxClose(g);
+    io.write("THEMETEST OK\n");
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     if (argc >= 4 and strEq(argAt(argv, 1), "--smoke")) {
         runSmoke(argAt(argv, 2), argAt(argv, 3));
@@ -447,8 +632,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         runClipTest();
         return;
     }
+    if (argc >= 2 and strEq(argAt(argv, 1), "--theme-test")) {
+        runThemeTest();
+        return;
+    }
     if (argc < 2) {
-        io.write("usage: z9edit <path> | z9edit --smoke <in> <out> | z9edit --live-smoke <in> | z9edit --wheel-test | --keytest | --clip-test\n");
+        io.write("usage: z9edit <path> | z9edit --smoke <in> <out> | z9edit --live-smoke <in> | z9edit --wheel-test | --keytest | --clip-test | --theme-test\n");
         os.exit(2);
         return;
     }

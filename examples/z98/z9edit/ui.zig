@@ -470,11 +470,30 @@ fn handleCommand(st: *UiImpl, c_in: u8) bool {
     return true;
 }
 
+// F2 cycles the session theme white -> solarized -> dark -> white. It is not
+// persisted; the config file is only read at startup.
+fn cycleTheme(st: *UiImpl) void {
+    const cur = gfx.gfxGetTheme(st.g);
+    var next: gfx.Theme = .white;
+    if (cur == .white) {
+        next = .solarized;
+    } else if (cur == .solarized) {
+        next = .dark;
+    } else {
+        next = .white;
+    }
+    _ = gfx.gfxSetTheme(st.g, next);
+}
+
 fn handleKey(st: *UiImpl, ev: *const gfx.Event) bool {
     const ctrl = (ev.mods & 2) != 0;
     const shift = (ev.mods & 1) != 0;
     if (ctrl) {
         if (ev.ch != 0) return handleCommand(st, ev.ch);
+        return true;
+    }
+    if (ev.code == 0x71) {
+        cycleTheme(st);
         return true;
     }
     if (ev.code == 0x25) {
@@ -731,7 +750,7 @@ fn paintTokens(st: *UiImpl, row: u32, line_start: usize, line: []const u8,
                 fg = COL_BRIGHT;
                 bg = COL_SEL;
             } else if (have_br and (abs == br1 or abs == br2)) {
-                fg = COL_BG;
+                fg = COL_FG;
                 bg = COL_SEL;
             }
             const x = st.gutter + screen_col;

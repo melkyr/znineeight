@@ -127,7 +127,7 @@ fn paint(g: *gfx.Gfx, app: *App) void {
     gfx.gfxClear(g, 8);
 
     gfx.gfxFillRect(g, 0, 0, COLS, 1, 15, 1);
-    gfx.gfxDrawText(g, 1, 0, TITLE, 15, 1);
+    gfx.gfxDrawText(g, 1, 0, TITLE, 0, 1);
 
     gfx.gfxFillRect(g, 0, 1, COLS, 1, 8, 7);
     gfx.gfxDrawText(g, 1, 1, "ESC quit | wheel=3 lines | click moves cursor", 0, 7);
@@ -249,10 +249,59 @@ fn dumpGrid(g: *gfx.Gfx) bool {
     return true;
 }
 
+fn themeName(t: gfx.Theme) []const u8 {
+    if (t == .solarized) return "solarized";
+    if (t == .dark) return "dark";
+    return "white";
+}
+
+// Headless theme evidence for std_gfx: default white, all three themes, and
+// memory-mode safety (no window/atlas; the grid is unchanged).
+fn runThemeTest() void {
+    const g = gfx.gfxOpenMemory(4, 1) catch {
+        io.write("gfx_demo: theme-test gfxOpenMemory failed\n");
+        @exit(@intCast(u8, 1));
+        return;
+    };
+    io.write("THEME default ");
+    io.write(themeName(gfx.gfxGetTheme(g)));
+    io.write("\n");
+    if (!gfx.gfxSetTheme(g, .solarized)) {
+        gfx.gfxClose(g);
+        io.write("THEME solarized FAIL\n");
+        @exit(@intCast(u8, 1));
+        return;
+    }
+    io.write("THEME solarized ");
+    io.write(themeName(gfx.gfxGetTheme(g)));
+    io.write("\n");
+    if (!gfx.gfxSetTheme(g, .dark)) {
+        gfx.gfxClose(g);
+        io.write("THEME dark FAIL\n");
+        @exit(@intCast(u8, 1));
+        return;
+    }
+    io.write("THEME dark ");
+    io.write(themeName(gfx.gfxGetTheme(g)));
+    io.write("\n");
+    if (!gfx.gfxSetTheme(g, .white)) {
+        gfx.gfxClose(g);
+        io.write("THEME white FAIL\n");
+        @exit(@intCast(u8, 1));
+        return;
+    }
+    io.write("THEME white ");
+    io.write(themeName(gfx.gfxGetTheme(g)));
+    io.write("\n");
+    gfx.gfxClose(g);
+    io.write("THEMETEST OK\n");
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     var smoke: bool = false;
     var dump: bool = false;
     var selftest: bool = false;
+    var theme_test: bool = false;
     var live_smoke: bool = false;
     var smoke_n: u32 = 0;
     var i: i32 = 1;
@@ -269,9 +318,16 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             dump = true;
         } else if (strEq(a, "--selftest")) {
             selftest = true;
+        } else if (strEq(a, "--theme-test")) {
+            theme_test = true;
         } else if (strEq(a, "--live-smoke")) {
             live_smoke = true;
         }
+    }
+
+    if (theme_test) {
+        runThemeTest();
+        return;
     }
 
     if (selftest) {
