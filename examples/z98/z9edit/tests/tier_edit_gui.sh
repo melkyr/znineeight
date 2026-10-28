@@ -335,11 +335,12 @@ else
             pass_case "runtime RSS recorded (Wine-hosted, includes Wine): ${RUNTIME_RSS} kB"
         fi
 
-        # Run 3: a failed save must not kill the session (I-1). The save path is
-        # a directory, so CreateFile-for-write fails deterministically; the
-        # editor must stay alive through the scripted Ctrl+Q and exit 0.
+        # Run 3: a failed save must not kill the session (I-1). The temp path is
+        # a directory, so the temp write fails deterministically; the editor
+        # must stay alive through the scripted Ctrl+Q and exit 0 without
+        # creating the target.
         FAILRUN="$OUT/fail_save"
-        mkdir -p "$FAILRUN/out.tmp"
+        mkdir -p "$FAILRUN/out.tmp.z9tmp"
         cp "$FIXTURE" "$FAILRUN/edit_smoke.z98"
         ( cd "$FAILRUN" && timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
             >"$OUT/failsave.log" 2>&1
@@ -349,10 +350,27 @@ else
         else
             fail_case "save-failure run exited $FAIL_RC (session died)"
         fi
-        if [ -d "$FAILRUN/out.tmp" ]; then
-            pass_case "read-only save target untouched (failure was real)"
+        if [ ! -f "$FAILRUN/out.tmp" ]; then
+            pass_case "failed temp write did not create the target"
         else
-            fail_case "save-failure run unexpectedly replaced the directory"
+            fail_case "failed temp write unexpectedly created the target"
+        fi
+
+        # Backup-restore failure: existing target, and .z9bak is a directory so
+        # moving the original aside fails. The original must survive and the
+        # temp must be cleaned (no delete-then-rename data loss).
+        BAKRUN="$OUT/bakfail"
+        mkdir -p "$BAKRUN/out.tmp.z9bak"
+        printf 'ORIGINAL\n' >"$BAKRUN/out.tmp"
+        cp "$FIXTURE" "$BAKRUN/edit_smoke.z98"
+        ( cd "$BAKRUN" && timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
+            >"$OUT/bakfail.log" 2>&1
+        BAK_RC=$?
+        if [ "$BAK_RC" -eq 0 ] && grep -qx 'ORIGINAL' "$BAKRUN/out.tmp" \
+            && [ ! -f "$BAKRUN/out.tmp.z9tmp" ]; then
+            pass_case "failed Windows replace preserved the original target"
+        else
+            fail_case "failed Windows replace lost/changed the original (rc=$BAK_RC)"
         fi
 
         # Wheel direction (headless memory Gfx, no window).

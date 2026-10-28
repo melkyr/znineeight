@@ -240,6 +240,8 @@ pub fn bufSave(b: *GapBuffer, path: []const u8) BufError!void {
 
     // Save atomically: write <path>.z9tmp in the same directory, flush+close,
     // then rename over the target. A failed write never touches the original.
+    // On Windows (MoveFileA does not replace) a completed temp is swapped in
+    // via a <path>.z9bak backup, so a failed replace restores the original.
     const tmp_path = try allocBytes(st.arena, path.len + 6);
     var suffix: []const u8 = ".z9tmp";
     var pi: usize = 0;
@@ -260,13 +262,34 @@ pub fn bufSave(b: *GapBuffer, path: []const u8) BufError!void {
     };
     if (!renamed) {
         if (@isWindows() and file_mod.exists(path)) {
-            // MoveFileA does not replace an existing target; the temp file is
-            // already complete, so remove the old target and retry once.
-            file_mod.remove(path) catch {};
-            file_mod.rename(tmp_s, path) catch {
+            const bak_path = try allocBytes(st.arena, path.len + 6);
+            var bsuffix: []const u8 = ".z9bak";
+            pi = 0;
+            while (pi < path.len) : (pi += 1) bak_path[pi] = path[pi];
+            si = 0;
+            while (si < 6) : (si += 1) bak_path[pi + si] = bsuffix[si];
+            const bak_s = bak_path[0 .. path.len + 6];
+
+            var moved_aside = true;
+            file_mod.rename(path, bak_s) catch {
+                moved_aside = false;
+            };
+            if (!moved_aside) {
                 _ = file_mod.remove(tmp_s) catch {};
                 return error.WriteFailed;
+            }
+            var replaced = true;
+            file_mod.rename(tmp_s, path) catch {
+                replaced = false;
             };
+            if (!replaced) {
+                // Restore the original; if even that fails, leave the backup
+                // in place (the data is not deleted).
+                file_mod.rename(bak_s, path) catch {};
+                _ = file_mod.remove(tmp_s) catch {};
+                return error.WriteFailed;
+            }
+            _ = file_mod.remove(bak_s) catch {};
         } else {
             _ = file_mod.remove(tmp_s) catch {};
             return error.WriteFailed;
