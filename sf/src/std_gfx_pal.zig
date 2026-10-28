@@ -50,6 +50,7 @@ const VK_SHIFT: i32 = 0x10;
 const VK_CONTROL: i32 = 0x11;
 const IDC_ARROW: u32 = 32512;
 const SYSTEM_FIXED_FONT: i32 = 16;
+const WHITE_BRUSH: i32 = 0;
 const BLACK_BRUSH: i32 = 4;
 const TRANSPARENT: i32 = 1;
 const SRCAND: u32 = 0x008800C6;
@@ -95,32 +96,80 @@ fn rgb(r: u32, g: u32, b: u32) u32 {
     return (r & 255) | ((g & 255) << 8) | ((b & 255) << 16);
 }
 
-// Editor 16-color palette (dark theme). The DirectDraw surfaces are 32-bit;
-// these 16 RGB values are the app's whole color vocabulary (the glyph atlas
-// bakes them once at open). Index roles are stable for z9edit: 0 bg, 1 panel
-// bg, 2 fg, 3 comment, 4 fill bg, 5 green, 6 brown, 7 status bg, 8 alt bg,
-// 9-12 syntax accents, 13 accent/selection, 14 warning/gold, 15 bright.
-// Unknown indices wrap (idx & 15).
-fn paletteRgb(idx: u8) u32 {
-    const PAL: [16]u32 = [16]u32{
-        rgb(0x0b, 0x0f, 0x14),
-        rgb(0x1f, 0x3a, 0x5f),
-        rgb(0xc9, 0xd1, 0xd9),
-        rgb(0x6e, 0x76, 0x81),
-        rgb(0x3a, 0x1f, 0x2b),
-        rgb(0x2d, 0x5a, 0x3d),
-        rgb(0x5a, 0x3d, 0x1f),
-        rgb(0x8b, 0x94, 0x9e),
-        rgb(0x16, 0x1b, 0x22),
-        rgb(0x79, 0xc0, 0xff),
-        rgb(0x56, 0xd3, 0x64),
-        rgb(0x7e, 0xe7, 0x87),
-        rgb(0xff, 0x7b, 0x72),
-        rgb(0x38, 0x8b, 0xfd),
-        rgb(0xe3, 0xb3, 0x41),
-        rgb(0xff, 0xff, 0xff),
-    };
-    return PAL[@intCast(usize, idx & 15)];
+// Editor 16-color palettes (Phase 2 P4-M4 theme system). The DirectDraw
+// surfaces are 32-bit; these 16 RGB values are the app's whole color
+// vocabulary (the glyph atlas bakes them, so a theme change rebuilds it).
+// Index roles are stable for z9edit: 0 bg, 1 panel bg, 2 fg, 3 comment,
+// 4 fill bg, 5 green, 6 brown, 7 status bg, 8 alt bg, 9-12 syntax accents,
+// 13 accent/selection, 14 warning/gold, 15 bright. Unknown indices wrap.
+//
+// Theme order matches std_gfx.Theme: 0 white (default), 1 solarized, 2 dark.
+const THEME_WHITE: u8 = 0;
+const THEME_SOLARIZED: u8 = 1;
+const THEME_DARK: u8 = 2;
+
+const PAL_WHITE: [16]u32 = [16]u32{
+    rgb(0xff, 0xff, 0xff),
+    rgb(0x00, 0x00, 0x80),
+    rgb(0x00, 0x00, 0x00),
+    rgb(0x80, 0x80, 0x80),
+    rgb(0xc0, 0xc0, 0xc0),
+    rgb(0x00, 0x80, 0x00),
+    rgb(0x80, 0x80, 0x00),
+    rgb(0x00, 0x00, 0x80),
+    rgb(0xf0, 0xf0, 0xf0),
+    rgb(0x00, 0x00, 0x80),
+    rgb(0x00, 0x80, 0x80),
+    rgb(0x00, 0x80, 0x00),
+    rgb(0x80, 0x00, 0x00),
+    rgb(0x00, 0x00, 0x80),
+    rgb(0x80, 0x80, 0x00),
+    rgb(0x00, 0x00, 0x00),
+};
+
+const PAL_SOLARIZED: [16]u32 = [16]u32{
+    rgb(0xfd, 0xf6, 0xe3),
+    rgb(0xee, 0xe8, 0xd5),
+    rgb(0x58, 0x6e, 0x75),
+    rgb(0x93, 0xa1, 0xa1),
+    rgb(0xee, 0xe8, 0xd5),
+    rgb(0x85, 0x99, 0x00),
+    rgb(0xb5, 0x89, 0x00),
+    rgb(0x07, 0x36, 0x42),
+    rgb(0xee, 0xe8, 0xd5),
+    rgb(0x26, 0x8b, 0xd2),
+    rgb(0x2a, 0xa1, 0x98),
+    rgb(0x85, 0x99, 0x00),
+    rgb(0xdc, 0x32, 0x2f),
+    rgb(0x6c, 0x71, 0xc4),
+    rgb(0xcb, 0x4b, 0x16),
+    rgb(0x00, 0x2b, 0x36),
+};
+
+const PAL_DARK: [16]u32 = [16]u32{
+    rgb(0x0b, 0x0f, 0x14),
+    rgb(0x1f, 0x3a, 0x5f),
+    rgb(0xc9, 0xd1, 0xd9),
+    rgb(0x6e, 0x76, 0x81),
+    rgb(0x3a, 0x1f, 0x2b),
+    rgb(0x2d, 0x5a, 0x3d),
+    rgb(0x5a, 0x3d, 0x1f),
+    rgb(0x8b, 0x94, 0x9e),
+    rgb(0x16, 0x1b, 0x22),
+    rgb(0x79, 0xc0, 0xff),
+    rgb(0x56, 0xd3, 0x64),
+    rgb(0x7e, 0xe7, 0x87),
+    rgb(0xff, 0x7b, 0x72),
+    rgb(0x38, 0x8b, 0xfd),
+    rgb(0xe3, 0xb3, 0x41),
+    rgb(0xff, 0xff, 0xff),
+};
+
+fn paletteRgb(theme: u8, idx: u8) u32 {
+    const i = @intCast(usize, idx & 15);
+    if (theme == THEME_SOLARIZED) return PAL_SOLARIZED[i];
+    if (theme == THEME_DARK) return PAL_DARK[i];
+    return PAL_WHITE[i];
 }
 
 // Raw wheel delta (WM_MOUSEWHEEL high word) -> app lines. Spec §7.1 says the
@@ -504,6 +553,7 @@ pub const State = struct {
     atlas_old_color: *void,
     atlas_old_mask: *void,
     atlas_used: bool,
+    theme: u8,
     clipper: *void,
     hdc: *void,
     font: *void,
@@ -641,7 +691,56 @@ fn releaseAtlas(st: *State) void {
     st.atlas_used = false;
 }
 
-fn buildAtlas(st: *State) bool {
+// Temporary atlas handles used by a theme rebuild: the new atlas is built
+// before the old one is released so a failed rebuild keeps the old theme.
+const AtlasRes = struct {
+    color_dc: *void,
+    mask_dc: *void,
+    color_bmp: *void,
+    mask_bmp: *void,
+    old_color: *void,
+    old_mask: *void,
+};
+
+fn nullAtlasRes() AtlasRes {
+    return AtlasRes{
+        .color_dc = nullVoid(),
+        .mask_dc = nullVoid(),
+        .color_bmp = nullVoid(),
+        .mask_bmp = nullVoid(),
+        .old_color = nullVoid(),
+        .old_mask = nullVoid(),
+    };
+}
+
+fn releaseAtlasRes(a: *AtlasRes) void {
+    if (!isNull(a.color_dc)) {
+        if (!isNull(a.old_color)) {
+            _ = SelectObject(a.color_dc, a.old_color);
+        }
+        _ = DeleteDC(a.color_dc);
+        a.color_dc = nullVoid();
+    }
+    if (!isNull(a.mask_dc)) {
+        if (!isNull(a.old_mask)) {
+            _ = SelectObject(a.mask_dc, a.old_mask);
+        }
+        _ = DeleteDC(a.mask_dc);
+        a.mask_dc = nullVoid();
+    }
+    if (!isNull(a.color_bmp)) {
+        _ = DeleteObject(a.color_bmp);
+        a.color_bmp = nullVoid();
+    }
+    if (!isNull(a.mask_bmp)) {
+        _ = DeleteObject(a.mask_bmp);
+        a.mask_bmp = nullVoid();
+    }
+    a.old_color = nullVoid();
+    a.old_mask = nullVoid();
+}
+
+fn buildAtlasInto(st: *State, theme: u8, brushes: []*void, a: *AtlasRes) bool {
     const aw: u32 = GLYPH_COUNT * st.cw;
     const ah: u32 = ATLAS_COLORS * st.ch;
     const wdc = GetDC(st.hwnd);
@@ -649,47 +748,116 @@ fn buildAtlas(st: *State) bool {
         logLine("GetDC(window) for glyph-atlas failed");
         return false;
     }
-    st.atlas_color_bmp = CreateCompatibleBitmap(wdc, @intCast(i32, aw), @intCast(i32, ah));
-    st.atlas_mask_bmp = CreateBitmap(@intCast(i32, aw), @intCast(i32, ah), 1, 1, nullVoid());
-    st.atlas_color_dc = CreateCompatibleDC(wdc);
-    st.atlas_mask_dc = CreateCompatibleDC(wdc);
+    a.color_bmp = CreateCompatibleBitmap(wdc, @intCast(i32, aw), @intCast(i32, ah));
+    a.mask_bmp = CreateBitmap(@intCast(i32, aw), @intCast(i32, ah), 1, 1, nullVoid());
+    a.color_dc = CreateCompatibleDC(wdc);
+    a.mask_dc = CreateCompatibleDC(wdc);
     _ = ReleaseDC(st.hwnd, wdc);
-    if (isNull(st.atlas_color_bmp) or isNull(st.atlas_mask_bmp)
-        or isNull(st.atlas_color_dc) or isNull(st.atlas_mask_dc)) {
+    if (isNull(a.color_bmp) or isNull(a.mask_bmp)
+        or isNull(a.color_dc) or isNull(a.mask_dc)) {
         logLine("glyph-atlas allocation failed");
-        releaseAtlas(st);
+        releaseAtlasRes(a);
         return false;
     }
-    st.atlas_old_color = SelectObject(st.atlas_color_dc, st.atlas_color_bmp);
-    st.atlas_old_mask = SelectObject(st.atlas_mask_dc, st.atlas_mask_bmp);
+    a.old_color = SelectObject(a.color_dc, a.color_bmp);
+    a.old_mask = SelectObject(a.mask_dc, a.mask_bmp);
 
     var full = Rect{ .left = 0, .top = 0, .right = @intCast(i32, aw), .bottom = @intCast(i32, ah) };
-    _ = FillRect(st.atlas_color_dc, @ptrCast(*const void, &full), brushFor(st, 0));
-    _ = FillRect(st.atlas_mask_dc, @ptrCast(*const void, &full), brushFor(st, 15));
-    _ = SelectObject(st.atlas_color_dc, st.font);
-    _ = SelectObject(st.atlas_mask_dc, st.font);
-    _ = SetBkMode(st.atlas_color_dc, TRANSPARENT);
-    _ = SetBkMode(st.atlas_mask_dc, TRANSPARENT);
+    _ = FillRect(a.color_dc, @ptrCast(*const void, &full), brushes[0]);
+    // The mask must always be white-background regardless of the theme's
+    // index 15 (white theme's bright is black): use the stock WHITE_BRUSH.
+    _ = FillRect(a.mask_dc, @ptrCast(*const void, &full), GetStockObject(WHITE_BRUSH));
+    _ = SelectObject(a.color_dc, st.font);
+    _ = SelectObject(a.mask_dc, st.font);
+    _ = SetBkMode(a.color_dc, TRANSPARENT);
+    _ = SetBkMode(a.mask_dc, TRANSPARENT);
 
     var fg: u32 = 0;
     while (fg < ATLAS_COLORS) : (fg += 1) {
-        _ = SetTextColor(st.atlas_color_dc, paletteRgb(@intCast(u8, fg)));
+        _ = SetTextColor(a.color_dc, paletteRgb(theme, @intCast(u8, fg)));
         // Mask: black glyph on white -> SRCAND clears glyph pixels, keeps bg.
-        _ = SetTextColor(st.atlas_mask_dc, 0);
+        _ = SetTextColor(a.mask_dc, 0);
         var idx: u32 = 0;
         while (idx < GLYPH_COUNT) : (idx += 1) {
             var ch: [1]u8 = undefined;
             ch[0] = @intCast(u8, GLYPH_FIRST + idx);
-            _ = TextOutA(st.atlas_color_dc,
+            _ = TextOutA(a.color_dc,
                 @intCast(i32, idx * st.cw), @intCast(i32, fg * st.ch),
                 @ptrCast([*]const u8, &ch[0]), 1);
-            _ = TextOutA(st.atlas_mask_dc,
+            _ = TextOutA(a.mask_dc,
                 @intCast(i32, idx * st.cw), @intCast(i32, fg * st.ch),
                 @ptrCast([*]const u8, &ch[0]), 1);
         }
     }
     logLine("glyph-atlas built (95x16 GDI color+mask)");
     return true;
+}
+
+fn buildAtlas(st: *State) bool {
+    var a = nullAtlasRes();
+    if (!buildAtlasInto(st, st.theme, st.brushes[0..], &a)) return false;
+    st.atlas_color_dc = a.color_dc;
+    st.atlas_mask_dc = a.mask_dc;
+    st.atlas_color_bmp = a.color_bmp;
+    st.atlas_mask_bmp = a.mask_bmp;
+    st.atlas_old_color = a.old_color;
+    st.atlas_old_mask = a.old_mask;
+    st.atlas_used = false;
+    return true;
+}
+
+// Rebuild both the brushes and the glyph atlas for a new theme. The new
+// resources are fully built before the old ones are released, so a failure
+// returns false with the old theme still active.
+pub fn setTheme(st: *State, theme_in: u8) bool {
+    if (isNull(st.hwnd)) return false;
+    var theme = theme_in;
+    if (theme > THEME_DARK) theme = THEME_WHITE;
+
+    var new_brushes: [16]*void = undefined;
+    var i: usize = 0;
+    while (i < 16) : (i += 1) {
+        new_brushes[i] = CreateSolidBrush(paletteRgb(theme, @intCast(u8, i)));
+        if (isNull(new_brushes[i])) {
+            var j: usize = 0;
+            while (j < i) : (j += 1) {
+                _ = DeleteObject(new_brushes[j]);
+            }
+            return false;
+        }
+    }
+
+    var a = nullAtlasRes();
+    if (!buildAtlasInto(st, theme, new_brushes[0..], &a)) {
+        i = 0;
+        while (i < 16) : (i += 1) {
+            _ = DeleteObject(new_brushes[i]);
+        }
+        return false;
+    }
+
+    releaseAtlas(st);
+    i = 0;
+    while (i < 16) : (i += 1) {
+        if (!isNull(st.brushes[i])) {
+            _ = DeleteObject(st.brushes[i]);
+        }
+    }
+    i = 0;
+    while (i < 16) : (i += 1) st.brushes[i] = new_brushes[i];
+    st.atlas_color_dc = a.color_dc;
+    st.atlas_mask_dc = a.mask_dc;
+    st.atlas_color_bmp = a.color_bmp;
+    st.atlas_mask_bmp = a.mask_bmp;
+    st.atlas_old_color = a.old_color;
+    st.atlas_old_mask = a.old_mask;
+    st.atlas_used = false;
+    st.theme = theme;
+    return true;
+}
+
+pub fn getTheme(st: *State) u8 {
+    return st.theme;
 }
 
 pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
@@ -706,6 +874,7 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.atlas_old_color = nullVoid();
     st.atlas_old_mask = nullVoid();
     st.atlas_used = false;
+    st.theme = THEME_WHITE;
     st.clipper = nullVoid();
     st.hdc = nullVoid();
     st.font = nullVoid();
@@ -793,7 +962,7 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
 
     var i: usize = 0;
     while (i < 16) : (i += 1) {
-        st.brushes[i] = CreateSolidBrush(paletteRgb(@intCast(u8, i)));
+        st.brushes[i] = CreateSolidBrush(paletteRgb(st.theme, @intCast(u8, i)));
         if (isNull(st.brushes[i])) {
             logLine("CreateSolidBrush failed");
             close(st);
@@ -1014,7 +1183,7 @@ pub fn drawText(st: *State, px: i32, py: i32, s: []const u8, fg: u8, bg: u8, cw:
     };
     _ = FillRect(st.hdc, @ptrCast(*const void, &bgrc), brushFor(st, bg));
     if (isNull(st.atlas_color_dc) or isNull(st.atlas_mask_dc) or cw == 0 or ch == 0) {
-        _ = SetTextColor(st.hdc, paletteRgb(fg));
+        _ = SetTextColor(st.hdc, paletteRgb(st.theme, fg));
         _ = TextOutA(st.hdc, px, py, s.ptr, @intCast(i32, s.len));
         return;
     }
@@ -1034,7 +1203,7 @@ pub fn drawText(st: *State, px: i32, py: i32, s: []const u8, fg: u8, bg: u8, cw:
         // atlas built at gfxOpen.
         if (BitBlt(st.hdc, dx, py, iw, ih, st.atlas_mask_dc, sx, sy, SRCAND) == 0
             or BitBlt(st.hdc, dx, py, iw, ih, st.atlas_color_dc, sx, sy, SRCPAINT) == 0) {
-            _ = SetTextColor(st.hdc, paletteRgb(fg));
+            _ = SetTextColor(st.hdc, paletteRgb(st.theme, fg));
             _ = TextOutA(st.hdc, px, py, s.ptr, @intCast(i32, s.len));
             return;
         }

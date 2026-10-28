@@ -22,6 +22,11 @@ const arena_mod = @import("std_arena.zig");
 
 pub const Color = u8;
 
+// Phase 2 P4-M4: the three shipped 16-color palettes. The layer stays
+// cell-based; a theme change rebuilds the PAL glyph atlas + brushes so the
+// baked colors follow the palette. White is the default.
+pub const Theme = enum(u8) { white, solarized, dark };
+
 pub const EventKind = enum {
     key_down,
     key_up,
@@ -65,6 +70,7 @@ const GfxState = struct {
     cw: u32,
     ch: u32,
     mem_only: bool,
+    theme: u8,
     st: pal.State,
 };
 
@@ -101,6 +107,7 @@ pub fn gfxOpen(title: []const u8, cols: u32, rows: u32) GfxError!*Gfx {
     s.cw = MEM_CW;
     s.ch = MEM_CH;
     s.mem_only = false;
+    s.theme = 0;
     if (!pal.open(title, cols, rows, &s.st)) {
         return error.OpenFailed;
     }
@@ -119,6 +126,7 @@ pub fn gfxOpenMemory(cols: u32, rows: u32) GfxError!*Gfx {
     s.cw = MEM_CW;
     s.ch = MEM_CH;
     s.mem_only = true;
+    s.theme = 0;
     g_gfx.opaque = s;
     return &g_gfx;
 }
@@ -339,4 +347,28 @@ pub fn gfxSetTitle(g: *Gfx, title: []const u8) bool {
     const s = g.opaque;
     if (s.mem_only) return false;
     return pal.setTitle(&s.st, title);
+}
+
+// Phase 2 P4-M4 theme API. A windowed Gfx rebuilds the PAL brushes + glyph
+// atlas and keeps the old theme if the rebuild fails. A memory Gfx has no
+// window or atlas: the call succeeds, records the requested theme for
+// gfxGetTheme, and leaves the cell grid unchanged (theme is purely a color
+// concern and cells carry no color).
+pub fn gfxSetTheme(g: *Gfx, theme: Theme) bool {
+    const s = g.opaque;
+    const ti: u8 = @intCast(u8, @enumToInt(theme));
+    if (s.mem_only) {
+        s.theme = ti;
+        return true;
+    }
+    if (!pal.setTheme(&s.st, ti)) return false;
+    s.theme = ti;
+    return true;
+}
+
+pub fn gfxGetTheme(g: *Gfx) Theme {
+    const s = g.opaque;
+    if (s.theme == 1) return .solarized;
+    if (s.theme == 2) return .dark;
+    return .white;
 }
