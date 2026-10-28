@@ -267,3 +267,119 @@ md5s.
 8. **Theme screenshots are evidence, not pixel gates.** The tier asserts
    startup `THEME` lines, non-empty screenshots, save bytes, F2 cycle, and bad
    config fallback. Real Win98 visuals remain operator-owned.
+
+## Fix round 1
+
+### C1 (critical) — black color-atlas background
+
+**What changed:** `sf/src/std_gfx_pal.zig` `buildAtlasInto` no longer fills the
+glyph **color** atlas with `brushes[0]`. It now fills it with the stock
+`BLACK_BRUSH` via `GetStockObject(BLACK_BRUSH)`, mirroring the mask fix. The
+source bitmap outside the glyph is therefore black for every theme, so
+`drawText`'s per-cell `FillRect` supplies the actual cell background and
+`SRCPAINT` only adds the glyph. The mask atlas remains white-background. The
+now-unused `brushes` parameter was dropped from `buildAtlasInto` and its two
+call sites.
+
+This fixes the white/solarized light-theme corruption where palette index 0 was
+white, so the color atlas painted a white box over status-bar text, the cursor,
+and selected cells.
+
+### I3 (important) — bracket highlight color
+
+**What changed:** `examples/z98/z9edit/ui.zig` bracket text on `COL_SEL` is back
+to **`COL_BG` (index 0)**, matching the operator ruling and the palette note
+(“bracket 0 on 13”). It reads on all three themes.
+
+### I4 (important) — per-theme rendering assertions
+
+**What changed:** `examples/z98/z9edit/tests/tier_edit_gui.sh` now samples the
+captured screenshot per theme and asserts palette RGB values. A new additive
+paint-only path, `z9edit --theme-paint <in>`, opens a real window, selects the
+startup theme, places the caret on line 2 col 6, selects line 2 cols 1..5, then
+holds the frame for capture. The tier parses the app's own
+`present ... dest=(x,y)` log for the client origin and samples 8x16 fixed-font
+cells.
+
+Per theme, assertions are:
+
+| cell | assertion |
+|---|---|
+| status-bar bg (col 78, row 24) | sampled pixel == role 7 |
+| status text (col 1, row 24) | cell contains role 0 glyph and role 7 bg |
+| cursor (col 7, row 1) | cell contains role 0 glyph and role 15 bg |
+| selected cell (col 2, row 1) | cell contains role 15 glyph and role 13 bg |
+| gutter digit (col 0, row 1) | cell contains role 3 glyph and role 0 bg |
+
+Expected palette RGB values:
+
+| theme | role 0 | role 3 | role 7 | role 13 | role 15 |
+|---|---|---|---|---|---|
+| white | `FFFFFF` | `808080` | `000080` | `000080` | `000000` |
+| solarized | `FDF6E3` | `93A1A1` | `073642` | `6C71C4` | `002B36` |
+| dark | `0B0F14` | `6E7681` | `8B949E` | `388BFD` | `FFFFFF` |
+
+These assertions fail on the C1 regression: the pre-fix white/solarized status
+and cursor cells were covered by the palette-0 color-atlas box, so role 7/15
+backgrounds were absent.
+
+### Refreshed screenshots (post-fix)
+
+| theme | run 1 | run 2 |
+|---|---|---|
+| white | `/tmp/fix1_final_gui1/theme_white/shot.png` | `/tmp/fix1_final_gui2/theme_white/shot.png` |
+| solarized | `/tmp/fix1_final_gui1/theme_solarized/shot.png` | `/tmp/fix1_final_gui2/theme_solarized/shot.png` |
+| dark | `/tmp/fix1_final_gui1/theme_dark/shot.png` | `/tmp/fix1_final_gui2/theme_dark/shot.png` |
+
+Screenshot stats (both runs): white `0.307969 0.460069 83`; solarized
+`0.293238 0.436145 191`; dark `0.0283302 0.0795501 256`.
+
+### Test output (post-fix, v126 compiler with refreshed `lib/`)
+
+`tier_edit_gui.sh` run 1 — `/tmp/fix1_final_gui1.log`:
+
+```
+ok   - theme white status-bar bg pixel is 000080
+ok   - theme white status text cell has FFFFFF on 000080
+ok   - theme white cursor cell has FFFFFF on 000000
+ok   - theme white selected cell has 000000 on 000080
+ok   - theme white gutter digit cell has 808080 on FFFFFF
+ok   - theme solarized status-bar bg pixel is 073642
+ok   - theme solarized status text cell has FDF6E3 on 073642
+ok   - theme solarized cursor cell has FDF6E3 on 002B36
+ok   - theme solarized selected cell has 002B36 on 6C71C4
+ok   - theme solarized gutter digit cell has 93A1A1 on FDF6E3
+ok   - theme dark status-bar bg pixel is 8B949E
+ok   - theme dark status text cell has 0B0F14 on 8B949E
+ok   - theme dark cursor cell has 0B0F14 on FFFFFF
+ok   - theme dark selected cell has FFFFFF on 388BFD
+ok   - theme dark gutter digit cell has 6E7681 on 0B0F14
+== tier_edit_gui summary: 57 passed, 0 failed ==
+compile max RSS: 7140 KiB
+TIER_EDIT_GUI PASS
+```
+
+Run 2 — `/tmp/fix1_final_gui2.log`: same 15 theme pixel assertions green,
+**57 passed, 0 failed**, compile max RSS **7,084 KiB**, `TIER_EDIT_GUI PASS`.
+Both runs kept `974243c97df614039f01da3b86c67b3c` for white/solarized/dark
+save bytes. Import gate still `IMPORT GATE PASS (9x)` with only
+DDRAW/GDI32/KERNEL32/USER32 and no MSVCRT.
+
+`tier_gfx.sh` runs 1/2 (`/tmp/fix1_final_gfx1.log`,
+`/tmp/fix1_final_gfx2.log`): **22 passed, 0 failed** both, `TIER_GFX PASS`;
+compile RSS 6,096 / 6,132 KiB; `THEMETEST OK`; `grid.txt matches golden
+byte-for-byte`.
+
+`tier_edit.sh` runs 1/2 (`/tmp/fix1_final_edit1.log`,
+`/tmp/fix1_final_edit2.log`): **38 passed, 0 failed** both, `TIER_EDIT PASS`;
+compile RSS 5,844 / 5,796 KiB.
+
+### I2 process waiver
+
+The operator **waived I2** (the earlier `perl`/`sed` process violation). No
+code change was made for it; this note records the waiver.
+
+### Scope note
+
+`release/seed/` was **not** rotated in this fix round; the controller will
+rotate v127 after the scoped re-review. No compiler source changed.
