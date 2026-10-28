@@ -55,12 +55,13 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v119** (`release/seed/zig1-seed.tgz`, archive md5
-`e7ac8cd2ed7e790a4b9225a82acaf4a5`), with **47** std files (`std.zig` +
-46 `std_*.zig`) and `lib/manifest.md5` md5
-`e731a3d2a7aef913f5bbcfd8670e5a2e`. The compiler fixed point is
-`45158dcede81125a39a2c2c58478e21e` (`F_new`, unchanged since v112); v119 is
-the M7 TCP/IP closeout rotation (adds `std_tcpip.zig`; no compiler movement).
+The committed seed is **v125** (`release/seed/zig1-seed.tgz`, archive md5
+`804e71f416841bf5070eacae3919b785`), with **49** std files (`std.zig` +
+48 `std_*.zig`) and `lib/manifest.md5` md5
+`29fe6bd51fa1a14839f476023a07562e`. The compiler fixed point is
+`2fc64ffedb3ba5f4e8adf35896729e54`; v125 is the P4 final-review rotation
+(refreshes the `std_gfx`/`std_gfx_pal` payload; P4 adds no compiler source
+change).
 
 ## Phase 1 result — TLS + WireGuard complete
 

@@ -23,24 +23,25 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-27 — seed v124]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-28 — seed v125]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in `release/seed/SEED_README.txt` and the v124 CHANGELOG entry.
+current md5s in `release/seed/SEED_README.txt` and the v125 CHANGELOG entry.
 
-**Current seed: v124** (rotated 2026-10-27 at HEAD `3c0c5f45`, the Phase 2 P4
-closeout: the std payload gained `std_gfx`/`std_gfx_pal`; the compiler fixed
-point is the pre-P4 leaf-tail cleanup `60e3a916` state — P4 adds no compiler
-source change). Archived binary md5 (= fixed point)
+**Current seed: v125** (rotated 2026-10-28 at HEAD `0683763d`, the Phase 2 P4
+final-review closeout: v125 refreshes the std payload with the P4 final-review
+fixes (C1/C2/I3-I10); `std_gfx`/`std_gfx_pal` landed at v124 and the compiler
+fixed point is the pre-P4 leaf-tail cleanup `60e3a916` state — P4 adds no
+compiler source change). Archived binary md5 (= fixed point)
 `2fc64ffedb3ba5f4e8adf35896729e54`; archive md5
-`205ce0860b438765ed90f6268686852e`; Win9x zip md5
-`32d5d9945b89f653c78c4da8de65f648`; `gen/` 48 `.c` + 49 `.h` (11,913,427
+`804e71f416841bf5070eacae3919b785`; Win9x zip md5
+`e2fd1bdf0864959c133b3adf94ff94ac`; `gen/` 48 `.c` + 49 `.h` (11,913,427
 bytes); `lib/` **49** std `.zig` (47 prior + `std_gfx.zig` +
 `std_gfx_pal.zig`) plus `lib/manifest.md5` (per-file std attribution pin,
-manifest md5 `51f628e55aad45388efe23c14205fdb3`). The rebuilt archive is
+manifest md5 `29fe6bd51fa1a14839f476023a07562e`). The rebuilt archive is
 two-hop (`build_from_seed.sh`: hop1 == hop2 == `2fc64ffe…`); the compiler↔std
 separation means the `lib/` payload does not move the fixed point. The compiler
 source is **`-fsafe`-clean** (12 intentional wraps + 3 real safe-mode
@@ -133,7 +134,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v124 carries the full 49 std `.zig`** = `std.zig` plus
+tracked seed archive **v125 carries the full 49 std `.zig`** = `std.zig` plus
 48 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -451,14 +452,15 @@ Real hardware is the operator's Win98 session.
 is evidence, and real Win98 keystroke→screen/runtime RSS are **not measured**
 here (operator hardware).
 
-### Compiler RSS/arena — seed v123 baseline, carried into v124 (not re-measured) [updated: 2026-10-27]
+### Compiler RSS/arena — seed v123 baseline, carried into v125 (not re-measured) [updated: 2026-10-28]
 
 **These are the last full compiler measurements.** They were taken
 2026-10-27 at seed v123 / fixed point `a567926c223492787786dd460563f32a`
-(two-hop closure hop1 == hop2). Seed v124 differs only by (i) the std payload
-(`std_gfx`/`std_gfx_pal`) and (ii) the already-landed pre-P4 leaf-tail cleanup
-that moved the fixed point to `2fc64ffe…`; P4 added no compiler source change,
-and the compiler RSS was **not re-measured** for v124. Every RSS/wall figure is
+(two-hop closure hop1 == hop2). Seed v125 differs from v123 only by (i) the std
+payload (`std_gfx`/`std_gfx_pal`, refreshed by the P4 final-review fixes) and
+(ii) the already-landed pre-P4 leaf-tail cleanup that moved the fixed point to
+`2fc64ffe…`; P4 added no compiler source change, and the compiler RSS was **not
+re-measured** for v124/v125. Every RSS/wall figure is
 the median of 3 `/usr/bin/time -v` runs in fresh scratch dirs; arena figures
 come from a separate `--markers --track-memory` run (3×, identical). The v111
 figures below are historical — do not present them as current.
@@ -533,8 +535,8 @@ S-RES → S-SIDE → S-EXTRA** — `-s1` moves AST to RAM, `-s2` also LIR, ... `
 files). S-EXTRA is the AST index-side `extra_children`/`extra_ranges` write-through pool pair
 (`.zig1_extra_ec.tmp` / `.zig1_extra_er.tmp`). Higher `-s` = more RAM, less disk I/O; emission is
 **byte-identical in every mode** (same data, different storage). **Current measured
-ladder (fixed point `a567926c…`, self-emission `--markers --track-memory` pool,
-measured 2026-10-27):** `-s0` pool=18416K (18.0 MB, all disk); `-s1` pool=51407K
+ladder (current fixed point `2fc64ffe…`; figures last measured at seed v123
+`a567926c…`, self-emission `--markers --track-memory` pool, measured 2026-10-27):** `-s0` pool=18416K (18.0 MB, all disk); `-s1` pool=51407K
 (50.2 MB); `-s2`/`-s3` pool=120400K (117.6 MB); `-s4` pool=124496K (121.6 MB);
 `-s5` pool=127568K (124.6 MB); `-s6` pool=130640K (127.6 MB, all RAM). `-s0`
 and `-s1` fit the 64 MB `-mm` default; `-s2`–`-s6` must be paired with `-mm128`
