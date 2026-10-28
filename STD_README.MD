@@ -55,11 +55,11 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v125** (`release/seed/zig1-seed.tgz`, archive md5
-`804e71f416841bf5070eacae3919b785`), with **49** std files (`std.zig` +
+The committed seed is **v126** (`release/seed/zig1-seed.tgz`, archive md5
+`00ff9b75d697a110e662ebf75bb65cea`), with **49** std files (`std.zig` +
 48 `std_*.zig`) and `lib/manifest.md5` md5
-`29fe6bd51fa1a14839f476023a07562e`. The compiler fixed point is
-`2fc64ffedb3ba5f4e8adf35896729e54`; v125 is the P4 final-review rotation
+`459b8e2baf656c0281dae4a0588d0930`. The compiler fixed point is
+`2fc64ffedb3ba5f4e8adf35896729e54`; v126 is the P4-M4 theme rotation
 (refreshes the `std_gfx`/`std_gfx_pal` payload; P4 adds no compiler source
 change).
 
