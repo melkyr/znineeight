@@ -295,6 +295,27 @@ else
         else
             pass_case "runtime RSS recorded (Wine-hosted, includes Wine): ${RUNTIME_RSS} kB"
         fi
+
+        # Run 3: a failed save must not kill the session (I-1). The save path is
+        # a directory, so CreateFile-for-write fails deterministically; the
+        # editor must stay alive through the scripted Ctrl+Q and exit 0.
+        FAILRUN="$OUT/fail_save"
+        mkdir -p "$FAILRUN/out.tmp"
+        cp "$FIXTURE" "$FAILRUN/edit_smoke.z98"
+        ( cd "$FAILRUN" && timeout 120 wine "$EXE" --smoke edit_smoke.z98 out.tmp ) \
+            >"$OUT/failsave.log" 2>&1
+        FAIL_RC=$?
+        if [ "$FAIL_RC" -eq 0 ]; then
+            pass_case "save-failure run exited 0 (session survived)"
+        else
+            fail_case "save-failure run exited $FAIL_RC (session died)"
+        fi
+        if [ -d "$FAILRUN/out.tmp" ]; then
+            pass_case "read-only save target untouched (failure was real)"
+        else
+            fail_case "save-failure run unexpectedly replaced the directory"
+        fi
+
         sed 's/^/       /' "$RUN1/app.log" | tail -8
 
         wineserver -k >/dev/null 2>&1 || true

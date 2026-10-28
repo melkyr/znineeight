@@ -62,7 +62,8 @@ const UiImpl = struct {
     edit_pending: bool,
     title: [TITLE_MAX]u8,
     title_len: usize,
-    err: u8, // 0 none, 1 OutOfMemory, 2 SaveFailed
+    err: u8, // 0 none, 1 OutOfMemory (unrecoverable frame state)
+    save_failed: bool,
 };
 
 // Opaque to main.zig: one pointer to the private state.
@@ -424,9 +425,13 @@ fn doUndo(st: *UiImpl) void {
 
 fn doSave(st: *UiImpl) void {
     buffer.bufSave(st.b, st.save_path) catch {
-        setErr(st, 2);
+        // A save failure (read-only/locked/full disk, or the temp allocation)
+        // is not fatal: keep the buffer dirty and tell the status bar. The
+        // next Ctrl+S retries; a successful save clears the message.
+        st.save_failed = true;
         return;
     };
+    st.save_failed = false;
     rebuildIdents(st);
     refreshTitle(st);
 }
@@ -608,6 +613,7 @@ pub fn uiInit(arena: *arena_mod.Arena, g: *gfx.Gfx, b: *buffer.GapBuffer, path: 
     st.edit_pending = false;
     st.title_len = 0;
     st.err = 0;
+    st.save_failed = false;
     const id_cap = buffer.bufLen(b) + 768 * 1024;
     const raw_ids = try allocBytes(arena, id_cap);
     st.ids_arena = arena_mod.init(raw_ids[0..id_cap]);
@@ -777,6 +783,9 @@ fn paintStatus(st: *UiImpl, caret_line: usize, caret_col: usize) void {
     p = putU32(buf[0..], p, @intCast(u32, caret_line + 1));
     p = putBytes(buf[0..], p, ",");
     p = putU32(buf[0..], p, @intCast(u32, caret_col + 1));
+    if (st.save_failed) {
+        p = putBytes(buf[0..], p, "  save failed (Ctrl+S retries)");
+    }
     var ub: match.Unbalance = undefined;
     if (match.matchUnbalanced(st.b, &ub)) {
         p = putBytes(buf[0..], p, "  unbalanced ");
@@ -805,7 +814,6 @@ fn paintStatus(st: *UiImpl, caret_line: usize, caret_col: usize) void {
 pub fn uiPaint(stw: *UiState) UiError!void {
     const st = stw.opaque;
     if (st.err == 1) return error.OutOfMemory;
-    if (st.err == 2) return error.SaveFailed;
 
     // Declared-ident freshness: rebuild after >= 2 s of edit idle.
     if (st.edit_pending) {
