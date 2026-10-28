@@ -214,6 +214,16 @@ pub fn bufLoad(arena: *arena_mod.Arena, path: []const u8) BufError!*GapBuffer {
     return wrap;
 }
 
+// True only when the path opens as a directory. A failure to decide (including
+// OOM) returns false so bufSave keeps its pre-existing behavior.
+fn isDirectory(st: *BufState, path: []const u8) bool {
+    var d = file_mod.openDir(st.arena, path) catch {
+        return false;
+    };
+    file_mod.closeDir(&d);
+    return true;
+}
+
 pub fn bufSave(b: *GapBuffer, path: []const u8) BufError!void {
     const st = state(b);
     var out_len = st.len;
@@ -262,6 +272,12 @@ pub fn bufSave(b: *GapBuffer, path: []const u8) BufError!void {
     };
     if (!renamed) {
         if (@isWindows() and file_mod.exists(path)) {
+            // Never replace a directory with a file. If openDir cannot decide,
+            // keep the pre-existing behavior.
+            if (isDirectory(st, path)) {
+                _ = file_mod.remove(tmp_s) catch {};
+                return error.WriteFailed;
+            }
             const bak_path = try allocBytes(st.arena, path.len + 6);
             var bsuffix: []const u8 = ".z9bak";
             pi = 0;
@@ -269,6 +285,15 @@ pub fn bufSave(b: *GapBuffer, path: []const u8) BufError!void {
             si = 0;
             while (si < 6) : (si += 1) bak_path[pi + si] = bsuffix[si];
             const bak_s = bak_path[0 .. path.len + 6];
+
+            // A stale backup (crash after swap, or a prior failed restore) must
+            // not block every future save: the live target is authoritative.
+            if (file_mod.exists(bak_s)) {
+                file_mod.remove(bak_s) catch {
+                    _ = file_mod.remove(tmp_s) catch {};
+                    return error.WriteFailed;
+                };
+            }
 
             var moved_aside = true;
             file_mod.rename(path, bak_s) catch {

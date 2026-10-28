@@ -373,6 +373,38 @@ else
             fail_case "failed Windows replace lost/changed the original (rc=$BAK_RC)"
         fi
 
+        # A save over an existing directory must fail and leave it untouched.
+        DIRRUN="$OUT/dirsave"
+        mkdir -p "$DIRRUN/out.tmp"
+        printf 'KEEP\n' >"$DIRRUN/out.tmp/keep.txt"
+        cp "$FIXTURE" "$DIRRUN/edit_smoke.z98"
+        ( cd "$DIRRUN" && timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
+            >"$OUT/dirsave.log" 2>&1
+        DIR_RC=$?
+        if [ "$DIR_RC" -eq 0 ] && [ -d "$DIRRUN/out.tmp" ] \
+            && [ -f "$DIRRUN/out.tmp/keep.txt" ] \
+            && [ ! -f "$DIRRUN/out.tmp.z9tmp" ]; then
+            pass_case "save over an existing directory refused; directory survives"
+        else
+            fail_case "save over a directory changed/lost it (rc=$DIR_RC)"
+        fi
+
+        # A stale .z9bak must be cleared, not block an overwrite save.
+        STALE="$OUT/stalebak"
+        mkdir -p "$STALE"
+        printf 'OLD\n' >"$STALE/out.tmp"
+        printf 'STALE\n' >"$STALE/out.tmp.z9bak"
+        cp "$FIXTURE" "$STALE/edit_smoke.z98"
+        ( cd "$STALE" && timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
+            >"$OUT/stalebak.log" 2>&1
+        STALE_RC=$?
+        if [ "$STALE_RC" -eq 0 ] && cmp -s "$STALE/out.tmp" "$EXPECTED" \
+            && [ ! -f "$STALE/out.tmp.z9bak" ]; then
+            pass_case "stale .z9bak cleared; overwrite save succeeds"
+        else
+            fail_case "stale .z9bak blocked or changed the save (rc=$STALE_RC)"
+        fi
+
         # Wheel direction (headless memory Gfx, no window).
         WHEEL_LOG="$OUT/wheeltest.log"
         if timeout 60 wine "$CONSOLE_EXE" --wheel-test >"$WHEEL_LOG" 2>&1 \
