@@ -272,3 +272,123 @@ Second identical run (`OUT=/tmp/z9tier_i1b`): **18 passed, 0 failed**,
 I-2 (process violation: `sed`/`python3` used during the original diagnosis)
 is **waived by the operator**. No code change was made for it; the waiver is
 recorded here as instructed.
+
+## Final-review fix wave (round 1)
+
+### Plan (written before edits; one entry per finding)
+
+- **C1** — `std_gfx_pal.endFrame` returns `true` (no-op present) for a 0×0/minimized
+  client; z9edit `loop` and `gfx_demo` interactive loop retry a failed frame
+  instead of exiting. Add `gfxTestMinimize`/`gfxTestRestore`/`gfxTestClose`
+  affordances and a real-pump live-smoke regression that minimizes, restores,
+  closes, and exits 0.
+- **C2** — remove `VK_DELETE` from `isCharKey`; deliver `raw.ch =
+  virtualToChar(vk)` on the immediate non-char `WM_KEYDOWN` path. Add
+  `gfxTestKey` (posts real `WM_KEYDOWN`) + a `z9edit --keytest` pump-level
+  assertion (`code=0x2E`, `ch=127`).
+- **I3** — add `z9edit --live-smoke <in>` (real load/open/loop through
+  `gfxPollEvent`, driven minimize/restore/close) and run it under Xvfb+Wine.
+  Add `gfx_demo --live-smoke` likewise to its tier.
+- **I4** — invert wheel handling (positive = scroll up/clamp 0, negative =
+  scroll down/clamp end). Add `uiTestScroll` + `z9edit --wheel-test`
+  (memory `Gfx`, no window) and run under Wine.
+- **I5** — PAL `clipboardSet` expands canonical LF to CF_TEXT CRLF while the
+  internal copy stays LF. Add `z9edit --clip-test`: Win32 set/get must return
+  `a\r\nb\r\n` for input `a\nb\n`.
+- **I6** — `buffer.bufSave` writes `<path>.z9tmp` in the same directory, flushes
+  and closes, then renames over the target (Windows retries after removing an
+  existing target; POSIX rename replaces). Clean the temp on any failure. Add
+  a native `save_failure_preserves_original` test (temp path is a directory) and
+  a Wine overwrite-existing-target run.
+- **I7** — add `EXTRA_LDFLAGS` to `cross_nocrt.sh`; build the shipping
+  `z9edit.exe` with `-Wl,--subsystem,windows` and a separate
+  `z9edit_console.exe` for READY/HRESULT evidence runs. Assert the shipping PE
+  subsystem is GUI and the console variant stays CUI.
+- **I8** — `endFrame` logs `Blt` only on failure, first success, or geometry
+  change (not every frame).
+- **I9** — docs/runtime claims: 16 MB is a **compile-only** gate; Wine runtime
+  RSS is evidence only; real Win9x RSS/perf is operator-owned.
+- **I10** — main uses `std_file.exists` to separate create-new from real read
+  errors; real `ReadFailed`/`OpenFailed` prints an error and exits before any
+  window/save, so the path cannot be overwritten. Add a Wine directory-load
+  error check.
+
+### Verification / results (filled per finding)
+
+All commands below use the refreshed v124 compiler
+`ZIG=/tmp/p4_newcheck/zig1_5_clean` with the changed `std_gfx.zig` /
+`std_gfx_pal.zig` copied into its `lib/`. Seed `release/seed/` is **not**
+rotated; `edit_smoke.expected` stays `974243c97df614039f01da3b86c67b3c`.
+
+- **C1 (minimize/0x0/transient present)** — `std_gfx_pal.endFrame` returns
+  `true` for a 0×0/minimized client; z9edit `loop` and `gfx_demo`'s interactive
+  loop retry a failed frame instead of exiting. Added test drivers
+  `gfxTestMinimize`/`gfxTestRestore`/`gfxTestClose`; `--live-smoke` directly
+  paints once while minimized (must be a no-op), then runs the real pump
+  through minimize/restore/close. Covering output:
+  `ok - live real-pump smoke survived minimize/restore/close (exit 0)`
+  and `ok - gfx_demo live pump survived minimize/restore/close (exit 0)`.
+- **C2 (Delete dead)** — `VK_DELETE` removed from `isCharKey`; the immediate
+  non-char `WM_KEYDOWN` path now uses `raw.ch = virtualToChar(vk)`. Added
+  `gfxTestKey` (posts a real `WM_KEYDOWN`) and `z9edit --keytest`. Output:
+  `ok - VK_DELETE pumps code=0x2E ch=127 (KEYTEST OK)`.
+- **I3 (real pump never tested)** — added `z9edit --live-smoke <in>` (real
+  load/open/`loop`/`gfxPollEvent`) and `gfx_demo --live-smoke`; the GUI tier
+  now runs the former under Xvfb+Wine and asserts the markers plus exit 0.
+  Output: `ok - live real-pump smoke survived minimize/restore/close (exit 0)`.
+- **I4 (wheel inverted)** — positive `ev.wheel` now decrements scroll (clamp
+  0), negative increments. Added `uiTestScroll` + `--wheel-test` (memory Gfx).
+  Output: `ok - wheel direction positive=up / negative=down (WHEELTEST OK)`.
+- **I5 (clipboard LF)** — PAL `clipboardSet` expands canonical LF to CF_TEXT
+  CRLF (internal copy stays LF). Added `--clip-test`: set `a\nb\n`, Win32 get
+  must return `a\r\nb\r\n`. Output:
+  `ok - clipboard CF_TEXT is CRLF (CLIPTEST OK)`.
+- **I6 (non-atomic save)** — `buffer.bufSave` writes `<path>.z9tmp`, flushes
+  and closes, then renames over the target; Windows retries after removing an
+  existing target, POSIX rename replaces. Temp is cleaned on failure. Added
+  native `save_failure_preserves_original` (temp path is a directory; original
+  stays `ORIGINAL\n`) and a Wine overwrite-existing run. Output:
+  `ok - save_failure_preserves_original` (tier_edit) and
+  `ok - overwrite-existing save exited 0 and matched expected`.
+- **I7 (console subsystem)** — `cross_nocrt.sh` gained `EXTRA_LDFLAGS`; the
+  shipping `z9edit.exe` is linked `-Wl,--subsystem,windows`, and the tier also
+  builds `z9edit_console.exe` (CUI) for READY/HRESULT evidence. Output:
+  `ok - shipping exe is GUI subsystem (Subsystem 00000002 (Windows GUI))`
+  and `ok - console/test exe is CUI subsystem (Subsystem 00000003 (Windows CUI))`.
+- **I8 (Blt spam)** — `endFrame` logs `Blt` only on first success, geometry
+  change, or a failure transition. Evidence still contains the required
+  `Blt(primary<-offscreen) hr=0x00000000` line; per-frame lines are gone.
+- **I9 (runtime 16 MB claim)** — `sf/docs/std_lib/z9edit.md`, the GUI section of
+  `docs/sf/QUICK_REF.md`, and the `main.zig` header now state the 16 MB gate is
+  **compile-only**; Wine runtime RSS is evidence only and real Win9x RSS/perf is
+  operator-owned. No runtime gate was added.
+- **I10 (read errors open empty)** — `main.zig` uses `std_file.exists`: missing
+  → new buffer; existing but `ReadFailed`/`OpenFailed` → error + exit before a
+  window, so Ctrl+S cannot overwrite it. Output:
+  `ok - real read error exits without an empty-overwrite session`.
+
+Covering tier runs:
+
+```
+ZIG=/tmp/p4_newcheck/zig1_5_clean OUT=/tmp/fw_tier_gui3 \
+  sh examples/z98/z9edit/tests/tier_edit_gui.sh
+...
+== tier_edit_gui summary: 27 passed, 0 failed ==
+compile max RSS: 6752 KiB
+TIER_EDIT_GUI PASS
+
+ZIG=/tmp/p4_newcheck/zig1_5_clean OUT=/tmp/fw_tier_gfx3 \
+  sh examples/z98/gfx_demo/tests/tier_gfx.sh
+...
+== tier_gfx summary: 21 passed, 0 failed ==
+TIER_GFX PASS
+
+ZIG=/tmp/p4_newcheck/zig1_5_clean OUT=/tmp/fw_tier_edit \
+  sh examples/z98/z9edit/tests/tier_edit.sh
+...
+== tier_edit summary: 38 passed, 0 failed ==
+TIER_EDIT PASS
+```
+
+Deliverable `lin_bin/z9edit/z9edit.exe` was refreshed from the GUI-subsystem
+build; `lin_bin` remains untracked/uncommitted.

@@ -441,14 +441,15 @@ Real hardware is the operator's Win98 session.
 
 | Metric | Value | Notes |
 |:--|--:|:--|
-| `z9edit/main.zig` compile max RSS (`-osw --dump-c89`) | **7,012–7,304 KiB** | < 16 MB target |
-| `z9edit` runtime RSS under Wine | **≈35.4 MiB** | recorded, not gated (Wine overhead) |
+| `z9edit/main.zig` compile max RSS (`-osw --dump-c89`) | **7,012–7,304 KiB** | compile-only 16 MB gate |
+| `z9edit` runtime RSS under Wine | **≈35.4 MiB** | evidence only, not gated (Wine overhead) |
 | Open 100 KB (native core `bufLoad` + `identScan`) | **≈40 ms** | 3,414 lines |
 | `--smoke` save bytes | md5 `974243c97df614039f01da3b86c67b3c` | 2× byte-identical |
 | Xvfb screenshot | 1024×768, mean 0.0280 / 222 colors | evidence only |
 
-Real Win98 keystroke→screen and runtime RSS are **not measured** here
-(operator hardware).
+**The 16 MB gate is compile-only.** Runtime RSS is not gated; the Wine number
+is evidence, and real Win98 keystroke→screen/runtime RSS are **not measured**
+here (operator hardware).
 
 ### Compiler RSS/arena — seed v123 baseline, carried into v124 (not re-measured) [updated: 2026-10-27]
 

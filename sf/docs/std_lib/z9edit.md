@@ -112,12 +112,13 @@ classified CRLF (documented, not byte-identical on a mixed round trip).
 
 | Metric | Value | Notes |
 |:--|:--|:--|
-| Z98 compile max RSS (`main.zig`, `-osw --dump-c89`) | **7,012–7,304 KiB** | < 16 MB target |
-| Editor runtime RSS (Wine-hosted) | **≈35.4 MiB** | recorded, **not gated**; includes Wine overhead |
+| Z98 compile max RSS (`main.zig`, `-osw --dump-c89`) | **7,012–7,304 KiB** | compile-only 16 MB gate |
+| Editor runtime RSS (Wine-hosted) | **≈35.4 MiB** | evidence only, not gated; includes Wine overhead |
 | Real Win98 runtime RSS | **not measured** | operator hardware |
 | Open a 100 KB file | **≈40 ms** | native core `bufLoad` + `identScan`, 3,414-line file, this test box |
 
-The 16 MB target applies to both the editor runtime and the compile of it; the
-Wine figure is reported for honesty, not as a Win98 measurement. The operator
-session (edit/select/undo/save) is the hardware proof; the Xvfb/Wine screenshot
-is a smoke signal only.
+The **16 MB gate is compile-only** (Z98 compile peak RSS < 16 MB). Runtime
+memory is not gated: the Wine-hosted ≈35.4 MiB figure is recorded evidence
+that includes Wine overhead, and real Win98 runtime RSS is operator-owned and
+not measured here. The operator session (edit/select/undo/save) is the hardware
+proof; the Xvfb/Wine screenshot is a smoke signal only.
