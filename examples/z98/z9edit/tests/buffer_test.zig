@@ -21,6 +21,7 @@ var P_CRLF_OUT: []const u8 = "/tmp/z9edit_buffer_crlf_out.txt";
 var P_LF_IN: []const u8 = "/tmp/z9edit_buffer_lf_in.txt";
 var P_LF_OUT: []const u8 = "/tmp/z9edit_buffer_lf_out.txt";
 var P_MISSING: []const u8 = "/tmp/z9edit_buffer_missing_do_not_create.txt";
+var P_ATOMIC: []const u8 = "/tmp/z9edit_atomic/target.txt";
 
 fn report(name: []const u8, ok: bool) void {
     if (ok) {
@@ -198,6 +199,27 @@ fn tLoadMissing() bool {
     return false;
 }
 
+// tier_edit.sh prepares P_ATOMIC with "ORIGINAL\n" and makes
+// P_ATOMIC.z9tmp a directory, so the temp write fails. The target must be
+// untouched (non-atomic direct writes would truncate it).
+fn tAtomicSaveFailure() bool {
+    const before = readFile(P_ATOMIC) orelse return false;
+    if (!eq(before, "ORIGINAL\n")) return false;
+    const b = buffer.bufInit(&arena, 16) catch {
+        return false;
+    };
+    buffer.bufInsert(b, 0, "REPLACEMENT\n") catch {
+        return false;
+    };
+    var failed = false;
+    buffer.bufSave(b, P_ATOMIC) catch {
+        failed = true;
+    };
+    if (!failed) return false;
+    const after = readFile(P_ATOMIC) orelse return false;
+    return eq(after, "ORIGINAL\n");
+}
+
 pub fn main() void {
     arena = arena_mod.init(arena_buf[0..]);
 
@@ -217,6 +239,8 @@ pub fn main() void {
     report("lf_file_crlf_insert_normalized", tLfCrlfInsertNormalized());
     arena_mod.reset(&arena);
     report("load_missing_error", tLoadMissing());
+    arena_mod.reset(&arena);
+    report("save_failure_preserves_original", tAtomicSaveFailure());
 
     if (fails != 0) os.exit(1);
 }

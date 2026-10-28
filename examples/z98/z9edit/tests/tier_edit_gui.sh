@@ -34,6 +34,7 @@ OUT="${OUT:-/tmp/z9edit_gui_tier}"
 CROSS="$ROOT/scripts/win32_cross/cross_nocrt.sh"
 CHECK="$ROOT/scripts/win32_cross/check_win9x_imports.sh"
 EXE="$OUT/z9edit.exe"
+CONSOLE_EXE="$OUT/z9edit_console.exe"
 FIXTURE="$SCRIPT_DIR/fixtures/edit_smoke.z98"
 EXPECTED="$SCRIPT_DIR/fixtures/edit_smoke.expected"
 WINE_PREFIX="${WINEPREFIX:-$OUT/wineprefix_x}"
@@ -79,16 +80,32 @@ cd "$ROOT" || exit 1
 # ---- (a) no-CRT build + import gate ---------------------------------------
 echo "== (a) no-CRT build + import gate =="
 BUILD_LOG="$OUT/build.log"
+CONSOLE_BUILD_LOG="$OUT/build_console.log"
 EXTRA_LIBS="-luser32 -lgdi32 -lddraw" \
 EXTRA_CSRC="$ROOT/sf/src/include/zig_gfx_wndproc.c" \
 DUMP_TARGET="-osw" \
-    bash "$CROSS" "$ZIG" "$ENTRY" "$OUT/work" "$EXE" >"$BUILD_LOG" 2>&1
+    bash "$CROSS" "$ZIG" "$ENTRY" "$OUT/work_console" "$CONSOLE_EXE" >"$CONSOLE_BUILD_LOG" 2>&1
+CONSOLE_RC=$?
+EXTRA_LIBS="-luser32 -lgdi32 -lddraw" \
+EXTRA_CSRC="$ROOT/sf/src/include/zig_gfx_wndproc.c" \
+DUMP_TARGET="-osw" \
+EXTRA_LDFLAGS="-Wl,--subsystem,windows" \
+    bash "$CROSS" "$ZIG" "$ENTRY" "$OUT/work_gui" "$EXE" >"$BUILD_LOG" 2>&1
 BUILD_RC=$?
 tail -3 "$BUILD_LOG" | sed 's/^/       /'
 if [ "$BUILD_RC" -eq 0 ] && [ -f "$EXE" ]; then
-    pass_case "no-CRT Win9x build produced z9edit.exe"
+    pass_case "no-CRT Win9x GUI-subsystem build produced z9edit.exe"
 else
-    fail_case "no-CRT build failed (rc=$BUILD_RC; see $BUILD_LOG)"
+    fail_case "GUI no-CRT build failed (rc=$BUILD_RC; see $BUILD_LOG)"
+    echo
+    echo "== tier_edit_gui summary: $PASSES passed, $FAILS failed =="
+    echo "TIER_EDIT_GUI FAIL"
+    exit 1
+fi
+if [ "$CONSOLE_RC" -eq 0 ] && [ -f "$CONSOLE_EXE" ]; then
+    pass_case "no-CRT console/test variant produced z9edit_console.exe"
+else
+    fail_case "console no-CRT build failed (rc=$CONSOLE_RC; see $CONSOLE_BUILD_LOG)"
     echo
     echo "== tier_edit_gui summary: $PASSES passed, $FAILS failed =="
     echo "TIER_EDIT_GUI FAIL"
@@ -100,6 +117,18 @@ case "$FILEOUT" in
     *PE32*Intel\ 80386*) pass_case "file: $FILEOUT" ;;
     *) fail_case "not a PE32 i386 executable: ${FILEOUT:-<none>}" ;;
 esac
+GUI_SUBSYS="$(i686-w64-mingw32-objdump -p "$EXE" 2>/dev/null | grep '^Subsystem' | head -1)"
+CON_SUBSYS="$(i686-w64-mingw32-objdump -p "$CONSOLE_EXE" 2>/dev/null | grep '^Subsystem' | head -1)"
+if echo "$GUI_SUBSYS" | grep -q 'Windows GUI'; then
+    pass_case "shipping exe is GUI subsystem ($GUI_SUBSYS)"
+else
+    fail_case "shipping exe is not GUI subsystem (${GUI_SUBSYS:-<none>})"
+fi
+if echo "$CON_SUBSYS" | grep -q 'Windows CUI'; then
+    pass_case "console/test exe is CUI subsystem ($CON_SUBSYS)"
+else
+    fail_case "console/test exe is not CUI subsystem (${CON_SUBSYS:-<none>})"
+fi
 
 if bash "$CHECK" "$EXE" 9x >"$OUT/imports.log" 2>&1; then
     pass_case "check_win9x_imports.sh 9x PASS"
@@ -192,7 +221,7 @@ else
         RUN1="$OUT/run1"
         mkdir -p "$RUN1"
         cp "$FIXTURE" "$RUN1/edit_smoke.z98"
-        ( cd "$RUN1" && timeout 120 wine "$EXE" --smoke edit_smoke.z98 out.tmp ) \
+        ( cd "$RUN1" && timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
             >"$RUN1/app.log" 2>&1 &
         WINE_PID=$!
         READY_SEEN=0
@@ -253,6 +282,16 @@ else
             MD1=""
         fi
 
+        # Run 1b: save over an existing target (Windows remove+rename path).
+        ( cd "$RUN1" && timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
+            >"$RUN1/app_overwrite.log" 2>&1
+        OW_RC=$?
+        if [ "$OW_RC" -eq 0 ] && cmp -s "$RUN1/out.tmp" "$EXPECTED"; then
+            pass_case "overwrite-existing save exited 0 and matched expected"
+        else
+            fail_case "overwrite-existing save failed (rc=$OW_RC; see $RUN1/app_overwrite.log)"
+        fi
+
         # Run 2: deterministic repeat + runtime RSS.
         RUN2="$OUT/run2"
         mkdir -p "$RUN2"
@@ -260,13 +299,13 @@ else
         RUNTIME_RSS="n/a"
         if command -v /usr/bin/time >/dev/null 2>&1; then
             ( cd "$RUN2" && /usr/bin/time -v -o "$OUT/runtime_time.log" \
-                timeout 120 wine "$EXE" --smoke edit_smoke.z98 out.tmp ) \
+                timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
                 >"$RUN2/app.log" 2>&1
             APP2_RC=$?
             RUNTIME_RSS=$(sed -n 's/.*Maximum resident set size (kbytes): //p' "$OUT/runtime_time.log" | tail -1)
             [ -n "$RUNTIME_RSS" ] || RUNTIME_RSS="n/a"
         else
-            ( cd "$RUN2" && timeout 120 wine "$EXE" --smoke edit_smoke.z98 out.tmp ) \
+            ( cd "$RUN2" && timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
                 >"$RUN2/app.log" 2>&1
             APP2_RC=$?
         fi
@@ -302,7 +341,7 @@ else
         FAILRUN="$OUT/fail_save"
         mkdir -p "$FAILRUN/out.tmp"
         cp "$FIXTURE" "$FAILRUN/edit_smoke.z98"
-        ( cd "$FAILRUN" && timeout 120 wine "$EXE" --smoke edit_smoke.z98 out.tmp ) \
+        ( cd "$FAILRUN" && timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
             >"$OUT/failsave.log" 2>&1
         FAIL_RC=$?
         if [ "$FAIL_RC" -eq 0 ]; then
@@ -314,6 +353,59 @@ else
             pass_case "read-only save target untouched (failure was real)"
         else
             fail_case "save-failure run unexpectedly replaced the directory"
+        fi
+
+        # Wheel direction (headless memory Gfx, no window).
+        WHEEL_LOG="$OUT/wheeltest.log"
+        if timeout 60 wine "$CONSOLE_EXE" --wheel-test >"$WHEEL_LOG" 2>&1 \
+            && grep -q 'WHEELTEST OK' "$WHEEL_LOG"; then
+            pass_case "wheel direction positive=up / negative=down (WHEELTEST OK)"
+        else
+            fail_case "wheel-direction test failed (see $WHEEL_LOG)"
+        fi
+
+        # CF_TEXT clipboard: external Win32 consumer must see CRLF.
+        CLIP_LOG="$OUT/cliptest.log"
+        if timeout 60 wine "$CONSOLE_EXE" --clip-test >"$CLIP_LOG" 2>&1 \
+            && grep -q 'CLIPTEST OK' "$CLIP_LOG"; then
+            pass_case "clipboard CF_TEXT is CRLF (CLIPTEST OK)"
+        else
+            fail_case "clipboard CRLF test failed (see $CLIP_LOG)"
+        fi
+
+        # Pump-level VK_DELETE mapping (real WM_KEYDOWN through PostMessage).
+        KEY_LOG="$OUT/keytest.log"
+        if timeout 60 wine "$CONSOLE_EXE" --keytest >"$KEY_LOG" 2>&1 \
+            && grep -q 'KEYTEST OK' "$KEY_LOG"; then
+            pass_case "VK_DELETE pumps code=0x2E ch=127 (KEYTEST OK)"
+        else
+            fail_case "pump-level Delete test failed (see $KEY_LOG)"
+        fi
+
+        # Real runInteractive path: load/open/loop, minimize, restore, close.
+        LIVE_LOG="$OUT/livesmoke.log"
+        ( cd "$RUN1" && timeout 120 wine "$CONSOLE_EXE" --live-smoke edit_smoke.z98 ) \
+            >"$LIVE_LOG" 2>&1
+        LIVE_RC=$?
+        LIVE_EVIDENCE=1
+        for pat in 'LIVE minimize' 'LIVE restore' 'LIVE close' 'LIVE OK'; do
+            grep -q "$pat" "$LIVE_LOG" 2>/dev/null || LIVE_EVIDENCE=0
+        done
+        if [ "$LIVE_RC" -eq 0 ] && [ "$LIVE_EVIDENCE" -eq 1 ]; then
+            pass_case "live real-pump smoke survived minimize/restore/close (exit 0)"
+        else
+            fail_case "live real-pump smoke failed (rc=$LIVE_RC; see $LIVE_LOG)"
+        fi
+
+        # Real read error (a directory) must exit before opening/saving.
+        mkdir -p "$OUT/badload"
+        ( cd "$OUT" && timeout 20 wine "$CONSOLE_EXE" badload ) >"$OUT/badload.log" 2>&1
+        BAD_RC=$?
+        if [ "$BAD_RC" -ne 0 ] && [ "$BAD_RC" -ne 124 ] \
+            && grep -q 'cannot read' "$OUT/badload.log"; then
+            pass_case "real read error exits without an empty-overwrite session"
+        else
+            fail_case "read-error path did not fail safely (rc=$BAD_RC; see $OUT/badload.log)"
         fi
 
         sed 's/^/       /' "$RUN1/app.log" | tail -8

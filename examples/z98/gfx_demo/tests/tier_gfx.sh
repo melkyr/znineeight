@@ -317,7 +317,22 @@ else
         else
             fail_case "1:1 present evidence missing (see $SHOT_DIR/app.log)"
         fi
-        sed 's/^/       /' "$SHOT_DIR/app.log"
+        sed 's/^/       /' "$SHOT_DIR/app.log" | tail -8
+
+        # Real pump: minimize/0x0, restore, close, exit 0 (C1 regression).
+        LIVE_LOG="$SHOT_DIR/live.log"
+        ( cd "$SHOT_DIR" && timeout 90 wine "$EXE" --live-smoke ) >"$LIVE_LOG" 2>&1
+        LIVE_RC=$?
+        LIVE_EVIDENCE=1
+        for pat in 'LIVE minimize' 'LIVE restore' 'LIVE close' 'LIVE OK'; do
+            grep -q "$pat" "$LIVE_LOG" 2>/dev/null || LIVE_EVIDENCE=0
+        done
+        if [ "$LIVE_RC" -eq 0 ] && [ "$LIVE_EVIDENCE" -eq 1 ]; then
+            pass_case "gfx_demo live pump survived minimize/restore/close (exit 0)"
+        else
+            fail_case "gfx_demo live pump failed (rc=$LIVE_RC; see $LIVE_LOG)"
+        fi
+        sed 's/^/       /' "$LIVE_LOG" | tail -8
         WINE_PID=""
         wineserver -k >/dev/null 2>&1 || true
     fi

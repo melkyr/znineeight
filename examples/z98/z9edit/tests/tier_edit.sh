@@ -82,6 +82,12 @@ check_case() {
     fi
 }
 
+# Atomic-save failure fixture: target exists, temp path is a directory so the
+# temp write fails; buffer_test proves the original is untouched.
+rm -rf /tmp/z9edit_atomic
+mkdir -p /tmp/z9edit_atomic/target.txt.z9tmp
+printf 'ORIGINAL\n' > /tmp/z9edit_atomic/target.txt
+
 echo "== z9edit core tests (binding recipe) =="
 for t in buffer_test lexer_test idents_test match_test undo_test errtab_test; do
     if ! build_test "$t"; then
@@ -100,6 +106,7 @@ check_case buffer_test lf_preserved
 check_case buffer_test crlf_preserved_after_insert
 check_case buffer_test lf_file_crlf_insert_normalized
 check_case buffer_test load_missing_error
+check_case buffer_test save_failure_preserves_original
 
 check_case lexer_test keyword_string_comment_number
 check_case lexer_test block_comment_state_carry

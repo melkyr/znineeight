@@ -40,7 +40,7 @@
 # timeout-guarded.
 #
 # Env overrides: ROOT, ZIG1, CROSS_GCC, TIMEOUT_DUMP, TIMEOUT_CC, EXTRA_LIBS,
-#                EXTRA_CSRC, DUMP_TARGET.
+#                EXTRA_CSRC, DUMP_TARGET, EXTRA_LDFLAGS.
 set -u
 
 ROOT=${ROOT:-/workspace/znineeight}
@@ -53,6 +53,9 @@ EXTRA_CSRC=${EXTRA_CSRC:-}
 # caller byte-identical; GUI programs that import std_time/std_os need -osw so
 # the emitted C takes the win32 branches instead of the POSIX ones.
 DUMP_TARGET=${DUMP_TARGET:-}
+# Optional extra linker flags (word-split), e.g. -Wl,--subsystem,windows for a
+# shipping GUI executable. Empty keeps every existing caller byte-identical.
+EXTRA_LDFLAGS=${EXTRA_LDFLAGS:-}
 
 ZIG1=${1:?usage: cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]}
 ENTRY=${2:?usage: cross_nocrt.sh <zig1> <entry> <workdir> <exe_out> [extra_gcc_defs...]}
@@ -164,9 +167,9 @@ for f in "$DUMPDIR"/*.o; do
 done
 if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -nostdlib -o "$EXE_OUT" \
     "${LINK_OBJS[@]}" "${RT_OBJS[@]}" "${EXTRA_OBJS[@]}" \
-    -Wl,-e,_mainCRTStartup -lgcc -lkernel32 $EXTRA_LIBS \
+    -Wl,-e,_mainCRTStartup -lgcc -lkernel32 $EXTRA_LIBS $EXTRA_LDFLAGS \
     >>"$DUMPDIR/ld.log" 2>&1; then
-    echo "no-crt link failed (entry -e,_mainCRTStartup, -nostdlib -lgcc -lkernel32 $EXTRA_LIBS)"
+    echo "no-crt link failed (entry -e,_mainCRTStartup, -nostdlib -lgcc -lkernel32 $EXTRA_LIBS $EXTRA_LDFLAGS)"
     tail -20 "$DUMPDIR/ld.log"
     fail LINKFAIL
 fi
