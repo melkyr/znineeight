@@ -7,11 +7,12 @@
 //                                 Ctrl+S writes <out>, exit 0
 //
 // Z98 subset only; direct imports (no std barrel). The 12 MB arena backs the
-// gap buffer, undo log, ident table, and clipboard fallback; GUI compile and
-// runtime stay under the 16 MB target.
+// gap buffer, undo log, ident table, and clipboard fallback. The 16 MB gate is
+// compile-only (compile peak RSS); runtime memory is not gated.
 
 const gfx = @import("std_gfx.zig");
 const arena_mod = @import("std_arena.zig");
+const file_mod = @import("std_file.zig");
 const buffer = @import("buffer.zig");
 const ui = @import("ui.zig");
 const io = @import("std_io.zig");
@@ -200,47 +201,74 @@ fn runSmoke(in_path: []const u8, out_path: []const u8) void {
     gfx.gfxClose(g);
 }
 
-fn runInteractive(path: []const u8) void {
-    var arena = arena_mod.init(g_arena_buf[0..]);
-    const b = buffer.bufLoad(&arena, path) catch |e| {
-        if (e == error.OutOfMemory or e == error.TooLarge) {
-            fail("z9edit: cannot allocate file buffer");
-            return;
-        }
-        const nb = buffer.bufInit(&arena, 4096) catch {
-            fail("z9edit: cannot allocate file buffer");
-            return;
+// Distinguish a missing file (create on first save) from a real read error.
+// A real error exits before a window opens, so Ctrl+S can never overwrite the
+// unreadable path with an empty buffer.
+fn loadOrNew(arena: *arena_mod.Arena, path: []const u8) ?*buffer.GapBuffer {
+    if (file_mod.exists(path)) {
+        return buffer.bufLoad(arena, path) catch |e| {
+            if (e == error.OutOfMemory) {
+                fail("z9edit: cannot allocate file buffer");
+                return null;
+            }
+            if (e == error.TooLarge) {
+                fail("z9edit: file is too large");
+                return null;
+            }
+            io.write("z9edit: cannot read ");
+            io.write(path);
+            io.write("\n");
+            os.exit(1);
+            return null;
         };
-        var tb2: [TITLE_MAX]u8 = undefined;
-        const t2 = buildTitle(tb2[0..], path);
-        const g2 = gfx.gfxOpen(t2, COLS, ROWS) catch {
-            fail("z9edit: gfxOpen failed");
-            return;
-        };
-        const st2 = ui.uiInit(&arena, g2, nb, path) catch {
-            gfx.gfxClose(g2);
-            fail("z9edit: uiInit failed");
-            return;
-        };
-        loop(g2, st2);
-        return;
+    }
+    return buffer.bufInit(arena, 4096) catch {
+        fail("z9edit: cannot allocate file buffer");
+        return null;
     };
+}
+
+fn startWindow(arena: *arena_mod.Arena, path: []const u8, b: *buffer.GapBuffer, live: bool) void {
     var tb: [TITLE_MAX]u8 = undefined;
     const title = buildTitle(tb[0..], path);
     const g = gfx.gfxOpen(title, COLS, ROWS) catch {
         fail("z9edit: gfxOpen failed");
         return;
     };
-    const st = ui.uiInit(&arena, g, b, path) catch {
+    const st = ui.uiInit(arena, g, b, path) catch {
         gfx.gfxClose(g);
         fail("z9edit: uiInit failed");
         return;
     };
-    loop(g, st);
+    if (live) {
+        // Direct C1 regression: a 0x0/minimized client is a successful no-op.
+        _ = gfx.gfxTestMinimize(g);
+        if (!paintFrame(g, st)) {
+            gfx.gfxClose(g);
+            fail("z9edit: minimized frame was not a no-op");
+            return;
+        }
+        _ = gfx.gfxTestRestore(g);
+        io.write("READY\n");
+    }
+    loop(g, st, live);
 }
 
-fn loop(g: *gfx.Gfx, st: *ui.UiState) void {
+fn runInteractive(path: []const u8) void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    const b = loadOrNew(&arena, path) orelse return;
+    startWindow(&arena, path, b, false);
+}
+
+fn runLiveSmoke(path: []const u8) void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    const b = loadOrNew(&arena, path) orelse return;
+    startWindow(&arena, path, b, true);
+}
+
+fn loop(g: *gfx.Gfx, st: *ui.UiState, live: bool) void {
     var quit = false;
+    var frames: u32 = 0;
     while (!quit) {
         var ev: gfx.Event = undefined;
         while (gfx.gfxPollEvent(g, &ev)) {
@@ -251,13 +279,151 @@ fn loop(g: *gfx.Gfx, st: *ui.UiState) void {
         }
         if (quit) break;
         if (!paintFrame(g, st)) {
-            gfx.gfxClose(g);
-            fail("z9edit: paint failed");
-            return;
+            // Minimize/0x0 and transient present failures are retried; the
+            // session and unsaved text survive.
+            io.sleepMs(16);
+            continue;
+        }
+        frames += 1;
+        if (live) {
+            if (frames == 20) {
+                _ = gfx.gfxTestMinimize(g);
+                io.write("LIVE minimize\n");
+            }
+            if (frames == 40) {
+                _ = gfx.gfxTestRestore(g);
+                io.write("LIVE restore\n");
+            }
+            if (frames == 60) {
+                _ = gfx.gfxTestClose(g);
+                io.write("LIVE close\n");
+            }
         }
         io.sleepMs(16);
     }
+    if (live) io.write("LIVE OK\n");
     gfx.gfxClose(g);
+}
+
+fn runWheelTest() void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    const b = buffer.bufInit(&arena, 64) catch {
+        fail("z9edit: wheel-test buffer init failed");
+        return;
+    };
+    var line: []const u8 = "line\n";
+    var i: usize = 0;
+    while (i < 40) : (i += 1) {
+        buffer.bufInsert(b, buffer.bufLen(b), line) catch {
+            fail("z9edit: wheel-test insert failed");
+            return;
+        };
+    }
+    const g = gfx.gfxOpenMemory(80, 10) catch {
+        fail("z9edit: wheel-test gfxOpenMemory failed");
+        return;
+    };
+    const st = ui.uiInit(&arena, g, b, "wheel-test") catch {
+        gfx.gfxClose(g);
+        fail("z9edit: wheel-test uiInit failed");
+        return;
+    };
+    var ev = evBase(.wheel);
+    ev.wheel = -3;
+    _ = ui.uiStep(st, &ev);
+    if (ui.uiTestScroll(st) != 3) {
+        gfx.gfxClose(g);
+        io.write("WHEELTEST FAIL (negative did not scroll down)\n");
+        os.exit(1);
+        return;
+    }
+    ev.wheel = 3;
+    _ = ui.uiStep(st, &ev);
+    if (ui.uiTestScroll(st) != 0) {
+        gfx.gfxClose(g);
+        io.write("WHEELTEST FAIL (positive did not scroll up)\n");
+        os.exit(1);
+        return;
+    }
+    ev.wheel = 3;
+    _ = ui.uiStep(st, &ev);
+    if (ui.uiTestScroll(st) != 0) {
+        gfx.gfxClose(g);
+        io.write("WHEELTEST FAIL (scroll did not clamp at 0)\n");
+        os.exit(1);
+        return;
+    }
+    ev.wheel = -3;
+    _ = ui.uiStep(st, &ev);
+    if (ui.uiTestScroll(st) != 3) {
+        gfx.gfxClose(g);
+        io.write("WHEELTEST FAIL (negative increment)\n");
+        os.exit(1);
+        return;
+    }
+    gfx.gfxClose(g);
+    io.write("WHEELTEST OK\n");
+}
+
+fn runKeyTest() void {
+    const g = gfx.gfxOpen("z9edit keytest", COLS, ROWS) catch {
+        fail("z9edit: keytest gfxOpen failed");
+        return;
+    };
+    if (!gfx.gfxTestKey(g, 0x2E)) {
+        gfx.gfxClose(g);
+        fail("z9edit: keytest PostMessage failed");
+        return;
+    }
+    var got = false;
+    var spins: usize = 0;
+    while (spins < 200 and !got) : (spins += 1) {
+        var ev: gfx.Event = undefined;
+        while (gfx.gfxPollEvent(g, &ev)) {
+            if (ev.kind == .key_down and ev.code == 0x2E and ev.ch == 127) got = true;
+        }
+        if (!got) io.sleepMs(10);
+    }
+    gfx.gfxClose(g);
+    if (got) {
+        io.write("KEYTEST OK\n");
+    } else {
+        io.write("KEYTEST FAIL (VK_DELETE did not map to ch=127)\n");
+        os.exit(1);
+    }
+}
+
+fn runClipTest() void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    const g = gfx.gfxOpen("z9edit cliptest", COLS, ROWS) catch {
+        fail("z9edit: cliptest gfxOpen failed");
+        return;
+    };
+    if (!gfx.gfxClipboardSet(g, "a\nb\n")) {
+        gfx.gfxClose(g);
+        fail("z9edit: cliptest clipboardSet failed");
+        return;
+    }
+    const expected: []const u8 = "a\r\nb\r\n";
+    var ok = false;
+    if (gfx.gfxClipboardGet(g, &arena)) |got| {
+        ok = true;
+        if (got.len != expected.len) {
+            ok = false;
+        } else {
+            var i: usize = 0;
+            while (i < expected.len) : (i += 1) {
+                if (got[i] != expected[i]) ok = false;
+            }
+        }
+    }
+    gfx.gfxClose(g);
+    if (ok) {
+        io.write("CLIPTEST OK\n");
+    } else {
+        io.write("CLIPTEST FAIL (CF_TEXT was not CRLF)\n");
+        os.exit(1);
+    }
 }
 
 pub fn main(argc: i32, argv: [*][*]u8) void {
@@ -265,8 +431,24 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         runSmoke(argAt(argv, 2), argAt(argv, 3));
         return;
     }
+    if (argc >= 3 and strEq(argAt(argv, 1), "--live-smoke")) {
+        runLiveSmoke(argAt(argv, 2));
+        return;
+    }
+    if (argc >= 2 and strEq(argAt(argv, 1), "--wheel-test")) {
+        runWheelTest();
+        return;
+    }
+    if (argc >= 2 and strEq(argAt(argv, 1), "--keytest")) {
+        runKeyTest();
+        return;
+    }
+    if (argc >= 2 and strEq(argAt(argv, 1), "--clip-test")) {
+        runClipTest();
+        return;
+    }
     if (argc < 2) {
-        io.write("usage: z9edit <path> | z9edit --smoke <in> <out>\n");
+        io.write("usage: z9edit <path> | z9edit --smoke <in> <out> | z9edit --live-smoke <in> | z9edit --wheel-test | --keytest | --clip-test\n");
         os.exit(2);
         return;
     }

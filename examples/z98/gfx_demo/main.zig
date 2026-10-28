@@ -253,6 +253,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var smoke: bool = false;
     var dump: bool = false;
     var selftest: bool = false;
+    var live_smoke: bool = false;
     var smoke_n: u32 = 0;
     var i: i32 = 1;
     while (i < argc) : (i += 1) {
@@ -268,6 +269,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             dump = true;
         } else if (strEq(a, "--selftest")) {
             selftest = true;
+        } else if (strEq(a, "--live-smoke")) {
+            live_smoke = true;
         }
     }
 
@@ -318,7 +321,55 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     }
 
     if (!smoke and !dump) {
+        if (live_smoke) {
+            // Direct C1 regression: a 0x0/minimized client is a no-op present.
+            _ = gfx.gfxTestMinimize(g);
+            if (!gfx.gfxBeginFrame(g) or !gfx.gfxEndFrame(g)) {
+                gfx.gfxClose(g);
+                io.write("gfx_demo: minimized frame was not a no-op\n");
+                @exit(@intCast(u8, 1));
+                return;
+            }
+            _ = gfx.gfxTestRestore(g);
+            io.write("READY\n");
+            var live_frames: u32 = 0;
+            while (!app.quit) {
+                var lev: gfx.Event = undefined;
+                while (gfx.gfxPollEvent(g, &lev)) {
+                    if (!handleEvent(&app, &lev)) break;
+                }
+                if (app.quit) break;
+                if (!gfx.gfxBeginFrame(g)) {
+                    io.sleepMs(16);
+                    continue;
+                }
+                paint(g, &app);
+                if (!gfx.gfxEndFrame(g)) {
+                    io.sleepMs(16);
+                    continue;
+                }
+                app.frames += 1;
+                live_frames += 1;
+                if (live_frames == 20) {
+                    _ = gfx.gfxTestMinimize(g);
+                    io.write("LIVE minimize\n");
+                }
+                if (live_frames == 40) {
+                    _ = gfx.gfxTestRestore(g);
+                    io.write("LIVE restore\n");
+                }
+                if (live_frames == 60) {
+                    _ = gfx.gfxTestClose(g);
+                    io.write("LIVE close\n");
+                }
+                io.sleepMs(16);
+            }
+            io.write("LIVE OK\n");
+            gfx.gfxClose(g);
+            return;
+        }
         // Interactive window loop: the real pump drives the same handler.
+        // A transient present failure (minimize/0x0) is retried, not fatal.
         while (!app.quit) {
             var ev: gfx.Event = undefined;
             while (gfx.gfxPollEvent(g, &ev)) {
@@ -326,17 +377,13 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             }
             if (app.quit) break;
             if (!gfx.gfxBeginFrame(g)) {
-                gfx.gfxClose(g);
-                io.write("gfx_demo: begin frame failed\n");
-                @exit(@intCast(u8, 1));
-                return;
+                io.sleepMs(16);
+                continue;
             }
             paint(g, &app);
             if (!gfx.gfxEndFrame(g)) {
-                gfx.gfxClose(g);
-                io.write("gfx_demo: end frame failed (Blt)\n");
-                @exit(@intCast(u8, 1));
-                return;
+                io.sleepMs(16);
+                continue;
             }
             app.frames += 1;
             io.sleepMs(16);

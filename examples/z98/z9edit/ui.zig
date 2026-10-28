@@ -633,6 +633,11 @@ pub fn uiSetSavePath(st: *UiState, path: []const u8) void {
     st.opaque.save_path = path;
 }
 
+// Test-only view of the scroll position (wheel-direction regression).
+pub fn uiTestScroll(st: *UiState) usize {
+    return st.opaque.scroll;
+}
+
 pub fn uiStep(stw: *UiState, ev: *const gfx.Event) bool {
     const st = stw.opaque;
     if (ev.kind == .close) return false;
@@ -642,12 +647,14 @@ pub fn uiStep(stw: *UiState, ev: *const gfx.Event) bool {
         return true;
     }
     if (ev.kind == .wheel) {
+        // Wheel forward/away is a negative line delta in Win32 terms; the
+        // editor scrolls up for positive ev.wheel and down for negative.
         var delta: i32 = ev.wheel;
-        if (delta < 0) {
-            var d: usize = @intCast(usize, 0 - delta);
+        if (delta > 0) {
+            var d: usize = @intCast(usize, delta);
             while (d > 0 and st.scroll > 0) : (d -= 1) st.scroll -= 1;
         } else {
-            var d: usize = @intCast(usize, delta);
+            var d: usize = @intCast(usize, 0 - delta);
             while (d > 0) : (d -= 1) st.scroll += 1;
         }
         clampScroll(st);

@@ -237,10 +237,41 @@ pub fn bufSave(b: *GapBuffer, path: []const u8) BufError!void {
         tmp[dst] = c;
         dst += 1;
     }
-    file_mod.writeAll(path, tmp[0..dst]) catch |e| {
+
+    // Save atomically: write <path>.z9tmp in the same directory, flush+close,
+    // then rename over the target. A failed write never touches the original.
+    const tmp_path = try allocBytes(st.arena, path.len + 6);
+    var suffix: []const u8 = ".z9tmp";
+    var pi: usize = 0;
+    while (pi < path.len) : (pi += 1) tmp_path[pi] = path[pi];
+    var si: usize = 0;
+    while (si < 6) : (si += 1) tmp_path[pi + si] = suffix[si];
+    const tmp_s = tmp_path[0 .. path.len + 6];
+
+    file_mod.writeAll(tmp_s, tmp[0..dst]) catch |e| {
+        _ = file_mod.remove(tmp_s) catch {};
         if (e == error.OutOfMemory) return error.OutOfMemory;
         return error.WriteFailed;
     };
+
+    var renamed = true;
+    file_mod.rename(tmp_s, path) catch {
+        renamed = false;
+    };
+    if (!renamed) {
+        if (@isWindows() and file_mod.exists(path)) {
+            // MoveFileA does not replace an existing target; the temp file is
+            // already complete, so remove the old target and retry once.
+            file_mod.remove(path) catch {};
+            file_mod.rename(tmp_s, path) catch {
+                _ = file_mod.remove(tmp_s) catch {};
+                return error.WriteFailed;
+            };
+        } else {
+            _ = file_mod.remove(tmp_s) catch {};
+            return error.WriteFailed;
+        }
+    }
     st.dirty = false;
 }
 
