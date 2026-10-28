@@ -47,6 +47,21 @@ FAILS=0
 pass_case() { echo "ok   - $1"; PASSES=$((PASSES + 1)); }
 fail_case() { echo "FAIL - $1"; FAILS=$((FAILS + 1)); }
 
+# Pixel helpers for the per-theme render assertions. Cell metrics are the fixed
+# font Wine supplies (SYSTEM_FIXED_FONT, 8x16); the client origin comes from the
+# app's own present log (dest=(x,y)).
+img_hex() { identify -format "%[hex:p{$2,$3}]" "$1" 2>/dev/null; }
+cell_has_hex() {
+    convert "$1" -crop "8x16+$2+$3" +repage -format %c histogram:info:- 2>/dev/null \
+        | grep -qi "#$4"
+}
+theme_origin() {
+    o="$(sed -n 's/.*dest=(\([0-9][0-9]*\),\([0-9][0-9]*\)).*/\1 \2/p' "$1" | head -1)"
+    [ -n "$o" ] || o="4 23"
+    echo "$o"
+}
+
+
 XVFB_PID=""
 WINE_PID=""
 cleanup() {
@@ -458,7 +473,7 @@ else
             fail_case "read-error path did not fail safely (rc=$BAD_RC; see $OUT/badload.log)"
         fi
 
-        # ---- P4-M4 theme coverage: config-selected screenshots + save bytes.
+        # ---- P4-M4 theme coverage: save bytes + rendered pixel assertions.
         THEME_SAVE_OK=1
         for th in white solarized dark; do
             TDIR="$OUT/theme_$th"
@@ -469,36 +484,21 @@ else
             else
                 printf 'theme=%s\n' "$th" >"$TDIR/z9edit.ini"
             fi
+            case "$th" in
+                white) E0=FFFFFF; E3=808080; E7=000080; E13=000080; E15=000000 ;;
+                solarized) E0=FDF6E3; E3=93A1A1; E7=073642; E13=6C71C4; E15=002B36 ;;
+                dark) E0=0B0F14; E3=6E7681; E7=8B949E; E13=388BFD; E15=FFFFFF ;;
+            esac
+
+            # Happy-path save bytes (must stay 974243c9... in every theme).
             ( cd "$TDIR" && timeout 120 wine "$CONSOLE_EXE" --smoke edit_smoke.z98 out.tmp ) \
-                >"$TDIR/app.log" 2>&1 &
-            WINE_PID=$!
-            READY_T=0
-            i=0
-            while [ "$i" -lt 200 ]; do
-                if grep -q '^READY$' "$TDIR/app.log" 2>/dev/null; then
-                    READY_T=1
-                    break
-                fi
-                sleep 0.1
-                i=$((i + 1))
-            done
-            if [ "$READY_T" -eq 1 ] && grep -qx "THEME $th" "$TDIR/app.log"; then
+                >"$TDIR/app.log" 2>&1
+            TRC=$?
+            if [ "$TRC" -eq 0 ] && grep -qx "THEME $th" "$TDIR/app.log"; then
                 pass_case "theme $th selected at startup (THEME $th)"
             else
-                fail_case "theme $th not selected (see $TDIR/app.log)"
+                fail_case "theme $th not selected (rc=$TRC; see $TDIR/app.log)"
             fi
-            sleep 0.5
-            if timeout 30 import -window root "$TDIR/shot.png" >"$TDIR/import.log" 2>&1 \
-                && [ -s "$TDIR/shot.png" ]; then
-                TSTATS="$(identify -format '%[fx:mean] %[fx:standard_deviation] %k' \
-                    "$TDIR/shot.png" 2>/dev/null)"
-                pass_case "theme $th screenshot: $TDIR/shot.png (mean/stddev/colors: $TSTATS)"
-            else
-                fail_case "theme $th screenshot failed (see $TDIR/import.log)"
-            fi
-            wait "$WINE_PID" 2>/dev/null
-            TRC=$?
-            WINE_PID=""
             if [ "$TRC" -eq 0 ] && [ -f "$TDIR/out.tmp" ] \
                 && cmp -s "$TDIR/out.tmp" "$EXPECTED"; then
                 TMD="$(md5sum "$TDIR/out.tmp" | cut -d' ' -f1)"
@@ -507,7 +507,84 @@ else
                 fail_case "theme $th save failed/differed (rc=$TRC)"
                 THEME_SAVE_OK=0
             fi
+
+            # Paint-only frame: caret line 2 col 6, selection line 2 cols 1..5.
+            ( cd "$TDIR" && timeout 120 wine "$CONSOLE_EXE" --theme-paint edit_smoke.z98 ) \
+                >"$TDIR/paint.log" 2>&1 &
+            WINE_PID=$!
+            READY_T=0
+            i=0
+            while [ "$i" -lt 200 ]; do
+                if grep -q '^READY$' "$TDIR/paint.log" 2>/dev/null; then
+                    READY_T=1
+                    break
+                fi
+                sleep 0.1
+                i=$((i + 1))
+            done
+            sleep 0.5
+            if [ "$READY_T" -eq 1 ] \
+                && timeout 30 import -window root "$TDIR/shot.png" >"$TDIR/import.log" 2>&1 \
+                && [ -s "$TDIR/shot.png" ]; then
+                TSTATS="$(identify -format '%[fx:mean] %[fx:standard_deviation] %k' \
+                    "$TDIR/shot.png" 2>/dev/null)"
+                pass_case "theme $th screenshot: $TDIR/shot.png (mean/stddev/colors: $TSTATS)"
+            else
+                fail_case "theme $th screenshot failed (see $TDIR/import.log)"
+            fi
+            wait "$WINE_PID" 2>/dev/null
+            PRC=$?
+            WINE_PID=""
+            if [ "$PRC" -ne 0 ]; then
+                fail_case "theme $th paint run exited $PRC (see $TDIR/paint.log)"
+            fi
+
+            ORIGIN="$(theme_origin "$TDIR/paint.log")"
+            OX=${ORIGIN%% *}
+            OY=${ORIGIN##* }
+            SX=$((OX + 78 * 8))
+            SY=$((OY + 24 * 16))
+            TX=$((OX + 1 * 8))
+            TY=$((OY + 24 * 16))
+            CX=$((OX + 7 * 8))
+            CY=$((OY + 1 * 16))
+            EX=$((OX + 2 * 8))
+            EY=$((OY + 1 * 16))
+            GX=$((OX + 0 * 8))
+            GY=$((OY + 1 * 16))
+
+            SBG="$(img_hex "$TDIR/shot.png" "$SX" "$SY")"
+            if [ "$SBG" = "$E7" ]; then
+                pass_case "theme $th status-bar bg pixel is $E7"
+            else
+                fail_case "theme $th status-bar bg pixel is ${SBG:-missing}, want $E7"
+            fi
+            if cell_has_hex "$TDIR/shot.png" "$TX" "$TY" "$E0" \
+                && cell_has_hex "$TDIR/shot.png" "$TX" "$TY" "$E7"; then
+                pass_case "theme $th status text cell has $E0 on $E7"
+            else
+                fail_case "theme $th status text cell lacks $E0/$E7"
+            fi
+            if cell_has_hex "$TDIR/shot.png" "$CX" "$CY" "$E15" \
+                && cell_has_hex "$TDIR/shot.png" "$CX" "$CY" "$E0"; then
+                pass_case "theme $th cursor cell has $E0 on $E15"
+            else
+                fail_case "theme $th cursor cell lacks $E0/$E15"
+            fi
+            if cell_has_hex "$TDIR/shot.png" "$EX" "$EY" "$E13" \
+                && cell_has_hex "$TDIR/shot.png" "$EX" "$EY" "$E15"; then
+                pass_case "theme $th selected cell has $E15 on $E13"
+            else
+                fail_case "theme $th selected cell lacks $E13/$E15"
+            fi
+            if cell_has_hex "$TDIR/shot.png" "$GX" "$GY" "$E3" \
+                && cell_has_hex "$TDIR/shot.png" "$GX" "$GY" "$E0"; then
+                pass_case "theme $th gutter digit cell has $E3 on $E0"
+            else
+                fail_case "theme $th gutter digit cell lacks $E3/$E0"
+            fi
         done
+
 
         # F2 cycle white -> solarized -> dark -> white (session-only). The
         # --theme-test mode drives uiStep on a memory Gfx (no window/atlas).

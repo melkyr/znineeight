@@ -611,6 +611,48 @@ fn runThemeTest() void {
     io.write("THEMETEST OK\n");
 }
 
+// Paint-only capture path for the per-theme pixel assertions. It opens a real
+// window, selects the config theme, puts the caret on line 2 col 6 and selects
+// line 2 cols 1..5, then holds the frame so the tier can sample known cells.
+fn runThemePaint(in_path: []const u8) void {
+    var arena = arena_mod.init(g_arena_buf[0..]);
+    const b = buffer.bufLoad(&arena, in_path) catch {
+        fail("z9edit: cannot read theme-paint input");
+        return;
+    };
+    var tb: [TITLE_MAX]u8 = undefined;
+    const title = buildTitle(tb[0..], in_path);
+    const g = gfx.gfxOpen(title, COLS, ROWS) catch {
+        fail("z9edit: theme-paint gfxOpen failed");
+        return;
+    };
+    applyConfigTheme(g, &arena);
+    const st = ui.uiInit(&arena, g, b, in_path) catch {
+        gfx.gfxClose(g);
+        fail("z9edit: theme-paint uiInit failed");
+        return;
+    };
+    if (!paintFrame(g, st)) {
+        gfx.gfxClose(g);
+        fail("z9edit: theme-paint initial paint failed");
+        return;
+    }
+    if (!feedMouse(g, st, .mouse_down, 2, 1)) return;
+    if (!feedMouse(g, st, .mouse_up, 2, 1)) return;
+    var k: usize = 0;
+    while (k < 5) : (k += 1) {
+        if (!feedKey(g, st, 0x27, 0, 1)) return;
+    }
+    if (!paintFrame(g, st)) return;
+    io.write("READY\n");
+    var hold: u32 = 0;
+    while (hold < 40) : (hold += 1) {
+        if (!paintFrame(g, st)) return;
+        io.sleepMs(100);
+    }
+    gfx.gfxClose(g);
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     if (argc >= 4 and strEq(argAt(argv, 1), "--smoke")) {
         runSmoke(argAt(argv, 2), argAt(argv, 3));
@@ -636,8 +678,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         runThemeTest();
         return;
     }
+    if (argc >= 3 and strEq(argAt(argv, 1), "--theme-paint")) {
+        runThemePaint(argAt(argv, 2));
+        return;
+    }
     if (argc < 2) {
-        io.write("usage: z9edit <path> | z9edit --smoke <in> <out> | z9edit --live-smoke <in> | z9edit --wheel-test | --keytest | --clip-test | --theme-test\n");
+        io.write("usage: z9edit <path> | z9edit --smoke <in> <out> | z9edit --live-smoke <in> | z9edit --wheel-test | --keytest | --clip-test | --theme-test | --theme-paint <in>\n");
         os.exit(2);
         return;
     }
