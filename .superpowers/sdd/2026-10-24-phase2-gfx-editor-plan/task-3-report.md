@@ -453,3 +453,52 @@ TIER_EDIT_GUI PASS
 Second identical GUI run (`OUT=/tmp/pre125_gui3`): **28 passed, 0 failed**,
 `TIER_EDIT_GUI PASS`, same save md5
 `974243c97df614039f01da3b86c67b3c`. Seed `release/seed/` was not rotated.
+
+## Low-edge fixes
+
+### Low #1 — save over an existing directory
+
+Added `isDirectory` in `examples/z98/z9edit/buffer.zig`, using
+`std_file.openDir` + `closeDir` (a successful `openDir` means directory; a
+failure to decide keeps the previous behavior). In the Windows existing-target
+branch, a directory target now removes `.z9tmp`, returns `error.WriteFailed`,
+and never moves/renames/deletes the directory.
+
+Regression (`--smoke` saving to `out.tmp/` which is a directory with a sentinel
+file): `ok - save over an existing directory refused; directory survives`.
+
+### Low #2 — stale `.z9bak`
+
+In the Windows existing-target branch, if `<path>.z9bak` already exists it is
+removed before moving the live target aside (the live target is authoritative).
+If that removal fails, `.z9tmp` is removed and `error.WriteFailed` returns
+without touching the target; otherwise the existing backup-restore flow runs.
+
+Regression (existing `out.tmp` + stale `out.tmp.z9bak`): overwrite succeeds,
+bytes match the golden, and the stale backup is gone:
+`ok - stale .z9bak cleared; overwrite save succeeds`.
+
+Both are exercised under Wine; `edit_smoke.expected` remains
+`974243c97df614039f01da3b86c67b3c`. No `sf/src/std_*`, compiler, or seed change.
+
+### Covering tests
+
+```
+ZIG=/tmp/p4_newcheck/zig1_5_clean OUT=/tmp/le_edit \
+  sh examples/z98/z9edit/tests/tier_edit.sh
+...
+== tier_edit summary: 38 passed, 0 failed ==
+TIER_EDIT PASS
+
+ZIG=/tmp/p4_newcheck/zig1_5_clean OUT=/tmp/le_gui1 \
+  sh examples/z98/z9edit/tests/tier_edit_gui.sh
+...
+ok   - save bytes byte-identical 2x (974243c97df614039f01da3b86c67b3c)
+ok   - save over an existing directory refused; directory survives
+ok   - stale .z9bak cleared; overwrite save succeeds
+== tier_edit_gui summary: 30 passed, 0 failed ==
+TIER_EDIT_GUI PASS
+```
+
+Second GUI run (`OUT=/tmp/le_gui2`): **30 passed, 0 failed**,
+`TIER_EDIT_GUI PASS`, same save md5.
