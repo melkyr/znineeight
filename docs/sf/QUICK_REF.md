@@ -23,25 +23,25 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-28 — seed v126]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-28 — seed v127]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in `release/seed/SEED_README.txt` and the v126 CHANGELOG entry.
+current md5s in `release/seed/SEED_README.txt` and the v127 CHANGELOG entry.
 
-**Current seed: v126** (rotated 2026-10-28 at HEAD `3d88a58e`, the Phase 2 P4-M4
-theme closeout: v126 refreshes the std payload with `std_gfx.Theme` +
-`gfxSetTheme`/`gfxGetTheme` and the white/solarized/dark PAL tables; the
-compiler fixed point stays the pre-P4 leaf-tail cleanup `60e3a916` state — P4
-adds no compiler source change). Archived binary md5 (= fixed point)
+**Current seed: v127** (rotated 2026-10-28 at HEAD `1b20dc71`, the Phase 2 P4-M4
+theme fix round: v127 refreshes the std payload with `std_gfx.Theme` +
+`gfxSetTheme`/`gfxGetTheme`, the white/solarized/dark PAL tables, and the black
+color-atlas background fix; the compiler fixed point stays the pre-P4 leaf-tail
+cleanup `60e3a916` state — P4 adds no compiler source change). Archived binary md5 (= fixed point)
 `2fc64ffedb3ba5f4e8adf35896729e54`; archive md5
-`00ff9b75d697a110e662ebf75bb65cea`; Win9x zip md5
-`0a1df690718917033a2b8c5884f12c3b`; `gen/` 48 `.c` + 49 `.h` (11,913,427
+`70a6173979fe74db8d00b0e1212153d7`; Win9x zip md5
+`adc2c2bd424783118a8b05b6336c1f0e`; `gen/` 48 `.c` + 49 `.h` (11,913,427
 bytes); `lib/` **49** std `.zig` (47 prior + `std_gfx.zig` +
 `std_gfx_pal.zig`) plus `lib/manifest.md5` (per-file std attribution pin,
-manifest md5 `459b8e2baf656c0281dae4a0588d0930`). The rebuilt archive is
+manifest md5 `fc9646bfcfecb14fd3872833bf13d43a`). The rebuilt archive is
 two-hop (`build_from_seed.sh`: hop1 == hop2 == `2fc64ffe…`); the compiler↔std
 separation means the `lib/` payload does not move the fixed point. The compiler
 source is **`-fsafe`-clean** (12 intentional wraps + 3 real safe-mode
@@ -134,7 +134,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v126 carries the full 49 std `.zig`** = `std.zig` plus
+tracked seed archive **v127 carries the full 49 std `.zig`** = `std.zig` plus
 48 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -461,15 +461,15 @@ Real hardware is the operator's Win98 session.
 is evidence, and real Win98 keystroke→screen/runtime RSS are **not measured**
 here (operator hardware).
 
-### Compiler RSS/arena — seed v123 baseline, carried into v126 (not re-measured) [updated: 2026-10-28]
+### Compiler RSS/arena — seed v123 baseline, carried into v127 (not re-measured) [updated: 2026-10-28]
 
 **These are the last full compiler measurements.** They were taken
 2026-10-27 at seed v123 / fixed point `a567926c223492787786dd460563f32a`
-(two-hop closure hop1 == hop2). Seed v126 differs from v123 only by (i) the std
-payload (`std_gfx`/`std_gfx_pal`, refreshed by the P4 final-review fixes and the P4-M4 theme payload) and
+(two-hop closure hop1 == hop2). Seed v127 differs from v123 only by (i) the std
+payload (`std_gfx`/`std_gfx_pal`, refreshed by the P4 final-review fixes and the P4-M4 theme payload plus the black color-atlas fix) and
 (ii) the already-landed pre-P4 leaf-tail cleanup that moved the fixed point to
 `2fc64ffe…`; P4 added no compiler source change, and the compiler RSS was **not
-re-measured** for v124-v126. Every RSS/wall figure is
+re-measured** for v124-v127. Every RSS/wall figure is
 the median of 3 `/usr/bin/time -v` runs in fresh scratch dirs; arena figures
 come from a separate `--markers --track-memory` run (3×, identical). The v111
 figures below are historical — do not present them as current.

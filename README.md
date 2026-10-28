@@ -35,7 +35,7 @@ compiles itself to become the fully self-hosted compiler, **zig1** — the subje
 ## Current Status
 The **self-hosted milestone is complete**: `zig1` compiles itself, the compilation is
 **deterministic to a fixed point** (current self-compile binary md5 `2fc64ffedb3ba5f4e8adf35896729e54`; committed seed
-**v126**, `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
+**v127**, `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
 [Determinism](#determinism)), and the maintained example matrix is **26/26** dump/gcc/link. The
 mi_matrix corpus at `-s0` is enumerated by the canonical generator
 [`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the documented
@@ -99,15 +99,15 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
 
 - **Current self-compile fixed point:** self-compiled `zig1` binary md5
   `2fc64ffedb3ba5f4e8adf35896729e54` (48 module `.c` + 49 module `.h`, 0 `error[`, 0 PANIC;
-  hop1 == hop2 closure), committed seed **v126** (`release/seed/zig1-seed.tgz`, archive md5
-  `00ff9b75d697a110e662ebf75bb65cea`; `lib/manifest.md5` md5
-  `459b8e2baf656c0281dae4a0588d0930`, 49 std files). The fixed point moved to `45158dce…` at M2
+  hop1 == hop2 closure), committed seed **v127** (`release/seed/zig1-seed.tgz`, archive md5
+  `70a6173979fe74db8d00b0e1212153d7`; `lib/manifest.md5` md5
+  `fc9646bfcfecb14fd3872833bf13d43a`, 49 std files). The fixed point moved to `45158dce…` at M2
   T1C-F (the `const`-rodata compiler fix) and to `a567926c…` at the
   iterative-lowering milestone (continuation-stack lowerer + TEMP_NONE fix); the seed payload
   moved to v119 at the M7 TCP/IP
   closeout (adds `std_tcpip`; no compiler movement), then rotated through v123
   (iterative-lowering closeout) and v124/v125 (P4 gfx std payload + final-review fixes)
-  and v126 (P4-M4 theme payload).
+  and v126 (P4-M4 theme payload) and v127 (P4-M4 theme payload + black color-atlas fix).
   The current `2fc64ffe…` is the pre-P4 leaf-tail cleanup state; P4 adds no compiler source
   change.
 - **Historical fixed point (0.20.0-era):** `553a39b4…` / seed v27 (45 module `.c` + 46 module `.h`);
@@ -178,7 +178,7 @@ Supporting data for row D at fixed point `553a39b4…` (historical): `zig1 -s0 -
 ### Current measured compiler peak (current fixed point `2fc64ffe…`)  [measured 2026-10-27 at seed v123]
 
 **These are the last full measurements, taken at seed v123; the current seed
-v126 (fixed point `2fc64ffe…`) has not been re-measured.** Measured 2026-10-27 at
+v127 (fixed point `2fc64ffe…`) has not been re-measured.** Measured 2026-10-27 at
 `a567926c223492787786dd460563f32a` (seed v123), fixed-point binary
 `/tmp/memfix_build/zig1_5_clean` built by
 `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/memfix_build`
