@@ -370,7 +370,11 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     } else {
         var title: []const u8 = "z98 gfx demo";
         g = gfx.gfxOpen(title, COLS, ROWS) catch {
-            gfx.gfxShowError("z98 gfx demo", "gfxOpen failed");
+            if (smoke) {
+                io.write("gfx_demo: gfxOpen failed\n");
+            } else {
+                gfx.gfxShowError("z98 gfx demo", "gfxOpen failed");
+            }
             @exit(@intCast(u8, 1));
             return;
         };
