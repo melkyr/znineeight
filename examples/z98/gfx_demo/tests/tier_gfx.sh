@@ -41,6 +41,18 @@ export WINEPREFIX="$WINE_PREFIX"
 export WINEARCH=win32
 export WINEDEBUG="${WINEDEBUG:--all}"
 
+# Forced-GDI mode: the same tier runs with Z98_GFX_SOFTWARE=1 and asserts the
+# GDI backend marker instead of the DirectDraw open sequence.
+FORCED_GDI=0
+[ "${Z98_GFX_SOFTWARE:-0}" = "1" ] && FORCED_GDI=1
+if [ "$FORCED_GDI" -eq 1 ]; then
+    EXPECT_BACKEND='gfx: backend=gdi'
+    REJECT_BACKEND='gfx: backend=ddraw'
+else
+    EXPECT_BACKEND='gfx: backend=ddraw'
+    REJECT_BACKEND='gfx: backend=gdi'
+fi
+
 PASSES=0
 FAILS=0
 pass_case() { echo "ok   - $1"; PASSES=$((PASSES + 1)); }
@@ -295,20 +307,35 @@ else
         else
             fail_case "windowed --smoke 30 exited $APP_RC (see $SHOT_DIR/app.log)"
         fi
-        HR_MISSING=""
-        for pat in \
-            'DirectDrawCreate hr=0x00000000' \
-            'QueryInterface(IID_IDirectDraw7) hr=0x00000000' \
-            'SetCooperativeLevel(DDSCL_NORMAL) hr=0x00000000' \
-            'CreateSurface(primary) hr=0x00000000' \
-            'CreateSurface(offscreen) hr=0x00000000' \
-            'Blt(primary<-offscreen) hr=0x00000000'; do
-            grep -Fq "$pat" "$SHOT_DIR/app.log" || HR_MISSING="$HR_MISSING [$pat]"
-        done
-        if [ -z "$HR_MISSING" ]; then
-            pass_case "DDraw HRESULT log present (create/QI/coop/surfaces/Blt all 0x0)"
+        BACKEND_COUNT=$(grep -cF "$EXPECT_BACKEND" "$SHOT_DIR/app.log" 2>/dev/null || true)
+        if [ "$BACKEND_COUNT" = "1" ] \
+            && ! grep -Fq "$REJECT_BACKEND" "$SHOT_DIR/app.log"; then
+            pass_case "backend marker exactly once: $EXPECT_BACKEND"
         else
-            fail_case "missing DDraw HRESULT log line(s):$HR_MISSING"
+            fail_case "backend marker missing/duplicated/wrong (want $EXPECT_BACKEND, count=$BACKEND_COUNT)"
+        fi
+        if [ "$FORCED_GDI" -eq 1 ]; then
+            if grep -Fq 'DirectDrawCreate' "$SHOT_DIR/app.log"; then
+                fail_case "forced-GDI run still opened DirectDraw"
+            else
+                pass_case "forced-GDI run skipped the DirectDraw open sequence"
+            fi
+        else
+            HR_MISSING=""
+            for pat in \
+                'DirectDrawCreate hr=0x00000000' \
+                'QueryInterface(IID_IDirectDraw7) hr=0x00000000' \
+                'SetCooperativeLevel(DDSCL_NORMAL) hr=0x00000000' \
+                'CreateSurface(primary) hr=0x00000000' \
+                'CreateSurface(offscreen) hr=0x00000000' \
+                'Blt(primary<-offscreen) hr=0x00000000'; do
+                grep -Fq "$pat" "$SHOT_DIR/app.log" || HR_MISSING="$HR_MISSING [$pat]"
+            done
+            if [ -z "$HR_MISSING" ]; then
+                pass_case "DDraw HRESULT log present (create/QI/coop/surfaces/Blt all 0x0)"
+            else
+                fail_case "missing DDraw HRESULT log line(s):$HR_MISSING"
+            fi
         fi
         ATLAS_COUNT=$(grep -cF 'glyph-atlas built (95x16 GDI color+mask)' "$SHOT_DIR/app.log" 2>/dev/null || true)
         if [ "$ATLAS_COUNT" = "1" ] \
@@ -347,6 +374,11 @@ else
             pass_case "gfx_demo live pump survived minimize/restore/close (exit 0)"
         else
             fail_case "gfx_demo live pump failed (rc=$LIVE_RC; see $LIVE_LOG)"
+        fi
+        if grep -Fq "$EXPECT_BACKEND" "$LIVE_LOG" 2>/dev/null; then
+            pass_case "live pump backend marker: $EXPECT_BACKEND"
+        else
+            fail_case "live pump backend marker missing (want $EXPECT_BACKEND)"
         fi
         sed 's/^/       /' "$LIVE_LOG" | tail -8
         WINE_PID=""

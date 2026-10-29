@@ -73,6 +73,14 @@ const GLYPH_LAST: u32 = 126;
 const GLYPH_COUNT: u32 = GLYPH_LAST - GLYPH_FIRST + 1;
 const ATLAS_COLORS: u32 = 16;
 const S_OK: u32 = 0;
+const BITSPIXEL: i32 = 12;
+const SRCCOPY: u32 = 0x00CC0020;
+const MB_OK: u32 = 0;
+const MB_ICONERROR: u32 = 0x00000010;
+const STD_ERROR_HANDLE: i32 = -12;
+const BACKEND_NONE: u8 = 0;
+const BACKEND_DDRAW: u8 = 1;
+const BACKEND_GDI: u8 = 2;
 
 // Event kinds, matching std_gfx.EventKind's declaration order.
 const EK_KEY_DOWN: u8 = 0;
@@ -504,6 +512,10 @@ pub extern "stdcall" fn AdjustWindowRect(rc: *void, style: u32, menu: i32) i32;
 pub extern "stdcall" fn SetWindowPos(hwnd: *void, after: *void, x: i32, y: i32, w: i32, h: i32, flags: u32) i32;
 pub extern "stdcall" fn GetDC(hwnd: *void) *void;
 pub extern "stdcall" fn ReleaseDC(hwnd: *void, hdc: *void) i32;
+pub extern "stdcall" fn GetDeviceCaps(hdc: *void, index: i32) i32;
+pub extern "stdcall" fn GetEnvironmentVariableA(name: [*]const u8, buf: [*]u8, size: u32) u32;
+pub extern "stdcall" fn GetStdHandle(kind: i32) *void;
+pub extern "stdcall" fn MessageBoxA(hwnd: *void, text: [*]const u8, cap: [*]const u8, typ: u32) i32;
 pub extern "stdcall" fn FillRect(hdc: *void, rc: *const void, brush: *void) i32;
 pub extern "stdcall" fn CreateSolidBrush(color: u32) *void;
 pub extern "stdcall" fn DeleteObject(obj: *void) i32;
@@ -554,7 +566,11 @@ pub const State = struct {
     atlas_old_mask: *void,
     atlas_used: bool,
     theme: u8,
+    backend: u8,
     clipper: *void,
+    gdi_bmp: *void,
+    gdi_dc: *void,
+    gdi_old: *void,
     hdc: *void,
     font: *void,
     brushes: [16]*void,
@@ -601,6 +617,48 @@ fn copyCstr(s: []const u8, out: []u8) void {
     out[n] = 0;
 }
 
+// Startup-only software-backend override: Z98_GFX_SOFTWARE=1 forces GDI.
+fn softwareForced() bool {
+    var name: [32]u8 = undefined;
+    copyCstr("Z98_GFX_SOFTWARE", name[0..]);
+    var buf: [8]u8 = undefined;
+    const n = GetEnvironmentVariableA(@ptrCast([*]const u8, &name[0]),
+        @ptrCast([*]u8, &buf[0]), 8);
+    return n == 1 and buf[0] == 49; // "1"
+}
+
+// 16-color machines (< 8bpp) cannot use the 32-bit DirectDraw offscreen path.
+fn screenDepth() i32 {
+    const dc = GetDC(nullVoid());
+    if (isNull(dc)) return 32;
+    const bpp = GetDeviceCaps(dc, BITSPIXEL);
+    _ = ReleaseDC(nullVoid(), dc);
+    return bpp;
+}
+
+// A GUI-subsystem process launched without a console has no stderr handle;
+// console builds (including the tier's redirected console exe) do.
+pub fn guiProcess() bool {
+    return isNull(GetStdHandle(STD_ERROR_HANDLE));
+}
+
+pub fn nullHandle() *void {
+    return nullVoid();
+}
+
+pub fn isWindowOpen(st: *State) bool {
+    return !isNull(st.hwnd) and st.backend != BACKEND_NONE;
+}
+
+pub fn showError(hwnd: *void, title: []const u8, msg: []const u8) void {
+    var tbuf: [128]u8 = undefined;
+    var mbuf: [512]u8 = undefined;
+    copyCstr(title, tbuf[0..]);
+    copyCstr(msg, mbuf[0..]);
+    _ = MessageBoxA(hwnd, @ptrCast([*]const u8, &mbuf[0]),
+        @ptrCast([*]const u8, &tbuf[0]), MB_OK | MB_ICONERROR);
+}
+
 // Update the top-level window title (z9edit keeps its dirty `*` current).
 pub fn setTitle(st: *State, title: []const u8) bool {
     if (isNull(st.hwnd)) return false;
@@ -631,6 +689,61 @@ fn releaseDd(p: *void) void {
     if (!isNull(p)) {
         _ = ddVtbl(p).Release(p);
     }
+}
+
+// --- GDI software-backend back bitmap (client-sized) -----------------------
+fn releaseGdiBack(st: *State) void {
+    if (!isNull(st.gdi_dc)) {
+        if (!isNull(st.gdi_old)) {
+            _ = SelectObject(st.gdi_dc, st.gdi_old);
+        }
+        _ = DeleteDC(st.gdi_dc);
+        st.gdi_dc = nullVoid();
+    }
+    if (!isNull(st.gdi_bmp)) {
+        _ = DeleteObject(st.gdi_bmp);
+        st.gdi_bmp = nullVoid();
+    }
+    st.gdi_old = nullVoid();
+}
+
+fn gdiResize(st: *State, w: u32, h: u32) bool {
+    if (w == 0 or h == 0) return false;
+    if (!isNull(st.gdi_dc) and st.bufw == w and st.bufh == h) return true;
+    releaseGdiBack(st);
+    const wdc = GetDC(st.hwnd);
+    if (isNull(wdc)) {
+        logLine("GetDC(window) for GDI back bitmap failed");
+        return false;
+    }
+    const bmp = CreateCompatibleBitmap(wdc, @intCast(i32, w), @intCast(i32, h));
+    const dc = CreateCompatibleDC(wdc);
+    _ = ReleaseDC(st.hwnd, wdc);
+    if (isNull(bmp) or isNull(dc)) {
+        if (!isNull(dc)) _ = DeleteDC(dc);
+        if (!isNull(bmp)) _ = DeleteObject(bmp);
+        logLine("GDI back bitmap allocation failed");
+        return false;
+    }
+    st.gdi_bmp = bmp;
+    st.gdi_dc = dc;
+    st.gdi_old = SelectObject(dc, bmp);
+    st.bufw = w;
+    st.bufh = h;
+    return true;
+}
+
+fn releaseDdraw(st: *State) void {
+    releaseSurface(st.back);
+    releaseSurface(st.primary);
+    releaseClipper(st.clipper);
+    releaseDd7(st.dd7);
+    releaseDd(st.dd);
+    st.back = nullVoid();
+    st.primary = nullVoid();
+    st.clipper = nullVoid();
+    st.dd7 = nullVoid();
+    st.dd = nullVoid();
 }
 
 fn makeSurface(st: *State, w: u32, h: u32, primary: bool, label: []const u8) *void {
@@ -863,6 +976,51 @@ pub fn getTheme(st: *State) u8 {
     return st.theme;
 }
 
+// Full DirectDraw7 open sequence. Any failed step (including the clipper) is a
+// startup fallback trigger; the caller then releases these objects and uses GDI.
+fn openDdraw(st: *State) bool {
+    // DirectDraw: v1 create, then upgrade to v7 (the T0-pre gotcha).
+    var dd_raw: *void = nullVoid();
+    var hr = DirectDrawCreate(nullVoid(), &dd_raw, nullVoid());
+    logHr("DirectDrawCreate", hr);
+    if (hr != S_OK) return false;
+    if (isNull(dd_raw)) {
+        logLine("DirectDrawCreate returned null v1 interface");
+        return false;
+    }
+    st.dd = dd_raw;
+    var dd7_raw: *void = nullVoid();
+    hr = ddVtbl(st.dd).QueryInterface(st.dd, @ptrCast(*const void, &IID_DD7), &dd7_raw);
+    logHr("QueryInterface(IID_IDirectDraw7)", hr);
+    if (hr != S_OK) return false;
+    if (isNull(dd7_raw)) {
+        logLine("QueryInterface(IID_IDirectDraw7) returned null");
+        return false;
+    }
+    st.dd7 = dd7_raw;
+    hr = dd7Vtbl(st.dd7).SetCooperativeLevel(st.dd7, st.hwnd, DDSCL_NORMAL);
+    logHr("SetCooperativeLevel(DDSCL_NORMAL)", hr);
+    if (hr != S_OK) return false;
+
+    st.primary = makeSurface(st, OFFSCREEN_W, OFFSCREEN_H, true, "CreateSurface(primary)");
+    if (isNull(st.primary)) return false;
+    st.back = makeSurface(st, OFFSCREEN_W, OFFSCREEN_H, false, "CreateSurface(offscreen)");
+    if (isNull(st.back)) return false;
+
+    var clip_raw: *void = nullVoid();
+    hr = dd7Vtbl(st.dd7).CreateClipper(st.dd7, 0, &clip_raw, nullVoid());
+    logHr("CreateClipper", hr);
+    if (hr != S_OK or isNull(clip_raw)) return false;
+    st.clipper = clip_raw;
+    hr = clipperVtbl(st.clipper).SetHWnd(st.clipper, 0, st.hwnd);
+    logHr("SetHWnd(clipper)", hr);
+    if (hr != S_OK) return false;
+    hr = surfaceVtbl(st.primary).SetClipper(st.primary, st.clipper);
+    logHr("SetClipper(primary)", hr);
+    if (hr != S_OK) return false;
+    return true;
+}
+
 pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.hwnd = nullVoid();
     st.hinst = nullVoid();
@@ -878,7 +1036,11 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.atlas_old_mask = nullVoid();
     st.atlas_used = false;
     st.theme = THEME_WHITE;
+    st.backend = BACKEND_NONE;
     st.clipper = nullVoid();
+    st.gdi_bmp = nullVoid();
+    st.gdi_dc = nullVoid();
+    st.gdi_old = nullVoid();
     st.hdc = nullVoid();
     st.font = nullVoid();
     st.cols = cols;
@@ -973,49 +1135,31 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
         }
     }
 
-    // DirectDraw: v1 create, then upgrade to v7 (the T0-pre gotcha).
-    var dd_raw: *void = nullVoid();
-    var hr = DirectDrawCreate(nullVoid(), &dd_raw, nullVoid());
-    logHr("DirectDrawCreate", hr);
-    if (hr != S_OK) {
-        close(st);
-        return false;
+    // Startup-only backend choice: forced software, a 16-color/no-DDraw
+    // machine, or any failed step of the DirectDraw open sequence -> GDI.
+    var use_gdi = softwareForced();
+    if (!use_gdi and screenDepth() < 8) use_gdi = true;
+    if (!use_gdi) {
+        if (!openDdraw(st)) {
+            releaseDdraw(st);
+            use_gdi = true;
+        }
     }
-    if (isNull(dd_raw)) {
-        logLine("DirectDrawCreate returned null v1 interface");
-        close(st);
-        return false;
-    }
-    st.dd = dd_raw;
-    var dd7_raw: *void = nullVoid();
-    hr = ddVtbl(st.dd).QueryInterface(st.dd, @ptrCast(*const void, &IID_DD7), &dd7_raw);
-    logHr("QueryInterface(IID_IDirectDraw7)", hr);
-    if (hr != S_OK) {
-        close(st);
-        return false;
-    }
-    if (isNull(dd7_raw)) {
-        logLine("QueryInterface(IID_IDirectDraw7) returned null");
-        close(st);
-        return false;
-    }
-    st.dd7 = dd7_raw;
-    hr = dd7Vtbl(st.dd7).SetCooperativeLevel(st.dd7, st.hwnd, DDSCL_NORMAL);
-    logHr("SetCooperativeLevel(DDSCL_NORMAL)", hr);
-    if (hr != S_OK) {
-        close(st);
-        return false;
-    }
-
-    st.primary = makeSurface(st, OFFSCREEN_W, OFFSCREEN_H, true, "CreateSurface(primary)");
-    if (isNull(st.primary)) {
-        close(st);
-        return false;
-    }
-    st.back = makeSurface(st, OFFSCREEN_W, OFFSCREEN_H, false, "CreateSurface(offscreen)");
-    if (isNull(st.back)) {
-        close(st);
-        return false;
+    if (use_gdi) {
+        st.backend = BACKEND_GDI;
+        var crc: Rect = undefined;
+        var gw: u32 = OFFSCREEN_W;
+        var gh: u32 = OFFSCREEN_H;
+        if (GetClientRect(st.hwnd, @ptrCast(*void, &crc)) != 0) {
+            if (crc.right > crc.left) gw = @intCast(u32, crc.right - crc.left);
+            if (crc.bottom > crc.top) gh = @intCast(u32, crc.bottom - crc.top);
+        }
+        if (!gdiResize(st, gw, gh)) {
+            close(st);
+            return false;
+        }
+    } else {
+        st.backend = BACKEND_DDRAW;
     }
 
     // Binding glyph cache: one offscreen color+mask atlas of ASCII 32..126 x
@@ -1027,45 +1171,25 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
         return false;
     }
 
-    // Best-effort clipper (windowed Blt still works without it; T0-pre proved
-    // the primary<-offscreen path under DDSCL_NORMAL).
-    var clip_raw: *void = nullVoid();
-    hr = dd7Vtbl(st.dd7).CreateClipper(st.dd7, 0, &clip_raw, nullVoid());
-    logHr("CreateClipper", hr);
-    if (hr == S_OK and !isNull(clip_raw)) {
-        st.clipper = clip_raw;
-        hr = clipperVtbl(st.clipper).SetHWnd(st.clipper, 0, st.hwnd);
-        logHr("SetHWnd(clipper)", hr);
-        if (hr == S_OK) {
-            hr = surfaceVtbl(st.primary).SetClipper(st.primary, st.clipper);
-            logHr("SetClipper(primary)", hr);
-        }
-        if (hr != S_OK) {
-            releaseClipper(st.clipper);
-            st.clipper = nullVoid();
-        }
+    if (st.backend == BACKEND_GDI) {
+        logLine("gfx: backend=gdi");
+    } else {
+        logLine("gfx: backend=ddraw");
     }
     return true;
 }
 
 pub fn close(st: *State) void {
     if (!isNull(st.hdc)) {
-        if (!isNull(st.back)) {
+        if (st.backend == BACKEND_DDRAW and !isNull(st.back)) {
             _ = surfaceVtbl(st.back).ReleaseDC(st.back, st.hdc);
         }
         st.hdc = nullVoid();
     }
     releaseAtlas(st);
-    releaseSurface(st.back);
-    releaseSurface(st.primary);
-    releaseClipper(st.clipper);
-    releaseDd7(st.dd7);
-    releaseDd(st.dd);
-    st.back = nullVoid();
-    st.primary = nullVoid();
-    st.clipper = nullVoid();
-    st.dd7 = nullVoid();
-    st.dd = nullVoid();
+    releaseGdiBack(st);
+    releaseDdraw(st);
+    st.backend = BACKEND_NONE;
     var i: usize = 0;
     while (i < 16) : (i += 1) {
         if (!isNull(st.brushes[i])) {
@@ -1084,6 +1208,13 @@ pub fn close(st: *State) void {
 }
 
 pub fn beginFrame(st: *State) bool {
+    if (st.backend == BACKEND_GDI) {
+        if (isNull(st.gdi_dc)) return false;
+        st.hdc = st.gdi_dc;
+        _ = SelectObject(st.hdc, st.font);
+        _ = SetBkMode(st.hdc, TRANSPARENT);
+        return true;
+    }
     if (isNull(st.back)) return false;
     var dc_raw: *void = nullVoid();
     const hr = surfaceVtbl(st.back).GetDC(st.back, &dc_raw);
@@ -1095,7 +1226,56 @@ pub fn beginFrame(st: *State) bool {
     return true;
 }
 
+fn presentGdi(st: *State) bool {
+    if (isNull(st.gdi_dc) or isNull(st.hwnd)) return false;
+
+    var crc: Rect = undefined;
+    if (GetClientRect(st.hwnd, @ptrCast(*void, &crc)) == 0) return false;
+    var origin = Point{ .x = crc.left, .y = crc.top };
+    if (ClientToScreen(st.hwnd, @ptrCast(*void, &origin)) == 0) return false;
+
+    var cw: i32 = crc.right - crc.left;
+    var ch: i32 = crc.bottom - crc.top;
+    const bw: i32 = @intCast(i32, st.bufw);
+    const bh: i32 = @intCast(i32, st.bufh);
+    if (cw > bw) cw = bw;
+    if (ch > bh) ch = bh;
+    // Minimized/0x0 client: there is nothing to present, but this is not an
+    // error. The next restore produces a normal WM_SIZE and frame.
+    if (cw <= 0 or ch <= 0) return true;
+
+    const uw: u32 = @intCast(u32, cw);
+    const uh: u32 = @intCast(u32, ch);
+    var geom_changed = false;
+    if (st.present_w != uw or st.present_h != uh or st.bufw != uw or st.bufh != uh) {
+        st.present_w = uw;
+        st.present_h = uh;
+        geom_changed = true;
+        logPresent(uw, uh, st.bufw, st.bufh, origin.x, origin.y);
+    }
+    // One window-DC BitBlt per frame; all glyph copies already happened in the
+    // client-sized GDI back bitmap.
+    const wdc = GetDC(st.hwnd);
+    if (isNull(wdc)) return false;
+    const hr = BitBlt(wdc, 0, 0, cw, ch, st.gdi_dc, 0, 0, SRCCOPY);
+    _ = ReleaseDC(st.hwnd, wdc);
+    if (hr == 0) {
+        if (!st.blt_failed) {
+            logLine("Blt(window<-gdi) failed");
+            st.blt_failed = true;
+        }
+        return false;
+    }
+    st.blt_failed = false;
+    if (!st.blt_logged or geom_changed) {
+        logLine("Blt(window<-gdi) ok");
+        st.blt_logged = true;
+    }
+    return true;
+}
+
 pub fn endFrame(st: *State) bool {
+    if (st.backend == BACKEND_GDI) return presentGdi(st);
     if (!isNull(st.hdc)) {
         _ = surfaceVtbl(st.back).ReleaseDC(st.back, st.hdc);
         st.hdc = nullVoid();
@@ -1354,7 +1534,13 @@ pub fn pollEvent(st: *State, raw: *RawEvent) bool {
         var pw: u32 = st.bufw;
         var ph: u32 = st.bufh;
         if (rw > 0 and rh > 0) {
-            if (resizeBack(st, rw, rh)) {
+            var resized = false;
+            if (st.backend == BACKEND_GDI) {
+                resized = gdiResize(st, rw, rh);
+            } else {
+                resized = resizeBack(st, rw, rh);
+            }
+            if (resized) {
                 pw = rw;
                 ph = rh;
                 cols = if (st.cw == 0) 1 else rw / st.cw;

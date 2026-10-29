@@ -474,6 +474,19 @@ bash scripts/win32_cross/check_win9x_imports.sh /tmp/z9edit/z9edit.exe 9x
   malformed -> white. `F2` cycles white -> solarized -> dark -> white for the
   session only (it never rewrites the config). A memory Gfx accepts
   `gfxSetTheme` and leaves the grid unchanged.
+- **GDI fallback (Phase 2.5):** startup-only backend choice in `std_gfx_pal`.
+  GDI is used when any DirectDraw open step fails, when
+  `GetDeviceCaps(GetDC(NULL), BITSPIXEL) < 8` (16-color machines), or when
+  `Z98_GFX_SOFTWARE=1`. The GDI path reuses the glyph atlas into a compatible
+  client-sized back bitmap and presents with one window-DC `BitBlt` per frame;
+  memory mode ignores the env var and never opens a backend. `gfxOpen` logs
+  exactly one `gfx: backend=ddraw|gdi` line. Both GUI tiers run the same
+  windowed/pixel sections in normal and forced-GDI modes. The automatic
+  fallback and real 16-color fidelity are operator-hardware checks.
+- **Visible startup errors:** `gfxShowError(title, msg)` uses `MessageBoxA` in
+  a GUI build (live window or before the window opens) and stderr + the
+  existing exit code in console/memory mode; `--smoke`/memory paths never call
+  it, and the tiers never trigger the message box (timeout-guarded runs).
 
 **Xvfb + Wine smoke recipe** (evidence, never a pixel gate):
 

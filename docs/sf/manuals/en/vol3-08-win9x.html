@@ -596,6 +596,17 @@ with the script that matches your toolchain, run it there, and let the
 screenshot be the proof rather than this page.</td>
 </tr>
 </table>
+<p>
+<b>16-color machines.</b> A Windows 98 machine left at 16 colors (less than
+8&nbsp;bpp) cannot use the 32-bit DirectDraw offscreen surface. The shipped
+<tt>std_gfx</tt> layer detects this at startup and uses its GDI software
+fallback instead: the same cell API, a client-sized compatible back bitmap, and
+one window-DC <tt>BitBlt</tt> per frame. Set <tt>Z98_GFX_SOFTWARE=1</tt> to force
+that path on any machine; a memory Gfx ignores the variable. The fallback and
+real 16-color palette fidelity are operator-hardware checks, and fatal GUI
+startup errors are shown in a message box rather than a console the shipping
+GUI subsystem does not have.
+</p>
 
 <h2>Common mistakes</h2>
 <p>

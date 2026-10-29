@@ -78,6 +78,8 @@ pub const Gfx = struct { opaque: *GfxState };
 
 var g_state: GfxState = undefined;
 var g_gfx: Gfx = undefined;
+var g_opened: bool = false;
+var g_mem_only: bool = false;
 
 fn initGrid(s: *GfxState, cols: u32, rows: u32) void {
     s.cols = cols;
@@ -113,6 +115,8 @@ pub fn gfxOpen(title: []const u8, cols: u32, rows: u32) GfxError!*Gfx {
     }
     s.cw = s.st.cw;
     s.ch = s.st.ch;
+    g_opened = true;
+    g_mem_only = false;
     g_gfx.opaque = s;
     return &g_gfx;
 }
@@ -127,6 +131,8 @@ pub fn gfxOpenMemory(cols: u32, rows: u32) GfxError!*Gfx {
     s.ch = MEM_CH;
     s.mem_only = true;
     s.theme = 0;
+    g_opened = true;
+    g_mem_only = true;
     g_gfx.opaque = s;
     return &g_gfx;
 }
@@ -339,6 +345,26 @@ pub fn gfxClose(g: *Gfx) void {
         pal.close(&s.st);
     }
     s.mem_only = true;
+    g_mem_only = true;
+}
+
+// Additive Phase 2.5 helper: make a fatal GUI-build error visible. A live
+// window uses MessageBoxA. Before the window opens, a GUI-subsystem process
+// (no stderr handle) still uses MessageBoxA; console/memory mode writes the
+// message to stderr and the caller keeps its existing exit code.
+pub fn gfxShowError(title: []const u8, msg: []const u8) void {
+    if (!g_mem_only and g_opened and pal.isWindowOpen(&g_state.st)) {
+        pal.showError(g_state.st.hwnd, title, msg);
+        return;
+    }
+    if (!g_mem_only and pal.guiProcess()) {
+        pal.showError(pal.nullHandle(), title, msg);
+        return;
+    }
+    @stderrWrite(msg.ptr, msg.len);
+    var nl: [1]u8 = undefined;
+    nl[0] = 10;
+    @stderrWrite(&nl[0], 1);
 }
 
 // Additive P4-M3 helper: refresh the real window title (dirty `*`). A memory

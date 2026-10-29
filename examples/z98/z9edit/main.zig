@@ -269,6 +269,14 @@ fn fail(msg: []const u8) void {
     os.exit(1);
 }
 
+// GUI-build fatal path: a live window (or a GUI-subsystem process before the
+// window opens) gets a MessageBoxA; console builds keep stderr + rc. Never used
+// by --smoke or memory-mode paths.
+fn failGui(msg: []const u8) void {
+    gfx.gfxShowError("z9edit", msg);
+    os.exit(1);
+}
+
 fn runSmoke(in_path: []const u8, out_path: []const u8) void {
     var arena = arena_mod.init(g_arena_buf[0..]);
     const b = buffer.bufLoad(&arena, in_path) catch {
@@ -349,22 +357,23 @@ fn loadOrNew(arena: *arena_mod.Arena, path: []const u8) ?*buffer.GapBuffer {
     if (file_mod.exists(path)) {
         return buffer.bufLoad(arena, path) catch |e| {
             if (e == error.OutOfMemory) {
-                fail("z9edit: cannot allocate file buffer");
+                failGui("z9edit: cannot allocate file buffer");
                 return null;
             }
             if (e == error.TooLarge) {
-                fail("z9edit: file is too large");
+                failGui("z9edit: file is too large");
                 return null;
             }
-            io.write("z9edit: cannot read ");
-            io.write(path);
-            io.write("\n");
+            var mb: [512]u8 = undefined;
+            var p = putBytes(mb[0..], 0, "z9edit: cannot read ");
+            p = putBytes(mb[0..], p, path);
+            gfx.gfxShowError("z9edit", mb[0..p]);
             os.exit(1);
             return null;
         };
     }
     return buffer.bufInit(arena, 4096) catch {
-        fail("z9edit: cannot allocate file buffer");
+        failGui("z9edit: cannot allocate file buffer");
         return null;
     };
 }
@@ -373,13 +382,13 @@ fn startWindow(arena: *arena_mod.Arena, path: []const u8, b: *buffer.GapBuffer, 
     var tb: [TITLE_MAX]u8 = undefined;
     const title = buildTitle(tb[0..], path);
     const g = gfx.gfxOpen(title, COLS, ROWS) catch {
-        fail("z9edit: gfxOpen failed");
+        failGui("z9edit: gfxOpen failed");
         return;
     };
     applyConfigTheme(g, arena);
     const st = ui.uiInit(arena, g, b, path) catch {
         gfx.gfxClose(g);
-        fail("z9edit: uiInit failed");
+        failGui("z9edit: uiInit failed");
         return;
     };
     if (live) {

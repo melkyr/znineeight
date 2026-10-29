@@ -5,7 +5,7 @@
 | **Modules** | `std_gfx` (contract + cell grid + metrics), `std_gfx_pal` (Win9x window/pump + DirectDraw7 + clipboard) |
 | **Layers** | **GUI** (outside L0–L6) — windowed cell-grid drawing, input events, and clipboard; app-facing contract over a per-OS backend |
 | **Import (by path)** | `const std_gfx = @import("std_gfx");` |
-| **Platform** | Win9x / Win98 (PE32, no-CRT profile); headless memory mode on any target |
+| **Platform** | Win9x / Win98 (PE32, no-CRT profile); DirectDraw7 windowed backend with a GDI software fallback (16-color / `< 8bpp` machines, or `Z98_GFX_SOFTWARE=1`); headless memory mode on any target |
 
 ## Module overview
 
@@ -20,7 +20,8 @@ All coordinates are **cells** (`x`, `y`), not pixels. The window is resizable;
 and the layer resizes its grid and offscreen surface. Drawing is immediate
 against the offscreen surface between `gfxBeginFrame` and `gfxEndFrame`; the
 end of a frame blits the offscreen to the primary surface 1:1 over the client
-area.
+area. On a 16-color (`< 8bpp`) machine, or when DirectDraw cannot open, the same
+cell API presents through a client-sized GDI back bitmap instead.
 
 `Color` is a `u8` palette index `0..15`. Three 16-color themes ship in
 `std_gfx_pal` — **white (default)**, **solarized (light)**, and **dark**:
@@ -41,6 +42,35 @@ The windowed path is `DDSCL_NORMAL`, primary + 640x480 offscreen
 `Blt(primary <- offscreen, DDBLT_WAIT)`. There is **no** `Flip`, no back-buffer
 caps, and no `CoInitialize`; the GUID is a local 16-byte value so `dxguid` is
 not linked.
+
+### GDI software fallback (16-color machines)
+
+Backend selection is **startup-only**. `gfxOpen` uses GDI when any step of the
+DirectDraw open sequence fails (`DirectDrawCreate` → `QueryInterface` →
+`SetCooperativeLevel` → primary/back `CreateSurface` → clipper), when
+`GetDeviceCaps(GetDC(NULL), BITSPIXEL) < 8`, or when `Z98_GFX_SOFTWARE=1` is set
+in the environment. `gfxOpenMemory` ignores that variable and never opens a
+backend.
+
+The GDI path reuses the same glyph atlas: each cell fills its background and
+`BitBlt`s the atlas mask/color into a compatible client-sized back bitmap, then
+one `BitBlt` presents that bitmap to the window DC per frame (no per-cell
+`TextOutA`). The bitmap/DC pair is sized at open and recreated on `WM_SIZE`;
+both are deleted on replacement and at `gfxClose`. `gfxOpen` logs exactly one
+line, `gfx: backend=ddraw` or `gfx: backend=gdi`.
+
+The automatic fallback branch and real 16-color palette fidelity are
+**operator-hardware** checks; CI exercises the forced-GDI path with
+`Z98_GFX_SOFTWARE=1` (same windowed pixel assertions, plus the backend marker).
+
+### Visible startup errors
+
+`gfxShowError(title, msg)` makes a fatal GUI-build failure visible: a live
+window uses `MessageBoxA`, and a GUI-subsystem process before the window opens
+does too. Console and memory modes write the message to stderr and the caller
+keeps its existing exit code. `--smoke` and memory-mode paths never call it.
+`MessageBoxA` is not exercised by the tiers (all windowed runs are
+timeout-guarded).
 
 ### COM vtable discipline
 
@@ -107,9 +137,11 @@ pub const Event = struct {
 
 ### Gfx lifecycle
 
-**`gfxOpen(title, cols, rows) GfxError!*Gfx`** — create a window + primary +
-offscreen surface + glyph atlas (ASCII 32..126, `SYSTEM_FIXED_FONT`, metrics
-from `GetTextMetricsA`). Opens fail closed if any DDraw step fails.
+**`gfxOpen(title, cols, rows) GfxError!*Gfx`** — create a window + glyph atlas
+(ASCII 32..126, `SYSTEM_FIXED_FONT`, metrics from `GetTextMetricsA`) plus the
+startup-selected backend: DirectDraw primary/offscreen surfaces, or the GDI
+software back bitmap when DirectDraw cannot open, the display is `< 8bpp`, or
+`Z98_GFX_SOFTWARE=1`. Logs one `gfx: backend=ddraw|gdi` line.
 
 **`gfxOpenMemory(cols, rows) GfxError!*Gfx`** — backend-free cell grid. No
 window, no DDraw, no clipboard. It exists so headless `--dump-grid` / save-byte
@@ -128,7 +160,14 @@ leaves the cell grid unchanged** (cells are ASCII with no color payload).
 
 **`gfxGetTheme(g) Theme`** — the active theme (`white` by default).
 
-**`gfxClose(g) void`** — release surfaces, atlas, brushes, and the window.
+**`gfxClose(g) void`** — release surfaces (or the GDI back bitmap/DC), atlas,
+brushes, and the window.
+
+**`gfxShowError(title, msg) void`** — additive visible-error helper for fatal
+GUI-build startup/IO/OOM paths. A live window (or a GUI-subsystem process before
+its window opens) shows `MessageBoxA`; console/memory mode writes `msg` to
+stderr and the caller keeps its exit code. Never called from `--smoke` or
+memory mode.
 
 ### Themes
 
@@ -142,12 +181,14 @@ theme's bright is black.
 
 ### Frame + primitives
 
-**`gfxBeginFrame(g) bool`** — `GetDC` the offscreen and select the fixed font.
-Call before drawing; `false` means no surface/DC.
+**`gfxBeginFrame(g) bool`** — select the fixed font on the offscreen DC (the
+DDraw surface DC or the GDI back-bitmap DC). Call before drawing; `false` means
+no surface/DC.
 
-**`gfxEndFrame(g) bool`** — `ReleaseDC`, compute the 1:1 client blit, and
-`Blt` to the primary. Logs `present 1:1 client=WxH back=WxH dest=(x,y)` when the
-present geometry changes.
+**`gfxEndFrame(g) bool`** — release the DDraw surface DC (GDI keeps its bitmap
+DC), compute the 1:1 client blit, then `Blt` to the primary (DDraw) or one
+`BitBlt` to the window DC (GDI). Logs
+`present 1:1 client=WxH back=WxH dest=(x,y)` when the present geometry changes.
 
 **`gfxClear(g, bg)`** — clear the whole grid and fill the offscreen.
 

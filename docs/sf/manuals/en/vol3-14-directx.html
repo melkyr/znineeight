@@ -146,6 +146,17 @@ tree gate. The boundary on this page is unchanged: that is Wine evidence, not a
 period-driver or era-hardware measurement, and this chapter still shows no
 <tt>src/vol3/</tt> sample and makes no pixel or display-mode claim.
 </p>
+<p>
+<b>Phase&nbsp;2.5 GDI fallback (2026-10-29).</b> <tt>std_gfx</tt> now selects
+its backend once at open: if any DirectDraw open step fails, if the display is
+below 8&nbsp;bpp (a 16-color machine), or if <tt>Z98_GFX_SOFTWARE=1</tt> is set,
+it presents the same glyph atlas through a client-sized GDI back bitmap and one
+window-DC <tt>BitBlt</tt> per frame. The automatic fallback branch and real
+16-color palette fidelity remain operator-hardware checks; the tree's CI proves
+only the forced-GDI path. Fatal GUI startup errors use <tt>MessageBoxA</tt>
+instead of vanishing into a console. DirectDraw is still the preferred path on
+a true-color machine.
+</p>
 
 <h2>DirectX on the 1998 machine</h2>
 <p>
