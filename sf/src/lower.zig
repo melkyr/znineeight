@@ -13514,9 +13514,19 @@ fn lowerForStmtStep(self: *LirLowerer, f: *StmtFrame) void {
           // an illegal array-to-array C assignment. The item is then a real
           // array value, so indexing, whole-row copies (`var r: [N]T = row`)
           // and nested `for` all work.
+          // Task 4 (Phase 2.5): a `|*item|` capture is a pointer into the
+          // iterable storage. Task 3 published the pointer type id on the
+          // `for_stmt` node (not `child_0`); the item temp is that pointer
+          // loaded by element address (`&base[idx]`, decay=2) with no
+          // by-value array copy.
           var item_decay: u8 = @intCast(u8, 0);
           var item_tid_type = elem_type[0];
-          if (elem_type[0] != type_mod.TYPE_UNDEFINED and elem_type[0] != type_mod.TYPE_VOID) {
+          var is_mut_item = (node.flags & @intCast(u8, 0x10)) != @intCast(u8, 0);
+          if (is_mut_item) {
+              var mut_ptr_tid = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx) orelse type_mod.TYPE_UNDEFINED;
+              item_tid_type = mut_ptr_tid;
+              item_decay = @intCast(u8, 2);
+          } else if (elem_type[0] != type_mod.TYPE_UNDEFINED and elem_type[0] != type_mod.TYPE_VOID) {
               var it_ety = self.ctx.registry.types_items[@intCast(usize, elem_type[0])];
               if (it_ety.kind == type_mod.TypeKind.array_type) {
                   item_decay = @intCast(u8, 3);

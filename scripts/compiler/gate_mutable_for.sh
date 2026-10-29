@@ -54,6 +54,58 @@ count_lir() {
     find "$1" -maxdepth 1 -type f -name '.zig1_lir.tmp' 2>/dev/null | wc -l | tr -d ' '
 }
 
+# Task 4 e2e: default-mode emission (no -f), build via the emitted
+# build_target.sh, run under a timeout, and assert exact stdout. Any of
+# emit/build/run nonzero, a timeout, or wrong stdout fails the case (the
+# pre-lowering compiler's `|*` binding is RED by construction).
+run_e2e() {
+    local label="$1" name="$2" want="$3"
+    local dir cwd out prog rc
+    dir="$ROOT/repro/mi_matrix/known_excluded/$name"
+    cwd="$WORK/e2e-$name"
+    out="$WORK/e2e-$name.out"
+    prog="$out/prog"
+    rm -rf "$cwd" "$out"
+    mkdir -p "$cwd" "$out"
+    set +e
+    ( cd "$cwd" && timeout 120 "$ZIG1" -o "$out" "$dir/main.zig" ) \
+        >"$WORK/e2e-$name.emit.out" 2>"$WORK/e2e-$name.emit.err"
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+        bad "$label: emit rc=$rc (stderr: $(tr '\n' '|' <"$WORK/e2e-$name.emit.err" | head -c 400))"
+        return
+    fi
+    if [ ! -f "$out/build_target.sh" ]; then
+        bad "$label: emitted build_target.sh missing"
+        return
+    fi
+    set +e
+    ( cd "$out" && timeout 120 sh "$out/build_target.sh" linux "$prog" ) \
+        >"$WORK/e2e-$name.build.out" 2>"$WORK/e2e-$name.build.err"
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+        bad "$label: build rc=$rc (stderr: $(tr '\n' '|' <"$WORK/e2e-$name.build.err" | head -c 400))"
+        return
+    fi
+    set +e
+    ( cd "$cwd" && timeout 30 "$prog" ) \
+        >"$WORK/e2e-$name.run.out" 2>"$WORK/e2e-$name.run.err"
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+        bad "$label: run rc=$rc (stderr: $(tr '\n' '|' <"$WORK/e2e-$name.run.err" | head -c 400))"
+        return
+    fi
+    printf '%s\n' "$want" >"$WORK/e2e-$name.want"
+    if ! cmp -s "$WORK/e2e-$name.run.out" "$WORK/e2e-$name.want"; then
+        bad "$label: stdout '$(tr '\n' '|' <"$WORK/e2e-$name.run.out")' want '$want'"
+        return
+    fi
+    note "$label: ok"
+}
+
 # run_check <label> <fixture-name> <want-rc> [extra zig1 args...]
 run_check() {
     local label="$1" name="$2" want_rc="$3"; shift 3
@@ -123,6 +175,17 @@ expect_err "l warning -W"            mutable_for_warning             'warning\[6
 run_check "flag -o missing"          mutable_for_slice_ok            0 -o /nonexistent/t3_gate_missing
 run_check "flag --output-dir missing" mutable_for_slice_ok           0 --output-dir /nonexistent/t3_gate_missing
 run_check "flag -d without output"   mutable_for_slice_ok            0 -d
+
+# Task 4 e2e: lowering + build + run. Values prove the `|*` capture aliases
+# the source storage (in-place mutation observed in the caller's buffer).
+note "--- e2e (default mode, build_target.sh linux) ---"
+run_e2e "e2e a slice"            mutable_for_slice_ok           "1 1 1"
+run_e2e "e2e b row ptr"          mutable_for_row_ptr_ok         "1 11 31"
+run_e2e "e2e d array ident"      mutable_for_array_ident_ok     "11 12 13"
+run_e2e "e2e e const binding"    mutable_for_const_binding_ok   "1 1 1"
+run_e2e "e2e f for_index_range"  mutable_for_for_index_range_ok "1 1 1"
+run_e2e "e2e g discard"          mutable_for_discard_ok         "0 0 0"
+run_e2e "e2e h nested"           mutable_for_nested_ok          "1 1 1 13 23"
 
 if [ "$fail" -eq 0 ]; then
     echo "MUTABLE_FOR GATE OK"
