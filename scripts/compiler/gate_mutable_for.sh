@@ -16,6 +16,7 @@ set -euo pipefail
 #   (j) mutable_for_for_index_range_ok   `for (s, 0..) |*x, i|`       -> rc=0
 #   (k) mutable_for_if_capture_reject    `if (o) |*x|`                -> rc=2 parse error
 #   (l) mutable_for_warning              `"\q"` + `|*x|`              -> rc=0 + warning[6]; `-W` -> rc=2
+#   (m) mutable_for_unresolved_elem_reject `for (p) |*x|`, p: *u32     -> rc=2, error[3078], no abort (not 133)
 # plus `--check -o <missing>` / `--check --output-dir <missing>` / `--check -d`
 # (no output dir) on a positive fixture -> rc=0 (the flags are truly ignored).
 #
@@ -189,6 +190,11 @@ run_check "l warning"                mutable_for_warning             0
 expect_err "l warning"               mutable_for_warning             'warning\[6\]'
 run_check "l warning -W"             mutable_for_warning             2 -W
 expect_err "l warning -W"            mutable_for_warning             'warning\[6\]'
+run_check "m unresolved elem"        mutable_for_unresolved_elem_reject 2
+expect_err "m unresolved elem"       mutable_for_unresolved_elem_reject 'error\[3078\]: mutable for-item capture requires an iterable with a resolvable element type'
+if grep -q 'panic:' "$WORK/mutable_for_unresolved_elem_reject.stderr"; then
+    bad "m unresolved elem: compiler aborted with panic (rc must not be 133)"
+fi
 run_check "flag -o missing"          mutable_for_slice_ok            0 -o /nonexistent/t3_gate_missing
 run_check "flag --output-dir missing" mutable_for_slice_ok           0 --output-dir /nonexistent/t3_gate_missing
 run_check "flag -d without output"   mutable_for_slice_ok            0 -d

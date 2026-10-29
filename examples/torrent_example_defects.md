@@ -607,3 +607,38 @@ collision. The P3-M1 hoisted-decl debug-map rows stay on their existing temp dec
 `gcc -std=c89 -pedantic -Werror=declaration-after-statement` over the full self-emitted
 compiler C is clean. The dump bytes move (declaration order), so the 8-pin re-baseline happens
 once at the end of Task 9; runtime behavior and corpus classes are unchanged.
+
+---
+
+## D12 — Module-scope untyped array literal initializer emits an invalid array-to-array assignment
+
+**Status:** OPEN — pre-existing, not fixed (out of scope). Found 2026-10-28 during Phase 2.5
+Task 4 fix round 1 while building the `mutable_for_module_array_ok` fixture.
+
+**Defect.** An untyped array-literal initializer at module scope is lowered as a tuple temp and
+then assigned to the array global, which is an illegal array-to-array C assignment. The explicit
+element-typed literal works.
+
+**Reproducer.**
+
+```zig
+pub var arr: [3]u32 = .{ 1, 2, 3 };
+```
+
+`zig1` exits rc=0 and emits `zG_<h>_arr = zT_0;`, where `zT_0` is a synthesized **tuple** temp
+(`Tup_*` type). gcc then rejects the emitted C with
+`error: assignment to expression with array type`. The explicit form
+`pub var arr: [3]u32 = [3]u32{ 1, 2, 3 };` emits the byte-wise element copy and builds cleanly.
+
+**Root cause.** The module-level initializer path does not use the array-literal annotation (or
+infer it from the declared array type) before lowering the value: the untyped `.{ ... }`
+materializes as a tuple temp, and the global store emits a whole-aggregate `=` instead of the
+existing element-wise copy used for typed array literals.
+
+**Impact / workaround.** Module-scope untyped array initializers are unusable when the emitted C
+must compile. Spell the literal with its array type (`[N]T{ ... }`) — this is the workaround used
+by the Task 4 fixture. Scope: no compiler change in Phase 2.5 Task 4.
+
+**Reference points.** `sf/src/lower.zig` module-init/global-store lowering; the array-literal
+annotation path used by `repro/mi_matrix/multiarray_literal_init_xmod`; Task 4 report fix round 1
+(module-array fixture).

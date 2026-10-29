@@ -6224,6 +6224,7 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
         }
         else if (cnode.kind == AstKind.range_exclusive or cnode.kind == AstKind.range_inclusive) { elem_box[0] = tid; }
         var mut_reject: bool = false;
+        var mut_reject_msg: []const u8 = "mutable for-item capture requires an addressable element (a range or a copied array value has none)";
         if (is_mut_item) {
             if (cnode.kind == AstKind.range_exclusive or cnode.kind == AstKind.range_inclusive) {
                 // A range item is a loop value, not storage: there is no element
@@ -6250,9 +6251,16 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
                     }
                 }
                 if (!mut_aliases) { mut_reject = true; }
+            } else if (elem_box[0] == type_mod.TYPE_UNDEFINED and ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0)) {
+                // T4 fix round 2: a named mutable capture over an iterable with
+                // no resolvable element (`*T` whose pointee is not an array)
+                // has no addressable item type. Reject in sema so lowering's
+                // channel invariant (and its guard) is never reached.
+                mut_reject = true;
+                mut_reject_msg = "mutable for-item capture requires an iterable with a resolvable element type";
             }
             if (mut_reject) {
-                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED)), self.source_file_id, for_item_s, for_item_e, "mutable for-item capture requires an addressable element (a range or a copied array value has none)");
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED)), self.source_file_id, for_item_s, for_item_e, mut_reject_msg);
             }
         }
         if (!mut_reject and ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
