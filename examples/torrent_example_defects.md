@@ -439,8 +439,9 @@ of latency-sensitive or panic-path output.
 
 ## D9 — Semantic analysis recurses on the C stack; deep expressions segfault instead of erroring
 
-**Status:** OPEN — mitigated this milestone by a depth guard (clean `error[...]` instead of a
-segfault) plus a documented ceiling. Full iterative conversion of the semantic analyzer is
+**Status:** MITIGATED — executed in Phase 2.5 Task 2 (limit-family diagnostic,
+`SEMA_GUARD_MAX = 130`) with a clean `error[...]` instead of a segfault plus a
+documented ceiling. Full iterative conversion of the semantic analyzer is
 **deferred** per operator ruling 2026-10-26 ("we can visit that later if needed but now it is
 not"). Found 2026-10-26 while validating the iterative-lowering milestone
 (`docs/superpowers/plans/2026-10-26-iterative-lowering-plan.md`), Task 2.
@@ -585,7 +586,7 @@ beyond console programs.
 
 ## D11 — Local declarations are emitted after statements (not strict C89)
 
-**Status:** FIXED at root cause (2026-10-28, Phase 2.5 Task 7, commit `56350635` base + Task-7
+**Status:** FIXED at root cause — executed in Phase 2.5 Task 7 (2026-10-28, commit `56350635` base + Task-7
 change; found 2026-10-28 in the Win9x/OpenWatcom conformance audit).
 
 **Symptom.** In an emitted function, the hoisted temp declarations come first, but the

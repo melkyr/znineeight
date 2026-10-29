@@ -11,6 +11,84 @@ Each completed plan that moves the self-emission fixed point rotates the seed
 (new zig1 binary + new self-emission C), overwriting the archive and appending
 a provenance entry here. Prior seeds remain recoverable in git history.
 
+## 2026-10-29 — seed v128 (HEAD a2e1db55)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12235048 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-10-29 |
+| HEAD | `a2e1db55` |
+| seed binary md5 | `18b4b10c8e014b486b648392d55ccdbe` |
+| self-emission C | 48 `.c` + 49 `.h` (12235048 bytes) |
+| fixed point | `18b4b10c8e014b486b648392d55ccdbe` |
+| lib manifest | `lib/manifest.md5` (50 std files; md5 `8b78593a7dabb86f9f01cd9e7994ab9f`) |
+| archive md5 | `5093ca9eaacd03bdb29c07777749cc16` |
+
+### Phase 2.5 milestone (v128)
+
+- **Iterative-lowering leftovers (T1/T2, 2026-10-27/28).** Removed the
+  unreachable `lowerStmtLeaf*` tail chains; added the
+  `scripts/compiler/gate_builtin_names.sh` name-table gate; added the
+  fixed-arity delivery-scan guard. Raised the semantic-analyzer depth guard to
+  the measured ceiling (`SEMA_GUARD_MAX = 130`) with its own limit-family
+  diagnostic `error[3077]` (`ERR_9001_ICE`/`error[3043]` stays for genuine
+  ICEs); applied the deferred M4 fixes (Win32 cmdline quoting, PE-to-COFF
+  fallback, FILE aux long names, `.zig1_dbg.tmp` cleanup, pipefail-safe
+  `gate_debug_map` grep).
+- **Mutable `for` capture (T3/T4, 2026-10-28).** `for (xs) |*item|` /
+  `|*item, index|` / `|*_|` bind a pointer into the iterable storage; the
+  capture is `*const T` for const element types and the binding stays
+  immutable while `item.*` / `item.field` write through it. Added the
+  sema-only `--check` mode. Range iterables, non-variable array values, and
+  iterables with no resolvable element type reject with `error[3078]`.
+- **`std.fold` (T5, 2026-10-29).** Added `foldU32` / `foldI32` / `foldUsize`
+  and re-exported `std.fold` from the `std.zig` barrel (lib payload is now 50
+  files = `std.zig` + 49 `std_*.zig`).
+- **Win9x toolchain conformance (T7/Task 9, 2026-10-28).** Fixed D11
+  (declarations before statements in emitted functions), emitted Windows text
+  as CRLF, dropped the generated-script `/za` `/we` `/Za` `/WX` flags, added
+  the `build_mingw_crt.bat` / `build_mingw_nocrt.bat` fallback pair, made
+  emission warning-clean at the origin (`gate_warn_clean.sh`, sole suppression
+  `-Wno-long-long`, gcc-gate-only), and made `sf/src/emit_support.zig` the
+  single hand-edited source for the runtime support files.
+- **GUI 16-color GDI fallback (T8, 2026-10-29).** `std_gfx` falls back from
+  DirectDraw to a GDI back-buffer path on 16-color / unusable-DDraw machines
+  and reports open failures visibly (`gfxShowError`); `gfx_demo` smoke
+  failures stay on stderr with the existing exit code.
+- **Battery at rotation:** corpus 1193 dirs = 1017 OK / 58 GREEN / 118 FAIL /
+  0 ICE / 0 CRASH; frozen-1124 0 movers (`518eca1a…`); goldens 5/5 byte-exact;
+  8 dump pins re-recorded once; markers 3304 lines / 37896 B; examples 26/26;
+  stdlib 339/0 + crosscheck 10/10; all seven gates and the five tier suites
+  green (dbg 38/38 twice, dbg_core 26/26, gfx 24/24 normal + forced, edit
+  38/38, edit_gui 64/64 normal + forced).
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `eb96956e3281711c452d78c05a8587da` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) plus the MinGW fallback pair `build_mingw_crt.bat` / `build_mingw_nocrt.bat` |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 50 std `.zig` + `manifest.md5` |
+| HEAD/date | `a2e1db55` / 2026-10-29 |
+
+Provenance note: the archived binary (md5 18b4b10c8e014b486b648392d55ccdbe) was captured by
+scripts/seed/archive_seed.sh at HEAD a2e1db55; gcc of the archive's self-emission
+C reproduces the self-emission fixed point `18b4b10c8e014b486b648392d55ccdbe` — both are the same
+compiler state at HEAD a2e1db55. The compiler self-build uses `-ffast` (user
+programs default to `-fsafe`), so the recorded fixed point is the `-ffast`
+binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
 ## 2026-10-28 — seed v127 (HEAD 1b20dc71)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir

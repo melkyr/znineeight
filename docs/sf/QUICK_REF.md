@@ -30,45 +30,51 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-28 — seed v127]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-29 — seed v128]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in `release/seed/SEED_README.txt` and the v127 CHANGELOG entry.
+current md5s in `release/seed/SEED_README.txt` and the v128 CHANGELOG entry.
 
-**Current seed: v127** (rotated 2026-10-28 at HEAD `1b20dc71`, the Phase 2 P4-M4
-theme fix round: v127 refreshes the std payload with `std_gfx.Theme` +
-`gfxSetTheme`/`gfxGetTheme`, the white/solarized/dark PAL tables, and the black
-color-atlas background fix; the compiler fixed point stays the pre-P4 leaf-tail
-cleanup `60e3a916` state — P4 adds no compiler source change). Archived binary md5 (= fixed point)
-`2fc64ffedb3ba5f4e8adf35896729e54`; archive md5
-`70a6173979fe74db8d00b0e1212153d7`; Win9x zip md5
-`adc2c2bd424783118a8b05b6336c1f0e`; `gen/` 48 `.c` + 49 `.h` (11,913,427
-bytes); `lib/` **49** std `.zig` (47 prior + `std_gfx.zig` +
-`std_gfx_pal.zig`) plus `lib/manifest.md5` (per-file std attribution pin,
-manifest md5 `fc9646bfcfecb14fd3872833bf13d43a`). The rebuilt archive is
-two-hop (`build_from_seed.sh`: hop1 == hop2 == `2fc64ffe…`); the compiler↔std
-separation means the `lib/` payload does not move the fixed point. The compiler
-source is **`-fsafe`-clean** (12 intentional wraps + 3 real safe-mode
-defects fixed). Markers (`--markers --dump-c89` on `mud_server`): **3252 lines
-/ 37293 B** (unchanged by P4; no compiler source change).
+**Current seed: v128** (rotated 2026-10-29 at HEAD `a2e1db55`, the Phase 2.5
+cleanup + mutable-for + fold + Win9x-conformance closeout: T1/T2 leftovers,
+T7/Task 9 Win9x conformance, T3/T4 mutable `for`, T5 `std.fold`, T8 GUI
+16-color GDI fallback). Archived binary md5 (= fixed point)
+`18b4b10c8e014b486b648392d55ccdbe`; archive md5
+`5093ca9eaacd03bdb29c07777749cc16`; Win9x zip md5
+`eb96956e3281711c452d78c05a8587da`; `gen/` 48 `.c` + 49 `.h` (12,235,048
+bytes); `lib/` **50** std `.zig` (`std.zig` + 49 `std_*.zig`, adding
+`std_fold.zig`) plus `lib/manifest.md5` (per-file std attribution pin,
+manifest md5 `8b78593a7dabb86f9f01cd9e7994ab9f`). v128 is a
+compiler-source-changing rotation, so `build_from_seed.sh` converges at
+**hop2 == hop3** (`18b4b10c…`; hop1 is `0c03752e…`). The compiler source is
+**`-fsafe`-clean** (12 intentional wraps + 3 real safe-mode defects fixed).
+Markers (`--markers --dump-c89` on `mud_server`): **3304 lines
+/ 37896 B** (v128 current; the pre-v128 / v127-era value was 3252 lines /
+37293 B). The increase is interned-id/type/forward-decl renumbering from the
+authorized T5 `std_fold` barrel addition plus the post-v127 intern/emitter
+shifts, not a behavior change: the 8 pins, the frozen-1124 corpus and the
+goldens are all exact.
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
 `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
-`zig1 -osw` compiler C/runtime with only the two emitted static-CRT compiler
-build scripts, no prebuilt `zig1.exe`. To build the compiler on the era
-machine:
+`zig1 -osw` compiler C/runtime with the two emitted static-CRT compiler
+build scripts plus the MinGW fallback pair, no prebuilt `zig1.exe`. To build
+the compiler on the era machine:
 
 ```bat
 cd zig1-seed-w9\win
 build_owc_crt.bat ..\zig1.exe
 ```
 
-or `build_target_crt.bat ..\zig1.exe`; `..\lib\` is the standard library. Both
-use a static CRT (`/MT` / OpenWatcom static CLIB), no `msvcrt.dll`, single EXE,
-and may import KERNEL32 names beyond the strict 9x whitelist. The compiler
+or `build_target_crt.bat ..\zig1.exe`; with a Windows-hosted MinGW gcc use
+`build_mingw_crt.bat ..\zig1.exe` (CRT-linked) or
+`build_mingw_nocrt.bat ..\zig1.exe` (no-CRT). `..\lib\` is the standard
+library. The MSVC/OWC pair uses a static CRT (`/MT` / OpenWatcom static CLIB),
+no `msvcrt.dll`, single EXE, and may import KERNEL32 names beyond the strict 9x
+whitelist. The compiler
 source in the zip is `-fsafe`-clean; the Windows-hosted `std_async.zig:259`
 field-resolution failure was root-caused to a C89 update-stream fseek elision
 in `spill_store.zig` and fixed, so this CRT build is **app-ready**. The compiler's own
@@ -141,12 +147,12 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v127 carries the full 49 std `.zig`** = `std.zig` plus
-48 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
+tracked seed archive **v128 carries the full 50 std `.zig`** = `std.zig` plus
+49 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
 
-**Std-module inventory:** the `sf/src` std set is **48** `std_*.zig` + `std.zig`
+**Std-module inventory:** the `sf/src` std set is **49** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
 `std_net`, `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`,
 `std_time_pal`, `std_buf`, `std_file`, `std_file_pal`, `std_stdin`,
@@ -155,10 +161,11 @@ and `SEED_README.txt`.
 `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`,
 `std_utf8`, `std_http`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
 `std_num`, `std_pathfind`, `std_hpa`, `std_physics`, `std_asn1`, `std_x509`,
-`std_tls`, `std_wireguard`, `std_tcpip`, `std_gfx`, `std_gfx_pal`). `std.zig` re-exports
-the core **13** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/buf`);
+`std_tls`, `std_wireguard`, `std_tcpip`, `std_gfx`, `std_gfx_pal`,
+`std_fold`). `std.zig` re-exports
+the core **14** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/buf/fold`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
-`scripts/seed/build_from_seed.sh` installs all 49 into the rebuilt compiler's `lib/`.
+`scripts/seed/build_from_seed.sh` installs all 50 into the rebuilt compiler's `lib/`.
 **`std_crypto` (M4):** carries streaming SHA-1/SHA-256/MD5 + CRC-32 plus RC4 (`rc4Init`/`rc4Apply`, RFC 6229 vectors) and modular exponentiation (`modpow`, fixed 32-bit limbs sized for the MSE/PE 768-bit Diffie-Hellman prime) for the encrypted handshake.
 **`std_crypto` M2 additions:** SHA-384/512, HMAC-SHA256 (one-shot + streaming), HKDF extract/expand (RFC 5869), BLAKE2s + HMAC-BLAKE2s (RFC 7693 / WireGuard MAC), and verify-only RSA PKCS#1 v1.5 / PSS (RFC 8017, generic modexp cap 4096-bit). Errors: `BadSignature` / `Corrupt` (`UnsupportedAlgorithm` is unrepresentable via `HashAlg`).
 **`std_cipher` (M2):** ChaCha20 (RFC 8439, 20 rounds unrolled), Poly1305 (donna 5×26-bit limbs, constant-time), ChaCha20-Poly1305 AEAD (`error.AuthenticationFailed`), AES-128 (FIPS-197, 4 KiB `const` T-tables `R/r` rodata), AES-128-GCM (SP800-38D, GHASH 4-bit tables). Pure, no heap/arena; fixtures `stdlib_chacha_poly_xmod` + `stdlib_aes_gcm_xmod`; T-table gate `scripts/compiler/gate_cipher_rodata.sh`. Doc: `sf/docs/std_lib/cipher.md`.
