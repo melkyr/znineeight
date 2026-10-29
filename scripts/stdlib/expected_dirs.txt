@@ -127,6 +127,9 @@ repro/mi_matrix/stdlib_file_write_xmod
 repro/mi_matrix/stdlib_file_writeall_xmod
 repro/mi_matrix/stdlib_fileio_xmod
 repro/mi_matrix/stdlib_floatcast_xmod
+repro/mi_matrix/stdlib_fold_i32_ok_xmod
+repro/mi_matrix/stdlib_fold_u32_ok_xmod
+repro/mi_matrix/stdlib_fold_usize_ok_xmod
 repro/mi_matrix/stdlib_for_continue_xmod
 repro/mi_matrix/stdlib_for_index_range_xmod
 repro/mi_matrix/stdlib_hash_sha384_512_xmod

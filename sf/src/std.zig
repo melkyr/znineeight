@@ -11,3 +11,4 @@ pub const bits = @import("std_bits.zig");
 pub const os = @import("std_os.zig");
 pub const time = @import("std_time.zig");
 pub const buf = @import("std_buf.zig");
+pub const fold = @import("std_fold.zig");

@@ -612,18 +612,27 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (2026-10-28 — Phase 2.5 Task 9 warning-clean emission re-baseline).**
+**8-pin table (2026-10-28 — Phase 2.5 Task 5 std_fold barrel re-baseline).**
 Measured with the seed-built compiler from the repo root with relative entry
 paths: `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`.
 
-**All 8 moved once**, by design: Task 9 fixes the emitted C at the origin
-(string-literal/field pointer casts, C89 extern declarations for modules without
-`@cInclude`, `label: ;` after terminal basic blocks, non-`static` const-init
-globals, and the split `build_target.sh` template), so both `-fsafe` and
+**All 8 moved once**, by design: `sf/src/std.zig` now re-exports
+`std_fold` (`pub const fold = @import("std_fold.zig");`). Its three per-type
+signatures (u32/i32/usize slice + fn-pointer types) are interned for every
+`std`-importing program, shifting later type ids, so both `-fsafe` and
 `-ffast` dump bytes move. Runtime behavior is unchanged: goldens 5/5
-byte-identical and corpus classification 0 movers. Previous values are the
-historical tables below. The absolute pin values are **compiler-build
-dependent**, so only same-build comparisons are meaningful.
+byte-identical (gol/lisp/json/mud) and corpus classification 0 movers.
+Previous values are the historical tables below. The absolute pin values are
+**compiler-build dependent**, so only same-build comparisons are meaningful.
+
+| Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
+|---|---|---|
+| `examples/z98/mud_server/main.zig` | `c52b9bb9267917fa13fa7207ae84e706` | `beea82815abed32cec443b4393f18cfb` |
+| `examples/z98/game_of_life/main.zig` | `078c7c6ce29b86f4ad8b369f534eb337` | `d9eb5b2f5ef7820af4d03a568cb1203f` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `4d08641e5eed3e5c90a67ab5489c5957` | `8a1905f24bc3fe0cdb0c5eeb55af4ac3` |
+| `examples/z98/json_parser/main.zig` | `c03d635c051beb66f9226b5f55285038` | `f43bb7b8be53d609edebeeee471e9fd5` |
+
+Historical 8-pin table (2026-10-28, Phase 2.5 Task 9 warning-clean emission re-baseline; superseded above):
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|

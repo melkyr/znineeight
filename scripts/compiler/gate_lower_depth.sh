@@ -21,11 +21,11 @@ set -euo pipefail
 #      does not trip this case passes with a note;
 #   5. the four 8-pin entries still emit and their `-fsafe`/`-ffast`
 #      `--dump-c89` md5s match the authoritative 8-pin table (Phase 2.5
-#      Task 9 warning-clean-emission re-baseline, both modes moved):
-#        mud  acc5ab7f68460815b11aa166240c1771 / b38f54f4137ff9c45ef4825749cb6a14
-#        gol  34ec050bc1b1815d12c62f52050b7285 / b1693ac1a7b1a042c5d8653b944b9bc1
-#        lisp 0613c6fe7444ab0268f98268cc6fbfcb / e4c1c144ef57163689a3035d1a014a2f
-#        json 4b88304ae606bbe71d96a66f5e2b5569 / a952b3fac10d3cc88d1224d7a7cc8ca8
+#      Task 5 std_fold barrel re-baseline, both modes moved):
+#        mud  c52b9bb9267917fa13fa7207ae84e706 / beea82815abed32cec443b4393f18cfb
+#        gol  078c7c6ce29b86f4ad8b369f534eb337 / d9eb5b2f5ef7820af4d03a568cb1203f
+#        lisp 4d08641e5eed3e5c90a67ab5489c5957 / 8a1905f24bc3fe0cdb0c5eeb55af4ac3
+#        json c03d635c051beb66f9226b5f55285038 / f43bb7b8be53d609edebeeee471e9fd5
 #      (left = `-fsafe`, right = `-ffast`);
 #   6. a generated 120-term RUNTIME-VALUED (not literal-folded) left-deep `+`
 #      chain compiles rc=0 under `ulimit -s 1024` (Task 2 trampoline) and its
@@ -281,13 +281,13 @@ pin_check() {
 }
 
 pin_check "examples/z98/mud_server/main.zig" \
-    "acc5ab7f68460815b11aa166240c1771" "b38f54f4137ff9c45ef4825749cb6a14" mud_server
+    "c52b9bb9267917fa13fa7207ae84e706" "beea82815abed32cec443b4393f18cfb" mud_server
 pin_check "examples/z98/game_of_life/main.zig" \
-    "34ec050bc1b1815d12c62f52050b7285" "b1693ac1a7b1a042c5d8653b944b9bc1" game_of_life
+    "078c7c6ce29b86f4ad8b369f534eb337" "d9eb5b2f5ef7820af4d03a568cb1203f" game_of_life
 pin_check "examples/z98/lisp_interpreter_curr/main.zig" \
-    "0613c6fe7444ab0268f98268cc6fbfcb" "e4c1c144ef57163689a3035d1a014a2f" lisp_interpreter_curr
+    "4d08641e5eed3e5c90a67ab5489c5957" "8a1905f24bc3fe0cdb0c5eeb55af4ac3" lisp_interpreter_curr
 pin_check "examples/z98/json_parser/main.zig" \
-    "4b88304ae606bbe71d96a66f5e2b5569" "a952b3fac10d3cc88d1224d7a7cc8ca8" json_parser
+    "c03d635c051beb66f9226b5f55285038" "f43bb7b8be53d609edebeeee471e9fd5" json_parser
 
 # ---- 6. 120-term runtime-valued left-deep `+` chain (Task 2 RED->GREEN) ----
 # Fixture (validated shape): each term is a u32 local seeded through
