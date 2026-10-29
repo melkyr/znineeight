@@ -77,8 +77,8 @@ default to no-CRT. The zip is not a fixed-point artifact; `archive_seed.sh`
 packs it deterministically with python3 `zipfile`.
 
 **Phase 1 closeout:** v119 completes the TLS + WireGuard phase. On the rotated
-compiler (`45158dce…`) the full std gate is **339/0** with crosscheck
-**10/10** (349 compiler invocations), `tier_tls.sh` is **19/19** (`Z98_NET=1`), and
+compiler (`45158dce…`) the full std gate is **336/0** with crosscheck
+**10/10** (346 compiler invocations), `tier_tls.sh` is **19/19** (`Z98_NET=1`), and
 `tier_wireguard.sh` is **13/13** (4 config checks + 5 in-netns integration
 cases + 4 build/import checks; kernel WireGuard netns, Linux + Wine). Measured
 demo RAM/CPU tables are in `examples/z98/demo/{tls_demo,wireguard_demo}/README.md`.

@@ -1464,6 +1464,40 @@ endian-tagged append functions exist because wire and file formats need them.
 </tr>
 </table>
 
+<h2><a name="fold"></a>std.fold</h2>
+<p>
+<tt>std.fold</tt> provides per-type left folds over slices. Each function walks
+the elements in order and threads the accumulator through the caller-supplied
+combiner: <tt>acc = f(acc, x)</tt>. An empty slice returns the initial
+<tt>acc</tt> unchanged. The functions allocate nothing and have no error set.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>foldU32</tt></td>
+<td valign="top"><tt>pub fn foldU32(xs: []const u32, acc: u32, f: fn (u32, u32) u32) u32</tt></td>
+<td valign="top"><tt>u32</tt>; no error</td>
+<td valign="top">Left fold over <tt>u32</tt> elements, in slice order.</td>
+</tr>
+<tr>
+<td valign="top"><tt>foldI32</tt></td>
+<td valign="top"><tt>pub fn foldI32(xs: []const i32, acc: i32, f: fn (i32, i32) i32) i32</tt></td>
+<td valign="top"><tt>i32</tt>; no error</td>
+<td valign="top">Left fold over <tt>i32</tt> elements, in slice order.</td>
+</tr>
+<tr>
+<td valign="top"><tt>foldUsize</tt></td>
+<td valign="top"><tt>pub fn foldUsize(xs: []const usize, acc: usize, f: fn (usize, usize) usize) usize</tt></td>
+<td valign="top"><tt>usize</tt>; no error</td>
+<td valign="top">Left fold over <tt>usize</tt> elements, in slice order.</td>
+</tr>
+</table>
+
 <h2><a name="by-path"></a>Modules imported by path</h2>
 <p>
 The library directory beside the compiler holds more <tt>std_*.zig</tt> files

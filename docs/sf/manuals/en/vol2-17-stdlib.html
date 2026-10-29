@@ -205,7 +205,9 @@ The namespace above is the whole <tt>std</tt> namespace, but not the whole
 shipped library. Thirty public modules ship by path (plus five internal
 <tt>*_pal</tt> files): import one as
 <tt>@import("std_&lt;name&gt;")</tt> rather than through <tt>std</tt>. They are
-documented below and in the companion reference pages:
+indexed below; 22 are detailed in the four companion reference pages,
+<tt>std_gfx</tt>/<tt>std_gfx_pal</tt> in the DirectX/GUI chapter, and the
+remaining seven in <tt>sf/docs/std_lib/</tt>.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -253,7 +255,7 @@ the public surface a program can name through <tt>std</tt>.
 <p>
 Seven public by-path modules have no dedicated manual chapter
 (<tt>std_ecc</tt>, <tt>std_asn1</tt>, <tt>std_x509</tt>, <tt>std_tls</tt>,
-<tt>std_wireguard</tt>, <tt>std_tcpip</tt>, <tt>std_gfx</tt>); their domain
+<tt>std_wireguard</tt>, <tt>std_tcpip</tt>, <tt>std_cipher</tt>); their domain
 docs live in <tt>sf/docs/std_lib/</tt>.
 </p>
 
@@ -855,9 +857,13 @@ where the arena, buffer, and init-function patterns are collected.</li>
 </ul>
 <p>
 <a href="vol4-18-stdlib.html">The Reference stdlib page</a> documents every
-function of every module in the table above; the companion pages linked
-under <a href="#beyond">Beyond <tt>std</tt></a> do the same for the thirty
-public by-path modules. The runnable example in
+function of every module in the table above; the four companion pages linked
+under <a href="#beyond">Beyond <tt>std</tt></a> cover 22 public by-path modules.
+<tt>std_gfx</tt>/<tt>std_gfx_pal</tt> are covered in
+<a href="vol3-14-directx.html">the DirectX/GUI chapter</a>; the remaining seven
+(<tt>std_ecc</tt>, <tt>std_asn1</tt>, <tt>std_x509</tt>, <tt>std_tls</tt>,
+<tt>std_wireguard</tt>, <tt>std_tcpip</tt>, <tt>std_cipher</tt>) are documented
+in <tt>sf/docs/std_lib/</tt>. The runnable example in
 <tt>docs/sf/manuals/src/vol2/stdio.z98</tt> is the working reference for the
 shape of a call, and the module sources
 <tt>sf/src/std_*.zig</tt> are the authority for a signature this chapter did
