@@ -99,8 +99,9 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
 
 - **Current self-compile fixed point:** self-compiled `zig1` binary md5
   `18b4b10c8e014b486b648392d55ccdbe` (48 module `.c` + 49 module `.h`, 0 `error[`, 0 PANIC;
-  `build_from_seed.sh` converges at hop2 == hop3 because v128 is a compiler-source-changing
-  rotation), committed seed **v128** (`release/seed/zig1-seed.tgz`, archive md5
+  the rotation-time build from the v127 seed converged at hop2 == hop3 (moving point: hop1
+  `0c03752e…`, hop2 == hop3 `18b4b10c…`); a rebuild from the committed v128 archive is
+  hop1 == hop2 == `18b4b10c…`), committed seed **v128** (`release/seed/zig1-seed.tgz`, archive md5
   `5093ca9eaacd03bdb29c07777749cc16`; `lib/manifest.md5` md5
   `8b78593a7dabb86f9f01cd9e7994ab9f`, 50 std files). The fixed point moved to `45158dce…` at M2
   T1C-F (the `const`-rodata compiler fix) and to `a567926c…` at the
@@ -404,8 +405,11 @@ Runtime safety defaults to `-fsafe`. The compiler self-build passes `-ffast`, so
 ## Minimal Distribution
 To build a Z98 program on a target machine you need:
 1. **`zig1`** (or `zig1_w32.exe`) — the self-hosted compiler binary.
-2. **The std modules** — the 9 files `std.zig`, `std_io.zig`, `std_arena.zig`, `std_net.zig`,
-   `std_str.zig`, `std_mem.zig`, `std_math.zig`, `std_debug.zig`, `std_async.zig`
+2. **The std modules** — the shipped `lib/` set is **50 files**: `std.zig` plus 49
+   `std_*.zig`. `std.zig` re-exports the 14 core modules (`io`, `fmt`, `arena`, `str`,
+   `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `buf`, `fold`); the
+   by-path modules (30 public + 5 `*_pal` companions) are the same inventory documented
+   under [Standard Library](#standard-library) above
    (linux: in a `lib/` dir beside the binary; windows: on the `-I` search path).
 3. **Runtime sources & headers** — emitted into the program's output dir by `zig1 -o <dir>`
    (`zig_runtime.c`/`.h`, `zig_pal.c`, `c_exit.c`, `zig_compat.h`, and `net_prelude.h` when

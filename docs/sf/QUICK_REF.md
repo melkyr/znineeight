@@ -36,7 +36,7 @@ in the next section; that is the only supported path.
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in `release/seed/SEED_README.txt` and the v128 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v128 CHANGELOG entry.
 
 **Current seed: v128** (rotated 2026-10-29 at HEAD `a2e1db55`, the Phase 2.5
 cleanup + mutable-for + fold + Win9x-conformance closeout: T1/T2 leftovers,
@@ -48,8 +48,10 @@ T7/Task 9 Win9x conformance, T3/T4 mutable `for`, T5 `std.fold`, T8 GUI
 bytes); `lib/` **50** std `.zig` (`std.zig` + 49 `std_*.zig`, adding
 `std_fold.zig`) plus `lib/manifest.md5` (per-file std attribution pin,
 manifest md5 `8b78593a7dabb86f9f01cd9e7994ab9f`). v128 is a
-compiler-source-changing rotation, so `build_from_seed.sh` converges at
-**hop2 == hop3** (`18b4b10c…`; hop1 is `0c03752e…`). The compiler source is
+compiler-source-changing rotation, so the **rotation-time build from the v127
+seed** converged at **hop2 == hop3** (`18b4b10c…`; moving point, hop1
+`0c03752e…`); a rebuild from the committed v128 archive is two-hop
+**hop1 == hop2 == `18b4b10c…`**. The compiler source is
 **`-fsafe`-clean** (12 intentional wraps + 3 real safe-mode defects fixed).
 Markers (`--markers --dump-c89` on `mud_server`): **3304 lines
 / 37896 B** (v128 current; the pre-v128 / v127-era value was 3252 lines /
@@ -221,7 +223,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the fixed
   point recorded for the current HEAD (the active plan's workspace ledger). The committed seed's own
-  archived-binary md5 + fixed point are in `release/seed/SEED_README.txt` /
+  archived-binary md5 + fixed point are in the archive's `zig1-seed/SEED_README.txt` /
   `release/seed/CHANGELOG.md`.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
@@ -234,7 +236,7 @@ include path, no zig0: stage `<seed>/runtime/zig_runtime.c` + `<seed>/runtime/zi
 `<seed>/c_exit.c` beside `gen/*.c`, ONE canonical-flag `gcc -c -I <seed>/runtime` over all of them,
 then link `*.o` (the three runtime TUs MUST be compiled under the full flag set, NOT dropped onto
 the link line — without `-Wall` the fixed point is not byte-reproduced). Exact commands, and the
-archived binary md5 the result must equal, are in `release/seed/SEED_README.txt`.
+archived binary md5 the result must equal, are in the archive's `zig1-seed/SEED_README.txt`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
@@ -372,7 +374,7 @@ iterable with no resolvable element type reports `mutable for-item capture requi
 an iterable with a resolvable element type`. It is outside the corpus `ICE_RE`.
 
 **Real-world incidence is low.** Every real Z98 source in the repo was scanned — the
-compiler itself, the std library, all `examples/`, all 1190 corpus dirs. Longest operator
+compiler itself, the std library, all `examples/`, all 1193 corpus dirs. Longest operator
 chains: 35 ops (a synthetic repro fixture), 10 (`std_ecc.zig` curve polynomial multiplies),
 9 (`lexer.zig` keyword-match `and` chains). Distribution: 1 line ≥20 ops, **0 lines ≥40**.
 Production code tops out at ~10 terms, so the tightest platform (Win9x, 1 MB) has ~3.8x
@@ -527,18 +529,16 @@ Real hardware is the operator's Win98 session.
 is evidence, and real Win98 keystroke→screen/runtime RSS are **not measured**
 here (operator hardware).
 
-### Compiler RSS/arena — seed v123 baseline, carried into v127 (not re-measured) [updated: 2026-10-28]
+### Compiler RSS/arena — historical v123 baseline (measured at `a567926c…`/`2fc64ffe…`; v124–v128 not re-measured) [updated: 2026-10-29]
 
-**These are the last full compiler measurements.** They were taken
-2026-10-27 at seed v123 / fixed point `a567926c223492787786dd460563f32a`
-(two-hop closure hop1 == hop2). Seed v127 differs from v123 only by (i) the std
-payload (`std_gfx`/`std_gfx_pal`, refreshed by the P4 final-review fixes and the P4-M4 theme payload plus the black color-atlas fix) and
-(ii) the already-landed pre-P4 leaf-tail cleanup that moved the fixed point to
-`2fc64ffe…`; P4 added no compiler source change, and the compiler RSS was **not
-re-measured** for v124-v127. Every RSS/wall figure is
+**These figures are historical.** They were taken 2026-10-27 at seed v123 /
+fixed point `a567926c223492787786dd460563f32a` (two-hop closure hop1 == hop2),
+when the compiler fixed point was `2fc64ffe…`. v124–v128 have **not** been
+re-measured (the current v128 fixed point is `18b4b10c8e014b486b648392d55ccdbe`);
+no current v128 RSS claim is made here. Every RSS/wall figure is
 the median of 3 `/usr/bin/time -v` runs in fresh scratch dirs; arena figures
 come from a separate `--markers --track-memory` run (3×, identical). The v111
-figures below are historical — do not present them as current.
+figures below are also historical.
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
 |---|---:|---:|---|
@@ -562,12 +562,13 @@ recursion → explicit continuation stacks — the lowerer's C stack is now O(1)
 instead of ~70 KB + ~18 KB per nesting level. (chain120 max RSS 7084 KiB /
 0.05 s; block300 4704 KiB / ~0.00 s.)
 
-Current `-s<N>` self-emission ladder (pool from `--markers --track-memory`;
-`-s2`+ need `-mm128`): `-s0` 18416K; `-s1` 51407K; `-s2`/`-s3` 120400K; `-s4`
+Historical v123 `-s<N>` self-emission ladder (pool from `--markers --track-memory`;
+v124–v128 not re-measured; `-s2`+ need `-mm128`): `-s0` 18416K; `-s1` 51407K; `-s2`/`-s3` 120400K; `-s4`
 124496K; `-s5` 127568K; `-s6` 130640K. Full ladder table with max RSS/wall:
-README "Current measured compiler peak" section.
+README "Last full measured compiler peak (historical v123-era fixed point
+`2fc64ffe…`)" section.
 
-Recipe (current), from the repo root:
+Historical v123 recipe, from the repo root:
 
 ```bash
 rm -rf /tmp/memfix_build
@@ -580,15 +581,15 @@ rm -rf /tmp/m1_emit_arena && mkdir -p /tmp/m1_emit_arena
   --output-dir /tmp/m1_emit_arena sf/src/main.zig 2>&1 | grep 'track-memory:'
 ```
 
-**Compiler target:** **<16 MB goal**; current measured peak 20348 KiB RSS /
-18416K pool (target not met). The historical v111 baseline below also failed
-both RSS and pool.
+**Compiler target:** **<16 MB goal**; the last full (historical v123) measurement
+was 20348 KiB RSS / 18416K pool (target not met); v124–v128 were not
+re-measured. The historical v111 baseline below also failed both RSS and pool.
 
 ### Compiler RSS/arena — historical Phase 1 M1 baseline (v111)
 
 **These figures are historical.** They were measured at seed v111 / fixed point
-`21c957…`. Do not present the v111 numbers as current; the current figures are
-in the section above.
+`21c957…`. Do not present the v111 numbers as current; the v123 figures above
+are the last full measurements (v128 not re-measured).
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
 |---|---:|---:|---|
@@ -604,16 +605,16 @@ is separate.
 **Demo RAM budget (Phase 1):** **16 MB target / 32 MB hard ceiling, enforced with
 `ulimit -v 32768` + recorded peak RSS**.
 
-### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [updated: 2026-10-27]
+### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [updated: 2026-10-29]
 
 `-s<N>` picks how many of the six spills live in RAM instead of the `.zig1_*.tmp` disk files.
 Default `-s0` = all on disk. Deactivation order (oldest-spill-first): **S-AST → S-LIR → S-HASH →
 S-RES → S-SIDE → S-EXTRA** — `-s1` moves AST to RAM, `-s2` also LIR, ... `-s6` = all RAM (no spill
 files). S-EXTRA is the AST index-side `extra_children`/`extra_ranges` write-through pool pair
 (`.zig1_extra_ec.tmp` / `.zig1_extra_er.tmp`). Higher `-s` = more RAM, less disk I/O; emission is
-**byte-identical in every mode** (same data, different storage). **Current measured
-ladder (current fixed point `2fc64ffe…`; figures last measured at seed v123
-`a567926c…`, self-emission `--markers --track-memory` pool, measured 2026-10-27):** `-s0` pool=18416K (18.0 MB, all disk); `-s1` pool=51407K
+**byte-identical in every mode** (same data, different storage). **Historical v123 measured
+ladder (v123-era fixed point `2fc64ffe…`; figures last measured at seed v123
+`a567926c…`; v124–v128 not re-measured; self-emission `--markers --track-memory` pool, measured 2026-10-27):** `-s0` pool=18416K (18.0 MB, all disk); `-s1` pool=51407K
 (50.2 MB); `-s2`/`-s3` pool=120400K (117.6 MB); `-s4` pool=124496K (121.6 MB);
 `-s5` pool=127568K (124.6 MB); `-s6` pool=130640K (127.6 MB, all RAM). `-s0`
 and `-s1` fit the 64 MB `-mm` default; `-s2`–`-s6` must be paired with `-mm128`
