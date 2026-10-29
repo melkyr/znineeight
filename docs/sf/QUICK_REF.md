@@ -180,6 +180,26 @@ the higher-layer modules (L3-L6) are imported by path, not re-exported.
   `-ffast` self-emission support), not the canonical `-fsafe` `sf/src/include` files, so a
   gcc-only rebuild of the archive C reproduces the archived binary's fixed point exactly.
 
+### Runtime support edits (`emit_support.zig`)  [added: 2026-10-28 — Phase 2.5 T7/T9]
+
+- **Single source:** `sf/src/emit_support.zig` is the ONLY hand-edited source for the emitted
+  support files (`zig_compat.h`, `zig_runtime.h`, `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c`,
+  `c_exit.c`, `net_prelude.h`, `std_os_prelude.h`, `std_time_prelude.h`). `sf/src/include/*` and
+  `sf/src/c_exit.c` are **generated snapshots** — never hand-edit them.
+- **Refresh:** after any `emit_support.zig` edit → build the compiler, then
+  `bash scripts/gen_emit_support.sh <built-zig1>` → `bash scripts/check_emit_support.sh <zig1>`
+  must be **8/8** (tripwire).
+- **Runtime ABI:** the `-fsafe` helpers (`zig_ovf_*`/`zig_wrap_*`/`zig_overflow_flag_*`/
+  `zig_cast_checked_s,u`/`zig_poison_fill`) and the `__bootstrap_*` casts are **external
+  definitions in `zig_runtime.c` + prototypes in `zig_runtime.h`** (Task 9), not header statics.
+  A helper's name/signature is a link-level contract across every emitted module.
+- **Gates:** `scripts/compiler/gate_warn_clean.sh` — `gcc -m32 -std=c89 -pedantic -Wall -Werror
+  -Wno-long-long` (the ONLY suppression; gcc-only, never in MSVC/OWC script strings) over the full
+  self-emission + shipped runtime + representative programs. `scripts/compiler/gate_crlf.sh` — CRLF
+  on Windows-facing artifacts only (`build_target.sh` stays LF).
+- **Windows scripts:** the four generated `.bat` (MSVC/OWC × CRT/no-CRT) carry no
+  `/Za`/`/WX`/`/za`/`/we`; `build_mingw_crt.bat`/`build_mingw_nocrt.bat` are the gcc fallback pair.
+
 **Rebuild recipe 1 (forward — from the seed binary):**
 ```bash
 cd /workspace/znineeight
@@ -344,7 +364,7 @@ stack per expression level. `repro/mi_matrix/emission_sibling_payload_xmod` (the
 ### Calling convention (Win9x) — `extern "stdcall"` / `extern "cdecl"`  [added: 2026-09-14]
 
 - **Surface:** a calling convention may be written on an extern fn declaration and on a function-pointer type — `extern "stdcall" fn(...) T`, `extern "cdecl" fn(...) T`, `extern "c" fn(...) T`; a bare `fn(...) T` is default cdecl. Accepted names: `"c"`/`"cdecl"` → cdecl (byte-identical to no string), `"stdcall"` → stdcall. Unknown → `error[3045]`; variadic `stdcall` → `error[3012]`; assigning a cross-convention fn-pointer → `error[3000]` (all clean: rc=2, 0 `.c`).
-- **`Z98_STDCALL` macro** (emitted in `zig_compat.h`; canonical source `sf/src/include/zig_compat.h` + hand-written bytes in `sf/src/emit_support.zig`): `__attribute__((stdcall))` on Win32 gcc, `__stdcall` on MSVC/Watcom, **empty on non-Windows** — so linux default-cdecl emission is byte-identical.
+- **`Z98_STDCALL` macro** (emitted in `zig_compat.h`; single hand-edited source `sf/src/emit_support.zig`, `sf/src/include/zig_compat.h` is its generated snapshot): `__attribute__((stdcall))` on Win32 gcc, `__stdcall` on MSVC/Watcom, **empty on non-Windows** — so linux default-cdecl emission is byte-identical.
 - **Option-B use-site-cast rule (operator ruling; SUPERSEDES the earlier forced-prototype rule):** do **NOT** emit a second convention-bearing prototype for a convention extern. The C header remains the **sole declaration source** (this is what lets `std_net` use the real `<winsock.h>`/`windows.h` prototypes without conflict). The convention rides on the fn type/LIR and is applied **at the use site** as a cast to the convention-qualified `FS_…` fn-pointer typedef in `zig_special_types.h`: `((zT_…_FS_…)MessageBoxA)(...)`. `typeRegistryGetOrCreateFn` marks the stdcall fn type used so the `FS_…` typedef is emitted. Standalone (non-header-covered) stdcall fixtures are **emission-inspection only** — the cast names the extern symbol, whose declaration is the C header's responsibility.
 - **`std_net` Win32 externs** are migrated to `extern "stdcall"` (all 15 in `sf/src/std_net.zig`); every `std`-importing program's dump gains the `FS_…` typedefs + use-site casts (the re-export pulls `std_net` in).
 
@@ -1492,9 +1512,10 @@ Trigger the requesting-code-review skill when auditing completed changes.
 ## Historical zig0 Runtime h/c Architecture (retired)
 
 > **Historical only.** zig0 no longer builds current `sf/src`; the current
-> runtime/support source is `sf/src/include/*` plus `sf/src/emit_support.zig`
-> (mirrored by `scripts/check_emit_support.sh`). The zig0 notes below are kept
-> for archaeology, not for current changes.
+> runtime/support source is `sf/src/emit_support.zig` alone — `sf/src/include/*`
+> is its generated snapshot (`scripts/gen_emit_support.sh`) and
+> `scripts/check_emit_support.sh` is the byte-equality tripwire. The zig0 notes
+> below are kept for archaeology, not for current changes.
 
 ### File Layout
 

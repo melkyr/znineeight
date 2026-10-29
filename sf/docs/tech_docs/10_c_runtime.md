@@ -1,4 +1,4 @@
-# 10 — C Runtime Layer [updated: 2026-09-25 — Task 2 (z98-print-formatting): `pal_f64_to_str` (both lockstep copies) omits the `'.'`+fraction for an integral value (`7.0` → `7`); `std_fmt.zig`'s `printHexI32/I64` print `-` + hex magnitude for negative values (Zig oracle); the Q2 float residuals are unchanged.][updated: 2026-09-24 — Task 1 (z98-print-formatting): the `std_print_i32/u32/i64/u64/f64/bool/char/str/hex_*` formatting bodies were retired from `zig_runtime.c` (canonical) and `emit_support.zig` (emitted copy) and now live in the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`), called through the same PAL primitives (`pal_print_stdout` + `pal_i64/u64/f64_to_str`). `std_print`/`std_print_len` remain the raw-bytes runtime helpers.] [updated: 2026-09-20 — refreshed against current source: `pal_trap`/trap handler, `pal_file_read`/`pal_dir_exists`/`pal_get_default_lib_path`, 15 print helpers incl. hex, 20 `__bootstrap_*` helpers, the `-fsafe` overflow/checked-cast/poison helpers, the three target-neutral preludes, `c_exit.c`, and the dead `extern_c_z98.zig`; emitted-support relationship now via `emit_support.zig`; line references and dated evidence removed]
+# 10 — C Runtime Layer [updated: 2026-10-28 — Phase 2.5 Task 9 (emission warning-clean at the origin): the `-fsafe` helpers (`zig_ovf_*`, `zig_wrap_*`, `zig_overflow_flag_*`, `zig_cast_checked_s/u`) and the `__bootstrap_*` casts are now **external definitions in `zig_runtime.c` + prototypes in `zig_runtime.h`** (no longer header statics) — one definition per program, link-level ABI; `zig_pal.c` gained a POSIX feature-selection preamble (`_DEFAULT_SOURCE` before libc headers) so `readlink`/`usleep` are declared under strict `-std=c89`. Runtime/support text has ONE hand-edited source, `sf/src/emit_support.zig`; `sf/src/include/*` + `sf/src/c_exit.c` are generated snapshots refreshed by `scripts/gen_emit_support.sh` and guarded by `scripts/check_emit_support.sh`. New gate `scripts/compiler/gate_warn_clean.sh` (gcc `-m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long`, sole suppression) compiles the runtime TUs.] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `pal_f64_to_str` (both lockstep copies) omits the `'.'`+fraction for an integral value (`7.0` → `7`); `std_fmt.zig`'s `printHexI32/I64` print `-` + hex magnitude for negative values (Zig oracle); the Q2 float residuals are unchanged.][updated: 2026-09-24 — Task 1 (z98-print-formatting): the `std_print_i32/u32/i64/u64/f64/bool/char/str/hex_*` formatting bodies were retired from `zig_runtime.c` (canonical) and `emit_support.zig` (emitted copy) and now live in the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`), called through the same PAL primitives (`pal_print_stdout` + `pal_i64/u64/f64_to_str`). `std_print`/`std_print_len` remain the raw-bytes runtime helpers.] [updated: 2026-09-20 — refreshed against current source: `pal_trap`/trap handler, `pal_file_read`/`pal_dir_exists`/`pal_get_default_lib_path`, 15 print helpers incl. hex, 20 `__bootstrap_*` helpers, the `-fsafe` overflow/checked-cast/poison helpers, the three target-neutral preludes, `c_exit.c`, and the dead `extern_c_z98.zig`; emitted-support relationship now via `emit_support.zig`; line references and dated evidence removed]
 
 > Covers: `sf/src/include/*`, `c_exit.c`, `extern_c.zig`, `extern_c_z98.zig`
 
@@ -11,8 +11,8 @@
 | PAL functions | 15 | `pal_print_stderr`/`stdout`, `pal_set_trap_handler`, `pal_abort`, `pal_trap`, `pal_i64/u64/f64_to_str`, `pal_file_open`/`read`/`write`/`close`, `pal_dir_exists`, `pal_get_default_lib_path`, `mainCRTStartup` (Win32 `ZIG_NO_CRT`), plus 4 file-static helpers |
 | Runtime print helpers | 3 | `std_panic`, `std_print`, `std_print_len` — the typed `std_print_i32/u32/i64/u64/f64/bool/char/str/hex_*` formatting bodies moved to `sf/src/std_fmt.zig` (`std.fmt`) in Task 1, 2026-09-24 |
 | Checked cast functions | 8 | `std_checked_cast_i8..u64` — **legacy, NOT emitted by zig1** (upper-bound-only) |
-| `__bootstrap_<DST>_from_<SRC>` helpers | 20 | Retained `@intCast` range-check support: `static` defs in `zig_runtime.h` + `extern` defs in `zig_runtime.c`; panic `"integer cast overflow in @intCast"` on out-of-range. The emitter no longer selects them (see `08_c89_emission.md`) |
-| `-fsafe` helpers | 28 | 25 wrap/overflow-flag helpers + 2 width/sign-aware `zig_cast_checked_s/u` + `zig_poison_fill`; header-static, emitted only under `-fsafe` |
+| `__bootstrap_<DST>_from_<SRC>` helpers | 20 | Retained `@intCast` range-check support: external defs in `zig_runtime.c` + prototypes in `zig_runtime.h`; panic `"integer cast overflow in @intCast"` on out-of-range. The emitter no longer selects them (see `08_c89_emission.md`) |
+| `-fsafe` helpers | 28 | 25 wrap/overflow-flag helpers + 2 width/sign-aware `zig_cast_checked_s/u` + `zig_poison_fill`; external defs in `zig_runtime.c` (prototypes in the header), emitted only under `-fsafe` |
 | Backward compat aliases | 0 | `__bootstrap_print*`/`write`/`sleep_ms`/`panic` REMOVED (F4, 2026-08-08) |
 | Legacy arena functions | 6 | `arena_create`/`alloc`/`free`/`reset`/`destroy`/`alloc_default` in `src/runtime/zig_runtime.c` (outside `sf/src`) |
 | Type tables | emitted | Slice/Optional/ErrorUnion structs emitted by zig1 codegen (see `08_c89_emission.md`); `zig_special_types.h` is an include stub |
@@ -38,9 +38,11 @@
 
 All typedefs at `sf/src/include/zig_compat.h`.
 
+> **Source of truth (Phase 2.5 T9):** `sf/src/emit_support.zig` is the only hand-edited support source; `sf/src/include/*` and `sf/src/c_exit.c` are generated snapshots refreshed by `scripts/gen_emit_support.sh` and verified by `scripts/check_emit_support.sh` (8/8).
+
 ### `zig_runtime.h` — Header Declarations
 
-`zig_runtime.h` includes `zig_compat.h` and declares the PAL, arena, print, and cast surface, plus the header-static `-fsafe` and `__bootstrap_*` helpers.
+`zig_runtime.h` includes `zig_compat.h` and declares the PAL, arena, print, and cast surface, plus prototypes for the `-fsafe` and `__bootstrap_*` helpers (definitions live in `zig_runtime.c`).
 
 | Decl | Visibility | Purpose | Notes |
 |------|-----------|---------|-------|
@@ -49,15 +51,15 @@ All typedefs at `sf/src/include/zig_compat.h`.
 | `pal_trap` | extern | Trap (`int3`) with an optional Z98-installed handler | Called by `std_panic` and the `-fsafe` guard failures |
 | `pal_i64_to_str` / `pal_u64_to_str` / `pal_f64_to_str` | extern | Int64/Uint64/Float64 to decimal string | Return length |
 | `zig_poison_fill` | extern | `-fsafe` `undefined` poison (`0xAA` fill) | Present in the canonical sources; emitted only under `-fsafe` |
-| `zig_ovf_*`, `zig_wrap_*`, `zig_overflow_flag_*` | static | `-fsafe` UB-free wrap and overflow-flag math | Header-static so every emitted TU is self-sufficient; emitted only under `-fsafe` |
+| `zig_ovf_*`, `zig_wrap_*`, `zig_overflow_flag_*` | extern | `-fsafe` UB-free wrap and overflow-flag math | Defined once in `zig_runtime.c` (prototypes here); emitted only under `-fsafe` |
 | `arena_alloc_default` | decl | Default-arena entry point | Defined in the legacy `src/runtime/zig_runtime.c`, not in `sf/src/include` |
 | `zig_default_arena` | extern | Global arena pointer | |
 | `std_panic` | decl | Print panic + trap | Used by zig1 emission |
 | `std_print` / `std_print_len` | decl | Stdout string helpers (raw bytes; format-string literal segments + console) | |
 | `std_print_i32`..`std_print_hex_i64` | decl | **Bodies moved (Task 1, 2026-09-24)** — the declarations are retained in `zig_runtime.h` for compatibility, but the definitions were retired from `zig_runtime.c`/`emit_support.zig`; the formatting bodies now live in `sf/src/std_fmt.zig` (`std.fmt`); see `08_c89_emission.md` | |
 | `std_checked_cast_*` | decl | Legacy upper-bound-only numeric casts | Panic `"int cast overflow for <T>"`; NOT emitted by zig1 |
-| `c_char` + `__bootstrap_<DST>_from_<SRC>` (20) | typedef + static | Retained `@intCast` range-check helpers | `static` here + `extern` in `zig_runtime.c`; the emitter now uses `zig_cast_checked_s/u` instead |
-| `zig_cast_checked_s` / `zig_cast_checked_u` | static | `-fsafe` width/sign-aware checked `@intCast` | Header-static; emitted only under `-fsafe` |
+| `c_char` + `__bootstrap_<DST>_from_<SRC>` (20) | typedef + prototypes | Retained `@intCast` range-check helpers | prototypes here + external defs in `zig_runtime.c`; the emitter now uses `zig_cast_checked_s/u` instead |
+| `zig_cast_checked_s` / `zig_cast_checked_u` | extern | `-fsafe` width/sign-aware checked `@intCast` | Defined in `zig_runtime.c` (prototype here); emitted only under `-fsafe` |
 
 All declarations at `sf/src/include/zig_runtime.h`.
 

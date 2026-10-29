@@ -65,6 +65,28 @@ in sf/docs/tech_docs/:
 - Update function signatures, descriptions, data flow, and markers
 - Add `[updated: date]` annotation at top of changed section
 
+### 1.1.2 Runtime support edits (`emit_support.zig`) — Phase 2.5 T7/T9
+
+- **Single source:** `sf/src/emit_support.zig` is the ONLY hand-edited source for the emitted
+  support files (`zig_compat.h`, `zig_runtime.h`, `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c`,
+  `c_exit.c`, `net_prelude.h`, `std_os_prelude.h`, `std_time_prelude.h`). `sf/src/include/*` and
+  `sf/src/c_exit.c` are **generated snapshots** — never hand-edit them.
+- **Refresh loop:** edit `emit_support.zig` → build the compiler
+  (`scripts/seed/build_from_seed.sh`) → `bash scripts/gen_emit_support.sh <built-zig1>` →
+  `bash scripts/check_emit_support.sh <zig1>` must be **8/8** (byte-equality tripwire).
+- **Runtime ABI:** the `-fsafe` helpers (`zig_ovf_*`, `zig_wrap_*`, `zig_overflow_flag_*`,
+  `zig_cast_checked_s/u`, `zig_poison_fill`) and the `__bootstrap_*` casts are **external
+  definitions in `zig_runtime.c` + prototypes in `zig_runtime.h`** (Task 9), not header statics.
+  Their names/signatures are a link-level contract across every emitted module.
+- **Gates:** `scripts/compiler/gate_warn_clean.sh` runs
+  `gcc -m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long` (`-Wno-long-long` is the sole
+  suppression and is gcc-gate-only — never put gcc-spelling flags in MSVC/OWC script strings)
+  over the full self-emission + shipped runtime + representative programs.
+  `scripts/compiler/gate_crlf.sh` asserts CRLF on Windows-facing artifacts only
+  (`build_target.sh` stays LF).
+- **Windows scripts:** the four generated `.bat` (MSVC/OWC × CRT/no-CRT) carry no
+  `/Za`/`/WX`/`/za`/`/we`; `build_mingw_crt.bat`/`build_mingw_nocrt.bat` are the gcc fallback pair.
+
 ### 1.2 Development Environment
 
 - **Host OS**: Linux (Ubuntu 20.04+ or equivalent)
