@@ -79,7 +79,36 @@ fn mangleC89Keyword(self: *NameMangler, name: []const u8) u32 {
     return interner_mod.stringInternerIntern(self.interner, buf[0 .. i + @intCast(usize, 2)]);
 }
 
+fn hasNamePrefix(name: []const u8, prefix: []const u8) u8 {
+    if (name.len < prefix.len) return @intCast(u8, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < prefix.len) : (i += @intCast(usize, 1)) {
+        if (name[i] != prefix[i]) return @intCast(u8, 0);
+    }
+    return @intCast(u8, 1);
+}
+
+// Raw-minted source identifiers must not collide with the emitted runtime's
+// symbol namespaces. Applied only in MintRaw (locals/params/fields/members);
+// extern/export names and nameManglerMangle outputs keep their ABI names.
+fn isRuntimeReservedName(name: []const u8) u8 {
+    // `zig_default_arena` is the only extern var that reaches the raw mint
+    // path (via a hoisted declaration); extern names keep their ABI spelling.
+    if (name.len == @intCast(usize, 17) and hasNamePrefix(name, "zig_default_arena") != @intCast(u8, 0)) return @intCast(u8, 0);
+    if (hasNamePrefix(name, "Z98_") != @intCast(u8, 0)) return @intCast(u8, 1);
+    if (hasNamePrefix(name, "zig_") != @intCast(u8, 0)) return @intCast(u8, 1);
+    if (hasNamePrefix(name, "pal_") != @intCast(u8, 0)) return @intCast(u8, 1);
+    if (hasNamePrefix(name, "zT_") != @intCast(u8, 0)) return @intCast(u8, 1);
+    if (hasNamePrefix(name, "zF_") != @intCast(u8, 0)) return @intCast(u8, 1);
+    if (hasNamePrefix(name, "zG_") != @intCast(u8, 0)) return @intCast(u8, 1);
+    return @intCast(u8, 0);
+}
+
 fn nameManglerPopulateKeywords(self: *NameMangler) void {
+    // C89 keywords plus the documented-reserved MSVC 6 / OpenWatcom C-mode
+    // extension keywords (I-1 report, Tier A). Bare `self` is deliberately
+    // absent: neither compiler reserves it in C mode. Slice-typed locals (not
+    // bare string literals) keep the array-literal lowering on the proven path.
     var k0: []const u8 = "auto";
     var k1: []const u8 = "break";
     var k2: []const u8 = "case";
@@ -112,7 +141,101 @@ fn nameManglerPopulateKeywords(self: *NameMangler) void {
     var k29: []const u8 = "void";
     var k30: []const u8 = "volatile";
     var k31: []const u8 = "while";
-    var keywords: [32][]const u8 = [32][]const u8{ k0, k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13, k14, k15, k16, k17, k18, k19, k20, k21, k22, k23, k24, k25, k26, k27, k28, k29, k30, k31 };
+    var k32: []const u8 = "cdecl";
+    var k33: []const u8 = "near";
+    var k34: []const u8 = "far";
+    var k35: []const u8 = "huge";
+    var k36: []const u8 = "pascal";
+    var k37: []const u8 = "fortran";
+    var k38: []const u8 = "interrupt";
+    var k39: []const u8 = "stdcall";
+    var k40: []const u8 = "fastcall";
+    var k41: []const u8 = "asm";
+    var k42: []const u8 = "inline";
+    var k43: []const u8 = "based";
+    var k44: []const u8 = "int8";
+    var k45: []const u8 = "int16";
+    var k46: []const u8 = "int32";
+    var k47: []const u8 = "int64";
+    var k48: []const u8 = "leave";
+    var k49: []const u8 = "_asm";
+    var k50: []const u8 = "_based";
+    var k51: []const u8 = "_cdecl";
+    var k52: []const u8 = "_declspec";
+    var k53: []const u8 = "_emit";
+    var k54: []const u8 = "_except";
+    var k55: []const u8 = "_export";
+    var k56: []const u8 = "_far";
+    var k57: []const u8 = "_far16";
+    var k58: []const u8 = "_fastcall";
+    var k59: []const u8 = "_finally";
+    var k60: []const u8 = "_fortran";
+    var k61: []const u8 = "_huge";
+    var k62: []const u8 = "_inline";
+    var k63: []const u8 = "_int8";
+    var k64: []const u8 = "_int16";
+    var k65: []const u8 = "_int32";
+    var k66: []const u8 = "_int64";
+    var k67: []const u8 = "_interrupt";
+    var k68: []const u8 = "_leave";
+    var k69: []const u8 = "_loadds";
+    var k70: []const u8 = "_near";
+    var k71: []const u8 = "_pascal";
+    var k72: []const u8 = "_saveregs";
+    var k73: []const u8 = "_segment";
+    var k74: []const u8 = "_segname";
+    var k75: []const u8 = "_self";
+    var k76: []const u8 = "_stdcall";
+    var k77: []const u8 = "_syscall";
+    var k78: []const u8 = "_try";
+    var k79: []const u8 = "__asm";
+    var k80: []const u8 = "__based";
+    var k81: []const u8 = "__cdecl";
+    var k82: []const u8 = "__declspec";
+    var k83: []const u8 = "__emit";
+    var k84: []const u8 = "__except";
+    var k85: []const u8 = "__export";
+    var k86: []const u8 = "__far";
+    var k87: []const u8 = "__far16";
+    var k88: []const u8 = "__fastcall";
+    var k89: []const u8 = "__finally";
+    var k90: []const u8 = "__fortran";
+    var k91: []const u8 = "__huge";
+    var k92: []const u8 = "__inline";
+    var k93: []const u8 = "__int8";
+    var k94: []const u8 = "__int16";
+    var k95: []const u8 = "__int32";
+    var k96: []const u8 = "__int64";
+    var k97: []const u8 = "__interrupt";
+    var k98: []const u8 = "__leave";
+    var k99: []const u8 = "__loadds";
+    var k100: []const u8 = "__near";
+    var k101: []const u8 = "__pascal";
+    var k102: []const u8 = "__saveregs";
+    var k103: []const u8 = "__segment";
+    var k104: []const u8 = "__segname";
+    var k105: []const u8 = "__self";
+    var k106: []const u8 = "__stdcall";
+    var k107: []const u8 = "__syscall";
+    var k108: []const u8 = "__try";
+    var k109: []const u8 = "__unaligned";
+    var k110: []const u8 = "__watcall";
+    var k111: []const u8 = "__ptr32";
+    var k112: []const u8 = "__ptr64";
+    var k113: []const u8 = "_Cdecl";
+    var k114: []const u8 = "_Except";
+    var k115: []const u8 = "_Export";
+    var k116: []const u8 = "_Far16";
+    var k117: []const u8 = "_Fastcall";
+    var k118: []const u8 = "_Finally";
+    var k119: []const u8 = "_Leave";
+    var k120: []const u8 = "_Packed";
+    var k121: []const u8 = "_Pascal";
+    var k122: []const u8 = "_Seg16";
+    var k123: []const u8 = "_Syscall";
+    var k124: []const u8 = "_System";
+    var k125: []const u8 = "_Try";
+    var keywords: [126][]const u8 = [126][]const u8{ k0, k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13, k14, k15, k16, k17, k18, k19, k20, k21, k22, k23, k24, k25, k26, k27, k28, k29, k30, k31, k32, k33, k34, k35, k36, k37, k38, k39, k40, k41, k42, k43, k44, k45, k46, k47, k48, k49, k50, k51, k52, k53, k54, k55, k56, k57, k58, k59, k60, k61, k62, k63, k64, k65, k66, k67, k68, k69, k70, k71, k72, k73, k74, k75, k76, k77, k78, k79, k80, k81, k82, k83, k84, k85, k86, k87, k88, k89, k90, k91, k92, k93, k94, k95, k96, k97, k98, k99, k100, k101, k102, k103, k104, k105, k106, k107, k108, k109, k110, k111, k112, k113, k114, k115, k116, k117, k118, k119, k120, k121, k122, k123, k124, k125 };
     var ki: usize = @intCast(usize, 0);
     while (ki < keywords.len) : (ki += @intCast(usize, 1)) {
         hash_mod.u32ToU32MapPut(&self.keyword_set, interner_mod.stringInternerIntern(self.interner, keywords[ki]), @intCast(u32, 1));
@@ -245,7 +368,7 @@ fn nameManglerMintRaw(self: *NameMangler, name_id: u32, scope: u32, cache: *U64T
     }
     var name = interner_mod.stringInternerGet(self.interner, name_id);
     var cand_id: u32 = name_id;
-    if (isC89Keyword(self, name_id) != @intCast(u8, 0)) {
+    if (isC89Keyword(self, name_id) != @intCast(u8, 0) or isRuntimeReservedName(name) != @intCast(u8, 0)) {
         cand_id = mangleC89Keyword(self, name);
     }
     var counter: u32 = @intCast(u32, 0);
