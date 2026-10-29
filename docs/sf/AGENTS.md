@@ -455,7 +455,7 @@ pre-created output directory.
 
 - archive md5 `e7ac8cd2ed7e790a4b9225a82acaf4a5`
 - `gen/` 47 `.c` + 48 `.h`
-- `lib/` 47 std `.zig` + `lib/manifest.md5` (manifest md5 `e731a3d2a7aef913f5bbcfd8670e5a2e`)
+- `lib/` 50 std `.zig` (49 `std_*.zig` + `std.zig`) + `lib/manifest.md5` (manifest md5 `e731a3d2a7aef913f5bbcfd8670e5a2e`)
 - archived binary = fixed point `45158dcede81125a39a2c2c58478e21e`
 - `runtime/` contains `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
   `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c`; no `net_prelude.h`

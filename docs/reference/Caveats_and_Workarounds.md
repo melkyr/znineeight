@@ -32,9 +32,9 @@ This document tracks known limitations, bugs, and recommended workarounds for th
 **Issue**: Every `switch` expression **must** include an `else =>` prong, even if the compiler could theoretically prove that all enum variants or integer ranges are covered.
 **Workaround**: Always add an `else` prong to your switch expressions.
 
-### 1.4 Optional Pointer Captures
-**Issue**: The bootstrap compiler does not yet support pointer captures in `if` or `while` statements (e.g., `if (optional_val) |*p|`).
-**Workaround**: Use a value capture and then take the address manually, or use an explicit boolean flag and index the original structure.
+### 1.4 Pointer Captures
+**Issue**: Pointer captures remain unsupported in `if`/`while` conditions and `switch` prongs (`if (optional_val) |*p|`, `.a => |*p|` are parse rejects). `for` does support mutable item capture — `for (xs) |*item|` / `for (xs) |*item, index|` / `|*_|` — binding a pointer into the iterable storage (`*T`, or `*const T` for a const element type such as `[]const T`/`*const [N]T`; a const-bound array also yields `*const T`, while a const binding of a mutable slice keeps `*T`); `item.*` and `item.field` write through it while the binding itself stays immutable. Restrictions: a range iterable, a non-variable array value, or an iterable with no resolvable element type rejects `error[3078]`.
+**Workaround**: For `if`/`while`/`switch`, use a value capture and then take the address manually, or use an explicit boolean flag and index the original structure. For `for`, use `|*item|` to mutate in place; for the rejected shapes, capture by value and write back through the original binding/index.
 
 ### 1.5 Slices in Branches
 **Issue**: When using an `if` or `switch` as an expression that returns a slice, ensure all branches explicitly produce a slice type.

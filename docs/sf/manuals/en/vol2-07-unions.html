@@ -643,7 +643,8 @@ and the mandatory <tt>else</tt> the earlier section described.
 <tt>.a =&gt; |*p| p.* = &hellip;</tt>, is a parse reject here:
 <tt>error[2000]: expected identifier but found token</tt> points at the
 <tt>*</tt>. The supported mutation stores the whole union &mdash; tag and
-payload together:
+payload together. (The <tt>for</tt> loop is the exception: it supports a
+mutable item capture <tt>|*item|</tt>; see the control-flow chapter.)
 </p>
 <pre>
 u = .{ .a = 5 };

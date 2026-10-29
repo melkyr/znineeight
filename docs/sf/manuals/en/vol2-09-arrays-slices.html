@@ -5,7 +5,7 @@
 <title>Z98 Manual: Arrays and Slices</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual array arrays slice slices fixed-size length ptr len slicing ranges coercion const propagation decay 3000 3002 3062 3066 3067 3013 3063 3060 2000">
+<meta name="keywords" content="Z98 manual array arrays slice slices fixed-size length ptr len slicing ranges coercion const propagation decay mutable capture 3000 3002 3062 3066 3067 3078 3013 3063 3060 2000">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -229,6 +229,19 @@ fn total(values: []const i32) i32 {
     }
     return sum;
 }
+</pre>
+<p>
+A <tt>|*item|</tt> capture binds a pointer into the same storage instead of a
+copy, so the loop can write back. Use it when the iterable is writable; a
+const element type (<tt>[]const T</tt>) yields <tt>*const T</tt> and a write
+through it rejects with <tt>error[3002]</tt>. An array iterable also consults
+its binding, so a <tt>const</tt>-bound array is read-only through the capture;
+a <tt>const</tt> binding of a mutable slice keeps <tt>*T</tt>.
+</p>
+<pre>
+var a: [3]u32 = [3]u32{ 1, 2, 3 };
+for (a) |*x| x.* += 10;                        // a = 11 12 13
+for (a, 0..) |*x, i| x.* += @intCast(u32, i);  // a = 11 13 15
 </pre>
 <p>
 <tt>.ptr</tt> is the other half. On a <tt>[]T</tt> slice it reads the element

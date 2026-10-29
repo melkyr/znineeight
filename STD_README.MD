@@ -33,11 +33,11 @@ same on linux and win32.
 
 ## How to import
 
-Twelve core modules are re-exported through `@import("std")` — reach them as
+Fourteen core modules are re-exported through `@import("std")` — reach them as
 `std.<name>`:
 
-> `io`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`,
-> `time`, `buf`
+> `io`, `fmt`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`,
+> `time`, `buf`, `fold`
 
 ```zig
 const std = @import("std");
@@ -56,8 +56,8 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 ## Shipped seed
 
 The committed seed is **v127** (`release/seed/zig1-seed.tgz`, archive md5
-`70a6173979fe74db8d00b0e1212153d7`), with **49** std files (`std.zig` +
-48 `std_*.zig`) and `lib/manifest.md5` md5
+`70a6173979fe74db8d00b0e1212153d7`), with **50** std files (`std.zig` +
+49 `std_*.zig`) and `lib/manifest.md5` md5
 `fc9646bfcfecb14fd3872833bf13d43a`. The compiler fixed point is
 `2fc64ffedb3ba5f4e8adf35896729e54`; v127 is the P4-M4 theme rotation
 (refreshes the `std_gfx`/`std_gfx_pal` payload, including the black color-atlas
@@ -108,7 +108,7 @@ apply to its modules.
   set at the top of its file. Translation between modules happens at the call
   site; there is no `catch unreachable` in the library.
 - **R3 — Imports.** Import direction is strict — lower layers only, never
-  siblings, never higher. All twelve core names are re-exported through
+  siblings, never higher. All fourteen core names are re-exported through
   `std.zig`; everything else is imported by path. Two sanctioned exceptions:
   `std_debug` (L1) imports `std_buf` (L2) and `std_io` for `backtrace` and
   logging, and `std_stdin` (L3) imports `std_file` (L3) to share the
@@ -142,6 +142,7 @@ apply to its modules.
 | Growable byte buffer with endian appends | `std.buf` | [text.md](sf/docs/std_lib/text.md) |
 | Popcount, rotate, bit-reverse, bitfield extract/insert | `std.bits` | [bits_math.md](sf/docs/std_lib/bits_math.md) |
 | Integer min/max/clamp/abs and power-of-two alignment | `std.math` | [bits_math.md](sf/docs/std_lib/bits_math.md) |
+| Left fold over slices with a caller-supplied `fn` combiner | `std_fold` | [fold.md](sf/docs/std_lib/fold.md) |
 | Program arguments, environment, working directory, exit | `std.os` | [os_time.md](sf/docs/std_lib/os_time.md) |
 | Monotonic/wall clocks and sleep | `std.time` | [os_time.md](sf/docs/std_lib/os_time.md) |
 | Logging, assertions, panic, trap hook, core dump, backtrace | `std.debug` | [os_time.md](sf/docs/std_lib/os_time.md) |
@@ -239,6 +240,8 @@ entry for each public function. Read the one for the job at hand:
   growable byte buffers.
 - [bits_math.md](sf/docs/std_lib/bits_math.md) — `std.bits`, `std.math`: bit
   twiddling and integer math.
+- [fold.md](sf/docs/std_lib/fold.md) — `std_fold`: per-type left folds over
+  slices with a function-pointer combiner.
 - [os_time.md](sf/docs/std_lib/os_time.md) — `std.os`, `std.time`,
   `std.debug`: process primitives, clocks, and diagnostics.
 - [io.md](sf/docs/std_lib/io.md) — `std.io`, `std_file`, `std_stdin`: console,

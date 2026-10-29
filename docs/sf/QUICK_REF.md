@@ -10,6 +10,13 @@ exact, verified commands. Do not improvise flags or rediscover linking — copy 
 > them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**).
 > `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`).
 
+> **Mutable `for` capture (`|*item|`):** `for (xs) |*item|` / `|*item, index|` binds a pointer
+> into the iterable storage (`*T`, or `*const T` for a const element type such as `[]const T` /
+> `*const [N]T`, or a const-bound array; a const binding of a mutable slice keeps `*T`); `item.*` /
+> `item.field` write through it while the binding stays immutable. A range iterable, a
+> non-variable array value, or an iterable with no resolvable element type rejects `error[3078]`.
+> `if`/`while`/switch-prong pointer captures remain unsupported.
+
 > **CWD collision hazard:** `zig1` writes shared `.zig1_*.tmp` spill files in the CWD. Two `zig1`
 > runs in the same directory collide — parallel invocations can emit empty or corrupt dumps, and a
 > byte-identity/pin md5 taken from such a run is meaningless. Run gate/compile invocations
@@ -349,6 +356,14 @@ margin) and the diagnostic moved to the limit-family `error[3077]`
 as FAIL rather than ICE. Raising it further still needs `semanticAnalyzerResolveExpr`
 converted to the explicit continuation stack the lowerer uses (deferred; see D9).
 
+**`error[3078]` is the mutable-capture reject, not a depth guard.**
+`ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED` fires level-0 (rc=2 / 0 `.c`) for a `|*item|`
+capture whose iterable has no addressable element: a range iterable or a
+non-variable array value reports `mutable for-item capture requires an addressable
+element (a range or a copied array value has none)`, and a named capture over an
+iterable with no resolvable element type reports `mutable for-item capture requires
+an iterable with a resolvable element type`. It is outside the corpus `ICE_RE`.
+
 **Real-world incidence is low.** Every real Z98 source in the repo was scanned — the
 compiler itself, the std library, all `examples/`, all 1190 corpus dirs. Longest operator
 chains: 35 ops (a synthetic repro fixture), 10 (`std_ecc.zig` curve polynomial multiplies),
@@ -399,6 +414,14 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   `print`-using program only when the std_fmt file is import-adjacent.
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
+
+**`--check` (sema-only; no emission).** `zig1 --check <FILE.zig>` runs import resolution →
+semantic analysis → static analyzers → const-init and stops. It prints the banner and all
+diagnostics, exits 0 when clean and 2 on errors; with `-W`/`--warn-error` a warning-only run
+also exits 2. It truly ignores `-o`/`--output-dir`/`-d` (no output-path validation, no spill
+redirect): no `.c`/`.h`/build scripts/`.zig1_lir.tmp` are written, while the earlier
+`.zig1_*.tmp` scratch spills are left in the CWD. Use it for syntax/type checks without an
+output directory.
 
 ### Windows (`-osw`) build — Win9x target; every `std` import emits `std_net`, so link `-lwsock32`  [updated: 2026-09-30]
 
@@ -641,7 +664,8 @@ paths: `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`.
 signatures (u32/i32/usize slice + fn-pointer types) are interned for every
 `std`-importing program, shifting later type ids, so both `-fsafe` and
 `-ffast` dump bytes move. Runtime behavior is unchanged: goldens 5/5
-byte-identical (gol/lisp/json/mud) and corpus classification 0 movers.
+byte-identical (gol/lisp/json/mud) and corpus classification 0 pre-existing
+movers.
 Previous values are the historical tables below. The absolute pin values are
 **compiler-build dependent**, so only same-build comparisons are meaningful.
 
@@ -1180,7 +1204,7 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 - Discovery is `repro/mi_matrix/stdlib_*/` (any `stdlib_*` dir, not just
   `_xmod`) plus `stdlib_test/*/`. In discovery mode the harness asserts the
   discovered dir set EQUALS the committed baseline
-  `scripts/stdlib/expected_dirs.txt` (336 dirs today: 326
+  `scripts/stdlib/expected_dirs.txt` (339 dirs today: 329
   `repro/mi_matrix/stdlib_*` + 10 `stdlib_test/*`), so a dropped/renamed/added
   fixture FAILS the gate instead of silently shrinking coverage. Update the pin
   intentionally when a band adds/removes fixtures.

@@ -329,6 +329,17 @@ the typedef and `arena_multi_inst_xmod` compiles + runs clean. No emitter change
 
 **Frozen 32-bit layout model pinned in the emitted C (FX14, 2026-09-29).** The registry registers exactly `i64`/`u64`/`f64` at size 8 / align 8 (`type_registry.zig` `typeRegistryRegisterPrimitives`), and `layoutCompute` folds composites from that model. Previously the emitted C used plain `long long`/`double`, which i386 System V (`gcc -m32`) aligns to 4 — so a `{a: u8, b: i64, c: u8}` measured `16/4/4/12` in the built binary while Z98 printed `24/8/8/16`. FX14 pins the model on every supported host compiler through the carrier typedefs (all three now carry ` Z98_ALIGN8`) plus the shared compat typedefs; because every declaration site (struct/union/tagged-union/tuple/array/optional/error-union/global/local/param) goes through `getCTypeName`, one typedef attribute covers them all. Packed aggregates are exempt (byte-array carriers; 64-bit packed fields reject `error[3000]`). Verified on `gcc -m32` and mingw; MSVC (`/Zp8`) and wcc386 (`-zp8`, 32-bit default) rely on their natural 8 and get an empty macro.
 
+**Pointer-to-array and string-literal decay** [added: 2026-10-29 — Phase 2.5 T5 docs, T4 feature]. An `array_type` is emitted as the
+`Arr_<elem>_<len>` typedef (`typedef <elem> Arr_<elem>_<len>[<len>];`), so a genuine
+pointer-to-array (`*[N]T`) prints as an `Arr_*` pointer. The one exception is the A1
+string-literal type `*const [N]u8` (Track4 S25): `typeCName` decays that type to plain
+`unsigned char*` so a C string literal (and a const global bound to one) is a valid element
+pointer and never a pointer-to-array. A `|*row|` mutable row capture therefore uses a
+**non-const** pointer-to-array (`*[N]T`, built by lowering with
+`typeRegistryGetOrCreatePtr(elem, false)`): keeping `*const [N]u8` would trigger the
+string-literal decay, collapse the row to `unsigned char*`, and lose the row type/`.len`.
+Genuine non-const `*[N]T` values are unaffected by the decay.
+
 **P3 (2026-10-12): the derivation lives in `type_registry.typeCName`.** `getCTypeName` is now a
 pure consumer wrapper (`return type_mod.typeCName(reg, mangler, tid);`) — the per-kind model
 below is `typeCName`'s (doc 03), synthetic names are minted once through the P1 `name_mangler.zig`

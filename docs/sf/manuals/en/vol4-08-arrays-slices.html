@@ -5,7 +5,7 @@
 <title>Z98 Manual: Arrays and Slices</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual array arrays slice slices fixed-size N inferred length sentinel len ptr many-item pointer pointer-to-array indexing bounds slicing ranges coercion const propagation decay string literal u8 3050 3062 3066 3067 3000 3002 for iteration">
+<meta name="keywords" content="Z98 manual array arrays slice slices fixed-size N inferred length sentinel len ptr many-item pointer pointer-to-array indexing bounds slicing ranges coercion const propagation decay string literal u8 3050 3062 3066 3067 3000 3002 3078 mutable capture for iteration">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -580,6 +580,10 @@ array is <tt>error[3063]</tt>.
 <td valign="top">The index capture is allowed without an explicit range; <tt>i</tt> runs <tt>0</tt>..<tt>len-1</tt>.</td>
 </tr>
 <tr>
+<td valign="top"><tt>for (arr) |*v|</tt>, <tt>for (arr) |*v, i|</tt></td>
+<td valign="top">Mutable item capture: binds a pointer into the iterable storage (<tt>*T</tt>; <tt>*const T</tt> for a const element type such as <tt>[]const T</tt>/<tt>*const [N]T</tt>, or a const-bound array; a const binding of a mutable slice keeps <tt>*T</tt>); <tt>v.*</tt>/<tt>v.field</tt> write through it. A range iterable, a non-variable array value, or an iterable with no resolvable element type rejects <tt>error[3078]</tt>.</td>
+</tr>
+<tr>
 <td valign="top"><tt>for (arr, start..) |v, i|</tt></td>
 <td valign="top">Iterates every element; the capture is <tt>start + j</tt> (j = the 0-based count) and is not clamped.</td>
 </tr>
@@ -599,6 +603,7 @@ array is <tt>error[3063]</tt>.
 <pre>
 for (arr) |v| { }                 // every element
 for (arr) |v, i| { }              // index 0..len-1
+for (arr) |*v| { v.* += 1; }      // in-place element write
 for (arr, 1..) |v, i| { }         // index 1..len
 for (arr, 0..arr.len) |v, i| { }  // explicit full range
 </pre>

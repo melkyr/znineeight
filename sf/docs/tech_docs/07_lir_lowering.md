@@ -87,7 +87,7 @@ AstStore (fn_decl) → lowerFn() → LirFunction → lirStreamAppend() ── sp
 | `addr_of_field` | `base, field_id, result` | Address of a field within a base address |
 | `load_field` | `base, field_id, result, name_id` | Read struct/union/slice field |
 | `store_field` | `base, field_id, value, name_id` | Write struct/union/slice field |
-| `load_index` | `base, index, result, name_id, decay` | Read array element (`decay=1`: pointer-to-array element address) |
+| `load_index` | `base, index, result, name_id, decay` | Read array element (`decay=1`: pointer-to-array element address; `decay=2`: element address for a `\|*item\|` capture; `decay=3`: by-value array-row copy) |
 | `load_local` | `name_id, result` | Load named local variable |
 | `store_local` | `name_id, value` | Write named local variable |
 | `load_global` | `name_id, module_id, result` | Load named global (P9: the result is a global ALIAS — recorded at `lowerGlobalRef`/the module-alias arms; the emitter spells the global's name and never declares the temp; never a frame-save member) |
@@ -639,7 +639,7 @@ push LoopInfo{ header=step_bb, exit=exit_bb, label_id=current_label }
 current_label = 0
 .jump(cond_bb)
 → cond_bb: .binary{ LT, idx, len } → .branch{ cmp, body_bb, exit_bb }
-→ body_bb: .load_index{ ptr, idx } → item_temp; decl_local for capture → lowerStmtBody(body) → .jump(step_bb) (if not terminated)
+→ body_bb: .load_index{ ptr, idx, decay } → item_temp; decl_local for capture → lowerStmtBody(body) → .jump(step_bb) (if not terminated)
 → step_bb: idx += 1 → .jump(cond_bb)
 → exit_bb: pop loop_stack; current_label = saved_label
 ```
@@ -653,6 +653,8 @@ plain-array path is that `ptr_temp` is a cast instead of the array decay. `for (
 and direct/`*const`/explicit-range forms all behave like their array counterparts; the by-value
 array-row item copy is unchanged. Every non-array pointer pointee still leaves the item unresolved, so
 sema rejects before lowering; array/slice/range/many-pointer arms are untouched.
+
+**Mutable item capture** `[added: 2026-10-29 — Phase 2.5 T4]`. When the `for_stmt` `0x10` flag is set and a named capture is present, the lowerer reads the pointer type from the `for_stmt` node's resolved-type channel (published by sema; not `child_0`), validates it is a `ptr_type` whose base equals the element type, and panics on a channel violation (unreachable after sema). The item temp has that pointer type, is loaded by element address with `load_index{decay=2}` (`&base[idx]`), and is bound via `bindCapture`; there is no by-value array copy. Array-typed elements (row captures) override the item type to a non-const pointer-to-array (`typeRegistryGetOrCreatePtr(elem, false)`) so the C model prints the `Arr_*` row pointer instead of decaying a `*const [N]u8` to `unsigned char*`. Scalar and fn-pointer captures use the sema channel type (`*T`/`*const T`). The by-value path (`decay=0`, or `decay=3` for a row copy) is unchanged.
 
 **Explicit index range** (Task 11; `for (iterable, start..end)`): the pattern node is
 `AstKind.for_index_range` (child_0 = iterable, child_1 = start, child_2 = end or 0). The iterable

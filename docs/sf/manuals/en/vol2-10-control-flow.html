@@ -5,7 +5,7 @@
 <title>Z98 Manual: Control Flow, in Full</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual control flow if else expression optional capture while continue-expression for index capture switch inclusive exclusive ranges else prong labeled loops labeled blocks break continue 3058 3059 3068 3000 2000 unreachable">
+<meta name="keywords" content="Z98 manual control flow if else expression optional capture while continue-expression for index capture mutable capture switch inclusive exclusive ranges else prong labeled loops labeled blocks break continue 3058 3059 3068 3078 3000 2000 unreachable">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -375,6 +375,31 @@ for (0..5, 0..) |x, i| { ... }
 <p>
 One iterable per loop. When two collections have to move together, index
 one of them with the other's index capture.
+</p>
+<p>
+<b>Mutable item capture.</b> A star on the item capture (<tt>|*item|</tt>,
+<tt>|*item, index|</tt>, or <tt>|*_|</tt>) binds a pointer into the iterable's
+storage instead of a copy. The binding is immutable, but the pointee is
+writable through <tt>item.*</tt> or <tt>item.field</tt>. The capture is
+<tt>*T</tt> for a writable slice/array/pointer-to-array and <tt>*const T</tt>
+for a const element type (<tt>[]const T</tt>/<tt>*const [N]T</tt>); a
+const-bound array also yields <tt>*const T</tt>, while a const binding of a
+mutable slice keeps <tt>*T</tt>, so the write rules follow the iterable type.
+</p>
+<pre>
+var a: [3]u32 = [3]u32{ 1, 2, 3 };
+for (a) |*x| x.* += 10;                        // a = 11 12 13
+for (a, 0..) |*x, i| x.* += @intCast(u32, i);  // a = 11 13 15
+</pre>
+<p>
+The iterable must supply an addressable element: an identifier, a
+module-member array, or the explicit index-range form. A range iterable
+(<tt>for (0..n) |*x|</tt>) or a non-variable array value (an array literal or
+call result) reports <tt>error[3078]: mutable for-item capture requires an
+addressable element (a range or a copied array value has none)</tt>. A named
+capture over an iterable with no resolvable element type (for example a
+<tt>*T</tt> whose pointee is not an array) reports <tt>error[3078]: mutable
+for-item capture requires an iterable with a resolvable element type</tt>.
 </p>
 
 <h2><a name="switch"></a><tt>switch</tt>, ranges, and the mandatory <tt>else</tt></h2>

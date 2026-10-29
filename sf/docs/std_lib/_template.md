@@ -19,9 +19,9 @@
 | **Import (re-export)** | `const std = @import("std");` → `std.<name>` |
 | **Import (by path)** | `const <std_module> = @import("<std_module>");` |
 
-<Delete the import row(s) that do not apply. The twelve `std` re-exports are
-`io`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`,
-`time`, `buf`; reach them as `std.arena`, `std.str`, and so on. Every other
+<Delete the import row(s) that do not apply. The fourteen `std` re-exports are
+`io`, `fmt`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`,
+`time`, `buf`, `fold`; reach them as `std.arena`, `std.str`, and so on. Every other
 module is imported directly by its bare name, e.g. `@import("std_file")` (the
 search path appends `.zig`; the sibling form `@import("std_file.zig")` also
 resolves).>

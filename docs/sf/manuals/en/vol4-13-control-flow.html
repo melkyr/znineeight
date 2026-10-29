@@ -5,7 +5,7 @@
 <title>Z98 Manual: Control flow</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual control flow if else while for switch capture break continue labels labeled block range prong mandatory else index range exhaustive unreachable 3057 3058 3059 3068 3071 3000 3001 3002 2000">
+<meta name="keywords" content="Z98 manual control flow if else while for switch capture break continue labels labeled block range prong mandatory else index range exhaustive unreachable mutable capture 3057 3058 3059 3068 3071 3078 3000 3001 3002 2000">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -212,6 +212,9 @@ provides the index. Braces are optional.
 <tr><td valign="top"><tt>for (x) |item| body</tt></td><td valign="top">One capture; iterates every element.</td></tr>
 <tr><td valign="top"><tt>for (x) |item, index| body</tt></td><td valign="top">Second capture is the <tt>usize</tt> index, counting from 0.</td></tr>
 <tr><td valign="top"><tt>for (x) |_| body</tt>, <tt>|_, index|</tt></td><td valign="top"><tt>_</tt> discards a capture; a discarded name is not bound and cannot be accessed.</td></tr>
+<tr><td valign="top"><tt>for (x) |*item| body</tt>, <tt>|*item, index|</tt></td><td valign="top">Mutable item capture: binds a pointer into the iterable storage (<tt>*T</tt>, or <tt>*const T</tt> for a const element type such as <tt>[]const T</tt>/<tt>*const [N]T</tt>; a const-bound array also yields <tt>*const T</tt>, while a const binding of a mutable slice keeps <tt>*T</tt>); <tt>item.*</tt>/<tt>item.field</tt> write through it while the binding itself stays immutable. <tt>|*_|</tt> is allowed.</td></tr>
+<tr><td valign="top"><tt>for (0..n) |*item|</tt>, <tt>for ([N]T{...}) |*item|</tt></td><td valign="top"><tt>error[3078]</tt> <tt>mutable for-item capture requires an addressable element (a range or a copied array value has none)</tt> &mdash; a range is a loop value and a non-variable array value is a copy; use an identifier or module-member array (the explicit index-range form stays legal).</td></tr>
+<tr><td valign="top"><tt>for (p) |*item|</tt>, <tt>p: *T</tt> whose pointee is not an array</td><td valign="top"><tt>error[3078]</tt> <tt>mutable for-item capture requires an iterable with a resolvable element type</tt>.</td></tr>
 <tr><td valign="top"><tt>for (arr, start..) |item, index|</tt></td><td valign="top">Explicit index range, open end; the index is <tt>start + j</tt> for the j-th iteration, <b>not</b> clamped to the iterable.</td></tr>
 <tr><td valign="top"><tt>for (arr, start..end) |item, index|</tt></td><td valign="top">Closed index range; <tt>start</tt>/<tt>end</tt> are <tt>usize</tt>-compatible unsigned integers. Requires <tt>end - start == arr.len</tt>.</td></tr>
 <tr><td valign="top"><tt>for (arr, 0..) |item|</tt></td><td valign="top"><tt>error[3000]</tt> <tt>explicit index range requires an index capture ('|item, index|')</tt>.</td></tr>
@@ -234,6 +237,15 @@ var tail: i32 = 0;
 for (scores, 1..) |v, idx| tail += v + @intCast(i32, idx);
 var spanned: i32 = 0;
 for (scores, 0..scores.len) |v, idx| spanned += @intCast(i32, idx);
+</pre>
+<p>
+A mutable item capture binds a pointer instead of a copy, so the loop writes
+back into the iterable. The item binding is immutable, but its pointee is not:
+</p>
+<pre>
+var a: [3]u32 = [3]u32{ 1, 2, 3 };
+for (a) |*x| x.* += 10;                        // a = 11 12 13
+for (a, 0..) |*x, i| x.* += @intCast(u32, i);  // a = 11 13 15
 </pre>
 <p>
 The whole-loop excerpt above is from <tt>docs/sf/manuals/src/vol2/control.z98</tt>;
@@ -422,7 +434,8 @@ labeled <tt>while</tt>, a labeled switch-in-loop, and a literal
 </tr>
 <tr><td valign="top"><tt>if</tt>/<tt>while</tt> capture conditions are optionals or error unions.</td><td valign="top">A capture on any other condition is <tt>error[3058] capture condition must be an optional or error union type</tt>.</td></tr>
 <tr><td valign="top"><tt>switch</tt> prong captures bind the condition's payload.</td><td valign="top">A tagged-union prong binds the payload; an enum prong binds the operand; an <tt>else</tt> prong may not capture.</td></tr>
-<tr><td valign="top">All captures are immutable.</td><td valign="top">Assignment through an <tt>if</tt>/<tt>while</tt>/<tt>for</tt>/<tt>switch</tt> capture is <tt>error[3002]</tt> <tt>cannot assign to immutable variable</tt>.</td></tr>
+<tr><td valign="top">All capture bindings are immutable.</td><td valign="top">Assignment to an <tt>if</tt>/<tt>while</tt>/<tt>for</tt>/<tt>switch</tt> capture binding is <tt>error[3002]</tt> <tt>cannot assign to immutable variable</tt>.</td></tr>
+<tr><td valign="top">A <tt>|*item|</tt> capture is a pointer; its pointee is writable.</td><td valign="top">The binding is immutable but <tt>item.*</tt>/<tt>item.field</tt> writes through to the iterable. A const element type (<tt>[]const T</tt>/<tt>*const [N]T</tt>) or a const-bound array yields <tt>*const T</tt>, so the same writes reject through <tt>error[3002]</tt>; a const binding of a mutable slice keeps <tt>*T</tt>.</td></tr>
 <tr><td valign="top">A capture may not shadow or redeclare an enclosing name.</td><td valign="top"><tt>error[3057] local declaration shadows an earlier declaration in an enclosing scope</tt>, with a note at the previous declaration.</td></tr>
 <tr><td valign="top"><tt>_</tt> discards a capture.</td><td valign="top">A discarded name is not bound; it may be reused freely.</td></tr>
 <tr><td valign="top">A capture is scoped to its construct.</td><td valign="top">A <tt>while</tt>/<tt>for</tt>/switch capture is visible in the body or prong only, and an <tt>if</tt> capture is visible in the then arm only. An <tt>else</tt>-arm use of an <tt>if</tt> capture is <tt>error[20]</tt> <tt>identifier '&lt;x&gt;' is not declared or imported in this module</tt> (rc 2, no C emitted), matching Zig's <tt>use of undeclared identifier</tt>; do not read an <tt>if</tt> capture in its <tt>else</tt> arm.</td></tr>

@@ -5,7 +5,7 @@
 <title>Z98 Manual: The Command Line</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual zig1 command line CLI options flags reference output-dir dump-c89 max-mem spill level markers track-memory target fsafe ffast diagnostics seed">
+<meta name="keywords" content="Z98 manual zig1 command line CLI options flags reference output-dir dump-c89 check sema-only analysis-only max-mem spill level markers track-memory target fsafe ffast diagnostics seed">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -133,6 +133,12 @@ value attached, with no space.
 <td valign="top">none</td>
 <td valign="top">off</td>
 <td valign="top">Enters the C89 emission phase. Without <tt>-o</tt> it writes one combined C translation unit to standard output; with <tt>-o</tt> the output directory is written as usual. With neither, the pipeline stops after analysis and emits no C. <tt>main.zig:1623-1624</tt>, <tt>main.zig:1184</tt>, <tt>main.zig:1538-1544</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--check</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Sema-only pipeline: import resolution &rarr; semantic analysis &rarr; static analyzers &rarr; const-init, then stop. All diagnostics are printed (the banner is retained) and the exit code is <tt>0</tt> when clean / <tt>2</tt> on errors. With <tt>-W</tt>/<tt>--warn-error</tt>, a warning-only run also exits <tt>2</tt>. It truly ignores <tt>-o</tt>/<tt>--output-dir</tt>/<tt>-d</tt> &mdash; no output-path validation and no spill redirect &mdash; and writes no <tt>.c</tt>/<tt>.h</tt>, build scripts, or <tt>.zig1_lir.tmp</tt>; the usual earlier <tt>.zig1_*.tmp</tt> scratch spills are left in the CWD. <tt>main.zig:178-186</tt>, <tt>main.zig:477-509</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>-m</tt>, <tt>--max-mem</tt></td>

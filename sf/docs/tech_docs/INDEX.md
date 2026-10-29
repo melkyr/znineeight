@@ -1591,7 +1591,7 @@ primitive while `FIRST_USER_TYPE` read 20); the source constant is left unchange
 | Types (ptr_type, many_ptr_type, array_type, slice_type, optional_type, error_union_type, fn_type) | 1 (parser), 3 (type resolution), 6 (semantic), 9 (lower: type metadata) |
 | Literals & Constants | 1 (parser), 6 (semantic), 7 (static analyzers), 9 (LIR) |
 | `range_exclusive` / `range_inclusive` | 1 (parser), 6 (semantic: switch ranges), 9 (LIR) |
-| `payload_capture` | 1 (parser), 6 (semantic: if/while/for captures) |
+| `payload_capture` | 1 (parser), 6 (semantic: if/while/for captures); the `for_stmt` node's `0x10` flag marks a mutable `|*item|` item capture |
 | `import_expr`, `module_root`, `c_include` | 1 (parser + import resolution), 2 (symbol registration) |
 | `builtin_call` | 1 (parser), 5 (comptime eval), 6 (semantic), 9 (LIR) |
 
