@@ -56,8 +56,8 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 ## Shipped seed
 
 The committed seed is **v127** (`release/seed/zig1-seed.tgz`, archive md5
-`70a6173979fe74db8d00b0e1212153d7`), with **50** std files (`std.zig` +
-49 `std_*.zig`) and `lib/manifest.md5` md5
+`70a6173979fe74db8d00b0e1212153d7`), with **49** std files (`std.zig` +
+48 `std_*.zig`) and `lib/manifest.md5` md5
 `fc9646bfcfecb14fd3872833bf13d43a`. The compiler fixed point is
 `2fc64ffedb3ba5f4e8adf35896729e54`; v127 is the P4-M4 theme rotation
 (refreshes the `std_gfx`/`std_gfx_pal` payload, including the black color-atlas
@@ -84,7 +84,7 @@ strict: lower layers only, never siblings, never higher (R3).
 | Layer | Meaning | Modules |
 |---|---|---|
 | Core | Builtin-backed console + descriptor I/O | `std.io` |
-| **L0** | Foundation — no library imports; arena, raw memory, pure bit/integer math | `std.arena`, `std.mem`, `std.bits`, `std.math` |
+| **L0** | Foundation — no library imports; arena, raw memory, pure bit/integer math | `std.arena`, `std.mem`, `std.bits`, `std.math`, `std_fold` |
 | **L1** | Process, clocks, and diagnostics over the builtins and a per-OS PAL | `std.os`, `std.time`, `std.debug` |
 | **L2** | Data layer built on L0 — string slices and growable buffers | `std.str`, `std.buf` |
 | **L3** | Resources — owned-handle files, stdin, and sockets | `std_file`, `std_stdin`, `std.net` |

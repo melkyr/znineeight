@@ -309,7 +309,7 @@ bit5=has_index_capture, bit6=inclusive, bit7=mutable) but overloaded per node ki
 `fn_decl` uses bit0=variadic, bit1=pub, bit2=extern, bit3=export, bit5=test; `fn_type` uses
 bit0=stdcall; `struct_decl`/`union_decl` use bit4=packed (union also bit0=tagged); `swt_prong`
 uses bit0=else, bit4=has_capture; `ptr_type`/`many_ptr_type` use bit0=const, bit1=volatile, and
-`slice_type` uses bit0=const. `for_stmt` reuses bit4 (`0x10`) as the mutable item-capture flag (`|*item|`); bits5/6 remain has_index_capture/inclusive.
+`slice_type` uses bit0=const. `for_stmt` previously used no flags; a `|*item|` mutable item capture sets bit4 (`0x10`). The index capture is `child_2` (not a flag), and range inclusivity is carried by the pattern node kind (`range_inclusive`/`range_exclusive`), not by a `for_stmt` flag.
 
 ### Functions
 

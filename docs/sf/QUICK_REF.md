@@ -77,8 +77,8 @@ default to no-CRT. The zip is not a fixed-point artifact; `archive_seed.sh`
 packs it deterministically with python3 `zipfile`.
 
 **Phase 1 closeout:** v119 completes the TLS + WireGuard phase. On the rotated
-compiler (`45158dce…`) the full std gate is **336/0** with crosscheck
-**10/10**, `tier_tls.sh` is **19/19** (`Z98_NET=1`), and
+compiler (`45158dce…`) the full std gate is **339/0** with crosscheck
+**10/10** (349 compiler invocations), `tier_tls.sh` is **19/19** (`Z98_NET=1`), and
 `tier_wireguard.sh` is **13/13** (4 config checks + 5 in-netns integration
 cases + 4 build/import checks; kernel WireGuard netns, Linux + Wine). Measured
 demo RAM/CPU tables are in `examples/z98/demo/{tls_demo,wireguard_demo}/README.md`.
@@ -292,7 +292,7 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is **336/0** on seed v123 (294/0 at M7 on v103; the two
+  pin); `verify_stdlib` is **339/0** today (**336/0** on seed v123; 294/0 at M7 on v103; the two
   M2 `stdlib_noise_*` fixtures, the M2 crypto/cipher/ecc fixtures, the four
   M3 `std_asn1`/`std_x509` fixtures, the three M4 `std_tls`/HTTP-transport
   fixtures, the three M5 TLS 1.3 fixtures, the three M6 WireGuard fixtures,
@@ -407,7 +407,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   via the search path: (1) importer's dir, (2) `-I`/`--lib-dir` dirs in CLI order, (3) the default
   install path `<exe_dir>/lib`, (4) CWD. To run a migrated example/repro you must first install the
   canonical std lib next to the compiler under test:
-  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_fmt.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig sf/src/std_crypto.zig sf/src/std_cipher.zig sf/src/std_ecc.zig sf/src/std_parse.zig sf/src/std_bencode.zig sf/src/std_map.zig sf/src/std_sort.zig sf/src/std_heap.zig sf/src/std_rle.zig sf/src/std_base64.zig sf/src/std_hex.zig sf/src/std_utf8.zig sf/src/std_http.zig sf/src/std_rand.zig sf/src/std_noise.zig sf/src/std_lz4.zig sf/src/std_zstd.zig sf/src/std_num.zig sf/src/std_pathfind.zig sf/src/std_physics.zig sf/src/std_hpa.zig sf/src/std_asn1.zig sf/src/std_x509.zig sf/src/std_tls.zig sf/src/std_wireguard.zig sf/src/std_tcpip.zig <exe_dir>/lib/`
+  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_fmt.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig sf/src/std_crypto.zig sf/src/std_cipher.zig sf/src/std_ecc.zig sf/src/std_parse.zig sf/src/std_bencode.zig sf/src/std_map.zig sf/src/std_sort.zig sf/src/std_heap.zig sf/src/std_rle.zig sf/src/std_base64.zig sf/src/std_hex.zig sf/src/std_utf8.zig sf/src/std_http.zig sf/src/std_rand.zig sf/src/std_noise.zig sf/src/std_lz4.zig sf/src/std_zstd.zig sf/src/std_num.zig sf/src/std_pathfind.zig sf/src/std_physics.zig sf/src/std_hpa.zig sf/src/std_asn1.zig sf/src/std_x509.zig sf/src/std_tls.zig sf/src/std_wireguard.zig sf/src/std_tcpip.zig sf/src/std_fold.zig <exe_dir>/lib/`
   (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The canonical set
   includes `std_fmt.zig` (the print-formatting layer, auto-imported by the compiler
   whenever a `print` is lowered); a compiler whose `lib/` predates it can resolve a
@@ -523,13 +523,15 @@ figures below are historical — do not present them as current.
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
 |---|---:|---:|---|
 | (a) fixed-point self-emission (`-ffast --dump-c89`) | 20348 | 6.65 | pool=18416K, total=2795K |
-| (b) full stdlib gate, compiler-only max (346 invocations) | 16960 | 0.55 | not exposed |
+| (b) full stdlib gate, compiler-only max (346 invocations, v123 measurement) | 16960 | 0.55 | not exposed |
 | (c) z9play `main.zig` `-fsafe` emit | 8368 | 0.38 | pool=4993K, total=2190K |
 
 Row (b): **0.55 s is the largest single compiler invocation's wall
 (`stdlib_tls13_handshake_xmod`), not the full gate wall**; 346 compiler
-invocations per gate pass (336 fixtures + 10 crosscheck), each timed through a
-wrapper; max taken over 3 gate passes. Arena `total` is `perm + mod + scr`;
+invocations per gate pass at the v123 measurement (336 fixtures + 10
+crosscheck), each timed through a wrapper; max taken over 3 gate passes. The
+current gate has 349 invocations (339 fixtures + 10 crosscheck). Arena
+`total` is `perm + mod + scr`;
 `pool` is separate. No regression vs the historical M1 baseline below
 ((a) 0.98×, (b) 0.59×, (c) 1.03×).
 
