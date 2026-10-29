@@ -11,41 +11,67 @@ Each completed plan that moves the self-emission fixed point rotates the seed
 (new zig1 binary + new self-emission C), overwriting the archive and appending
 a provenance entry here. Prior seeds remain recoverable in git history.
 
-## 2026-10-29 — seed v129 (HEAD cdec5098)
+
+
+## 2026-10-29 — seed v129 (HEAD 1e7b303a)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
 `zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
-emitted `zig_special_types.h`, 12281878 bytes), `c_exit.c` (top level),
+emitted `zig_special_types.h`, 12281379 bytes), `c_exit.c` (top level),
 `runtime/`, `lib/`, `SEED_README.txt`.
 
 | field | value |
 |---|---|
 | date | 2026-10-29 |
-| HEAD | `cdec5098` |
-| seed binary md5 | `1422368ea17f306a93e8bb24691351a2` |
-| self-emission C | 48 `.c` + 49 `.h` (12281878 bytes) |
-| fixed point | `1422368ea17f306a93e8bb24691351a2` |
+| HEAD | `1e7b303a` |
+| seed binary md5 | `c1bb4c0e7cbb3d9f4a808491f1a5772d` |
+| self-emission C | 48 `.c` + 49 `.h` (12281379 bytes) |
+| fixed point | `c1bb4c0e7cbb3d9f4a808491f1a5772d` |
 | lib manifest | `lib/manifest.md5` (50 std files; md5 `8b78593a7dabb86f9f01cd9e7994ab9f`) |
-| archive md5 | `7ccef887cd8ae9aed7d1c77ca32daaf1` |
+| archive md5 | `af4a480f16e833a26f29210fec9a30b5` |
 
 ### Win9x companion seed
 
 | field | value |
 |---|---|
 | zip | `release/seed/zig1_seed_w9.zip` |
-| zip md5 | `9c790587f2a35cd9286b90dececeadc6` |
+| zip md5 | `f6aa60cb05e7533b9f24afa1040ad0d3` |
 | win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
 | compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
 | compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
 | no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
 | status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
 | lib | 50 std `.zig` + `manifest.md5` |
-| HEAD/date | `cdec5098` / 2026-10-29 |
+| HEAD/date | `1e7b303a` / 2026-10-29 |
 
-Provenance note: the archived binary (md5 1422368ea17f306a93e8bb24691351a2) was captured by
-scripts/seed/archive_seed.sh at HEAD cdec5098; gcc of the archive's self-emission
-C reproduces the self-emission fixed point `1422368ea17f306a93e8bb24691351a2` — both are the same
-compiler state at HEAD cdec5098. The compiler self-build uses `-ffast` (user
+### Battery at rotation (v129)
+
+- **Corpus:** 1193 dirs = 1017 OK / 58 GREEN / 118 FAIL / 0 ICE / 0 CRASH;
+  class md5 `5167393439ffb80049ba5d3d87a2773f` (unchanged).
+- **Frozen-1124:** 1124 lines, md5 `518eca1a9b5d3e1cc5a48abce214abd8`,
+  diff vs anchor empty (0 movers).
+- **Goldens 5/5 byte-identical:** gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`,
+  lisp basic `b3d9f8974da24ddbf9d389f3d7d97322`, lisp canonical
+  `96654b3910a54d8bb7ec3ddfc0f26c6a`, json `8bda3d5a1ec07d14a301bc343df32bf8`,
+  mud server/client `66c8f0abb926cca7baf9a0d1692ab318` /
+  `93147d0f0bbd983a9d844fea8b7a6fa7`.
+- **8 dump pins unchanged:** mud `c52b9bb9…`/`beea8281…`, gol
+  `078c7c6c…`/`d9eb5b2f…`, lisp `4d08641e…`/`8a1905f2…`, json
+  `c03d635c…`/`f43bb7b8…`.
+- **Markers:** 3397 lines / 39012 B (v128 was 3304 / 37896).
+- **Examples:** 26/26 build and 26/26 run with the expected rc set.
+- **stdlib:** 339 PASS / 0 FAIL; crosscheck 10 PASS / 0 FAIL.
+- **Gates:** `gate_win_compat` (reserved scan + 8 bat lints + reserved-export
+  probe + MinGW cross compile 52 TUs), `gate_warn_clean`,
+  `gate_builtin_names`, `gate_lower_depth` (8 pins), `gate_reserved_names`,
+  `gate_crlf`, `check_emit_support` 8/8 — all GREEN.
+- **Closure:** rebuild from this archive closes at hop1 == hop2 ==
+  `c1bb4c0e7cbb3d9f4a808491f1a5772d`.
+
+Provenance note: the archived binary (md5 c1bb4c0e7cbb3d9f4a808491f1a5772d) was captured by
+scripts/seed/archive_seed.sh at HEAD 1e7b303a; gcc of the archive's self-emission
+C reproduces the self-emission fixed point `c1bb4c0e7cbb3d9f4a808491f1a5772d` — both are the same
+compiler state at HEAD 1e7b303a. The compiler self-build uses `-ffast` (user
 programs default to `-fsafe`), so the recorded fixed point is the `-ffast`
 binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign

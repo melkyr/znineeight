@@ -249,7 +249,7 @@ asm_x86 backend. Do not use the Linux gen/ C for Win9x.
 Build the compiler on the Win9x machine
 ---------------------------------------
 cd win
-then run one of (the scripts hardcode the output name `prog.exe`):
+then run one of (the scripts hardcode the output name prog.exe):
 
   build_owc_crt.bat
   copy prog.exe ..\\zig1.exe
@@ -269,7 +269,7 @@ beyond the strict 9x whitelist; validate the result on the era machine.
 build_mingw_nocrt.bat is the -nostdlib single-EXE fallback; build_mingw_crt.bat
 is CRT-linked.
 
-The copied `..\\zig1.exe` sits beside `..\\lib\\`. That lib/ is the compiler's
+The copied ..\\zig1.exe sits beside ..\\lib\\. That lib/ is the compiler's
 standard library. Run zig1.exe with no arguments to see usage.
 
 CRT note
