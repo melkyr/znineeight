@@ -13518,13 +13518,44 @@ fn lowerForStmtStep(self: *LirLowerer, f: *StmtFrame) void {
           // iterable storage. Task 3 published the pointer type id on the
           // `for_stmt` node (not `child_0`); the item temp is that pointer
           // loaded by element address (`&base[idx]`, decay=2) with no
-          // by-value array copy.
+          // by-value array copy. The channel is validated for named captures
+          // (present, ptr_type, base == element type). Array-typed elements
+          // (row captures) use a non-const pointer-to-array type so the
+          // `*const [N]u8` string-literal C decay cannot reach them; scalar
+          // and fn-pointer captures use the sema channel type.
           var item_decay: u8 = @intCast(u8, 0);
           var item_tid_type = elem_type[0];
           var is_mut_item = (node.flags & @intCast(u8, 0x10)) != @intCast(u8, 0);
           if (is_mut_item) {
-              var mut_ptr_tid = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx) orelse type_mod.TYPE_UNDEFINED;
-              item_tid_type = mut_ptr_tid;
+              var mut_ptr_opt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+              var mut_ptr_tid: u32 = type_mod.TYPE_UNDEFINED;
+              if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) {
+                  var channel_ok: bool = false;
+                  if (mut_ptr_opt) |mpt| {
+                      if (@intCast(usize, mpt) < self.ctx.registry.types_len) {
+                          var mpt_ty = self.ctx.registry.types_items[@intCast(usize, mpt)];
+                          if (mpt_ty.kind == type_mod.TypeKind.ptr_type and @intCast(usize, mpt_ty.payload_idx) < self.ctx.registry.ptr_len) {
+                              if (self.ctx.registry.ptr_items[@intCast(usize, mpt_ty.payload_idx)].base == elem_type[0]) {
+                                  channel_ok = true;
+                                  mut_ptr_tid = mpt;
+                              }
+                          }
+                      }
+                  }
+                  if (!channel_ok) { @panic("lowerForStmtStep: invalid mutable for-capture type channel"); }
+              } else if (mut_ptr_opt) |mpt| {
+                  mut_ptr_tid = mpt;
+              }
+              var item_elem_is_array: bool = false;
+              if (elem_type[0] != type_mod.TYPE_UNDEFINED and elem_type[0] != type_mod.TYPE_VOID) {
+                  var it_mty = self.ctx.registry.types_items[@intCast(usize, elem_type[0])];
+                  if (it_mty.kind == type_mod.TypeKind.array_type) { item_elem_is_array = true; }
+              }
+              if (item_elem_is_array) {
+                  item_tid_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false);
+              } else {
+                  item_tid_type = mut_ptr_tid;
+              }
               item_decay = @intCast(u8, 2);
           } else if (elem_type[0] != type_mod.TYPE_UNDEFINED and elem_type[0] != type_mod.TYPE_VOID) {
               var it_ety = self.ctx.registry.types_items[@intCast(usize, elem_type[0])];

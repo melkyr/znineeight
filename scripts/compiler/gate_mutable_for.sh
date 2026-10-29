@@ -19,6 +19,23 @@ set -euo pipefail
 # plus `--check -o <missing>` / `--check --output-dir <missing>` / `--check -d`
 # (no output dir) on a positive fixture -> rc=0 (the flags are truly ignored).
 #
+# Task 4 e2e section (default mode, no `-f`; all timeout-guarded): emit with
+# `zig1 -o <dir> <entry>`, build via the emitted `build_target.sh linux`, run,
+# and assert exact stdout. Cases (labels name the fixture shape, not the sema
+# letters above):
+#   (e2e 1) mutable_for_slice_ok             `[]u32` in-place mutation       -> `1 1 1`
+#   (e2e 2) mutable_for_row_ptr_ok           `*[3][2]u32` row pointer        -> `1 11 31`
+#   (e2e 3) mutable_for_array_ident_ok       `var a: [3]u32`                  -> `11 12 13`
+#   (e2e 4) mutable_for_const_binding_ok     `const s: []u32` write           -> `1 1 1`
+#   (e2e 5) mutable_for_for_index_range_ok   `for (s, 0..) |*x, i|`           -> `1 1 1`
+#   (e2e 6) mutable_for_discard_ok           `|*_|` (rc + stdout only)        -> `0 0 0`
+#   (e2e 7) mutable_for_nested_ok            nested distinct-name loops       -> `1 1 1 13 23`
+#   (e2e 8) mutable_for_const_u8_row_ok      `[]const [3]u8` + `r.*[0]`       -> `1 4`
+#   (e2e 9) mutable_for_const_u8_row_ptr_ok  `*const [3]u8` + `r.*`           -> `24`
+#   (e2e 10) mutable_for_array_row_ok        `var m: [3][2]u32` + row write   -> `1 11 31`
+#   (e2e 11) mutable_for_module_array_ok     module-member array write        -> `11 12 13`
+#   (e2e 12) mutable_for_fnptr_ok            `[]fn(u32)u32` slot mutation     -> `23`
+#
 # Positives assert `--check` rc=0, no `error[` diagnostic, banner present, and no
 # emitted `.c` / `.zig1_lir.tmp` in either the per-case CWD (default spill
 # location) or the ignored output dir. Negatives assert rc=2, the exact
@@ -178,14 +195,20 @@ run_check "flag -d without output"   mutable_for_slice_ok            0 -d
 
 # Task 4 e2e: lowering + build + run. Values prove the `|*` capture aliases
 # the source storage (in-place mutation observed in the caller's buffer).
+# Labels name the fixture shape; they do not reuse the sema-case letters.
 note "--- e2e (default mode, build_target.sh linux) ---"
-run_e2e "e2e a slice"            mutable_for_slice_ok           "1 1 1"
-run_e2e "e2e b row ptr"          mutable_for_row_ptr_ok         "1 11 31"
-run_e2e "e2e d array ident"      mutable_for_array_ident_ok     "11 12 13"
-run_e2e "e2e e const binding"    mutable_for_const_binding_ok   "1 1 1"
-run_e2e "e2e f for_index_range"  mutable_for_for_index_range_ok "1 1 1"
-run_e2e "e2e g discard"          mutable_for_discard_ok         "0 0 0"
-run_e2e "e2e h nested"           mutable_for_nested_ok          "1 1 1 13 23"
+run_e2e "e2e slice []u32"                  mutable_for_slice_ok           "1 1 1"
+run_e2e "e2e row ptr *[3][2]u32"           mutable_for_row_ptr_ok         "1 11 31"
+run_e2e "e2e array ident [3]u32"           mutable_for_array_ident_ok     "11 12 13"
+run_e2e "e2e const binding []u32"          mutable_for_const_binding_ok   "1 1 1"
+run_e2e "e2e for_index_range"              mutable_for_for_index_range_ok "1 1 1"
+run_e2e "e2e discard |*_|"                 mutable_for_discard_ok         "0 0 0"
+run_e2e "e2e nested"                       mutable_for_nested_ok          "1 1 1 13 23"
+run_e2e "e2e const u8 row []const [3]u8"   mutable_for_const_u8_row_ok    "1 4"
+run_e2e "e2e const u8 row ptr *const [3]u8" mutable_for_const_u8_row_ptr_ok "24"
+run_e2e "e2e array row [3][2]u32"          mutable_for_array_row_ok       "1 11 31"
+run_e2e "e2e module array"                 mutable_for_module_array_ok    "11 12 13"
+run_e2e "e2e fn ptr []fn(u32)u32"          mutable_for_fnptr_ok           "23"
 
 if [ "$fail" -eq 0 ]; then
     echo "MUTABLE_FOR GATE OK"
