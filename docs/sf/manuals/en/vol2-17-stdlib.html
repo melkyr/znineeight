@@ -5,7 +5,7 @@
 <title>Z98 Manual: The Standard Library Tour</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual standard library std tour io fmt arena str mem math debug net async bits os time buf module re-export std.zig stdio.z98">
+<meta name="keywords" content="Z98 manual standard library std tour io fmt arena str mem math debug net async bits os time buf fold module re-export std.zig stdio.z98 std_fold">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -76,11 +76,11 @@ compiler: <tt>std.arena</tt>, <tt>std.io</tt>, and the rest of the
 function in every module; it names every module the <tt>std</tt> namespace
 actually exports, says what each one is for, and gives the smallest call
 that proves it is there. The chapter's program,
-<tt>docs/sf/manuals/src/vol2/stdio.z98</tt>, touches all thirteen modules in
+<tt>docs/sf/manuals/src/vol2/stdio.z98</tt>, touches all fourteen modules in
 one run.
 </p>
 <p>
-Thirteen is a small number, and the size is deliberate: this chapter covers
+Fourteen is a small number, and the size is deliberate: this chapter covers
 the whole <tt>std</tt> namespace, not the whole shipped library. The compiler's
 runtime library directory carries more files than the <tt>std</tt> namespace
 re-exports; only the names in this chapter resolve as <tt>std.&lt;name&gt;</tt>.
@@ -94,7 +94,7 @@ function of every module, has shipped.
 <tr>
 <td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
 <td><b>Honest note.</b> You will reach for a standard library; here is how
-small the <tt>std</tt> namespace is. It is thirteen modules, and most of them
+small the <tt>std</tt> namespace is. It is fourteen modules, and most of them
 are short. There is no formatted input, no dynamic array in the compiler sense,
 no map in the <tt>std</tt> namespace (a by-path <tt>std_map</tt> ships
 separately), no string object. Floating-point math is limited to the f64
@@ -102,8 +102,9 @@ separately), no string object. Floating-point math is limited to the f64
 f32 surface. What exists is a set of concrete, hand-written helpers: an arena
 you own, byte slices you slice yourself, a formatting engine behind
 <tt>print</tt>, and thin wrappers over the operating system. The list below is
-the whole <tt>std</tt> namespace; the shipped library also has twenty-two
-by-path modules beyond it (see <a href="#beyond">Beyond <tt>std</tt></a>). What
+the whole <tt>std</tt> namespace; the shipped library also has thirty
+public by-path modules beyond it plus five internal <tt>*_pal</tt> files
+(see <a href="#beyond">Beyond <tt>std</tt></a>). What
 you gain is that every function is a plain Z98 function you can read in the
 compiler's source, with no hidden allocation and no dispatch you did not write.
 What you lose is the convenience layer a larger language would have built on top
@@ -114,10 +115,10 @@ of it.</td>
 <h2><a name="whatships"></a>What ships in <tt>std</tt></h2>
 <p>
 The module <tt>sf/src/std.zig</tt> is nothing but a list of re-exports. It
-declares exactly thirteen names; each maps to one <tt>std_*.zig</tt> file in
+declares exactly fourteen names; each maps to one <tt>std_*.zig</tt> file in
 the compiler's library directory. Every name is reachable as
 <tt>std.&lt;name&gt;</tt> and nothing else is. The blueprint for this volume
-named eight of them; the other five are part of the same surface and are
+named eight of them; the other six are part of the same surface and are
 covered here so the list is complete.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
@@ -191,14 +192,20 @@ covered here so the list is complete.
 <td><tt>std_buf.zig</tt></td>
 <td>A growable byte buffer backed by an arena.</td>
 </tr>
+<tr>
+<td><tt>std.fold</tt></td>
+<td><tt>std_fold.zig</tt></td>
+<td>Per-type left folds over slices through a caller-supplied function pointer.</td>
+</tr>
 </table>
 
 <h2><a name="beyond"></a>Beyond <tt>std</tt></h2>
 <p>
 The namespace above is the whole <tt>std</tt> namespace, but not the whole
-shipped library. Twenty-two more modules ship by path: import one as
+shipped library. Thirty public modules ship by path (plus five internal
+<tt>*_pal</tt> files): import one as
 <tt>@import("std_&lt;name&gt;")</tt> rather than through <tt>std</tt>. They are
-documented in four companion reference pages:
+documented below and in the companion reference pages:
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -221,13 +228,18 @@ documented in four companion reference pages:
 <td><a href="vol4-18-stdlib-algorithms.html">Algorithms</a></td>
 <td><tt>std_rand</tt>, <tt>std_noise</tt>, <tt>std_num</tt>, <tt>std_pathfind</tt>, <tt>std_physics</tt>, <tt>std_hpa</tt></td>
 </tr>
+<tr>
+<td><a href="vol3-14-directx.html">Graphics / GUI</a></td>
+<td><tt>std_gfx</tt>, <tt>std_gfx_pal</tt></td>
+</tr>
 </table>
 <p>
-The directory holds twenty-six more <tt>std_*.zig</tt> files than these
-thirteen; twenty-two of them are public modules that ship by path, and four are
-internal <tt>*_pal</tt> support files. A name that is not in the re-export table
-above is not part of the <tt>std</tt> namespace. The compiler rejects it rather
-than resolving it, for example:
+The directory holds thirty-five more <tt>std_*.zig</tt> files than these
+fourteen: thirty public modules that ship by path and five internal
+<tt>*_pal</tt> support files (<tt>std_os_pal</tt>, <tt>std_time_pal</tt>,
+<tt>std_file_pal</tt>, <tt>std_stdin_pal</tt>, <tt>std_gfx_pal</tt>). A name
+that is not in the re-export table above is not part of the <tt>std</tt>
+namespace. The compiler rejects it rather than resolving it, for example:
 </p>
 <pre>
 const S = @sizeOf(std.base64);
@@ -237,6 +249,12 @@ const S = @sizeOf(std.base64);
 That is the measured diagnostic for a name outside the re-export list. The
 same file may exist on disk and be used internally; it is simply not part of
 the public surface a program can name through <tt>std</tt>.
+</p>
+<p>
+Seven public by-path modules have no dedicated manual chapter
+(<tt>std_ecc</tt>, <tt>std_asn1</tt>, <tt>std_x509</tt>, <tt>std_tls</tt>,
+<tt>std_wireguard</tt>, <tt>std_tcpip</tt>, <tt>std_gfx</tt>); their domain
+docs live in <tt>sf/docs/std_lib/</tt>.
 </p>
 
 <h2><a name="io"></a>std.io</h2>
@@ -619,7 +637,7 @@ path, and the <tt>slice</tt> view.
 
 <h2>The example</h2>
 <p>
-The whole tour in one program. It calls every one of the thirteen modules and
+The whole tour in one program. It calls every one of the fourteen modules and
 prints one line for each result.
 It is <tt>docs/sf/manuals/src/vol2/stdio.z98</tt>:
 </p>
@@ -627,6 +645,10 @@ It is <tt>docs/sf/manuals/src/vol2/stdio.z98</tt>:
 const std = @import("std");
 
 const Point = struct { x: i32, y: i32 };
+
+fn addU32(a: u32, x: u32) u32 {
+    return a + x;
+}
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
     std.os.initArgs(argc, argv);
@@ -677,6 +699,9 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
 
     std.io.print("time ticks&gt;=0={}\n", .{ std.time.ticksMs() &gt;= 0 });
 
+    var fold_xs: [4]u32 = [4]u32{ 1, 2, 3, 4 };
+    std.io.print("fold sum={}\n", .{ std.fold.foldU32(fold_xs[0..], 0, addU32) });
+
     std.fmt.printI32(-99);
     std.io.print("\n", .{});
 }
@@ -712,10 +737,11 @@ async header=16 capacity=112
 os argc&gt;=1=true cwd_nonempty=true
 buf len=4 byte0=44
 time ticks&gt;=0=true
+fold sum=10
 -99
 </pre>
 <p>
-Thirteen lines, one per module, and an exit status of 0. Read the numbers
+Fourteen lines, one per module, and an exit status of 0. Read the numbers
 back against the sections above. The arena reports eight bytes used for one
 <tt>Point</tt>; the async header is the declared sixteen, leaving 112 of the
 128-byte pool; the network helper turns port <tt>0x1234</tt> around to the
@@ -730,7 +756,7 @@ trailing newline of its own.
 The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
 emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
 <tt>stdio.exe</tt>; run from a Windows 98 command prompt, it prints the same
-thirteen lines. Every module in the tour is target-selected already:
+fourteen lines. Every module in the tour is target-selected already:
 <tt>std.net</tt>, <tt>std.os</tt>, and <tt>std.time</tt> choose their OS
 binding at compile time, so the same source emits the Win9x calls when it is
 built for that target. OpenWatcom is not installed on the development host, so this <tt>build_owc.bat</tt> path is emitted and documented, not run here; the screenshot below will be captured on real hardware.
@@ -745,7 +771,7 @@ built for that target. OpenWatcom is not installed on the development host, so t
 <p><i>Figure 31. Running <tt>stdio.exe</tt> under Windows 98.</i></p>
 <p>
 Every line matches. The emitted program was also built for the Win9x target
-and run under wine, and it printed the same thirteen lines, because the tour
+and run under wine, and it printed the same fourteen lines, because the tour
 reduces its target-dependent values to booleans before printing them. The
 values behind those booleans do vary &mdash; <tt>ticksMs</tt> and the
 argument count are live &mdash; but the output does not. The tour is about
@@ -778,7 +804,8 @@ information in Z98 is in the return type, which is why the arena returns
 </p>
 <p>
 <b>Assuming more modules ship through <tt>std</tt>.</b> The library directory
-holds twenty-two more <tt>std_*.zig</tt> modules that ship by path, and a name
+holds thirty more public <tt>std_*.zig</tt> modules that ship by path (plus five
+internal <tt>*_pal</tt> files), and a name
 that is not in the re-export table is not reachable through <tt>std</tt>. The
 compiler says so at the point of use:
 </p>
@@ -788,8 +815,8 @@ const S = @sizeOf(std.base64);
 </pre>
 <p>
 Check the re-export list in <tt>sf/src/std.zig</tt> before you reach for a
-name. If it is not one of the thirteen, it is not part of the <tt>std</tt>
-namespace; if it is one of the twenty-two by-path modules, import it as
+name. If it is not one of the fourteen, it is not part of the <tt>std</tt>
+namespace; if it is one of the thirty public by-path modules, import it as
 <tt>@import("std_&lt;name&gt;")</tt> and use the companion page above.
 </p>
 <p>
@@ -828,9 +855,9 @@ where the arena, buffer, and init-function patterns are collected.</li>
 </ul>
 <p>
 <a href="vol4-18-stdlib.html">The Reference stdlib page</a> documents every
-function of every module in the table above; the four companion pages linked
-under <a href="#beyond">Beyond <tt>std</tt></a> do the same for the twenty-two
-by-path modules. The runnable example in
+function of every module in the table above; the companion pages linked
+under <a href="#beyond">Beyond <tt>std</tt></a> do the same for the thirty
+public by-path modules. The runnable example in
 <tt>docs/sf/manuals/src/vol2/stdio.z98</tt> is the working reference for the
 shape of a call, and the module sources
 <tt>sf/src/std_*.zig</tt> are the authority for a signature this chapter did

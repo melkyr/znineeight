@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Modules** | `std_gfx` (contract + cell grid + metrics), `std_gfx_pal` (Win9x window/pump + DirectDraw7 + clipboard) |
-| **Layers** | `L2` — app-facing GUI contract over `L3` OS backends |
+| **Layers** | **GUI** (outside L0–L6) — windowed cell-grid drawing, input events, and clipboard; app-facing contract over a per-OS backend |
 | **Import (by path)** | `const std_gfx = @import("std_gfx");` |
 | **Platform** | Win9x / Win98 (PE32, no-CRT profile); headless memory mode on any target |
 

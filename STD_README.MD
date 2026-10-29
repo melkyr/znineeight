@@ -92,6 +92,7 @@ strict: lower layers only, never siblings, never higher (R3).
 | **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, DER/X.509 parsing and chain verification, TLS 1.2/1.3 client, WireGuard initiator protocol, userspace IPv4/TCP/UDP/DNS/ICMP stack, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_wireguard`, `std_tcpip`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
 | **L6** | Composition — coroutine-aware line and frame readers | `std_stream` |
 | async runtime | Outside L0–L6 — the cooperative scheduler and child-frame pool | `std.async` |
+| **GUI** | Windowed cell-grid drawing, input events, and clipboard; app-facing contract over a per-OS backend | `std_gfx`, `std_gfx_pal` |
 
 ## Rules (R1–R7)
 
@@ -175,6 +176,7 @@ apply to its modules.
 | TLS 1.2/1.3 client (sans-I/O records + handshakes) | `std_tls` | [tls.md](sf/docs/std_lib/tls.md) |
 | WireGuard initiator (NoiseIK handshake, transport, timers, replay) | `std_wireguard` | [wireguard.md](sf/docs/std_lib/wireguard.md) |
 | Userspace IPv4/TCP client, UDP, DNS A, ICMP echo | `std_tcpip` | [tcpip.md](sf/docs/std_lib/tcpip.md) |
+| Window/input/cell-grid text drawing | `std_gfx` + `std_gfx_pal` | [gfx.md](sf/docs/std_lib/gfx.md) |
 | Parse/format integers and fixed-point `f64` | `std_parse` | [codecs.md](sf/docs/std_lib/codecs.md) |
 
 ## Worked example
@@ -294,6 +296,8 @@ entry for each public function. Read the one for the job at hand:
 - [physics.md](sf/docs/std_lib/physics.md) — `std_physics`: Position-Based
   Dynamics (Verlet integration plus iterative distance projection) for cloth,
   soft bodies, and ropes.
+- [gfx.md](sf/docs/std_lib/gfx.md) — `std_gfx`, `std_gfx_pal`: windowed
+  cell-grid drawing, input events, palette, and clipboard over a per-OS backend.
 
 ## Further reading
 
