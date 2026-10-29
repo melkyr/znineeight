@@ -174,6 +174,15 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var startmsg: []const u8 = "START\n";
     pal.markerWrite(startmsg);
      var cli = parseArgs();
+     if (cli.check) {
+        // Task 3 (Phase 2.5, review fix round 1): `--check` genuinely ignores
+        // `-o`/`-d`/`--output-dir`. Disabling the output-dir flag skips its
+        // existence validation and keeps every scratch spill on the default CWD
+        // path; disabling debug drops the `-d`-requires-`--output-dir` check
+        // (and the debug-map work, which --check never reaches anyway).
+        cli.output_dir_set = false;
+        cli.debug = false;
+     }
      if (cli.show_markers) { pal.markersEnabled(@intCast(u32, 1)); }
      if (!cli.quiet) {
         if (cli.debug) {
@@ -486,12 +495,14 @@ fn runCompiler(ctx: *CompilerContext) void {
         // lowered or emitted (no `.c`/`.h`/scripts/.zig1_lir.tmp); the usual
         // scratch spills were created by earlier phases and are left for the
         // caller's cleanup, exactly like a normal run.
-        if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
-            diag_mod.diagnosticCollectorPrintAll(ctx.diag);
-            resolved_type_table.resolvedTypeTableClose(ctx.resolved_types);
-            pal.exit(2);
-        }
+        //
+        // Review fix round 1: print ALL diagnostics unconditionally (no-op when
+        // empty) so warnings are visible; `-W`/--warn-error turns a warning-only
+        // run into rc=2, staying inside the documented 0/2 contract.
+        diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         resolved_type_table.resolvedTypeTableClose(ctx.resolved_types);
+        if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) { pal.exit(2); }
+        if ((ctx.cli.warnings_as_errors or ctx.cli.warn_error) and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) { pal.exit(2); }
         pal.exit(0);
         return;
     }

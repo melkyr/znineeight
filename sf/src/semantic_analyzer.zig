@@ -5541,12 +5541,12 @@ fn semanticAnalyzerResolveExprImpl(self: *SemanticAnalyzer, node_idx: u32) u32 {
        } else if (node.kind == AstKind.for_stmt) {
            semanticAnalyzerResolveForHeader(self, node_idx);
            if (node.child_1 != 0) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
-           // Task 3 (Phase 2.5): do NOT fall through to the generic tail write
-           // (`resolvedTypeTableSet(node_idx, TYPE_VOID)`): the mutable-capture
-           // channel writes the pointer type at this same `for_stmt` node inside
-           // `semanticAnalyzerResolveForHeader`, and the tail would clobber it.
-           // The for_stmt node has no value consumer, so the tail write is dead.
-           return type_mod.TYPE_VOID;
+           // Task 3 (Phase 2.5, review fix round 1): fall through so the
+           // STX/A4/STB marker writes stay byte-identical; the generic tail's
+           // type-table write is guarded below because the mutable-capture
+           // channel already wrote the pointer type at this same `for_stmt` node
+           // and the node has no value consumer.
+           result = type_mod.TYPE_VOID;
       } else if (node.kind == AstKind.while_stmt) {
           semanticAnalyzerResolveWhileHeader(self, node_idx);
           if (node.child_1 != 0) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
@@ -5669,7 +5669,11 @@ fn semanticAnalyzerResolveExprImpl(self: *SemanticAnalyzer, node_idx: u32) u32 {
      var a4_nm: []const u8 = "A4:N"; pal_mod.markerWriteInt(a4_nm, node_idx);
      var a4_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var a4_km: []const u8 = "A4:K"; pal_mod.markerWriteInt(a4_km, a4_kv);
      var a4_rm: []const u8 = "A4:R"; pal_mod.markerWriteInt(a4_rm, result);
-     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
+     // Task 3 (Phase 2.5, review fix round 1): the mutable-capture channel writes
+     // the ptr type at a `for_stmt` node inside `ResolveForHeader`; do not let
+     // the generic tail clobber it with TYPE_VOID. For every other kind this is
+     // the single writer, unchanged.
+     if (node.kind != AstKind.for_stmt) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result); }
      var stb_nm: []const u8 = "STB:N"; pal_mod.markerWriteInt(stb_nm, node_idx);
      var stb_rm: []const u8 = "STB:R"; pal_mod.markerWriteInt(stb_rm, result);
     return result;
