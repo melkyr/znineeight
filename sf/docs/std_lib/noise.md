@@ -34,7 +34,7 @@ The 2D skew/squish and 3D stretch constants are the canonical 2014-reference
 decimal spellings. Since M2 T1B (correctly-rounded `parseF64`) + T1D (literal
 restore) these parse bit-exactly; the earlier adjacent-literal workaround
 (`0.3660254037844389` / `-0.16666666666666664`) is **removed** and must not
-come back (defect D6 in `examples/torrent_example_defects.md`, FIXED).
+come back (fixed at root cause 2026-10-20 in the lexer; see git history).
 
 | constant | literal | IEEE-754 bits (f64) |
 |---|---|---|
