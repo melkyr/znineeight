@@ -157,13 +157,54 @@ else
     bad "escape proof: z_cdecl absent from emitted main_*.c"
 fi
 
+# Export/function-name probe: a reserved `export fn` keeps its raw ABI symbol
+# (documented escape bypass), while a non-export function is hash-prefixed and
+# must not be raw-escaped to z_<keyword>.
+mkdir -p "$WORK/exportprobe"
+cat >"$WORK/export_probe.zig" <<'Z98'
+const std = @import("std");
+
+export fn cdecl(n: i32) i32 {
+    return n;
+}
+
+fn near(n: i32) i32 {
+    return n + 1;
+}
+
+pub fn main() void {
+    std.io.printInt(@intCast(i32, cdecl(1) + near(1)));
+    std.io.writeByte('\n');
+}
+Z98
+if timeout 120 "$ZIG1" -osw -o "$WORK/exportprobe" "$WORK/export_probe.zig" >"$WORK/exportprobe.log" 2>&1; then
+    rm -f "$WORK/exportprobe"/.zig1_*.tmp
+    if grep -qE '(^|[^A-Za-z0-9_])z_cdecl[[:space:]]*\(' "$WORK/exportprobe"/*.c 2>/dev/null; then
+        bad "reserved export fn 'cdecl' was escaped to z_cdecl"
+    elif grep -qE '(^|[^A-Za-z0-9_])cdecl[[:space:]]*\(' "$WORK/exportprobe"/*.c 2>/dev/null; then
+        echo "[win-compat] NOTE reserved export fn kept raw ABI symbol: cdecl"
+    else
+        bad "reserved export fn 'cdecl' is absent from the probe emission"
+    fi
+    if grep -qE '(^|[^A-Za-z0-9_])z_near[[:space:]]*\(' "$WORK/exportprobe"/*.c 2>/dev/null; then
+        bad "non-export fn 'near' was raw-escaped to z_near"
+    elif grep -qE 'zF_[0-9A-F]+_near' "$WORK/exportprobe"/*.c 2>/dev/null; then
+        ok "non-export fn 'near' is hash-prefixed (zF_<hash>_near)"
+    else
+        bad "non-export fn 'near' has no hash-prefixed emission"
+    fi
+else
+    bad "reserved-export probe dump failed (see $WORK/exportprobe.log)"
+fi
+
 # ---- 3. command.com-safe batch lint ---------------------------------------
 MAX_LINE="${MAX_LINE:-260}"
 lint_bat() {
-    local bat="$1" name lf line_no setline is_alias
+    local bat="$1" name lf line_no setline is_alias fail_before
     name="$(basename "$bat")"
     lf="$WORK/lint_$name"
     tr -d '\r' <"$bat" >"$lf"
+    fail_before=$fail
     is_alias=0
     case "$name" in
         build_target.bat|build_owc.bat)
@@ -247,6 +288,9 @@ lint_bat() {
             grep -qE '^[[:space:]]*[Ss][Ee][Tt][[:space:]]+LINK_EXE=link[[:space:]]*$' "$lf" || bad "$name: missing 'set LINK_EXE=link'"
             grep -q '%CL_EXE%' "$lf" || bad "$name: compile lines do not use %CL_EXE%"
             grep -q '%LINK_EXE%' "$lf" || bad "$name: link line does not use %LINK_EXE%"
+            if grep '%CL_EXE%' "$lf" | grep -qv '/c '; then
+                bad "$name: %CL_EXE% compile line lacks /c"
+            fi
             grep -q '/nologo' "$lf" || bad "$name: missing /nologo"
             grep -q '/O2' "$lf" || bad "$name: missing /O2"
             grep -q '/DWINVER=0x0410' "$lf" || bad "$name: missing /DWINVER=0x0410"
@@ -260,6 +304,10 @@ lint_bat() {
             grep -q '/d_CRT_SECURE_NO_WARNINGS' "$lf" || bad "$name: missing /d_CRT_SECURE_NO_WARNINGS"
             grep -q '/d_CRT_NONSTDC_NO_DEPRECATE' "$lf" || bad "$name: missing /d_CRT_NONSTDC_NO_DEPRECATE"
             grep -q '/ox' "$lf" || bad "$name: missing /ox"
+            grep -qE '^wcc386 .*\.c$' "$lf" || bad "$name: no wcc386 compile line"
+            if grep -E '^wcc386 ' "$lf" | grep -qvE '\.c$'; then
+                bad "$name: wcc386 line is not compile-only (.c)"
+            fi
             ;;
         build_mingw_crt.bat|build_mingw_nocrt.bat)
             grep -q -- '-m32' "$lf" || bad "$name: missing -m32"
@@ -271,6 +319,9 @@ lint_bat() {
             grep -q -- '-D_CRT_NONSTDC_NO_DEPRECATE' "$lf" || bad "$name: missing -D_CRT_NONSTDC_NO_DEPRECATE"
             grep -q -- '-D_WIN32' "$lf" || bad "$name: missing -D_WIN32"
             grep -q -- '@z98_link.rsp' "$lf" || bad "$name: link does not use @z98_link.rsp"
+            if grep -E '^gcc .*\.c$' "$lf" | grep -qv ' -c '; then
+                bad "$name: gcc compile line lacks -c"
+            fi
             ;;
     esac
     case "$name" in
@@ -278,7 +329,11 @@ lint_bat() {
             grep -q '\*\.obj' "$lf" || bad "$name: CRT link does not use *.obj"
             ;;
     esac
-    ok "$name lint"
+    if [ "$fail" -eq "$fail_before" ]; then
+        ok "$name lint"
+    else
+        echo "[win-compat] FAIL $name lint (see above)" >&2
+    fi
 }
 
 for s in build_target_nocrt.bat build_target_crt.bat build_owc_nocrt.bat \

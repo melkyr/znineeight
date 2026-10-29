@@ -249,15 +249,19 @@ asm_x86 backend. Do not use the Linux gen/ C for Win9x.
 Build the compiler on the Win9x machine
 ---------------------------------------
 cd win
-then run one of:
+then run one of (the scripts hardcode the output name `prog.exe`):
 
-  build_owc_crt.bat ..\\zig1.exe
-  build_target_crt.bat ..\\zig1.exe
+  build_owc_crt.bat
+  copy prog.exe ..\\zig1.exe
+  build_target_crt.bat
+  copy prog.exe ..\\zig1.exe
 
 MinGW fallback (Windows-hosted gcc), if MSVC 6 / OpenWatcom are unavailable:
 
-  build_mingw_crt.bat ..\\zig1.exe
-  build_mingw_nocrt.bat ..\\zig1.exe
+  build_mingw_crt.bat
+  copy prog.exe ..\\zig1.exe
+  build_mingw_nocrt.bat
+  copy prog.exe ..\\zig1.exe
 
 The MSVC/OpenWatcom scripts use a static CRT (/MT for MSVC 6, OpenWatcom
 static CLIB): a single EXE with no msvcrt.dll. They may import KERNEL32 names
@@ -265,8 +269,8 @@ beyond the strict 9x whitelist; validate the result on the era machine.
 build_mingw_nocrt.bat is the -nostdlib single-EXE fallback; build_mingw_crt.bat
 is CRT-linked.
 
-..\\zig1.exe sits beside ..\\lib\\. That lib/ is the compiler's standard
-library. Run zig1.exe with no arguments to see usage.
+The copied `..\\zig1.exe` sits beside `..\\lib\\`. That lib/ is the compiler's
+standard library. Run zig1.exe with no arguments to see usage.
 
 CRT note
 --------
@@ -288,7 +292,7 @@ Build a program
 ---------------
 zig1.exe -osw -o out hello.z98
 then run out\\build_owc_crt.bat (or build_target_crt.bat), or the emitted
-_nocrt variant, then out\\hello.exe.
+_nocrt variant; the program is out\\prog.exe (rename it if desired).
 
 If a toolchain rejects the C, report the exact error.
 EOF
