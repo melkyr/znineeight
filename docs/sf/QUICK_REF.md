@@ -36,21 +36,22 @@ in the next section; that is the only supported path.
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v130 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v131 CHANGELOG entry.
 
-**Current seed: v130** (rotated 2026-11-02 from compiler source `efdb269b`,
-captured at packaging base HEAD `2f0b9d29`; the Win9x emission-fixes
+**Current seed: v131** (rotated 2026-11-02 from compiler source `b1da327a`,
+captured at packaging base HEAD `b1da327a`; the Win9x emission-fixes
 milestone: target-filtered `dirent`, sanitized `ZIG_*` guards, folded-if
 terminator DCE including the explicit-block/labeled-sequence flag fix, OWC
-`FILE __iob`, and self-sufficient emitted build scripts with response files /
-`00.txt` logging). Archived binary md5 (= fixed point)
-`a452e713f869f6d7f8c4894c2acb67e5`; archive md5
-`c9198e2f0dd7ac4e05d19442aa53ec05`; Win9x zip md5
-`baf39d8ba30042d39beff0e1a80ede16`; `gen/` 48 `.c` + 49 `.h` (12,351,612
+`FILE __iob`, self-sufficient emitted build scripts with response files /
+`00.txt` logging, and command.com-safe stdout-only logging with no `2>&1`).
+Archived binary md5 (= fixed point)
+`cc15a6f3fd0e6e28b8e2fe116665ff86`; archive md5
+`54980ef2c404954fd7613d4f5f7907b2`; Win9x zip md5
+`ae8d3a041b85b5b9842e4e3feb043a2a`; `gen/` 48 `.c` + 49 `.h` (12,355,182
 bytes); `lib/` **50** std `.zig` (`std.zig` + 49 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`8b78593a7dabb86f9f01cd9e7994ab9f`). A rebuild from the committed v130
-archive is two-hop **hop1 == hop2 == `a452e713…`**. The compiler source is
+`8b78593a7dabb86f9f01cd9e7994ab9f`). A rebuild from the committed v131
+archive is two-hop **hop1 == hop2 == `cc15a6f3…`**. The compiler source is
 **`-fsafe`-clean**. Markers (`--markers --dump-c89` on `mud_server`):
 **3397 lines / 39012 B** (unchanged from v129). The 8 pins, the frozen-1124
 corpus, the goldens, the 26 examples and the 339/0 stdlib are all exact.
