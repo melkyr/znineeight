@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.21.0] - "Terephthalic Acid"
+
+### Added
+- **Mutable `for` capture**: `|*item|`, `|*item, index|`, `|*_|` bind a pointer into the iterable; writes through `item.*` / `item.field` mutate in place (`d893379c`, `c45a7514`).
+- **Sema-only `--check`**: runs import resolution, sema, static analyzers, and const-init; prints all diagnostics; rc 0/2 (`d893379c`, `0673563e`).
+- **New diagnostics**: `error[3077]` for semantic-analysis depth (limit 130) and `error[3078]` for unsupported mutable captures (`56350635`, `d893379c`).
+- **Debugger**: `-d`/`--debug` sidecar map emission plus `z9dbg` with Linux ptrace/DWARF and Win98 COFF/DWARF-in-PE backends (`4df9a753`, `566f65ce`, `7cd7e26f`).
+- **GUI layer**: `std_gfx` / `std_gfx_pal` windowed DirectDraw7 cell layer, `gfx_demo`, and a 16-color GDI fallback (`b83df7e9`, `571445b9`).
+- **Editor**: `z9edit` single-file editor with gap buffer, syntax/declared-identifier colors, bracket matching, undo, clipboard, and CRLF/LF preservation (`0065371b`, `629dc9b1`).
+- **Themes**: `std_gfx.Theme` white/solarized/dark; `z9edit.ini`/`z9edit.cfg` config and F2 cycling (`be8d4f96`, `21dbc320`).
+- **Networking/crypto std**: `std_net` extensions, `std_tcpip`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_wireguard`, `std_http` (`349b3de3`, `6e14ce78`, `2a2dc138`, `fe2c74d2`, `8af805dc`, `4858de78`, `3b98ebb3`, `ed1fcd7b`, `00ef28ea`, `7cc9f072`).
+- **Algorithm std**: `std_noise`, `std_lz4`, `std_zstd`, `std_num`, `std_pathfind`, `std_physics`, `std_hpa`, `std_fold` (`10fd69c0`, `e48278ef`, `c9af1fa8`, `0231ddc9`, `abbc7ce2`, `453efcc0`, `e89acce2`, `a3abb204`).
+- **Async**: `std.async` scheduler fixes, multi-module `__Z98Step_<f>`, suspending `export fn` drivers, and async/coroutine documentation (spec §4/§4.1, builtins, README, `sf/docs/tech_docs/12_async_coroutines.md`) (`b8ffe1bb`, `af2d7080`, `66446667`, `aaf6374b`, `d3bace14`, `5967496d`, `84b73b12`).
+- **Examples**: `z9play`, `z9torr`, `z9dbg`, `gfx_demo`, `z9edit`, `wireguard_demo`, and TLS/HTTPS demos (`07d92393`, `37484cb6`, `566f65ce`, `b83df7e9`, `629dc9b1`, `65c20b1c`, `b9fb17bd`).
+- **Seed**: committed rotating bootstrap seed; **v129** fixed point `c1bb4c0e7cbb3d9f4a808491f1a5772d` with 50-file `lib/`; Win9x companion seed zip (`53eb190d`, `a886be61`, `4a0f34ea`, `0b9e0a89`, `cdec5098`, `1e7b303a`, `b5580232`).
+
+### Changed
+- **String literals** are typed `*const [N]u8` and decay warning-cleanly in C89 output (`5b9208c7`, `821c932f`).
+- **Implicit enum→int** is now rejected; use `@enumToInt` (`40fd672c`, `c153f31c`).
+- **Invalid Zig coercions** now fail with `error[3000]` (`40fd672c`).
+- **`zig0` is retired**; rebuild from the committed seed via `scripts/seed/build_from_seed.sh` (`fbe40e9f`).
+- **Windows emission** is strict-C89, CRLF, warning-clean, and no longer passes `/Za` `/WX` `/za` `/we`; MinGW fallback scripts are generated (`6941244f`, `1339eb4a`).
+- **Lowering** uses an explicit continuation stack, fixing deep-expression C-stack failures (`dd5d8a2e`, `1891be6f`, `09ed4ae5`, `c0c23ea8`, `395ccdfd`).
+- **`-d`/`--debug`** requires `--output-dir` (`4df9a753`).
+
+### Removed
+- **`zig0` from the release/build path**; no zig0 binaries or archives ship in 0.21.0 (`fbe40e9f`; design §2/§5).
+
+### Fixed
+- **Coroutine emission**: `__Z98Step_<f>` is emitted in the owning module; `std.async` stores task handles by pointer and traps non-suspending `awaitTask` (`b8ffe1bb`, `af2d7080`).
+- **String slicing**: switch/if string-literal prongs recover the real length; un-annotated expressions infer `[]const u8`; error-union/optional payloads coerce (`b6ec2da5`, `5fa8a3d5`).
+- **False positives**: 48 spurious `warning[3000]` removed; bare enum literals lower correctly (`466fd2cc`).
+- **`[*]*T` field stores** no longer ICE with `error[3043]` (`5b9208c7`).
+- **`strtod`**: direct `null` optional arguments emit `(void*)NULL`; examples declare `endptr` correctly (`ee6345b2`, `1a10ebd2`).
+- **Windows spill**: update-stream `fseek` elision fixed; Windows-hosted compiler matches Linux corpus classes (`4805a742`, `908fd08b`).
+- **Debugger maps**: lazy sections, optional C names, COFF line RVAs, dump/step semantics (`99b2c1cf`, `9519eece`).
+- **Editor**: save failure/replace/backup, wheel, clipboard, Delete, minimize/live pump (`4fcd08f2`, `1baa0199`, `4b04c597`, `fee47e86`, `6b4abb36`).
+- **Theme**: black color-atlas background fixed for light themes (`b0e7fc44`).
+- **Win9x**: D11 declaration ordering, CRLF, flag cleanup, warning-clean emission, MinGW fallback (`6941244f`, `1339eb4a`).
+- **Win9x truth hotfix**: source identifiers reserved by MSVC 6 / OpenWatcom (`cdecl`, `near`, `far`, `stdcall`, …) plus the emitted `Z98_*`/`zig_*`/`pal_*`/`zT_*`/`zF_*`/`zG_*` namespaces are escaped in the raw-mint path while convention tokens stay raw; emitted `.bat` files are `command.com`-safe (no `set OUT`/`set CFLAGS`, no `%ERRORLEVEL%`/`&&`/`||`/`setlocal`), stop on `if errorlevel 1 goto z98_fail`, never print `Built:` after a failure, and link gcc via `@z98_link.rsp` (`cdec5098`; seed v129).
+
+## [Unreleased]
+
 ## [0.20.0] - "Oxalic Acid"
 
 ### Added
@@ -29,29 +72,6 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - **WSAStartup Init**: std_net now calls `WSAStartup`, removing win32 `10093` (WSANOTINITIALISED) failures — mud_server binds and serves, and the client connects, under wine.
 - **Connect Loopback**: `createTcpClient` connects to `htonl(0x7F000001)` (127.0.0.1) with `htons(port)` — no double byte-swap.
-
-## [Unreleased]
-
-### Added
-- **Multi-Module Coroutine Steps**: synthesized `__Z98Step_<f>` functions are now emitted in the module that owns the suspending function in the per-module (`--output-dir`) emission path, fixing `undeclared identifier` link failures for coroutines outside the last-imported module.
-- **Coroutine Library (`std.async`)**: `Scheduler.tasks` is now `[*]*Task`; `addTask` stores the caller's task handle (no by-value copy), and `awaitTask` traps when called outside a suspending context.
-- **Async/Coroutine Documentation**: the `@async*` builtins and the `std.async` cooperative scheduler are now documented in the language spec (§4/§4.1), `docs/reference/builtins.md`, the README, and a new deep-dive `sf/docs/tech_docs/12_async_coroutines.md` (step machine, frame/step ABI, `Context` layout, multi-module `__Z98Step_<f>` emission, and the `rogue_mud`/`mud_server` conversions).
-- **Suspending `export fn` Synchronous Driver**: a suspending `export fn` now keeps a synthesized synchronous export entry under its source name, exactly like root `main` (`isDriverTarget = isRootMain || lf.is_export`, where `LirFunction.is_export` carries the AST `fn_decl` bit3 `0x08`). The driver frame-inits through the shared `asyncEmitFrameInit` helper (the same zero-fill → step → ctx → state → param sequence the `@asyncInit` lowering uses), and a value-returning target returns the value stored through a local result buffer.
-
-### Changed
-- **String-Literal Type**: string literals are now typed `*const [N]u8` (the real byte length in the type) instead of a bare `*const c_char`; the C89 emitter decays the temporary to a plain element pointer so generated C stays warning-clean.
-- **Implicit `enum`->`int` Rejected**: converting an enum to an integer without `@enumToInt` is now a hard `error[3000]` in variable declarations, assignments, return statements, and call arguments. The compiler's own sources were migrated to `@enumToInt`.
-- **Invalid-Zig Coercions Rejected**: implicit `*T`->`[*]T` (variable declarations and assignments), array element/length mismatch, error-set subset mismatch, and bare pointer->slice are now hard `error[3000]` (previously tolerated or only caught by the C compiler).
-
-### Fixed
-- **String-Literal Slice Length**: switch-expression and `if`-expression prongs with string-literal bodies now recover the real byte length (previously the coerced slice length was silently 1, truncating strings such as `Goodbye!` to `G`).
-- **Un-Annotated Switch/If Inference**: string-literal prongs/branches of an un-annotated `switch`/`if` expression now infer `[]const u8` instead of the literal pointer type.
-- **Error-Union / Optional Payload Coercion**: string literals assigned to `E![]const u8` / `?[]const u8` payloads now coerce correctly.
-- **False-Positive `warning[3000]`**: removed 48 spurious type-mismatch warnings across 12 checker arms (slice `.ptr`->`[*]T`, enum `==`/`!=`, enum-literal expected type, `is_extern` error-set equality, `noreturn` coercion, tuple->array, error-set subset, `if`-expression expected type, `@cVaArg` argument type, `@enumToInt` backing type, `undefined`/`noreturn`, and bare enum-literal lowering).
-- **`[*]*T` Element Field Store**: fixed an `error[3043]` internal error on stores through an element of a `[*]*T` / `[]*T` base.
-- **Bare Enum Literal**: corrected the runtime lowering of a bare plain-enum literal to its member value.
-- **`strtod` Null Optional**: a direct `null` optional pointer argument is now emitted as `(void*)NULL` instead of a payload-typed temporary.
-- **`strtod` `endptr` Declaration**: the canonical `examples/z98/json_parser*` copies now declare `endptr` as `?*[*]c_char`, matching libc's `char**`.
 
 ## [0.13.0] - "2-Propanol"
 

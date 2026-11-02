@@ -1,3 +1,128 @@
+# Z98 0.21.0 "Terephthalic Acid" Release Notes
+
+We are proud to announce the release of Z98 version **0.21.0**, codenamed **"Terephthalic Acid"** — the first release after **0.20.0 "Oxalic Acid"** and a release built entirely from the committed seed. It covers **1,864 commits** from the 0.20.0 finalize commit (`ab49e167`) to the release content freeze (`d609186c`), plus the Win9x truth hotfix (`cdec5098`, `1e7b303a`): the seed/self-hosting migration with **zig0 retired**, mutable `for` captures and sema-only `--check`, stricter Zig fidelity, continuation-stack lowering, the full secure-networking standard library, the `z9dbg` debugger, the `std_gfx` GUI layer and `z9edit` editor, and the Win9x conformance work. The release ships **zig1 + seed, no zig0**.
+
+## 🚀 Timeline
+
+- **2026-09-06** — Z98 0.20.0 "Oxalic Acid" released: the first fully self-hosted release. There is **no 0.20.0 tag**; provenance is the finalize commit `ab49e167`.
+- **2026-09-06 → 2026-10-29** — 0.21.0 development window: **53 days (~7.6 weeks)**, **1,864 commits** from `ab49e167` to the release content freeze `d609186c`, with no merges; the Win9x truth hotfix rounds (`cdec5098`, `1e7b303a`) and seed v129 rotation (`b5580232`) follow the freeze.
+- **2026-10-29** — This release: **Z98 0.21.0 "Terephthalic Acid"**.
+
+## ✨ Headline Capabilities
+
+**Self-hosting and seed**
+- Rebuild Z98 from the committed **v129** seed with only `gcc`; fixed point `c1bb4c0e7cbb3d9f4a808491f1a5772d`, two-hop closure `hop1 == hop2`; `lib/` now ships **50** std files (`std.zig` + 49 `std_*.zig`).
+- `zig0` is retired from the build path; the seed model (`scripts/seed/build_from_seed.sh`) is authoritative.
+- Win9x companion seed zip (`zig1_seed_w9.zip`) with static-CRT/MSVC and OpenWatcom build scripts.
+
+**Language and compiler**
+- Mutable `for` captures `|*item|`, `|*item, index|`, `|*_|` bind a pointer into the iterable.
+- Sema-only `--check` (rc 0/2, all diagnostics) plus `error[3077]` for semantic-analysis depth and `error[3078]` for unsupported mutable captures.
+- Stricter Zig fidelity: string literals typed `*const [N]u8`, implicit enum→int rejected without `@enumToInt`, invalid coercions hard `error[3000]`.
+- Continuation-stack lowering removes deep-expression C-stack failures; D11 declarations-before-statements, CRLF Windows files, warning-clean emission, and MinGW fallback build scripts.
+
+**Standard library**
+- Full Phase 1 secure-networking stack: `std_net`, `std_tcpip`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_http`, `std_wireguard`.
+- Codecs and algorithms: `std_noise`, `std_lz4`, `std_zstd`, `std_num`, `std_pathfind`, `std_physics`, `std_hpa`, `std_fold` (re-exported as `std.fold`), plus `std_async` and `std_stream`.
+
+**Debugger**
+- `-d`/`--debug` sidecar map emission (`--output-dir` required) and `z9dbg` with Linux ptrace/DWARF and Win98/Win9x COFF/DWARF-in-PE backends.
+
+**GUI and editor**
+- `std_gfx`/`std_gfx_pal` windowed DirectDraw7 cell layer with a 16-color GDI fallback, plus `gfx_demo`.
+- `z9edit` single-file editor: gap buffer, syntax/declared-identifier colors, bracket matching, undo, clipboard, themes (white/solarized/dark), `z9edit.ini`/`.cfg` config, and F2 switching.
+
+**Win9x conformance**
+- 16-color GDI fallback, visible error dialogs, CRLF batch files, `/Za` `/WX` `/za` `/we` removed from generated scripts, warning-clean emission, MinGW CRT/no-CRT fallback scripts, and the Win9x import gate.
+- **Win9x truth hotfix**: source identifiers reserved by MSVC 6 / OpenWatcom (`cdecl`, `near`, `far`, `stdcall`, …) and the emitted `Z98_*`/`zig_*`/`pal_*`/`zT_*`/`zF_*`/`zG_*` namespaces are escaped in the raw-mint path; the emitted `.bat` files are `command.com`-safe, stop on `if errorlevel`, never print `Built:` after a failure, and link gcc via `@z98_link.rsp`.
+
+**Async**
+- Multi-module `__Z98Step_<f>` emission, pointer-based `std.async` task handles, and suspending `export fn` synchronous drivers.
+
+**Examples**
+- `z9play`, `z9torr`, `z9dbg`, `gfx_demo`, `z9edit`, `wireguard_demo`, and the TLS demo.
+
+## 🛠️ Build Machine & Toolchain
+
+The Linux release artifacts were built and measured on an **AMD Ryzen 7 7700X 8-core/16-thread up to ~5.58 GHz, 32 GB RAM, Debian GNU/Linux 12 (bookworm)** machine with **gcc 12.2.0**, **i686-w64-mingw32-gcc 12-win32**, **Wine 8.0**, and `gcc -m32` available. No MSVC or OpenWatcom is available locally; the Win9x `zig1_w32.exe` is the operator-built static-CRT binary. Linux artifacts are `gcc -m32` builds; Windows archives are built in the `-osw` target flavour. Linux-facing archives are `.tgz`; win-facing archives are `.zip` so they unpack directly on win9x-era targets.
+
+## 💾 Minimum Requirements
+
+**Running** `zig1` measured **~20 MB** peak RSS at `-s0` on v129: D-safe (`-s0`, default `-fsafe`) is **6.82 s / 20,336 kB** (~19.9 MB), and D-fast (`-s0 -ffast`) is **6.68 s / 19,696 kB** (~19.2 MB). The old **~16 MB** RUN claim no longer holds at v129; use the measured ~20 MB figure. **Building** the compiler from source is dominated by the gcc backend: Row E (`sh build_target.sh linux zig1_next`, gcc `-m32` compile+link of the D-fast output) measured **9.57 s / 180,328 kB** (~176 MB). The Row E binary `6d64c270…` is a build-recipe binary, not the fixed point. Windows runtime memory was not measured; Wine is evidence only.
+
+Measured spill ladder at v129 (`-ffast --markers --track-memory`, RSS median / `pool`):
+
+| Level | Peak RSS (KiB) | Pool (K) |
+|---|---:|---:|
+| `-s0` | 19,740 | 18,633 |
+| `-s1` | 46,368 | 51,414 |
+| `-s2` (`-mm128`) | 95,868 | 120,406 |
+| `-s3` (`-mm128`) | 95,732 | 120,406 |
+| `-s4` (`-mm128`) | 99,420 | 124,502 |
+| `-s5` (`-mm128`) | 100,988 | 126,550 |
+| `-s6` (`-mm128`) | 103,008 | 130,646 |
+
+Optional deep-input evidence at a 1 MB stack: the 120-term `+` chain ran **0.05 s / 7,040 kB**; the 300-deep block fixture ran **0.00 s / 4,496 kB**. All numbers are medians of 3 at v129; see `measurements.md` for the raw logs.
+
+## ⏱️ PII/PIII Time Estimates
+
+Engineering estimates — **not measurements**. Clock-scaled from the v129 medians via `T_p = T_m × f_m/f_p × k` (`k = 1.0` clock-only lower bound; `f_m` = 4.0 GHz conservative single-core figure for the 7700X; PII 300–450 MHz, PIII 700–1000 MHz). Memory-bound phases scale worse by the stated 1.5–3× upper rationale.
+
+| Row | Median `T_m` (s) | PII 300–450 MHz (s) | PIII 700–1000 MHz (s) |
+|---|---:|---:|---:|
+| D-safe | 6.82 | 60.6 – 90.9 | 27.3 – 39.0 |
+| D-fast | 6.68 | 59.4 – 89.1 | 26.7 – 38.2 |
+| E (gcc compile+link) | 9.57 | 85.1 – 127.6 | 38.3 – 54.7 |
+
+Row E is the memory-bound row (~176 MB peak RSS) and carries the 1.5–3× memory-band caveat; D-safe/D-fast peak at only ~20 MB and track the clock ratio more closely. Verify on the operator's real VM.
+
+## 📦 Release Artifacts
+
+The staged 0.21.0 set is **zig1 + seed, no zig0** (git-ignored `release/staging/0.21.0/`):
+
+| File | Size (B) | md5 | Notes |
+|---|---:|---|---|
+| `zig1_linux32` | 3,560,024 | `c1bb4c0e7cbb3d9f4a808491f1a5772d` | v129 seed binary; ELF 32-bit i386; equals the fixed point |
+| `src_c_zig1_linux.tgz` | 2,028,819 | `98e38b070fb7b02f2352a98c9b09beab` | self-emission C89 archive (52 `.c` + 51 `.h` raw; 48 + 49 canonical) |
+| `src_c_zig1_w32.zip` | 2,056,674 | `48c229b674343deddf2a7f7dda69bdd9` | `-osw` self-emission; byte-identical members to the linux flavour |
+| `zig1_src.tgz` | 1,099,651 | `edeca691a0740ed8e4f32eacf9690e29` | `sf/src` + 50-file `lib/` + `RELEASE_README.txt` |
+| `zig1_src.zip` | 1,179,334 | `fa8d63da5759039407248c34a60b5f3c` | identical tree, zip format |
+| `zig1-seed.tgz` | 3,681,168 | `af4a480f16e833a26f29210fec9a30b5` | v129 seed archive |
+| `zig1_seed_w9.zip` | 2,581,045 | `f6aa60cb05e7533b9f24afa1040ad0d3` | v129 Win9x companion seed (sources + build scripts; no prebuilt exe) |
+| `zig1_w32.exe` | PENDING | operator-built static-CRT; hash to be recorded in MANIFEST.txt after the operator build | PE32 i386 Win9x-class compiler; pending operator build |
+
+The shipped `lib/` payload is **50** std files (`std.zig` + 49 `std_*.zig`); `lib/manifest.md5` md5 is `8b78593a7dabb86f9f01cd9e7994ab9f`. `zig1_w32.exe` is the **operator-built static-CRT** compiler (MSVC `/MT` or OpenWatcom static CLIB): it embeds the C runtime, has **no `msvcrt.dll` dependency**, and is verified with the `9x` import gate when it arrives. The MinGW CRT build is a **separate optional artifact** that **does require `msvcrt.dll`**; it is not the Win9x binary and is not shipped as one. A future packaging task will offer OWC/MSVC/MinGW variants for users to choose.
+
+## ⚠️ Known Issues
+
+Open-only entries after Phase 2.5 (no fixed defect is listed):
+
+- **D3** — conditional `@import` still parse-loads a sema-dead arm outside the parse probe; false reject only.
+- **D4** — static-analyzer cluster (dead-arm parity, unseeded params/returns, capture aliases, provenance lookup, test drift); false diagnostics possible on complex code.
+- **D5** — an `extern fn` with a body is accepted then emitted as a declaration only; non-cdecl callbacks (e.g. Win32 `stdcall`) cannot be defined.
+- **D7.3** — a nested write through `arr[i].field[0..]` can target a by-value temporary; the store is silently lost.
+- **D8** — stdout is split between C stdio builtins and PAL `std.fmt`; mixed writes can reorder or lose buffered output on abnormal exit.
+- **D10** — no first-class calling conventions; Win32 `WNDPROC`/callbacks need a C trampoline.
+- **D12** — a module-scope untyped array literal (`pub var arr: [3]u32 = .{...}`) emits an invalid array-to-array C assignment.
+
+## 🔧 Breaking Changes / Upgrade Notes
+
+- **Implicit `enum`→`int`** now requires `@enumToInt`; other previously tolerated invalid coercions are now `error[3000]`.
+- **String literals** are typed `*const [N]u8`; code depending on the old bare pointer type may need an annotation or coercion.
+- **`-d`/`--debug`** requires `--output-dir`.
+- **`zig0` is retired**; the shipped seed archive is the supported rebuild path (there is no zig0 in the release).
+- **Generated Windows scripts** no longer pass `/Za`, `/WX`, `/za`, or `/we`.
+- **Additional verified strictness**: two-argument `@ptrFromInt` is rejected; assignment used as an expression is rejected; type values in value position, `[_]T` outside inferred-length positions, and `anytype` in signatures are rejected.
+- **Tooling note**: depth-limit trips are now `error[3077]` (limit class), not the old `error[3043]` ICE classification.
+
+## 👥 Contributors
+Z98 is made possible by the dedicated work of its contributors.
+
+*@melkyr-Andres Hernandez*
+*Zni005 (DeepseekV4+Opencode)*
+
+---
+
 # Z98 0.20.0 "Oxalic Acid" Release Notes
 
 We are proud to announce the release of Z98 version **0.20.0**, codenamed **"Oxalic Acid"** — a **major** release and the first fully self-hosted release of Z98. The self-hosted `zig1` compiler — written in Z98 itself and running from the ANSI C89 it emits — now builds itself, deterministically. The 0.20.0 binaries in this release are produced entirely by the self-hosted chain (Z98 source emitted to C89, compiled with `gcc`); the C++98 bootstrap compiler (`zig0`) is no longer part of building the compiler.
