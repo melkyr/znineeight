@@ -12980,6 +12980,12 @@ fn lowerStmtBodyStep(self: *LirLowerer, f: *StmtFrame) void {
 fn lowerBlockStmtStep(self: *LirLowerer, f: *StmtFrame) void {
     var node_idx: u32 = f.node_idx;
     if (f.phase == @intCast(u16, 1)) {
+        if (self.folded_arm_terminated != @intCast(u8, 0)) {
+            self.folded_arm_terminated = @intCast(u8, 0);
+            expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
+            popScopeDepth(self);
+            return;
+        }
         var ec_n1 = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
         var i1: usize = @intCast(usize, f.slot0) + @intCast(usize, 1);
         if (i1 < ec_n1) {
@@ -12988,6 +12994,7 @@ fn lowerBlockStmtStep(self: *LirLowerer, f: *StmtFrame) void {
             lowerStmtPushChild(self, f, ec_i1, @intCast(u16, 1), @intCast(u16, 0));
             return;
         }
+        self.folded_arm_terminated = @intCast(u8, 0);
         expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
         popScopeDepth(self);
         return;
@@ -13000,6 +13007,7 @@ fn lowerBlockStmtStep(self: *LirLowerer, f: *StmtFrame) void {
         lowerStmtPushChild(self, f, ec_i, @intCast(u16, 1), @intCast(u16, 0));
         return;
     }
+    self.folded_arm_terminated = @intCast(u8, 0);
     expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
     popScopeDepth(self);
 }
@@ -13020,6 +13028,7 @@ fn lowerStmtLabeledStep(self: *LirLowerer, f: *StmtFrame) void {
             self.current_bb = f.slot1;
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
         }
+        self.folded_arm_terminated = @intCast(u8, 0);
         self.current_label = f.slot0;
         return;
     }
