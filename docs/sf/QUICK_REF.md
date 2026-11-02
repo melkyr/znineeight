@@ -30,35 +30,28 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-10-29 — seed v128]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-02 — seed v130]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v128 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v130 CHANGELOG entry.
 
-**Current seed: v128** (rotated 2026-10-29 at HEAD `a2e1db55`, the Phase 2.5
-cleanup + mutable-for + fold + Win9x-conformance closeout: T1/T2 leftovers,
-T7/Task 9 Win9x conformance, T3/T4 mutable `for`, T5 `std.fold`, T8 GUI
-16-color GDI fallback). Archived binary md5 (= fixed point)
-`18b4b10c8e014b486b648392d55ccdbe`; archive md5
-`5093ca9eaacd03bdb29c07777749cc16`; Win9x zip md5
-`eb96956e3281711c452d78c05a8587da`; `gen/` 48 `.c` + 49 `.h` (12,235,048
-bytes); `lib/` **50** std `.zig` (`std.zig` + 49 `std_*.zig`, adding
-`std_fold.zig`) plus `lib/manifest.md5` (per-file std attribution pin,
-manifest md5 `8b78593a7dabb86f9f01cd9e7994ab9f`). v128 is a
-compiler-source-changing rotation, so the **rotation-time build from the v127
-seed** converged at **hop2 == hop3** (`18b4b10c…`; moving point, hop1
-`0c03752e…`); a rebuild from the committed v128 archive is two-hop
-**hop1 == hop2 == `18b4b10c…`**. The compiler source is
-**`-fsafe`-clean** (12 intentional wraps + 3 real safe-mode defects fixed).
-Markers (`--markers --dump-c89` on `mud_server`): **3304 lines
-/ 37896 B** (v128 current; the pre-v128 / v127-era value was 3252 lines /
-37293 B). The increase is interned-id/type/forward-decl renumbering from the
-authorized T5 `std_fold` barrel addition plus the post-v127 intern/emitter
-shifts, not a behavior change: the 8 pins, the frozen-1124 corpus and the
-goldens are all exact.
+**Current seed: v130** (rotated 2026-11-02 at HEAD `b5580232`, the Win9x
+emission-fixes milestone: target-filtered `dirent`, sanitized `ZIG_*` guards,
+folded-if terminator DCE, OWC `FILE __iob`, and self-sufficient emitted build
+scripts with response files / `00.txt` logging). Archived binary md5 (= fixed
+point) `6c9319b2e97f980a2c958c09cab38415`; archive md5
+`48a245c5b38559d555e9cf761865f3be`; Win9x zip md5
+`5782b6b4651cfb52514d9969545bf4a0`; `gen/` 48 `.c` + 49 `.h` (12,350,919
+bytes); `lib/` **50** std `.zig` (`std.zig` + 49 `std_*.zig`) plus
+`lib/manifest.md5` (per-file std attribution pin, manifest md5
+`8b78593a7dabb86f9f01cd9e7994ab9f`). A rebuild from the committed v130
+archive is two-hop **hop1 == hop2 == `6c9319b2…`**. The compiler source is
+**`-fsafe`-clean**. Markers (`--markers --dump-c89` on `mud_server`):
+**3397 lines / 39012 B** (unchanged from v129). The 8 pins, the frozen-1124
+corpus, the goldens, the 26 examples and the 339/0 stdlib are all exact.
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
 `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
@@ -67,14 +60,24 @@ build scripts plus the MinGW fallback pair, no prebuilt `zig1.exe`. To build
 the compiler on the era machine:
 
 ```bat
+rem OpenWatcom: run C:\WATCOM\OWSETENV.BAT in this window first
 cd zig1-seed-w9\win
-build_owc_crt.bat ..\zig1.exe
+build_owc_crt.bat
+copy prog.exe ..\zig1.exe
 ```
 
-or `build_target_crt.bat ..\zig1.exe`; with a Windows-hosted MinGW gcc use
-`build_mingw_crt.bat ..\zig1.exe` (CRT-linked) or
-`build_mingw_nocrt.bat ..\zig1.exe` (no-CRT). `..\lib\` is the standard
-library. The MSVC/OWC pair uses a static CRT (`/MT` / OpenWatcom static CLIB),
+or `build_target_crt.bat` from a fresh window after `VCVARS32.BAT` (never with
+the Watcom env); with a Windows-hosted MinGW gcc put its `bin` directory on
+`PATH` and use `build_mingw_crt.bat` (CRT-linked) or `build_mingw_nocrt.bat`
+(no-CRT). The OpenWatcom/MSVC scripts read compiler flags from `z98_cc.rsp`
+(`/fpc` / `/Op`) and link inputs from `z98_link.lnk` / `z98_link.rsp`; the
+MinGW scripts are response-file-free (gcc 3.4.5 has no `@file`) with explicit
+chunked `gcc -r` partial links and a short final link. Each script echoes
+every command and its output to `00.txt` in `win/` (last line `Built: prog.exe`
+or `BUILD FAILED`) and writes `prog.exe` (arguments are ignored by design — the
+scripts are command.com-safe); copy it to `..\zig1.exe`. The MSVC script's
+`CL_EXE` / `LINK_EXE` variables can point at absolute tool paths when another
+toolchain shadows `cl.exe`/`link.exe`. `..\lib\` is the standard library. The MSVC/OWC pair uses a static CRT (`/MT` / OpenWatcom static CLIB),
 no `msvcrt.dll`, single EXE, and may import KERNEL32 names beyond the strict 9x
 whitelist. The compiler
 source in the zip is `-fsafe`-clean; the Windows-hosted `std_async.zig:259`
