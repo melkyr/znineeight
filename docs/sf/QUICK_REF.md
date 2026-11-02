@@ -38,18 +38,19 @@ in the next section; that is the only supported path.
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
 current md5s in the archive's `zig1-seed/SEED_README.txt` and the v130 CHANGELOG entry.
 
-**Current seed: v130** (rotated 2026-11-02 from compiler source `bd9789f9`,
-captured at packaging base HEAD `416a54c9`; the Win9x emission-fixes
+**Current seed: v130** (rotated 2026-11-02 from compiler source `efdb269b`,
+captured at packaging base HEAD `2f0b9d29`; the Win9x emission-fixes
 milestone: target-filtered `dirent`, sanitized `ZIG_*` guards, folded-if
-terminator DCE, OWC `FILE __iob`, and self-sufficient emitted build scripts
-with response files / `00.txt` logging). Archived binary md5 (= fixed point)
-`6c9319b2e97f980a2c958c09cab38415`; archive md5
-`1280aad7377437cedd6bf8c5f43ea962`; Win9x zip md5
-`e0b3584d03cd1800cba885a7aa46a40d`; `gen/` 48 `.c` + 49 `.h` (12,350,919
+terminator DCE including the explicit-block/labeled-sequence flag fix, OWC
+`FILE __iob`, and self-sufficient emitted build scripts with response files /
+`00.txt` logging). Archived binary md5 (= fixed point)
+`a452e713f869f6d7f8c4894c2acb67e5`; archive md5
+`c9198e2f0dd7ac4e05d19442aa53ec05`; Win9x zip md5
+`baf39d8ba30042d39beff0e1a80ede16`; `gen/` 48 `.c` + 49 `.h` (12,351,612
 bytes); `lib/` **50** std `.zig` (`std.zig` + 49 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
 `8b78593a7dabb86f9f01cd9e7994ab9f`). A rebuild from the committed v130
-archive is two-hop **hop1 == hop2 == `6c9319b2…`**. The compiler source is
+archive is two-hop **hop1 == hop2 == `a452e713…`**. The compiler source is
 **`-fsafe`-clean**. Markers (`--markers --dump-c89` on `mud_server`):
 **3397 lines / 39012 B** (unchanged from v129). The 8 pins, the frozen-1124
 corpus, the goldens, the 26 examples and the 339/0 stdlib are all exact.
