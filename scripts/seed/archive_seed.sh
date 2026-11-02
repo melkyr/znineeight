@@ -276,7 +276,7 @@ MinGW fallback (Windows-hosted gcc), if MSVC 6 / OpenWatcom are unavailable:
     copy prog.exe ..\\zig1.exe
   The MinGW scripts are response-file-free: gcc 3.4.5 has no @file support.
   Every source is compiled by an explicit gcc line; objects are linked in
-  explicit partial `gcc -r` chunks (at most 18 objects each) plus one short
+  explicit partial \`gcc -r\` chunks (at most 18 objects each) plus one short
   final link. The CRT script defines no ZIG_NO_CRT; the no-CRT script adds
   -DZIG_NO_CRT and links -nostdlib -Wl,-e,_mainCRTStartup -lgcc.
 
@@ -399,7 +399,7 @@ Windows companion build recipe (win/ in zig1_seed_w9.zip):
   MinGW: put the MinGW bin directory on PATH; then build_mingw_crt.bat (or
   build_mingw_nocrt.bat, which adds -DZIG_NO_CRT and -nostdlib). The MinGW
   scripts are @file-free (gcc 3.4.5 has no response-file support): explicit
-  compile lines plus explicit chunked `gcc -r` partial links (at most 18
+  compile lines plus explicit chunked \`gcc -r\` partial links (at most 18
   objects each) and one short final link.
   Every script echoes each command and its output to 00.txt in win/; the
   final log line is Built: prog.exe on success or BUILD FAILED otherwise.
@@ -561,14 +561,18 @@ emitted \`zig_special_types.h\`, $GEN_BYTES bytes), \`c_exit.c\` (top level),
 ${WIN9X_ENTRY_SECTION}
 
 Provenance note: the archived binary (md5 $BIN_MD5) was captured by
-scripts/seed/archive_seed.sh at HEAD $HEAD; gcc of the archive's self-emission
-C reproduces the self-emission fixed point \`$FP_MD5\` — both are the same
-compiler state at HEAD $HEAD. The compiler self-build uses \`-ffast\` (user
-programs default to \`-fsafe\`), so the recorded fixed point is the \`-ffast\`
-binary. Rebuild recipes + full canonical flag-set requirement (\`gcc -m32
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+$HEAD; gcc of the archive's self-emission C reproduces the fixed point
+\`$FP_MD5\` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses \`-ffast\` (user programs
+default to \`-fsafe\`), so the recorded fixed point is the \`-ffast\` binary.
+Rebuild recipes + full canonical flag-set requirement (\`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration\`; the fixed point reproduces ONLY with
 \`-Wall\` present) are recorded in \`zig1-seed/SEED_README.txt\`.
+
 EOF
 
 echo "--- CHANGELOG entry ---"

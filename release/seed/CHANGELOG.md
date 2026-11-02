@@ -13,7 +13,8 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
-## 2026-11-02 — seed v130 (HEAD b5580232)
+
+## 2026-11-02 — seed v130 (HEAD 416a54c9)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
 `zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
@@ -23,36 +24,41 @@ emitted `zig_special_types.h`, 12350919 bytes), `c_exit.c` (top level),
 | field | value |
 |---|---|
 | date | 2026-11-02 |
-| HEAD | `b5580232` |
+| capture HEAD | `416a54c9` |
+| compiler source commit | `bd9789f9` (E5 templates; E1-E4/E3B in `b5fc2087`) |
 | seed binary md5 | `6c9319b2e97f980a2c958c09cab38415` |
 | self-emission C | 48 `.c` + 49 `.h` (12350919 bytes) |
 | fixed point | `6c9319b2e97f980a2c958c09cab38415` |
 | lib manifest | `lib/manifest.md5` (50 std files; md5 `8b78593a7dabb86f9f01cd9e7994ab9f`) |
-| archive md5 | `48a245c5b38559d555e9cf761865f3be` |
+| archive md5 | `1280aad7377437cedd6bf8c5f43ea962` |
 
 ### Win9x companion seed
 
 | field | value |
 |---|---|
 | zip | `release/seed/zig1_seed_w9.zip` |
-| zip md5 | `5782b6b4651cfb52514d9969545bf4a0` |
+| zip md5 | `e0b3584d03cd1800cba885a7aa46a40d` |
 | win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
 | compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
 | compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
 | no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
 | status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
 | lib | 50 std `.zig` + `manifest.md5` |
-| HEAD/date | `b5580232` / 2026-11-02 |
+| HEAD/date | `416a54c9` / 2026-11-02 |
 
 Provenance note: the archived binary (md5 6c9319b2e97f980a2c958c09cab38415) was captured by
-scripts/seed/archive_seed.sh at HEAD b5580232; gcc of the archive's self-emission
-C reproduces the self-emission fixed point `6c9319b2e97f980a2c958c09cab38415` — both are the same
-compiler state at HEAD b5580232. The compiler self-build uses `-ffast` (user
-programs default to `-fsafe`), so the recorded fixed point is the `-ffast`
-binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+scripts/seed/archive_seed.sh at packaging base HEAD 416a54c9. The compiler
+source that produced the binary and the self-emission C is commit bd9789f9
+(E5 build-script templates; the E1-E4/E3B compiler fixes are in b5fc2087).
+gcc of the archive's self-emission C reproduces the fixed point
+`6c9319b2e97f980a2c958c09cab38415` — the binary and the C are the same compiler state.
+The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-10-29 — seed v129 (HEAD 1e7b303a)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
