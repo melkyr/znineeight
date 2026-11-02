@@ -13,9 +13,11 @@ set -uo pipefail
 #        no goto :eof, no %~/%*/%1, no parenthesised if, no "if not"
 #        (CL_EXE/LINK_EXE set lines are the only allowed `set`);
 #        :z98_fail + if errorlevel 1 goto z98_fail + BUILD FAILED on the
-#        fail path; Built: only on the success path; non-REM lines <= 260;
+#        fail path; Built: only on the success path; non-REM lines <= 900;
 #        hardcoded prog.exe; MSVC CL_EXE/LINK_EXE overrides; flag parity;
-#        MSVC/OWC CRT link via *.obj; MinGW via @z98_link.rsp;
+#        MSVC/OWC compiler flags via @z98_cc.rsp (/Op, /fpc); MSVC/OWC CRT
+#        link via *.obj; MinGW is @free (explicit chunked gcc -r links);
+#        PREREQ line + every command echoed/logged to 00.txt;
 #   5. optional MinGW cross compile of every emitted .c (skip with
 #      --skip-cross or when i686-w64-mingw32-gcc is absent);
 #   6. optional 9x import gate with --exe <operator-exe>.
@@ -198,7 +200,7 @@ else
 fi
 
 # ---- 3. command.com-safe batch lint ---------------------------------------
-MAX_LINE="${MAX_LINE:-260}"
+MAX_LINE="${MAX_LINE:-900}"
 lint_bat() {
     local bat="$1" name lf line_no setline is_alias fail_before
     name="$(basename "$bat")"
@@ -254,8 +256,8 @@ lint_bat() {
     fail_line=$(grep -nE '^[[:space:]]*:z98_fail[[:space:]]*$' "$lf" | head -n1 | cut -d: -f1)
     fail_line="${fail_line:-0}"
     if [ "$fail_line" -gt 0 ]; then
-        if ! tail -n +"$fail_line" "$lf" | grep -qE '^[[:space:]]*echo[[:space:]]+BUILD FAILED[[:space:]]*$'; then
-            bad "$name: fail path does not echo BUILD FAILED"
+        if ! tail -n +"$fail_line" "$lf" | grep -qE '^[[:space:]]*echo[[:space:]]+BUILD FAILED( >> 00\.txt)?[[:space:]]*$'; then
+            bad "$name: fail path does not append BUILD FAILED to 00.txt"
         fi
         if tail -n +"$fail_line" "$lf" | grep -qE 'Built:'; then
             bad "$name: prints Built: on the fail path"
@@ -272,7 +274,46 @@ lint_bat() {
         if ! head -n "$fail_line" "$lf" | tail -n +"$built_line" | grep -qE '^[[:space:]]*goto[[:space:]]+z98_done[[:space:]]*$'; then
             bad "$name: success path lacks goto z98_done after Built:"
         fi
+        fi
     fi
+
+    # E5 invariants: PREREQ line + 00.txt logging on every command.
+    if [ "$is_alias" -eq 0 ]; then
+        if ! grep -qE '^REM PREREQ:' "$lf"; then
+            bad "$name: missing REM PREREQ line"
+        fi
+        if ! grep -qE '^echo === .* === > 00\.txt$' "$lf"; then
+            bad "$name: missing 'echo === <script> === > 00.txt' start"
+        fi
+        if ! grep -q '>> 00\.txt 2>&1' "$lf"; then
+            bad "$name: no command output is logged to 00.txt"
+        fi
+        while IFS= read -r tool; do
+            [ -n "$tool" ] || continue
+            tline="${tool%%:*}"
+            tcmd="${tool#*:}"
+            base="${tcmd% >> 00.txt 2>&1}"
+            if ! printf '%s\n' "$tcmd" | grep -qE ' >> 00\.txt 2>&1$'; then
+                bad "$name:$tline: tool command does not append to 00.txt"
+            fi
+            prev="$(sed -n "$((tline - 1))p" "$lf")"
+            if [ "$prev" != "echo $base >> 00.txt" ]; then
+                bad "$name:$tline: command is not preceded by its echo to 00.txt"
+            fi
+            next="$(sed -n "$((tline + 1))p" "$lf")"
+            if [ "$next" != "if errorlevel 1 goto z98_fail" ]; then
+                bad "$name:$tline: missing errorlevel guard after command"
+            fi
+        done < <(grep -nE '^(%CL_EXE%|%LINK_EXE%|wcc386|wlink|gcc) ' "$lf" || true)
+        while IFS= read -r setup; do
+            [ -n "$setup" ] || continue
+            sline="${setup%%:*}"
+            prev="$(sed -n "$((sline - 1))p" "$lf")"
+            case "$prev" in
+                echo\ echo*" >> 00.txt") ;;
+                *) bad "$name:$sline: rsp/lnk setup command is not logged to 00.txt" ;;
+            esac
+        done < <(grep -nE '^echo .*(>|>>) z98_.*\.(rsp|lnk)$' "$lf" || true)
     fi
 
     # Line length (REM lines exempt).
@@ -286,11 +327,10 @@ lint_bat() {
         build_target_crt.bat|build_target_nocrt.bat)
             grep -qE '^[[:space:]]*[Ss][Ee][Tt][[:space:]]+CL_EXE=cl[[:space:]]*$' "$lf" || bad "$name: missing 'set CL_EXE=cl'"
             grep -qE '^[[:space:]]*[Ss][Ee][Tt][[:space:]]+LINK_EXE=link[[:space:]]*$' "$lf" || bad "$name: missing 'set LINK_EXE=link'"
-            grep -q '%CL_EXE%' "$lf" || bad "$name: compile lines do not use %CL_EXE%"
-            grep -q '%LINK_EXE%' "$lf" || bad "$name: link line does not use %LINK_EXE%"
-            if grep '%CL_EXE%' "$lf" | grep -qv '/c '; then
-                bad "$name: %CL_EXE% compile line lacks /c"
-            fi
+            grep -q '%CL_EXE% @z98_cc\.rsp ' "$lf" || bad "$name: compile lines do not use %CL_EXE% @z98_cc.rsp"
+            grep -q '%LINK_EXE% @z98_link\.rsp' "$lf" || bad "$name: link does not use %LINK_EXE% @z98_link.rsp"
+            grep -q '/c ' "$lf" || bad "$name: z98_cc.rsp lacks /c"
+            grep -q '/Op' "$lf" || bad "$name: z98_cc.rsp lacks /Op"
             grep -q '/nologo' "$lf" || bad "$name: missing /nologo"
             grep -q '/O2' "$lf" || bad "$name: missing /O2"
             grep -q '/DWINVER=0x0410' "$lf" || bad "$name: missing /DWINVER=0x0410"
@@ -299,17 +339,23 @@ lint_bat() {
             grep -q '/D_CRT_NONSTDC_NO_DEPRECATE' "$lf" || bad "$name: missing /D_CRT_NONSTDC_NO_DEPRECATE"
             ;;
         build_owc_crt.bat|build_owc_nocrt.bat)
+            grep -q 'wcc386 @z98_cc\.rsp ' "$lf" || bad "$name: compile does not use wcc386 @z98_cc.rsp"
+            grep -q 'wlink @z98_link\.lnk' "$lf" || bad "$name: link does not use wlink @z98_link.lnk"
+            grep -q '/fpc' "$lf" || bad "$name: z98_cc.rsp lacks /fpc"
             grep -q '/d_WIN32' "$lf" || bad "$name: missing /d_WIN32"
             grep -q '/dWINVER=0x0410' "$lf" || bad "$name: missing /dWINVER=0x0410"
             grep -q '/d_CRT_SECURE_NO_WARNINGS' "$lf" || bad "$name: missing /d_CRT_SECURE_NO_WARNINGS"
             grep -q '/d_CRT_NONSTDC_NO_DEPRECATE' "$lf" || bad "$name: missing /d_CRT_NONSTDC_NO_DEPRECATE"
             grep -q '/ox' "$lf" || bad "$name: missing /ox"
-            grep -qE '^wcc386 .*\.c$' "$lf" || bad "$name: no wcc386 compile line"
-            if grep -E '^wcc386 ' "$lf" | grep -qvE '\.c$'; then
-                bad "$name: wcc386 line is not compile-only (.c)"
-            fi
+            grep -qE '^wcc386 @z98_cc\.rsp .*\.c >> 00\.txt 2>&1$' "$lf" || bad "$name: no logged wcc386 compile line"
             ;;
         build_mingw_crt.bat|build_mingw_nocrt.bat)
+            if grep -q '@' "$lf"; then
+                bad "$name: contains '@' (gcc 3.4.5 has no @file support; scripts must be @free)"
+            fi
+            if grep -qE 'z98_(cc|link|l[0-9]+|final)\.rsp' "$lf"; then
+                bad "$name: contains a response-file reference"
+            fi
             grep -q -- '-m32' "$lf" || bad "$name: missing -m32"
             grep -q -- '-mconsole' "$lf" || bad "$name: missing -mconsole"
             grep -q -- '-static-libgcc' "$lf" || bad "$name: missing -static-libgcc"
@@ -318,10 +364,9 @@ lint_bat() {
             grep -q -- '-D_CRT_SECURE_NO_WARNINGS' "$lf" || bad "$name: missing -D_CRT_SECURE_NO_WARNINGS"
             grep -q -- '-D_CRT_NONSTDC_NO_DEPRECATE' "$lf" || bad "$name: missing -D_CRT_NONSTDC_NO_DEPRECATE"
             grep -q -- '-D_WIN32' "$lf" || bad "$name: missing -D_WIN32"
-            grep -q -- '@z98_link.rsp' "$lf" || bad "$name: link does not use @z98_link.rsp"
-            if grep -E '^gcc .*\.c$' "$lf" | grep -qv ' -c '; then
-                bad "$name: gcc compile line lacks -c"
-            fi
+            grep -qE '^gcc -m32 .* -c .*\.c >> 00\.txt 2>&1$' "$lf" || bad "$name: no logged gcc compile line"
+            grep -qE '^gcc -m32 -r -o z98_l[0-9]+\.o ' "$lf" || bad "$name: no explicit partial-link line"
+            grep -qE '^gcc -m32 -mconsole -static-libgcc -o prog\.exe z98_l1\.o' "$lf" || bad "$name: no explicit final link line"
             ;;
     esac
     case "$name" in

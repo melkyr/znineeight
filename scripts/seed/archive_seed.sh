@@ -249,19 +249,36 @@ asm_x86 backend. Do not use the Linux gen/ C for Win9x.
 Build the compiler on the Win9x machine
 ---------------------------------------
 cd win
-then run one of (the scripts hardcode the output name prog.exe):
+Each script writes its full command/output log to 00.txt in win/; the final
+log line is Built: prog.exe on success or BUILD FAILED otherwise.
 
-  build_owc_crt.bat
-  copy prog.exe ..\\zig1.exe
-  build_target_crt.bat
-  copy prog.exe ..\\zig1.exe
+OpenWatcom (build_owc_crt.bat):
+    rem run C:\\WATCOM\\OWSETENV.BAT in this window first (sets INCLUDE/LIB)
+    build_owc_crt.bat
+    copy prog.exe ..\\zig1.exe
+  wcc386 reads its flags from z98_cc.rsp (/fpc /bt=nt /ox and the /d /i
+  flags), and wlink reads z98_link.lnk (system nt, stack 2097152, file
+  *.obj, library kernel32,winmm).
+
+MSVC 6 (build_target_crt.bat):
+    rem fresh window; do not keep the Watcom env in it
+    C:\\PROGRA~1\\MICROS~1\\VC98\\BIN\\VCVARS32.BAT
+    build_target_crt.bat
+    copy prog.exe ..\\zig1.exe
+  cl reads /c /Op /nologo /O2 /W3 /MT from z98_cc.rsp (plus the /D and /I
+  flags), and link reads z98_link.rsp. Keep CL_EXE/LINK_EXE unquoted.
 
 MinGW fallback (Windows-hosted gcc), if MSVC 6 / OpenWatcom are unavailable:
-
-  build_mingw_crt.bat
-  copy prog.exe ..\\zig1.exe
-  build_mingw_nocrt.bat
-  copy prog.exe ..\\zig1.exe
+    rem put the MinGW bin directory on PATH first
+    build_mingw_crt.bat
+    copy prog.exe ..\\zig1.exe
+    build_mingw_nocrt.bat
+    copy prog.exe ..\\zig1.exe
+  The MinGW scripts are response-file-free: gcc 3.4.5 has no @file support.
+  Every source is compiled by an explicit gcc line; objects are linked in
+  explicit partial `gcc -r` chunks (at most 18 objects each) plus one short
+  final link. The CRT script defines no ZIG_NO_CRT; the no-CRT script adds
+  -DZIG_NO_CRT and links -nostdlib -Wl,-e,_mainCRTStartup -lgcc.
 
 The MSVC/OpenWatcom scripts use a static CRT (/MT for MSVC 6, OpenWatcom
 static CLIB): a single EXE with no msvcrt.dll. They may import KERNEL32 names
@@ -372,6 +389,20 @@ zig1-seed/lib/manifest.md5  per-file md5 of every lib/*.zig (50 std files,
 zig1-seed/SEED_README.txt  this file
 
 Companion Win9x seed: release/seed/zig1_seed_w9.zip (Windows-target compiler C + emitted build scripts; CRT-only compiler build via build_target_crt.bat/build_owc_crt.bat with static CRT and no msvcrt.dll; compiler source -fsafe-clean; no-CRT zig1 deferred to asm_x86; the Win9x std_async field-resolution failure was root-caused to a C89 update-stream fseek elision in spill_store.zig and fixed, so the CRT build is app-ready)
+
+Windows companion build recipe (win/ in zig1_seed_w9.zip):
+  OpenWatcom: run C:\\WATCOM\\OWSETENV.BAT in the window first; then
+  build_owc_crt.bat (wcc386 @z98_cc.rsp with /fpc; wlink @z98_link.lnk).
+  MSVC 6: use a fresh window and run VCVARS32.BAT first (never with the
+  Watcom env); then build_target_crt.bat (%CL_EXE% @z98_cc.rsp with /Op;
+  %LINK_EXE% @z98_link.rsp).
+  MinGW: put the MinGW bin directory on PATH; then build_mingw_crt.bat (or
+  build_mingw_nocrt.bat, which adds -DZIG_NO_CRT and -nostdlib). The MinGW
+  scripts are @file-free (gcc 3.4.5 has no response-file support): explicit
+  compile lines plus explicit chunked `gcc -r` partial links (at most 18
+  objects each) and one short final link.
+  Every script echoes each command and its output to 00.txt in win/; the
+  final log line is Built: prog.exe on success or BUILD FAILED otherwise.
 
 (net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT
 included: 0 references in any emitted gen/*.c|*.h for a linux -osl gcc-only

@@ -9469,215 +9469,403 @@ pub fn emitBuildTargetSh(writer: *BufferedWriter, emitter: *C89Emitter, net_emit
     var tail: []const u8 = " zig_runtime.o zig_pal.o zig_nocrt.o c_exit.o -o \"$OUT\" $LIBS\necho \"Built: $OUT\"\n";
     bufferedWriterWrite(writer, tail);
 }
+fn writeBatCompileLogged(writer: *BufferedWriter, prefix: []const u8, name: []const u8, suffix: []const u8) void {
+    var e: []const u8 = "echo ";
+    bufferedWriterWrite(writer, e);
+    bufferedWriterWrite(writer, prefix);
+    bufferedWriterWrite(writer, name);
+    bufferedWriterWrite(writer, suffix);
+    var l: []const u8 = " >> 00.txt\n";
+    bufferedWriterWrite(writer, l);
+    bufferedWriterWrite(writer, prefix);
+    bufferedWriterWrite(writer, name);
+    bufferedWriterWrite(writer, suffix);
+    var r: []const u8 = " >> 00.txt 2>&1\nif errorlevel 1 goto z98_fail\n";
+    bufferedWriterWrite(writer, r);
+}
+
+fn writeBatLoggedCommand(writer: *BufferedWriter, cmd: []const u8) void {
+    var e: []const u8 = "echo ";
+    bufferedWriterWrite(writer, e);
+    bufferedWriterWrite(writer, cmd);
+    var l: []const u8 = " >> 00.txt\n";
+    bufferedWriterWrite(writer, l);
+    bufferedWriterWrite(writer, cmd);
+    var r: []const u8 = " >> 00.txt 2>&1\nif errorlevel 1 goto z98_fail\n";
+    bufferedWriterWrite(writer, r);
+}
+
+fn writeBatSetupLine(writer: *BufferedWriter, content: []const u8, target: []const u8, append: u8) void {
+    var e0: []const u8 = "echo echo ";
+    bufferedWriterWrite(writer, e0);
+    bufferedWriterWrite(writer, content);
+    if (append != @intCast(u8, 0)) {
+        var a0: []const u8 = " ^>^> ";
+        bufferedWriterWrite(writer, a0);
+    } else {
+        var a1: []const u8 = " ^> ";
+        bufferedWriterWrite(writer, a1);
+    }
+    bufferedWriterWrite(writer, target);
+    var l0: []const u8 = " >> 00.txt\n";
+    bufferedWriterWrite(writer, l0);
+    var e1: []const u8 = "echo ";
+    bufferedWriterWrite(writer, e1);
+    bufferedWriterWrite(writer, content);
+    if (append != @intCast(u8, 0)) {
+        var a2: []const u8 = " >> ";
+        bufferedWriterWrite(writer, a2);
+    } else {
+        var a3: []const u8 = " > ";
+        bufferedWriterWrite(writer, a3);
+    }
+    bufferedWriterWrite(writer, target);
+    var l1: []const u8 = "\n";
+    bufferedWriterWrite(writer, l1);
+}
+
+fn writeBatDelIfExists(writer: *BufferedWriter, target: []const u8) void {
+    var e0: []const u8 = "echo if exist ";
+    bufferedWriterWrite(writer, e0);
+    bufferedWriterWrite(writer, target);
+    var d0: []const u8 = " del ";
+    bufferedWriterWrite(writer, d0);
+    bufferedWriterWrite(writer, target);
+    var l0: []const u8 = " >> 00.txt\n";
+    bufferedWriterWrite(writer, l0);
+    var e1: []const u8 = "if exist ";
+    bufferedWriterWrite(writer, e1);
+    bufferedWriterWrite(writer, target);
+    var d1: []const u8 = " del ";
+    bufferedWriterWrite(writer, d1);
+    bufferedWriterWrite(writer, target);
+    var l1: []const u8 = "\n";
+    bufferedWriterWrite(writer, l1);
+}
+
+fn writeBatLoggedModuleCompiles(writer: *BufferedWriter, emitter: *C89Emitter, prefix: []const u8) void {
+    var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
+    var i: usize = @intCast(usize, 0);
+    while (i < mods.len) : (i += @intCast(usize, 1)) {
+        var m = mods[i];
+        if (hash_mod.u32ToU32MapGet(&emitter.reachable, m.id) == null) continue;
+        writeBatCompileLogged(writer, prefix, moduleQualifiedName(emitter, m.id), ".c");
+    }
+}
+
+fn reachableModuleCount(emitter: *C89Emitter) usize {
+    var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
+    var n: usize = @intCast(usize, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < mods.len) : (i += @intCast(usize, 1)) {
+        var m = mods[i];
+        if (hash_mod.u32ToU32MapGet(&emitter.reachable, m.id) != null) n += 1;
+    }
+    return n;
+}
+
+fn writeMingwObjName(writer: *BufferedWriter, emitter: *C89Emitter, reach_n: usize, k: usize) void {
+    if (k < reach_n) {
+        var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
+        var i: usize = @intCast(usize, 0);
+        var seen: usize = @intCast(usize, 0);
+        while (i < mods.len) : (i += @intCast(usize, 1)) {
+            var m = mods[i];
+            if (hash_mod.u32ToU32MapGet(&emitter.reachable, m.id) == null) continue;
+            if (seen == k) {
+                writeModuleStem(writer, emitter, m.id);
+                var o: []const u8 = ".o";
+                bufferedWriterWrite(writer, o);
+                return;
+            }
+            seen += 1;
+        }
+        return;
+    }
+    var r = k - reach_n;
+    if (r == 0) {
+        var s0: []const u8 = "zig_runtime.o";
+        bufferedWriterWrite(writer, s0);
+    } else if (r == 1) {
+        var s1: []const u8 = "zig_pal.o";
+        bufferedWriterWrite(writer, s1);
+    } else if (r == 2) {
+        var s2: []const u8 = "zig_nocrt.o";
+        bufferedWriterWrite(writer, s2);
+    } else {
+        var s3: []const u8 = "c_exit.o";
+        bufferedWriterWrite(writer, s3);
+    }
+}
+
+fn writeMingwPartialCmd(writer: *BufferedWriter, emitter: *C89Emitter, reach_n: usize, chunk_idx: usize, start: usize, end: usize) void {
+    var p: []const u8 = "gcc -m32 -r -o z98_l";
+    bufferedWriterWrite(writer, p);
+    var nb: [10]u8 = undefined;
+    var nl = itoa_mod.itoa(@intCast(u32, chunk_idx + 1), nb[0..]);
+    var ns = @intCast(usize, 9) - @intCast(usize, nl);
+    bufferedWriterWrite(writer, nb[ns..@intCast(usize, 9)]);
+    var o: []const u8 = ".o";
+    bufferedWriterWrite(writer, o);
+    var k = start;
+    while (k < end) : (k += 1) {
+        var sp: []const u8 = " ";
+        bufferedWriterWrite(writer, sp);
+        writeMingwObjName(writer, emitter, reach_n, k);
+    }
+}
+
+fn writeMingwPartialLogged(writer: *BufferedWriter, emitter: *C89Emitter, reach_n: usize, chunk_idx: usize, start: usize, end: usize) void {
+    var e: []const u8 = "echo ";
+    bufferedWriterWrite(writer, e);
+    writeMingwPartialCmd(writer, emitter, reach_n, chunk_idx, start, end);
+    var l: []const u8 = " >> 00.txt\n";
+    bufferedWriterWrite(writer, l);
+    writeMingwPartialCmd(writer, emitter, reach_n, chunk_idx, start, end);
+    var r: []const u8 = " >> 00.txt 2>&1\nif errorlevel 1 goto z98_fail\n";
+    bufferedWriterWrite(writer, r);
+}
+
+fn writeMingwFinalCmd(writer: *BufferedWriter, chunk_count: usize, nocrt: u8, net_emitted: u8) void {
+    var p: []const u8 = "gcc -m32 -mconsole -static-libgcc -o prog.exe";
+    bufferedWriterWrite(writer, p);
+    var c: usize = @intCast(usize, 0);
+    while (c < chunk_count) : (c += 1) {
+        var sp: []const u8 = " z98_l";
+        bufferedWriterWrite(writer, sp);
+        var nb: [10]u8 = undefined;
+        var nl = itoa_mod.itoa(@intCast(u32, c + 1), nb[0..]);
+        var ns = @intCast(usize, 9) - @intCast(usize, nl);
+        bufferedWriterWrite(writer, nb[ns..@intCast(usize, 9)]);
+        var o: []const u8 = ".o";
+        bufferedWriterWrite(writer, o);
+    }
+    if (nocrt != @intCast(u8, 0)) {
+        var l0: []const u8 = " -nostdlib -Wl,-e,_mainCRTStartup -lgcc -lkernel32";
+        bufferedWriterWrite(writer, l0);
+    } else {
+        var l1: []const u8 = " -lkernel32 -lwinmm";
+        bufferedWriterWrite(writer, l1);
+    }
+    if (net_emitted != @intCast(u8, 0)) {
+        var n: []const u8 = " -lwsock32";
+        bufferedWriterWrite(writer, n);
+    }
+}
+
+fn emitMingwChunkedLink(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, nocrt: u8) void {
+    var reach_n = reachableModuleCount(emitter);
+    var total = reach_n + 4;
+    var chunk_count = (total + 17) / 18;
+    if (chunk_count == 0) chunk_count = 1;
+    var c: usize = @intCast(usize, 0);
+    while (c < chunk_count) : (c += 1) {
+        var start = c * 18;
+        var end = start + 18;
+        if (end > total) end = total;
+        writeMingwPartialLogged(writer, emitter, reach_n, c, start, end);
+    }
+    var e: []const u8 = "echo ";
+    bufferedWriterWrite(writer, e);
+    writeMingwFinalCmd(writer, chunk_count, nocrt, net_emitted);
+    var l: []const u8 = " >> 00.txt\n";
+    bufferedWriterWrite(writer, l);
+    writeMingwFinalCmd(writer, chunk_count, nocrt, net_emitted);
+    var r: []const u8 = " >> 00.txt 2>&1\nif errorlevel 1 goto z98_fail\necho Built: prog.exe >> 00.txt\ngoto z98_done\n:z98_fail\necho BUILD FAILED >> 00.txt\n:z98_done\n";
+    bufferedWriterWrite(writer, r);
+}
 
 pub fn emitBuildTargetNocrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
-    var h0: []const u8 = "@echo off\nREM build_target_nocrt.bat - generated by zig1 (MSVC cl, Win9x no-CRT DEFAULT)\nREM REDISTRIBUTION: single EXE, no msvcrt.dll. Imports only OS DLLs.\nREM Run from the emitted output directory. Output: prog.exe\n";
+    var h0: []const u8 = "@echo off\nREM build_target_nocrt.bat - generated by zig1 (MSVC cl, Win9x no-CRT DEFAULT)\nREM REDISTRIBUTION: single EXE, no msvcrt.dll. Imports only OS DLLs.\nREM PREREQ: fresh window + VCVARS32.BAT first (sets INCLUDE/LIB); not with the Watcom env.\nREM Run from the emitted output directory. Output: prog.exe\necho === build_target_nocrt.bat === > 00.txt\n";
     bufferedWriterWrite(writer, h0);
-    var h0b: []const u8 = "REM Edit CL_EXE/LINK_EXE below to absolute paths if another toolchain\nREM shadows cl.exe/link.exe (space-free; use the 8.3 PROGRA~1 form).\nset CL_EXE=cl\nif errorlevel 1 goto z98_fail\nset LINK_EXE=link\nif errorlevel 1 goto z98_fail\necho Compiling...\n";
+    var h0b: []const u8 = "REM Edit CL_EXE/LINK_EXE below to absolute paths if another toolchain\nREM shadows cl.exe/link.exe (space-free; use the 8.3 PROGRA~1 form).\necho set CL_EXE=cl >> 00.txt\nset CL_EXE=cl\nif errorlevel 1 goto z98_fail\necho set LINK_EXE=link >> 00.txt\nset LINK_EXE=link\nif errorlevel 1 goto z98_fail\necho Compiling... >> 00.txt\n";
     bufferedWriterWrite(writer, h0b);
-    var bat_prefix: []const u8 = "%CL_EXE% /c /nologo /O2 /W3 /D_WIN32 /DZIG_WIN32 /DZIG_NO_CRT /Zl /DWINVER=0x0410 /D_WIN32_WINNT=0x0410 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /I. ";
+    var cc1: []const u8 = "/c /Op /nologo /O2 /W3 /Zl";
+    writeBatSetupLine(writer, cc1, "z98_cc.rsp", @intCast(u8, 0));
+    var cc2: []const u8 = "/D_WIN32 /DZIG_WIN32 /DZIG_NO_CRT /DWINVER=0x0410 /D_WIN32_WINNT=0x0410 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /I.";
     if (win_profile == WinProfile.nt) {
-        bat_prefix = "%CL_EXE% /c /nologo /O2 /W3 /D_WIN32 /DZIG_WIN32 /DZIG_WIN_NT /DZIG_NO_CRT /Zl /DWINVER=0x0410 /D_WIN32_WINNT=0x0410 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /I. ";
+        cc2 = "/D_WIN32 /DZIG_WIN32 /DZIG_WIN_NT /DZIG_NO_CRT /DWINVER=0x0410 /D_WIN32_WINNT=0x0410 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /I.";
     }
-    var bat_csuf: []const u8 = ".c\nif errorlevel 1 goto z98_fail\n";
-    writeReachableModuleList(writer, emitter, bat_prefix, bat_csuf);
-    var rt: []const u8 = "zig_runtime.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, bat_prefix);
-    bufferedWriterWrite(writer, rt);
-    var rt2: []const u8 = "zig_pal.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, bat_prefix);
-    bufferedWriterWrite(writer, rt2);
-    var rt3: []const u8 = "zig_nocrt.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, bat_prefix);
-    bufferedWriterWrite(writer, rt3);
-    var rt4: []const u8 = "c_exit.c\nif errorlevel 1 goto z98_fail\necho Linking...\nif exist z98_link.rsp del z98_link.rsp\necho /NODEFAULTLIB >> z98_link.rsp\necho /subsystem:console,4.0 >> z98_link.rsp\necho /STACK:2097152 >> z98_link.rsp\necho /entry:_mainCRTStartup@0 >> z98_link.rsp\n";
-    bufferedWriterWrite(writer, bat_prefix);
-    bufferedWriterWrite(writer, rt4);
-    var rsp_pre: []const u8 = "echo ";
-    var rsp_suf: []const u8 = ".obj >> z98_link.rsp\n";
-    writeReachableModuleList(writer, emitter, rsp_pre, rsp_suf);
-    var rsp_sup: []const u8 = "echo zig_runtime.obj >> z98_link.rsp\necho zig_pal.obj >> z98_link.rsp\necho zig_nocrt.obj >> z98_link.rsp\necho c_exit.obj >> z98_link.rsp\necho kernel32.lib winmm.lib ";
-    bufferedWriterWrite(writer, rsp_sup);
+    writeBatSetupLine(writer, cc2, "z98_cc.rsp", @intCast(u8, 1));
+    var bat_prefix: []const u8 = "%CL_EXE% @z98_cc.rsp ";
+    writeBatLoggedModuleCompiles(writer, emitter, bat_prefix);
+    writeBatCompileLogged(writer, bat_prefix, "zig_runtime", ".c");
+    writeBatCompileLogged(writer, bat_prefix, "zig_pal", ".c");
+    writeBatCompileLogged(writer, bat_prefix, "zig_nocrt", ".c");
+    writeBatCompileLogged(writer, bat_prefix, "c_exit", ".c");
+    var lk: []const u8 = "echo Linking... >> 00.txt\n";
+    bufferedWriterWrite(writer, lk);
+    writeBatDelIfExists(writer, "z98_link.rsp");
+    writeBatSetupLine(writer, "/NODEFAULTLIB", "z98_link.rsp", @intCast(u8, 1));
+    writeBatSetupLine(writer, "/subsystem:console,4.0", "z98_link.rsp", @intCast(u8, 1));
+    writeBatSetupLine(writer, "/STACK:2097152", "z98_link.rsp", @intCast(u8, 1));
+    writeBatSetupLine(writer, "/entry:_mainCRTStartup@0", "z98_link.rsp", @intCast(u8, 1));
+    var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
+    var i: usize = @intCast(usize, 0);
+    while (i < mods.len) : (i += @intCast(usize, 1)) {
+        var m = mods[i];
+        if (hash_mod.u32ToU32MapGet(&emitter.reachable, m.id) == null) continue;
+        bufferedWriterWrite(writer, "echo echo ");
+        writeModuleStem(writer, emitter, m.id);
+        bufferedWriterWrite(writer, ".obj ^>^> z98_link.rsp >> 00.txt\necho ");
+        writeModuleStem(writer, emitter, m.id);
+        bufferedWriterWrite(writer, ".obj >> z98_link.rsp\n");
+    }
+    writeBatSetupLine(writer, "zig_runtime.obj", "z98_link.rsp", @intCast(u8, 1));
+    writeBatSetupLine(writer, "zig_pal.obj", "z98_link.rsp", @intCast(u8, 1));
+    writeBatSetupLine(writer, "zig_nocrt.obj", "z98_link.rsp", @intCast(u8, 1));
+    writeBatSetupLine(writer, "c_exit.obj", "z98_link.rsp", @intCast(u8, 1));
     if (net_emitted != @intCast(u8, 0)) {
-        var wl: []const u8 = "wsock32.lib ";
-        bufferedWriterWrite(writer, wl);
+        writeBatSetupLine(writer, "kernel32.lib winmm.lib wsock32.lib libcmt.lib", "z98_link.rsp", @intCast(u8, 1));
+    } else {
+        writeBatSetupLine(writer, "kernel32.lib winmm.lib libcmt.lib", "z98_link.rsp", @intCast(u8, 1));
     }
-    var tail: []const u8 = "libcmt.lib >> z98_link.rsp\necho /out:prog.exe >> z98_link.rsp\n%LINK_EXE% @z98_link.rsp\nif errorlevel 1 goto z98_fail\necho Built: prog.exe\ngoto z98_done\n:z98_fail\necho BUILD FAILED\n:z98_done\n";
+    writeBatSetupLine(writer, "/out:prog.exe", "z98_link.rsp", @intCast(u8, 1));
+    writeBatLoggedCommand(writer, "%LINK_EXE% @z98_link.rsp");
+    var tail: []const u8 = "echo Built: prog.exe >> 00.txt\ngoto z98_done\n:z98_fail\necho BUILD FAILED >> 00.txt\n:z98_done\n";
     bufferedWriterWrite(writer, tail);
 }
 
 pub fn emitBuildTargetCrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
-    var h0: []const u8 = "@echo off\nREM build_target_crt.bat - generated by zig1 (MSVC cl, static-CRT ALTERNATE)\nREM REDISTRIBUTION: single EXE, no DLL dependency (static /MT CRT).\nREM Imports only KERNEL32 (+WINMM/WSOCK32 when used); no msvcrt.dll.\nREM Run from the emitted output directory. Output: prog.exe\n";
+    var h0: []const u8 = "@echo off\nREM build_target_crt.bat - generated by zig1 (MSVC cl, static-CRT ALTERNATE)\nREM REDISTRIBUTION: single EXE, no DLL dependency (static /MT CRT).\nREM Imports only KERNEL32 (+WINMM/WSOCK32 when used); no msvcrt.dll.\nREM PREREQ: fresh window + VCVARS32.BAT first (sets INCLUDE/LIB); not with the Watcom env.\nREM Run from the emitted output directory. Output: prog.exe\necho === build_target_crt.bat === > 00.txt\n";
     bufferedWriterWrite(writer, h0);
-    var h0b: []const u8 = "REM Edit CL_EXE/LINK_EXE below to absolute paths if another toolchain\nREM shadows cl.exe/link.exe (space-free; use the 8.3 PROGRA~1 form).\nset CL_EXE=cl\nif errorlevel 1 goto z98_fail\nset LINK_EXE=link\nif errorlevel 1 goto z98_fail\necho Compiling...\n";
+    var h0b: []const u8 = "REM Edit CL_EXE/LINK_EXE below to absolute paths if another toolchain\nREM shadows cl.exe/link.exe (space-free; use the 8.3 PROGRA~1 form).\necho set CL_EXE=cl >> 00.txt\nset CL_EXE=cl\nif errorlevel 1 goto z98_fail\necho set LINK_EXE=link >> 00.txt\nset LINK_EXE=link\nif errorlevel 1 goto z98_fail\necho Compiling... >> 00.txt\n";
     bufferedWriterWrite(writer, h0b);
-    var bat_prefix: []const u8 = "%CL_EXE% /c /nologo /O2 /W3 /MT /D_WIN32 /DZIG_WIN32 /DWINVER=0x0410 /D_WIN32_WINNT=0x0410 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /I. ";
+    var cc1: []const u8 = "/c /Op /nologo /O2 /W3 /MT";
+    writeBatSetupLine(writer, cc1, "z98_cc.rsp", @intCast(u8, 0));
+    var cc2: []const u8 = "/D_WIN32 /DZIG_WIN32 /DWINVER=0x0410 /D_WIN32_WINNT=0x0410 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /I.";
     if (win_profile == WinProfile.nt) {
-        bat_prefix = "%CL_EXE% /c /nologo /O2 /W3 /MT /D_WIN32 /DZIG_WIN32 /DZIG_WIN_NT /DWINVER=0x0410 /D_WIN32_WINNT=0x0410 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /I. ";
+        cc2 = "/D_WIN32 /DZIG_WIN32 /DZIG_WIN_NT /DWINVER=0x0410 /D_WIN32_WINNT=0x0410 /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /I.";
     }
-    var bat_csuf: []const u8 = ".c\nif errorlevel 1 goto z98_fail\n";
-    writeReachableModuleList(writer, emitter, bat_prefix, bat_csuf);
-    var rt: []const u8 = "zig_runtime.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, bat_prefix);
-    bufferedWriterWrite(writer, rt);
-    var rt2: []const u8 = "zig_pal.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, bat_prefix);
-    bufferedWriterWrite(writer, rt2);
-    var rt3: []const u8 = "zig_nocrt.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, bat_prefix);
-    bufferedWriterWrite(writer, rt3);
-    var rt4: []const u8 = "c_exit.c\nif errorlevel 1 goto z98_fail\necho Linking...\n";
-    bufferedWriterWrite(writer, bat_prefix);
-    bufferedWriterWrite(writer, rt4);
-    var link0: []const u8 = "%LINK_EXE% /nologo /subsystem:console,4.0 /STACK:2097152 /out:prog.exe *.obj kernel32.lib winmm.lib";
-    bufferedWriterWrite(writer, link0);
+    writeBatSetupLine(writer, cc2, "z98_cc.rsp", @intCast(u8, 1));
+    var bat_prefix: []const u8 = "%CL_EXE% @z98_cc.rsp ";
+    writeBatLoggedModuleCompiles(writer, emitter, bat_prefix);
+    writeBatCompileLogged(writer, bat_prefix, "zig_runtime", ".c");
+    writeBatCompileLogged(writer, bat_prefix, "zig_pal", ".c");
+    writeBatCompileLogged(writer, bat_prefix, "zig_nocrt", ".c");
+    writeBatCompileLogged(writer, bat_prefix, "c_exit", ".c");
+    var lk: []const u8 = "echo Linking... >> 00.txt\n";
+    bufferedWriterWrite(writer, lk);
+    writeBatDelIfExists(writer, "z98_link.rsp");
+    writeBatSetupLine(writer, "/nologo /subsystem:console,4.0 /STACK:2097152 /out:prog.exe", "z98_link.rsp", @intCast(u8, 0));
     if (net_emitted != @intCast(u8, 0)) {
-        var wl: []const u8 = " wsock32.lib";
-        bufferedWriterWrite(writer, wl);
+        writeBatSetupLine(writer, "*.obj kernel32.lib winmm.lib wsock32.lib", "z98_link.rsp", @intCast(u8, 1));
+    } else {
+        writeBatSetupLine(writer, "*.obj kernel32.lib winmm.lib", "z98_link.rsp", @intCast(u8, 1));
     }
-    var tail: []const u8 = "\nif errorlevel 1 goto z98_fail\necho Built: prog.exe\ngoto z98_done\n:z98_fail\necho BUILD FAILED\n:z98_done\n";
+    writeBatLoggedCommand(writer, "%LINK_EXE% @z98_link.rsp");
+    var tail: []const u8 = "echo Built: prog.exe >> 00.txt\ngoto z98_done\n:z98_fail\necho BUILD FAILED >> 00.txt\n:z98_done\n";
     bufferedWriterWrite(writer, tail);
 }
 
 pub fn emitBuildOwcNocrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
-    var h0: []const u8 = "@echo off\nREM build_owc_nocrt.bat - generated by zig1 (OpenWatcom, Win9x no-CRT DEFAULT)\nREM REDISTRIBUTION: single EXE, no runtime DLL dependency. Imports only OS DLLs.\nREM Run from the emitted output directory. Output: prog.exe\nREM Do not rely on command.com setting a process exit code; this script\nREM prints BUILD FAILED and never prints Built: on failure.\necho Compiling...\n";
-    bufferedWriterWrite(writer, h0);
-    var owc_prefix: []const u8 = "wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /dZIG_WIN32 /dZIG_NO_CRT /d_CRT_SECURE_NO_WARNINGS /d_CRT_NONSTDC_NO_DEPRECATE /ox /w4 /zl /sg /i=. ";
+    var h0a: []const u8 = "@echo off\nREM build_owc_nocrt.bat - generated by zig1 (OpenWatcom, Win9x no-CRT DEFAULT)\nREM REDISTRIBUTION: single EXE, no runtime DLL dependency. Imports only OS DLLs.\nREM PREREQ: run C:\\WATCOM\\OWSETENV.BAT in this window first (sets INCLUDE/LIB).\n";
+    bufferedWriterWrite(writer, h0a);
+    var h0b: []const u8 = "REM Run from the emitted output directory. Output: prog.exe\nREM Do not rely on command.com setting a process exit code; this script\nREM appends BUILD FAILED to 00.txt and never Built: on failure.\necho === build_owc_nocrt.bat === > 00.txt\necho Compiling... >> 00.txt\n";
+    bufferedWriterWrite(writer, h0b);
+    var cc_line: []const u8 = "/fpc /bt=nt /d_WIN32 /dWINVER=0x0410 /dZIG_WIN32 /dZIG_NO_CRT /d_CRT_SECURE_NO_WARNINGS /d_CRT_NONSTDC_NO_DEPRECATE /ox /w4 /zl /sg /i=.";
     if (win_profile == WinProfile.nt) {
-        owc_prefix = "wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /dZIG_WIN32 /dZIG_WIN_NT /dZIG_NO_CRT /d_CRT_SECURE_NO_WARNINGS /d_CRT_NONSTDC_NO_DEPRECATE /ox /w4 /zl /sg /i=. ";
+        cc_line = "/fpc /bt=nt /d_WIN32 /dWINVER=0x0410 /dZIG_WIN32 /dZIG_WIN_NT /dZIG_NO_CRT /d_CRT_SECURE_NO_WARNINGS /d_CRT_NONSTDC_NO_DEPRECATE /ox /w4 /zl /sg /i=.";
     }
-    var owc_csuf: []const u8 = ".c\nif errorlevel 1 goto z98_fail\n";
-    writeReachableModuleList(writer, emitter, owc_prefix, owc_csuf);
-    var rt: []const u8 = "zig_runtime.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, owc_prefix);
-    bufferedWriterWrite(writer, rt);
-    var rt2: []const u8 = "zig_pal.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, owc_prefix);
-    bufferedWriterWrite(writer, rt2);
-    var rt3: []const u8 = "zig_nocrt.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, owc_prefix);
-    bufferedWriterWrite(writer, rt3);
-    var rt4: []const u8 = "c_exit.c\nif errorlevel 1 goto z98_fail\necho Linking...\nif exist z98_link.lnk del z98_link.lnk\necho system nt >> z98_link.lnk\necho option nodefaultlibs >> z98_link.lnk\necho option start=_mainCRTStartup >> z98_link.lnk\necho option stack=2097152 >> z98_link.lnk\n";
-    bufferedWriterWrite(writer, owc_prefix);
-    bufferedWriterWrite(writer, rt4);
-    var lnk_pre: []const u8 = "echo file ";
-    var lnk_suf: []const u8 = ".obj >> z98_link.lnk\n";
-    writeReachableModuleList(writer, emitter, lnk_pre, lnk_suf);
-    var lnk_sup: []const u8 = "echo file zig_runtime.obj >> z98_link.lnk\necho file zig_pal.obj >> z98_link.lnk\necho file zig_nocrt.obj >> z98_link.lnk\necho file c_exit.obj >> z98_link.lnk\necho library kernel32,clib3r,winmm";
-    bufferedWriterWrite(writer, lnk_sup);
+    writeBatSetupLine(writer, cc_line, "z98_cc.rsp", @intCast(u8, 0));
+    var owc_prefix: []const u8 = "wcc386 @z98_cc.rsp ";
+    writeBatLoggedModuleCompiles(writer, emitter, owc_prefix);
+    writeBatCompileLogged(writer, owc_prefix, "zig_runtime", ".c");
+    writeBatCompileLogged(writer, owc_prefix, "zig_pal", ".c");
+    writeBatCompileLogged(writer, owc_prefix, "zig_nocrt", ".c");
+    writeBatCompileLogged(writer, owc_prefix, "c_exit", ".c");
+    var lk: []const u8 = "echo Linking... >> 00.txt\n";
+    bufferedWriterWrite(writer, lk);
+    writeBatDelIfExists(writer, "z98_link.lnk");
+    writeBatSetupLine(writer, "system nt", "z98_link.lnk", @intCast(u8, 1));
+    writeBatSetupLine(writer, "option nodefaultlibs", "z98_link.lnk", @intCast(u8, 1));
+    writeBatSetupLine(writer, "option start=_mainCRTStartup", "z98_link.lnk", @intCast(u8, 1));
+    writeBatSetupLine(writer, "option stack=2097152", "z98_link.lnk", @intCast(u8, 1));
+    writeBatSetupLine(writer, "file *.obj", "z98_link.lnk", @intCast(u8, 1));
+    writeBatSetupLine(writer, "name prog.exe", "z98_link.lnk", @intCast(u8, 1));
     if (net_emitted != @intCast(u8, 0)) {
-        var wl: []const u8 = ",wsock32";
-        bufferedWriterWrite(writer, wl);
+        writeBatSetupLine(writer, "library kernel32,clib3r,winmm,wsock32", "z98_link.lnk", @intCast(u8, 1));
+    } else {
+        writeBatSetupLine(writer, "library kernel32,clib3r,winmm", "z98_link.lnk", @intCast(u8, 1));
     }
-    var tail: []const u8 = " >> z98_link.lnk\necho name prog.exe >> z98_link.lnk\nwlink @z98_link.lnk\nif errorlevel 1 goto z98_fail\necho Built: prog.exe\ngoto z98_done\n:z98_fail\necho BUILD FAILED\n:z98_done\n";
+    writeBatLoggedCommand(writer, "wlink @z98_link.lnk");
+    var tail: []const u8 = "echo Built: prog.exe >> 00.txt\ngoto z98_done\n:z98_fail\necho BUILD FAILED >> 00.txt\n:z98_done\n";
     bufferedWriterWrite(writer, tail);
 }
 
 pub fn emitBuildOwcCrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
-    var h0: []const u8 = "@echo off\nREM build_owc_crt.bat - generated by zig1 (OpenWatcom, static-runtime ALTERNATE)\nREM REDISTRIBUTION: single EXE, no runtime DLL dependency (static clib).\nREM Imports only KERNEL32 (+WINMM/WSOCK32 when used).\nREM Run from the emitted output directory. Output: prog.exe\nREM Do not rely on command.com setting a process exit code; this script\nREM prints BUILD FAILED and never prints Built: on failure.\necho Compiling...\n";
-    bufferedWriterWrite(writer, h0);
-    var owc_prefix: []const u8 = "wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /dZIG_WIN32 /d_CRT_SECURE_NO_WARNINGS /d_CRT_NONSTDC_NO_DEPRECATE /ox /w4 /sg /i=. ";
+    var h0a: []const u8 = "@echo off\nREM build_owc_crt.bat - generated by zig1 (OpenWatcom, static-runtime ALTERNATE)\nREM REDISTRIBUTION: single EXE, no runtime DLL dependency (static clib).\nREM Imports only KERNEL32 (+WINMM/WSOCK32 when used).\nREM PREREQ: run C:\\WATCOM\\OWSETENV.BAT in this window first (sets INCLUDE/LIB).\n";
+    bufferedWriterWrite(writer, h0a);
+    var h0b: []const u8 = "REM Run from the emitted output directory. Output: prog.exe\nREM Do not rely on command.com setting a process exit code; this script\nREM appends BUILD FAILED to 00.txt and never Built: on failure.\necho === build_owc_crt.bat === > 00.txt\necho Compiling... >> 00.txt\n";
+    bufferedWriterWrite(writer, h0b);
+    var cc_line: []const u8 = "/fpc /bt=nt /d_WIN32 /dWINVER=0x0410 /dZIG_WIN32 /d_CRT_SECURE_NO_WARNINGS /d_CRT_NONSTDC_NO_DEPRECATE /ox /w4 /sg /i=.";
     if (win_profile == WinProfile.nt) {
-        owc_prefix = "wcc386 /bt=nt /d_WIN32 /dWINVER=0x0410 /dZIG_WIN32 /dZIG_WIN_NT /d_CRT_SECURE_NO_WARNINGS /d_CRT_NONSTDC_NO_DEPRECATE /ox /w4 /sg /i=. ";
+        cc_line = "/fpc /bt=nt /d_WIN32 /dWINVER=0x0410 /dZIG_WIN32 /dZIG_WIN_NT /d_CRT_SECURE_NO_WARNINGS /d_CRT_NONSTDC_NO_DEPRECATE /ox /w4 /sg /i=.";
     }
-    var owc_csuf: []const u8 = ".c\nif errorlevel 1 goto z98_fail\n";
-    writeReachableModuleList(writer, emitter, owc_prefix, owc_csuf);
-    var rt: []const u8 = "zig_runtime.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, owc_prefix);
-    bufferedWriterWrite(writer, rt);
-    var rt2: []const u8 = "zig_pal.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, owc_prefix);
-    bufferedWriterWrite(writer, rt2);
-    var rt3: []const u8 = "zig_nocrt.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, owc_prefix);
-    bufferedWriterWrite(writer, rt3);
-    var rt4: []const u8 = "c_exit.c\nif errorlevel 1 goto z98_fail\necho Linking...\n";
-    bufferedWriterWrite(writer, owc_prefix);
-    bufferedWriterWrite(writer, rt4);
-    var link0: []const u8 = "wlink system nt option stack=2097152 file *.obj name prog.exe library kernel32,winmm";
-    bufferedWriterWrite(writer, link0);
+    writeBatSetupLine(writer, cc_line, "z98_cc.rsp", @intCast(u8, 0));
+    var owc_prefix: []const u8 = "wcc386 @z98_cc.rsp ";
+    writeBatLoggedModuleCompiles(writer, emitter, owc_prefix);
+    writeBatCompileLogged(writer, owc_prefix, "zig_runtime", ".c");
+    writeBatCompileLogged(writer, owc_prefix, "zig_pal", ".c");
+    writeBatCompileLogged(writer, owc_prefix, "zig_nocrt", ".c");
+    writeBatCompileLogged(writer, owc_prefix, "c_exit", ".c");
+    var lk: []const u8 = "echo Linking... >> 00.txt\n";
+    bufferedWriterWrite(writer, lk);
+    writeBatDelIfExists(writer, "z98_link.lnk");
+    writeBatSetupLine(writer, "system nt", "z98_link.lnk", @intCast(u8, 1));
+    writeBatSetupLine(writer, "option stack=2097152", "z98_link.lnk", @intCast(u8, 1));
+    writeBatSetupLine(writer, "file *.obj", "z98_link.lnk", @intCast(u8, 1));
+    writeBatSetupLine(writer, "name prog.exe", "z98_link.lnk", @intCast(u8, 1));
     if (net_emitted != @intCast(u8, 0)) {
-        var wl: []const u8 = ",wsock32";
-        bufferedWriterWrite(writer, wl);
+        writeBatSetupLine(writer, "library kernel32,winmm,wsock32", "z98_link.lnk", @intCast(u8, 1));
+    } else {
+        writeBatSetupLine(writer, "library kernel32,winmm", "z98_link.lnk", @intCast(u8, 1));
     }
-    var tail: []const u8 = "\nif errorlevel 1 goto z98_fail\necho Built: prog.exe\ngoto z98_done\n:z98_fail\necho BUILD FAILED\n:z98_done\n";
+    writeBatLoggedCommand(writer, "wlink @z98_link.lnk");
+    var tail: []const u8 = "echo Built: prog.exe >> 00.txt\ngoto z98_done\n:z98_fail\necho BUILD FAILED >> 00.txt\n:z98_done\n";
     bufferedWriterWrite(writer, tail);
 }
-
 // MinGW fallback scripts (Windows-hosted gcc). They are emitted with every
 // -osw dump and shipped in the Win9x seed's win/ so a gcc fallback always
-// exists when MSVC 6 / OpenWatcom are unavailable. The link list lives in
-// @z98_link.rsp so no command.com line exceeds ~1 KiB.
+// exists when MSVC 6 / OpenWatcom are unavailable. gcc 3.4.5 has no response
+// file support, so the scripts keep every command short with explicit
+// 18-object partial `gcc -r` links and a short final link.
 pub fn emitBuildMingwCrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
-    var h0: []const u8 = "@echo off\nREM build_mingw_crt.bat - generated by zig1 (MinGW gcc, CRT-linked)\nREM REDISTRIBUTION: CRT-linked fallback build; use build_mingw_nocrt.bat for\nREM the single-EXE no-CRT shape.\nREM Run from the emitted output directory. Output: prog.exe\necho Compiling...\n";
-    bufferedWriterWrite(writer, h0);
+    var h0a: []const u8 = "echo off\nREM build_mingw_crt.bat - generated by zig1 (MinGW gcc, CRT-linked)\nREM REDISTRIBUTION: CRT-linked fallback build; use build_mingw_nocrt.bat for\nREM the single-EXE no-CRT shape.\nREM PREREQ: MinGW bin on PATH. CRT variant: no -DZIG_NO_CRT here.\n";
+    bufferedWriterWrite(writer, h0a);
+    var h0b: []const u8 = "REM Run from the emitted output directory. Output: prog.exe\nREM response-file-free: gcc 3.4.5 has no response-file support; commands are explicit.\necho === build_mingw_crt.bat === > 00.txt\necho Compiling... >> 00.txt\n";
+    bufferedWriterWrite(writer, h0b);
     var c_prefix: []const u8 = "gcc -m32 -mconsole -static-libgcc -std=c89 -O2 -pedantic -Wall -c -D_WIN32 -DZIG_WIN32 -DWINVER=0x0410 -D_WIN32_WINNT=0x0410 -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -I. ";
     if (win_profile == WinProfile.nt) {
         c_prefix = "gcc -m32 -mconsole -static-libgcc -std=c89 -O2 -pedantic -Wall -c -D_WIN32 -DZIG_WIN32 -DZIG_WIN_NT -DWINVER=0x0410 -D_WIN32_WINNT=0x0410 -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -I. ";
     }
-    var c_suf: []const u8 = ".c\nif errorlevel 1 goto z98_fail\n";
-    writeReachableModuleList(writer, emitter, c_prefix, c_suf);
-    var rt: []const u8 = "zig_runtime.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, c_prefix);
-    bufferedWriterWrite(writer, rt);
-    var rt2: []const u8 = "zig_pal.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, c_prefix);
-    bufferedWriterWrite(writer, rt2);
-    var rt3: []const u8 = "zig_nocrt.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, c_prefix);
-    bufferedWriterWrite(writer, rt3);
-    var rt4: []const u8 = "c_exit.c\nif errorlevel 1 goto z98_fail\necho Linking...\nif exist z98_link.rsp del z98_link.rsp\n";
-    bufferedWriterWrite(writer, c_prefix);
-    bufferedWriterWrite(writer, rt4);
-    var rsp_pre: []const u8 = "echo ";
-    var rsp_suf: []const u8 = ".o >> z98_link.rsp\n";
-    writeReachableModuleList(writer, emitter, rsp_pre, rsp_suf);
-    var rsp_sup: []const u8 = "echo zig_runtime.o >> z98_link.rsp\necho zig_pal.o >> z98_link.rsp\necho zig_nocrt.o >> z98_link.rsp\necho c_exit.o >> z98_link.rsp\n";
-    bufferedWriterWrite(writer, rsp_sup);
-    var link0: []const u8 = "gcc -m32 -mconsole -static-libgcc -o prog.exe @z98_link.rsp -lkernel32 -lwinmm";
-    bufferedWriterWrite(writer, link0);
-    if (net_emitted != @intCast(u8, 0)) {
-        var wl: []const u8 = " -lwsock32";
-        bufferedWriterWrite(writer, wl);
-    }
-    var tail: []const u8 = "\nif errorlevel 1 goto z98_fail\necho Built: prog.exe\ngoto z98_done\n:z98_fail\necho BUILD FAILED\n:z98_done\n";
-    bufferedWriterWrite(writer, tail);
+    writeBatLoggedModuleCompiles(writer, emitter, c_prefix);
+    writeBatCompileLogged(writer, c_prefix, "zig_runtime", ".c");
+    writeBatCompileLogged(writer, c_prefix, "zig_pal", ".c");
+    writeBatCompileLogged(writer, c_prefix, "zig_nocrt", ".c");
+    writeBatCompileLogged(writer, c_prefix, "c_exit", ".c");
+    var lk: []const u8 = "echo Linking... >> 00.txt\n";
+    bufferedWriterWrite(writer, lk);
+    emitMingwChunkedLink(writer, emitter, net_emitted, @intCast(u8, 0));
 }
 
 pub fn emitBuildMingwNocrtBat(writer: *BufferedWriter, emitter: *C89Emitter, net_emitted: u8, win_profile: WinProfile) void {
-    var h0: []const u8 = "@echo off\nREM build_mingw_nocrt.bat - generated by zig1 (MinGW gcc, Win9x no-CRT)\nREM REDISTRIBUTION: -nostdlib single EXE; entry is the emitted\nREM mainCRTStartup. Mirrors scripts/win32_cross/cross_nocrt.sh.\nREM Run from the emitted output directory. Output: prog.exe\necho Compiling...\n";
-    bufferedWriterWrite(writer, h0);
-    var c_prefix: []const u8 = "gcc -m32 -mconsole -static-libgcc -std=c89 -O2 -pedantic -Wall -c -D_WIN32 -DZIG_WIN32 -DZIG_NO_CRT -nostdlib -DWINVER=0x0410 -D_WIN32_WINNT=0x0410 -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -I. ";
+    var h0a: []const u8 = "echo off\nREM build_mingw_nocrt.bat - generated by zig1 (MinGW gcc, Win9x no-CRT)\nREM REDISTRIBUTION: -nostdlib single EXE; entry is the emitted\nREM mainCRTStartup. Mirrors scripts/win32_cross/cross_nocrt.sh.\nREM PREREQ: MinGW bin on PATH. No-CRT variant: -DZIG_NO_CRT + -nostdlib link.\n";
+    bufferedWriterWrite(writer, h0a);
+    var h0b: []const u8 = "REM Run from the emitted output directory. Output: prog.exe\nREM response-file-free: gcc 3.4.5 has no response-file support; commands are explicit.\necho === build_mingw_nocrt.bat === > 00.txt\necho Compiling... >> 00.txt\n";
+    bufferedWriterWrite(writer, h0b);
+    var c_prefix: []const u8 = "gcc -m32 -mconsole -static-libgcc -std=c89 -O2 -pedantic -Wall -c -D_WIN32 -DZIG_WIN32 -DZIG_NO_CRT -DWINVER=0x0410 -D_WIN32_WINNT=0x0410 -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -I. ";
     if (win_profile == WinProfile.nt) {
-        c_prefix = "gcc -m32 -mconsole -static-libgcc -std=c89 -O2 -pedantic -Wall -c -D_WIN32 -DZIG_WIN32 -DZIG_WIN_NT -DZIG_NO_CRT -nostdlib -DWINVER=0x0410 -D_WIN32_WINNT=0x0410 -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -I. ";
+        c_prefix = "gcc -m32 -mconsole -static-libgcc -std=c89 -O2 -pedantic -Wall -c -D_WIN32 -DZIG_WIN32 -DZIG_WIN_NT -DZIG_NO_CRT -DWINVER=0x0410 -D_WIN32_WINNT=0x0410 -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -I. ";
     }
-    var c_suf: []const u8 = ".c\nif errorlevel 1 goto z98_fail\n";
-    writeReachableModuleList(writer, emitter, c_prefix, c_suf);
-    var rt: []const u8 = "zig_runtime.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, c_prefix);
-    bufferedWriterWrite(writer, rt);
-    var rt2: []const u8 = "zig_pal.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, c_prefix);
-    bufferedWriterWrite(writer, rt2);
-    var rt3: []const u8 = "zig_nocrt.c\nif errorlevel 1 goto z98_fail\n";
-    bufferedWriterWrite(writer, c_prefix);
-    bufferedWriterWrite(writer, rt3);
-    var rt4: []const u8 = "c_exit.c\nif errorlevel 1 goto z98_fail\necho Linking...\nif exist z98_link.rsp del z98_link.rsp\n";
-    bufferedWriterWrite(writer, c_prefix);
-    bufferedWriterWrite(writer, rt4);
-    var rsp_pre: []const u8 = "echo ";
-    var rsp_suf: []const u8 = ".o >> z98_link.rsp\n";
-    writeReachableModuleList(writer, emitter, rsp_pre, rsp_suf);
-    var rsp_sup: []const u8 = "echo zig_runtime.o >> z98_link.rsp\necho zig_pal.o >> z98_link.rsp\necho zig_nocrt.o >> z98_link.rsp\necho c_exit.o >> z98_link.rsp\n";
-    bufferedWriterWrite(writer, rsp_sup);
-    var link0: []const u8 = "gcc -m32 -mconsole -static-libgcc -nostdlib -o prog.exe @z98_link.rsp -Wl,-e,_mainCRTStartup -lgcc -lkernel32";
-    bufferedWriterWrite(writer, link0);
-    if (net_emitted != @intCast(u8, 0)) {
-        var wl: []const u8 = " -lwsock32";
-        bufferedWriterWrite(writer, wl);
-    }
-    var tail: []const u8 = "\nif errorlevel 1 goto z98_fail\necho Built: prog.exe\ngoto z98_done\n:z98_fail\necho BUILD FAILED\n:z98_done\n";
-    bufferedWriterWrite(writer, tail);
+    writeBatLoggedModuleCompiles(writer, emitter, c_prefix);
+    writeBatCompileLogged(writer, c_prefix, "zig_runtime", ".c");
+    writeBatCompileLogged(writer, c_prefix, "zig_pal", ".c");
+    writeBatCompileLogged(writer, c_prefix, "zig_nocrt", ".c");
+    writeBatCompileLogged(writer, c_prefix, "c_exit", ".c");
+    var lk: []const u8 = "echo Linking... >> 00.txt\n";
+    bufferedWriterWrite(writer, lk);
+    emitMingwChunkedLink(writer, emitter, net_emitted, @intCast(u8, 1));
 }
 
 pub fn emitBuildTargetAliasBat(writer: *BufferedWriter, crt: bool) void {
