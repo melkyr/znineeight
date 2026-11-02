@@ -767,6 +767,48 @@ else
     echo "case 14: rc=$c14rc FAIL (want rc=2 clean limit diagnostic, 0 .c)"
 fi
 
+# ---- 15. folded terminating if inside an explicit labeled block ----
+# Regression for the E3B folded-arm DCE flag leaking past lowerBlockStmtStep /
+# lowerStmtLabeledStep: `outer: { if (c) break :outer; if (true) return 7; }`
+# must still emit the post-label `return 42` (run(true) -> 42) and the folded
+# return (run(false) -> 7). Compile, build via the emitted linux script, run.
+C15_DIR="$ROOT/repro/mi_matrix/known_excluded/folded_terminator_labeled_block_ok"
+run1mb c15 "$C15_DIR/main.zig"
+c15rc="$RC"
+c15_ok=1
+if [ "$c15rc" -ne 0 ]; then
+    c15_ok=0
+    bad "case 15: folded_terminator_labeled_block_ok emit rc=$c15rc want 0"
+fi
+if [ "$c15_ok" -eq 1 ]; then
+    if ! ( cd "$WORK/c15" && timeout 120 sh build_target.sh linux prog ) \
+        >"$WORK/c15.build.log" 2>&1; then
+        c15_ok=0
+        bad "case 15: build_target.sh linux failed (see $WORK/c15.build.log)"
+    fi
+fi
+if [ "$c15_ok" -eq 1 ]; then
+    set +e
+    ( cd "$WORK/c15" && timeout 10 ./prog </dev/null ) \
+        >"$WORK/c15.run.out" 2>"$WORK/c15.run.err"
+    c15run="$?"
+    set -e
+    if ! cmp -s "$WORK/c15.run.out" "$C15_DIR/expected.txt"; then
+        c15_ok=0
+        bad "case 15: runtime stdout mismatch (want 42/7)"
+    fi
+    c15want="$(tr -d '\r\n' <"$C15_DIR/expected.rc")"
+    if [ "$c15run" -ne "$c15want" ]; then
+        c15_ok=0
+        bad "case 15: runtime rc=$c15run want $c15want"
+    fi
+fi
+if [ "$c15_ok" -eq 1 ]; then
+    report_case 15 "$c15rc" "PASS (folded terminator + labeled block prints 42/7)"
+else
+    report_case 15 "$c15rc" "FAIL (folded terminator + labeled block regression)"
+fi
+
 if [ "$fail" -eq 0 ]; then
     echo "LOWER_DEPTH GATE OK"
     exit 0
