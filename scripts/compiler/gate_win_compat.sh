@@ -217,6 +217,12 @@ lint_bat() {
             ;;
     esac
 
+    # Win9x command.com supports stdout redirection only: no 2>&1 / 2> at all.
+    if grep -nE '2>&1|2>' "$lf" >"$WORK/bad_redir_$name"; then
+        bad "$name: contains unsupported Win9x redirection (2>&1 or 2>):"
+        sed -n '1,10p' "$WORK/bad_redir_$name" >&2
+    fi
+
     # Forbidden constructs (case-insensitive).
     if grep -inE '(^|[[:space:]])setlocal([[:space:]]|$)|(^|[[:space:]])endlocal([[:space:]]|$)|%ERRORLEVEL%|exit[[:space:]]+/b|goto[[:space:]]+:eof|%~|%\*|[[:space:]]&&[[:space:]]|[[:space:]]\|\|[[:space:]]|if[[:space:]]+not[[:space:]]+"|if[[:space:]]*\(' "$lf" >"$WORK/bad_constructs"; then
         bad "$name: forbidden command.com construct(s):"
@@ -285,15 +291,15 @@ lint_bat() {
         if ! grep -qE '^echo === .* === > 00\.txt$' "$lf"; then
             bad "$name: missing 'echo === <script> === > 00.txt' start"
         fi
-        if ! grep -q '>> 00\.txt 2>&1' "$lf"; then
+        if ! grep -q '>> 00\.txt' "$lf"; then
             bad "$name: no command output is logged to 00.txt"
         fi
         while IFS= read -r tool; do
             [ -n "$tool" ] || continue
             tline="${tool%%:*}"
             tcmd="${tool#*:}"
-            base="${tcmd% >> 00.txt 2>&1}"
-            if ! printf '%s\n' "$tcmd" | grep -qE ' >> 00\.txt 2>&1$'; then
+            base="${tcmd% >> 00.txt}"
+            if ! printf '%s\n' "$tcmd" | grep -qE ' >> 00\.txt$'; then
                 bad "$name:$tline: tool command does not append to 00.txt"
             fi
             prev="$(sed -n "$((tline - 1))p" "$lf")"
@@ -347,7 +353,7 @@ lint_bat() {
             grep -q '/d_CRT_SECURE_NO_WARNINGS' "$lf" || bad "$name: missing /d_CRT_SECURE_NO_WARNINGS"
             grep -q '/d_CRT_NONSTDC_NO_DEPRECATE' "$lf" || bad "$name: missing /d_CRT_NONSTDC_NO_DEPRECATE"
             grep -q '/ox' "$lf" || bad "$name: missing /ox"
-            grep -qE '^wcc386 @z98_cc\.rsp .*\.c >> 00\.txt 2>&1$' "$lf" || bad "$name: no logged wcc386 compile line"
+            grep -qE '^wcc386 @z98_cc\.rsp .*\.c >> 00\.txt$' "$lf" || bad "$name: no logged wcc386 compile line"
             ;;
         build_mingw_crt.bat|build_mingw_nocrt.bat)
             if grep -q '@' "$lf"; then
@@ -364,7 +370,7 @@ lint_bat() {
             grep -q -- '-D_CRT_SECURE_NO_WARNINGS' "$lf" || bad "$name: missing -D_CRT_SECURE_NO_WARNINGS"
             grep -q -- '-D_CRT_NONSTDC_NO_DEPRECATE' "$lf" || bad "$name: missing -D_CRT_NONSTDC_NO_DEPRECATE"
             grep -q -- '-D_WIN32' "$lf" || bad "$name: missing -D_WIN32"
-            grep -qE '^gcc -m32 .* -c .*\.c >> 00\.txt 2>&1$' "$lf" || bad "$name: no logged gcc compile line"
+            grep -qE '^gcc -m32 .* -c .*\.c >> 00\.txt$' "$lf" || bad "$name: no logged gcc compile line"
             grep -qE '^gcc -m32 -r -o z98_l[0-9]+\.o ' "$lf" || bad "$name: no explicit partial-link line"
             grep -qE '^gcc -m32 -mconsole -static-libgcc -o prog\.exe z98_l1\.o' "$lf" || bad "$name: no explicit final link line"
             ;;

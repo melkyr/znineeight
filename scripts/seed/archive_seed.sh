@@ -251,6 +251,9 @@ Build the compiler on the Win9x machine
 cd win
 Each script writes its full command/output log to 00.txt in win/; the final
 log line is Built: prog.exe on success or BUILD FAILED otherwise.
+Win9x command.com redirects stdout only: no stream-merge redirection is used.
+00.txt holds the executed commands plus stdout; OWC writes per-TU *.err files,
+and MinGW gcc stderr appears on the console.
 
 OpenWatcom (build_owc_crt.bat):
     rem run C:\\WATCOM\\OWSETENV.BAT in this window first (sets INCLUDE/LIB)
@@ -403,6 +406,9 @@ Windows companion build recipe (win/ in zig1_seed_w9.zip):
   objects each) and one short final link.
   Every script echoes each command and its output to 00.txt in win/; the
   final log line is Built: prog.exe on success or BUILD FAILED otherwise.
+  Win9x command.com redirects stdout only: no stream-merge redirection is
+  used. 00.txt holds commands+stdout; OWC writes per-TU *.err and MinGW gcc
+  stderr appears on the console.
 
 (net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT
 included: 0 references in any emitted gen/*.c|*.h for a linux -osl gcc-only
