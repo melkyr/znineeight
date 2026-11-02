@@ -18,7 +18,7 @@ extern z64 pal_wallclock_unix(void);
 #if defined(_MSC_VER)
 FILE _iob[3];
 #elif defined(__WATCOMC__)
-__w_FILE __iob[3];
+FILE __iob[3];
 #endif
 
 #undef getchar

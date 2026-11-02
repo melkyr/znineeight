@@ -3,8 +3,24 @@ const ModuleRegistry = mr_mod.ModuleRegistry;
 const Sand = @import("allocator.zig").Sand;
 const ga_mod = @import("growable_array.zig");
 const hash_mod = @import("util/hash.zig");
+const interner_mod = @import("string_interner.zig");
 
-pub fn cincludeUnionAll(module_reg: *ModuleRegistry, alloc: *Sand) []u32 {
+fn cincludeStrEql(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = @intCast(usize, 0);
+    while (i < a.len) : (i += @intCast(usize, 1)) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
+
+// Headers with no Win9x/Win32 equivalent. Matched with or without the
+// surrounding angle brackets used by `@cInclude`.
+pub fn cincludeIsPosixOnly(name: []const u8) bool {
+    return cincludeStrEql(name, "dirent.h") or cincludeStrEql(name, "<dirent.h>");
+}
+
+pub fn cincludeUnionAll(module_reg: *ModuleRegistry, alloc: *Sand, target_is_windows: bool) []u32 {
     var temp = ga_mod.u32ArrayListInit(alloc);
     var mods = mr_mod.moduleRegistryGetModules(module_reg);
     var hint: usize = @intCast(usize, 0);
@@ -20,6 +36,10 @@ pub fn cincludeUnionAll(module_reg: *ModuleRegistry, alloc: *Sand) []u32 {
         var ci: usize = @intCast(usize, 0);
         while (ci < m_incs.len) : (ci += @intCast(usize, 1)) {
             var name_id = m_incs[ci];
+            if (target_is_windows) {
+                var inc_str = interner_mod.stringInternerGet(module_reg.interner, name_id);
+                if (cincludeIsPosixOnly(inc_str)) continue;
+            }
             if (hash_mod.u32ToU32MapGet(&seen, name_id)) |_| {
                 // skip duplicate
             } else {

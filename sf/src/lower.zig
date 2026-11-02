@@ -447,6 +447,7 @@ pub const LirLowerer = struct {
     alloc: *Sand,
     scope_depth: u32,
     block_terminated: u8,
+    folded_arm_terminated: u8,
     suppress_fnref_ban: u8,
     module_id: u32,
     module_reg: *ModuleRegistry,
@@ -617,6 +618,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .alloc = alloc,
         .scope_depth = @intCast(u32, 0),
         .block_terminated = @intCast(u8, 0),
+        .folded_arm_terminated = @intCast(u8, 0),
         .suppress_fnref_ban = @intCast(u8, 0),
         .module_id = @intCast(u32, 0),
         .module_reg = undefined,
@@ -12925,6 +12927,7 @@ fn lowerStmtBodyStep(self: *LirLowerer, f: *StmtFrame) void {
     var node_idx: u32 = f.node_idx;
     var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     if (f.phase == @intCast(u16, 2)) {
+        self.folded_arm_terminated = @intCast(u8, 0);
         expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
         popScopeDepth(self);
         return;
@@ -12933,6 +12936,12 @@ fn lowerStmtBodyStep(self: *LirLowerer, f: *StmtFrame) void {
         var ec_n1 = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
         var i1: usize = @intCast(usize, f.slot0) + @intCast(usize, 1);
         if (i1 < ec_n1) {
+            if (self.folded_arm_terminated != @intCast(u8, 0)) {
+                self.folded_arm_terminated = @intCast(u8, 0);
+                expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
+                popScopeDepth(self);
+                return;
+            }
             var ec_i1 = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, i1));
             lowerStmtBlcMarker(self, ec_i1);
             self.block_terminated = @intCast(u8, 0);
@@ -12940,6 +12949,7 @@ fn lowerStmtBodyStep(self: *LirLowerer, f: *StmtFrame) void {
             lowerStmtPushChild(self, f, ec_i1, @intCast(u16, 1), @intCast(u16, 0));
             return;
         }
+        self.folded_arm_terminated = @intCast(u8, 0);
         expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
         popScopeDepth(self);
         return;
@@ -12955,6 +12965,7 @@ fn lowerStmtBodyStep(self: *LirLowerer, f: *StmtFrame) void {
             lowerStmtPushChild(self, f, ec_i, @intCast(u16, 1), @intCast(u16, 0));
             return;
         }
+        self.folded_arm_terminated = @intCast(u8, 0);
         expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
         popScopeDepth(self);
         return;
@@ -13047,7 +13058,11 @@ fn lowerIfStmtStep(self: *LirLowerer, f: *StmtFrame) void {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     var store = self.ctx.store;
     if (f.phase == @intCast(u16, 10)) {
-        self.block_terminated = @intCast(u8, 0);
+        if (self.block_terminated != @intCast(u8, 0)) {
+            self.folded_arm_terminated = @intCast(u8, 1);
+        } else {
+            self.block_terminated = @intCast(u8, 0);
+        }
         return;
     }
     if (f.phase == @intCast(u16, 1)) {

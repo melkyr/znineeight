@@ -269,7 +269,7 @@ pub fn emitZigNocrtCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#if defined(_MSC_VER)\n");
     c89_mod.bufferedWriterWrite(writer, "FILE _iob[3];\n");
     c89_mod.bufferedWriterWrite(writer, "#elif defined(__WATCOMC__)\n");
-    c89_mod.bufferedWriterWrite(writer, "__w_FILE __iob[3];\n");
+    c89_mod.bufferedWriterWrite(writer, "FILE __iob[3];\n");
     c89_mod.bufferedWriterWrite(writer, "#endif\n");
     c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "#undef getchar\n");

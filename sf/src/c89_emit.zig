@@ -15,6 +15,7 @@ const hash_mod = @import("util/hash.zig");
 const interner_mod = @import("string_interner.zig");
 const type_mod = @import("type_registry.zig");
 const mr_mod = @import("module_registry.zig");
+const cinclude = @import("cinclude.zig");
 const nm_mod = @import("name_mangler.zig");
 const c89_plan = @import("c89_plan.zig");
 const const_init_eval = @import("const_init_eval.zig");
@@ -944,6 +945,22 @@ fn ctypeGuardWrite(writer: *BufferedWriter, kind: TypeKind) void {
     }
 }
 
+fn guardMacroCNameWrite(writer: *BufferedWriter, cname: []const u8) void {
+    var i: usize = @intCast(usize, 0);
+    while (i < cname.len) : (i += @intCast(usize, 1)) {
+        var c: u8 = cname[i];
+        var is_id_ch: bool = (c >= @intCast(u8, 'a') and c <= @intCast(u8, 'z')) or
+            (c >= @intCast(u8, 'A') and c <= @intCast(u8, 'Z')) or
+            (c >= @intCast(u8, '0') and c <= @intCast(u8, '9')) or
+            (c == @intCast(u8, '_'));
+        if (is_id_ch) {
+            bufferedWriterWriteByte(writer, c);
+        } else {
+            bufferedWriterWriteByte(writer, @intCast(u8, '_'));
+        }
+    }
+}
+
 // D5-4: the FNV-31-style dedup key over an emitted C name, shared by the four
 // dedup sites (emitTypeDefOnce, the shared-header and single-file forward-typedef
 // loops, and emitModuleHeaderFile).
@@ -975,10 +992,10 @@ fn emitTypeDefOnce(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map, gated: u8
     }
     var g0: []const u8 = "#ifndef "; bufferedWriterWrite(&emitter.writer, g0);
     ctypeGuardWrite(&emitter.writer, ty.kind);
-    bufferedWriterWrite(&emitter.writer, cname);
+    guardMacroCNameWrite(&emitter.writer, cname);
     var g1: []const u8 = "\n#define "; bufferedWriterWrite(&emitter.writer, g1);
     ctypeGuardWrite(&emitter.writer, ty.kind);
-    bufferedWriterWrite(&emitter.writer, cname);
+    guardMacroCNameWrite(&emitter.writer, cname);
     var g2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, g2);
     emitTypeDefinition(emitter, tid);
     var g3: []const u8 = "#endif /* "; bufferedWriterWrite(&emitter.writer, g3);
@@ -2418,6 +2435,7 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, c_includes: []u32) v
     while (ci < c_includes.len) : (ci += @intCast(usize, 1)) {
         var inc_id = c_includes[ci];
         var inc_str = interner_mod.stringInternerGet(emitter.interner, inc_id);
+        if (emitter.module_reg.target_is_windows and cinclude.cincludeIsPosixOnly(inc_str)) continue;
         var is1: []const u8 = "#include ";
         bufferedWriterWrite(&emitter.writer, is1);
         if (inc_str.len > @intCast(usize, 0)) {
@@ -2942,6 +2960,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     while (ci < c_includes.len) : (ci += @intCast(usize, 1)) {
         var inc_id = c_includes[ci];
         var inc_str = interner_mod.stringInternerGet(emitter.interner, inc_id);
+        if (emitter.module_reg.target_is_windows and cinclude.cincludeIsPosixOnly(inc_str)) continue;
         var is1: []const u8 = "#include ";
         bufferedWriterWrite(&emitter.writer, is1);
         if (inc_str.len > @intCast(usize, 0)) {

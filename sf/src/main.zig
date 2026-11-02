@@ -1971,7 +1971,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.emitIncludes(&cwriter);
     c89_mod.bufferedWriterFlush(&cwriter);
 
-    var c_incs = cinclude.cincludeUnionAll(ctx.module_reg, &ctx.alloc.emission);
+    var c_incs = cinclude.cincludeUnionAll(ctx.module_reg, &ctx.alloc.emission, ctx.cli.target_is_windows);
     c89_mod.emitModule(&emitter, module_name, c_incs);
     var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
     c89_mod.bufferedWriterFlush(&emitter.writer);

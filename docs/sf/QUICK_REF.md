@@ -695,10 +695,10 @@ Previous values are the historical tables below. The absolute pin values are
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `c52b9bb9267917fa13fa7207ae84e706` | `beea82815abed32cec443b4393f18cfb` |
-| `examples/z98/game_of_life/main.zig` | `078c7c6ce29b86f4ad8b369f534eb337` | `d9eb5b2f5ef7820af4d03a568cb1203f` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `4d08641e5eed3e5c90a67ab5489c5957` | `8a1905f24bc3fe0cdb0c5eeb55af4ac3` |
-| `examples/z98/json_parser/main.zig` | `c03d635c051beb66f9226b5f55285038` | `f43bb7b8be53d609edebeeee471e9fd5` |
+| `examples/z98/mud_server/main.zig` | `725ef46e3facd5be7d00f5284eb740d1` | `8a993683503df539843386b25ddd7dcf` |
+| `examples/z98/game_of_life/main.zig` | `d9b10a777c4375460695cfd538db676f` | `0d2ba0cfc294745f30023e7d11e9924c` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `19bac3abc328a4318f29d3334d1dfefd` | `de4c6d52b4cb8461676da65b4377717d` |
+| `examples/z98/json_parser/main.zig` | `c8a8ddf0585e2d964e74c3bf4fde897f` | `1b89bcf83e66f8d9f24c7c286faddc15` |
 
 Historical 8-pin table (2026-10-28, Phase 2.5 Task 9 warning-clean emission re-baseline; superseded above):
 
