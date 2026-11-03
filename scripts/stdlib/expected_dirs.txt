@@ -109,6 +109,9 @@ repro/mi_matrix/stdlib_errset_capture_qualified_xmod
 repro/mi_matrix/stdlib_eu_samepayload_xmod
 repro/mi_matrix/stdlib_f32_narrow_ok_xmod
 repro/mi_matrix/stdlib_f32_print_xmod
+repro/mi_matrix/stdlib_fft_basic_xmod
+repro/mi_matrix/stdlib_fft_inverse_xmod
+repro/mi_matrix/stdlib_fft_radix_xmod
 repro/mi_matrix/stdlib_file_close_xmod
 repro/mi_matrix/stdlib_file_exists_xmod
 repro/mi_matrix/stdlib_file_flush_xmod
@@ -126,9 +129,6 @@ repro/mi_matrix/stdlib_file_stress_xmod
 repro/mi_matrix/stdlib_file_write_xmod
 repro/mi_matrix/stdlib_file_writeall_xmod
 repro/mi_matrix/stdlib_fileio_xmod
-repro/mi_matrix/stdlib_fft_basic_xmod
-repro/mi_matrix/stdlib_fft_inverse_xmod
-repro/mi_matrix/stdlib_fft_radix_xmod
 repro/mi_matrix/stdlib_floatcast_xmod
 repro/mi_matrix/stdlib_fold_i32_ok_xmod
 repro/mi_matrix/stdlib_fold_u32_ok_xmod
