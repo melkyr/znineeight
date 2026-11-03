@@ -30,31 +30,31 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-03 — seed v132]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-03 — seed v133]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v132 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v133 CHANGELOG entry.
 
-**Current seed: v132** (rotated 2026-11-03 from the 0.21.1 Win9x hotfix tree —
-T1/T1c MinGW `-nostdlib` + no-CRT `-lwinmm` + volatile runtime shims, T2 GUI
-`WndProc` shim removal + dynamic DDraw + GDI fallback + `user32`/`gdi32` link
-libs, T3 z9play live flush + no-CRT `fflush` shim, T4 per-example build recipes,
-T5a z9dbg fixture re-baseline; packaging base HEAD `8f2269c3`). Archived binary
-md5 (= fixed point) `108fed5c1d143d0d905fdb3e2fd120e9`; archive md5
-`9244ae831cb41ee9b71b1187a9f23820`; Win9x zip md5
-`2cfd893244ff3a7fbc317bb4221babdf`; `gen/` 48 `.c` + 49 `.h` (12,361,596
-bytes); `lib/` **50** std `.zig` (`std.zig` + 49 `std_*.zig`) plus
+**Current seed: v133** (rotated 2026-11-03 from the z9play/z9torr optimization
+tree — `std_fft` split-radix FFT + z9play FFT IMDCT + z9torr O(1) accounting +
+CLI help docs; packaging base HEAD `0b35199f`). Archived binary md5 (= fixed
+point) `108fed5c1d143d0d905fdb3e2fd120e9`; archive md5
+`f833c5ee355681927aedf5881450221d`; Win9x zip md5
+`2b516af68400ec886fc1ee8a5dbc961d`; `gen/` 48 `.c` + 49 `.h` (12,361,596
+bytes); `lib/` **51** std `.zig` (`std.zig` + 50 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`a7ada3edfa99ba091a5ef1096550b908`; moved because `std_gfx_pal.zig` is part of
-`lib/`). A rebuild from the committed v132 archive is two-hop
+`62008632c1f057c42b04bf5883f6da5d`; moved because `std_fft.zig` was added to
+`lib/`). A rebuild from the committed v133 archive is two-hop
 **hop1 == hop2 == `108fed5c…`**. The compiler source is **`-fsafe`-clean**.
 Markers (`--markers --dump-c89` on `mud_server`): **3397 lines / 39012 B**
-(unchanged from v129). The 8 pins, the frozen-1124 corpus (md5
+(unchanged from v129). The 8 pins (unchanged), the live corpus (1196 =
+**1020 OK / 58 GREEN / 118 FAIL**, class md5
+`dd67bcdfb00162cc000205060925b6d7`), the frozen-1124 corpus (md5
 `518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the goldens (5/5), the 26
-examples and the 339/0 stdlib + 10/10 crosscheck are all exact.
+examples and the 342/0 stdlib + 10/10 crosscheck are all exact.
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
 `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
@@ -155,12 +155,12 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v128 carries the full 50 std `.zig`** = `std.zig` plus
-49 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
+tracked seed archive **v133 carries the full 51 std `.zig`** = `std.zig` plus
+50 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
 
-**Std-module inventory:** the `sf/src` std set is **49** `std_*.zig` + `std.zig`
+**Std-module inventory:** the `sf/src` std set is **50** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
 `std_net`, `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`,
 `std_time_pal`, `std_buf`, `std_file`, `std_file_pal`, `std_stdin`,
@@ -170,10 +170,10 @@ and `SEED_README.txt`.
 `std_utf8`, `std_http`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
 `std_num`, `std_pathfind`, `std_hpa`, `std_physics`, `std_asn1`, `std_x509`,
 `std_tls`, `std_wireguard`, `std_tcpip`, `std_gfx`, `std_gfx_pal`,
-`std_fold`). `std.zig` re-exports
+`std_fold`, `std_fft`). `std.zig` re-exports
 the core **14** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/buf/fold`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
-`scripts/seed/build_from_seed.sh` installs all 50 into the rebuilt compiler's `lib/`.
+`scripts/seed/build_from_seed.sh` installs all 51 into the rebuilt compiler's `lib/`.
 **`std_crypto` (M4):** carries streaming SHA-1/SHA-256/MD5 + CRC-32 plus RC4 (`rc4Init`/`rc4Apply`, RFC 6229 vectors) and modular exponentiation (`modpow`, fixed 32-bit limbs sized for the MSE/PE 768-bit Diffie-Hellman prime) for the encrypted handshake.
 **`std_crypto` M2 additions:** SHA-384/512, HMAC-SHA256 (one-shot + streaming), HKDF extract/expand (RFC 5869), BLAKE2s + HMAC-BLAKE2s (RFC 7693 / WireGuard MAC), and verify-only RSA PKCS#1 v1.5 / PSS (RFC 8017, generic modexp cap 4096-bit). Errors: `BadSignature` / `Corrupt` (`UnsupportedAlgorithm` is unrepresentable via `HashAlg`).
 **`std_cipher` (M2):** ChaCha20 (RFC 8439, 20 rounds unrolled), Poly1305 (donna 5×26-bit limbs, constant-time), ChaCha20-Poly1305 AEAD (`error.AuthenticationFailed`), AES-128 (FIPS-197, 4 KiB `const` T-tables `R/r` rodata), AES-128-GCM (SP800-38D, GHASH 4-bit tables). Pure, no heap/arena; fixtures `stdlib_chacha_poly_xmod` + `stdlib_aes_gcm_xmod`; T-table gate `scripts/compiler/gate_cipher_rodata.sh`. Doc: `sf/docs/std_lib/cipher.md`.
@@ -307,7 +307,7 @@ point is unmoved), via
   back to `stat` when `d_type == DT_UNKNOWN`. The Win9x backend uses only
   KERNEL32 `FindFirstFileA`/`FindNextFileA`/`FindClose` (no msvcrt/CRT).
 - **Gate:** fixture `repro/mi_matrix/stdlib_dir_iter_xmod` (`expected_dirs.txt`
-  pin); `verify_stdlib` is **339/0** today (**336/0** on seed v123; 294/0 at M7 on v103; the two
+  pin); `verify_stdlib` is **342/0** today (**336/0** on seed v123; 294/0 at M7 on v103; the two
   M2 `stdlib_noise_*` fixtures, the M2 crypto/cipher/ecc fixtures, the four
   M3 `std_asn1`/`std_x509` fixtures, the three M4 `std_tls`/HTTP-transport
   fixtures, the three M5 TLS 1.3 fixtures, the three M6 WireGuard fixtures,

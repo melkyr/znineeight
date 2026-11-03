@@ -15,6 +15,88 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-03 — seed v133 (HEAD 0b35199f)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12361596 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-11-03 |
+| HEAD | `0b35199f` |
+| seed binary md5 | `108fed5c1d143d0d905fdb3e2fd120e9` |
+| self-emission C | 48 `.c` + 49 `.h` (12361596 bytes) |
+| fixed point | `108fed5c1d143d0d905fdb3e2fd120e9` |
+| lib manifest | `lib/manifest.md5` (51 std files; md5 `62008632c1f057c42b04bf5883f6da5d`) |
+| archive md5 | `f833c5ee355681927aedf5881450221d` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `2b516af68400ec886fc1ee8a5dbc961d` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 51 std `.zig` + `manifest.md5` |
+| HEAD/date | `0b35199f` / 2026-11-03 |
+
+### Changes in this rotation (z9play/z9torr optimization)
+
+- **`std_fft`:** new standalone `sf/src/std_fft.zig` (iterative split-radix
+  complex FFT, imported directly as `@import("std_fft.zig")` and deliberately
+  not re-exported from `std.zig`) is now shipped in `lib/`; the
+  `stdlib_fft_basic` / `stdlib_fft_inverse` / `stdlib_fft_radix` fixtures raise
+  the std gate to 342. No compiler or barrel change.
+- **z9play:** FFT-based IMDCT using `std_fft` plus cached window/slope tables;
+  the 2-LSB / RMS golden is unchanged and the release recipe uses `-ffast`.
+- **z9torr:** O(1) piece/block accounting counters replace the per-block scans;
+  downloaded bytes are unchanged and the release recipe uses `-ffast`.
+- **CLI docs:** the z9play and z9torr `-h` text documents exit codes, the
+  log/save paths and the WAV sink. No new flags.
+- `lib/` changed only by adding `std_fft.zig`, so the manifest pin moved to
+  `62008632c1f057c42b04bf5883f6da5d`; the compiler fixed point stayed at
+  `108fed5c1d143d0d905fdb3e2fd120e9` (the barrel is untouched).
+
+### Battery at rotation (v133)
+
+- **Corpus:** live 1196 dirs = 1020 OK / 58 GREEN / 118 FAIL / 0 ICE / 0 CRASH;
+  class md5 `dd67bcdfb00162cc000205060925b6d7` (v132 live was 1193 = 1017 OK /
+  58 GREEN / 118 FAIL; the +3 OK are the new `std_fft` fixtures).
+- **Frozen-1124:** 1124 lines, md5 `518eca1a9b5d3e1cc5a48abce214abd8`,
+  950 OK / 58 GREEN / 116 FAIL, 0 movers.
+- **Goldens 5/5 byte-identical:** gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`,
+  lisp basic `b3d9f8974da24ddbf9d389f3d7d97322`, lisp canonical
+  `96654b3910a54d8bb7ec3ddfc0f26c6a`, json `8bda3d5a1ec07d14a301bc343df32bf8`,
+  mud server/client `66c8f0abb926cca7baf9a0d1692ab318` /
+  `93147d0f0bbd983a9d844fea8b7a6fa7`.
+- **8 dump pins unchanged:** 8/8 byte-identical (no compiler/barrel change).
+- **Markers:** 3397 lines / 39012 B (unchanged).
+- **Examples:** 26/26 build and 26/26 run with the expected rc set
+  (`z9play`/`z9torr` usage text grew in the CLI-docs change; rc remains 1).
+- **stdlib:** 342 PASS / 0 FAIL; crosscheck 10 PASS / 0 FAIL.
+- **`check_emit_support.sh`:** 8/8 support files byte-identical.
+- **Closure:** rebuild from this archive closes at hop1 == hop2 ==
+  `108fed5c1d143d0d905fdb3e2fd120e9`.
+
+Provenance note: the archived binary (md5 108fed5c1d143d0d905fdb3e2fd120e9) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+0b35199f; gcc of the archive's self-emission C reproduces the fixed point
+`108fed5c1d143d0d905fdb3e2fd120e9` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-11-03 — seed v132 (HEAD 8f2269c3)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
