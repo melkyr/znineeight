@@ -246,35 +246,20 @@ fn scanTail(buf: []const u8, serial: u32) ?u64 {
 
 fn readTailInto(arena: *std.arena.Arena, path: []const u8, cap: usize) OggStreamError![]u8 {
     var f = std_file.open(arena, path, .Read) catch return error.Truncated;
-    var raw: [*]u8 = std.arena.alloc(arena, cap) catch {
-        std_file.close(&f);
-        return error.OutOfMemory;
-    };
+    defer std_file.close(&f);
+    var raw: [*]u8 = std.arena.alloc(arena, cap) catch return error.OutOfMemory;
     var buf: []u8 = raw[0..cap];
-    var sz: i64 = std_file.size(&f) catch {
-        std_file.close(&f);
-        return error.Truncated;
-    };
-    if (sz < 0) {
-        std_file.close(&f);
-        return error.Truncated;
-    }
+    var sz: i64 = std_file.size(&f) catch return error.Truncated;
+    if (sz < 0) return error.Truncated;
     var size: u64 = @intCast(u64, sz);
     var start: u64 = size - @intCast(u64, cap);
-    _ = std_file.seek(&f, @intCast(i64, start), .Set) catch {
-        std_file.close(&f);
-        return error.Truncated;
-    };
+    _ = std_file.seek(&f, @intCast(i64, start), .Set) catch return error.Truncated;
     var total: usize = 0;
     while (total < cap) {
-        var got: usize = std_file.read(&f, buf[total..]) catch {
-            std_file.close(&f);
-            return error.Truncated;
-        };
+        var got: usize = std_file.read(&f, buf[total..]) catch return error.Truncated;
         if (got == 0) break;
         total += got;
     }
-    std_file.close(&f);
     if (total != cap) return error.Truncated;
     return buf;
 }
@@ -286,11 +271,8 @@ fn readTailInto(arena: *std.arena.Arena, path: []const u8, cap: usize) OggStream
 // with no complete final page for `serial` is `Truncated`.
 pub fn oggStreamLastGranule(arena: *std.arena.Arena, path: []const u8, serial: u32) OggStreamError!u64 {
     var f = std_file.open(arena, path, .Read) catch return error.Truncated;
-    var sz: i64 = std_file.size(&f) catch {
-        std_file.close(&f);
-        return error.Truncated;
-    };
-    std_file.close(&f);
+    defer std_file.close(&f);
+    var sz: i64 = std_file.size(&f) catch return error.Truncated;
     if (sz < 0) return error.Truncated;
     var size: u64 = @intCast(u64, sz);
     if (size == 0) return 0;

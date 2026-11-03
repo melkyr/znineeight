@@ -49,18 +49,10 @@ fn refill(bf: *BufferedFile) StreamError!void {
 
 pub fn bufferedFileOpen(arena: *std.arena.Arena, path: []const u8) StreamError!BufferedFile {
     var f: std_file.File = std_file.open(arena, path, .Read) catch return error.OpenFailed;
-    var sz: i64 = std_file.size(&f) catch {
-        std_file.close(&f);
-        return error.SizeFailed;
-    };
-    if (sz < 0) {
-        std_file.close(&f);
-        return error.SizeFailed;
-    }
-    var raw: [*]u8 = std.arena.alloc(arena, STREAM_BUF_SIZE) catch {
-        std_file.close(&f);
-        return error.OutOfMemory;
-    };
+    errdefer std_file.close(&f);
+    var sz: i64 = std_file.size(&f) catch return error.SizeFailed;
+    if (sz < 0) return error.SizeFailed;
+    var raw: [*]u8 = std.arena.alloc(arena, STREAM_BUF_SIZE) catch return error.OutOfMemory;
     return BufferedFile{
         .file = f,
         .arena = arena,

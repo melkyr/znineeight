@@ -343,26 +343,20 @@ fn loadDir(path: []const u8) void {
         setStatus("cannot open directory");
         return;
     };
+    defer filemod.closeDir(&d);
 
-    var reading: bool = true;
-    while (reading) {
-        var maybe: ?filemod.DirEntry = filemod.readDir(&g_dir_arena, &d) catch null;
-        if (maybe) |e| {
-            if (!isDotOrDotDot(e.name)) {
-                var keep: bool = e.is_dir;
-                if (!keep) keep = isAudioName(e.name);
-                if (keep) {
-                    if (g_entry_count < MAX_ENTRIES) {
-                        g_entries[g_entry_count] = e;
-                        g_entry_count += 1;
-                    }
+    while (filemod.readDir(&g_dir_arena, &d) catch null) |e| {
+        if (!isDotOrDotDot(e.name)) {
+            var keep: bool = e.is_dir;
+            if (!keep) keep = isAudioName(e.name);
+            if (keep) {
+                if (g_entry_count < MAX_ENTRIES) {
+                    g_entries[g_entry_count] = e;
+                    g_entry_count += 1;
                 }
             }
-        } else {
-            reading = false;
         }
     }
-    filemod.closeDir(&d);
     sortEntries(g_entries[0..g_entry_count]);
     setStatus("");
 }
@@ -704,15 +698,13 @@ fn removeCurrentFromPlaylist() void {
         return;
     }
     var idx: usize = 0;
-    var found: bool = false;
-    for (0..g_playlist_len) |k| {
-        if (std.str.eql(g_playlist[k], g_current_buf[0..g_current_len])) {
-            found = true;
-            idx = @intCast(usize, k);
-            break;
+    blk: {
+        for (0..g_playlist_len) |k| {
+            if (std.str.eql(g_playlist[k], g_current_buf[0..g_current_len])) {
+                idx = @intCast(usize, k);
+                break :blk;
+            }
         }
-    }
-    if (!found) {
         setStatus("not in playlist");
         return;
     }
@@ -1163,9 +1155,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var prev_state: player.PlayerState = player.PlayerState.stopped;
     var have_prev: bool = false;
 
-    while (!quit) {
+    outer: while (true) {
         var got_key: bool = false;
-        while (true) {
+        inner: while (true) {
             var k: contract.Key = cs.readKey_fn(cs.state);
             var is_none: bool = false;
             switch (k) {
@@ -1177,10 +1169,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                     got_key = true;
                 },
             }
-            if (quit) break;
+            if (quit) break :outer;
             if (is_none) break;
         }
-        if (quit) break;
 
         if (g_has_track) {
             if (g_player.state == player.PlayerState.playing) {

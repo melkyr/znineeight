@@ -619,16 +619,14 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
         var written: u64 = 0;
         var max_payload: u64 = 4294967295 - 36;
-        while (true) {
-            var maybe: ?[]const u8 = ogg_stream.oggStreamNextPacket(&os) catch {
-                ogg_stream.oggStreamClose(&os);
-                filemod.close(&outf);
-                var msg: []const u8 = "z9play: corrupt or unsupported audio packet\n";
-                std.io.write(msg);
-                exitFlush(3);
-                return;
-            };
-            if (maybe) |packet| {
+        while (ogg_stream.oggStreamNextPacket(&os) catch {
+            ogg_stream.oggStreamClose(&os);
+            filemod.close(&outf);
+            var msg: []const u8 = "z9play: corrupt or unsupported audio packet\n";
+            std.io.write(msg);
+            exitFlush(3);
+            return;
+        }) |packet| {
                 std.arena.reset(&scratch);
                 var f: usize = dec.decodePacket(&scratch, setup, &state, packet, tmp) catch {
                     ogg_stream.oggStreamClose(&os);
@@ -671,9 +669,6 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                     return;
                 }
                 written = nw;
-            } else {
-                break;
-            }
         }
         ogg_stream.oggStreamClose(&os);
 
@@ -1159,9 +1154,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 if (!args.quiet) {
                     writeStatus(player.playerPositionMs(&pl), pl.duration_ms, vol);
                 }
-                while (true) {
+                outer: while (true) {
                     if (interactive) {
-                        while (true) {
+                        inner: while (true) {
                             var k: contract.Key = cs.readKey_fn(cs.state);
                             var got: bool = true;
                             switch (k) {
@@ -1202,11 +1197,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                                 },
                                 else => {},
                             }
-                            if (quit) break;
+                            if (quit) break :outer;
                             if (!got) break;
                         }
                     }
-                    if (quit) break;
                     if (pl.state == player.PlayerState.ended) break;
 
                     if (pl.state == player.PlayerState.playing) {

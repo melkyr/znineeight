@@ -340,24 +340,19 @@ pub fn vorbisCreate(persistent: *std.arena.Arena, scratch: *std.arena.Arena, str
 pub fn vorbisNext(ctx: *void, pcm_out: []i16) DecoderError!usize {
     var c: *VorbisCtx = @ptrCast(*VorbisCtx, ctx);
     var ch: usize = @intCast(usize, c.state.channels);
-    while (true) {
-        var maybe: ?[]const u8 = ogg_stream.oggStreamNextPacket(c.stream) catch |e| {
+    while (ogg_stream.oggStreamNextPacket(c.stream) catch |e| {
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.DecodeFailed;
+    }) |packet| {
+        std.arena.reset(c.scratch);
+        var f: usize = dec.decodePacket(c.scratch, c.setup, &c.state, packet, c.tmp) catch |e| {
             if (e == error.OutOfMemory) return error.OutOfMemory;
             return error.DecodeFailed;
         };
-        if (maybe) |packet| {
-            std.arena.reset(c.scratch);
-            var f: usize = dec.decodePacket(c.scratch, c.setup, &c.state, packet, c.tmp) catch |e| {
-                if (e == error.OutOfMemory) return error.OutOfMemory;
-                return error.DecodeFailed;
-            };
-            if (f > 0) {
-                var n: usize = f * ch;
-                for (0..n) |i| pcm_out[i] = c.tmp[i];
-                return f;
-            }
-        } else {
-            return 0;
+        if (f > 0) {
+            var n: usize = f * ch;
+            for (0..n) |i| pcm_out[i] = c.tmp[i];
+            return f;
         }
     }
     return 0;
