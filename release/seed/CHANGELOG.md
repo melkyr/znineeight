@@ -15,6 +15,70 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-03 — seed v132 (HEAD 8f2269c3)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12361596 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-11-03 |
+| HEAD | `8f2269c3` |
+| seed binary md5 | `108fed5c1d143d0d905fdb3e2fd120e9` |
+| self-emission C | 48 `.c` + 49 `.h` (12361596 bytes) |
+| fixed point | `108fed5c1d143d0d905fdb3e2fd120e9` |
+| lib manifest | `lib/manifest.md5` (50 std files; md5 `a7ada3edfa99ba091a5ef1096550b908`) |
+| archive md5 | `9244ae831cb41ee9b71b1187a9f23820` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `2cfd893244ff3a7fbc317bb4221babdf` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 50 std `.zig` + `manifest.md5` |
+| HEAD/date | `8f2269c3` / 2026-11-03 |
+
+### Changes in this rotation (0.21.1 Win9x hotfix)
+
+- **MinGW emitted links:** partial/chunk links use `-nostdlib`; the no-CRT
+  final link adds `-lwinmm` (the CRT branch and `build_target.sh` already did).
+- **no-CRT runtime shims:** `strlen`/`memcpy`/`memset`/`strncmp` use volatile
+  pointers so `-O2` cannot rewrite the loops into self-calls; gated by a static
+  self-call check plus a Wine `-O2` smoke.
+- **GUI (`std_gfx_pal`):** the C `WndProc` shim is removed (register
+  `DefWindowProcA`; poll `GetClientRect`/`IsWindow`); DirectDraw is loaded
+  dynamically with `LoadLibraryA("ddraw.dll")`/`GetProcAddress` (no static
+  `DDRAW.DLL` import; GDI fallback kept); MSVC/MinGW GUI link lines add
+  `user32`/`gdi32`.
+- **z9play:** live console output via direct `fflush(NULL)` (no-CRT `fflush`
+  shim added); `--wav` prints start + periodic progress lines.
+- **Docs:** every `examples/z98/*/README.md` now carries Linux + Windows zig1
+  build recipes.
+- `lib/` payload changed only through `std_gfx_pal.zig`, so the manifest pin
+  moved to `a7ada3edfa99ba091a5ef1096550b908`; compiler fixed point moved from
+  v131 `cc15a6f3…` to `108fed5c…`. No language or CLI change.
+
+Provenance note: the archived binary (md5 108fed5c1d143d0d905fdb3e2fd120e9) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+8f2269c3; gcc of the archive's self-emission C reproduces the fixed point
+`108fed5c1d143d0d905fdb3e2fd120e9` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-11-02 — seed v131 (HEAD b1da327a)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir

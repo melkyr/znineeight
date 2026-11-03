@@ -30,31 +30,31 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-02 — seed v130]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-03 — seed v132]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v131 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v132 CHANGELOG entry.
 
-**Current seed: v131** (rotated 2026-11-02 from compiler source `b1da327a`,
-captured at packaging base HEAD `b1da327a`; the Win9x emission-fixes
-milestone: target-filtered `dirent`, sanitized `ZIG_*` guards, folded-if
-terminator DCE including the explicit-block/labeled-sequence flag fix, OWC
-`FILE __iob`, self-sufficient emitted build scripts with response files /
-`00.txt` logging, and command.com-safe stdout-only logging with no `2>&1`).
-Archived binary md5 (= fixed point)
-`cc15a6f3fd0e6e28b8e2fe116665ff86`; archive md5
-`54980ef2c404954fd7613d4f5f7907b2`; Win9x zip md5
-`ae8d3a041b85b5b9842e4e3feb043a2a`; `gen/` 48 `.c` + 49 `.h` (12,355,182
+**Current seed: v132** (rotated 2026-11-03 from the 0.21.1 Win9x hotfix tree —
+T1/T1c MinGW `-nostdlib` + no-CRT `-lwinmm` + volatile runtime shims, T2 GUI
+`WndProc` shim removal + dynamic DDraw + GDI fallback + `user32`/`gdi32` link
+libs, T3 z9play live flush + no-CRT `fflush` shim, T4 per-example build recipes,
+T5a z9dbg fixture re-baseline; packaging base HEAD `8f2269c3`). Archived binary
+md5 (= fixed point) `108fed5c1d143d0d905fdb3e2fd120e9`; archive md5
+`9244ae831cb41ee9b71b1187a9f23820`; Win9x zip md5
+`2cfd893244ff3a7fbc317bb4221babdf`; `gen/` 48 `.c` + 49 `.h` (12,361,596
 bytes); `lib/` **50** std `.zig` (`std.zig` + 49 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`8b78593a7dabb86f9f01cd9e7994ab9f`). A rebuild from the committed v131
-archive is two-hop **hop1 == hop2 == `cc15a6f3…`**. The compiler source is
-**`-fsafe`-clean**. Markers (`--markers --dump-c89` on `mud_server`):
-**3397 lines / 39012 B** (unchanged from v129). The 8 pins, the frozen-1124
-corpus, the goldens, the 26 examples and the 339/0 stdlib are all exact.
+`a7ada3edfa99ba091a5ef1096550b908`; moved because `std_gfx_pal.zig` is part of
+`lib/`). A rebuild from the committed v132 archive is two-hop
+**hop1 == hop2 == `108fed5c…`**. The compiler source is **`-fsafe`-clean**.
+Markers (`--markers --dump-c89` on `mud_server`): **3397 lines / 39012 B**
+(unchanged from v129). The 8 pins, the frozen-1124 corpus (md5
+`518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the goldens (5/5), the 26
+examples and the 339/0 stdlib + 10/10 crosscheck are all exact.
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
 `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
