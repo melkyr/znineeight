@@ -7,6 +7,57 @@ library); playback goes through a small application-level platform audio layer.
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md`.
 M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
 
+## Building with zig1
+
+The compiler is self-hosted. A seed build (`scripts/seed/build_from_seed.sh`)
+puts `lib/` next to the `zig1` binary, and the compiler searches `<exe-dir>/lib`
+automatically. When the binary lives elsewhere, pass the library directory with
+`-I lib` (relative to the current directory). On Windows never use `-I /lib`:
+that is the drive root, and the compiler reports `cannot find std`.
+
+`-o <dir>` selects the output directory and is required; without it the
+compiler emits nothing. Create the directory first.
+
+### Linux
+
+```sh
+mkdir -p out
+/path/to/zig1_5_clean -o out main.zig
+sh out/build_target.sh
+./out/prog song.ogg
+```
+
+### Windows 9x / NT
+
+Run this from the example directory in a Command Prompt. `-osw` selects the
+Windows target and emits the batch scripts.
+
+```bat
+mkdir out
+z1.exe -I lib -osw -o out main.zig
+cd out
+build_owc_crt.bat
+prog.exe song.ogg
+```
+
+`build_owc_crt.bat` (OpenWatcom, static CRT) is the verified path;
+`build_target_crt.bat` is the MSVC 6 equivalent (run `VCVARS32.BAT` first);
+`build_owc_nocrt.bat` / `build_target_nocrt.bat` are the no-CRT alternates; and
+`build_mingw_crt.bat` is the MinGW fallback (needs `msvcrt.dll`). The output is
+`out\prog.exe`.
+
+z9play needs an input file: `z9play song.ogg` (dragging a file onto
+`z9play.exe` works too). While playing it prints a live, per-second status line
+(`mm:ss / mm:ss  vol N%  [####----]`). `--info`, `--dump-setup`, `--pcm`,
+`--wav`, `--volume`, `--start`, `--loop`, and `--quiet` are described below.
+`ui.zig` is a separate full-screen TUI root: build it the same way by passing
+`ui.zig` as the entry file.
+
+Sources: `main.zig` (entry) imports `cli.zig`, `decoder.zig`, `stream.zig`,
+`ogg_stream.zig`, `player.zig`, `fmt.zig`, `flac.zig`, and the `platform/`
+backends; `ui.zig` additionally drives the `Console` + `Player` contracts.
+Pass only the entry file — the compiler resolves the rest.
+
 ## Status
 
 **M0 (OGG container + Vorbis headers + `z9play --info`) — complete.**

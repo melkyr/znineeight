@@ -32,21 +32,48 @@ Due to current bootstrap compiler limitations, this implementation uses a "Downg
 
 **Status**: The Zig source code for the interpreter is feature-complete for the "Baptism of Water" phase. However, generating a working binary requires specific patches to the `z98` bootstrap compiler.
 
-### Build Instructions
+## Building with zig1
 
-To attempt a build of the Lisp interpreter:
+The compiler is self-hosted. A seed build (`scripts/seed/build_from_seed.sh`)
+puts `lib/` next to the `zig1` binary, and the compiler searches `<exe-dir>/lib`
+automatically. When the binary lives elsewhere, pass the library directory with
+`-I lib` (relative to the current directory). On Windows never use `-I /lib`:
+that is the drive root, and the compiler reports `cannot find std`.
 
-1.  Ensure you have a compiled `z98` compiler at the repository root.
-2.  Run the compiler on the entry point:
-    ```bash
-    ./z98 examples/lisp_interpreter/main.zig -o o_lisp/main.c
-    ```
-3.  Compile the generated C code (requires `-m32` for the 1998 target):
-    ```bash
-    gcc -m32 -o lisp_repl o_lisp/*.c
-    ```
+`-o <dir>` selects the output directory and is required; without it the
+compiler emits nothing. Create the directory first.
 
-**Note**: Without the compiler patches described in `missing_features_lisp.md`, the Zig compilation phase may fail with "type mismatch" errors across modules, and the generated C code may fail to compile due to C89 scoping rules or `main` function return type mismatches.
+### Linux
+
+```sh
+mkdir -p out
+/path/to/zig1_5_clean -o out main.zig
+sh out/build_target.sh
+./out/prog
+```
+
+### Windows 9x / NT
+
+Run this from the example directory in a Command Prompt. `-osw` selects the
+Windows target and emits the batch scripts.
+
+```bat
+mkdir out
+z1.exe -I lib -osw -o out main.zig
+cd out
+build_owc_crt.bat
+prog.exe
+```
+
+`build_owc_crt.bat` (OpenWatcom, static CRT) is the verified path;
+`build_target_crt.bat` is the MSVC 6 equivalent (run `VCVARS32.BAT` first);
+`build_owc_nocrt.bat` / `build_target_nocrt.bat` are the no-CRT alternates; and
+`build_mingw_crt.bat` is the MinGW fallback (needs `msvcrt.dll`). The output is
+`out\prog.exe`.
+
+Sources: `main.zig` (entry) imports `sand.zig`, `value.zig`, `token.zig`,
+`parser.zig`, `env.zig`, `eval.zig`, `builtins.zig`, and `util.zig`; pass only
+`main.zig` — the compiler resolves the rest.
 
 ## Basic Test Expressions
 
