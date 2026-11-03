@@ -100,7 +100,7 @@ The staged 0.21.1 set is **zig1 + seed, no zig0** (git-ignored
 | File | Size (B) | md5 | Notes |
 |---|---:|---|---|
 | `zig1_linux32` | 3,585,348 | `108fed5c1d143d0d905fdb3e2fd120e9` | v132 seed binary; ELF 32-bit i386; equals the fixed point |
-| `src_c_zig1_linux.tgz` | 2,042,316 | `e1a2d993a4bc649da73b99330ff9ed8c` | self-emission C89 archive (52 `.c` + 51 `.h` raw; 48 + 49 canonical) |
+| `src_c_zig1_linux.tgz` | 2,040,283 | `3bbd81a92df14d3a6eff6b2d42e5efe6` | self-emission C89 archive (52 `.c` + 51 `.h` raw; 48 + 49 canonical) |
 | `src_c_zig1_w32.zip` | 2,068,392 | `d41f945c4bee2f5206826408311cb6a6` | `-osw` self-emission; byte-identical members to the linux flavour |
 | `zig1_src.tgz` | 1,101,827 | `d178e3c0c48939a3fa1cec4672cace05` | `sf/src` + 50-file `lib/` + `RELEASE_README.txt` |
 | `zig1_src.zip` | 1,181,078 | `16e848832097c8b18cf451f73d746863` | identical tree, zip format |
