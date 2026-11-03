@@ -44,6 +44,30 @@ else
     fail_case "--help exit 0 + usage on stdout"
 fi
 
+# 1b. --help documents the save path, log control and exit codes
+if grep -qi "save" "$OUT/help.out"; then
+    pass_case "--help documents the save path"
+else
+    fail_case "--help documents the save path"
+fi
+if grep -q "Z9TORR_LOG" "$OUT/help.out"; then
+    pass_case "--help documents Z9TORR_LOG"
+else
+    fail_case "--help documents Z9TORR_LOG"
+fi
+if grep -qi "exit" "$OUT/help.out"; then
+    pass_case "--help documents exit codes"
+else
+    fail_case "--help documents exit codes"
+fi
+for code in 1 2 3 4 5; do
+    if grep -Eqi "${code}[[:space:]]*(usage|torrent|tracker|peer|disk|complete)" "$OUT/help.out"; then
+        pass_case "--help documents exit code $code"
+    else
+        fail_case "--help documents exit code $code"
+    fi
+done
+
 # 2. no args -> exit 1
 "$PROG" >"$OUT/noargs.out" 2>&1
 if test $? -eq 1; then

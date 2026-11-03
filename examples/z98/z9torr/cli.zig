@@ -60,6 +60,14 @@ pub fn usage() void {
     std.io.write(l4);
     var l5: []const u8 = "  --max-down N     download limit in bytes/s (0 or 16384..65535)\n";
     std.io.write(l5);
+    var l6: []const u8 = "  output           saves as <torrent name> in the current directory\n";
+    std.io.write(l6);
+    var l7: []const u8 = "  Z9TORR_LOG=1     write z9torr.log; a path-like value writes that file\n";
+    std.io.write(l7);
+    var l8: []const u8 = "  runs to completion (no interactive keys); -o is the compiler's output-dir flag, not a z9torr flag\n";
+    std.io.write(l8);
+    var l9: []const u8 = "  exit codes: 0 complete, 1 usage, 2 torrent, 3 tracker, 4 peer, 5 disk\n";
+    std.io.write(l9);
 }
 
 fn usageError() void {
