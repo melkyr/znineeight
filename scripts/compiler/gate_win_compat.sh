@@ -382,6 +382,9 @@ lint_bat() {
         build_target_crt.bat|build_owc_crt.bat)
             grep -q '\*\.obj' "$lf" || bad "$name: CRT link does not use *.obj"
             ;;
+        build_mingw_nocrt.bat)
+            grep -qE '^gcc .* -o prog\.exe .* -nostdlib .* -lwinmm' "$lf" || bad "$name: no-CRT final link must include -nostdlib and -lwinmm"
+            ;;
     esac
     if [ "$fail" -eq "$fail_before" ]; then
         ok "$name lint"

@@ -9646,7 +9646,7 @@ fn writeMingwFinalCmd(writer: *BufferedWriter, chunk_count: usize, nocrt: u8, ne
         bufferedWriterWrite(writer, o);
     }
     if (nocrt != @intCast(u8, 0)) {
-        var l0: []const u8 = " -nostdlib -Wl,-e,_mainCRTStartup -lgcc -lkernel32";
+        var l0: []const u8 = " -nostdlib -Wl,-e,_mainCRTStartup -lgcc -lkernel32 -lwinmm";
         bufferedWriterWrite(writer, l0);
     } else {
         var l1: []const u8 = " -lkernel32 -lwinmm";
