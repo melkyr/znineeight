@@ -458,7 +458,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         return;
     }
 
-    if (args.mode == cli.MODE_INFO) {
+    switch (args.mode) {
+        cli.MODE_INFO => {
         var os: ogg_stream.OggStream = ogg_stream.oggStreamOpen(&arena, args.path) catch |e| {
             if (e == error.OutOfMemory) {
                 var msg: []const u8 = "z9play: out of memory\n";
@@ -509,9 +510,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
         exitFlush(0);
         return;
-    }
+        },
 
-    if (args.mode == cli.MODE_DUMP_SETUP) {
+    cli.MODE_DUMP_SETUP => {
         var os: ogg_stream.OggStream = ogg_stream.oggStreamOpen(&arena, args.path) catch |e| {
             if (e == error.OutOfMemory) {
                 var msg: []const u8 = "z9play: out of memory\n";
@@ -547,9 +548,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         writeNl();
         exitFlush(0);
         return;
-    }
+        },
 
-    if (args.mode == cli.MODE_PCM) {
+    cli.MODE_PCM => {
         var darena = std.arena.init(dec_arena_buf[0..]);
         var scratch = std.arena.init(pcm_scratch_buf[0..]);
 
@@ -707,14 +708,14 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         filemod.close(&outf);
         exitFlush(0);
         return;
-    }
+        },
 
     // --wav <in.ogg> <out.wav>: drive the M4 Player core (decode -> double
     // buffer ring -> audio vtable) into the hermetic WAV sink. This is the M4
     // gate path (tests/tier_audio.sh): it exercises the real Player + audio
     // output layer with no device dependency. Exit codes follow the spec:
     // 3 = malformed stream / decode / audio failure, 2 = sink open failure.
-    if (args.mode == cli.MODE_WAV) {
+    cli.MODE_WAV => {
         // Persistent decode state (setup, DecoderState, the VorbisCtx and its
         // one-block scratch) off the 32-bit stack; `scratch` is reset per packet
         // by vorbisNext; `par` backs the Player ring + block buffer. `darena`
@@ -885,7 +886,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         if (ogg_open) ogg_stream.oggStreamClose(&os);
         exitFlush(0);
         return;
-    }
+        },
 
     // Playback (<file.ogg> [--volume/--start/--loop/--quiet], M5): drive the M4
     // Player through the M5 console + formatter. The audio backend is selected
@@ -895,7 +896,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // core's `write` does not block for
     // the WAV sink, so the loop paces itself against `std.time.ticksMs()`
     // instead of relying on the device for real time.
-    if (args.mode == cli.MODE_PLAY) {
+    cli.MODE_PLAY => {
         // Decode chain backing stores (same as --wav) + the container comment
         // for the startup metadata line.
         var darena = std.arena.init(dec_arena_buf[0..]);
@@ -1272,6 +1273,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         writeText(".\n");
         exitFlush(0);
         return;
+        },
+        else => {},
     }
 
     exitFlush(1);

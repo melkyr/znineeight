@@ -761,12 +761,16 @@ fn playlistStep(forward: bool) void {
 
 fn togglePause() void {
     if (!g_has_track) return;
-    if (g_player.state == player.PlayerState.playing) {
-        g_player.state = player.PlayerState.paused;
-        g_pause_began = std.time.ticksMs();
-    } else if (g_player.state == player.PlayerState.paused) {
-        g_player.state = player.PlayerState.playing;
-        g_paused_accum += @intCast(u64, std.time.ticksMs() - g_pause_began);
+    switch (g_player.state) {
+        .playing => {
+            g_player.state = player.PlayerState.paused;
+            g_pause_began = std.time.ticksMs();
+        },
+        .paused => {
+            g_player.state = player.PlayerState.playing;
+            g_paused_accum += @intCast(u64, std.time.ticksMs() - g_pause_began);
+        },
+        else => {},
     }
 }
 
@@ -846,26 +850,38 @@ fn addSelected() void {
 fn handleKey(k: contract.Key, quit: *bool) void {
     switch (k) {
         .char => |c| {
-            if (c == 'q') {
-                quit.* = true;
-            } else if (c == 'j') {
-                cursorDown();
-            } else if (c == 'k') {
-                cursorUp();
-            } else if (c == 'a') {
-                addSelected();
-            } else if (c == 'd') {
-                removeCurrentFromPlaylist();
-            } else if (c == 'n') {
-                playlistStep(true);
-            } else if (c == 'p') {
-                playlistStep(false);
-            } else if (c == ' ') {
-                togglePause();
-            } else if (c == '+' or c == '=') {
-                volumeUp();
-            } else if (c == '-') {
-                volumeDown();
+            switch (c) {
+                'q' => {
+                    quit.* = true;
+                },
+                'j' => {
+                    cursorDown();
+                },
+                'k' => {
+                    cursorUp();
+                },
+                'a' => {
+                    addSelected();
+                },
+                'd' => {
+                    removeCurrentFromPlaylist();
+                },
+                'n' => {
+                    playlistStep(true);
+                },
+                'p' => {
+                    playlistStep(false);
+                },
+                ' ' => {
+                    togglePause();
+                },
+                '+', '=' => {
+                    volumeUp();
+                },
+                '-' => {
+                    volumeDown();
+                },
+                else => {},
             }
         },
         .up => {
@@ -961,60 +977,71 @@ fn renderRight(buf: []u8, row: usize) void {
         }
         return;
     }
-    if (row == 2) {
-        var pos_buf: [fmt.MMSS_MAX]u8 = undefined;
-        var dur_buf: [fmt.MMSS_MAX]u8 = undefined;
-        var pos: []const u8 = fmt.mmss(pos_buf[0..], player.playerPositionMs(&g_player));
-        var dur: []const u8 = fmt.mmss(dur_buf[0..], g_player.duration_ms);
-        var x: usize = RIGHT_START;
-        x += putAtClip(buf, x, WIDTH - 1, pos);
-        x += putAtClip(buf, x, WIDTH - 1, " / ");
-        _ = putAtClip(buf, x, WIDTH - 1, dur);
-    } else if (row == 3) {
-        var x: usize = RIGHT_START;
-        x += putAtClip(buf, x, WIDTH - 1, "vol ");
-        x += putU64(buf, x, @intCast(u64, g_volume));
-        _ = putAtClip(buf, x, WIDTH - 1, "%");
-    } else if (row == 4) {
-        putBar(buf, RIGHT_START, player.playerPositionMs(&g_player), g_player.duration_ms);
-    } else if (row == 5) {
-        if (g_player.title) |t| {
-            _ = putAtClip(buf, RIGHT_START, WIDTH - 1, "Title: ");
-            _ = putAtClip(buf, RIGHT_START + 7, WIDTH - 1, t);
-        }
-    } else if (row == 6) {
-        if (g_player.artist) |a| {
-            _ = putAtClip(buf, RIGHT_START, WIDTH - 1, "Artist: ");
-            _ = putAtClip(buf, RIGHT_START + 8, WIDTH - 1, a);
-        }
-    } else if (row == 7) {
-        if (g_player.album) |a| {
-            _ = putAtClip(buf, RIGHT_START, WIDTH - 1, "Album: ");
-            _ = putAtClip(buf, RIGHT_START + 7, WIDTH - 1, a);
-        }
-    } else if (row == 8) {
-        var st: []const u8 = "Stopped";
-        if (g_player.state == player.PlayerState.playing) {
-            st = "Playing";
-        } else if (g_player.state == player.PlayerState.paused) {
-            st = "Paused";
-        } else if (g_player.state == player.PlayerState.ended) {
-            st = "Ended";
-        } else if (g_player.state == player.PlayerState.error_state) {
-            st = "Error";
-        }
-        var x: usize = RIGHT_START;
-        x += putAtClip(buf, x, WIDTH - 1, "State: ");
-        _ = putAtClip(buf, x, WIDTH - 1, st);
-    } else if (row == 9) {
-        var x: usize = RIGHT_START;
-        x += putAtClip(buf, x, WIDTH - 1, "Playlist: ");
-        _ = putU64(buf, x, @intCast(u64, g_playlist_len));
-    } else if (row == 10) {
-        if (g_status.len > 0) {
-            _ = putAtClip(buf, RIGHT_START, WIDTH - 1, "Status: ");
-            _ = putAtClip(buf, RIGHT_START + 8, WIDTH - 1, g_status);
-        }
+    switch (row) {
+        2 => {
+            var pos_buf: [fmt.MMSS_MAX]u8 = undefined;
+            var dur_buf: [fmt.MMSS_MAX]u8 = undefined;
+            var pos: []const u8 = fmt.mmss(pos_buf[0..], player.playerPositionMs(&g_player));
+            var dur: []const u8 = fmt.mmss(dur_buf[0..], g_player.duration_ms);
+            var x: usize = RIGHT_START;
+            x += putAtClip(buf, x, WIDTH - 1, pos);
+            x += putAtClip(buf, x, WIDTH - 1, " / ");
+            _ = putAtClip(buf, x, WIDTH - 1, dur);
+        },
+        3 => {
+            var x: usize = RIGHT_START;
+            x += putAtClip(buf, x, WIDTH - 1, "vol ");
+            x += putU64(buf, x, @intCast(u64, g_volume));
+            _ = putAtClip(buf, x, WIDTH - 1, "%");
+        },
+        4 => {
+            putBar(buf, RIGHT_START, player.playerPositionMs(&g_player), g_player.duration_ms);
+        },
+        5 => {
+            if (g_player.title) |t| {
+                _ = putAtClip(buf, RIGHT_START, WIDTH - 1, "Title: ");
+                _ = putAtClip(buf, RIGHT_START + 7, WIDTH - 1, t);
+            }
+        },
+        6 => {
+            if (g_player.artist) |a| {
+                _ = putAtClip(buf, RIGHT_START, WIDTH - 1, "Artist: ");
+                _ = putAtClip(buf, RIGHT_START + 8, WIDTH - 1, a);
+            }
+        },
+        7 => {
+            if (g_player.album) |a| {
+                _ = putAtClip(buf, RIGHT_START, WIDTH - 1, "Album: ");
+                _ = putAtClip(buf, RIGHT_START + 7, WIDTH - 1, a);
+            }
+        },
+        8 => {
+            var st: []const u8 = "Stopped";
+            if (g_player.state == player.PlayerState.playing) {
+                st = "Playing";
+            } else if (g_player.state == player.PlayerState.paused) {
+                st = "Paused";
+            } else if (g_player.state == player.PlayerState.ended) {
+                st = "Ended";
+            } else if (g_player.state == player.PlayerState.error_state) {
+                st = "Error";
+            }
+            var x: usize = RIGHT_START;
+            x += putAtClip(buf, x, WIDTH - 1, "State: ");
+            _ = putAtClip(buf, x, WIDTH - 1, st);
+        },
+        9 => {
+            var x: usize = RIGHT_START;
+            x += putAtClip(buf, x, WIDTH - 1, "Playlist: ");
+            _ = putU64(buf, x, @intCast(u64, g_playlist_len));
+        },
+        10 => {
+            if (g_status.len > 0) {
+                _ = putAtClip(buf, RIGHT_START, WIDTH - 1, "Status: ");
+                _ = putAtClip(buf, RIGHT_START + 8, WIDTH - 1, g_status);
+            }
+        },
+        else => {},
     }
 }
 

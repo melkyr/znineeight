@@ -51,7 +51,7 @@
 // clamp to [-1,1], val = floor(x*32768 + 0.5), saturate to [-32768, 32767].
 //
 // Pure Z98: free functions, no generics/anytype/@Type, strict @intCast, no
-// @cImport, no switch (if/else only). Every string literal is written through a
+// @cImport; integer/enum dispatch uses `switch`. Every string literal is written through a
 // typed `var` (see AGENTS.md X.5).
 
 const std = @import("std");

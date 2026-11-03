@@ -117,11 +117,15 @@ pub fn statusLine(buf: []u8, pos_ms: u64, dur_ms: u64, vol: u8) []const u8 {
     putStr(buf, &pos, "  vol ");
     // Fixed 3-char volume field, right-aligned (`vol   5%` / `vol  80%` /
     // `vol 100%`); `vol` is a u8 percent so at most three digits.
-    if (vol < 10) {
-        putByte(buf, &pos, ' ');
-        putByte(buf, &pos, ' ');
-    } else if (vol < 100) {
-        putByte(buf, &pos, ' ');
+    switch (vol) {
+        0...9 => {
+            putByte(buf, &pos, ' ');
+            putByte(buf, &pos, ' ');
+        },
+        10...99 => {
+            putByte(buf, &pos, ' ');
+        },
+        else => {},
     }
     putU64(buf, &pos, @intCast(u64, vol));
     putByte(buf, &pos, '%');

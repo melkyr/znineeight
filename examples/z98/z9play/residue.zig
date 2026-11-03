@@ -41,7 +41,7 @@
 // `decode_packed_entry_number`; see decodeScalarEop.
 //
 // Pure Z98: free functions, no generics/anytype/@Type, strict @intCast, no
-// @cImport, no switch. Ported from the Vorbis I specification section 8.6 and
+// @cImport; integer/enum dispatch uses `switch`. Ported from the Vorbis I specification section 8.6 and
 // cross-checked against xiph/vorbis lib/res0.c and lib/codebook.c.
 
 const std = @import("std");
@@ -303,12 +303,16 @@ pub fn decodeResidue(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, b
                             if (!bookHasValues(vdt)) return error.BadVersion;
                             var offset: u32 = limit_begin + pc * part_size;
                             var ok: bool = false;
-                            if (residue.residue_type == 0) {
-                                ok = try placeFormat0(arena, vdt, bits, out[j], offset, part_size);
-                            } else if (residue.residue_type == 1) {
-                                ok = try placeFormat1(arena, vdt, bits, out[j], offset, part_size);
-                            } else {
-                                ok = try placeFormat2(arena, vdt, bits, out, offset, part_size, ch);
+                            switch (residue.residue_type) {
+                                0 => {
+                                    ok = try placeFormat0(arena, vdt, bits, out[j], offset, part_size);
+                                },
+                                1 => {
+                                    ok = try placeFormat1(arena, vdt, bits, out[j], offset, part_size);
+                                },
+                                else => {
+                                    ok = try placeFormat2(arena, vdt, bits, out, offset, part_size, ch);
+                                },
                             }
                             if (!ok) return; // end-of-packet: nominal stop
                         }

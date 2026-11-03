@@ -1,7 +1,7 @@
 // dsp.zig — Vorbis window + inverse MDCT + overlap-add (z9play M3 Task 1).
 //
 // Pure Z98: free functions, no generics/anytype/@Type, strict @intCast, no
-// @cImport, no switch. The transcendental work (sin/cos) comes from the M2
+// @cImport; integer/enum dispatch uses `switch`. The transcendental work (sin/cos) comes from the M2
 // `std.math` f64 surface, which is reachable through the std root import and
 // links no libm; pi is a LOCAL constant (built from its exact IEEE-754 bit
 // pattern, like std_math does, because the lexer's decimal-float parser is not

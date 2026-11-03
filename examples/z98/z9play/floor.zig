@@ -26,7 +26,7 @@
 //   channel or multiply by zero.
 //
 // Pure Z98: free functions, no generics/anytype/@Type, strict @intCast, no
-// @cImport, no switch. The integer line/point algorithms are ported exactly
+// @cImport; integer/enum dispatch uses `switch`. The integer line/point algorithms are ported exactly
 // from the Vorbis I specification (9.2.4 / 9.2.5 / 9.2.6 / 9.2.7) and the
 // reference implementation (xiph/vorbis lib/floor1.c); the 256-entry
 // floor1_inverse_dB_table is included verbatim from spec 10.1.
@@ -126,10 +126,12 @@ fn ilog(x: u32) u32 {
 // range = vector { 256, 128, 86, 64 } element (multiplier - 1) (spec 7.2.3);
 // multiplier is 1..4 from setup.
 fn quantRange(mult: u8) u32 {
-    if (mult == 1) return 256;
-    if (mult == 2) return 128;
-    if (mult == 3) return 86;
-    return 64;
+    return switch (mult) {
+        1 => 256,
+        2 => 128,
+        3 => 86,
+        else => 64,
+    };
 }
 
 fn iabs(x: i32) i32 {
@@ -391,7 +393,9 @@ pub fn decodeFloor1(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, bi
 // Decode a floor of either type. Type 1 is delegated to `decodeFloor1`; type 0
 // is rejected with error.UnsupportedFloor (v1 scope, M3 plan Task 2).
 pub fn decodeFloor(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, bits: *vs.BitReader, floor: vs.Floor, out_curve: []f64) FloorError!bool {
-    if (floor.floor_type == 0) return error.UnsupportedFloor;
-    if (floor.floor_type != 1) return error.BadVersion;
-    return decodeFloor1(arena, tables, bits, floor, out_curve);
+    switch (floor.floor_type) {
+        0 => return error.UnsupportedFloor,
+        1 => return decodeFloor1(arena, tables, bits, floor, out_curve),
+        else => return error.BadVersion,
+    }
 }

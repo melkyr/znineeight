@@ -579,12 +579,16 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
     var floors: [*]Floor = @ptrCast([*]Floor, raw_fl);
     for (0..floor_count) |fi| {
         var ftype: u32 = try brRead(&br, 16);
-        if (ftype == 0) {
-            try parseFloor0(arena, &br, &floors[fi]);
-        } else if (ftype == 1) {
-            try parseFloor1(arena, &br, &floors[fi]);
-        } else {
-            return error.BadVersion;
+        switch (ftype) {
+            0 => {
+                try parseFloor0(arena, &br, &floors[fi]);
+            },
+            1 => {
+                try parseFloor1(arena, &br, &floors[fi]);
+            },
+            else => {
+                return error.BadVersion;
+            },
         }
     }
 
