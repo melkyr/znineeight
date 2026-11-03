@@ -55,6 +55,10 @@
 //   sh out/build_target.sh linux out/prog
 //   ./out/prog --info examples/z98/z9play/testdata/tagged_unicode.ogg
 
+// fflush(NULL) must use the active CRT's prototype (msvcrt / OWC static /
+// MSVC /MT) so the calling convention is right on every Win9x CRT build.
+@cInclude("<stdio.h>");
+
 const std = @import("std");
 const cli = @import("cli.zig");
 const filemod = @import("std_file");
@@ -78,32 +82,17 @@ const player = @import("player.zig");
 
 // Win9x D8-stdout: std.io.write goes through C stdio (fwrite), which the CRT
 // build buffers, so console text can sit in the process buffer during a long
-// decode. The no-CRT Win9x shim has no fflush and its fwrite is already
-// unbuffered, so the Windows side resolves msvcrt's fflush at runtime: a direct
-// extern would leave `fflush` undefined in the no-CRT link, and @isWindows()
-// prunes this branch out of the Linux emission (which calls libc fflush).
+// decode. Flush directly through the active CRT (msvcrt, OWC static, MSVC /MT):
+// the no-CRT Win9x runtime now provides a no-op fflush because its fwrite is
+// already unbuffered.
 extern "c" fn fflush(stream: *void) i32;
-extern "stdcall" fn GetModuleHandleA(name: [*]const u8) *void;
-extern "stdcall" fn GetProcAddress(mod: *void, name: [*]const u8) *void;
-const FflushFn = extern "c" fn(stream: *void) i32;
 
 fn nullVoid() *void {
     return @intToPtr(*void, 0);
 }
 
 fn flushOut() void {
-    if (@isWindows()) {
-        var mname: []const u8 = "msvcrt.dll";
-        var lib: *void = GetModuleHandleA(mname.ptr);
-        if (@ptrToInt(lib) == 0) return;
-        var fname: []const u8 = "fflush";
-        var proc: *void = GetProcAddress(lib, fname.ptr);
-        if (@ptrToInt(proc) == 0) return;
-        var fnp: FflushFn = @ptrCast(FflushFn, proc);
-        _ = fnp(nullVoid());
-    } else {
-        _ = fflush(nullVoid());
-    }
+    _ = fflush(nullVoid());
 }
 
 // Flush, then exit. Every main/playback/error exit goes through here so the

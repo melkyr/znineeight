@@ -319,6 +319,11 @@ pub fn emitZigNocrtCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "    return n;\n");
     c89_mod.bufferedWriterWrite(writer, "}\n");
     c89_mod.bufferedWriterWrite(writer, "\n");
+    c89_mod.bufferedWriterWrite(writer, "int fflush(FILE* stream) {\n");
+    c89_mod.bufferedWriterWrite(writer, "    (void)stream;\n");
+    c89_mod.bufferedWriterWrite(writer, "    return 0;\n");
+    c89_mod.bufferedWriterWrite(writer, "}\n");
+    c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "int getchar(void) {\n");
     c89_mod.bufferedWriterWrite(writer, "    char ch;\n");
     c89_mod.bufferedWriterWrite(writer, "    DWORD r = 0;\n");

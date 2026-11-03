@@ -68,6 +68,11 @@ size_t fwrite(const void* p, size_t sz, size_t n, FILE* stream) {
     return n;
 }
 
+int fflush(FILE* stream) {
+    (void)stream;
+    return 0;
+}
+
 int getchar(void) {
     char ch;
     DWORD r = 0;
