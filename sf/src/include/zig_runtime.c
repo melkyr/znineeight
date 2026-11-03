@@ -325,14 +325,14 @@ void zig_poison_fill(void* p, unsigned int n) {
 
 #if defined(_WIN32) && defined(ZIG_NO_CRT)
 size_t strlen(const char* s) {
-    const char* p = s;
+    const volatile char* p = s;
     while (*p) p++;
     return (size_t)(p - s);
 }
 
 void* memcpy(void* dst, const void* src, size_t n) {
-    unsigned char* d = (unsigned char*)dst;
-    const unsigned char* s = (const unsigned char*)src;
+    volatile unsigned char* d = (volatile unsigned char*)dst;
+    const volatile unsigned char* s = (const volatile unsigned char*)src;
     if (d < s) {
         while (n--) *d++ = *s++;
     } else {
@@ -344,15 +344,17 @@ void* memcpy(void* dst, const void* src, size_t n) {
 }
 
 void* memset(void* dst, int c, size_t n) {
-    unsigned char* d = (unsigned char*)dst;
+    volatile unsigned char* d = (volatile unsigned char*)dst;
     while (n--) *d++ = (unsigned char)c;
     return dst;
 }
 
 int strncmp(const char* a, const char* b, size_t n) {
+    const volatile char* pa = a;
+    const volatile char* pb = b;
     while (n--) {
-        unsigned char ca = (unsigned char)*a++;
-        unsigned char cb = (unsigned char)*b++;
+        unsigned char ca = (unsigned char)*pa++;
+        unsigned char cb = (unsigned char)*pb++;
         if (ca != cb) return (int)ca - (int)cb;
         if (ca == 0) return 0;
     }
