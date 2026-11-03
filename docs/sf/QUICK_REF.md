@@ -478,6 +478,12 @@ bash scripts/win32_cross/check_win9x_imports.sh /tmp/z9edit/z9edit.exe 9x
 - No extra C file is needed: DDraw is loaded dynamically from `ddraw.dll` and
   the window is polled (`GetClientRect`/`IsWindow`) instead of using a stdcall
   WndProc shim. `EXTRA_LIBS` adds GDI/User32 only (no `ddraw`).
+- **OWC no-CRT is not a GUI build:** the emitted `build_owc_nocrt.bat` uses
+  `option nodefaultlibs` and links only `kernel32,clib3r,winmm`, so `user32`
+  and `gdi32` stay unresolved. For GUI programs use `build_owc_crt.bat`
+  (verified static-CRT Win9x path), `build_target_crt.bat` (MSVC 6), or
+  `build_mingw_crt.bat` (MinGW, needs `msvcrt.dll`); the no-CRT alternates
+  remain valid for non-GUI console programs.
 - The gate is `examples/z98/z9edit/tests/tier_edit_gui.sh` (build + import
   gate + compile RSS + Xvfb/Wine `--smoke` 2× save-byte golden + all three
   theme screenshots/save bytes + F2 cycle + bad-config fallback). `gfx_demo` has

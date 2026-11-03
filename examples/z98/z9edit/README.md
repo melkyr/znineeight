@@ -34,10 +34,17 @@ prog.exe
 ```
 
 `build_owc_crt.bat` (OpenWatcom, static CRT) is the verified path;
-`build_target_crt.bat` is the MSVC 6 equivalent (run `VCVARS32.BAT` first);
-`build_owc_nocrt.bat` / `build_target_nocrt.bat` are the no-CRT alternates; and
+`build_target_crt.bat` is the MSVC 6 equivalent (run `VCVARS32.BAT` first); and
 `build_mingw_crt.bat` is the MinGW fallback (needs `msvcrt.dll`). The output is
 `out\prog.exe`.
+
+The OpenWatcom **no-CRT** variant (`build_owc_nocrt.bat`) is **not supported
+for GUI programs**: its link line sets `option nodefaultlibs` and omits
+`user32`/`gdi32`, so the GUI symbols stay unresolved. Use `build_owc_crt.bat`
+(verified static-CRT Win9x path), `build_target_crt.bat` (MSVC 6), or
+`build_mingw_crt.bat` (MinGW, needs `msvcrt.dll`) for GUI builds. The non-GUI
+no-CRT alternates (`build_owc_nocrt.bat` / `build_target_nocrt.bat`) remain
+valid for console programs.
 
 No extra C shim and no `-lddraw` are needed: DirectDraw is loaded dynamically
 and GDI is the fallback. Run `prog.exe <path>` to open a file, or
