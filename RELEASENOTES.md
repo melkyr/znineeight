@@ -1,3 +1,151 @@
+# Z98 0.21.1 "Terephthalic Acid" (hotfix) Release Notes
+
+This is a **hotfix** for **0.21.0 "Terephthalic Acid"**. It fixes programs built
+for, or cross-built for, Windows 9x: MinGW chunked links no longer embed CRT
+startup, GUI programs no longer depend on a C `WndProc` trampoline or a static
+`DDRAW.DLL`, and `z9play` console output is live. There is **no new language
+feature and no breaking change**; the compiler fixed point moves to seed
+**v132** (`108fed5c1d143d0d905fdb3e2fd120e9`).
+
+## 🚀 Timeline
+
+- **2026-10-29** — Z98 **0.21.0 "Terephthalic Acid"** released (seed v129).
+- **2026-11-02** — Win9x emission fixes rotate the seed v130 → v131 (emitted
+  scripts self-sufficient, stdout-only logging); they are included here.
+- **2026-11-03** — This hotfix: **Z98 0.21.1 "Terephthalic Acid" (hotfix)**,
+  seed **v132**; the Win9x link/GUI/console defects from 0.21.0 are fixed.
+
+## ✨ Headline Capabilities
+
+**Win9x link correctness**
+- Emitted MinGW partial/chunk links use `-nostdlib`; only the final link keeps
+  startup. The no-CRT final link adds `-lwinmm` for the waveOut path.
+
+**no-CRT runtime hardening**
+- `strlen`/`memcpy`/`memset`/`strncmp` shims are opaque to `-O2` idiom
+  conversion (no self-call recursion), covered by a static self-call gate and a
+  Wine `-O2` smoke.
+
+**GUI without the trampoline**
+- `std_gfx_pal` registers `DefWindowProcA` and polls `IsWindow`/`GetClientRect`
+  for close/minimize/resize; the deleted C `WndProc` shim is no longer shipped
+  or required.
+- DirectDraw is loaded dynamically (`LoadLibraryA("ddraw.dll")` +
+  `GetProcAddress`) with the 16-color GDI fallback; GUI executables import no
+  `DDRAW.DLL`. MSVC/MinGW GUI link lines add `user32`/`gdi32`.
+
+**z9play live output**
+- Console metadata/status/errors/final output flush immediately, including long
+  `--wav` decodes (start + periodic progress lines); the default no-CRT link
+  gets a no-op `fflush` shim.
+
+**Examples**
+- Every `examples/z98/*/README.md` documents working Linux and Windows zig1
+  build recipes.
+
+## 🛠️ Build Machine & Toolchain
+
+Unchanged from 0.21.0. The Linux release artifacts were built and measured on an
+**AMD Ryzen 7 7700X 8-core/16-thread up to ~5.58 GHz, 32 GB RAM, Debian
+GNU/Linux 12 (bookworm)** machine with **gcc 12.2.0**,
+**i686-w64-mingw32-gcc 12-win32**, **Wine 8.0**, and `gcc -m32` available. No
+MSVC or OpenWatcom is available locally; the Win9x `zig1_w32.exe` is the
+operator-built static-CRT binary. Linux artifacts are `gcc -m32` builds;
+Windows archives are built in the `-osw` target flavour.
+
+## 💾 Minimum Requirements
+
+**Unchanged from 0.21.0.** At v132, RUN is **~20 MB** peak RSS at `-s0`: D-safe
+**6.85 s / 20,300 kB**, D-fast **6.66 s / 19,920 kB** (medians of 3). BUILD from
+source is dominated by the gcc backend: Row E measured **9.28 s / 181,432 kB**
+(~177 MB). The Windows runtime is **not measured**; Wine is evidence only.
+
+Measured spill ladder at v132 (`-ffast --markers --track-memory`; medians of 3):
+
+| Level | Peak RSS (KiB) | Pool (K) |
+|---|---:|---:|
+| `-s0` | 19,844 | 18,645 |
+| `-s1` | 45,648 | 50,402 |
+| `-s2` (`-mm128`) | 95,152 | 119,394 |
+| `-s3` (`-mm128`) | 95,188 | 119,394 |
+| `-s4` (`-mm128`) | 98,748 | 123,490 |
+| `-s5` (`-mm128`) | 101,272 | 126,562 |
+| `-s6` (`-mm128`) | 103,108 | 130,658 |
+
+Optional deep-input evidence at a 1 MB stack: the 120-term `+` chain ran
+**0.05 s / 7,064 kB**; the 300-deep block fixture ran **0.00 s / 4,636 kB**.
+
+## ⏱️ PII/PIII Time Estimates
+
+Engineering estimates — **not measurements**. Clock-scaled from the v132
+medians via `T_p = T_m × f_m/f_p × k` (`k = 1.0`; `f_m` = 4.0 GHz conservative
+single-core figure for the 7700X; PII 300–450 MHz, PIII 700–1000 MHz).
+
+| Row | Median `T_m` (s) | PII 300–450 MHz (s) | PIII 700–1000 MHz (s) |
+|---|---:|---:|---:|
+| D-safe | 6.85 | 60.9 – 91.3 | 27.4 – 39.1 |
+| D-fast | 6.66 | 59.2 – 88.8 | 26.6 – 38.1 |
+| E (gcc compile+link) | 9.28 | 82.5 – 123.7 | 37.1 – 53.0 |
+
+Row E is the memory-bound row (~177 MB peak RSS) and carries the 1.5–3×
+memory-band caveat: roughly up to ~371 s on PII and ~159 s on PIII at the worst
+end. D-safe/D-fast peak at ~20 MB and track the clock ratio more closely.
+Verify on the operator's real VM.
+
+## 📦 Release Artifacts
+
+The staged 0.21.1 set is **zig1 + seed, no zig0** (git-ignored
+`release/staging/0.21.1/`):
+
+| File | Size (B) | md5 | Notes |
+|---|---:|---|---|
+| `zig1_linux32` | 3,585,348 | `108fed5c1d143d0d905fdb3e2fd120e9` | v132 seed binary; ELF 32-bit i386; equals the fixed point |
+| `src_c_zig1_linux.tgz` | 2,042,316 | `e1a2d993a4bc649da73b99330ff9ed8c` | self-emission C89 archive (52 `.c` + 51 `.h` raw; 48 + 49 canonical) |
+| `src_c_zig1_w32.zip` | 2,068,392 | `d41f945c4bee2f5206826408311cb6a6` | `-osw` self-emission; byte-identical members to the linux flavour |
+| `zig1_src.tgz` | 1,101,827 | `d178e3c0c48939a3fa1cec4672cace05` | `sf/src` + 50-file `lib/` + `RELEASE_README.txt` |
+| `zig1_src.zip` | 1,181,078 | `16e848832097c8b18cf451f73d746863` | identical tree, zip format |
+| `zig1-seed.tgz` | 3,702,406 | `9244ae831cb41ee9b71b1187a9f23820` | v132 seed archive |
+| `zig1_seed_w9.zip` | 2,596,656 | `2cfd893244ff3a7fbc317bb4221babdf` | v132 Win9x companion seed (sources + build scripts; no prebuilt exe) |
+| `zig1_w32.exe` | PENDING | operator-built static-CRT; hash to be recorded in MANIFEST.txt after the operator build | PE32 i386 Win9x-class compiler; pending operator build |
+
+The shipped `lib/` payload is **50** std files (`std.zig` + 49 `std_*.zig`);
+`lib/manifest.md5` md5 is `a7ada3edfa99ba091a5ef1096550b908` (changed because
+`std_gfx_pal.zig` is part of `lib/`). `zig1_w32.exe` is the **operator-built
+static-CRT** compiler (MSVC `/MT` or OpenWatcom static CLIB): it embeds the C
+runtime, has **no `msvcrt.dll` dependency**, and is verified with the `9x`
+import gate when it arrives. The MinGW CRT build is a **separate optional
+artifact** that **does require `msvcrt.dll`**; it is not the Win9x binary.
+`zig1_src` ships 222 files (170 `sf/src` + 51 `lib/` + `RELEASE_README.txt`):
+the obsolete `sf/src/include/zig_gfx_wndproc.c` shim is deleted, so the count is
+one lower than 0.21.0's 223.
+
+## ⚠️ Known Issues
+
+Open-only entries after Phase 2.5 (no fixed defect is listed):
+
+- **D3** — conditional `@import` still parse-loads a sema-dead arm outside the parse probe; false reject only.
+- **D4** — static-analyzer cluster (dead-arm parity, unseeded params/returns, capture aliases, provenance lookup, test drift); false diagnostics possible on complex code.
+- **D5** — an `extern fn` with a body is accepted then emitted as a declaration only; non-cdecl callbacks cannot be defined.
+- **D7.3** — a nested write through `arr[i].field[0..]` can target a by-value temporary; the store is silently lost.
+- **D8** — stdout is split between C stdio builtins and PAL `std.fmt`; mixed writes can reorder or lose buffered output on abnormal exit. **Mitigated in `z9play` only** (0.21.1 adds explicit flushes); no compiler-level change.
+- **D10** — no first-class calling conventions; Win32 `WNDPROC`/callbacks need a C trampoline. 0.21.1 removes the `std_gfx` shim by polling instead, but the language limitation remains.
+- **D12** — a module-scope untyped array literal (`pub var arr: [3]u32 = .{...}`) emits an invalid array-to-array C assignment.
+
+## 🔧 Breaking Changes / Upgrade Notes
+
+**None.** Commands, flags, diagnostics, the language surface, and the 50-file
+`lib/` set are unchanged from 0.21.0. Programs built with an older 0.21.0
+emitted build script should be re-emitted with 0.21.1 to pick up the MinGW/GUI
+link fixes.
+
+## 👥 Contributors
+Z98 is made possible by the dedicated work of its contributors.
+
+*@melkyr-Andres Hernandez*
+*Zni005 (DeepseekV4+Opencode)*
+
+---
+
 # Z98 0.21.0 "Terephthalic Acid" Release Notes
 
 We are proud to announce the release of Z98 version **0.21.0**, codenamed **"Terephthalic Acid"** — the first release after **0.20.0 "Oxalic Acid"** and a release built entirely from the committed seed. It covers **1,864 commits** from the 0.20.0 finalize commit (`ab49e167`) to the release content freeze (`d609186c`), plus the Win9x truth hotfix (`cdec5098`, `1e7b303a`): the seed/self-hosting migration with **zig0 retired**, mutable `for` captures and sema-only `--check`, stricter Zig fidelity, continuation-stack lowering, the full secure-networking standard library, the `z9dbg` debugger, the `std_gfx` GUI layer and `z9edit` editor, and the Win9x conformance work. The release ships **zig1 + seed, no zig0**.

@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [0.21.1] - "Terephthalic Acid" (hotfix)
+
+Win9x hotfix on 0.21.0. No language, CLI, or breaking change; the compiler fixed
+point moves to seed **v132** (`108fed5c1d143d0d905fdb3e2fd120e9`).
+
+### Fixed
+- **MinGW chunked link**: emitted partial links now use `-nostdlib` so CRT startup
+  is not embedded in each chunk; the no-CRT final link adds `-lwinmm` for the
+  Win9x waveOut path (`c195be9d`, `73bec393`, `93616fa6`).
+- **no-CRT runtime shims**: `strlen`/`memcpy`/`memset`/`strncmp` use volatile
+  pointers so `-O2` cannot rewrite the loops into self-calls; gated by a static
+  self-call check and a Wine `-O2` smoke (`d4f663ea`, `530806c9`).
+- **GUI / Win9x**: removed the C `WndProc` shim (`zig_gfx_wndproc.c`); the window
+  procedure is `DefWindowProcA` and close/minimize/resize are polled via
+  `IsWindow`/`GetClientRect`. DirectDraw is now loaded dynamically with
+  `LoadLibraryA("ddraw.dll")` + `GetProcAddress`, with the 16-color GDI fallback;
+  GUI programs no longer import `DDRAW.DLL` statically. MSVC/MinGW GUI link lines
+  add `user32`/`gdi32` (`40cd8018`).
+- **z9play console output**: flush after metadata/status/errors/final output via a
+  direct `fflush(NULL)` (plus a no-CRT `fflush` shim so the default Win9x link is
+  clean); `--wav` prints a start line and periodic `pos` progress (`66b488ba`,
+  `5a6c0289`).
+- **z9dbg fixture**: re-baselined the z9play debug session line references after
+  the flush change; no behavior change (`8f2269c3`).
+
+### Changed
+- **Examples**: every `examples/z98/*/README.md` now documents Linux and Windows
+  zig1 build recipes (`8dd8a8be`, `d9373bac`).
+- **Seed**: rotated to **v132** (archive md5 `9244ae831cb41ee9b71b1187a9f23820`,
+  Win9x zip md5 `2cfd893244ff3a7fbc317bb4221babdf`, 50-file `lib/`, manifest md5
+  `a7ada3edfa99ba091a5ef1096550b908`). The manifest pin moved because
+  `std_gfx_pal.zig` is part of `lib/`.
+
+### Notes
+- **Breaking changes: none.** CLI flags, diagnostics, and the language surface are
+  unchanged from 0.21.0.
+
 ## [0.21.0] - "Terephthalic Acid"
 
 ### Added
@@ -42,8 +81,6 @@ All notable changes to this project will be documented in this file.
 - **Theme**: black color-atlas background fixed for light themes (`b0e7fc44`).
 - **Win9x**: D11 declaration ordering, CRLF, flag cleanup, warning-clean emission, MinGW fallback (`6941244f`, `1339eb4a`).
 - **Win9x truth hotfix**: source identifiers reserved by MSVC 6 / OpenWatcom (`cdecl`, `near`, `far`, `stdcall`, …) plus the emitted `Z98_*`/`zig_*`/`pal_*`/`zT_*`/`zF_*`/`zG_*` namespaces are escaped in the raw-mint path while convention tokens stay raw; emitted `.bat` files are `command.com`-safe (no `set OUT`/`set CFLAGS`, no `%ERRORLEVEL%`/`&&`/`||`/`setlocal`), stop on `if errorlevel 1 goto z98_fail`, never print `Built:` after a failure, and link gcc via `@z98_link.rsp` (`cdec5098`; seed v129).
-
-## [Unreleased]
 
 ## [0.20.0] - "Oxalic Acid"
 
