@@ -128,6 +128,7 @@ repro/mi_matrix/stdlib_file_writeall_xmod
 repro/mi_matrix/stdlib_fileio_xmod
 repro/mi_matrix/stdlib_fft_basic_xmod
 repro/mi_matrix/stdlib_fft_inverse_xmod
+repro/mi_matrix/stdlib_fft_radix_xmod
 repro/mi_matrix/stdlib_floatcast_xmod
 repro/mi_matrix/stdlib_fold_i32_ok_xmod
 repro/mi_matrix/stdlib_fold_u32_ok_xmod
