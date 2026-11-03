@@ -80,6 +80,31 @@ if [ ! -x "$PROG" ]; then
     exit 1
 fi
 
+echo "== --help documents exit codes, WAV sink and --wav progress =="
+HELP="$OUT/help.out"
+"$PROG" --help >"$HELP" 2>&1
+rc=$?
+if [ "$rc" -eq 0 ]; then
+    pass_case "--help exit 0"
+else
+    fail_case "--help exit 0 (got $rc)"
+fi
+if grep -qi "exit" "$HELP"; then
+    pass_case "--help documents exit codes"
+else
+    fail_case "--help documents exit codes"
+fi
+if grep -q "Z9PLAY_WAV_OUT" "$HELP"; then
+    pass_case "--help documents Z9PLAY_WAV_OUT"
+else
+    fail_case "--help documents Z9PLAY_WAV_OUT"
+fi
+if grep -q "wav: pos" "$HELP"; then
+    pass_case "--help documents wav: pos progress"
+else
+    fail_case "--help documents wav: pos progress"
+fi
+
 # key_writer <log> <mode> <delay> — the left side of a pty pipeline. Waits for
 # the startup line to appear in <log> (the startup line is `\n`-terminated, so
 # the program's line-buffered stdout flushes it even though later status lines

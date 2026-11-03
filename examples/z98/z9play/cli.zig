@@ -79,6 +79,12 @@ pub fn usage() void {
     std.io.write(l5);
     var l6: []const u8 = "  --version                show version\n";
     std.io.write(l6);
+    var l7: []const u8 = "  exit codes: 0 ok, 1 args, 2 open, 3 decoder, 4 audio, 5 internal\n";
+    std.io.write(l7);
+    var l8: []const u8 = "  Z9PLAY_WAV_OUT=<path>    route playback to the hermetic WAV sink (no audio device)\n";
+    std.io.write(l8);
+    var l9: []const u8 = "  --wav prints wav: decoding <file>, periodic wav: pos ... lines, then wav: ended ...\n";
+    std.io.write(l9);
 }
 
 pub fn version() void {

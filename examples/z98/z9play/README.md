@@ -512,8 +512,10 @@ so it lines up with the `oggdec` golden `testdata/expected/*.pcm`. Exit codes:
 double-buffer PCM ring (`player.zig`) → the `AudioOut` vtable — into the
 hermetic WAV sink (`platform/audio_wavfile.zig`); no audio device is touched. It
 writes the same canonical 44-byte-header PCM WAV as `--pcm` (same granule trim)
-and prints one line `wav: ended frames=<n> pos_ms=<n> monotonic=<0|1>` (the
-Player reached `ended` cleanly and `playerPositionMs` never went backwards). It
+and prints a `wav: decoding <file>` line, periodic `wav: pos <mm:ss> frames=<n>`
+lines (every 10 s on long decodes), and a final
+`wav: ended frames=<n> pos_ms=<n> monotonic=<0|1>` line (the Player reached
+`ended` cleanly and `playerPositionMs` never went backwards). It
 is the M4 gate subcommand; the Linux OSS `/dev/dsp` backend is best-effort and
 device-dependent. Exit codes mirror `--info`/`--pcm` (`0`/`1`/`2`/`3`).
 
