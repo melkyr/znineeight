@@ -76,7 +76,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 cd "$ROOT" || exit 1
 
-# Seed v104 (fixed point 21c95773...); rebuild from the committed archive when
+# Seed v132 (fixed point 108fed5c...); rebuild from the committed archive when
 # neither the env override nor the conventional scratch build is present.
 if [ -z "${ZIG:-}" ] || [ ! -x "${ZIG:-}" ]; then
     ZIG=""
@@ -89,7 +89,7 @@ if [ -z "${ZIG:-}" ] || [ ! -x "${ZIG:-}" ]; then
     done
 fi
 if [ -z "$ZIG" ] || [ ! -x "$ZIG" ]; then
-    echo "== rebuilding seed v104 from release/seed/zig1-seed.tgz =="
+    echo "== rebuilding seed v132 from release/seed/zig1-seed.tgz =="
     if ! timeout 900 bash scripts/seed/build_from_seed.sh \
         release/seed/zig1-seed.tgz "$OUT/seed" >"$OUT/seed.log" 2>&1; then
         echo "FAIL: seed rebuild failed (see $OUT/seed.log)"
@@ -107,8 +107,8 @@ echo "== seed =="
 SEED_MD5="$(md5sum "$ZIG" 2>/dev/null | awk '{print $1}')"
 echo "compiler: $ZIG"
 echo "md5:      ${SEED_MD5:-<none>}"
-if [ "$SEED_MD5" = "21c957730d268f1e7883176fa5413b65" ]; then
-    pass_case "seed v104 compiler md5 is the fixed point 21c957730d268f1e7883176fa5413b65"
+if [ "$SEED_MD5" = "108fed5c1d143d0d905fdb3e2fd120e9" ]; then
+    pass_case "seed v104 compiler md5 is the fixed point 108fed5c1d143d0d905fdb3e2fd120e9"
 else
     fail_case "seed compiler md5 is not the v104 fixed point (got ${SEED_MD5:-<none>})"
 fi
@@ -570,7 +570,7 @@ run_ogg_tier() {
         tail -15 "$OUT/$rt_name.log" | sed 's/^/       /'
     fi
 }
-run_ogg_tier tier_cli 23
+run_ogg_tier tier_cli 27
 run_ogg_tier tier_tui 40
 run_ogg_tier tier_audio 27
 
