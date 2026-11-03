@@ -27,7 +27,7 @@ compiler emits nothing. Create the directory first.
 
 ```sh
 mkdir -p out
-/path/to/zig1_5_clean -o out main.zig
+/path/to/zig1_5_clean -ffast -o out main.zig
 sh out/build_target.sh
 ./out/prog some.torrent
 ```
@@ -39,7 +39,7 @@ Windows target and emits the batch scripts.
 
 ```bat
 mkdir out
-z1.exe -I lib -osw -o out main.zig
+z1.exe -I lib -osw -ffast -o out main.zig
 cd out
 build_owc_crt.bat
 prog.exe some.torrent
