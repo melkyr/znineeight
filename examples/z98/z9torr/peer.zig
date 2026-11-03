@@ -532,10 +532,14 @@ fn revertBlock(ps: *piece.PieceState, begin: u32) void {
     if (bi < ps.nblocks) {
         var bu: usize = @intCast(usize, bi);
         var prev = ps.blocks[bu];
-        if (prev == piece.BlockState.requested) {
-            if (ps.outstanding_count > 0) ps.outstanding_count -= 1;
-        } else if (prev == piece.BlockState.received or prev == piece.BlockState.verified) {
-            if (ps.received_count > 0) ps.received_count -= 1;
+        switch (prev) {
+            .requested => {
+                if (ps.outstanding_count > 0) ps.outstanding_count -= 1;
+            },
+            .received, .verified => {
+                if (ps.received_count > 0) ps.received_count -= 1;
+            },
+            else => {},
         }
         ps.blocks[bu] = piece.BlockState.missing;
     }

@@ -164,18 +164,22 @@ fn parsePeerSpec(s: []const u8) ?tracker.PeerAddr {
     var i: usize = 0;
     while (i < colon) : (i += 1) {
         var c: u8 = s[i];
-        if (c >= '0' and c <= '9') {
-            val = val * 10 + @intCast(u32, c - '0');
-            if (val > 255) return null;
-            seen = true;
-        } else if (c == '.') {
-            if (!seen or oct >= 4) return null;
-            ip[oct] = @intCast(u8, val);
-            oct += 1;
-            val = 0;
-            seen = false;
-        } else {
-            return null;
+        switch (c) {
+            '0'...'9' => {
+                val = val * 10 + @intCast(u32, c - '0');
+                if (val > 255) return null;
+                seen = true;
+            },
+            '.' => {
+                if (!seen or oct >= 4) return null;
+                ip[oct] = @intCast(u8, val);
+                oct += 1;
+                val = 0;
+                seen = false;
+            },
+            else => {
+                return null;
+            },
         }
     }
     if (!seen or oct != 3) return null;

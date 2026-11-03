@@ -83,22 +83,26 @@ fn putEta(out: []u8, pos: *usize, left: u64, rate: u64) void {
         return;
     }
     var secs: u64 = left / rate;
-    if (secs < 60) {
-        putU64(out, pos, secs);
-        putByte(out, pos, 's');
-    } else if (secs < 3600) {
-        putU64(out, pos, secs / 60);
-        putByte(out, pos, 'm');
-        putFrac2(out, pos, secs % 60);
-        putByte(out, pos, 's');
-    } else {
-        var rem: u64 = secs % 3600;
-        putU64(out, pos, secs / 3600);
-        putByte(out, pos, 'h');
-        putFrac2(out, pos, rem / 60);
-        putByte(out, pos, 'm');
-        putFrac2(out, pos, rem % 60);
-        putByte(out, pos, 's');
+    switch (secs) {
+        0...59 => {
+            putU64(out, pos, secs);
+            putByte(out, pos, 's');
+        },
+        60...3599 => {
+            putU64(out, pos, secs / 60);
+            putByte(out, pos, 'm');
+            putFrac2(out, pos, secs % 60);
+            putByte(out, pos, 's');
+        },
+        else => {
+            var rem: u64 = secs % 3600;
+            putU64(out, pos, secs / 3600);
+            putByte(out, pos, 'h');
+            putFrac2(out, pos, rem / 60);
+            putByte(out, pos, 'm');
+            putFrac2(out, pos, rem % 60);
+            putByte(out, pos, 's');
+        },
     }
 }
 
