@@ -51,8 +51,14 @@ map sidecars exist next to its generated C:
 ```sh
 mkdir -p dbgout
 /path/to/zig1_5_clean -d -o dbgout ../hello/main.zig
+sh dbgout/build_target.sh
 ./out/prog dbgout/prog
 ```
+
+The `-d` emission writes the C and the map sidecars but not an executable;
+`sh dbgout/build_target.sh` links them into `dbgout/prog` (the script defaults
+to the `linux` target and `prog` output). The sidecars stay next to that
+executable, where z9dbg scans for them.
 
 `-d` writes `<stem>.z98dbg.syms`, `<stem>.z98dbg.lines`, and
 `<stem>.z98dbg.cnames`. z9dbg then reports `z9dbg: ... <debuggee>` and stops
