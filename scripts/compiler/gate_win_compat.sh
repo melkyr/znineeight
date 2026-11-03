@@ -421,6 +421,71 @@ if [ "$SKIP_CROSS" -eq 0 ] && command -v i686-w64-mingw32-gcc >/dev/null 2>&1; t
     else
         ok "MinGW cross compile ($(ls "$cross"/*.o 2>/dev/null | wc -l | tr -d ' ') TUs)"
     fi
+    # no-CRT shim self-call check: at -O2 the emitted strlen/memcpy/memset/
+    # strncmp loops must stay opaque to optimizer idiom conversion; otherwise
+    # they become calls to themselves (stack overflow on Win9x).
+    nm_bin="$(command -v i686-w64-mingw32-nm || true)"
+    objdump_bin="$(command -v i686-w64-mingw32-objdump || true)"
+    if [ -n "$nm_bin" ] && [ -n "$objdump_bin" ]; then
+        nocrt_o="$cross/zig_runtime_nocrt_o2.o"
+        if i686-w64-mingw32-gcc -O2 -DZIG_NO_CRT -D_WIN32 -DZIG_WIN32 \
+            -DWINVER=0x0410 -D_WIN32_WINNT=0x0410 -I "$WORK/emit" \
+            -c "$WORK/emit/zig_runtime.c" -o "$nocrt_o" >>"$WORK/cross.log" 2>&1; then
+            under=_
+            "$nm_bin" "$nocrt_o" | grep -q ' T _memset$' || under=
+            shim_self=0
+            for sym in memset memcpy strlen strncmp; do
+                full="${under}${sym}"
+                if "$objdump_bin" -d --disassemble="$full" "$nocrt_o" \
+                    | grep -qE "(call|jmp|j[a-z]+)[[:space:]]+[0-9a-f]+[[:space:]]+<${full}>"; then
+                    bad "no-CRT -O2 shim $sym calls itself (optimizer idiom recursion)"
+                    shim_self=1
+                fi
+            done
+            [ "$shim_self" -eq 0 ] && ok "no-CRT -O2 shim self-call check"
+            if command -v wine >/dev/null 2>&1; then
+                cat >"$cross/nocrt_smoke.c" <<'Z98_NOCRT_SMOKE'
+#include <string.h>
+
+int main(int argc, char** argv) {
+    char buf[32];
+    const char* s = "abc";
+    (void)argc;
+    (void)argv;
+    memset(buf, 0, sizeof buf);
+    memcpy(buf, s, 3);
+    if (strlen(buf) != 3) return 1;
+    if (strncmp(buf, s, 3) != 0) return 2;
+    return 0;
+}
+Z98_NOCRT_SMOKE
+                if i686-w64-mingw32-gcc -O2 -DZIG_NO_CRT -D_WIN32 -DZIG_WIN32 \
+                    -DWINVER=0x0410 -D_WIN32_WINNT=0x0410 -I "$WORK/emit" \
+                    "$cross/nocrt_smoke.c" "$WORK/emit/zig_runtime.c" \
+                    "$WORK/emit/zig_pal.c" "$WORK/emit/zig_nocrt.c" \
+                    "$WORK/emit/c_exit.c" -o "$cross/nocrt_smoke.exe" \
+                    -nostdlib -Wl,-e,_mainCRTStartup -lgcc -lkernel32 -lwinmm \
+                    >>"$WORK/cross.log" 2>&1; then
+                    WINEDEBUG=-all timeout 120 wine "$cross/nocrt_smoke.exe" >>"$WORK/cross.log" 2>&1
+                    smoke_rc=$?
+                    if [ "$smoke_rc" -eq 0 ]; then
+                        ok "no-CRT -O2 Wine smoke rc=0"
+                    else
+                        bad "no-CRT -O2 Wine smoke failed (rc=$smoke_rc)"
+                    fi
+                else
+                    bad "no-CRT -O2 Wine smoke link failed"
+                fi
+            else
+                echo "[win-compat] SKIP no-CRT -O2 Wine smoke (wine absent)"
+            fi
+        else
+            bad "no-CRT -O2 zig_runtime.c compile failed"
+            sed -n '1,40p' "$WORK/cross.log" >&2
+        fi
+    else
+        echo "[win-compat] SKIP no-CRT shim self-call check (objdump/nm absent)"
+    fi
 elif [ "$SKIP_CROSS" -eq 0 ]; then
     echo "[win-compat] SKIP MinGW cross compile (i686-w64-mingw32-gcc absent)"
 else

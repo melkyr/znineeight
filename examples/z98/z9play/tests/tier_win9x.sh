@@ -303,6 +303,43 @@ else
     fail_case "console probe did not report restore=1 (rc=$rc; see $OUT/probe.norm)"
 fi
 
+echo "== (d) emitted build_mingw_nocrt.bat at -O2 + Wine --wav =="
+NOCRT_DIR="$OUT/nocrt_o2"
+rm -rf "$NOCRT_DIR"
+mkdir -p "$NOCRT_DIR"
+cp "$EMIT"/build_mingw_nocrt.bat "$NOCRT_DIR"/ 2>/dev/null
+cp "$EMIT"/*.c "$EMIT"/*.h "$NOCRT_DIR"/ 2>/dev/null
+NOCRT_RC=0
+while IFS= read -r nline; do
+    nline="$(printf '%s\n' "$nline" | tr -d '\r')"
+    case "$nline" in
+        gcc\ *)
+            ncmd="${nline% >> 00.txt}"
+            ncmd="i686-w64-mingw32-gcc${ncmd#gcc}"
+            ( cd "$NOCRT_DIR" && sh -c "$ncmd" ) >>"$OUT/nocrt_build.log" 2>&1 \
+                || { NOCRT_RC=1; break; }
+            ;;
+    esac
+done <"$NOCRT_DIR/build_mingw_nocrt.bat"
+if [ "$NOCRT_RC" -eq 0 ] && [ -f "$NOCRT_DIR/prog.exe" ]; then
+    pass_case "emitted build_mingw_nocrt.bat -O2 link produced prog.exe"
+else
+    fail_case "emitted build_mingw_nocrt.bat -O2 link failed (see $OUT/nocrt_build.log)"
+fi
+tail -3 "$OUT/nocrt_build.log" 2>/dev/null | sed 's/^/       /'
+
+cp "$Z9DIR/testdata/short.ogg" "$NOCRT_DIR"/ 2>/dev/null
+WINEDEBUG=-all timeout 120 sh -c "cd '$NOCRT_DIR' && wine prog.exe --wav short.ogg out.wav" \
+    >"$OUT/nocrt_wine.log" 2>&1
+NOCRT_WINE_RC=$?
+if [ "$NOCRT_WINE_RC" -eq 0 ] && [ -f "$NOCRT_DIR/out.wav" ] \
+    && grep -q 'wav: ended' "$OUT/nocrt_wine.log"; then
+    pass_case "no-CRT -O2 Wine --wav exit 0 (out.wav $(LC_ALL=C wc -c <"$NOCRT_DIR/out.wav" | tr -d ' ') bytes)"
+else
+    fail_case "no-CRT -O2 Wine --wav rc=$NOCRT_WINE_RC (see $OUT/nocrt_wine.log)"
+fi
+tail -3 "$OUT/nocrt_wine.log" 2>/dev/null | sed 's/^/       /'
+
 echo
 echo "== tier_win9x summary: $PASSES passed, $FAILS failed, $SKIPS skipped =="
 if [ "$FAILS" -ne 0 ]; then
