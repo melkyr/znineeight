@@ -43,6 +43,8 @@ pub const PieceState = struct {
     state: BlockState,
     blocks: []BlockState,
     received_bytes: u32,
+    received_count: u32,
+    outstanding_count: u32,
     hash: [20]u8,
     length: u32,
     nblocks: u32,
@@ -114,6 +116,8 @@ pub fn pieceInit(arena: *std.arena.Arena, t: torrent.Torrent, state: *PieceState
     state.state = BlockState.missing;
     state.blocks = blocks;
     state.received_bytes = 0;
+    state.received_count = 0;
+    state.outstanding_count = 0;
     state.length = plen;
     state.nblocks = n;
 
@@ -131,15 +135,9 @@ pub fn pieceInit(arena: *std.arena.Arena, t: torrent.Torrent, state: *PieceState
 pub fn nextRequests(state: *PieceState, out: *RequestQueue) void {
     out.head = 0;
 
-    var outstanding: u32 = 0;
-    var i: u32 = 0;
-    while (i < state.nblocks) : (i += 1) {
-        if (state.blocks[@intCast(usize, i)] == BlockState.requested) outstanding += 1;
-    }
-
     var n: u32 = 0;
     var j: u32 = 0;
-    while (j < state.nblocks and (outstanding + n) < DEPTH) : (j += 1) {
+    while (j < state.nblocks and (state.outstanding_count + n) < DEPTH) : (j += 1) {
         var bi: usize = @intCast(usize, j);
         if (state.blocks[bi] == BlockState.missing) {
             var begin: u32 = j * BLOCK_SIZE;
@@ -150,6 +148,7 @@ pub fn nextRequests(state: *PieceState, out: *RequestQueue) void {
             n += 1;
         }
     }
+    state.outstanding_count += n;
     out.tail = n;
 }
 
@@ -169,17 +168,18 @@ pub fn onBlock(state: *PieceState, begin: u32, bytes: []const u8, io: *PieceIO) 
     disk.writeBlock(io.f, io.t, state.index, begin, bytes) catch return error.DiskFailed;
 
     var biu: usize = @intCast(usize, bi);
+    var prev = state.blocks[biu];
+    if (prev == BlockState.requested) {
+        if (state.outstanding_count > 0) state.outstanding_count -= 1;
+    }
+    if (prev == BlockState.missing or prev == BlockState.requested) {
+        state.received_count += 1;
+    }
     state.blocks[biu] = BlockState.received;
     state.received_bytes += @intCast(u32, bytes.len);
 
-    // All blocks present?
-    var all: bool = true;
-    var i: u32 = 0;
-    while (i < state.nblocks) : (i += 1) {
-        var s = state.blocks[@intCast(usize, i)];
-        if (s != BlockState.received and s != BlockState.verified) all = false;
-    }
-    if (!all) return BlockResult.Continue;
+    // All blocks present? (O(1): the counter is exact on every transition.)
+    if (state.received_count != state.nblocks) return BlockResult.Continue;
 
     // Verify-on-complete: read the piece back and SHA-1 it (spec §7).
     var raw = std.arena.alloc(io.arena, @intCast(usize, state.length)) catch return error.OutOfMemory;
@@ -198,8 +198,8 @@ pub fn onBlock(state: *PieceState, begin: u32, bytes: []const u8, io: *PieceIO) 
         if (h[k] != state.hash[k]) match = false;
     }
 
+    var i: u32 = 0;
     if (match) {
-        i = 0;
         while (i < state.nblocks) : (i += 1) {
             state.blocks[@intCast(usize, i)] = BlockState.verified;
         }
@@ -215,5 +215,7 @@ pub fn onBlock(state: *PieceState, begin: u32, bytes: []const u8, io: *PieceIO) 
         state.blocks[@intCast(usize, i)] = BlockState.missing;
     }
     state.received_bytes = 0;
+    state.received_count = 0;
+    state.outstanding_count = 0;
     return BlockResult.Corrupt;
 }

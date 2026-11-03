@@ -295,6 +295,8 @@ pub fn zeroPieceState() piece.PieceState {
     x.state = piece.BlockState.missing;
     x.blocks = emptyBlockStates();
     x.received_bytes = 0;
+    x.received_count = 0;
+    x.outstanding_count = 0;
     x.length = 0;
     x.nblocks = 0;
     return x;
@@ -535,7 +537,16 @@ fn plainReconnect(ctx: *RunCtx, peer: *Peer, ok_out: *bool) void {
 // Return block `begin` of `ps` to `missing` so a later tick can request it.
 fn revertBlock(ps: *piece.PieceState, begin: u32) void {
     var bi: u32 = begin / piece.BLOCK_SIZE;
-    if (bi < ps.nblocks) ps.blocks[@intCast(usize, bi)] = piece.BlockState.missing;
+    if (bi < ps.nblocks) {
+        var bu: usize = @intCast(usize, bi);
+        var prev = ps.blocks[bu];
+        if (prev == piece.BlockState.requested) {
+            if (ps.outstanding_count > 0) ps.outstanding_count -= 1;
+        } else if (prev == piece.BlockState.received or prev == piece.BlockState.verified) {
+            if (ps.received_count > 0) ps.received_count -= 1;
+        }
+        ps.blocks[bu] = piece.BlockState.missing;
+    }
 }
 
 // Fill the request window from `ps` and send the requests (no-op while the
@@ -664,7 +675,12 @@ fn seedPartial(ctx: *RunCtx, ps: *piece.PieceState) void {
                 if (byte < pp.block_mask.len) {
                     var bit: u8 = (pp.block_mask[byte] >> sh) & @intCast(u8, 1);
                     if (bit == @intCast(u8, 1)) {
-                        ps.blocks[@intCast(usize, b)] = piece.BlockState.received;
+                        var bu: usize = @intCast(usize, b);
+                        var prev = ps.blocks[bu];
+                        if (prev != piece.BlockState.received and prev != piece.BlockState.verified) {
+                            ps.received_count += 1;
+                        }
+                        ps.blocks[bu] = piece.BlockState.received;
                     }
                 }
             }
