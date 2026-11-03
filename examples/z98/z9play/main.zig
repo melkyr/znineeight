@@ -76,6 +76,44 @@ const decoder = @import("decoder.zig");
 const flac = @import("flac.zig");
 const player = @import("player.zig");
 
+// Win9x D8-stdout: std.io.write goes through C stdio (fwrite), which the CRT
+// build buffers, so console text can sit in the process buffer during a long
+// decode. The no-CRT Win9x shim has no fflush and its fwrite is already
+// unbuffered, so the Windows side resolves msvcrt's fflush at runtime: a direct
+// extern would leave `fflush` undefined in the no-CRT link, and @isWindows()
+// prunes this branch out of the Linux emission (which calls libc fflush).
+extern "c" fn fflush(stream: *void) i32;
+extern "stdcall" fn GetModuleHandleA(name: [*]const u8) *void;
+extern "stdcall" fn GetProcAddress(mod: *void, name: [*]const u8) *void;
+const FflushFn = extern "c" fn(stream: *void) i32;
+
+fn nullVoid() *void {
+    return @intToPtr(*void, 0);
+}
+
+fn flushOut() void {
+    if (@isWindows()) {
+        var mname: []const u8 = "msvcrt.dll";
+        var lib: *void = GetModuleHandleA(mname.ptr);
+        if (@ptrToInt(lib) == 0) return;
+        var fname: []const u8 = "fflush";
+        var proc: *void = GetProcAddress(lib, fname.ptr);
+        if (@ptrToInt(proc) == 0) return;
+        var fnp: FflushFn = @ptrCast(FflushFn, proc);
+        _ = fnp(nullVoid());
+    } else {
+        _ = fflush(nullVoid());
+    }
+}
+
+// Flush, then exit. Every main/playback/error exit goes through here so the
+// final line is never lost to the CRT stdout buffer (the no-CRT build's flush
+// is a no-op and its fwrite is already unbuffered).
+fn exitFlush(code: i32) void {
+    flushOut();
+    std.os.exit(code);
+}
+
 // Backing store for the read/reassembly/comment arena; module-global so it does
 // not sit on the 32-bit stack (~11 KiB fixtures need a small fraction of this).
 var arena_buf: [4 * 1024 * 1024]u8 = undefined;
@@ -178,7 +216,7 @@ fn discardDrain(state: *void) audio.AudioError!void {
 fn playFail(cs: *contract.Console, msg: []const u8, code: i32) void {
     cs.leaveRaw_fn(cs.state);
     std.io.write(msg);
-    std.os.exit(code);
+    exitFlush(code);
 }
 
 // Write the `\r`-prefixed fixed-width status line (fmt.statusLine) to stdout.
@@ -188,6 +226,7 @@ fn writeStatus(pos_ms: u64, dur_ms: u64, vol: u8) void {
     var cr: []const u8 = "\r";
     std.io.write(cr);
     std.io.write(line);
+    flushOut();
 }
 
 fn writeText(s: []const u8) void {
@@ -327,7 +366,7 @@ fn readOggHeaders(os: *ogg_stream.OggStream, arena: *std.arena.Arena, want_comme
         ogg_stream.oggStreamClose(os);
         var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
         std.io.write(msg);
-        std.os.exit(3);
+        exitFlush(3);
         return;
     };
     if (m0) |p0| {
@@ -335,14 +374,14 @@ fn readOggHeaders(os: *ogg_stream.OggStream, arena: *std.arena.Arena, want_comme
             ogg_stream.oggStreamClose(os);
             var msg: []const u8 = "z9play: bad Vorbis identification header\n";
             std.io.write(msg);
-            std.os.exit(3);
+            exitFlush(3);
             return;
         };
     } else {
         ogg_stream.oggStreamClose(os);
         var msg: []const u8 = "z9play: missing Vorbis headers\n";
         std.io.write(msg);
-        std.os.exit(3);
+        exitFlush(3);
         return;
     }
 
@@ -350,7 +389,7 @@ fn readOggHeaders(os: *ogg_stream.OggStream, arena: *std.arena.Arena, want_comme
         ogg_stream.oggStreamClose(os);
         var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
         std.io.write(msg);
-        std.os.exit(3);
+        exitFlush(3);
         return;
     };
     if (m1) |p1| {
@@ -359,7 +398,7 @@ fn readOggHeaders(os: *ogg_stream.OggStream, arena: *std.arena.Arena, want_comme
                 ogg_stream.oggStreamClose(os);
                 var msg: []const u8 = "z9play: bad Vorbis comment header\n";
                 std.io.write(msg);
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
         }
@@ -367,7 +406,7 @@ fn readOggHeaders(os: *ogg_stream.OggStream, arena: *std.arena.Arena, want_comme
         ogg_stream.oggStreamClose(os);
         var msg: []const u8 = "z9play: missing Vorbis headers\n";
         std.io.write(msg);
-        std.os.exit(3);
+        exitFlush(3);
         return;
     }
 
@@ -375,7 +414,7 @@ fn readOggHeaders(os: *ogg_stream.OggStream, arena: *std.arena.Arena, want_comme
         ogg_stream.oggStreamClose(os);
         var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
         std.io.write(msg);
-        std.os.exit(3);
+        exitFlush(3);
         return;
     };
     if (m2) |p2| {
@@ -384,7 +423,7 @@ fn readOggHeaders(os: *ogg_stream.OggStream, arena: *std.arena.Arena, want_comme
                 ogg_stream.oggStreamClose(os);
                 var msg: []const u8 = "z9play: bad Vorbis setup header\n";
                 std.io.write(msg);
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
         }
@@ -392,7 +431,7 @@ fn readOggHeaders(os: *ogg_stream.OggStream, arena: *std.arena.Arena, want_comme
         ogg_stream.oggStreamClose(os);
         var msg: []const u8 = "z9play: missing Vorbis setup header\n";
         std.io.write(msg);
-        std.os.exit(3);
+        exitFlush(3);
         return;
     }
 }
@@ -407,7 +446,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var bf: stream.BufferedFile = stream.bufferedFileOpen(&arena, args.path) catch {
         var msg: []const u8 = "z9play: cannot open file\n";
         std.io.write(msg);
-        std.os.exit(2);
+        exitFlush(2);
         return;
     };
     var sig: [4]u8 = undefined;
@@ -415,7 +454,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         stream.bufferedFileClose(&bf);
         var msg: []const u8 = "z9play: cannot open file\n";
         std.io.write(msg);
-        std.os.exit(2);
+        exitFlush(2);
         return;
     };
     var kind: u8 = decoder.detectKind(sig[0..siglen]);
@@ -427,7 +466,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     if (is_flac and args.mode != cli.MODE_WAV and args.mode != cli.MODE_PLAY) {
         var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
         std.io.write(msg);
-        std.os.exit(3);
+        exitFlush(3);
         return;
     }
 
@@ -440,7 +479,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
                 std.io.write(msg);
             }
-            std.os.exit(3);
+            exitFlush(3);
             return;
         };
         var id: vi.IdHeader = undefined;
@@ -453,7 +492,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var last: u64 = ogg_stream.oggStreamLastGranule(&arena, args.path, serial) catch {
             var msg: []const u8 = "z9play: cannot locate the audio granule\n";
             std.io.write(msg);
-            std.os.exit(3);
+            exitFlush(3);
             return;
         };
         var dur_ms: u64 = ogg.durationMs(last, id.sample_rate);
@@ -480,7 +519,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         writeTagLine(comment.tags, k_artist);
         writeTagLine(comment.tags, k_album);
 
-        std.os.exit(0);
+        exitFlush(0);
         return;
     }
 
@@ -493,7 +532,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
                 std.io.write(msg);
             }
-            std.os.exit(3);
+            exitFlush(3);
             return;
         };
         var id: vi.IdHeader = undefined;
@@ -518,7 +557,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         std.io.write(l_mo);
         writeU64(@intCast(u64, setup.modes.len));
         writeNl();
-        std.os.exit(0);
+        exitFlush(0);
         return;
     }
 
@@ -534,7 +573,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
                 std.io.write(msg);
             }
-            std.os.exit(3);
+            exitFlush(3);
             return;
         };
         var id: vi.IdHeader = undefined;
@@ -545,7 +584,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             ogg_stream.oggStreamClose(&os);
             var msg: []const u8 = "z9play: cannot initialize the decoder\n";
             std.io.write(msg);
-            std.os.exit(3);
+            exitFlush(3);
             return;
         };
         var last: u64 = ogg_stream.oggStreamLastGranule(&arena, args.path, os.serial) catch 0;
@@ -558,7 +597,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             ogg_stream.oggStreamClose(&os);
             var msg: []const u8 = "z9play: out of memory\n";
             std.io.write(msg);
-            std.os.exit(3);
+            exitFlush(3);
             return;
         };
         var tmp: []i16 = @ptrCast([*]i16, tr)[0 .. @intCast(usize, n1) * ch];
@@ -566,7 +605,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             ogg_stream.oggStreamClose(&os);
             var msg: []const u8 = "z9play: out of memory\n";
             std.io.write(msg);
-            std.os.exit(3);
+            exitFlush(3);
             return;
         };
         var obuf: []u8 = br[0 .. @intCast(usize, n1) * ch * 2];
@@ -575,7 +614,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             ogg_stream.oggStreamClose(&os);
             var msg: []const u8 = "z9play: cannot write output file\n";
             std.io.write(msg);
-            std.os.exit(2);
+            exitFlush(2);
             return;
         };
 
@@ -586,7 +625,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             filemod.close(&outf);
             var msg: []const u8 = "z9play: cannot write output file\n";
             std.io.write(msg);
-            std.os.exit(2);
+            exitFlush(2);
             return;
         }
 
@@ -598,7 +637,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 filemod.close(&outf);
                 var msg: []const u8 = "z9play: corrupt or unsupported audio packet\n";
                 std.io.write(msg);
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
             if (maybe) |packet| {
@@ -608,7 +647,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                     filemod.close(&outf);
                     var msg: []const u8 = "z9play: corrupt or unsupported audio packet\n";
                     std.io.write(msg);
-                    std.os.exit(3);
+                    exitFlush(3);
                     return;
                 };
                 var wf: usize = f;
@@ -626,7 +665,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                     filemod.close(&outf);
                     var msg: []const u8 = "z9play: output too large for WAV\n";
                     std.io.write(msg);
-                    std.os.exit(3);
+                    exitFlush(3);
                     return;
                 }
                 var q: usize = 0;
@@ -640,7 +679,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                     filemod.close(&outf);
                     var msg: []const u8 = "z9play: cannot write output file\n";
                     std.io.write(msg);
-                    std.os.exit(2);
+                    exitFlush(2);
                     return;
                 }
                 written = nw;
@@ -657,14 +696,14 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             filemod.close(&outf);
             var msg: []const u8 = "z9play: cannot write output file\n";
             std.io.write(msg);
-            std.os.exit(2);
+            exitFlush(2);
             return;
         };
         if (!writeExact(&outf, patch[0..4])) {
             filemod.close(&outf);
             var msg: []const u8 = "z9play: cannot write output file\n";
             std.io.write(msg);
-            std.os.exit(2);
+            exitFlush(2);
             return;
         }
         putLe32(patch[0..], 0, data_bytes);
@@ -672,18 +711,18 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             filemod.close(&outf);
             var msg: []const u8 = "z9play: cannot write output file\n";
             std.io.write(msg);
-            std.os.exit(2);
+            exitFlush(2);
             return;
         };
         if (!writeExact(&outf, patch[0..4])) {
             filemod.close(&outf);
             var msg: []const u8 = "z9play: cannot write output file\n";
             std.io.write(msg);
-            std.os.exit(2);
+            exitFlush(2);
             return;
         }
         filemod.close(&outf);
-        std.os.exit(0);
+        exitFlush(0);
         return;
     }
 
@@ -711,7 +750,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             fdec = flac.openStream(&darena, args.path) catch {
                 var msg: []const u8 = "z9play: corrupt or unsupported FLAC stream\n";
                 std.io.write(msg);
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
             sr = fdec.sample_rate;
@@ -726,7 +765,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                     var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
                     std.io.write(msg);
                 }
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
             ogg_open = true;
@@ -739,21 +778,21 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 ogg_stream.oggStreamClose(&os);
                 var msg: []const u8 = "z9play: cannot locate the audio granule\n";
                 std.io.write(msg);
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
             var state: dec.DecoderState = dec.initDecoderState(&darena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
                 ogg_stream.oggStreamClose(&os);
                 var msg: []const u8 = "z9play: cannot initialize the decoder\n";
                 std.io.write(msg);
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
             var vc: *player.VorbisCtx = player.vorbisCreate(&darena, &scratch, &os, setup, state, id.sample_rate, id.channels, last) catch {
                 ogg_stream.oggStreamClose(&os);
                 var msg: []const u8 = "z9play: cannot initialize the player decoder\n";
                 std.io.write(msg);
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
             sr = id.sample_rate;
@@ -767,7 +806,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.io.write(msg);
             if (is_flac) flac.closeStream(&fdec);
             if (ogg_open) ogg_stream.oggStreamClose(&os);
-            std.os.exit(2);
+            exitFlush(2);
             return;
         };
         var ao: audio.AudioOut = audio.AudioOut{
@@ -785,32 +824,52 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.io.write(msg);
             if (is_flac) flac.closeStream(&fdec);
             if (ogg_open) ogg_stream.oggStreamClose(&os);
-            std.os.exit(3);
+            exitFlush(3);
             return;
         };
+
+        // Live progress for long decodes: the CRT build buffers stdout, so emit
+        // the start line and a periodic position line through flushOut (the
+        // no-CRT Win9x build is already unbuffered).
+        writeText("wav: decoding ");
+        writeText(args.path);
+        writeNl();
+        flushOut();
 
         // Pump to completion; assert the reported position is monotonic.
         var monotonic: bool = true;
         var prev_ms: u64 = 0;
+        var last_progress: u32 = std.time.ticksMs();
         while (pl.state == player.PlayerState.playing) {
             player.playerPump(&pl) catch {
                 var msg: []const u8 = "z9play: playback failed\n";
                 std.io.write(msg);
                 if (is_flac) flac.closeStream(&fdec);
                 if (ogg_open) ogg_stream.oggStreamClose(&os);
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
             var pos_ms: u64 = player.playerPositionMs(&pl);
             if (pos_ms < prev_ms) monotonic = false;
             prev_ms = pos_ms;
+            var now_prog: u32 = std.time.ticksMs();
+            if (now_prog - last_progress >= 10000) {
+                writeText("wav: pos ");
+                var pbuf: [fmt.MMSS_MAX]u8 = undefined;
+                std.io.write(fmt.mmss(pbuf[0..], pos_ms));
+                writeText(" frames=");
+                writeU64(pl.frames_written);
+                writeNl();
+                flushOut();
+                last_progress = now_prog;
+            }
         }
         if (pl.state != player.PlayerState.ended) {
             var msg: []const u8 = "z9play: playback did not end cleanly\n";
             std.io.write(msg);
             if (is_flac) flac.closeStream(&fdec);
             if (ogg_open) ogg_stream.oggStreamClose(&os);
-            std.os.exit(3);
+            exitFlush(3);
             return;
         }
         pl.audio.drain_fn(pl.audio.state) catch {
@@ -818,7 +877,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.io.write(msg);
             if (is_flac) flac.closeStream(&fdec);
             if (ogg_open) ogg_stream.oggStreamClose(&os);
-            std.os.exit(3);
+            exitFlush(3);
             return;
         };
         pl.audio.close_fn(pl.audio.state);
@@ -841,7 +900,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         writeNl();
         if (is_flac) flac.closeStream(&fdec);
         if (ogg_open) ogg_stream.oggStreamClose(&os);
-        std.os.exit(0);
+        exitFlush(0);
         return;
     }
 
@@ -873,7 +932,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             var finfo: flac.StreamFlacDecoder = flac.openStream(&arena, args.path) catch {
                 var msg: []const u8 = "z9play: corrupt or unsupported FLAC stream\n";
                 std.io.write(msg);
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
             sr = finfo.sample_rate;
@@ -889,7 +948,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                     var msg: []const u8 = "z9play: not an OGG Vorbis stream\n";
                     std.io.write(msg);
                 }
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
             var id: vi.IdHeader = undefined;
@@ -901,7 +960,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             last = ogg_stream.oggStreamLastGranule(&arena, args.path, serial) catch {
                 var msg: []const u8 = "z9play: cannot locate the audio granule\n";
                 std.io.write(msg);
-                std.os.exit(3);
+                exitFlush(3);
                 return;
             };
             sr = id.sample_rate;
@@ -941,7 +1000,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             real_ctx = wav.open(sr, chn) catch {
                 var msg: []const u8 = "z9play: cannot open the WAV sink\n";
                 std.io.write(msg);
-                std.os.exit(4);
+                exitFlush(4);
                 return;
             };
             real_ao = audio.AudioOut{ .open_fn = wav.open, .write_fn = wav.write, .close_fn = wav.close, .drain_fn = wav.drain, .state = real_ctx };
@@ -949,7 +1008,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             real_ctx = awin.open(sr, chn) catch {
                 var msg: []const u8 = "z9play: cannot open the audio device\n";
                 std.io.write(msg);
-                std.os.exit(4);
+                exitFlush(4);
                 return;
             };
             real_ao = audio.AudioOut{ .open_fn = awin.open, .write_fn = awin.write, .close_fn = awin.close, .drain_fn = awin.drain, .state = real_ctx };
@@ -957,7 +1016,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             real_ctx = oss.open(sr, chn) catch {
                 var msg: []const u8 = "z9play: cannot open the audio device\n";
                 std.io.write(msg);
-                std.os.exit(4);
+                exitFlush(4);
                 return;
             };
             real_ao = audio.AudioOut{ .open_fn = oss.open, .write_fn = oss.write, .close_fn = oss.close, .drain_fn = oss.drain, .state = real_ctx };
@@ -986,6 +1045,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         writeText("ch ");
         writeU64(@intCast(u64, sr));
         writeText("Hz\n");
+        flushOut();
 
         // Assemble the platform `Console` vtable from the backend's public free
         // functions (mirrors the `audio.AudioOut` assembly above). With
@@ -1228,9 +1288,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var sbuf: [fmt.MMSS_MAX]u8 = undefined;
         std.io.write(fmt.mmss(sbuf[0..], fpos));
         writeText(".\n");
-        std.os.exit(0);
+        exitFlush(0);
         return;
     }
 
-    std.os.exit(1);
+    exitFlush(1);
 }
