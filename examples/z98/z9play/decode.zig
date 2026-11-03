@@ -92,20 +92,14 @@ pub const DecoderState = struct {
     imdct_out: []f64,
     win: []f64,
     slope: []f64,
+    imdct0: dsp.ImdctTables,
+    imdct1: dsp.ImdctTables,
+    wcache: WindowCache,
 };
-
-// Correctly-rounded IEEE-754 double pi (0x1.921fb54442d18p+1), matching
-// dsp.zig; the lexer's decimal-float parser is not guaranteed correctly
-// rounded.
-const PI_BITS: u64 = 0x400921FB54442D18;
-
-fn b2d(b: u64) f64 {
-    var p: *f64 = @ptrCast(*f64, &b);
-    return p.*;
-}
 
 // ilog (spec 9.2.1): number of bits needed to represent x (0 -> 0). Used to
 // size the mode field.
+
 fn ilog(x: u32) u32 {
     var n: u32 = 0;
     var v: u32 = x;
@@ -115,36 +109,6 @@ fn ilog(x: u32) u32 {
     return n;
 }
 
-// Unnormalized inverse MDCT, identical in value to dsp.imdct:
-//   out[i] = sum_{k=0}^{n/2-1} X[k] cos( (pi/(2n)) (2i+1+n/2) (2k+1) ).
-// dsp.imdct evaluates that directly, needing O(n^2/2) std.math.cos calls; at
-// -O0 the pure-Z98 cos makes a 2-second stream take minutes. Here each output
-// row is evaluated with a per-row angle recurrence (c_k = cos(theta (2k+1)),
-// advanced by an orthogonal rotation of 2 theta), which needs O(n) trig calls
-// per block. The rotation drifts only ~1e-13, far below the 2-LSB gate.
-fn imdctFast(n: u32, spectra: []const f64, out: []f64) void {
-    var half: u32 = n / 2;
-    var nf: f64 = @intToFloat(f64, n);
-    var scale: f64 = b2d(PI_BITS) / (2.0 * nf);
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
-        var theta: f64 = scale * @intToFloat(f64, 2 * i + 1 + half);
-        var c: f64 = std.math.cos(theta);
-        var s: f64 = std.math.sin(theta);
-        var c2: f64 = c * c - s * s;
-        var s2: f64 = 2.0 * c * s;
-        var sum: f64 = 0.0;
-        var k: u32 = 0;
-        while (k < half) : (k += 1) {
-            sum = sum + spectra[@intCast(usize, k)] * c;
-            var nc: f64 = c * c2 - s * s2;
-            var ns: f64 = s * c2 + c * s2;
-            c = nc;
-            s = ns;
-        }
-        out[@intCast(usize, i)] = sum;
-    }
-}
 
 // Allocate `ch` f64 rows of length `len` from `arena`. Used for the per-channel
 // working vectors and the overlap tails.
@@ -207,6 +171,19 @@ pub fn initDecoderState(arena: *std.arena.Arena, setup: vs.Setup, channels: u8, 
     var win: []f64 = try allocF64(arena, max_n);
     var slope: []f64 = try allocF64(arena, spec_cap);
 
+    var imdct0: dsp.ImdctTables = dsp.imdctTablesInit(arena, n0) catch |e| {
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.BadVersion;
+    };
+    var imdct1: dsp.ImdctTables = dsp.imdctTablesInit(arena, n1) catch |e| {
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.BadVersion;
+    };
+    var wcache: WindowCache = buildWindowCache(arena, n0, n1) catch |e| {
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.BadVersion;
+    };
+
     return DecoderState{
         .channels = channels,
         .blocksize_0 = n0,
@@ -225,6 +202,9 @@ pub fn initDecoderState(arena: *std.arena.Arena, setup: vs.Setup, channels: u8, 
         .imdct_out = imdct_out,
         .win = win,
         .slope = slope,
+        .imdct0 = imdct0,
+        .imdct1 = imdct1,
+        .wcache = wcache,
     };
 }
 
@@ -274,6 +254,32 @@ fn buildWindow(n: u32, bs0: u32, blockflag: bool, prev_wf: u32, next_wf: u32, wi
         win[@intCast(usize, r_end - 1 - i)] = slope[@intCast(usize, i)];
     }
     fillRange(win, r_end, n, 0.0);
+}
+
+// Cached block windows: one symmetric short window and four long windows
+// keyed by (prev_wf, next_wf) at index prev_wf*2 + next_wf. Built once from the
+// decoder arena so decodePacket never re-runs windowSlope.
+pub const WindowCache = struct {
+    short: []f64,
+    long: [][]f64,
+};
+
+pub fn buildWindowCache(arena: *std.arena.Arena, bs0: u32, bs1: u32) DecodeError!WindowCache {
+    var maxb: u32 = bs0;
+    if (bs1 > maxb) maxb = bs1;
+    var short: []f64 = try allocF64(arena, bs0);
+    var slope: []f64 = try allocF64(arena, maxb / 2);
+    buildWindow(bs0, bs0, false, 1, 1, short, slope);
+
+    var raw: [*]u8 = std.arena.alloc(arena, 4 * @sizeOf([]f64)) catch return error.OutOfMemory;
+    var long: [][]f64 = @ptrCast([*][]f64, raw)[0..4];
+    var p: u32 = 0;
+    while (p < 4) : (p += 1) {
+        var row: []f64 = try allocF64(arena, bs1);
+        buildWindow(bs1, bs0, true, p / 2, p % 2, row, slope);
+        long[@intCast(usize, p)] = row;
+    }
+    return WindowCache{ .short = short, .long = long };
 }
 
 // Convert one sample to s16 exactly as libvorbisfile (_vorbis_ftoi):
@@ -423,14 +429,20 @@ pub fn decodePacket(arena: *std.arena.Arena, setup: vs.Setup, state: *DecoderSta
         }
     }
 
-    buildWindow(n, state.blocksize_0, mode.blockflag, prev_wf, next_wf, state.win[0..nus], state.slope);
+    var frame_win: []f64 = state.wcache.short;
+    var imdct_tab: dsp.ImdctTables = state.imdct0;
+    if (mode.blockflag) {
+        var wi: usize = @intCast(usize, prev_wf * 2 + next_wf);
+        frame_win = state.wcache.long[wi];
+        imdct_tab = state.imdct1;
+    }
 
     // spec 4.3.6/4.3.7/4.3.8: per channel, dot the floor curve with the
     // residue, inverse-MDCT, apply the window, then overlap-add. The transform
     // scale is unity: libvorbis puts its 4/n factor in mdct_forward (the
     // analysis), while mdct_backward -- the decoder's transform, and the one
     // the golden was produced with -- is the raw unnormalized inverse, exactly
-    // dsp.imdct/imdctFast. (The PR-correct synthesis for an *unnormalized*
+    // dsp.imdct/dsp.imdctFft. (The PR-correct synthesis for an *unnormalized*
     // forward is (4/n)*raw, which is why the 4/n cancels.)
     var scale: f64 = 1.0;
     i = 0;
@@ -439,10 +451,10 @@ pub fn decodePacket(arena: *std.arena.Arena, setup: vs.Setup, state: *DecoderSta
         while (k < half) : (k += 1) {
             state.spectrum[k] = state.floors[i][k] * state.residue[i][k];
         }
-        imdctFast(n, state.spectrum[0..half], state.imdct_out[0..nus]);
+        dsp.imdctFft(imdct_tab, state.spectrum[0..half], state.imdct_out[0..nus]);
         var p: usize = 0;
         while (p < nus) : (p += 1) {
-            state.blocks[i][p] = state.imdct_out[p] * scale * state.win[p];
+            state.blocks[i][p] = state.imdct_out[p] * scale * frame_win[p];
         }
     }
 

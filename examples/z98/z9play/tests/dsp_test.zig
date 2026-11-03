@@ -29,6 +29,7 @@
 
 const std = @import("std");
 const dsp = @import("../dsp.zig");
+const dec = @import("../decode.zig");
 
 const PI_BITS: u64 = 0x400921FB54442D18;
 
@@ -38,6 +39,15 @@ fn b2d(b: u64) f64 {
 }
 
 var arena_buf: [256 * 1024]u8 = undefined;
+
+var spec_buf: [1024]f64 = undefined;
+var ref_buf: [2048]f64 = undefined;
+var got_buf: [2048]f64 = undefined;
+var win_buf: [2048]f64 = undefined;
+var blk_buf: [2048]f64 = undefined;
+var fwd_buf: [1024]f64 = undefined;
+var slope_buf: [1024]f64 = undefined;
+var exp_buf: [2048]f64 = undefined;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "dsp_test: FAIL: ";
@@ -81,6 +91,40 @@ fn windowWant(n: u32, i: u32) f64 {
     var half: u32 = n / 2;
     if (i >= half) return slopeWant(half, n - 1 - i);
     return slopeWant(half, i);
+}
+
+// Independent copy of decode.buildWindow's assembly, using dsp.windowSlope.
+// Used to check the cached windows in decode.buildWindowCache byte for byte.
+fn expectedWindow(n: u32, bs0: u32, blockflag: bool, prev_wf: u32, next_wf: u32, out: []f64, slope: []f64) void {
+    var center: u32 = n / 2;
+    var l_start: u32 = 0;
+    var l_end: u32 = center;
+    var l_n: u32 = n / 2;
+    if (blockflag and prev_wf == 0) {
+        l_start = n / 4 - bs0 / 4;
+        l_end = n / 4 + bs0 / 4;
+        l_n = bs0 / 2;
+    }
+    var r_start: u32 = center;
+    var r_end: u32 = n;
+    var r_n: u32 = n / 2;
+    if (blockflag and next_wf == 0) {
+        r_start = n * 3 / 4 - bs0 / 4;
+        r_end = n * 3 / 4 + bs0 / 4;
+        r_n = bs0 / 2;
+    }
+    var i: u32 = 0;
+    while (i < l_start) : (i += 1) out[@intCast(usize, i)] = 0.0;
+    dsp.windowSlope(l_n, slope[0..@intCast(usize, l_n)]);
+    i = 0;
+    while (i < l_n) : (i += 1) out[@intCast(usize, l_start + i)] = slope[@intCast(usize, i)];
+    i = l_end;
+    while (i < r_start) : (i += 1) out[@intCast(usize, i)] = 1.0;
+    dsp.windowSlope(r_n, slope[0..@intCast(usize, r_n)]);
+    i = 0;
+    while (i < r_n) : (i += 1) out[@intCast(usize, r_end - 1 - i)] = slope[@intCast(usize, i)];
+    i = r_end;
+    while (i < n) : (i += 1) out[@intCast(usize, i)] = 0.0;
 }
 
 fn checkImdctSingle(arena: *std.arena.Arena, n: u32, k: u32) void {
@@ -193,7 +237,97 @@ pub fn main() void {
         }
     }
 
-    var ok: []const u8 = "dsp_test: PASS imdct=analytic window=closed+tdac vwin64=ok overlap=ok deterministic=ok\n";
+    // --- 6. imdctFft vs the exact dsp.imdct reference, every block size ---
+    {
+        var sizes: [6]u32 = [6]u32{ 64, 128, 256, 512, 1024, 2048 };
+        var si: usize = 0;
+        while (si < 6) : (si += 1) {
+            var n: u32 = sizes[si];
+            var sz: usize = @intCast(usize, n);
+            var half: usize = sz / 2;
+            var t: dsp.ImdctTables = dsp.imdctTablesInit(&arena, n) catch {
+                fail("imdctTablesInit failed");
+                return;
+            };
+            var i: usize = 0;
+            while (i < half) : (i += 1) {
+                var q: i32 = @intCast(i32, (i * 37 + 11) % 97) - 48;
+                spec_buf[i] = @intToFloat(f64, q) * 0.05;
+            }
+            dsp.imdct(&arena, n, spec_buf[0..half], ref_buf[0..sz]);
+            dsp.imdctFft(t, spec_buf[0..half], got_buf[0..sz]);
+            var maxd: f64 = 0.0;
+            i = 0;
+            while (i < sz) : (i += 1) {
+                var d: f64 = absF(got_buf[i] - ref_buf[i]);
+                if (d > maxd) maxd = d;
+            }
+            if (maxd > 1.0e-9) fail("imdctFft accuracy mismatch");
+            var lab: []const u8 = "imdctFft n=";
+            std.io.write(lab);
+            std.io.printInt(@intCast(i32, n));
+            var lab2: []const u8 = " maxdelta_x1e12=";
+            std.io.write(lab2);
+            std.io.printInt(@intCast(i32, maxd * 1.0e12 + 0.5));
+            var nl: []const u8 = "\n";
+            std.io.write(nl);
+        }
+    }
+
+    // --- 7. TDAC: two consecutive windows + overlap -> constant signal ---
+    {
+        var n: u32 = 64;
+        var sz: usize = @intCast(usize, n);
+        var m: usize = sz / 2;
+        var t: dsp.ImdctTables = dsp.imdctTablesInit(&arena, n) catch {
+            fail("imdctTablesInit failed (tdac)");
+            return;
+        };
+        dsp.window(n, win_buf[0..sz]);
+        var k: usize = 0;
+        while (k < m) : (k += 1) {
+            var sum: f64 = 0.0;
+            var tt: usize = 0;
+            while (tt < sz) : (tt += 1) {
+                sum = sum + win_buf[tt] * basis(n, @intCast(u32, tt), @intCast(u32, k));
+            }
+            fwd_buf[k] = sum;
+        }
+        dsp.imdctFft(t, fwd_buf[0..m], blk_buf[0..sz]);
+        var gain: f64 = @intToFloat(f64, @intCast(u32, sz / 4));
+        var g: usize = m;
+        while (g < sz) : (g += 1) {
+            var r: f64 = blk_buf[g] * win_buf[g] + blk_buf[g - m] * win_buf[g - m];
+            var v: f64 = r / gain;
+            if (absF(v - 1.0) > 1.0e-9) fail("TDAC reconstruction mismatch");
+        }
+    }
+
+    // --- 8. cached windows match a freshly assembled window byte for byte ---
+    {
+        var bs0: u32 = 64;
+        var bs1: u32 = 256;
+        var cache: dec.WindowCache = dec.buildWindowCache(&arena, bs0, bs1) catch {
+            fail("buildWindowCache failed");
+            return;
+        };
+        expectedWindow(bs0, bs0, false, 1, 1, exp_buf[0..@intCast(usize, bs0)], slope_buf);
+        var i: usize = 0;
+        while (i < @intCast(usize, bs0)) : (i += 1) {
+            if (cache.short[i] != exp_buf[i]) fail("cached short window mismatch");
+        }
+        var p: u32 = 0;
+        while (p < 4) : (p += 1) {
+            expectedWindow(bs1, bs0, true, p / 2, p % 2, exp_buf[0..@intCast(usize, bs1)], slope_buf);
+            var row: []f64 = cache.long[@intCast(usize, p)];
+            i = 0;
+            while (i < @intCast(usize, bs1)) : (i += 1) {
+                if (row[i] != exp_buf[i]) fail("cached long window mismatch");
+            }
+        }
+    }
+
+    var ok: []const u8 = "dsp_test: PASS imdct=analytic window=closed+tdac vwin64=ok overlap=ok deterministic=ok imdctfft=ref tdac=ola windows=cached\n";
     std.io.write(ok);
     std.os.exit(0);
 }
