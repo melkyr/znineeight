@@ -186,8 +186,7 @@ fn lookup1Values(entries: u32, dimensions: u32) u32 {
     while (r < entries) {
         var prod: u64 = 1;
         var base: u64 = @intCast(u64, r + 1);
-        var i: u32 = 0;
-        while (i < dimensions) : (i += 1) {
+        for (0..dimensions) |_| {
             prod = prod * base;
             if (prod > @intCast(u64, entries)) break;
         }
@@ -207,9 +206,8 @@ fn parseFloor0(arena: *std.arena.Arena, br: *BitReader, f: *Floor) ogg.OggError!
     var nbooks: u32 = (try brRead(br, 4)) + 1;
     var raw_b: [*]u8 = std.arena.alloc(arena, @intCast(usize, nbooks)) catch return error.OutOfMemory;
     var books: []u8 = raw_b[0..@intCast(usize, nbooks)];
-    var i: u32 = 0;
-    while (i < nbooks) : (i += 1) {
-        books[@intCast(usize, i)] = @intCast(u8, try brRead(br, 8));
+    for (books) |*item| {
+        item.* = @intCast(u8, try brRead(br, 8));
     }
     var raw_e: [*]u8 = std.arena.alloc(arena, 0) catch return error.OutOfMemory;
     var e_u8: []u8 = raw_e[0..0];
@@ -244,11 +242,10 @@ fn parseFloor1(arena: *std.arena.Arena, br: *BitReader, f: *Floor) ogg.OggError!
     var partitions: u32 = try brRead(br, 5);
     var raw_pc: [*]u8 = std.arena.alloc(arena, @intCast(usize, partitions)) catch return error.OutOfMemory;
     var pclass: []u8 = raw_pc[0..@intCast(usize, partitions)];
-    var i: u32 = 0;
     var maxclass: i32 = -1;
-    while (i < partitions) : (i += 1) {
+    for (pclass) |*item| {
         var v: u32 = try brRead(br, 4);
-        pclass[@intCast(usize, i)] = @intCast(u8, v);
+        item.* = @intCast(u8, v);
         if (@intCast(i32, v) > maxclass) maxclass = @intCast(i32, v);
     }
     var nclass: usize = 0;
@@ -261,10 +258,8 @@ fn parseFloor1(arena: *std.arena.Arena, br: *BitReader, f: *Floor) ogg.OggError!
     var cmaster: []u8 = raw_cm[0..nclass];
     var raw_sb: [*]u8 = std.arena.alloc(arena, nclass * 8 * @sizeOf(i16)) catch return error.OutOfMemory;
     var sb: []i16 = @ptrCast([*]i16, raw_sb)[0 .. nclass * 8];
-    var z: usize = 0;
-    while (z < nclass * 8) : (z += 1) sb[z] = -1;
-    i = 0;
-    while (i < nclass) : (i += 1) {
+    for (0..nclass * 8) |z| sb[z] = -1;
+    for (0..nclass) |i| {
         var d: u32 = (try brRead(br, 3)) + 1;
         var sc: u32 = try brRead(br, 2);
         cdim[i] = @intCast(u8, d);
@@ -281,8 +276,7 @@ fn parseFloor1(arena: *std.arena.Arena, br: *BitReader, f: *Floor) ogg.OggError!
     var mult: u32 = (try brRead(br, 2)) + 1;
     var rangebits: u32 = try brRead(br, 4);
     var xcount: u32 = 2;
-    i = 0;
-    while (i < partitions) : (i += 1) {
+    for (0..partitions) |i| {
         var cls: u8 = pclass[@intCast(usize, i)];
         xcount += @intCast(u32, cdim[@intCast(usize, cls)]);
     }
@@ -292,18 +286,15 @@ fn parseFloor1(arena: *std.arena.Arena, br: *BitReader, f: *Floor) ogg.OggError!
     xs[0] = 0;
     xs[1] = @intCast(u32, 1) << rangebits;
     var xi: u32 = 2;
-    i = 0;
-    while (i < partitions) : (i += 1) {
+    for (0..partitions) |i| {
         var cls: u8 = pclass[@intCast(usize, i)];
         var cd: u8 = cdim[@intCast(usize, cls)];
-        var j: u32 = 0;
-        while (j < cd) : (j += 1) {
+        for (0..cd) |_| {
             xs[@intCast(usize, xi)] = try brRead(br, rangebits);
             xi += 1;
         }
     }
-    var a: u32 = 0;
-    while (a < xcount) : (a += 1) {
+    for (0..xcount) |a| {
         var b: u32 = a + 1;
         while (b < xcount) : (b += 1) {
             if (xs[@intCast(usize, a)] == xs[@intCast(usize, b)]) return error.BadVersion;
@@ -342,20 +333,17 @@ fn parseResidue(arena: *std.arena.Arena, br: *BitReader, r: *Residue, rtype: u16
     var classbook: u32 = try brRead(br, 8);
     var raw_cas: [*]u8 = std.arena.alloc(arena, @intCast(usize, classes)) catch return error.OutOfMemory;
     var cas: []u8 = raw_cas[0..@intCast(usize, classes)];
-    var i: u32 = 0;
-    while (i < classes) : (i += 1) {
+    for (cas) |*item| {
         var low: u32 = try brRead(br, 3);
         var bitflag: u32 = try brRead(br, 1);
         var high: u32 = 0;
         if (bitflag != 0) high = try brRead(br, 5);
-        cas[@intCast(usize, i)] = @intCast(u8, high * 8 + low);
+        item.* = @intCast(u8, high * 8 + low);
     }
     var raw_bk: [*]u8 = std.arena.alloc(arena, @intCast(usize, classes) * 8 * @sizeOf(i16)) catch return error.OutOfMemory;
     var bk: []i16 = @ptrCast([*]i16, raw_bk)[0 .. @intCast(usize, classes) * 8];
-    var z: usize = 0;
-    while (z < @intCast(usize, classes) * 8) : (z += 1) bk[z] = -1;
-    i = 0;
-    while (i < classes) : (i += 1) {
+    for (0..@intCast(usize, classes) * 8) |z| bk[z] = -1;
+    for (0..classes) |i| {
         var j: u32 = 0;
         while (j < 8) : (j += 1) {
             var mask: u32 = @intCast(u32, 1) << j;
@@ -397,8 +385,7 @@ fn parseMapping(arena: *std.arena.Arena, br: *BitReader, m: *Mapping, channels: 
         mag = rm[0..@intCast(usize, steps)];
         ang = ra[0..@intCast(usize, steps)];
         var cbits: u32 = ilog(channels - 1);
-        var i: u32 = 0;
-        while (i < steps) : (i += 1) {
+        for (0..steps) |i| {
             var mv: u32 = try brRead(br, cbits);
             var av: u32 = try brRead(br, cbits);
             if (mv >= channels or av >= channels or mv == av) return error.BadVersion;
@@ -412,19 +399,17 @@ fn parseMapping(arena: *std.arena.Arena, br: *BitReader, m: *Mapping, channels: 
     if (submaps > 1) {
         var rx: [*]u8 = std.arena.alloc(arena, @intCast(usize, channels)) catch return error.OutOfMemory;
         mux = rx[0..@intCast(usize, channels)];
-        var j: u32 = 0;
-        while (j < channels) : (j += 1) {
+        for (mux) |*item, j| {
             var v: u32 = try brRead(br, 4);
             if (v >= submaps) return error.BadVersion;
-            mux[@intCast(usize, j)] = @intCast(u8, v);
+            item.* = @intCast(u8, v);
         }
     }
     var raw_sf: [*]u8 = std.arena.alloc(arena, @intCast(usize, submaps)) catch return error.OutOfMemory;
     var raw_sr: [*]u8 = std.arena.alloc(arena, @intCast(usize, submaps)) catch return error.OutOfMemory;
     var sf: []u8 = raw_sf[0..@intCast(usize, submaps)];
     var sr: []u8 = raw_sr[0..@intCast(usize, submaps)];
-    var k: u32 = 0;
-    while (k < submaps) : (k += 1) {
+    for (0..submaps) |k| {
         _ = try brRead(br, 8);
         var fl: u32 = try brRead(br, 8);
         if (fl >= floor_count) return error.BadVersion;
@@ -471,9 +456,8 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
     if (packet[0] != 5) return error.BadVersion;
     if (channels < 1) return error.BadVersion;
     var sig: []const u8 = "vorbis";
-    var i: usize = 0;
-    while (i < 6) : (i += 1) {
-        if (packet[1 + i] != sig[i]) return error.BadVersion;
+    for (sig) |b, i| {
+        if (packet[1 + i] != b) return error.BadVersion;
     }
 
     var br = brInit(packet[7..]);
@@ -482,8 +466,7 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
     var raw_cb: [*]u8 = std.arena.alloc(arena, @intCast(usize, count) * @sizeOf(Codebook)) catch return error.OutOfMemory;
     var cbs: [*]Codebook = @ptrCast([*]Codebook, raw_cb);
 
-    var c: u32 = 0;
-    while (c < count) : (c += 1) {
+    for (0..count) |c| {
         var sync: u32 = try brRead(&br, 24);
         if (sync != 0x564342) return error.BadVersion;
         var dims: u32 = try brRead(&br, 16);
@@ -513,19 +496,18 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
             }
         } else {
             sparse = ((try brRead(&br, 1)) == 1);
-            var e: u32 = 0;
             if (sparse) {
-                while (e < entries) : (e += 1) {
+                for (lengths) |*item| {
                     var present: u32 = try brRead(&br, 1);
                     if (present == 1) {
-                        lengths[e] = @intCast(u8, (try brRead(&br, 5)) + 1);
+                        item.* = @intCast(u8, (try brRead(&br, 5)) + 1);
                     } else {
-                        lengths[e] = 0;
+                        item.* = 0;
                     }
                 }
             } else {
-                while (e < entries) : (e += 1) {
-                    lengths[e] = @intCast(u8, (try brRead(&br, 5)) + 1);
+                for (lengths) |*item| {
+                    item.* = @intCast(u8, (try brRead(&br, 5)) + 1);
                 }
             }
         }
@@ -563,9 +545,8 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
             var lv: usize = @intCast(usize, lookup_values);
             var mul_raw: [*]u8 = std.arena.alloc(arena, lv * @sizeOf(u32)) catch return error.OutOfMemory;
             multiplicands = @ptrCast([*]u32, mul_raw)[0..lv];
-            var mi: u64 = 0;
-            while (mi < lookup_values) : (mi += 1) {
-                multiplicands[@intCast(usize, mi)] = try brRead(&br, value_bits);
+            for (multiplicands) |*item| {
+                item.* = try brRead(&br, value_bits);
             }
         }
 
@@ -588,8 +569,7 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
 
     // --- time-domain transforms (placeholders in Vorbis I) ---
     var time_count: u32 = (try brRead(&br, 6)) + 1;
-    var ti: u32 = 0;
-    while (ti < time_count) : (ti += 1) {
+    for (0..time_count) |_| {
         if ((try brRead(&br, 16)) != 0) return error.BadVersion;
     }
 
@@ -597,8 +577,7 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
     var floor_count: u32 = (try brRead(&br, 6)) + 1;
     var raw_fl: [*]u8 = std.arena.alloc(arena, @intCast(usize, floor_count) * @sizeOf(Floor)) catch return error.OutOfMemory;
     var floors: [*]Floor = @ptrCast([*]Floor, raw_fl);
-    var fi: u32 = 0;
-    while (fi < floor_count) : (fi += 1) {
+    for (0..floor_count) |fi| {
         var ftype: u32 = try brRead(&br, 16);
         if (ftype == 0) {
             try parseFloor0(arena, &br, &floors[fi]);
@@ -613,8 +592,7 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
     var residue_count: u32 = (try brRead(&br, 6)) + 1;
     var raw_rs: [*]u8 = std.arena.alloc(arena, @intCast(usize, residue_count) * @sizeOf(Residue)) catch return error.OutOfMemory;
     var residues: [*]Residue = @ptrCast([*]Residue, raw_rs);
-    var ri: u32 = 0;
-    while (ri < residue_count) : (ri += 1) {
+    for (0..residue_count) |ri| {
         var rtype: u32 = try brRead(&br, 16);
         if (rtype > 2) return error.BadVersion;
         try parseResidue(arena, &br, &residues[ri], @intCast(u16, rtype));
@@ -624,8 +602,7 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
     var mapping_count: u32 = (try brRead(&br, 6)) + 1;
     var raw_mp: [*]u8 = std.arena.alloc(arena, @intCast(usize, mapping_count) * @sizeOf(Mapping)) catch return error.OutOfMemory;
     var mappings: [*]Mapping = @ptrCast([*]Mapping, raw_mp);
-    var mi: u32 = 0;
-    while (mi < mapping_count) : (mi += 1) {
+    for (0..mapping_count) |mi| {
         try parseMapping(arena, &br, &mappings[mi], channels, floor_count, residue_count);
     }
 
@@ -633,8 +610,7 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
     var mode_count: u32 = (try brRead(&br, 6)) + 1;
     var raw_mo: [*]u8 = std.arena.alloc(arena, @intCast(usize, mode_count) * @sizeOf(VorbisMode)) catch return error.OutOfMemory;
     var modes: [*]VorbisMode = @ptrCast([*]VorbisMode, raw_mo);
-    var moi: u32 = 0;
-    while (moi < mode_count) : (moi += 1) {
+    for (0..mode_count) |moi| {
         try parseMode(&br, &modes[moi]);
         if (@intCast(u32, modes[moi].mapping) >= mapping_count) return error.BadVersion;
     }

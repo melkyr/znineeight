@@ -71,12 +71,10 @@ pub fn imdct(arena: *std.arena.Arena, n: u32, spectra: []const f64, out: []f64) 
     var half: u32 = n / 2;
     var nf: f64 = @intToFloat(f64, n);
     var scale: f64 = piVal() / (2.0 * nf);
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         var a: f64 = @intToFloat(f64, 2 * i + 1 + half);
         var sum: f64 = 0.0;
-        var k: u32 = 0;
-        while (k < half) : (k += 1) {
+        for (0..half) |k| {
             var b: f64 = @intToFloat(f64, 2 * k + 1);
             var arg: f64 = scale * a * b;
             sum = sum + spectra[@intCast(usize, k)] * std.math.cos(arg);
@@ -120,14 +118,12 @@ pub fn imdctTablesInit(arena: *std.arena.Arena, n: u32) !ImdctTables {
 
     var mf: f64 = @intToFloat(f64, n / 2);
     var alpha: f64 = piVal() / mf;
-    var i: u32 = 0;
-    while (i < k) : (i += 1) {
+    for (0..k) |i| {
         var beta: f64 = alpha * (@intToFloat(f64, i) + 0.25);
         pre_c[@intCast(usize, i)] = std.math.cos(beta);
         pre_s[@intCast(usize, i)] = std.math.sin(beta);
     }
-    i = 0;
-    while (i <= k) : (i += 1) {
+    for (0..k + 1) |i| {
         var ang: f64 = alpha * @intToFloat(f64, i);
         post_c[@intCast(usize, i)] = std.math.cos(ang);
         post_s[@intCast(usize, i)] = std.math.sin(ang);
@@ -207,8 +203,7 @@ fn slopeAt(len: u32, i: u32) f64 {
 
 // Fill `out` (length `len`) with the Vorbis half-window slope of length `len`.
 pub fn windowSlope(len: u32, out: []f64) void {
-    var i: u32 = 0;
-    while (i < len) : (i += 1) {
+    for (0..len) |i| {
         out[@intCast(usize, i)] = slopeAt(len, i);
     }
 }
@@ -228,9 +223,8 @@ pub fn window(n: u32, out: []f64) void {
 
 // Multiply `block` by `win` element by element (both the same length).
 pub fn applyWindow(block: []f64, win: []f64) void {
-    var i: usize = 0;
-    while (i < block.len) : (i += 1) {
-        block[i] = block[i] * win[i];
+    for (block) |*item, i| {
+        item.* = item.* * win[i];
     }
 }
 
@@ -238,8 +232,7 @@ pub fn applyWindow(block: []f64, win: []f64) void {
 // windowed right-half tail, `cur` the current block's windowed left-half head;
 // all three slices share the overlap length.
 pub fn overlapAdd(prev: []f64, cur: []f64, out: []f64) void {
-    var i: usize = 0;
-    while (i < out.len) : (i += 1) {
-        out[i] = prev[i] + cur[i];
+    for (out) |*item, i| {
+        item.* = prev[i] + cur[i];
     }
 }

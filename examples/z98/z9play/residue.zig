@@ -105,11 +105,10 @@ fn placeFormat0(arena: *std.arena.Arena, dt: *const cbk.DecodeTable, bits: *vs.B
     if (step == 0) return true;
     var raw: [*]u8 = std.arena.alloc(arena, @intCast(usize, step) * @sizeOf(u32)) catch return error.OutOfMemory;
     var entries: []u32 = @ptrCast([*]u32, raw)[0..@intCast(usize, step)];
-    var i: u32 = 0;
-    while (i < step) : (i += 1) {
+    for (entries) |*item| {
         var e: i32 = decodeScalarEop(dt, bits);
         if (e < 0) return false;
-        entries[@intCast(usize, i)] = @intCast(u32, e);
+        item.* = @intCast(u32, e);
     }
     var j: u32 = 0;
     while (j < step) : (j += 1) {
@@ -190,11 +189,9 @@ pub fn decodeResidue(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, b
     if (residue.books.len < @intCast(usize, residue.classifications) * 8) return error.BadVersion;
 
     // Zero every returned vector (spec 8.6.2 step 1), even 'do not decode'.
-    var z: usize = 0;
-    while (z < ch) : (z += 1) {
+    for (0..ch) |z| {
         if (out[z].len < @intCast(usize, spectral_len)) return error.BadVersion;
-        var k: usize = 0;
-        while (k < @intCast(usize, spectral_len)) : (k += 1) {
+        for (0..@intCast(usize, spectral_len)) |k| {
             out[z][k] = 0.0;
         }
     }
@@ -227,9 +224,8 @@ pub fn decodeResidue(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, b
     var v2_active: bool = false;
     if (residue.residue_type == 2) {
         nvec = 1;
-        var a: usize = 0;
-        while (a < ch) : (a += 1) {
-            if (!doNotDecode[a]) v2_active = true;
+        for (doNotDecode) |flag| {
+            if (!flag) v2_active = true;
         }
     }
 
@@ -245,8 +241,7 @@ pub fn decodeResidue(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, b
     // class_space = classifications ^ dimensions must not exceed the classbook
     // entry count (spec 8.6.1); the early exit avoids any u64 overflow.
     var class_space: u64 = 1;
-    var ce: u32 = 0;
-    while (ce < class_dim) : (ce += 1) {
+    for (0..class_dim) |_| {
         class_space = class_space * @intCast(u64, classes);
         if (class_space > @intCast(u64, cdt.entries)) return error.BadVersion;
     }
@@ -258,15 +253,13 @@ pub fn decodeResidue(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, b
     var cls_raw: [*]u8 = std.arena.alloc(arena, @intCast(usize, cls_count)) catch return error.OutOfMemory;
     var cls: []u8 = cls_raw[0..@intCast(usize, cls_count)];
 
-    var stage: u32 = 0;
-    while (stage < 8) : (stage += 1) {
+    for (0..8) |stage| {
         var pc: u32 = 0;
         while (pc < partitions_to_read) {
             // Pass 0 reads one classword per channel for this group of
             // class_dim partitions; later passes reuse the stored classes.
             if (stage == 0) {
-                var j: usize = 0;
-                while (j < nvec) : (j += 1) {
+                for (0..nvec) |j| {
                     var skip: bool = false;
                     if (residue.residue_type == 2) {
                         if (!v2_active) skip = true;
@@ -293,8 +286,7 @@ pub fn decodeResidue(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, b
             }
             var k: u32 = 0;
             while (k < class_dim and pc < partitions_to_read) {
-                var j: usize = 0;
-                while (j < nvec) : (j += 1) {
+                for (0..nvec) |j| {
                     var skip: bool = false;
                     if (residue.residue_type == 2) {
                         if (!v2_active) skip = true;

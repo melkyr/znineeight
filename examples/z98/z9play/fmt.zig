@@ -126,8 +126,7 @@ pub fn statusLine(buf: []u8, pos_ms: u64, dur_ms: u64, vol: u8) []const u8 {
     putU64(buf, &pos, @intCast(u64, vol));
     putByte(buf, &pos, '%');
     putStr(buf, &pos, "  [");
-    var i: usize = 0;
-    while (i < BAR_WIDTH) : (i += 1) {
+    for (0..BAR_WIDTH) |i| {
         if (i < filled) {
             putByte(buf, &pos, '#');
         } else {

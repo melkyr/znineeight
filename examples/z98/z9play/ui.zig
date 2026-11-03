@@ -92,9 +92,8 @@ var g_stream_is_flac: bool = false;
 var g_player: player.Player = undefined;
 
 fn fillSpaces(buf: []u8) void {
-    var i: usize = 0;
-    while (i < buf.len) : (i += 1) {
-        buf[i] = ' ';
+    for (buf) |*item| {
+        item.* = ' ';
     }
 }
 
@@ -147,8 +146,7 @@ fn putU64(buf: []u8, x: usize, v_in: u64) usize {
 fn setStatus(s: []const u8) void {
     var n: usize = s.len;
     if (n > g_status_buf.len) n = g_status_buf.len;
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         g_status_buf[i] = s[i];
     }
     g_status = g_status_buf[0..n];
@@ -187,8 +185,7 @@ fn isRootPath(p: []const u8) bool {
 fn copyPath(path: []const u8) bool {
     var n: usize = path.len;
     if (n > PATH_BUF) return false;
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         g_path_buf[i] = path[i];
     }
     g_path_len = n;
@@ -249,8 +246,7 @@ fn parentPath(out: []u8, path: []const u8) usize {
             return 3;
         }
     }
-    var k: usize = 0;
-    while (k < end) : (k += 1) {
+    for (0..end) |k| {
         out[k] = path[k];
     }
     return end;
@@ -277,10 +273,9 @@ fn isDotOrDotDot(name: []const u8) bool {
 fn suffixIgnoreCase(s: []const u8, suffix: []const u8) bool {
     if (s.len < suffix.len) return false;
     var off: usize = s.len - suffix.len;
-    var i: usize = 0;
-    while (i < suffix.len) : (i += 1) {
+    for (suffix) |sb, i| {
         var a: u8 = s[off + i];
-        var b: u8 = suffix[i];
+        var b: u8 = sb;
         if (a >= 'A' and a <= 'Z') a += 32;
         if (b >= 'A' and b <= 'Z') b += 32;
         if (a != b) return false;
@@ -484,9 +479,8 @@ fn stopPlayback() void {
 }
 
 fn tagValue(tags: []vi.Tag, key: []const u8) []const u8 {
-    var i: usize = 0;
-    while (i < tags.len) : (i += 1) {
-        if (std.str.eql(tags[i].key, key)) return tags[i].value;
+    for (tags) |tag| {
+        if (std.str.eql(tag.key, key)) return tag.value;
     }
     var empty: []const u8 = "";
     return empty;
@@ -660,8 +654,7 @@ fn playTrack(path: []const u8) bool {
     g_has_track = true;
     g_current_len = path.len;
     if (g_current_len > PATH_BUF) g_current_len = PATH_BUF;
-    var i: usize = 0;
-    while (i < g_current_len) : (i += 1) {
+    for (0..g_current_len) |i| {
         g_current_buf[i] = path[i];
     }
     g_base_ticks = std.time.ticksMs();
@@ -672,10 +665,9 @@ fn playTrack(path: []const u8) bool {
 }
 
 fn syncPlaylistCurrent() void {
-    var i: usize = 0;
-    while (i < g_playlist_len) : (i += 1) {
+    for (0..g_playlist_len) |i| {
         if (std.str.eql(g_playlist[i], g_current_buf[0..g_current_len])) {
-            g_playlist_index = i;
+            g_playlist_index = @intCast(usize, i);
             g_playlist_has_current = true;
             return;
         }
@@ -688,8 +680,7 @@ fn addToPlaylist(path: []const u8) void {
         setStatus("playlist full");
         return;
     }
-    var i: usize = 0;
-    while (i < g_playlist_len) : (i += 1) {
+    for (0..g_playlist_len) |i| {
         if (std.str.eql(g_playlist[i], path)) {
             setStatus("already in playlist");
             return;
@@ -699,8 +690,7 @@ fn addToPlaylist(path: []const u8) void {
         setStatus("out of memory");
         return;
     };
-    i = 0;
-    while (i < path.len) : (i += 1) {
+    for (0..path.len) |i| {
         raw[i] = path[i];
     }
     g_playlist[g_playlist_len] = raw[0..path.len];
@@ -715,9 +705,10 @@ fn removeCurrentFromPlaylist() void {
     }
     var idx: usize = 0;
     var found: bool = false;
-    while (idx < g_playlist_len) : (idx += 1) {
-        if (std.str.eql(g_playlist[idx], g_current_buf[0..g_current_len])) {
+    for (0..g_playlist_len) |k| {
+        if (std.str.eql(g_playlist[k], g_current_buf[0..g_current_len])) {
             found = true;
+            idx = @intCast(usize, k);
             break;
         }
     }
@@ -903,9 +894,8 @@ fn handleKey(k: contract.Key, quit: *bool) void {
 }
 
 fn topRow(buf: []u8) void {
-    var i: usize = 0;
-    while (i < WIDTH) : (i += 1) {
-        buf[i] = '-';
+    for (buf) |*item| {
+        item.* = '-';
     }
     buf[0] = '+';
     buf[WIDTH - 1] = '+';
@@ -920,9 +910,8 @@ fn contentRow(buf: []u8) void {
 }
 
 fn separatorRow(buf: []u8) void {
-    var i: usize = 0;
-    while (i < WIDTH) : (i += 1) {
-        buf[i] = '-';
+    for (buf) |*item| {
+        item.* = '-';
     }
     buf[0] = '+';
     buf[SEP_COL] = '+';
@@ -937,9 +926,8 @@ fn helpRow(buf: []u8, text: []const u8) void {
 }
 
 fn bottomRow(buf: []u8) void {
-    var i: usize = 0;
-    while (i < WIDTH) : (i += 1) {
-        buf[i] = '-';
+    for (buf) |*item| {
+        item.* = '-';
     }
     buf[0] = '+';
     buf[WIDTH - 1] = '+';

@@ -353,8 +353,7 @@ pub fn vorbisNext(ctx: *void, pcm_out: []i16) DecoderError!usize {
             };
             if (f > 0) {
                 var n: usize = f * ch;
-                var i: usize = 0;
-                while (i < n) : (i += 1) pcm_out[i] = c.tmp[i];
+                for (0..n) |i| pcm_out[i] = c.tmp[i];
                 return f;
             }
         } else {

@@ -271,9 +271,8 @@ fn writeDurationMs(ms: u64) void {
 
 // The value for `key` (already uppercase) among `tags`, or "" when absent.
 fn tagValue(tags: []vi.Tag, key: []const u8) []const u8 {
-    var i: usize = 0;
-    while (i < tags.len) : (i += 1) {
-        if (std.str.eql(tags[i].key, key)) return tags[i].value;
+    for (tags) |tag| {
+        if (std.str.eql(tag.key, key)) return tag.value;
     }
     var empty: []const u8 = "";
     return empty;

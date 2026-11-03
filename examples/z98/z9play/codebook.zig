@@ -80,9 +80,8 @@ pub fn buildDecodeTable(arena: *std.arena.Arena, cb: vs.Codebook) ogg.OggError!D
     var entries_usize: usize = @intCast(usize, cb.entries);
     var raw_codes: [*]u8 = std.arena.alloc(arena, entries_usize * @sizeOf(u32)) catch return error.OutOfMemory;
     var codes: []u32 = @ptrCast([*]u32, raw_codes)[0..entries_usize];
-    var i: u32 = 0;
-    while (i < cb.entries) : (i += 1) {
-        codes[@intCast(usize, i)] = 0;
+    for (codes) |*item| {
+        item.* = 0;
     }
 
     // Canonical codeword assignment (libvorbis _make_words): entries are
@@ -90,30 +89,27 @@ pub fn buildDecodeTable(arena: *std.arena.Arena, cb: vs.Codebook) ogg.OggError!D
     // its length that does not conflict with an already-claimed node. `marker`
     // is u64 (values stay <= 2^32) so no increment can trap under -fsafe.
     var marker: [33]u64 = undefined;
-    var mj: usize = 0;
-    while (mj < 33) : (mj += 1) {
-        marker[mj] = 0;
+    for (marker) |*item| {
+        item.* = 0;
     }
     var used: u32 = 0;
     var max_len: u32 = 0;
     var single_sym: i32 = -1;
-    i = 0;
-    while (i < cb.entries) : (i += 1) {
-        var L: u32 = @intCast(u32, cb.lengths[@intCast(usize, i)]);
+    for (codes) |*item, i| {
+        var L: u32 = @intCast(u32, cb.lengths[i]);
         if (L == 0) continue;
         if (L > 32) return error.BadVersion;
         var entry: u64 = marker[@intCast(usize, L)];
         if (L < 32) {
             var limit: u64 = 1;
-            var t: u32 = 0;
-            while (t < L) : (t += 1) {
+            for (0..L) |_| {
                 limit = limit * 2;
             }
             if (entry >= limit) return error.BadVersion; // overpopulated tree
         }
 
 
-        codes[@intCast(usize, i)] = @intCast(u32, entry);
+        item.* = @intCast(u32, entry);
 
         // Advance the shorter markers that now sit above a claimed node.
         var j: u32 = L;
@@ -147,8 +143,7 @@ pub fn buildDecodeTable(arena: *std.arena.Arena, cb: vs.Codebook) ogg.OggError!D
     if (used == 1) {
         // Single-entry codebooks (spec errata): the one used entry must have
         // length 1; decode always returns it after sinking one bit.
-        i = 0;
-        while (i < cb.entries) : (i += 1) {
+        for (0..cb.entries) |i| {
             if (cb.lengths[@intCast(usize, i)] != 0) {
                 if (cb.lengths[@intCast(usize, i)] != 1) return error.BadVersion;
                 single_sym = @intCast(i32, i);
@@ -175,22 +170,19 @@ pub fn buildDecodeTable(arena: *std.arena.Arena, cb: vs.Codebook) ogg.OggError!D
     var left: []i32 = @ptrCast([*]i32, raw_l)[0..nodes];
     var right: []i32 = @ptrCast([*]i32, raw_r)[0..nodes];
     var sym: []i32 = @ptrCast([*]i32, raw_s)[0..nodes];
-    var nc: usize = 0;
-    while (nc < nodes) : (nc += 1) {
+    for (0..nodes) |nc| {
         left[nc] = -1;
         right[nc] = -1;
         sym[nc] = -1;
     }
 
     var node_count: u32 = 1; // node 0 is the root
-    i = 0;
-    while (i < cb.entries) : (i += 1) {
+    for (0..cb.entries) |i| {
         var L: u32 = @intCast(u32, cb.lengths[@intCast(usize, i)]);
         if (L == 0) continue;
         var code: u32 = codes[@intCast(usize, i)];
         var node: u32 = 0;
-        var b: u32 = 0;
-        while (b < L) : (b += 1) {
+        for (0..L) |b| {
             var sh: u32 = L - 1 - b;
             var bit: u32 = (code >> sh) & 1;
 
@@ -276,10 +268,9 @@ pub fn entryToVector(arena: *std.arena.Arena, dt: *const DecodeTable, entry: u32
     var raw: [*]u8 = std.arena.alloc(arena, dims * @sizeOf(f64)) catch return error.OutOfMemory;
     var out: []f64 = @ptrCast([*]f64, raw)[0..dims];
     var last: f64 = 0.0;
-    var i: u32 = 0;
     if (dt.lookup_type == 1) {
         var divisor: u64 = 1;
-        while (i < dt.dimensions) : (i += 1) {
+        for (0..dt.dimensions) |i| {
             var off: u64 = (@as(u64, entry) / divisor) % @as(u64, dt.lookup_values);
             var m: f64 = @intToFloat(f64, dt.multiplicands[@intCast(usize, off)]);
             var val: f64 = m * dt.delta_value + dt.min_value + last;
@@ -289,7 +280,7 @@ pub fn entryToVector(arena: *std.arena.Arena, dt: *const DecodeTable, entry: u32
         }
     } else {
         var off: u64 = @as(u64, entry) * @as(u64, dt.dimensions);
-        while (i < dt.dimensions) : (i += 1) {
+        for (0..dt.dimensions) |i| {
             var m: f64 = @intToFloat(f64, dt.multiplicands[@intCast(usize, off)]);
             var val: f64 = m * dt.delta_value + dt.min_value + last;
             out[@intCast(usize, i)] = val;

@@ -145,9 +145,8 @@ fn clampIndex(v: i32) u32 {
 }
 
 fn zeroCurve(out: []f64) void {
-    var i: usize = 0;
-    while (i < out.len) : (i += 1) {
-        out[i] = 0.0;
+    for (out) |*item| {
+        item.* = 0.0;
     }
 }
 
@@ -158,8 +157,7 @@ fn lowNeighbor(floor: vs.Floor, p: u32) u32 {
     var currentx: u32 = floor.x_list[@intCast(usize, p)];
     var lo: u32 = 0;
     var lx: u32 = 0;
-    var j: u32 = 0;
-    while (j < p) : (j += 1) {
+    for (0..p) |j| {
         var x: u32 = floor.x_list[@intCast(usize, j)];
         if (x > lx and x < currentx) {
             lo = j;
@@ -175,8 +173,7 @@ fn highNeighbor(floor: vs.Floor, p: u32) u32 {
     var currentx: u32 = floor.x_list[@intCast(usize, p)];
     var hi: u32 = 1;
     var hx: u32 = floor.x_list[1];
-    var j: u32 = 0;
-    while (j < p) : (j += 1) {
+    for (0..p) |j| {
         var x: u32 = floor.x_list[@intCast(usize, j)];
         if (x < hx and x > currentx) {
             hi = j;
@@ -268,8 +265,7 @@ pub fn decodeFloor1(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, bi
     // floor1_step2_flag, inverted: a set flag (an un-decoded/predicted point)
     // is stored as 0x8000 (libvorbis's convention) so it is skipped in step 2.
     var fit: [65]i32 = undefined;
-    var z: usize = 0;
-    while (z < posts) : (z += 1) fit[z] = 0;
+    for (0..posts) |z| fit[z] = 0;
 
     // An end-of-packet during these reads yields zero bits (spec 2.1.8), which
     // is a nominal read, not the "unused" condition.
@@ -280,8 +276,7 @@ pub fn decodeFloor1(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, bi
 
     // --- per-partition Y decode (spec 7.2.3) ---
     var j: usize = 2;
-    var pi: u32 = 0;
-    while (pi < floor.partition_count) : (pi += 1) {
+    for (0..floor.partition_count) |pi| {
         var cls: usize = @intCast(usize, floor.partition_class[@intCast(usize, pi)]);
         var cdim: u32 = floor.class_dimensions[cls];
         var cbits: u32 = floor.class_subclasses[cls];
@@ -297,8 +292,7 @@ pub fn decodeFloor1(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, bi
             }
             cval = @intCast(u32, cv);
         }
-        var k: u32 = 0;
-        while (k < cdim) : (k += 1) {
+        for (0..cdim) |_| {
             var sub: usize = @intCast(usize, cval & (csub - 1));
             cval = cval >> cbits;
             var sbook: i16 = floor.subclass_books[cls * 8 + sub];
@@ -358,17 +352,16 @@ pub fn decodeFloor1(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, bi
     // X values are unique) and render contiguous segments between anchor
     // points, then the constant tail out to n. ---
     var order: [65]u32 = undefined;
-    i = 0;
-    while (i < posts) : (i += 1) order[i] = @intCast(u32, i);
-    i = 0;
-    while (i < posts) : (i += 1) {
-        var m: usize = i;
-        var k2: usize = i + 1;
+    for (0..posts) |idx| order[idx] = @intCast(u32, idx);
+    for (0..posts) |idx| {
+        var ii: usize = @intCast(usize, idx);
+        var m: usize = ii;
+        var k2: usize = ii + 1;
         while (k2 < posts) : (k2 += 1) {
             if (floor.x_list[@intCast(usize, order[k2])] < floor.x_list[@intCast(usize, order[m])]) m = k2;
         }
-        var tmp: u32 = order[i];
-        order[i] = order[m];
+        var tmp: u32 = order[ii];
+        order[ii] = order[m];
         order[m] = tmp;
     }
 

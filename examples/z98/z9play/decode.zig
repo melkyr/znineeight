@@ -115,10 +115,9 @@ fn ilog(x: u32) u32 {
 fn allocRows(arena: *std.arena.Arena, ch: usize, len: u32) DecodeError![][]f64 {
     var raw: [*]u8 = std.arena.alloc(arena, ch * @sizeOf([]f64)) catch return error.OutOfMemory;
     var rows: [][]f64 = @ptrCast([*][]f64, raw)[0..ch];
-    var i: usize = 0;
-    while (i < ch) : (i += 1) {
+    for (rows) |*item| {
         var r: [*]u8 = std.arena.alloc(arena, @intCast(usize, len) * @sizeOf(f64)) catch return error.OutOfMemory;
-        rows[i] = @ptrCast([*]f64, r)[0..@intCast(usize, len)];
+        item.* = @ptrCast([*]f64, r)[0..@intCast(usize, len)];
     }
     return rows;
 }
@@ -148,9 +147,8 @@ pub fn initDecoderState(arena: *std.arena.Arena, setup: vs.Setup, channels: u8, 
     var cnt: usize = setup.codebooks.len;
     var t_raw: [*]u8 = std.arena.alloc(arena, cnt * @sizeOf(cbk.DecodeTable)) catch return error.OutOfMemory;
     var tables: []cbk.DecodeTable = @ptrCast([*]cbk.DecodeTable, t_raw)[0..cnt];
-    var c: usize = 0;
-    while (c < cnt) : (c += 1) {
-        tables[c] = cbk.buildDecodeTable(arena, setup.codebooks[c]) catch |e| {
+    for (tables) |*item, c| {
+        item.* = cbk.buildDecodeTable(arena, setup.codebooks[c]) catch |e| {
             if (e == error.OutOfMemory) return error.OutOfMemory;
             return error.BadVersion;
         };
@@ -273,11 +271,10 @@ pub fn buildWindowCache(arena: *std.arena.Arena, bs0: u32, bs1: u32) DecodeError
 
     var raw: [*]u8 = std.arena.alloc(arena, 4 * @sizeOf([]f64)) catch return error.OutOfMemory;
     var long: [][]f64 = @ptrCast([*][]f64, raw)[0..4];
-    var p: u32 = 0;
-    while (p < 4) : (p += 1) {
+    for (long) |*item, p| {
         var row: []f64 = try allocF64(arena, bs1);
-        buildWindow(bs1, bs0, true, p / 2, p % 2, row, slope);
-        long[@intCast(usize, p)] = row;
+        buildWindow(bs1, bs0, true, @intCast(u32, p / 2), @intCast(u32, p % 2), row, slope);
+        item.* = row;
     }
     return WindowCache{ .short = short, .long = long };
 }
@@ -339,8 +336,7 @@ pub fn decodePacket(arena: *std.arena.Arena, setup: vs.Setup, state: *DecoderSta
     // spec 4.3.2: floor curve for each channel (channel order). A floor-0
     // stream is a clean UnsupportedFloor; an end-of-packet during floor decode
     // surfaces as `used == false` and a zeroed curve (silence for the channel).
-    var i: usize = 0;
-    while (i < ch) : (i += 1) {
+    for (0..ch) |i| {
         var sub: u32 = 0;
         if (mapping.mux.len > 0) {
             if (i >= mapping.mux.len) return error.BadVersion;
@@ -359,8 +355,7 @@ pub fn decodePacket(arena: *std.arena.Arena, setup: vs.Setup, state: *DecoderSta
 
     // spec 4.3.3: coupling dirties the unused list -- if either channel of a
     // coupled pair is used, both must have their residue decoded.
-    var cs: u32 = 0;
-    while (cs < mapping.coupling_steps) : (cs += 1) {
+    for (0..mapping.coupling_steps) |cs| {
         if (@intCast(usize, cs) >= mapping.coupling_magnitude.len) return error.BadVersion;
         if (@intCast(usize, cs) >= mapping.coupling_angle.len) return error.BadVersion;
         var m0: usize = @intCast(usize, mapping.coupling_magnitude[@intCast(usize, cs)]);
@@ -375,11 +370,9 @@ pub fn decodePacket(arena: *std.arena.Arena, setup: vs.Setup, state: *DecoderSta
     // spec 4.3.4: residue decode per submap (submap order). The affected
     // channels are gathered in channel order; decodeResidue zeroes and fills
     // the gathered rows in place.
-    var sub_i: u32 = 0;
-    while (sub_i < mapping.submaps) : (sub_i += 1) {
+    for (0..mapping.submaps) |sub_i| {
         var count: usize = 0;
-        i = 0;
-        while (i < ch) : (i += 1) {
+        for (0..ch) |i| {
             var s2: u32 = 0;
             if (mapping.mux.len > 0) s2 = @intCast(u32, mapping.mux[i]);
             if (s2 == sub_i) {
@@ -405,8 +398,7 @@ pub fn decodePacket(arena: *std.arena.Arena, setup: vs.Setup, state: *DecoderSta
         ci -= 1;
         var m: usize = @intCast(usize, mapping.coupling_magnitude[@intCast(usize, ci)]);
         var a: usize = @intCast(usize, mapping.coupling_angle[@intCast(usize, ci)]);
-        var k: usize = 0;
-        while (k < half) : (k += 1) {
+        for (0..half) |k| {
             var M: f64 = state.residue[m][k];
             var A: f64 = state.residue[a][k];
             if (M > 0.0) {
@@ -445,23 +437,19 @@ pub fn decodePacket(arena: *std.arena.Arena, setup: vs.Setup, state: *DecoderSta
     // dsp.imdct/dsp.imdctFft. (The PR-correct synthesis for an *unnormalized*
     // forward is (4/n)*raw, which is why the 4/n cancels.)
     var scale: f64 = 1.0;
-    i = 0;
-    while (i < ch) : (i += 1) {
-        var k: usize = 0;
-        while (k < half) : (k += 1) {
+    for (0..ch) |i| {
+        for (0..half) |k| {
             state.spectrum[k] = state.floors[i][k] * state.residue[i][k];
         }
         dsp.imdctFft(imdct_tab, state.spectrum[0..half], state.imdct_out[0..nus]);
-        var p: usize = 0;
-        while (p < nus) : (p += 1) {
+        for (0..nus) |p| {
             state.blocks[i][p] = state.imdct_out[p] * scale * frame_win[p];
         }
     }
 
     // Priming frame: no output, only seed the overlap tail.
     if (state.prev_n == 0) {
-        i = 0;
-        while (i < ch) : (i += 1) {
+        for (0..ch) |i| {
             var t: usize = 0;
             while (t < half) : (t += 1) {
                 state.tail[i][t] = state.blocks[i][half + t];
@@ -495,8 +483,7 @@ pub fn decodePacket(arena: *std.arena.Arena, setup: vs.Setup, state: *DecoderSta
         }
     }
 
-    i = 0;
-    while (i < ch) : (i += 1) {
+    for (0..ch) |i| {
         var t3: usize = 0;
         while (t3 < half) : (t3 += 1) {
             state.tail[i][t3] = state.blocks[i][half + t3];

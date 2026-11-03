@@ -49,9 +49,8 @@ pub fn parseId(packet: []const u8) ogg.OggError!IdHeader {
     if (packet.len < 30) return error.Truncated;
     if (packet[0] != 1) return error.BadVersion;
     var sig: []const u8 = "vorbis";
-    var i: usize = 0;
-    while (i < 6) : (i += 1) {
-        if (packet[1 + i] != sig[i]) return error.BadVersion;
+    for (sig) |b, i| {
+        if (packet[1 + i] != b) return error.BadVersion;
     }
     var version: u32 = rdU32(packet, 7);
     if (version != 0) return error.BadVersion;
@@ -88,8 +87,7 @@ pub const Comment = struct {
 // parser never aliases the caller's packet bytes.
 fn dupBytes(arena: *std.arena.Arena, src: []const u8) ogg.OggError![]u8 {
     var p: [*]u8 = std.arena.alloc(arena, src.len) catch return error.OutOfMemory;
-    var i: usize = 0;
-    while (i < src.len) : (i += 1) p[i] = src[i];
+    for (0..src.len) |i| p[i] = src[i];
     return p[0..src.len];
 }
 
@@ -104,9 +102,8 @@ pub fn parseComment(arena: *std.arena.Arena, packet: []const u8) ogg.OggError!Co
     if (packet.len < 11) return error.Truncated;
     if (packet[0] != 3) return error.BadVersion;
     var sig: []const u8 = "vorbis";
-    var i: usize = 0;
-    while (i < 6) : (i += 1) {
-        if (packet[1 + i] != sig[i]) return error.BadVersion;
+    for (sig) |b, i| {
+        if (packet[1 + i] != b) return error.BadVersion;
     }
 
     var off: usize = 7;
@@ -125,8 +122,7 @@ pub fn parseComment(arena: *std.arena.Arena, packet: []const u8) ogg.OggError!Co
 
     var raw: [*]u8 = std.arena.alloc(arena, count * @sizeOf(Tag)) catch return error.OutOfMemory;
     var tags: [*]Tag = @ptrCast([*]Tag, raw);
-    var n: usize = 0;
-    while (n < count) : (n += 1) {
+    for (0..count) |n| {
         if (off + 4 > packet.len) return error.Truncated;
         var clen: usize = @intCast(usize, rdU32(packet, off));
         off += 4;
