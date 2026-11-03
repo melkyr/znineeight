@@ -102,14 +102,14 @@ Build no-CRT for Win9x (see QUICK_REF for the full recipe):
 
 ```sh
 DUMP_TARGET="-osw" \
-EXTRA_LIBS="-luser32 -lgdi32 -lddraw" \
-EXTRA_CSRC="$PWD/sf/src/include/zig_gfx_wndproc.c" \
+EXTRA_LIBS="-luser32 -lgdi32" \
   bash scripts/win32_cross/cross_nocrt.sh <zig1> <entry.zig> <work> <out.exe>
 ```
 
-`EXTRA_CSRC` supplies the stdcall WndProc trampoline (Z98 cannot define a
-stdcall callback). The exe imports `DDRAW.DLL`, `GDI32.DLL`, `USER32.DLL`, and
-`KERNEL32.DLL`, never `MSVCRT.DLL`, and passes
+No extra C file is needed: DDraw is loaded dynamically from `ddraw.dll` and the
+window is polled (`GetClientRect`/`IsWindow`) instead of using a stdcall WndProc
+shim. The exe imports `GDI32.DLL`, `USER32.DLL`, and `KERNEL32.DLL` (never
+`DDRAW.DLL` or `MSVCRT.DLL`), and passes
 `check_win9x_imports.sh <exe> 9x`.
 
 ## API

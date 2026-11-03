@@ -26,11 +26,13 @@
 #   - shim symbols come from the emitted zig_nocrt.c / c_exit.c.
 #   - EXTRA_LIBS (default empty) is appended verbatim/word-split, so callers
 #     that do not set it keep the exact historical link line. The GUI tier sets
-#     EXTRA_LIBS="-luser32 -lgdi32 -lddraw".
+#     EXTRA_LIBS="-luser32 -lgdi32". DDraw is loaded dynamically at runtime, so
+#     no -lddraw import library is needed (or shipped).
 #   - EXTRA_CSRC (default empty) is a space-separated list of extra C sources
 #     compiled with the same no-CRT flags and linked after the emitted objects.
-#     The GUI tier passes sf/src/include/zig_gfx_wndproc.c (the stdcall WndProc
-#     trampoline Z98 cannot express). Unset keeps every other caller unchanged.
+#     The GUI programs no longer need an extra C file (the old stdcall WndProc
+#     trampoline is gone; window messages are polled). Unset keeps every other
+#     caller unchanged.
 #   - Program choice: the dump MUST be no-CRT-clean. examples/z98/hello is the
 #     proven candidate; game_of_life is NOT (its emitted main calls system("cls")
 #     -> unresolved msvcrt `system`). See task-WIN32-report.md ## Task 4.

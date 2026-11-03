@@ -24,8 +24,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9
 
 # no-CRT Win9x exe
 DUMP_TARGET="-osw" \
-EXTRA_LIBS="-luser32 -lgdi32 -lddraw" \
-EXTRA_CSRC="$PWD/sf/src/include/zig_gfx_wndproc.c" \
+EXTRA_LIBS="-luser32 -lgdi32" \
   bash scripts/win32_cross/cross_nocrt.sh /tmp/z9/zig1_5_clean \
     examples/z98/z9edit/main.zig /tmp/z9edit/work /tmp/z9edit/z9edit.exe
 
@@ -33,8 +32,9 @@ EXTRA_CSRC="$PWD/sf/src/include/zig_gfx_wndproc.c" \
 wine /tmp/z9edit/z9edit.exe path\to\file.zig
 ```
 
-The exe passes `check_win9x_imports.sh z9edit.exe 9x` with `DDRAW/GDI32/
-USER32/KERNEL32` and **no `msvcrt.dll`**.
+No extra C file is needed: DDraw is loaded dynamically and the window is polled.
+The exe passes `check_win9x_imports.sh z9edit.exe 9x` with `GDI32/USER32/
+KERNEL32` (no `DDRAW.DLL`) and **no `msvcrt.dll`**.
 
 ## Usage
 

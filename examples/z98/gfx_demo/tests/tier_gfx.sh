@@ -4,9 +4,10 @@
 # POSIX sh. Run from anywhere (paths resolved from this script).
 #
 # (a) Build examples/z98/gfx_demo/main.zig through the no-CRT mingw harness
-#     (scripts/win32_cross/cross_nocrt.sh) with EXTRA_LIBS="-luser32 -lgdi32
-#     -lddraw". The exe must be PE32 i386, import DDRAW/GDI32/USER32 and never
-#     MSVCRT, and pass the closed-world 9x import gate.
+#     (scripts/win32_cross/cross_nocrt.sh) with EXTRA_LIBS="-luser32 -lgdi32"
+#     (no extra C file: DDraw is loaded dynamically and the window is polled).
+#     The exe must be PE32 i386, import GDI32/USER32 (never DDRAW or MSVCRT),
+#     and pass the closed-world 9x import gate.
 # (b) Headless deterministic gate: run the real .exe under Wine with
 #     `--smoke 30 --dump-grid` (gfxOpenMemory: no window, no X), then compare
 #     the produced grid.txt byte-for-byte with tests/golden/grid.txt.
@@ -88,8 +89,7 @@ cd "$ROOT" || exit 1
 echo "== (a) no-CRT build + import gate =="
 BUILD_LOG="$OUT/build.log"
 COMPILE_RSS="n/a"
-EXTRA_LIBS="-luser32 -lgdi32 -lddraw" \
-EXTRA_CSRC="$ROOT/sf/src/include/zig_gfx_wndproc.c" \
+EXTRA_LIBS="-luser32 -lgdi32" \
     bash "$CROSS" "$ZIG" "$ENTRY" "$OUT/work" "$EXE" >"$BUILD_LOG" 2>&1
 BUILD_RC=$?
 # The 16 MB target is the Z98 compile (dump) of the demo, not the host gcc
@@ -142,13 +142,18 @@ DLLS="$(i686-w64-mingw32-objdump -p "$EXE" 2>/dev/null \
     | sed -n 's/.*DLL Name: //p' | tr -d '\r' | tr '[:lower:]' '[:upper:]' | sort -u)"
 echo "$DLLS" | sed 's/^/       DLL /'
 MISSING_DLL=""
-for d in DDRAW.DLL GDI32.DLL USER32.DLL; do
+for d in GDI32.DLL USER32.DLL; do
     echo "$DLLS" | grep -qx "$d" || MISSING_DLL="$MISSING_DLL $d"
 done
 if [ -z "$MISSING_DLL" ]; then
-    pass_case "DLL imports include DDRAW.DLL + GDI32.DLL + USER32.DLL"
+    pass_case "DLL imports include GDI32.DLL + USER32.DLL"
 else
     fail_case "missing DLL import(s):$MISSING_DLL"
+fi
+if echo "$DLLS" | grep -qx 'DDRAW.DLL'; then
+    fail_case "DDRAW.DLL imported (must be loaded dynamically)"
+else
+    pass_case "no DDRAW.DLL import (loaded dynamically)"
 fi
 if echo "$DLLS" | grep -qx 'MSVCRT.DLL'; then
     fail_case "MSVCRT.DLL imported on the no-CRT profile"

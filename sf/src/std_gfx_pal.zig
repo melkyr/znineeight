@@ -488,8 +488,14 @@ fn surfaceVtbl(p: *void) *const Surface7Vtbl {
 }
 
 // --- external Win32 / GDI / DDraw symbols ----------------------------------
-pub extern "stdcall" fn DirectDrawCreate(lpGuid: *void, out: **void, outer: *void) u32;
+// DirectDrawCreate is resolved dynamically from ddraw.dll at open time, so the
+// exe imports no DDRAW.DLL (the Win9x build scripts ship no ddraw import lib).
+const DirectDrawCreateFn = extern "stdcall" fn(lpGuid: *void, out: **void, outer: *void) u32;
 pub extern "stdcall" fn GetModuleHandleA(name: *void) *void;
+pub extern "stdcall" fn LoadLibraryA(name: [*]const u8) *void;
+pub extern "stdcall" fn GetProcAddress(mod: *void, name: [*]const u8) *void;
+pub extern "stdcall" fn FreeLibrary(mod: *void) i32;
+pub extern "stdcall" fn IsWindow(hwnd: *void) i32;
 pub extern "stdcall" fn RegisterClassA(wc: *void) u16;
 pub extern "stdcall" fn CreateWindowExA(ex_style: u32, cls: *void, title: *void, style: u32, x: i32, y: i32, w: i32, h: i32, parent: *void, menu: *void, inst: *void, param: *void) *void;
 pub extern "stdcall" fn DefWindowProcA(hwnd: *void, msg: u32, wparam: u32, lparam: i32) i32;
@@ -541,14 +547,8 @@ pub extern "stdcall" fn GlobalUnlock(mem: *void) i32;
 pub extern "stdcall" fn GlobalFree(mem: *void) *void;
 pub extern "stdcall" fn GlobalSize(mem: *void) u32;
 
-// C runtime trampoline (zig_nocrt.c): owns the stdcall WndProc and records
-// SENT WM_SIZE/WM_CLOSE messages for this poll loop. cdecl; the emitted C uses
-// C89 implicit declarations for these helpers (32-bit pointer/int compatible).
-extern "c" fn z98_gfx_set_defproc(p: *void) void;
-extern "c" fn z98_gfx_wndproc_addr() usize;
-extern "c" fn z98_gfx_reset() void;
-extern "c" fn z98_gfx_resize_take(w: *u32, h: *u32) i32;
-extern "c" fn z98_gfx_close_take() i32;
+// The window registers DefWindowProcA directly; there is no stdcall WndProc
+// shim. Resize/close state is polled from GetClientRect/IsWindow below.
 
 // --- PAL state -------------------------------------------------------------
 pub const State = struct {
@@ -556,6 +556,8 @@ pub const State = struct {
     hinst: *void,
     dd: *void,
     dd7: *void,
+    dd_lib: *void,
+    dd_create: *void,
     primary: *void,
     back: *void,
     atlas_color_dc: *void,
@@ -582,6 +584,9 @@ pub const State = struct {
     bufh: u32,
     present_w: u32,
     present_h: u32,
+    last_client_w: u32,
+    last_client_h: u32,
+    window_gone: bool,
     blt_logged: bool,
     blt_failed: bool,
     pending: bool,
@@ -744,6 +749,14 @@ fn releaseDdraw(st: *State) void {
     st.clipper = nullVoid();
     st.dd7 = nullVoid();
     st.dd = nullVoid();
+}
+
+fn releaseDdrawLib(st: *State) void {
+    if (!isNull(st.dd_lib)) {
+        _ = FreeLibrary(st.dd_lib);
+    }
+    st.dd_lib = nullVoid();
+    st.dd_create = nullVoid();
 }
 
 fn makeSurface(st: *State, w: u32, h: u32, primary: bool, label: []const u8) *void {
@@ -978,10 +991,34 @@ pub fn getTheme(st: *State) u8 {
 
 // Full DirectDraw7 open sequence. Any failed step (including the clipper) is a
 // startup fallback trigger; the caller then releases these objects and uses GDI.
+// ddraw.dll is loaded dynamically so the exe imports no DDRAW.DLL.
+fn loadDdraw(st: *State) bool {
+    var dll_name: [32]u8 = undefined;
+    copyCstr("ddraw.dll", dll_name[0..]);
+    const lib = LoadLibraryA(@ptrCast([*]const u8, &dll_name[0]));
+    if (isNull(lib)) {
+        logLine("LoadLibraryA(ddraw.dll) failed");
+        return false;
+    }
+    st.dd_lib = lib;
+    var fn_name: [32]u8 = undefined;
+    copyCstr("DirectDrawCreate", fn_name[0..]);
+    const proc = GetProcAddress(lib, @ptrCast([*]const u8, &fn_name[0]));
+    if (isNull(proc)) {
+        logLine("GetProcAddress(DirectDrawCreate) failed");
+        releaseDdrawLib(st);
+        return false;
+    }
+    st.dd_create = proc;
+    return true;
+}
+
 fn openDdraw(st: *State) bool {
+    if (!loadDdraw(st)) return false;
+    const create: DirectDrawCreateFn = @ptrCast(DirectDrawCreateFn, st.dd_create);
     // DirectDraw: v1 create, then upgrade to v7 (the T0-pre gotcha).
     var dd_raw: *void = nullVoid();
-    var hr = DirectDrawCreate(nullVoid(), &dd_raw, nullVoid());
+    var hr = create(nullVoid(), &dd_raw, nullVoid());
     logHr("DirectDrawCreate", hr);
     if (hr != S_OK) return false;
     if (isNull(dd_raw)) {
@@ -1026,6 +1063,8 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.hinst = nullVoid();
     st.dd = nullVoid();
     st.dd7 = nullVoid();
+    st.dd_lib = nullVoid();
+    st.dd_create = nullVoid();
     st.primary = nullVoid();
     st.back = nullVoid();
     st.atlas_color_dc = nullVoid();
@@ -1051,6 +1090,9 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.bufh = OFFSCREEN_H;
     st.present_w = 0;
     st.present_h = 0;
+    st.last_client_w = 0;
+    st.last_client_h = 0;
+    st.window_gone = false;
     st.blt_logged = false;
     st.blt_failed = false;
     st.pending = false;
@@ -1070,14 +1112,10 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     const hinst = GetModuleHandleA(nullVoid());
     st.hinst = hinst;
 
-    // The WndProc is the C trampoline (Z98 cannot define a stdcall function).
-    // It records SENT WM_SIZE/WM_CLOSE messages for this poll loop and forwards
-    // everything to DefWindowProcA (address supplied here, no user32 import in
-    // the runtime shim itself).
-    z98_gfx_reset();
-    z98_gfx_set_defproc(@ptrCast(*void, DefWindowProcA));
-    const wnd_addr = z98_gfx_wndproc_addr();
-    const wnd_void: *void = @intToPtr(*void, wnd_addr);
+    // Register DefWindowProcA directly (Z98 cannot define a stdcall callback).
+    // Resize/close are polled from GetClientRect/IsWindow in pollEvent instead
+    // of being recorded by a C WndProc shim.
+    const wnd_void: *void = @ptrCast(*void, DefWindowProcA);
     const wnd_proc: WndProc = @ptrCast(WndProc, wnd_void);
 
     var wc: WndClassA = WndClassA{
@@ -1102,6 +1140,11 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     if (isNull(st.hwnd)) {
         close(st);
         return false;
+    }
+    var init_crc: Rect = undefined;
+    if (GetClientRect(st.hwnd, @ptrCast(*void, &init_crc)) != 0) {
+        if (init_crc.right > init_crc.left) st.last_client_w = @intCast(u32, init_crc.right - init_crc.left);
+        if (init_crc.bottom > init_crc.top) st.last_client_h = @intCast(u32, init_crc.bottom - init_crc.top);
     }
     _ = ShowWindow(st.hwnd, SW_SHOW);
     _ = UpdateWindow(st.hwnd);
@@ -1142,6 +1185,7 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     if (!use_gdi) {
         if (!openDdraw(st)) {
             releaseDdraw(st);
+            releaseDdrawLib(st);
             use_gdi = true;
         }
     }
@@ -1189,6 +1233,7 @@ pub fn close(st: *State) void {
     releaseAtlas(st);
     releaseGdiBack(st);
     releaseDdraw(st);
+    releaseDdrawLib(st);
     st.backend = BACKEND_NONE;
     var i: usize = 0;
     while (i < 16) : (i += 1) {
@@ -1465,10 +1510,9 @@ fn deferKeyUp(st: *State, code: u16, ch: u8, mods: u8) void {
     st.def_mods = mods;
 }
 
-// Test-only: resize the real top-level window so Windows sends WM_SIZE to the
-// WndProc (the production path). AdjustWindowRect converts the requested
-// client size into the outer window size; the poll loop then takes the recorded
-// client size and resizes the back buffer/grid.
+// Test-only: resize the real top-level window. AdjustWindowRect converts the
+// requested client size into the outer window size; pollEvent then observes the
+// new client size through GetClientRect and resizes the back buffer/grid.
 pub fn testResizeClient(st: *State, cols: u32, rows: u32) bool {
     if (isNull(st.hwnd)) return false;
     if (cols == 0 or rows == 0) return false;
@@ -1520,41 +1564,47 @@ fn modsNow() u8 {
 pub fn pollEvent(st: *State, raw: *RawEvent) bool {
     if (isNull(st.hwnd)) return false;
     if (fillDeferred(st, raw)) return true;
-    if (z98_gfx_close_take() != 0) {
-        zeroRaw(raw);
-        raw.kind = EK_CLOSE;
-        return true;
+    if (IsWindow(st.hwnd) == 0) {
+        if (!st.window_gone) {
+            st.window_gone = true;
+            zeroRaw(raw);
+            raw.kind = EK_CLOSE;
+            return true;
+        }
+        return false;
     }
-    var rw: u32 = 0;
-    var rh: u32 = 0;
-    if (z98_gfx_resize_take(&rw, &rh) != 0) {
-        zeroRaw(raw);
-        var cols: u32 = st.cols;
-        var rows: u32 = st.rows;
-        var pw: u32 = st.bufw;
-        var ph: u32 = st.bufh;
-        if (rw > 0 and rh > 0) {
-            var resized = false;
-            if (st.backend == BACKEND_GDI) {
-                resized = gdiResize(st, rw, rh);
-            } else {
-                resized = resizeBack(st, rw, rh);
-            }
-            if (resized) {
-                pw = rw;
-                ph = rh;
-                cols = if (st.cw == 0) 1 else rw / st.cw;
-                rows = if (st.ch == 0) 1 else rh / st.ch;
-                st.cols = cols;
-                st.rows = rows;
+    var crc: Rect = undefined;
+    if (GetClientRect(st.hwnd, @ptrCast(*void, &crc)) != 0) {
+        const cw_i: i32 = crc.right - crc.left;
+        const ch_i: i32 = crc.bottom - crc.top;
+        if (cw_i > 0 and ch_i > 0) {
+            const nw: u32 = @intCast(u32, cw_i);
+            const nh: u32 = @intCast(u32, ch_i);
+            if (nw != st.last_client_w or nh != st.last_client_h) {
+                var resized = false;
+                if (st.backend == BACKEND_GDI) {
+                    resized = gdiResize(st, nw, nh);
+                } else {
+                    resized = resizeBack(st, nw, nh);
+                }
+                st.last_client_w = nw;
+                st.last_client_h = nh;
+                zeroRaw(raw);
+                raw.kind = EK_RESIZE;
+                if (resized) {
+                    st.cols = if (st.cw == 0) 1 else nw / st.cw;
+                    st.rows = if (st.ch == 0) 1 else nh / st.ch;
+                    raw.x = nw;
+                    raw.y = nh;
+                } else {
+                    raw.x = st.bufw;
+                    raw.y = st.bufh;
+                }
+                raw.cols = st.cols;
+                raw.rows = st.rows;
+                return true;
             }
         }
-        raw.kind = EK_RESIZE;
-        raw.x = pw;
-        raw.y = ph;
-        raw.cols = cols;
-        raw.rows = rows;
-        return true;
     }
     zeroRaw(raw);
     var msg: Msg = undefined;

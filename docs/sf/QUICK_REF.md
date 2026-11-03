@@ -463,21 +463,21 @@ no-CRT harness and three additive hooks:
 ```bash
 cd /workspace/znineeight
 DUMP_TARGET="-osw" \
-EXTRA_LIBS="-luser32 -lgdi32 -lddraw" \
-EXTRA_CSRC="$PWD/sf/src/include/zig_gfx_wndproc.c" \
+EXTRA_LIBS="-luser32 -lgdi32" \
   bash scripts/win32_cross/cross_nocrt.sh <zig1> \
     examples/z98/z9edit/main.zig /tmp/z9edit/work /tmp/z9edit/z9edit.exe
 
 bash scripts/win32_cross/check_win9x_imports.sh /tmp/z9edit/z9edit.exe 9x
-# PASS: DDRAW/GDI32/USER32/KERNEL32, no MSVCRT
+# PASS: GDI32/USER32/KERNEL32, no DDRAW, no MSVCRT
 ```
 
 - `DUMP_TARGET="-osw"` is required when the program imports `std_time`/`std_os`
   (z9edit does, for the 2 s ident-idle timer); without it the emitted C takes
   the POSIX branches and the mingw link fails on `gettimeofday`/`fork`. The
   env var is empty by default, so every pre-existing caller is unchanged.
-- `EXTRA_CSRC` supplies the stdcall WndProc trampoline (`Z98` cannot define a
-  stdcall callback). `EXTRA_LIBS` adds DDraw/GDI/User32.
+- No extra C file is needed: DDraw is loaded dynamically from `ddraw.dll` and
+  the window is polled (`GetClientRect`/`IsWindow`) instead of using a stdcall
+  WndProc shim. `EXTRA_LIBS` adds GDI/User32 only (no `ddraw`).
 - The gate is `examples/z98/z9edit/tests/tier_edit_gui.sh` (build + import
   gate + compile RSS + Xvfb/Wine `--smoke` 2× save-byte golden + all three
   theme screenshots/save bytes + F2 cycle + bad-config fallback). `gfx_demo` has

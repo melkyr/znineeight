@@ -5,9 +5,10 @@
 #
 # (a) Build examples/z98/z9edit/main.zig no-CRT for Win9x through
 #     scripts/win32_cross/cross_nocrt.sh (DUMP_TARGET=-osw so std_time/std_os
-#     take the win32 branches; EXTRA_LIBS/EXTRA_CSRC for DDraw/GDI/User +
-#     the stdcall WndProc trampoline). PE32 i386, imports DDRAW/GDI32/USER32,
-#     never MSVCRT, and passes the closed-world 9x import gate.
+#     take the win32 branches; EXTRA_LIBS for GDI/User32 — no extra C file:
+#     DDraw is loaded dynamically and the window is polled). PE32 i386, imports
+#     GDI32/USER32 (never DDRAW or MSVCRT), and passes the closed-world 9x
+#     import gate.
 # (b) Compile max RSS of main.zig (--dump-c89) < 16 MB.
 # (c) Xvfb + Wine: `z9edit.exe --smoke edit_smoke.z98 out.tmp` twice, exit 0,
 #     out.tmp byte-identical to tests/fixtures/edit_smoke.expected both times.
@@ -109,13 +110,11 @@ cd "$ROOT" || exit 1
 echo "== (a) no-CRT build + import gate =="
 BUILD_LOG="$OUT/build.log"
 CONSOLE_BUILD_LOG="$OUT/build_console.log"
-EXTRA_LIBS="-luser32 -lgdi32 -lddraw" \
-EXTRA_CSRC="$ROOT/sf/src/include/zig_gfx_wndproc.c" \
+EXTRA_LIBS="-luser32 -lgdi32" \
 DUMP_TARGET="-osw" \
     bash "$CROSS" "$ZIG" "$ENTRY" "$OUT/work_console" "$CONSOLE_EXE" >"$CONSOLE_BUILD_LOG" 2>&1
 CONSOLE_RC=$?
-EXTRA_LIBS="-luser32 -lgdi32 -lddraw" \
-EXTRA_CSRC="$ROOT/sf/src/include/zig_gfx_wndproc.c" \
+EXTRA_LIBS="-luser32 -lgdi32" \
 DUMP_TARGET="-osw" \
 EXTRA_LDFLAGS="-Wl,--subsystem,windows" \
     bash "$CROSS" "$ZIG" "$ENTRY" "$OUT/work_gui" "$EXE" >"$BUILD_LOG" 2>&1
@@ -169,13 +168,18 @@ DLLS="$(i686-w64-mingw32-objdump -p "$EXE" 2>/dev/null \
     | sed -n 's/.*DLL Name: //p' | tr -d '\r' | tr '[:lower:]' '[:upper:]' | sort -u)"
 echo "$DLLS" | sed 's/^/       DLL /'
 MISSING_DLL=""
-for d in DDRAW.DLL GDI32.DLL USER32.DLL; do
+for d in GDI32.DLL USER32.DLL; do
     echo "$DLLS" | grep -qx "$d" || MISSING_DLL="$MISSING_DLL $d"
 done
 if [ -z "$MISSING_DLL" ]; then
-    pass_case "DLL imports include DDRAW.DLL + GDI32.DLL + USER32.DLL"
+    pass_case "DLL imports include GDI32.DLL + USER32.DLL"
 else
     fail_case "missing DLL import(s):$MISSING_DLL"
+fi
+if echo "$DLLS" | grep -qx 'DDRAW.DLL'; then
+    fail_case "DDRAW.DLL imported (must be loaded dynamically)"
+else
+    pass_case "no DDRAW.DLL import (loaded dynamically)"
 fi
 if echo "$DLLS" | grep -qx 'MSVCRT.DLL'; then
     fail_case "MSVCRT.DLL imported on the no-CRT profile"
