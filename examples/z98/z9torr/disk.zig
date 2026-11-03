@@ -50,27 +50,16 @@ fn blockOffset(t: torrent.Torrent, piece_index: u32, block_begin: u32) u64 {
 pub fn openTarget(arena: *std.arena.Arena, t: torrent.Torrent) DiskError!filemod.File {
     if (t.name.len == 0) return error.BadName;
     var f = filemod.open(arena, t.name, filemod.Mode.ReadWrite) catch return error.OpenFailed;
+    errdefer filemod.close(&f);
     if (t.total_length > 0) {
-        var sz: i64 = filemod.size(&f) catch {
-            filemod.close(&f);
-            return error.SizeFailed;
-        };
-        if (sz < 0) {
-            filemod.close(&f);
-            return error.SizeFailed;
-        }
+        var sz: i64 = filemod.size(&f) catch return error.SizeFailed;
+        if (sz < 0) return error.SizeFailed;
         if (@intCast(u64, sz) < t.total_length) {
             var last: i64 = @intCast(i64, t.total_length - 1);
-            _ = filemod.seek(&f, last, filemod.SeekWhence.Set) catch {
-                filemod.close(&f);
-                return error.SeekFailed;
-            };
+            _ = filemod.seek(&f, last, filemod.SeekWhence.Set) catch return error.SeekFailed;
             var zero: [1]u8 = undefined;
             zero[0] = 0;
-            _ = filemod.write(&f, zero[0..]) catch {
-                filemod.close(&f);
-                return error.WriteFailed;
-            };
+            _ = filemod.write(&f, zero[0..]) catch return error.WriteFailed;
         }
     }
     return f;

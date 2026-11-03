@@ -627,6 +627,7 @@ pub fn dhtDiscover(arena: *std.arena.Arena, bootstrap: []const u8, self_id: [20]
     if (out.len == 0 or bootstrap.len == 0) return 0;
     var d: Dht = undefined;
     dhtInit(&d, 0, self_id) catch return 0;
+    defer std_net.close(d.sock);
     std_net.udpSetTimeout(&d.sock, 1500) catch {};
     var total: usize = 0;
     var start: usize = 0;
@@ -640,7 +641,6 @@ pub fn dhtDiscover(arena: *std.arena.Arena, bootstrap: []const u8, self_id: [20]
             }
         }
     }
-    std_net.close(d.sock);
     return @intCast(u32, total);
 }
 
@@ -698,6 +698,8 @@ pub fn selfTest() i32 {
         fail("bind B");
         return 1;
     };
+    defer std_net.close(da.sock);
+    defer std_net.close(db.sock);
     std_net.udpSetTimeout(&da.sock, 2000) catch {};
     std_net.udpSetTimeout(&db.sock, 2000) catch {};
 
@@ -787,8 +789,6 @@ pub fn selfTest() i32 {
         return 1;
     }
 
-    std_net.close(da.sock);
-    std_net.close(db.sock);
     std_net.cleanup();
     var ok: []const u8 = "dht selftest: PASS (get_peers two-node discovery)\n";
     std.io.write(ok);
