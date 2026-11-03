@@ -9604,7 +9604,7 @@ fn writeMingwObjName(writer: *BufferedWriter, emitter: *C89Emitter, reach_n: usi
 }
 
 fn writeMingwPartialCmd(writer: *BufferedWriter, emitter: *C89Emitter, reach_n: usize, chunk_idx: usize, start: usize, end: usize) void {
-    var p: []const u8 = "gcc -m32 -r -o z98_l";
+    var p: []const u8 = "gcc -m32 -nostdlib -r -o z98_l";
     bufferedWriterWrite(writer, p);
     var nb: [10]u8 = undefined;
     var nl = itoa_mod.itoa(@intCast(u32, chunk_idx + 1), nb[0..]);
