@@ -290,7 +290,7 @@ echo "== test set session: z9play (stress) =="
 before=$FAILS
 run_set_case set_z9play "$OUT/z9play/prog" "$Z9DIR/tests/session_set_z9play.in" \
     "$EXP/set_z9play.txt" "$OUT/set-z9play.snap" \
-    "stopped at examples/z98/z9play/main.zig:453" "function main" \
+    "stopped at examples/z98/z9play/main.zig:481" "function main" \
     --info "$ROOT/examples/z98/z9play/testdata/short.ogg"
 [ "$FAILS" -eq "$before" ] && pass_case "z9play break/continue/step/dump session"
 
