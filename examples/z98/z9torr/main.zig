@@ -126,8 +126,7 @@ fn startsWithPrefix(s: []const u8, p: []const u8) bool {
 fn findUdpAnnounce(t: torrentlib.Torrent) ?[]const u8 {
     var pre: []const u8 = "udp://";
     if (startsWithPrefix(t.announce, pre)) return t.announce;
-    var i: u32 = 0;
-    while (i < t.announce_count) : (i += 1) {
+    for (0..t.announce_count) |i| {
         var u: []const u8 = t.announce_list[@intCast(usize, i)];
         if (startsWithPrefix(u, pre)) return u;
     }
@@ -145,9 +144,8 @@ fn announceTracked(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: [20]
 
 // Index of the first inactive scheduler peer slot (== `peers.len` if full).
 fn firstInactiveSlot() usize {
-    var j: usize = 0;
-    while (j < g_sched.peers.len) : (j += 1) {
-        if (!g_sched.peers[j].active) return j;
+    for (0..g_sched.peers.len) |j| {
+        if (!g_sched.peers[j].active) return @intCast(usize, j);
     }
     return g_sched.peers.len;
 }
@@ -157,8 +155,7 @@ fn firstInactiveSlot() usize {
 // so PEX-learned peers are dialed by exactly the same mechanism as DHT/tracker
 // peers. The client's real peer_id is copied into the slot for `makeHandshake`.
 fn spawnPeerAt(slot: usize, peer_id: [20]u8) void {
-    var pid_i: usize = 0;
-    while (pid_i < 20) : (pid_i += 1) {
+    for (0..20) |pid_i| {
         g_sched.peers[slot].peer_id[pid_i] = peer_id[pid_i];
     }
     g_peer_args[slot] = PeerArgs{ .ctx = &g_pctx, .peer = &g_sched.peers[slot] };
@@ -179,8 +176,7 @@ fn spawnPeerAt(slot: usize, peer_id: [20]u8) void {
 // Bytes covered by the verified pieces in `bits` (for the progress line).
 fn verifiedBytes(t: torrentlib.Torrent, bits: []u8, n: u32) u64 {
     var total: u64 = 0;
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         if (piecemod.bitGet(bits, i)) total += @intCast(u64, diskmod.pieceLength(t, i));
     }
     return total;
@@ -206,12 +202,11 @@ fn parseSeed(sv: []const u8) u32 {
 // (deterministic), else the millisecond clock. Out-param: C89 cannot return an
 // array from a function.
 fn makePeerId(out: *[20]u8) void {
-    var i: usize = 0;
-    while (i < 20) : (i += 1) {
-        out[i] = 0;
+    for (out) |*item| {
+        item.* = 0;
     }
     var prefix: []const u8 = "-Z9T01-";
-    i = 0;
+    var i: usize = 0;
     while (i < prefix.len and i < 20) : (i += 1) {
         out[i] = prefix[i];
     }
@@ -377,8 +372,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         n_pieces = @intCast(u32, (t.total_length + pl - 1) / pl);
     }
     var verified_count: u32 = 0;
-    var vi: u32 = 0;
-    while (vi < n_pieces) : (vi += 1) {
+    for (0..n_pieces) |vi| {
         if (piecemod.bitGet(rstate.completed_bits, vi)) verified_count += 1;
     }
 
@@ -413,8 +407,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.disk)), "disk error: scheduler init");
         return;
     };
-    var seed_i: u32 = 0;
-    while (seed_i < n_pieces) : (seed_i += 1) {
+    for (0..n_pieces) |seed_i| {
         if (piecemod.bitGet(rstate.completed_bits, seed_i)) {
             g_sched.piece_state[@intCast(usize, seed_i)].state = piecemod.BlockState.verified;
         }
@@ -424,8 +417,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // slots are otherwise undefined (schedulerInit leaves nested `Peer` fields
     // undefined), and PEX may activate them mid-run; zeroing keeps the run-wide
     // byte sums well-defined.
-    var zs: usize = 0;
-    while (zs < g_sched.peers.len) : (zs += 1) {
+    for (0..g_sched.peers.len) |zs| {
         g_sched.peers[zs].down_bytes = 0;
         g_sched.peers[zs].up_bytes = 0;
         g_started[zs] = false;
@@ -519,8 +511,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // The async scheduler is sized to the full slot capacity so PEX dynamic
     // spawns can register new tasks later; only started slots are added now.
     var sched = std.async.schedulerInit(g_task_ptrs[0..g_sched.peers.len]);
-    var ti: usize = 0;
-    while (ti < g_sched.peers.len) : (ti += 1) {
+    for (0..g_sched.peers.len) |ti| {
         if (g_started[ti]) _ = std.async.addTask(&sched, g_task_ptrs[ti]);
     }
 
@@ -554,8 +545,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         // count tracks live peers only. `removePeer` returns early when the
         // slot is already inactive, so repeated calls are safe; a peer whose
         // task is still live is left untouched.
-        var rj: usize = 0;
-        while (rj < g_sched.peers.len) : (rj += 1) {
+        for (0..g_sched.peers.len) |rj| {
             if (!g_started[rj]) continue;
             var rts = g_tasks[rj].state;
             if (rts == std.async.TaskState.done or rts == std.async.TaskState.cancelled) {
@@ -568,10 +558,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         // Spawn a coroutine for every active slot that has none yet, using the
         // same `spawnPeerAt` path as the startup candidates, so discovered peers
         // are actually dialed (not merely added).
-        var ds: usize = 0;
-        while (ds < g_sched.peers.len) : (ds += 1) {
+        for (0..g_sched.peers.len) |ds| {
             if (g_sched.peers[ds].active and !g_started[ds]) {
-                spawnPeerAt(ds, peer_id);
+                spawnPeerAt(@intCast(usize, ds), peer_id);
                 g_started[ds] = true;
                 _ = std.async.addTask(&sched, g_task_ptrs[ds]);
                 logmod.s("dyn spawn slot=");
@@ -592,8 +581,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         // drop) and treat any change as progress. The `!=` test keeps the u64
         // math underflow-safe.
         var dnow: u64 = 0;
-        var dj: usize = 0;
-        while (dj < g_sched.peers.len) : (dj += 1) {
+        for (0..g_sched.peers.len) |dj| {
             dnow += g_sched.peers[dj].down_bytes;
         }
         if (dnow != last_progress_bytes) {
@@ -604,8 +592,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         if (std.time.ticksMs() - last_progress_ms > STALL_MS) break;
 
         var live: bool = false;
-        var lt: usize = 0;
-        while (lt < g_sched.peers.len) : (lt += 1) {
+        for (0..g_sched.peers.len) |lt| {
             if (!g_started[lt]) continue;
             var ts = g_tasks[lt].state;
             if (ts != std.async.TaskState.done and ts != std.async.TaskState.cancelled) live = true;
@@ -617,8 +604,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             var dsum: u64 = 0;
             var usum: u64 = 0;
             var pc: u32 = 0;
-            var pj: usize = 0;
-            while (pj < g_sched.peers.len) : (pj += 1) {
+            for (0..g_sched.peers.len) |pj| {
                 if (g_sched.peers[pj].active) {
                     dsum += g_sched.peers[pj].down_bytes;
                     usum += g_sched.peers[pj].up_bytes;
@@ -700,8 +686,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // unless its slot was reused).
     var total_down: u64 = 0;
     var total_up: u64 = 0;
-    var sj: usize = 0;
-    while (sj < g_sched.peers.len) : (sj += 1) {
+    for (0..g_sched.peers.len) |sj| {
         total_down += g_sched.peers[sj].down_bytes;
         total_up += g_sched.peers[sj].up_bytes;
     }

@@ -18,9 +18,8 @@ var g_enabled: bool = false;
 // A value "looks like a path" when it carries a directory separator or an
 // extension; this keeps the documented `Z9TORR_LOG=1` form on the default path.
 fn looksLikePath(v: []const u8) bool {
-    var i: usize = 0;
-    while (i < v.len) : (i += 1) {
-        if (v[i] == '/' or v[i] == '.') return true;
+    for (v) |c| {
+        if (c == '/' or c == '.') return true;
     }
     return false;
 }

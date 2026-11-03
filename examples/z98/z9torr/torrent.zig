@@ -63,9 +63,8 @@ const MAX_COMPONENT: usize = 255;
 
 fn eqBytes(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
-    var i: usize = 0;
-    while (i < a.len) : (i += 1) {
-        if (a[i] != b[i]) return false;
+    for (a) |item, i| {
+        if (item != b[i]) return false;
     }
     return true;
 }
@@ -77,9 +76,8 @@ fn lowerAscii(c: u8) u8 {
 
 fn eqBytesIgnoreCase(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
-    var i: usize = 0;
-    while (i < a.len) : (i += 1) {
-        if (lowerAscii(a[i]) != lowerAscii(b[i])) return false;
+    for (a) |item, i| {
+        if (lowerAscii(item) != lowerAscii(b[i])) return false;
     }
     return true;
 }
@@ -93,9 +91,8 @@ fn isDigit1to9(c: u8) bool {
 // the first '.' is examined, so "NUL.txt" is reserved and "NULlog.txt" is not.
 fn isReservedDeviceName(name: []const u8) bool {
     var stem_len: usize = name.len;
-    var i: usize = 0;
-    while (i < name.len) : (i += 1) {
-        if (name[i] == '.') {
+    for (name) |c, i| {
+        if (c == '.') {
             stem_len = i;
             break;
         }
@@ -119,9 +116,8 @@ fn isReservedDeviceName(name: []const u8) bool {
 }
 
 fn findIndex(entries: []bencode.Entry, key: []const u8) ?usize {
-    var i: usize = 0;
-    while (i < entries.len) : (i += 1) {
-        if (eqBytes(entries[i].key, key)) return i;
+    for (entries) |entry, i| {
+        if (eqBytes(entry.key, key)) return i;
     }
     return null;
 }
@@ -183,11 +179,10 @@ pub fn load(arena: *std.arena.Arena, file_bytes: []const u8) TorrentError!Torren
     // Path safety for the single-file output name (spec §6): reject '/', '\',
     // a ".." component, or a leading '/'.
     if (result.name.len == 0) return error.BadFilePath;
-    var ci: usize = 0;
-    while (ci < result.name.len) : (ci += 1) {
+    for (0..result.name.len) |ci| {
         if (result.name[ci] == '/' or result.name[ci] == '\\') return error.BadFilePath;
     }
-    ci = 0;
+    var ci: usize = 0;
     while (ci + 1 < result.name.len) : (ci += 1) {
         if (result.name[ci] == '.' and result.name[ci + 1] == '.') return error.BadFilePath;
     }
@@ -229,21 +224,18 @@ pub fn load(arena: *std.arena.Arena, file_bytes: []const u8) TorrentError!Torren
     // --- announce-list (optional; fixed `[N][]const u8`, D2-safe) ---
     // Z98 D2: never `[]` a synthetic type. `[8][]const u8` is an array of
     // primitive slices (the array branch recurses correctly in c89_emit).
-    var fi: usize = 0;
-    while (fi < MAX_ANNOUNCE_LIST) : (fi += 1) {
+    for (0..MAX_ANNOUNCE_LIST) |fi| {
         result.announce_list[fi] = "";
     }
     var fill: usize = 0;
     if (findIndex(top_entries, "announce-list")) |ali| {
         switch (top_entries[ali].value) {
             .list => |tiers| {
-                var ti: usize = 0;
-                while (ti < tiers.len) : (ti += 1) {
-                    switch (tiers[ti]) {
+                for (tiers) |tier| {
+                    switch (tier) {
                         .list => |strs| {
-                            var si: usize = 0;
-                            while (si < strs.len) : (si += 1) {
-                                switch (strs[si]) {
+                            for (strs) |s| {
+                                switch (s) {
                                     .bytes => |b| {
                                         if (fill < MAX_ANNOUNCE_LIST) {
                                             result.announce_list[fill] = b;

@@ -158,12 +158,11 @@ pub fn deriveKeys(s: []const u8, info_hash: []const u8, key_a: *[HASH_LEN]u8, ke
 pub fn makeSecret(seed: u32, out: []u8) void {
     var st: u32 = seed;
     if (st == 0) st = 1;
-    var i: usize = 0;
     var any: u32 = 0;
-    while (i < out.len) : (i += 1) {
+    for (out) |*item| {
         st = st *% @intCast(u32, 1664525) +% @intCast(u32, 1013904223);
         var b: u8 = @intCast(u8, (st >> 16) & @intCast(u32, 0xFF));
-        out[i] = b;
+        item.* = b;
         any |= @intCast(u32, b);
     }
     if (any == 0) out[0] = 1;
@@ -212,8 +211,9 @@ fn writeU16BE(b: []u8, v: u16) void {
 
 fn burn1024(ctx: *std_crypto.Rc4) void {
     var burn: [DISCARD]u8 = undefined;
-    var i: usize = 0;
-    while (i < DISCARD) : (i += 1) burn[i] = 0;
+    for (burn) |*item| {
+        item.* = 0;
+    }
     std_crypto.rc4Apply(ctx, burn[0..]);
 }
 
@@ -264,17 +264,15 @@ fn recvDecMse(sock: std_net.Socket, ctx: *std_crypto.Rc4, dst: []u8, start_ms: u
 }
 
 fn isZero8(b: []const u8) bool {
-    var i: usize = 0;
-    while (i < 8) : (i += 1) {
-        if (b[i] != 0) return false;
+    for (b) |byte| {
+        if (byte != 0) return false;
     }
     return true;
 }
 
 fn eq8(a: []const u8, b: []const u8) bool {
-    var i: usize = 0;
-    while (i < 8) : (i += 1) {
-        if (a[i] != b[i]) return false;
+    for (a) |item, i| {
+        if (item != b[i]) return false;
     }
     return true;
 }
@@ -353,8 +351,7 @@ pub fn mseConnectAsync(sock: std_net.Socket, info_hash: []const u8, seed: u32, o
     hash2("req1", sc.s[0..], &sc.req1);
     hash2("req2", info_hash, &sc.r2);
     hash2("req3", sc.s[0..], &sc.r3);
-    var i: usize = 0;
-    while (i < HASH_LEN) : (i += 1) sc.req2x[i] = sc.r2[i] ^ sc.r3[i];
+    for (0..HASH_LEN) |i| sc.req2x[i] = sc.r2[i] ^ sc.r3[i];
     logmod.s("mse stage=req1 hex=");
     logmod.hex(sc.req1[0..]);
     logmod.nl();
@@ -364,8 +361,7 @@ pub fn mseConnectAsync(sock: std_net.Socket, info_hash: []const u8, seed: u32, o
     sendAllMse(sock, sc.req1[0..], start_ms) catch |e| return stageFail("req1", e);
     sendAllMse(sock, sc.req2x[0..], start_ms) catch |e| return stageFail("req2xor", e);
 
-    i = 0;
-    while (i < VC_LEN) : (i += 1) sc.blk[i] = 0;
+    for (0..VC_LEN) |i| sc.blk[i] = 0;
     writeU32BE(sc.blk[VC_LEN..VC_LEN + 4], CRYPTO_RC4);
     writeU16BE(sc.blk[VC_LEN + 4 .. VC_LEN + 6], 0); // len(PadC)
     writeU16BE(sc.blk[VC_LEN + 6 .. VC_LEN + 8], 0); // len(IA)
@@ -377,15 +373,13 @@ pub fn mseConnectAsync(sock: std_net.Socket, info_hash: []const u8, seed: u32, o
 
     // step 4: scan the raw B->A bytes for ENCRYPT_B(VC).
     var peeker: std_crypto.Rc4 = rc4_in;
-    i = 0;
-    while (i < VC_LEN) : (i += 1) sc.enc_vc[i] = 0;
+    for (0..VC_LEN) |i| sc.enc_vc[i] = 0;
     std_crypto.rc4Apply(&peeker, sc.enc_vc[0..]);
     logmod.s("mse stage=enc_vc hex=");
     logmod.hex(sc.enc_vc[0..]);
     logmod.nl();
 
-    i = 0;
-    while (i < VC_LEN) : (i += 1) sc.win[i] = 0;
+    for (0..VC_LEN) |i| sc.win[i] = 0;
     var cnt: usize = 0;
     var found: bool = false;
     var scanned: u32 = 0;

@@ -72,9 +72,8 @@ fn emptyBytes() []u8 {
 
 fn eqBytes(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
-    var i: usize = 0;
-    while (i < a.len) : (i += 1) {
-        if (a[i] != b[i]) return false;
+    for (a) |item, i| {
+        if (item != b[i]) return false;
     }
     return true;
 }
@@ -108,16 +107,14 @@ fn valueCanonical(v: bencode.Value) bool {
     switch (v) {
         .dict => |es| {
             if (!dictKeysSorted(es)) return false;
-            var i: usize = 0;
-            while (i < es.len) : (i += 1) {
-                if (!valueCanonical(es[i].value)) return false;
+            for (es) |item| {
+                if (!valueCanonical(item.value)) return false;
             }
             return true;
         },
         .list => |items| {
-            var i: usize = 0;
-            while (i < items.len) : (i += 1) {
-                if (!valueCanonical(items[i])) return false;
+            for (items) |item| {
+                if (!valueCanonical(item)) return false;
             }
             return true;
         },
@@ -169,10 +166,9 @@ fn writeCompactPeer(dst: []u8, addr: tracker.PeerAddr) void {
 // --- bencode helpers --------------------------------------------------------
 
 fn dictGetBytes(entries: []bencode.Entry, key: []const u8, out: *[]const u8) bool {
-    var i: usize = 0;
-    while (i < entries.len) : (i += 1) {
-        if (eqBytes(entries[i].key, key)) {
-            switch (entries[i].value) {
+    for (entries) |entry| {
+        if (eqBytes(entry.key, key)) {
+            switch (entry.value) {
                 .bytes => |b| {
                     out.* = b;
                     return true;
@@ -185,10 +181,9 @@ fn dictGetBytes(entries: []bencode.Entry, key: []const u8, out: *[]const u8) boo
 }
 
 fn dictGetInt(entries: []bencode.Entry, key: []const u8, out: *i64) bool {
-    var i: usize = 0;
-    while (i < entries.len) : (i += 1) {
-        if (eqBytes(entries[i].key, key)) {
-            switch (entries[i].value) {
+    for (entries) |entry| {
+        if (eqBytes(entry.key, key)) {
+            switch (entry.value) {
                 .int_val => |n| {
                     out.* = n;
                     return true;
@@ -201,10 +196,9 @@ fn dictGetInt(entries: []bencode.Entry, key: []const u8, out: *i64) bool {
 }
 
 fn dictGetDict(entries: []bencode.Entry, key: []const u8, out: *[]bencode.Entry) bool {
-    var i: usize = 0;
-    while (i < entries.len) : (i += 1) {
-        if (eqBytes(entries[i].key, key)) {
-            switch (entries[i].value) {
+    for (entries) |entry| {
+        if (eqBytes(entry.key, key)) {
+            switch (entry.value) {
                 .dict => |d| {
                     out.* = d;
                     return true;
@@ -217,10 +211,9 @@ fn dictGetDict(entries: []bencode.Entry, key: []const u8, out: *[]bencode.Entry)
 }
 
 fn dictGetList(entries: []bencode.Entry, key: []const u8, out: *[]bencode.Value) bool {
-    var i: usize = 0;
-    while (i < entries.len) : (i += 1) {
-        if (eqBytes(entries[i].key, key)) {
-            switch (entries[i].value) {
+    for (entries) |entry| {
+        if (eqBytes(entry.key, key)) {
+            switch (entry.value) {
                 .list => |l| {
                     out.* = l;
                     return true;
@@ -260,15 +253,13 @@ fn allocValues(arena: *std.arena.Arena, n: usize) DhtError![]bencode.Value {
 
 pub fn dhtAddNode(d: *Dht, id: []const u8, ip_be: u32, port: u16) bool {
     if (id.len != NODE_ID_LEN) return false;
-    var i: u32 = 0;
-    while (i < d.table_count) : (i += 1) {
+    for (0..d.table_count) |i| {
         var u: usize = @intCast(usize, i);
         if (d.table[u].ip_be == ip_be and d.table[u].port == port) return false;
     }
     if (d.table_count >= @intCast(u32, TABLE_MAX)) return false;
     var ui: usize = @intCast(usize, d.table_count);
-    var k: usize = 0;
-    while (k < NODE_ID_LEN) : (k += 1) {
+    for (0..NODE_ID_LEN) |k| {
         d.table[ui].id[k] = id[k];
     }
     d.table[ui].ip_be = ip_be;
@@ -278,8 +269,7 @@ pub fn dhtAddNode(d: *Dht, id: []const u8, ip_be: u32, port: u16) bool {
 }
 
 pub fn dhtAddPeer(d: *Dht, ip_be: u32, port: u16) bool {
-    var i: u32 = 0;
-    while (i < d.peers_count) : (i += 1) {
+    for (0..d.peers_count) |i| {
         var u: usize = @intCast(usize, i);
         if (d.peers[u].ip_be == ip_be and d.peers[u].port == port) return false;
     }
@@ -293,8 +283,7 @@ pub fn dhtAddPeer(d: *Dht, ip_be: u32, port: u16) bool {
 // Bind the node's UDP socket (port 0 = any ephemeral port) and seed its id.
 pub fn dhtInit(d: *Dht, port: u16, id: [20]u8) DhtError!void {
     d.sock = std_net.udpBind(port) catch return error.NetFailed;
-    var i: usize = 0;
-    while (i < NODE_ID_LEN) : (i += 1) {
+    for (0..NODE_ID_LEN) |i| {
         d.id[i] = id[i];
         d.peer_ih[i] = 0;
     }
@@ -377,8 +366,7 @@ fn buildIdResp(arena: *std.arena.Arena, d: *Dht, tid: []const u8) []u8 {
 // returns the byte length written.
 fn packNodes(d: *Dht, dst: []u8) usize {
     var n: usize = 0;
-    var i: u32 = 0;
-    while (i < d.table_count) : (i += 1) {
+    for (0..d.table_count) |i| {
         var u: usize = @intCast(usize, i);
         var off: usize = n * COMPACT_NODE_LEN;
         var k: usize = 0;
@@ -514,8 +502,7 @@ pub fn handleDatagram(arena: *std.arena.Arena, d: *Dht, data: []const u8, from: 
             announced_port = @intCast(u16, port_v);
         }
         if (ih.len == NODE_ID_LEN) {
-            var k: usize = 0;
-            while (k < NODE_ID_LEN) : (k += 1) {
+            for (0..NODE_ID_LEN) |k| {
                 d.peer_ih[k] = ih[k];
             }
             d.has_peer_ih = true;
@@ -604,9 +591,8 @@ fn parseU16(s: []const u8) ?u16 {
 fn queryBootstrap(arena: *std.arena.Arena, d: *Dht, hostport: []const u8, info_hash: []const u8, out_peers: []tracker.PeerAddr) u32 {
     if (out_peers.len == 0) return 0;
     var colon: usize = hostport.len;
-    var i: usize = 0;
-    while (i < hostport.len) : (i += 1) {
-        if (hostport[i] == ':') {
+    for (hostport) |c, i| {
+        if (c == ':') {
             colon = i;
             break;
         }
@@ -665,8 +651,7 @@ var g_test_buf: [262144]u8 = undefined;
 fn fillId(id: *[20]u8, seed: u32) void {
     var st: u32 = seed;
     if (st == 0) st = 1;
-    var i: usize = 0;
-    while (i < 20) : (i += 1) {
+    for (0..20) |i| {
         st = st *% @intCast(u32, 1664525) +% @intCast(u32, 1013904223);
         id[i] = @intCast(u8, (st >> 16) & @intCast(u32, 0xFF));
     }
@@ -718,8 +703,7 @@ pub fn selfTest() i32 {
 
     var ih: [20]u8 = undefined;
     fillId(&ih, 77);
-    var k: usize = 0;
-    while (k < NODE_ID_LEN) : (k += 1) {
+    for (0..NODE_ID_LEN) |k| {
         db.peer_ih[k] = ih[k];
     }
     db.has_peer_ih = true;

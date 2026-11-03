@@ -103,8 +103,7 @@ pub fn clearFailureReason() void {
 pub fn storeFailureReason(s: []const u8) void {
     var n: usize = s.len;
     if (n > FAILURE_MAX) n = FAILURE_MAX;
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         g_failure_buf[i] = s[i];
     }
     g_failure_len = n;
@@ -112,17 +111,15 @@ pub fn storeFailureReason(s: []const u8) void {
 
 fn eqBytes(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
-    var i: usize = 0;
-    while (i < a.len) : (i += 1) {
-        if (a[i] != b[i]) return false;
+    for (a) |item, i| {
+        if (item != b[i]) return false;
     }
     return true;
 }
 
 fn findEntry(entries: []bencode.Entry, key: []const u8) ?usize {
-    var i: usize = 0;
-    while (i < entries.len) : (i += 1) {
-        if (eqBytes(entries[i].key, key)) return i;
+    for (entries) |entry, i| {
+        if (eqBytes(entry.key, key)) return i;
     }
     return null;
 }
@@ -327,8 +324,7 @@ pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId,
     logmod.s(" hex=");
     logmod.hex(pbytes);
     logmod.nl();
-    var lk: usize = 0;
-    while (lk < count) : (lk += 1) {
+    for (0..count) |lk| {
         var lp = result.peers[lk];
         logmod.s("tracker peer=");
         logmod.u32v(@intCast(u32, lk));

@@ -107,9 +107,8 @@ pub fn pieceInit(arena: *std.arena.Arena, t: torrent.Torrent, state: *PieceState
     var raw = std.arena.alloc(arena, @intCast(usize, n) * @sizeOf(BlockState)) catch return error.OutOfMemory;
     var blocks: []BlockState = @ptrCast([*]BlockState, raw)[0..@intCast(usize, n)];
 
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
-        blocks[@intCast(usize, i)] = BlockState.missing;
+    for (blocks) |*item| {
+        item.* = BlockState.missing;
     }
 
     state.index = index;
@@ -123,8 +122,7 @@ pub fn pieceInit(arena: *std.arena.Arena, t: torrent.Torrent, state: *PieceState
 
     var off: usize = pieceHashOffset(index);
     if (off + HASH_LEN > t.piece_hashes.len) return error.BadPiece;
-    var k: usize = 0;
-    while (k < HASH_LEN) : (k += 1) {
+    for (0..HASH_LEN) |k| {
         state.hash[k] = t.piece_hashes[off + k];
     }
 }
@@ -193,14 +191,12 @@ pub fn onBlock(state: *PieceState, begin: u32, bytes: []const u8, io: *PieceIO) 
     crypto.sha1Final(&hs, &h);
 
     var match: bool = true;
-    var k: usize = 0;
-    while (k < HASH_LEN) : (k += 1) {
-        if (h[k] != state.hash[k]) match = false;
+    for (h) |item, k| {
+        if (item != state.hash[k]) match = false;
     }
 
-    var i: u32 = 0;
     if (match) {
-        while (i < state.nblocks) : (i += 1) {
+        for (0..state.nblocks) |i| {
             state.blocks[@intCast(usize, i)] = BlockState.verified;
         }
         state.state = BlockState.verified;
@@ -210,8 +206,7 @@ pub fn onBlock(state: *PieceState, begin: u32, bytes: []const u8, io: *PieceIO) 
     // Corrupt: mark failed and re-queue every block (spec §7 — mismatch is
     // re-requested; the peer that delivered it is dropped by the caller).
     state.state = BlockState.failed;
-    i = 0;
-    while (i < state.nblocks) : (i += 1) {
+    for (0..state.nblocks) |i| {
         state.blocks[@intCast(usize, i)] = BlockState.missing;
     }
     state.received_bytes = 0;

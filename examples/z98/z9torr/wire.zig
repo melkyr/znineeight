@@ -344,16 +344,14 @@ pub fn readHandshakeAsync(sock: std_net.Socket, expected_info_hash: []const u8, 
     hsLogRecv(sock, "peer_id", out.peer_id[0..]);
 
     var pstr: []const u8 = "BitTorrent protocol";
-    var i: usize = 0;
-    while (i < PSTR_LEN) : (i += 1) {
-        if (out.pstr[i] != pstr[i]) {
+    for (pstr) |b, i| {
+        if (out.pstr[i] != b) {
             hsLogFail(sock, "pstr", error.HandshakeFailed);
             return error.HandshakeFailed;
         }
     }
-    i = 0;
-    while (i < HASH_LEN) : (i += 1) {
-        if (out.info_hash[i] != expected_info_hash[i]) {
+    for (expected_info_hash) |b, i| {
+        if (out.info_hash[i] != b) {
             hsLogFail(sock, "info_hash", error.InfoHashMismatch);
             return error.InfoHashMismatch;
         }
@@ -669,13 +667,11 @@ pub fn readHandshakeAsyncEnc(sock: std_net.Socket, dec: *std_crypto.Rc4, expecte
     logmod.nl();
 
     var pstr: []const u8 = "BitTorrent protocol";
-    var i: usize = 0;
-    while (i < PSTR_LEN) : (i += 1) {
-        if (out.pstr[i] != pstr[i]) return error.HandshakeFailed;
+    for (pstr) |b, i| {
+        if (out.pstr[i] != b) return error.HandshakeFailed;
     }
-    i = 0;
-    while (i < HASH_LEN) : (i += 1) {
-        if (out.info_hash[i] != expected_info_hash[i]) return error.InfoHashMismatch;
+    for (expected_info_hash) |b, i| {
+        if (out.info_hash[i] != b) return error.InfoHashMismatch;
     }
 }
 

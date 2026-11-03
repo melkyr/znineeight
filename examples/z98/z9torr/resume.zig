@@ -84,17 +84,15 @@ fn bitClear(bits: []u8, i: u32) void {
 
 fn eqBytes(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
-    var i: usize = 0;
-    while (i < a.len) : (i += 1) {
-        if (a[i] != b[i]) return false;
+    for (a) |item, i| {
+        if (item != b[i]) return false;
     }
     return true;
 }
 
 fn findEntry(entries: []bencode.Entry, key: []const u8) ?usize {
-    var i: usize = 0;
-    while (i < entries.len) : (i += 1) {
-        if (eqBytes(entries[i].key, key)) return i;
+    for (entries) |entry, i| {
+        if (eqBytes(entry.key, key)) return i;
     }
     return null;
 }
@@ -124,8 +122,7 @@ fn verifyPiece(t: torrent.Torrent, f: *filemod.File, index: u32, buf: []u8) bool
     crypto.sha1Final(&hs, &h);
     var off: usize = @intCast(usize, index) * HASH_LEN;
     if (off + HASH_LEN > t.piece_hashes.len) return false;
-    var k: usize = 0;
-    while (k < HASH_LEN) : (k += 1) {
+    for (0..HASH_LEN) |k| {
         if (h[k] != t.piece_hashes[off + k]) return false;
     }
     return true;
@@ -138,9 +135,8 @@ pub fn load(arena: *std.arena.Arena, t: torrent.Torrent, out_file: *filemod.File
     var nbits: usize = bitsBytes(pieceCount(t));
     var raw = std.arena.alloc(arena, nbits) catch return emptyState();
     var bits: []u8 = raw[0..nbits];
-    var zi: usize = 0;
-    while (zi < nbits) : (zi += 1) {
-        bits[zi] = 0;
+    for (bits) |*item| {
+        item.* = 0;
     }
     var state: ResumeState = ResumeState{ .completed_bits = bits, .partial = g_empty_partial[0..0] };
 
@@ -169,8 +165,7 @@ pub fn load(arena: *std.arena.Arena, t: torrent.Torrent, out_file: *filemod.File
     switch (top[ih_i].value) {
         .bytes => |b| {
             if (b.len != HASH_LEN) return state;
-            var k: usize = 0;
-            while (k < HASH_LEN) : (k += 1) {
+            for (0..HASH_LEN) |k| {
                 if (b[k] != t.info_hash[k]) return state;
             }
         },
@@ -221,8 +216,7 @@ pub fn load(arena: *std.arena.Arena, t: torrent.Torrent, out_file: *filemod.File
         },
         else => return state,
     }
-    zi = 0;
-    while (zi < nbits) : (zi += 1) {
+    for (0..nbits) |zi| {
         bits[zi] = src_bits[zi];
     }
 
@@ -232,8 +226,7 @@ pub fn load(arena: *std.arena.Arena, t: torrent.Torrent, out_file: *filemod.File
             .list => |items| {
                 var praw = std.arena.alloc(arena, items.len * @sizeOf(PartialPiece)) catch return state;
                 var pp: []PartialPiece = @ptrCast([*]PartialPiece, praw)[0..items.len];
-                var q: usize = 0;
-                while (q < items.len) : (q += 1) {
+                for (0..items.len) |q| {
                     var dent: []bencode.Entry = undefined;
                     switch (items[q]) {
                         .dict => |dd| {
@@ -270,8 +263,7 @@ pub fn load(arena: *std.arena.Arena, t: torrent.Torrent, out_file: *filemod.File
                     }
                     var mraw = std.arena.alloc(arena, mask_src.len) catch return state;
                     var mask: []u8 = mraw[0..mask_src.len];
-                    var m: usize = 0;
-                    while (m < mask_src.len) : (m += 1) {
+                    for (0..mask_src.len) |m| {
                         mask[m] = mask_src[m];
                     }
                     pp[q] = PartialPiece{ .index = pidx, .block_mask = mask };
@@ -296,8 +288,7 @@ pub fn rehash(arena: *std.arena.Arena, t: torrent.Torrent, f: *filemod.File, sta
     if (plen == 0) return error.OutOfMemory;
     var raw = std.arena.alloc(arena, plen) catch return error.OutOfMemory;
     var buf: []u8 = raw[0..plen];
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         if (!bitGet(state.completed_bits, i)) {
             if (verifyPiece(t, f, i, buf)) {
                 bitSet(state.completed_bits, i);
@@ -321,8 +312,7 @@ pub fn save(arena: *std.arena.Arena, t: torrent.Torrent, state: ResumeState) Res
     entries[3] = bencode.Entry{ .key = "completed_bits", .value = bencode.Value{ .bytes = cb } };
 
     var pv: []bencode.Value = try allocValues(arena, state.partial.len);
-    var pi: usize = 0;
-    while (pi < state.partial.len) : (pi += 1) {
+    for (0..state.partial.len) |pi| {
         var pe: []bencode.Entry = try allocEntries(arena, 2);
         pe[0] = bencode.Entry{ .key = "index", .value = bencode.Value{ .int_val = @intCast(i64, state.partial[pi].index) } };
         var bm: []const u8 = state.partial[pi].block_mask;

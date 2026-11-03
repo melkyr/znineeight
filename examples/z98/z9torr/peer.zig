@@ -306,15 +306,13 @@ pub fn zeroPieceState() piece.PieceState {
 // written, not left `undefined`, so no poisoned field is ever read).
 fn zeroTorrent() torrent.Torrent {
     var ih: [20]u8 = undefined;
-    var i: usize = 0;
-    while (i < 20) : (i += 1) {
-        ih[i] = 0;
+    for (ih) |*item| {
+        item.* = 0;
     }
     var alist: [8][]const u8 = undefined;
     var e: []const u8 = "";
-    i = 0;
-    while (i < 8) : (i += 1) {
-        alist[i] = e;
+    for (alist) |*item| {
+        item.* = e;
     }
     return torrent.Torrent{
         .announce = e,
@@ -338,16 +336,13 @@ pub fn zeroPieceIO() piece.PieceIO {
 
 pub fn zeroHandshake() wire.Handshake {
     var x: wire.Handshake = undefined;
-    var i: usize = 0;
-    while (i < 19) : (i += 1) {
+    for (0..19) |i| {
         x.pstr[i] = 0;
     }
-    i = 0;
-    while (i < 8) : (i += 1) {
+    for (0..8) |i| {
         x.reserved[i] = 0;
     }
-    i = 0;
-    while (i < 20) : (i += 1) {
+    for (0..20) |i| {
         x.info_hash[i] = 0;
         x.peer_id[i] = 0;
     }
@@ -356,20 +351,17 @@ pub fn zeroHandshake() wire.Handshake {
 
 fn makeHandshake(t: torrent.Torrent, peer_id: [20]u8, out: *wire.Handshake) void {
     var pstr: []const u8 = "BitTorrent protocol";
-    var i: usize = 0;
-    while (i < 19) : (i += 1) {
+    for (0..19) |i| {
         out.pstr[i] = pstr[i];
     }
-    i = 0;
-    while (i < 8) : (i += 1) {
+    for (0..8) |i| {
         out.reserved[i] = 0;
     }
     // Advertise the two reserved bits we understand: BEP 10 extension protocol
     // (reserved[5] bit 0x10) and BEP 5 DHT (reserved[7] bit 0x01).
     out.reserved[5] = @intCast(u8, 0x10);
     out.reserved[7] = @intCast(u8, 0x01);
-    i = 0;
-    while (i < 20) : (i += 1) {
+    for (0..20) |i| {
         out.info_hash[i] = t.info_hash[i];
         out.peer_id[i] = peer_id[i];
     }
@@ -567,9 +559,8 @@ fn sendRequests(ctx: *RunCtx, peer: *Peer, ps: *piece.PieceState) bool {
     if (peer.peer_choking) return true;
     var q: piece.RequestQueue = undefined;
     piece.nextRequests(ps, &q);
-    var i: u32 = 0;
     var sent: u32 = 0;
-    while (i < q.tail) : (i += 1) {
+    for (0..q.tail) |i| {
         var r = q.in_flight[@intCast(usize, i)];
 
         // Buckets are refilled centrally by the driver every 100 ms (spec §9);
@@ -609,8 +600,7 @@ fn sendRequests(ctx: *RunCtx, peer: *Peer, ps: *piece.PieceState) bool {
 }
 
 fn nextMissing(ctx: *RunCtx) u32 {
-    var i: u32 = 0;
-    while (i < ctx.n_pieces) : (i += 1) {
+    for (0..ctx.n_pieces) |i| {
         if (!piece.bitGet(ctx.verified_bits, i)) return i;
     }
     return ctx.n_pieces;
@@ -664,12 +654,10 @@ fn acquirePiece(ctx: *RunCtx, peer: *Peer) u8 {
 // them `received` and let `nextRequests` request only the missing 16 KB blocks
 // (B2=A — half-downloaded piece resume). A mask mismatch simply re-requests.
 fn seedPartial(ctx: *RunCtx, ps: *piece.PieceState) void {
-    var i: usize = 0;
-    while (i < ctx.partial.len) : (i += 1) {
+    for (0..ctx.partial.len) |i| {
         var pp = ctx.partial[i];
         if (pp.index == ps.index) {
-            var b: u32 = 0;
-            while (b < ps.nblocks) : (b += 1) {
+            for (0..ps.nblocks) |b| {
                 var byte: usize = @intCast(usize, b / 8);
                 var sh: u8 = @intCast(u8, b % 8);
                 if (byte < pp.block_mask.len) {
@@ -691,8 +679,7 @@ fn seedPartial(ctx: *RunCtx, ps: *piece.PieceState) void {
 
 // True if `ps` holds at least one received (written-through) block.
 fn hasReceived(ps: *piece.PieceState) bool {
-    var i: u32 = 0;
-    while (i < ps.nblocks) : (i += 1) {
+    for (0..ps.nblocks) |i| {
         if (ps.blocks[@intCast(usize, i)] == piece.BlockState.received) return true;
     }
     return false;
@@ -700,8 +687,7 @@ fn hasReceived(ps: *piece.PieceState) bool {
 
 // True if the partial list `pp[0..count]` already holds `index`.
 fn indexIn(pp: []resumemod.PartialPiece, count: usize, index: u32) bool {
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
+    for (0..count) |i| {
         if (pp[i].index == index) return true;
     }
     return false;
@@ -713,8 +699,7 @@ fn fillMask(ctx: *RunCtx, ps: *piece.PieceState, dst: *resumemod.PartialPiece) b
     var mbytes: usize = (@intCast(usize, ps.nblocks) + 7) / 8;
     var mraw = std.arena.alloc(ctx.save_arena, mbytes) catch return false;
     var mask: []u8 = mraw[0..mbytes];
-    var z: usize = 0;
-    while (z < mbytes) : (z += 1) {
+    for (0..mbytes) |z| {
         mask[z] = 0;
     }
     var i: u32 = 0;
@@ -747,8 +732,7 @@ fn saveResume(ctx: *RunCtx, ps: *piece.PieceState) void {
     var count: usize = 0;
 
     // 1. Live peers' working pieces (newest masks).
-    var pi: usize = 0;
-    while (pi < ctx.peers.len) : (pi += 1) {
+    for (0..ctx.peers.len) |pi| {
         var lpe = &ctx.peers[pi];
         if (!lpe.active) continue;
         if (lpe.ps.state == piece.BlockState.verified) continue;
@@ -966,8 +950,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
             return;
         };
         peer.bitfield = raw_bf[0..need_bf];
-        var zb: usize = 0;
-        while (zb < need_bf) : (zb += 1) {
+        for (0..need_bf) |zb| {
             peer.bitfield[zb] = 0;
         }
     } else {
@@ -1093,8 +1076,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                         break_reason = "bad-bitfield";
                         stop = true;
                     } else {
-                        var bi: u32 = 0;
-                        while (bi < ctx.n_pieces) : (bi += 1) {
+                        for (0..ctx.n_pieces) |bi| {
                             if (piece.bitGet(msg.payload, bi)) {
                                 // With a scheduler the shared `noteHave` sets
                                 // the bit and bumps `piece_rarest`; without one

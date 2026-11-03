@@ -112,10 +112,9 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
     if (n_pieces > 0) {
         var raw = std.arena.alloc(arena, @intCast(usize, n_pieces) * @sizeOf(PieceStatus)) catch return error.OutOfMemory;
         ps = @ptrCast([*]PieceStatus, raw)[0..@intCast(usize, n_pieces)];
-        var i: u32 = 0;
-        while (i < n_pieces) : (i += 1) {
-            ps[@intCast(usize, i)] = PieceStatus{
-                .index = i,
+        for (ps) |*item, i| {
+            item.* = PieceStatus{
+                .index = @intCast(u32, i),
                 .state = piece.BlockState.missing,
             };
         }
@@ -126,9 +125,8 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
     if (n_pieces > 0) {
         var rawr = std.arena.alloc(arena, @intCast(usize, n_pieces) * @sizeOf(u32)) catch return error.OutOfMemory;
         rar = @ptrCast([*]u32, rawr)[0..@intCast(usize, n_pieces)];
-        var k: u32 = 0;
-        while (k < n_pieces) : (k += 1) {
-            rar[@intCast(usize, k)] = 0;
+        for (rar) |*item| {
+            item.* = 0;
         }
     }
 
@@ -136,9 +134,8 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
     if (n_pieces > 0) {
         var rawo = std.arena.alloc(arena, @intCast(usize, n_pieces) * @sizeOf(u32)) catch return error.OutOfMemory;
         own = @ptrCast([*]u32, rawo)[0..@intCast(usize, n_pieces)];
-        var ko: u32 = 0;
-        while (ko < n_pieces) : (ko += 1) {
-            own[@intCast(usize, ko)] = NO_OWNER;
+        for (own) |*item| {
+            item.* = NO_OWNER;
         }
     }
 
@@ -146,8 +143,7 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
     if (max_peers > 0) {
         var rawp = std.arena.alloc(arena, @intCast(usize, max_peers) * @sizeOf(peer.Peer)) catch return error.OutOfMemory;
         peers = @ptrCast([*]peer.Peer, rawp)[0..@intCast(usize, max_peers)];
-        var j: u32 = 0;
-        while (j < max_peers) : (j += 1) {
+        for (0..max_peers) |j| {
             // `ps`/`io` are fully zero-initialised: `saveResume` walks every
             // ACTIVE peer slot and reads `ps` before `peerRun` has acquired a
             // piece (`pieceInit`), so an undefined `ps` would poison-read (and
@@ -193,8 +189,7 @@ pub fn pickPiece(s: *Scheduler, p: *peer.Peer) ?u32 {
     var best: u32 = NO_OWNER;
     var best_r: u32 = 0xFFFFFFFF;
     var n: u32 = @intCast(u32, s.piece_state.len);
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         if (s.piece_state[@intCast(usize, i)].state != piece.BlockState.missing) continue;
         if (!peerHas(p, i)) continue;
         var r: u32 = s.piece_rarest[@intCast(usize, i)];
@@ -260,8 +255,7 @@ pub fn corrupt(s: *Scheduler, index: u32) void {
 // written-through block mask.
 pub fn release(s: *Scheduler, p: *peer.Peer) void {
     var n: u32 = @intCast(u32, s.piece_state.len);
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         var ui: usize = @intCast(usize, i);
         if (ui >= s.piece_owner.len) continue;
         if (s.piece_owner[ui] == p.slot and s.piece_state[ui].state == piece.BlockState.requested) {
@@ -274,15 +268,13 @@ pub fn release(s: *Scheduler, p: *peer.Peer) void {
 
 fn addrSeen(s: *Scheduler, addr: tracker.PeerAddr) bool {
     var n: u32 = @intCast(u32, s.peers.len);
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         var ui: usize = @intCast(usize, i);
         if (s.peers[ui].active) {
             if (s.peers[ui].addr.ip_be == addr.ip_be and s.peers[ui].addr.port == addr.port) return true;
         }
     }
-    var j: u32 = 0;
-    while (j < s.seen_count) : (j += 1) {
+    for (0..s.seen_count) |j| {
         var uj: usize = @intCast(usize, j);
         if (s.seen[uj].ip_be == addr.ip_be and s.seen[uj].port == addr.port) return true;
     }
@@ -301,8 +293,7 @@ fn rememberAddr(s: *Scheduler, addr: tracker.PeerAddr) void {
 pub fn addPeer(s: *Scheduler, addr: tracker.PeerAddr) bool {
     if (addrSeen(s, addr)) return false;
     var n: u32 = @intCast(u32, s.peers.len);
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         var ui: usize = @intCast(usize, i);
         if (!s.peers[ui].active) {
             var p = &s.peers[ui];
@@ -337,8 +328,7 @@ pub fn removePeer(s: *Scheduler, p: *peer.Peer) void {
     if (!p.active) return;
     release(s, p);
     var n: u32 = @intCast(u32, s.piece_rarest.len);
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
+    for (0..n) |i| {
         if (peerHas(p, i)) {
             var ui: usize = @intCast(usize, i);
             if (s.piece_rarest[ui] == 0) {

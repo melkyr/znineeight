@@ -127,8 +127,7 @@ pub fn statsRender(s: *tracker.Stats, out_buf: []u8) []const u8 {
     // 40-char progress bar.
     var filled: u64 = (p1000 * @intCast(u64, BAR_WIDTH)) / 1000;
     putByte(out_buf, &pos, '[');
-    var i: usize = 0;
-    while (i < BAR_WIDTH) : (i += 1) {
+    for (0..BAR_WIDTH) |i| {
         if (@intCast(u64, i) < filled) {
             putByte(out_buf, &pos, '#');
         } else {
@@ -146,8 +145,7 @@ pub fn statsRender(s: *tracker.Stats, out_buf: []u8) []const u8 {
 
     // Rate: mean of the 5-sample rolling window (bytes/s), widened to u64.
     var sum: u64 = 0;
-    var k: usize = 0;
-    while (k < 5) : (k += 1) {
+    for (0..5) |k| {
         sum += @intCast(u64, s.window_down[k]);
     }
     var rate: u64 = sum / 5;

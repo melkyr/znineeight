@@ -51,9 +51,8 @@ fn emptyBytes() []u8 {
 
 fn eqBytes(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
-    var i: usize = 0;
-    while (i < a.len) : (i += 1) {
-        if (a[i] != b[i]) return false;
+    for (a) |item, i| {
+        if (item != b[i]) return false;
     }
     return true;
 }
@@ -81,10 +80,9 @@ fn be(k: []const u8, v: bencode.Value) bencode.Entry {
 }
 
 fn dictGetBytes(entries: []bencode.Entry, key: []const u8, out: *[]const u8) bool {
-    var i: usize = 0;
-    while (i < entries.len) : (i += 1) {
-        if (eqBytes(entries[i].key, key)) {
-            switch (entries[i].value) {
+    for (entries) |entry| {
+        if (eqBytes(entry.key, key)) {
+            switch (entry.value) {
                 .bytes => |b| {
                     out.* = b;
                     return true;
@@ -97,10 +95,9 @@ fn dictGetBytes(entries: []bencode.Entry, key: []const u8, out: *[]const u8) boo
 }
 
 fn dictGetInt(entries: []bencode.Entry, key: []const u8, out: *i64) bool {
-    var i: usize = 0;
-    while (i < entries.len) : (i += 1) {
-        if (eqBytes(entries[i].key, key)) {
-            switch (entries[i].value) {
+    for (entries) |entry| {
+        if (eqBytes(entry.key, key)) {
+            switch (entry.value) {
                 .int_val => |n| {
                     out.* = n;
                     return true;
@@ -113,10 +110,9 @@ fn dictGetInt(entries: []bencode.Entry, key: []const u8, out: *i64) bool {
 }
 
 fn dictGetDict(entries: []bencode.Entry, key: []const u8, out: *[]bencode.Entry) bool {
-    var i: usize = 0;
-    while (i < entries.len) : (i += 1) {
-        if (eqBytes(entries[i].key, key)) {
-            switch (entries[i].value) {
+    for (entries) |entry| {
+        if (eqBytes(entry.key, key)) {
+            switch (entry.value) {
                 .dict => |d| {
                     out.* = d;
                     return true;
@@ -155,9 +151,8 @@ pub fn pexBuildHandshake(arena: *std.arena.Arena, listen_port: u16) []u8 {
 // Parse "a.b.c.d[:port]" into a `PeerAddr` (ip_be image); default port 6881.
 fn parsePeerSpec(s: []const u8) ?tracker.PeerAddr {
     var colon: usize = s.len;
-    var i: usize = 0;
-    while (i < s.len) : (i += 1) {
-        if (s[i] == ':') {
+    for (s) |c, i| {
+        if (c == ':') {
             colon = i;
             break;
         }
@@ -166,7 +161,7 @@ fn parsePeerSpec(s: []const u8) ?tracker.PeerAddr {
     var val: u32 = 0;
     var oct: usize = 0;
     var seen: bool = false;
-    i = 0;
+    var i: usize = 0;
     while (i < colon) : (i += 1) {
         var c: u8 = s[i];
         if (c >= '0' and c <= '9') {
@@ -326,14 +321,11 @@ fn fail(msg: []const u8) void {
 
 fn makeTorrent() torrent.Torrent {
     var ih: [20]u8 = undefined;
-    var z: usize = 0;
-    while (z < 20) : (z += 1) ih[z] = 0;
-    z = 0;
-    while (z < 120) : (z += 1) g_hashes[z] = 0;
+    for (ih) |*item| item.* = 0;
+    for (g_hashes) |*item| item.* = 0;
     var alist: [8][]const u8 = undefined;
     var e: []const u8 = "";
-    z = 0;
-    while (z < 8) : (z += 1) alist[z] = e;
+    for (alist) |*item| item.* = e;
     return torrent.Torrent{
         .announce = e,
         .announce_list = alist,

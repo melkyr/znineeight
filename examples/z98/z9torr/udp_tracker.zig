@@ -118,12 +118,11 @@ fn wrU64(b: []u8, off: usize, v: u64) void {
 fn parseUdpUrl(url: []const u8, host_start: *usize, host_len: *usize, port: *u16) bool {
     var pre: []const u8 = "udp://";
     if (url.len <= pre.len) return false;
-    var i: usize = 0;
-    while (i < pre.len) : (i += 1) {
-        if (url[i] != pre[i]) return false;
+    for (pre) |b, i| {
+        if (url[i] != b) return false;
     }
     var hb: usize = pre.len;
-    i = hb;
+    var i: usize = hb;
     while (i < url.len and url[i] != ':' and url[i] != '/') : (i += 1) {}
     if (i == hb) return false;
     host_start.* = hb;
