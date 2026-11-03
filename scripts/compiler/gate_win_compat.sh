@@ -371,8 +371,10 @@ lint_bat() {
             grep -q -- '-D_CRT_NONSTDC_NO_DEPRECATE' "$lf" || bad "$name: missing -D_CRT_NONSTDC_NO_DEPRECATE"
             grep -q -- '-D_WIN32' "$lf" || bad "$name: missing -D_WIN32"
             grep -qE '^gcc -m32 .* -c .*\.c >> 00\.txt$' "$lf" || bad "$name: no logged gcc compile line"
-            grep -qE '^gcc -m32 -nostdlib -r -o z98_l[0-9]+\.o ' "$lf" || bad "$name: no explicit -nostdlib partial-link line"
-            grep -qE '^gcc -m32 -r -o z98_l[0-9]+\.o ' "$lf" && bad "$name: partial link must not run without -nostdlib (embeds CRT startup)"
+            n_r=$(grep -cE '^gcc .* -r ' "$lf")
+            n_ok=$(grep -E '^gcc .* -r ' "$lf" | grep -c -- '-nostdlib')
+            [ "$n_r" -ge 1 ] || bad "$name: no explicit gcc -r partial-link line"
+            [ "$n_r" -eq "$n_ok" ] || bad "$name: every gcc -r line must use -nostdlib (embeds CRT startup)"
             grep -qE '^gcc -m32 -mconsole -static-libgcc -o prog\.exe z98_l1\.o' "$lf" || bad "$name: no explicit final link line"
             ;;
     esac
