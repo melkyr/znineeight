@@ -286,9 +286,9 @@ operator-owned and pending (plan Amendment 5).
 ## Z98 idioms
 
 The sources stay inside the Z98 subset (free functions only, no generics or
-`@Type`). Iteration uses `for (slice) |item|` / `for (0..n) |i|` captures,
-including `|*item|` for in-place writes; dispatch uses `switch` with an explicit
-`else`; cleanup uses `defer`/`errdefer`; early exits use labeled blocks/loops;
-and optionals use `if (opt) |v|` / `while (opt) |v|` captures. The cold 1 Hz
-stats renderer aggregates the `[5]u32` rolling window with
-`std.fold.foldU32` (`stats.zig`), never in a decode or crypto hot path.
+`@Type`). Iteration uses `for` captures, both by value (`|item|`, `|item, i|`)
+and by pointer (`|*item|` for in-place writes); optionals use `if (opt) |v|`
+captures; dispatch uses `switch` with an explicit `else`, including `.tag` and
+range prongs; cleanup uses `defer`/`errdefer`. The cold 1 Hz stats renderer
+aggregates the `[5]u32` rolling window with `std.fold.foldU32` (`stats.zig`),
+never in a decode or crypto hot path.

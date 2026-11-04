@@ -26,8 +26,8 @@
 //
 // Z98 rules: free functions only, no generics/`anytype`/`@Type`, strict
 // `@intCast`, every `switch` needs `else` (none here), string literals via
-// `var s: []const u8 = "...";`. D2: the only slice is `[]u8`/`[]const u8`
-// (primitive element); no slice of a synthetic type.
+// `var s: []const u8 = "...";`. D2: the slices are `[]u8`, `[]const u8`, and
+// the fold's `[]u32` (all primitive-element); no slice of a synthetic type.
 
 const std = @import("std");
 const parse = @import("std_parse.zig");
@@ -152,7 +152,8 @@ pub fn statsRender(s: *tracker.Stats, out_buf: []u8) []const u8 {
     putMB(out_buf, &pos, total);
     putByte(out_buf, &pos, ' ');
 
-    // Rate: mean of the 5-sample rolling window (bytes/s), widened to u64.
+    // Rate: mean of the 5-sample rolling window (bytes/s); foldU32 accumulates
+    // in u32, then the result is widened to u64.
     var sum: u64 = @intCast(u64, std.fold.foldU32(s.window_down[0..], 0, addU32));
     var rate: u64 = sum / 5;
     putU64(out_buf, &pos, rate / 1024);

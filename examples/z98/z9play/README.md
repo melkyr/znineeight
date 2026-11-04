@@ -692,4 +692,5 @@ The sources stay inside the Z98 subset (free functions only, no generics or
 including `|*item|` for in-place writes; dispatch uses `switch` with an explicit
 `else`; cleanup uses `defer`/`errdefer`; early exits use labeled blocks/loops;
 and optionals use `if (opt) |v|` / `while (opt) |v|` captures. These are
-syntactic idioms only; the decode, IMDCT and audio paths are unchanged.
+syntactic idioms only: behaviour and outputs are unchanged, including the T5/T7
+syntax changes in `dsp.zig`, `decode.zig`, `flac.zig`, and `residue.zig`.
