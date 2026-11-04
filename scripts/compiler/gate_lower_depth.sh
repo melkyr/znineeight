@@ -97,6 +97,14 @@ set -euo pipefail
 #      `error[3077] expression nesting too deep for semantic analysis (limit
 #      130)`, 0 `.c` emitted, and no `error[3043]`/ICE or signal death
 #      (rc>=128). This pins the raised cap and the new limit-family code.
+#  15. the folded-terminator/labeled-block regression repro still prints 42/7.
+#  16. enum-value machinery under a `-fsafe` compiler built from the same
+#      emission (self-contained scratch build): a single member at i64/u63 max
+#      compiles rc 0 (the shared walk must not trap on `mval + 1`), and an
+#      implicit successor after max rejects rc 2 with `error[3000]` and NO
+#      secondary `error[3062]`.
+#  17-18. `enum(u40) { A = 0, B = 4294967297 }` resolves the wide discriminant
+#      exactly (shorthand `.B` and qualified `E.B`) at runtime: stdout `8`, rc 0.
 #
 # With second arg `known-red`, cases 1 and 2 are reported as KNOWN-RED (pending
 # Tasks 2/4) and do not fail the gate. Their REAL rc is always printed; the
@@ -808,6 +816,130 @@ if [ "$c15_ok" -eq 1 ]; then
 else
     report_case 15 "$c15rc" "FAIL (folded terminator + labeled block regression)"
 fi
+
+# ---- 16. -fsafe enum-value machinery: valid max compiles, implicit successor rejects ----
+# The normal fast corpus classifier cannot see the i64-max overflow trap: only a
+# `-fsafe` compiler traps. Build a safe compiler from the SAME source emission
+# (I-B §1 recipe), then:
+#   * enum_i64_max_ok_xmod / enum_u63_max_ok_xmod: rc 0, `.c` emitted;
+#   * enum_i64_max_implicit_reject_xmod / enum_u63_max_implicit_reject_xmod:
+#     rc 2, 0 `.c`, `error[3000]`, and NO secondary `error[3062]`.
+# Self-contained scratch build under $WORK; no shared state.
+GATE_ZLIB="$(cd "$(dirname "$ZIG1")" && pwd)/lib"
+if [ ! -d "$GATE_ZLIB" ]; then GATE_ZLIB="$ROOT/sf/src"; fi
+SAFE_ZIG="$WORK/c16_safe/zig1_safe"
+mkdir -p "$WORK/c16_safe"
+c16_ok=1
+set +e
+( cd "$ROOT" && timeout 300 "$ZIG1" -fsafe -o "$WORK/c16_safe" --lib-dir "$GATE_ZLIB" sf/src/main.zig ) \
+    >"$WORK/c16_safe_emit.out" 2>"$WORK/c16_safe_emit.err"
+c16_emit=$?
+set -e
+if [ "$c16_emit" -ne 0 ]; then
+    c16_ok=0
+    bad "case 16: -fsafe compiler emit rc=$c16_emit want 0"
+elif ! ( cd "$WORK/c16_safe" && timeout 300 sh build_target.sh linux zig1_safe ) \
+    >"$WORK/c16_safe_build.log" 2>&1; then
+    c16_ok=0
+    bad "case 16: -fsafe compiler build_target failed (see $WORK/c16_safe_build.log)"
+fi
+if [ "$c16_ok" -eq 1 ]; then
+    for _c16v in enum_i64_max_ok_xmod enum_u63_max_ok_xmod; do
+        mkdir -p "$WORK/c16_valid_$_c16v"
+        set +e
+        ( cd "$WORK/c16_valid_$_c16v" && timeout 120 "$SAFE_ZIG" --dump-c89 \
+            -o "$WORK/c16_valid_$_c16v" --lib-dir "$GATE_ZLIB" \
+            "$ROOT/repro/mi_matrix/$_c16v/main.zig" ) \
+            >"$WORK/c16_valid_$_c16v.out" 2>"$WORK/c16_valid_$_c16v.err"
+        _c16rc=$?
+        set -e
+        if [ "$_c16rc" -ne 0 ]; then
+            c16_ok=0
+            bad "case 16: -fsafe $_c16v rc=$_c16rc want 0"
+        elif [ -z "$(find "$WORK/c16_valid_$_c16v" -name '*.c' -print -quit 2>/dev/null)" ]; then
+            c16_ok=0
+            bad "case 16: -fsafe $_c16v emitted no .c"
+        fi
+    done
+    for _c16r in enum_i64_max_implicit_reject_xmod enum_u63_max_implicit_reject_xmod; do
+        mkdir -p "$WORK/c16_reject_$_c16r"
+        set +e
+        ( cd "$WORK/c16_reject_$_c16r" && timeout 120 "$SAFE_ZIG" --dump-c89 \
+            -o "$WORK/c16_reject_$_c16r" --lib-dir "$GATE_ZLIB" \
+            "$ROOT/repro/mi_matrix/$_c16r/main.zig" ) \
+            >"$WORK/c16_reject_$_c16r.out" 2>"$WORK/c16_reject_$_c16r.err"
+        _c16rc=$?
+        set -e
+        if [ "$_c16rc" -ne 2 ]; then
+            c16_ok=0
+            bad "case 16: -fsafe $_c16r rc=$_c16rc want 2"
+        fi
+        if ! grep -q 'error\[3000\]' "$WORK/c16_reject_$_c16r.err" 2>/dev/null; then
+            c16_ok=0
+            bad "case 16: -fsafe $_c16r missing error[3000]"
+        fi
+        if grep -q 'error\[3062\]' "$WORK/c16_reject_$_c16r.err" 2>/dev/null; then
+            c16_ok=0
+            bad "case 16: -fsafe $_c16r has secondary error[3062]"
+        fi
+        if [ -n "$(find "$WORK/c16_reject_$_c16r" -name '*.c' -print -quit 2>/dev/null)" ]; then
+            c16_ok=0
+            bad "case 16: -fsafe $_c16r emitted .c despite the reject"
+        fi
+    done
+fi
+if [ "$c16_ok" -eq 1 ]; then
+    report_case 16 "$c16_emit" "PASS (-fsafe: max enums ok, implicit successor rejects)"
+else
+    report_case 16 "$c16_emit" "FAIL (-fsafe enum-value machinery)"
+fi
+
+# ---- 17-18. wide unsigned enum discriminants resolve exactly (runtime) ----
+# `enum(u40) { A = 0, B = 4294967297 }`: the u32 `enum_value_table` truncates
+# both the shorthand `.B` value and the `.A`/`.B` case labels to 0/1. The exact
+# member walk must resolve them. Each case emits, builds, and runs; stdout must
+# equal the committed expected.txt and rc the committed expected.rc (8).
+_c16idx=17
+for _c16w in switch_enum_u40_wide_ok_xmod switch_enum_u40_wide_qualified_ok_xmod; do
+    _c16dn="c${_c16idx}_$_c16w"
+    mkdir -p "$WORK/$_c16dn"
+    set +e
+    ( cd "$WORK/$_c16dn" && timeout 120 "$ZIG1" -ffast -o "$WORK/$_c16dn" \
+        "$ROOT/repro/mi_matrix/$_c16w/main.zig" ) \
+        >"$WORK/$_c16dn.out" 2>"$WORK/$_c16dn.err"
+    _c16rc=$?
+    set -e
+    _c16ok=1
+    if [ "$_c16rc" -ne 0 ]; then
+        _c16ok=0
+        bad "case $_c16idx: $_c16w emit rc=$_c16rc want 0"
+    elif ! ( cd "$WORK/$_c16dn" && timeout 120 sh build_target.sh linux prog ) \
+        >"$WORK/$_c16dn.build.log" 2>&1; then
+        _c16ok=0
+        bad "case $_c16idx: $_c16w build_target failed (see $WORK/$_c16dn.build.log)"
+    else
+        set +e
+        ( cd "$WORK/$_c16dn" && timeout 10 ./prog </dev/null ) \
+            >"$WORK/$_c16dn.run.out" 2>"$WORK/$_c16dn.run.err"
+        _c16run=$?
+        set -e
+        if ! cmp -s "$WORK/$_c16dn.run.out" "$ROOT/repro/mi_matrix/$_c16w/expected.txt"; then
+            _c16ok=0
+            bad "case $_c16idx: $_c16w runtime stdout mismatch (want 8)"
+        fi
+        _c16want="$(tr -d '\r\n' <"$ROOT/repro/mi_matrix/$_c16w/expected.rc")"
+        if [ "$_c16run" -ne "$_c16want" ]; then
+            _c16ok=0
+            bad "case $_c16idx: $_c16w runtime rc=$_c16run want $_c16want"
+        fi
+    fi
+    if [ "$_c16ok" -eq 1 ]; then
+        report_case "$_c16idx" "$_c16rc" "PASS ($_c16w runtime stdout 8)"
+    else
+        report_case "$_c16idx" "$_c16rc" "FAIL ($_c16w runtime)"
+    fi
+    _c16idx=$((_c16idx + 1))
+done
 
 if [ "$fail" -eq 0 ]; then
     echo "LOWER_DEPTH GATE OK"

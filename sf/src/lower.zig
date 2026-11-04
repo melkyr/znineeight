@@ -5242,9 +5242,11 @@ fn lowerExprStep(self: *LirLowerer) u32 {
             var enum_ty = enum_type[0];
             if (enum_ty != type_mod.TYPE_INT_LIT and enum_ty != type_mod.TYPE_UNDEFINED and enum_ty != type_mod.TYPE_VOID) {
                 var enum_ti = self.ctx.registry.types_items[@intCast(usize, enum_ty)];
-                // F2: the u32 table truncates a signed enum discriminant; the
-                // member record keeps the full i64 value.
-                if (enum_ti.kind == type_mod.TypeKind.enum_type and type_mod.typeRegistryIntIsSigned(self.ctx.registry, enum_ty)) {
+                // Task 6a: the u32 table truncates ANY enum discriminant above
+                // u32, not just a signed one; the member record keeps the full
+                // i64 value. Resolve the member by name for every enum type.
+                // Tagged-union tag ordinals still use the table below.
+                if (enum_ti.kind == type_mod.TypeKind.enum_type) {
                     var el_ev_name: u32 = ast_mod.astStoreIdentifier(self.ctx.store, node_idx);
                     if (lowerSwitchCaseItemMemberValue(self, el_ev_name, enum_ty)) |mv| ev_val = mv;
                 }
@@ -7217,14 +7219,14 @@ fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) 
     }
     if (node.kind == AstKind.enum_literal) {
         var el_name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, item_idx);
-        // F2: the u32 `enum_value_table` keeps only the low 32 bits of an
-        // enum member value. A signed backing can carry a negative (or wider)
-        // discriminant, so resolve the member by name first for a signed enum
-        // condition; unsigned conditions keep the table fast path unchanged.
+        // Task 6a: the u32 `enum_value_table` keeps only the low 32 bits of an
+        // enum member value, so any enum discriminant above u32 (signed or
+        // unsigned) must be resolved by name first. Tagged unions and
+        // non-enum contexts keep the table fast path unchanged.
         if (cond_ty_id) |ct| {
             if (@intCast(usize, ct) < self.ctx.registry.types_len) {
                 var el_ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
-                if (el_ct_ty.kind == type_mod.TypeKind.enum_type and type_mod.typeRegistryIntIsSigned(self.ctx.registry, ct)) {
+                if (el_ct_ty.kind == type_mod.TypeKind.enum_type) {
                     if (lowerSwitchCaseItemMemberValue(self, el_name_id, cond_ty_id)) |mv| return mv;
                 }
             }
@@ -7245,14 +7247,14 @@ fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) 
     }
     if (node.kind == AstKind.field_access) {
         var fa_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, item_idx);
-        // F2: a signed enum backing can carry a negative/wider discriminant
-        // than the u32 `enum_value_table` slot, so resolve the member by name
-        // first. Unsigned enums, tagged unions and `.tag` switches keep the
+        // Task 6a: a member of ANY enum backing can carry a discriminant wider
+        // than the u32 `enum_value_table` slot (signed or unsigned), so resolve
+        // the member by name first. Tagged unions and `.tag` switches keep the
         // table fast path below unchanged.
         if (cond_ty_id) |ct| {
             if (@intCast(usize, ct) < self.ctx.registry.types_len) {
                 var fa_ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
-                if (fa_ct_ty.kind == type_mod.TypeKind.enum_type and type_mod.typeRegistryIntIsSigned(self.ctx.registry, ct)) {
+                if (fa_ct_ty.kind == type_mod.TypeKind.enum_type) {
                     if (lowerSwitchCaseItemMemberValue(self, fa_name_id, cond_ty_id)) |mv| return mv;
                 }
             }
@@ -8711,9 +8713,11 @@ fn lowerExprLit(self: *LirLowerer, node_idx: u32) u32 {
             var enum_ty = enum_type[0];
             if (enum_ty != type_mod.TYPE_INT_LIT and enum_ty != type_mod.TYPE_UNDEFINED and enum_ty != type_mod.TYPE_VOID) {
                 var enum_ti = self.ctx.registry.types_items[@intCast(usize, enum_ty)];
-                // F2: the u32 table truncates a signed enum discriminant; the
-                // member record keeps the full i64 value.
-                if (enum_ti.kind == type_mod.TypeKind.enum_type and type_mod.typeRegistryIntIsSigned(self.ctx.registry, enum_ty)) {
+                // Task 6a: the u32 table truncates ANY enum discriminant above
+                // u32, not just a signed one; the member record keeps the full
+                // i64 value. Resolve the member by name for every enum type.
+                // Tagged-union tag ordinals still use the table below.
+                if (enum_ti.kind == type_mod.TypeKind.enum_type) {
                     var el_ev_name: u32 = ast_mod.astStoreIdentifier(self.ctx.store, node_idx);
                     if (lowerSwitchCaseItemMemberValue(self, el_ev_name, enum_ty)) |mv| ev_val = mv;
                 }

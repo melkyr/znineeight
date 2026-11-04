@@ -2408,6 +2408,18 @@ fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node
         } else if (mv < @intCast(i64, 0)) {
             var msp = fd2.span_start;
             var mep = msp + @intCast(u32, fd2.span_len);
+            // Task 6a: a positive source value above i64 max wrapped the i64
+            // member slot. Report the documented range limitation instead of
+            // the misleading negative-literal wording; genuine negative
+            // initializers keep the pre-existing error[3062].
+            if (fd2.child_1 != @intCast(u32, 0)) {
+                var ne_env = semanticAnalyzerTypeEnv(self, self.module_id);
+                if (type_resolver.evalConstEnumSourceExceedsI64Max(&ne_env, fd2.child_1)) {
+                    var lim_msg: []const u8 = "enum member value exceeds the supported enum value range (values above 9223372036854775807 require u64 enum storage, not supported yet)";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, lim_msg);
+                    return;
+                }
+            }
             var num_buf: [24]u8 = undefined;
             var mag: u64 = @intCast(u64, 0) -% mvu;
             var dl = itoa_mod.itoa64(mag, num_buf[1..]);
