@@ -4775,6 +4775,60 @@ fn semanticAnalyzerResolveSwitchCaseMember(self: *SemanticAnalyzer, node_idx: u3
     return type_mod.TYPE_VOID;
 }
 
+// F1: a negative literal / named-constant case item (or range endpoint) is
+// rejected when the switch condition is a concrete unsigned integer type,
+// matching Zig's `type '<T>' cannot represent integer value '<v>'` wording.
+// The check is deliberately limited to integer conditions: signed integers,
+// bool, the untyped integer-literal type, and enum/tagged-union conditions are
+// not validated here.
+fn semanticAnalyzerCheckUnsignedCaseItem(self: *SemanticAnalyzer, item_idx: u32, cond_tid: u32) void {
+    if (item_idx == @intCast(u32, 0)) return;
+    var item = ast_mod.astStoreNodeAt(self.store, item_idx);
+    if (item.kind == AstKind.range_inclusive or item.kind == AstKind.range_exclusive) {
+        if (semanticAnalyzerReportUnsignedNegativeCaseItem(self, item_idx, item.child_0, cond_tid)) return;
+        _ = semanticAnalyzerReportUnsignedNegativeCaseItem(self, item_idx, item.child_1, cond_tid);
+        return;
+    }
+    _ = semanticAnalyzerReportUnsignedNegativeCaseItem(self, item_idx, item_idx, cond_tid);
+}
+
+fn semanticAnalyzerReportUnsignedNegativeCaseItem(self: *SemanticAnalyzer, mark_node: u32, value_node: u32, cond_tid: u32) bool {
+    if (value_node == @intCast(u32, 0)) return false;
+    var ce = semaComptimeEvalInit(self);
+    var ci: ce_mod.ComptimeInt = undefined;
+    if (!semanticAnalyzerComptimeIntValue(self, &ce, value_node, &ci)) return false;
+    if (!ci.neg or ce_mod.ciIsZero(ci)) return false;
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return true;
+    var num_buf: [24]u8 = undefined;
+    var num_text = semanticAnalyzerComptimeIntText(ci, num_buf[0..]);
+    var ty_text = semanticAnalyzerIntrospectionTypeLabel(self, cond_tid);
+    var p0: []const u8 = "type '";
+    var p1: []const u8 = "' cannot represent integer value '";
+    var p2: []const u8 = "'";
+    var parts: [5][]const u8 = [5][]const u8{ p0, ty_text, p1, num_text, p2 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 5));
+    var sp: u32 = @intCast(u32, 0);
+    var ep: u32 = @intCast(u32, 0);
+    semanticAnalyzerCaseItemValueSpan(self, value_node, &sp, &ep);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, sp, ep, msg);
+    return true;
+}
+
+// The parser's `negate` node spans only the `-` token, so extend it to the
+// operand's end to match Zig's two-character `-1` caret.
+fn semanticAnalyzerCaseItemValueSpan(self: *SemanticAnalyzer, value_node: u32, sp_out: *u32, ep_out: *u32) void {
+    var vn = ast_mod.astStoreNodeAt(self.store, value_node);
+    var sp = vn.span_start;
+    var ep = vn.span_start + @intCast(u32, vn.span_len);
+    if (vn.kind == AstKind.negate and vn.child_0 != @intCast(u32, 0)) {
+        var op = ast_mod.astStoreNodeAt(self.store, vn.child_0);
+        var ope = op.span_start + @intCast(u32, op.span_len);
+        if (ope > ep) ep = ope;
+    }
+    sp_out.* = sp;
+    ep_out.* = ep;
+}
+
 fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     self.switch_depth += @intCast(u32, 1);
     var se: []const u8 = "SE"; pal_mod.markerWrite(se);
@@ -4875,6 +4929,10 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         self.switch_depth -= @intCast(u32, 1);
         return type_mod.TYPE_VOID;
     }
+    var cond_unsigned: u8 = @intCast(u8, 0);
+    if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID and cond_type != type_mod.TYPE_UNDEFINED and @intCast(usize, cond_type) < self.registry.types_len) {
+        if (type_mod.typeKindIsUnsignedIntBase(self.registry.types_items[@intCast(usize, cond_type)].kind) != @intCast(u8, 0)) cond_unsigned = @intCast(u8, 1);
+    }
     var unified: u32 = @intCast(u32, 0);
     var unified_node: u32 = @intCast(u32, 0);
     var has_else: u8 = 0;
@@ -4903,6 +4961,14 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         var pct = self.current_switch_cond_tu; var pp = ast_mod.astStoreNodePayload(self.store, prong_i);
         var pct_m2: []const u8 = "PCT:C"; pal_mod.markerWriteInt(pct_m2, pct);
         var ppt_m: []const u8 = "PCT:P"; pal_mod.markerWriteInt(ppt_m, @intCast(u32, ast_mod.astStoreNodePayloadPacked(self.store, prong_i, prong.kind) & @intCast(u64, 0xFFFFFFFF)));
+        if (cond_unsigned != @intCast(u8, 0) and ast_mod.astStoreNodePayload(self.store, prong_i) != @intCast(u32, 0)) {
+            var uc_n = ast_mod.astStoreNodeExtraChildCount(self.store, prong_i);
+            var uci: usize = 0;
+            while (uci < @intCast(usize, uc_n)) : (uci += 1) {
+                var uc_item = ast_mod.astStoreNodeExtraChildAt(self.store, prong_i, @intCast(u32, uci));
+                semanticAnalyzerCheckUnsignedCaseItem(self, uc_item, cond_type);
+            }
+        }
         if (self.current_switch_cond_tu != @intCast(u32, 0) and ast_mod.astStoreNodePayload(self.store, prong_i) != @intCast(u32, 0)) {
             var case_n = ast_mod.astStoreNodeExtraChildCount(self.store, prong_i);
             var ci: usize = 0;

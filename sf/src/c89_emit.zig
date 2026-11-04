@@ -773,6 +773,34 @@ fn tempIs64BitInt(emitter: *C89Emitter, temp_id: u32) u8 {
     return @intCast(u8, 0);
 }
 
+// F1: the switch condition's signedness/width for case-label spelling. Enums
+// follow their backing type (via `typeRegistryIntIsSigned`); an untyped integer
+// literal and `c_char` count signed, bool and the unsigned kinds do not.
+fn switchCondIsSigned(emitter: *C89Emitter, tid: u32) u8 {
+    if (tid == @intCast(u32, 0xFFFFFFFF) or tid == type_mod.TYPE_UNDEFINED or tid == type_mod.TYPE_VOID) return @intCast(u8, 0);
+    if (@intCast(usize, tid) >= emitter.registry.types_len) return @intCast(u8, 0);
+    var k = emitter.registry.types_items[@intCast(usize, tid)].kind;
+    if (k == type_mod.TypeKind.enum_type) {
+        if (type_mod.typeRegistryIntIsSigned(emitter.registry, tid)) return @intCast(u8, 1);
+        return @intCast(u8, 0);
+    }
+    if (type_mod.typeRegistryIntSignednessClass(emitter.registry, tid) == @intCast(i8, 1)) return @intCast(u8, 1);
+    return @intCast(u8, 0);
+}
+
+fn switchCondWidthBits(emitter: *C89Emitter, tid: u32) u32 {
+    if (tid == @intCast(u32, 0xFFFFFFFF) or tid == type_mod.TYPE_UNDEFINED or tid == type_mod.TYPE_VOID) return @intCast(u32, 32);
+    if (@intCast(usize, tid) >= emitter.registry.types_len) return @intCast(u32, 32);
+    var k = emitter.registry.types_items[@intCast(usize, tid)].kind;
+    if (k == type_mod.TypeKind.integer_literal_type) return @intCast(u32, 32);
+    if (k == type_mod.TypeKind.enum_type or type_mod.typeRegistryIsIntKind(emitter.registry, tid) != @intCast(u8, 0)) {
+        var w = type_mod.typeRegistryIntWidthBits(emitter.registry, tid);
+        if (w == @intCast(u8, 0)) return @intCast(u32, 32);
+        return @intCast(u32, w);
+    }
+    return @intCast(u32, 32);
+}
+
 // D1-1: the `first matching hoisted temp with a concrete (non-UNDEFINED) type`
 // truth table, returning the type id or TYPE_UNDEFINED (0) when absent. This is
 // the exact shape the int-const / addr-of-field / tagged-binop / temp-info
@@ -4746,6 +4774,61 @@ fn writeIntConstRvalue(emitter: *C89Emitter, value: u64, temp_type_id: u32, pref
     }
 }
 
+// F1: render one switch case value in the spelling the condition type needs.
+// Unsigned and non-negative signed values keep the existing decimal output
+// byte-for-byte; a negative signed value is a signed decimal literal in a
+// 32-bit `switch` label and a token-paste-safe signed 64-bit literal in the
+// if/else chain.
+fn writeSwitchCaseLabel(emitter: *C89Emitter, value: u64, cond_tid: u32) void {
+    var sbuf: [24]u8 = undefined;
+    var width = switchCondWidthBits(emitter, cond_tid);
+    if (switchCondIsSigned(emitter, cond_tid) == @intCast(u8, 0)) {
+        if (width >= @intCast(u32, 64)) { writeIntConstRvalue(emitter, value, cond_tid, ""); return; }
+        var vl = itoa_mod.itoa64(value, sbuf[0..]);
+        var vs = @intCast(usize, @intCast(u32, sbuf.len) - @intCast(u32, 1) - vl);
+        var vsl = sbuf[vs .. @intCast(usize, @intCast(u32, sbuf.len) - @intCast(u32, 1))];
+        bufferedWriterWrite(&emitter.writer, vsl);
+        return;
+    }
+    if (width < @intCast(u32, 64)) {
+        var wmask = (@intCast(u64, 1) << @intCast(u64, width)) - @intCast(u64, 1);
+        var masked = value & wmask;
+        var sb = @intCast(u8, width - @intCast(u32, 1));
+        var sign_bit = @intCast(u64, 1) << @intCast(u64, sb);
+        if ((masked & sign_bit) != @intCast(u64, 0)) {
+            var magnitude = (@intCast(u64, 1) << @intCast(u64, width)) - masked;
+            var minus: []const u8 = "-";
+            bufferedWriterWrite(&emitter.writer, minus);
+            var vl = itoa_mod.itoa64(magnitude, sbuf[0..]);
+            var vs = @intCast(usize, @intCast(u32, sbuf.len) - @intCast(u32, 1) - vl);
+            var vsl = sbuf[vs .. @intCast(usize, @intCast(u32, sbuf.len) - @intCast(u32, 1))];
+            bufferedWriterWrite(&emitter.writer, vsl);
+            return;
+        }
+        var vl = itoa_mod.itoa64(value, sbuf[0..]);
+        var vs = @intCast(usize, @intCast(u32, sbuf.len) - @intCast(u32, 1) - vl);
+        var vsl = sbuf[vs .. @intCast(usize, @intCast(u32, sbuf.len) - @intCast(u32, 1))];
+        bufferedWriterWrite(&emitter.writer, vsl);
+        return;
+    }
+    var sign_bit64: u64 = @intCast(u64, 0x8000000000000000);
+    if ((value & sign_bit64) == @intCast(u64, 0)) { writeIntConstRvalue(emitter, value, cond_tid, ""); return; }
+    if (value == sign_bit64) {
+        var min_lit: []const u8 = "Z98_I64_MIN";
+        bufferedWriterWrite(&emitter.writer, min_lit);
+        return;
+    }
+    var magnitude = @intCast(u64, 0) -% value;
+    var pfx: []const u8 = "(-Z98_I64_C(";
+    bufferedWriterWrite(&emitter.writer, pfx);
+    var vl = itoa_mod.itoa64(magnitude, sbuf[0..]);
+    var vs = @intCast(usize, @intCast(u32, sbuf.len) - @intCast(u32, 1) - vl);
+    var vsl = sbuf[vs .. @intCast(usize, @intCast(u32, sbuf.len) - @intCast(u32, 1))];
+    bufferedWriterWrite(&emitter.writer, vsl);
+    var sfx: []const u8 = "))";
+    bufferedWriterWrite(&emitter.writer, sfx);
+}
+
 fn arrLoopDeclSigned(len: u32) []const u8 {
     if (len == @intCast(u32, 0)) { var s: []const u8 = "    int _i = 0;\n"; return s; }
     var s: []const u8 = "    unsigned int _i = 0;\n"; return s;
@@ -8411,7 +8494,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                     emitValueExpr(emitter, s.cond, @intCast(u32, 0));
                     var eq: []const u8 = " == ";
                     bufferedWriterWrite(&emitter.writer, eq);
-                    writeIntConstRvalue(emitter, c.value, cond_tid, "");
+                    writeSwitchCaseLabel(emitter, c.value, cond_tid);
                     var gotoa: []const u8 = ") goto z_bb_";
                     bufferedWriterWrite(&emitter.writer, gotoa);
                     var bb_buf: [10]u8 = undefined;
@@ -8443,17 +8526,14 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 var s2: []const u8 = ") {\n";
                 bufferedWriterWrite(&emitter.writer, s2);
                 emitter.indent += @intCast(u32, 1);
+                var cond_tid = getTempTypeByIndex(emitter, s.cond);
                 var i: u32 = s.cases_start;
                 var end = s.cases_start + s.cases_count;
                 while (i < end) : (i += @intCast(u32, 1)) {
                     var c = emitter.switch_cases.items[@intCast(usize, i)];
                     var case_kw: []const u8 = "case ";
                     bufferedWriterWrite(&emitter.writer, case_kw);
-                    var val_buf: [24]u8 = undefined;
-                    var val_len = itoa_mod.itoa64(c.value, val_buf[0..]);
-                    var val_start = @intCast(usize, @intCast(u32, val_buf.len) - @intCast(u32, 1) - val_len);
-                    var val_str = val_buf[val_start .. @intCast(usize, @intCast(u32, val_buf.len) - @intCast(u32, 1))];
-                    bufferedWriterWrite(&emitter.writer, val_str);
+                    writeSwitchCaseLabel(emitter, c.value, cond_tid);
                     var gotoa: []const u8 = ": goto z_bb_";
                     bufferedWriterWrite(&emitter.writer, gotoa);
                     var bb_buf: [10]u8 = undefined;

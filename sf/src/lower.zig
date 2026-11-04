@@ -7190,14 +7190,19 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
 // FX1 shapes resolve to their comptime values: int consts (typed/untyped,
 // same-module `LO` or module-qualified `mod.LO`), enum-member consts
 // (`const LOMEM = Color.Red;`), unqualified enum members (`Blue`) and
-// `bool_literal` items (`true`/`false` -> 1/0). An unresolved item returns
+// `bool_literal` items (`true`/`false` -> 1/0), and negative literals /
+// module-level negative consts (resolved through the shared const evaluator
+// and stored as their two's-complement bit pattern). An unresolved item returns
 // null (no case appended) -- the silent-drop behavior retained for the shapes
-// still out of scope (negative const bounds / negative literals, non-constant
-// expressions, function-local consts -- lowering has no local-const scope).
+// still out of scope (non-constant expressions, function-local consts --
+// lowering has no local-const scope).
 fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) ?u64 {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, item_idx);
     if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal) {
         return ast_mod.astStoreIntValue(self.ctx.store, item_idx);
+    }
+    if (node.kind == AstKind.negate) {
+        return lowerSwitchCaseItemConstValue(self, item_idx, cond_ty_id);
     }
     if (node.kind == AstKind.bool_literal) {
         if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return @intCast(u64, 1);
@@ -7256,7 +7261,7 @@ fn lowerSwitchCaseItemMemberValue(self: *LirLowerer, name_id: u32, cond_ty_id: ?
             while (ei < ecount) : (ei += 1) {
                 var member = self.ctx.registry.em_items[estart + ei];
                 if (member.name_id == name_id) {
-                    return @intCast(u64, member.value);
+                    return @bitCast(u64, member.value);
                 }
             }
         } else if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
@@ -7277,22 +7282,21 @@ fn lowerSwitchCaseItemMemberValue(self: *LirLowerer, name_id: u32, cond_ty_id: ?
 // FX1: resolve a named case item / range bound (`LO`, `mod.LO`) to its
 // comptime integer value. The exact evaluator covers typed/untyped int consts
 // in the same module and module-qualified consts, including constant
-// arithmetic and the cross-module visibility check; only non-negative values
-// are emittable (the C emitter prints case labels as unsigned decimal). A
-// reference whose initializer is not an integer constant is re-checked
-// structurally for an enum-member value.
+// arithmetic and the cross-module visibility check. A negative value is stored
+// as its two's-complement `u64` bit pattern (the emitter selects the signed or
+// unsigned label form from the condition type). A reference whose initializer
+// is not an integer constant is re-checked structurally for an enum-member
+// value.
 fn lowerSwitchCaseItemConstValue(self: *LirLowerer, node_idx: u32, cond_ty_id: ?u32) ?u64 {
     var env = lowerTypeResolveEnv(self, self.ctx.diag);
     if (type_resolver.evalConstI64Full(&env, node_idx, @intCast(u32, 0))) |iv| {
-        if (iv >= @intCast(i64, 0)) return @intCast(u64, iv);
-        return null;
+        return @bitCast(u64, iv);
     }
     var decl = lowerSwitchCaseItemConstDecl(self, node_idx) orelse return null;
     var decl_node = ast_mod.astStoreNodeAt(self.ctx.store, decl);
     if (decl_node.child_1 == @intCast(u32, 0)) return null;
     if (type_resolver.evalConstI64Full(&env, decl_node.child_1, @intCast(u32, 0))) |iv2| {
-        if (iv2 >= @intCast(i64, 0)) return @intCast(u64, iv2);
-        return null;
+        return @bitCast(u64, iv2);
     }
     return lowerSwitchCaseItemEnumConstMemberValue(self, decl_node.child_1, cond_ty_id, @intCast(u32, 1));
 }
@@ -7365,6 +7369,21 @@ fn lowerSwitchCaseItemIsConstGlobal(s: *sym_mod.Symbol) bool {
     return symbolIsConstGlobal(s);
 }
 
+// True when the switch condition is a signed integer kind for range ordering
+// and case-label spelling. Enums follow their backing type; `c_char` and an
+// untyped integer literal are signed, while bool and the unsigned kinds are
+// not.
+fn lowerSwitchCondIsSigned(self: *LirLowerer, cond_ty_id: ?u32) u8 {
+    if (cond_ty_id) |tid| {
+        if (tid == @intCast(u32, 0) or tid == type_mod.TYPE_VOID or tid == type_mod.TYPE_UNDEFINED) return @intCast(u8, 0);
+        if (@intCast(usize, tid) >= self.ctx.registry.types_len) return @intCast(u8, 0);
+        var k = self.ctx.registry.types_items[@intCast(usize, tid)].kind;
+        if (type_mod.typeRegistryIntIsSigned(self.ctx.registry, tid)) return @intCast(u8, 1);
+        if (k == type_mod.TypeKind.integer_literal_type) return @intCast(u8, 1);
+    }
+    return @intCast(u8, 0);
+}
+
 fn lowerAppendSwitchCaseItem(self: *LirLowerer, item_idx: u32, prong_bb_id: u32, cond_ty_id: ?u32) void {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, item_idx);
     if (node.kind == AstKind.range_inclusive or node.kind == AstKind.range_exclusive) {
@@ -7372,7 +7391,29 @@ fn lowerAppendSwitchCaseItem(self: *LirLowerer, item_idx: u32, prong_bb_id: u32,
         var hi_opt = lowerSwitchCaseItemValue(self, node.child_1, cond_ty_id);
         if (lo_opt) |lo| {
             if (hi_opt) |hi| {
-                if (hi >= lo) {
+                if (lowerSwitchCondIsSigned(self, cond_ty_id) != @intCast(u8, 0)) {
+                    // Signed ranges order by their two's-complement value: bias
+                    // the sign bit so the unsigned compare and width stay exact
+                    // even across zero. An inclusive range whose diff is u64 max
+                    // cannot be expanded under the 16384 cap anyway.
+                    var sign_bias: u64 = @intCast(u64, 0x8000000000000000);
+                    var lo_ord = lo ^ sign_bias;
+                    var hi_ord = hi ^ sign_bias;
+                    if (hi_ord >= lo_ord) {
+                        var diff = hi_ord - lo_ord;
+                        var count: u64 = diff;
+                        if (node.kind == AstKind.range_inclusive) {
+                            if (diff != @intCast(u64, 0xFFFFFFFFFFFFFFFF)) count = diff + @intCast(u64, 1);
+                        }
+                        if (count <= @intCast(u64, 16384)) {
+                            var ctr: u64 = @intCast(u64, 0);
+                            while (ctr < count) : (ctr += @intCast(u64, 1)) {
+                                var vv = (lo_ord + ctr) ^ sign_bias;
+                                lir_mod.switchCaseArrayListAppend(&self.func.switch_cases, lir_mod.SwitchCase{ .value = vv, .target_bb = prong_bb_id });
+                            }
+                        }
+                    }
+                } else if (hi >= lo) {
                     var one: u64 = @intCast(u64, 1);
                     var count: u64 = if (node.kind == AstKind.range_inclusive) (hi - lo) + one else hi - lo;
                     if (count <= @intCast(u64, 16384)) {
