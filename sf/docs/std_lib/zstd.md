@@ -9,11 +9,15 @@
 ## Module overview
 
 `std_zstd` is a stateless, single-shot decoder for the RFC 8878 zstd frame
-format (a documented subset). It expands a complete compressed stream into a
-caller-owned destination buffer. There is no heap allocation, no internal output
-buffer, and no state carried between calls: history for a back-reference is
-always the already-written prefix of `dst`, so the caller must keep the whole
-decoded frame contiguous.
+format. The no-dictionary entry `zstdDecompress` covers the documented frame
+subset and still rejects frames carrying a nonzero dictionary id; the additive
+`zstdDecompressDict` entry adds full RFC 8878 dictionary support (magic
+dictionaries with entropy/content, or raw-content dictionaries). Both expand a
+complete compressed stream into a caller-owned destination buffer. There is no
+heap allocation, no internal output buffer, and no state carried between calls:
+history for a back-reference is the supplied dictionary content followed by the
+already-written prefix of `dst`, so the caller must keep the whole decoded
+frame contiguous.
 
 The module follows the L4 codec model used by `std_lz4`, not the arena model:
 the caller owns both buffers and sizes `dst` for the full decoded payload.
@@ -139,6 +143,58 @@ frames (`0` written). On any error the destination may contain partial output �
 there is no partial-output contract, so treat `dst` as invalid and retry into a
 fresh buffer after fixing the caller's size/cap or the input.
 
+### `zstdDecompressDict`
+
+**Purpose** — decodes a complete zstd stream (one or more standard frames, plus
+skippable frames) using a caller-supplied RFC 8878 dictionary, expanding into
+`dst`.
+
+**When to use** — when the producer compressed with `zstd -D <dict>` (a magic
+dictionary, `0xEC30A437`) or with a raw-content dictionary. Use the plain
+`zstdDecompress` for ordinary frames; it rejects dictionary-compressed frames.
+
+**Signature** — `pub fn zstdDecompressDict(src: []const u8, dst: []u8, dict: []const u8, max_window_log: u8) !u32`
+
+**Parameters**
+- `src` — the complete compressed stream (standard and skippable frames, as for
+  `zstdDecompress`).
+- `dst` — the destination and, after the dictionary tail, the decoder's
+  history. The caller sizes it for the total decoded content.
+- `dict` — the dictionary bytes. If the first four bytes are the magic
+  `0xEC30A437` and the input is at least 8 bytes, the dictionary id is read
+  little-endian from bytes 4–7 and its Huffman/FSE entropy tables are loaded
+  (they seed first-block `Repeat`); the remaining bytes are the content. Any
+  other input is treated as a raw-content dictionary with id `0`.
+- `max_window_log` — the same caller window cap as `zstdDecompress`.
+
+**Returns** — the total number of bytes written to `dst` (`u32`), across all
+decoded standard frames.
+
+**Errors**
+- `error.Corrupt` — as for `zstdDecompress`, plus: a frame carries a nonzero
+  dictionary id and the supplied dictionary is absent, is not a magic
+  dictionary, or has a different id; a raw-content dictionary is supplied for a
+  frame with a nonzero dictionary id; or the dictionary header/tables are
+  malformed.
+- `error.OutputTooSmall` — a frame declares more content than the remaining
+  space in `dst`, or a block would write past `dst.len`.
+- `error.WindowTooBig` — the frame's window log exceeds `max_window_log`.
+
+**Example**
+```zig
+const std_zstd = @import("std_zstd");
+
+var dst: [1 << 20]u8 = undefined;
+const n = std_zstd.zstdDecompressDict(frame[0..], dst[0..], dict[0..], 24) catch return;
+std.io.write(dst[0..@intCast(usize, n)]);
+```
+
+**Gotchas** — a frame's dictionary id `0` accepts any supplied dictionary; a
+nonzero id requires a magic dictionary with the exact matching id (raw content
+cannot satisfy it). Only the last `min(dict content length, frame window
+size)` dictionary bytes are used as history. As with `zstdDecompress`, there is
+no partial-output contract: treat `dst` as invalid after any error.
+
 ### Supported subset and boundaries
 
 - Standard zstd frames with raw, RLE, and compressed blocks.
@@ -148,9 +204,11 @@ fresh buffer after fixing the caller's size/cap or the input.
   modes and repeat offsets.
 - Optional content size and content checksum (xxh64 low 32 bits).
 - RFC-mandated skippable frames.
-- **No dictionaries.** A frame with a nonzero dictionary id is
-  `error.Corrupt`; dictionary-compressed data must not be produced for this
-  decoder.
+- **Dictionaries via `zstdDecompressDict` only.** Magic dictionaries
+  (`0xEC30A437`, id + entropy tables + content) and raw-content dictionaries
+  are accepted there; a frame with a nonzero dictionary id is `error.Corrupt`
+  when no dictionary is supplied. `zstdDecompress` (no-dict entry) still
+  rejects every nonzero dictionary id.
 - No legacy/magicless frames and no streaming API: input must be a complete
   frame stream and output must fit the caller's `dst` in one call.
 
@@ -163,16 +221,18 @@ Compression is never done at runtime by Z98:
    larger inputs (libzstd 1.5.4 uses window log 23 on 10 MiB), and `--long=24`
    (or another window log) raises it further. Either give the decoder a matching
    `max_window_log` (`23`–`24` for `-19` on more than 2 MiB) or constrain the
-   producer with `zstd --zstd=wlog=21`. Do **not** use `-D` / dictionaries.
+   producer with `zstd --zstd=wlog=21`. For dictionary-compressed data use
+   `zstd -D <dict>` and commit the dictionary alongside the frame.
 2. Commit the resulting `.zst` as the `.in` fixture/asset and its decoded bytes
    (or the original input) as `.expected`; never regenerate vectors during a
    test run — the committed pair is the frozen agreement.
 3. At runtime pass the `.zst` bytes and a `dst` sized for the known decoded
    length to `zstdDecompress`, with `max_window_log` no smaller than the window
-   used to produce the frame. Level `-1` output fits the default `21`; level
-   `-19` raises the window automatically on larger inputs, so use `23`–`24`
-   for `-19` on more than 2 MiB (a 256 MB box can pass `24`–`28`) or constrain
-   the producer with `zstd --zstd=wlog=21`.
+   used to produce the frame. For `-D` output use `zstdDecompressDict` with the
+   same dictionary bytes. Level `-1` output fits the default `21`; level `-19`
+   raises the window automatically on larger inputs, so use `23`–`24` for `-19`
+   on more than 2 MiB (a 256 MB box can pass `24`–`28`) or constrain the
+   producer with `zstd --zstd=wlog=21`.
 
 The repo's vectors follow this path: `scripts/stdlib/vectors/std_zstd/` holds
 committed host-zstd frames (text, binary, incompressible data, several window

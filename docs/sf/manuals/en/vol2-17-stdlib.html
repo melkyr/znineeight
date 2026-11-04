@@ -102,7 +102,7 @@ separately), no string object. Floating-point math is limited to the f64
 f32 surface. What exists is a set of concrete, hand-written helpers: an arena
 you own, byte slices you slice yourself, a formatting engine behind
 <tt>print</tt>, and thin wrappers over the operating system. The list below is
-the whole <tt>std</tt> namespace; the shipped library also has thirty
+the whole <tt>std</tt> namespace; the shipped library also has thirty-two
 public by-path modules beyond it plus five internal <tt>*_pal</tt> files
 (see <a href="#beyond">Beyond <tt>std</tt></a>). What
 you gain is that every function is a plain Z98 function you can read in the
@@ -202,12 +202,12 @@ covered here so the list is complete.
 <h2><a name="beyond"></a>Beyond <tt>std</tt></h2>
 <p>
 The namespace above is the whole <tt>std</tt> namespace, but not the whole
-shipped library. Thirty public modules ship by path (plus five internal
+shipped library. Thirty-two public modules ship by path (plus five internal
 <tt>*_pal</tt> files): import one as
 <tt>@import("std_&lt;name&gt;")</tt> rather than through <tt>std</tt>. They are
 indexed below; 22 are detailed in the four companion reference pages,
 <tt>std_gfx</tt>/<tt>std_gfx_pal</tt> in the DirectX/GUI chapter, and the
-remaining seven in <tt>sf/docs/std_lib/</tt>.
+remaining eight in <tt>sf/docs/std_lib/</tt>.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -223,6 +223,10 @@ remaining seven in <tt>sf/docs/std_lib/</tt>.
 <td><tt>std_base64</tt>, <tt>std_hex</tt>, <tt>std_utf8</tt>, <tt>std_crypto</tt>, <tt>std_lz4</tt>, <tt>std_zstd</tt></td>
 </tr>
 <tr>
+<td><a href="../../../sf/docs/std_lib/deflate.md">Deflate / zlib</a></td>
+<td><tt>std_deflate</tt></td>
+</tr>
+<tr>
 <td><a href="vol4-18-stdlib-io.html">I/O and HTTP</a></td>
 <td><tt>std_file</tt>, <tt>std_stdin</tt>, <tt>std_stream</tt>, <tt>std_http</tt></td>
 </tr>
@@ -236,8 +240,20 @@ remaining seven in <tt>sf/docs/std_lib/</tt>.
 </tr>
 </table>
 <p>
-The directory holds thirty-five more <tt>std_*.zig</tt> files than these
-fourteen: thirty public modules that ship by path and five internal
+The v136 seed expands this surface without changing the <tt>std</tt>
+namespace. <tt>std_zstd</tt> now also decodes RFC 8878 dictionaries through
+<tt>zstdDecompressDict</tt> (magic or raw content), while the original
+<tt>zstdDecompress</tt> still rejects dictionary frames. The new
+<tt>std_deflate</tt> module inflates RFC 1951 raw DEFLATE
+(<tt>inflateRaw</tt>) and RFC 1950 zlib streams (<tt>inflateZlib</tt>), both
+with a mandatory <tt>used</tt> consumed-input count. <tt>std_http</tt> adds
+POST and a streaming response sink (<tt>httpPostOver</tt>,
+<tt>httpPostStreamOver</tt>, <tt>ResponseSink</tt>) plus the <tt>post</tt>
+convenience call on top of GET.
+</p>
+<p>
+The directory holds thirty-seven more <tt>std_*.zig</tt> files than these
+fourteen: thirty-two public modules that ship by path and five internal
 <tt>*_pal</tt> support files (<tt>std_os_pal</tt>, <tt>std_time_pal</tt>,
 <tt>std_file_pal</tt>, <tt>std_stdin_pal</tt>, <tt>std_gfx_pal</tt>). A name
 that is not in the re-export table above is not part of the <tt>std</tt>
@@ -806,7 +822,7 @@ information in Z98 is in the return type, which is why the arena returns
 </p>
 <p>
 <b>Assuming more modules ship through <tt>std</tt>.</b> The library directory
-holds thirty more public <tt>std_*.zig</tt> modules that ship by path (plus five
+holds thirty-two more public <tt>std_*.zig</tt> modules that ship by path (plus five
 internal <tt>*_pal</tt> files), and a name
 that is not in the re-export table is not reachable through <tt>std</tt>. The
 compiler says so at the point of use:
@@ -818,7 +834,7 @@ const S = @sizeOf(std.base64);
 <p>
 Check the re-export list in <tt>sf/src/std.zig</tt> before you reach for a
 name. If it is not one of the fourteen, it is not part of the <tt>std</tt>
-namespace; if it is one of the thirty public by-path modules, import it as
+namespace; if it is one of the thirty-two public by-path modules, import it as
 <tt>@import("std_&lt;name&gt;")</tt> and use the companion page above.
 </p>
 <p>
@@ -860,10 +876,10 @@ where the arena, buffer, and init-function patterns are collected.</li>
 function of every module in the table above; the four companion pages linked
 under <a href="#beyond">Beyond <tt>std</tt></a> cover 22 public by-path modules.
 <tt>std_gfx</tt>/<tt>std_gfx_pal</tt> are covered in
-<a href="vol3-14-directx.html">the DirectX/GUI chapter</a>; the remaining seven
+<a href="vol3-14-directx.html">the DirectX/GUI chapter</a>; the remaining eight
 (<tt>std_ecc</tt>, <tt>std_asn1</tt>, <tt>std_x509</tt>, <tt>std_tls</tt>,
-<tt>std_wireguard</tt>, <tt>std_tcpip</tt>, <tt>std_cipher</tt>) are documented
-in <tt>sf/docs/std_lib/</tt>. The runnable example in
+<tt>std_wireguard</tt>, <tt>std_tcpip</tt>, <tt>std_cipher</tt>,
+<tt>std_deflate</tt>) are documented in <tt>sf/docs/std_lib/</tt>. The runnable example in
 <tt>docs/sf/manuals/src/vol2/stdio.z98</tt> is the working reference for the
 shape of a call, and the module sources
 <tt>sf/src/std_*.zig</tt> are the authority for a signature this chapter did

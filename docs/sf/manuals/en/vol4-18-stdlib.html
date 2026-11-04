@@ -1529,6 +1529,11 @@ internal implementation, not public modules.
 <td valign="top"><a href="vol4-18-stdlib-codecs.html">Codecs and crypto</a></td>
 </tr>
 <tr>
+<td valign="top">Deflate / zlib</td>
+<td valign="top"><tt>std_deflate</tt></td>
+<td valign="top"><a href="../../../sf/docs/std_lib/deflate.md">Deflate / zlib</a></td>
+</tr>
+<tr>
 <td valign="top">I/O and HTTP</td>
 <td valign="top"><tt>std_file</tt>, <tt>std_stdin</tt>, <tt>std_stream</tt>,
 <tt>std_http</tt></td>
@@ -1541,6 +1546,16 @@ internal implementation, not public modules.
 <td valign="top"><a href="vol4-18-stdlib-algorithms.html">Algorithms</a></td>
 </tr>
 </table>
+<p>
+The v136 seed adds no re-export and no compiler source change. In the by-path
+surface, <tt>std_zstd</tt> gains RFC 8878 dictionary decode via
+<tt>zstdDecompressDict</tt> (the no-dict <tt>zstdDecompress</tt> still rejects
+dictionary frames), <tt>std_deflate</tt> is new
+(<tt>inflateRaw</tt>/<tt>inflateZlib</tt>, both with a mandatory consumed-input
+<tt>used</tt> count), and <tt>std_http</tt> gains POST and a streaming response
+sink (<tt>httpPostOver</tt>, <tt>httpPostStreamOver</tt>,
+<tt>ResponseSink</tt>, and <tt>post</tt>) alongside GET.
+</p>
 
 <h2>See also</h2>
 <p>

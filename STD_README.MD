@@ -25,9 +25,9 @@ same on linux and win32.
 - **Not concurrent.** No threads, locking, or atomics (R5).
 - **Not a hidden runtime.** Coroutines have no executor and no poll loop; the
   caller drives the scheduler (R4).
-- **Not a grab-bag.** Image/compression formats, graph algorithms, application
-  math, Win32/DirectX/COM declarations, regex, container types beyond the three
-  maps and one heap, and a testing framework are explicitly out of scope.
+- **Not a grab-bag.** Image codecs, graph algorithms, application math,
+  Win32/DirectX/COM declarations, regex, container types beyond the three maps
+  and one heap, and a testing framework are explicitly out of scope.
 - **Not a set of public PAL modules.** The private `std_<module>_pal.zig` units
   are implementation details and are never imported directly.
 
@@ -55,13 +55,16 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v127** (`release/seed/zig1-seed.tgz`, archive md5
-`70a6173979fe74db8d00b0e1212153d7`), with **49** std files (`std.zig` +
-48 `std_*.zig`) and `lib/manifest.md5` md5
-`fc9646bfcfecb14fd3872833bf13d43a`. The compiler fixed point is
-`2fc64ffedb3ba5f4e8adf35896729e54`; v127 is the P4-M4 theme rotation
-(refreshes the `std_gfx`/`std_gfx_pal` payload, including the black color-atlas
-fix; P4 adds no compiler source change).
+The committed seed is **v136** (`release/seed/zig1-seed.tgz`, archive md5
+`d0f1d191689ad996bedcade688de1f2b`), with **52** std files (`std.zig` +
+51 `std_*.zig`) and `lib/manifest.md5` md5
+`1906480f9b15dcd4e152cf8c247f2e61`. The compiler fixed point is
+`cf68f192900e7f6618c11e1712b74b3a`; v136 is the Phase 3 Milestone-1
+std closeout (zstd RFC 8878 dictionaries, the new `std_deflate` inflater,
+and `std_http` POST + streaming sink; no compiler source change, so the
+fixed point is unchanged from v135). The Win9x companion zip is
+`release/seed/zig1_seed_w9.zip` (md5
+`8fc02b8123ab04fac77ab8932ac60beb`).
 
 ## Phase 1 result — TLS + WireGuard complete
 
@@ -88,7 +91,7 @@ strict: lower layers only, never siblings, never higher (R3).
 | **L1** | Process, clocks, and diagnostics over the builtins and a per-OS PAL | `std.os`, `std.time`, `std.debug` |
 | **L2** | Data layer built on L0 — string slices and growable buffers | `std.str`, `std.buf` |
 | **L3** | Resources — owned-handle files, stdin, and sockets | `std_file`, `std_stdin`, `std.net` |
-| **L4** | Collections and byte codecs — concrete maps, sort/search, a stable min-heap, RLE, LZ4 block and zstd frame decode | `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_lz4`, `std_zstd` |
+| **L4** | Collections and byte codecs — concrete maps, sort/search, a stable min-heap, RLE, LZ4 block decode, zstd frame/dictionary decode, and raw DEFLATE/zlib inflate | `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_lz4`, `std_zstd`, `std_deflate` |
 | **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, DER/X.509 parsing and chain verification, TLS 1.2/1.3 client, WireGuard initiator protocol, userspace IPv4/TCP/UDP/DNS/ICMP stack, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_wireguard`, `std_tcpip`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
 | **L6** | Composition — coroutine-aware line and frame readers | `std_stream` |
 | async runtime | Outside L0–L6 — the cooperative scheduler and child-frame pool | `std.async` |
@@ -157,7 +160,9 @@ apply to its modules.
 | PCG32 / xoshiro256\*\* pseudorandom generators | `std_rand` | [rand.md](sf/docs/std_lib/rand.md) |
 | OpenSimplex 2D/3D noise and fBm | `std_noise` | [noise.md](sf/docs/std_lib/noise.md) |
 | LZ4 raw block decode | `std_lz4` | [codecs.md](sf/docs/std_lib/codecs.md) |
-| Zstd frame decode | `std_zstd` | [zstd.md](sf/docs/std_lib/zstd.md) |
+| Zstd frame decode, including RFC 8878 dictionaries | `std_zstd` | [zstd.md](sf/docs/std_lib/zstd.md) |
+| Raw DEFLATE / zlib inflate with consumed-input reporting | `std_deflate` | [deflate.md](sf/docs/std_lib/deflate.md) |
+| HTTP/1.1 GET/POST over a caller transport; streaming response sink | `std_http` | [http.md](sf/docs/std_lib/http.md) |
 | Adaptive ODE integration (explicit Dormand–Prince RK45) | `std_num` | [num.md](sf/docs/std_lib/num.md) |
 | Grid pathfinding (JPS, preprocessed JPS+) | `std_pathfind` | [pathfind.md](sf/docs/std_lib/pathfind.md) |
 | Hierarchical pathfinding (HPA\*, exact transition tiles) | `std_hpa` | [hpa.md](sf/docs/std_lib/hpa.md) |
@@ -283,7 +288,13 @@ entry for each public function. Read the one for the job at hand:
   raw LZ4 block decode (legacy `std_crypto` primitives are indexed in
   [crypto.md](sf/docs/std_lib/crypto.md)).
 - [zstd.md](sf/docs/std_lib/zstd.md) — `std_zstd`: single-shot zstd frame
-  decode with a caller-overridable window cap.
+  decode with a caller-overridable window cap, plus RFC 8878 dictionaries
+  (`zstdDecompressDict`; magic or raw content).
+- [deflate.md](sf/docs/std_lib/deflate.md) — `std_deflate`: single-shot raw
+  DEFLATE / zlib inflate (`inflateRaw`, `inflateZlib`) with a mandatory
+  consumed-input `used` out-param and no heap.
+- [http.md](sf/docs/std_lib/http.md) — `std_http`: HTTP/1.1 GET and POST over
+  a caller-supplied transport, plus a streaming response sink for large bodies.
 - [num.md](sf/docs/std_lib/num.md) — `std_num`: explicit adaptive
   Dormand–Prince RK45 with a caller-supplied state vector and derivative
   callback.
