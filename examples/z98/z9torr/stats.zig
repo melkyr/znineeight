@@ -29,6 +29,7 @@
 // `var s: []const u8 = "...";`. D2: the only slice is `[]u8`/`[]const u8`
 // (primitive element); no slice of a synthetic type.
 
+const std = @import("std");
 const parse = @import("std_parse.zig");
 const tracker = @import("tracker.zig");
 
@@ -38,6 +39,10 @@ pub const STATS_LINE_MAX: usize = 256;
 
 const BAR_WIDTH: u32 = 40;
 const MB: u64 = 1048576;
+
+fn addU32(a: u32, b: u32) u32 {
+    return a + b;
+}
 
 fn putByte(out: []u8, pos: *usize, c: u8) void {
     out[pos.*] = c;
@@ -148,10 +153,7 @@ pub fn statsRender(s: *tracker.Stats, out_buf: []u8) []const u8 {
     putByte(out_buf, &pos, ' ');
 
     // Rate: mean of the 5-sample rolling window (bytes/s), widened to u64.
-    var sum: u64 = 0;
-    for (0..5) |k| {
-        sum += @intCast(u64, s.window_down[k]);
-    }
+    var sum: u64 = @intCast(u64, std.fold.foldU32(s.window_down[0..], 0, addU32));
     var rate: u64 = sum / 5;
     putU64(out_buf, &pos, rate / 1024);
     putStr(out_buf, &pos, "KB/s peers=");
