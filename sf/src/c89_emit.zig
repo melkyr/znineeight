@@ -1453,6 +1453,21 @@ fn emitDefineMacroWideNeg(emitter: *C89Emitter, a: []const u8, b: []const u8, c:
     bufferedWriterWrite(&emitter.writer, d2);
 }
 
+// F2 fix round 1: a portable minimum-literal macro body (token text passed by
+// the caller; no sign/magnitude arithmetic here).
+fn emitDefineMacroWideLit(emitter: *C89Emitter, a: []const u8, b: []const u8, c: []const u8, lit: []const u8) void {
+    var d0: []const u8 = "#define ";
+    bufferedWriterWrite(&emitter.writer, d0);
+    bufferedWriterWrite(&emitter.writer, a);
+    bufferedWriterWrite(&emitter.writer, b);
+    bufferedWriterWrite(&emitter.writer, c);
+    var d1: []const u8 = " ";
+    bufferedWriterWrite(&emitter.writer, d1);
+    bufferedWriterWrite(&emitter.writer, lit);
+    var d2: []const u8 = "\n";
+    bufferedWriterWrite(&emitter.writer, d2);
+}
+
 fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
     var reg = emitter.registry;
     var ty = reg.types_items[@intCast(usize, tid)];
@@ -1819,6 +1834,7 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
     bufferedWriterWrite(&emitter.writer, mangled_name);
     var sc: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sc);
     var signed_backing = type_mod.typeRegistryIntIsSigned(emitter.registry, ep.backing_type);
+    var backing_width: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(emitter.registry, ep.backing_type));
     var mi: u16 = @intCast(u16, 0);
     while (mi < ep.members_count) : (mi += @intCast(u16, 1)) {
         var member = emitter.registry.em_items[@intCast(usize, ep.members_start) + @intCast(usize, mi)];
@@ -1826,7 +1842,15 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
         var uf_us: []const u8 = "_";
         if (signed_backing and member.value < @intCast(i64, 0)) {
             var magnitude: u64 = @intCast(u64, 0) -% @bitCast(u64, member.value);
-            emitDefineMacroWideNeg(emitter, mangled_name, uf_us, mname, magnitude);
+            if (backing_width == @intCast(u32, 64) and magnitude == @intCast(u64, 0x8000000000000000)) {
+                var i64_min_lit: []const u8 = "Z98_I64_MIN";
+                emitDefineMacroWideLit(emitter, mangled_name, uf_us, mname, i64_min_lit);
+            } else if (backing_width == @intCast(u32, 32) and magnitude == @intCast(u64, 0x80000000)) {
+                var i32_min_lit: []const u8 = "(-2147483647 - 1)";
+                emitDefineMacroWideLit(emitter, mangled_name, uf_us, mname, i32_min_lit);
+            } else {
+                emitDefineMacroWideNeg(emitter, mangled_name, uf_us, mname, magnitude);
+            }
         } else {
             emitDefineMacroWide(emitter, mangled_name, uf_us, mname, @bitCast(u64, member.value));
         }
@@ -4826,6 +4850,13 @@ fn writeSwitchCaseLabel(emitter: *C89Emitter, value: u64, cond_tid: u32) void {
         var sign_bit = @intCast(u64, 1) << @intCast(u64, sb);
         if ((masked & sign_bit) != @intCast(u64, 0)) {
             var magnitude = (@intCast(u64, 1) << @intCast(u64, width)) - masked;
+            // F2 fix round 1: `-2147483648` is not a portable C89 int constant;
+            // spell the i32 minimum as `(-2147483647 - 1)`.
+            if (width == @intCast(u32, 32) and magnitude == @intCast(u64, 0x80000000)) {
+                var min_lbl: []const u8 = "(-2147483647 - 1)";
+                bufferedWriterWrite(&emitter.writer, min_lbl);
+                return;
+            }
             var minus: []const u8 = "-";
             bufferedWriterWrite(&emitter.writer, minus);
             var vl = itoa_mod.itoa64(magnitude, sbuf[0..]);

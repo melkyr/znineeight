@@ -332,6 +332,27 @@ fn classifyScalar(ec: *ConstInitEvalCtx, module_id: u32, node_idx: u32, type_id:
         return tableAddNode(ec.tbl, CIE_BOOL, bv, @intCast(u32, 0), @intCast(u32, 0));
     }
     if (node.kind == AstKind.enum_literal) {
+        // F2 fix round 1: the u32 `enum_values` table truncates a signed enum
+        // discriminant. When the declaration's expected type is an enum, take
+        // the exact i64 member value so `.A` initializers keep the sign.
+        if (typeKindOf(ec, type_id) == @intCast(u32, @enumToInt(type_mod.TypeKind.enum_type))) {
+            var el_name_id = ast_mod.astStoreIdentifier(ec.store, node_idx);
+            var el_ty = ec.registry.types_items[@intCast(usize, type_id)];
+            var el_ep = ec.registry.en_items[@intCast(usize, el_ty.payload_idx)];
+            var el_start: usize = @intCast(usize, el_ep.members_start);
+            var el_count: usize = @intCast(usize, el_ep.members_count);
+            var el_i: usize = @intCast(usize, 0);
+            while (el_i < el_count) : (el_i += @intCast(usize, 1)) {
+                var el_m = ec.registry.em_items[el_start + el_i];
+                if (el_m.name_id == el_name_id) {
+                    var el_mag: u64 = @bitCast(u64, el_m.value);
+                    if (el_m.value < @intCast(i64, 0)) { el_mag = @intCast(u64, 0) -% el_mag; }
+                    var el_pv = ce_mod.ciFromU64(el_mag);
+                    if (el_m.value < @intCast(i64, 0)) { el_pv.neg = true; }
+                    return valNodeFromComptime(ec, ce_mod.ciIntVal(el_pv), type_id);
+                }
+            }
+        }
         if (hash_mod.u32ToU32MapGet(ec.enum_values, node_idx)) |ev| {
             var pv = ce_mod.ciFromU64(@intCast(u64, ev));
             return valNodeFromComptime(ec, ce_mod.ciIntVal(pv), type_id);

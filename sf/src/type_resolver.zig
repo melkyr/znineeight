@@ -1659,6 +1659,112 @@ pub fn tupleElemArrayUnsupported(env: *TypeResolveEnv, elem_tid: u32, mark_node:
     return true;
 }
 
+fn localEnumBackingTypeLabel(env: *TypeResolveEnv, bt: u32) []const u8 {
+    if (@intCast(usize, bt) < env.typereg.types_len) {
+        var bty = env.typereg.types_items[@intCast(usize, bt)];
+        if (bty.name_id != @intCast(u32, 0)) {
+            return interner_mod.stringInternerGet(env.interner, bty.name_id);
+        }
+    }
+    var fallback: []const u8 = "?";
+    return fallback;
+}
+
+// F2 fix round 1: the local/inline enum path had no backing-fit check, so
+// `enum(u8) { A = -1 }` and `enum(i8) { A = 300 }` were accepted. Mirror the
+// module gate's fit rules: unsigned accepts 0..2^N-1, signed accepts
+// -2^(N-1)..2^(N-1)-1, and a negative value on an unsigned backing uses the
+// F1-pinned `error[3062]` wording.
+fn validateLocalEnumBackingFit(env: *TypeResolveEnv, enum_node: u32, diag: *DiagnosticCollector) void {
+    var enum_n = ast_mod.astStoreNodeAt(env.store, enum_node);
+    var bt: u32 = type_mod.TYPE_U32;
+    if (enum_n.child_0 != @intCast(u32, 0)) {
+        var rbt = resolveTypeExprFull(env, enum_n.child_0, @intCast(u32, 0));
+        if (rbt == type_mod.TYPE_UNDEFINED or rbt == type_mod.TYPE_VOID) return;
+        bt = rbt;
+    }
+    var is_unsigned = type_mod.typeRegistryIsUnsigned(env.typereg, bt);
+    var is_signed = type_mod.typeRegistryIsInteger(env.typereg, bt) and type_mod.typeRegistryIntIsSigned(env.typereg, bt);
+    if (!is_unsigned and !is_signed) return;
+    var nbits: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, bt));
+    var max_u: u64 = @intCast(u64, 0xFFFFFFFFFFFFFFFF);
+    if (nbits < @intCast(u32, 64)) {
+        max_u = (@intCast(u64, 1) << @intCast(u64, nbits)) - @intCast(u64, 1);
+    }
+    var max_s: i64 = @intCast(i64, 0x7FFFFFFFFFFFFFFF);
+    var min_s: i64 = @bitCast(i64, @intCast(u64, 0x8000000000000000));
+    if (nbits < @intCast(u32, 64)) {
+        var half_u: u64 = @intCast(u64, 1) << @intCast(u64, nbits - @intCast(u32, 1));
+        var half: i64 = @intCast(i64, half_u);
+        max_s = half - @intCast(i64, 1);
+        min_s = -half;
+    }
+    var auto_val: i64 = @intCast(i64, 0);
+    var prev_u: u64 = @intCast(u64, 0);
+    var prev_s: i64 = @intCast(i64, 0);
+    var have_prev: bool = false;
+    var children_n = ast_mod.astStoreNodeExtraChildCount(env.store, enum_node);
+    var i: usize = 0;
+    while (i < @intCast(usize, children_n)) : (i += @intCast(usize, 1)) {
+        var mnode = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i)));
+        if (mnode.kind != AstKind.field_decl) continue;
+        var at_max: bool = false;
+        if (is_signed) { at_max = prev_s == max_s; } else { at_max = prev_u == max_u; }
+        if (have_prev and mnode.child_1 == @intCast(u32, 0) and at_max) {
+            var osp = mnode.span_start;
+            var oep = osp + @intCast(u32, mnode.span_len);
+            var ov_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
+            if (is_signed) { var sov: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation"; ov_msg = sov; }
+            _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, osp, oep, ov_msg);
+            return;
+        }
+        var mval: i64 = auto_val;
+        if (mnode.child_1 != @intCast(u32, 0)) {
+            if (evalConstI64Full(env, mnode.child_1, @intCast(u32, 0))) |ev| { mval = ev; } else { return; }
+        }
+        if (is_signed) {
+            if (mval > max_s or mval < min_s) {
+                var msp = mnode.span_start;
+                var mep = msp + @intCast(u32, mnode.span_len);
+                var mv_msg: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation";
+                _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, msp, mep, mv_msg);
+                return;
+            }
+        } else if (mval < @intCast(i64, 0)) {
+            var msp = mnode.span_start;
+            var mep = msp + @intCast(u32, mnode.span_len);
+            var num_buf: [24]u8 = undefined;
+            var mag: u64 = @intCast(u64, 0) -% @bitCast(u64, mval);
+            var dl = itoa_mod.itoa64(mag, num_buf[1..]);
+            var ds: usize = @intCast(usize, num_buf.len) - @intCast(usize, dl) - @intCast(usize, 1);
+            num_buf[ds - @intCast(usize, 1)] = @intCast(u8, 45);
+            var num_text = num_buf[ds - @intCast(usize, 1) .. @intCast(usize, num_buf.len) - @intCast(usize, 1)];
+            var ty_text = localEnumBackingTypeLabel(env, bt);
+            var p0: []const u8 = "type '";
+            var p1: []const u8 = "' cannot represent integer value '";
+            var p2: []const u8 = "'";
+            var parts: [5][]const u8 = [5][]const u8{ p0, ty_text, p1, num_text, p2 };
+            var neg_msg = diag_mod.diagnosticBuilderMakeMsg(env.interner, &parts[0], @intCast(u32, 5));
+            _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), env.source_file_id, msp, mep, neg_msg);
+            return;
+        } else if (@bitCast(u64, mval) > max_u) {
+            var msp = mnode.span_start;
+            var mep = msp + @intCast(u32, mnode.span_len);
+            var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
+            _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, msp, mep, mv_msg);
+            return;
+        }
+        prev_u = @bitCast(u64, mval);
+        prev_s = mval;
+        have_prev = true;
+        if (is_signed and mval == max_s) {
+            auto_val = mval;
+        } else {
+            auto_val = mval + @intCast(i64, 1);
+        }
+    }
+}
+
 // Task B2 fix round 1: strict validation of a local/inline enum declaration.
 // Runs the ONE shared member walk (`enumMembersResolve`) in check-only strict
 // mode so a duplicate tag value or an unfoldable initializer is a clean
@@ -1675,7 +1781,9 @@ pub fn validateLocalEnum(env: *TypeResolveEnv, enum_node: u32) void {
     var fail_kind: u32 = 0;
     if (!enumMembersResolve(env, enum_node, false, @intCast(u32, 0), true, true, &count, &fail_node, &fail_kind)) {
         reportEnumWalkFailure(diag, env.store, env.source_file_id, fail_node, fail_kind);
+        return;
     }
+    validateLocalEnumBackingFit(env, enum_node, diag);
 }
 
 // Task B2: register one container type (struct/enum/union/error-set) under its

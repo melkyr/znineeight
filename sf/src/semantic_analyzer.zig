@@ -2401,7 +2401,7 @@ fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node
             if (mv > max_signed or mv < min_signed) {
                 var msp = fd2.span_start;
                 var mep = msp + @intCast(u32, fd2.span_len);
-                var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^(N-1)-1); no silent truncation";
+                var mv_msg: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation";
                 _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
                 return;
             }
@@ -2434,6 +2434,7 @@ fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node
             var msp = fd2.span_start;
             var mep = msp + @intCast(u32, fd2.span_len);
             var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
+            if (is_signed_backing) { var smsg: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation"; mv_msg = smsg; }
             _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
             return;
         }
