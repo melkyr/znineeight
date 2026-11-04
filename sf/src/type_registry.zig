@@ -1665,6 +1665,25 @@ pub fn typeRegistryIntByteWidth(self: *TypeRegistry, tyid: u32) u32 {
     return self.types_items[@intCast(usize, tyid)].size;
 }
 
+// Carrier width: the width of the C type that carries this Z98 integer value
+// (C switch legality, literal suffixes, casts). This is NOT the declared Z98
+// width used for masks/sign bits: u40/i40 declare 40 bits but carry in u64/i64.
+// Enums follow their backing type; arb kinds carry Type.size (1/2/4/8).
+pub fn typeRegistryIntCarrierBytes(self: *TypeRegistry, tid: u32) u32 {
+    if (@intCast(usize, tid) >= self.types_len) return @intCast(u32, 0);
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.enum_type) {
+        return typeRegistryIntCarrierBytes(self, typeRegistryEnumBackingType(self, tid));
+    }
+    var w = typeKindIntWidthBytes(ty.kind);
+    if (w != @intCast(u32, 0)) return w;   // fixed-width kinds
+    return ty.size;                        // arb_uint_type / arb_int_type carrier
+}
+
+pub fn typeRegistryIntCarrierIs64(self: *TypeRegistry, tid: u32) bool {
+    return typeRegistryIntCarrierBytes(self, tid) == @intCast(u32, 8);
+}
+
 pub fn typeRegistryIsIntKind(self: *TypeRegistry, tid: u32) u8 {
     if (tid == TYPE_VOID) { return @intCast(u8, 0); }
     var k = self.types_items[@intCast(usize, tid)].kind;

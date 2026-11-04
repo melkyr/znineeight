@@ -769,7 +769,7 @@ fn tempIs64BitInt(emitter: *C89Emitter, temp_id: u32) u8 {
     var kind = emitter.registry.types_items[@intCast(usize, tid)].kind;
     if (kind != type_mod.TypeKind.enum_type and
         type_mod.typeRegistryIsIntKind(emitter.registry, tid) == @intCast(u8, 0)) return @intCast(u8, 0);
-    if (type_mod.typeRegistryIntWidthBits(emitter.registry, tid) == @intCast(u8, 64)) return @intCast(u8, 1);
+    if (type_mod.typeRegistryIntCarrierIs64(emitter.registry, tid)) return @intCast(u8, 1);
     return @intCast(u8, 0);
 }
 
@@ -4835,8 +4835,9 @@ fn writeIntConstRvalue(emitter: *C89Emitter, value: u64, temp_type_id: u32, pref
 fn writeSwitchCaseLabel(emitter: *C89Emitter, value: u64, cond_tid: u32) void {
     var sbuf: [24]u8 = undefined;
     var width = switchCondWidthBits(emitter, cond_tid);
+    var carrier64 = type_mod.typeRegistryIntCarrierIs64(emitter.registry, cond_tid);
     if (switchCondIsSigned(emitter, cond_tid) == @intCast(u8, 0)) {
-        if (width >= @intCast(u32, 64)) { writeIntConstRvalue(emitter, value, cond_tid, ""); return; }
+        if (carrier64) { writeIntConstRvalue(emitter, value, cond_tid, ""); return; }
         var vl = itoa_mod.itoa64(value, sbuf[0..]);
         var vs = @intCast(usize, @intCast(u32, sbuf.len) - @intCast(u32, 1) - vl);
         var vsl = sbuf[vs .. @intCast(usize, @intCast(u32, sbuf.len) - @intCast(u32, 1))];
@@ -4844,6 +4845,7 @@ fn writeSwitchCaseLabel(emitter: *C89Emitter, value: u64, cond_tid: u32) void {
         return;
     }
     if (width < @intCast(u32, 64)) {
+        if (carrier64) { writeIntConstRvalue(emitter, value, cond_tid, ""); return; }
         var wmask = (@intCast(u64, 1) << @intCast(u64, width)) - @intCast(u64, 1);
         var masked = value & wmask;
         var sb = @intCast(u8, width - @intCast(u32, 1));

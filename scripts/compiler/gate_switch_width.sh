@@ -42,6 +42,11 @@ bad()  { echo "[switch-width] FAIL: $*" >&2; fail=1; }
 REPROS=(
     repro/mi_matrix/switch_u64_ok_xmod
     repro/mi_matrix/switch_i64_ok_xmod
+    repro/mi_matrix/switch_u40_ok_xmod
+    repro/mi_matrix/switch_i40_ok_xmod
+    repro/mi_matrix/switch_i63_ok_xmod
+    repro/mi_matrix/switch_enum_u40_ok_xmod
+    repro/mi_matrix/switch_enum_i40_ok_xmod
 )
 
 # PARSE_AWK emits one line per emitted switch:
@@ -58,6 +63,20 @@ function trim(s) {
 }
 {
     line = $0
+    # typedef <base> <alias>;  (enum/arb carrier aliases)
+    if (match(line, /^[ \t]*typedef[ \t]+[A-Za-z_][A-Za-z0-9_ \t\*]*[ \t]+\*?[A-Za-z_][A-Za-z0-9_]*[ \t]*;[ \t]*$/)) {
+        s = trim(line)
+        sub(/^typedef[ \t]+/, "", s)
+        sub(/[ \t]*;[ \t]*$/, "", s)
+        n = split(s, tp, /[ \t]+/)
+        if (n >= 2) {
+            aname = tp[n]
+            gsub(/^\*+/, "", aname)
+            base = s
+            sub(/[ \t]*\*?[ \t]*[A-Za-z_][A-Za-z0-9_]*$/, "", base)
+            tdef[aname] = trim(base)
+        }
+    }
     # Declaration: <type> <name> ;  (nearest preceding declaration wins).
     if (match(line, /^[ \t]*[A-Za-z_][A-Za-z0-9_ \t\*]*[ \t]+\*?[A-Za-z_][A-Za-z0-9_]*[ \t]*;[ \t]*$/)) {
         s = trim(line)
@@ -89,11 +108,13 @@ function trim(s) {
             id = ""
         }
         if (id != "" && (id in type)) {
+            t = type[id]
+            for (k = 0; k < 8 && (t in tdef); k++) t = tdef[t]
             is64 = 0
-            if (type[id] ~ /(^|[^A-Za-z0-9])(u64|i64)$/) is64 = 1
-            if (type[id] ~ /(^|[^A-Za-z0-9])__int64([^A-Za-z0-9]|$)/) is64 = 1
-            if (type[id] ~ /(^|[^A-Za-z0-9])unsigned[ \t]+__int64([^A-Za-z0-9]|$)/) is64 = 1
-            if (type[id] ~ /(^|[^A-Za-z0-9])long[ \t]+long([^A-Za-z0-9]|$)/) is64 = 1
+            if (t ~ /(^|[^A-Za-z0-9])(u64|i64)$/) is64 = 1
+            if (t ~ /(^|[^A-Za-z0-9])__int64([^A-Za-z0-9]|$)/) is64 = 1
+            if (t ~ /(^|[^A-Za-z0-9])unsigned[ \t]+__int64([^A-Za-z0-9]|$)/) is64 = 1
+            if (t ~ /(^|[^A-Za-z0-9])long[ \t]+long([^A-Za-z0-9]|$)/) is64 = 1
             if (is64)
                 printf("SW64 %d %s %d [%s]\n", NR, expr, decl_line[id], type[id])
             else
