@@ -7,7 +7,8 @@ library); playback goes through a small application-level platform audio layer.
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md`.
 M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
 
-Policy: every example local and static is explicitly initialized; no `= undefined` is used.
+Policy: every example local is explicitly initialized; module statics are
+zero-initialized by the compiler (BSS); no `= undefined` is used.
 
 ## Building with zig1
 

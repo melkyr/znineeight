@@ -491,7 +491,7 @@ To build a Z98 program on a target machine you need:
 - [README_zig0_bootstrap.md](README_zig0_bootstrap.md) — the preserved bootstrap-era (`zig0`)
   README, kept byte-verbatim.
 
-## Standard Library  [updated: 2026-11-03 — v133]
+## Standard Library  [updated: 2026-11-03 — v134]
 The Z98 standard library lives in `sf/src/`. The shipped seed payload is **51**
 files: `std.zig` plus **50** `std_*.zig`. `std.zig` re-exports **14** modules
 (`io`, `fmt`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`,

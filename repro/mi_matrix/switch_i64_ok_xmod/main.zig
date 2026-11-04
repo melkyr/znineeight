@@ -4,9 +4,9 @@
 // rejected (E1078: Invalid type for switch expression). The emitted C must
 // stay portable across GCC, OpenWatcom 1.9, and MSVC 6.
 //
-// Negative case literals are not resolved in case items, so the cases stay
-// positive and the condition value is positive too. `x` is 2^32, so the
-// `0x100000000` prong sets `r = 2`; stdout `2\n`, rc 0.
+// Negative case literals now resolve (including parenthesized forms); this
+// repro keeps positive values because it is the 64-bit carrier/if-else pin.
+// `x` is 2^32, so the `0x100000000` prong sets `r = 2`; stdout `2\n`, rc 0.
 const std = @import("std");
 
 pub fn main() void {

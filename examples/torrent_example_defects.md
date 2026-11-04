@@ -3,9 +3,9 @@
 Tracks only **open** compiler defects found while building the example programs.
 Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
-deleted numbers are not reused. Next free slot: **D13**.
+deleted numbers are not reused. Next free slot: **D14**.
 
-Open: **D3**, **D4**, **D5**, **D7.3**, **D8**, **D10**, **D12**.
+Open: **D3**, **D4**, **D5**, **D7.3**, **D8**, **D10**, **D12**, **D13**.
 
 _(Add new entries at the next free slot as they are found; entries are doc-only
 unless a compiler fix is separately authorized.)_
@@ -208,3 +208,56 @@ by the Task 4 fixture. Scope: no compiler change in Phase 2.5 Task 4.
 **Reference points.** `sf/src/lower.zig` module-init/global-store lowering; the array-literal
 annotation path used by `repro/mi_matrix/multiarray_literal_init_xmod`; Task 4 report fix round 1
 (module-array fixture).
+
+---
+
+## D13 — `enum(u64)` discriminants above the i64 storage maximum are unsupported
+
+**Status:** OPEN — documented compiler limitation (found 2026-11-04 during the
+syntax-emission-defects investigation; the Task 6c brief makes an enum-storage
+change a STOP, so it is recorded, not fixed).
+
+**Defect.** Enum member values are stored in an i64 slot, so a legal Zig
+`enum(u64)` discriminant above `9223372036854775807` cannot be represented. The
+compiler rejects it cleanly (rc 2, no `.c`) with a level-0 `error[3000]` that
+names the limitation, but valid Zig source is still rejected.
+
+**Reproducer.**
+
+```zig
+const E = enum(u64) { A = 18446744073709551615 };
+```
+
+`zig1` exits rc 2 and emits no C:
+
+```text
+error[3000]: enum member value exceeds the supported enum value range
+  (values above 9223372036854775807 require u64 enum storage, not supported yet)
+```
+
+The fixture `repro/mi_matrix/enum_u64_max_reject_xmod` pins this reject, and
+`repro/mi_matrix/enum_u64_max_implicit_reject_xmod` pins the implicit successor
+after the storage maximum. Values at or below i64 max (including the full
+`enum(i64)` and `enum(u63)` ranges) work.
+
+**Root cause.** The enum member table (`em_items[].value`) and the shared member
+walk in `sf/src/type_resolver.zig` (`enumMembersResolve`) store discriminants as
+`i64`; the backing-fit gates in the local validator and
+`sf/src/semantic_analyzer.zig` therefore cannot materialise a `u64` value above
+i64 max. Supporting the full `u64` range needs a storage/registry-layout change
+(e.g. a u64 value slot plus sign-aware fit checks), not a literal-spelling
+change.
+
+**Impact / workaround.** `enum(u64)` declarations are limited to
+`0 .. 9223372036854775807` today; this is a bounded, documented divergence from
+Zig. Use a plain `u64` (plus named constants) when a value above i64 max is
+needed, or keep enum discriminants within the supported range. The limitation is
+stated in `docs/reference/Language_Spec_Z98.md` §1.3 and the emission notes in
+`docs/sf/QUICK_REF.md`.
+
+**Reference points.** `sf/src/type_resolver.zig` `enumMembersResolve` /
+`validateLocalEnumBackingFit`; `sf/src/semantic_analyzer.zig`
+`semanticAnalyzerGateEnumTypeDecl`; `sf/src/type_registry.zig` enum payload
+`em_items[].value`; fixtures `enum_u64_max_reject_xmod`,
+`enum_u64_max_implicit_reject_xmod`; Task 6c brief STOP condition on enum
+storage/layout changes.

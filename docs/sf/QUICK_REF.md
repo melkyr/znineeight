@@ -320,10 +320,11 @@ point is unmoved), via
 
 ### Switch / negative / enum case emission (v134)  [added: 2026-11-04]
 
-- **64-bit `switch`:** a condition temp whose C type is 64-bit (`i64`/`u64`, a
-  64-bit arbitrary int, or a 64-bit-backed enum) lowers to a portable
-  `if (cond == …) goto …; else if (…) …; else goto …;` chain — never a C
-  `switch` on a 64-bit controlling expression (OpenWatcom `E1078`). The
+- **64-bit (8-byte carrier) `switch`:** a condition temp whose **C carrier**
+  is 64-bit (`i64`/`u64`, a 33..63-bit arbitrary int, or an enum backed by one)
+  lowers to a portable `if (cond == …) goto …; else if (…) …; else goto …;`
+  chain — never a C `switch` on a 64-bit controlling expression (OpenWatcom
+  `E1078`). The declared Z98 width may be below 64; the carrier decides. The
   condition is materialized and evaluated once. 64-bit case literals are exact:
   non-negative values use the decimal unsigned form (`Z98_U64_C(<n>)` above
   `2^32`), a negative signed label is `(-Z98_I64_C(<n>))`, and the minimum is
@@ -340,7 +341,18 @@ point is unmoved), via
   discriminant rejects with the same `error[3062]` family. Case labels follow
   the backing's signedness (`switchCondIsSigned`), and
   `lowerSwitchCaseItemMemberValue` uses `@bitCast(u64, member.value)` (a bit
-  pattern, so no `-fsafe` checked-cast trap).
+  pattern, so no `-fsafe` checked-cast trap). Wide member macros are portable
+  C89: `(-Z98_I64_C(<n>))` for a negative magnitude above `2147483647`,
+  `Z98_U64_C(<n>)` above `4294967295`, the `u` suffix from `2147483648` to
+  `4294967295`, and `Z98_I64_MIN` / `(-2147483647 - 1)` at the i64/i32 minima.
+- **`enum(u64)` limitation:** member values are stored in an i64 slot, so a
+  discriminant above `9223372036854775807` rejects today with a clear level-0
+  `error[3000]` (`values above 9223372036854775807 require u64 enum storage`);
+  full u64 storage is open defect D13.
+- **Bool case items:** a `bool` condition accepts `true`/`false` and integer
+  `0`/`1`; a negative integer item (bare or parenthesized) rejects level-0
+  `error[3062]` `type 'bool' cannot represent integer value '-1'` and emits no
+  invalid `case 18446744073709551615:` label.
 - **Safe-mode poison note:** source `= undefined` is gone from the examples
   (Task TC). Remaining emitted `zig_poison_fill` calls are compiler-generated
   `-fsafe` initialization of call-result temporaries — a known item, not a

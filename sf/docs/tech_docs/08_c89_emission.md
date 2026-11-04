@@ -708,7 +708,10 @@ not flag it UNWRITTEN.
 
 `.switch_br` (`c89_emit.zig`, the `emitInst` arm) selects the lowering from the
 **condition temp's resolved C type** (`tempIs64BitInt` via
-`getTempTypeByIndex`), not from the source-level type name:
+`getTempTypeByIndex`), not from the source-level type name. This is the **C
+carrier width**, not the declared Z98 width: a 33..63-bit arbitrary integer
+(or an enum backed by one) declares fewer than 64 bits but carries in an
+8-byte `i64`/`u64` typedef, so it takes the 64-bit if/else path too.
 
 - **32-bit conditions keep the existing C `switch` byte-identically.** The label
   spelling still comes from `switchCondIsSigned`/`switchCondWidthBits`: an
@@ -744,7 +747,22 @@ not flag it UNWRITTEN.
   prints a negative discriminant as a signed literal in the per-member
   `#define` (`#define <cname>_A -1`, with `Z98_I64_MIN` /
   `(-2147483647 - 1)` at the minima). Enum switch labels follow the backing's
-  signedness through `switchCondIsSigned`.
+  signedness through `switchCondIsSigned`. Wide member macro bodies are
+  carrier-legal C89 via the untyped literal renderer: a negative magnitude
+  above `2147483647` is `(-Z98_I64_C(<n>))`, a positive value above
+  `4294967295` is `Z98_U64_C(<n>)`, a positive value from `2147483648` to
+  `4294967295` carries the `u` suffix, and the i64/i32 minima keep their
+  existing special forms. **`enum(u64)` limitation:** member values live in an
+  i64 slot, so a discriminant above `9223372036854775807` rejects with a clear
+  level-0 `error[3000]` (`enum member value exceeds the supported enum value
+  range (values above 9223372036854775807 require u64 enum storage, not
+  supported yet)`); the full u64 range needs u64 enum storage (open defect D13).
+- **Bool case items.** A `bool` condition accepts `true`/`false` and the
+  non-negative integers `0`/`1`; a negative integer item (bare or
+  parenthesized) is a clean level-0 `error[3062]` (`type 'bool' cannot
+  represent integer value '-1'`, rc 2, zero `.c`) emitted by the same
+  unsigned-negative case-item gate. It never reaches lowering, so the invalid
+  `case 18446744073709551615:` label is not emitted.
 - **`@bitCast`, not a checked cast.** `lowerSwitchCaseItemMemberValue`
   (`lower.zig`) returns `@bitCast(u64, member.value)`. A negative enum
   discriminant is a bit pattern, not an `@intCast(u64, …)` value, so the
