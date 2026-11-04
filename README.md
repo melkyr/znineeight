@@ -1,6 +1,6 @@
 > **Disclaimer:** Z98 is an independent project and is not affiliated with the official Zig project. Z98 represents a specific interpretation of the Zig language, designed to target 1998-era hardware and C89 code generation. As such, it contains intentional differences from the official Zig specification.
 
-# Z98 0.21.1 "Terephthalic Acid" (hotfix) — Self-Hosted Compiler (zig1)
+# Z98 0.21.2 "Terephthalic Acid" — Self-Hosted Compiler (zig1)
 **A self-hosting subset of Zig → C89 compiler, now compiling itself.**
 
 > **Are you looking for the bootstrap era?** The pre-self-hosted (C++98 `zig0`) guide that
@@ -37,14 +37,16 @@ compiles itself to become the fully self-hosted compiler, **zig1** — the subje
   (`cdec5098`, `1e7b303a`) and seed v129 rotation (`b5580232`).
 - **2026-10-29** — Z98 **0.21.0 "Terephthalic Acid"** released (seed v129).
 - **2026-11-02** — Win9x emission fixes rotate the seed v130 → v131 (included in this hotfix).
-- **2026-11-03** — This release: **Z98 0.21.1 "Terephthalic Acid" (hotfix)**, seed **v132**.
+- **2026-11-03** — Z98 0.21.1 "Terephthalic Acid" (hotfix), seed **v132**.
+- **2026-11-05** — This release: **Z98 0.21.2 "Terephthalic Acid"**, seed **v135**, with the
+  operator-built Windows 9x/NT compilers.
 
 ## Current Status
-**Z98 0.21.1 "Terephthalic Acid" (hotfix) is the current release (2026-11-03).** It fixes
-Win9x link, GUI, and console defects in 0.21.0: MinGW chunked links use `-nostdlib`, the
-no-CRT final link adds `-lwinmm`, the GUI `WndProc` C shim is gone (DirectDraw loaded
-dynamically, GDI fallback kept), and `z9play` flushes console output live. It also documents
-per-example Linux/Windows build recipes. The **self-hosted milestone is complete**: `zig1`
+**Z98 0.21.2 "Terephthalic Acid" is the current release (2026-11-05).** It supersedes the
+0.21.1 hotfix staging and ships the operator-built Windows compilers (OpenWatcom static-CLIB
+canonical, MSVC 6 `/MT`, MinGW CRT) with the Linux artifacts. It rolls up the v133-v135 work:
+the z9play/z9torr optimizations, example idiom modernization, and the portable switch /
+negative-case / enum emission fixes. The **self-hosted milestone is complete**: `zig1`
 compiles itself, the compilation is **deterministic to a fixed point** (current self-compile
 binary md5 `cf68f192900e7f6618c11e1712b74b3a`; committed seed **v135**,
 `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
@@ -154,55 +156,55 @@ crosscheck 10/10.
 > AMD Ryzen 7 7700X 8-core/16-thread up to ~5.58 GHz, 32 GB RAM, Debian; gcc/g++ 12.2.0;
 > i686-w64-mingw32-gcc 12-win32
 
-The 0.21.1 Linux binaries were built and measured on this machine: Debian GNU/Linux 12
+The 0.21.2 Linux artifacts were built and measured on this machine: Debian GNU/Linux 12
 (bookworm), gcc 12.2.0, `i686-w64-mingw32-gcc` 12-win32, Wine 8.0, `gcc -m32` available; no
 MSVC or OpenWatcom locally. Linux builds target 32-bit (`-m32`) C89 output; Windows cross-builds
-use `i686-w64-mingw32-gcc` (12-win32). The shipped Win9x `zig1_w32.exe` will be the
-operator-built static-CRT binary (MSVC `/MT` or OpenWatcom static CLIB); it is currently pending
-the operator's build.
+use `i686-w64-mingw32-gcc` (12-win32). The three Windows compilers were built and manually tested
+on the operator's Windows 98 machine with MSVC 6, OpenWatcom 1.9, and MinGW gcc 3.4.5; the
+canonical Win9x binary is the OpenWatcom static-CLIB build (no `msvcrt.dll`).
 
 ## RAM & Wall-Clock Comparison
 Measured on the build machine, each row 3× under `/usr/bin/time -v` in fresh scratch dirs with
 fresh output names (no incremental caching); **median** reported. wall = "Elapsed (wall clock)",
 RSS = "Maximum resident set size (kbytes)". All runs: rc=0, 0 `error[`, 0 PANIC.
 
-### Current measurements (v132, measured 2026-11-03)
+### Current measurements (v135, measured 2026-11-05)
 
-Reference binary `/tmp/t5_close/hop2/zig1_hop2`, md5 `108fed5c1d143d0d905fdb3e2fd120e9`, built
-from `release/seed/zig1-seed.tgz` with two-hop closure `hop1 == hop2`; the same binary is archived
-as seed v132. Full raw logs are the T5 workspace `/tmp/t5_measure/` (recipe:
-`.superpowers/sdd/2026-10-29-z98-0.21.0-release-plan/measurements.md`).
+Reference binary `release/staging/0.21.2/zig1_linux32`, md5 `cf68f192900e7f6618c11e1712b74b3a`,
+built from `release/seed/zig1-seed.tgz` with two-hop closure `hop1 == hop2`; the same binary is
+archived as seed v135. Raw logs are `/tmp/m212/`. The v132 numbers are retained in the 0.21.1
+release notes.
 
 | Row | Phase | Wall (s) | Peak RSS (kB) | ≈ MB | Emitted `.c` |
 |---|---|---|---|---|---|
-| D-safe | `zig1 -s0 --dump-c89` self-emission (default `-fsafe`) | 6.85 | 20,300 | 19.8 | 48 |
-| D-fast | `zig1 -s0 -ffast --dump-c89` self-emission | 6.66 | 19,920 | 19.5 | 48 |
-| E | gcc `-m32` compile+link of the D-fast output (`sh build_target.sh linux zig1_next`) | 9.28 | 181,432 | 177.2 | (48 in) |
+| D-safe | `zig1 -s0 --dump-c89` self-emission (default `-fsafe`) | 6.91 | 20,716 | 20.2 | 48 |
+| D-fast | `zig1 -s0 -ffast --dump-c89` self-emission | 6.73 | 20,100 | 19.6 | 48 |
+| E | gcc `-m32` compile+link of the D-fast output (`sh build_target.sh linux zig1_next`) | 9.56 | 181,564 | 177.3 | (48 in) |
 
-> Row E produces `zig1_next` md5 `96b01e2da9bc3704f53b5f726c923bb9` — a build-recipe binary, not
+> Row E produces `zig1_next` md5 `44d1bf034c678bde26a4e2ac45eda354` — a build-recipe binary, not
 > the fixed point. All three E builds were byte-identical.
 
-#### Current spill ladder (`-s0` … `-s6`), self-emission at v132
+#### Current spill ladder (`-s0` … `-s6`), self-emission at v135
 
 RSS is the median of 3; `pool` is copied from the `--markers --track-memory` line (3× identical).
 All 21 ladder emissions were byte-identical across levels and repetitions.
 
 | Level | Pool (K) | Max RSS (KiB) | Notes |
 |---|---:|---:|---|
-| `-s0` | 18,645 | 19,844 | all disk |
-| `-s1` | 50,402 | 45,648 | |
-| `-s2` | 119,394 | 95,152 | needs `-mm128` |
-| `-s3` | 119,394 | 95,188 | needs `-mm128` |
-| `-s4` | 123,490 | 98,748 | needs `-mm128` |
-| `-s5` | 126,562 | 101,272 | needs `-mm128` |
-| `-s6` | 130,658 | 103,108 | all RAM; needs `-mm128` |
+| `-s0` | 18,677 | 20,284 | all disk |
+| `-s1` | 50,421 | 45,900 | |
+| `-s2` | 119,477 | 95,532 | needs `-mm128` |
+| `-s3` | 119,477 | 95,180 | needs `-mm128` |
+| `-s4` | 123,573 | 99,368 | needs `-mm128` |
+| `-s5` | 126,645 | 101,336 | needs `-mm128` |
+| `-s6` | 131,765 | 104,080 | all RAM; needs `-mm160` (the 128 MB limit ICEs) |
 
-#### Current deep-input evidence (v132, 1 MB stack)
+#### Current deep-input evidence (v135, 1 MB stack)
 
 | Shape | rc @ `ulimit -s 1024` | Max RSS (KiB) | Wall (s) |
 |---|---:|---:|---:|
-| 120-term runtime-valued `+` chain | 0 | 7,064 | 0.05 |
-| 300-deep nested blocks | 0 | 4,636 | ~0.00 |
+| 120-term runtime-valued `+` chain | 0 | 7,112–7,256 | 0.05 |
+| 300-deep nested blocks | 0 | 4,264–4,516 | ~0.00 |
 
 ### Historical measurements (0.20.0-era and v123-era; not current)
 
@@ -214,18 +216,18 @@ All 21 ladder emissions were byte-identical across levels and repetitions.
 | D | zig1 `-s0` self-compile → C89 | 3.90 | 16,376 | 16.0 | 45 module (48 full) |
 | E | gcc -m32 compile+link of zig1's self-emitted C89 → zig1_5 | 5.87 | 160,712 | 157.0 | (48 in; 45 module) |
 
-> **Note:** Rows A/B/C are historical 0.20.0-era bootstrap measurements (`zig0` retired; not re-measurable). Rows D/E were current at fixed point `553a39b4…` (historical; superseded by the current v132 measurements above): their Wall/Peak RSS figures are the medians at that fixed point and their emitted `.c` counts are 45 module (48 full) for D and 48 full (45 module) for E.
+> **Note:** Rows A/B/C are historical 0.20.0-era bootstrap measurements (`zig0` retired; not re-measurable). Rows D/E were current at fixed point `553a39b4…` (historical; superseded by the current v135 measurements above): their Wall/Peak RSS figures are the medians at that fixed point and their emitted `.c` counts are 45 module (48 full) for D and 48 full (45 module) for E.
 
-> **The gcc caveat (current v132 ~177 MB; historical ~85 MB and ~157 MB, all measured).** The gcc
-> backend is the memory hotspot of building the compiler from source. At v132, Row E — gcc `-m32`
-> over zig1's **own** self-emission — peaks at **~177 MB** (181,432 kB, 9.28 s). The historical
+> **The gcc caveat (current v135 ~177 MB; historical ~85 MB and ~157 MB, all measured).** The gcc
+> backend is the memory hotspot of building the compiler from source. At v135, Row E — gcc `-m32`
+> over zig1's **own** self-emission — peaks at **~177 MB** (181,564 kB, 9.56 s). The historical
 > 0.20.0-era Row C (gcc over the gen-0 C89 that zig0 emitted) peaked at **~85 MB** (linux `-m32`;
 > the mingw cross higher, ~168 MB), and the historical Row E at `553a39b4…` peaked at **~157 MB**
 > (5.87 s). Because each self-host hop recompiles the same byte-identical self-emission, the
 > current Row E figure applies to every `zig1_5`-style next-generation hop and to any
 > compiler-from-source build that starts from a self-hosted zig1. Row A (the g++ C++98 bootstrap)
-> was ~182 MB, but only matters when rebuilding `zig0` from scratch; 0.21.1 ships no zig0. Rows
-> B (~46 MB) and the historical D (~16 MB) fit comfortably in era-class RAM; the current v132 RUN
+> was ~182 MB, but only matters when rebuilding `zig0` from scratch; 0.21.2 ships no zig0. Rows
+> B (~46 MB) and the historical D (~16 MB) fit comfortably in era-class RAM; the current v135 RUN
 > figure is ~20 MB (see above).
 
 Supporting data for row D at fixed point `553a39b4…` (historical): `zig1 -s0 --markers --track-memory` self-compile reported
@@ -233,8 +235,8 @@ Supporting data for row D at fixed point `553a39b4…` (historical): `zig1 -s0 -
 
 ### Historical full measured compiler peak (v123-era fixed point `2fc64ffe…`)  [measured 2026-10-27 at seed v123]
 
-**These are historical measurements, taken at seed v123 and superseded by the current v132 rows
-above; v132 has been re-measured at fixed point `108fed5c…`.** Measured 2026-10-27 at
+**These are historical measurements, taken at seed v123 and superseded by the current v135 rows
+above; v132 is recorded in the 0.21.1 release notes.** Measured 2026-10-27 at
 `a567926c223492787786dd460563f32a` (seed v123), fixed-point binary
 `/tmp/memfix_build/zig1_5_clean` built by
 `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/memfix_build`
@@ -263,7 +265,7 @@ historical M1 figures below: (a) 20348 vs 20792 KiB (0.98×), (b) 16960 vs
 
 Pool from `--markers --track-memory` (3× identical); max RSS / wall are 3×
 medians of `-s<N> -ffast --dump-c89` self-emission runs. *Historical; superseded
-by the current v132 ladder above.*
+by the current v135 ladder above.*
 
 | Level | Arena pool | Max RSS (KiB) | Wall (s) | Notes |
 |---|---:|---:|---:|---|
@@ -301,8 +303,8 @@ One run on the build machine at the **M1 measured** seed v111 / fixed point
 `/usr/bin/time -v` (not the 3× medians used for the historical table above). **This section is
 historical.** The compiler fixed point has since moved on (M2 T1C-F `45158dce…`, then the
 iterative-lowering milestone); the v123-era fixed point `2fc64ffe…` is measured (last full
-measurements at seed v123) in the section above, and the current v132 fixed point is
-`108fed5c…` (re-measured in the current v132 section at the top of this comparison).
+measurements at seed v123) in the section above, and the current v135 fixed point is
+`cf68f192…` (re-measured in the current v135 section at the top of this comparison).
 
 | Workload | Max RSS (KiB) | Wall (s) | Arena |
 |---|---:|---:|---|
@@ -319,7 +321,7 @@ Exact recipe, runnable from the repo root:
 
 ```bash
 # build the fixed-point binary first
-# M1 historical measurement; v123-era fixed point is 2fc64ffedb3ba5f4e8adf35896729e54 (figures last measured at seed v123 a567926c…, above); current v132 fixed point is 108fed5c1d143d0d905fdb3e2fd120e9 (re-measured in the current v132 section above)
+# M1 historical measurement; v123-era fixed point is 2fc64ffedb3ba5f4e8adf35896729e54 (figures last measured at seed v123 a567926c…, above); current v135 fixed point is cf68f192900e7f6618c11e1712b74b3a (re-measured in the current v135 section above)
 FIXED_POINT_MD5=21c957730d268f1e7883176fa5413b65 \
   bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/m1_build
 
@@ -334,9 +336,9 @@ rm -rf /tmp/m1_emit_arena && mkdir -p /tmp/m1_emit_arena
   --output-dir /tmp/m1_emit_arena sf/src/main.zig 2>&1 | grep 'track-memory:'
 ```
 
-**Compiler target:** **<16 MB goal; tracked per Phase 1 milestone.** The current v132
-fixed-point self-emission fails on both axes: 20,300 KiB RSS (19.8 MB; +3.8 MB over) and
-`pool` 18,645K (18.2 MB; +2.2 MB over). The historical v123-era fixed point `2fc64ffe…`
+**Compiler target:** **<16 MB goal; tracked per Phase 1 milestone.** The current v135
+fixed-point self-emission fails on both axes: 20,716 KiB RSS (20.2 MB; +4.2 MB over) and
+`pool` 18,677K (18.2 MB; +2.2 MB over). The historical v123-era fixed point `2fc64ffe…`
 measured 20,348 KiB RSS (19.9 MB; +3.9 MB over) and pool 18,416K (18.0 MB; +2.0 MB over);
 the historical M1 (`21c957…`) also failed on both axes: 20,792 KiB RSS (20.3 MB; +4.3 MB
 over) and pool 18,871K (18.4 MB; +2.4 MB over).
@@ -347,10 +349,10 @@ over) and pool 18,871K (18.4 MB; +2.4 MB over).
 ## Minimum Requirements
 | Requirement | Linux | Windows 9x |
 |---|---|---|
-| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 51-file `lib/` std set next to it (auto-discovered); **~20 MB peak RSS at `-s0` at v132** (D-safe 20,300 kB / 19.8 MB; D-fast 19,920 kB / 19.5 MB; spill `-s0` pool 18,645K / 18.2 MB); the <16 MB goal is not met | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); **runtime not measured** — Wine is evidence only |
-| **BUILDING the compiler from source** | gcc (C89) for the emitted C — gcc backend **~177 MB** peak (Row E, 181,432 kB); rebuild from the committed seed (no zig0) | operator-built static-CRT `zig1_w32.exe` (MSVC `/MT` or OpenWatcom static CLIB) from the release seed zip (v134 for 0.21.1); cross-compile not measured here. The optional MinGW CRT build requires `msvcrt.dll` and is not the Win9x binary |
+| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 51-file `lib/` std set next to it (auto-discovered); **~20 MB peak RSS at `-s0` at v135** (D-safe 20,716 kB / 20.2 MB; D-fast 20,100 kB / 19.6 MB; spill `-s0` pool 18,677K / 18.2 MB); the <16 MB goal is not met | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); **runtime not measured** — Wine is evidence only |
+| **BUILDING the compiler from source** | gcc (C89) for the emitted C — gcc backend **~177 MB** peak (Row E, 181,564 kB); rebuild from the committed seed (no zig0) | the three Windows compilers: `zig1_w32.exe` (OpenWatcom static CLIB, canonical), `zig1_w32_msvc.exe` (MSVC 6 `/MT`), and `z98_mingw_crt_w32.exe` (MinGW CRT, requires `msvcrt.dll`); built from the release seed zip (v135 for 0.21.2); cross-compile not measured here |
 
-> **At v132, Linux `zig1` self-compiles at ~20 MB peak RSS / ~18.2 MB pool at `-s0` — the
+> **At v135, Linux `zig1` self-compiles at ~20 MB peak RSS / ~18.2 MB pool at `-s0` — the
 > <16 MB compiler goal is not met, and the old ~16 MB RUN claim no longer holds.** Building the
 > compiler from source remains dominated by the gcc backend (current Row E ~177 MB; historical
 > self-host gcc step ~157 MB; see the gcc caveat above), so a 16 MB machine cannot build it from
@@ -364,13 +366,13 @@ Engineering estimates — not measurements. Clock-scaled from the table above vi
 single-core figure for the 7700X; PII representative 300–450 MHz, PIII 700–1000 MHz). Each entry
 is a range spanning the clock band; the low end is the k=1.0 clock-only lower bound.
 
-Current v132 estimates (historical 0.20.0-era estimates are retained in the 0.20.0 release notes):
+Current v135 estimates (historical 0.20.0-era estimates are retained in the 0.20.0 release notes):
 
 | Row (median `T_m`) | PII 300–450 MHz (s) | PIII 700–1000 MHz (s) |
 |---|---|---|
-| D-safe — `zig1 -s0` self (6.85 s) | 60.9 – 91.3 | 27.4 – 39.1 |
-| D-fast — `zig1 -s0 -ffast` self (6.66 s) | 59.2 – 88.8 | 26.6 – 38.1 |
-| E — gcc `-m32` compile+link (9.28 s) | 82.5 – 123.7 | 37.1 – 53.0 |
+| D-safe — `zig1 -s0` self (6.91 s) | 61.4 – 92.1 | 27.6 – 39.5 |
+| D-fast — `zig1 -s0 -ffast` self (6.73 s) | 59.8 – 89.7 | 26.9 – 38.5 |
+| E — gcc `-m32` compile+link (9.56 s) | 85.0 – 127.5 | 38.2 – 54.6 |
 
 **Methodology.** Each row was run 3× under `/usr/bin/time -v` on the reference machine (AMD Ryzen 7
 7700X — see machine statement), in fresh scratch directories with fresh output names per repetition
@@ -381,7 +383,7 @@ time on the reference machine, `f_m = 4.0 GHz` is a conservative single-core fig
 `f_p` is the target-era representative clock (PII 300–450 MHz; PIII 700–1000 MHz), and `k = 1.0` is
 the default uncertainty multiplier. Each entry is a range spanning the platform's clock band; the
 low end is the k=1.0 clock-only lower bound. Memory-bound phases (notably Row E, the gcc backend at
-~177 MB measured at v132) scale worse than the clock ratio on small-RAM era machines where paging
+~177 MB measured at v135) scale worse than the clock ratio on small-RAM era machines where paging
 dominates — apply 1.5–3× as the stated upper rationale. **These are engineering estimates; verify on
 the operator's real VM.**
 
@@ -416,11 +418,14 @@ The authoritative, always-verified command set lives in [docs/sf/QUICK_REF.md](d
 the build script is `scripts/seed/build_from_seed.sh`. Release binaries (`zig1_linux32` /
 `zig1_w32.exe`) ship with a sibling `lib/` and `MANIFEST.txt` (md5/sha256/sizes).
 
-**Release artifacts (0.21.1, staged from seed v134)** — `zig1_linux32` (md5 `8dff7650e83df66d96388b3d21c489ea`, the v134
-fixed point); `zig1_w32.exe` (operator-built static-CRT; hash to be recorded in MANIFEST.txt after
-the operator build); `src_c_zig1_linux.tgz` / `src_c_zig1_w32.zip`; `zig1_src.tgz` / `zig1_src.zip`;
-the v134 seed archives `zig1-seed.tgz` / `zig1_seed_w9.zip`; the 51-file `lib/` (manifest md5
-`62008632c1f057c42b04bf5883f6da5d`); and `MANIFEST.txt`. No zig0 ships in 0.21.1.
+**Release artifacts (0.21.2, seed v135)** — `zig1_linux32` (md5 `cf68f192900e7f6618c11e1712b74b3a`, the v135
+fixed point); `zig1_w32.exe` (OpenWatcom static CLIB, md5 `3e944a2c4d4842422ff9108d534a9f42`);
+`zig1_w32_msvc.exe` (MSVC 6 `/MT`, md5 `1141ecbf15e720da955b0434eeb8624d`); `z98_mingw_crt_w32.exe`
+(MinGW CRT, md5 `f08ddae7fc7924e7a372174c437ed380`; requires `msvcrt.dll`);
+`z98-0.21.2-win9x-binaries.zip` (the three compilers + hashes); `src_c_zig1_linux.tgz` /
+`src_c_zig1_w32.zip`; `zig1_src.tgz` / `zig1_src.zip`; the v135 seed archives `zig1-seed.tgz` /
+`zig1_seed_w9.zip`; the 51-file `lib/` (manifest md5 `62008632c1f057c42b04bf5883f6da5d`); and
+`MANIFEST.txt`. No zig0 ships in 0.21.2.
 
 ## Command-Line Flags
 `zig1`'s flag set (the self-hosted compiler; for the `zig0` bootstrap flags see
@@ -435,7 +440,7 @@ the v134 seed archives `zig1-seed.tgz` / `zig1_seed_w9.zip`; the 51-file `lib/` 
 | `--target <linux\|windows>` | Alias for the target OS |
 | `-fsafe` | **Default.** Enable the six runtime checks (cast / div-mod / shift-count / null-unwrap / index-OOB / integer-overflow) and the `undefined` `0xAA` poison fill |
 | `-ffast` | Disable the six runtime checks and poison fill (used for the compiler self-build). `unreachable`/`@panic` still trap in both modes |
-| `-s<N>` | Spill level 0–6 (default `-s0`): how many of the six compiler-state spills live in RAM instead of `.zig1_*.tmp` disk files. Deactivation order S-AST → S-LIR → S-HASH → S-RES → S-SIDE → S-EXTRA. Higher `-s` = more RAM, less disk I/O; emission byte-identical in every mode. **Current measured ladder (v132, self-emission `--markers --track-memory` pool):** `-s0` pool=18645K (18.2 MB, all disk); `-s1` pool=50402K (49.2 MB); `-s2`/`-s3` pool=119394K (116.6 MB); `-s4` pool=123490K (120.6 MB); `-s5` pool=126562K (123.6 MB); `-s6` pool=130658K (127.6 MB, all RAM). Historical (superseded): v123-era `2fc64ffe…` pool=18416K/51407K/120400K/124496K/127568K/130640K; `553a39b4…` ≈ 13.8/33.1/70.0/73.0/74.0/77.0 MB pool; M1 `21c957…` `-s0` pool=18871K. Bare/non-digit/out-of-range `-s` = error rc=1 |
+| `-s<N>` | Spill level 0–6 (default `-s0`): how many of the six compiler-state spills live in RAM instead of `.zig1_*.tmp` disk files. Deactivation order S-AST → S-LIR → S-HASH → S-RES → S-SIDE → S-EXTRA. Higher `-s` = more RAM, less disk I/O; emission byte-identical in every mode. **Current measured ladder (v135, self-emission `--markers --track-memory` pool):** `-s0` pool=18677K (18.2 MB, all disk); `-s1` pool=50421K (49.2 MB); `-s2`/`-s3` pool=119477K (116.7 MB); `-s4` pool=123573K (120.7 MB); `-s5` pool=126645K (123.7 MB); `-s6` pool=131765K (128.7 MB, all RAM; needs `-mm160` — the 128 MB limit ICEs). Historical (superseded): v123-era `2fc64ffe…` pool=18416K/51407K/120400K/124496K/127568K/130640K; `553a39b4…` ≈ 13.8/33.1/70.0/73.0/74.0/77.0 MB pool; M1 `21c957…` `-s0` pool=18871K. Bare/non-digit/out-of-range `-s` = error rc=1 |
 | `-mm<N>` | Hard pool budget in MB (default 64). Levels whose pool exceeds the budget abort with `memory limit exceeded` rc=3 (e.g. `-s2`+ need `-mm128`) |
 | `-m <size>` / `--max-mem <size>` | Pool memory budget with k/M/G suffix |
 | `--track-memory`, `--markers` | Memory tracking / pipeline markers (e.g. the `pool=` report line) |
