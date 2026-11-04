@@ -1419,6 +1419,54 @@ fn emitDefineMacro(emitter: *C89Emitter, a: []const u8, b: []const u8, c: []cons
     bufferedWriterWrite(&emitter.writer, d2);
 }
 
+fn intConstLitNeedsU64Macro(value: u64) bool {
+    return value > @intCast(u64, 4294967295);
+}
+
+fn intConstLitNeedsUSuffix(value: u64) bool {
+    return value > @intCast(u64, 2147483647);
+}
+
+fn intConstLitNegNeedsI64Macro(magnitude: u64) bool {
+    return magnitude > @intCast(u64, 2147483647);
+}
+
+fn writeIntConstLiteralUntyped(emitter: *C89Emitter, value: u64, negative: bool) void {
+    var ib: [24]u8 = undefined;
+    var il = itoa_mod.itoa64(value, ib[0..]);
+    var is_start: usize = @intCast(usize, @intCast(u32, 23) - il);
+    var is_end: usize = @intCast(usize, 23);
+    if (negative) {
+        var wide = intConstLitNegNeedsI64Macro(value);
+        if (wide) {
+            var wp: []const u8 = "(-Z98_I64_C(";
+            bufferedWriterWrite(&emitter.writer, wp);
+        } else {
+            var minus: []const u8 = "-";
+            bufferedWriterWrite(&emitter.writer, minus);
+        }
+        bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
+        if (wide) {
+            var wc: []const u8 = "))";
+            bufferedWriterWrite(&emitter.writer, wc);
+        }
+        return;
+    }
+    var wide_uns = intConstLitNeedsU64Macro(value);
+    if (wide_uns) {
+        var wp: []const u8 = "Z98_U64_C(";
+        bufferedWriterWrite(&emitter.writer, wp);
+    }
+    bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
+    if (wide_uns) {
+        var wc: []const u8 = ")";
+        bufferedWriterWrite(&emitter.writer, wc);
+    } else if (intConstLitNeedsUSuffix(value)) {
+        var usuf: []const u8 = "u";
+        bufferedWriterWrite(&emitter.writer, usuf);
+    }
+}
+
 fn emitDefineMacroWide(emitter: *C89Emitter, a: []const u8, b: []const u8, c: []const u8, value: u64) void {
     var d0: []const u8 = "#define ";
     bufferedWriterWrite(&emitter.writer, d0);
@@ -1427,10 +1475,7 @@ fn emitDefineMacroWide(emitter: *C89Emitter, a: []const u8, b: []const u8, c: []
     bufferedWriterWrite(&emitter.writer, c);
     var d1: []const u8 = " ";
     bufferedWriterWrite(&emitter.writer, d1);
-    var vb: [24]u8 = undefined;
-    var vl = itoa_mod.itoa64(value, vb[0..]);
-    var vs: usize = @intCast(usize, 24) - @intCast(usize, 1) - @intCast(usize, vl);
-    bufferedWriterWrite(&emitter.writer, vb[vs..@intCast(usize, 24) - @intCast(usize, 1)]);
+    writeIntConstLiteralUntyped(emitter, value, false);
     var d2: []const u8 = "\n";
     bufferedWriterWrite(&emitter.writer, d2);
 }
@@ -1443,12 +1488,9 @@ fn emitDefineMacroWideNeg(emitter: *C89Emitter, a: []const u8, b: []const u8, c:
     bufferedWriterWrite(&emitter.writer, a);
     bufferedWriterWrite(&emitter.writer, b);
     bufferedWriterWrite(&emitter.writer, c);
-    var d1: []const u8 = " -";
+    var d1: []const u8 = " ";
     bufferedWriterWrite(&emitter.writer, d1);
-    var vb: [24]u8 = undefined;
-    var vl = itoa_mod.itoa64(magnitude, vb[0..]);
-    var vs: usize = @intCast(usize, 24) - @intCast(usize, 1) - @intCast(usize, vl);
-    bufferedWriterWrite(&emitter.writer, vb[vs..@intCast(usize, 24) - @intCast(usize, 1)]);
+    writeIntConstLiteralUntyped(emitter, magnitude, true);
     var d2: []const u8 = "\n";
     bufferedWriterWrite(&emitter.writer, d2);
 }
@@ -4804,7 +4846,7 @@ fn writeIntConstRvalue(emitter: *C89Emitter, value: u64, temp_type_id: u32, pref
                 var is_idx = @intCast(u32, @intCast(u32, 31) - il);
                 var is_start: usize = @intCast(usize, is_idx);
                 var is_end: usize = @intCast(usize, 31);
-                var wide_neg = magnitude > @intCast(u64, 2147483647);
+                var wide_neg = intConstLitNegNeedsI64Macro(magnitude);
                 if (wide_neg) { var wp: []const u8 = "Z98_I64_C("; bufferedWriterWrite(&emitter.writer, wp); }
                 bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
                 if (wide_neg) { var wc: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, wc); }
@@ -4816,12 +4858,12 @@ fn writeIntConstRvalue(emitter: *C89Emitter, value: u64, temp_type_id: u32, pref
         var is_idx = @intCast(u32, @intCast(u32, 31) - il);
         var is_start: usize = @intCast(usize, is_idx);
         var is_end: usize = @intCast(usize, 31);
-        var wide_uns = value > @intCast(u64, 4294967295);
+        var wide_uns = intConstLitNeedsU64Macro(value);
         if (wide_uns) { var wp: []const u8 = "Z98_U64_C("; bufferedWriterWrite(&emitter.writer, wp); }
         bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
         if (wide_uns) {
             var wc: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, wc);
-        } else if (value > @intCast(u64, 2147483647)) {
+        } else if (intConstLitNeedsUSuffix(value)) {
             var usuf: []const u8 = "u"; bufferedWriterWrite(&emitter.writer, usuf);
         }
     }

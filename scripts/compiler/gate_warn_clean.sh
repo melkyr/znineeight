@@ -15,8 +15,9 @@ set -uo pipefail
 #   (a) full self-emission: `zig1 -osw -o DIR sf/src/main.zig` (every .c)
 #   (b) shipped runtime C: sf/src/include/{zig_runtime,zig_pal,zig_nocrt}.c
 #       and sf/src/c_exit.c
-#   (c) representative programs: examples/z98/hello/main.zig and the std-heavy
-#       examples/z98/lisp_interpreter_curr/main.zig (every emitted .c)
+#   (c) representative programs: examples/z98/hello/main.zig, the std-heavy
+#       examples/z98/lisp_interpreter_curr/main.zig, and the wide-enum-macro
+#       fixtures under repro/mi_matrix/ (every emitted .c)
 #
 # `-c` is required: `-fsyntax-only` would suppress -Wunused-function.
 # zig1 defaults to $ROOT/zig1. Builds must be run sequentially (a zig1 process
@@ -92,7 +93,14 @@ cp "$ROOT/sf/src/c_exit.c" "$WORK/runtime/"
 compile_tree runtime "$WORK/runtime"
 
 # (c) representative programs ------------------------------------------------
-for entry in examples/z98/hello/main.zig examples/z98/lisp_interpreter_curr/main.zig; do
+for entry in \
+    examples/z98/hello/main.zig \
+    examples/z98/lisp_interpreter_curr/main.zig \
+    repro/mi_matrix/enum_wide_macro_i64_ok_xmod/main.zig \
+    repro/mi_matrix/enum_wide_macro_i40_ok_xmod/main.zig \
+    repro/mi_matrix/enum_wide_macro_u40_ok_xmod/main.zig \
+    repro/mi_matrix/enum_wide_macro_i63_ok_xmod/main.zig \
+    repro/mi_matrix/enum_wide_macro_i64_min_ok_xmod/main.zig; do
     label="$(basename "$(dirname "$entry")")"
     mkdir -p "$WORK/$label"
     ( cd "$ROOT" && timeout 600 "$ZIG1" -osw -o "$WORK/$label" "$entry" ) \
@@ -110,4 +118,4 @@ if [ "$fail" -ne 0 ]; then
     echo "[warn-clean] FAILED (gcc -m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long)" >&2
     exit 1
 fi
-echo "[warn-clean] OK: self-emission + shipped runtime + hello + lisp_interpreter_curr"
+echo "[warn-clean] OK: self-emission + shipped runtime + hello + lisp_interpreter_curr + wide enum macros"
