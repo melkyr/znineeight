@@ -291,7 +291,10 @@ fn decodeSubframe(br: *BitReader, dst: []i64, block: u32, bps: u32) FlacError!vo
             if (precision == 15) return error.BadFrame;
             precision += 1;
             var shift: i64 = try readSigned(br, 5);
-            var coefs: [32]i64 = undefined;
+            var coefs: [32]i64 = [32]i64{0};
+            for (coefs) |*item| {
+                item.* = 0;
+            }
             for (0..order) |i| {
                 coefs[@intCast(usize, i)] = try readSigned(br, precision);
             }
@@ -636,6 +639,24 @@ pub const StreamFlacDecoder = struct {
     eof: bool,
 };
 
+var g_empty_i64: [1]i64;
+
+pub fn zeroStreamFlacDecoder() StreamFlacDecoder {
+    return StreamFlacDecoder{
+        .bf = @intToPtr(*stream.BufferedFile, 0),
+        .arena = @intToPtr(*std.arena.Arena, 0),
+        .sample_rate = 0,
+        .channels = 0,
+        .bits_per_sample = 0,
+        .min_block = 0,
+        .max_block = 0,
+        .max_frames = 0,
+        .total_frames = 0,
+        .samples = g_empty_i64[0..0],
+        .eof = false,
+    };
+}
+
 // MSB-first bit reader over a BufferedFile. While `recording` is set, loaded
 // bytes are captured in the fixed `hdr` buffer for the frame-header CRC-8; the
 // buffer is far larger than the maximum FLAC frame header.
@@ -867,7 +888,10 @@ fn sDecodeSubframe(br: *StreamBitReader, dst: []i64, block: u32, bps: u32) FlacE
             if (precision == 15) return error.BadFrame;
             precision += 1;
             var shift: i64 = try sReadSigned(br, 5);
-            var coefs: [32]i64 = undefined;
+            var coefs: [32]i64 = [32]i64{0};
+            for (coefs) |*item| {
+                item.* = 0;
+            }
             for (0..order) |i| {
                 coefs[@intCast(usize, i)] = try sReadSigned(br, precision);
             }
@@ -915,7 +939,17 @@ fn sBlockSize(code: u32, br: *StreamBitReader) FlacError!u32 {
 }
 
 fn decodeStreamFrame(d: *StreamFlacDecoder, out: []i16) FlacError!usize {
-    var br: StreamBitReader = undefined;
+    var br: StreamBitReader = StreamBitReader{
+        .bf = d.bf,
+        .cur = 0,
+        .bit_pos = 0,
+        .recording = false,
+        .hdr = [64]u8{0},
+        .hdr_len = 0,
+    };
+    for (0..64) |i| {
+        br.hdr[i] = 0;
+    }
     br.bf = d.bf;
     br.cur = 0;
     br.bit_pos = 0;
@@ -1124,7 +1158,10 @@ fn streamReadExact(bf: *stream.BufferedFile, out: []u8) FlacError!void {
 // Skip `n` bytes through a fixed stack buffer; metadata block lengths are
 // bounded by the 24-bit header field and never allocated.
 fn streamSkip(bf: *stream.BufferedFile, n: usize) FlacError!void {
-    var chunk: [4096]u8 = undefined;
+    var chunk: [4096]u8 = [4096]u8{0};
+    for (chunk) |*item| {
+        item.* = 0;
+    }
     var left: usize = n;
     while (left > 0) {
         var take: usize = left;
@@ -1135,7 +1172,10 @@ fn streamSkip(bf: *stream.BufferedFile, n: usize) FlacError!void {
 }
 
 fn parseStreamMetadata(bf: *stream.BufferedFile) FlacError!StreamInfo {
-    var marker: [4]u8 = undefined;
+    var marker: [4]u8 = [4]u8{0};
+    for (marker) |*item| {
+        item.* = 0;
+    }
     try streamReadExact(bf, marker[0..]);
     if (marker[0] != 'f' or marker[1] != 'L' or marker[2] != 'a' or marker[3] != 'C') {
         return error.BadStream;
@@ -1150,7 +1190,10 @@ fn parseStreamMetadata(bf: *stream.BufferedFile) FlacError!StreamInfo {
     var total: u64 = 0;
 
     while (true) {
-        var hdr: [4]u8 = undefined;
+        var hdr: [4]u8 = [4]u8{0};
+        for (hdr) |*item| {
+            item.* = 0;
+        }
         try streamReadExact(bf, hdr[0..]);
         var last: bool = (hdr[0] & 0x80) != 0;
         var mtype: u8 = hdr[0] & 0x7f;
@@ -1159,7 +1202,10 @@ fn parseStreamMetadata(bf: *stream.BufferedFile) FlacError!StreamInfo {
             @intCast(usize, hdr[3]);
         if (mtype == 0) {
             if (mlen < 34) return error.BadStream;
-            var b: [34]u8 = undefined;
+            var b: [34]u8 = [34]u8{0};
+            for (b) |*item| {
+                item.* = 0;
+            }
             try streamReadExact(bf, b[0..]);
             min_block = (@intCast(u16, b[0]) << 8) | @intCast(u16, b[1]);
             max_block = (@intCast(u16, b[2]) << 8) | @intCast(u16, b[3]);

@@ -41,35 +41,35 @@ const DEC_ARENA_SIZE: usize = 16 * 1024 * 1024;
 const SCRATCH_ARENA_SIZE: usize = 8 * 1024 * 1024;
 const PLAYER_ARENA_SIZE: usize = 2 * 1024 * 1024;
 
-var g_ui_buf: [UI_ARENA_SIZE]u8 = undefined;
-var g_dir_buf: [DIR_ARENA_SIZE]u8 = undefined;
-var g_stream_buf: [STREAM_ARENA_SIZE]u8 = undefined;
-var g_dec_buf: [DEC_ARENA_SIZE]u8 = undefined;
-var g_scratch_buf: [SCRATCH_ARENA_SIZE]u8 = undefined;
-var g_player_buf: [PLAYER_ARENA_SIZE]u8 = undefined;
+var g_ui_buf: [UI_ARENA_SIZE]u8;
+var g_dir_buf: [DIR_ARENA_SIZE]u8;
+var g_stream_buf: [STREAM_ARENA_SIZE]u8;
+var g_dec_buf: [DEC_ARENA_SIZE]u8;
+var g_scratch_buf: [SCRATCH_ARENA_SIZE]u8;
+var g_player_buf: [PLAYER_ARENA_SIZE]u8;
 
-var g_ui_arena: std.arena.Arena = undefined;
-var g_dir_arena: std.arena.Arena = undefined;
-var g_stream_arena: std.arena.Arena = undefined;
-var g_dec_arena: std.arena.Arena = undefined;
-var g_scratch_arena: std.arena.Arena = undefined;
-var g_player_arena: std.arena.Arena = undefined;
+var g_ui_arena: std.arena.Arena;
+var g_dir_arena: std.arena.Arena;
+var g_stream_arena: std.arena.Arena;
+var g_dec_arena: std.arena.Arena;
+var g_scratch_arena: std.arena.Arena;
+var g_player_arena: std.arena.Arena;
 
-var g_path_buf: [PATH_BUF]u8 = undefined;
+var g_path_buf: [PATH_BUF]u8;
 var g_path_len: usize = 0;
-var g_current_buf: [PATH_BUF]u8 = undefined;
+var g_current_buf: [PATH_BUF]u8;
 var g_current_len: usize = 0;
 
-var g_entries: []filemod.DirEntry = undefined;
+var g_entries: []filemod.DirEntry;
 var g_entry_count: usize = 0;
 var g_cursor: usize = 0;
 var g_scroll: usize = 0;
 var g_has_parent: bool = false;
 
-var g_status_buf: [128]u8 = undefined;
+var g_status_buf: [128]u8;
 var g_status: []const u8 = "";
 
-var g_playlist: [PLAYLIST_MAX][]const u8 = undefined;
+var g_playlist: [PLAYLIST_MAX][]const u8;
 var g_playlist_len: usize = 0;
 var g_playlist_index: usize = 0;
 var g_playlist_has_current: bool = false;
@@ -80,16 +80,16 @@ var g_base_ticks: u32 = 0;
 var g_paused_accum: u64 = 0;
 var g_pause_began: u32 = 0;
 
-var g_mix_buf: [MIX_MAX]i16 = undefined;
+var g_mix_buf: [MIX_MAX]i16;
 var g_mix_vol: u8 = 80;
-var g_real: audio.AudioOut = undefined;
-var g_mix_ao: audio.AudioOut = undefined;
-var g_decoder: player.Decoder = undefined;
-var g_flac: flac.StreamFlacDecoder = undefined;
-var g_ogg_stream: ogg_stream.OggStream = undefined;
+var g_real: audio.AudioOut;
+var g_mix_ao: audio.AudioOut;
+var g_decoder: player.Decoder;
+var g_flac: flac.StreamFlacDecoder;
+var g_ogg_stream: ogg_stream.OggStream;
 var g_stream_open: bool = false;
 var g_stream_is_flac: bool = false;
-var g_player: player.Player = undefined;
+var g_player: player.Player;
 
 fn fillSpaces(buf: []u8) void {
     for (buf) |*item| {
@@ -123,7 +123,10 @@ fn putAtClip(buf: []u8, x: usize, limit: usize, s: []const u8) usize {
 }
 
 fn putU64(buf: []u8, x: usize, v_in: u64) usize {
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     var v: u64 = v_in;
     if (v == 0) {
@@ -496,7 +499,10 @@ fn playTrack(path: []const u8) bool {
         }
         return false;
     };
-    var sig: [4]u8 = undefined;
+    var sig: [4]u8 = [4]u8{0};
+    for (sig) |*item| {
+        item.* = 0;
+    }
     var siglen: usize = stream.bufferedFileRead(&probe, sig[0..]) catch {
         stream.bufferedFileClose(&probe);
         setStatus("cannot open track");
@@ -536,9 +542,9 @@ fn playTrack(path: []const u8) bool {
         g_stream_open = true;
         g_stream_is_flac = false;
 
-        var id: vi.IdHeader = undefined;
-        var comment: vi.Comment = undefined;
-        var setup: vs.Setup = undefined;
+        var id: vi.IdHeader = vi.zeroIdHeader();
+        var comment: vi.Comment = vi.zeroComment();
+        var setup: vs.Setup = vs.zeroSetup();
 
         var m0: ?[]const u8 = ogg_stream.oggStreamNextPacket(&g_ogg_stream) catch {
             stopPlayback();
@@ -799,14 +805,20 @@ fn volumeDown() void {
 
 fn navigateUp() void {
     if (g_has_parent == false) return;
-    var tmp: [PATH_BUF]u8 = undefined;
+    var tmp: [PATH_BUF]u8 = [PATH_BUF]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = parentPath(tmp[0..], g_path_buf[0..g_path_len]);
     if (n == 0) return;
     loadDir(tmp[0..n]);
 }
 
 fn navigateInto(name: []const u8) void {
-    var tmp: [PATH_BUF]u8 = undefined;
+    var tmp: [PATH_BUF]u8 = [PATH_BUF]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = buildPath(tmp[0..], g_path_buf[0..g_path_len], name);
     loadDir(tmp[0..n]);
 }
@@ -824,7 +836,10 @@ fn activateSelected() void {
             navigateInto(e.name);
             return;
         }
-        var tmp: [PATH_BUF]u8 = undefined;
+        var tmp: [PATH_BUF]u8 = [PATH_BUF]u8{0};
+        for (tmp) |*item| {
+            item.* = 0;
+        }
         var n: usize = buildPath(tmp[0..], g_path_buf[0..g_path_len], e.name);
         if (playTrack(tmp[0..n])) {
             syncPlaylistCurrent();
@@ -839,7 +854,10 @@ fn addSelected() void {
             setStatus("select a file");
             return;
         }
-        var tmp: [PATH_BUF]u8 = undefined;
+        var tmp: [PATH_BUF]u8 = [PATH_BUF]u8{0};
+        for (tmp) |*item| {
+            item.* = 0;
+        }
         var n: usize = buildPath(tmp[0..], g_path_buf[0..g_path_len], e.name);
         addToPlaylist(tmp[0..n]);
     } else {
@@ -979,8 +997,14 @@ fn renderRight(buf: []u8, row: usize) void {
     }
     switch (row) {
         2 => {
-            var pos_buf: [fmt.MMSS_MAX]u8 = undefined;
-            var dur_buf: [fmt.MMSS_MAX]u8 = undefined;
+            var pos_buf: [fmt.MMSS_MAX]u8 = [fmt.MMSS_MAX]u8{0};
+            for (pos_buf) |*item| {
+                item.* = 0;
+            }
+            var dur_buf: [fmt.MMSS_MAX]u8 = [fmt.MMSS_MAX]u8{0};
+            for (dur_buf) |*item| {
+                item.* = 0;
+            }
             var pos: []const u8 = fmt.mmss(pos_buf[0..], player.playerPositionMs(&g_player));
             var dur: []const u8 = fmt.mmss(dur_buf[0..], g_player.duration_ms);
             var x: usize = RIGHT_START;
@@ -1046,7 +1070,10 @@ fn renderRight(buf: []u8, row: usize) void {
 }
 
 fn render(cs: *contract.Console) void {
-    var buf: [WIDTH]u8 = undefined;
+    var buf: [WIDTH]u8 = [WIDTH]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
 
     topRow(buf[0..]);
     drawLine(cs, 0, buf[0..]);
@@ -1141,9 +1168,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     };
     loadDir(cwd);
 
-    var cs: contract.Console = undefined;
+    var cs: contract.Console = contract.zeroConsole();
     if (@isWindows()) {
-        var st_win: cwin.ConsoleWinState = undefined;
+        var st_win: cwin.ConsoleWinState = cwin.zeroConsoleWinState();
         cs = contract.Console{
             .clear_fn = cwin.clear,
             .setCursor_fn = cwin.setCursor,
@@ -1157,7 +1184,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             .state = @ptrCast(*void, &st_win),
         };
     } else {
-        var st_lin: con.ConsoleLinState = undefined;
+        var st_lin: con.ConsoleLinState = con.zeroConsoleLinState();
         cs = contract.Console{
             .clear_fn = con.clear,
             .setCursor_fn = con.setCursor,

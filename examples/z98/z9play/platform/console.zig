@@ -58,3 +58,28 @@ pub const Console = struct {
     cursorShow_fn:  fn (*void, bool) void,
     state:          *void,
 };
+
+fn zeroClear(ctx: *void) void { _ = ctx; }
+fn zeroSetCursor(ctx: *void, row: u16, col: u16) void { _ = ctx; _ = row; _ = col; }
+fn zeroWriteStr(ctx: *void, s: []const u8) void { _ = ctx; _ = s; }
+fn zeroReadKey(ctx: *void) Key { _ = ctx; return Key{ .none = {} }; }
+fn zeroEnterRaw(ctx: *void) void { _ = ctx; }
+fn zeroLeaveRaw(ctx: *void) void { _ = ctx; }
+fn zeroWidth(ctx: *void) u16 { _ = ctx; return 0; }
+fn zeroHeight(ctx: *void) u16 { _ = ctx; return 0; }
+fn zeroCursorShow(ctx: *void, show: bool) void { _ = ctx; _ = show; }
+
+pub fn zeroConsole() Console {
+    return Console{
+        .clear_fn = zeroClear,
+        .setCursor_fn = zeroSetCursor,
+        .writeStr_fn = zeroWriteStr,
+        .readKey_fn = zeroReadKey,
+        .enterRaw_fn = zeroEnterRaw,
+        .leaveRaw_fn = zeroLeaveRaw,
+        .width_fn = zeroWidth,
+        .height_fn = zeroHeight,
+        .cursorShow_fn = zeroCursorShow,
+        .state = @intToPtr(*void, 0),
+    };
+}

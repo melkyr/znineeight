@@ -20,8 +20,8 @@ const crypto = @import("std_crypto");
 const filemod = @import("std_file");
 const flac = @import("../flac.zig");
 
-var arena_buf: [16 * 1024 * 1024]u8 = undefined;
-var out_buf: [400000]i16 = undefined;
+var arena_buf: [16 * 1024 * 1024]u8;
+var out_buf: [400000]i16;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "flac_test: FAIL: ";
@@ -38,7 +38,10 @@ fn writeU(uint: u64) void {
         std.io.write(z);
         return;
     }
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     var v: u64 = uint;
     while (v > 0) {
@@ -46,7 +49,10 @@ fn writeU(uint: u64) void {
         v = v / 10;
         n += 1;
     }
-    var buf: [20]u8 = undefined;
+    var buf: [20]u8 = [20]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < n) : (i += 1) buf[i] = tmp[n - 1 - i];
     std.io.write(buf[0..n]);
@@ -60,7 +66,10 @@ fn sha1Of(data: []const u8, out: *[20]u8) void {
 
 fn hexByte(b: u8) void {
     var d: []const u8 = "0123456789abcdef";
-    var s: [1]u8 = undefined;
+    var s: [1]u8 = [1]u8{0};
+    for (s) |*item| {
+        item.* = 0;
+    }
     s[0] = d[@intCast(usize, (b >> 4) & 0x0f)];
     std.io.write(s[0..1]);
     s[0] = d[@intCast(usize, b & 0x0f)];
@@ -85,16 +94,16 @@ fn argAt(argv: [*][*]u8, i: usize) []const u8 {
 fn decodeOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []const u8) RunResult {
     var data: []u8 = filemod.readAll(arena, fixture) catch {
         fail("cannot read fixture");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = [20]u8{0} };
     };
     var gold: []u8 = filemod.readAll(arena, golden) catch {
         fail("cannot read golden PCM");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = [20]u8{0} };
     };
 
     var fd: flac.FlacDecoder = flac.open(arena, data) catch {
         fail("flac.open failed");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = [20]u8{0} };
     };
     var ch: usize = @intCast(usize, fd.channels);
 
@@ -103,7 +112,7 @@ fn decodeOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []const u8) 
         var room: usize = out_buf.len - total * ch;
         if (room == 0) {
             fail("decoded output exceeds harness buffer");
-            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = [20]u8{0} };
         }
         var f: usize = flac.decode(&fd, arena, out_buf[total * ch ..]) catch |e| {
             if (e == error.OutOfMemory) {
@@ -111,7 +120,7 @@ fn decodeOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []const u8) 
             } else {
                 fail("flac.decode returned an error");
             }
-            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = [20]u8{0} };
         };
         if (f == 0) break;
         total += f;
@@ -140,7 +149,10 @@ fn decodeOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []const u8) 
     }
 
     var bytes: []const u8 = @ptrCast([*]const u8, out_buf[0..n].ptr)[0 .. n * 2];
-    var hash: [20]u8 = undefined;
+    var hash: [20]u8 = [20]u8{0};
+    for (hash) |*item| {
+        item.* = 0;
+    }
     sha1Of(bytes, &hash);
     return RunResult{ .frames = total, .golden_frames = golden_frames, .max_delta = md, .hash = hash };
 }
@@ -151,12 +163,12 @@ fn decodeOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []const u8) 
 fn decodeStreamOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []const u8) RunResult {
     var gold: []u8 = filemod.readAll(arena, golden) catch {
         fail("cannot read golden PCM");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = [20]u8{0} };
     };
 
     var fd: flac.StreamFlacDecoder = flac.openStream(arena, fixture) catch {
         fail("flac.openStream failed");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = [20]u8{0} };
     };
     var ch: usize = @intCast(usize, fd.channels);
 
@@ -166,7 +178,7 @@ fn decodeStreamOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []cons
         if (room == 0) {
             flac.closeStream(&fd);
             fail("streamed output exceeds harness buffer");
-            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = [20]u8{0} };
         }
         var f: usize = flac.decodeStream(&fd, arena, out_buf[total * ch ..]) catch |e| {
             flac.closeStream(&fd);
@@ -175,7 +187,7 @@ fn decodeStreamOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []cons
             } else {
                 fail("flac.decodeStream returned an error");
             }
-            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = undefined };
+            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .hash = [20]u8{0} };
         };
         if (f == 0) break;
         total += f;
@@ -205,7 +217,10 @@ fn decodeStreamOnce(arena: *std.arena.Arena, fixture: []const u8, golden: []cons
     }
 
     var bytes: []const u8 = @ptrCast([*]const u8, out_buf[0..n].ptr)[0 .. n * 2];
-    var hash: [20]u8 = undefined;
+    var hash: [20]u8 = [20]u8{0};
+    for (hash) |*item| {
+        item.* = 0;
+    }
     sha1Of(bytes, &hash);
     return RunResult{ .frames = total, .golden_frames = golden_frames, .max_delta = md, .hash = hash };
 }

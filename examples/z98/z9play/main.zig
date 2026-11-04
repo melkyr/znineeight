@@ -105,28 +105,28 @@ fn exitFlush(code: i32) void {
 
 // Backing store for the read/reassembly/comment arena; module-global so it does
 // not sit on the 32-bit stack (~11 KiB fixtures need a small fraction of this).
-var arena_buf: [4 * 1024 * 1024]u8 = undefined;
+var arena_buf: [4 * 1024 * 1024]u8;
 
 // Separate arena for persistent decode state (setup tables, DecoderState, the
 // VorbisCtx and fixed output buffers). Module-global so it is off the 32-bit
 // stack.
-var dec_arena_buf: [16 * 1024 * 1024]u8 = undefined;
+var dec_arena_buf: [16 * 1024 * 1024]u8;
 
 // Per-packet decode scratch for `--pcm`. `dec.decodePacket` allocates residue
 // and codebook temporaries per call; resetting this arena before every packet
 // keeps memory bounded over long tracks (same pattern as `vorbisNext`).
-var pcm_scratch_buf: [8 * 1024 * 1024]u8 = undefined;
+var pcm_scratch_buf: [8 * 1024 * 1024]u8;
 
 // `--wav` (M4 Player) backing stores: `wav_scratch_buf` is the per-packet decode
 // scratch (reset by vorbisNext each packet, so it stays small); `wav_player_buf`
 // backs the Player's double-buffer ring + one-block scratch. Both are module-
 // global to keep them off the 32-bit stack.
-var wav_scratch_buf: [8 * 1024 * 1024]u8 = undefined;
-var wav_player_buf: [2 * 1024 * 1024]u8 = undefined;
+var wav_scratch_buf: [8 * 1024 * 1024]u8;
+var wav_player_buf: [2 * 1024 * 1024]u8;
 
 // Per-pass streaming buffers for --loop. Reset and reopened for every pass so
 // repeated playback does not accumulate page/packet buffers in `arena`.
-var stream_arena_buf: [2 * 1024 * 1024]u8 = undefined;
+var stream_arena_buf: [2 * 1024 * 1024]u8;
 
 // --- M5 interactive playback: audio wrappers ------------------------------
 //
@@ -144,9 +144,9 @@ var stream_arena_buf: [2 * 1024 * 1024]u8 = undefined;
 // (the CLI opens the backend and sets `state`), but the field is filled for
 // completeness.
 const MIX_MAX: usize = 88200; // ring capacity (interleaved i16)
-var g_mix_buf: [MIX_MAX]i16 = undefined;
+var g_mix_buf: [MIX_MAX]i16;
 var g_mix_vol: u8 = 80;
-var g_real: audio.AudioOut = undefined;
+var g_real: audio.AudioOut;
 var g_discard_ctx: u8 = 0;
 
 fn mixOpen(rate: u32, channels: u8) audio.AudioError!*void {
@@ -210,7 +210,10 @@ fn playFail(cs: *contract.Console, msg: []const u8, code: i32) void {
 
 // Write the `\r`-prefixed fixed-width status line (fmt.statusLine) to stdout.
 fn writeStatus(pos_ms: u64, dur_ms: u64, vol: u8) void {
-    var buf: [fmt.STATUS_LINE_MAX]u8 = undefined;
+    var buf: [fmt.STATUS_LINE_MAX]u8 = [fmt.STATUS_LINE_MAX]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var line: []const u8 = fmt.statusLine(buf[0..], pos_ms, dur_ms, vol);
     var cr: []const u8 = "\r";
     std.io.write(cr);
@@ -236,14 +239,20 @@ fn writeU64(v_in: u64) void {
         std.io.write(z);
         return;
     }
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     while (v > 0) {
         tmp[n] = @intCast(u8, v % 10) + '0';
         v = v / 10;
         n += 1;
     }
-    var buf: [20]u8 = undefined;
+    var buf: [20]u8 = [20]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < n) : (i += 1) {
         buf[i] = tmp[n - 1 - i];
@@ -254,7 +263,10 @@ fn writeU64(v_in: u64) void {
 // `value` zero-padded to exactly three decimal digits (0..=999).
 fn write3digits(value: u64) void {
     var v: u64 = value % 1000;
-    var b: [3]u8 = undefined;
+    var b: [3]u8 = [3]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     b[0] = @intCast(u8, (v / 100) % 10) + '0';
     b[1] = @intCast(u8, (v / 10) % 10) + '0';
     b[2] = @intCast(u8, v % 10) + '0';
@@ -437,7 +449,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         exitFlush(2);
         return;
     };
-    var sig: [4]u8 = undefined;
+    var sig: [4]u8 = [4]u8{0};
+    for (sig) |*item| {
+        item.* = 0;
+    }
     var siglen: usize = stream.bufferedFileRead(&bf, sig[0..]) catch {
         stream.bufferedFileClose(&bf);
         var msg: []const u8 = "z9play: cannot open file\n";
@@ -471,9 +486,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             exitFlush(3);
             return;
         };
-        var id: vi.IdHeader = undefined;
-        var comment: vi.Comment = undefined;
-        var setup: vs.Setup = undefined;
+        var id: vi.IdHeader = vi.zeroIdHeader();
+        var comment: vi.Comment = vi.zeroComment();
+        var setup: vs.Setup = vs.zeroSetup();
         readOggHeaders(&os, &arena, true, false, &id, &comment, &setup);
         var serial: u32 = os.serial;
         ogg_stream.oggStreamClose(&os);
@@ -524,9 +539,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             exitFlush(3);
             return;
         };
-        var id: vi.IdHeader = undefined;
-        var comment: vi.Comment = undefined;
-        var setup: vs.Setup = undefined;
+        var id: vi.IdHeader = vi.zeroIdHeader();
+        var comment: vi.Comment = vi.zeroComment();
+        var setup: vs.Setup = vs.zeroSetup();
         readOggHeaders(&os, &arena, false, true, &id, &comment, &setup);
         ogg_stream.oggStreamClose(&os);
 
@@ -565,9 +580,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             exitFlush(3);
             return;
         };
-        var id: vi.IdHeader = undefined;
-        var comment: vi.Comment = undefined;
-        var setup: vs.Setup = undefined;
+        var id: vi.IdHeader = vi.zeroIdHeader();
+        var comment: vi.Comment = vi.zeroComment();
+        var setup: vs.Setup = vs.zeroSetup();
         readOggHeaders(&os, &darena, false, true, &id, &comment, &setup);
         var state: dec.DecoderState = dec.initDecoderState(&darena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
             ogg_stream.oggStreamClose(&os);
@@ -607,7 +622,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             return;
         };
 
-        var hdr: [44]u8 = undefined;
+        var hdr: [44]u8 = [44]u8{0};
+        for (hdr) |*item| {
+            item.* = 0;
+        }
         writeWavHeader(hdr[0..], 0, @intCast(u16, ch), id.sample_rate);
         if (!writeExact(&outf, hdr[0..44])) {
             ogg_stream.oggStreamClose(&os);
@@ -674,7 +692,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         ogg_stream.oggStreamClose(&os);
 
         var data_bytes: u32 = @intCast(u32, written * @intCast(u64, ch) * 2);
-        var patch: [4]u8 = undefined;
+        var patch: [4]u8 = [4]u8{0};
+        for (patch) |*item| {
+            item.* = 0;
+        }
         putLe32(patch[0..], 0, 36 + data_bytes);
         _ = filemod.seek(&outf, 4, .Set) catch {
             filemod.close(&outf);
@@ -724,11 +745,11 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var scratch = std.arena.init(wav_scratch_buf[0..]);
         var par = std.arena.init(wav_player_buf[0..]);
 
-        var decv: player.Decoder = undefined;
+        var decv: player.Decoder = player.zeroDecoder();
         var sr: u32 = 0;
         var chn: u8 = 0;
-        var fdec: flac.StreamFlacDecoder = undefined;
-        var os: ogg_stream.OggStream = undefined;
+        var fdec: flac.StreamFlacDecoder = flac.zeroStreamFlacDecoder();
+        var os: ogg_stream.OggStream = ogg_stream.zeroOggStream();
         var ogg_open: bool = false;
         if (is_flac) {
             fdec = flac.openStream(&darena, args.path) catch {
@@ -754,9 +775,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             };
             ogg_open = true;
 
-            var id: vi.IdHeader = undefined;
-            var comment: vi.Comment = undefined;
-            var setup: vs.Setup = undefined;
+            var id: vi.IdHeader = vi.zeroIdHeader();
+            var comment: vi.Comment = vi.zeroComment();
+            var setup: vs.Setup = vs.zeroSetup();
             readOggHeaders(&os, &darena, false, true, &id, &comment, &setup);
             var last: u64 = ogg_stream.oggStreamLastGranule(&arena, args.path, os.serial) catch {
                 ogg_stream.oggStreamClose(&os);
@@ -802,7 +823,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         };
         var meta: player.Meta = player.Meta{ .title = null, .artist = null, .album = null };
 
-        var pl: player.Player = undefined;
+        var pl: player.Player = player.zeroPlayer();
         player.playerInit(&pl, &par, &decv, &ao, meta) catch {
             var msg: []const u8 = "z9play: cannot initialize the player\n";
             std.io.write(msg);
@@ -839,7 +860,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             var now_prog: u32 = std.time.ticksMs();
             if (now_prog - last_progress >= 10000) {
                 writeText("wav: pos ");
-                var pbuf: [fmt.MMSS_MAX]u8 = undefined;
+                var pbuf: [fmt.MMSS_MAX]u8 = [fmt.MMSS_MAX]u8{0};
+                for (pbuf) |*item| {
+                    item.* = 0;
+                }
                 std.io.write(fmt.mmss(pbuf[0..], pos_ms));
                 writeText(" frames=");
                 writeU64(pl.frames_written);
@@ -935,9 +959,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 exitFlush(3);
                 return;
             };
-            var id: vi.IdHeader = undefined;
-            var comment: vi.Comment = undefined;
-            var dummy_setup: vs.Setup = undefined;
+            var id: vi.IdHeader = vi.zeroIdHeader();
+            var comment: vi.Comment = vi.zeroComment();
+            var dummy_setup: vs.Setup = vs.zeroSetup();
             readOggHeaders(&meta_os, &arena, true, false, &id, &comment, &dummy_setup);
             var serial: u32 = meta_os.serial;
             ogg_stream.oggStreamClose(&meta_os);
@@ -977,8 +1001,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             env_path = e;
         }
 
-        var real_ctx: *void = undefined;
-        var real_ao: audio.AudioOut = undefined;
+        var real_ctx: *void = nullVoid();
+        var real_ao: audio.AudioOut = audio.zeroAudioOut();
         if (use_wav) {
             wav.setOutputPath(env_path);
             real_ctx = wav.open(sr, chn) catch {
@@ -1022,7 +1046,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         writeText("z9play: ");
         writeText(name);
         writeText("  ");
-        var mbuf: [fmt.MMSS_MAX]u8 = undefined;
+        var mbuf: [fmt.MMSS_MAX]u8 = [fmt.MMSS_MAX]u8{0};
+        for (mbuf) |*item| {
+            item.* = 0;
+        }
         std.io.write(fmt.mmss(mbuf[0..], dur_ms));
         writeText("  ");
         writeU64(@intCast(u64, chn));
@@ -1036,10 +1063,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         // @isWindows() select the Win9x backend; the explicit else keeps the
         // Linux backend valid C. Raw keyboard input is a no-op when stdin is not
         // a tty; keys are then not polled, so a redirected run still completes.
-        var cs: contract.Console = undefined;
-        var entered_ptr: *bool = undefined;
+        var cs: contract.Console = contract.zeroConsole();
+        var entered_ptr: *bool = @intToPtr(*bool, 0);
         if (@isWindows()) {
-            var st_win: cwin.ConsoleWinState = undefined;
+            var st_win: cwin.ConsoleWinState = cwin.zeroConsoleWinState();
             cs = contract.Console{
                 .clear_fn = cwin.clear,
                 .setCursor_fn = cwin.setCursor,
@@ -1054,7 +1081,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             };
             entered_ptr = &st_win.entered;
         } else {
-            var st_lin: con.ConsoleLinState = undefined;
+            var st_lin: con.ConsoleLinState = con.zeroConsoleLinState();
             cs = contract.Console{
                 .clear_fn = con.clear,
                 .setCursor_fn = con.setCursor,
@@ -1072,7 +1099,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         cs.enterRaw_fn(cs.state);
         var interactive: bool = entered_ptr.*;
 
-        var pl: player.Player = undefined;
+        var pl: player.Player = player.zeroPlayer();
         var quit: bool = false;
         var ended_by_start: bool = false;
         while (true) {
@@ -1082,9 +1109,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.arena.reset(&par);
             std.arena.reset(&sarena);
 
-            var decv: player.Decoder = undefined;
-            var fdec: flac.StreamFlacDecoder = undefined;
-            var os: ogg_stream.OggStream = undefined;
+            var decv: player.Decoder = player.zeroDecoder();
+            var fdec: flac.StreamFlacDecoder = flac.zeroStreamFlacDecoder();
+            var os: ogg_stream.OggStream = ogg_stream.zeroOggStream();
             var ogg_open: bool = false;
             if (is_flac) {
                 fdec = flac.openStream(&darena, args.path) catch {
@@ -1103,9 +1130,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 };
                 ogg_open = true;
 
-                var hid: vi.IdHeader = undefined;
-                var comment: vi.Comment = undefined;
-                var setup: vs.Setup = undefined;
+                var hid: vi.IdHeader = vi.zeroIdHeader();
+                var comment: vi.Comment = vi.zeroComment();
+                var setup: vs.Setup = vs.zeroSetup();
                 readOggHeaders(&os, &darena, false, true, &hid, &comment, &setup);
                 var state: dec.DecoderState = dec.initDecoderState(&darena, setup, hid.channels, hid.blocksize_0, hid.blocksize_1) catch {
                     ogg_stream.oggStreamClose(&os);
@@ -1268,7 +1295,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var nl: []const u8 = "\n";
         std.io.write(nl);
         writeText("Stopped at ");
-        var sbuf: [fmt.MMSS_MAX]u8 = undefined;
+        var sbuf: [fmt.MMSS_MAX]u8 = [fmt.MMSS_MAX]u8{0};
+        for (sbuf) |*item| {
+            item.* = 0;
+        }
         std.io.write(fmt.mmss(sbuf[0..], fpos));
         writeText(".\n");
         exitFlush(0);

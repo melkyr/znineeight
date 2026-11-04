@@ -92,6 +92,34 @@ pub const ConsoleLinState = struct {
     pending_valid: bool,
 };
 
+fn zeroTermios() Termios {
+    var t: Termios = Termios{
+        .c_iflag = 0,
+        .c_oflag = 0,
+        .c_cflag = 0,
+        .c_lflag = 0,
+        .c_line = 0,
+        .c_cc = [32]u8{0},
+        .c_ispeed = 0,
+        .c_ospeed = 0,
+    };
+    for (0..32) |i| {
+        t.c_cc[i] = 0;
+    }
+    return t;
+}
+
+pub fn zeroConsoleLinState() ConsoleLinState {
+    return ConsoleLinState{
+        .saved = zeroTermios(),
+        .entered = false,
+        .esc_phase = 0,
+        .esc_start = 0,
+        .pending_byte = 0,
+        .pending_valid = false,
+    };
+}
+
 // termios(3) constants (linux x86 numeric values; deliberately not the macros).
 const TCSANOW: i32 = 0;
 const SIGINT: i32 = 2;
@@ -175,7 +203,10 @@ pub fn leaveRaw(state: *void) void {
 
 // One byte from stdin, or -1 when none is ready (read is non-blocking, VMIN=0).
 fn pullByte() i32 {
-    var b: [1]u8 = undefined;
+    var b: [1]u8 = [1]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     var n: i32 = pal.read(0, @ptrCast([*]u8, &b[0]), 1);
     if (n == 1) return @intCast(i32, b[0]);
     return -1;
@@ -285,7 +316,10 @@ fn writeDec(buf: []u8, v_in: u32) usize {
         buf[0] = '0';
         return 1;
     }
-    var tmp: [10]u8 = undefined;
+    var tmp: [10]u8 = [10]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     while (v > 0) {
         tmp[n] = @intCast(u8, v % 10) + '0';
@@ -304,7 +338,10 @@ fn writeDec(buf: []u8, v_in: u32) usize {
 // incremented.
 pub fn setCursor(state: *void, row: u16, col: u16) void {
     _ = state;
-    var buf: [24]u8 = undefined;
+    var buf: [24]u8 = [24]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     buf[n] = ESC;
     n += 1;
@@ -335,7 +372,7 @@ pub fn cursorShow(state: *void, show: bool) void {
 // ioctl fails or reports zero.
 pub fn width(state: *void) u16 {
     _ = state;
-    var ws: pal.Winsize = undefined;
+    var ws: pal.Winsize = pal.Winsize{ .ws_row = 0, .ws_col = 0, .ws_xpixel = 0, .ws_ypixel = 0 };
     if (pal.ioctl(0, TIOCGWINSZ, @ptrCast(*void, &ws)) != 0) return 80;
     if (ws.ws_col == 0) return 80;
     return ws.ws_col;
@@ -345,7 +382,7 @@ pub fn width(state: *void) u16 {
 // fails or reports zero.
 pub fn height(state: *void) u16 {
     _ = state;
-    var ws: pal.Winsize = undefined;
+    var ws: pal.Winsize = pal.Winsize{ .ws_row = 0, .ws_col = 0, .ws_xpixel = 0, .ws_ypixel = 0 };
     if (pal.ioctl(0, TIOCGWINSZ, @ptrCast(*void, &ws)) != 0) return 24;
     if (ws.ws_row == 0) return 24;
     return ws.ws_row;

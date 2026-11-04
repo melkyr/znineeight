@@ -23,9 +23,9 @@ const stream = @import("../stream.zig");
 const FILE_SIZE: usize = 4 * 1024 * 1024 + 12345;
 const BLOCK: usize = 64 * 1024;
 
-var arena_buf: [stream.STREAM_BUF_SIZE]u8 = undefined;
-var write_block: [BLOCK]u8 = undefined;
-var read_block: [200000]u8 = undefined;
+var arena_buf: [stream.STREAM_BUF_SIZE]u8;
+var write_block: [BLOCK]u8;
+var read_block: [200000]u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "stream_test: FAIL: ";
@@ -43,14 +43,20 @@ fn writeU64(v_in: u64) void {
         std.io.write(z);
         return;
     }
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     while (v > 0) {
         tmp[n] = @intCast(u8, v % 10) + '0';
         v = v / 10;
         n += 1;
     }
-    var buf: [20]u8 = undefined;
+    var buf: [20]u8 = [20]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < n) : (i += 1) {
         buf[i] = tmp[n - 1 - i];

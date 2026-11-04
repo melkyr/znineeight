@@ -70,7 +70,7 @@ const OssDev = struct {
 
 const DEV_PATH_BUF: usize = 16;
 
-var g_dev: OssDev = undefined;
+var g_dev: OssDev;
 
 // Copy `s` into `out` and NUL-terminate. Returns false when it does not fit.
 fn cstr(s: []const u8, out: []u8) bool {
@@ -92,7 +92,10 @@ pub fn open(rate: u32, channels: u8) AudioError!*void {
     if (channels != 1 and channels != 2) return error.ConfigUnsupported;
 
     var path: []const u8 = "/dev/dsp";
-    var devbuf: [DEV_PATH_BUF]u8 = undefined;
+    var devbuf: [DEV_PATH_BUF]u8 = [DEV_PATH_BUF]u8{0};
+    for (devbuf) |*item| {
+        item.* = 0;
+    }
     if (!cstr(path, devbuf[0..])) return error.OpenFailed;
 
     var fd: i32 = pal.open(@ptrCast([*]const u8, &devbuf[0]), O_WRONLY, OPEN_MODE);

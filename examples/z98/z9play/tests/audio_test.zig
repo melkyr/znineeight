@@ -27,9 +27,10 @@ const wav = @import("../platform/audio_wavfile.zig");
 
 const NSAMP: usize = 1000;
 
-var arena1_buf: [4 * 1024 * 1024]u8 = undefined;
-var arena2_buf: [4 * 1024 * 1024]u8 = undefined;
-var samples: [NSAMP]i16 = undefined;
+var arena1_buf: [4 * 1024 * 1024]u8;
+var arena2_buf: [4 * 1024 * 1024]u8;
+var samples: [NSAMP]i16;
+var g_empty_u8: [1]u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "audio_test: FAIL: ";
@@ -100,7 +101,7 @@ fn writeSink(path: []const u8) void {
 fn checkSink(arena: *std.arena.Arena, path: []const u8) []u8 {
     var data: []u8 = filemod.readAll(arena, path) catch {
         fail("read back failed");
-        return undefined;
+        return g_empty_u8[0..0];
     };
     var want: usize = 44 + NSAMP * 2;
     if (data.len != want) fail("file size wrong");

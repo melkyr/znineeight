@@ -19,11 +19,11 @@ const filemod = @import("std_file");
 const ogg = @import("../ogg.zig");
 const ogg_stream = @import("../ogg_stream.zig");
 
-var arena_buf: [4 * 1024 * 1024]u8 = undefined;
-var synth_buf: [200000]u8 = undefined;
-var page_buf: [ogg_stream.OGG_PAGE_MAX]u8 = undefined;
-var body_full: [65025]u8 = undefined;
-var laces_full: [255]u8 = undefined;
+var arena_buf: [4 * 1024 * 1024]u8;
+var synth_buf: [200000]u8;
+var page_buf: [ogg_stream.OGG_PAGE_MAX]u8;
+var body_full: [65025]u8;
+var laces_full: [255]u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "ogg_stream_test: FAIL: ";
@@ -41,14 +41,20 @@ fn writeU64(v_in: u64) void {
         std.io.write(z);
         return;
     }
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     while (v > 0) {
         tmp[n] = @intCast(u8, v % 10) + '0';
         v = v / 10;
         n += 1;
     }
-    var buf: [20]u8 = undefined;
+    var buf: [20]u8 = [20]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < n) : (i += 1) {
         buf[i] = tmp[n - 1 - i];
@@ -247,7 +253,10 @@ fn expectTailError(path: []const u8, serial: u32, want: ogg_stream.OggStreamErro
 
 fn testCrcFailure() void {
     var path: []const u8 = "/tmp/z9play_ogg_stream_crc.ogg";
-    var laces: [1]u8 = undefined;
+    var laces: [1]u8 = [1]u8{0};
+    for (laces) |*item| {
+        item.* = 0;
+    }
     laces[0] = 3;
     var end: usize = buildPage(synth_buf[0..], 0, 0x02, 7, 0, 0, laces[0..], "abc");
     synth_buf[28] = 'X';
@@ -258,17 +267,29 @@ fn testCrcFailure() void {
 
 fn testContinuation() void {
     var path: []const u8 = "/tmp/z9play_ogg_stream_cont.ogg";
-    var laces_a: [1]u8 = undefined;
+    var laces_a: [1]u8 = [1]u8{0};
+    for (laces_a) |*item| {
+        item.* = 0;
+    }
     laces_a[0] = 255;
-    var body_a: [255]u8 = undefined;
+    var body_a: [255]u8 = [255]u8{0};
+    for (body_a) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < 255) : (i += 1) body_a[i] = 0xAA;
     var end: usize = buildPage(synth_buf[0..], 0, 0x02, 42, 0, 0, laces_a[0..], body_a[0..]);
 
-    var laces_b: [2]u8 = undefined;
+    var laces_b: [2]u8 = [2]u8{0};
+    for (laces_b) |*item| {
+        item.* = 0;
+    }
     laces_b[0] = 45;
     laces_b[1] = 3;
-    var body_b: [48]u8 = undefined;
+    var body_b: [48]u8 = [48]u8{0};
+    for (body_b) |*item| {
+        item.* = 0;
+    }
     i = 0;
     while (i < 45) : (i += 1) body_b[i] = 0xBB;
     body_b[45] = 'x';
@@ -326,7 +347,10 @@ fn testContinuation() void {
 
 fn testContinuationWithoutPending() void {
     var path: []const u8 = "/tmp/z9play_ogg_stream_cont_no_pending.ogg";
-    var laces: [1]u8 = undefined;
+    var laces: [1]u8 = [1]u8{0};
+    for (laces) |*item| {
+        item.* = 0;
+    }
     laces[0] = 3;
     var end: usize = buildPage(synth_buf[0..], 0, 0x01, 9, 0, 0, laces[0..], "abc");
     writeBytes(path, synth_buf[0..end]);
@@ -336,13 +360,22 @@ fn testContinuationWithoutPending() void {
 
 fn testMissingContinuation() void {
     var path: []const u8 = "/tmp/z9play_ogg_stream_missing_cont.ogg";
-    var laces_a: [1]u8 = undefined;
+    var laces_a: [1]u8 = [1]u8{0};
+    for (laces_a) |*item| {
+        item.* = 0;
+    }
     laces_a[0] = 255;
-    var body_a: [255]u8 = undefined;
+    var body_a: [255]u8 = [255]u8{0};
+    for (body_a) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < 255) : (i += 1) body_a[i] = 0xCC;
     var end: usize = buildPage(synth_buf[0..], 0, 0x02, 9, 0, 0, laces_a[0..], body_a[0..]);
-    var laces_b: [1]u8 = undefined;
+    var laces_b: [1]u8 = [1]u8{0};
+    for (laces_b) |*item| {
+        item.* = 0;
+    }
     laces_b[0] = 3;
     end = buildPage(synth_buf[0..], end, 0x00, 9, 1, 0, laces_b[0..], "abc");
     writeBytes(path, synth_buf[0..end]);
@@ -352,7 +385,10 @@ fn testMissingContinuation() void {
 
 fn testSerialMismatch() void {
     var path: []const u8 = "/tmp/z9play_ogg_stream_serial.ogg";
-    var laces: [1]u8 = undefined;
+    var laces: [1]u8 = [1]u8{0};
+    for (laces) |*item| {
+        item.* = 0;
+    }
     laces[0] = 3;
     var end: usize = buildPage(synth_buf[0..], 0, 0x02, 100, 0, 0, laces[0..], "abc");
     end = buildPage(synth_buf[0..], end, 0x00, 200, 1, 0, laces[0..], "def");
@@ -425,7 +461,10 @@ fn testPacketTooLarge() void {
 
 fn testEofMidPage() void {
     var path: []const u8 = "/tmp/z9play_ogg_stream_eof.ogg";
-    var laces: [1]u8 = undefined;
+    var laces: [1]u8 = [1]u8{0};
+    for (laces) |*item| {
+        item.* = 0;
+    }
     laces[0] = 3;
     var end: usize = buildPage(synth_buf[0..], 0, 0x02, 5, 0, 0, laces[0..], "abc");
     writeBytes(path, synth_buf[0 .. end - 10]);

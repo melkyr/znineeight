@@ -129,6 +129,23 @@ pub const Setup = struct {
     modes: []VorbisMode,
 };
 
+var g_empty_codebook: [1]Codebook;
+var g_empty_floor: [1]Floor;
+var g_empty_residue: [1]Residue;
+var g_empty_mapping: [1]Mapping;
+var g_empty_mode: [1]VorbisMode;
+
+pub fn zeroSetup() Setup {
+    return Setup{
+        .codebooks = g_empty_codebook[0..0],
+        .time_count = 0,
+        .floors = g_empty_floor[0..0],
+        .residues = g_empty_residue[0..0],
+        .mappings = g_empty_mapping[0..0],
+        .modes = g_empty_mode[0..0],
+    };
+}
+
 // LSB-first bit reader over a Vorbis packet (the setup tail or, later, an
 // audio packet). `nbits` is the total readable bit count; any read or skip past
 // it reports Truncated. Decode codebooks and later milestones share it.

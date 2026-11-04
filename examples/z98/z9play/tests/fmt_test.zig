@@ -43,13 +43,19 @@ fn fail(name: []const u8, got: []const u8, want: []const u8) void {
 }
 
 fn checkMmss(name: []const u8, ms: u64, want: []const u8) void {
-    var buf: [fmt.MMSS_MAX]u8 = undefined;
+    var buf: [fmt.MMSS_MAX]u8 = [fmt.MMSS_MAX]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var got: []const u8 = fmt.mmss(buf[0..], ms);
     if (!eq(got, want)) fail(name, got, want);
 }
 
 fn checkStatus(name: []const u8, pos_ms: u64, dur_ms: u64, vol: u8, want: []const u8) void {
-    var buf: [fmt.STATUS_LINE_MAX]u8 = undefined;
+    var buf: [fmt.STATUS_LINE_MAX]u8 = [fmt.STATUS_LINE_MAX]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var got: []const u8 = fmt.statusLine(buf[0..], pos_ms, dur_ms, vol);
     if (!eq(got, want)) fail(name, got, want);
 }
@@ -67,7 +73,10 @@ fn failMsg(name: []const u8) void {
 // bytes. The renderer returns a slice bounded by its own writes, so a line
 // shorter or longer than the fixed width fails here.
 fn checkWidth(name: []const u8, pos_ms: u64, dur_ms: u64, vol: u8, want: usize) void {
-    var buf: [fmt.STATUS_LINE_MAX]u8 = undefined;
+    var buf: [fmt.STATUS_LINE_MAX]u8 = [fmt.STATUS_LINE_MAX]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var got: []const u8 = fmt.statusLine(buf[0..], pos_ms, dur_ms, vol);
     if (got.len != want) failMsg(name);
 }

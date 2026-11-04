@@ -48,7 +48,10 @@ fn putStr(out: []u8, pos: *usize, s: []const u8) void {
 
 // Decimal, unsigned, no padding; zero prints a single `0`.
 fn putU64(out: []u8, pos: *usize, v: u64) void {
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     var x: u64 = v;
     if (x == 0) {
@@ -88,10 +91,16 @@ pub fn mmss(buf: []u8, ms: u64) []const u8 {
 // One fixed-width `\r`-ready status line into `buf`; returns the used prefix.
 // `buf` must be at least `STATUS_LINE_MAX` bytes. `vol` is a percent (0..100).
 pub fn statusLine(buf: []u8, pos_ms: u64, dur_ms: u64, vol: u8) []const u8 {
-    var pos_buf: [MMSS_MAX]u8 = undefined;
-    var dur_buf: [MMSS_MAX]u8 = undefined;
+    var pos_buf: [MMSS_MAX]u8 = [MMSS_MAX]u8{0};
+    for (pos_buf) |*item| {
+        item.* = 0;
+    }
+    var dur_buf: [MMSS_MAX]u8 = [MMSS_MAX]u8{0};
+    for (dur_buf) |*item| {
+        item.* = 0;
+    }
     var pos_s: []const u8 = mmss(pos_buf[0..], pos_ms);
-    var dur_s: []const u8 = undefined;
+    var dur_s: []const u8 = "";
     if (dur_ms == 0) {
         var dash: []const u8 = "--";
         dur_s = dash;

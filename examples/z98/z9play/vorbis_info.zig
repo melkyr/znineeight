@@ -83,6 +83,25 @@ pub const Comment = struct {
     tags: []Tag,
 };
 
+var g_empty_tag: [1]Tag;
+
+pub fn zeroIdHeader() IdHeader {
+    return IdHeader{
+        .version = 0,
+        .channels = 0,
+        .sample_rate = 0,
+        .bitrate_max = 0,
+        .bitrate_nom = 0,
+        .bitrate_min = 0,
+        .blocksize_0 = 0,
+        .blocksize_1 = 0,
+    };
+}
+
+pub fn zeroComment() Comment {
+    return Comment{ .vendor = "", .tags = g_empty_tag[0..0] };
+}
+
 // Copy `src` into arena storage and return the fresh mutable slice, so the
 // parser never aliases the caller's packet bytes.
 fn dupBytes(arena: *std.arena.Arena, src: []const u8) ogg.OggError![]u8 {

@@ -94,8 +94,16 @@ pub const ConsoleWinState = struct {
     entered: bool,
 };
 
+pub fn zeroConsoleWinState() ConsoleWinState {
+    return ConsoleWinState{
+        .in_handle = @intToPtr(*void, 0),
+        .saved_in_mode = 0,
+        .entered = false,
+    };
+}
+
 // Backstop-visible copy of the live raw-mode state.
-var g_in_handle: *void = undefined;
+var g_in_handle: *void;
 var g_saved_in_mode: u32 = 0;
 var g_raw_active: bool = false;
 
@@ -172,7 +180,7 @@ pub fn readKey(state: *void) Key {
         if (pal.GetNumberOfConsoleInputEvents(h, &n) == 0) return Key{ .none = {} };
         if (n == 0) return Key{ .none = {} };
 
-        var rec: pal.InputRecord = undefined;
+        var rec: pal.InputRecord = pal.zeroInputRecord();
         var got: u32 = 0;
         if (pal.ReadConsoleInputA(h, @ptrCast(*void, &rec), 1, &got) == 0) return Key{ .none = {} };
         if (got == 0) return Key{ .none = {} };
@@ -216,7 +224,7 @@ pub fn writeStr(state: *void, s: []const u8) void {
 pub fn clear(state: *void) void {
     _ = state;
     var h: *void = pal.GetStdHandle(STD_OUTPUT_HANDLE);
-    var info: pal.ConsoleScreenBufferInfo = undefined;
+    var info: pal.ConsoleScreenBufferInfo = pal.zeroConsoleScreenBufferInfo();
     if (pal.GetConsoleScreenBufferInfo(h, @ptrCast(*void, &info)) == 0) return;
 
     var w: i32 = @intCast(i32, info.dwSize.x);
@@ -244,7 +252,7 @@ pub fn setCursor(state: *void, row: u16, col: u16) void {
 pub fn cursorShow(state: *void, show: bool) void {
     _ = state;
     var h: *void = pal.GetStdHandle(STD_OUTPUT_HANDLE);
-    var info: pal.ConsoleCursorInfo = undefined;
+    var info: pal.ConsoleCursorInfo = pal.zeroConsoleCursorInfo();
     if (pal.GetConsoleCursorInfo(h, @ptrCast(*void, &info)) == 0) return;
     if (show) {
         info.bVisible = 1;
@@ -259,7 +267,7 @@ pub fn cursorShow(state: *void, show: bool) void {
 pub fn width(state: *void) u16 {
     _ = state;
     var h: *void = pal.GetStdHandle(STD_OUTPUT_HANDLE);
-    var info: pal.ConsoleScreenBufferInfo = undefined;
+    var info: pal.ConsoleScreenBufferInfo = pal.zeroConsoleScreenBufferInfo();
     if (pal.GetConsoleScreenBufferInfo(h, @ptrCast(*void, &info)) == 0) return 80;
     if (info.dwSize.x <= 0) return 80;
     return @intCast(u16, info.dwSize.x);
@@ -270,7 +278,7 @@ pub fn width(state: *void) u16 {
 pub fn height(state: *void) u16 {
     _ = state;
     var h: *void = pal.GetStdHandle(STD_OUTPUT_HANDLE);
-    var info: pal.ConsoleScreenBufferInfo = undefined;
+    var info: pal.ConsoleScreenBufferInfo = pal.zeroConsoleScreenBufferInfo();
     if (pal.GetConsoleScreenBufferInfo(h, @ptrCast(*void, &info)) == 0) return 24;
     if (info.dwSize.y <= 0) return 24;
     return @intCast(u16, info.dwSize.y);

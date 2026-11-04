@@ -39,11 +39,11 @@ const WavSink = struct {
     data_bytes: u32,
 };
 
-var g_arena_buf: [ARENA_BUF]u8 = undefined;
-var g_arena: std.arena.Arena = undefined;
-var g_path_buf: [PATH_BUF]u8 = undefined;
+var g_arena_buf: [ARENA_BUF]u8;
+var g_arena: std.arena.Arena;
+var g_path_buf: [PATH_BUF]u8;
 var g_path_len: usize = 0;
-var g_ctx: WavSink = undefined;
+var g_ctx: WavSink;
 
 // --- output path ----------------------------------------------------------
 
@@ -136,7 +136,10 @@ pub fn open(rate: u32, channels: u8) AudioError!*void {
     g_arena = std.arena.init(g_arena_buf[0..]);
     var f: filemod.File = filemod.open(&g_arena, path, filemod.Mode.Write) catch return error.OpenFailed;
 
-    var hdr: [44]u8 = undefined;
+    var hdr: [44]u8 = [44]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
     writeWavHeader(hdr[0..], 0, @intCast(u16, channels), rate);
     writeExact(&f, hdr[0..]) catch {
         filemod.close(&f);
@@ -151,7 +154,10 @@ pub fn open(rate: u32, channels: u8) AudioError!*void {
 // Returns the number of samples accepted (all of them, on success).
 pub fn write(state: *void, samples: []const i16) AudioError!usize {
     var ctx: *WavSink = @ptrCast(*WavSink, state);
-    var chunk: [CHUNK_SAMPLES * 2]u8 = undefined;
+    var chunk: [CHUNK_SAMPLES * 2]u8 = [CHUNK_SAMPLES * 2]u8{0};
+    for (chunk) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < samples.len) {
         var n: usize = samples.len - i;
@@ -180,7 +186,10 @@ pub fn drain(state: *void) AudioError!void {
 // §2.2; a seek/write failure here still closes the file (best effort).
 pub fn close(state: *void) void {
     var ctx: *WavSink = @ptrCast(*WavSink, state);
-    var b: [4]u8 = undefined;
+    var b: [4]u8 = [4]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     putLe32(b[0..], 0, 36 + ctx.data_bytes);
     _ = filemod.seek(&ctx.file, 4, filemod.SeekWhence.Set) catch {};
     writeExact(&ctx.file, b[0..]) catch {};

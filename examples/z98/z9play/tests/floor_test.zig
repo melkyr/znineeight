@@ -41,7 +41,7 @@ const vs = @import("../vorbis_setup.zig");
 const cbk = @import("../codebook.zig");
 const flr = @import("../floor.zig");
 
-var arena_buf: [4 * 1024 * 1024]u8 = undefined;
+var arena_buf: [4 * 1024 * 1024]u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "floor_test: FAIL: ";
@@ -71,7 +71,7 @@ fn ilog(x: u32) u32 {
 }
 
 // LSB-first packet writer for the crafted vector.
-var pkt: [64]u8 = undefined;
+var pkt: [64]u8;
 var bp: usize = 0;
 
 fn pktClear() void {
@@ -219,7 +219,10 @@ fn checkFixtureFloor(path: []const u8) bool {
             }
         }
 
-        var out: [4096]f64 = undefined;
+        var out: [4096]f64 = [4096]f64{0};
+        for (out) |*item| {
+            item.* = 0;
+        }
         var used: bool = flr.decodeFloor1(&arena, tables[0..], &br, f, out[0..@intCast(usize, spec_len)]) catch {
             fail("fixture: floor decode error");
             return false;
@@ -249,7 +252,10 @@ fn checkFixtureFloor(path: []const u8) bool {
             _ = vs.brRead(&br2, 1) catch 0;
             _ = vs.brRead(&br2, 1) catch 0;
         }
-        var out2: [4096]f64 = undefined;
+        var out2: [4096]f64 = [4096]f64{0};
+        for (out2) |*item| {
+            item.* = 0;
+        }
         var used2: bool = flr.decodeFloor1(&arena, tables[0..], &br2, f, out2[0..@intCast(usize, spec_len)]) catch {
             fail("second decode error");
             return false;
@@ -328,7 +334,7 @@ pub fn main() void {
         fail("crafted buildDecodeTable failed");
         return;
     };
-    var tables: [1]cbk.DecodeTable = undefined;
+    var tables: [1]cbk.DecodeTable = [1]cbk.DecodeTable{ dt };
     tables[0] = dt;
 
     var pc_raw: [*]u8 = std.arena.alloc(&arena, 1) catch {
@@ -403,7 +409,10 @@ pub fn main() void {
     wbits(2, 3); // subclass codeword -> entry 3
     var nb: usize = (bp + 7) / 8;
     var br: vs.BitReader = vs.brInit(pkt[0..nb]);
-    var out: [20]f64 = undefined;
+    var out: [20]f64 = [20]f64{0};
+    for (out) |*item| {
+        item.* = 0;
+    }
     var used: bool = flr.decodeFloor1(&arena, tables[0..], &br, f, out[0..20]) catch {
         fail("crafted decode returned an error");
         return;
@@ -433,7 +442,10 @@ pub fn main() void {
     pktClear();
     wbits(1, 0);
     var brz: vs.BitReader = vs.brInit(pkt[0..1]);
-    var outz: [20]f64 = undefined;
+    var outz: [20]f64 = [20]f64{0};
+    for (outz) |*item| {
+        item.* = 0;
+    }
     var zi: usize = 0;
     while (zi < 20) : (zi += 1) outz[zi] = 9.0;
     var usedz: bool = flr.decodeFloor1(&arena, tables[0..], &brz, f, outz[0..20]) catch {
@@ -468,7 +480,10 @@ pub fn main() void {
         fail("floor0: type != 0");
         return;
     }
-    var out0: [8]f64 = undefined;
+    var out0: [8]f64 = [8]f64{0};
+    for (out0) |*item| {
+        item.* = 0;
+    }
     if (!floor0Rejected(&arena, tables[0..], s0.floors[0], out0[0..8])) {
         fail("floor 0 was not rejected with UnsupportedFloor");
         return;

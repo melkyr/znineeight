@@ -121,6 +121,55 @@ pub const Player = struct {
     block_buf: []i16, // scratch for one decoded block (max_frames * channels)
 };
 
+var g_empty_i16: [1]i16;
+
+fn zeroNext(ctx: *void, pcm_out: []i16) DecoderError!usize {
+    _ = ctx;
+    _ = pcm_out;
+    return 0;
+}
+
+pub fn zeroDecoder() Decoder {
+    return Decoder{
+        .ctx = @intToPtr(*void, 0),
+        .next_fn = zeroNext,
+        .max_frames = 0,
+        .sample_rate = 0,
+        .channels = 0,
+        .total_frames = 0,
+    };
+}
+
+pub fn zeroPlayer() Player {
+    return Player{
+        .decoder = @intToPtr(*const Decoder, 0),
+        .audio = @intToPtr(*const audio.AudioOut, 0),
+        .arena = @intToPtr(*std.arena.Arena, 0),
+        .ring = RingBuffer{
+            .data = g_empty_i16[0..0],
+            .write_pos = 0,
+            .read_pos = 0,
+            .filled = 0,
+            .capacity = 0,
+        },
+        .state = PlayerState.stopped,
+        .volume = 0,
+        .position_ms = 0,
+        .started_ms = 0,
+        .duration_ms = 0,
+        .sample_rate = 0,
+        .channels = 0,
+        .title = null,
+        .artist = null,
+        .album = null,
+        .frames_written = 0,
+        .frames_decoded = 0,
+        .decoding_done = false,
+        .flush_threshold = 0,
+        .block_buf = g_empty_i16[0..0],
+    };
+}
+
 // Allocate the ring + block scratch from `arena` and initialise caller-owned
 // `p` in the `playing` state. `decoder`/`ao` are held by pointer; `meta` is
 // optional (null fields).

@@ -75,6 +75,34 @@ pub const InputRecord = struct {
     key: KeyEventRecord,
 };
 
+pub fn zeroConsoleScreenBufferInfo() ConsoleScreenBufferInfo {
+    return ConsoleScreenBufferInfo{
+        .dwSize = Coord{ .x = 0, .y = 0 },
+        .dwCursorPosition = Coord{ .x = 0, .y = 0 },
+        .wAttributes = 0,
+        .srWindow = SmallRect{ .left = 0, .top = 0, .right = 0, .bottom = 0 },
+        .dwMaximumWindowSize = Coord{ .x = 0, .y = 0 },
+    };
+}
+
+pub fn zeroConsoleCursorInfo() ConsoleCursorInfo {
+    return ConsoleCursorInfo{ .dwSize = 0, .bVisible = 0 };
+}
+
+pub fn zeroInputRecord() InputRecord {
+    return InputRecord{
+        .event_type = 0,
+        .key = KeyEventRecord{
+            .bKeyDown = 0,
+            .wRepeatCount = 0,
+            .wVirtualKeyCode = 0,
+            .wVirtualScanCode = 0,
+            .uChar = 0,
+            .dwControlKeyState = 0,
+        },
+    };
+}
+
 // HANDLE GetStdHandle(DWORD nStdHandle);
 pub extern "stdcall" fn GetStdHandle(nStdHandle: i32) *void;
 

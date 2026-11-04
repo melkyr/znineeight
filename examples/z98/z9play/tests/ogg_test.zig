@@ -22,7 +22,7 @@ const vi = @import("../vorbis_info.zig");
 
 // Backing store for the read/reassembly arena; module-global so it does not
 // sit on the 32-bit stack. 4 MiB is far above this ~11 KiB fixture's needs.
-var arena_buf: [4 * 1024 * 1024]u8 = undefined;
+var arena_buf: [4 * 1024 * 1024]u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "ogg_test: FAIL: ";
@@ -40,14 +40,20 @@ fn writeU64(v_in: u64) void {
         std.io.write(z);
         return;
     }
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     while (v > 0) {
         tmp[n] = @intCast(u8, v % 10) + '0';
         v = v / 10;
         n += 1;
     }
-    var buf: [20]u8 = undefined;
+    var buf: [20]u8 = [20]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < n) : (i += 1) {
         buf[i] = tmp[n - 1 - i];
@@ -144,7 +150,10 @@ fn wrPageHdr(buf: []u8, off: usize, header_type: u8, nseg: u8) usize {
 // concatenated bytes, with a following short packet intact. This exercises the
 // cross-page-carry path the fixtures do not hit.
 fn testContinuationReassembly() void {
-    var buf: [1024]u8 = undefined;
+    var buf: [1024]u8 = [1024]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var off: usize = 0;
     // Page A (BOS): a single 255-byte segment -> packet continues.
     var st: usize = wrPageHdr(buf[0..], off, 0x02, 1);
@@ -191,7 +200,10 @@ fn testContinuationReassembly() void {
 // write past the terminated-packet allocation. The single page below closes one
 // 3-byte packet and then leaves a 255-byte tail open.
 fn testUnterminatedReassembly() void {
-    var buf: [512]u8 = undefined;
+    var buf: [512]u8 = [512]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var st: usize = wrPageHdr(buf[0..], 0, 0x04, 2);
     buf[st] = 3;
     buf[st + 1] = 255;

@@ -28,6 +28,24 @@ pub const BufferedFile = struct {
     closed: bool,
 };
 
+var g_empty_u8: [1]u8;
+
+pub fn zeroBufferedFile() BufferedFile {
+    return BufferedFile{
+        .file = std_file.File{
+            .handle = @intToPtr(*void, 0),
+            .size_cache = 0,
+            .arena = @intToPtr(*std.arena.Arena, 0),
+        },
+        .arena = @intToPtr(*std.arena.Arena, 0),
+        .buf = g_empty_u8[0..0],
+        .start = 0,
+        .len = 0,
+        .pos = 0,
+        .closed = false,
+    };
+}
+
 fn nullHandle() *void {
     return @intToPtr(*void, 0);
 }

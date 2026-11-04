@@ -48,6 +48,33 @@ pub const DecodeTable = struct {
     single_sym: i32,
 };
 
+var g_empty_u32: [1]u32;
+var g_empty_u8: [1]u8;
+var g_empty_i32: [1]i32;
+
+pub fn zeroDecodeTable() DecodeTable {
+    return DecodeTable{
+        .dimensions = 0,
+        .entries = 0,
+        .lookup_type = 0,
+        .value_bits = 0,
+        .sequence_p = false,
+        .lookup_values = 0,
+        .min_value = 0,
+        .delta_value = 0,
+        .multiplicands = g_empty_u32[0..0],
+        .lengths = g_empty_u8[0..0],
+        .codes = g_empty_u32[0..0],
+        .left = g_empty_i32[0..0],
+        .right = g_empty_i32[0..0],
+        .sym = g_empty_i32[0..0],
+        .node_count = 0,
+        .max_len = 0,
+        .used = 0,
+        .single_sym = 0,
+    };
+}
+
 // float32_unpack (spec 9.2.2): mantissa * 2^(exponent-788), sign applied. The
 // power-of-two scaling is exact (only exponent shifts), so no precision is
 // lost between the packed Vorbis float32 and the returned f64.
@@ -88,7 +115,7 @@ pub fn buildDecodeTable(arena: *std.arena.Arena, cb: vs.Codebook) ogg.OggError!D
     // processed in index order and each claims the lowest-valued codeword of
     // its length that does not conflict with an already-claimed node. `marker`
     // is u64 (values stay <= 2^32) so no increment can trap under -fsafe.
-    var marker: [33]u64 = undefined;
+    var marker: [33]u64 = [33]u64{0};
     for (marker) |*item| {
         item.* = 0;
     }

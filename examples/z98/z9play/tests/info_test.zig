@@ -20,7 +20,7 @@ const vi = @import("../vorbis_info.zig");
 
 // Backing store for the read/reassembly arena; module-global so it does not
 // sit on the 32-bit stack.
-var arena_buf: [4 * 1024 * 1024]u8 = undefined;
+var arena_buf: [4 * 1024 * 1024]u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "info_test: FAIL: ";
@@ -93,19 +93,28 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     if (packets[0].bytes.len < 30) fail("packet 0 shorter than 30 bytes");
 
     // Malformed: framing bit cleared.
-    var bad: [30]u8 = undefined;
+    var bad: [30]u8 = [30]u8{0};
+    for (bad) |*item| {
+        item.* = 0;
+    }
     copyInto(bad[0..], packets[0].bytes[0..30]);
     bad[29] = bad[29] & 0xFE;
     if (!parseFails(bad[0..])) fail("accepted cleared framing bit");
 
     // Malformed: non-zero version.
-    var bad2: [30]u8 = undefined;
+    var bad2: [30]u8 = [30]u8{0};
+    for (bad2) |*item| {
+        item.* = 0;
+    }
     copyInto(bad2[0..], packets[0].bytes[0..30]);
     bad2[7] = 1;
     if (!parseFails(bad2[0..])) fail("accepted non-zero version");
 
     // Malformed: bad capture signature byte.
-    var bad3: [30]u8 = undefined;
+    var bad3: [30]u8 = [30]u8{0};
+    for (bad3) |*item| {
+        item.* = 0;
+    }
     copyInto(bad3[0..], packets[0].bytes[0..30]);
     bad3[1] = 'X';
     if (!parseFails(bad3[0..])) fail("accepted bad capture signature");

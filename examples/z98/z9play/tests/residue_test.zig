@@ -29,7 +29,7 @@ const vs = @import("../vorbis_setup.zig");
 const cbk = @import("../codebook.zig");
 const res = @import("../residue.zig");
 
-var arena_buf: [4 * 1024 * 1024]u8 = undefined;
+var arena_buf: [4 * 1024 * 1024]u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "residue_test: FAIL: ";
@@ -41,8 +41,11 @@ fn fail(msg: []const u8) void {
 }
 
 // LSB-first packet writer (Vorbis bit packing, spec 2.1.4).
-var pkt: [32]u8 = undefined;
+var pkt: [32]u8;
 var bp: usize = 0;
+var g_empty_u8: [1]u8;
+var g_empty_i16: [1]i16;
+var g_empty_rows: [1][]f64;
 
 fn pktClear() void {
     var i: usize = 0;
@@ -157,14 +160,14 @@ fn makeBooks(arena: *std.arena.Arena, tables: []cbk.DecodeTable) void {
 fn makeResidue(arena: *std.arena.Arena, rtype: u16, begin: u32, end: u32, psize: u32) vs.Residue {
     var cas_raw: [*]u8 = std.arena.alloc(arena, 2) catch {
         fail("alloc cascade");
-        return undefined;
+        return vs.Residue{ .residue_type = 0, .begin = 0, .end = 0, .partition_size = 0, .classifications = 0, .classbook = 0, .cascade = g_empty_u8[0..0], .books = g_empty_i16[0..0] };
     };
     var cas: []u8 = cas_raw[0..2];
     cas[0] = 1;
     cas[1] = 0;
     var bk_raw: [*]u8 = std.arena.alloc(arena, 16 * @sizeOf(i16)) catch {
         fail("alloc books");
-        return undefined;
+        return vs.Residue{ .residue_type = 0, .begin = 0, .end = 0, .partition_size = 0, .classifications = 0, .classbook = 0, .cascade = g_empty_u8[0..0], .books = g_empty_i16[0..0] };
     };
     var bk: []i16 = @ptrCast([*]i16, bk_raw)[0..16];
     var i: usize = 0;
@@ -185,14 +188,14 @@ fn makeResidue(arena: *std.arena.Arena, rtype: u16, begin: u32, end: u32, psize:
 fn makeOut(arena: *std.arena.Arena, ch: usize, len: usize) [][]f64 {
     var raw: [*]u8 = std.arena.alloc(arena, ch * @sizeOf([]f64)) catch {
         fail("alloc out rows");
-        return undefined;
+        return g_empty_rows[0..0];
     };
     var rows: [][]f64 = @ptrCast([*][]f64, raw)[0..ch];
     var i: usize = 0;
     while (i < ch) : (i += 1) {
         var r_raw: [*]u8 = std.arena.alloc(arena, len * @sizeOf(f64)) catch {
             fail("alloc out row");
-            return undefined;
+            return g_empty_rows[0..0];
         };
         rows[i] = @ptrCast([*]f64, r_raw)[0..len];
     }
@@ -216,7 +219,7 @@ fn checkRow(row: []f64, want: []const f64, msg: []const u8) void {
 pub fn main() void {
     var arena = std.arena.init(arena_buf[0..]);
 
-    var tables: [2]cbk.DecodeTable = undefined;
+    var tables: [2]cbk.DecodeTable = [2]cbk.DecodeTable{ cbk.zeroDecodeTable(), cbk.zeroDecodeTable() };
     makeBooks(&arena, tables[0..2]);
 
     // Common packet: group0 cls0, stage codewords for entries 0 and 1;
@@ -233,7 +236,10 @@ pub fn main() void {
     // --- 1. type 0 (interleaved) exact layout ---
     {
         var r: vs.Residue = makeResidue(&arena, 0, 2, 10, 4);
-        var dnd: [1]bool = undefined;
+        var dnd: [1]bool = [1]bool{false};
+        for (dnd) |*item| {
+            item.* = false;
+        }
         dnd[0] = false;
         var out: [][]f64 = makeOut(&arena, 1, 16);
         var br: vs.BitReader = vs.brInit(pkt[0..nb]);
@@ -248,7 +254,10 @@ pub fn main() void {
     // --- 2. type 1 (sequential) exact layout ---
     {
         var r: vs.Residue = makeResidue(&arena, 1, 2, 10, 4);
-        var dnd: [1]bool = undefined;
+        var dnd: [1]bool = [1]bool{false};
+        for (dnd) |*item| {
+            item.* = false;
+        }
         dnd[0] = false;
         var out: [][]f64 = makeOut(&arena, 1, 16);
         var br: vs.BitReader = vs.brInit(pkt[0..nb]);
@@ -263,7 +272,10 @@ pub fn main() void {
     // --- 3. type 2 (2 channels) interleave/deinterleave ---
     {
         var r: vs.Residue = makeResidue(&arena, 2, 0, 8, 4);
-        var dnd: [2]bool = undefined;
+        var dnd: [2]bool = [2]bool{false};
+        for (dnd) |*item| {
+            item.* = false;
+        }
         dnd[0] = false;
         dnd[1] = false;
         var out: [][]f64 = makeOut(&arena, 2, 4);
@@ -281,7 +293,10 @@ pub fn main() void {
     // --- 4a. empty packet: the first classword read gates the decode ---
     {
         var r: vs.Residue = makeResidue(&arena, 0, 2, 10, 4);
-        var dnd: [1]bool = undefined;
+        var dnd: [1]bool = [1]bool{false};
+        for (dnd) |*item| {
+            item.* = false;
+        }
         dnd[0] = false;
         var out: [][]f64 = makeOut(&arena, 1, 16);
         var empty: [1]u8 = [1]u8{0};
@@ -302,7 +317,10 @@ pub fn main() void {
         wcode(2, 1);
         var nb2: usize = pktBytes();
         var r: vs.Residue = makeResidue(&arena, 0, 2, 10, 4);
-        var dnd: [1]bool = undefined;
+        var dnd: [1]bool = [1]bool{false};
+        for (dnd) |*item| {
+            item.* = false;
+        }
         dnd[0] = false;
         var out: [][]f64 = makeOut(&arena, 1, 16);
         var br: vs.BitReader = vs.brInit(pkt[0..nb2]);
@@ -326,7 +344,10 @@ pub fn main() void {
         wcode(2, 3);
         var r: vs.Residue = makeResidue(&arena, 0, 2, 10, 4);
 
-        var dnd: [2]bool = undefined;
+        var dnd: [2]bool = [2]bool{false};
+        for (dnd) |*item| {
+            item.* = false;
+        }
         dnd[0] = false;
         dnd[1] = true;
         var out: [][]f64 = makeOut(&arena, 2, 16);
@@ -344,7 +365,10 @@ pub fn main() void {
     // --- 5b. type 2 all 'do not decode': consumes no bits, stays zero ---
     {
         var r: vs.Residue = makeResidue(&arena, 2, 0, 8, 4);
-        var dnd: [2]bool = undefined;
+        var dnd: [2]bool = [2]bool{false};
+        for (dnd) |*item| {
+            item.* = false;
+        }
         dnd[0] = true;
         dnd[1] = true;
         var out: [][]f64 = makeOut(&arena, 2, 4);

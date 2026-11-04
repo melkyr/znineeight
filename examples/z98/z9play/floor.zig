@@ -266,7 +266,10 @@ pub fn decodeFloor1(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, bi
     // floor1_Y / floor1_final_Y in one array. Bit 0x8000 is the spec's
     // floor1_step2_flag, inverted: a set flag (an un-decoded/predicted point)
     // is stored as 0x8000 (libvorbis's convention) so it is skipped in step 2.
-    var fit: [65]i32 = undefined;
+    var fit: [65]i32 = [65]i32{0};
+    for (fit) |*item| {
+        item.* = 0;
+    }
     for (0..posts) |z| fit[z] = 0;
 
     // An end-of-packet during these reads yields zero bits (spec 2.1.8), which
@@ -353,7 +356,10 @@ pub fn decodeFloor1(arena: *std.arena.Arena, tables: []const cbk.DecodeTable, bi
     // --- step 2: curve synthesis (spec 7.2.4). Sort X order (selection sort;
     // X values are unique) and render contiguous segments between anchor
     // points, then the constant tail out to n. ---
-    var order: [65]u32 = undefined;
+    var order: [65]u32 = [65]u32{0};
+    for (order) |*item| {
+        item.* = 0;
+    }
     for (0..posts) |idx| order[idx] = @intCast(u32, idx);
     for (0..posts) |idx| {
         var ii: usize = @intCast(usize, idx);

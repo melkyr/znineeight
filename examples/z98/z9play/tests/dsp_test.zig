@@ -38,16 +38,16 @@ fn b2d(b: u64) f64 {
     return p.*;
 }
 
-var arena_buf: [256 * 1024]u8 = undefined;
+var arena_buf: [256 * 1024]u8;
 
-var spec_buf: [1024]f64 = undefined;
-var ref_buf: [2048]f64 = undefined;
-var got_buf: [2048]f64 = undefined;
-var win_buf: [2048]f64 = undefined;
-var blk_buf: [2048]f64 = undefined;
-var fwd_buf: [1024]f64 = undefined;
-var slope_buf: [1024]f64 = undefined;
-var exp_buf: [2048]f64 = undefined;
+var spec_buf: [1024]f64;
+var ref_buf: [2048]f64;
+var got_buf: [2048]f64;
+var win_buf: [2048]f64;
+var blk_buf: [2048]f64;
+var fwd_buf: [1024]f64;
+var slope_buf: [1024]f64;
+var exp_buf: [2048]f64;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "dsp_test: FAIL: ";
@@ -128,8 +128,14 @@ fn expectedWindow(n: u32, bs0: u32, blockflag: bool, prev_wf: u32, next_wf: u32,
 }
 
 fn checkImdctSingle(arena: *std.arena.Arena, n: u32, k: u32) void {
-    var spectra: [64]f64 = undefined;
-    var out: [64]f64 = undefined;
+    var spectra: [64]f64 = [64]f64{0};
+    for (spectra) |*item| {
+        item.* = 0;
+    }
+    var out: [64]f64 = [64]f64{0};
+    for (out) |*item| {
+        item.* = 0;
+    }
     var i: u32 = 0;
     while (i < n) : (i += 1) spectra[i] = 0.0;
     spectra[k] = 1.0;
@@ -152,8 +158,14 @@ pub fn main() void {
     // Two coefficients: linearity of the transform.
     {
         var n: u32 = 16;
-        var spectra: [8]f64 = undefined;
-        var out: [16]f64 = undefined;
+        var spectra: [8]f64 = [8]f64{0};
+        for (spectra) |*item| {
+            item.* = 0;
+        }
+        var out: [16]f64 = [16]f64{0};
+        for (out) |*item| {
+            item.* = 0;
+        }
         var i: u32 = 0;
         while (i < 8) : (i += 1) spectra[i] = 0.0;
         spectra[2] = 1.5;
@@ -169,7 +181,10 @@ pub fn main() void {
     // --- 2. window vs closed form + TDAC ---
     {
         var n: u32 = 16;
-        var w: [16]f64 = undefined;
+        var w: [16]f64 = [16]f64{0};
+        for (w) |*item| {
+            item.* = 0;
+        }
         dsp.window(n, w[0..16]);
         var i: u32 = 0;
         while (i < n) : (i += 1) {
@@ -184,7 +199,10 @@ pub fn main() void {
 
     // --- 3. libvorbis vwin64 spot-check (xiph/vorbis lib/window.c) ---
     {
-        var w64: [64]f64 = undefined;
+        var w64: [64]f64 = [64]f64{0};
+        for (w64) |*item| {
+            item.* = 0;
+        }
         dsp.window(64, w64[0..64]);
         checkNear(w64[0], 0.0009460463, 2.0e-7, "vwin64[0] mismatch");
         checkNear(w64[1], 0.0085006468, 2.0e-7, "vwin64[1] mismatch");
@@ -194,9 +212,18 @@ pub fn main() void {
 
     // --- 4. overlapAdd ---
     {
-        var prev: [4]f64 = undefined;
-        var cur: [4]f64 = undefined;
-        var out: [4]f64 = undefined;
+        var prev: [4]f64 = [4]f64{0};
+        for (prev) |*item| {
+            item.* = 0;
+        }
+        var cur: [4]f64 = [4]f64{0};
+        for (cur) |*item| {
+            item.* = 0;
+        }
+        var out: [4]f64 = [4]f64{0};
+        for (out) |*item| {
+            item.* = 0;
+        }
         prev[0] = 1.0;
         prev[1] = 2.0;
         prev[2] = 3.0;
@@ -215,9 +242,18 @@ pub fn main() void {
     // --- 5. deterministic re-run (bit-identical) ---
     {
         var n: u32 = 16;
-        var spectra: [8]f64 = undefined;
-        var a: [16]f64 = undefined;
-        var b: [16]f64 = undefined;
+        var spectra: [8]f64 = [8]f64{0};
+        for (spectra) |*item| {
+            item.* = 0;
+        }
+        var a: [16]f64 = [16]f64{0};
+        for (a) |*item| {
+            item.* = 0;
+        }
+        var b: [16]f64 = [16]f64{0};
+        for (b) |*item| {
+            item.* = 0;
+        }
         var i: u32 = 0;
         while (i < 8) : (i += 1) spectra[i] = @intToFloat(f64, i) - 3.5;
         dsp.imdct(&arena, n, spectra[0..8], a[0..16]);
@@ -227,8 +263,14 @@ pub fn main() void {
             if (a[i] != b[i]) fail("imdct not deterministic");
         }
 
-        var wa: [16]f64 = undefined;
-        var wb: [16]f64 = undefined;
+        var wa: [16]f64 = [16]f64{0};
+        for (wa) |*item| {
+            item.* = 0;
+        }
+        var wb: [16]f64 = [16]f64{0};
+        for (wb) |*item| {
+            item.* = 0;
+        }
         dsp.window(n, wa[0..16]);
         dsp.window(n, wb[0..16]);
         i = 0;

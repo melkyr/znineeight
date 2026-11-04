@@ -43,10 +43,10 @@ const vi = @import("../vorbis_info.zig");
 
 // Backing store for the read/reassembly/parse arena; module-global so it does
 // not sit on the 32-bit stack. 4 MiB is far above these fixtures' needs.
-var arena_buf: [4 * 1024 * 1024]u8 = undefined;
+var arena_buf: [4 * 1024 * 1024]u8;
 // A separate backing store for the per-fixture codebook round-trip arena, so
 // those parses cannot clobber the main arena's synthetic-parse results.
-var cb_arena_buf: [4 * 1024 * 1024]u8 = undefined;
+var cb_arena_buf: [4 * 1024 * 1024]u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "setup_test: FAIL: ";
@@ -136,7 +136,7 @@ fn buildFails(arena: *std.arena.Arena, cb: vs.Codebook) bool {
 }
 
 // Scratch + cursor for the crafted-header negative test (LSB-first bits).
-var pk_buf: [64 * 1024]u8 = undefined;
+var pk_buf: [64 * 1024]u8;
 var pk_pos: usize = 0;
 
 // Write `n` bits of `v` LSB-first (Vorbis bitpacking convention).

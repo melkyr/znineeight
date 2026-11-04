@@ -42,3 +42,33 @@ pub const AudioOut = struct {
     drain_fn: fn (*void) AudioError!void,
     state: *void,
 };
+
+fn zeroOpen(rate: u32, channels: u8) AudioError!*void {
+    _ = rate;
+    _ = channels;
+    return @intToPtr(*void, 0);
+}
+
+fn zeroWrite(ctx: *void, samples: []const i16) AudioError!usize {
+    _ = ctx;
+    _ = samples;
+    return 0;
+}
+
+fn zeroClose(ctx: *void) void {
+    _ = ctx;
+}
+
+fn zeroDrain(ctx: *void) AudioError!void {
+    _ = ctx;
+}
+
+pub fn zeroAudioOut() AudioOut {
+    return AudioOut{
+        .open_fn = zeroOpen,
+        .write_fn = zeroWrite,
+        .close_fn = zeroClose,
+        .drain_fn = zeroDrain,
+        .state = @intToPtr(*void, 0),
+    };
+}

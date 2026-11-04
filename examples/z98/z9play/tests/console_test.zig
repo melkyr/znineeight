@@ -73,6 +73,27 @@ const Winsize = struct {
     ws_ypixel: u16,
 };
 
+fn zeroTermios() Termios {
+    var t: Termios = Termios{
+        .c_iflag = 0,
+        .c_oflag = 0,
+        .c_cflag = 0,
+        .c_lflag = 0,
+        .c_line = 0,
+        .c_cc = [32]u8{0},
+        .c_ispeed = 0,
+        .c_ospeed = 0,
+    };
+    for (0..32) |i| {
+        t.c_cc[i] = 0;
+    }
+    return t;
+}
+
+fn zeroWinsize() Winsize {
+    return Winsize{ .ws_row = 0, .ws_col = 0, .ws_xpixel = 0, .ws_ypixel = 0 };
+}
+
 const TIOCGWINSZ: u32 = 0x5413;
 
 const ECHO: u32 = 0x00000008;
@@ -87,8 +108,8 @@ const EXPECT_CHAR: u8 = 64;
 const DEFAULT_MARKER: []const u8 = "/tmp/z9play_console.ready";
 const ARENA_BUF: usize = 4096;
 
-var g_arena_buf: [ARENA_BUF]u8 = undefined;
-var g_arena: std.arena.Arena = undefined;
+var g_arena_buf: [ARENA_BUF]u8;
+var g_arena: std.arena.Arena;
 
 // Marker path: the harness may point Z9PLAY_CONSOLE_MARKER at its scratch dir
 // so parallel runs never share a stale file.
@@ -128,14 +149,20 @@ fn writeDec(v_in: u16) void {
         std.io.write(z);
         return;
     }
-    var tmp: [5]u8 = undefined;
+    var tmp: [5]u8 = [5]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     while (v > 0) {
         tmp[n] = @intCast(u8, v % 10) + '0';
         v = v / 10;
         n += 1;
     }
-    var out: [5]u8 = undefined;
+    var out: [5]u8 = [5]u8{0};
+    for (out) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < n) : (i += 1) out[i] = tmp[n - 1 - i];
     std.io.write(out[0..n]);
@@ -209,13 +236,13 @@ fn waitTag(cs: contract.Console, want: u8, timeout_ms: u32) bool {
 }
 
 pub fn main() void {
-    var orig: Termios = undefined;
+    var orig: Termios = zeroTermios();
     _ = tcgetattr(0, @ptrCast(*void, &orig));
 
     // Assemble the contract vtable from the backend's public free functions,
     // exactly as the CLI does. This is a compile-time proof that each backend
     // signature matches its `Console` field.
-    var st: con.ConsoleLinState = undefined;
+    var st: con.ConsoleLinState = con.zeroConsoleLinState();
     var cs: contract.Console = contract.Console{
         .clear_fn = con.clear,
         .setCursor_fn = con.setCursor,
@@ -232,7 +259,7 @@ pub fn main() void {
     cs.enterRaw_fn(cs.state);
 
     // 1. Raw mode is live: echo and canonical processing are off, reads poll.
-    var raw: Termios = undefined;
+    var raw: Termios = zeroTermios();
     _ = tcgetattr(0, @ptrCast(*void, &raw));
     if ((raw.c_lflag & ECHO) != 0) fail("echo not disabled");
     if ((raw.c_lflag & ICANON) != 0) fail("icanon not disabled");
@@ -243,7 +270,7 @@ pub fn main() void {
     //    must report the real ioctl(TIOCGWINSZ) size, not the 80x24 fallback.
     //    The test reads the size directly too and requires agreement, so a
     //    broken ioctl path cannot pass on the fallback.
-    var wsz: Winsize = undefined;
+    var wsz: Winsize = zeroWinsize();
     if (ioctl(0, TIOCGWINSZ, @ptrCast(*void, &wsz)) != 0) fail("test ioctl TIOCGWINSZ failed");
     if (wsz.ws_col == 0 or wsz.ws_row == 0) fail("pty reported 0x0 size");
     var w: u16 = cs.width_fn(cs.state);
@@ -319,7 +346,7 @@ pub fn main() void {
 
     // 6. Termios restored byte-for-byte on the fields raw mode touched.
     cs.leaveRaw_fn(cs.state);
-    var back: Termios = undefined;
+    var back: Termios = zeroTermios();
     _ = tcgetattr(0, @ptrCast(*void, &back));
     if (back.c_lflag != orig.c_lflag) fail("c_lflag not restored");
     if (back.c_iflag != orig.c_iflag) fail("c_iflag not restored");

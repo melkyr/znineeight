@@ -36,9 +36,9 @@ const GOLDEN: []const u8 = "examples/z98/z9play/testdata/expected/sine_stereo_44
 // 16 MiB is ample for one decode pass (parser + decode tables + the residue
 // decoder's per-codeword arena scratch); the arena is reset between the three
 // determinism runs so the total stays bounded.
-var arena_buf: [16 * 1024 * 1024]u8 = undefined;
-var out_buf: [400000]i16 = undefined;
-var tmp_buf: [4096]i16 = undefined;
+var arena_buf: [16 * 1024 * 1024]u8;
+var out_buf: [400000]i16;
+var tmp_buf: [4096]i16;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "decode_test: FAIL: ";
@@ -55,7 +55,10 @@ fn writeU(uint: u64) void {
         std.io.write(z);
         return;
     }
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     var v: u64 = uint;
     while (v > 0) {
@@ -63,7 +66,10 @@ fn writeU(uint: u64) void {
         v = v / 10;
         n += 1;
     }
-    var buf: [20]u8 = undefined;
+    var buf: [20]u8 = [20]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < n) : (i += 1) buf[i] = tmp[n - 1 - i];
     std.io.write(buf[0..n]);
@@ -73,7 +79,10 @@ fn hexByte(b: u8) void {
     var d: []const u8 = "0123456789abcdef";
     var hi: u8 = (b >> 4) & 0x0f;
     var lo: u8 = b & 0x0f;
-    var s: [1]u8 = undefined;
+    var s: [1]u8 = [1]u8{0};
+    for (s) |*item| {
+        item.* = 0;
+    }
     s[0] = d[@intCast(usize, hi)];
     std.io.write(s[0..1]);
     s[0] = d[@intCast(usize, lo)];
@@ -100,27 +109,27 @@ const RunResult = struct {
 fn decodeOnce(arena: *std.arena.Arena, ch: usize) RunResult {
     var data: []u8 = filemod.readAll(arena, FIXTURE) catch {
         fail("cannot read fixture");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = [20]u8{0} };
     };
     var golden: []u8 = filemod.readAll(arena, GOLDEN) catch {
         fail("cannot read golden PCM");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = [20]u8{0} };
     };
     var packets: []ogg.Packet = ogg.reassemble(arena, data) catch {
         fail("reassemble failed");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = [20]u8{0} };
     };
     var id: vi.IdHeader = vi.parseId(packets[0].bytes) catch {
         fail("parseId failed");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = [20]u8{0} };
     };
     var setup: vs.Setup = vs.parseSetup(arena, packets[2].bytes, @intCast(u32, id.channels)) catch {
         fail("parseSetup failed");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = [20]u8{0} };
     };
     var state: dec.DecoderState = dec.initDecoderState(arena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
         fail("initDecoderState failed");
-        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = undefined };
+        return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = [20]u8{0} };
     };
 
     var total: usize = 0;
@@ -134,7 +143,7 @@ fn decodeOnce(arena: *std.arena.Arena, ch: usize) RunResult {
             } else {
                 fail("decodePacket returned an error");
             }
-            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = undefined };
+            return RunResult{ .frames = 0, .golden_frames = 0, .max_delta = 0, .rms_milli = 0, .hash = [20]u8{0} };
         };
         var base: usize = total * ch;
         var q: usize = 0;
@@ -165,7 +174,10 @@ fn decodeOnce(arena: *std.arena.Arena, ch: usize) RunResult {
     var rms: f64 = std.math.sqrt(sumsq / @intToFloat(f64, count));
     var rms_milli: i32 = @intCast(i32, rms * 1000.0 + 0.5);
 
-    var hash: [20]u8 = undefined;
+    var hash: [20]u8 = [20]u8{0};
+    for (hash) |*item| {
+        item.* = 0;
+    }
     var bytes: []const u8 = @ptrCast([*]const u8, out_buf[0..].ptr)[0 .. count * 2];
     sha1Of(bytes, &hash);
 

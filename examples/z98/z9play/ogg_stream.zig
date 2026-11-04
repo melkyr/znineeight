@@ -53,6 +53,24 @@ pub const OggStream = struct {
     pending: bool,
 };
 
+var g_empty_u8: [1]u8;
+
+pub fn zeroOggStream() OggStream {
+    return OggStream{
+        .bf = stream.zeroBufferedFile(),
+        .page = g_empty_u8[0..0],
+        .page_len = 0,
+        .page_seg = 0,
+        .page_body = 0,
+        .nseg = 0,
+        .packet = g_empty_u8[0..0],
+        .packet_len = 0,
+        .serial = 0,
+        .have_serial = false,
+        .pending = false,
+    };
+}
+
 fn rdU32(data: []const u8, off: usize) u32 {
     return @intCast(u32, data[off]) |
         (@intCast(u32, data[off + 1]) << 8) |

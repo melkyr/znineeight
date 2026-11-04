@@ -41,14 +41,20 @@ fn writeU32(v_in: u32) void {
         std.io.write(z);
         return;
     }
-    var tmp: [10]u8 = undefined;
+    var tmp: [10]u8 = [10]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     while (v > 0) {
         tmp[n] = @intCast(u8, v % 10) + '0';
         v = v / 10;
         n += 1;
     }
-    var out: [10]u8 = undefined;
+    var out: [10]u8 = [10]u8{0};
+    for (out) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < n) : (i += 1) out[i] = tmp[n - 1 - i];
     std.io.write(out[0..n]);
@@ -74,7 +80,7 @@ pub fn main() void {
         return;
     }
 
-    var st: cwin.ConsoleWinState = undefined;
+    var st: cwin.ConsoleWinState = cwin.zeroConsoleWinState();
     cwin.enterRaw(@ptrCast(*void, &st));
     var entered: bool = st.entered;
 

@@ -43,18 +43,18 @@ const MAX_DELTA_BOUND: i32 = 2;
 // Arenas. parse/scratch back the Vorbis decoder (persistent state + per-packet
 // scratch); player backs the ring + block scratch; ref reproduces the M3 --pcm
 // path (single arena, no per-packet reset); io/gold read files back.
-var parse_buf: [12 * 1024 * 1024]u8 = undefined;
-var scratch_buf: [8 * 1024 * 1024]u8 = undefined;
-var player_buf: [2 * 1024 * 1024]u8 = undefined;
-var ref_buf: [24 * 1024 * 1024]u8 = undefined;
-var io1_buf: [1 * 1024 * 1024]u8 = undefined;
-var io2_buf: [1 * 1024 * 1024]u8 = undefined;
-var gold_buf: [1 * 1024 * 1024]u8 = undefined;
+var parse_buf: [12 * 1024 * 1024]u8;
+var scratch_buf: [8 * 1024 * 1024]u8;
+var player_buf: [2 * 1024 * 1024]u8;
+var ref_buf: [24 * 1024 * 1024]u8;
+var io1_buf: [1 * 1024 * 1024]u8;
+var io2_buf: [1 * 1024 * 1024]u8;
+var gold_buf: [1 * 1024 * 1024]u8;
 
 // Decoded streams: the M3 reference (trimmed to the granule) and one-block
 // scratch for the reference decoder.
-var ref_pcm: [200000]i16 = undefined;
-var tmp_ref: [4096]i16 = undefined;
+var ref_pcm: [200000]i16;
+var tmp_ref: [4096]i16;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "player_test: FAIL: ";
@@ -85,8 +85,8 @@ fn playOnce(parse: *std.arena.Arena, scratch: *std.arena.Arena, par: *std.arena.
     std.arena.reset(scratch);
     std.arena.reset(par);
 
-    var id: vi.IdHeader = undefined;
-    var setup: vs.Setup = undefined;
+    var id: vi.IdHeader = vi.zeroIdHeader();
+    var setup: vs.Setup = vs.zeroSetup();
     var os: ogg_stream.OggStream = ogg_stream.oggStreamOpen(parse, FIXTURE) catch {
         fail("oggStreamOpen failed");
         return;
@@ -163,7 +163,7 @@ fn playOnce(parse: *std.arena.Arena, scratch: *std.arena.Arena, par: *std.arena.
     };
     var meta: player.Meta = player.Meta{ .title = null, .artist = null, .album = null };
 
-    var pl: player.Player = undefined;
+    var pl: player.Player = player.zeroPlayer();
     player.playerInit(&pl, par, &decv, &ao, meta) catch {
         fail("playerInit failed");
         return;

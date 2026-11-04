@@ -110,7 +110,7 @@ const Win9xDev = struct {
     fill_len: usize,
 };
 
-var g_dev: Win9xDev = undefined;
+var g_dev: Win9xDev;
 
 // --- internal helpers ------------------------------------------------------
 
@@ -175,7 +175,15 @@ pub fn open(rate: u32, channels: u8) AudioError!*void {
     if (rate != 44100 and rate != 48000) return error.ConfigUnsupported;
     if (channels != 1 and channels != 2) return error.ConfigUnsupported;
 
-    var wfx: WaveFormatEx = undefined;
+    var wfx: WaveFormatEx = WaveFormatEx{
+        .wFormatTag = 0,
+        .nChannels = 0,
+        .nSamplesPerSec = 0,
+        .nAvgBytesPerSec = 0,
+        .nBlockAlign = 0,
+        .wBitsPerSample = 0,
+        .cbSize = 0,
+    };
     wfx.wFormatTag = WAVE_FORMAT_PCM;
     wfx.nChannels = @intCast(u16, channels);
     wfx.nSamplesPerSec = rate;
