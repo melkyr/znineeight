@@ -30,29 +30,31 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-03 — seed v133]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-04 — seed v134]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v133 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v134 CHANGELOG entry.
 
-**Current seed: v133** (rotated 2026-11-03 from the z9play/z9torr optimization
-tree — `std_fft` split-radix FFT + z9play FFT IMDCT + z9torr O(1) accounting +
-CLI help docs; packaging base HEAD `0b35199f`). Archived binary md5 (= fixed
-point) `108fed5c1d143d0d905fdb3e2fd120e9`; archive md5
-`f833c5ee355681927aedf5881450221d`; Win9x zip md5
-`2b516af68400ec886fc1ee8a5dbc961d`; `gen/` 48 `.c` + 49 `.h` (12,361,596
+**Current seed: v134** (rotated 2026-11-04 from the switch emission fixes
+tree — portable 64-bit `switch` lowering, negative integer case items, and
+signed enum backings/negative discriminants; packaging base HEAD `38a18deb`).
+Archived binary md5 (= fixed point) `8dff7650e83df66d96388b3d21c489ea`;
+archive md5 `c978404ed9662fd7adc0c804aae8ae1d`; Win9x zip md5
+`3203c96fcc21d5fe2b5b931e4cb103c7`; `gen/` 48 `.c` + 49 `.h` (12,457,821
 bytes); `lib/` **51** std `.zig` (`std.zig` + 50 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`62008632c1f057c42b04bf5883f6da5d`; moved because `std_fft.zig` was added to
-`lib/`). A rebuild from the committed v133 archive is two-hop
-**hop1 == hop2 == `108fed5c…`**. The compiler source is **`-fsafe`-clean**.
+`62008632c1f057c42b04bf5883f6da5d`; unchanged — no new std file). A rebuild
+from the committed v134 archive is two-hop
+**hop1 == hop2 == `8dff7650…`**. The compiler source is **`-fsafe`-clean**.
 Markers (`--markers --dump-c89` on `mud_server`): **3397 lines / 39012 B**
-(unchanged from v129). The 8 pins (unchanged), the live corpus (1196 =
-**1020 OK / 58 GREEN / 118 FAIL**, class md5
-`dd67bcdfb00162cc000205060925b6d7`), the frozen-1124 corpus (md5
+(unchanged). The 8 pins (unchanged), the live corpus (1212 =
+**1032 OK / 59 GREEN / 121 FAIL**, class md5
+`f61943c5459b6dd27d342d5600b6dd0d`; the +16 dirs vs v133 are the additive
+switch/enum repros and removing them reproduces the v133 live class file
+exactly, 0 existing movers), the frozen-1124 corpus (md5
 `518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the goldens (5/5), the 26
 examples and the 342/0 stdlib + 10/10 crosscheck are all exact.
 

@@ -15,6 +15,96 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-04 — seed v134 (HEAD 38a18deb)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12457821 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-11-04 |
+| HEAD | `38a18deb` |
+| seed binary md5 | `8dff7650e83df66d96388b3d21c489ea` |
+| self-emission C | 48 `.c` + 49 `.h` (12457821 bytes) |
+| fixed point | `8dff7650e83df66d96388b3d21c489ea` |
+| lib manifest | `lib/manifest.md5` (51 std files; md5 `62008632c1f057c42b04bf5883f6da5d`) |
+| archive md5 | `c978404ed9662fd7adc0c804aae8ae1d` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `3203c96fcc21d5fe2b5b931e4cb103c7` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 51 std `.zig` + `manifest.md5` |
+| HEAD/date | `38a18deb` / 2026-11-04 |
+
+Provenance note: the archived binary (md5 8dff7650e83df66d96388b3d21c489ea) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+38a18deb; gcc of the archive's self-emission C reproduces the fixed point
+`8dff7650e83df66d96388b3d21c489ea` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
+### Changes in this rotation (switch emission fixes)
+
+- **64-bit `switch` lowering:** a `switch` whose condition is a 64-bit
+  integer now lowers to a portable `if` / `else if` / `else` chain instead of
+  a C `switch` on a 64-bit controlling expression (OpenWatcom rejects the
+  latter). 32-bit conditions keep the existing C `switch` emission
+  byte-identically; the exact 64-bit case literals use the `Z98_U64_C` /
+  `Z98_I64_C` forms (including `0xFFFFFFFFFFFFFFFF`).
+- **Negative integer case items:** negative literals, module-level named
+  `const` items and negative range endpoints now resolve and match on signed
+  integer conditions (32-bit signed labels; signed forms in the 64-bit chain).
+  A negative case item on an unsigned condition is a clean level-0
+  `error[3062]` rejection (rc 2, 0 `.c`). Function-local `const` case items
+  remain the documented limitation.
+- **Signed enum backings / negative discriminants:** `enum(iN)` declarations
+  with negative discriminants are accepted (including `i32`/`i64` minima and
+  module-const `const X: E = .A` shorthand) with signed case labels; an
+  unsigned backing with a negative discriminant rejects with the same
+  `error[3062]` family. Local/inline enum validation was widened to match.
+  No new std file, so `lib/` stays at 51 std `.zig` and the manifest pin is
+  unchanged.
+
+### Battery at rotation (v134)
+
+- **Corpus:** live 1212 dirs = 1032 OK / 59 GREEN / 121 FAIL / 0 ICE /
+  0 CRASH; class md5 `f61943c5459b6dd27d342d5600b6dd0d`. The +16 dirs vs v133
+  are the additive `switch_*` / `local_enum_*` repros (12 OK, 1 GREEN,
+  3 clean `error[3062]` rejects counted FAIL by the canonical classifier);
+  removing them reproduces the v133 live class file exactly (1196 = 1020 OK /
+  58 GREEN / 118 FAIL, md5 `dd67bcdfb00162cc000205060925b6d7`), so there are
+  **0 existing-dir movers**.
+- **Frozen-1124:** 1124 lines, md5 `518eca1a9b5d3e1cc5a48abce214abd8`,
+  950 OK / 58 GREEN / 116 FAIL, **0 movers**.
+- **Goldens 5/5 byte-identical:** gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`,
+  lisp basic `b3d9f8974da24ddbf9d389f3d7d97322`, lisp canonical
+  `96654b3910a54d8bb7ec3ddfc0f26c6a`, json `8bda3d5a1ec07d14a301bc343df32bf8`,
+  mud server/client `66c8f0abb926cca7baf9a0d1692ab318` /
+  `93147d0f0bbd983a9d844fea8b7a6fa7`.
+- **8 dump pins unchanged:** 8/8 byte-identical.
+- **Markers:** 3397 lines / 39012 B (unchanged).
+- **Examples:** 26/26 build and 26/26 run with the expected rc set.
+- **stdlib:** 342 PASS / 0 FAIL; crosscheck 10 PASS / 0 FAIL.
+- **`check_emit_support.sh`:** 8/8 support files byte-identical.
+- **Closure:** rebuild from this archive closes at hop1 == hop2 ==
+  `8dff7650e83df66d96388b3d21c489ea`.
+
 ## 2026-11-03 — seed v133 (HEAD 0b35199f)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
