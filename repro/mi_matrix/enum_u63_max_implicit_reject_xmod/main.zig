@@ -5,8 +5,9 @@
 // successor increment (which previously wrapped to i64 min and produced a
 // spurious secondary `error[3062]`).
 //
-// Contract: rc 2, no `.c`, exactly one `error[3000]` (unsigned enum backing
-// width at `B`) and no secondary `error[3062]`.
+// Contract: rc 2, no `.c`, `error[3000]` (unsigned enum backing width at `B`;
+// the local validator and the module gate each report it, so two diagnostics
+// appear today) and no secondary `error[3062]`.
 const E = enum(u63) { A = 9223372036854775807, B };
 
 pub fn main() void {

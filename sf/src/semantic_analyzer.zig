@@ -2442,11 +2442,22 @@ fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node
             return;
         }
         var overflow = if (is_signed_backing) (prev_vs == max_signed) else (prev_vu == maxv);
-        if (have_prev and overflow and fd2.child_1 == @intCast(u32, 0)) {
+        // Task 6a fix round 1: the shared i64 member storage can only represent
+        // successors up to i64 max, even when the declared backing is wider
+        // (`u64`). Treat an implicit member whose predecessor is the STORAGE
+        // maximum as overflow too; otherwise it silently duplicates the max tag.
+        var storage_overflow = prev_vs == @intCast(i64, 0x7FFFFFFFFFFFFFFF);
+        if (have_prev and (overflow or storage_overflow) and fd2.child_1 == @intCast(u32, 0)) {
             var msp = fd2.span_start;
             var mep = msp + @intCast(u32, fd2.span_len);
             var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
-            if (is_signed_backing) { var smsg: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation"; mv_msg = smsg; }
+            if (is_signed_backing) {
+                var smsg: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation";
+                mv_msg = smsg;
+            } else if (!overflow and storage_overflow) {
+                var lim: []const u8 = "enum member value exceeds the supported enum value range (values above 9223372036854775807 require u64 enum storage, not supported yet)";
+                mv_msg = lim;
+            }
             _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
             return;
         }

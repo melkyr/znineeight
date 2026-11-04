@@ -101,8 +101,8 @@ set -euo pipefail
 #  16. enum-value machinery under a `-fsafe` compiler built from the same
 #      emission (self-contained scratch build): a single member at i64/u63 max
 #      compiles rc 0 (the shared walk must not trap on `mval + 1`), and an
-#      implicit successor after max rejects rc 2 with `error[3000]` and NO
-#      secondary `error[3062]`.
+#      implicit successor after the declared max OR the i64 storage max (u64)
+#      rejects rc 2 with `error[3000]` and NO secondary `error[3062]`.
 #  17-18. `enum(u40) { A = 0, B = 4294967297 }` resolves the wide discriminant
 #      exactly (shorthand `.B` and qualified `E.B`) at runtime: stdout `8`, rc 0.
 #
@@ -822,8 +822,10 @@ fi
 # `-fsafe` compiler traps. Build a safe compiler from the SAME source emission
 # (I-B §1 recipe), then:
 #   * enum_i64_max_ok_xmod / enum_u63_max_ok_xmod: rc 0, `.c` emitted;
-#   * enum_i64_max_implicit_reject_xmod / enum_u63_max_implicit_reject_xmod:
-#     rc 2, 0 `.c`, `error[3000]`, and NO secondary `error[3062]`.
+#   * enum_i64_max_implicit_reject_xmod / enum_u63_max_implicit_reject_xmod /
+#     enum_u64_max_implicit_reject_xmod: rc 2, 0 `.c`, `error[3000]`, and NO
+#     secondary `error[3062]` (`u64` catches the i64 STORAGE max, not the
+#     declared u64 width).
 # Self-contained scratch build under $WORK; no shared state.
 GATE_ZLIB="$(cd "$(dirname "$ZIG1")" && pwd)/lib"
 if [ ! -d "$GATE_ZLIB" ]; then GATE_ZLIB="$ROOT/sf/src"; fi
@@ -861,7 +863,7 @@ if [ "$c16_ok" -eq 1 ]; then
             bad "case 16: -fsafe $_c16v emitted no .c"
         fi
     done
-    for _c16r in enum_i64_max_implicit_reject_xmod enum_u63_max_implicit_reject_xmod; do
+    for _c16r in enum_i64_max_implicit_reject_xmod enum_u63_max_implicit_reject_xmod enum_u64_max_implicit_reject_xmod; do
         mkdir -p "$WORK/c16_reject_$_c16r"
         set +e
         ( cd "$WORK/c16_reject_$_c16r" && timeout 120 "$SAFE_ZIG" --dump-c89 \

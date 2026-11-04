@@ -1745,11 +1745,22 @@ fn validateLocalEnumBackingFit(env: *TypeResolveEnv, enum_node: u32, diag: *Diag
         if (mnode.kind != AstKind.field_decl) continue;
         var at_max: bool = false;
         if (is_signed) { at_max = prev_s == max_s; } else { at_max = prev_u == max_u; }
-        if (have_prev and mnode.child_1 == @intCast(u32, 0) and at_max) {
+        // Task 6a fix round 1: the shared i64 member storage can only represent
+        // successors up to i64 max, even when the declared backing is wider
+        // (`u64`). Treat an implicit member whose predecessor is the STORAGE
+        // maximum as overflow too; otherwise it silently duplicates the max tag.
+        var at_storage_max: bool = prev_s == @intCast(i64, 0x7FFFFFFFFFFFFFFF);
+        if (have_prev and mnode.child_1 == @intCast(u32, 0) and (at_max or at_storage_max)) {
             var osp = mnode.span_start;
             var oep = osp + @intCast(u32, mnode.span_len);
             var ov_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
-            if (is_signed) { var sov: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation"; ov_msg = sov; }
+            if (is_signed) {
+                var sov: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation";
+                ov_msg = sov;
+            } else if (!at_max and at_storage_max) {
+                var lim: []const u8 = "enum member value exceeds the supported enum value range (values above 9223372036854775807 require u64 enum storage, not supported yet)";
+                ov_msg = lim;
+            }
             _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, osp, oep, ov_msg);
             return;
         }

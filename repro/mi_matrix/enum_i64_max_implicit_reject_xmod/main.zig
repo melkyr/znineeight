@@ -4,8 +4,9 @@
 // fit gate own the diagnostic; it must not overflow its own successor
 // increment, and must not report a spurious duplicate-tag error instead.
 //
-// Contract: rc 2, no `.c`, exactly one `error[3000]` (signed enum backing
-// range at `B`) and no secondary `error[3062]`.
+// Contract: rc 2, no `.c`, `error[3000]` (signed enum backing range at `B`;
+// the local validator and the module gate each report it, so two diagnostics
+// appear today) and no secondary `error[3062]`.
 const E = enum(i64) { A = 9223372036854775807, B };
 
 pub fn main() void {
