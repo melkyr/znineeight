@@ -51,7 +51,10 @@ pub fn s(m: []const u8) void {
 
 pub fn nl() void {
     if (!g_enabled) return;
-    var b: [1]u8 = undefined;
+    var b: [1]u8 = [1]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     b[0] = '\n';
     std.io.fileWrite(g_fd, b[0..1]);
 }
@@ -59,7 +62,10 @@ pub fn nl() void {
 // Manual unsigned decimal into a local buffer (no printf/float path).
 fn putU64(v: u64) void {
     if (!g_enabled) return;
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var len: usize = 0;
     var x: u64 = v;
     if (x == 0) {
@@ -71,7 +77,10 @@ fn putU64(v: u64) void {
             len += 1;
         }
     }
-    var out: [20]u8 = undefined;
+    var out: [20]u8 = [20]u8{0};
+    for (out) |*item| {
+        item.* = 0;
+    }
     var k: usize = 0;
     while (k < len) : (k += 1) {
         out[k] = tmp[len - 1 - k];
@@ -109,7 +118,10 @@ fn hexNib(v: u8) u8 {
 
 pub fn hex(data: []const u8) void {
     if (!g_enabled) return;
-    var buf: [64]u8 = undefined;
+    var buf: [64]u8 = [64]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < data.len) {
         var n: usize = data.len - i;

@@ -71,10 +71,11 @@ pub const Scheduler = struct {
 
 // Zero-length slices for the empty-piece / empty-peer cases (D2: `[]primitive`
 // and fixed arrays of named types only).
-var g_empty_bits: [1]u8 = undefined;
-var g_empty_u32: [1]u32 = undefined;
-var g_empty_piece_status: [1]PieceStatus = undefined;
-var g_empty_peer: [1]peer.Peer = undefined;
+var g_empty_bits: [1]u8;
+var g_empty_u32: [1]u32;
+var g_empty_piece_status: [1]PieceStatus;
+var g_empty_peer: [1]peer.Peer;
+var g_zero_seen: [8]tracker.PeerAddr;
 
 fn emptyBits() []u8 {
     return g_empty_bits[0..0];
@@ -151,7 +152,7 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
             // `peer_id`/`read_buf` stay uninitialised until `addPeer`/`peerRun`
             // set them (a struct literal cannot `undefined` a nested named-struct
             // field in Z98 emission).
-            var p: peer.Peer = undefined;
+            var p: peer.Peer = peer.zeroPeer();
             p.active = false;
             p.slot = j;
             p.sched = null;
@@ -174,7 +175,7 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
         .active_peer_count = 0,
         .piece_owner = own,
         .pending_owner = NO_OWNER,
-        .seen = undefined,
+        .seen = g_zero_seen,
         .seen_count = 0,
         .seen_next = 0,
     };

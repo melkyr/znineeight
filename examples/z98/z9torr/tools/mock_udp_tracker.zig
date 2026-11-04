@@ -31,10 +31,10 @@ const INTERVAL: u32 = 1800;
 const SEEDERS: u32 = 1;
 const LEECHERS: u32 = 0;
 
-var g_ips: [MAX_PEERS][4]u8 = undefined;
-var g_ports: [MAX_PEERS]u16 = undefined;
+var g_ips: [MAX_PEERS][4]u8;
+var g_ports: [MAX_PEERS]u16;
 var g_npeers: usize = 0;
-var g_resp: [RESP_MAX]u8 = undefined;
+var g_resp: [RESP_MAX]u8;
 var g_event_fd: usize = 0;
 var g_has_event_log: bool = false;
 
@@ -46,7 +46,10 @@ fn out(s: []const u8) void {
 // tier gate assert the BEP 15 event code the client actually transmitted).
 fn logEvent(code: u32) void {
     if (!g_has_event_log) return;
-    var b: [24]u8 = undefined;
+    var b: [24]u8 = [24]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     var pre: []const u8 = "event=";
     var i: usize = 0;
@@ -54,7 +57,10 @@ fn logEvent(code: u32) void {
         b[n] = pre[i];
         n += 1;
     }
-    var tmp: [12]u8 = undefined;
+    var tmp: [12]u8 = [12]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var m: usize = 0;
     var v: u32 = code;
     if (v == 0) {
@@ -149,7 +155,10 @@ fn parsePeer(s: []const u8, ip: *[4]u8, port: *u16) bool {
 
 fn addPeerStr(s: []const u8) bool {
     if (g_npeers >= MAX_PEERS) return false;
-    var ip: [4]u8 = undefined;
+    var ip: [4]u8 = [4]u8{0};
+    for (ip) |*item| {
+        item.* = 0;
+    }
     var port: u16 = 0;
     if (!parsePeer(s, &ip, &port)) return false;
     g_ips[g_npeers] = ip;
@@ -317,9 +326,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var l1: []const u8 = "mock_udp_tracker listening\n";
     out(l1);
 
-    var buf: [RECV_MAX]u8 = undefined;
+    var buf: [RECV_MAX]u8 = [RECV_MAX]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     while (true) {
-        var fa: std_net.IpAddr = undefined;
+        var fa: std_net.IpAddr = std_net.IpAddr{ .a = 0, .b = 0, .c = 0, .d = 0 };
         var fp: u16 = 0;
         const len = std_net.udpRecvFrom(&sock, buf[0..], &fa, &fp) catch {
             continue;

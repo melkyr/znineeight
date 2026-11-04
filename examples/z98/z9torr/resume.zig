@@ -33,6 +33,12 @@ pub const PartialPiece = struct {
     block_mask: []u8,
 };
 
+var g_zero_partial_piece: PartialPiece;
+
+pub fn zeroPartialPiece() PartialPiece {
+    return g_zero_partial_piece;
+}
+
 pub const ResumeState = struct {
     completed_bits: []u8,
     partial: []PartialPiece,
@@ -44,8 +50,9 @@ const BITS_PER_BYTE: u32 = 8;
 const HASH_LEN: usize = 20;
 
 // Zero-length fallbacks for the (practically unreachable) OOM path of load.
-var g_empty_bits: [1]u8 = undefined;
-var g_empty_partial: [1]PartialPiece = undefined;
+var g_empty_bits: [1]u8;
+var g_empty_partial: [1]PartialPiece;
+var g_empty_entry: [1]bencode.Entry;
 
 fn emptyState() ResumeState {
     return ResumeState{ .completed_bits = g_empty_bits[0..0], .partial = g_empty_partial[0..0] };
@@ -118,7 +125,10 @@ fn verifyPiece(t: torrent.Torrent, f: *filemod.File, index: u32, buf: []u8) bool
     if (got != want) return false;
     var hs = crypto.sha1Init();
     crypto.sha1Update(&hs, buf[0..got]);
-    var h: [20]u8 = undefined;
+    var h: [20]u8 = [20]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
     crypto.sha1Final(&hs, &h);
     var off: usize = @intCast(usize, index) * HASH_LEN;
     if (off + HASH_LEN > t.piece_hashes.len) return false;
@@ -147,7 +157,7 @@ pub fn load(arena: *std.arena.Arena, t: torrent.Torrent, out_file: *filemod.File
 
     var bytes: []u8 = filemod.readAll(arena, ".z9torr.resume") catch return state;
     var v = bencode.decode(arena, bytes) catch return state;
-    var top: []bencode.Entry = undefined;
+    var top: []bencode.Entry = g_empty_entry[0..0];
     switch (v) {
         .dict => |d| {
             top = d;
@@ -208,7 +218,7 @@ pub fn load(arena: *std.arena.Arena, t: torrent.Torrent, out_file: *filemod.File
     } else {
         return state;
     }
-    var src_bits: []const u8 = undefined;
+    var src_bits: []const u8 = "";
     switch (top[cb_i].value) {
         .bytes => |b| {
             if (b.len != nbits) return state;
@@ -227,7 +237,7 @@ pub fn load(arena: *std.arena.Arena, t: torrent.Torrent, out_file: *filemod.File
                 var praw = std.arena.alloc(arena, items.len * @sizeOf(PartialPiece)) catch return state;
                 var pp: []PartialPiece = @ptrCast([*]PartialPiece, praw)[0..items.len];
                 for (0..items.len) |q| {
-                    var dent: []bencode.Entry = undefined;
+                    var dent: []bencode.Entry = g_empty_entry[0..0];
                     switch (items[q]) {
                         .dict => |dd| {
                             dent = dd;
@@ -254,7 +264,7 @@ pub fn load(arena: *std.arena.Arena, t: torrent.Torrent, out_file: *filemod.File
                     } else {
                         return state;
                     }
-                    var mask_src: []const u8 = undefined;
+                    var mask_src: []const u8 = "";
                     switch (dent[bi].value) {
                         .bytes => |b| {
                             mask_src = b;

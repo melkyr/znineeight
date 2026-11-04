@@ -43,7 +43,10 @@ fn fail(name: []const u8, got: []const u8, want: []const u8) void {
 }
 
 fn check(name: []const u8, s: *tracker.Stats, want: []const u8) void {
-    var buf: [stats.STATS_LINE_MAX]u8 = undefined;
+    var buf: [stats.STATS_LINE_MAX]u8 = [stats.STATS_LINE_MAX]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var got: []const u8 = stats.statsRender(s, buf[0..]);
     if (!eqSlice(got, want)) fail(name, got, want);
 }

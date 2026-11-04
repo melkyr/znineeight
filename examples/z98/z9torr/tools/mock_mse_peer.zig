@@ -33,10 +33,10 @@ const DEFAULT_PIECE_LENGTH: u32 = 262144;
 const MAX_MESSAGE: usize = 65536;
 const MAX_BITFIELD: usize = 8192;
 
-var g_body: [MAX_MESSAGE]u8 = undefined;
-var g_out: [MAX_MESSAGE]u8 = undefined;
-var g_bits: [MAX_BITFIELD]u8 = undefined;
-var g_arena_buf: [65536]u8 = undefined;
+var g_body: [MAX_MESSAGE]u8;
+var g_out: [MAX_MESSAGE]u8;
+var g_bits: [MAX_BITFIELD]u8;
+var g_arena_buf: [65536]u8;
 
 fn out(s: []const u8) void {
     std.io.write(s);
@@ -141,7 +141,10 @@ fn recvDecExact(fd: i32, ctx: *std_crypto.Rc4, buf: []u8, want: usize) bool {
 // Read one decrypted frame body into `body`; returns length (0 = keep-alive),
 // or -1 on error/oversize.
 fn recvFrame(fd: i32, dec: *std_crypto.Rc4, body: []u8) i32 {
-    var ph: [4]u8 = undefined;
+    var ph: [4]u8 = [4]u8{0};
+    for (ph) |*item| {
+        item.* = 0;
+    }
     if (!recvDecExact(fd, dec, ph[0..], 4)) return -1;
     const mlen: u32 = readU32BE(ph[0..]);
     if (mlen == 0) return 0;
@@ -183,7 +186,10 @@ fn makePeerId(seed_in: u32, dst: []u8) void {
 }
 
 fn writeHandshake(fd: i32, info_hash: []const u8, peer_id: []const u8) bool {
-    var h: [68]u8 = undefined;
+    var h: [68]u8 = [68]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
     h[0] = 19;
     var pstr: []const u8 = "BitTorrent protocol";
     var i: usize = 0;
@@ -206,7 +212,10 @@ fn writeHandshake(fd: i32, info_hash: []const u8, peer_id: []const u8) bool {
 }
 
 fn writeHandshakeEnc(fd: i32, enc: *std_crypto.Rc4, info_hash: []const u8, peer_id: []const u8) bool {
-    var h: [68]u8 = undefined;
+    var h: [68]u8 = [68]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
     h[0] = 19;
     var pstr: []const u8 = "BitTorrent protocol";
     var i: usize = 0;
@@ -230,7 +239,10 @@ fn writeHandshakeEnc(fd: i32, enc: *std_crypto.Rc4, info_hash: []const u8, peer_
 }
 
 fn sendSimpleEnc(fd: i32, enc: *std_crypto.Rc4, id: u8) bool {
-    var b: [5]u8 = undefined;
+    var b: [5]u8 = [5]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     putU32BE(b[0..], @intCast(u32, 1));
     b[4] = id;
     std_crypto.rc4Apply(enc, b[0..]);
@@ -238,7 +250,10 @@ fn sendSimpleEnc(fd: i32, enc: *std_crypto.Rc4, id: u8) bool {
 }
 
 fn sendBitfieldEnc(fd: i32, enc: *std_crypto.Rc4, bits: []const u8) bool {
-    var hdr: [5]u8 = undefined;
+    var hdr: [5]u8 = [5]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
     putU32BE(hdr[0..], @intCast(u32, 1 + bits.len));
     hdr[4] = 5;
     std_crypto.rc4Apply(enc, hdr[0..]);
@@ -254,7 +269,10 @@ fn sendBitfieldEnc(fd: i32, enc: *std_crypto.Rc4, bits: []const u8) bool {
 }
 
 fn sendPieceEnc(fd: i32, enc: *std_crypto.Rc4, index: u32, begin: u32, data: []u8) bool {
-    var hdr: [13]u8 = undefined;
+    var hdr: [13]u8 = [13]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
     putU32BE(hdr[0..], @intCast(u32, 9 + data.len));
     hdr[4] = 7;
     putU32BE(hdr[5..], index);
@@ -277,28 +295,49 @@ fn eq20(a: []const u8, b: []const u8) bool {
 
 fn respondMse(fd: i32, info_hash: []const u8, seed: u32, dec_out: *std_crypto.Rc4, enc_out: *std_crypto.Rc4) bool {
     // step 1: read Ya.
-    var ya: [mse.DH_LEN]u8 = undefined;
+    var ya: [mse.DH_LEN]u8 = [mse.DH_LEN]u8{0};
+    for (ya) |*item| {
+        item.* = 0;
+    }
     if (!recvExact(fd, ya[0..], mse.DH_LEN)) return false;
 
     // step 2: send Yb + PadB(0).
-    var xb: [mse.HASH_LEN]u8 = undefined;
+    var xb: [mse.HASH_LEN]u8 = [mse.HASH_LEN]u8{0};
+    for (xb) |*item| {
+        item.* = 0;
+    }
     mse.makeSecret(seed, xb[0..]);
-    var yb: [mse.DH_LEN]u8 = undefined;
+    var yb: [mse.DH_LEN]u8 = [mse.DH_LEN]u8{0};
+    for (yb) |*item| {
+        item.* = 0;
+    }
     mse.dhPublic(xb[0..], yb[0..]);
     if (!sendAll(fd, yb[0..])) return false;
 
-    var s: [mse.DH_LEN]u8 = undefined;
+    var s: [mse.DH_LEN]u8 = [mse.DH_LEN]u8{0};
+    for (s) |*item| {
+        item.* = 0;
+    }
     mse.dhShared(ya[0..], xb[0..], s[0..]);
 
     // sync on HASH('req1'||S): scan the plaintext stream (skip PadA).
-    var req1: [mse.HASH_LEN]u8 = undefined;
+    var req1: [mse.HASH_LEN]u8 = [mse.HASH_LEN]u8{0};
+    for (req1) |*item| {
+        item.* = 0;
+    }
     mse.hash2("req1", s[0..], &req1);
-    var win: [mse.HASH_LEN]u8 = undefined;
+    var win: [mse.HASH_LEN]u8 = [mse.HASH_LEN]u8{0};
+    for (win) |*item| {
+        item.* = 0;
+    }
     var cnt: usize = 0;
     var found: bool = false;
     var scanned: u32 = 0;
     while (scanned < 532 and !found) : (scanned += 1) {
-        var b: [1]u8 = undefined;
+        var b: [1]u8 = [1]u8{0};
+        for (b) |*item| {
+            item.* = 0;
+        }
         if (!recvExact(fd, b[0..], 1)) return false;
         var k: usize = 0;
         while (k + 1 < mse.HASH_LEN) : (k += 1) win[k] = win[k + 1];
@@ -309,12 +348,21 @@ fn respondMse(fd: i32, info_hash: []const u8, seed: u32, dec_out: *std_crypto.Rc
     if (!found) return false;
 
     // read HASH('req2'||SKEY) xor HASH('req3'||S) (we know SKEY).
-    var req2x: [mse.HASH_LEN]u8 = undefined;
+    var req2x: [mse.HASH_LEN]u8 = [mse.HASH_LEN]u8{0};
+    for (req2x) |*item| {
+        item.* = 0;
+    }
     if (!recvExact(fd, req2x[0..], mse.HASH_LEN)) return false;
 
     // keys: decB decrypts A->B with keyA; encB encrypts B->A with keyB.
-    var key_a: [mse.HASH_LEN]u8 = undefined;
-    var key_b: [mse.HASH_LEN]u8 = undefined;
+    var key_a: [mse.HASH_LEN]u8 = [mse.HASH_LEN]u8{0};
+    for (key_a) |*item| {
+        item.* = 0;
+    }
+    var key_b: [mse.HASH_LEN]u8 = [mse.HASH_LEN]u8{0};
+    for (key_b) |*item| {
+        item.* = 0;
+    }
     mse.deriveKeys(s[0..], info_hash, &key_a, &key_b);
     std_crypto.rc4Init(key_a[0..], dec_out);
     std_crypto.rc4Init(key_b[0..], enc_out);
@@ -322,29 +370,47 @@ fn respondMse(fd: i32, info_hash: []const u8, seed: u32, dec_out: *std_crypto.Rc
     burn(enc_out);
 
     // decrypt VC + crypto_provide + len(PadC) + PadC + len(IA) + IA.
-    var vc: [8]u8 = undefined;
+    var vc: [8]u8 = [8]u8{0};
+    for (vc) |*item| {
+        item.* = 0;
+    }
     if (!recvDecExactLocal(fd, dec_out, vc[0..], 8)) return false;
     var i: usize = 0;
     while (i < 8) : (i += 1) {
         if (vc[i] != 0) return false;
     }
-    var cp: [4]u8 = undefined;
+    var cp: [4]u8 = [4]u8{0};
+    for (cp) |*item| {
+        item.* = 0;
+    }
     if (!recvDecExactLocal(fd, dec_out, cp[0..], 4)) return false;
     const provide: u32 = readU32BE(cp[0..]);
-    var pcl: [2]u8 = undefined;
+    var pcl: [2]u8 = [2]u8{0};
+    for (pcl) |*item| {
+        item.* = 0;
+    }
     if (!recvDecExactLocal(fd, dec_out, pcl[0..], 2)) return false;
     const pad_c_len: u32 = @intCast(u32, (@intCast(u16, pcl[0]) << 8) | @intCast(u16, pcl[1]));
     var pc: u32 = 0;
     while (pc < pad_c_len) : (pc += 1) {
-        var one: [1]u8 = undefined;
+        var one: [1]u8 = [1]u8{0};
+        for (one) |*item| {
+            item.* = 0;
+        }
         if (!recvDecExactLocal(fd, dec_out, one[0..], 1)) return false;
     }
-    var ial: [2]u8 = undefined;
+    var ial: [2]u8 = [2]u8{0};
+    for (ial) |*item| {
+        item.* = 0;
+    }
     if (!recvDecExactLocal(fd, dec_out, ial[0..], 2)) return false;
     const ia_len: u32 = @intCast(u32, (@intCast(u16, ial[0]) << 8) | @intCast(u16, ial[1]));
     var ia: u32 = 0;
     while (ia < ia_len) : (ia += 1) {
-        var one2: [1]u8 = undefined;
+        var one2: [1]u8 = [1]u8{0};
+        for (one2) |*item| {
+            item.* = 0;
+        }
         if (!recvDecExactLocal(fd, dec_out, one2[0..], 1)) return false;
     }
 
@@ -352,7 +418,10 @@ fn respondMse(fd: i32, info_hash: []const u8, seed: u32, dec_out: *std_crypto.Rc
     if ((provide & mse.CRYPTO_RC4) == 0) return false;
 
     // step 4: ENCRYPT_B(VC, crypto_select, len(PadD)=0).
-    var resp: [8 + 4 + 2]u8 = undefined;
+    var resp: [8 + 4 + 2]u8 = [8 + 4 + 2]u8{0};
+    for (resp) |*item| {
+        item.* = 0;
+    }
     i = 0;
     while (i < 8) : (i += 1) resp[i] = 0;
     putU32BE(resp[8..12], mse.CRYPTO_RC4);
@@ -364,7 +433,10 @@ fn respondMse(fd: i32, info_hash: []const u8, seed: u32, dec_out: *std_crypto.Rc
 }
 
 fn burn(ctx: *std_crypto.Rc4) void {
-    var b: [1024]u8 = undefined;
+    var b: [1024]u8 = [1024]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < 1024) : (i += 1) b[i] = 0;
     std_crypto.rc4Apply(ctx, b[0..]);
@@ -376,12 +448,15 @@ fn recvDecExactLocal(fd: i32, ctx: *std_crypto.Rc4, buf: []u8, want: usize) bool
 
 fn serve(fd: i32, f: *std_file.File, piece_length: u32, bits: []const u8,
          info_hash: []const u8, seed: u32, peer_id: []const u8) void {
-    var dec: std_crypto.Rc4 = undefined;
-    var enc: std_crypto.Rc4 = undefined;
+    var dec: std_crypto.Rc4 = mse.zeroRc4();
+    var enc: std_crypto.Rc4 = mse.zeroRc4();
     if (!respondMse(fd, info_hash, seed, &dec, &enc)) return;
 
     // Read the client's BT handshake through the encrypted stream.
-    var hs: [68]u8 = undefined;
+    var hs: [68]u8 = [68]u8{0};
+    for (hs) |*item| {
+        item.* = 0;
+    }
     if (!recvDecExact(fd, &dec, hs[0..], 68)) return;
 
     // Reply with our handshake, bitfield, unchoke (all encrypted).
@@ -463,7 +538,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         std.os.exit(1);
         return;
     }
-    var info_hash: [20]u8 = undefined;
+    var info_hash: [20]u8 = [20]u8{0};
+    for (info_hash) |*item| {
+        item.* = 0;
+    }
     if (!parseHex20(info_hex, &info_hash)) {
         out("mock_mse_peer: --info-hash must be 40 hex chars\n");
         std.os.exit(1);
@@ -481,7 +559,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     }
     if (seed == 0) seed = 0x5EED1234;
 
-    var peer_id: [20]u8 = undefined;
+    var peer_id: [20]u8 = [20]u8{0};
+    for (peer_id) |*item| {
+        item.* = 0;
+    }
     makePeerId(seed, peer_id[0..]);
 
     var arena = std.arena.init(g_arena_buf[0..]);

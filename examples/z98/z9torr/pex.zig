@@ -43,7 +43,9 @@ pub fn pexInit(p: *PexState) void {
     p.negotiated = false;
 }
 
-var g_empty: [1]u8 = undefined;
+var g_empty: [1]u8;
+var g_empty_entry: [1]bencode.Entry;
+var g_zero_alist: [8][]const u8;
 
 fn emptyBytes() []u8 {
     return g_empty[0..0];
@@ -210,7 +212,10 @@ fn parsePeerSpec(s: []const u8) ?tracker.PeerAddr {
 // "ip[:port]" spec. Used to send PEX and by the tier_pex injection hook.
 pub fn pexBuildUtPex(arena: *std.arena.Arena, spec: []const u8) []u8 {
     if (parsePeerSpec(spec)) |a| {
-        var added: [6]u8 = undefined;
+        var added: [6]u8 = [6]u8{0};
+        for (added) |*item| {
+            item.* = 0;
+        }
         added[0] = @intCast(u8, a.ip_be & @intCast(u32, 0xFF));
         added[1] = @intCast(u8, (a.ip_be >> 8) & @intCast(u32, 0xFF));
         added[2] = @intCast(u8, (a.ip_be >> 16) & @intCast(u32, 0xFF));
@@ -229,14 +234,14 @@ pub fn pexBuildUtPex(arena: *std.arena.Arena, spec: []const u8) []u8 {
 // Parse a BEP 10 extension handshake body and adopt the peer's `ut_pex` id.
 pub fn pexParseHandshake(arena: *std.arena.Arena, p: *PexState, body: []const u8) void {
     var root = bencode.decode(arena, body) catch return;
-    var top: []bencode.Entry = undefined;
+    var top: []bencode.Entry = g_empty_entry[0..0];
     switch (root) {
         .dict => |e| {
             top = e;
         },
         else => return,
     }
-    var m: []bencode.Entry = undefined;
+    var m: []bencode.Entry = g_empty_entry[0..0];
     if (!dictGetDict(top, "m", &m)) return;
     var v: i64 = 0;
     if (dictGetInt(m, "ut_pex", &v)) {
@@ -253,7 +258,7 @@ pub fn pexParseHandshake(arena: *std.arena.Arena, p: *PexState, body: []const u8
 // remove-by-address API and the recent-address ring already suppresses re-adds.
 pub fn pexParseUtPex(arena: *std.arena.Arena, s: *scheduler.Scheduler, body: []const u8) u32 {
     var root = bencode.decode(arena, body) catch return 0;
-    var top: []bencode.Entry = undefined;
+    var top: []bencode.Entry = g_empty_entry[0..0];
     switch (root) {
         .dict => |e| {
             top = e;
@@ -312,8 +317,8 @@ pub fn pexInjectPeer(arena: *std.arena.Arena, p: *PexState, s: *scheduler.Schedu
 
 // --- in-process self-test (tier_pex) ----------------------------------------
 
-var g_test_buf: [2097152]u8 = undefined;
-var g_hashes: [120]u8 = undefined;
+var g_test_buf: [2097152]u8;
+var g_hashes: [120]u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "pex selftest: FAIL: ";
@@ -324,10 +329,10 @@ fn fail(msg: []const u8) void {
 }
 
 fn makeTorrent() torrent.Torrent {
-    var ih: [20]u8 = undefined;
+    var ih: [20]u8 = [20]u8{0};
     for (ih) |*item| item.* = 0;
     for (g_hashes) |*item| item.* = 0;
-    var alist: [8][]const u8 = undefined;
+    var alist: [8][]const u8 = g_zero_alist;
     var e: []const u8 = "";
     for (alist) |*item| item.* = e;
     return torrent.Torrent{
@@ -359,7 +364,7 @@ pub fn selfTest() i32 {
         fail("schedulerInit");
         return 1;
     };
-    var p: PexState = undefined;
+    var p: PexState = PexState{ .ut_pex_id = 0, .negotiated = false };
     pexInit(&p);
 
     // 0. F1: emitted extended dicts must be canonically keyed. Decode each
@@ -373,7 +378,10 @@ pub fn selfTest() i32 {
 
     // 1. BEP 10 handshake negotiates ut_pex = 3 and adds no peers.
     var hs_body: []const u8 = "d1:md6:ut_pexi3ee1:v6:z9torre";
-    var msgbuf: [256]u8 = undefined;
+    var msgbuf: [256]u8 = [256]u8{0};
+    for (msgbuf) |*item| {
+        item.* = 0;
+    }
     var hs_len: usize = extMessage(msgbuf[0..], EXT_HANDSHAKE_ID, hs_body);
     var added0: u32 = pexOnExtended(&arena, &p, &s, msgbuf[0..hs_len]);
     if (added0 != 0) {
@@ -390,7 +398,10 @@ pub fn selfTest() i32 {
     }
 
     // 2. A ut_pex message with two `added` peers must add both.
-    var added: [12]u8 = undefined;
+    var added: [12]u8 = [12]u8{0};
+    for (added) |*item| {
+        item.* = 0;
+    }
     added[0] = 127;
     added[1] = 0;
     added[2] = 0;

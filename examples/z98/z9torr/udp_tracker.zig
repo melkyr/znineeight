@@ -179,7 +179,7 @@ fn exchange(sock: *std_net.Socket, addr: std_net.IpAddr, port: u16, req: []const
         var got: bool = false;
         var tries: u32 = 0;
         while (tries < RECV_PER_ATTEMPT and !got) : (tries += 1) {
-            var fa: std_net.IpAddr = undefined;
+            var fa: std_net.IpAddr = std_net.IpAddr{ .a = 0, .b = 0, .c = 0, .d = 0 };
             var fp: u16 = 0;
             if (recvOne(sock, resp, &fa, &fp)) |n| {
                 if (n >= 8) {
@@ -245,12 +245,18 @@ pub fn announceUdp(arena: *std.arena.Arena, tracker_url: []const u8, info_hash: 
     // --- connect: obtain the 64-bit connection id ---------------------------
     var conn_id: u64 = 0;
     {
-        var creq: [CONNECT_REQ_LEN]u8 = undefined;
+        var creq: [CONNECT_REQ_LEN]u8 = [CONNECT_REQ_LEN]u8{0};
+        for (creq) |*item| {
+            item.* = 0;
+        }
         var ctxn: u32 = nextTxn();
         wrU64(creq[0..], 0, PROTOCOL_ID);
         wrU32(creq[0..], 8, CONNECT_ACTION);
         wrU32(creq[0..], 12, ctxn);
-        var cresp: [RECV_MAX]u8 = undefined;
+        var cresp: [RECV_MAX]u8 = [RECV_MAX]u8{0};
+        for (cresp) |*item| {
+            item.* = 0;
+        }
         var clen: usize = 0;
         exchange(&sock, addr, tport, creq[0..], CONNECT_ACTION, ctxn, cresp[0..], &clen) catch |e| {
             std_net.close(sock);
@@ -266,7 +272,10 @@ pub fn announceUdp(arena: *std.arena.Arena, tracker_url: []const u8, info_hash: 
     logmod.nl();
 
     // --- announce: send the compact request, parse compact peers ------------
-    var areq: [ANNOUNCE_REQ_LEN]u8 = undefined;
+    var areq: [ANNOUNCE_REQ_LEN]u8 = [ANNOUNCE_REQ_LEN]u8{0};
+    for (areq) |*item| {
+        item.* = 0;
+    }
     var atxn: u32 = nextTxn();
     wrU64(areq[0..], 0, conn_id);
     wrU32(areq[0..], 8, ANNOUNCE_ACTION);
@@ -285,7 +294,10 @@ pub fn announceUdp(arena: *std.arena.Arena, tracker_url: []const u8, info_hash: 
     wrU32(areq[0..], 92, NUM_WANT_ANY);
     wrU16(areq[0..], 96, port);
 
-    var aresp: [RECV_MAX]u8 = undefined;
+    var aresp: [RECV_MAX]u8 = [RECV_MAX]u8{0};
+    for (aresp) |*item| {
+        item.* = 0;
+    }
     var alen: usize = 0;
     exchange(&sock, addr, tport, areq[0..], ANNOUNCE_ACTION, atxn, aresp[0..], &alen) catch |e| {
         std_net.close(sock);
@@ -295,7 +307,7 @@ pub fn announceUdp(arena: *std.arena.Arena, tracker_url: []const u8, info_hash: 
 
     if (alen < 20) return error.BadResponse;
 
-    var result: tracker.AnnounceResult = undefined;
+    var result: tracker.AnnounceResult = tracker.zeroAnnounceResult();
     result.interval = rdU32(aresp[0..], 8);
     result.min_interval = 0;
     result.incomplete = rdU32(aresp[0..], 12); // leechers

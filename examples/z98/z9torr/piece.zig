@@ -60,6 +60,17 @@ pub const RequestQueue = struct {
     tail: u32,
 };
 
+var g_zero_request_queue: RequestQueue;
+var g_zero_piece_state: PieceState;
+
+pub fn zeroRequestQueue() RequestQueue {
+    return g_zero_request_queue;
+}
+
+pub fn zeroPieceState() PieceState {
+    return g_zero_piece_state;
+}
+
 pub const BlockResult = enum(u8) { Continue, Complete, Corrupt };
 
 pub const PieceError = error{ OutOfMemory, BadPiece, DiskFailed };
@@ -187,7 +198,10 @@ pub fn onBlock(state: *PieceState, begin: u32, bytes: []const u8, io: *PieceIO) 
 
     var hs = crypto.sha1Init();
     crypto.sha1Update(&hs, buf);
-    var h: [20]u8 = undefined;
+    var h: [20]u8 = [20]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
     crypto.sha1Final(&hs, &h);
 
     var match: bool = true;

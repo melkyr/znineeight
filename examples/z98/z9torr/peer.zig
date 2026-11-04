@@ -266,9 +266,12 @@ fn logFrameRxErr(peer: *Peer, e: wire.PeerError) void {
 // Zero-length slices returned to callers that need a valid-but-empty slice
 // (the M2 single-peer path has no scheduler, so `rarest`/`bitfield` start
 // empty). D2: `[]u8`/`[]u32` are primitive-element slices.
-var g_empty_u8: [1]u8 = undefined;
-var g_empty_u32: [1]u32 = undefined;
-var g_empty_blockstate: [1]piece.BlockState = undefined;
+var g_empty_u8: [1]u8;
+var g_empty_u32: [1]u32;
+var g_empty_blockstate: [1]piece.BlockState;
+var g_zero_alist: [8][]const u8;
+var g_zero_peer: Peer;
+var g_zero_fdset: std_net.fd_set;
 
 pub fn emptyU8() []u8 {
     return g_empty_u8[0..0];
@@ -290,26 +293,35 @@ fn emptyBlockStates() []piece.BlockState {
 // use (`makeHandshake`, `readHandshakeAsync`, `pieceInit`, the explicit `io`
 // assignments).
 pub fn zeroPieceState() piece.PieceState {
-    var x: piece.PieceState = undefined;
-    x.index = 0;
-    x.state = piece.BlockState.missing;
-    x.blocks = emptyBlockStates();
-    x.received_bytes = 0;
-    x.received_count = 0;
-    x.outstanding_count = 0;
-    x.length = 0;
-    x.nblocks = 0;
+    var x: piece.PieceState = piece.PieceState{
+        .index = 0,
+        .state = piece.BlockState.missing,
+        .blocks = emptyBlockStates(),
+        .received_bytes = 0,
+        .received_count = 0,
+        .outstanding_count = 0,
+        .hash = [20]u8{0},
+        .length = 0,
+        .nblocks = 0,
+    };
+    for (0..20) |i| {
+        x.hash[i] = 0;
+    }
     return x;
+}
+
+pub fn zeroPeer() Peer {
+    return g_zero_peer;
 }
 
 // All-zero `torrent.Torrent` for `zeroPieceIO` (its slices/arrays must be
 // written, not left `undefined`, so no poisoned field is ever read).
 fn zeroTorrent() torrent.Torrent {
-    var ih: [20]u8 = undefined;
+    var ih: [20]u8 = [20]u8{0};
     for (ih) |*item| {
         item.* = 0;
     }
-    var alist: [8][]const u8 = undefined;
+    var alist: [8][]const u8 = g_zero_alist;
     var e: []const u8 = "";
     for (alist) |*item| {
         item.* = e;
@@ -327,15 +339,20 @@ fn zeroTorrent() torrent.Torrent {
 }
 
 pub fn zeroPieceIO() piece.PieceIO {
-    var x: piece.PieceIO = undefined;
-    x.arena = @ptrFromInt(0);
-    x.t = zeroTorrent();
-    x.f = @ptrFromInt(0);
-    return x;
+    return piece.PieceIO{
+        .arena = @ptrFromInt(0),
+        .t = zeroTorrent(),
+        .f = @ptrFromInt(0),
+    };
 }
 
 pub fn zeroHandshake() wire.Handshake {
-    var x: wire.Handshake = undefined;
+    var x: wire.Handshake = wire.Handshake{
+        .pstr = [19]u8{0},
+        .reserved = [8]u8{0},
+        .info_hash = [20]u8{0},
+        .peer_id = [20]u8{0},
+    };
     for (0..19) |i| {
         x.pstr[i] = 0;
     }
@@ -398,7 +415,7 @@ fn connectAsync(sock: std_net.Socket, ip_be: u32, port: u16, deadline_ms: u32) s
     var start: u32 = std.time.ticksMs();
     var done: bool = false;
     while (!done) {
-        var wfds: std_net.fd_set = undefined;
+        var wfds: std_net.fd_set = g_zero_fdset;
         std_net.fdZero(@ptrCast(*u8, &wfds));
         std_net.fdSet(s, @ptrCast(*u8, &wfds));
         const sr = std_net.select(s + 1, null, @ptrCast(*u8, &wfds), null, @intCast(i32, 0));
@@ -561,7 +578,7 @@ fn revertBlock(ps: *piece.PieceState, begin: u32) void {
 // caller must yield and retry, because there is no in-flight data to read.
 fn sendRequests(ctx: *RunCtx, peer: *Peer, ps: *piece.PieceState) bool {
     if (peer.peer_choking) return true;
-    var q: piece.RequestQueue = undefined;
+    var q: piece.RequestQueue = piece.zeroRequestQueue();
     piece.nextRequests(ps, &q);
     var sent: u32 = 0;
     for (0..q.tail) |i| {
@@ -776,7 +793,7 @@ fn saveResume(ctx: *RunCtx, ps: *piece.PieceState) void {
 // readable the caller yields and re-checks the scheduler on the next tick.
 fn socketReadable(sock: std_net.Socket) bool {
     if (sock < 0) return false;
-    var rfds: std_net.fd_set = undefined;
+    var rfds: std_net.fd_set = g_zero_fdset;
     std_net.fdZero(@ptrCast(*u8, &rfds));
     std_net.fdSet(sock, @ptrCast(*u8, &rfds));
     const sr = std_net.select(sock + 1, @ptrCast(*u8, &rfds), null, null, @intCast(i32, 0));
@@ -927,7 +944,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
     }
     logFrameTx(peer, @intCast(u8, 2), 1);
 
-    var reader: std_stream.MsgReader = undefined;
+    var reader: std_stream.MsgReader = std_stream.initMsgReader(&peer.sock, peer.read_buf[0..]);
     reader.src = &peer.sock;
     reader.buf = peer.read_buf[0..];
     reader.pending = peer.read_buf[0..0];
@@ -1041,7 +1058,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
             continue;
         }
 
-        var msg: wire.Message = undefined;
+        var msg: wire.Message = wire.zeroMessage();
         if (peer.encrypted) {
             wire.readMessageAsyncEnc(&reader, &peer.enc.in, &msg) catch |e| {
                 logFrameRxErr(peer, e);

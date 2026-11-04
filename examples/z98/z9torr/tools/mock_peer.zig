@@ -48,11 +48,11 @@ const M_BAD_BITFIELD: u8 = 3;
 const M_WRONG_INFO: u8 = 4;
 const M_CORRUPT: u8 = 5;
 
-var g_body: [MAX_MESSAGE]u8 = undefined;
-var g_out: [MAX_MESSAGE]u8 = undefined;
-var g_bits: [MAX_BITFIELD]u8 = undefined;
-var g_bits_bad: [MAX_BITFIELD + 1]u8 = undefined;
-var g_arena_buf: [65536]u8 = undefined;
+var g_body: [MAX_MESSAGE]u8;
+var g_out: [MAX_MESSAGE]u8;
+var g_bits: [MAX_BITFIELD]u8;
+var g_bits_bad: [MAX_BITFIELD + 1]u8;
+var g_arena_buf: [65536]u8;
 
 fn out(s: []const u8) void {
     std.io.write(s);
@@ -183,7 +183,10 @@ fn makePeerId(seed_in: u32, dst: []u8) void {
 }
 
 fn writeHandshake(fd: i32, info_hash: []const u8, peer_id: []const u8) bool {
-    var h: [68]u8 = undefined;
+    var h: [68]u8 = [68]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
     h[0] = 19;
     var pstr: []const u8 = "BitTorrent protocol";
     var i: usize = 0;
@@ -206,14 +209,20 @@ fn writeHandshake(fd: i32, info_hash: []const u8, peer_id: []const u8) bool {
 }
 
 fn sendSimple(fd: i32, id: u8) bool {
-    var b: [5]u8 = undefined;
+    var b: [5]u8 = [5]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     putU32BE(b[0..], @intCast(u32, 1));
     b[4] = id;
     return sendAll(fd, b[0..]);
 }
 
 fn sendBitfield(fd: i32, bits: []const u8) bool {
-    var hdr: [5]u8 = undefined;
+    var hdr: [5]u8 = [5]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
     putU32BE(hdr[0..], @intCast(u32, 1 + bits.len));
     hdr[4] = 5;
     if (!sendAll(fd, hdr[0..])) return false;
@@ -221,7 +230,10 @@ fn sendBitfield(fd: i32, bits: []const u8) bool {
 }
 
 fn sendPiece(fd: i32, index: u32, begin: u32, data: []const u8) bool {
-    var hdr: [13]u8 = undefined;
+    var hdr: [13]u8 = [13]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
     putU32BE(hdr[0..], @intCast(u32, 9 + data.len));
     hdr[4] = 7;
     putU32BE(hdr[5..], index);
@@ -232,10 +244,16 @@ fn sendPiece(fd: i32, index: u32, begin: u32, data: []const u8) bool {
 
 fn serve(fd: i32, f: *std_file.File, piece_length: u32, bits: []const u8,
          mode_kind: u8, mode_n: u32, corrupt_piece: u32, peer_id: []const u8) void {
-    var hs: [68]u8 = undefined;
+    var hs: [68]u8 = [68]u8{0};
+    for (hs) |*item| {
+        item.* = 0;
+    }
     if (!recvExact(fd, hs[0..], 68)) return;
 
-    var info: [20]u8 = undefined;
+    var info: [20]u8 = [20]u8{0};
+    for (info) |*item| {
+        item.* = 0;
+    }
     var i: usize = 0;
     while (i < 20) : (i += 1) {
         info[i] = hs[28 + i];
@@ -253,7 +271,10 @@ fn serve(fd: i32, f: *std_file.File, piece_length: u32, bits: []const u8,
 
     var count: u32 = 0;
     while (true) {
-        var ph: [4]u8 = undefined;
+        var ph: [4]u8 = [4]u8{0};
+        for (ph) |*item| {
+            item.* = 0;
+        }
         if (!recvExact(fd, ph[0..], 4)) return;
         const mlen: u32 = readU32BE(ph[0..]);
         if (mlen == 0) {
@@ -384,7 +405,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         if (parseU32(sv)) |sval| seed = sval;
     }
 
-    var peer_id: [20]u8 = undefined;
+    var peer_id: [20]u8 = [20]u8{0};
+    for (peer_id) |*item| {
+        item.* = 0;
+    }
     makePeerId(seed, peer_id[0..]);
 
     var arena = std.arena.init(g_arena_buf[0..]);

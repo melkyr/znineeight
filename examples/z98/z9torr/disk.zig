@@ -57,7 +57,10 @@ pub fn openTarget(arena: *std.arena.Arena, t: torrent.Torrent) DiskError!filemod
         if (@intCast(u64, sz) < t.total_length) {
             var last: i64 = @intCast(i64, t.total_length - 1);
             _ = filemod.seek(&f, last, filemod.SeekWhence.Set) catch return error.SeekFailed;
-            var zero: [1]u8 = undefined;
+            var zero: [1]u8 = [1]u8{0};
+            for (zero) |*item| {
+                item.* = 0;
+            }
             zero[0] = 0;
             _ = filemod.write(&f, zero[0..]) catch return error.WriteFailed;
         }

@@ -27,6 +27,12 @@ pub const Torrent = struct {
     total_length: u64,
 };
 
+var g_zero_torrent: Torrent;
+
+pub fn zeroTorrent() Torrent {
+    return g_zero_torrent;
+}
+
 pub const TorrentError = error{
     MalformedBencode,
     MissingField,
@@ -51,6 +57,9 @@ const MAX_ANNOUNCE_LIST: usize = 8;
 pub const MAX_TORRENT_BYTES: usize = 3145728; // 3 MiB
 
 const HASH_LEN: usize = 20;
+
+var g_empty_entry: [1]bencode.Entry;
+var g_empty_u8: [1]u8;
 
 // Piece-count cap consistent with the metadata cap above.
 const MAX_PIECES: usize = MAX_TORRENT_BYTES / HASH_LEN;
@@ -125,13 +134,13 @@ fn findIndex(entries: []bencode.Entry, key: []const u8) ?usize {
 pub fn load(arena: *std.arena.Arena, file_bytes: []const u8) TorrentError!Torrent {
     if (file_bytes.len > MAX_TORRENT_BYTES) return error.TooLarge;
 
-    var result: Torrent = undefined;
+    var result: Torrent = zeroTorrent();
 
     var top = bencode.decode(arena, file_bytes) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
         return error.MalformedBencode;
     };
-    var top_entries: []bencode.Entry = undefined;
+    var top_entries: []bencode.Entry = g_empty_entry[0..0];
     switch (top) {
         .dict => |d| {
             top_entries = d;
@@ -152,7 +161,7 @@ pub fn load(arena: *std.arena.Arena, file_bytes: []const u8) TorrentError!Torren
     }
 
     // --- info (required, dict) ---
-    var info_entries: []bencode.Entry = undefined;
+    var info_entries: []bencode.Entry = g_empty_entry[0..0];
     if (findIndex(top_entries, "info")) |ii| {
         switch (top_entries[ii].value) {
             .dict => |d| {
@@ -260,7 +269,7 @@ pub fn load(arena: *std.arena.Arena, file_bytes: []const u8) TorrentError!Torren
     // `pieces` bencode bytes, not a `[][20]u8`, because Z98 emits one shared C
     // slice typedef for `[]`-of-synthetic types and would mistype this field.
     // Callers index `piece_hashes[i*20 .. i*20+20]`.
-    var pieces_bytes: []const u8 = undefined;
+    var pieces_bytes: []const u8 = g_empty_u8[0..0];
     if (findIndex(info_entries, "pieces")) |qi| {
         switch (info_entries[qi].value) {
             .bytes => |b| {

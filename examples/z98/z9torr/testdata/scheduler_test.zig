@@ -24,8 +24,9 @@ const peer = @import("../peer.zig");
 const torrent = @import("../torrent.zig");
 const tracker = @import("../tracker.zig");
 
-var g_arena_buf: [1048576]u8 = undefined;
-var g_hashes: [120]u8 = undefined;
+var g_arena_buf: [1048576]u8;
+var g_hashes: [120]u8;
+var g_zero_alist: [8][]const u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "scheduler_test: FAIL: ";
@@ -69,12 +70,12 @@ fn checkCounts(s: *scheduler.Scheduler, label: []const u8) void {
 }
 
 fn makeTorrent() torrent.Torrent {
-    var ih: [20]u8 = undefined;
+    var ih: [20]u8 = [20]u8{0};
     var z: usize = 0;
     while (z < 20) : (z += 1) ih[z] = 0;
     z = 0;
     while (z < 120) : (z += 1) g_hashes[z] = 0;
-    var alist: [8][]const u8 = undefined;
+    var alist: [8][]const u8 = g_zero_alist;
     var e: []const u8 = "";
     z = 0;
     while (z < 8) : (z += 1) alist[z] = e;

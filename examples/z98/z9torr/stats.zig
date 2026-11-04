@@ -58,7 +58,10 @@ fn putStr(out: []u8, pos: *usize, s: []const u8) void {
 }
 
 fn putU64(out: []u8, pos: *usize, v: u64) void {
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var r: []u8 = parse.utoa64(tmp[0..], v);
     putStr(out, pos, r);
 }

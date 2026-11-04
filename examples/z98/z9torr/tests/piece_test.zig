@@ -29,10 +29,11 @@ const crypto = @import("std_crypto");
 
 const BLOCK = piece.BLOCK_SIZE;
 
-var g_state_buf: [1048576]u8 = undefined;
-var g_io_buf: [1048576]u8 = undefined;
-var g_data: [5 * 16384]u8 = undefined;
-var g_hash: [20]u8 = undefined;
+var g_state_buf: [1048576]u8;
+var g_io_buf: [1048576]u8;
+var g_data: [5 * 16384]u8;
+var g_hash: [20]u8;
+var g_zero_alist: [8][]const u8;
 
 fn fail(msg: []const u8) void {
     var p: []const u8 = "piece_test: FAIL: ";
@@ -68,10 +69,10 @@ fn hashPiece(data: []const u8) void {
 }
 
 fn makeTorrent(name: []const u8, nblocks: u32) torrent.Torrent {
-    var ih: [20]u8 = undefined;
+    var ih: [20]u8 = [20]u8{0};
     var z: usize = 0;
     while (z < 20) : (z += 1) ih[z] = 0;
-    var alist: [8][]const u8 = undefined;
+    var alist: [8][]const u8 = g_zero_alist;
     var e: []const u8 = "";
     z = 0;
     while (z < 8) : (z += 1) alist[z] = e;
@@ -109,7 +110,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         return;
     };
     var ioa = piece.PieceIO{ .arena = &io_arena, .t = ta, .f = &fa };
-    var pa: piece.PieceState = undefined;
+    var pa: piece.PieceState = piece.zeroPieceState();
     piece.pieceInit(&state_arena, ta, &pa, 0) catch {
         fail("(a) pieceInit");
         return;
@@ -157,7 +158,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         return;
     };
     var iob = piece.PieceIO{ .arena = &io_arena, .t = tb, .f = &fb };
-    var pb: piece.PieceState = undefined;
+    var pb: piece.PieceState = piece.zeroPieceState();
     piece.pieceInit(&state_arena, tb, &pb, 0) catch {
         fail("(b) pieceInit");
         return;
@@ -187,7 +188,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         return;
     };
     var ioc = piece.PieceIO{ .arena = &io_arena, .t = tc, .f = &fc };
-    var pc: piece.PieceState = undefined;
+    var pc: piece.PieceState = piece.zeroPieceState();
     piece.pieceInit(&state_arena, tc, &pc, 0) catch {
         fail("(c) pieceInit");
         return;
@@ -225,12 +226,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         return;
     };
     var iod = piece.PieceIO{ .arena = &io_arena, .t = td, .f = &fd };
-    var pd: piece.PieceState = undefined;
+    var pd: piece.PieceState = piece.zeroPieceState();
     piece.pieceInit(&state_arena, td, &pd, 0) catch {
         fail("(d) pieceInit");
         return;
     };
-    var q: piece.RequestQueue = undefined;
+    var q: piece.RequestQueue = piece.zeroRequestQueue();
     piece.nextRequests(&pd, &q);
     checkU32(q.head, 0, "(d) head != 0");
     checkU32(q.tail, 4, "(d) first window tail != 4");
@@ -264,7 +265,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         return;
     };
     var ioe = piece.PieceIO{ .arena = &io_arena, .t = te, .f = &fe };
-    var pe: piece.PieceState = undefined;
+    var pe: piece.PieceState = piece.zeroPieceState();
     piece.pieceInit(&state_arena, te, &pe, 0) catch {
         fail("(e) pieceInit");
         return;

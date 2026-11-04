@@ -60,6 +60,17 @@ pub const Rc4Pair = struct {
     in: std_crypto.Rc4,
 };
 
+var g_zero_rc4: std_crypto.Rc4;
+var g_zero_rc4_pair: Rc4Pair;
+
+pub fn zeroRc4() std_crypto.Rc4 {
+    return g_zero_rc4;
+}
+
+pub fn zeroRc4Pair() Rc4Pair {
+    return g_zero_rc4_pair;
+}
+
 pub const DH_LEN: usize = 96;
 pub const HASH_LEN: usize = 20;
 pub const VC_LEN: usize = 8;
@@ -136,7 +147,7 @@ pub fn hash3(label: []const u8, a: []const u8, b: []const u8, out: *[HASH_LEN]u8
 
 // Ya = 2^Xa mod P (96-byte BE out).
 pub fn dhPublic(xa: []const u8, out: []u8) void {
-    var two: [1]u8 = undefined;
+    var two: [1]u8 = [1]u8{2};
     two[0] = 2;
     std_crypto.modpow(two[0..], xa, DH_PRIME[0..], out);
 }
@@ -210,7 +221,7 @@ fn writeU16BE(b: []u8, v: u16) void {
 }
 
 fn burn1024(ctx: *std_crypto.Rc4) void {
-    var burn: [DISCARD]u8 = undefined;
+    var burn: [DISCARD]u8 = [DISCARD]u8{0};
     for (burn) |*item| {
         item.* = 0;
     }
@@ -340,8 +351,8 @@ pub fn mseConnectAsync(sock: std_net.Socket, info_hash: []const u8, seed: u32, o
     logmod.hex(sc.key_b[0..]);
     logmod.nl();
 
-    var rc4_out: std_crypto.Rc4 = undefined;
-    var rc4_in: std_crypto.Rc4 = undefined;
+    var rc4_out: std_crypto.Rc4 = zeroRc4();
+    var rc4_in: std_crypto.Rc4 = zeroRc4();
     std_crypto.rc4Init(sc.key_a[0..], &rc4_out);
     std_crypto.rc4Init(sc.key_b[0..], &rc4_in);
     burn1024(&rc4_out);

@@ -72,6 +72,12 @@ pub const Message = struct {
     is_keep_alive: bool,
 };
 
+var g_zero_message: Message;
+
+pub fn zeroMessage() Message {
+    return g_zero_message;
+}
+
 // Spec §8 error taxonomy, kept small and concrete. `PeerClosed`/`NetFailed`
 // are the transport members (a peer close, or a socket send/recv error); the
 // rest are protocol members.
@@ -183,7 +189,10 @@ fn hsLogFail(fd: std_net.Socket, stage: []const u8, e: PeerError) void {
 // --- handshake --------------------------------------------------------------
 
 pub fn writeHandshake(sock: std_net.Socket, hs: *const Handshake) PeerError!void {
-    var h: [HANDSHAKE_LEN]u8 = undefined;
+    var h: [HANDSHAKE_LEN]u8 = [HANDSHAKE_LEN]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
     h[0] = @intCast(u8, PSTR_LEN);
     var i: usize = 0;
     while (i < PSTR_LEN) : (i += 1) {
@@ -225,7 +234,10 @@ pub fn writeHandshake(sock: std_net.Socket, hs: *const Handshake) PeerError!void
 pub fn readHandshake(sock: std_net.Socket, expected_info_hash: []const u8, out: *Handshake) PeerError!void {
     if (expected_info_hash.len != HASH_LEN) return error.HandshakeFailed;
 
-    var h: [HANDSHAKE_LEN]u8 = undefined;
+    var h: [HANDSHAKE_LEN]u8 = [HANDSHAKE_LEN]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
     try recvAll(sock, h[0..]);
 
     if (h[0] != @intCast(u8, PSTR_LEN)) return error.HandshakeFailed;
@@ -422,7 +434,7 @@ fn decodeFrame(frame: []u8, out: *Message) PeerError!void {
         out.is_keep_alive = true;
         return;
     }
-    var t: MsgType = undefined;
+    var t: MsgType = MsgType.choke;
     if (!decodeMsgType(frame[0], &t)) return error.BadMessage;
     out.id = t;
     out.payload = frame[1..];
@@ -468,7 +480,10 @@ fn checkLen(total: usize) PeerError!void {
 
 // A message with an id and no payload (choke/unchoke/interested/...).
 pub fn writeSimple(sock: std_net.Socket, id: MsgType) PeerError!void {
-    var b: [5]u8 = undefined;
+    var b: [5]u8 = [5]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     writeU32BE(b[0..4], @intCast(u32, 1));
     b[4] = @intCast(u8, @enumToInt(id));
     try sendAll(sock, b[0..]);
@@ -492,14 +507,20 @@ pub fn writeNotInterested(sock: std_net.Socket) PeerError!void {
 
 // Zero-length frame: 4-byte length prefix 0, no id, no payload.
 pub fn writeKeepAlive(sock: std_net.Socket) PeerError!void {
-    var b: [4]u8 = undefined;
+    var b: [4]u8 = [4]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     writeU32BE(b[0..4], @intCast(u32, 0));
     try sendAll(sock, b[0..]);
 }
 
 // have{index}: payload is a 4-byte BE piece index.
 pub fn writeHave(sock: std_net.Socket, index: u32) PeerError!void {
-    var b: [9]u8 = undefined;
+    var b: [9]u8 = [9]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     writeU32BE(b[0..4], @intCast(u32, 5));
     b[4] = @intCast(u8, @enumToInt(MsgType.have));
     writeU32BE(b[5..9], index);
@@ -510,7 +531,10 @@ pub fn writeHave(sock: std_net.Socket, index: u32) PeerError!void {
 pub fn writeBitfield(sock: std_net.Socket, bits: []const u8) PeerError!void {
     const total: usize = 1 + bits.len;
     try checkLen(total);
-    var hdr: [5]u8 = undefined;
+    var hdr: [5]u8 = [5]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
     writeU32BE(hdr[0..4], @intCast(u32, total));
     hdr[4] = @intCast(u8, @enumToInt(MsgType.bitfield));
     try sendAll(sock, hdr[0..]);
@@ -519,7 +543,10 @@ pub fn writeBitfield(sock: std_net.Socket, bits: []const u8) PeerError!void {
 
 // request{index, begin, length} / cancel{...}: 12-byte payload, all BE u32.
 fn writeBlockReq(sock: std_net.Socket, id: MsgType, index: u32, begin: u32, length: u32) PeerError!void {
-    var b: [17]u8 = undefined;
+    var b: [17]u8 = [17]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     writeU32BE(b[0..4], @intCast(u32, 13));
     b[4] = @intCast(u8, @enumToInt(id));
     writeU32BE(b[5..9], index);
@@ -540,7 +567,10 @@ pub fn writeCancel(sock: std_net.Socket, index: u32, begin: u32, length: u32) Pe
 pub fn writePiece(sock: std_net.Socket, index: u32, begin: u32, data: []const u8) PeerError!void {
     const total: usize = 9 + data.len;
     try checkLen(total);
-    var hdr: [13]u8 = undefined;
+    var hdr: [13]u8 = [13]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
     writeU32BE(hdr[0..4], @intCast(u32, total));
     hdr[4] = @intCast(u8, @enumToInt(MsgType.piece));
     writeU32BE(hdr[5..9], index);
@@ -558,7 +588,10 @@ pub fn writePiece(sock: std_net.Socket, index: u32, begin: u32, data: []const u8
 pub fn writeExtended(sock: std_net.Socket, ext_id: u8, payload: []const u8) PeerError!void {
     const total: usize = 2 + payload.len;
     try checkLen(total);
-    var hdr: [6]u8 = undefined;
+    var hdr: [6]u8 = [6]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
     writeU32BE(hdr[0..4], @intCast(u32, total));
     hdr[4] = @intCast(u8, @enumToInt(MsgType.extended));
     hdr[5] = ext_id;
@@ -573,7 +606,10 @@ pub fn writeExtended(sock: std_net.Socket, ext_id: u8, payload: []const u8) Peer
 pub fn writeExtendedEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, ext_id: u8, payload: []const u8) PeerError!void {
     const total: usize = 2 + payload.len;
     try checkLen(total);
-    var hdr: [6]u8 = undefined;
+    var hdr: [6]u8 = [6]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
     writeU32BE(hdr[0..4], @intCast(u32, total));
     hdr[4] = @intCast(u8, @enumToInt(MsgType.extended));
     hdr[5] = ext_id;
@@ -581,7 +617,10 @@ pub fn writeExtendedEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, ext_id: u8, 
     try sendAll(sock, hdr[0..]);
 
     var off: usize = 0;
-    var scratch: [256]u8 = undefined;
+    var scratch: [256]u8 = [256]u8{0};
+    for (scratch) |*item| {
+        item.* = 0;
+    }
     while (off < payload.len) {
         var n: usize = payload.len - off;
         if (n > scratch.len) n = scratch.len;
@@ -677,7 +716,10 @@ pub fn readHandshakeAsyncEnc(sock: std_net.Socket, dec: *std_crypto.Rc4, expecte
 
 // Encrypted write of our 68-byte handshake.
 pub fn writeHandshakeEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, hs: *const Handshake) PeerError!void {
-    var h: [HANDSHAKE_LEN]u8 = undefined;
+    var h: [HANDSHAKE_LEN]u8 = [HANDSHAKE_LEN]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
     h[0] = @intCast(u8, PSTR_LEN);
     var i: usize = 0;
     while (i < PSTR_LEN) : (i += 1) {
@@ -701,7 +743,10 @@ pub fn writeHandshakeEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, hs: *const 
 
 // Encrypted simple message (choke/unchoke/interested/...).
 pub fn writeSimpleEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, id: MsgType) PeerError!void {
-    var b: [5]u8 = undefined;
+    var b: [5]u8 = [5]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     writeU32BE(b[0..4], @intCast(u32, 1));
     b[4] = @intCast(u8, @enumToInt(id));
     std_crypto.rc4Apply(enc, b[0..]);
@@ -713,14 +758,20 @@ pub fn writeInterestedEnc(sock: std_net.Socket, enc: *std_crypto.Rc4) PeerError!
 }
 
 pub fn writeKeepAliveEnc(sock: std_net.Socket, enc: *std_crypto.Rc4) PeerError!void {
-    var b: [4]u8 = undefined;
+    var b: [4]u8 = [4]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     writeU32BE(b[0..4], @intCast(u32, 0));
     std_crypto.rc4Apply(enc, b[0..]);
     try sendAll(sock, b[0..]);
 }
 
 pub fn writeRequestEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, index: u32, begin: u32, length: u32) PeerError!void {
-    var b: [17]u8 = undefined;
+    var b: [17]u8 = [17]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
     writeU32BE(b[0..4], @intCast(u32, 13));
     b[4] = @intCast(u8, @enumToInt(MsgType.request));
     writeU32BE(b[5..9], index);

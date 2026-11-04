@@ -20,7 +20,7 @@ const logmod = @import("log.zig");
 const consolemod = @import("console.zig");
 
 // One torrent arena (spec §9), backed by a static buffer. Never reset.
-var g_arena_buf: [4194304]u8 = undefined;
+var g_arena_buf: [4194304]u8;
 
 // M3 multi-peer download state. A fixed cap on live peer coroutines bounds the
 // coroutine frame pools and the scheduler's per-peer `Peer` slots (each embeds a
@@ -44,42 +44,45 @@ const STALL_MS: u32 = 60000;
 
 // The context/frame buffers are `[N]u64` so `contextInit`/`@asyncInit` get the
 // 8-aligned storage they require (a bare `[N]u8` is 1-aligned and traps).
-var g_ctx_buf: [MAX_RUNTIME_PEERS * PEER_CTX_U64]u64 = undefined;
-var g_frame_buf: [MAX_RUNTIME_PEERS * PEER_FRAME_U64]u64 = undefined;
-var g_work_buf: [1048576]u8 = undefined;
-var g_save_buf: [262144]u8 = undefined;
+var g_ctx_buf: [MAX_RUNTIME_PEERS * PEER_CTX_U64]u64;
+var g_frame_buf: [MAX_RUNTIME_PEERS * PEER_FRAME_U64]u64;
+var g_work_buf: [1048576]u8;
+var g_save_buf: [262144]u8;
 // M4: scratch arena for BEP 10/11 extended-message decoding (reset per message).
-var g_pex_buf: [131072]u8 = undefined;
+var g_pex_buf: [131072]u8;
 // Dedicated scheduler arena. `schedulerInit` carves three per-piece arrays
 // (PieceStatus: 8 B/piece; piece_rarest + piece_owner: 4 B each) plus
 // `max_peers * sizeof(Peer)` (≈64 KiB each). At the parser's `MAX_PIECES`
 // (157286) that is ≈ 157286*(8+4+4) ≈ 2.4 MiB plus ≈ 1.0 MiB of peers ≈ 3.4 MiB,
 // so 4 MiB fits the largest torrent the parser accepts (M3 final-review fix 4).
-var g_sched_buf: [4194304]u8 = undefined;
-var g_work_arena: std.arena.Arena = undefined;
-var g_save_arena: std.arena.Arena = undefined;
-var g_sched_arena: std.arena.Arena = undefined;
-var g_pex_arena: std.arena.Arena = undefined;
-var g_pctx: peermod.RunCtx = undefined;
-var g_sched: schedmod.Scheduler = undefined;
-var g_down_bucket: ratelimit.TokenBucket = undefined;
-var g_up_bucket: ratelimit.TokenBucket = undefined;
+var g_sched_buf: [4194304]u8;
+var g_work_arena: std.arena.Arena;
+var g_save_arena: std.arena.Arena;
+var g_sched_arena: std.arena.Arena;
+var g_pex_arena: std.arena.Arena;
+var g_pctx: peermod.RunCtx;
+var g_sched: schedmod.Scheduler;
+var g_down_bucket: ratelimit.TokenBucket;
+var g_up_bucket: ratelimit.TokenBucket;
 
 const PeerArgs = struct { ctx: *peermod.RunCtx, peer: *peermod.Peer };
-var g_peer_args: [MAX_RUNTIME_PEERS]PeerArgs = undefined;
-var g_tasks: [MAX_RUNTIME_PEERS]std.async.Task = undefined;
-var g_task_ptrs: [MAX_RUNTIME_PEERS]*std.async.Task = undefined;
-var g_cand: [MAX_CANDIDATES]tracker.PeerAddr = undefined;
+var g_peer_args: [MAX_RUNTIME_PEERS]PeerArgs;
+var g_tasks: [MAX_RUNTIME_PEERS]std.async.Task;
+var g_task_ptrs: [MAX_RUNTIME_PEERS]*std.async.Task;
+var g_cand: [MAX_CANDIDATES]tracker.PeerAddr;
 // M4: per-slot "a coroutine task exists" flag, so PEX-learned peers added mid-
 // run can be spawned with the same code path as the startup candidates.
-var g_started: [MAX_RUNTIME_PEERS]bool = undefined;
+var g_started: [MAX_RUNTIME_PEERS]bool;
 
 fn writeText(s: []const u8) void {
     std.io.write(s);
 }
 
 fn writeU64(v: u64) void {
-    var buf: [24]u8 = undefined;
+    var buf: [24]u8 = [24]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
     var n = parse.itoa64(buf[0..], @intCast(i64, v));
     std.io.write(n);
 }
@@ -327,7 +330,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // attempts the tracker: an announce failure is a tracker/network error
     // (spec §8 exit 3); a tracker that yields no peers is a peer error (exit 4).
     _ = std_net.init();
-    var peer_id: [20]u8 = undefined;
+    var peer_id: [20]u8 = [20]u8{0};
+    for (peer_id) |*item| {
+        item.* = 0;
+    }
     makePeerId(&peer_id);
     var stats = zeroStats();
     stats.left = t.total_length;
@@ -521,7 +527,10 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var last_progress_ms: u32 = std.time.ticksMs();
     var last_verified: u32 = g_pctx.verified_count;
     var last_progress_bytes: u64 = 0;
-    var line_buf: [statsmod.STATS_LINE_MAX]u8 = undefined;
+    var line_buf: [statsmod.STATS_LINE_MAX]u8 = [statsmod.STATS_LINE_MAX]u8{0};
+    for (line_buf) |*item| {
+        item.* = 0;
+    }
     var st: trackerlib.Stats = zeroStats();
     var last_sample_ms: u32 = std.time.ticksMs();
     var last_down_bytes: u64 = 0;

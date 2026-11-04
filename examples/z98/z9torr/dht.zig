@@ -58,13 +58,21 @@ pub const Dht = struct {
     peers_count: u32,
 };
 
+var g_zero_dht: Dht;
+
+pub fn zeroDht() Dht {
+    return g_zero_dht;
+}
+
 pub const DhtError = error{
     NetFailed,
     OutOfMemory,
     BadMessage,
 };
 
-var g_empty: [1]u8 = undefined;
+var g_empty: [1]u8;
+var g_empty_entry: [1]bencode.Entry;
+var g_empty_value: [1]bencode.Value;
 
 fn emptyBytes() []u8 {
     return g_empty[0..0];
@@ -385,7 +393,10 @@ fn packNodes(d: *Dht, dst: []u8) usize {
 }
 
 fn buildNodesResp(arena: *std.arena.Arena, d: *Dht, tid: []const u8) []u8 {
-    var nbuf: [TABLE_MAX * COMPACT_NODE_LEN]u8 = undefined;
+    var nbuf: [TABLE_MAX * COMPACT_NODE_LEN]u8 = [TABLE_MAX * COMPACT_NODE_LEN]u8{0};
+    for (nbuf) |*item| {
+        item.* = 0;
+    }
     var len: usize = packNodes(d, nbuf[0..]);
     var r: [2]bencode.Entry = [2]bencode.Entry{
         be("id", bv(d.id[0..])),
@@ -399,7 +410,10 @@ fn buildGetPeersResp(arena: *std.arena.Arena, d: *Dht, tid: []const u8, info_has
 
     var serve_peers: bool = d.has_peer_ih and eqBytes(info_hash, d.peer_ih[0..]) and d.peers_count > 0;
     if (serve_peers) {
-        var cbuf: [PEERS_MAX * COMPACT_PEER_LEN]u8 = undefined;
+        var cbuf: [PEERS_MAX * COMPACT_PEER_LEN]u8 = [PEERS_MAX * COMPACT_PEER_LEN]u8{0};
+        for (cbuf) |*item| {
+            item.* = 0;
+        }
         var vals: []bencode.Value = allocValues(arena, @intCast(usize, d.peers_count)) catch return emptyBytes();
         var n: usize = 0;
         var i: u32 = 0;
@@ -419,7 +433,10 @@ fn buildGetPeersResp(arena: *std.arena.Arena, d: *Dht, tid: []const u8, info_has
     }
     // No peers for this info_hash: return the closest nodes we know, plus the
     // token a subsequent announce_peer would need (BEP 5). Sorted: id,nodes,token.
-    var nbuf: [TABLE_MAX * COMPACT_NODE_LEN]u8 = undefined;
+    var nbuf: [TABLE_MAX * COMPACT_NODE_LEN]u8 = [TABLE_MAX * COMPACT_NODE_LEN]u8{0};
+    for (nbuf) |*item| {
+        item.* = 0;
+    }
     var len: usize = packNodes(d, nbuf[0..]);
     var rn: [3]bencode.Entry = [3]bencode.Entry{
         be("id", bv(d.id[0..])),
@@ -437,7 +454,7 @@ fn buildGetPeersResp(arena: *std.arena.Arena, d: *Dht, tid: []const u8, info_has
 // returns false.
 pub fn handleDatagram(arena: *std.arena.Arena, d: *Dht, data: []const u8, from: std_net.IpAddr, from_port: u16, out_resp: *[]u8) bool {
     var root = bencode.decode(arena, data) catch return false;
-    var top: []bencode.Entry = undefined;
+    var top: []bencode.Entry = g_empty_entry[0..0];
     switch (root) {
         .dict => |e| {
             top = e;
@@ -453,7 +470,7 @@ pub fn handleDatagram(arena: *std.arena.Arena, d: *Dht, data: []const u8, from: 
 
     if (!(y.len == 1 and y[0] == 'q')) {
         // Response/error: learn the node if it named itself.
-        var r: []bencode.Entry = undefined;
+        var r: []bencode.Entry = g_empty_entry[0..0];
         if (dictGetDict(top, "r", &r)) {
             var nid: []const u8 = "";
             if (dictGetBytes(r, "id", &nid)) {
@@ -465,7 +482,7 @@ pub fn handleDatagram(arena: *std.arena.Arena, d: *Dht, data: []const u8, from: 
 
     var q: []const u8 = "";
     if (!dictGetBytes(top, "q", &q)) return false;
-    var a: []bencode.Entry = undefined;
+    var a: []bencode.Entry = g_empty_entry[0..0];
     if (!dictGetDict(top, "a", &a)) return false;
 
     // The sender's own id (if present) seeds our bounded routing table.
@@ -522,7 +539,7 @@ pub fn handleDatagram(arena: *std.arena.Arena, d: *Dht, data: []const u8, from: 
 // count written.
 pub fn parseResponse(arena: *std.arena.Arena, d: *Dht, data: []const u8, expected_tid: []const u8, out_peers: []tracker.PeerAddr) u32 {
     var root = bencode.decode(arena, data) catch return 0;
-    var top: []bencode.Entry = undefined;
+    var top: []bencode.Entry = g_empty_entry[0..0];
     switch (root) {
         .dict => |e| {
             top = e;
@@ -537,7 +554,7 @@ pub fn parseResponse(arena: *std.arena.Arena, d: *Dht, data: []const u8, expecte
         if (!dictGetBytes(top, "t", &rtid)) return 0;
         if (!eqBytes(rtid, expected_tid)) return 0;
     }
-    var r: []bencode.Entry = undefined;
+    var r: []bencode.Entry = g_empty_entry[0..0];
     if (!dictGetDict(top, "r", &r)) return 0;
 
     var nodes: []const u8 = "";
@@ -553,14 +570,14 @@ pub fn parseResponse(arena: *std.arena.Arena, d: *Dht, data: []const u8, expecte
     }
 
     var count: u32 = 0;
-    var items: []bencode.Value = undefined;
+    var items: []bencode.Value = g_empty_value[0..0];
     if (dictGetList(r, "values", &items)) {
         var i: usize = 0;
         while (i < items.len and @intCast(usize, count) < out_peers.len) : (i += 1) {
             switch (items[i]) {
                 .bytes => |b| {
                     if (b.len == COMPACT_PEER_LEN) {
-                        var addr: tracker.PeerAddr = undefined;
+                        var addr: tracker.PeerAddr = tracker.zeroPeerAddr();
                         compactPeerAt(b, &addr);
                         out_peers[@intCast(usize, count)] = addr;
                         count += 1;
@@ -610,8 +627,11 @@ fn queryBootstrap(arena: *std.arena.Arena, d: *Dht, hostport: []const u8, info_h
     if (q.len == 0) return 0;
     std_net.udpSendTo(&d.sock, ipBeToAddr(ip_be), port, q) catch return 0;
 
-    var buf: [RECV_MAX]u8 = undefined;
-    var fa: std_net.IpAddr = undefined;
+    var buf: [RECV_MAX]u8 = [RECV_MAX]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
+    var fa: std_net.IpAddr = std_net.IpAddr{ .a = 0, .b = 0, .c = 0, .d = 0 };
     var fp: u16 = 0;
     var n: usize = 0;
     n = std_net.udpRecvFrom(&d.sock, buf[0..], &fa, &fp) catch return 0;
@@ -625,7 +645,7 @@ fn queryBootstrap(arena: *std.arena.Arena, d: *Dht, hostport: []const u8, info_h
 // Binds an ephemeral UDP socket; returns the number of peers written to `out`.
 pub fn dhtDiscover(arena: *std.arena.Arena, bootstrap: []const u8, self_id: [20]u8, info_hash: []const u8, out: []tracker.PeerAddr) u32 {
     if (out.len == 0 or bootstrap.len == 0) return 0;
-    var d: Dht = undefined;
+    var d: Dht = zeroDht();
     dhtInit(&d, 0, self_id) catch return 0;
     defer std_net.close(d.sock);
     std_net.udpSetTimeout(&d.sock, 1500) catch {};
@@ -646,7 +666,7 @@ pub fn dhtDiscover(arena: *std.arena.Arena, bootstrap: []const u8, self_id: [20]
 
 // --- in-process self-test (tier_dht) ----------------------------------------
 
-var g_test_buf: [262144]u8 = undefined;
+var g_test_buf: [262144]u8;
 
 fn fillId(id: *[20]u8, seed: u32) void {
     var st: u32 = seed;
@@ -683,13 +703,19 @@ pub fn selfTest() i32 {
     var port_b: u16 = envU16("Z9TORR_DHT_PORT_B", 6978);
     var arena: std.arena.Arena = std.arena.init(g_test_buf[0..]);
 
-    var id_a: [20]u8 = undefined;
-    var id_b: [20]u8 = undefined;
+    var id_a: [20]u8 = [20]u8{0};
+    for (id_a) |*item| {
+        item.* = 0;
+    }
+    var id_b: [20]u8 = [20]u8{0};
+    for (id_b) |*item| {
+        item.* = 0;
+    }
     fillId(&id_a, 11);
     fillId(&id_b, 22);
 
-    var da: Dht = undefined;
-    var db: Dht = undefined;
+    var da: Dht = zeroDht();
+    var db: Dht = zeroDht();
     dhtInit(&da, port_a, id_a) catch {
         fail("bind A");
         return 1;
@@ -703,7 +729,10 @@ pub fn selfTest() i32 {
     std_net.udpSetTimeout(&da.sock, 2000) catch {};
     std_net.udpSetTimeout(&db.sock, 2000) catch {};
 
-    var ih: [20]u8 = undefined;
+    var ih: [20]u8 = [20]u8{0};
+    for (ih) |*item| {
+        item.* = 0;
+    }
     fillId(&ih, 77);
     for (0..NODE_ID_LEN) |k| {
         db.peer_ih[k] = ih[k];
@@ -739,8 +768,11 @@ pub fn selfTest() i32 {
         return 1;
     };
 
-    var buf: [RECV_MAX]u8 = undefined;
-    var fa: std_net.IpAddr = undefined;
+    var buf: [RECV_MAX]u8 = [RECV_MAX]u8{0};
+    for (buf) |*item| {
+        item.* = 0;
+    }
+    var fa: std_net.IpAddr = std_net.IpAddr{ .a = 0, .b = 0, .c = 0, .d = 0 };
     var fp: u16 = 0;
     const n = std_net.udpRecvFrom(&db.sock, buf[0..], &fa, &fp) catch {
         fail("recv at B");
@@ -752,7 +784,7 @@ pub fn selfTest() i32 {
     }
 
     // 2. B handles the query and replies to A.
-    var resp: []u8 = undefined;
+    var resp: []u8 = g_empty[0..0];
     if (!handleDatagram(&arena, &db, buf[0..n], fa, fp, &resp)) {
         fail("B produced no get_peers response");
         return 1;
@@ -767,7 +799,7 @@ pub fn selfTest() i32 {
     };
 
     // 3. A receives and parses; must learn the registered peer.
-    var fa2: std_net.IpAddr = undefined;
+    var fa2: std_net.IpAddr = std_net.IpAddr{ .a = 0, .b = 0, .c = 0, .d = 0 };
     var fp2: u16 = 0;
     const n2 = std_net.udpRecvFrom(&da.sock, buf[0..], &fa2, &fp2) catch {
         fail("recv at A");

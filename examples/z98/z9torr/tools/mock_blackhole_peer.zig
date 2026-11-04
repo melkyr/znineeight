@@ -25,7 +25,7 @@ const DEFAULT_PORT: u32 = 6991;
 // Held-open accepted sockets (never closed, never read/written). A tiny list is
 // enough: the client dials at most twice (MSE probe + plaintext fallback).
 const MAX_HELD: usize = 64;
-var g_held: [MAX_HELD]i32 = undefined;
+var g_held: [MAX_HELD]i32;
 
 fn out(s: []const u8) void {
     std.io.write(s);

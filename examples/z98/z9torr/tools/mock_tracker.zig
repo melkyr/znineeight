@@ -32,12 +32,12 @@ const RESP_MAX: usize = 65536;
 const MAX_PEERS: usize = 64;
 
 // Fixed work buffers (no per-connection allocation).
-var g_body: [RESP_MAX]u8 = undefined;
-var g_arena_buf: [65536]u8 = undefined;
+var g_body: [RESP_MAX]u8;
+var g_arena_buf: [65536]u8;
 
 // Accumulated compact peers (D2: fixed arrays, never a slice of a synthetic).
-var g_ips: [MAX_PEERS][4]u8 = undefined;
-var g_ports: [MAX_PEERS]u16 = undefined;
+var g_ips: [MAX_PEERS][4]u8;
+var g_ports: [MAX_PEERS]u16;
 var g_npeers: usize = 0;
 
 fn out(s: []const u8) void {
@@ -117,7 +117,10 @@ fn parsePeer(s: []const u8, ip: *[4]u8, port: *u16) bool {
 
 fn addPeerStr(s: []const u8) bool {
     if (g_npeers >= MAX_PEERS) return false;
-    var ip: [4]u8 = undefined;
+    var ip: [4]u8 = [4]u8{0};
+    for (ip) |*item| {
+        item.* = 0;
+    }
     var port: u16 = 0;
     if (!parsePeer(s, &ip, &port)) return false;
     g_ips[g_npeers] = ip;
@@ -179,7 +182,10 @@ fn writeU64(dst: []u8, v_in: u64) usize {
         dst[0] = '0';
         return 1;
     }
-    var tmp: [20]u8 = undefined;
+    var tmp: [20]u8 = [20]u8{0};
+    for (tmp) |*item| {
+        item.* = 0;
+    }
     var n: usize = 0;
     while (v > 0) {
         tmp[n] = @intCast(u8, v % 10) + '0';
@@ -224,7 +230,10 @@ fn buildBody() usize {
 }
 
 fn handle(fd: i32, body: []const u8) void {
-    var req: [REQ_BUF]u8 = undefined;
+    var req: [REQ_BUF]u8 = [REQ_BUF]u8{0};
+    for (req) |*item| {
+        item.* = 0;
+    }
     var len: usize = 0;
     while (len < REQ_BUF) {
         const n = std_net.recv(fd, @ptrCast([*]u8, &req[len]), @intCast(i32, REQ_BUF - len));
@@ -233,7 +242,10 @@ fn handle(fd: i32, body: []const u8) void {
         if (hasHeaderEnd(req[0..len])) break;
     }
 
-    var hdr: [160]u8 = undefined;
+    var hdr: [160]u8 = [160]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
     var hl: usize = 0;
     var p1: []const u8 = "HTTP/1.1 200 OK\r\nContent-Length: ";
     hl = copyInto(hdr[0..], hl, p1);
@@ -310,7 +322,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     }
 
     var arena = std.arena.init(g_arena_buf[0..]);
-    var body: []const u8 = undefined;
+    var body: []const u8 = "";
     if (have_response) {
         var data: []u8 = std_file.readAll(&arena, response_path) catch {
             out("mock_tracker: cannot read --response file\n");

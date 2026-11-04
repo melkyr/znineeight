@@ -68,6 +68,17 @@ pub const AnnounceResult = struct {
     tracker_id: ?[]const u8,
 };
 
+var g_zero_peer_addr: PeerAddr;
+var g_zero_announce_result: AnnounceResult;
+
+pub fn zeroPeerAddr() PeerAddr {
+    return g_zero_peer_addr;
+}
+
+pub fn zeroAnnounceResult() AnnounceResult {
+    return g_zero_announce_result;
+}
+
 // Spec §8 taxonomy. `HttpFailed` is any transport/HTTP-layer failure;
 // `BadResponse` is a non-200 status or a malformed/unsupported body;
 // `FailureReason` is a bencoded tracker failure (string via `failureReason`).
@@ -87,7 +98,9 @@ const FAILURE_MAX: usize = 256;
 
 // Last `failure reason` string (copied; no arena lifetime dependency). Reset
 // each `announce`; read with `failureReason`.
-var g_failure_buf: [FAILURE_MAX]u8 = undefined;
+var g_failure_buf: [FAILURE_MAX]u8;
+var g_empty_entry: [1]bencode.Entry;
+var g_empty_u8: [1]u8;
 var g_failure_len: usize = 0;
 
 pub fn failureReason() []const u8 {
@@ -205,7 +218,10 @@ pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId,
     try appendStr(&b, "&peer_id=");
     try appendStr(&b, enc_pid);
     try appendStr(&b, "&port=");
-    var nbuf: [24]u8 = undefined;
+    var nbuf: [24]u8 = [24]u8{0};
+    for (nbuf) |*item| {
+        item.* = 0;
+    }
     try appendStr(&b, parse.utoa(nbuf[0..], @intCast(u32, port)));
     try appendStr(&b, "&uploaded=");
     try appendStr(&b, parse.utoa64(nbuf[0..], stats.uploaded));
@@ -234,7 +250,7 @@ pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId,
         if (e == error.OutOfMemory) return error.OutOfMemory;
         return error.BadResponse;
     };
-    var entries: []bencode.Entry = undefined;
+    var entries: []bencode.Entry = g_empty_entry[0..0];
     switch (top) {
         .dict => |d| {
             entries = d;
@@ -253,7 +269,7 @@ pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId,
         return error.FailureReason;
     }
 
-    var result: AnnounceResult = undefined;
+    var result: AnnounceResult = zeroAnnounceResult();
     result.interval = 0;
     result.min_interval = 0;
     result.complete = 0;
@@ -308,7 +324,7 @@ pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId,
     } else {
         return error.BadResponse;
     }
-    var pbytes: []const u8 = undefined;
+    var pbytes: []const u8 = g_empty_u8[0..0];
     switch (entries[pidx].value) {
         .bytes => |pb| {
             pbytes = pb;
