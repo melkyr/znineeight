@@ -27,7 +27,7 @@ const Mock = struct {
     chunk: usize,
     req: [512]u8,
     req_len: usize,
-    closed: bool,
+    closes: u32,
 };
 
 fn mockRead(state: *void, buf: []u8) !usize {
@@ -57,7 +57,7 @@ fn mockWrite(state: *void, data: []const u8) !usize {
 
 fn mockClose(state: *void) void {
     var m: *Mock = @ptrCast(*Mock, state);
-    m.closed = true;
+    m.closes += 1;
 }
 
 fn eqBytes(a: []const u8, b: []const u8) bool {
@@ -96,7 +96,7 @@ fn runCase(url: []const u8, body: []const u8, ct: []const u8, accept: []const u8
     var storage: [65536]u8 = undefined;
     var ar = std.arena.init(storage[0..]);
 
-    var m = Mock{ .resp = resp_bytes, .pos = 0, .chunk = 3, .req = undefined, .req_len = 0, .closed = false };
+    var m = Mock{ .resp = resp_bytes, .pos = 0, .chunk = 3, .req = undefined, .req_len = 0, .closes = 0 };
     var t = http.HttpTransport{
         .state = @ptrCast(*void, &m),
         .read_fn = mockRead,
@@ -109,9 +109,52 @@ fn runCase(url: []const u8, body: []const u8, ct: []const u8, accept: []const u8
     ck(resp.status == want_status, "status");
     ck(eqBytes(resp.body, want_body), "body");
     ck(contains(resp.body, want_body), "body contains");
-    ck(m.closed, "closed");
+    ck(m.closes == 1, "closed exactly once");
 
     ck(eqBytes(m.req[0..m.req_len], want_req), "request exact");
+}
+
+fn tooLargeClosesOnce() void {
+    var storage: [65536]u8 = undefined;
+    var ar = std.arena.init(storage[0..]);
+
+    var m = Mock{ .resp = "HTTP/1.1 200 OK\r\nContent-Length: 1048577\r\n\r\n", .pos = 0, .chunk = 3, .req = undefined, .req_len = 0, .closes = 0 };
+    var t = http.HttpTransport{
+        .state = @ptrCast(*void, &m),
+        .read_fn = mockRead,
+        .write_fn = mockWrite,
+        .close_fn = mockClose,
+    };
+    var resp: http.Response = undefined;
+    var saw: bool = false;
+    http.httpPostOver(&ar, &t, "http://example.com/big", "x", "", "", &resp) catch |e| {
+        ck(e == error.TooLarge, "too large");
+        saw = true;
+    };
+    ck(saw, "too large seen");
+    ck(m.req_len > 0, "request written before too large");
+    ck(m.closes == 1, "close exactly once on too large");
+}
+
+fn badHeaderCase(ct: []const u8, accept: []const u8) void {
+    var storage: [65536]u8 = undefined;
+    var ar = std.arena.init(storage[0..]);
+
+    var m = Mock{ .resp = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", .pos = 0, .chunk = 3, .req = undefined, .req_len = 0, .closes = 0 };
+    var t = http.HttpTransport{
+        .state = @ptrCast(*void, &m),
+        .read_fn = mockRead,
+        .write_fn = mockWrite,
+        .close_fn = mockClose,
+    };
+    var resp: http.Response = undefined;
+    var saw: bool = false;
+    http.httpPostOver(&ar, &t, "http://example.com/x", "x", ct, accept, &resp) catch |e| {
+        ck(e == error.BadHeader, "bad header");
+        saw = true;
+    };
+    ck(saw, "bad header seen");
+    ck(m.req_len == 0, "no write on bad header");
 }
 
 pub fn main() void {
@@ -122,6 +165,14 @@ pub fn main() void {
 
     const want_req2 = "POST /submit HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\nContent-Length: 3\r\n\r\nabc";
     runCase("https://example.com/submit", "abc", "", "", "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndone", want_req2, 200, "done");
+
+    tooLargeClosesOnce();
+    badHeaderCase("text/plain\r\nX-Injected: y", "");
+    badHeaderCase("text/plain\nX-Injected: y", "");
+    badHeaderCase("text/plain\x00z", "");
+    badHeaderCase("", "text/plain\rX-Injected: y");
+    badHeaderCase("", "text/plain\nX-Injected: y");
+    badHeaderCase("", "text/plain\x00z");
 
     if (g_fail == 0) {
         std.io.write("http post ok\n");

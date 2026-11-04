@@ -20,6 +20,9 @@ pub const HttpError = error{
     ConnectFailed,
     Timeout,
     BadResponse,
+    // Additive (Task 3 fix round 1): CR/LF/NUL in a caller-supplied POST
+    // Content-Type/Accept value. GET paths never produce it.
+    BadHeader,
     TooLarge,
     OutOfMemory,
 };
@@ -473,7 +476,22 @@ fn appendHead(head: []u8, head_len: *usize, line: []const u8) HttpError!void {
 // --- POST request/response helpers ------------------------------------------
 
 const STREAM_BUF_BYTES: usize = 1048576;
-const USIZE_MAX_U64: u64 = 0xFFFFFFFF;
+const STREAM_MAX_BYTES: u64 = 0xFFFFFFFF;
+
+fn hasHeaderInjection(s: []const u8) bool {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '\r' or c == '\n' or c == 0) return true;
+    }
+    return false;
+}
+
+fn validatePostHeaders(content_type: []const u8, accept: []const u8) HttpError!void {
+    if (hasHeaderInjection(content_type)) return error.BadHeader;
+    if (hasHeaderInjection(accept)) return error.BadHeader;
+    return;
+}
 
 fn appendUsize(b: *std.buf.Buf, v0: usize) HttpError!void {
     var tmp: [20]u8 = undefined;
@@ -500,7 +518,7 @@ fn parseSizeStream(s: []const u8) HttpError!usize {
     while (i < s.len) : (i += 1) {
         if (!isDigit(s[i])) return error.BadResponse;
         const d: u64 = @intCast(u64, s[i] - 48);
-        if (v > (USIZE_MAX_U64 - d) / 10) return error.TooLarge;
+        if (v > (STREAM_MAX_BYTES - d) / 10) return error.TooLarge;
         v = v * 10 + d;
     }
     return @intCast(usize, v);
@@ -514,7 +532,7 @@ fn parseChunkSizeStream(s: []const u8) HttpError!usize {
         if (!isHex(s[i])) return error.BadResponse;
         any = true;
         const d: u64 = @intCast(u64, hexVal(s[i]));
-        if (v > (USIZE_MAX_U64 - d) / 16) return error.TooLarge;
+        if (v > (STREAM_MAX_BYTES - d) / 16) return error.TooLarge;
         v = v * 16 + d;
     }
     if (!any) return error.BadResponse;
@@ -690,8 +708,9 @@ fn readCloseDelimitedStream(c: *Conn, s: *StreamBuf) HttpError!void {
 // parsing, `Connection: close`, identity + chunked response bodies, and the
 // 1 MiB whole-body cap. Empty content_type/accept omit those headers.
 pub fn httpPostOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, out: *Response) !void {
-    const req = try buildPostHead(arena, url, body.len, content_type, accept);
+    try validatePostHeaders(content_type, accept);
     defer t.close_fn(t.state);
+    const req = try buildPostHead(arena, url, body.len, content_type, accept);
     try transportWriteAll(t, std.buf.slice(&req));
     if (body.len > 0) try transportWriteAll(t, body);
 
@@ -728,13 +747,17 @@ pub fn httpPostOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8,
 // an empty body; de-chunked body bytes flow to `sink` through a fixed ~1 MiB
 // arena buffer. The body length is unbounded (hardware-capped).
 pub fn httpPostStreamOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, sink: *ResponseSink, out_head: *Response) !void {
-    const req = try buildPostHead(arena, url, body.len, content_type, accept);
+    try validatePostHeaders(content_type, accept);
     defer t.close_fn(t.state);
+    const req = try buildPostHead(arena, url, body.len, content_type, accept);
     try transportWriteAll(t, std.buf.slice(&req));
     if (body.len > 0) try transportWriteAll(t, body);
 
     var c = Conn{ .t = t, .buf = undefined, .pos = 0, .len = 0, .eof = false };
     const ph = try readResponseHeadOver(arena, &c, true);
+
+    const empty_body = try allocBytes(arena, 0);
+    out_head.* = Response{ .status = ph.status, .headers = ph.headers, .body = empty_body };
 
     const sbuf = try allocBytes(arena, STREAM_BUF_BYTES);
     var sb = StreamBuf{ .buf = sbuf, .len = 0, .sink = sink };
@@ -747,8 +770,6 @@ pub fn httpPostStreamOver(arena: *std.arena.Arena, t: *HttpTransport, url: []con
     } else {
         try readCloseDelimitedStream(&c, &sb);
     }
-
-    out_head.* = Response{ .status = ph.status, .headers = ph.headers, .body = try allocBytes(arena, 0) };
 }
 
 // GET over any caller-supplied transport (plain TCP, TLS, mock). HTTP/1.1,
@@ -778,79 +799,21 @@ pub fn httpGetOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, 
     try transportWriteAll(t, std.buf.slice(&req));
 
     var c = Conn{ .t = t, .buf = undefined, .pos = 0, .len = 0, .eof = false };
-    var head: [MAX_HEADER_BLOCK]u8 = undefined;
-    var head_len: usize = 0;
-    var line: [MAX_HEADER_BLOCK]u8 = undefined;
-
-    const status_len = try connReadLine(&c, line[0..]);
-    try appendHead(head[0..], &head_len, line[0..status_len]);
-    while (true) {
-        const n = try connReadLine(&c, line[0..]);
-        if (n == 0) break;
-        try appendHead(head[0..], &head_len, line[0..n]);
-    }
-    try appendHead(head[0..], &head_len, line[0..0]);
-
-    const durable = try allocBytes(arena, head_len);
-    copyBytes(durable, head[0..head_len]);
-
-    const first_end = findFrom(durable, "\r\n", 0);
-    if (first_end >= durable.len) return error.BadResponse;
-    const status = try parseStatus(durable[0..first_end]);
-
-    var count: usize = 0;
-    var pos: usize = first_end + 2;
-    while (true) {
-        const le = findFrom(durable, "\r\n", pos);
-        if (le >= durable.len) return error.BadResponse;
-        if (le == pos) break;
-        count += 1;
-        pos = le + 2;
-    }
-
-    const hdrs = try allocHeaders(arena, count);
-    var have_cl: bool = false;
-    var have_chunked: bool = false;
-    var clen: usize = 0;
-    var idx: usize = 0;
-    pos = first_end + 2;
-    while (true) {
-        const le = findFrom(durable, "\r\n", pos);
-        if (le >= durable.len) return error.BadResponse;
-        if (le == pos) break;
-        const hline = durable[pos..le];
-        const colon = findFrom(hline, ":", 0);
-        if (colon >= hline.len) return error.BadResponse;
-        const name = hline[0..colon];
-        const value = trimSpaces(hline[colon + 1 ..]);
-        hdrs[idx] = Header{ .name = name, .value = value };
-        idx += 1;
-        if (eqIgnoreCase(name, "content-length")) {
-            have_cl = true;
-            clen = try parseSize(value);
-        } else if (eqIgnoreCase(name, "transfer-encoding")) {
-            if (containsIgnoreCase(value, "chunked")) {
-                have_chunked = true;
-            } else if (!containsIgnoreCase(value, "identity")) {
-                return error.BadResponse;
-            }
-        }
-        pos = le + 2;
-    }
+    const ph = try readResponseHeadOver(arena, &c, false);
 
     var body = std.buf.init(arena);
-    if (have_chunked) {
+    if (ph.have_chunked) {
         try readChunked(&c, &body);
-    } else if (have_cl) {
-        if (clen > MAX_BODY_BYTES) return error.TooLarge;
-        try std.buf.reserve(&body, clen);
+    } else if (ph.have_cl) {
+        if (ph.clen > MAX_BODY_BYTES) return error.TooLarge;
+        try std.buf.reserve(&body, ph.clen);
         var got: usize = 0;
-        while (got < clen) {
-            const n = try connReadSome(&c, body.data[body.len + got .. body.len + clen]);
+        while (got < ph.clen) {
+            const n = try connReadSome(&c, body.data[body.len + got .. body.len + ph.clen]);
             if (n == 0) return error.BadResponse;
             got += n;
         }
-        body.len += clen;
+        body.len += ph.clen;
     } else {
         var tmp: [4096]u8 = undefined;
         while (true) {
@@ -861,7 +824,7 @@ pub fn httpGetOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, 
         }
     }
 
-    out.* = Response{ .status = status, .headers = hdrs, .body = std.buf.slice(&body) };
+    out.* = Response{ .status = ph.status, .headers = ph.headers, .body = std.buf.slice(&body) };
 }
 
 // --- get (network) -----------------------------------------------------------
@@ -1054,6 +1017,7 @@ fn postOnce(arena: *std.arena.Arena, url: []const u8, body: []const u8, content_
 }
 
 pub fn post(arena: *std.arena.Arena, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, timeout_ms: u32) HttpError!Response {
+    try validatePostHeaders(content_type, accept);
     var resp = try postOnce(arena, url, body, content_type, accept, timeout_ms);
     if (resp.status == 301 or resp.status == 302 or resp.status == 303 or resp.status == 307) {
         const loc = findHeader(resp, "location");

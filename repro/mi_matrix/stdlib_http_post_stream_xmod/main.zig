@@ -13,6 +13,7 @@ const std = @import("std");
 const http = @import("std_http.zig");
 
 var g_fail: u32 = 0;
+var g_storage: [2097152]u8 = undefined;
 
 fn ck(cond: bool, what: []const u8) void {
     if (!cond) {
@@ -59,10 +60,17 @@ const SinkState = struct {
     buf: [4096]u8,
     len: usize,
     calls: u32,
+    head: *http.Response,
+    first_status: u16,
+    first_ct_len: usize,
 };
 
 fn sinkWrite(state: *void, data: []const u8) http.HttpError!void {
     var s: *SinkState = @ptrCast(*SinkState, state);
+    if (s.calls == 0) {
+        s.first_status = s.head.status;
+        s.first_ct_len = headerValue(s.head.*, "Content-Type").len;
+    }
     s.calls += 1;
     if (s.len + data.len > s.buf.len) return error.TooLarge;
     var i: usize = 0;
@@ -96,6 +104,16 @@ fn contains(hay: []const u8, needle: []const u8) bool {
     return false;
 }
 
+fn endsWith(hay: []const u8, needle: []const u8) bool {
+    if (needle.len > hay.len) return false;
+    const off: usize = hay.len - needle.len;
+    var i: usize = 0;
+    while (i < needle.len) : (i += 1) {
+        if (hay[off + i] != needle[i]) return false;
+    }
+    return true;
+}
+
 fn headerValue(resp: http.Response, name: []const u8) []const u8 {
     var i: usize = 0;
     while (i < resp.headers.len) : (i += 1) {
@@ -106,11 +124,11 @@ fn headerValue(resp: http.Response, name: []const u8) []const u8 {
 }
 
 pub fn main() void {
-    const resp_bytes = "HTTP/1.1 200 OK\r\nContent-Type: application/x-git-upload-pack-result\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
+    const resp_bytes = "HTTP/1.1 200 OK\r\nContent-Type: application/x-git-upload-pack-result\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\nX-Trailer: v\r\n\r\n";
     const want_body = "hello world";
+    const want_req_body = "cmd=ls-refs";
 
-    var storage: [2097152]u8 = undefined;
-    var ar = std.arena.init(storage[0..]);
+    var ar = std.arena.init(g_storage[0..]);
 
     var m = Mock{ .resp = resp_bytes, .pos = 0, .req = undefined, .req_len = 0, .reads = 0, .closed = false };
     var t = http.HttpTransport{
@@ -119,20 +137,25 @@ pub fn main() void {
         .write_fn = mockWrite,
         .close_fn = mockClose,
     };
-    var s = SinkState{ .buf = undefined, .len = 0, .calls = 0 };
+    var no_headers: [1]http.Header = undefined;
+    var no_body: [1]u8 = undefined;
+    var head = http.Response{ .status = 0, .headers = no_headers[0..0], .body = no_body[0..0] };
+    var s = SinkState{ .buf = undefined, .len = 0, .calls = 0, .head = &head, .first_status = 0, .first_ct_len = 0 };
     var sink = http.ResponseSink{
         .state = @ptrCast(*void, &s),
         .write_fn = sinkWrite,
     };
-    var head: http.Response = undefined;
-    http.httpPostStreamOver(&ar, &t, "http://example.com/git-upload-pack", "cmd=ls-refs", "application/x-git-upload-pack-request", "application/x-git-upload-pack-result", &sink, &head) catch @panic("post stream");
+    http.httpPostStreamOver(&ar, &t, "http://example.com/git-upload-pack", want_req_body, "application/x-git-upload-pack-request", "application/x-git-upload-pack-result", &sink, &head) catch @panic("post stream");
 
+    ck(s.first_status == 200, "out_head ready at first sink call");
+    ck(s.first_ct_len > 0, "out_head header at first sink call");
     ck(head.status == 200, "status");
     ck(head.body.len == 0, "head body empty");
     ck(m.closed, "closed");
 
     ck(s.calls >= 1, "sink calls");
     ck(eqBytes(s.buf[0..s.len], want_body), "sink body exact");
+    ck(!contains(s.buf[0..s.len], "X-Trailer"), "trailer skipped");
     ck(m.reads > 20, "one byte per read");
 
     ck(contains(m.req[0..m.req_len], "POST /git-upload-pack HTTP/1.1\r\n"), "request line");
@@ -140,6 +163,8 @@ pub fn main() void {
     ck(contains(m.req[0..m.req_len], "Accept: application/x-git-upload-pack-result\r\n"), "accept");
     ck(contains(m.req[0..m.req_len], "Content-Length: 11\r\n"), "content-length");
     ck(contains(m.req[0..m.req_len], "Connection: close\r\n"), "connection");
+    ck(endsWith(m.req[0..m.req_len], want_req_body), "request body exact");
+    ck(contains(m.req[0..m.req_len], "\r\n\r\ncmd=ls-refs"), "request body after blank line");
 
     const hct = headerValue(head, "Content-Type");
     ck(contains(hct, "application/x-git-upload-pack-result"), "head content-type");
