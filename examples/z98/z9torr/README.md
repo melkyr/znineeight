@@ -12,6 +12,8 @@ cross-restart resume). M4 adds **MSE/PE protocol encryption**, a **UDP tracker
 (BEP 15)**, **DHT (BEP 5) + PEX (BEP 11)** peer discovery, and fixes the
 all-zero `peer_id`.
 
+Policy: every example local and static is explicitly initialized; no `= undefined` is used.
+
 ## Building with zig1
 
 The compiler is self-hosted. A seed build (`scripts/seed/build_from_seed.sh`)
