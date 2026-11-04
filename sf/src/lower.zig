@@ -7206,19 +7206,20 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
 // still out of scope (non-constant expressions, function-local consts --
 // lowering has no local-const scope).
 fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) ?u64 {
-    var node = ast_mod.astStoreNodeAt(self.ctx.store, item_idx);
+    var item = ast_mod.astUnwrapParensBounded(self.ctx.store, item_idx, @intCast(u32, 16));
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, item);
     if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal) {
-        return ast_mod.astStoreIntValue(self.ctx.store, item_idx);
+        return ast_mod.astStoreIntValue(self.ctx.store, item);
     }
     if (node.kind == AstKind.negate) {
-        return lowerSwitchCaseItemConstValue(self, item_idx, cond_ty_id);
+        return lowerSwitchCaseItemConstValue(self, item, cond_ty_id);
     }
     if (node.kind == AstKind.bool_literal) {
         if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return @intCast(u64, 1);
         return @intCast(u64, 0);
     }
     if (node.kind == AstKind.enum_literal) {
-        var el_name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, item_idx);
+        var el_name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, item);
         // Task 6a: the u32 `enum_value_table` keeps only the low 32 bits of an
         // enum member value, so any enum discriminant above u32 (signed or
         // unsigned) must be resolved by name first. Tagged unions and
@@ -7231,7 +7232,7 @@ fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) 
                 }
             }
         }
-        var el_table = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item_idx);
+        var el_table = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item);
         if (el_table) |v| { return @intCast(u64, v); }
         // Sema's switch case-item walk does not descend into range endpoints,
         // so a range endpoint reaches lowering with no `enum_value_table`
@@ -7240,13 +7241,13 @@ fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) 
         return lowerSwitchCaseItemMemberValue(self, el_name_id, cond_ty_id);
     }
     if (node.kind == AstKind.error_literal) {
-        var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, ast_mod.astStoreNodePayload(self.ctx.store, item_idx)));
-        var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item_idx);
+        var cval3: u64 = @intCast(u64, hash_mod.u32ToU32MapGetOrAddDense(self.ctx.error_code_registry, ast_mod.astStoreNodePayload(self.ctx.store, item)));
+        var cev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item);
         if (cev3) |v| { cval3 = @intCast(u64, v); }
         return cval3;
     }
     if (node.kind == AstKind.field_access) {
-        var fa_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, item_idx);
+        var fa_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, item);
         // Task 6a: a member of ANY enum backing can carry a discriminant wider
         // than the u32 `enum_value_table` slot (signed or unsigned), so resolve
         // the member by name first. Tagged unions and `.tag` switches keep the
@@ -7263,19 +7264,19 @@ fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) 
         // `enum_value_table` while the condition's own resolved type stays the
         // u32 tag; honor the recorded ordinal here (identical to the value the
         // condition-type member walk yields for all pre-existing switches).
-        var fa_ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item_idx);
+        var fa_ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item);
         if (fa_ev) |fv| { return @intCast(u64, fv); }
         // D2: a qualified/shorthand enum member or a tagged-union field tag.
         if (lowerSwitchCaseItemMemberValue(self, fa_name_id, cond_ty_id)) |mv| return mv;
         // FX1: a module-qualified constant (`mod.LO`, `mod.LOMEM`).
-        return lowerSwitchCaseItemConstValue(self, item_idx, cond_ty_id);
+        return lowerSwitchCaseItemConstValue(self, item, cond_ty_id);
     }
     if (node.kind == AstKind.ident_expr) {
         // FX1: an unqualified enum member (`Blue`) or a named constant
         // (`LO`, `PICK`, `LOMEM`).
-        var id_name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, item_idx);
+        var id_name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, item);
         if (lowerSwitchCaseItemMemberValue(self, id_name_id, cond_ty_id)) |mv| return mv;
-        return lowerSwitchCaseItemConstValue(self, item_idx, cond_ty_id);
+        return lowerSwitchCaseItemConstValue(self, item, cond_ty_id);
     }
     return null;
 }
@@ -7420,8 +7421,10 @@ fn lowerSwitchCondIsSigned(self: *LirLowerer, cond_ty_id: ?u32) u8 {
 fn lowerAppendSwitchCaseItem(self: *LirLowerer, item_idx: u32, prong_bb_id: u32, cond_ty_id: ?u32) void {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, item_idx);
     if (node.kind == AstKind.range_inclusive or node.kind == AstKind.range_exclusive) {
-        var lo_opt = lowerSwitchCaseItemValue(self, node.child_0, cond_ty_id);
-        var hi_opt = lowerSwitchCaseItemValue(self, node.child_1, cond_ty_id);
+        var lo_node = ast_mod.astUnwrapParensBounded(self.ctx.store, node.child_0, @intCast(u32, 16));
+        var hi_node = ast_mod.astUnwrapParensBounded(self.ctx.store, node.child_1, @intCast(u32, 16));
+        var lo_opt = lowerSwitchCaseItemValue(self, lo_node, cond_ty_id);
+        var hi_opt = lowerSwitchCaseItemValue(self, hi_node, cond_ty_id);
         if (lo_opt) |lo| {
             if (hi_opt) |hi| {
                 if (lowerSwitchCondIsSigned(self, cond_ty_id) != @intCast(u8, 0)) {

@@ -3975,15 +3975,7 @@ fn semaOrelseFallbackDiverges(self: *SemanticAnalyzer, node_idx: u32) bool {
 // empty paren (child_0 == 0, returning that paren node), or after `max_depth`
 // unwraps (returning the node reached) -- exactly the hand-rolled loops'.
 fn semaUnwrapParensBounded(self: *SemanticAnalyzer, node_idx: u32, max_depth: u32) u32 {
-    var n = node_idx;
-    var d: u32 = @intCast(u32, 0);
-    while (d < max_depth) : (d += @intCast(u32, 1)) {
-        var nd = ast_mod.astStoreNodeAt(self.store, n);
-        if (nd.kind != AstKind.paren_expr) return n;
-        if (nd.child_0 == @intCast(u32, 0)) return n;
-        n = nd.child_0;
-    }
-    return n;
+    return ast_mod.astUnwrapParensBounded(self.store, node_idx, max_depth);
 }
 
 fn semaUnwrapParens(self: *SemanticAnalyzer, node_idx: u32) u32 {
@@ -4989,7 +4981,9 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     }
     var cond_unsigned: u8 = @intCast(u8, 0);
     if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID and cond_type != type_mod.TYPE_UNDEFINED and @intCast(usize, cond_type) < self.registry.types_len) {
-        if (type_mod.typeKindIsUnsignedIntBase(self.registry.types_items[@intCast(usize, cond_type)].kind) != @intCast(u8, 0)) cond_unsigned = @intCast(u8, 1);
+        var cond_kind = self.registry.types_items[@intCast(usize, cond_type)].kind;
+        if (type_mod.typeKindIsUnsignedIntBase(cond_kind) != @intCast(u8, 0)) cond_unsigned = @intCast(u8, 1);
+        if (cond_kind == type_mod.TypeKind.bool_type) cond_unsigned = @intCast(u8, 1);
     }
     var unified: u32 = @intCast(u32, 0);
     var unified_node: u32 = @intCast(u32, 0);

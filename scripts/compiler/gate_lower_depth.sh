@@ -105,6 +105,15 @@ set -euo pipefail
 #      rejects rc 2 with `error[3000]` and NO secondary `error[3062]`.
 #  17-18. `enum(u40) { A = 0, B = 4294967297 }` resolves the wide discriminant
 #      exactly (shorthand `.B` and qualified `E.B`) at runtime: stdout `8`, rc 0.
+#  19-25. parenthesized case items / range endpoints resolve in lowering:
+#      `(-1)`, `(- 1)`, `((1))`, `(-5)...(-1)`, `(NEG)`/`((NEG))`, `(true)` on
+#      bool, and `((1))` on u32 each emit a real `case` and run to the committed
+#      stdout/rc instead of being silently dropped.
+#  26-28. negative case items reject with `error[3062]`, rc 2, 0 `.c`:
+#      `(-1)` on u32 (pins the pre-existing const-path reject) and bare/paren
+#      `-1` on bool (`type 'bool' cannot represent integer value '-1'`).
+#  29. bool case items keep the tolerated `true`/`false`/`0`/`1` forms accepted,
+#      including parenthesized variants; stdout `101111111`, rc 0.
 #
 # With second arg `known-red`, cases 1 and 2 are reported as KNOWN-RED (pending
 # Tasks 2/4) and do not fail the gate. Their REAL rc is always printed; the
@@ -942,6 +951,174 @@ for _c16w in switch_enum_u40_wide_ok_xmod switch_enum_u40_wide_qualified_ok_xmod
     fi
     _c16idx=$((_c16idx + 1))
 done
+
+# ---- 19-25. parenthesized case items resolve in lowering (Task 6b) ----
+# A `paren_expr` wrapper around a case item / range endpoint must be unwrapped
+# iteratively before dispatch: `(-1)`, `(- 1)`, `((1))`, `(-5)...(-1)`,
+# `(NEG)`/`((NEG))`, `(true)` on bool, and `((1))` on u32 all resolve to a real
+# `case` label instead of being silently dropped (only `default:`).
+_c6b_case=19
+for _c6b_ok in \
+    switch_neg_paren_i32_ok_xmod \
+    switch_neg_paren_space_ok_xmod \
+    switch_paren_double_ok_xmod \
+    switch_neg_paren_range_ok_xmod \
+    switch_paren_named_const_ok_xmod \
+    switch_bool_paren_ok_xmod \
+    switch_u32_paren_ok_xmod; do
+    _c6b_dn="c${_c6b_case}_$_c6b_ok"
+    mkdir -p "$WORK/$_c6b_dn"
+    set +e
+    ( cd "$WORK/$_c6b_dn" && timeout 120 "$ZIG1" -ffast -o "$WORK/$_c6b_dn" \
+        "$ROOT/repro/mi_matrix/$_c6b_ok/main.zig" ) \
+        >"$WORK/$_c6b_dn.out" 2>"$WORK/$_c6b_dn.err"
+    _c6b_rc=$?
+    set -e
+    _c6b_okflag=1
+    if [ "$_c6b_rc" -ne 0 ]; then
+        _c6b_okflag=0
+        bad "case $_c6b_case: $_c6b_ok emit rc=$_c6b_rc want 0"
+    elif ! ( cd "$WORK/$_c6b_dn" && timeout 120 sh build_target.sh linux prog ) \
+        >"$WORK/$_c6b_dn.build.log" 2>&1; then
+        _c6b_okflag=0
+        bad "case $_c6b_case: $_c6b_ok build_target failed (see $WORK/$_c6b_dn.build.log)"
+    else
+        set +e
+        ( cd "$WORK/$_c6b_dn" && timeout 10 ./prog </dev/null ) \
+            >"$WORK/$_c6b_dn.run.out" 2>"$WORK/$_c6b_dn.run.err"
+        _c6b_run=$?
+        set -e
+        if ! cmp -s "$WORK/$_c6b_dn.run.out" "$ROOT/repro/mi_matrix/$_c6b_ok/expected.txt"; then
+            _c6b_okflag=0
+            bad "case $_c6b_case: $_c6b_ok runtime stdout mismatch"
+        fi
+        _c6b_want="$(tr -d '\r\n' <"$ROOT/repro/mi_matrix/$_c6b_ok/expected.rc")"
+        if [ "$_c6b_run" -ne "$_c6b_want" ]; then
+            _c6b_okflag=0
+            bad "case $_c6b_case: $_c6b_ok runtime rc=$_c6b_run want $_c6b_want"
+        fi
+    fi
+    if [ "$_c6b_okflag" -eq 1 ]; then
+        report_case "$_c6b_case" "$_c6b_rc" "PASS ($_c6b_ok runtime)"
+    else
+        report_case "$_c6b_case" "$_c6b_rc" "FAIL ($_c6b_ok runtime)"
+    fi
+    _c6b_case=$((_c6b_case + 1))
+done
+
+# ---- 26-28. negative case items reject (Task 6b) ----
+# `(-1)` on u32 already rejected via the const evaluator; bare and
+# parenthesized `-1` on bool are now rejected by the same `error[3062]` gate.
+# All three must be rc 2 with 0 `.c` and the exact type/message span.
+for _c6b_rej in \
+    switch_u32_paren_neg_reject_xmod \
+    switch_bool_neg_reject_xmod \
+    switch_bool_paren_neg_reject_xmod; do
+    _c6b_dn="c${_c6b_case}_$_c6b_rej"
+    mkdir -p "$WORK/$_c6b_dn"
+    set +e
+    ( cd "$WORK/$_c6b_dn" && timeout 120 "$ZIG1" -ffast --dump-c89 \
+        -o "$WORK/$_c6b_dn" "$ROOT/repro/mi_matrix/$_c6b_rej/main.zig" ) \
+        >"$WORK/$_c6b_dn.out" 2>"$WORK/$_c6b_dn.err"
+    _c6b_rc=$?
+    set -e
+    _c6b_okflag=1
+    if [ "$_c6b_rc" -ne 2 ]; then
+        _c6b_okflag=0
+        bad "case $_c6b_case: $_c6b_rej rc=$_c6b_rc want 2"
+    fi
+    if ! grep -q 'error\[3062\]' "$WORK/$_c6b_dn.err" 2>/dev/null; then
+        _c6b_okflag=0
+        bad "case $_c6b_case: $_c6b_rej missing error[3062]"
+    fi
+    case "$_c6b_rej" in
+        switch_u32_paren_neg_reject_xmod)
+            _c6b_msg="type 'u32' cannot represent integer value '-1'" ;;
+        *)
+            _c6b_msg="type 'bool' cannot represent integer value '-1'" ;;
+    esac
+    if ! grep -qF "$_c6b_msg" "$WORK/$_c6b_dn.err" 2>/dev/null; then
+        _c6b_okflag=0
+        bad "case $_c6b_case: $_c6b_rej missing message: $_c6b_msg"
+    fi
+    if [ -n "$(find "$WORK/$_c6b_dn" -name '*.c' -print -quit 2>/dev/null)" ]; then
+        _c6b_okflag=0
+        bad "case $_c6b_case: $_c6b_rej emitted .c despite reject"
+    fi
+    if [ "$_c6b_okflag" -eq 1 ]; then
+        report_case "$_c6b_case" "$_c6b_rc" "PASS ($_c6b_rej error[3062], 0 .c)"
+    else
+        report_case "$_c6b_case" "$_c6b_rc" "FAIL ($_c6b_rej reject)"
+    fi
+    _c6b_case=$((_c6b_case + 1))
+done
+
+# ---- 29. bool case items keep true/false/0/1 accepted (including parens) ----
+# The new bool-negative reject must not reject the pre-existing tolerated
+# positive forms. Every function selects the 1-prong; expected stdout is the
+# digit string `101111111`.
+cat >"$WORK/bool_case_matrix.zig" <<'EOF'
+const std = @import("std");
+
+fn t1(b: bool) i32 { return switch (b) { true => 1, else => 0 }; }
+fn t2(b: bool) i32 { return switch (b) { false => 1, else => 0 }; }
+fn t3(b: bool) i32 { return switch (b) { 0 => 1, else => 0 }; }
+fn t4(b: bool) i32 { return switch (b) { 1 => 1, else => 0 }; }
+fn p1(b: bool) i32 { return switch (b) { (true) => 1, else => 0 }; }
+fn p2(b: bool) i32 { return switch (b) { ((false)) => 1, else => 0 }; }
+fn p3(b: bool) i32 { return switch (b) { (0) => 1, else => 0 }; }
+fn p4(b: bool) i32 { return switch (b) { ((1)) => 1, else => 0 }; }
+
+pub fn main() void {
+    std.io.printInt(t1(true));
+    std.io.printInt(t1(false));
+    std.io.printInt(t2(false));
+    std.io.printInt(t3(false));
+    std.io.printInt(t4(true));
+    std.io.printInt(p1(true));
+    std.io.printInt(p2(false));
+    std.io.printInt(p3(false));
+    std.io.printInt(p4(true));
+    std.io.writeByte('\n');
+}
+EOF
+printf '101111111\n' >"$WORK/bool_case_matrix.expected"
+_c6b_dn="c${_c6b_case}_bool_case_matrix"
+mkdir -p "$WORK/$_c6b_dn"
+set +e
+( cd "$WORK/$_c6b_dn" && timeout 120 "$ZIG1" -ffast -o "$WORK/$_c6b_dn" \
+    "$WORK/bool_case_matrix.zig" ) \
+    >"$WORK/$_c6b_dn.out" 2>"$WORK/$_c6b_dn.err"
+_c6b_rc=$?
+set -e
+_c6b_okflag=1
+if [ "$_c6b_rc" -ne 0 ]; then
+    _c6b_okflag=0
+    bad "case $_c6b_case: bool_case_matrix emit rc=$_c6b_rc want 0"
+elif ! ( cd "$WORK/$_c6b_dn" && timeout 120 sh build_target.sh linux prog ) \
+    >"$WORK/$_c6b_dn.build.log" 2>&1; then
+    _c6b_okflag=0
+    bad "case $_c6b_case: bool_case_matrix build_target failed (see $WORK/$_c6b_dn.build.log)"
+else
+    set +e
+    ( cd "$WORK/$_c6b_dn" && timeout 10 ./prog </dev/null ) \
+        >"$WORK/$_c6b_dn.run.out" 2>"$WORK/$_c6b_dn.run.err"
+    _c6b_run=$?
+    set -e
+    if ! cmp -s "$WORK/$_c6b_dn.run.out" "$WORK/bool_case_matrix.expected"; then
+        _c6b_okflag=0
+        bad "case $_c6b_case: bool_case_matrix runtime stdout mismatch (want 101111111)"
+    fi
+    if [ "$_c6b_run" -ne 0 ]; then
+        _c6b_okflag=0
+        bad "case $_c6b_case: bool_case_matrix runtime rc=$_c6b_run want 0"
+    fi
+fi
+if [ "$_c6b_okflag" -eq 1 ]; then
+    report_case "$_c6b_case" "$_c6b_rc" "PASS (bool true/false/0/1 + parens accepted)"
+else
+    report_case "$_c6b_case" "$_c6b_rc" "FAIL (bool positive matrix)"
+fi
 
 if [ "$fail" -eq 0 ]; then
     echo "LOWER_DEPTH GATE OK"

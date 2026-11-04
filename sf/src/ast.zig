@@ -829,6 +829,18 @@ pub fn astStoreNodeAt(store: *AstStore, idx: u32) AstNode {
     return store.slots[entry.slot].node_buf[off];
 }
 
+pub fn astUnwrapParensBounded(store: *AstStore, idx: u32, max_depth: u32) u32 {
+    var n = idx;
+    var d: u32 = @intCast(u32, 0);
+    while (d < max_depth) : (d += @intCast(u32, 1)) {
+        var nd = astStoreNodeAt(store, n);
+        if (nd.kind != AstKind.paren_expr) return n;
+        if (nd.child_0 == @intCast(u32, 0)) return n;
+        n = nd.child_0;
+    }
+    return n;
+}
+
 pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u32 {
     var start = @intCast(u32, store.extra_children.len);
     var i: usize = 0;
