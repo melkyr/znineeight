@@ -4828,9 +4828,9 @@ fn semanticAnalyzerResolveSwitchCaseMember(self: *SemanticAnalyzer, node_idx: u3
 // F1: a negative literal / named-constant case item (or range endpoint) is
 // rejected when the switch condition is a concrete unsigned integer type,
 // matching Zig's `type '<T>' cannot represent integer value '<v>'` wording.
-// The check is deliberately limited to integer conditions: signed integers,
-// bool, the untyped integer-literal type, and enum/tagged-union conditions are
-// not validated here.
+// The check also runs for `bool` conditions (a negative integer item is not a
+// valid bool value); signed integers, the untyped integer-literal type, and
+// enum/tagged-union conditions are not validated here.
 fn semanticAnalyzerCheckUnsignedCaseItem(self: *SemanticAnalyzer, item_idx: u32, cond_tid: u32) void {
     if (item_idx == @intCast(u32, 0)) return;
     var item = ast_mod.astStoreNodeAt(self.store, item_idx);
