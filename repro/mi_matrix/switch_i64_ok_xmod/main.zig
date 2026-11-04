@@ -1,7 +1,8 @@
-// switch_i64_ok_xmod — Task TA reproducer (defect A): a legal Z98 `switch` on
-// an `i64` is emitted as a C `switch` whose controlling expression is 64-bit,
-// which OpenWatcom 1.9 rejects (E1078: Invalid type for switch expression).
-// The emitted C is accepted by GCC; the defect is C portability.
+// switch_i64_ok_xmod — Task TA regression reproducer (defect A, fixed): a legal
+// Z98 `switch` on an `i64` now lowers to an if/else chain instead of a C
+// `switch` whose controlling expression was 64-bit, which OpenWatcom 1.9
+// rejected (E1078: Invalid type for switch expression). The emitted C must
+// stay portable across GCC, OpenWatcom 1.9, and MSVC 6.
 //
 // Negative case literals are not resolved in case items, so the cases stay
 // positive and the condition value is positive too. `x` is 2^32, so the

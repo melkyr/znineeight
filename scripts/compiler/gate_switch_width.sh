@@ -13,8 +13,9 @@ set -uo pipefail
 #   3. FAIL if any resolved controlling temp is declared as a 64-bit C type
 #      (`*_u64`, `*_i64`, `__int64`, `unsigned __int64`, `long long`).
 #
-# The gate is RED while the defect is present. It is non-vacuous: a repro
-# whose emitted C has no resolvable `switch` also FAILS.
+# The gate is RED while the defect is present. A repro whose emitted C still
+# contains an unresolvable `switch` FAILS; a repro with no `switch` at all
+# PASSES (the 64-bit condition was lowered to an if/else chain).
 #
 # usage: scripts/compiler/gate_switch_width.sh <path/to/zig1>
 
@@ -47,7 +48,8 @@ REPROS=(
 #   SW64 <line> <expr> <decl-line> <type>
 #   SWOK <line> <expr> <decl-line> <type>
 #   SWUNRESOLVED <line> <expr>
-# and exits 2 when no switch resolved at all.
+# and prints NOSWITCH (exit 0) when the file has no switch at all; it exits 2
+# when switches exist but none resolve.
 read -r -d '' PARSE_AWK <<'AWK'
 function trim(s) {
     sub(/^[ \t]+/, "", s)
@@ -73,6 +75,7 @@ function trim(s) {
     }
     # Switch: `switch (<expr>) {`
     if (match(line, /^[ \t]*switch[ \t]*\(/)) {
+        seen++
         rest = line
         sub(/^[^(]*\(/, "", rest)
         # Drop the final closing paren (and optional brace).
@@ -102,6 +105,7 @@ function trim(s) {
     }
 }
 END {
+    if (seen == 0) { print "NOSWITCH"; exit 0 }
     if (resolved == 0) exit 2
     exit 0
 }
@@ -127,6 +131,10 @@ check_repro() {
     if ! awk "$PARSE_AWK" "$out/emit.c" >"$out/switches.txt"; then
         bad "$tag: emitted C has no resolvable 'switch' controlling expression"
         sed -n '1,20p' "$out/switches.txt" >&2
+        return
+    fi
+    if grep -q '^NOSWITCH$' "$out/switches.txt"; then
+        note "$tag: OK (no C switch; 64-bit condition lowered to if/else)"
         return
     fi
     hits="$(grep -c '^SW64 ' "$out/switches.txt" || true)"
