@@ -684,3 +684,12 @@ was `4c9f760ae825d7fcf91cbf7a2500a4a4` (M5b; prior M5
 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`,
 M1 `344c26ed89dd0830443fa5e16b870ec0`,
 M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`).
+
+## Z98 idioms
+
+The sources stay inside the Z98 subset (free functions only, no generics or
+`@Type`). Iteration uses `for (slice) |item|` / `for (0..n) |i|` captures,
+including `|*item|` for in-place writes; dispatch uses `switch` with an explicit
+`else`; cleanup uses `defer`/`errdefer`; early exits use labeled blocks/loops;
+and optionals use `if (opt) |v|` / `while (opt) |v|` captures. These are
+syntactic idioms only; the decode, IMDCT and audio paths are unchanged.

@@ -282,3 +282,13 @@ M5 makes the client build and run for Win9x.
 
 Next: M6 T5.5 covers z9play; z9torr's real Win98/Me load/run verification is
 operator-owned and pending (plan Amendment 5).
+
+## Z98 idioms
+
+The sources stay inside the Z98 subset (free functions only, no generics or
+`@Type`). Iteration uses `for (slice) |item|` / `for (0..n) |i|` captures,
+including `|*item|` for in-place writes; dispatch uses `switch` with an explicit
+`else`; cleanup uses `defer`/`errdefer`; early exits use labeled blocks/loops;
+and optionals use `if (opt) |v|` / `while (opt) |v|` captures. The cold 1 Hz
+stats renderer aggregates the `[5]u32` rolling window with
+`std.fold.foldU32` (`stats.zig`), never in a decode or crypto hot path.
