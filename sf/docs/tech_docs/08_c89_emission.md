@@ -423,7 +423,7 @@ boundary (doc 03) — `emitTypePasses` retains ZERO classification calls
 | `error_union_type` | `emitErrorUnionType` | `typedef struct { union { <type> payload; int err; } data; int is_error; } EU_<payload>;` (void payload: `{ int err; int is_error; }`) |
 | `error_set_type` | `emitErrorSetType` | `typedef int <cname>;` + `#define <cname>_<tag> <N>` per tag |
 | `tagged_union_type` | `emitTaggedUnionType` | Complex struct + union + tag constants |
-| `enum_type` | `emitEnumType` | `typedef <backing> <cname>;` + `#define <cname>_<member> <val>` per member (64-bit member values via `itoa64`) |
+| `enum_type` | `emitEnumType` | `typedef <backing> <cname>;` + `#define <cname>_<member> <val>` per member (64-bit member values via `itoa64`; a signed backing keeps its signed C type — `int` / the signed 64-bit carrier — and a negative discriminant is emitted as the signed literal, e.g. `#define <cname>_A -1`) |
 | `struct_type` | `emitStructType` | `struct <cname> { <type> <field>; ... };` — or, when `typeRegistryIsPacked`, a carrier `typedef struct { unsigned char _[N]; } <cname>;`; an empty non-packed `struct {}` (`fields_count == 0`) emits `struct <cname> { unsigned char _[1]; };` so the C layout matches the registry's min-1 size 1 / align 1 (**A2-F**) |
 | `union_type` | `emitUnionType` | `union <cname> { <type> <field>; ... };` — real C union (all members at offset 0, size = max member) matching `@sizeOf`'s union-max. Keyword from `aggregateKeyword(ty.kind)` — the same helper as the two fwd-decl sites, so the C89 tag-namespace (struct/union tags share one namespace) always agrees. Guard tag is `ZIG_UNION_` (see §1.17). |
 | `packed_union_type` | `emitUnionType` | carrier `typedef struct { unsigned char _[N]; } <cname>;` (untagged, members at bit 0 via bitfield access) |
@@ -626,7 +626,7 @@ Every `LirInst` variant handled in `emitInst`:
 | `.call` | `result = callee(args...);` (indirect call through function pointer) |
 | `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) |
 | `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump; void return → `fn_name(args...); return;`; extern → original name; indirect callee via `resolveTempName` |
-| `.switch_br` | 32-bit: `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }`; signed conditions print negative labels (`case -1:`), unsigned conditions keep unsigned decimal. 64-bit conditions lower to a portable `if (cond == <literal>) goto z_bb_<target>; else if (...) ...; else goto z_bb_<else>;` chain (signed negative labels `(-Z98_I64_C(<n>))` / `Z98_I64_MIN`; unsigned labels `Z98_U64_C(<n>)`). |
+| `.switch_br` | 32-bit: `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }`; signed conditions (including an enum whose backing is signed) print negative labels (`case -1:`), unsigned conditions keep unsigned decimal. 64-bit conditions lower to a portable `if (cond == <literal>) goto z_bb_<target>; else if (...) ...; else goto z_bb_<else>;` chain (signed negative labels `(-Z98_I64_C(<n>))` / `Z98_I64_MIN`; unsigned labels `Z98_U64_C(<n>)`). |
 | `.wrap_optional` | `result.has_value = 1;\n result.value = src;` |
 | `.int_cast` | `result = (type)src;` (unchecked plain cast; the checked `-fsafe` path is the separate `.int_cast_checked`) |
 | `.int_cast_checked` | `result = (type)zig_cast_checked_s/u((unsigned long long)src, <sw>u, <ss>u, <dw>u);` (`-fsafe` width/sign-aware) |
