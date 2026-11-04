@@ -758,6 +758,21 @@ fn getTempTypeByIndex(emitter: *C89Emitter, temp_id: u32) u32 {
     return emitter.current_fn.hoisted_temps.items[@intCast(usize, p)].type_id;
 }
 
+// A2/A: true when a temp's resolved C integer type is 64-bit (i64/u64, a
+// 64-bit arbitrary int, or a 64-bit-backed enum). `switch_br` lowers such
+// conditions to a C if/else chain because `switch` on a 64-bit controlling
+// expression is rejected by OpenWatcom (`E1078`) and is not C89.
+fn tempIs64BitInt(emitter: *C89Emitter, temp_id: u32) u8 {
+    var tid = getTempTypeByIndex(emitter, temp_id);
+    if (tid == @intCast(u32, 0xFFFFFFFF)) return @intCast(u8, 0);
+    if (tid == type_mod.TYPE_UNDEFINED or tid == type_mod.TYPE_VOID) return @intCast(u8, 0);
+    var kind = emitter.registry.types_items[@intCast(usize, tid)].kind;
+    if (kind != type_mod.TypeKind.enum_type and
+        type_mod.typeRegistryIsIntKind(emitter.registry, tid) == @intCast(u8, 0)) return @intCast(u8, 0);
+    if (type_mod.typeRegistryIntWidthBits(emitter.registry, tid) == @intCast(u8, 64)) return @intCast(u8, 1);
+    return @intCast(u8, 0);
+}
+
 // D1-1: the `first matching hoisted temp with a concrete (non-UNDEFINED) type`
 // truth table, returning the type id or TYPE_UNDEFINED (0) when absent. This is
 // the exact shape the int-const / addr-of-field / tagged-binop / temp-info
@@ -4310,8 +4325,12 @@ fn nestConsumerWired(emitter: *C89Emitter, t: u32) u8 {
             return @intCast(u8, 0);
         },
         .switch_br => |s| {
-            if (s.cond == t) return @intCast(u8, 1);
-            return @intCast(u8, 0);
+            if (s.cond != t) return @intCast(u8, 0);
+            // A2/A: the 64-bit lowering reads the condition once per case, so
+            // keep it materialized (a 64-bit condition is evaluated once
+            // instead of duplicating an inlined expression).
+            if (tempIs64BitInt(emitter, s.cond) != @intCast(u8, 0)) return @intCast(u8, 0);
+            return @intCast(u8, 1);
         },
         .ret => |v| {
             if (v == t) return @intCast(u8, 1);
@@ -8370,45 +8389,94 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             }
         },
         .switch_br => |s| {
-            var s1: []const u8 = "switch (";
-            bufferedWriterWrite(&emitter.writer, s1);
-            emitValueExpr(emitter, s.cond, @intCast(u32, 0));
-            var s2: []const u8 = ") {\n";
-            bufferedWriterWrite(&emitter.writer, s2);
-            emitter.indent += @intCast(u32, 1);
-            var i: u32 = s.cases_start;
-            var end = s.cases_start + s.cases_count;
-            while (i < end) : (i += @intCast(u32, 1)) {
-                var c = emitter.switch_cases.items[@intCast(usize, i)];
-                var case_kw: []const u8 = "case ";
-                bufferedWriterWrite(&emitter.writer, case_kw);
-                var val_buf: [20]u8 = undefined;
-                var val_len = itoa_mod.itoa64(c.value, val_buf[0..]);
-                var val_start = @intCast(usize, @intCast(u32, val_buf.len) - @intCast(u32, 1) - val_len);
-                var val_str = val_buf[val_start .. @intCast(usize, @intCast(u32, val_buf.len) - @intCast(u32, 1))];
-                bufferedWriterWrite(&emitter.writer, val_str);
-                var gotoa: []const u8 = ": goto z_bb_";
-                bufferedWriterWrite(&emitter.writer, gotoa);
-                var bb_buf: [10]u8 = undefined;
-                var bb_len = itoa_mod.itoa(c.target_bb, bb_buf[0..]);
-                var bb_start = @intCast(usize, @intCast(u32, bb_buf.len) - @intCast(u32, 1) - bb_len);
-                var bb_str = bb_buf[bb_start .. @intCast(usize, @intCast(u32, bb_buf.len) - @intCast(u32, 1))];
-                bufferedWriterWrite(&emitter.writer, bb_str);
-                var semi: []const u8 = ";\n";
-                bufferedWriterWrite(&emitter.writer, semi);
+            if (tempIs64BitInt(emitter, s.cond) != @intCast(u8, 0)) {
+                // A2/A: C89/OpenWatcom reject `switch` on a 64-bit controlling
+                // expression. Lower to an if/else chain with the same goto
+                // targets; the condition temp is materialized (see
+                // `nestConsumerWired`) and its type drives exact literals.
+                var cond_tid = getTempTypeByIndex(emitter, s.cond);
+                var i: u32 = s.cases_start;
+                var end = s.cases_start + s.cases_count;
+                var first: u8 = @intCast(u8, 1);
+                while (i < end) : (i += @intCast(u32, 1)) {
+                    var c = emitter.switch_cases.items[@intCast(usize, i)];
+                    if (first != @intCast(u8, 0)) {
+                        var if_kw: []const u8 = "if (";
+                        bufferedWriterWrite(&emitter.writer, if_kw);
+                        first = @intCast(u8, 0);
+                    } else {
+                        var elif_kw: []const u8 = "else if (";
+                        bufferedWriterWrite(&emitter.writer, elif_kw);
+                    }
+                    emitValueExpr(emitter, s.cond, @intCast(u32, 0));
+                    var eq: []const u8 = " == ";
+                    bufferedWriterWrite(&emitter.writer, eq);
+                    writeIntConstRvalue(emitter, c.value, cond_tid, "");
+                    var gotoa: []const u8 = ") goto z_bb_";
+                    bufferedWriterWrite(&emitter.writer, gotoa);
+                    var bb_buf: [10]u8 = undefined;
+                    var bb_len = itoa_mod.itoa(c.target_bb, bb_buf[0..]);
+                    var bb_start = @intCast(usize, @intCast(u32, bb_buf.len) - @intCast(u32, 1) - bb_len);
+                    var bb_str = bb_buf[bb_start .. @intCast(usize, @intCast(u32, bb_buf.len) - @intCast(u32, 1))];
+                    bufferedWriterWrite(&emitter.writer, bb_str);
+                    var semi: []const u8 = ";\n";
+                    bufferedWriterWrite(&emitter.writer, semi);
+                }
+                if (first != @intCast(u8, 0)) {
+                    var goto_only: []const u8 = "goto z_bb_";
+                    bufferedWriterWrite(&emitter.writer, goto_only);
+                } else {
+                    var else_kw: []const u8 = "else goto z_bb_";
+                    bufferedWriterWrite(&emitter.writer, else_kw);
+                }
+                var def_buf: [10]u8 = undefined;
+                var def_len = itoa_mod.itoa(s.else_bb, def_buf[0..]);
+                var def_start = @intCast(usize, @intCast(u32, def_buf.len) - @intCast(u32, 1) - def_len);
+                var def_str = def_buf[def_start .. @intCast(usize, @intCast(u32, def_buf.len) - @intCast(u32, 1))];
+                bufferedWriterWrite(&emitter.writer, def_str);
+                var semi2: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, semi2);
+            } else {
+                var s1: []const u8 = "switch (";
+                bufferedWriterWrite(&emitter.writer, s1);
+                emitValueExpr(emitter, s.cond, @intCast(u32, 0));
+                var s2: []const u8 = ") {\n";
+                bufferedWriterWrite(&emitter.writer, s2);
+                emitter.indent += @intCast(u32, 1);
+                var i: u32 = s.cases_start;
+                var end = s.cases_start + s.cases_count;
+                while (i < end) : (i += @intCast(u32, 1)) {
+                    var c = emitter.switch_cases.items[@intCast(usize, i)];
+                    var case_kw: []const u8 = "case ";
+                    bufferedWriterWrite(&emitter.writer, case_kw);
+                    var val_buf: [24]u8 = undefined;
+                    var val_len = itoa_mod.itoa64(c.value, val_buf[0..]);
+                    var val_start = @intCast(usize, @intCast(u32, val_buf.len) - @intCast(u32, 1) - val_len);
+                    var val_str = val_buf[val_start .. @intCast(usize, @intCast(u32, val_buf.len) - @intCast(u32, 1))];
+                    bufferedWriterWrite(&emitter.writer, val_str);
+                    var gotoa: []const u8 = ": goto z_bb_";
+                    bufferedWriterWrite(&emitter.writer, gotoa);
+                    var bb_buf: [10]u8 = undefined;
+                    var bb_len = itoa_mod.itoa(c.target_bb, bb_buf[0..]);
+                    var bb_start = @intCast(usize, @intCast(u32, bb_buf.len) - @intCast(u32, 1) - bb_len);
+                    var bb_str = bb_buf[bb_start .. @intCast(usize, @intCast(u32, bb_buf.len) - @intCast(u32, 1))];
+                    bufferedWriterWrite(&emitter.writer, bb_str);
+                    var semi: []const u8 = ";\n";
+                    bufferedWriterWrite(&emitter.writer, semi);
+                }
+                var default_kw: []const u8 = "default: goto z_bb_";
+                bufferedWriterWrite(&emitter.writer, default_kw);
+                var def_buf: [10]u8 = undefined;
+                var def_len = itoa_mod.itoa(s.else_bb, def_buf[0..]);
+                var def_start = @intCast(usize, @intCast(u32, def_buf.len) - @intCast(u32, 1) - def_len);
+                var def_str = def_buf[def_start .. @intCast(usize, @intCast(u32, def_buf.len) - @intCast(u32, 1))];
+                bufferedWriterWrite(&emitter.writer, def_str);
+                var semi2: []const u8 = ";\n";
+                bufferedWriterWrite(&emitter.writer, semi2);
+                emitter.indent -= @intCast(u32, 1);
+                var close: []const u8 = "}\n";
+                bufferedWriterWrite(&emitter.writer, close);
             }
-            var default_kw: []const u8 = "default: goto z_bb_";
-            bufferedWriterWrite(&emitter.writer, default_kw);
-            var def_buf: [10]u8 = undefined;
-            var def_len = itoa_mod.itoa(s.else_bb, def_buf[0..]);
-            var def_start = @intCast(usize, @intCast(u32, def_buf.len) - @intCast(u32, 1) - def_len);
-            var def_str = def_buf[def_start .. @intCast(usize, @intCast(u32, def_buf.len) - @intCast(u32, 1))];
-            bufferedWriterWrite(&emitter.writer, def_str);
-            var semi2: []const u8 = ";\n";
-            bufferedWriterWrite(&emitter.writer, semi2);
-            emitter.indent -= @intCast(u32, 1);
-            var close: []const u8 = "}\n";
-            bufferedWriterWrite(&emitter.writer, close);
         },
         .wrap_optional => |w| {
             var insta_w_m: []const u8 = "INSTA:optw\n"; pal.markerWrite(insta_w_m);
