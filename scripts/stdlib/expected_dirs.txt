@@ -100,6 +100,11 @@ repro/mi_matrix/stdlib_default_lib_lookup_xmod
 repro/mi_matrix/stdlib_defer_control_flow_xmod
 repro/mi_matrix/stdlib_defer_queue_reset_xmod
 repro/mi_matrix/stdlib_defer_switch_block_xmod
+repro/mi_matrix/stdlib_deflate_corrupt_xmod
+repro/mi_matrix/stdlib_deflate_dynamic_xmod
+repro/mi_matrix/stdlib_deflate_raw_xmod
+repro/mi_matrix/stdlib_deflate_used_xmod
+repro/mi_matrix/stdlib_deflate_zlib_basic_xmod
 repro/mi_matrix/stdlib_dir_iter_xmod
 repro/mi_matrix/stdlib_ecc_verify_xmod
 repro/mi_matrix/stdlib_enum_init_expr_xmod
