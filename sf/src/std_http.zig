@@ -708,8 +708,8 @@ fn readCloseDelimitedStream(c: *Conn, s: *StreamBuf) HttpError!void {
 // parsing, `Connection: close`, identity + chunked response bodies, and the
 // 1 MiB whole-body cap. Empty content_type/accept omit those headers.
 pub fn httpPostOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, out: *Response) !void {
-    try validatePostHeaders(content_type, accept);
     defer t.close_fn(t.state);
+    try validatePostHeaders(content_type, accept);
     const req = try buildPostHead(arena, url, body.len, content_type, accept);
     try transportWriteAll(t, std.buf.slice(&req));
     if (body.len > 0) try transportWriteAll(t, body);
@@ -747,8 +747,8 @@ pub fn httpPostOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8,
 // an empty body; de-chunked body bytes flow to `sink` through a fixed ~1 MiB
 // arena buffer. The body length is unbounded (hardware-capped).
 pub fn httpPostStreamOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, sink: *ResponseSink, out_head: *Response) !void {
-    try validatePostHeaders(content_type, accept);
     defer t.close_fn(t.state);
+    try validatePostHeaders(content_type, accept);
     const req = try buildPostHead(arena, url, body.len, content_type, accept);
     try transportWriteAll(t, std.buf.slice(&req));
     if (body.len > 0) try transportWriteAll(t, body);
@@ -1017,6 +1017,8 @@ fn postOnce(arena: *std.arena.Arena, url: []const u8, body: []const u8, content_
 }
 
 pub fn post(arena: *std.arena.Arena, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, timeout_ms: u32) HttpError!Response {
+    // Validate before opening a socket: a BadHeader return owns no fd, and
+    // postOnce closes every fd it opens exactly once.
     try validatePostHeaders(content_type, accept);
     var resp = try postOnce(arena, url, body, content_type, accept, timeout_ms);
     if (resp.status == 301 or resp.status == 302 or resp.status == 303 or resp.status == 307) {

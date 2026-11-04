@@ -28,7 +28,7 @@ const Mock = struct {
     req: [512]u8,
     req_len: usize,
     reads: u32,
-    closed: bool,
+    closes: u32,
 };
 
 fn mockReadOne(state: *void, buf: []u8) !usize {
@@ -53,7 +53,7 @@ fn mockWrite(state: *void, data: []const u8) !usize {
 
 fn mockClose(state: *void) void {
     var m: *Mock = @ptrCast(*Mock, state);
-    m.closed = true;
+    m.closes += 1;
 }
 
 const SinkState = struct {
@@ -123,6 +123,37 @@ fn headerValue(resp: http.Response, name: []const u8) []const u8 {
     return empty;
 }
 
+fn streamErrorClosesOnce(url: []const u8, ct: []const u8, accept: []const u8, want_bad_url: bool) void {
+    var storage: [65536]u8 = undefined;
+    var ar = std.arena.init(storage[0..]);
+
+    var m = Mock{ .resp = "", .pos = 0, .req = undefined, .req_len = 0, .reads = 0, .closes = 0 };
+    var t = http.HttpTransport{
+        .state = @ptrCast(*void, &m),
+        .read_fn = mockReadOne,
+        .write_fn = mockWrite,
+        .close_fn = mockClose,
+    };
+    var head: http.Response = undefined;
+    var ss = SinkState{ .buf = undefined, .len = 0, .calls = 0, .head = &head, .first_status = 0, .first_ct_len = 0 };
+    var sink = http.ResponseSink{
+        .state = @ptrCast(*void, &ss),
+        .write_fn = sinkWrite,
+    };
+    var saw: bool = false;
+    http.httpPostStreamOver(&ar, &t, url, "x", ct, accept, &sink, &head) catch |e| {
+        if (want_bad_url) {
+            ck(e == error.BadUrl, "stream bad url");
+        } else {
+            ck(e == error.BadHeader, "stream bad header");
+        }
+        saw = true;
+    };
+    ck(saw, "stream error seen");
+    ck(m.req_len == 0, "no write on stream error");
+    ck(m.closes == 1, "stream close exactly once on error");
+}
+
 pub fn main() void {
     const resp_bytes = "HTTP/1.1 200 OK\r\nContent-Type: application/x-git-upload-pack-result\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\nX-Trailer: v\r\n\r\n";
     const want_body = "hello world";
@@ -130,7 +161,7 @@ pub fn main() void {
 
     var ar = std.arena.init(g_storage[0..]);
 
-    var m = Mock{ .resp = resp_bytes, .pos = 0, .req = undefined, .req_len = 0, .reads = 0, .closed = false };
+    var m = Mock{ .resp = resp_bytes, .pos = 0, .req = undefined, .req_len = 0, .reads = 0, .closes = 0 };
     var t = http.HttpTransport{
         .state = @ptrCast(*void, &m),
         .read_fn = mockReadOne,
@@ -151,7 +182,7 @@ pub fn main() void {
     ck(s.first_ct_len > 0, "out_head header at first sink call");
     ck(head.status == 200, "status");
     ck(head.body.len == 0, "head body empty");
-    ck(m.closed, "closed");
+    ck(m.closes == 1, "closed exactly once");
 
     ck(s.calls >= 1, "sink calls");
     ck(eqBytes(s.buf[0..s.len], want_body), "sink body exact");
@@ -170,6 +201,9 @@ pub fn main() void {
     ck(contains(hct, "application/x-git-upload-pack-result"), "head content-type");
     const hte = headerValue(head, "Transfer-Encoding");
     ck(contains(hte, "chunked"), "head transfer-encoding");
+
+    streamErrorClosesOnce("ftp://example.com/x", "", "", true);
+    streamErrorClosesOnce("http://example.com/x", "text/plain\r\nX: y", "", false);
 
     if (g_fail == 0) {
         std.io.write("http post stream ok\n");

@@ -155,6 +155,29 @@ fn badHeaderCase(ct: []const u8, accept: []const u8) void {
     };
     ck(saw, "bad header seen");
     ck(m.req_len == 0, "no write on bad header");
+    ck(m.closes == 1, "close exactly once on bad header");
+}
+
+fn badUrlClosesOnce() void {
+    var storage: [65536]u8 = undefined;
+    var ar = std.arena.init(storage[0..]);
+
+    var m = Mock{ .resp = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", .pos = 0, .chunk = 3, .req = undefined, .req_len = 0, .closes = 0 };
+    var t = http.HttpTransport{
+        .state = @ptrCast(*void, &m),
+        .read_fn = mockRead,
+        .write_fn = mockWrite,
+        .close_fn = mockClose,
+    };
+    var resp: http.Response = undefined;
+    var saw: bool = false;
+    http.httpPostOver(&ar, &t, "ftp://example.com/x", "x", "", "", &resp) catch |e| {
+        ck(e == error.BadUrl, "bad url");
+        saw = true;
+    };
+    ck(saw, "bad url seen");
+    ck(m.req_len == 0, "no write on bad url");
+    ck(m.closes == 1, "close exactly once on bad url");
 }
 
 pub fn main() void {
@@ -167,6 +190,7 @@ pub fn main() void {
     runCase("https://example.com/submit", "abc", "", "", "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndone", want_req2, 200, "done");
 
     tooLargeClosesOnce();
+    badUrlClosesOnce();
     badHeaderCase("text/plain\r\nX-Injected: y", "");
     badHeaderCase("text/plain\nX-Injected: y", "");
     badHeaderCase("text/plain\x00z", "");
