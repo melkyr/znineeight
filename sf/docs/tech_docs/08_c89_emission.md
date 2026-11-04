@@ -704,6 +704,68 @@ that can emit a proper tail-jump; until then cross-function TCO is call+ret. The
 written-type scan marks the result temp as a call-result (written_flag=2) so the decl pass does
 not flag it UNWRITTEN.
 
+### 1.9.1 Switch / negative / enum case emission [updated: 2026-11-04 — syntax-emission defects]
+
+`.switch_br` (`c89_emit.zig`, the `emitInst` arm) selects the lowering from the
+**condition temp's resolved C type** (`tempIs64BitInt` via
+`getTempTypeByIndex`), not from the source-level type name:
+
+- **32-bit conditions keep the existing C `switch` byte-identically.** The label
+  spelling still comes from `switchCondIsSigned`/`switchCondWidthBits`: an
+  unsigned (or bool) condition prints unsigned decimal; a signed condition
+  (including an enum whose backing is signed) prints negative labels
+  (`case -1:`), with the `i32` minimum spelled `(-2147483647 - 1)` because
+  `-2147483648` is not a portable C89 int constant. Signed non-negative values
+  keep the old decimal output.
+- **64-bit conditions never emit a C `switch`.** OpenWatcom rejects a
+  `switch` on a 64-bit controlling expression (`E1078`), and C89 has no such
+  form, so `.switch_br` lowers to an `if (cond == ...) goto z_bb_N;` /
+  `else if (...) ...` / `else goto z_bb_else;` chain with the same target
+  labels. The condition temp is materialized and evaluated once (the
+  expression-nesting pass does not inline it — `nestConsumerWired`), so the
+  chain cannot re-evaluate a side-effecting expression. Case literals are exact
+  via `writeSwitchCaseLabel`: non-negative values keep the decimal unsigned
+  form (`Z98_U64_C(<n>)` above `2^32`, including `0xFFFFFFFFFFFFFFFF`),
+  negative signed values use `(-Z98_I64_C(<n>))`, and the minimum uses
+  `Z98_I64_MIN`.
+- **Negative integer case items.** Negative literals, module-level named
+  `const` items, and negative range endpoints resolve on signed integer
+  conditions (they are stored as the two's-complement bit pattern in
+  `SwitchCase.value`; the condition's signedness selects the label form). On a
+  concrete unsigned condition a negative item is a clean level-0 rejection:
+  `error[3062] type '<T>' cannot represent integer value '<v>'` (rc 2, zero
+  `.c`), emitted by `semanticAnalyzerCheckUnsignedCaseItem` /
+  `semanticAnalyzerReportUnsignedNegativeCaseItem`
+  (`semantic_analyzer.zig`). **Function-local `const` case items remain an
+  unsupported, documented limitation** (operator ruling D2).
+- **Signed enum backings.** `enum(iN)` with negative discriminants is accepted;
+  an unsigned backing with a negative discriminant rejects with the same
+  `error[3062]` family. `emitEnumType` keeps the signed C backing type and
+  prints a negative discriminant as a signed literal in the per-member
+  `#define` (`#define <cname>_A -1`, with `Z98_I64_MIN` /
+  `(-2147483647 - 1)` at the minima). Enum switch labels follow the backing's
+  signedness through `switchCondIsSigned`.
+- **`@bitCast`, not a checked cast.** `lowerSwitchCaseItemMemberValue`
+  (`lower.zig`) returns `@bitCast(u64, member.value)`. A negative enum
+  discriminant is a bit pattern, not an `@intCast(u64, …)` value, so the
+  `-fsafe` build cannot trap on the enum case path.
+
+**Safe-mode temporary `zig_poison_fill`.** Task TC removed every source
+`= undefined` (471 sites across `examples/z98/z9play` and `z9torr`), so no
+source-undefined poison remains. The `zig_poison_fill` calls still present in
+the emitted example C (measured 603 in z9play / 789 in z9torr) are
+**compiler-generated initialization of call-result temporaries under `-fsafe`**
+— safe-mode temporary initialization, a known item, not a defect and not
+something to grep-fix in the examples.
+
+**Stale-artifact lesson (defect B).** Defect B (the VM `pal_trap` stub) was a
+stale/mixed build artifact, not an emitter defect: all three emitters
+(Linux/MinGW/OWC) produce correct C for the same source. Always rebuild the
+target after re-emitting; an existing `.o`/`.exe` can disagree with the `.c`
+currently on disk (or with an object linked from an earlier emission). Verify
+the `.c` that was actually compiled, not just the one the compiler would write
+today.
+
 ### 1.10 emitModule — Top-Level Orchestration
 
 `emitModule(emitter, name, c_includes)` (P4 fix round 2: the `ptr_only_ids`/`ptr_only_len`

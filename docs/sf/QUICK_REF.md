@@ -157,7 +157,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v133 carries the full 51 std `.zig`** = `std.zig` plus
+tracked seed archive **v134 carries the full 51 std `.zig`** = `std.zig` plus
 50 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -317,6 +317,34 @@ point is unmoved), via
   set).
   The z9play M7 TUI consumes this API
   (`examples/z98/z9play/ui.zig`).
+
+### Switch / negative / enum case emission (v134)  [added: 2026-11-04]
+
+- **64-bit `switch`:** a condition temp whose C type is 64-bit (`i64`/`u64`, a
+  64-bit arbitrary int, or a 64-bit-backed enum) lowers to a portable
+  `if (cond == …) goto …; else if (…) …; else goto …;` chain — never a C
+  `switch` on a 64-bit controlling expression (OpenWatcom `E1078`). The
+  condition is materialized and evaluated once. 64-bit case literals are exact:
+  non-negative values use the decimal unsigned form (`Z98_U64_C(<n>)` above
+  `2^32`), a negative signed label is `(-Z98_I64_C(<n>))`, and the minimum is
+  `Z98_I64_MIN`. **32-bit conditions keep the existing C `switch`
+  byte-identically.**
+- **Negative integer case items:** negative literals, module-level named
+  `const` items, and negative range endpoints match on signed integer
+  conditions (32-bit `case -1:`; signed form in the 64-bit chain). A negative
+  item on an unsigned condition is a level-0 `error[3062] type '<T>' cannot
+  represent integer value '<v>'` (rc 2, zero `.c`). Function-local `const`
+  case items remain the documented unsupported limitation.
+- **Enums:** `enum(iN)` backings with negative discriminants are accepted and
+  emit signed labels/`#define`s; an unsigned backing with a negative
+  discriminant rejects with the same `error[3062]` family. Case labels follow
+  the backing's signedness (`switchCondIsSigned`), and
+  `lowerSwitchCaseItemMemberValue` uses `@bitCast(u64, member.value)` (a bit
+  pattern, so no `-fsafe` checked-cast trap).
+- **Safe-mode poison note:** source `= undefined` is gone from the examples
+  (Task TC). Remaining emitted `zig_poison_fill` calls are compiler-generated
+  `-fsafe` initialization of call-result temporaries — a known item, not a
+  defect.
 
 ### Compiler limits — `Type`-column ceilings  [added: 2026-10-08]
 
