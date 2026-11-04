@@ -206,8 +206,9 @@ shipped library. Thirty-two public modules ship by path (plus five internal
 <tt>*_pal</tt> files): import one as
 <tt>@import("std_&lt;name&gt;")</tt> rather than through <tt>std</tt>. They are
 indexed below; 22 are detailed in the four companion reference pages,
-<tt>std_gfx</tt>/<tt>std_gfx_pal</tt> in the DirectX/GUI chapter, and the
-remaining eight in <tt>sf/docs/std_lib/</tt>.
+<tt>std_gfx</tt>/<tt>std_gfx_pal</tt> in the DirectX/GUI chapter, and the rest
+in <tt>sf/docs/std_lib/</tt> (except <tt>std_fft</tt>, which is not yet
+documented).
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -223,7 +224,7 @@ remaining eight in <tt>sf/docs/std_lib/</tt>.
 <td><tt>std_base64</tt>, <tt>std_hex</tt>, <tt>std_utf8</tt>, <tt>std_crypto</tt>, <tt>std_lz4</tt>, <tt>std_zstd</tt></td>
 </tr>
 <tr>
-<td><a href="../../../sf/docs/std_lib/deflate.md">Deflate / zlib</a></td>
+<td><a href="vol4-18-stdlib.html#deflate">Deflate / zlib</a></td>
 <td><tt>std_deflate</tt></td>
 </tr>
 <tr>
@@ -876,10 +877,13 @@ where the arena, buffer, and init-function patterns are collected.</li>
 function of every module in the table above; the four companion pages linked
 under <a href="#beyond">Beyond <tt>std</tt></a> cover 22 public by-path modules.
 <tt>std_gfx</tt>/<tt>std_gfx_pal</tt> are covered in
-<a href="vol3-14-directx.html">the DirectX/GUI chapter</a>; the remaining eight
-(<tt>std_ecc</tt>, <tt>std_asn1</tt>, <tt>std_x509</tt>, <tt>std_tls</tt>,
-<tt>std_wireguard</tt>, <tt>std_tcpip</tt>, <tt>std_cipher</tt>,
-<tt>std_deflate</tt>) are documented in <tt>sf/docs/std_lib/</tt>. The runnable example in
+<a href="vol3-14-directx.html">the DirectX/GUI chapter</a>; <tt>std_deflate</tt> is
+indexed above (full domain doc in <tt>sf/docs/std_lib/deflate.md</tt>); the
+other eight public by-path modules outside the companion pages are
+<tt>std_ecc</tt>, <tt>std_asn1</tt>, <tt>std_x509</tt>, <tt>std_tls</tt>,
+<tt>std_wireguard</tt>, <tt>std_tcpip</tt>, <tt>std_cipher</tt>, and
+<tt>std_fft</tt>; the first seven have domain docs in
+<tt>sf/docs/std_lib/</tt>, while <tt>std_fft</tt> is not yet documented. The runnable example in
 <tt>docs/sf/manuals/src/vol2/stdio.z98</tt> is the working reference for the
 shape of a call, and the module sources
 <tt>sf/src/std_*.zig</tt> are the authority for a signature this chapter did

@@ -1506,7 +1506,8 @@ resolve as <tt>std.&lt;name&gt;</tt>; the compiler rejects it (the measured
 diagnostic is <tt>error[3074]</tt>, shown on
 <a href="vol2-17-stdlib.html">Volume II, The standard library tour</a>).
 The shipped by-path library is indexed below and detailed on four companion
-pages. The <tt>*_pal</tt> files (<tt>std_file_pal</tt>, <tt>std_os_pal</tt>,
+pages, with a fifth <tt>Deflate / zlib</tt> area in the table carrying its own
+section on this page. The <tt>*_pal</tt> files (<tt>std_file_pal</tt>, <tt>std_os_pal</tt>,
 <tt>std_stdin_pal</tt>, <tt>std_time_pal</tt>, and <tt>std_gfx_pal</tt>) are
 internal implementation, not public modules.
 </p>
@@ -1531,7 +1532,7 @@ internal implementation, not public modules.
 <tr>
 <td valign="top">Deflate / zlib</td>
 <td valign="top"><tt>std_deflate</tt></td>
-<td valign="top"><a href="../../../sf/docs/std_lib/deflate.md">Deflate / zlib</a></td>
+<td valign="top"><a href="#deflate">Deflate / zlib</a></td>
 </tr>
 <tr>
 <td valign="top">I/O and HTTP</td>
@@ -1555,6 +1556,18 @@ dictionary frames), <tt>std_deflate</tt> is new
 <tt>used</tt> count), and <tt>std_http</tt> gains POST and a streaming response
 sink (<tt>httpPostOver</tt>, <tt>httpPostStreamOver</tt>,
 <tt>ResponseSink</tt>, and <tt>post</tt>) alongside GET.
+</p>
+
+<h3><a name="deflate"></a>std_deflate</h3>
+<p>
+<tt>std_deflate</tt> is the L4 single-shot inflater for RFC 1951 raw DEFLATE
+and RFC 1950 zlib streams: <tt>inflateRaw(src, dst, used) !u32</tt> and
+<tt>inflateZlib(src, dst, used) !u32</tt>. Both write the number of input bytes
+consumed, wrapper bytes included, to <tt>used</tt>; the zlib entry validates
+CMF/FLG/FCHECK, rejects <tt>FDICT</tt>, and verifies Adler-32. Errors are
+<tt>error.Corrupt</tt> and <tt>error.OutputTooSmall</tt>. There is no heap and
+no compressor. The full domain doc is <tt>sf/docs/std_lib/deflate.md</tt> in the
+source tree.
 </p>
 
 <h2>See also</h2>
