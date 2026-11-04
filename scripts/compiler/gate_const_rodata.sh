@@ -18,14 +18,20 @@ set -euo pipefail
 #   3. `__module_init` stores the S19/rs symbols and never the const symbols;
 #   4. header/definition text: `extern ... const` present for pub consts
 #      (const_rodata_xmod_xmod/leaf), absent for private (value_shapes); the
-#      private definition is `static ... const`;
+#      private definition is external-linkage `const` (NOT `static`) per
+#      commit 1339eb4a / sf/src/c89_emit.zig:3013 (warning-clean emission:
+#      a `static` module-private const can be folded away at every use and
+#      then trip -Wunused-const-variable);
 #   5. value fixture repro/mi_matrix/stdlib_const_rodata_xmod runs green
 #      (scripts/stdlib/run_fixtures.sh targeted).
 #
 # Non-vacuity (mutations) are performed at closeout and recorded in the
 # task report, not by this script: stub the emitter's const_init branch to
 # `.bss` -> step 2 FAILS; force a non-constant const to the const path ->
-# the runtime-shape negative FAILS.
+# the runtime-shape negative FAILS; restore a `static` private definition ->
+# the not-static check FAILS; emit a non-const/`var` definition ->
+# the const check FAILS; store a value const from __module_init ->
+# step 3 FAILS.
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ZIG1="${1:-}"
@@ -145,10 +151,15 @@ if ls "$WORK/v"/*.h >/dev/null 2>&1; then
     fi
 fi
 if ls "$WORK/v"/*.c >/dev/null 2>&1; then
-    if grep -aqE 'static .* const zG_.*_vs_scalar = ' "$WORK"/v/*.c; then
-        note "ok private const definition is 'static ... const'"
+    if grep -aqE '^[[:space:]]*[^;]* const zG_.*_vs_scalar = ' "$WORK"/v/*.c; then
+        note "ok private const definition is 'const zG_..._vs_scalar ='"
     else
-        bad "private const definition missing 'static ... const'"
+        bad "private const definition missing 'const zG_..._vs_scalar ='"
+    fi
+    if grep -aqE '^[[:space:]]*static[[:space:]].*zG_.*_vs_scalar = ' "$WORK"/v/*.c; then
+        bad "private const definition is 'static'; expected external linkage (Task 9)"
+    else
+        note "ok private const definition is external linkage (not static)"
     fi
 fi
 XOUT="$WORK/x"
