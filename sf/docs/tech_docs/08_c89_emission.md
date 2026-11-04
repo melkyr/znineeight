@@ -626,7 +626,7 @@ Every `LirInst` variant handled in `emitInst`:
 | `.call` | `result = callee(args...);` (indirect call through function pointer) |
 | `.call_direct` | `result = fn_name(args...);` (extern return wrapping for optional/error_union) |
 | `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump; void return → `fn_name(args...); return;`; extern → original name; indirect callee via `resolveTempName` |
-| `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` |
+| `.switch_br` | 32-bit: `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }`; signed conditions print negative labels (`case -1:`), unsigned conditions keep unsigned decimal. 64-bit conditions lower to a portable `if (cond == <literal>) goto z_bb_<target>; else if (...) ...; else goto z_bb_<else>;` chain (signed negative labels `(-Z98_I64_C(<n>))` / `Z98_I64_MIN`; unsigned labels `Z98_U64_C(<n>)`). |
 | `.wrap_optional` | `result.has_value = 1;\n result.value = src;` |
 | `.int_cast` | `result = (type)src;` (unchecked plain cast; the checked `-fsafe` path is the separate `.int_cast_checked`) |
 | `.int_cast_checked` | `result = (type)zig_cast_checked_s/u((unsigned long long)src, <sw>u, <ss>u, <dw>u);` (`-fsafe` width/sign-aware) |
