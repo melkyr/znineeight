@@ -1,3 +1,179 @@
+# Z98 0.21.2 "Terephthalic Acid" Release Notes
+
+This release supersedes the 0.21.1 staging and is the first that ships the
+**Windows 9x/NT compiler binaries** together with the Linux artifacts. It rolls
+up the v133-v135 work: the z9play/z9torr optimizations and example idiom
+modernization, plus the switch, negative-case, and enum emission fixes. The
+compiler fixed point moves to seed **v135**
+(`cf68f192900e7f6618c11e1712b74b3a`).
+
+## 🚀 Timeline
+
+- **2026-11-03** — Z98 0.21.1 "Terephthalic Acid" (hotfix), seed **v132**.
+- **2026-11-04** — seed **v133** (`std_fft` + z9play/z9torr optimizations +
+  example idioms); seed **v134** (64-bit switch lowering, negative integer case
+  items, signed enum backings); seed **v135** (33-63-bit carrier switches,
+  parenthesized/bool case items, portable wide enum macros, enum storage
+  limits).
+- **2026-11-05** — This release: **Z98 0.21.2 "Terephthalic Acid"**, seed
+  **v135**, with the operator-built Windows compilers.
+
+## ✨ Headline Capabilities
+
+**Portable switch / case emission**
+- `switch` conditions whose C carrier is 64-bit (including 33-63-bit arbitrary
+  integers and enums backed by them) lower to a portable `if`/`else if`/`else`
+  chain instead of a 64-bit C `switch` (OpenWatcom `E1078`). 32-bit switches are
+  byte-identical to the previous release.
+- Negative integer case items match: literals, module-level constants, range
+  endpoints, and parenthesized forms. A negative item on an unsigned condition
+  is a level-0 `error[3062]`; bool items follow the documented rules.
+
+**Enums**
+- Signed integer backings and negative discriminants are accepted; labels and
+  macros follow the backing's signedness.
+- Wide enum macros are portable C89 (`Z98_I64_C`/`Z98_U64_C`, `Z98_I64_MIN`,
+  `(-2147483647 - 1)`); `enum_value_table` no longer truncates values above
+  `u32`.
+- An implicit successor past the i64 storage maximum rejects instead of
+  silently duplicating a member; `enum(u64)` above i64 max rejects with a clear
+  `error[3000]` (documented limitation D13).
+
+**Performance**
+- z9play's Ogg Vorbis IMDCT uses a split-radix FFT with cached window/slope
+  tables: about **170x faster** on the 2 s fixture (5.35 s -> 0.031 s); FLAC is
+  unchanged (O(n)).
+- z9torr uses O(1) piece/block accounting (no per-block rescans; download output
+  SHA-1 unchanged).
+
+**Examples**
+- Example code uses `for` captures, `defer`/`errdefer`, labeled flow, `switch`
+  and tag prongs, and `std.fold`; behavior and outputs are unchanged. 471
+  source `= undefined` sites were replaced with explicit or zero initialization,
+  and rotating seed-md5 pins were dropped from the tiers.
+
+**Windows binaries**
+- `zig1_w32.exe` — OpenWatcom 1.9 static CLIB, canonical Win9x compiler;
+  imports KERNEL32 + USER32 only, no `msvcrt.dll`; passes the 9x import gate.
+- `zig1_w32_msvc.exe` — MSVC 6 `/MT`, no `msvcrt.dll`; passes the 9x gate.
+- `z98_mingw_crt_w32.exe` — MinGW CRT build; requires `msvcrt.dll`; optional
+  fallback, not the Win9x static-CRT binary.
+- `z98-0.21.2-win9x-binaries.zip` bundles the three binaries and their hashes.
+- All three were built on the operator's Windows 98 machine from the v135 seed
+  zip and emit C byte-identical to the v135 Linux reference build.
+
+## 🛠️ Build Machine & Toolchain
+
+The Linux release artifacts were built and measured on an **AMD Ryzen 7 7700X
+8-core/16-thread up to ~5.58 GHz, 32 GB RAM, Debian GNU/Linux 12 (bookworm)**
+machine with **gcc 12.2.0**, **i686-w64-mingw32-gcc 12-win32**, **Wine 8.0**, and
+`gcc -m32` available. The Windows binaries were built and manually tested on the
+operator's Windows 98 machine with **MSVC 6**, **OpenWatcom 1.9**, and
+**MinGW gcc 3.4.5**; the emitted C from the examples was cross-built with both
+MSVC 6 and OpenWatcom 1.9.
+
+## 💾 Minimum Requirements
+
+At v135, RUN is **~20 MB** peak RSS at `-s0`: D-safe **6.91 s / 20,716 kB**,
+D-fast **6.73 s / 20,100 kB** (medians of 3). BUILD from source is dominated by
+the gcc backend: Row E measured **9.56 s / 181,564 kB** (~177 MB). The Windows
+runtime is **not measured**; Wine and the operator's VM are evidence only.
+
+Measured spill ladder at v135 (`-ffast --markers --track-memory`; medians of 3):
+
+| Level | Peak RSS (KiB) | Pool (K) |
+|---|---:|---:|
+| `-s0` | 20,284 | 18,677 |
+| `-s1` | 45,900 | 50,421 |
+| `-s2` (`-mm128`) | 95,532 | 119,477 |
+| `-s3` (`-mm128`) | 95,180 | 119,477 |
+| `-s4` (`-mm128`) | 99,368 | 123,573 |
+| `-s5` (`-mm128`) | 101,336 | 126,645 |
+| `-s6` (`-mm160`) | 104,080 | 131,765 |
+
+**`-s6` now needs `-mm160`:** the v135 pool peak is 131,765K, above the 128 MB
+limit used in earlier ladders (a `-mm128` run ICEs with rc 3).
+
+Optional deep-input evidence at a 1 MB stack: the 120-term `+` chain ran
+**0.05 s / 7,112-7,256 kB**; the 300-deep block fixture ran **0.00 s /
+4,264-4,516 kB**.
+
+## ⏱️ PII/PIII Time Estimates
+
+Engineering estimates — **not measurements**. Clock-scaled from the v135
+medians via `T_p = T_m × f_m/f_p × k` (`k = 1.0`; `f_m` = 4.0 GHz conservative
+single-core figure for the 7700X; PII 300-450 MHz, PIII 700-1000 MHz).
+
+| Row | Median `T_m` (s) | PII 300-450 MHz (s) | PIII 700-1000 MHz (s) |
+|---|---:|---:|---:|
+| D-safe | 6.91 | 61.4 - 92.1 | 27.6 - 39.5 |
+| D-fast | 6.73 | 59.8 - 89.7 | 26.9 - 38.5 |
+| E (gcc compile+link) | 9.56 | 85.0 - 127.5 | 38.2 - 54.6 |
+
+Row E is the memory-bound row (~177 MB peak RSS) and carries the 1.5-3x
+memory-band caveat: roughly up to ~382 s on PII and ~164 s on PIII at the worst
+end. D-safe/D-fast peak at ~20 MB and track the clock ratio more closely.
+
+## 📦 Release Artifacts
+
+The staged 0.21.2 set is **zig1 + seed + three Windows compilers, no zig0**
+(git-ignored `release/staging/0.21.2/`):
+
+| File | Size (B) | md5 | Notes |
+|---|---:|---|---|
+| `zig1_linux32` | 3,614,976 | `cf68f192900e7f6618c11e1712b74b3a` | v135 seed binary; ELF 32-bit i386; equals the fixed point |
+| `src_c_zig1_linux.tgz` | 2,059,825 | `6012f66a134236bf201ac910ae9b97a1` | self-emission C89 archive (52 `.c` + 51 `.h` raw; 48 + 49 canonical) |
+| `src_c_zig1_w32.zip` | 2,084,208 | `b30b85ddacb3f9f85bb9fa6d79bb7fea` | same C/H set, zip; byte-identical members |
+| `zig1_src.tgz` | 1,123,054 | `c374b266a3a096d363b3c29f19cf48c5` | `sf/src` + 52-file `lib/` + `RELEASE_README.txt` (224 files) |
+| `zig1_src.zip` | 1,194,171 | `6f114e150addbfda6ca6298d9fcbd230` | identical tree, zip format |
+| `zig1-seed.tgz` | 3,737,713 | `c01a8261aa9b9d84f2d414724011b3db` | v135 seed archive |
+| `zig1_seed_w9.zip` | 2,622,216 | `49242d99702f0521ac5d06a29c2d96c3` | v135 Win9x companion seed (sources + build scripts; no prebuilt exe) |
+| `zig1_w32.exe` | 1,712,128 | `3e944a2c4d4842422ff9108d534a9f42` | OpenWatcom static CLIB Win9x compiler (canonical; no msvcrt) |
+| `zig1_w32_msvc.exe` | 1,764,352 | `1141ecbf15e720da955b0434eeb8624d` | MSVC 6 `/MT` Win9x compiler (no msvcrt) |
+| `z98_mingw_crt_w32.exe` | 2,750,720 | `f08ddae7fc7924e7a372174c437ed380` | MinGW CRT compiler (requires msvcrt.dll; optional) |
+| `z98-0.21.2-win9x-binaries.zip` | 2,742,990 | `5c0bded892f12465a391e13b46fab34c` | bundle of the three Windows compilers + hashes README |
+| `W32_BUILDS.md` | 3,592 | `2dc197ce14f32897f152f0a393b64e64` | Windows build provenance, recipes, imports, gate results |
+
+The shipped `lib/` payload is **51** std files (`std.zig` + 50 `std_*.zig`);
+`lib/manifest.md5` md5 is `62008632c1f057c42b04bf5883f6da5d`. `zig1_src` ships
+224 files (171 `sf/src` + 52 `lib/` + `RELEASE_README.txt`; `lib/` includes
+`manifest.md5`). `zig1_w32.exe` is the canonical Win9x static-CRT compiler;
+`zig1_w32_msvc.exe` is the MSVC variant; the MinGW build is the optional CRT
+fallback that requires `msvcrt.dll`.
+
+## ⚠️ Known Issues
+
+Open-only entries (no fixed defect is listed):
+
+- **D3** — conditional `@import` still parse-loads a sema-dead arm outside the parse probe; false reject only.
+- **D4** — static-analyzer cluster (dead-arm parity, unseeded params/returns, capture aliases, provenance lookup, test drift); false diagnostics possible on complex code.
+- **D5** — an `extern fn` with a body is accepted then emitted as a declaration only; non-cdecl callbacks cannot be defined.
+- **D7.3** — a nested write through `arr[i].field[0..]` can target a by-value temporary; the store is silently lost.
+- **D8** — stdout is split between C stdio builtins and PAL `std.fmt`; mixed writes can reorder or lose buffered output on abnormal exit (mitigated in `z9play` only).
+- **D10** — no first-class calling conventions; Win32 `WNDPROC`/callbacks need a C trampoline.
+- **D12** — a module-scope untyped array literal (`pub var arr: [3]u32 = .{...}`) emits an invalid array-to-array C assignment.
+- **D13** — `enum(u64)` discriminants above the i64 storage maximum are unsupported (clean `error[3000]`; no wrong code).
+
+## 🔧 Breaking Changes / Upgrade Notes
+
+- A negative integer case item on an **unsigned** switch condition is now a
+  level-0 `error[3062]` (previously accepted with incorrect behavior).
+- An enum discriminant, explicit or implicit, beyond the i64 storage maximum is
+  now rejected (`error[3000]`); `enum(u64)` above i64 max remains unsupported
+  (D13).
+- The canonical Win9x compiler is the OpenWatcom static-CLIB build; the MinGW
+  CRT build is a separate optional artifact requiring `msvcrt.dll`.
+- Programs built with an older 0.21.1 emitted build script should be re-emitted
+  with 0.21.2 to pick up the current runtime and link lines.
+
+## 👥 Contributors
+Z98 is made possible by the dedicated work of its contributors.
+
+*@melkyr-Andres Hernandez*
+*Zni005 (DeepseekV4+Opencode)*
+
+---
+
 # Z98 0.21.1 "Terephthalic Acid" (hotfix) Release Notes
 
 This is a **hotfix** for **0.21.0 "Terephthalic Acid"**. It fixes programs built

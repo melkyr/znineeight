@@ -4,6 +4,72 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.21.2] - "Terephthalic Acid"
+
+The first release that ships the self-hosted compiler's Windows 9x/NT binaries
+and the v135 seed. It rolls up the v133-v135 work (example optimizations,
+idiom modernization, and the switch/negative/enum emission fixes) and
+supersedes the 0.21.1 staging. The compiler fixed point moves to seed **v135**
+(`cf68f192900e7f6618c11e1712b74b3a`).
+
+### Added
+- **Three operator-built, Win98-tested Windows compilers:** `zig1_w32.exe`
+  (OpenWatcom 1.9 static CLIB, canonical, no `msvcrt.dll`), `zig1_w32_msvc.exe`
+  (MSVC 6 `/MT`, no `msvcrt.dll`), and `z98_mingw_crt_w32.exe` (MinGW CRT;
+  requires `msvcrt.dll`; optional fallback), plus
+  `z98-0.21.2-win9x-binaries.zip` with the three binaries and their hashes.
+- `std_fft` (split-radix complex FFT, direct import) used by z9play's Ogg
+  IMDCT; example idiom notes for the modernized examples.
+
+### Changed
+- **z9play Ogg Vorbis decode** uses an FFT IMDCT with cached window/slope
+  tables (about 170x faster on the 2 s fixture; FLAC unchanged at O(n)).
+- **z9torr** uses O(1) piece/block accounting (no per-block rescans; output
+  SHA-1 unchanged).
+- **Examples** use `for` captures, `defer`/`errdefer`, labeled flow,
+  `switch`/tag prongs, and `std.fold` idioms; behavior and outputs are
+  unchanged. 471 source `= undefined` sites were replaced with explicit or
+  zero initialization; rotating seed-md5 pins were removed from the tiers.
+- **Switch emission:** 64-bit and 33-63-bit carrier conditions lower to a
+  portable `if`/`else if`/`else` chain (OpenWatcom E1078); 32-bit switches stay
+  byte-identical. Negative integer case items (literals, module constants,
+  range endpoints, parenthesized) match on signed conditions; bool case items
+  follow the documented rules.
+- **Enums:** signed integer backings and negative discriminants are accepted;
+  wide-enum macros are portable C89 (`Z98_I64_C`/`Z98_U64_C`, `Z98_I64_MIN`,
+  `(-2147483647 - 1)`).
+- **Win9x gate:** the 9x import whitelist accepts the static-CRT startup
+  imports used by the MSVC/OpenWatcom builds.
+
+### Fixed
+- Negative case items on signed conditions previously fell through to `else`;
+  they now match (including `(-1)`).
+- `enum_value_table` no longer truncates unsigned enum values above `u32`; an
+  implicit successor past the i64 storage maximum rejects instead of silently
+  duplicating a member.
+- `enum(u64)` discriminants above `9223372036854775807` reject with a clear
+  `error[3000]` instead of producing a wrong value (documented limitation D13).
+- A signed-enum safe-mode overflow on `enum(i64)` at the i64 maximum.
+- `gate_const_rodata.sh` now asserts the external-linkage `const` definition
+  instead of the obsolete `static` form.
+
+### Breaking changes
+- A negative integer case item on an **unsigned** switch condition is now a
+  level-0 `error[3062]` (previously accepted with incorrect behavior).
+- An enum discriminant, explicit or implicit, beyond the i64 storage maximum is
+  now rejected (`error[3000]`); `enum(u64)` above i64 max remains unsupported
+  (D13).
+- The canonical Win9x compiler is now the OpenWatcom static-CLIB build; the
+  MinGW CRT build is a separate optional artifact that requires `msvcrt.dll`.
+
+### Notes
+- Seed v135: archive md5 `c01a8261aa9b9d84f2d414724011b3db`; Win9x zip md5
+  `49242d99702f0521ac5d06a29c2d96c3`; `lib/` 51 std `.zig`; manifest md5
+  `62008632c1f057c42b04bf5883f6da5d`.
+- `-s6` now needs `-mm160`: the v135 pool peak is 131,765K, above the 128 MB
+  limit used by the earlier ladder.
+- Known open defects: D3, D4, D5, D7.3, D8, D10, D12, D13.
+
 ## [0.21.1] - "Terephthalic Acid" (hotfix)
 
 Win9x hotfix on 0.21.0. No language, CLI, or breaking change; the compiler fixed
