@@ -316,6 +316,14 @@ pub const HttpTransport = struct {
     close_fn: fn (*void) void,
 };
 
+// Streaming response body destination. The caller owns `state`; the module
+// calls `write_fn` with bounded body slices (never more than the fixed stream
+// buffer) until the response body is exhausted.
+pub const ResponseSink = struct {
+    state: *void,
+    write_fn: fn (*void, []const u8) HttpError!void,
+};
+
 const Conn = struct {
     t: *HttpTransport,
     buf: [4096]u8,
@@ -460,6 +468,287 @@ fn appendHead(head: []u8, head_len: *usize, line: []const u8) HttpError!void {
     head[head_len.*] = '\r';
     head[head_len.* + 1] = '\n';
     head_len.* += 2;
+}
+
+// --- POST request/response helpers ------------------------------------------
+
+const STREAM_BUF_BYTES: usize = 1048576;
+const USIZE_MAX_U64: u64 = 0xFFFFFFFF;
+
+fn appendUsize(b: *std.buf.Buf, v0: usize) HttpError!void {
+    var tmp: [20]u8 = undefined;
+    var n: usize = 0;
+    var v: usize = v0;
+    if (v == 0) {
+        tmp[0] = '0';
+        n = 1;
+    }
+    while (v > 0) : (v = v / 10) {
+        tmp[n] = @intCast(u8, v % 10 + 48);
+        n += 1;
+    }
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        try std.buf.appendByte(b, tmp[n - 1 - i]);
+    }
+}
+
+fn parseSizeStream(s: []const u8) HttpError!usize {
+    if (s.len == 0) return error.BadResponse;
+    var v: u64 = 0;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        if (!isDigit(s[i])) return error.BadResponse;
+        const d: u64 = @intCast(u64, s[i] - 48);
+        if (v > (USIZE_MAX_U64 - d) / 10) return error.TooLarge;
+        v = v * 10 + d;
+    }
+    return @intCast(usize, v);
+}
+
+fn parseChunkSizeStream(s: []const u8) HttpError!usize {
+    var v: u64 = 0;
+    var any: bool = false;
+    var i: usize = 0;
+    while (i < s.len and s[i] != ';') : (i += 1) {
+        if (!isHex(s[i])) return error.BadResponse;
+        any = true;
+        const d: u64 = @intCast(u64, hexVal(s[i]));
+        if (v > (USIZE_MAX_U64 - d) / 16) return error.TooLarge;
+        v = v * 16 + d;
+    }
+    if (!any) return error.BadResponse;
+    return @intCast(usize, v);
+}
+
+fn buildPostHead(arena: *std.arena.Arena, url: []const u8, body_len: usize, content_type: []const u8, accept: []const u8) HttpError!std.buf.Buf {
+    const u = try parseTransportUrl(url);
+    const scheme_sep = findFrom(url, "://", 0);
+    var default_port: u16 = DEFAULT_PORT;
+    if (scheme_sep < url.len and eqBytes(url[0..scheme_sep], "https")) default_port = 443;
+
+    var req = std.buf.init(arena);
+    try std.buf.append(&req, "POST ");
+    try std.buf.append(&req, u.path);
+    if (u.query.len > 0) {
+        try std.buf.appendByte(&req, '?');
+        try std.buf.append(&req, u.query);
+    }
+    try std.buf.append(&req, " HTTP/1.1\r\nHost: ");
+    try std.buf.append(&req, u.host);
+    if (u.port != default_port) {
+        try std.buf.appendByte(&req, ':');
+        try appendU16(&req, u.port);
+    }
+    try std.buf.append(&req, "\r\nConnection: close\r\n");
+    if (content_type.len > 0) {
+        try std.buf.append(&req, "Content-Type: ");
+        try std.buf.append(&req, content_type);
+        try std.buf.append(&req, "\r\n");
+    }
+    if (accept.len > 0) {
+        try std.buf.append(&req, "Accept: ");
+        try std.buf.append(&req, accept);
+        try std.buf.append(&req, "\r\n");
+    }
+    try std.buf.append(&req, "Content-Length: ");
+    try appendUsize(&req, body_len);
+    try std.buf.append(&req, "\r\n\r\n");
+    return req;
+}
+
+const RespHead = struct {
+    status: u16,
+    headers: []Header,
+    have_cl: bool,
+    have_chunked: bool,
+    clen: usize,
+};
+
+fn readResponseHeadOver(arena: *std.arena.Arena, c: *Conn, streaming: bool) !RespHead {
+    var head: [MAX_HEADER_BLOCK]u8 = undefined;
+    var head_len: usize = 0;
+    var line: [MAX_HEADER_BLOCK]u8 = undefined;
+
+    const status_len = try connReadLine(c, line[0..]);
+    try appendHead(head[0..], &head_len, line[0..status_len]);
+    while (true) {
+        const n = try connReadLine(c, line[0..]);
+        if (n == 0) break;
+        try appendHead(head[0..], &head_len, line[0..n]);
+    }
+    try appendHead(head[0..], &head_len, line[0..0]);
+
+    const durable = try allocBytes(arena, head_len);
+    copyBytes(durable, head[0..head_len]);
+
+    const first_end = findFrom(durable, "\r\n", 0);
+    if (first_end >= durable.len) return error.BadResponse;
+    const status = try parseStatus(durable[0..first_end]);
+
+    var count: usize = 0;
+    var pos: usize = first_end + 2;
+    while (true) {
+        const le = findFrom(durable, "\r\n", pos);
+        if (le >= durable.len) return error.BadResponse;
+        if (le == pos) break;
+        count += 1;
+        pos = le + 2;
+    }
+
+    const hdrs = try allocHeaders(arena, count);
+    var have_cl: bool = false;
+    var have_chunked: bool = false;
+    var clen: usize = 0;
+    var idx: usize = 0;
+    pos = first_end + 2;
+    while (true) {
+        const le = findFrom(durable, "\r\n", pos);
+        if (le >= durable.len) return error.BadResponse;
+        if (le == pos) break;
+        const hline = durable[pos..le];
+        const colon = findFrom(hline, ":", 0);
+        if (colon >= hline.len) return error.BadResponse;
+        const name = hline[0..colon];
+        const value = trimSpaces(hline[colon + 1 ..]);
+        hdrs[idx] = Header{ .name = name, .value = value };
+        idx += 1;
+        if (eqIgnoreCase(name, "content-length")) {
+            have_cl = true;
+            if (streaming) {
+                clen = try parseSizeStream(value);
+            } else {
+                clen = try parseSize(value);
+            }
+        } else if (eqIgnoreCase(name, "transfer-encoding")) {
+            if (containsIgnoreCase(value, "chunked")) {
+                have_chunked = true;
+            } else if (!containsIgnoreCase(value, "identity")) {
+                return error.BadResponse;
+            }
+        }
+        pos = le + 2;
+    }
+
+    return RespHead{ .status = status, .headers = hdrs, .have_cl = have_cl, .have_chunked = have_chunked, .clen = clen };
+}
+
+const StreamBuf = struct {
+    buf: []u8,
+    len: usize,
+    sink: *ResponseSink,
+};
+
+fn streamFlush(s: *StreamBuf) HttpError!void {
+    if (s.len == 0) return;
+    try s.sink.write_fn(s.sink.state, s.buf[0..s.len]);
+    s.len = 0;
+}
+
+fn streamReadN(c: *Conn, s: *StreamBuf, total: usize) HttpError!void {
+    var got: usize = 0;
+    while (got < total) {
+        if (s.len == s.buf.len) try streamFlush(s);
+        var room: usize = s.buf.len - s.len;
+        var want: usize = total - got;
+        if (want > room) want = room;
+        const n = try connReadSome(c, s.buf[s.len .. s.len + want]);
+        if (n == 0) return error.BadResponse;
+        s.len += n;
+        got += n;
+    }
+}
+
+fn readChunkedStream(c: *Conn, s: *StreamBuf) HttpError!void {
+    while (true) {
+        var line: [64]u8 = undefined;
+        const n = try connReadLine(c, line[0..]);
+        const sz = try parseChunkSizeStream(line[0..n]);
+        if (sz == 0) {
+            try readTrailers(c);
+            try streamFlush(s);
+            return;
+        }
+        try streamReadN(c, s, sz);
+        var crlf: [2]u8 = undefined;
+        try connReadExact(c, crlf[0..]);
+        if (crlf[0] != '\r' or crlf[1] != '\n') return error.BadResponse;
+    }
+}
+
+fn readCloseDelimitedStream(c: *Conn, s: *StreamBuf) HttpError!void {
+    while (true) {
+        if (s.len == s.buf.len) try streamFlush(s);
+        const n = try connReadSome(c, s.buf[s.len..]);
+        if (n == 0) break;
+        s.len += n;
+    }
+    try streamFlush(s);
+}
+
+// POST over any caller-supplied transport. Mirrors `httpGetOver`: same URL
+// parsing, `Connection: close`, identity + chunked response bodies, and the
+// 1 MiB whole-body cap. Empty content_type/accept omit those headers.
+pub fn httpPostOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, out: *Response) !void {
+    const req = try buildPostHead(arena, url, body.len, content_type, accept);
+    defer t.close_fn(t.state);
+    try transportWriteAll(t, std.buf.slice(&req));
+    if (body.len > 0) try transportWriteAll(t, body);
+
+    var c = Conn{ .t = t, .buf = undefined, .pos = 0, .len = 0, .eof = false };
+    const ph = try readResponseHeadOver(arena, &c, false);
+
+    var resp_body = std.buf.init(arena);
+    if (ph.have_chunked) {
+        try readChunked(&c, &resp_body);
+    } else if (ph.have_cl) {
+        if (ph.clen > MAX_BODY_BYTES) return error.TooLarge;
+        try std.buf.reserve(&resp_body, ph.clen);
+        var got: usize = 0;
+        while (got < ph.clen) {
+            const n = try connReadSome(&c, resp_body.data[resp_body.len + got .. resp_body.len + ph.clen]);
+            if (n == 0) return error.BadResponse;
+            got += n;
+        }
+        resp_body.len += ph.clen;
+    } else {
+        var tmp: [4096]u8 = undefined;
+        while (true) {
+            const n = try connReadSome(&c, tmp[0..]);
+            if (n == 0) break;
+            if (resp_body.len + n > MAX_BODY_BYTES) return error.TooLarge;
+            try std.buf.append(&resp_body, tmp[0..n]);
+        }
+    }
+
+    out.* = Response{ .status = ph.status, .headers = ph.headers, .body = std.buf.slice(&resp_body) };
+}
+
+// POST with a streaming response body. Headers/status land in `out_head` with
+// an empty body; de-chunked body bytes flow to `sink` through a fixed ~1 MiB
+// arena buffer. The body length is unbounded (hardware-capped).
+pub fn httpPostStreamOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, sink: *ResponseSink, out_head: *Response) !void {
+    const req = try buildPostHead(arena, url, body.len, content_type, accept);
+    defer t.close_fn(t.state);
+    try transportWriteAll(t, std.buf.slice(&req));
+    if (body.len > 0) try transportWriteAll(t, body);
+
+    var c = Conn{ .t = t, .buf = undefined, .pos = 0, .len = 0, .eof = false };
+    const ph = try readResponseHeadOver(arena, &c, true);
+
+    const sbuf = try allocBytes(arena, STREAM_BUF_BYTES);
+    var sb = StreamBuf{ .buf = sbuf, .len = 0, .sink = sink };
+
+    if (ph.have_chunked) {
+        try readChunkedStream(&c, &sb);
+    } else if (ph.have_cl) {
+        try streamReadN(&c, &sb, ph.clen);
+        try streamFlush(&sb);
+    } else {
+        try readCloseDelimitedStream(&c, &sb);
+    }
+
+    out_head.* = Response{ .status = ph.status, .headers = ph.headers, .body = try allocBytes(arena, 0) };
 }
 
 // GET over any caller-supplied transport (plain TCP, TLS, mock). HTTP/1.1,
@@ -697,6 +986,80 @@ pub fn get(arena: *std.arena.Arena, url: []const u8, timeout_ms: u32) HttpError!
         if (loc.len > 0) {
             const loc_url = try absoluteLocation(arena, url, loc);
             resp = try getOnce(arena, loc_url, timeout_ms);
+        }
+    }
+    return resp;
+}
+
+// --- post (network) ----------------------------------------------------------
+
+fn postOnce(arena: *std.arena.Arena, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, timeout_ms: u32) HttpError!Response {
+    const u = try parseUrl(url);
+    const ip = std.net.resolve(u.host) catch return error.DnsFailed;
+    const fd = std.net.tcpSocket() catch return error.ConnectFailed;
+    std.net.connectToIp(fd, ip, u.port, timeout_ms) catch |e| {
+        std.net.close(fd);
+        if (e == error.Timeout) return error.Timeout;
+        return error.ConnectFailed;
+    };
+
+    const req = buildPostHead(arena, url, body.len, content_type, accept) catch |e| {
+        std.net.close(fd);
+        return e;
+    };
+    sendAll(fd, std.buf.slice(&req)) catch |e| {
+        std.net.close(fd);
+        return e;
+    };
+    if (body.len > 0) {
+        sendAll(fd, body) catch |e| {
+            std.net.close(fd);
+            return e;
+        };
+    }
+
+    const rbuf = std.arena.alloc(arena, MAX_RECV) catch {
+        std.net.close(fd);
+        return error.OutOfMemory;
+    };
+    var total: usize = 0;
+    var done: bool = false;
+    while (!done) {
+        var fds: std.net.fd_set = undefined;
+        std.net.fdZero(@ptrCast(*u8, &fds));
+        std.net.fdSet(fd, @ptrCast(*u8, &fds));
+        const sr = std.net.select(fd + 1, @ptrCast(*u8, &fds), null, null, @intCast(i32, timeout_ms));
+        if (sr == 0) {
+            std.net.close(fd);
+            return error.Timeout;
+        }
+        if (sr < 0) {
+            std.net.close(fd);
+            return error.ConnectFailed;
+        }
+        const n = std.net.recv(fd, rbuf + total, @intCast(i32, MAX_RECV - total));
+        if (n == 0) {
+            done = true;
+        } else if (n > 0) {
+            total += @intCast(usize, n);
+            if (total >= MAX_RECV) {
+                std.net.close(fd);
+                return error.TooLarge;
+            }
+        }
+    }
+    std.net.close(fd);
+    var raw: []const u8 = rbuf[0..total];
+    return parseResponse(arena, raw);
+}
+
+pub fn post(arena: *std.arena.Arena, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, timeout_ms: u32) HttpError!Response {
+    var resp = try postOnce(arena, url, body, content_type, accept, timeout_ms);
+    if (resp.status == 301 or resp.status == 302 or resp.status == 303 or resp.status == 307) {
+        const loc = findHeader(resp, "location");
+        if (loc.len > 0) {
+            const loc_url = try absoluteLocation(arena, url, loc);
+            resp = try postOnce(arena, loc_url, body, content_type, accept, timeout_ms);
         }
     }
     return resp;
