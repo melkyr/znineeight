@@ -2,8 +2,12 @@
 //
 // Every case must surface error.Corrupt (not a crash, not a silent success):
 // bad FCHECK, FDICT (unsupported dictionary), bad Adler-32, truncated zlib,
-// bad CM, truncated raw, and a reserved block type. The program catches and
-// prints a deterministic success line, so expected.rc is 0.
+// bad CM, truncated raw, a reserved block type, a stored-block LEN/NLEN
+// mismatch, and a distance-too-far match. The program catches and prints a
+// deterministic success line, so expected.rc is 0.
+//
+// expected_error.txt is generated documentation only (gitignored, not read by
+// the harness); expected.txt + expected.rc are the pins.
 //
 // GREEN: deterministic byte-exact stdout `deflate corrupt rejected\n` (rc 0).
 const io = @import("std_io.zig");
@@ -40,6 +44,8 @@ pub fn main() void {
     expectCorruptZ(fx.corrupt_bad_cm_slice(), "bad cm");
     expectCorruptRaw(fx.corrupt_raw_truncated_slice(), "truncated raw");
     expectCorruptRaw(fx.corrupt_raw_reserved_slice(), "reserved block type");
+    expectCorruptRaw(fx.corrupt_stored_mismatch_slice(), "stored len/nlen mismatch");
+    expectCorruptRaw(fx.corrupt_distance_far_slice(), "distance too far");
 
     io.write("deflate corrupt rejected\n");
 }

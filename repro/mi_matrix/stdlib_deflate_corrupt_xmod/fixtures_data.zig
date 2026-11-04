@@ -51,3 +51,15 @@ const corrupt_raw_reserved = [_]u8{
 };
 
 pub fn corrupt_raw_reserved_slice() []const u8 { return corrupt_raw_reserved[0..]; }
+
+const corrupt_stored_mismatch = [_]u8{
+    0x01, 0x05, 0x00, 0x00, 0x00, 0x41, 0x42, 0x43, 0x44, 0x45,
+};
+
+pub fn corrupt_stored_mismatch_slice() []const u8 { return corrupt_stored_mismatch[0..]; }
+
+const corrupt_distance_far = [_]u8{
+    0x73, 0x04, 0x42, 0x00,
+};
+
+pub fn corrupt_distance_far_slice() []const u8 { return corrupt_distance_far[0..]; }

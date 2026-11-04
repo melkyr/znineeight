@@ -102,7 +102,9 @@ repro/mi_matrix/stdlib_defer_queue_reset_xmod
 repro/mi_matrix/stdlib_defer_switch_block_xmod
 repro/mi_matrix/stdlib_deflate_corrupt_xmod
 repro/mi_matrix/stdlib_deflate_dynamic_xmod
+repro/mi_matrix/stdlib_deflate_multiblock_xmod
 repro/mi_matrix/stdlib_deflate_raw_xmod
+repro/mi_matrix/stdlib_deflate_toosmall_xmod
 repro/mi_matrix/stdlib_deflate_used_xmod
 repro/mi_matrix/stdlib_deflate_zlib_basic_xmod
 repro/mi_matrix/stdlib_dir_iter_xmod
