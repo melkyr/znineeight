@@ -2360,22 +2360,28 @@ fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node
                 return;
             }
             if (!type_mod.typeRegistryIsUnsigned(self.registry, bt)) {
-                if (type_mod.typeRegistryIntIsSigned(self.registry, bt)) {
-                    var bs_msg: []const u8 = "enum(iN) signed backings are not supported; use an unsigned backing (enum(uN))";
-                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, bsp, bep, bs_msg);
-                } else {
+                if (!(type_mod.typeRegistryIsInteger(self.registry, bt) and type_mod.typeRegistryIntIsSigned(self.registry, bt))) {
                     var bi_msg: []const u8 = "invalid enum backing type; enum(uN) requires an unsigned integer type (uN)";
                     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, bsp, bep, bi_msg);
+                    return;
                 }
-                return;
             }
             check_btid = bt;
         }
     }
+    var is_signed_backing: bool = type_mod.typeRegistryIsInteger(self.registry, check_btid) and type_mod.typeRegistryIntIsSigned(self.registry, check_btid);
     var nbits: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, check_btid));
     var maxv: u64 = @intCast(u64, 0xFFFFFFFFFFFFFFFF);
     if (nbits < @intCast(u32, 64)) {
         maxv = (@intCast(u64, 1) << @intCast(u64, nbits)) - @intCast(u64, 1);
+    }
+    var max_signed: i64 = @intCast(i64, 0x7FFFFFFFFFFFFFFF);
+    var min_signed: i64 = @bitCast(i64, @intCast(u64, 0x8000000000000000));
+    if (nbits < @intCast(u32, 64)) {
+        var half_u: u64 = @intCast(u64, 1) << @intCast(u64, nbits - @intCast(u32, 1));
+        var half: i64 = @intCast(i64, half_u);
+        max_signed = half - @intCast(i64, 1);
+        min_signed = -half;
     }
     var ep2 = self.registry.en_items[@intCast(usize, ety.payload_idx)];
     var mstart2: usize = @intCast(usize, ep2.members_start);
@@ -2384,20 +2390,47 @@ fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node
     var fcount2: usize = @intCast(usize, 0);
     var ci2: usize = 0;
     var prev_vu: u64 = @intCast(u64, 0);
+    var prev_vs: i64 = @intCast(i64, 0);
     var have_prev: bool = false;
     while (ci2 < @intCast(usize, children2_n) and fcount2 < mcount2) : (ci2 += @intCast(usize, 1)) {
         var fd2 = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, enum_node, @intCast(u32, ci2)));
         if (fd2.kind != AstKind.field_decl) continue;
         var mv = self.registry.em_items[mstart2 + fcount2].value;
         var mvu: u64 = @bitCast(u64, mv);
-        if (mvu > maxv) {
+        if (is_signed_backing) {
+            if (mv > max_signed or mv < min_signed) {
+                var msp = fd2.span_start;
+                var mep = msp + @intCast(u32, fd2.span_len);
+                var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^(N-1)-1); no silent truncation";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
+                return;
+            }
+        } else if (mv < @intCast(i64, 0)) {
+            var msp = fd2.span_start;
+            var mep = msp + @intCast(u32, fd2.span_len);
+            var num_buf: [24]u8 = undefined;
+            var mag: u64 = @intCast(u64, 0) -% mvu;
+            var dl = itoa_mod.itoa64(mag, num_buf[1..]);
+            var ds: usize = @intCast(usize, num_buf.len) - @intCast(usize, dl) - @intCast(usize, 1);
+            num_buf[ds - @intCast(usize, 1)] = @intCast(u8, 45);
+            var num_text = num_buf[ds - @intCast(usize, 1) .. @intCast(usize, num_buf.len) - @intCast(usize, 1)];
+            var ty_text = semanticAnalyzerIntrospectionTypeLabel(self, check_btid);
+            var p0: []const u8 = "type '";
+            var p1: []const u8 = "' cannot represent integer value '";
+            var p2: []const u8 = "'";
+            var parts: [5][]const u8 = [5][]const u8{ p0, ty_text, p1, num_text, p2 };
+            var neg_msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 5));
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, msp, mep, neg_msg);
+            return;
+        } else if (mvu > maxv) {
             var msp = fd2.span_start;
             var mep = msp + @intCast(u32, fd2.span_len);
             var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
             _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, msp, mep, mv_msg);
             return;
         }
-        if (have_prev and prev_vu == maxv and fd2.child_1 == @intCast(u32, 0)) {
+        var overflow = if (is_signed_backing) (prev_vs == max_signed) else (prev_vu == maxv);
+        if (have_prev and overflow and fd2.child_1 == @intCast(u32, 0)) {
             var msp = fd2.span_start;
             var mep = msp + @intCast(u32, fd2.span_len);
             var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
@@ -2405,6 +2438,7 @@ fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node
             return;
         }
         prev_vu = mvu;
+        prev_vs = mv;
         have_prev = true;
         fcount2 += @intCast(usize, 1);
     }
@@ -4339,7 +4373,7 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
             while (emi < ecount) : (emi += 1) {
                 var member = self.registry.em_items[estart + emi];
                 if (member.name_id == n) {
-                    semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, member.value), self.current_switch_cond_tu);
+                    semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, @bitCast(u64, member.value) & @intCast(u64, 0xFFFFFFFF)), self.current_switch_cond_tu);
                     return self.current_switch_cond_tu;
                 }
             }
@@ -4391,7 +4425,7 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
                 while (emi2 < ecount2) : (emi2 += 1) {
                     var member2 = self.registry.em_items[estart2 + emi2];
                     if (member2.name_id == n) {
-                        semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, member2.value), top);
+                        semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, @bitCast(u64, member2.value) & @intCast(u64, 0xFFFFFFFF)), top);
                         return top;
                     }
                 }
@@ -4766,7 +4800,7 @@ fn semanticAnalyzerResolveSwitchCaseMember(self: *SemanticAnalyzer, node_idx: u3
         while (emi < ecount) : (emi += 1) {
             var member = self.registry.em_items[estart + emi];
             if (member.name_id == name_id) {
-                semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, member.value), self.current_switch_cond_tu);
+                semanticAnalyzerSetEnumValue(self, node_idx, @intCast(u32, @bitCast(u64, member.value) & @intCast(u64, 0xFFFFFFFF)), self.current_switch_cond_tu);
                 return self.current_switch_cond_tu;
             }
         }

@@ -1435,6 +1435,24 @@ fn emitDefineMacroWide(emitter: *C89Emitter, a: []const u8, b: []const u8, c: []
     bufferedWriterWrite(&emitter.writer, d2);
 }
 
+// F2: a negative discriminant on a signed enum backing. `magnitude` is the
+// absolute value, already computed in i64 space by the caller.
+fn emitDefineMacroWideNeg(emitter: *C89Emitter, a: []const u8, b: []const u8, c: []const u8, magnitude: u64) void {
+    var d0: []const u8 = "#define ";
+    bufferedWriterWrite(&emitter.writer, d0);
+    bufferedWriterWrite(&emitter.writer, a);
+    bufferedWriterWrite(&emitter.writer, b);
+    bufferedWriterWrite(&emitter.writer, c);
+    var d1: []const u8 = " -";
+    bufferedWriterWrite(&emitter.writer, d1);
+    var vb: [24]u8 = undefined;
+    var vl = itoa_mod.itoa64(magnitude, vb[0..]);
+    var vs: usize = @intCast(usize, 24) - @intCast(usize, 1) - @intCast(usize, vl);
+    bufferedWriterWrite(&emitter.writer, vb[vs..@intCast(usize, 24) - @intCast(usize, 1)]);
+    var d2: []const u8 = "\n";
+    bufferedWriterWrite(&emitter.writer, d2);
+}
+
 fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
     var reg = emitter.registry;
     var ty = reg.types_items[@intCast(usize, tid)];
@@ -1800,12 +1818,18 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
     var sp: []const u8 = " "; bufferedWriterWrite(&emitter.writer, sp);
     bufferedWriterWrite(&emitter.writer, mangled_name);
     var sc: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sc);
+    var signed_backing = type_mod.typeRegistryIntIsSigned(emitter.registry, ep.backing_type);
     var mi: u16 = @intCast(u16, 0);
     while (mi < ep.members_count) : (mi += @intCast(u16, 1)) {
         var member = emitter.registry.em_items[@intCast(usize, ep.members_start) + @intCast(usize, mi)];
         var mname = interner_mod.stringInternerGet(emitter.interner, member.name_id);
         var uf_us: []const u8 = "_";
-        emitDefineMacroWide(emitter, mangled_name, uf_us, mname, @bitCast(u64, member.value));
+        if (signed_backing and member.value < @intCast(i64, 0)) {
+            var magnitude: u64 = @intCast(u64, 0) -% @bitCast(u64, member.value);
+            emitDefineMacroWideNeg(emitter, mangled_name, uf_us, mname, magnitude);
+        } else {
+            emitDefineMacroWide(emitter, mangled_name, uf_us, mname, @bitCast(u64, member.value));
+        }
     }
     var nl: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl);
 }
@@ -4717,7 +4741,12 @@ fn writeIntConstRvalue(emitter: *C89Emitter, value: u64, temp_type_id: u32, pref
     if (type_mod.typeKindIsSignedIntBase(ict_bty.kind) != @intCast(u8, 0)) {
         is_signed = @intCast(u8, 1);
     }
+    if (ict_bty.kind == type_mod.TypeKind.enum_type and type_mod.typeRegistryIntIsSigned(emitter.registry, temp_type_id)) {
+        is_signed = @intCast(u8, 1);
+    }
     if (ict_bty.kind == type_mod.TypeKind.arb_uint_type or ict_bty.kind == type_mod.TypeKind.arb_int_type) {
+        width_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(emitter.registry, temp_type_id));
+    } else if (ict_bty.kind == type_mod.TypeKind.enum_type) {
         width_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(emitter.registry, temp_type_id));
     } else {
         width_bits = @intCast(u32, ict_bty.size * @intCast(u32, 8));

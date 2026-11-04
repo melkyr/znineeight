@@ -5242,12 +5242,19 @@ fn lowerExprStep(self: *LirLowerer) u32 {
             var enum_ty = enum_type[0];
             if (enum_ty != type_mod.TYPE_INT_LIT and enum_ty != type_mod.TYPE_UNDEFINED and enum_ty != type_mod.TYPE_VOID) {
                 var enum_ti = self.ctx.registry.types_items[@intCast(usize, enum_ty)];
+                // F2: the u32 table truncates a signed enum discriminant; the
+                // member record keeps the full i64 value.
+                if (enum_ti.kind == type_mod.TypeKind.enum_type and type_mod.typeRegistryIntIsSigned(self.ctx.registry, enum_ty)) {
+                    var el_ev_name: u32 = ast_mod.astStoreIdentifier(self.ctx.store, node_idx);
+                    if (lowerSwitchCaseItemMemberValue(self, el_ev_name, enum_ty)) |mv| ev_val = mv;
+                }
                 if (enum_ti.kind == type_mod.TypeKind.tagged_union_type) {
+
                     var tu_result = emitTaggedUnionInit(self, enum_ty, @intCast(u32, ev_val));
                     var enl_m: []const u8 = "ENL:t"; pal.markerWrite(enl_m);
                     var enl_tb: [10]u8 = undefined; var enl_tl = itoa_mod.itoa(enum_type[0], enl_tb[0..]); var enl_ts: usize = @intCast(usize, 9) - @intCast(usize, enl_tl); pal.markerWrite(enl_tb[enl_ts..@intCast(usize, 9)]);
                     var enl_cm: []const u8 = "c"; pal.markerWrite(enl_cm);
-                    var enl_cb: [20]u8 = undefined; var enl_cl = itoa_mod.itoa(@intCast(u32, ev_val), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 19) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 19)]);
+                    var enl_cb: [20]u8 = undefined; var enl_cl = itoa_mod.itoa(@intCast(u32, ev_val & @intCast(u64, 0xFFFFFFFF)), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 19) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 19)]);
                     var enl_nl: []const u8 = "\n"; pal.markerWrite(enl_nl);
                     return tu_result;
                 }
@@ -5259,7 +5266,7 @@ fn lowerExprStep(self: *LirLowerer) u32 {
         var enl_m: []const u8 = "ENL:t"; pal.markerWrite(enl_m);
         var enl_tb: [10]u8 = undefined; var enl_tl = itoa_mod.itoa(enum_type[0], enl_tb[0..]); var enl_ts: usize = @intCast(usize, 9) - @intCast(usize, enl_tl); pal.markerWrite(enl_tb[enl_ts..@intCast(usize, 9)]);
         var enl_cm: []const u8 = "c"; pal.markerWrite(enl_cm);
-        var enl_cb: [20]u8 = undefined; var enl_cl = itoa_mod.itoa(@intCast(u32, ev_val), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 19) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 19)]);
+        var enl_cb: [20]u8 = undefined; var enl_cl = itoa_mod.itoa(@intCast(u32, ev_val & @intCast(u64, 0xFFFFFFFF)), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 19) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 19)]);
         var enl_nl: []const u8 = "\n"; pal.markerWrite(enl_nl);
         return tid;
     }
@@ -7209,13 +7216,25 @@ fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) 
         return @intCast(u64, 0);
     }
     if (node.kind == AstKind.enum_literal) {
+        var el_name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, item_idx);
+        // F2: the u32 `enum_value_table` keeps only the low 32 bits of an
+        // enum member value. A signed backing can carry a negative (or wider)
+        // discriminant, so resolve the member by name first for a signed enum
+        // condition; unsigned conditions keep the table fast path unchanged.
+        if (cond_ty_id) |ct| {
+            if (@intCast(usize, ct) < self.ctx.registry.types_len) {
+                var el_ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+                if (el_ct_ty.kind == type_mod.TypeKind.enum_type and type_mod.typeRegistryIntIsSigned(self.ctx.registry, ct)) {
+                    if (lowerSwitchCaseItemMemberValue(self, el_name_id, cond_ty_id)) |mv| return mv;
+                }
+            }
+        }
         var el_table = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item_idx);
         if (el_table) |v| { return @intCast(u64, v); }
         // Sema's switch case-item walk does not descend into range endpoints,
         // so a range endpoint reaches lowering with no `enum_value_table`
         // entry; resolve its member name against the condition type, exactly
         // like the qualified `field_access` tail below.
-        var el_name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, item_idx);
         return lowerSwitchCaseItemMemberValue(self, el_name_id, cond_ty_id);
     }
     if (node.kind == AstKind.error_literal) {
@@ -7226,6 +7245,18 @@ fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) 
     }
     if (node.kind == AstKind.field_access) {
         var fa_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, item_idx);
+        // F2: a signed enum backing can carry a negative/wider discriminant
+        // than the u32 `enum_value_table` slot, so resolve the member by name
+        // first. Unsigned enums, tagged unions and `.tag` switches keep the
+        // table fast path below unchanged.
+        if (cond_ty_id) |ct| {
+            if (@intCast(usize, ct) < self.ctx.registry.types_len) {
+                var fa_ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+                if (fa_ct_ty.kind == type_mod.TypeKind.enum_type and type_mod.typeRegistryIntIsSigned(self.ctx.registry, ct)) {
+                    if (lowerSwitchCaseItemMemberValue(self, fa_name_id, cond_ty_id)) |mv| return mv;
+                }
+            }
+        }
         // FX16-F (A+): an A+ `.tag` switch records the member ordinal in
         // `enum_value_table` while the condition's own resolved type stays the
         // u32 tag; honor the recorded ordinal here (identical to the value the
@@ -8680,12 +8711,18 @@ fn lowerExprLit(self: *LirLowerer, node_idx: u32) u32 {
             var enum_ty = enum_type[0];
             if (enum_ty != type_mod.TYPE_INT_LIT and enum_ty != type_mod.TYPE_UNDEFINED and enum_ty != type_mod.TYPE_VOID) {
                 var enum_ti = self.ctx.registry.types_items[@intCast(usize, enum_ty)];
+                // F2: the u32 table truncates a signed enum discriminant; the
+                // member record keeps the full i64 value.
+                if (enum_ti.kind == type_mod.TypeKind.enum_type and type_mod.typeRegistryIntIsSigned(self.ctx.registry, enum_ty)) {
+                    var el_ev_name: u32 = ast_mod.astStoreIdentifier(self.ctx.store, node_idx);
+                    if (lowerSwitchCaseItemMemberValue(self, el_ev_name, enum_ty)) |mv| ev_val = mv;
+                }
                 if (enum_ti.kind == type_mod.TypeKind.tagged_union_type) {
                     var tu_result = emitTaggedUnionInit(self, enum_ty, @intCast(u32, ev_val));
                     var enl_m: []const u8 = "ENL:t"; pal.markerWrite(enl_m);
                     var enl_tb: [10]u8 = undefined; var enl_tl = itoa_mod.itoa(enum_type[0], enl_tb[0..]); var enl_ts: usize = @intCast(usize, 9) - @intCast(usize, enl_tl); pal.markerWrite(enl_tb[enl_ts..@intCast(usize, 9)]);
                     var enl_cm: []const u8 = "c"; pal.markerWrite(enl_cm);
-                    var enl_cb: [20]u8 = undefined; var enl_cl = itoa_mod.itoa(@intCast(u32, ev_val), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 19) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 19)]);
+                    var enl_cb: [20]u8 = undefined; var enl_cl = itoa_mod.itoa(@intCast(u32, ev_val & @intCast(u64, 0xFFFFFFFF)), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 19) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 19)]);
                     var enl_nl: []const u8 = "\n"; pal.markerWrite(enl_nl);
                     return tu_result;
                 }
@@ -8697,7 +8734,7 @@ fn lowerExprLit(self: *LirLowerer, node_idx: u32) u32 {
         var enl_m: []const u8 = "ENL:t"; pal.markerWrite(enl_m);
         var enl_tb: [10]u8 = undefined; var enl_tl = itoa_mod.itoa(enum_type[0], enl_tb[0..]); var enl_ts: usize = @intCast(usize, 9) - @intCast(usize, enl_tl); pal.markerWrite(enl_tb[enl_ts..@intCast(usize, 9)]);
         var enl_cm: []const u8 = "c"; pal.markerWrite(enl_cm);
-        var enl_cb: [20]u8 = undefined; var enl_cl = itoa_mod.itoa(@intCast(u32, ev_val), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 19) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 19)]);
+        var enl_cb: [20]u8 = undefined; var enl_cl = itoa_mod.itoa(@intCast(u32, ev_val & @intCast(u64, 0xFFFFFFFF)), enl_cb[0..]); var enl_cs: usize = @intCast(usize, 19) - @intCast(usize, enl_cl); pal.markerWrite(enl_cb[enl_cs..@intCast(usize, 19)]);
         var enl_nl: []const u8 = "\n"; pal.markerWrite(enl_nl);
         return tid;
     } else if (node.kind == AstKind.error_literal) {
@@ -10264,7 +10301,7 @@ fn lowerExprField(self: *LirLowerer, node_idx: u32) u32 {
                     var member2 = self.ctx.registry.em_items[estart2 + ei2];
                     if (member2.name_id == field_name_id) {
                         var eftid2 = nextTemp(self, type_id);
-                        emitInst(self, LirInst{ .enum_const = .{ .value = @intCast(u64, member2.value), .result = eftid2, .type_id = type_id, .member_name_id = member2.name_id } });
+                        emitInst(self, LirInst{ .enum_const = .{ .value = @bitCast(u64, member2.value), .result = eftid2, .type_id = type_id, .member_name_id = member2.name_id } });
                         return eftid2;
                     }
                 }
