@@ -30,31 +30,32 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-04 — seed v134]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-04 — seed v135]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v134 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v135 CHANGELOG entry.
 
-**Current seed: v134** (rotated 2026-11-04 from the switch emission fixes
-tree — portable 64-bit `switch` lowering, negative integer case items, and
-signed enum backings/negative discriminants; packaging base HEAD `38a18deb`).
-Archived binary md5 (= fixed point) `8dff7650e83df66d96388b3d21c489ea`;
-archive md5 `c978404ed9662fd7adc0c804aae8ae1d`; Win9x zip md5
-`3203c96fcc21d5fe2b5b931e4cb103c7`; `gen/` 48 `.c` + 49 `.h` (12,457,821
+**Current seed: v135** (rotated 2026-11-04 from the switch emission defect
+fix wave — 33..63-bit carrier switches, negative integer case items
+(including parenthesized and bool rules), signed enum backings, and portable
+wide enum macros; packaging base HEAD `5f901b4f`).
+Archived binary md5 (= fixed point) `cf68f192900e7f6618c11e1712b74b3a`;
+archive md5 `c01a8261aa9b9d84f2d414724011b3db`; Win9x zip md5
+`49242d99702f0521ac5d06a29c2d96c3`; `gen/` 48 `.c` + 49 `.h` (12,473,249
 bytes); `lib/` **51** std `.zig` (`std.zig` + 50 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
 `62008632c1f057c42b04bf5883f6da5d`; unchanged — no new std file). A rebuild
-from the committed v134 archive is two-hop
-**hop1 == hop2 == `8dff7650…`**. The compiler source is **`-fsafe`-clean**.
+from the committed v135 archive is two-hop
+**hop1 == hop2 == `cf68f192…`**. The compiler source is **`-fsafe`-clean**.
 Markers (`--markers --dump-c89` on `mud_server`): **3397 lines / 39012 B**
-(unchanged). The 8 pins (unchanged), the live corpus (1212 =
-**1032 OK / 59 GREEN / 121 FAIL**, class md5
-`f61943c5459b6dd27d342d5600b6dd0d`; the +16 dirs vs v133 are the additive
-switch/enum repros and removing them reproduces the v133 live class file
-exactly, 0 existing movers), the frozen-1124 corpus (md5
+(unchanged). The 8 pins (unchanged), the live corpus (1240 =
+**1053 OK / 63 GREEN / 124 FAIL**, class md5
+`d9011c94cdbae01aa1765ca1047656a4`; the +28 dirs vs v134 are the additive
+switch/enum/paren/bool repros and removing them reproduces the v134 live
+class file exactly, 0 existing movers), the frozen-1124 corpus (md5
 `518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the goldens (5/5), the 26
 examples and the 342/0 stdlib + 10/10 crosscheck are all exact.
 
@@ -157,7 +158,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v134 carries the full 51 std `.zig`** = `std.zig` plus
+tracked seed archive **v135 carries the full 51 std `.zig`** = `std.zig` plus
 50 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -318,7 +319,7 @@ point is unmoved), via
   The z9play M7 TUI consumes this API
   (`examples/z98/z9play/ui.zig`).
 
-### Switch / negative / enum case emission (v134)  [added: 2026-11-04]
+### Switch / negative / enum case emission (v134–v135)  [added: 2026-11-04]
 
 - **64-bit (8-byte carrier) `switch`:** a condition temp whose **C carrier**
   is 64-bit (`i64`/`u64`, a 33..63-bit arbitrary int, or an enum backed by one)

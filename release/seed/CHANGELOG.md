@@ -15,6 +15,73 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-04 — seed v135 (HEAD 5f901b4f)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12473249 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-11-04 |
+| HEAD | `5f901b4f` |
+| seed binary md5 | `cf68f192900e7f6618c11e1712b74b3a` |
+| self-emission C | 48 `.c` + 49 `.h` (12473249 bytes) |
+| fixed point | `cf68f192900e7f6618c11e1712b74b3a` |
+| lib manifest | `lib/manifest.md5` (51 std files; md5 `62008632c1f057c42b04bf5883f6da5d`) |
+| archive md5 | `c01a8261aa9b9d84f2d414724011b3db` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `49242d99702f0521ac5d06a29c2d96c3` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 51 std `.zig` + `manifest.md5` |
+| HEAD/date | `5f901b4f` / 2026-11-04 |
+
+Provenance note: the archived binary (md5 cf68f192900e7f6618c11e1712b74b3a) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+5f901b4f; gcc of the archive's self-emission C reproduces the fixed point
+`cf68f192900e7f6618c11e1712b74b3a` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
+### Battery at rotation (v135)
+
+- **Corpus:** live 1240 dirs = 1053 OK / 63 GREEN / 124 FAIL / 0 ICE /
+  0 CRASH; class md5 `d9011c94cdbae01aa1765ca1047656a4`. The +28 dirs vs v134
+  are the additive switch/enum/paren/bool repros (5 + 8 + 10 + 5); removing
+  them reproduces the v134 live class file exactly (1212 = 1032 OK / 59 GREEN /
+  121 FAIL, md5 `f61943c5459b6dd27d342d5600b6dd0d`), so there are **0
+  existing-dir movers**.
+- **Frozen-1124:** 1124 lines, md5 `518eca1a9b5d3e1cc5a48abce214abd8`,
+  950 OK / 58 GREEN / 116 FAIL, **0 movers**.
+- **Goldens 5/5 byte-identical; 8 dump pins 8/8 unchanged; markers 3397 lines /
+  39012 B (unchanged); examples 26/26; stdlib 342/0 + crosscheck 10/10;
+  `check_emit_support` 8/8; all compiler gates green** (including the extended
+  `gate_switch_width.sh`, `gate_lower_depth.sh` cases 16-29, and
+  `gate_warn_clean.sh` scope (c)).
+- **Known (not gated):** the compiler's own self-emission produces 18
+  `-Werror` diagnostics in 8 TUs under gcc `-O2`/`-O3` (array-bounds /
+  stringop-overflow behind existing `pal_trap()` guards, and optional-payload
+  `maybe-uninitialized`); identical on the archived v134 compiler, i.e.
+  pre-existing and behavior-neutral. The wave's own emitted C (hello, lisp,
+  runtime, and all 16 new repros) is clean at `-O2`/`-O3`. Deferred; the
+  shipped MSVC/OWC scripts carry no `/WX`/`-Werror`.
+
 ## 2026-11-04 — seed v134 (HEAD 38a18deb)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
