@@ -1,27 +1,43 @@
 // stdlib_zstd_dict_mismatch_xmod — std_zstd (L4) RFC 8878 dict-id rejection.
 //
-// Covers: a frame carrying a nonzero dictionary id must remain error.Corrupt
-// through the no-dictionary entry point (the supplied `wrong_dict` in data.zig
-// has a different id; this fixture intentionally exercises only the existing
-// zstdDecompress API, so it is runtime-RED/GREEN without the new symbol).
+// Covers: a frame carrying a nonzero dictionary id must raise error.Corrupt
+// (a) through the no-dict entry point, (b) through zstdDecompressDict with a
+// magic dictionary whose id differs, and (c) through zstdDecompressDict with a
+// raw-content dictionary (raw dictionaries are legal for dict-id-0 frames
+// only). expected.txt/expected.rc pin the success line; expected_error.txt is
+// documentation only.
 //
-// GREEN (contract): catch error.Corrupt and emit deterministic byte-exact
-// stdout `zstd dict mismatch ok\n` (rc 0).
+// GREEN (contract): catch error.Corrupt on every path and emit deterministic
+// byte-exact stdout `zstd dict mismatch ok\n` (rc 0).
 const io = @import("std_io.zig");
 const zstd = @import("std_zstd.zig");
 const data = @import("data.zig");
 
 var g_dst: [65536]u8 = undefined;
 
-pub fn main() void {
-    _ = data.wrong_dict_slice();
-    const n = zstd.zstdDecompress(data.frame_slice(), g_dst[0..], 21) catch |e| {
-        if (e == error.Corrupt) {
-            io.write("zstd dict mismatch ok\n");
-            return;
-        }
-        @panic("wrong error");
+fn expectNoDictCorrupt(src: []const u8, what: []const u8) void {
+    const n = zstd.zstdDecompress(src, g_dst[0..], 21) catch |e| {
+        if (e == error.Corrupt) return;
+        @panic(what);
     };
     _ = n;
-    @panic("dictionary frame accepted by no-dict API");
+    @panic(what);
+}
+
+fn expectDictCorrupt(src: []const u8, dict: []const u8, what: []const u8) void {
+    const n = zstd.zstdDecompressDict(src, g_dst[0..], dict, 21) catch |e| {
+        if (e == error.Corrupt) return;
+        @panic(what);
+    };
+    _ = n;
+    @panic(what);
+}
+
+pub fn main() void {
+    expectNoDictCorrupt(data.frame_slice(), "no-dict API accepted dict frame");
+    expectDictCorrupt(data.frame_slice(), data.wrong_dict_slice(),
+                      "wrong magic dictionary id accepted");
+    expectDictCorrupt(data.frame_slice(), data.raw_dict_slice(),
+                      "raw dict accepted for nonzero frame id");
+    io.write("zstd dict mismatch ok\n");
 }

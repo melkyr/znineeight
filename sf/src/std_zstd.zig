@@ -1,15 +1,19 @@
 // std_zstd.zig — Z98 std lib L4: RFC 8878 zstd frame decoder (subset).
 //
 // Contract (design spec §6.4): single-shot decompression into the caller's
-// `dst`; history is `dst[0..written]`; no heap and no buffer beyond `dst`
+// `dst`; dictionary history (when supplied) precedes frame output, and frame
+// output accumulates in `dst[0..written]`; no heap and no buffer beyond `dst`
 // (entropy tables are function-local). Errors are exactly:
 //   error.Corrupt       malformed/truncated/unsupported frame data
 //   error.OutputTooSmall caller dst cannot hold the decoded content
 //   error.WindowTooBig  frame window_log exceeds the caller cap
 //
 // Supported subset: standard frames (raw/RLE/compressed blocks), predefined,
-// RLE and FSE-compressed Huffman/FSE tables, repeat modes, skippable frames.
-// Dictionaries are not supported (a nonzero dictionary id is Corrupt).
+// RLE and FSE-compressed Huffman/FSE tables, repeat modes, skippable frames,
+// and RFC 8878 dictionaries via `zstdDecompressDict` (magic or raw content;
+// dict entropy tables seed first-block Repeat; dict content seeds history).
+// The no-dict `zstdDecompress` entry still rejects frames carrying a nonzero
+// dictionary id.
 //
 // The decoder has no dependencies beyond L0-L2 (only types and arithmetic).
 // `sf/src/std.zig` is intentionally not modified: L4 modules are imported by
@@ -1248,25 +1252,19 @@ fn decodeFrame(st: *Decoder, src: []const u8, start: usize, dst: []u8,
     return pos;
 }
 
-pub fn zstdDecompress(src: []const u8, dst: []u8, max_window_log: u8) !u32 {
+fn decompressFrames(src: []const u8, dst: []u8, max_window_log: u8,
+                    dict: *const Dict) !u32 {
     if (src.len == 0) return error.Corrupt;
-    var no_dict: Dict = undefined;
-    no_dict.present = false;
-    no_dict.magic = false;
-    no_dict.id = 0;
-    no_dict.raw = "";
     var st: Decoder = undefined;
     var written: usize = 0;
     var pos: usize = 0;
-    var saw_frame: bool = false;
 
     while (pos < src.len) {
         if (pos + 4 > src.len) return error.Corrupt;
         const magic = le32(src, pos);
         if (magic == MAGIC) {
             resetDecoder(&st);
-            pos = try decodeFrame(&st, src, pos, dst, &written, max_window_log, &no_dict);
-            saw_frame = true;
+            pos = try decodeFrame(&st, src, pos, dst, &written, max_window_log, dict);
         } else if ((magic & 0xFFFFFFF0) == SKIPPABLE_MAGIC) {
             if (pos + 8 > src.len) return error.Corrupt;
             const fsize: usize = @intCast(usize, le32(src, pos + 4));
@@ -1277,14 +1275,21 @@ pub fn zstdDecompress(src: []const u8, dst: []u8, max_window_log: u8) !u32 {
             return error.Corrupt;
         }
     }
-    if (!saw_frame and src.len == 0) return error.Corrupt;
     if (written > 0xFFFFFFFF) return error.Corrupt;
     return @intCast(u32, written);
 }
 
+pub fn zstdDecompress(src: []const u8, dst: []u8, max_window_log: u8) !u32 {
+    var no_dict: Dict = undefined;
+    no_dict.present = false;
+    no_dict.magic = false;
+    no_dict.id = 0;
+    no_dict.raw = "";
+    return decompressFrames(src, dst, max_window_log, &no_dict);
+}
+
 pub fn zstdDecompressDict(src: []const u8, dst: []u8, dict: []const u8,
                           max_window_log: u8) !u32 {
-    if (src.len == 0) return error.Corrupt;
     var di: Dict = undefined;
     di.present = true;
     di.magic = false;
@@ -1295,30 +1300,5 @@ pub fn zstdDecompressDict(src: []const u8, dst: []u8, dict: []const u8,
         di.magic = true;
         di.id = le32(dict, 4);
     }
-
-    var st: Decoder = undefined;
-    var written: usize = 0;
-    var pos: usize = 0;
-    var saw_frame: bool = false;
-
-    while (pos < src.len) {
-        if (pos + 4 > src.len) return error.Corrupt;
-        const magic = le32(src, pos);
-        if (magic == MAGIC) {
-            resetDecoder(&st);
-            pos = try decodeFrame(&st, src, pos, dst, &written, max_window_log, &di);
-            saw_frame = true;
-        } else if ((magic & 0xFFFFFFF0) == SKIPPABLE_MAGIC) {
-            if (pos + 8 > src.len) return error.Corrupt;
-            const fsize: usize = @intCast(usize, le32(src, pos + 4));
-            pos += 8;
-            if (fsize > src.len - pos) return error.Corrupt;
-            pos += fsize;
-        } else {
-            return error.Corrupt;
-        }
-    }
-    if (!saw_frame and src.len == 0) return error.Corrupt;
-    if (written > 0xFFFFFFFF) return error.Corrupt;
-    return @intCast(u32, written);
+    return decompressFrames(src, dst, max_window_log, &di);
 }

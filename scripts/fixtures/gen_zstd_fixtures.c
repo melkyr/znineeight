@@ -3,7 +3,7 @@
  *
  * Links against the system libzstd (1.5.4 in the dev environment) and writes
  * the self-contained `data.zig` byte-array modules used by
- * repro/mi_matrix/stdlib_zstd_dict_{basic,hist,raw,mismatch}_xmod.
+ * repro/mi_matrix/stdlib_zstd_dict_{basic,hist,raw,mismatch,entropy}_xmod.
  *
  * Build/run (from the repo root):
  *   gcc -O2 -o /tmp/gen_zstd_fixtures scripts/fixtures/gen_zstd_fixtures.c -lzstd
@@ -103,6 +103,118 @@ static void emit_array(FILE *f, const char *name, const unsigned char *data,
     fprintf(f, "};\n\n");
     fprintf(f, "pub fn %s_slice() []const u8 { return %s[0..]; }\n\n",
             name, name);
+}
+
+static size_t frame_header_size(const unsigned char *f, size_t n) {
+    unsigned desc;
+    int single;
+    unsigned fcs_flag, did_flag;
+    size_t p, fcs_size;
+    if (n < 5) return 0;
+    desc = f[4];
+    single = (int)((desc >> 5) & 1);
+    fcs_flag = desc >> 6;
+    did_flag = desc & 3;
+    p = 5;
+    if (!single) {
+        if (p >= n) return 0;
+        p += 1;
+    }
+    if (did_flag == 1) p += 1;
+    else if (did_flag == 2) p += 2;
+    else if (did_flag == 3) p += 4;
+    if (fcs_flag == 0) fcs_size = single ? 1u : 0u;
+    else if (fcs_flag == 1) fcs_size = 2;
+    else if (fcs_flag == 2) fcs_size = 4;
+    else fcs_size = 8;
+    p += fcs_size;
+    if (p > n) return 0;
+    return p;
+}
+
+/* Assert the first compressed block uses the dictionary's entropy tables:
+ * Treeless literals (dict Huffman) and Repeat match-length FSE mode. */
+static void assert_entropy_modes(const unsigned char *frame, size_t n,
+                                 const char *what) {
+    size_t pos = frame_header_size(frame, n);
+    uint32_t bh, lhc;
+    int type, lit_type, lit_sf;
+    size_t bsize, lit_hdr = 0, lit_size = 0, lit_csize = 0;
+    size_t seq_pos, sp, nb;
+    unsigned char b, b0, modes;
+    if (pos == 0) die("entropy: bad frame header");
+    if (pos + 3 > n) die("entropy: truncated block header");
+    bh = (uint32_t)frame[pos] | ((uint32_t)frame[pos + 1] << 8) |
+        ((uint32_t)frame[pos + 2] << 16);
+    pos += 3;
+    type = (int)((bh >> 1) & 3);
+    bsize = (size_t)(bh >> 3);
+    if (type != 2) die("entropy: first block is not compressed");
+    if (pos + bsize > n) die("entropy: truncated block");
+    b = frame[pos];
+    lit_type = (int)(b & 3);
+    lit_sf = (int)((b >> 2) & 3);
+    lhc = (uint32_t)frame[pos] | ((uint32_t)frame[pos + 1] << 8) |
+        ((uint32_t)frame[pos + 2] << 16);
+    if (lit_type <= 1) {
+        if (lit_sf == 0 || lit_sf == 2) {
+            lit_hdr = 1;
+            lit_size = b >> 3;
+            lit_csize = (lit_type == 0) ? lit_size : 1;
+        } else if (lit_sf == 1) {
+            lit_hdr = 2;
+            lit_size = ((uint32_t)frame[pos] |
+                        ((uint32_t)frame[pos + 1] << 8)) >> 4;
+            lit_csize = lit_size;
+        } else {
+            lit_hdr = 3;
+            lit_size = ((uint32_t)frame[pos] |
+                        ((uint32_t)frame[pos + 1] << 8) |
+                        ((uint32_t)frame[pos + 2] << 16)) >> 4;
+            lit_csize = lit_size;
+        }
+    } else {
+        if (lit_sf == 0 || lit_sf == 1) {
+            lit_hdr = 3;
+            lit_size = (lhc >> 4) & 0x3FF;
+            lit_csize = (lhc >> 14) & 0x3FF;
+        } else if (lit_sf == 2) {
+            lit_hdr = 4;
+            lhc |= (uint32_t)frame[pos + 3] << 24;
+            lit_size = (lhc >> 4) & 0x3FFF;
+            lit_csize = lhc >> 18;
+        } else {
+            lit_hdr = 5;
+            lhc |= (uint32_t)frame[pos + 3] << 24;
+            lit_size = (lhc >> 4) & 0x3FFFF;
+            lit_csize = (lhc >> 22) + ((size_t)frame[pos + 4] << 10);
+        }
+    }
+    if (lit_type != 3)
+        die("entropy: literals are not Treeless (dict Huffman not used)");
+    seq_pos = pos + lit_hdr + lit_csize;
+    if (seq_pos >= pos + bsize) die("entropy: no sequence section");
+    b0 = frame[seq_pos];
+    sp = seq_pos + 1;
+    if (b0 == 0) die("entropy: no sequences");
+    if (b0 < 128) {
+        nb = b0;
+    } else if (b0 < 255) {
+        nb = ((size_t)b0 - 128) * 256 + frame[sp];
+        sp += 1;
+    } else {
+        nb = ((size_t)frame[sp] | ((size_t)frame[sp + 1] << 8)) + 0x7F00;
+        sp += 2;
+    }
+    if (sp >= pos + bsize) die("entropy: no sequence modes byte");
+    modes = frame[sp];
+    if (((modes >> 2) & 3) != 3)
+        die("entropy: match-length mode is not Repeat");
+    printf("entropy frame: %lu bytes (%s) lit_type=%d treeless lit=%lu "
+           "nbseq=%lu modes=0x%02X ll=%d of=%d ml=%d\n",
+           (unsigned long)n, what, lit_type, (unsigned long)lit_size,
+           (unsigned long)nb, modes, (modes >> 6) & 3, (modes >> 4) & 3,
+           (modes >> 2) & 3);
 }
 
 static FILE *open_data(const char *root, const char *fixture) {
@@ -240,9 +352,33 @@ int main(int argc, char **argv) {
         f = open_data(root, "stdlib_zstd_dict_mismatch_xmod");
         emit_array(f, "frame", frame, n);
         emit_array(f, "wrong_dict", wrong_dict, dict2_sz);
+        emit_array(f, "raw_dict", custom, 1024u);
         fclose(f);
         printf("mismatch frame: %lu bytes id=0x%08X wrong id=0x%08X\n",
                (unsigned long)n, id1, id2);
+    }
+
+    /* (e) entropy: first block uses the dictionary Huffman table (Treeless
+     * literals) and the dictionary ML FSE table (Repeat mode). The generator
+     * asserts those block-mode bytes so the fixture cannot regress to
+     * Raw/predefined tables. */
+    {
+        size_t p = 0;
+        size_t j;
+        for (j = 0; j < 16u; j++) {
+            memcpy(buf + p, samples + ((j * 5u) % NSAMP) * SAMP_SZ, SAMP_SZ);
+            p += SAMP_SZ;
+        }
+        n = compress_with_dict(dict1, dict1_sz, buf, p, 0, -1,
+                               frame, sizeof frame, "entropy");
+        assert_entropy_modes(frame, n, "dict1");
+        f = open_data(root, "stdlib_zstd_dict_entropy_xmod");
+        emit_array(f, "dict", dict1, dict1_sz);
+        emit_array(f, "frame", frame, n);
+        emit_array(f, "want", buf, p);
+        fclose(f);
+        printf("entropy frame: %lu bytes (payload %lu)\n", (unsigned long)n,
+               (unsigned long)p);
     }
 
     return 0;
