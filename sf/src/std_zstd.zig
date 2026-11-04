@@ -19,6 +19,7 @@ pub const ZSTD_DEFAULT_WINDOW_LOG: u8 = 21;
 
 const MAGIC: u32 = 0xFD2FB528;
 const SKIPPABLE_MAGIC: u32 = 0x184D2A50;
+const DICT_MAGIC: u32 = 0xEC30A437;
 const BLOCK_MAX: usize = 131072;
 
 const LL_MAX: usize = 35;
@@ -101,6 +102,13 @@ const FseTable = struct {
     valid: bool,
 };
 
+const Dict = struct {
+    present: bool,
+    magic: bool,
+    id: u32,
+    raw: []const u8,
+};
+
 const Decoder = struct {
     huf_symbols: [2048]u8,
     huf_nbits: [2048]u8,
@@ -110,6 +118,8 @@ const Decoder = struct {
     of: FseTable,
     ml: FseTable,
     rep: [3]usize,
+    dict_present: bool,
+    dict_tail: []const u8,
 };
 
 const RevBits = struct {
@@ -875,7 +885,8 @@ fn copyLiterals(st: *const Decoder, lr: *LitReader, dst: []u8,
 
 fn decodeCompressedBlock(st: *Decoder, src: []const u8, pos: *usize,
                          block_end: usize, dst: []u8, written: *usize,
-                         window_size: u64, block_max: usize) !void {
+                         frame_start: usize, window_size: u64,
+                         block_max: usize) !void {
     const block_start: usize = written.*;
     var lr: LitReader = undefined;
     const lit_size = try setupLiterals(st, src, pos, block_end, &lr);
@@ -920,13 +931,35 @@ fn decodeCompressedBlock(st: *Decoder, src: []const u8, pos: *usize,
             try copyLiterals(st, &lr, dst, written, lit_len);
 
             const offset: usize = try resolveOffset(&st.rep, @intCast(usize, offset_value), lit_len);
-            if (offset == 0 or offset > written.*) return error.Corrupt;
+            if (offset == 0) return error.Corrupt;
+            if (st.dict_present) {
+                const frame_out: usize = written.* - frame_start;
+                const hist: u64 = @intCast(u64, frame_out) +
+                    @intCast(u64, st.dict_tail.len);
+                if (@intCast(u64, offset) > hist) return error.Corrupt;
+            } else {
+                if (offset > written.*) return error.Corrupt;
+            }
             if (@intCast(u64, offset) > window_size) return error.Corrupt;
             if (match_len > dst.len - written.*) return error.OutputTooSmall;
 
-            var mi: usize = 0;
-            while (mi < match_len) : (mi += 1) {
-                dst[written.* + mi] = dst[written.* - offset + mi];
+            if (st.dict_present) {
+                const frame_out: usize = written.* - frame_start;
+                var mi: usize = 0;
+                while (mi < match_len) : (mi += 1) {
+                    const p_out: usize = frame_out + mi;
+                    if (p_out >= offset) {
+                        dst[written.* + mi] = dst[frame_start + (p_out - offset)];
+                    } else {
+                        dst[written.* + mi] =
+                            st.dict_tail[st.dict_tail.len - (offset - p_out)];
+                    }
+                }
+            } else {
+                var mi: usize = 0;
+                while (mi < match_len) : (mi += 1) {
+                    dst[written.* + mi] = dst[written.* - offset + mi];
+                }
             }
             written.* += match_len;
 
@@ -969,6 +1002,8 @@ fn resetDecoder(st: *Decoder) void {
     st.rep[0] = 1;
     st.rep[1] = 4;
     st.rep[2] = 8;
+    st.dict_present = false;
+    st.dict_tail = "";
 }
 
 fn rotl64(x: u64, n: u32) u64 {
@@ -1050,7 +1085,7 @@ fn xxh64(data: []const u8) u64 {
 }
 
 fn decodeFrame(st: *Decoder, src: []const u8, start: usize, dst: []u8,
-               written: *usize, max_window_log: u8) !usize {
+               written: *usize, max_window_log: u8, dict: *const Dict) !usize {
     var pos: usize = start;
     if (pos + 5 > src.len) return error.Corrupt;
     if (le32(src, pos) != MAGIC) return error.Corrupt;
@@ -1088,7 +1123,11 @@ fn decodeFrame(st: *Decoder, src: []const u8, start: usize, dst: []u8,
     if (did_size == 2) dict_id = @intCast(u64, le16(src, pos));
     if (did_size == 4) dict_id = @intCast(u64, le32(src, pos));
     pos += did_size;
-    if (dict_id != 0) return error.Corrupt;
+    if (dict_id != 0) {
+        if (!dict.present) return error.Corrupt;
+        if (!dict.magic) return error.Corrupt;
+        if (@intCast(u64, dict.id) != dict_id) return error.Corrupt;
+    }
 
     var fcs_size: usize = 0;
     if (fcs_flag == 0) {
@@ -1116,6 +1155,42 @@ fn decodeFrame(st: *Decoder, src: []const u8, start: usize, dst: []u8,
     if (have_size) {
         if (frame_size > @intCast(u64, dst.len - written.*)) return error.OutputTooSmall;
 
+    }
+
+    if (dict.present) {
+        var dict_content: []const u8 = dict.raw;
+        if (dict.magic) {
+            if (dict.raw.len < 8) return error.Corrupt;
+            var dp: usize = 8;
+            dp += try huffmanReadTree(st, dict.raw[dp..dict.raw.len]);
+            if (dp > dict.raw.len) return error.Corrupt;
+            var dict_norm: [256]i16 = undefined;
+            var dict_log: u8 = 0;
+            var used: usize = try readNCount(dict.raw[dp..dict.raw.len],
+                                             OF_MAX, OF_FSE_LOG,
+                                             &dict_norm, &dict_log);
+            dp += used;
+            try buildFse(&st.of, &dict_norm, OF_MAX, dict_log);
+            used = try readNCount(dict.raw[dp..dict.raw.len],
+                                  ML_MAX, ML_FSE_LOG, &dict_norm, &dict_log);
+            dp += used;
+            try buildFse(&st.ml, &dict_norm, ML_MAX, dict_log);
+            used = try readNCount(dict.raw[dp..dict.raw.len],
+                                  LL_MAX, LL_FSE_LOG, &dict_norm, &dict_log);
+            dp += used;
+            try buildFse(&st.ll, &dict_norm, LL_MAX, dict_log);
+            if (dp > dict.raw.len) return error.Corrupt;
+            dict_content = dict.raw[dp..dict.raw.len];
+        }
+        var seed: usize = dict_content.len;
+        if (@intCast(u64, seed) > window_size) {
+            seed = @intCast(usize, window_size);
+        }
+        st.dict_present = true;
+        st.dict_tail = dict_content[dict_content.len - seed..dict_content.len];
+    } else {
+        st.dict_present = false;
+        st.dict_tail = "";
     }
 
     const frame_start: usize = written.*;
@@ -1151,7 +1226,7 @@ fn decodeFrame(st: *Decoder, src: []const u8, start: usize, dst: []u8,
             if (bsize > block_max) return error.Corrupt;
             const block_end: usize = pos + bsize;
             try decodeCompressedBlock(st, src, &pos, block_end, dst, written,
-                                      window_size, block_max);
+                                      frame_start, window_size, block_max);
             pos = block_end;
         } else {
             return error.Corrupt;
@@ -1175,6 +1250,11 @@ fn decodeFrame(st: *Decoder, src: []const u8, start: usize, dst: []u8,
 
 pub fn zstdDecompress(src: []const u8, dst: []u8, max_window_log: u8) !u32 {
     if (src.len == 0) return error.Corrupt;
+    var no_dict: Dict = undefined;
+    no_dict.present = false;
+    no_dict.magic = false;
+    no_dict.id = 0;
+    no_dict.raw = "";
     var st: Decoder = undefined;
     var written: usize = 0;
     var pos: usize = 0;
@@ -1185,7 +1265,48 @@ pub fn zstdDecompress(src: []const u8, dst: []u8, max_window_log: u8) !u32 {
         const magic = le32(src, pos);
         if (magic == MAGIC) {
             resetDecoder(&st);
-            pos = try decodeFrame(&st, src, pos, dst, &written, max_window_log);
+            pos = try decodeFrame(&st, src, pos, dst, &written, max_window_log, &no_dict);
+            saw_frame = true;
+        } else if ((magic & 0xFFFFFFF0) == SKIPPABLE_MAGIC) {
+            if (pos + 8 > src.len) return error.Corrupt;
+            const fsize: usize = @intCast(usize, le32(src, pos + 4));
+            pos += 8;
+            if (fsize > src.len - pos) return error.Corrupt;
+            pos += fsize;
+        } else {
+            return error.Corrupt;
+        }
+    }
+    if (!saw_frame and src.len == 0) return error.Corrupt;
+    if (written > 0xFFFFFFFF) return error.Corrupt;
+    return @intCast(u32, written);
+}
+
+pub fn zstdDecompressDict(src: []const u8, dst: []u8, dict: []const u8,
+                          max_window_log: u8) !u32 {
+    if (src.len == 0) return error.Corrupt;
+    var di: Dict = undefined;
+    di.present = true;
+    di.magic = false;
+    di.id = 0;
+    di.raw = dict;
+    if (dict.len >= 4 and le32(dict, 0) == DICT_MAGIC) {
+        if (dict.len < 8) return error.Corrupt;
+        di.magic = true;
+        di.id = le32(dict, 4);
+    }
+
+    var st: Decoder = undefined;
+    var written: usize = 0;
+    var pos: usize = 0;
+    var saw_frame: bool = false;
+
+    while (pos < src.len) {
+        if (pos + 4 > src.len) return error.Corrupt;
+        const magic = le32(src, pos);
+        if (magic == MAGIC) {
+            resetDecoder(&st);
+            pos = try decodeFrame(&st, src, pos, dst, &written, max_window_log, &di);
             saw_frame = true;
         } else if ((magic & 0xFFFFFFF0) == SKIPPABLE_MAGIC) {
             if (pos + 8 > src.len) return error.Corrupt;

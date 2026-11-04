@@ -335,6 +335,10 @@ repro/mi_matrix/stdlib_x509_parse_xmod
 repro/mi_matrix/stdlib_x509_verify_xmod
 repro/mi_matrix/stdlib_zstd_basic_xmod
 repro/mi_matrix/stdlib_zstd_cross_xmod
+repro/mi_matrix/stdlib_zstd_dict_basic_xmod
+repro/mi_matrix/stdlib_zstd_dict_hist_xmod
+repro/mi_matrix/stdlib_zstd_dict_mismatch_xmod
+repro/mi_matrix/stdlib_zstd_dict_raw_xmod
 stdlib_test/bits_buf_str_usage
 stdlib_test/crypto_codec_usage
 stdlib_test/file_stdin_usage
