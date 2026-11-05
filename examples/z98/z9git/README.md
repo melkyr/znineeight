@@ -144,11 +144,12 @@ The heavy phases are bounded:
   inflate/decompress buffers come from the arena/scratch and are reset between
   entries. Loose objects are read and copied without a whole-object app-arena
   buffer. Large packed objects, loose objects and delta bases use a file-backed
-  temp mapping where the platform supports it (POSIX; Windows falls back to a
-  pagefile-backed mapping), so their pages live on temp disk rather than the
-  `--arena-mb` arena. The ceiling is the 32-bit address space (plus free
-  temp disk/pagefile), not the arena; an object that cannot be reconstructed
-  fails with a clear out-of-memory/object-store error.
+  temp mapping (POSIX `mmap`; Windows `CreateFileMappingA`/`MapViewOfFile`, with
+  a `VirtualAlloc` fallback if mapping is unavailable), so their pages live on
+  temp disk rather than the `--arena-mb` arena. Copy buffers are reused, not
+  grown per file. The ceiling is the 32-bit address space (plus free temp
+  disk/pagefile), not the arena; an object that cannot be reconstructed fails
+  with a clear out-of-memory/object-store error.
 
 Disk preflight runs before the committing work (idx temp files/checkout). On
 HTTP it uses the `Content-Length` when present, otherwise the actual pack size,
@@ -156,8 +157,12 @@ and always parses the PACK header object count for the idx, external-sort temp
 records and the checkout estimate. The worktree estimate is the packed size plus
 a per-object allowance (a lower bound; extremely compressible packs can exceed
 it). The same object-count estimate is used for local path/`file://` pack
-copies and checkout. It checks free space on the destination filesystem
-(`statvfs` on POSIX, `GetDiskFreeSpaceA` via `GetProcAddress` on win32).
+copies and checkout; local loose-object copies also sum the source loose sizes
+and preflight the destination before copying. During HTTP pack download the
+guard rechecks free space every 4 MiB written when no full `Content-Length`
+target is known, so a chunked/no-`Content-Length` pack cannot fill the disk
+silently. It checks free space on the destination filesystem (`statvfs` on
+POSIX, `GetDiskFreeSpaceA` via `GetProcAddress` on win32).
 Insufficient space fails with
 `z9git: not enough free disk space for the pack, idx, temp files and worktree`
 (exit 5). The HTTP idx is synthesized beside the temp pack and only renamed with

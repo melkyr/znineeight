@@ -41,6 +41,8 @@ const KIND_IO: u8 = 1;
 const KIND_PROTOCOL: u8 = 2;
 const KIND_DISK_FULL: u8 = 3;
 
+const DISK_GUARD_BYTES: u64 = 4 * 1024 * 1024;
+
 
 pub const OpenError = error{ Transport, OutOfMemory };
 
@@ -689,6 +691,8 @@ const PackSink = struct {
     dest_git: []const u8,
     preflight_done: bool,
     have_cl: u64,
+    pack_count: u64,
+    guard_next: u64,
     pack_hdr: [12]u8,
     pack_hdr_len: usize,
 };
@@ -708,6 +712,17 @@ fn writeFileAll(f: *file_mod.File, data: []const u8) bool {
     return true;
 }
 
+fn guardDownloadSpace(s: *PackSink) http.HttpError!void {
+    if (s.guard_next == 0 or s.pack_bytes < s.guard_next) return;
+    const est = if (s.have_cl > 0) s.have_cl else s.pack_bytes;
+    repo.diskPreflightEstimate(s.dest_git, est, s.pack_count) catch return sinkFail(s, KIND_DISK_FULL);
+    if (s.pack_bytes > 0xFFFFFFFFFFFFFFFF - DISK_GUARD_BYTES) {
+        s.guard_next = 0xFFFFFFFFFFFFFFFF;
+    } else {
+        s.guard_next = s.pack_bytes + DISK_GUARD_BYTES;
+    }
+}
+
 fn packWriteBytes(s: *PackSink, data: []const u8) http.HttpError!void {
     if (!writeFileAll(&s.file, data)) return sinkFail(s, KIND_IO);
     var i: usize = 0;
@@ -725,6 +740,7 @@ fn packWriteBytes(s: *PackSink, data: []const u8) http.HttpError!void {
     }
     s.pack_started = true;
     s.pack_bytes += @intCast(u64, data.len);
+    try guardDownloadSpace(s);
     if (s.max_down_bps != 0) {
         if (s.pace_start == 0) s.pace_start = time.highRes();
         const target_ms: u64 = s.pack_bytes * 1000 / @intCast(u64, s.max_down_bps);
@@ -755,6 +771,8 @@ fn packDecorate(s: *PackSink, data: []const u8) http.HttpError!void {
         if (s.pack_hdr_len < 12) return;
         const count = packCount(s.pack_hdr[0..]);
         repo.diskPreflightEstimate(s.dest_git, s.have_cl, count) catch return sinkFail(s, KIND_DISK_FULL);
+        s.pack_count = count;
+        s.guard_next = s.pack_bytes + DISK_GUARD_BYTES;
         s.preflight_done = true;
         try packWriteBytes(s, s.pack_hdr[0..12]);
         if (take < data.len) try packWriteBytes(s, data[take..]);
@@ -948,6 +966,8 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     ps.preflight_done = false;
     ps.have_cl = 0;
     ps.pack_hdr_len = 0;
+    ps.pack_count = 0;
+    ps.guard_next = 0;
     var tmp_live = true;
     var pack_open = true;
     defer {

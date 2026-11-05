@@ -577,7 +577,28 @@ fn readLoose(arena: *arena_mod.Arena, s: *Store, id: ObjectId) !Resolved {
         if (e == error.OutOfMemory) return error.OutOfMemory;
         return error.Corrupt;
     };
-    res.big = inf.big;
+    if (inf.big) {
+        // parseLoose returns a body slice into the inflated mapping. Give the
+        // body its own exact mapping so freeTyped/storeReadTo free the mapping
+        // base with the original length (never an interior pointer).
+        const body = res.data;
+        if (body.len == 0) {
+            pack_mod.dynFree(inf.data);
+            res.big = false;
+            return res;
+        }
+        const raw = pack_mod.dynAllocFile(arena, body.len) orelse {
+            pack_mod.dynFree(inf.data);
+            return error.OutOfMemory;
+        };
+        var i: usize = 0;
+        while (i < body.len) : (i += 1) raw[i] = body[i];
+        pack_mod.dynFree(inf.data);
+        res.data = raw[0..body.len];
+        res.big = true;
+    } else {
+        res.big = false;
+    }
     return res;
 }
 

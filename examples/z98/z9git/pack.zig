@@ -34,6 +34,83 @@ fn nullVoid() *void {
     return @ptrCast(*void, @intToPtr(*void, 0));
 }
 
+// Windows file-backed big mappings: CreateFileMappingA/MapViewOfFile are
+// resolved through LoadLibraryA/GetProcAddress so the 9x import whitelist does
+// not change. LoadLibraryA/GetProcAddress/CloseHandle are already whitelisted.
+const CreateFileMappingFn = extern "stdcall" fn(hFile: *void, attrs: *void, protect: u32, maxHigh: u32, maxLow: u32, name: *void) *void;
+const MapViewOfFileFn = extern "stdcall" fn(hMap: *void, access: u32, offHigh: u32, offLow: u32, n: usize) *void;
+const UnmapViewOfFileFn = extern "stdcall" fn(addr: *void) i32;
+extern "stdcall" fn LoadLibraryA(name: [*]const u8) *void;
+extern "stdcall" fn GetProcAddress(mod: *void, name: [*]const u8) *void;
+extern "stdcall" fn CloseHandle(h: *void) i32;
+
+var g_fmap_state: u8 = 0;
+var g_create_mapping: CreateFileMappingFn = undefined;
+var g_map_view: MapViewOfFileFn = undefined;
+var g_unmap_view: UnmapViewOfFileFn = undefined;
+
+const FMAP_MAX: usize = 128;
+const FMAP_PATH_BYTES: usize = 512;
+var g_fmap_ptrs: [FMAP_MAX]usize = undefined;
+var g_fmap_lens: [FMAP_MAX]usize = undefined;
+var g_fmap_paths: [FMAP_MAX][FMAP_PATH_BYTES]u8 = undefined;
+var g_fmap_n: usize = 0;
+
+fn resolveFmapApi() void {
+    if (@isWindows()) {
+        if (g_fmap_state != 0) return;
+        g_fmap_state = 2;
+        const lib = LoadLibraryA("kernel32.dll");
+        if (@ptrToInt(lib) == 0) return;
+        const cf = GetProcAddress(lib, "CreateFileMappingA");
+        const mv = GetProcAddress(lib, "MapViewOfFile");
+        const uv = GetProcAddress(lib, "UnmapViewOfFile");
+        if (@ptrToInt(cf) == 0 or @ptrToInt(mv) == 0 or @ptrToInt(uv) == 0) return;
+        g_create_mapping = @ptrCast(CreateFileMappingFn, cf);
+        g_map_view = @ptrCast(MapViewOfFileFn, mv);
+        g_unmap_view = @ptrCast(UnmapViewOfFileFn, uv);
+        g_fmap_state = 1;
+    }
+}
+
+fn fmapTrack(p: *void, path: []const u8) bool {
+    if (g_fmap_n >= FMAP_MAX) return false;
+    const idx = g_fmap_n;
+    g_fmap_ptrs[idx] = @ptrToInt(p);
+    var n = path.len;
+    if (n > FMAP_PATH_BYTES) n = FMAP_PATH_BYTES;
+    var i: usize = 0;
+    while (i < n) : (i += 1) g_fmap_paths[idx][i] = path[i];
+    g_fmap_lens[idx] = n;
+    g_fmap_n += 1;
+    return true;
+}
+
+fn fmapFree(p: *void) bool {
+    const v = @ptrToInt(p);
+    var i: usize = 0;
+    while (i < g_fmap_n) : (i += 1) {
+        if (g_fmap_ptrs[i] == v) {
+            if (g_fmap_state == 1) _ = g_unmap_view(p);
+            if (g_fmap_lens[i] != 0) {
+                file_mod.remove(g_fmap_paths[i][0..g_fmap_lens[i]]) catch {};
+            }
+            const last = g_fmap_n - 1;
+            if (i != last) {
+                g_fmap_ptrs[i] = g_fmap_ptrs[last];
+                g_fmap_lens[i] = g_fmap_lens[last];
+                var k: usize = 0;
+                while (k < g_fmap_lens[last]) : (k += 1) {
+                    g_fmap_paths[i][k] = g_fmap_paths[last][k];
+                }
+            }
+            g_fmap_n = last;
+            return true;
+        }
+    }
+    return false;
+}
+
 pub fn dynAlloc(n0: usize) ?[]u8 {
     var n = n0;
     if (n == 0) n = 1;
@@ -51,6 +128,7 @@ pub fn dynAlloc(n0: usize) ?[]u8 {
 pub fn dynFree(buf: []u8) void {
     if (buf.len == 0) return;
     if (@isWindows()) {
+        if (fmapFree(@ptrCast(*void, buf.ptr))) return;
         _ = VirtualFree(@ptrCast(*void, buf.ptr), 0, 0x8000);
     } else {
         _ = munmap(@ptrCast(*void, buf.ptr), buf.len);
@@ -105,34 +183,58 @@ fn buildTempPath(out: []u8) usize {
 pub fn dynAllocFile(arena: *arena_mod.Arena, n0: usize) ?[]u8 {
     var n = n0;
     if (n == 0) n = 1;
-    if (!@isWindows() and g_tmp_dir_len != 0) {
-        var pb: [4096]u8 = undefined;
-        const plen = buildTempPath(pb[0..]);
-        if (plen != 0) {
-            const f = file_mod.open(arena, pb[0..plen], file_mod.Mode.ReadWrite) catch return dynAlloc(n);
-            var ok = true;
-            _ = file_mod.seek(&f, @intCast(i64, n - 1), file_mod.SeekWhence.Set) catch {
-                ok = false;
-            };
-            if (ok) {
-                var z: [1]u8 = [_]u8{0};
-                const w = file_mod.write(&f, z[0..]) catch 0;
-                if (w != 1) ok = false;
-            }
-            if (!ok) {
-                file_mod.close(&f);
-                file_mod.remove(pb[0..plen]) catch {};
-                return dynAlloc(n);
-            }
-            const fd: i32 = @intCast(i32, @ptrToInt(f.handle));
-            const p = mmap(nullVoid(), n, 3, 1, fd, 0);
+    if (g_tmp_dir_len == 0) return dynAlloc(n);
+    var pb: [4096]u8 = undefined;
+    const plen = buildTempPath(pb[0..]);
+    if (plen == 0) return dynAlloc(n);
+    const f = file_mod.open(arena, pb[0..plen], file_mod.Mode.ReadWrite) catch return dynAlloc(n);
+    var ok = true;
+    _ = file_mod.seek(&f, @intCast(i64, n - 1), file_mod.SeekWhence.Set) catch {
+        ok = false;
+    };
+    if (ok) {
+        var z: [1]u8 = [_]u8{0};
+        const w = file_mod.write(&f, z[0..]) catch 0;
+        if (w != 1) ok = false;
+    }
+    if (!ok) {
+        file_mod.close(&f);
+        file_mod.remove(pb[0..plen]) catch {};
+        return dynAlloc(n);
+    }
+    if (@isWindows()) {
+        resolveFmapApi();
+        if (g_fmap_state != 1) {
             file_mod.close(&f);
             file_mod.remove(pb[0..plen]) catch {};
-            if (@ptrToInt(p) >= 0xFFFFF000) return dynAlloc(n);
-            return @ptrCast([*]u8, p)[0..n];
+            return dynAlloc(n);
         }
+        const hm = g_create_mapping(f.handle, nullVoid(), 0x04, 0, 0, nullVoid());
+        if (@ptrToInt(hm) == 0) {
+            file_mod.close(&f);
+            file_mod.remove(pb[0..plen]) catch {};
+            return dynAlloc(n);
+        }
+        const p = g_map_view(hm, 0xF001F, 0, 0, n);
+        _ = CloseHandle(hm);
+        file_mod.close(&f);
+        if (@ptrToInt(p) == 0) {
+            file_mod.remove(pb[0..plen]) catch {};
+            return dynAlloc(n);
+        }
+        if (!fmapTrack(p, pb[0..plen])) {
+            _ = g_unmap_view(p);
+            file_mod.remove(pb[0..plen]) catch {};
+            return dynAlloc(n);
+        }
+        return @ptrCast([*]u8, p)[0..n];
     }
-    return dynAlloc(n);
+    const fd: i32 = @intCast(i32, @ptrToInt(f.handle));
+    const p = mmap(nullVoid(), n, 3, 1, fd, 0);
+    file_mod.close(&f);
+    file_mod.remove(pb[0..plen]) catch {};
+    if (@ptrToInt(p) >= 0xFFFFF000) return dynAlloc(n);
+    return @ptrCast([*]u8, p)[0..n];
 }
 
 pub const ObjectId = [20]u8;

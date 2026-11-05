@@ -53,8 +53,11 @@ const MAX_DEPTH: usize = 64;
 const MODE_DIR: u32 = 16384; // 040000
 const MODE_LINK: u32 = 40960; // 0120000
 const MODE_GITLINK: u32 = 57344; // 160000
-const CHECKOUT_SCRATCH_MIN: usize = 8 * 1024 * 1024;
-const CHECKOUT_SCRATCH_MAX: usize = 64 * 1024 * 1024;
+const CHECKOUT_SCRATCH_MAX: usize = 8 * 1024 * 1024;
+
+// One reusable copy buffer: copyFile is called once per loose object/ref and
+// the callers no longer grow the app arena by 64 KiB per file.
+var g_copy_buf: [65536]u8 = undefined;
 
 const Resolved = struct {
     id: ObjectId,
@@ -348,8 +351,7 @@ fn copyFile(arena: *arena_mod.Arena, src: []const u8, dst: []const u8) GitError!
     var out = file_mod.open(arena, dst, file_mod.Mode.Write) catch return error.Io;
     defer file_mod.close(&out);
     const cap: usize = 65536;
-    const raw = arena_mod.alloc(arena, cap) catch return error.OutOfMemory;
-    const buf = raw[0..cap];
+    const buf = g_copy_buf[0..cap];
     while (true) {
         const n = file_mod.read(&in, buf) catch return error.Io;
         if (n == 0) break;
@@ -602,9 +604,48 @@ fn copyPacks(arena: *arena_mod.Arena, src_pack_dir: []const u8, dst_pack_dir: []
     }
 }
 
+fn looseBytes(arena: *arena_mod.Arena, src_git: []const u8) u64 {
+    const src_objects = join2(arena, src_git, "/objects") catch return 0;
+    if (!file_mod.exists(src_objects)) return 0;
+    var d = file_mod.openDir(arena, src_objects) catch return 0;
+    defer file_mod.closeDir(&d);
+    var total: u64 = 0;
+    while (true) {
+        const maybe = file_mod.readDir(arena, &d) catch break;
+        const e = maybe orelse break;
+        if (!e.is_dir or e.name.len != 2) continue;
+        if (eq(e.name, "pack") or eq(e.name, "info")) continue;
+        const sp_dir = join3(arena, src_objects, "/", e.name) catch continue;
+        var sd = file_mod.openDir(arena, sp_dir) catch continue;
+        defer file_mod.closeDir(&sd);
+        while (true) {
+            const fmaybe = file_mod.readDir(arena, &sd) catch break;
+            const f = fmaybe orelse break;
+            if (f.is_dir or f.name.len != 38) continue;
+            const sp = join3(arena, sp_dir, "/", f.name) catch continue;
+            var sf = file_mod.open(arena, sp, file_mod.Mode.Read) catch continue;
+            const sz = file_mod.size(&sf) catch {
+                file_mod.close(&sf);
+                continue;
+            };
+            file_mod.close(&sf);
+            if (sz > 0) {
+                const s: u64 = @intCast(u64, sz);
+                total = satAdd64(total, s);
+            }
+        }
+    }
+    return total;
+}
+
 fn copyLoose(arena: *arena_mod.Arena, src_git: []const u8, dst_git: []const u8) GitError!void {
     const src_objects = try join2(arena, src_git, "/objects");
     if (!file_mod.exists(src_objects)) return;
+    const loose_total = looseBytes(arena, src_git);
+    if (loose_total > 0) {
+        const loose_need = satAdd64(satMul64(loose_total, 2), DISK_SLACK_BYTES);
+        try diskPreflight(dst_git, loose_need);
+    }
     var d = file_mod.openDir(arena, src_objects) catch return error.Io;
     defer file_mod.closeDir(&d);
     while (true) {
@@ -1057,9 +1098,9 @@ fn writeLink(path: []const u8, target: []const u8) GitError!void {
 }
 
 fn checkoutScratchAlloc(arena: *arena_mod.Arena) ?[]u8 {
-    var n = arena.capacity;
-    if (n < CHECKOUT_SCRATCH_MIN) n = CHECKOUT_SCRATCH_MIN;
+    var n = arena.capacity / 2;
     if (n > CHECKOUT_SCRATCH_MAX) n = CHECKOUT_SCRATCH_MAX;
+    if (n < 64 * 1024) n = 64 * 1024;
     return pack_mod.dynAlloc(n);
 }
 

@@ -1,6 +1,6 @@
 // mock_http.zig -- scripted smart-HTTP clone harness (Task 8).
 //
-// usage: mock_http <url> <dest> <max_down_bps> <info_refs_body> <upload_body> <reqlog> [post_status]
+// usage: mock_http <url> <dest> <max_down_bps> <info_refs_body> <upload_body> <reqlog> [post_status] [chunked]
 //
 // Injects a std_http.HttpTransport factory into httpgit.httpCloneOver: the
 // first opened connection serves the supplied info/refs body, the second
@@ -39,6 +39,15 @@ const Mock = struct {
 };
 
 var g_mocks: [2]Mock = undefined;
+
+fn eqStr(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
 
 fn parseU32(s: []const u8) ?u32 {
     if (s.len == 0) return null;
@@ -118,6 +127,92 @@ fn buildResponse(arena: *arena_mod.Arena, status: u16, body: []const u8, content
         pos += 1;
     }
     return out[0..pos];
+}
+
+fn appendHex(out: []u8, pos: *usize, value: usize) void {
+    var tmp: [16]u8 = undefined;
+    var n: usize = 0;
+    var v = value;
+    if (v == 0) {
+        tmp[0] = '0';
+        n = 1;
+    } else {
+        while (v != 0) {
+            const d: u8 = @intCast(u8, v % 16);
+            tmp[n] = if (d < 10) '0' + d else 'a' + (d - 10);
+            n += 1;
+            v = v / 16;
+        }
+    }
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        out[pos.*] = tmp[n - 1 - i];
+        pos.* += 1;
+    }
+}
+
+fn buildChunkedResponse(arena: *arena_mod.Arena, status: u16, body: []const u8, content_type: []const u8) ![]u8 {
+    const chunk: usize = 4096;
+    const chunks = (body.len + chunk - 1) / chunk;
+    const total = body.len + chunks * 16 + content_type.len + 192;
+    const raw = arena_mod.alloc(arena, total) catch return error.OutOfMemory;
+    const out = raw[0..total];
+    var pos: usize = 0;
+    const prefix: []const u8 = "HTTP/1.1 ";
+    var i: usize = 0;
+    while (i < prefix.len) : (i += 1) {
+        out[pos] = prefix[i];
+        pos += 1;
+    }
+    appendDec(out, &pos, @intCast(usize, status));
+    const mid1: []const u8 = " Status\r\nContent-Type: ";
+    i = 0;
+    while (i < mid1.len) : (i += 1) {
+        out[pos] = mid1[i];
+        pos += 1;
+    }
+    i = 0;
+    while (i < content_type.len) : (i += 1) {
+        out[pos] = content_type[i];
+        pos += 1;
+    }
+    const hdr_end: []const u8 = "\r\nTransfer-Encoding: chunked\r\n\r\n";
+    i = 0;
+    while (i < hdr_end.len) : (i += 1) {
+        out[pos] = hdr_end[i];
+        pos += 1;
+    }
+    var off: usize = 0;
+    while (off < body.len) {
+        var n = body.len - off;
+        if (n > chunk) n = chunk;
+        appendHex(out, &pos, n);
+        out[pos] = '\r';
+        pos += 1;
+        out[pos] = '\n';
+        pos += 1;
+        i = 0;
+        while (i < n) : (i += 1) out[pos + i] = body[off + i];
+        pos += n;
+        out[pos] = '\r';
+        pos += 1;
+        out[pos] = '\n';
+        pos += 1;
+        off += n;
+    }
+    const trailer: []const u8 = "0\r\n\r\n";
+    i = 0;
+    while (i < trailer.len) : (i += 1) {
+        out[pos] = trailer[i];
+        pos += 1;
+    }
+    return out[0..pos];
+}
+
+fn buildChunkedResponseOr(arena: *arena_mod.Arena, status: u16, body: []const u8, content_type: []const u8, out: *[]const u8) bool {
+    const r = buildChunkedResponse(arena, status, body, content_type) catch return false;
+    out.* = r;
+    return true;
 }
 
 fn mockRead(state: *void, buf: []u8) !usize {
@@ -205,7 +300,7 @@ fn writeFileOr(path: []const u8, data: []const u8) bool {
 pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
     os.initArgs(arg_count, arg_values);
     const n = os.argc();
-    if (n < 7) fail("usage: mock_http <url> <dest> <max_down_bps> <info_refs_body> <upload_body> <reqlog> [post_status]");
+    if (n < 7) fail("usage: mock_http <url> <dest> <max_down_bps> <info_refs_body> <upload_body> <reqlog> [post_status] [chunked]");
 
     var arena = arena_mod.init(g_arena_buf[0..]);
     const url = os.argv(1);
@@ -225,6 +320,14 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
             fail("mock_http: bad post_status");
         }
     }
+    var chunked = false;
+    if (n >= 9) {
+        if (eqStr(os.argv(8), "chunked")) {
+            chunked = true;
+        } else {
+            fail("mock_http: bad mode");
+        }
+    }
     var info_body: []u8 = undefined;
     if (!readFileOr(&arena, os.argv(4), &info_body)) fail("mock_http: cannot read info/refs body");
     var upload_body: []u8 = undefined;
@@ -234,8 +337,14 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
     if (!buildResponseOr(&arena, 200, info_body, "application/x-git-upload-pack-advertisement", &g_info_resp)) {
         fail("mock_http: out of memory");
     }
-    if (!buildResponseOr(&arena, post_status, upload_body, "application/x-git-upload-pack-result", &g_upload_resp)) {
-        fail("mock_http: out of memory");
+    if (chunked) {
+        if (!buildChunkedResponseOr(&arena, post_status, upload_body, "application/x-git-upload-pack-result", &g_upload_resp)) {
+            fail("mock_http: out of memory");
+        }
+    } else {
+        if (!buildResponseOr(&arena, post_status, upload_body, "application/x-git-upload-pack-result", &g_upload_resp)) {
+            fail("mock_http: out of memory");
+        }
     }
     g_open_count = 0;
 

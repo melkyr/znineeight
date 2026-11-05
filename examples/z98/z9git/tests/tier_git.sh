@@ -280,6 +280,68 @@ else
     echo "$PF_LEFTOVER" | sed 's/^/       /'
 fi
 
+echo "== no Content-Length (chunked) disk guard =="
+CH_SRC="$OUT/mock_chunk_src"
+CH_DATA="$MOCK_DATA/chunk"
+CH_CLONE="$OUT/linux/clone_mock_chunked"
+rm -rf "$CH_SRC" "$CH_CLONE" "$CH_DATA"
+mkdir -p "$CH_DATA"
+if ! (
+    git init -q "$CH_SRC" &&
+    cd "$CH_SRC" &&
+    git config user.name "z9 fixture" &&
+    git config user.email "z9@example.invalid" &&
+    head -c 8000000 /dev/urandom >big.bin &&
+    printf 'chunked\n' >small.txt &&
+    git add big.bin small.txt &&
+    git commit -q -m "chunked guard fixture"
+) >"$OUT/mock_chunk_build.log" 2>&1; then
+    fail_case "prepare chunked no-Content-Length fixture"
+    tail -10 "$OUT/mock_chunk_build.log" | sed 's/^/       /'
+else
+    git upload-pack --stateless-rpc --advertise-refs "$CH_SRC/.git" >"$CH_DATA/adv" 2>"$OUT/mock_chunk_adv.err"
+    { printf '001e# service=git-upload-pack\n0000'; cat "$CH_DATA/adv"; } >"$CH_DATA/info_refs"
+    git --git-dir="$CH_SRC/.git" pack-objects --stdout --all >"$CH_DATA/pack" 2>"$OUT/mock_chunk_pack.err"
+    { printf '0008NAK\n'; cat "$CH_DATA/pack"; } >"$CH_DATA/upload"
+    "$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$CH_CLONE" 0 \
+        "$CH_DATA/info_refs" "$CH_DATA/upload" "$OUT/linux/mock_chunk_requests.log" 200 chunked \
+        >"$OUT/linux/mock_chunk.log" 2>&1
+    CH_RC=$?
+    if [ "$CH_RC" -eq 0 ] && cmp -s "$CH_SRC/big.bin" "$CH_CLONE/big.bin"; then
+        pass_case "chunked no-Content-Length clone exits 0 with matching bytes"
+    else
+        fail_case "chunked no-Content-Length clone failed (rc=$CH_RC)"
+        tail -15 "$OUT/linux/mock_chunk.log" | sed 's/^/       /'
+    fi
+    CH_IDX=$(find "$CH_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
+    if [ "$CH_RC" -eq 0 ] && [ -n "$CH_IDX" ] && git verify-pack -v "$CH_IDX" >/dev/null 2>&1; then
+        pass_case "chunked no-Content-Length clone idx verifies"
+    else
+        fail_case "chunked no-Content-Length clone idx failed verification"
+    fi
+    printf '0008NAK\n\120\101\103\113\000\000\000\002\377\377\377\377' >"$CH_DATA/upload_huge"
+    CH_DEST="$OUT/linux/clone_mock_chunked_huge"
+    rm -rf "$CH_DEST"
+    "$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$CH_DEST" 0 \
+        "$CH_DATA/info_refs" "$CH_DATA/upload_huge" "$OUT/linux/mock_chunk_huge_requests.log" 200 chunked \
+        >"$OUT/linux/mock_chunk_huge.log" 2>&1
+    CH_HUGE_RC=$?
+    if [ "$CH_HUGE_RC" -eq 5 ] && grep -q 'disk full' "$OUT/linux/mock_chunk_huge.log"; then
+        pass_case "chunked oversized PACK count fails DiskFull rc5"
+    else
+        fail_case "chunked oversized PACK count did not fail DiskFull (rc=$CH_HUGE_RC)"
+        tail -10 "$OUT/linux/mock_chunk_huge.log" | sed 's/^/       /'
+    fi
+    CH_LEFTOVER=$(find "$CH_DEST/.git/objects/pack" -maxdepth 1 \
+        \( -name '*.pack' -o -name '*.idx' -o -name 'tmp_http_pack.*' \) -print 2>/dev/null)
+    if [ -z "$CH_LEFTOVER" ]; then
+        pass_case "chunked DiskFull leaves no final pack/idx or temp pack"
+    else
+        fail_case "chunked DiskFull left files behind"
+        echo "$CH_LEFTOVER" | sed 's/^/       /'
+    fi
+fi
+
 echo "== mocked-transport refs/pull/* filter =="
 PULL_SRC="$OUT/mock_pull_src"
 PULL_REPO="$OUT/mock_pull.git"
@@ -1291,6 +1353,97 @@ else
     fi
 fi
 
+echo "== multiple large loose objects (mapping ownership) =="
+LOOSE_MULTI_SRC="$OUT/loose_multi_src"
+LOOSE_MULTI="$OUT/linux/clone_loose_multi"
+rm -rf "$LOOSE_MULTI_SRC" "$LOOSE_MULTI"
+if ! (
+    git init -q "$LOOSE_MULTI_SRC" &&
+    cd "$LOOSE_MULTI_SRC" &&
+    git config user.name "z9 fixture" &&
+    git config user.email "z9@example.invalid" &&
+    i=0 && while [ "$i" -lt 5 ]; do
+        head -c 12000000 /dev/urandom >"big_$i.bin"
+        i=$((i + 1))
+    done &&
+    git add big_*.bin &&
+    git commit -q -m "five 12 MiB loose blobs"
+) >"$OUT/loose_multi_build.log" 2>&1; then
+    fail_case "prepare multiple large loose fixture"
+    tail -10 "$OUT/loose_multi_build.log" | sed 's/^/       /'
+else
+    if [ -x /usr/bin/time ]; then
+        /usr/bin/time -v "$PROG" clone "$LOOSE_MULTI_SRC" "$LOOSE_MULTI" \
+            >"$OUT/linux/clone_loose_multi.log" 2>"$OUT/linux/clone_loose_multi.time"
+    else
+        "$PROG" clone "$LOOSE_MULTI_SRC" "$LOOSE_MULTI" \
+            >"$OUT/linux/clone_loose_multi.log" 2>"$OUT/linux/clone_loose_multi.time"
+    fi
+    LOOSE_MULTI_RC=$?
+    LOOSE_MULTI_OK=1
+    i=0 && while [ "$i" -lt 5 ]; do
+        cmp -s "$LOOSE_MULTI_SRC/big_$i.bin" "$LOOSE_MULTI/big_$i.bin" || LOOSE_MULTI_OK=0
+        i=$((i + 1))
+    done
+    if [ "$LOOSE_MULTI_RC" -eq 0 ] && [ "$LOOSE_MULTI_OK" -eq 1 ]; then
+        pass_case "five 12 MiB loose blobs clone with correct bytes"
+    else
+        fail_case "multiple large loose clone failed (rc=$LOOSE_MULTI_RC ok=$LOOSE_MULTI_OK)"
+        tail -10 "$OUT/linux/clone_loose_multi.log" | sed 's/^/       /'
+    fi
+    if find "$LOOSE_MULTI/.git" -name 'z9big-*' -print | grep -q .; then
+        fail_case "multiple large loose clone left a z9big temp file"
+    else
+        pass_case "multiple large loose clone left no z9big temp file"
+    fi
+    if [ -x /usr/bin/time ]; then
+        LOOSE_MULTI_RSS=$(awk '/Maximum resident set size/ {print $6}' "$OUT/linux/clone_loose_multi.time" 2>/dev/null)
+        if [ -n "$LOOSE_MULTI_RSS" ] && [ "$LOOSE_MULTI_RSS" -lt 196608 ]; then
+            pass_case "multiple large loose peak RSS ${LOOSE_MULTI_RSS} kB (<192 MiB)"
+        else
+            fail_case "multiple large loose peak RSS ${LOOSE_MULTI_RSS:-?} kB is too high"
+        fi
+    fi
+fi
+
+echo "== 4000 loose objects and many refs at --arena-mb 32 =="
+LOOSE_MANY_SRC="$OUT/loose_many_src"
+LOOSE_MANY="$OUT/linux/clone_loose_many"
+rm -rf "$LOOSE_MANY_SRC" "$LOOSE_MANY"
+if ! (
+    git init -q "$LOOSE_MANY_SRC" &&
+    cd "$LOOSE_MANY_SRC" &&
+    git config user.name "z9 fixture" &&
+    git config user.email "z9@example.invalid" &&
+    d=0 && while [ "$d" -lt 40 ]; do
+        mkdir "d$d"
+        f=0 && while [ "$f" -lt 100 ]; do
+            printf 'loose %s %s\n' "$d" "$f" >"d$d/file_${d}_${f}.txt"
+            f=$((f + 1))
+        done
+        d=$((d + 1))
+    done &&
+    git add -A && git commit -q -m "4000 loose objects" &&
+    i=0 && while [ "$i" -lt 300 ]; do
+        git branch "b$i"
+        i=$((i + 1))
+    done
+) >"$OUT/loose_many_build.log" 2>&1; then
+    fail_case "prepare 4000-loose-object fixture"
+    tail -10 "$OUT/loose_many_build.log" | sed 's/^/       /'
+else
+    "$PROG" clone --arena-mb 32 "$LOOSE_MANY_SRC" "$LOOSE_MANY" >"$OUT/linux/clone_loose_many.log" 2>&1
+    LOOSE_MANY_RC=$?
+    LOOSE_MANY_N=$(find "$LOOSE_MANY" -path "$LOOSE_MANY/.git" -prune -o -type f -print | wc -l)
+    LOOSE_MANY_REFS=$(find "$LOOSE_MANY/.git/refs" -type f 2>/dev/null | wc -l)
+    if [ "$LOOSE_MANY_RC" -eq 0 ] && [ "$LOOSE_MANY_N" -eq 4000 ] && [ "$LOOSE_MANY_REFS" -ge 300 ]; then
+        pass_case "4000 loose objects + 300 refs clone at --arena-mb 32"
+    else
+        fail_case "4000 loose objects clone failed (rc=$LOOSE_MANY_RC files=$LOOSE_MANY_N refs=$LOOSE_MANY_REFS)"
+        tail -10 "$OUT/linux/clone_loose_many.log" | sed 's/^/       /'
+    fi
+fi
+
 echo "== checkout preflight/removal bounded at the default 32 MiB arena =="
 TREE_SRC="$OUT/tree_src"
 TREE_CLONE="$OUT/linux/clone_tree_4k"
@@ -1555,6 +1708,39 @@ else
     fail_case "Wine log golden (rc=$WIN_LOG_RC; STOP: see $OUT/wine_log.err)"
     diff "$OUT/linux/packed_log.want" "$OUT/wine_log.out" | sed 's/^/       /' | head -20
     tail -10 "$OUT/wine_log.err" | sed 's/^/       /'
+fi
+
+echo "== Windows: file-backed large loose object under Wine =="
+WIN_LOOSE_SRC="$OUT/wine/loose_big_src"
+WIN_LOOSE_CLONE="$OUT/wine/loose_big_clone"
+rm -rf "$WIN_LOOSE_SRC" "$WIN_LOOSE_CLONE"
+if ! (
+    git init -q "$WIN_LOOSE_SRC" &&
+    cd "$WIN_LOOSE_SRC" &&
+    git config user.name "z9 fixture" &&
+    git config user.email "z9@example.invalid" &&
+    head -c 12000000 /dev/urandom >big.bin &&
+    printf 'wine loose\n' >small.txt &&
+    git add big.bin small.txt &&
+    git commit -q -m "12 MiB loose blob"
+) >"$OUT/wine_loose_build.log" 2>&1; then
+    fail_case "prepare Wine 12 MiB loose fixture"
+    tail -10 "$OUT/wine_loose_build.log" | sed 's/^/       /'
+else
+    ( cd "$OUT/wine" && timeout 300 wine "$EXE" clone loose_big_src loose_big_clone ) \
+        >"$OUT/wine_loose_clone.log" 2>&1
+    WIN_LOOSE_RC=$?
+    if [ "$WIN_LOOSE_RC" -eq 0 ] && cmp -s "$WIN_LOOSE_SRC/big.bin" "$WIN_LOOSE_CLONE/big.bin"; then
+        pass_case "Wine 12 MiB loose blob clone uses file-backed mapping"
+    else
+        fail_case "Wine 12 MiB loose blob clone failed (rc=$WIN_LOOSE_RC)"
+        tail -15 "$OUT/wine_loose_clone.log" | sed 's/^/       /'
+    fi
+    if find "$WIN_LOOSE_CLONE/.git" -name 'z9big-*.tmp' -print | grep -q .; then
+        fail_case "Wine large-loose clone left a z9big temp file"
+    else
+        pass_case "Wine large-loose clone removed its temp mapping file"
+    fi
 fi
 
 echo "== Windows: mocked smart HTTP under Wine =="
