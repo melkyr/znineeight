@@ -55,16 +55,16 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v136** (`release/seed/zig1-seed.tgz`, archive md5
-`d0f1d191689ad996bedcade688de1f2b`), with **52** std files (`std.zig` +
+The committed seed is **v138** (`release/seed/zig1-seed.tgz`, archive md5
+`9aef8a6a00bafd3f8f08db96c5ff889b`), with **52** std files (`std.zig` +
 51 `std_*.zig`) and `lib/manifest.md5` md5
-`1906480f9b15dcd4e152cf8c247f2e61`. The compiler fixed point is
-`cf68f192900e7f6618c11e1712b74b3a`; v136 is the Phase 3 Milestone-1
-std closeout (zstd RFC 8878 dictionaries, the new `std_deflate` inflater,
-and `std_http` POST + streaming sink; no compiler source change, so the
-fixed point is unchanged from v135). The Win9x companion zip is
-`release/seed/zig1_seed_w9.zip` (md5
-`8fc02b8123ab04fac77ab8932ac60beb`).
+`df2a11962272dfa1cf92c6929e13d937`. The compiler fixed point is
+`cf68f192900e7f6618c11e1712b74b3a`; v138 is the Phase 3 Task 8b `std_http`
+large-repo helper rotation (`httpGetHeadersOver`, `httpGetStreamOver`,
+`RequestSource`/`httpPostStreamBodyOver`; existing GET/POST behavior
+unchanged, no compiler source change, so the fixed point is unchanged from
+v137). The Win9x companion zip is `release/seed/zig1_seed_w9.zip` (md5
+`067fb8fbb05834b5a4207f32bc17125b`).
 
 ## Phase 1 result — TLS + WireGuard complete
 

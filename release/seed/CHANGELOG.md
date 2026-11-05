@@ -15,6 +15,50 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-05 — seed v138 (HEAD d08d07ab)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12473249 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-11-05 |
+| HEAD | `d08d07ab` |
+| seed binary md5 | `cf68f192900e7f6618c11e1712b74b3a` |
+| self-emission C | 48 `.c` + 49 `.h` (12473249 bytes) |
+| fixed point | `cf68f192900e7f6618c11e1712b74b3a` |
+| lib manifest | `lib/manifest.md5` (52 std files; md5 `df2a11962272dfa1cf92c6929e13d937`) |
+| archive md5 | `9aef8a6a00bafd3f8f08db96c5ff889b` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `067fb8fbb05834b5a4207f32bc17125b` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 52 std `.zig` + `manifest.md5` |
+| HEAD/date | `d08d07ab` / 2026-11-05 |
+
+Provenance note: the archived binary (md5 cf68f192900e7f6618c11e1712b74b3a) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+d08d07ab; gcc of the archive's self-emission C reproduces the fixed point
+`cf68f192900e7f6618c11e1712b74b3a` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-11-05 — seed v137 (HEAD c4bb4fa2)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -196,8 +240,20 @@ Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
 `zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
-emitted `zig_special_types.h`, 12457821 bytes), `c_exit.c` (top level),
+emitted `zig_special_types.h`, 12473249 bytes), `c_exit.c` (top level),
 `runtime/`, `lib/`, `SEED_README.txt`.
+
+Task 8b adds the `std_http` large-repo helpers: `httpGetHeadersOver` (buffered
+GET with caller headers, including `Range` for static servers),
+`httpGetStreamOver` (GET body streamed to a `ResponseSink`),
+`RequestSource` + `httpPostStreamBodyOver` (a POST request body streamed from a
+caller source with a declared `Content-Length` and the same streamed response
+path). The existing GET/POST signatures and behavior are unchanged, no
+compiler source changed, so the fixed point is unchanged and `lib/` remains
+**52** std `.zig` (`std_http.zig` updated, no new module). The targeted
+`stdlib_http_*` fixtures are **8 PASS / 0 FAIL** and the crosscheck is
+**10 PASS / 0 FAIL** (the full compiler/std battery is not re-run here).
+
 
 | field | value |
 |---|---|
