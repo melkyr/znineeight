@@ -48,7 +48,8 @@ cd work
 This app uses `std_os`, `std_file`, `std_arena`, `std_crypto`, `std_deflate`,
 and the z9git modules; there is no network code in this task. The 9x **no-CRT**
 build is the gated path: the emitted `build_mingw_nocrt.bat` uses `-DZIG_NO_CRT`
-+ `-nostdlib`, links only `kernel32`, and imports no `msvcrt.dll`.
++ `-nostdlib`, links `-lgcc -lkernel32 -lwinmm`, and imports no `msvcrt.dll`
++(the import table remains KERNEL32-only).
 `CreateDirectoryA` is resolved through `LoadLibraryA`/`GetProcAddress` (both on
 the 9x import whitelist) so the closed import gate passes. The tier emits with
 bare `-osw`, builds with MinGW no-CRT, runs `check_win9x_imports.sh … 9x`, and
@@ -67,19 +68,24 @@ z9git -h
 - `clone` copies `objects/pack/*.pack` and the matching `*.idx` verbatim, copies
   loose objects verbatim (their SHA-1 filenames are preserved), copies `refs/`,
   `HEAD`, and `packed-refs` when present, then checks out HEAD into the
-  destination. The destination defaults to the source basename with a trailing
-  `.git` removed. A source pack without an idx is a protocol error; idx
-  synthesis arrives with the Task 8 network path.
+  destination. If a source pack has no idx, clone synthesizes one from the pack
+  itself (inflate extents, per-entry CRC32, materialized object ids, sorted
+  names/fanout/large offsets, pack + idx checksums); the reusable entry point is
+  `pack.idxSynthesize`. The destination defaults to the source basename with a
+  trailing `.git` removed.
 - `--max-down <KB/s>` is accepted by the clone grammar for Task 8. It has no
   effect on local transports.
 - `log [ref]` walks parents from the ref (default `HEAD`). The walk is
   depth-first, first parent first; a commit that is reachable twice is printed
   once.
-- `checkout <ref>` resolves a branch, tag, `HEAD`, or 40-hex object id. Files
-  tracked in the previous HEAD tree but absent from the target tree are
-  removed; untracked files are left alone. HEAD becomes symbolic for a branch
-  and detached (the 40-hex commit id) for a tag or raw id. There is no index
-  file; the previous HEAD tree is the old state.
+- `checkout <ref>` resolves a branch, tag, `HEAD`, or 40-hex object id. Before
+  mutating anything it preflights the target tree: a target path that exists
+  untracked is refused, and a tracked directory replaced by a file is refused
+  (no index means a safe recursive directory removal cannot be guaranteed).
+  Files tracked in the previous HEAD tree but absent from the target tree are
+  then removed; untracked files are left alone. HEAD becomes symbolic for a
+  branch and detached (the 40-hex commit id) for a tag or raw id. There is no
+  index file; the previous HEAD tree is the old state.
 
 Run `log` and `checkout` from inside the clone (the repository is discovered
 from the current directory or a parent directory's `.git`).
@@ -89,7 +95,7 @@ from the current directory or a parent directory's `.git`).
 | URL form | Status |
 |---|---|
 | `<path>` (bare git dir) | supported |
-| `<path>` (worktree, uses `<path>/.git`) | supported |
+| `<path>` (worktree, uses `<path>/.git` dir or `gitdir:` file; linked worktrees use `commondir`) | supported |
 | `file://<path>` | supported (scheme stripped) |
 | `http://…` | Task 8 (smart HTTP); rc 2 here |
 | `https://…` | Task 8 (smart HTTP over TLS); rc 2 here |
@@ -139,10 +145,16 @@ checks:
 - clone layout (pack/idx bytes, refs, HEAD) and worktree contents against the
   `git ls-tree -r` goldens;
 - loose-object byte-for-byte copy with SHA-1 names preserved;
-- `log` goldens for both fixtures;
+- local idx synthesis (delete both fixture `.idx` files, clone, then
+  `git verify-pack -v` and a byte comparison against the fixture idx);
+- `log` goldens for both fixtures and for the synthesized-idx clone;
 - `checkout <branch>`: worktree update, tracked-but-absent removal, untracked
   preservation, and HEAD updates both ways;
-- `file://` and worktree sources, and a packed-refs-only source;
+- checkout preflight: an untracked file at a target path is refused without
+  mutation; a tracked directory replaced by a file is refused without mutation
+  (small git-generated fixture);
+- `file://`, worktree, linked-worktree `gitdir:` file (with `commondir`), and a
+  packed-refs-only source;
 - `-h` rc0, bad args rc1, HTTP rc2;
 - bare `-osw` emit, MinGW no-CRT build, `check_win9x_imports.sh … 9x` PASS, and
   Wine `clone` + `log`.

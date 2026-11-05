@@ -19,6 +19,7 @@ const arena_mod = @import("std_arena.zig");
 const file_mod = @import("std_file.zig");
 const crypto = @import("std_crypto.zig");
 const deflate = @import("std_deflate.zig");
+const delta_mod = @import("delta.zig");
 
 pub const ObjectId = [20]u8;
 
@@ -383,6 +384,50 @@ pub fn packOpen(arena: *arena_mod.Arena, pack_path: []const u8, idx: Idx) !Pack 
     return p;
 }
 
+// Open a pack without an idx.  Used only by idxSynthesize: entry parsing and
+// the sliding window need file_size, not the idx lookup table.
+pub fn packOpenRaw(arena: *arena_mod.Arena, pack_path: []const u8) !Pack {
+    const file = file_mod.open(arena, pack_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    var p: Pack = undefined;
+    p.file = file;
+    const fsz = file_mod.size(&p.file) catch return error.OpenFailed;
+    if (fsz < 12 + 20) return error.Corrupt;
+    p.file_size = @intCast(u64, fsz);
+    const win_raw = arena_mod.alloc(arena, WINDOW_SIZE) catch return error.OutOfMemory;
+    p.win = win_raw[0..WINDOW_SIZE];
+    p.win_start = 0;
+    p.win_len = 0;
+    p.count = 0;
+
+    var hdr: [12]u8 = undefined;
+    try readAt(&p, 0, hdr[0..12]);
+    if (hdr[0] != 'P' or hdr[1] != 'A' or hdr[2] != 'C' or hdr[3] != 'K') return error.Corrupt;
+    if (be32(hdr[0..], 4) != 2) return error.Corrupt;
+    p.count = be32(hdr[0..], 8);
+
+    var h = crypto.sha1Init();
+    var off: u64 = 0;
+    const body_end = p.file_size - 20;
+    var chunk: [4096]u8 = undefined;
+    while (off < body_end) {
+        var n: usize = 4096;
+        const left = body_end - off;
+        if (left < @intCast(u64, n)) n = @intCast(usize, left);
+        try readAt(&p, off, chunk[0..n]);
+        crypto.sha1Update(&h, chunk[0..n]);
+        off += @intCast(u64, n);
+    }
+    var trailer: ObjectId = undefined;
+    crypto.sha1Final(&h, &trailer);
+    var on_disk: [20]u8 = undefined;
+    try readAt(&p, body_end, on_disk[0..20]);
+    var i: usize = 0;
+    while (i < 20) : (i += 1) {
+        if (trailer[i] != on_disk[i]) return error.Corrupt;
+    }
+    return p;
+}
+
 pub fn readEntry(arena: *arena_mod.Arena, p: *Pack, offset: u64) !RawEntry {
     if (offset >= p.file_size) return error.Corrupt;
     var pos: u64 = offset;
@@ -419,4 +464,359 @@ pub fn readEntry(arena: *arena_mod.Arena, p: *Pack, offset: u64) !RawEntry {
         .payload_off = pos,
         .payload_len = got.used,
     };
+}
+
+// --- idx v2 synthesis -------------------------------------------------------
+//
+// idxSynthesize(arena, pack_path, idx_path) is the reusable Task 8 entry point:
+// it walks a self-contained pack v2 from offset 12, inflates every entry with
+// std_deflate's `used` extent (the stream end), CRCs the raw packed bytes,
+// materializes OFS_DELTA/REF_DELTA objects against same-pack bases, and writes
+// a canonical idx v2 (sorted names, fanout, per-entry CRC, 31-bit offsets plus
+// the large-offset table, pack SHA-1, idx SHA-1).  It does not need an existing
+// idx and never shells out to git.  A REF_DELTA base outside the pack is
+// rejected as Corrupt (local object-store packs are self-contained).
+
+const SynthEntry = struct {
+    offset: u64,
+    end: u64,
+    kind: Kind,
+    base_off: u64,
+    base_id: ObjectId,
+    payload: []u8,
+    crc: u32,
+    id: ObjectId,
+    id_known: bool,
+    ty: Kind,
+    data: []const u8,
+};
+
+fn copyId(dst: *ObjectId, src: ObjectId) void {
+    var i: usize = 0;
+    while (i < 20) : (i += 1) dst[i] = src[i];
+}
+
+fn idEql(a: ObjectId, b: ObjectId) bool {
+    var i: usize = 0;
+    while (i < 20) : (i += 1) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
+
+fn idLess(a: ObjectId, b: ObjectId) bool {
+    var i: usize = 0;
+    while (i < 20) : (i += 1) {
+        if (a[i] < b[i]) return true;
+        if (a[i] > b[i]) return false;
+    }
+    return false;
+}
+
+fn isBaseKind(k: Kind) bool {
+    return k == Kind.commit or k == Kind.tree or k == Kind.blob or k == Kind.tag;
+}
+
+fn kindName(k: Kind) []const u8 {
+    if (k == Kind.commit) return "commit";
+    if (k == Kind.tree) return "tree";
+    if (k == Kind.blob) return "blob";
+    return "tag";
+}
+
+fn putDecimal(dst: []u8, value: u64) usize {
+    var tmp: [20]u8 = undefined;
+    var n: usize = 0;
+    var v = value;
+    if (v == 0) {
+        dst[0] = '0';
+        return 1;
+    }
+    while (v != 0) {
+        tmp[n] = @intCast(u8, v % 10) + '0';
+        n += 1;
+        v = v / 10;
+    }
+    var i: usize = 0;
+    while (i < n) : (i += 1) dst[i] = tmp[n - 1 - i];
+    return n;
+}
+
+fn synthObjectId(k: Kind, data: []const u8, out: *ObjectId) void {
+    var hdr: [40]u8 = undefined;
+    const name = kindName(k);
+    var n: usize = 0;
+    while (n < name.len) : (n += 1) hdr[n] = name[n];
+    hdr[n] = ' ';
+    n += 1;
+    n += putDecimal(hdr[n..], @intCast(u64, data.len));
+    hdr[n] = 0;
+    n += 1;
+    var h = crypto.sha1Init();
+    crypto.sha1Update(&h, hdr[0..n]);
+    crypto.sha1Update(&h, data);
+    crypto.sha1Final(&h, out);
+}
+
+fn putBe32(dst: []u8, off: usize, v: u32) void {
+    dst[off] = @intCast(u8, (v >> 24) & 0xFF);
+    dst[off + 1] = @intCast(u8, (v >> 16) & 0xFF);
+    dst[off + 2] = @intCast(u8, (v >> 8) & 0xFF);
+    dst[off + 3] = @intCast(u8, v & 0xFF);
+}
+
+fn putBe64(dst: []u8, off: usize, v: u64) void {
+    dst[off] = @intCast(u8, (v >> 56) & 0xFF);
+    dst[off + 1] = @intCast(u8, (v >> 48) & 0xFF);
+    dst[off + 2] = @intCast(u8, (v >> 40) & 0xFF);
+    dst[off + 3] = @intCast(u8, (v >> 32) & 0xFF);
+    dst[off + 4] = @intCast(u8, (v >> 24) & 0xFF);
+    dst[off + 5] = @intCast(u8, (v >> 16) & 0xFF);
+    dst[off + 6] = @intCast(u8, (v >> 8) & 0xFF);
+    dst[off + 7] = @intCast(u8, v & 0xFF);
+}
+
+fn findOffsetIndex(entries: []SynthEntry, n: usize, offset: u64) ?usize {
+    var lo: usize = 0;
+    var hi: usize = n;
+    while (lo < hi) {
+        const mid: usize = lo + (hi - lo) / 2;
+        if (entries[mid].offset < offset) {
+            lo = mid + 1;
+        } else if (entries[mid].offset > offset) {
+            hi = mid;
+        } else {
+            return mid;
+        }
+    }
+    return null;
+}
+
+fn findKnownById(entries: []SynthEntry, n: usize, id: ObjectId) ?usize {
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        if (entries[i].id_known and idEql(entries[i].id, id)) return i;
+    }
+    return null;
+}
+
+fn resolveNormal(entry: *SynthEntry) void {
+    entry.ty = entry.kind;
+    entry.data = entry.payload;
+    var id: ObjectId = undefined;
+    synthObjectId(entry.kind, entry.data, &id);
+    copyId(&entry.id, id);
+    entry.id_known = true;
+}
+
+fn applyDeltaEntry(arena: *arena_mod.Arena, target: *SynthEntry, base: *SynthEntry) !void {
+    var src_len: usize = 0;
+    var tgt_len: usize = 0;
+    delta_mod.deltaSizes(target.payload, &src_len, &tgt_len) catch return error.Corrupt;
+    if (src_len != base.data.len) return error.Corrupt;
+    const raw = arena_mod.alloc(arena, tgt_len) catch return error.OutOfMemory;
+    const out = raw[0..tgt_len];
+    delta_mod.deltaApply(base.data, target.payload, out) catch return error.Corrupt;
+    target.ty = base.ty;
+    target.data = out;
+    var id: ObjectId = undefined;
+    synthObjectId(target.ty, target.data, &id);
+    copyId(&target.id, id);
+    target.id_known = true;
+}
+
+fn mergeBlock(entries: []SynthEntry, src: []u32, dst: []u32, lo: usize, mid: usize, hi: usize) void {
+    var i: usize = lo;
+    var j: usize = mid;
+    var k: usize = lo;
+    while (i < mid and j < hi) {
+        if (idLess(entries[@intCast(usize, src[i])].id, entries[@intCast(usize, src[j])].id)) {
+            dst[k] = src[i];
+            i += 1;
+        } else {
+            dst[k] = src[j];
+            j += 1;
+        }
+        k += 1;
+    }
+    while (i < mid) {
+        dst[k] = src[i];
+        i += 1;
+        k += 1;
+    }
+    while (j < hi) {
+        dst[k] = src[j];
+        j += 1;
+        k += 1;
+    }
+}
+
+fn sortIndices(arena: *arena_mod.Arena, entries: []SynthEntry, out: *[]u32) !void {
+    const n = entries.len;
+    const a_raw = arena_mod.alloc(arena, n * 4) catch return error.OutOfMemory;
+    const b_raw = arena_mod.alloc(arena, n * 4) catch return error.OutOfMemory;
+    var a = @ptrCast([*]u32, a_raw)[0..n];
+    var b = @ptrCast([*]u32, b_raw)[0..n];
+    var i: usize = 0;
+    while (i < n) : (i += 1) a[i] = @intCast(u32, i);
+    var width: usize = 1;
+    while (width < n) {
+        var lo: usize = 0;
+        while (lo < n) {
+            var mid = lo + width;
+            if (mid > n) mid = n;
+            var hi = lo + width * 2;
+            if (hi > n) hi = n;
+            mergeBlock(entries, a, b, lo, mid, hi);
+            lo += width * 2;
+        }
+        const tmp = a;
+        a = b;
+        b = tmp;
+        if (width > n / 2) break;
+        width = width * 2;
+    }
+    out.* = a[0..n];
+}
+
+pub fn idxSynthesize(arena: *arena_mod.Arena, pack_path: []const u8, idx_path: []const u8) !void {
+    var p = try packOpenRaw(arena, pack_path);
+    defer file_mod.close(&p.file);
+    const n: usize = @intCast(usize, p.count);
+    const entries_raw = arena_mod.alloc(arena, n * @sizeOf(SynthEntry)) catch return error.OutOfMemory;
+    const entries = @ptrCast([*]SynthEntry, entries_raw)[0..n];
+
+    const body_end = p.file_size - 20;
+    var off: u64 = 12;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const raw = try readEntry(arena, &p, off);
+        const end = try addU64(raw.payload_off, @intCast(u64, raw.payload_len));
+        if (end > body_end) return error.Corrupt;
+        const raw_len: usize = @intCast(usize, end - off);
+        const raw_buf = arena_mod.alloc(arena, raw_len) catch return error.OutOfMemory;
+        try readAt(&p, off, raw_buf[0..raw_len]);
+        var crc = crypto.crc32Init();
+        crc = crypto.crc32Update(crc, raw_buf[0..raw_len]);
+        crc = crypto.crc32Final(crc);
+        entries[i].offset = off;
+        entries[i].end = end;
+        entries[i].kind = raw.kind;
+        entries[i].base_off = raw.base_off;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) {
+            entries[i].base_id[k] = raw.base_id[k];
+            entries[i].id[k] = 0;
+        }
+        entries[i].payload = raw.payload;
+        entries[i].crc = crc;
+        entries[i].id_known = false;
+        entries[i].ty = raw.kind;
+        entries[i].data = raw.payload[0..0];
+        off = end;
+    }
+    if (off != body_end) return error.Corrupt;
+
+    var pass: usize = 0;
+    while (pass <= n) : (pass += 1) {
+        var progress = false;
+        i = 0;
+        while (i < n) : (i += 1) {
+            if (entries[i].id_known) continue;
+            if (isBaseKind(entries[i].kind)) {
+                resolveNormal(&entries[i]);
+                progress = true;
+            } else if (entries[i].kind == Kind.ofs_delta) {
+                if (findOffsetIndex(entries, n, entries[i].base_off)) |bi| {
+                    if (entries[bi].id_known) {
+                        try applyDeltaEntry(arena, &entries[i], &entries[bi]);
+                        progress = true;
+                    }
+                } else {
+                    return error.Corrupt;
+                }
+            } else if (entries[i].kind == Kind.ref_delta) {
+                if (findKnownById(entries, n, entries[i].base_id)) |bi| {
+                    try applyDeltaEntry(arena, &entries[i], &entries[bi]);
+                    progress = true;
+                }
+            } else {
+                return error.Corrupt;
+            }
+        }
+        if (!progress) break;
+    }
+    i = 0;
+    while (i < n) : (i += 1) {
+        if (!entries[i].id_known) return error.Corrupt;
+    }
+
+    var sorted: []u32 = undefined;
+    try sortIndices(arena, entries, &sorted);
+    var large_count: usize = 0;
+    i = 0;
+    while (i < n) : (i += 1) {
+        if (entries[@intCast(usize, sorted[i])].offset > 0x7FFFFFFF) large_count += 1;
+    }
+
+    const total64: u64 = 8 + 1024 + @intCast(u64, n) * 20 + @intCast(u64, n) * 4 +
+        @intCast(u64, n) * 4 + @intCast(u64, large_count) * 8 + 40;
+    if (total64 > 0xFFFFFFFF) return error.OutOfMemory;
+    const total: usize = @intCast(usize, total64);
+    const buf = arena_mod.alloc(arena, total) catch return error.OutOfMemory;
+    const out = buf[0..total];
+
+    out[0] = 0xFF;
+    out[1] = 't';
+    out[2] = 'O';
+    out[3] = 'c';
+    putBe32(out, 4, 2);
+    const names_off: usize = 8 + 1024;
+    const crc_off: usize = names_off + n * 20;
+    const offs_off: usize = crc_off + n * 4;
+    const large_off: usize = offs_off + n * 4;
+    const trailer_off: usize = large_off + large_count * 8;
+
+    var counts: [256]u32 = undefined;
+    i = 0;
+    while (i < 256) : (i += 1) counts[i] = 0;
+    i = 0;
+    while (i < n) : (i += 1) {
+        const e = entries[@intCast(usize, sorted[i])];
+        counts[e.id[0]] += 1;
+    }
+    var cum: u32 = 0;
+    i = 0;
+    while (i < 256) : (i += 1) {
+        cum += counts[i];
+        putBe32(out, 8 + i * 4, cum);
+    }
+
+    var large_i: usize = 0;
+    i = 0;
+    while (i < n) : (i += 1) {
+        const e = entries[@intCast(usize, sorted[i])];
+        var k: usize = 0;
+        while (k < 20) : (k += 1) out[names_off + i * 20 + k] = e.id[k];
+        putBe32(out, crc_off + i * 4, e.crc);
+        if (e.offset <= 0x7FFFFFFF) {
+            putBe32(out, offs_off + i * 4, @intCast(u32, e.offset));
+        } else {
+            if (large_i >= 0x7FFFFFFF) return error.Corrupt;
+            putBe32(out, offs_off + i * 4, @intCast(u32, 0x80000000) + @intCast(u32, large_i));
+            putBe64(out, large_off + large_i * 8, e.offset);
+            large_i += 1;
+        }
+    }
+
+    var pack_id: ObjectId = undefined;
+    try readAt(&p, body_end, pack_id[0..20]);
+    i = 0;
+    while (i < 20) : (i += 1) out[trailer_off + i] = pack_id[i];
+    var idx_id: ObjectId = undefined;
+    sha1Slice(out[0 .. trailer_off + 20], &idx_id);
+    i = 0;
+    while (i < 20) : (i += 1) out[trailer_off + 20 + i] = idx_id[i];
+
+    file_mod.writeAll(idx_path, out) catch return error.WriteFailed;
 }

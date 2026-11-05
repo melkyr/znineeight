@@ -306,6 +306,81 @@ fi
 rm -f "$PACKED/untracked.txt"
 check_worktree packed_after_master "$PACKED" "$TD/packed_repo" "$TD/goldens/packed.lstree"
 
+echo "== checkout untracked-collision preflight =="
+COLL="$OUT/linux/clone_collision"
+rm -rf "$COLL"
+"$PROG" clone "$TD/packed_repo" "$COLL" >"$OUT/linux/clone_collision.log" 2>&1
+printf 'keep me\n' > "$COLL/ref_a.txt"
+cp "$COLL/big.txt" "$OUT/linux/collision_big.want"
+printf 'ref: refs/heads/master\n' > "$OUT/linux/collision_head.want"
+( cd "$COLL" && "$PROG" checkout refdelta ) >"$OUT/linux/collision.log" 2>&1
+COLL_RC=$?
+if [ "$COLL_RC" -eq 3 ] && grep -qi 'untracked' "$OUT/linux/collision.log"; then
+    pass_case "checkout refuses an untracked target path with rc3"
+else
+    fail_case "checkout untracked collision (rc=$COLL_RC)"
+    cat "$OUT/linux/collision.log" | sed 's/^/       /'
+fi
+if [ "$(cat "$COLL/ref_a.txt")" = "keep me" ]; then
+    pass_case "collision left untracked ref_a.txt intact"
+else
+    fail_case "collision modified untracked ref_a.txt"
+fi
+if cmp -s "$OUT/linux/collision_big.want" "$COLL/big.txt" && [ -f "$COLL/docs/notes.txt" ]; then
+    pass_case "collision left tracked worktree unchanged"
+else
+    fail_case "collision changed tracked worktree files"
+fi
+if cmp -s "$OUT/linux/collision_head.want" "$COLL/.git/HEAD" && [ ! -e "$COLL/ref_b.txt" ]; then
+    pass_case "collision left HEAD and target-only files untouched"
+else
+    fail_case "collision changed HEAD or materialized target-only files"
+fi
+
+echo "== local idx synthesis (pack without idx) =="
+SYNTH_SRC="$OUT/linux/synth_src"
+SYNTH_CLONE="$OUT/linux/clone_synth"
+rm -rf "$SYNTH_SRC" "$SYNTH_CLONE"
+cp -R "$TD/packed_repo" "$SYNTH_SRC"
+rm -f "$SYNTH_SRC"/objects/pack/*.idx
+before_idx=$(find "$SYNTH_SRC/objects/pack" -name '*.idx' | wc -l)
+"$PROG" clone "$SYNTH_SRC" "$SYNTH_CLONE" >"$OUT/linux/clone_synth.log" 2>&1
+SYNTH_RC=$?
+if [ "$before_idx" -eq 0 ] && [ "$SYNTH_RC" -eq 0 ]; then
+    pass_case "clone synthesizes missing pack idx (rc0)"
+else
+    fail_case "clone with missing idx (before=$before_idx rc=$SYNTH_RC)"
+    tail -10 "$OUT/linux/clone_synth.log" | sed 's/^/       /'
+fi
+SYNTH_OK=1
+for pack in "$SYNTH_SRC"/objects/pack/*.pack; do
+    bn=$(basename "$pack" .pack)
+    idx="$SYNTH_CLONE/.git/objects/pack/$bn.idx"
+    if [ -f "$idx" ] && git verify-pack -v "$idx" >"$OUT/linux/verify_$bn.log" 2>&1; then
+        pass_case "git verify-pack accepts synthesized $bn.idx"
+    else
+        fail_case "git verify-pack rejected synthesized $bn.idx"
+        tail -10 "$OUT/linux/verify_$bn.log" 2>/dev/null | sed 's/^/       /'
+        SYNTH_OK=0
+    fi
+    orig_idx="$TD/packed_repo/objects/pack/$bn.idx"
+    if cmp -s "$orig_idx" "$idx"; then
+        pass_case "synthesized $bn.idx is byte-identical to the fixture idx"
+    else
+        fail_case "synthesized $bn.idx differs from the fixture idx"
+        SYNTH_OK=0
+    fi
+done
+if [ "$SYNTH_OK" -eq 1 ]; then
+    check_worktree synth "$SYNTH_CLONE" "$TD/packed_repo" "$TD/goldens/packed.lstree"
+    ( cd "$SYNTH_CLONE" && "$PROG" log ) >"$OUT/linux/synth_log.out" 2>&1
+    if cmp -s "$OUT/linux/packed_log.want" "$OUT/linux/synth_log.out"; then
+        pass_case "log golden from synthesized-idx clone"
+    else
+        fail_case "log golden from synthesized-idx clone"
+    fi
+fi
+
 echo "== clone loose_repo =="
 LOOSE="$OUT/linux/clone_loose"
 rm -rf "$LOOSE"
@@ -404,6 +479,78 @@ else
     diff "$OUT/linux/loose_log.want" "$OUT/linux/packedrefs_log.out" | sed 's/^/       /' | head -20
 fi
 check_worktree packedrefs "$PR_CLONE" "$TD/loose_repo" "$TD/goldens/loose.lstree"
+
+echo "== directory -> file transition =="
+DF_SRC="$OUT/linux/dirfile_src"
+DF_BARE="$OUT/linux/dirfile_bare.git"
+DF_WORK="$OUT/linux/clone_dirfile"
+rm -rf "$DF_SRC" "$DF_BARE" "$DF_WORK"
+mkdir -p "$DF_SRC"
+(
+    cd "$DF_SRC" || exit 1
+    git init -q
+    git config user.name "z9 fixture"
+    git config user.email "z9@example.invalid"
+    printf 'keep\n' > keep.txt
+    mkdir pkg
+    printf 'inside\n' > pkg/inside.txt
+    git add -A
+    git commit -q -m "branch A directory"
+    git branch A
+    git checkout -q -b B
+    git rm -q -r pkg
+    printf 'now a file\n' > pkg
+    git add pkg
+    git commit -q -m "branch B file"
+    git checkout -q A
+) >"$OUT/linux/dirfile_build.log" 2>&1
+git clone --bare --no-hardlinks -q "$DF_SRC" "$DF_BARE" >>"$OUT/linux/dirfile_build.log" 2>&1
+"$PROG" clone "$DF_BARE" "$DF_WORK" >"$OUT/linux/dirfile_clone.log" 2>&1
+DF_CLONE_RC=$?
+if [ "$DF_CLONE_RC" -eq 0 ] && [ -f "$DF_WORK/pkg/inside.txt" ]; then
+    pass_case "dir->file fixture cloned on branch A"
+else
+    fail_case "dir->file fixture clone (rc=$DF_CLONE_RC)"
+    tail -10 "$OUT/linux/dirfile_build.log" | sed 's/^/       /'
+fi
+cp "$DF_WORK/.git/HEAD" "$OUT/linux/dirfile_head.want"
+( cd "$DF_WORK" && "$PROG" checkout B ) >"$OUT/linux/dirfile_checkout.log" 2>&1
+DF_RC=$?
+if [ "$DF_RC" -eq 3 ] && grep -qi 'directory' "$OUT/linux/dirfile_checkout.log"; then
+    pass_case "dir->file checkout refuses before mutating (rc3)"
+else
+    fail_case "dir->file checkout refusal (rc=$DF_RC)"
+    cat "$OUT/linux/dirfile_checkout.log" | sed 's/^/       /'
+fi
+if [ -d "$DF_WORK/pkg" ] && [ "$(cat "$DF_WORK/pkg/inside.txt")" = "inside" ] && \
+   [ -f "$DF_WORK/keep.txt" ] && cmp -s "$OUT/linux/dirfile_head.want" "$DF_WORK/.git/HEAD"; then
+    pass_case "dir->file refusal left tree and HEAD unchanged"
+else
+    fail_case "dir->file refusal mutated the worktree or HEAD"
+fi
+
+echo "== linked-worktree gitfile source =="
+LW_MAIN="$OUT/linux/linked_main.git"
+LW_WT="$OUT/linux/linked_wt"
+LW_CLONE="$OUT/linux/clone_linked"
+rm -rf "$LW_MAIN" "$LW_WT" "$LW_CLONE"
+cp -R "$TD/loose_repo" "$LW_MAIN"
+git --git-dir="$LW_MAIN" worktree add -q "$LW_WT" master >"$OUT/linux/linked_add.log" 2>&1
+if [ -f "$LW_WT/.git" ] && grep -q '^gitdir: ' "$LW_WT/.git"; then
+    pass_case "prepared linked worktree with a .git gitfile"
+else
+    fail_case "could not prepare linked worktree"
+    tail -10 "$OUT/linux/linked_add.log" | sed 's/^/       /'
+fi
+"$PROG" clone "$LW_WT" "$LW_CLONE" >"$OUT/linux/clone_linked.log" 2>&1
+LW_RC=$?
+( cd "$LW_CLONE" 2>/dev/null && "$PROG" log ) >"$OUT/linux/linked_log.out" 2>&1
+if [ "$LW_RC" -eq 0 ] && cmp -s "$OUT/linux/loose_log.want" "$OUT/linux/linked_log.out"; then
+    pass_case "clone resolves linked-worktree gitfile + commondir"
+else
+    fail_case "clone from linked-worktree gitfile (rc=$LW_RC)"
+    tail -10 "$OUT/linux/clone_linked.log" | sed 's/^/       /'
+fi
 
 # --- Windows 9x no-CRT smoke ------------------------------------------------
 echo "== Windows: bare -osw emit + MinGW no-CRT build =="

@@ -26,19 +26,23 @@ const arena_mod = @import("std_arena.zig");
 const file_mod = @import("std_file.zig");
 const os = @import("std_os.zig");
 const objects = @import("objects.zig");
+const pack_mod = @import("pack.zig");
 
 pub const ObjectId = objects.ObjectId;
 
-pub const GitError = error{ Usage, Transport, Protocol, ObjectStore, Io, OutOfMemory };
+pub const GitError = error{ Usage, Transport, Protocol, ObjectStore, Io, OutOfMemory, UntrackedCollision, UnsupportedTransition };
 
-// win32 (kernel32, always present on Win9x) and POSIX directory creation.
-// CreateDirectoryA is resolved through LoadLibraryA/GetProcAddress so the 9x
-// import gate's closed whitelist (which predates this app) still passes; both
-// lookup symbols are on that whitelist.  POSIX calls the plain mkdir wrapper.
+// win32 (kernel32, always present on Win9x) and POSIX directory creation and
+// empty-directory removal.  CreateDirectoryA/RemoveDirectoryA are resolved
+// through LoadLibraryA/GetProcAddress so the 9x import gate's closed whitelist
+// (which predates this app) still passes; both lookup symbols are on that
+// whitelist.  POSIX calls the plain mkdir/rmdir wrappers.
 const CreateDirFn = extern "stdcall" fn(lpPathName: [*]const u8, lpSecurityAttributes: *void) i32;
+const RemoveDirFn = extern "stdcall" fn(lpPathName: [*]const u8) i32;
 pub extern "stdcall" fn LoadLibraryA(name: [*]const u8) *void;
 pub extern "stdcall" fn GetProcAddress(mod: *void, name: [*]const u8) *void;
 pub extern "c" fn mkdir(path: [*]const u8, mode: i32) i32;
+pub extern "c" fn rmdir(path: [*]const u8) i32;
 
 const PATH_BUF: usize = 4096;
 const INDEX_ENTRY_BYTES: usize = 20;
@@ -240,18 +244,42 @@ fn isNull(p: *void) bool {
     return @ptrToInt(p) == 0;
 }
 
-fn createDirWin(path: [*]const u8) i32 {
-    if (!@isWindows()) return 0;
+// 0 = unresolved, 1 = resolved, 2 = unavailable.  Cached after the first call
+// so kernel32 is looked up once; the handle stays loaded for the process.
+var g_create_dir: CreateDirFn = undefined;
+var g_remove_dir: RemoveDirFn = undefined;
+var g_dir_api_state: u8 = 0;
+
+fn resolveDirApi() void {
+    if (g_dir_api_state != 0) return;
+    g_dir_api_state = 2;
+    if (!@isWindows()) return;
     var libbuf: [16]u8 = undefined;
-    if (!cstr("kernel32.dll", libbuf[0..])) return 0;
+    if (!cstr("kernel32.dll", libbuf[0..])) return;
     const lib = LoadLibraryA(@ptrCast([*]const u8, &libbuf[0]));
-    if (isNull(lib)) return 0;
+    if (isNull(lib)) return;
     var fnbuf: [32]u8 = undefined;
-    if (!cstr("CreateDirectoryA", fnbuf[0..])) return 0;
-    const proc = GetProcAddress(lib, @ptrCast([*]const u8, &fnbuf[0]));
-    if (isNull(proc)) return 0;
-    const create: CreateDirFn = @ptrCast(CreateDirFn, proc);
-    return create(path, nullVoid());
+    if (!cstr("CreateDirectoryA", fnbuf[0..])) return;
+    const create = GetProcAddress(lib, @ptrCast([*]const u8, &fnbuf[0]));
+    if (isNull(create)) return;
+    if (!cstr("RemoveDirectoryA", fnbuf[0..])) return;
+    const remove = GetProcAddress(lib, @ptrCast([*]const u8, &fnbuf[0]));
+    if (isNull(remove)) return;
+    g_create_dir = @ptrCast(CreateDirFn, create);
+    g_remove_dir = @ptrCast(RemoveDirFn, remove);
+    g_dir_api_state = 1;
+}
+
+fn createDirWin(path: [*]const u8) i32 {
+    resolveDirApi();
+    if (g_dir_api_state != 1) return 0;
+    return g_create_dir(path, nullVoid());
+}
+
+fn removeDirWin(path: [*]const u8) i32 {
+    resolveDirApi();
+    if (g_dir_api_state != 1) return 0;
+    return g_remove_dir(path);
 }
 
 // Create one directory component; an existing directory is success.
@@ -270,6 +298,21 @@ fn makeDirOne(path: []const u8) GitError!void {
             if (file_mod.exists(path)) return;
             return error.Io;
         }
+    }
+}
+
+// Best-effort removal of an empty directory.  A non-empty directory (for
+// example one holding user-untracked files) is left in place: the tracked
+// files inside it were already removed by removeTreePath, and checkout must
+// not fail just because an untracked file keeps the directory alive.
+fn removeDirIfEmpty(path: []const u8) void {
+    if (!file_mod.exists(path)) return;
+    var buf: [PATH_BUF]u8 = undefined;
+    if (!cstr(path, buf[0..])) return;
+    if (@isWindows()) {
+        _ = removeDirWin(@ptrCast([*]const u8, &buf[0]));
+    } else {
+        _ = rmdir(@ptrCast([*]const u8, &buf[0]));
     }
 }
 
@@ -344,11 +387,14 @@ fn copyPacks(arena: *arena_mod.Arena, src_pack_dir: []const u8, dst_pack_dir: []
         const idx_name = try join2(arena, stem, ".idx");
         const sp = try join3(arena, src_pack_dir, "/", e.name);
         const si = try join3(arena, src_pack_dir, "/", idx_name);
-        if (!file_mod.exists(si)) return error.Protocol;
         const dp = try join3(arena, dst_pack_dir, "/", e.name);
         const di = try join3(arena, dst_pack_dir, "/", idx_name);
         try copyFile(arena, sp, dp);
-        try copyFile(arena, si, di);
+        if (file_mod.exists(si)) {
+            try copyFile(arena, si, di);
+        } else {
+            pack_mod.idxSynthesize(arena, dp, di) catch return error.ObjectStore;
+        }
     }
 }
 
@@ -384,27 +430,60 @@ fn copyLoose(arena: *arena_mod.Arena, src_git: []const u8, dst_git: []const u8) 
     }
 }
 
-fn copyMeta(arena: *arena_mod.Arena, src_git: []const u8, dst_git: []const u8) GitError!void {
-    const src_refs = try join2(arena, src_git, "/refs");
+fn copyMeta(arena: *arena_mod.Arena, head_dir: []const u8, common_dir: []const u8, dst_git: []const u8) GitError!void {
+    const src_refs = try join2(arena, common_dir, "/refs");
     if (file_mod.exists(src_refs)) {
         const dst_refs = try join2(arena, dst_git, "/refs");
         try copyTree(arena, src_refs, dst_refs);
     }
-    const src_head = try join2(arena, src_git, "/HEAD");
+    const src_head = try join2(arena, head_dir, "/HEAD");
     if (!file_mod.exists(src_head)) return error.ObjectStore;
     const dst_head = try join2(arena, dst_git, "/HEAD");
     try copyFile(arena, src_head, dst_head);
-    const src_pr = try join2(arena, src_git, "/packed-refs");
+    const src_pr = try join2(arena, common_dir, "/packed-refs");
     if (file_mod.exists(src_pr)) {
         const dst_pr = try join2(arena, dst_git, "/packed-refs");
         try copyFile(arena, src_pr, dst_pr);
     }
 }
 
+// A linked worktree's gitdir carries a `commondir` file pointing at the main
+// repository (objects/refs live there); HEAD stays in the worktree gitdir.
+fn commonDir(arena: *arena_mod.Arena, git_dir: []const u8) GitError![]const u8 {
+    const path = try join2(arena, git_dir, "/commondir");
+    if (!file_mod.exists(path)) return git_dir;
+    const raw = file_mod.readAll(arena, path) catch return error.Io;
+    const s = trimSpace(raw);
+    if (s.len == 0) return git_dir;
+    const absolute = s[0] == '/' or (s.len >= 2 and s[1] == ':');
+    if (absolute) return s;
+    return try join3(arena, git_dir, "/", s);
+}
+
+fn dirExists(arena: *arena_mod.Arena, path: []const u8) bool {
+    var d = file_mod.openDir(arena, path) catch return false;
+    file_mod.closeDir(&d);
+    return true;
+}
+
 fn sourceGitDir(arena: *arena_mod.Arena, src_path: []const u8, out: *[]const u8) GitError!void {
     const dotgit = try join2(arena, src_path, "/.git");
     if (file_mod.exists(dotgit)) {
-        out.* = dotgit;
+        if (dirExists(arena, dotgit)) {
+            out.* = dotgit;
+            return;
+        }
+        const raw = file_mod.readAll(arena, dotgit) catch return error.Transport;
+        const s = trimSpace(raw);
+        if (!startsWith(s, "gitdir: ")) return error.Transport;
+        const target = trimSpace(s[8..]);
+        if (target.len == 0) return error.Transport;
+        const absolute = target[0] == '/' or (target.len >= 2 and target[1] == ':');
+        if (absolute) {
+            out.* = target;
+        } else {
+            out.* = try join3(arena, src_path, "/", target);
+        }
         return;
     }
     const head = try join2(arena, src_path, "/HEAD");
@@ -611,6 +690,50 @@ fn findEntry(entries: []TreeEntry, name: []const u8) ?usize {
     return null;
 }
 
+// Preflight the whole target tree before checkout mutates anything.  A target
+// path that exists in the worktree but is not in the previous HEAD tree is an
+// untracked collision.  A tracked directory replaced by a file is refused
+// (UnsupportedTransition) because removing a non-empty directory is not safe
+// without an index.  File -> directory is allowed and turns into a remove +
+// mkdir after this check.
+fn preflightTree(arena: *arena_mod.Arena, store: *objects.Store, has_old: bool, old_tree: ObjectId, new_tree: ObjectId, base: []const u8, depth: usize) GitError!void {
+    if (depth > MAX_DEPTH) return error.Protocol;
+    var new_obj: objects.TypedObject = undefined;
+    try readTyped(arena, store, new_tree, &new_obj);
+    if (new_obj.ty != objects.ObjType.tree) return error.Protocol;
+    const new_entries = try parseTree(arena, new_obj.data);
+    var old_entries: []TreeEntry = undefined;
+    if (has_old) {
+        var old_obj: objects.TypedObject = undefined;
+        try readTyped(arena, store, old_tree, &old_obj);
+        if (old_obj.ty != objects.ObjType.tree) return error.Protocol;
+        old_entries = try parseTree(arena, old_obj.data);
+    }
+    var i: usize = 0;
+    while (i < new_entries.len) : (i += 1) {
+        const new = new_entries[i];
+        if (!goodName(new.name)) return error.Protocol;
+        const path = try join3(arena, base, "/", new.name);
+        var old_index: ?usize = null;
+        if (has_old) old_index = findEntry(old_entries, new.name);
+        if (old_index) |oi| {
+            const old = old_entries[oi];
+            if (old.is_dir and new.is_dir) {
+                try preflightTree(arena, store, true, old.id, new.id, path, depth + 1);
+            } else if (old.is_dir and !new.is_dir) {
+                return error.UnsupportedTransition;
+            } else if (!old.is_dir and new.is_dir) {
+                try preflightTree(arena, store, false, new.id, new.id, path, depth + 1);
+            }
+        } else {
+            if (file_mod.exists(path)) return error.UntrackedCollision;
+            if (new.is_dir) {
+                try preflightTree(arena, store, false, new.id, new.id, path, depth + 1);
+            }
+        }
+    }
+}
+
 fn materializeTree(arena: *arena_mod.Arena, store: *objects.Store, tree_id: ObjectId, base: []const u8, depth: usize) GitError!void {
     if (depth > MAX_DEPTH) return error.Protocol;
     var obj: objects.TypedObject = undefined;
@@ -636,10 +759,15 @@ fn materializeTree(arena: *arena_mod.Arena, store: *objects.Store, tree_id: Obje
     }
 }
 
+fn removeTrackedFile(path: []const u8) GitError!void {
+    if (!file_mod.exists(path)) return;
+    file_mod.remove(path) catch return error.Io;
+}
+
 fn removeTreePath(arena: *arena_mod.Arena, store: *objects.Store, id: ObjectId, is_dir: bool, path: []const u8, depth: usize) GitError!void {
     if (depth > MAX_DEPTH) return error.Protocol;
     if (!is_dir) {
-        file_mod.remove(path) catch {};
+        try removeTrackedFile(path);
         return;
     }
     var obj: objects.TypedObject = undefined;
@@ -653,6 +781,7 @@ fn removeTreePath(arena: *arena_mod.Arena, store: *objects.Store, id: ObjectId, 
         const p = try join3(arena, path, "/", e.name);
         try removeTreePath(arena, store, e.id, e.is_dir, p, depth + 1);
     }
+    removeDirIfEmpty(path);
 }
 
 fn removeAbsent(arena: *arena_mod.Arena, store: *objects.Store, old_tree: ObjectId, new_tree: ObjectId, base: []const u8, depth: usize) GitError!void {
@@ -675,8 +804,10 @@ fn removeAbsent(arena: *arena_mod.Arena, store: *objects.Store, old_tree: Object
             const new = new_entries[ni];
             if (old.is_dir and new.is_dir) {
                 try removeAbsent(arena, store, old.id, new.id, path, depth + 1);
+            } else if (old.is_dir and !new.is_dir) {
+                return error.UnsupportedTransition;
             } else if (!old.is_dir and new.is_dir) {
-                file_mod.remove(path) catch {};
+                try removeTrackedFile(path);
             }
         } else {
             try removeTreePath(arena, store, old.id, old.is_dir, path, depth + 1);
@@ -757,6 +888,7 @@ pub fn discoverResult(arena: *arena_mod.Arena) DiscoverResult {
 pub fn cloneLocal(arena: *arena_mod.Arena, src_path: []const u8, dest_dir: []const u8) GitError!void {
     var src_git: []const u8 = undefined;
     try sourceGitDir(arena, src_path, &src_git);
+    const src_common = try commonDir(arena, src_git);
     try mkdirPath(dest_dir);
     const dest_git = try join2(arena, dest_dir, "/.git");
     try mkdirPath(dest_git);
@@ -767,10 +899,10 @@ pub fn cloneLocal(arena: *arena_mod.Arena, src_path: []const u8, dest_dir: []con
     const dst_refs = try join2(arena, dest_git, "/refs");
     try mkdirPath(dst_refs);
 
-    const src_pack = try join2(arena, src_git, "/objects/pack");
+    const src_pack = try join2(arena, src_common, "/objects/pack");
     try copyPacks(arena, src_pack, dst_pack);
-    try copyLoose(arena, src_git, dest_git);
-    try copyMeta(arena, src_git, dest_git);
+    try copyLoose(arena, src_common, dest_git);
+    try copyMeta(arena, src_git, src_common, dest_git);
 
     var store: objects.Store = undefined;
     objects.storeOpen(arena, dest_git, &store) catch return error.ObjectStore;
@@ -917,7 +1049,7 @@ fn writeOut(s: []const u8) void {
     if (s.len != 0) @stdoutWrite(s.ptr, s.len);
 }
 
-fn printCommit(id: ObjectId, data: []const u8) void {
+fn printCommit(id: ObjectId, data: []const u8) GitError!void {
     var author: []const u8 = "";
     var ts: i64 = 0;
     var tz: i64 = 0;
@@ -950,6 +1082,8 @@ fn printCommit(id: ObjectId, data: []const u8) void {
     appendChar(buf[0..], &n, ' ');
     var date: [32]u8 = undefined;
     const dn = formatDate(date[0..], ts, tz);
+    const needed: usize = 7 + 1 + author.len + 1 + dn + 1 + subject.len + 1;
+    if (needed > buf.len) return error.Protocol;
     append(buf[0..], &n, date[0..dn]);
     appendChar(buf[0..], &n, ' ');
     append(buf[0..], &n, subject);
@@ -967,10 +1101,9 @@ fn parseParents(data: []const u8, out: []u8) !usize {
         if (end - pos >= 7 and startsWith(data[pos..end], "parent ")) {
             var id: ObjectId = undefined;
             if (parseId(data[pos + 7 .. end], &id)) {
-                if ((count + 1) * 20 <= out.len) {
-                    idToBytes(out, count * 20, id);
-                    count += 1;
-                }
+                if (count >= out.len / 20) return error.Protocol;
+                idToBytes(out, count * 20, id);
+                count += 1;
             }
         }
         if (eol < 0) break;
@@ -1031,7 +1164,7 @@ pub fn logRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []const u8
         var obj: objects.TypedObject = undefined;
         try readTyped(arena, &store, id, &obj);
         if (obj.ty != objects.ObjType.commit) return error.Protocol;
-        printCommit(id, obj.data);
+        try printCommit(id, obj.data);
         var parents: [32 * 20]u8 = undefined;
         const pc = parseParents(obj.data, parents[0..]) catch return error.Protocol;
         var j: usize = pc;
@@ -1065,6 +1198,7 @@ pub fn checkoutRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []con
     try commitTree(arena, &store, target_commit, &target_tree);
     const root = try worktreeRoot(arena, git_dir);
 
+    try preflightTree(arena, &store, true, old_tree, target_tree, root, 0);
     try removeAbsent(arena, &store, old_tree, target_tree, root, 0);
     try materializeTree(arena, &store, target_tree, root, 0);
     try updateHead(arena, git_dir, target, target_commit);
@@ -1074,6 +1208,8 @@ pub fn exitCode(e: GitError) i32 {
     if (e == error.Usage) return 1;
     if (e == error.Transport) return 2;
     if (e == error.Protocol) return 3;
+    if (e == error.UntrackedCollision) return 3;
+    if (e == error.UnsupportedTransition) return 3;
     if (e == error.ObjectStore) return 4;
     return 5;
 }
@@ -1082,6 +1218,8 @@ pub fn errorMessage(e: GitError) []const u8 {
     if (e == error.Usage) return "z9git: usage error\n";
     if (e == error.Transport) return "z9git: transport error\n";
     if (e == error.Protocol) return "z9git: protocol error\n";
+    if (e == error.UntrackedCollision) return "z9git: checkout would overwrite an untracked path\n";
+    if (e == error.UnsupportedTransition) return "z9git: checkout cannot replace a tracked directory with a file\n";
     if (e == error.ObjectStore) return "z9git: object-store error\n";
     if (e == error.Io) return "z9git: io error\n";
     return "z9git: out of memory\n";
