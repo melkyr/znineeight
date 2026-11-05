@@ -62,9 +62,31 @@ const Bits = struct {
 
 fn bFill(br: *Bits, n: u8) void {
     while (br.cnt < n and br.pos < br.src.len) {
-        br.buf |= @intCast(u32, br.src[br.pos]) << @intCast(u32, br.cnt);
-        br.pos += 1;
-        br.cnt += 8;
+        if (br.pos + 4 <= br.src.len and br.cnt <= 8) {
+            const b0: u32 = @intCast(u32, br.src[br.pos]);
+            const b1: u32 = @intCast(u32, br.src[br.pos + 1]);
+            const b2: u32 = @intCast(u32, br.src[br.pos + 2]);
+            if (br.cnt == 0) {
+                const b3: u32 = @intCast(u32, br.src[br.pos + 3]);
+                br.buf = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+                br.pos += 4;
+                br.cnt = 32;
+            } else {
+                br.buf |= (b0 | (b1 << 8) | (b2 << 16)) << @intCast(u32, br.cnt);
+                br.pos += 3;
+                br.cnt += 24;
+            }
+        } else if (br.pos + 2 <= br.src.len and br.cnt <= 16) {
+            const b0: u32 = @intCast(u32, br.src[br.pos]);
+            const b1: u32 = @intCast(u32, br.src[br.pos + 1]);
+            br.buf |= (b0 | (b1 << 8)) << @intCast(u32, br.cnt);
+            br.pos += 2;
+            br.cnt += 16;
+        } else {
+            br.buf |= @intCast(u32, br.src[br.pos]) << @intCast(u32, br.cnt);
+            br.pos += 1;
+            br.cnt += 8;
+        }
     }
 }
 
@@ -330,10 +352,86 @@ fn adler32(data: []const u8) u32 {
     var s1: u32 = 1;
     var s2: u32 = 0;
     var i: usize = 0;
-    while (i < data.len) : (i += 1) {
-        s1 = (s1 + @intCast(u32, data[i])) % 65521;
-        s2 = (s2 + s1) % 65521;
+    while (data.len - i >= 5552) {
+        var k: usize = 0;
+        while (k < 5552) : (k += 16) {
+            s1 += @intCast(u32, data[i + k]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 1]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 2]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 3]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 4]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 5]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 6]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 7]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 8]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 9]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 10]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 11]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 12]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 13]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 14]);
+            s2 += s1;
+            s1 += @intCast(u32, data[i + k + 15]);
+            s2 += s1;
+        }
+        s1 = s1 % 65521;
+        s2 = s2 % 65521;
+        i += 5552;
     }
+    while (data.len - i >= 16) : (i += 16) {
+        s1 += @intCast(u32, data[i]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 1]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 2]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 3]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 4]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 5]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 6]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 7]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 8]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 9]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 10]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 11]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 12]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 13]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 14]);
+        s2 += s1;
+        s1 += @intCast(u32, data[i + 15]);
+        s2 += s1;
+    }
+    while (i < data.len) : (i += 1) {
+        s1 += @intCast(u32, data[i]);
+        s2 += s1;
+    }
+    s1 = s1 % 65521;
+    s2 = s2 % 65521;
     return (s2 << 16) | s1;
 }
 
