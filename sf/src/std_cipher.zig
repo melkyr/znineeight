@@ -78,117 +78,94 @@ pub const ChaCha20 = struct {
     state: [16]u32,
 };
 
-fn chachaQr(x: *[16]u32, a: usize, b: usize, c: usize, d: usize) void {
-    x[a] = x[a] +% x[b];
-    x[d] = rotl32(x[d] ^ x[a], 16);
-    x[c] = x[c] +% x[d];
-    x[b] = rotl32(x[b] ^ x[c], 12);
-    x[a] = x[a] +% x[b];
-    x[d] = rotl32(x[d] ^ x[a], 8);
-    x[c] = x[c] +% x[d];
-    x[b] = rotl32(x[b] ^ x[c], 7);
-}
-
 fn chacha20Block(state: *const [16]u32, out: *[64]u8) void {
     var x: [16]u32 = undefined;
     var i: usize = 0;
     while (i < 16) : (i += 1) x[i] = state[i];
 
-    chachaQr(&x, 0, 4, 8, 12);
-    chachaQr(&x, 1, 5, 9, 13);
-    chachaQr(&x, 2, 6, 10, 14);
-    chachaQr(&x, 3, 7, 11, 15);
-    chachaQr(&x, 0, 5, 10, 15);
-    chachaQr(&x, 1, 6, 11, 12);
-    chachaQr(&x, 2, 7, 8, 13);
-    chachaQr(&x, 3, 4, 9, 14);
+    var t: u32 = 0;
+    var round: usize = 0;
+    while (round < 10) : (round += 1) {
 
-    chachaQr(&x, 0, 4, 8, 12);
-    chachaQr(&x, 1, 5, 9, 13);
-    chachaQr(&x, 2, 6, 10, 14);
-    chachaQr(&x, 3, 7, 11, 15);
-    chachaQr(&x, 0, 5, 10, 15);
-    chachaQr(&x, 1, 6, 11, 12);
-    chachaQr(&x, 2, 7, 8, 13);
-    chachaQr(&x, 3, 4, 9, 14);
+        x[0] = x[0] +% x[4];
+        t = x[12] ^ x[0]; x[12] = ((t & 0xFFFF) << 16) | (t >> 16);
+        x[8] = x[8] +% x[12];
+        t = x[4] ^ x[8]; x[4] = ((t & 0xFFFFF) << 12) | (t >> 20);
+        x[0] = x[0] +% x[4];
+        t = x[12] ^ x[0]; x[12] = ((t & 0xFFFFFF) << 8) | (t >> 24);
+        x[8] = x[8] +% x[12];
+        t = x[4] ^ x[8]; x[4] = ((t & 0x1FFFFFF) << 7) | (t >> 25);
 
-    chachaQr(&x, 0, 4, 8, 12);
-    chachaQr(&x, 1, 5, 9, 13);
-    chachaQr(&x, 2, 6, 10, 14);
-    chachaQr(&x, 3, 7, 11, 15);
-    chachaQr(&x, 0, 5, 10, 15);
-    chachaQr(&x, 1, 6, 11, 12);
-    chachaQr(&x, 2, 7, 8, 13);
-    chachaQr(&x, 3, 4, 9, 14);
+        x[1] = x[1] +% x[5];
+        t = x[13] ^ x[1]; x[13] = ((t & 0xFFFF) << 16) | (t >> 16);
+        x[9] = x[9] +% x[13];
+        t = x[5] ^ x[9]; x[5] = ((t & 0xFFFFF) << 12) | (t >> 20);
+        x[1] = x[1] +% x[5];
+        t = x[13] ^ x[1]; x[13] = ((t & 0xFFFFFF) << 8) | (t >> 24);
+        x[9] = x[9] +% x[13];
+        t = x[5] ^ x[9]; x[5] = ((t & 0x1FFFFFF) << 7) | (t >> 25);
 
-    chachaQr(&x, 0, 4, 8, 12);
-    chachaQr(&x, 1, 5, 9, 13);
-    chachaQr(&x, 2, 6, 10, 14);
-    chachaQr(&x, 3, 7, 11, 15);
-    chachaQr(&x, 0, 5, 10, 15);
-    chachaQr(&x, 1, 6, 11, 12);
-    chachaQr(&x, 2, 7, 8, 13);
-    chachaQr(&x, 3, 4, 9, 14);
+        x[2] = x[2] +% x[6];
+        t = x[14] ^ x[2]; x[14] = ((t & 0xFFFF) << 16) | (t >> 16);
+        x[10] = x[10] +% x[14];
+        t = x[6] ^ x[10]; x[6] = ((t & 0xFFFFF) << 12) | (t >> 20);
+        x[2] = x[2] +% x[6];
+        t = x[14] ^ x[2]; x[14] = ((t & 0xFFFFFF) << 8) | (t >> 24);
+        x[10] = x[10] +% x[14];
+        t = x[6] ^ x[10]; x[6] = ((t & 0x1FFFFFF) << 7) | (t >> 25);
 
-    chachaQr(&x, 0, 4, 8, 12);
-    chachaQr(&x, 1, 5, 9, 13);
-    chachaQr(&x, 2, 6, 10, 14);
-    chachaQr(&x, 3, 7, 11, 15);
-    chachaQr(&x, 0, 5, 10, 15);
-    chachaQr(&x, 1, 6, 11, 12);
-    chachaQr(&x, 2, 7, 8, 13);
-    chachaQr(&x, 3, 4, 9, 14);
+        x[3] = x[3] +% x[7];
+        t = x[15] ^ x[3]; x[15] = ((t & 0xFFFF) << 16) | (t >> 16);
+        x[11] = x[11] +% x[15];
+        t = x[7] ^ x[11]; x[7] = ((t & 0xFFFFF) << 12) | (t >> 20);
+        x[3] = x[3] +% x[7];
+        t = x[15] ^ x[3]; x[15] = ((t & 0xFFFFFF) << 8) | (t >> 24);
+        x[11] = x[11] +% x[15];
+        t = x[7] ^ x[11]; x[7] = ((t & 0x1FFFFFF) << 7) | (t >> 25);
 
-    chachaQr(&x, 0, 4, 8, 12);
-    chachaQr(&x, 1, 5, 9, 13);
-    chachaQr(&x, 2, 6, 10, 14);
-    chachaQr(&x, 3, 7, 11, 15);
-    chachaQr(&x, 0, 5, 10, 15);
-    chachaQr(&x, 1, 6, 11, 12);
-    chachaQr(&x, 2, 7, 8, 13);
-    chachaQr(&x, 3, 4, 9, 14);
+        x[0] = x[0] +% x[5];
+        t = x[15] ^ x[0]; x[15] = ((t & 0xFFFF) << 16) | (t >> 16);
+        x[10] = x[10] +% x[15];
+        t = x[5] ^ x[10]; x[5] = ((t & 0xFFFFF) << 12) | (t >> 20);
+        x[0] = x[0] +% x[5];
+        t = x[15] ^ x[0]; x[15] = ((t & 0xFFFFFF) << 8) | (t >> 24);
+        x[10] = x[10] +% x[15];
+        t = x[5] ^ x[10]; x[5] = ((t & 0x1FFFFFF) << 7) | (t >> 25);
 
-    chachaQr(&x, 0, 4, 8, 12);
-    chachaQr(&x, 1, 5, 9, 13);
-    chachaQr(&x, 2, 6, 10, 14);
-    chachaQr(&x, 3, 7, 11, 15);
-    chachaQr(&x, 0, 5, 10, 15);
-    chachaQr(&x, 1, 6, 11, 12);
-    chachaQr(&x, 2, 7, 8, 13);
-    chachaQr(&x, 3, 4, 9, 14);
+        x[1] = x[1] +% x[6];
+        t = x[12] ^ x[1]; x[12] = ((t & 0xFFFF) << 16) | (t >> 16);
+        x[11] = x[11] +% x[12];
+        t = x[6] ^ x[11]; x[6] = ((t & 0xFFFFF) << 12) | (t >> 20);
+        x[1] = x[1] +% x[6];
+        t = x[12] ^ x[1]; x[12] = ((t & 0xFFFFFF) << 8) | (t >> 24);
+        x[11] = x[11] +% x[12];
+        t = x[6] ^ x[11]; x[6] = ((t & 0x1FFFFFF) << 7) | (t >> 25);
 
-    chachaQr(&x, 0, 4, 8, 12);
-    chachaQr(&x, 1, 5, 9, 13);
-    chachaQr(&x, 2, 6, 10, 14);
-    chachaQr(&x, 3, 7, 11, 15);
-    chachaQr(&x, 0, 5, 10, 15);
-    chachaQr(&x, 1, 6, 11, 12);
-    chachaQr(&x, 2, 7, 8, 13);
-    chachaQr(&x, 3, 4, 9, 14);
+        x[2] = x[2] +% x[7];
+        t = x[13] ^ x[2]; x[13] = ((t & 0xFFFF) << 16) | (t >> 16);
+        x[8] = x[8] +% x[13];
+        t = x[7] ^ x[8]; x[7] = ((t & 0xFFFFF) << 12) | (t >> 20);
+        x[2] = x[2] +% x[7];
+        t = x[13] ^ x[2]; x[13] = ((t & 0xFFFFFF) << 8) | (t >> 24);
+        x[8] = x[8] +% x[13];
+        t = x[7] ^ x[8]; x[7] = ((t & 0x1FFFFFF) << 7) | (t >> 25);
 
-    chachaQr(&x, 0, 4, 8, 12);
-    chachaQr(&x, 1, 5, 9, 13);
-    chachaQr(&x, 2, 6, 10, 14);
-    chachaQr(&x, 3, 7, 11, 15);
-    chachaQr(&x, 0, 5, 10, 15);
-    chachaQr(&x, 1, 6, 11, 12);
-    chachaQr(&x, 2, 7, 8, 13);
-    chachaQr(&x, 3, 4, 9, 14);
-
-    chachaQr(&x, 0, 4, 8, 12);
-    chachaQr(&x, 1, 5, 9, 13);
-    chachaQr(&x, 2, 6, 10, 14);
-    chachaQr(&x, 3, 7, 11, 15);
-    chachaQr(&x, 0, 5, 10, 15);
-    chachaQr(&x, 1, 6, 11, 12);
-    chachaQr(&x, 2, 7, 8, 13);
-    chachaQr(&x, 3, 4, 9, 14);
+        x[3] = x[3] +% x[4];
+        t = x[14] ^ x[3]; x[14] = ((t & 0xFFFF) << 16) | (t >> 16);
+        x[9] = x[9] +% x[14];
+        t = x[4] ^ x[9]; x[4] = ((t & 0xFFFFF) << 12) | (t >> 20);
+        x[3] = x[3] +% x[4];
+        t = x[14] ^ x[3]; x[14] = ((t & 0xFFFFFF) << 8) | (t >> 24);
+        x[9] = x[9] +% x[14];
+        t = x[4] ^ x[9]; x[4] = ((t & 0x1FFFFFF) << 7) | (t >> 25);
+    }
 
     i = 0;
     while (i < 16) : (i += 1) {
         store32le(out[0..], i * 4, x[i] +% state[i]);
     }
 }
+
 
 pub fn chacha20Init(key: *const [32]u8, nonce: *const [12]u8, counter: u32) ChaCha20 {
     var s: ChaCha20 = undefined;
