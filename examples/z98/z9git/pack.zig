@@ -34,7 +34,7 @@ fn nullVoid() *void {
     return @ptrCast(*void, @intToPtr(*void, 0));
 }
 
-fn dynAlloc(n0: usize) ?[]u8 {
+pub fn dynAlloc(n0: usize) ?[]u8 {
     var n = n0;
     if (n == 0) n = 1;
     if (@isWindows()) {
@@ -48,7 +48,7 @@ fn dynAlloc(n0: usize) ?[]u8 {
     }
 }
 
-fn dynFree(buf: []u8) void {
+pub fn dynFree(buf: []u8) void {
     if (buf.len == 0) return;
     if (@isWindows()) {
         _ = VirtualFree(@ptrCast(*void, buf.ptr), 0, 0x8000);
@@ -73,14 +73,19 @@ const MAX_U64: u64 = 0xFFFFFFFFFFFFFFFF;
 const MAX_U32: u64 = 0xFFFFFFFF;
 
 pub const Idx = struct {
-    data: []const u8,
-    names_off: usize,
-    crc_off: usize,
-    offs_off: usize,
-    large_off: usize,
-    large_end: usize,
+    // The idx stays on disk. Only the 1 KiB fanout is resident; names, CRCs,
+    // offsets and the large-offset table are read on demand, so a 24 MiB idx
+    // (git/git) does not consume the arena.
+    file: file_mod.File,
+    file_size: u64,
+    names_off: u64,
+    crc_off: u64,
+    offs_off: u64,
+    large_off: u64,
+    large_end: u64,
     count: usize,
     pack_id: ObjectId,
+    fanout: [256]u32,
 };
 
 pub const Pack = struct {
@@ -101,6 +106,7 @@ pub const RawEntry = struct {
     payload: []u8,
     payload_off: u64,
     payload_len: usize,
+    big: bool,
 };
 
 fn be32(b: []const u8, off: usize) u32 {
@@ -136,75 +142,115 @@ fn sha1Slice(data: []const u8, out: *ObjectId) void {
     crypto.sha1Final(&h, out);
 }
 
-pub fn idxLoad(arena: *arena_mod.Arena, path: []const u8) !Idx {
-    const data = file_mod.readAll(arena, path) catch return error.OpenFailed;
-    if (data.len < 8 + 256 * 4 + 40) return error.Corrupt;
-    if (data[0] != 0xFF or data[1] != 't' or data[2] != 'O' or data[3] != 'c') {
-        return error.Corrupt;
+const IDX_HEADER_BYTES: usize = 8 + 256 * 4;
+const IDX_MIN_BYTES: u64 = @intCast(u64, IDX_HEADER_BYTES) + 40;
+
+fn idxReadFile(f: *file_mod.File, size: u64, off: u64, dst: []u8) !void {
+    if (off > size) return error.Corrupt;
+    if (@intCast(u64, dst.len) > size - off) return error.Corrupt;
+    if (off > 0x7FFFFFFFFFFFFFFF) return error.Corrupt;
+    _ = file_mod.seek(f, @intCast(i64, off), file_mod.SeekWhence.Set) catch return error.Io;
+    var got: usize = 0;
+    while (got < dst.len) {
+        const n = file_mod.read(f, dst[got..]) catch return error.Io;
+        if (n == 0) return error.Corrupt;
+        got += n;
     }
-    if (be32(data, 4) != 2) return error.Corrupt;
-
-    var trailer: ObjectId = undefined;
-    sha1Slice(data[0 .. data.len - 20], &trailer);
-    var i: usize = 0;
-    while (i < 20) : (i += 1) {
-        if (trailer[i] != data[data.len - 20 + i]) return error.Corrupt;
-    }
-
-    const count: usize = @intCast(usize, be32(data, 8 + 255 * 4));
-    const names_off: usize = 8 + 256 * 4;
-    const names_bytes: u64 = try mulU64(@intCast(u64, count), 20);
-    const crc_off64: u64 = try addU64(@intCast(u64, names_off), names_bytes);
-    const crc_bytes: u64 = try mulU64(@intCast(u64, count), 4);
-    const offs_off64: u64 = try addU64(crc_off64, crc_bytes);
-    const offs_bytes: u64 = try mulU64(@intCast(u64, count), 4);
-    const large_off64: u64 = try addU64(offs_off64, offs_bytes);
-    const min_end: u64 = try addU64(large_off64, 40);
-    if (min_end > @intCast(u64, data.len)) return error.Corrupt;
-
-    var pack_id: ObjectId = undefined;
-    i = 0;
-    while (i < 20) : (i += 1) pack_id[i] = data[data.len - 40 + i];
-
-    var prev: u32 = 0;
-    i = 0;
-    while (i < 256) : (i += 1) {
-        const v = be32(data, 8 + i * 4);
-        if (v < prev) return error.Corrupt;
-        if (@intCast(u64, v) > @intCast(u64, count)) return error.Corrupt;
-        prev = v;
-    }
-    if (@intCast(usize, prev) != count) return error.Corrupt;
-
-    // Every 31-bit offset that uses the MSB indirection must address an
-    // in-bounds 8-byte large-offset slot; validate once so a lookup can never
-    // silently treat a truncated table as "not found".
-    i = 0;
-    while (i < count) : (i += 1) {
-        const raw = be32(data, @intCast(usize, offs_off64) + i * 4);
-        if ((raw & 0x80000000) != 0) {
-            const li: u64 = @intCast(u64, raw & 0x7FFFFFFF);
-            const pos = try addU64(large_off64, try mulU64(li, 8));
-            const end = try addU64(pos, 8);
-            if (end > @intCast(u64, data.len - 40)) return error.Corrupt;
-        }
-    }
-
-    return Idx{
-        .data = data,
-        .names_off = names_off,
-        .crc_off = @intCast(usize, crc_off64),
-        .offs_off = @intCast(usize, offs_off64),
-        .large_off = @intCast(usize, large_off64),
-        .large_end = data.len - 40,
-        .count = count,
-        .pack_id = pack_id,
-    };
 }
 
-fn nameAt(idx: *const Idx, i: usize) []const u8 {
-    const off = idx.names_off + i * 20;
-    return idx.data[off .. off + 20];
+fn idxReadAt(idx: *Idx, off: u64, dst: []u8) !void {
+    return idxReadFile(&idx.file, idx.file_size, off, dst);
+}
+
+pub fn idxClose(idx: *Idx) void {
+    file_mod.close(&idx.file);
+}
+
+fn idxParse(f: file_mod.File, size: u64, out: *Idx) !void {
+    if (size < IDX_MIN_BYTES) return error.Corrupt;
+    var hdr: [IDX_HEADER_BYTES]u8 = undefined;
+    try idxReadFile(&f, size, 0, hdr[0..]);
+    if (hdr[0] != 0xFF or hdr[1] != 't' or hdr[2] != 'O' or hdr[3] != 'c') {
+        return error.Corrupt;
+    }
+    if (be32(hdr[0..], 4) != 2) return error.Corrupt;
+
+    var fanout: [256]u32 = undefined;
+    var prev: u32 = 0;
+    var i: usize = 0;
+    while (i < 256) : (i += 1) {
+        fanout[i] = be32(hdr[0..], 8 + i * 4);
+        if (fanout[i] < prev) return error.Corrupt;
+        prev = fanout[i];
+    }
+    const count: usize = @intCast(usize, fanout[255]);
+    const names_off: u64 = @intCast(u64, IDX_HEADER_BYTES);
+    const names_bytes: u64 = try mulU64(@intCast(u64, count), 20);
+    const crc_off: u64 = try addU64(names_off, names_bytes);
+    const crc_bytes: u64 = try mulU64(@intCast(u64, count), 4);
+    const offs_off: u64 = try addU64(crc_off, crc_bytes);
+    const offs_bytes: u64 = try mulU64(@intCast(u64, count), 4);
+    const large_off: u64 = try addU64(offs_off, offs_bytes);
+    if (large_off > size - 40) return error.Corrupt;
+    const large_end: u64 = size - 40;
+    const large_bytes: u64 = large_end - large_off;
+    if (large_bytes % 8 != 0) return error.Corrupt;
+
+    var pack_id: ObjectId = undefined;
+    try idxReadFile(&f, size, large_end, pack_id[0..20]);
+
+    // The idx SHA-1 trailer is verified over the file bytes, not a whole-file
+    // arena copy.
+    var h = crypto.sha1Init();
+    var off: u64 = 0;
+    const body_end: u64 = size - 20;
+    var buf: [4096]u8 = undefined;
+    while (off < body_end) {
+        var take: usize = 4096;
+        const left = body_end - off;
+        if (left < @intCast(u64, take)) take = @intCast(usize, left);
+        try idxReadFile(&f, size, off, buf[0..take]);
+        crypto.sha1Update(&h, buf[0..take]);
+        off += @intCast(u64, take);
+    }
+    var trailer: ObjectId = undefined;
+    crypto.sha1Final(&h, &trailer);
+    var on_disk: [20]u8 = undefined;
+    try idxReadFile(&f, size, body_end, on_disk[0..20]);
+    i = 0;
+    while (i < 20) : (i += 1) {
+        if (trailer[i] != on_disk[i]) return error.Corrupt;
+    }
+
+    out.file = f;
+    out.file_size = size;
+    out.names_off = names_off;
+    out.crc_off = crc_off;
+    out.offs_off = offs_off;
+    out.large_off = large_off;
+    out.large_end = large_end;
+    out.count = count;
+    i = 0;
+    while (i < 20) : (i += 1) out.pack_id[i] = pack_id[i];
+    i = 0;
+    while (i < 256) : (i += 1) out.fanout[i] = fanout[i];
+}
+
+pub fn idxLoad(arena: *arena_mod.Arena, path: []const u8, out: *Idx) !void {
+    const f = file_mod.open(arena, path, file_mod.Mode.Read) catch return error.OpenFailed;
+    const sz = file_mod.size(&f) catch {
+        file_mod.close(&f);
+        return error.OpenFailed;
+    };
+    if (sz <= 0) {
+        file_mod.close(&f);
+        return error.Corrupt;
+    }
+    idxParse(f, @intCast(u64, sz), out) catch |e| {
+        file_mod.close(&f);
+        _ = e;
+        return error.Corrupt;
+    };
 }
 
 fn nameCmpId(name: []const u8, id: ObjectId) i32 {
@@ -217,21 +263,24 @@ fn nameCmpId(name: []const u8, id: ObjectId) i32 {
 }
 
 // Returns the pack offset for `id`, or null.  The fanout narrows the search to
-// the entries whose first byte matches, then a binary search compares the full
-// sorted 20-byte names.
-pub fn idxFind(idx: *const Idx, id: ObjectId) ?u64 {
+// the entries whose first byte matches, then a binary search reads the sorted
+// 20-byte names from the idx file on demand.
+pub fn idxFind(idx: *Idx, id: ObjectId) !?u64 {
     const c: usize = @intCast(usize, id[0]);
     var lo: u32 = 0;
-    if (c != 0) lo = be32(idx.data, 8 + (c - 1) * 4);
-    const hi: u32 = be32(idx.data, 8 + c * 4);
-    if (hi < lo) return null;
+    if (c != 0) lo = idx.fanout[c - 1];
+    const hi: u32 = idx.fanout[c];
+    if (hi < lo) return error.Corrupt;
     var a: usize = @intCast(usize, lo);
     var b: usize = @intCast(usize, hi);
+    var namebuf: [20]u8 = undefined;
     while (a < b) {
         const mid: usize = a + (b - a) / 2;
-        if (mid >= idx.count) return null;
-        const cmp = nameCmpId(nameAt(idx, mid), id);
-        if (cmp == 0) return idxOffsetAt(idx, mid);
+        if (mid >= idx.count) return error.Corrupt;
+        const name_off = idx.names_off + @intCast(u64, mid) * 20;
+        try idxReadAt(idx, name_off, namebuf[0..]);
+        const cmp = nameCmpId(namebuf[0..], id);
+        if (cmp == 0) return try idxOffsetAt(idx, mid);
         if (cmp < 0) {
             a = mid + 1;
         } else {
@@ -241,14 +290,19 @@ pub fn idxFind(idx: *const Idx, id: ObjectId) ?u64 {
     return null;
 }
 
-fn idxOffsetAt(idx: *const Idx, i: usize) ?u64 {
-    if (i >= idx.count) return null;
-    const raw = be32(idx.data, idx.offs_off + i * 4);
+fn idxOffsetAt(idx: *Idx, i: usize) !?u64 {
+    if (i >= idx.count) return error.Corrupt;
+    var raw_b: [4]u8 = undefined;
+    const pos = idx.offs_off + @intCast(u64, i) * 4;
+    try idxReadAt(idx, pos, raw_b[0..]);
+    const raw = be32(raw_b[0..], 0);
     if ((raw & 0x80000000) == 0) return @intCast(u64, raw);
-    const li: usize = @intCast(usize, raw & 0x7FFFFFFF);
-    const off64: u64 = @intCast(u64, idx.large_off) + @intCast(u64, li) * 8;
-    if (off64 + 8 > @intCast(u64, idx.large_end)) return null;
-    return be64(idx.data, @intCast(usize, off64));
+    const li: u64 = @intCast(u64, raw & 0x7FFFFFFF);
+    const off64 = idx.large_off + li * 8;
+    if (off64 > idx.large_end or idx.large_end - off64 < 8) return error.Corrupt;
+    var large_b: [8]u8 = undefined;
+    try idxReadAt(idx, off64, large_b[0..]);
+    return be64(large_b[0..], 0);
 }
 
 fn readAt(p: *Pack, off: u64, dst: []u8) !void {
@@ -342,6 +396,7 @@ fn readOfsDistance(p: *Pack, pos: *u64) !u64 {
 const Inflated = struct {
     data: []u8,
     used: usize,
+    big: bool,
 };
 
 fn decompressEntry(arena: *arena_mod.Arena, p: *Pack, payload_off: u64, size: u64) !Inflated {
@@ -371,53 +426,111 @@ fn decompressEntry(arena: *arena_mod.Arena, p: *Pack, payload_off: u64, size: u6
     if (used > cap) return error.Corrupt;
     const end = try addU64(payload_off, @intCast(u64, used));
     if (end > after_header) return error.Corrupt;
-    return Inflated{ .data = out, .used = used };
+    return Inflated{ .data = out, .used = used, .big = false };
 }
 
-pub fn packOpen(arena: *arena_mod.Arena, pack_path: []const u8, idx: Idx) !Pack {
+fn decompressEntryBig(p: *Pack, payload_off: u64, size: u64) !Inflated {
+    if (size > MAX_U32) return error.Corrupt;
+    const usize_size: usize = @intCast(usize, size);
+    const out_raw = dynAlloc(usize_size) orelse return error.OutOfMemory;
+    const out: []u8 = out_raw[0..usize_size];
+
+    if (payload_off > p.file_size) {
+        dynFree(out_raw);
+        return error.Corrupt;
+    }
+    const after_header = p.file_size - 20;
+    if (payload_off > after_header) {
+        dynFree(out_raw);
+        return error.Corrupt;
+    }
+    const remaining: u64 = after_header - payload_off;
+
+    var slack: u64 = size / 4;
+    if (slack < 1024) slack = 1024;
+    var cap64 = try addU64(size, slack);
+    if (cap64 > remaining) cap64 = remaining;
+    if (cap64 > MAX_U32) cap64 = MAX_U32;
+    if (cap64 == 0) {
+        dynFree(out_raw);
+        return error.Corrupt;
+    }
+    const cap: usize = @intCast(usize, cap64);
+    const in_raw = dynAlloc(cap) orelse {
+        dynFree(out_raw);
+        return error.OutOfMemory;
+    };
+    readAt(p, payload_off, in_raw[0..cap]) catch {
+        dynFree(in_raw);
+        dynFree(out_raw);
+        return error.Corrupt;
+    };
+
+    var used: usize = 0;
+    const got = deflate.inflateZlib(in_raw[0..cap], out, &used) catch {
+        dynFree(in_raw);
+        dynFree(out_raw);
+        return error.Corrupt;
+    };
+    dynFree(in_raw);
+    if (@intCast(u64, got) != size) {
+        dynFree(out_raw);
+        return error.Corrupt;
+    }
+    if (used > cap) {
+        dynFree(out_raw);
+        return error.Corrupt;
+    }
+    const end = try addU64(payload_off, @intCast(u64, used));
+    if (end > after_header) {
+        dynFree(out_raw);
+        return error.Corrupt;
+    }
+    return Inflated{ .data = out, .used = used, .big = true };
+}
+
+pub fn packOpen(arena: *arena_mod.Arena, pack_path: []const u8, idx: *Idx, out: *Pack) !void {
     const file = file_mod.open(arena, pack_path, file_mod.Mode.Read) catch return error.OpenFailed;
-    var p: Pack = undefined;
-    p.file = file;
-    const fsz = file_mod.size(&p.file) catch return error.OpenFailed;
+    out.file = file;
+    const fsz = file_mod.size(&out.file) catch return error.OpenFailed;
     if (fsz < 12 + 20) return error.Corrupt;
-    p.file_size = @intCast(u64, fsz);
-    p.idx = idx;
+    out.file_size = @intCast(u64, fsz);
+    out.idx = idx.*;
     const win_raw = arena_mod.alloc(arena, WINDOW_SIZE) catch return error.OutOfMemory;
-    p.win = win_raw[0..WINDOW_SIZE];
-    p.win_start = 0;
-    p.win_len = 0;
-    p.count = 0;
+    out.win = win_raw[0..WINDOW_SIZE];
+    out.win_start = 0;
+    out.win_len = 0;
+    out.count = 0;
 
     var hdr: [12]u8 = undefined;
-    try readAt(&p, 0, hdr[0..12]);
+    try readAt(out, 0, hdr[0..12]);
     if (hdr[0] != 'P' or hdr[1] != 'A' or hdr[2] != 'C' or hdr[3] != 'K') return error.Corrupt;
     if (be32(hdr[0..], 4) != 2) return error.Corrupt;
-    p.count = be32(hdr[0..], 8);
-    if (@intCast(usize, p.count) != idx.count) return error.Corrupt;
+    out.count = be32(hdr[0..], 8);
+    if (@intCast(usize, out.count) != out.idx.count) return error.Corrupt;
 
     // Streaming SHA-1 over everything except the 20-byte pack trailer.
     var h = crypto.sha1Init();
     var off: u64 = 0;
-    const body_end = p.file_size - 20;
+    const body_end = out.file_size - 20;
     var chunk: [4096]u8 = undefined;
     while (off < body_end) {
         var n: usize = 4096;
         const left = body_end - off;
         if (left < @intCast(u64, n)) n = @intCast(usize, left);
-        try readAt(&p, off, chunk[0..n]);
+        try readAt(out, off, chunk[0..n]);
         crypto.sha1Update(&h, chunk[0..n]);
         off += @intCast(u64, n);
     }
     var trailer: ObjectId = undefined;
     crypto.sha1Final(&h, &trailer);
     var on_disk: [20]u8 = undefined;
-    try readAt(&p, body_end, on_disk[0..20]);
+    try readAt(out, body_end, on_disk[0..20]);
     var i: usize = 0;
     while (i < 20) : (i += 1) {
         if (trailer[i] != on_disk[i]) return error.Corrupt;
-        if (on_disk[i] != idx.pack_id[i]) return error.Corrupt;
+        if (on_disk[i] != out.idx.pack_id[i]) return error.Corrupt;
     }
-    return p;
 }
 
 // Open a pack without an idx.  Used only by idxSynthesize: entry parsing and
@@ -464,7 +577,15 @@ pub fn packOpenRaw(arena: *arena_mod.Arena, pack_path: []const u8) !Pack {
     return p;
 }
 
-pub fn readEntry(arena: *arena_mod.Arena, p: *Pack, offset: u64) !RawEntry {
+const EntryHeader = struct {
+    kind: Kind,
+    size: u64,
+    base_off: u64,
+    base_id: ObjectId,
+    payload_off: u64,
+};
+
+fn parseEntryHeader(p: *Pack, offset: u64) !EntryHeader {
     if (offset >= p.file_size) return error.Corrupt;
     var pos: u64 = offset;
     const first = try readByte(p, pos);
@@ -489,18 +610,41 @@ pub fn readEntry(arena: *arena_mod.Arena, p: *Pack, offset: u64) !RawEntry {
         while (bi < 20) : (bi += 1) base_id[bi] = tmp[bi];
         pos = try addU64(pos, 20);
     }
-
-    const got = try decompressEntry(arena, p, pos, size);
-    return RawEntry{
-        .kind = kind,
-        .size = size,
-        .base_off = base_off,
-        .base_id = base_id,
-        .payload = got.data,
-        .payload_off = pos,
-        .payload_len = got.used,
-    };
+    return EntryHeader{ .kind = kind, .size = size, .base_off = base_off, .base_id = base_id, .payload_off = pos };
 }
+
+pub fn readEntry(arena: *arena_mod.Arena, p: *Pack, offset: u64) !RawEntry {
+    const h = try parseEntryHeader(p, offset);
+    const got = try decompressEntry(arena, p, h.payload_off, h.size);
+    var out: RawEntry = undefined;
+    out.kind = h.kind;
+    out.size = h.size;
+    out.base_off = h.base_off;
+    var bi: usize = 0;
+    while (bi < 20) : (bi += 1) out.base_id[bi] = h.base_id[bi];
+    out.payload = got.data;
+    out.payload_off = h.payload_off;
+    out.payload_len = got.used;
+    out.big = got.big;
+    return out;
+}
+
+pub fn readEntryBig(p: *Pack, offset: u64) !RawEntry {
+    const h = try parseEntryHeader(p, offset);
+    const got = try decompressEntryBig(p, h.payload_off, h.size);
+    var out: RawEntry = undefined;
+    out.kind = h.kind;
+    out.size = h.size;
+    out.base_off = h.base_off;
+    var bi: usize = 0;
+    while (bi < 20) : (bi += 1) out.base_id[bi] = h.base_id[bi];
+    out.payload = got.data;
+    out.payload_off = h.payload_off;
+    out.payload_len = got.used;
+    out.big = got.big;
+    return out;
+}
+
 
 // --- external-memory idx v2 synthesis ---------------------------------------
 //
@@ -535,6 +679,7 @@ const Resolved = struct {
     ty: Kind,
     data: []u8,
     id: ObjectId,
+    big: bool,
 };
 
 const CacheEntry = struct {
@@ -933,12 +1078,23 @@ fn applyDeltaCached(scratch: *arena_mod.Arena, base: Resolved, raw: RawEntry) !R
     var tgt_len: usize = 0;
     delta_mod.deltaSizes(raw.payload, &src_len, &tgt_len) catch return error.Corrupt;
     if (src_len != base.data.len) return error.Corrupt;
-    const raw_out = arena_mod.alloc(scratch, tgt_len) catch return error.OutOfMemory;
-    const out = raw_out[0..tgt_len];
-    delta_mod.deltaApply(base.data, raw.payload, out) catch return error.Corrupt;
+    var out_big = false;
+    var out: []u8 = undefined;
+    if (tgt_len > scratch.capacity / 4 or scratch.used > scratch.capacity or (scratch.capacity - scratch.used) < tgt_len) {
+        const raw_out = dynAlloc(tgt_len) orelse return error.OutOfMemory;
+        out = raw_out[0..tgt_len];
+        out_big = true;
+    } else {
+        const raw_out = arena_mod.alloc(scratch, tgt_len) catch return error.OutOfMemory;
+        out = raw_out[0..tgt_len];
+    }
+    delta_mod.deltaApply(base.data, raw.payload, out) catch {
+        if (out_big) dynFree(out);
+        return error.Corrupt;
+    };
     var id: ObjectId = undefined;
     synthObjectId(base.ty, out, &id);
-    return Resolved{ .ty = base.ty, .data = out, .id = id };
+    return Resolved{ .ty = base.ty, .data = out, .id = id, .big = out_big };
 }
 
 fn findIdOffset(ids_path: []const u8, id: ObjectId) !?u64 {
@@ -995,36 +1151,71 @@ fn arenaFor(path: []const u8) *arena_mod.Arena {
     return @ptrCast(*arena_mod.Arena, @intToPtr(*void, 0));
 }
 
+pub fn readEntryMaybeBig(scratch: *arena_mod.Arena, p: *Pack, offset: u64) !RawEntry {
+    // Only the actual large/overflow condition falls back to the mmap path.
+    // Corruption and real allocation failures propagate unchanged, and the
+    // size check is against this scratch (not the whole process) so a 27 MiB
+    // object does not depend on the caller's arena having a contiguous half.
+    const h = try parseEntryHeader(p, offset);
+    const avail: usize = if (scratch.used >= scratch.capacity) 0 else scratch.capacity - scratch.used;
+    if (h.size > @intCast(u64, scratch.capacity / 4) or h.size > @intCast(u64, avail / 2)) {
+        return readEntryBig(p, offset);
+    }
+    return readEntry(scratch, p, offset);
+}
+
 fn resolveAt(p: *Pack, cache: *Cache, scratch: *arena_mod.Arena, ids_path: []const u8, offset: u64, depth: usize, deferred: *bool) !Resolved {
     if (depth > 64) return error.Corrupt;
     if (cacheFindOffset(cache, offset)) |e| {
         var id: ObjectId = undefined;
         var i: usize = 0;
         while (i < 20) : (i += 1) id[i] = e.id[i];
-        return Resolved{ .ty = e.ty, .data = cache.buf[e.d_off .. e.d_off + e.d_len], .id = id };
+        return Resolved{ .ty = e.ty, .data = cache.buf[e.d_off .. e.d_off + e.d_len], .id = id, .big = false };
     }
 
-    const raw = try readEntry(scratch, p, offset);
+    const raw = try readEntryMaybeBig(scratch, p, offset);
     var res: Resolved = undefined;
     if (raw.kind == Kind.ofs_delta) {
         const base = try resolveAt(p, cache, scratch, ids_path, raw.base_off, depth + 1, deferred);
-        if (deferred.*) return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id };
-        res = try applyDeltaCached(scratch, base, raw);
+        if (deferred.*) {
+            if (raw.big) dynFree(raw.payload);
+            return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id, .big = false };
+        }
+        res = applyDeltaCached(scratch, base, raw) catch {
+            if (raw.big) dynFree(raw.payload);
+            if (base.big) dynFree(base.data);
+            return error.Corrupt;
+        };
+        if (raw.big) dynFree(raw.payload);
+        if (base.big) dynFree(base.data);
     } else if (raw.kind == Kind.ref_delta) {
         const bo = try findIdOffset(ids_path, raw.base_id);
         if (bo) |base_off| {
             const base = try resolveAt(p, cache, scratch, ids_path, base_off, depth + 1, deferred);
-            if (deferred.*) return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id };
-            res = try applyDeltaCached(scratch, base, raw);
+            if (deferred.*) {
+                if (raw.big) dynFree(raw.payload);
+                return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id, .big = false };
+            }
+            res = applyDeltaCached(scratch, base, raw) catch {
+                if (raw.big) dynFree(raw.payload);
+                if (base.big) dynFree(base.data);
+                return error.Corrupt;
+            };
+            if (raw.big) dynFree(raw.payload);
+            if (base.big) dynFree(base.data);
         } else {
             deferred.* = true;
-            return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id };
+            if (raw.big) dynFree(raw.payload);
+            return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id, .big = false };
         }
     } else {
-        if (!isBaseKind(raw.kind)) return error.Corrupt;
+        if (!isBaseKind(raw.kind)) {
+            if (raw.big) dynFree(raw.payload);
+            return error.Corrupt;
+        }
         var id: ObjectId = undefined;
         synthObjectId(raw.kind, raw.payload, &id);
-        res = Resolved{ .ty = raw.kind, .data = raw.payload, .id = id };
+        res = Resolved{ .ty = raw.kind, .data = raw.payload, .id = id, .big = raw.big };
     }
     cacheAdd(cache, offset, res.id, res.ty, res.data);
     return res;
@@ -1314,9 +1505,9 @@ pub fn idxSynthesize(arena: *arena_mod.Arena, pack_path: []const u8, idx_path: [
     var scratch_bytes = arena.capacity / 2;
     if (scratch_bytes > 16 * 1024 * 1024) scratch_bytes = 16 * 1024 * 1024;
     if (scratch_bytes < 256 * 1024) scratch_bytes = 256 * 1024;
-    var cache_bytes = arena.capacity / 4;
-    if (cache_bytes > 8 * 1024 * 1024) cache_bytes = 8 * 1024 * 1024;
-    if (cache_bytes < 64 * 1024) cache_bytes = 64 * 1024;
+    var cache_bytes = arena.capacity;
+    if (cache_bytes > 32 * 1024 * 1024) cache_bytes = 32 * 1024 * 1024;
+    if (cache_bytes < 1024 * 1024) cache_bytes = 1024 * 1024;
     const scratch_raw = dynAlloc(scratch_bytes) orelse return error.OutOfMemory;
     defer dynFree(scratch_raw);
     var scratch = arena_mod.init(scratch_raw[0..scratch_bytes]);
@@ -1344,7 +1535,7 @@ pub fn idxSynthesize(arena: *arena_mod.Arena, pack_path: []const u8, idx_path: [
     var crc_buf: [4096]u8 = undefined;
     while (i < n) : (i += 1) {
         arena_mod.reset(&scratch);
-        const raw = try readEntry(&scratch, &p, off);
+        const raw = try readEntryMaybeBig(&scratch, &p, off);
         const end = try addU64(raw.payload_off, @intCast(u64, raw.payload_len));
         if (end > body_end) return error.Corrupt;
         var crc = crypto.crc32Init();
@@ -1377,6 +1568,7 @@ pub fn idxSynthesize(arena: *arena_mod.Arena, pack_path: []const u8, idx_path: [
         } else if (raw.kind != Kind.ofs_delta and raw.kind != Kind.ref_delta) {
             return error.Corrupt;
         }
+        if (raw.big) dynFree(raw.payload);
         off = end;
     }
     if (off != body_end) return error.Corrupt;
@@ -1422,6 +1614,7 @@ pub fn idxSynthesize(arena: *arena_mod.Arena, pack_path: []const u8, idx_path: [
             var irec: [ID_REC]u8 = undefined;
             idRecFill(irec[0..], res.id, entry_off, metaCrc(mrec[0..]));
             try writerBytes(&iw2, irec[0..]);
+            if (res.big) dynFree(res.data);
             resolved[bit] |= mask;
             resolved_count += 1;
             progress = true;

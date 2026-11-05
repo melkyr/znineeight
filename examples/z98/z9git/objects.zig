@@ -8,8 +8,10 @@
 // object is checked against SHA-1("type len\0" + data); a mismatch is Corrupt.
 //
 // A fixed 16-entry memo cache, keyed by id and by (pack, offset), keeps delta
-// chains from materializing the same base repeatedly.  All storage is arena
-// bounded; the cache never frees, it only evicts by wrapping the fixed ring.
+// chains from materializing the same base repeatedly.  The cache may clear its
+// fixed buffer when full, so storeReadTyped copies a cache hit into the caller's
+// arena before returning; internal delta paths consume cache slices immediately.
+// Streaming checkout (storeReadTo) writes the slice before the next store read.
 
 const arena_mod = @import("std_arena.zig");
 const file_mod = @import("std_file.zig");
@@ -24,7 +26,8 @@ pub const ObjType = enum(u8) { commit, tree, blob, tag };
 
 pub const TypedObject = struct {
     ty: ObjType,
-    data: []const u8,
+    data: []u8,
+    big: bool,
 };
 
 const CACHE_SLOTS: usize = 16;
@@ -40,24 +43,43 @@ const CacheEntry = struct {
     pack_i: usize,
     offset: u64,
     ty: ObjType,
-    data: []const u8,
+    d_off: usize,
+    d_len: usize,
 };
 
 // Store owns one open read handle per pack until storeClose (or process exit).
-// The slices/pointers point into the caller's arena; storeOpen does not copy
-// pack payloads.  Task 7 may call storeClose after it has finished reading.
+// The cache holds copies in a fixed byte budget, so retained object data is
+// bounded; the caller's per-checkout scratch arena is reset between files.
 pub const Store = struct {
     arena: *arena_mod.Arena,
     git_dir: []const u8,
     packs: []pack_mod.Pack,
     cache: [CACHE_SLOTS]CacheEntry,
     cache_next: usize,
+    cache_buf: []u8,
+    cache_used: usize,
+};
+
+// Streaming object destination used by storeReadTo. The callback consumes the
+// object bytes before the per-file scratch is reset.
+pub const ObjectSink = struct {
+    state: *void,
+    write_fn: fn (*void, []const u8) !void,
 };
 
 const Resolved = struct {
     ty: ObjType,
-    data: []const u8,
+    data: []u8,
+    big: bool,
 };
+
+// Release object bytes allocated outside the arena (the mmap/VirtualAlloc
+// large-object path). Cache copies and arena slices are not freed here.
+pub fn freeTyped(o: *TypedObject) void {
+    if (o.big) pack_mod.dynFree(o.data);
+    o.big = false;
+    o.data = o.data[0..0];
+}
 
 fn idEql(a: ObjectId, b: ObjectId) bool {
     var i: usize = 0;
@@ -135,7 +157,40 @@ fn cacheFindPos(s: *Store, pack_i: usize, offset: u64) ?*CacheEntry {
     return null;
 }
 
+fn cacheClear(s: *Store) void {
+    s.cache_used = 0;
+    s.cache_next = 0;
+    var i: usize = 0;
+    while (i < CACHE_SLOTS) : (i += 1) s.cache[i].valid = false;
+}
+
+pub fn storeClearCache(s: *Store) void {
+    cacheClear(s);
+}
+
+fn inCache(s: *Store, data: []const u8) bool {
+    if (data.len == 0) return false;
+    const p = @ptrToInt(data.ptr);
+    const base = @ptrToInt(s.cache_buf.ptr);
+    return p >= base and p < base + s.cache_buf.len;
+}
+
+// Copy a cache hit into the caller's arena so the returned object (and any
+// tree-entry name slices into it) survives a later cache clear.
+fn detachCache(arena: *arena_mod.Arena, s: *Store, res: Resolved) !Resolved {
+    if (!inCache(s, res.data)) return res;
+    const raw = arena_mod.alloc(arena, res.data.len) catch return error.OutOfMemory;
+    var i: usize = 0;
+    while (i < res.data.len) : (i += 1) raw[i] = res.data[i];
+    return Resolved{ .ty = res.ty, .data = raw[0..res.data.len], .big = false };
+}
+
 fn cacheAdd(s: *Store, id: ObjectId, pack_i: usize, offset: u64, ty: ObjType, data: []const u8) void {
+    if (s.cache_buf.len == 0) return;
+    // Bases larger than a quarter of the cache are never retained: recomputing
+    // them from the pack is cheaper than letting one object evict the cache.
+    if (data.len > s.cache_buf.len / 4) return;
+    if (s.cache_used + data.len > s.cache_buf.len) cacheClear(s);
     const slot = s.cache_next % CACHE_SLOTS;
     s.cache_next += 1;
     const e = &s.cache[slot];
@@ -147,7 +202,11 @@ fn cacheAdd(s: *Store, id: ObjectId, pack_i: usize, offset: u64, ty: ObjType, da
     e.pack_i = pack_i;
     e.offset = offset;
     e.ty = ty;
-    e.data = data;
+    e.d_off = s.cache_used;
+    e.d_len = data.len;
+    i = 0;
+    while (i < data.len) : (i += 1) s.cache_buf[s.cache_used + i] = data[i];
+    s.cache_used += data.len;
 }
 
 fn lenAdd(a: usize, b: usize) !usize {
@@ -229,6 +288,16 @@ pub fn storeOpen(arena: *arena_mod.Arena, git_dir: []const u8, s: *Store) !void 
         s.cache[i].has_pos = false;
     }
     s.cache_next = 0;
+    s.cache_used = 0;
+
+    // Bounded object cache: copies, not arena-retained slices. 16 slots and a
+    // byte budget (1/8 of the arena, capped at 8 MiB) keep delta bases cheap
+    // without letting one large object dominate.
+    var cache_bytes = arena.capacity / 8;
+    if (cache_bytes > 8 * 1024 * 1024) cache_bytes = 8 * 1024 * 1024;
+    if (cache_bytes < 256 * 1024) cache_bytes = 256 * 1024;
+    const cache_raw = arena_mod.alloc(arena, cache_bytes) catch return error.OutOfMemory;
+    s.cache_buf = cache_raw[0..cache_bytes];
 
     const raw_dir = arena_mod.alloc(arena, git_dir.len) catch return error.OutOfMemory;
     i = 0;
@@ -253,11 +322,20 @@ pub fn storeOpen(arena: *arena_mod.Arena, git_dir: []const u8, s: *Store) !void 
         if (e.is_dir or !endsWith(e.name, ".idx")) continue;
         if (filled >= count) break;
         const idx_path = try join3(arena, pack_dir, "/", e.name);
-        const idx = try pack_mod.idxLoad(arena, idx_path);
         const stem = e.name[0 .. e.name.len - 4];
         const pack_name = try join2(arena, stem, ".pack");
         const pack_path = try join3(arena, pack_dir, "/", pack_name);
-        s.packs[filled] = try pack_mod.packOpen(arena, pack_path, idx);
+        var idx: pack_mod.Idx = undefined;
+        pack_mod.idxLoad(arena, idx_path, &idx) catch |err| {
+            if (err == error.OpenFailed) return error.OpenFailed;
+            return error.Corrupt;
+        };
+        pack_mod.packOpen(arena, pack_path, &idx, &s.packs[filled]) catch |err| {
+            pack_mod.idxClose(&idx);
+            if (err == error.OutOfMemory) return error.OutOfMemory;
+            if (err == error.OpenFailed) return error.OpenFailed;
+            return error.Corrupt;
+        };
         filled += 1;
     }
     file_mod.closeDir(&d);
@@ -270,8 +348,19 @@ pub fn storeClose(s: *Store) void {
     var i: usize = 0;
     while (i < s.packs.len) : (i += 1) {
         file_mod.close(&s.packs[i].file);
+        pack_mod.idxClose(&s.packs[i].idx);
     }
     s.packs = s.packs[0..0];
+    cacheClear(s);
+}
+
+// Streams one materialized object to `sink`. The caller supplies a per-file
+// scratch arena (`arena`), so checkout does not retain every object in the app
+// arena; the bounded cache holds only copies of small delta bases.
+pub fn storeReadTo(arena: *arena_mod.Arena, s: *Store, id: ObjectId, sink: *ObjectSink) !void {
+    const res = try readById(arena, s, id, 0);
+    defer if (res.big) pack_mod.dynFree(res.data);
+    try sink.write_fn(sink.state, res.data);
 }
 
 fn verifyId(id: ObjectId, ty: ObjType, data: []const u8) !void {
@@ -285,10 +374,22 @@ fn applyDelta(arena: *arena_mod.Arena, base: Resolved, raw: pack_mod.RawEntry) !
     var tgt_len: usize = 0;
     try delta_mod.deltaSizes(raw.payload, &src_len, &tgt_len);
     if (src_len != base.data.len) return error.Corrupt;
-    const out_raw = arena_mod.alloc(arena, tgt_len) catch return error.OutOfMemory;
-    const out = out_raw[0..tgt_len];
-    try delta_mod.deltaApply(base.data, raw.payload, out);
-    return Resolved{ .ty = base.ty, .data = out };
+    const avail: usize = if (arena.used >= arena.capacity) 0 else arena.capacity - arena.used;
+    var out_big = false;
+    var out: []u8 = undefined;
+    if (tgt_len > arena.capacity / 4 or tgt_len > avail / 2) {
+        const raw_out = pack_mod.dynAlloc(tgt_len) orelse return error.OutOfMemory;
+        out = raw_out[0..tgt_len];
+        out_big = true;
+    } else {
+        const raw_out = arena_mod.alloc(arena, tgt_len) catch return error.OutOfMemory;
+        out = raw_out[0..tgt_len];
+    }
+    delta_mod.deltaApply(base.data, raw.payload, out) catch {
+        if (out_big) pack_mod.dynFree(out);
+        return error.Corrupt;
+    };
+    return Resolved{ .ty = base.ty, .data = out, .big = out_big };
 }
 
 fn resolveAt(arena: *arena_mod.Arena, s: *Store, pack_i: usize, offset: u64, expected: ObjectId, check_expected: bool, depth: usize) !Resolved {
@@ -297,27 +398,35 @@ fn resolveAt(arena: *arena_mod.Arena, s: *Store, pack_i: usize, offset: u64, exp
         if (check_expected) {
             if (!e.has_id or !idEql(e.id, expected)) return error.Corrupt;
         }
-        return Resolved{ .ty = e.ty, .data = e.data };
+        return Resolved{ .ty = e.ty, .data = s.cache_buf[e.d_off .. e.d_off + e.d_len], .big = false };
     }
 
-    const raw = try pack_mod.readEntry(arena, &s.packs[pack_i], offset);
+    const raw = try pack_mod.readEntryMaybeBig(arena, &s.packs[pack_i], offset);
+    var raw_owned = true;
+    defer if (raw_owned and raw.big) pack_mod.dynFree(raw.payload);
     var res: Resolved = undefined;
 
     if (raw.kind == pack_mod.Kind.ofs_delta) {
         const base = try resolveAt(arena, s, pack_i, raw.base_off, raw.base_id, false, depth + 1);
+        defer if (base.big) pack_mod.dynFree(base.data);
         res = try applyDelta(arena, base, raw);
     } else if (raw.kind == pack_mod.Kind.ref_delta) {
         const base = try readById(arena, s, raw.base_id, depth + 1);
+        defer if (base.big) pack_mod.dynFree(base.data);
         res = try applyDelta(arena, base, raw);
     } else {
         const ty = try tyFromKind(raw.kind);
-        res = Resolved{ .ty = ty, .data = raw.payload };
+        res = Resolved{ .ty = ty, .data = raw.payload, .big = raw.big };
+        raw_owned = false;
     }
 
     var id: ObjectId = undefined;
     objectId(res.ty, res.data, &id);
     if (check_expected) {
-        if (!idEql(id, expected)) return error.Corrupt;
+        if (!idEql(id, expected)) {
+            if (res.big) pack_mod.dynFree(res.data);
+            return error.Corrupt;
+        }
     }
     cacheAdd(s, id, pack_i, offset, res.ty, res.data);
     return res;
@@ -377,7 +486,7 @@ fn parseLoose(arena: *arena_mod.Arena, id: ObjectId, compressed: []const u8) !Re
     const body = inflated[nul + 1 ..];
     if (lenv != @intCast(u64, body.len)) return error.Corrupt;
     try verifyId(id, ty, body);
-    return Resolved{ .ty = ty, .data = body };
+    return Resolved{ .ty = ty, .data = body, .big = false };
 }
 
 fn readLoose(arena: *arena_mod.Arena, s: *Store, id: ObjectId) !Resolved {
@@ -390,11 +499,11 @@ fn readLoose(arena: *arena_mod.Arena, s: *Store, id: ObjectId) !Resolved {
 pub fn readById(arena: *arena_mod.Arena, s: *Store, id: ObjectId, depth: usize) !Resolved {
     if (depth > MAX_DELTA_DEPTH) return error.Corrupt;
     if (cacheFindId(s, id)) |e| {
-        return Resolved{ .ty = e.ty, .data = e.data };
+        return Resolved{ .ty = e.ty, .data = s.cache_buf[e.d_off .. e.d_off + e.d_len], .big = false };
     }
     var i: usize = 0;
     while (i < s.packs.len) : (i += 1) {
-        if (pack_mod.idxFind(&s.packs[i].idx, id)) |off| {
+        if (try pack_mod.idxFind(&s.packs[i].idx, id)) |off| {
             return try resolveAt(arena, s, i, off, id, true, depth);
         }
     }
@@ -402,8 +511,9 @@ pub fn readById(arena: *arena_mod.Arena, s: *Store, id: ObjectId, depth: usize) 
 }
 
 pub fn storeReadTyped(arena: *arena_mod.Arena, s: *Store, id: ObjectId, out: *TypedObject) !void {
-    const res = try readById(arena, s, id, 0);
-    out.* = TypedObject{ .ty = res.ty, .data = res.data };
+    const got = try readById(arena, s, id, 0);
+    const res = try detachCache(arena, s, got);
+    out.* = TypedObject{ .ty = res.ty, .data = res.data, .big = res.big };
 }
 
 pub fn storeWriteLoose(git_dir: []const u8, id: ObjectId, zlib_bytes: []const u8) !void {

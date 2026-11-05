@@ -39,6 +39,7 @@ const IO_TIMEOUT_MS: u32 = 15000;
 
 const KIND_IO: u8 = 1;
 const KIND_PROTOCOL: u8 = 2;
+const KIND_DISK_FULL: u8 = 3;
 
 
 pub const OpenError = error{ Transport, OutOfMemory };
@@ -683,6 +684,12 @@ const PackSink = struct {
     max_down_bps: u32,
     pace_start: u64,
     fail_kind: u8,
+    head: *http.Response,
+    dest_git: []const u8,
+    preflight_done: bool,
+    have_cl: u64,
+    pack_hdr: [12]u8,
+    pack_hdr_len: usize,
 };
 
 fn sinkFail(s: *PackSink, kind: u8) http.HttpError {
@@ -700,7 +707,7 @@ fn writeFileAll(f: *file_mod.File, data: []const u8) bool {
     return true;
 }
 
-fn packDecorate(s: *PackSink, data: []const u8) http.HttpError!void {
+fn packWriteBytes(s: *PackSink, data: []const u8) http.HttpError!void {
     if (!writeFileAll(&s.file, data)) return sinkFail(s, KIND_IO);
     var i: usize = 0;
     while (i < data.len) : (i += 1) {
@@ -730,6 +737,34 @@ fn packDecorate(s: *PackSink, data: []const u8) http.HttpError!void {
             time.sleepMs(@intCast(u32, diff));
         }
     }
+}
+
+fn packDecorate(s: *PackSink, data: []const u8) http.HttpError!void {
+    if (!s.preflight_done) {
+        if (s.have_cl == 0) s.have_cl = headerU64(s.head, "Content-Length");
+        if (s.have_cl > 0) {
+            // Preflight before the first pack byte reaches the temp file.
+            repo.diskPreflightEstimate(s.dest_git, s.have_cl, 0) catch return sinkFail(s, KIND_DISK_FULL);
+            s.preflight_done = true;
+        } else {
+            // No Content-Length: use the PACK object count, read from the
+            // streamed 12-byte header, still before writing any pack bytes.
+            const need = 12 - s.pack_hdr_len;
+            var take = data.len;
+            if (take > need) take = need;
+            var i: usize = 0;
+            while (i < take) : (i += 1) s.pack_hdr[s.pack_hdr_len + i] = data[i];
+            s.pack_hdr_len += take;
+            if (s.pack_hdr_len < 12) return;
+            const count = packCount(s.pack_hdr[0..]);
+            repo.diskPreflightEstimate(s.dest_git, 0, count) catch return sinkFail(s, KIND_DISK_FULL);
+            s.preflight_done = true;
+            try packWriteBytes(s, s.pack_hdr[0..12]);
+            if (take < data.len) try packWriteBytes(s, data[take..]);
+            return;
+        }
+    }
+    try packWriteBytes(s, data);
 }
 
 fn pktPayloadDone(s: *PackSink) http.HttpError!void {
@@ -821,6 +856,51 @@ fn openTransport(factory: *const TransportFactory, url: []const u8) repo.GitErro
     return t;
 }
 
+fn headerNameEq(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        var ca = a[i];
+        var cb = b[i];
+        if (ca >= 'A' and ca <= 'Z') ca = ca + 32;
+        if (cb >= 'A' and cb <= 'Z') cb = cb + 32;
+        if (ca != cb) return false;
+    }
+    return true;
+}
+
+fn headerU64(head: *http.Response, name: []const u8) u64 {
+    var i: usize = 0;
+    while (i < head.headers.len) : (i += 1) {
+        if (headerNameEq(head.headers[i].name, name)) {
+            const v = head.headers[i].value;
+            var n: u64 = 0;
+            var any = false;
+            var k: usize = 0;
+            while (k < v.len) : (k += 1) {
+                const c = v[k];
+                if (c == ' ' or c == '\t') continue;
+                if (c < '0' or c > '9') return 0;
+                const d: u64 = @intCast(u64, c - '0');
+                if (n > (0xFFFFFFFFFFFFFFFF - d) / 10) return 0;
+                n = n * 10 + d;
+                any = true;
+            }
+            if (any) return n;
+            return 0;
+        }
+    }
+    return 0;
+}
+
+fn packCount(hdr: []const u8) u64 {
+    var c: u64 = @intCast(u64, hdr[8]);
+    c = (c << 8) | @intCast(u64, hdr[9]);
+    c = (c << 8) | @intCast(u64, hdr[10]);
+    c = (c << 8) | @intCast(u64, hdr[11]);
+    return c;
+}
+
 // --- clone entry points -----------------------------------------------------
 
 pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const u8, max_down_bps: u32, factory: *const TransportFactory) repo.GitError!void {
@@ -847,6 +927,9 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     if (file_mod.exists(tmp_path)) file_mod.remove(tmp_path) catch return error.Io;
     const pack_file = file_mod.open(arena, tmp_path, file_mod.Mode.Write) catch return error.Io;
 
+    var no_headers: [1]http.Header = undefined;
+    var no_body: [1]u8 = undefined;
+    var head = http.Response{ .status = 0, .headers = no_headers[0..0], .body = no_body[0..0] };
     var ps: PackSink = undefined;
     ps.file = pack_file;
     ps.hasher = crypto.sha1Init();
@@ -862,6 +945,11 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     ps.max_down_bps = max_down_bps;
     ps.pace_start = 0;
     ps.fail_kind = 0;
+    ps.head = &head;
+    ps.dest_git = dest_git;
+    ps.preflight_done = false;
+    ps.have_cl = 0;
+    ps.pack_hdr_len = 0;
     var tmp_live = true;
     var pack_open = true;
     defer {
@@ -873,11 +961,10 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
         .write_fn = packSinkWrite,
     };
     var post_t = try openTransport(factory, post_url);
-    var no_headers: [1]http.Header = undefined;
-    var no_body: [1]u8 = undefined;
-    var head = http.Response{ .status = 0, .headers = no_headers[0..0], .body = no_body[0..0] };
+
     http.httpPostStreamOver(arena, &post_t, post_url, req_body, "application/x-git-upload-pack-request", "application/x-git-upload-pack-result", &sink, &head) catch |e| {
         if (head.status != 0 and head.status != 200) return error.Transport;
+        if (ps.fail_kind == KIND_DISK_FULL) return error.DiskFull;
         if (ps.fail_kind == KIND_IO) return error.Io;
         if (ps.fail_kind == KIND_PROTOCOL) return error.Protocol;
         if (e == error.OutOfMemory) return error.OutOfMemory;
@@ -889,6 +976,7 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     file_mod.close(&ps.file);
     pack_open = false;
     if (head.status != 200) return error.Transport;
+    if (ps.fail_kind == KIND_DISK_FULL) return error.DiskFull;
     if (ps.fail_kind == KIND_IO) return error.Io;
     if (ps.fail_kind == KIND_PROTOCOL) return error.Protocol;
     if (!ps.pack_started or ps.hold_len != 20) return error.Protocol;

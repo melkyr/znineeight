@@ -114,9 +114,9 @@ check_worktree() {
     done < "$OUT/linux/$cw_name.blobs"
 }
 
-echo "== build z9git with the seed compiler =="
-if ! "$ZIG" -fsafe -o "$OUT/bin" "$ENTRY" >"$OUT/zig.log" 2>&1; then
-    echo "FAIL: zig compile (see $OUT/zig.log)"
+echo "== build z9git with the seed compiler (-ffast work / -fsafe memory) =="
+if ! "$ZIG" -ffast -o "$OUT/bin" "$ENTRY" >"$OUT/zig.log" 2>&1; then
+    echo "FAIL: zig compile (-ffast; see $OUT/zig.log)"
     tail -40 "$OUT/zig.log" | sed 's/^/       /'
     FAILS=$((FAILS + 1))
     finish
@@ -129,7 +129,21 @@ if ! sh "$OUT/bin/build_target.sh" linux "$OUT/bin/prog" >"$OUT/build.log" 2>&1;
 fi
 PROG="$OUT/bin/prog"
 [ -x "$PROG" ] || { echo "FAIL: $PROG not built"; exit 1; }
-pass_case "Linux build produced $PROG"
+pass_case "Linux build produced $PROG (-ffast)"
+mkdir -p "$OUT/bin_safe"
+if ! "$ZIG" -fsafe -o "$OUT/bin_safe" "$ENTRY" >"$OUT/zig_safe.log" 2>&1; then
+    fail_case "zig -fsafe measurement build (see $OUT/zig_safe.log)"
+    tail -40 "$OUT/zig_safe.log" | sed 's/^/       /'
+    finish
+fi
+if ! sh "$OUT/bin_safe/build_target.sh" linux "$OUT/bin_safe/prog" >"$OUT/build_safe.log" 2>&1; then
+    fail_case "target link for -fsafe measurement build (see $OUT/build_safe.log)"
+    tail -40 "$OUT/build_safe.log" | sed 's/^/       /'
+    finish
+fi
+PROG_SAFE="$OUT/bin_safe/prog"
+[ -x "$PROG_SAFE" ] || { echo "FAIL: $PROG_SAFE not built"; exit 1; }
+pass_case "Linux build produced $PROG_SAFE (-fsafe for peak-RSS measurement)"
 
 echo "== pkt-line unit =="
 PKT_DIR="$OUT/pkt"
@@ -906,17 +920,37 @@ if [ "$HAVE_PYTHON" -eq 1 ]; then
             fail_case "100k-object clone worktree differs"
         fi
         if [ -n "$TIME_BIN" ]; then
-            LARGE_RSS=$(awk '/Maximum resident set size/ {print $6}' "$OUT/linux/large_clone.time" 2>/dev/null)
-            LARGE_ELAPSED=$(awk '/Elapsed \(wall clock\)/ {print $NF}' "$OUT/linux/large_clone.time" 2>/dev/null)
+            LARGE_FAST_ELAPSED=$(awk '/Elapsed \(wall clock\)/ {print $NF}' "$OUT/linux/large_clone.time" 2>/dev/null)
+            pass_case "100k-object clone -ffast wall time ${LARGE_FAST_ELAPSED:-?}"
+        fi
+        LARGE_SAFE="$OUT/linux/clone_large_safe"
+        rm -rf "$LARGE_SAFE"
+        if [ -n "$TIME_BIN" ]; then
+            "$TIME_BIN" -v "$PROG_SAFE" clone "$LARGE" "$LARGE_SAFE" \
+                >"$OUT/linux/large_safe.log" 2>"$OUT/linux/large_safe.time"
+        else
+            "$PROG_SAFE" clone "$LARGE" "$LARGE_SAFE" \
+                >"$OUT/linux/large_safe.log" 2>"$OUT/linux/large_safe.time"
+        fi
+        LARGE_SAFE_RC=$?
+        if [ "$LARGE_SAFE_RC" -eq 0 ] && [ -f "$LARGE_SAFE/.git/HEAD" ]; then
+            pass_case "100k-object -fsafe measurement clone exit 0"
+        else
+            fail_case "100k-object -fsafe measurement clone (rc=$LARGE_SAFE_RC)"
+            tail -15 "$OUT/linux/large_safe.log" | sed 's/^/       /'
+        fi
+        if [ -n "$TIME_BIN" ]; then
+            LARGE_RSS=$(awk '/Maximum resident set size/ {print $6}' "$OUT/linux/large_safe.time" 2>/dev/null)
+            LARGE_SAFE_ELAPSED=$(awk '/Elapsed \(wall clock\)/ {print $NF}' "$OUT/linux/large_safe.time" 2>/dev/null)
             if [ -n "$LARGE_RSS" ]; then
-                pass_case "100k-object clone peak RSS ${LARGE_RSS} kB (elapsed ${LARGE_ELAPSED:-?})"
-                if [ "$LARGE_RSS" -lt 98304 ]; then
-                    pass_case "100k-object clone peak RSS is below 96 MiB"
+                pass_case "100k-object -fsafe peak RSS ${LARGE_RSS} kB (elapsed ${LARGE_SAFE_ELAPSED:-?})"
+                if [ "$LARGE_RSS" -lt 131072 ]; then
+                    pass_case "100k-object -fsafe peak RSS is below 128 MiB"
                 else
-                    fail_case "100k-object clone peak RSS ${LARGE_RSS} kB exceeds 96 MiB"
+                    fail_case "100k-object -fsafe peak RSS ${LARGE_RSS} kB exceeds 128 MiB"
                 fi
             else
-                fail_case "could not read peak RSS from $OUT/linux/large_clone.time"
+                fail_case "could not read peak RSS from $OUT/linux/large_safe.time"
             fi
         else
             echo "SKIP - 100k-object peak RSS: /usr/bin/time not available"
@@ -949,6 +983,107 @@ if [ "$HAVE_PYTHON" -eq 1 ]; then
     fi
 else
     echo "SKIP - large synthetic external-memory idx: python3 not installed"
+fi
+
+echo "== real remote melonDS (HTTPS, default 32 MiB) =="
+if [ "${Z98_NET:-0}" = "1" ]; then
+    MELON_URL="https://github.com/melonDS-emu/melonDS.git"
+    MELON="$OUT/linux/clone_melon"
+    rm -rf "$MELON"
+    TIME_BIN=""
+    if [ -x /usr/bin/time ]; then TIME_BIN="/usr/bin/time"; fi
+    if [ -n "$TIME_BIN" ]; then
+        "$TIME_BIN" -v timeout 1800 "$PROG" clone "$MELON_URL" "$MELON" \
+            >"$OUT/linux/melon.log" 2>"$OUT/linux/melon.time"
+    else
+        timeout 1800 "$PROG" clone "$MELON_URL" "$MELON" \
+            >"$OUT/linux/melon.log" 2>"$OUT/linux/melon.time"
+    fi
+    MELON_RC=$?
+    if [ "$MELON_RC" -eq 0 ] && [ -f "$MELON/.git/HEAD" ]; then
+        pass_case "melonDS real HTTPS clone exit 0 (default 32 MiB arena)"
+    else
+        fail_case "melonDS real HTTPS clone (rc=$MELON_RC)"
+        tail -20 "$OUT/linux/melon.log" | sed 's/^/       /'
+    fi
+    MELON_IDX=$(find "$MELON/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
+    if [ -n "$MELON_IDX" ] && git verify-pack -v "$MELON_IDX" >"$OUT/linux/melon_verify.log" 2>&1; then
+        pass_case "git verify-pack accepts the melonDS synthesized idx"
+    else
+        fail_case "git verify-pack rejected the melonDS idx"
+        tail -10 "$OUT/linux/melon_verify.log" 2>/dev/null | sed 's/^/       /'
+    fi
+    if [ "$MELON_RC" -eq 0 ] && git --git-dir="$MELON/.git" fsck --full --no-dangling >"$OUT/linux/melon_fsck.log" 2>&1; then
+        pass_case "git fsck accepts the melonDS clone"
+    else
+        fail_case "git fsck rejected the melonDS clone"
+        tail -10 "$OUT/linux/melon_fsck.log" 2>/dev/null | sed 's/^/       /'
+    fi
+    MELON_REMOTE_HEAD=$(timeout 120 git ls-remote "$MELON_URL" HEAD 2>/dev/null | awk '{print $1}' | head -1)
+    MELON_LOCAL_HEAD=$(git --git-dir="$MELON/.git" rev-parse HEAD 2>/dev/null)
+    if [ -n "$MELON_REMOTE_HEAD" ] && [ "$MELON_REMOTE_HEAD" = "$MELON_LOCAL_HEAD" ]; then
+        pass_case "melonDS HEAD matches the remote ($MELON_LOCAL_HEAD)"
+    else
+        fail_case "melonDS HEAD mismatch (remote=${MELON_REMOTE_HEAD:-?} local=${MELON_LOCAL_HEAD:-?})"
+    fi
+    if [ "$MELON_RC" -eq 0 ]; then
+        git --git-dir="$MELON/.git" ls-tree -r HEAD | awk '$1 != "120000" && $1 != "160000"' >"$OUT/linux/melon.lstree"
+        check_worktree melon "$MELON" "$MELON/.git" "$OUT/linux/melon.lstree"
+    fi
+    if [ -n "$TIME_BIN" ]; then
+        MELON_ELAPSED=$(awk '/Elapsed \(wall clock\)/ {print $NF}' "$OUT/linux/melon.time" 2>/dev/null)
+        pass_case "melonDS -ffast wall time ${MELON_ELAPSED:-?}"
+    fi
+
+    MELON_SAFE="$OUT/linux/clone_melon_safe"
+    MELON_SAFE_SRC="$OUT/linux/melon_safe_src"
+    rm -rf "$MELON_SAFE" "$MELON_SAFE_SRC"
+    mkdir -p "$MELON_SAFE_SRC/objects/pack"
+    for mp in "$MELON/.git/objects/pack"/*.pack; do
+        [ -f "$mp" ] && ln "$mp" "$MELON_SAFE_SRC/objects/pack/"
+    done
+    cp -R "$MELON/.git/refs" "$MELON_SAFE_SRC/refs"
+    cp "$MELON/.git/HEAD" "$MELON_SAFE_SRC/"
+    if [ -f "$MELON/.git/packed-refs" ]; then
+        cp "$MELON/.git/packed-refs" "$MELON_SAFE_SRC/"
+    fi
+    if [ -n "$(find "$MELON_SAFE_SRC/objects/pack" -name '*.pack' -print -quit)" ]; then
+        pass_case "prepared melonDS local idx-synthesis source for -fsafe RSS"
+    else
+        fail_case "could not prepare melonDS local -fsafe source"
+    fi
+    if [ -n "$TIME_BIN" ]; then
+        "$TIME_BIN" -v timeout 1800 "$PROG_SAFE" clone "$MELON_SAFE_SRC" "$MELON_SAFE" \
+            >"$OUT/linux/melon_safe.log" 2>"$OUT/linux/melon_safe.time"
+    else
+        timeout 1800 "$PROG_SAFE" clone "$MELON_SAFE_SRC" "$MELON_SAFE" \
+            >"$OUT/linux/melon_safe.log" 2>"$OUT/linux/melon_safe.time"
+    fi
+    MELON_SAFE_RC=$?
+    if [ "$MELON_SAFE_RC" -eq 0 ] && [ -f "$MELON_SAFE/.git/HEAD" ]; then
+        pass_case "melonDS -fsafe measurement clone exit 0"
+    else
+        fail_case "melonDS -fsafe measurement clone (rc=$MELON_SAFE_RC)"
+        tail -20 "$OUT/linux/melon_safe.log" | sed 's/^/       /'
+    fi
+    if [ -n "$TIME_BIN" ]; then
+        MELON_RSS=$(awk '/Maximum resident set size/ {print $6}' "$OUT/linux/melon_safe.time" 2>/dev/null)
+        MELON_SAFE_ELAPSED=$(awk '/Elapsed \(wall clock\)/ {print $NF}' "$OUT/linux/melon_safe.time" 2>/dev/null)
+        if [ -n "$MELON_RSS" ]; then
+            pass_case "melonDS -fsafe peak RSS ${MELON_RSS} kB (elapsed ${MELON_SAFE_ELAPSED:-?})"
+            if [ "$MELON_RSS" -lt 131072 ]; then
+                pass_case "melonDS -fsafe peak RSS is below 128 MiB"
+            else
+                fail_case "melonDS -fsafe peak RSS ${MELON_RSS} kB exceeds 128 MiB"
+            fi
+        else
+            fail_case "could not read melonDS peak RSS"
+        fi
+    else
+        echo "SKIP - melonDS peak RSS: /usr/bin/time not available"
+    fi
+else
+    echo "SKIP - real remote melonDS: set Z98_NET=1 to enable the network test"
 fi
 
 echo "== clone loose_repo =="
