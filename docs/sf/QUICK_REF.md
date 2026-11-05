@@ -30,33 +30,33 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-05 — seed v138]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-05 — seed v139]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v138 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v139 CHANGELOG entry.
 
-**Current seed: v138** (rotated 2026-11-05 for the Task 8b `std_http`
-large-repo helpers: `httpGetHeadersOver` (buffered GET with caller headers,
-including `Range`), `httpGetStreamOver` (GET body streamed to a `ResponseSink`),
-`RequestSource` + `httpPostStreamBodyOver` (streamed POST request body with a
-declared `Content-Length`, same streamed response path). Existing GET/POST
-behavior is unchanged; packaging base HEAD `d08d07ab`). Archived binary md5
+**Current seed: v139** (rotated 2026-11-05 for the Task 8b std crypto CPU
+fixes: table-driven GHASH in `std_cipher` (`ghashMulNib`) and the optimized
+SHA-1 compression loop in `std_crypto`. Existing behavior is unchanged;
+packaging base HEAD `6e49471d`). Archived binary md5
 (= fixed point) `cf68f192900e7f6618c11e1712b74b3a`; archive md5
-`9aef8a6a00bafd3f8f08db96c5ff889b`; Win9x zip md5
-`067fb8fbb05834b5a4207f32bc17125b`; `gen/` 48 `.c` + 49 `.h` (12,473,249
+`c05bf7d54e9f2a3bb14eabd5e8d22295`; Win9x zip md5
+`7acfa50f5bf4bd749f473bdb0776aad7`; `gen/` 48 `.c` + 49 `.h` (12,473,249
 bytes); `lib/` **52** std `.zig` (`std.zig` + 51 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`df2a11962272dfa1cf92c6929e13d937`; `std_http.zig` updated, no new module).
-A rebuild from the committed v138 archive is two-hop
+`ad9abde15b01dd57d9a442b5cbe06685`; `std_cipher.zig` and `std_crypto.zig`
+updated, no new module).
+A rebuild from the committed v139 archive is two-hop
 **hop1 == hop2 == `cf68f192…`**. The compiler source is **`-fsafe`-clean**.
 
-The v138 rotation battery is deliberately **`stdlib_http_*`-only**: the eight
-`repro/mi_matrix/stdlib_http_*` fixtures are **8 PASS / 0 FAIL** and the
-crosscheck is **10 PASS / 0 FAIL**. The v136 full-battery measurements below
-are historical and were **not** re-run or re-claimed for v137/v138: markers
+The v139 rotation battery is deliberately **crypto-fixture-only**: the ten
+`repro/mi_matrix/stdlib_{aes_gcm,chacha_poly,crypto_*}_xmod` fixtures
+(AES-GCM, ChaCha20-Poly1305, and the eight `stdlib_crypto_*`) are
+**10 PASS / 0 FAIL**. The v136 full-battery measurements below
+are historical and were **not** re-run or re-claimed for v137/v138/v139: markers
 (`--markers --dump-c89` on `mud_server`) **3397 lines / 39012 B**; the 8 pins,
 the frozen-1124 corpus (md5 `518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the
 goldens (5/5), the 26 examples and the **356/0** stdlib + **10/10** crosscheck.
