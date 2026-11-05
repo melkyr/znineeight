@@ -328,6 +328,8 @@ pub fn storeOpen(arena: *arena_mod.Arena, git_dir: []const u8, s: *Store) !void 
         var idx: pack_mod.Idx = undefined;
         pack_mod.idxLoad(arena, idx_path, &idx) catch |err| {
             if (err == error.OpenFailed) return error.OpenFailed;
+            if (err == error.OutOfMemory) return error.OutOfMemory;
+            if (err == error.Io) return error.Io;
             return error.Corrupt;
         };
         pack_mod.packOpen(arena, pack_path, &idx, &s.packs[filled]) catch |err| {

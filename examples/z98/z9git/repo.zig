@@ -771,6 +771,14 @@ fn readTyped(arena: *arena_mod.Arena, store: *objects.Store, id: ObjectId, out: 
     };
 }
 
+fn openStore(arena: *arena_mod.Arena, git_dir: []const u8, store: *objects.Store) GitError!void {
+    objects.storeOpen(arena, git_dir, store) catch |e| {
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        if (e == error.Io) return error.Io;
+        return error.ObjectStore;
+    };
+}
+
 fn peelToCommit(arena: *arena_mod.Arena, store: *objects.Store, id: ObjectId, out: *ObjectId) GitError!void {
     var cur: ObjectId = undefined;
     copyId(&cur, id);
@@ -1028,7 +1036,9 @@ fn fileSinkWrite(state: *void, data: []const u8) !void {
 }
 
 fn writeObjectToFile(scratch: *arena_mod.Arena, store: *objects.Store, id: ObjectId, path: []const u8) GitError!void {
-    if (file_mod.exists(path)) file_mod.remove(path) catch return error.Io;
+    // exists() follows symlinks; a dangling link reports false but must still
+    // be unlinked so the write does not recreate its target behind the link.
+    file_mod.remove(path) catch {};
     const f = file_mod.open(scratch, path, file_mod.Mode.Write) catch return error.Io;
     var st = FileSinkState{ .f = f };
     var sink = objects.ObjectSink{ .state = @ptrCast(*void, &st), .write_fn = fileSinkWrite };
@@ -1064,9 +1074,10 @@ fn materializeTree(arena: *arena_mod.Arena, scratch: *arena_mod.Arena, store: *o
             try materializeTree(arena, scratch, store, e.id, path, depth + 1);
         } else if (e.mode == MODE_GITLINK) {
             // Submodules are out of scope: leave an empty directory and never
-            // fetch the referenced commit object.
-            if (file_mod.exists(path) and !dirExists(arena, path)) {
-                file_mod.remove(path) catch return error.Io;
+            // fetch the referenced commit object. Remove any file or dangling
+            // symlink at the path (exists() follows links) before mkdir.
+            if (!dirExists(arena, path)) {
+                file_mod.remove(path) catch {};
             }
             try mkdirPath(path);
         } else if (e.mode == MODE_LINK) {
@@ -1086,8 +1097,11 @@ fn materializeTree(arena: *arena_mod.Arena, scratch: *arena_mod.Arena, store: *o
 }
 
 fn removeTrackedFile(path: []const u8) GitError!void {
-    if (!file_mod.exists(path)) return;
-    file_mod.remove(path) catch return error.Io;
+    // Unlink unconditionally: exists() follows symlinks, so a dangling link
+    // would otherwise be reported absent and left behind.
+    file_mod.remove(path) catch {
+        if (file_mod.exists(path)) return error.Io;
+    };
 }
 
 fn removeTreePath(arena: *arena_mod.Arena, store: *objects.Store, id: ObjectId, is_dir: bool, path: []const u8, depth: usize) GitError!void {
@@ -1269,7 +1283,7 @@ pub fn cloneLocal(arena: *arena_mod.Arena, src_path: []const u8, dest_dir: []con
     }
 
     var store: objects.Store = undefined;
-    objects.storeOpen(arena, dest_git, &store) catch return error.ObjectStore;
+    try openStore(arena, dest_git, &store);
     defer objects.storeClose(&store);
 
     var head: Resolved = undefined;
@@ -1365,7 +1379,7 @@ pub fn checkoutHead(arena: *arena_mod.Arena, dest_dir: []const u8) GitError!void
         try diskPreflight(dest_git, pack_bytes * 2 + DISK_SLACK_BYTES);
     }
     var store: objects.Store = undefined;
-    objects.storeOpen(arena, dest_git, &store) catch return error.ObjectStore;
+    try openStore(arena, dest_git, &store);
     defer objects.storeClose(&store);
 
     var head: Resolved = undefined;
@@ -1604,7 +1618,7 @@ fn visitedHas(seen: []u8, count: usize, id: ObjectId) bool {
 
 pub fn logRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []const u8) GitError!void {
     var store: objects.Store = undefined;
-    objects.storeOpen(arena, git_dir, &store) catch return error.ObjectStore;
+    try openStore(arena, git_dir, &store);
     defer objects.storeClose(&store);
 
     const start_ref = try resolveUserRef(arena, git_dir, ref_name);
@@ -1646,7 +1660,7 @@ pub fn logRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []const u8
 
 pub fn checkoutRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []const u8) GitError!void {
     var store: objects.Store = undefined;
-    objects.storeOpen(arena, git_dir, &store) catch return error.ObjectStore;
+    try openStore(arena, git_dir, &store);
     defer objects.storeClose(&store);
 
     var old_head: Resolved = undefined;

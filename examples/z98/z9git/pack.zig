@@ -248,7 +248,7 @@ pub fn idxLoad(arena: *arena_mod.Arena, path: []const u8, out: *Idx) !void {
     }
     idxParse(f, @intCast(u64, sz), out) catch |e| {
         file_mod.close(&f);
-        _ = e;
+        if (e == error.Io) return error.Io;
         return error.Corrupt;
     };
 }
@@ -1158,7 +1158,10 @@ pub fn readEntryMaybeBig(scratch: *arena_mod.Arena, p: *Pack, offset: u64) !RawE
     // object does not depend on the caller's arena having a contiguous half.
     const h = try parseEntryHeader(p, offset);
     const avail: usize = if (scratch.used >= scratch.capacity) 0 else scratch.capacity - scratch.used;
-    if (h.size > @intCast(u64, scratch.capacity / 4) or h.size > @intCast(u64, avail / 2)) {
+    // decompressEntry allocates the output (size) plus an input window of about
+    // size + size/4. Require roughly four times the object size to remain so a
+    // near-threshold object cannot consume the output then fail the input alloc.
+    if (h.size > @intCast(u64, scratch.capacity / 4) or h.size > @intCast(u64, avail / 4)) {
         return readEntryBig(p, offset);
     }
     return readEntry(scratch, p, offset);
@@ -1181,9 +1184,10 @@ fn resolveAt(p: *Pack, cache: *Cache, scratch: *arena_mod.Arena, ids_path: []con
             if (raw.big) dynFree(raw.payload);
             return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id, .big = false };
         }
-        res = applyDeltaCached(scratch, base, raw) catch {
+        res = applyDeltaCached(scratch, base, raw) catch |e| {
             if (raw.big) dynFree(raw.payload);
             if (base.big) dynFree(base.data);
+            if (e == error.OutOfMemory) return error.OutOfMemory;
             return error.Corrupt;
         };
         if (raw.big) dynFree(raw.payload);
@@ -1196,9 +1200,10 @@ fn resolveAt(p: *Pack, cache: *Cache, scratch: *arena_mod.Arena, ids_path: []con
                 if (raw.big) dynFree(raw.payload);
                 return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id, .big = false };
             }
-            res = applyDeltaCached(scratch, base, raw) catch {
+            res = applyDeltaCached(scratch, base, raw) catch |e| {
                 if (raw.big) dynFree(raw.payload);
                 if (base.big) dynFree(base.data);
+                if (e == error.OutOfMemory) return error.OutOfMemory;
                 return error.Corrupt;
             };
             if (raw.big) dynFree(raw.payload);
