@@ -73,7 +73,9 @@ fn sha1Block(s: *Sha1) void {
             @intCast(u32, s.buf[i * 4 + 3]);
     }
     while (i < 80) : (i += 1) {
-        w[i] = rotl32(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+        var x: u32 = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16];
+        var keep: u32 = x & 0x7FFFFFFF;
+        w[i] = (keep << 1) | (x >> 31);
     }
 
     var a: u32 = s.h0;
@@ -82,27 +84,50 @@ fn sha1Block(s: *Sha1) void {
     var d: u32 = s.h3;
     var e: u32 = s.h4;
 
+    // Constant rotations are inlined: at -O0 the generic rotl32/mask helpers
+    // were 37% of local CPU, and -fsafe still needs the shifted half masked.
     i = 0;
-    while (i < 80) : (i += 1) {
-        var f: u32 = 0;
-        var k: u32 = 0;
-        if (i < 20) {
-            f = (b & c) | ((~b) & d);
-            k = 0x5A827999;
-        } else if (i < 40) {
-            f = b ^ c ^ d;
-            k = 0x6ED9EBA1;
-        } else if (i < 60) {
-            f = (b & c) | (b & d) | (c & d);
-            k = 0x8F1BBCDC;
-        } else {
-            f = b ^ c ^ d;
-            k = 0xCA62C1D6;
-        }
-        var temp: u32 = rotl32(a, 5) +% f +% e +% k +% w[i];
+    while (i < 20) : (i += 1) {
+        var f: u32 = (b & c) | ((~b) & d);
+        var ak: u32 = a & 0x07FFFFFF;
+        var bk: u32 = b & 0x00000003;
+        var temp: u32 = ((ak << 5) | (a >> 27)) +% f +% e +% 0x5A827999 +% w[i];
         e = d;
         d = c;
-        c = rotl32(b, 30);
+        c = (bk << 30) | (b >> 2);
+        b = a;
+        a = temp;
+    }
+    while (i < 40) : (i += 1) {
+        var f: u32 = b ^ c ^ d;
+        var ak: u32 = a & 0x07FFFFFF;
+        var bk: u32 = b & 0x00000003;
+        var temp: u32 = ((ak << 5) | (a >> 27)) +% f +% e +% 0x6ED9EBA1 +% w[i];
+        e = d;
+        d = c;
+        c = (bk << 30) | (b >> 2);
+        b = a;
+        a = temp;
+    }
+    while (i < 60) : (i += 1) {
+        var f: u32 = (b & c) | (b & d) | (c & d);
+        var ak: u32 = a & 0x07FFFFFF;
+        var bk: u32 = b & 0x00000003;
+        var temp: u32 = ((ak << 5) | (a >> 27)) +% f +% e +% 0x8F1BBCDC +% w[i];
+        e = d;
+        d = c;
+        c = (bk << 30) | (b >> 2);
+        b = a;
+        a = temp;
+    }
+    while (i < 80) : (i += 1) {
+        var f: u32 = b ^ c ^ d;
+        var ak: u32 = a & 0x07FFFFFF;
+        var bk: u32 = b & 0x00000003;
+        var temp: u32 = ((ak << 5) | (a >> 27)) +% f +% e +% 0xCA62C1D6 +% w[i];
+        e = d;
+        d = c;
+        c = (bk << 30) | (b >> 2);
         b = a;
         a = temp;
     }
