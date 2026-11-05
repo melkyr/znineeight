@@ -1252,9 +1252,113 @@ fn decodeFrame(st: *Decoder, src: []const u8, start: usize, dst: []u8,
     return pos;
 }
 
+// Parse one standard frame starting at `start`, walk its block headers, and
+// store the first byte after the frame (checksum included) in `next`. Returns
+// the frame's declared content size, or null when the header is malformed or
+// the frame does not declare an exact content size.
+fn frameContentSizeAt(src: []const u8, start: usize, next: *usize) ?u64 {
+    var pos: usize = start;
+    if (pos + 4 > src.len) return null;
+    if (le32(src, pos) != MAGIC) return null;
+    pos += 4;
+    if (pos >= src.len) return null;
+    const desc: u8 = src[pos];
+    pos += 1;
+    if ((desc & 8) != 0) return null;
+    const fcs_flag: u8 = desc >> 6;
+    const single: bool = ((desc >> 5) & 1) != 0;
+    const has_checksum: bool = ((desc >> 2) & 1) != 0;
+    const did_flag: u8 = desc & 3;
+
+    if (!single) {
+        if (pos >= src.len) return null;
+        pos += 1;
+    }
+    var did_size: usize = 0;
+    if (did_flag == 1) did_size = 1;
+    if (did_flag == 2) did_size = 2;
+    if (did_flag == 3) did_size = 4;
+    if (did_size > src.len - pos) return null;
+    pos += did_size;
+
+    var fcs_size: usize = 0;
+    if (fcs_flag == 0) {
+        if (single) fcs_size = 1;
+    } else if (fcs_flag == 1) {
+        fcs_size = 2;
+    } else if (fcs_flag == 2) {
+        fcs_size = 4;
+    } else {
+        fcs_size = 8;
+    }
+    if (fcs_size > src.len - pos) return null;
+    var frame_size: u64 = 0;
+    if (fcs_size == 1) frame_size = @intCast(u64, src[pos]);
+    if (fcs_size == 2) frame_size = @intCast(u64, le16(src, pos)) + 256;
+    if (fcs_size == 4) frame_size = @intCast(u64, le32(src, pos));
+    if (fcs_size == 8) frame_size = le64(src, pos);
+    pos += fcs_size;
+
+    while (true) {
+        if (pos + 3 > src.len) return null;
+        const bh: u32 = @intCast(u32, src[pos]) |
+            (@intCast(u32, src[pos + 1]) << 8) |
+            (@intCast(u32, src[pos + 2]) << 16);
+        pos += 3;
+        const last: bool = (bh & 1) != 0;
+        const btype: u32 = (bh >> 1) & 3;
+        const bsize: usize = @intCast(usize, bh >> 3);
+        var payload: usize = bsize;
+        if (btype == 1) payload = 1;
+        if (btype == 3) return null;
+        if (payload > src.len - pos) return null;
+        pos += payload;
+        if (last) break;
+    }
+    if (has_checksum) {
+        if (src.len - pos < 4) return null;
+        pos += 4;
+    }
+    if (fcs_size == 0) return null;
+    next.* = pos;
+    return frame_size;
+}
+
+// Public reader for the exact decoded size of a complete frame stream. Returns
+// the sum of every standard frame's declared content size, or null when any
+// frame omits its size (the grow-and-retry case) or the stream is malformed.
+// Skippable frames are skipped and contribute nothing; multiple standard
+// frames are summed.
+pub fn zstdFrameContentSize(src: []const u8) ?u64 {
+    var pos: usize = 0;
+    var total: u64 = 0;
+    while (pos < src.len) {
+        if (pos + 4 > src.len) return null;
+        const magic = le32(src, pos);
+        if ((magic & 0xFFFFFFF0) == SKIPPABLE_MAGIC) {
+            if (pos + 8 > src.len) return null;
+            const fsize: usize = @intCast(usize, le32(src, pos + 4));
+            const body = pos + 8;
+            if (fsize > src.len - body) return null;
+            pos = body + fsize;
+            continue;
+        }
+        if (magic != MAGIC) return null;
+        var next: usize = 0;
+        const sz = frameContentSizeAt(src, pos, &next) orelse return null;
+        total += sz;
+        pos = next;
+    }
+    return total;
+}
+
 fn decompressFrames(src: []const u8, dst: []u8, max_window_log: u8,
                     dict: *const Dict) !u32 {
     if (src.len == 0) return error.Corrupt;
+    const declared = zstdFrameContentSize(src);
+    if (declared) |d| {
+        if (d > @intCast(u64, dst.len)) return error.OutputTooSmall;
+    }
     var st: Decoder = undefined;
     var written: usize = 0;
     var pos: usize = 0;

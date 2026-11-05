@@ -195,6 +195,44 @@ cannot satisfy it). Only the last `min(dict content length, frame window
 size)` dictionary bytes are used as history. As with `zstdDecompress`, there is
 no partial-output contract: treat `dst` as invalid after any error.
 
+### `zstdFrameContentSize`
+
+**Purpose** — read the exact decoded size declared by a complete frame stream
+without decoding it. Use it to size a destination buffer (or to start a
+grow-and-retry loop) before calling `zstdDecompress`/`zstdDecompressDict`.
+
+**When to use** — when the producer recorded the content size (the normal zstd
+CLI default) and the caller wants to avoid guessing or over-allocating. It is
+also the single shared frame/block header walker used by the decoder.
+
+**Signature** — `pub fn zstdFrameContentSize(src: []const u8) ?u64`
+
+**Parameters**
+- `src` — the complete compressed stream (standard and skippable frames).
+
+**Returns** — the sum of every standard frame's exact declared content size.
+Returns `null` when any standard frame omits its content size (for example a
+single frame produced with `ZSTD_c_contentSizeFlag=0`) or when the stream is
+malformed/incomplete. Skippable frames are skipped and contribute `0`; an empty
+input reports `0`.
+
+**Errors** — none; an unknown size or malformed stream is `null`.
+
+**Example**
+```zig
+const std_zstd = @import("std_zstd");
+
+if (std_zstd.zstdFrameContentSize(frame[0..])) |n| {
+    // n bytes will be written; allocate exactly that much.
+}
+```
+
+**Gotchas** — a `null` result means “unknown”, not “empty”: fall back to a
+grow-and-retry destination. Concatenated standard frames are summed, and a
+stream containing only skippable frames reports `0`. The helper does not
+validate windows, dictionaries, block payloads, or checksums; the decoder still
+does that during `zstdDecompress`/`zstdDecompressDict`.
+
 ### Supported subset and boundaries
 
 - Standard zstd frames with raw, RLE, and compressed blocks.
