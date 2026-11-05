@@ -598,6 +598,7 @@ fn parseDiscovery(arena: *arena_mod.Arena, body: []const u8) repo.GitError!Disco
             continue;
         }
         if (endsWith(name, "^{}")) continue;
+        if (startsWith(name, "refs/pull/")) continue;
         try refAppend(arena, &list, name, id);
     }
     if (!saw_service or list.len == 0) return error.Protocol;
@@ -1008,18 +1009,6 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     var hk: usize = 0;
     while (hk < 20) : (hk += 1) head_id[hk] = disc.head_id[hk];
     var has_head = disc.has_head;
-    if (head_target.len == 0 and !has_head) {
-        var i: usize = 0;
-        while (i < disc.refs.len) : (i += 1) {
-            if (startsWith(disc.refs[i].name, "refs/heads/")) {
-                head_target = disc.refs[i].name;
-                var k: usize = 0;
-                while (k < 20) : (k += 1) head_id[k] = disc.refs[i].id[k];
-                has_head = true;
-                break;
-            }
-        }
-    }
     if (head_target.len != 0 and !has_head) {
         var i: usize = 0;
         while (i < disc.refs.len) : (i += 1) {
@@ -1031,7 +1020,19 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
             }
         }
     }
-    if (head_target.len == 0 and !has_head) return error.Protocol;
+    if (!has_head) {
+        var i: usize = 0;
+        while (i < disc.refs.len) : (i += 1) {
+            if (startsWith(disc.refs[i].name, "refs/heads/")) {
+                head_target = disc.refs[i].name;
+                var k: usize = 0;
+                while (k < 20) : (k += 1) head_id[k] = disc.refs[i].id[k];
+                has_head = true;
+                break;
+            }
+        }
+    }
+    if (!has_head) return error.Protocol;
 
     var entries_raw = arena_mod.alloc(arena, disc.refs.len * @sizeOf(repo.RefEntry)) catch return error.OutOfMemory;
     const entries = @ptrCast([*]repo.RefEntry, entries_raw)[0..disc.refs.len];

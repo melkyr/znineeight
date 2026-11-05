@@ -255,6 +255,119 @@ else
 fi
 check_worktree mock_http "$MOCK_CLONE" "$TD/packed_repo" "$TD/goldens/packed.lstree"
 
+echo "== mocked-transport refs/pull/* filter =="
+PULL_SRC="$OUT/mock_pull_src"
+PULL_REPO="$OUT/mock_pull.git"
+PULL_DATA="$MOCK_DATA/pull"
+rm -rf "$PULL_SRC" "$PULL_REPO" "$PULL_DATA"
+mkdir -p "$PULL_DATA"
+if ! (
+    git init -q "$PULL_SRC" &&
+    cd "$PULL_SRC" &&
+    git config user.name "z9 fixture" &&
+    git config user.email "z9@example.invalid" &&
+    printf 'base\n' >main.txt &&
+    git add main.txt &&
+    git commit -q -m "pull filter base" &&
+    PULL_BASE=$(git symbolic-ref --short HEAD) &&
+    git checkout -q --orphan pullreq &&
+    git rm -q -rf . &&
+    printf 'pull only\n' >pull.txt &&
+    git add pull.txt &&
+    git commit -q -m "pull request only commit" &&
+    git update-ref refs/pull/1/head refs/heads/pullreq &&
+    git checkout -q "$PULL_BASE"
+) >"$OUT/mock_pull_build.log" 2>&1; then
+    fail_case "prepare refs/pull fixture"
+    tail -10 "$OUT/mock_pull_build.log" | sed 's/^/       /'
+    finish
+fi
+if ! git clone --bare --no-hardlinks -q "$PULL_SRC" "$PULL_REPO" >>"$OUT/mock_pull_build.log" 2>&1; then
+    fail_case "prepare refs/pull bare fixture"
+    tail -10 "$OUT/mock_pull_build.log" | sed 's/^/       /'
+    finish
+fi
+if ! git --git-dir="$PULL_REPO" update-ref refs/pull/1/head refs/heads/pullreq >>"$OUT/mock_pull_build.log" 2>&1 || \
+   ! git --git-dir="$PULL_REPO" update-ref -d refs/heads/pullreq >>"$OUT/mock_pull_build.log" 2>&1; then
+    fail_case "prepare refs/pull advertisement"
+    tail -10 "$OUT/mock_pull_build.log" | sed 's/^/       /'
+    finish
+fi
+if ! git upload-pack --stateless-rpc --advertise-refs "$PULL_REPO" >"$PULL_DATA/adv" 2>"$OUT/mock_pull_adv.err"; then
+    fail_case "prepare refs/pull ref advertisement"
+    tail -10 "$OUT/mock_pull_adv.err" | sed 's/^/       /'
+    finish
+fi
+{ printf '001e# service=git-upload-pack\n0000'; cat "$PULL_DATA/adv"; } >"$PULL_DATA/info_refs"
+if ! git --git-dir="$PULL_REPO" rev-list --objects --all --not refs/pull/1/head | \
+     git --git-dir="$PULL_REPO" pack-objects --stdout >"$PULL_DATA/pack" 2>"$OUT/mock_pull_pack.err"; then
+    fail_case "prepare refs/pull upload-pack archive"
+    tail -10 "$OUT/mock_pull_pack.err" | sed 's/^/       /'
+    finish
+fi
+{ printf '0008NAK\n'; cat "$PULL_DATA/pack"; } >"$PULL_DATA/upload"
+PULL_ID=$(git --git-dir="$PULL_REPO" rev-parse refs/pull/1/head)
+PULL_MASTER=$(git --git-dir="$PULL_REPO" rev-parse refs/heads/master)
+PULL_CLONE="$OUT/linux/clone_mock_pull"
+PULL_REQ="$OUT/linux/mock_pull_requests.log"
+rm -rf "$PULL_CLONE"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$PULL_CLONE" 0 \
+    "$PULL_DATA/info_refs" "$PULL_DATA/upload" "$PULL_REQ" \
+    >"$OUT/linux/mock_pull.log" 2>&1
+PULL_RC=$?
+if [ "$PULL_RC" -eq 0 ] && [ -f "$PULL_CLONE/.git/HEAD" ]; then
+    pass_case "refs/pull clone exit 0"
+else
+    fail_case "refs/pull clone (rc=$PULL_RC)"
+    tail -15 "$OUT/linux/mock_pull.log" | sed 's/^/       /'
+fi
+if [ "$PULL_RC" -eq 0 ] && ! grep -q "want $PULL_ID" "$PULL_REQ"; then
+    pass_case "refs/pull clone request omits want <pull-ref>"
+else
+    fail_case "refs/pull clone requested the pull ref"
+    [ -f "$PULL_REQ" ] && grep "want $PULL_ID" "$PULL_REQ" | sed 's/^/       /' | head -5
+fi
+if [ "$PULL_RC" -eq 0 ] && grep -q "want $PULL_MASTER" "$PULL_REQ"; then
+    pass_case "refs/pull clone request keeps non-pull wants"
+else
+    fail_case "refs/pull clone lost the master want"
+    [ -f "$PULL_REQ" ] && sed 's/^/       /' "$PULL_REQ" | head -20
+fi
+git --git-dir="$PULL_REPO" for-each-ref --format='%(objectname) %(refname)' | grep -v ' refs/pull/' >"$OUT/linux/mock_pull_refs.want"
+git --git-dir="$PULL_CLONE/.git" for-each-ref --format='%(objectname) %(refname)' >"$OUT/linux/mock_pull_refs.out" 2>/dev/null
+if [ "$PULL_RC" -eq 0 ] && ! grep -q ' refs/pull/' "$OUT/linux/mock_pull_refs.out" && \
+   cmp -s "$OUT/linux/mock_pull_refs.want" "$OUT/linux/mock_pull_refs.out"; then
+    pass_case "refs/pull clone installs only non-pull refs"
+else
+    fail_case "refs/pull clone ref list is wrong"
+    diff "$OUT/linux/mock_pull_refs.want" "$OUT/linux/mock_pull_refs.out" | sed 's/^/       /' | head -20
+fi
+PULL_IDX=$(find "$PULL_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
+if [ "$PULL_RC" -eq 0 ] && [ -n "$PULL_IDX" ] && git verify-pack -v "$PULL_IDX" >"$OUT/linux/mock_pull_verify.log" 2>&1; then
+    pass_case "git verify-pack accepts refs/pull clone idx"
+else
+    fail_case "git verify-pack rejected refs/pull clone idx"
+    tail -10 "$OUT/linux/mock_pull_verify.log" 2>/dev/null | sed 's/^/       /'
+fi
+if [ "$PULL_RC" -eq 0 ] && git --git-dir="$PULL_CLONE/.git" fsck --full --no-dangling >"$OUT/linux/mock_pull_fsck.log" 2>&1; then
+    pass_case "git fsck accepts refs/pull clone"
+else
+    fail_case "git fsck rejected refs/pull clone"
+    tail -10 "$OUT/linux/mock_pull_fsck.log" 2>/dev/null | sed 's/^/       /'
+fi
+if [ "$PULL_RC" -eq 0 ] && cmp -s "$PULL_REPO/HEAD" "$PULL_CLONE/.git/HEAD"; then
+    pass_case "refs/pull clone HEAD matches source"
+else
+    fail_case "refs/pull clone HEAD differs"
+fi
+PULL_MAIN_ID=$(git --git-dir="$PULL_REPO" rev-parse refs/heads/master:main.txt)
+if [ "$PULL_RC" -eq 0 ] && [ ! -e "$PULL_CLONE/pull.txt" ] && \
+   git --git-dir="$PULL_REPO" cat-file blob "$PULL_MAIN_ID" | cmp -s - "$PULL_CLONE/main.txt"; then
+    pass_case "refs/pull clone worktree matches source"
+else
+    fail_case "refs/pull clone worktree differs"
+fi
+
 echo "== mocked-transport pacing (independent of python3/e2e) =="
 MOCK_PACED="$OUT/linux/clone_mock_paced"
 rm -rf "$MOCK_PACED"
