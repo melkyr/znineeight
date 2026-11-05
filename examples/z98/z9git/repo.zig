@@ -405,17 +405,6 @@ fn leU32At(b: []const u8, off: usize) u32 {
     return v;
 }
 
-fn leU64At(b: []const u8, off: usize) u64 {
-    var v: u64 = 0;
-    var mul: u64 = 1;
-    var i: usize = 0;
-    while (i < 8) : (i += 1) {
-        v += @intCast(u64, b[off + i]) * mul;
-        if (i < 7) mul = mul * 256;
-    }
-    return v;
-}
-
 var g_get_disk_free: GetDiskFreeSpaceFn = undefined;
 var g_disk_api_state: u8 = 0;
 
@@ -467,14 +456,16 @@ fn freeBytes(path: []const u8) ?u64 {
     } else {
         var cbuf: [PATH_BUF]u8 = undefined;
         if (!cstr(path, cbuf[0..])) return null;
-        // i386 Linux struct statvfs: f_bsize @0, f_frsize @4, f_bavail @24.
+        // i386 Linux without _FILE_OFFSET_BITS: 32-bit fsblkcnt_t fields,
+        // so f_bsize @0, f_frsize @4, f_bavail @16 (the 64-bit LFS layout has
+        // f_bavail @24 and is not used by the emitted build).
         var st: [256]u8 = undefined;
         if (statvfs(@ptrCast([*]const u8, &cbuf[0]), @ptrCast(*void, &st[0])) != 0) return null;
         const bsize: u64 = @intCast(u64, leU32At(st[0..], 0));
         var frsize: u64 = @intCast(u64, leU32At(st[0..], 4));
         if (frsize == 0) frsize = bsize;
         if (frsize == 0) return null;
-        const avail: u64 = leU64At(st[0..], 24);
+        const avail: u64 = @intCast(u64, leU32At(st[0..], 16));
         if (avail > U64_MAX / frsize) return U64_MAX;
         return avail * frsize;
     }
@@ -498,22 +489,49 @@ fn satMul64(a: u64, b: u64) u64 {
 
 // Pack + idx + external-sort temp + worktree estimate. `pack_bytes` is the
 // actual pack size when known (or the HTTP Content-Length); `object_count` is
-// the PACK header count (0 when unknown).
+// the PACK header count (0 when unknown). Worktree bytes are approximated by the
+// packed size plus a per-object allowance: the pack is a lower bound and very
+// compressible packs can exceed it, but the object count now always contributes
+// the idx/temp/checkout terms on the Content-Length path.
 pub fn diskPreflightEstimate(path: []const u8, pack_bytes: u64, object_count: u64) GitError!void {
     const idx_bytes = satAdd64(2048, satMul64(object_count, 40));
     const temp_bytes = satMul64(object_count, 192);
+    const worktree_bytes = satAdd64(pack_bytes, satMul64(object_count, 512));
     var need = satAdd64(pack_bytes, idx_bytes);
     need = satAdd64(need, temp_bytes);
-    need = satAdd64(need, pack_bytes);
+    need = satAdd64(need, worktree_bytes);
     need = satAdd64(need, DISK_SLACK_BYTES);
     try diskPreflight(path, need);
 }
 
-fn packDirBytes(arena: *arena_mod.Arena, pack_dir: []const u8) u64 {
-    if (!file_mod.exists(pack_dir)) return 0;
-    var d = file_mod.openDir(arena, pack_dir) catch return 0;
+fn readPackCount(arena: *arena_mod.Arena, path: []const u8) u64 {
+    var f = file_mod.open(arena, path, file_mod.Mode.Read) catch return 0;
+    var h: [12]u8 = undefined;
+    var got: usize = 0;
+    while (got < 12) {
+        const n = file_mod.read(&f, h[got..12]) catch {
+            file_mod.close(&f);
+            return 0;
+        };
+        if (n == 0) break;
+        got += n;
+    }
+    file_mod.close(&f);
+    if (got < 12) return 0;
+    if (h[0] != 'P' or h[1] != 'A' or h[2] != 'C' or h[3] != 'K') return 0;
+    if (h[4] != 0 or h[5] != 0 or h[6] != 0 or h[7] != 2) return 0;
+    var c: u64 = 0;
+    var i: usize = 8;
+    while (i < 12) : (i += 1) c = (c << 8) | @intCast(u64, h[i]);
+    return c;
+}
+
+fn packDirStats(arena: *arena_mod.Arena, pack_dir: []const u8, bytes: *u64, count: *u64) void {
+    bytes.* = 0;
+    count.* = 0;
+    if (!file_mod.exists(pack_dir)) return;
+    var d = file_mod.openDir(arena, pack_dir) catch return;
     defer file_mod.closeDir(&d);
-    var total: u64 = 0;
     while (true) {
         const maybe = file_mod.readDir(arena, &d) catch break;
         const e = maybe orelse break;
@@ -527,20 +545,26 @@ fn packDirBytes(arena: *arena_mod.Arena, pack_dir: []const u8) u64 {
         file_mod.close(&f);
         if (sz > 0) {
             const s: u64 = @intCast(u64, sz);
-            if (total > U64_MAX - s) {
-                total = U64_MAX;
+            if (bytes.* > U64_MAX - s) {
+                bytes.* = U64_MAX;
             } else {
-                total += s;
+                bytes.* += s;
             }
         }
+        const c = readPackCount(arena, p);
+        if (count.* > U64_MAX - c) {
+            count.* = U64_MAX;
+        } else {
+            count.* += c;
+        }
     }
-    return total;
 }
 
 fn copyPacks(arena: *arena_mod.Arena, src_pack_dir: []const u8, dst_pack_dir: []const u8) GitError!void {
     if (!file_mod.exists(src_pack_dir)) return;
     var d = file_mod.openDir(arena, src_pack_dir) catch return error.Io;
     defer file_mod.closeDir(&d);
+    pack_mod.setTempDir(dst_pack_dir);
     while (true) {
         const maybe = file_mod.readDir(arena, &d) catch return error.Io;
         const e = maybe orelse break;
@@ -558,17 +582,20 @@ fn copyPacks(arena: *arena_mod.Arena, src_pack_dir: []const u8, dst_pack_dir: []
         };
         file_mod.close(&sf);
         if (ssz > 0) {
-            try diskPreflight(dst_pack_dir, @intCast(u64, ssz) * 3 + DISK_SLACK_BYTES);
+            const sc = readPackCount(arena, sp);
+            try diskPreflightEstimate(dst_pack_dir, @intCast(u64, ssz), sc);
         }
         try copyFile(arena, sp, dp);
         if (file_mod.exists(si)) {
             try copyFile(arena, si, di);
         } else {
             pack_mod.idxSynthesize(arena, dp, di) catch |ie| {
+                file_mod.remove(dp) catch {};
+                file_mod.remove(di) catch {};
                 if (ie == error.OutOfMemory) return error.OutOfMemory;
+                if (ie == error.WriteFailed) return error.DiskFull;
                 if (ie == error.OpenFailed) return error.Io;
                 if (ie == error.ReadFailed) return error.Io;
-                if (ie == error.WriteFailed) return error.Io;
                 return error.ObjectStore;
             };
         }
@@ -601,8 +628,8 @@ fn copyLoose(arena: *arena_mod.Arena, src_git: []const u8, dst_git: []const u8) 
                 created = true;
             }
             const sp = try join3(arena, sp_dir, "/", f.name);
-            const bytes = file_mod.readAll(arena, sp) catch return error.Io;
-            objects.storeWriteLoose(dst_git, id, bytes) catch return error.Io;
+            const dp = try objects.loosePath(arena, dst_git, id);
+            try copyFile(arena, sp, dp);
         }
     }
 }
@@ -886,23 +913,38 @@ fn findEntry(entries: []TreeEntry, name: []const u8) ?usize {
 // (UnsupportedTransition) because removing a non-empty directory is not safe
 // without an index.  File -> directory is allowed and turns into a remove +
 // mkdir after this check.
-fn preflightTree(arena: *arena_mod.Arena, store: *objects.Store, has_old: bool, old_tree: ObjectId, new_tree: ObjectId, base: []const u8, depth: usize) GitError!void {
+fn preflightTree(arena: *arena_mod.Arena, scratch: *arena_mod.Arena, store: *objects.Store, has_old: bool, old_tree: ObjectId, new_tree: ObjectId, base: []const u8, depth: usize) GitError!void {
     if (depth > MAX_DEPTH) return error.Protocol;
+    arena_mod.reset(scratch);
     var new_obj: objects.TypedObject = undefined;
-    try readTyped(arena, store, new_tree, &new_obj);
-    defer objects.freeTyped(&new_obj);
-    if (new_obj.ty != objects.ObjType.tree) return error.Protocol;
-    const new_entries = try parseTree(arena, new_obj.data);
-    var old_obj: objects.TypedObject = undefined;
-    var old_loaded = false;
-    defer if (old_loaded) objects.freeTyped(&old_obj);
+    try readTyped(scratch, store, new_tree, &new_obj);
+    if (new_obj.ty != objects.ObjType.tree) {
+        objects.freeTyped(&new_obj);
+        return error.Protocol;
+    }
+    const new_entries = parseTreeCopy(arena, new_obj.data) catch |e| {
+        objects.freeTyped(&new_obj);
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.Protocol;
+    };
+    objects.freeTyped(&new_obj);
     var old_entries: []TreeEntry = undefined;
     if (has_old) {
-        try readTyped(arena, store, old_tree, &old_obj);
-        old_loaded = true;
-        if (old_obj.ty != objects.ObjType.tree) return error.Protocol;
-        old_entries = try parseTree(arena, old_obj.data);
+        arena_mod.reset(scratch);
+        var old_obj: objects.TypedObject = undefined;
+        try readTyped(scratch, store, old_tree, &old_obj);
+        if (old_obj.ty != objects.ObjType.tree) {
+            objects.freeTyped(&old_obj);
+            return error.Protocol;
+        }
+        old_entries = parseTreeCopy(arena, old_obj.data) catch |e| {
+            objects.freeTyped(&old_obj);
+            if (e == error.OutOfMemory) return error.OutOfMemory;
+            return error.Protocol;
+        };
+        objects.freeTyped(&old_obj);
     }
+    arena_mod.reset(scratch);
     var i: usize = 0;
     while (i < new_entries.len) : (i += 1) {
         const new = new_entries[i];
@@ -920,9 +962,9 @@ fn preflightTree(arena: *arena_mod.Arena, store: *objects.Store, has_old: bool, 
                 } else if (old.mode == MODE_GITLINK) {
                     // Empty gitlink directory replaced by a real tree: old is
                     // not a tree id, so preflight the new tree alone.
-                    try preflightTree(arena, store, false, new.id, new.id, path, depth + 1);
+                    try preflightTree(arena, scratch, store, false, new.id, new.id, path, depth + 1);
                 } else {
-                    try preflightTree(arena, store, true, old.id, new.id, path, depth + 1);
+                    try preflightTree(arena, scratch, store, true, old.id, new.id, path, depth + 1);
                 }
             } else if (old_is_dir and !new_is_dir) {
                 if (old.mode == MODE_GITLINK) {
@@ -935,13 +977,13 @@ fn preflightTree(arena: *arena_mod.Arena, store: *objects.Store, has_old: bool, 
                     // Empty directory replaces a file; removeAbsent/materialize
                     // handle the transition.
                 } else {
-                    try preflightTree(arena, store, false, new.id, new.id, path, depth + 1);
+                    try preflightTree(arena, scratch, store, false, new.id, new.id, path, depth + 1);
                 }
             }
         } else {
             if (file_mod.exists(path)) return error.UntrackedCollision;
             if (new.is_dir) {
-                try preflightTree(arena, store, false, new.id, new.id, path, depth + 1);
+                try preflightTree(arena, scratch, store, false, new.id, new.id, path, depth + 1);
             }
         }
     }
@@ -1104,17 +1146,26 @@ fn removeTrackedFile(path: []const u8) GitError!void {
     };
 }
 
-fn removeTreePath(arena: *arena_mod.Arena, store: *objects.Store, id: ObjectId, is_dir: bool, path: []const u8, depth: usize) GitError!void {
+fn removeTreePath(arena: *arena_mod.Arena, scratch: *arena_mod.Arena, store: *objects.Store, id: ObjectId, is_dir: bool, path: []const u8, depth: usize) GitError!void {
     if (depth > MAX_DEPTH) return error.Protocol;
     if (!is_dir) {
         try removeTrackedFile(path);
         return;
     }
+    arena_mod.reset(scratch);
     var obj: objects.TypedObject = undefined;
-    try readTyped(arena, store, id, &obj);
-    defer objects.freeTyped(&obj);
-    if (obj.ty != objects.ObjType.tree) return error.Protocol;
-    const entries = try parseTree(arena, obj.data);
+    try readTyped(scratch, store, id, &obj);
+    if (obj.ty != objects.ObjType.tree) {
+        objects.freeTyped(&obj);
+        return error.Protocol;
+    }
+    const entries = parseTreeCopy(arena, obj.data) catch |e| {
+        objects.freeTyped(&obj);
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.Protocol;
+    };
+    objects.freeTyped(&obj);
+    arena_mod.reset(scratch);
     var i: usize = 0;
     while (i < entries.len) : (i += 1) {
         const e = entries[i];
@@ -1123,25 +1174,42 @@ fn removeTreePath(arena: *arena_mod.Arena, store: *objects.Store, id: ObjectId, 
         if (e.mode == MODE_GITLINK) {
             removeDirIfEmpty(p);
         } else {
-            try removeTreePath(arena, store, e.id, e.is_dir, p, depth + 1);
+            try removeTreePath(arena, scratch, store, e.id, e.is_dir, p, depth + 1);
         }
     }
     removeDirIfEmpty(path);
 }
 
-fn removeAbsent(arena: *arena_mod.Arena, store: *objects.Store, old_tree: ObjectId, new_tree: ObjectId, base: []const u8, depth: usize) GitError!void {
+fn removeAbsent(arena: *arena_mod.Arena, scratch: *arena_mod.Arena, store: *objects.Store, old_tree: ObjectId, new_tree: ObjectId, base: []const u8, depth: usize) GitError!void {
     if (depth > MAX_DEPTH) return error.Protocol;
     if (idEql(old_tree, new_tree)) return;
+    arena_mod.reset(scratch);
     var old_obj: objects.TypedObject = undefined;
-    try readTyped(arena, store, old_tree, &old_obj);
-    defer objects.freeTyped(&old_obj);
-    if (old_obj.ty != objects.ObjType.tree) return error.Protocol;
+    try readTyped(scratch, store, old_tree, &old_obj);
+    if (old_obj.ty != objects.ObjType.tree) {
+        objects.freeTyped(&old_obj);
+        return error.Protocol;
+    }
+    const old_entries = parseTreeCopy(arena, old_obj.data) catch |e| {
+        objects.freeTyped(&old_obj);
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.Protocol;
+    };
+    objects.freeTyped(&old_obj);
+    arena_mod.reset(scratch);
     var new_obj: objects.TypedObject = undefined;
-    try readTyped(arena, store, new_tree, &new_obj);
-    defer objects.freeTyped(&new_obj);
-    if (new_obj.ty != objects.ObjType.tree) return error.Protocol;
-    const old_entries = try parseTree(arena, old_obj.data);
-    const new_entries = try parseTree(arena, new_obj.data);
+    try readTyped(scratch, store, new_tree, &new_obj);
+    if (new_obj.ty != objects.ObjType.tree) {
+        objects.freeTyped(&new_obj);
+        return error.Protocol;
+    }
+    const new_entries = parseTreeCopy(arena, new_obj.data) catch |e| {
+        objects.freeTyped(&new_obj);
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.Protocol;
+    };
+    objects.freeTyped(&new_obj);
+    arena_mod.reset(scratch);
     var i: usize = 0;
     while (i < old_entries.len) : (i += 1) {
         const old = old_entries[i];
@@ -1157,7 +1225,7 @@ fn removeAbsent(arena: *arena_mod.Arena, store: *objects.Store, old_tree: Object
                     // commit id. A real old directory still needs its tracked
                     // files removed before the empty submodule dir is created.
                     if (old.mode != MODE_GITLINK) {
-                        try removeTreePath(arena, store, old.id, old.is_dir, path, depth + 1);
+                        try removeTreePath(arena, scratch, store, old.id, old.is_dir, path, depth + 1);
                     }
                     removeDirIfEmpty(path);
                     try mkdirPath(path);
@@ -1166,7 +1234,7 @@ fn removeAbsent(arena: *arena_mod.Arena, store: *objects.Store, old_tree: Object
                     // dir, then materialize the new tree.
                     removeDirIfEmpty(path);
                 } else {
-                    try removeAbsent(arena, store, old.id, new.id, path, depth + 1);
+                    try removeAbsent(arena, scratch, store, old.id, new.id, path, depth + 1);
                 }
             } else if (old_is_dir and !new_is_dir) {
                 if (old.mode == MODE_GITLINK) {
@@ -1182,7 +1250,7 @@ fn removeAbsent(arena: *arena_mod.Arena, store: *objects.Store, old_tree: Object
             if (old.mode == MODE_GITLINK) {
                 removeDirIfEmpty(path);
             } else {
-                try removeTreePath(arena, store, old.id, old.is_dir, path, depth + 1);
+                try removeTreePath(arena, scratch, store, old.id, old.is_dir, path, depth + 1);
             }
         }
     }
@@ -1277,9 +1345,11 @@ pub fn cloneLocal(arena: *arena_mod.Arena, src_path: []const u8, dest_dir: []con
     try copyLoose(arena, src_common, dest_git);
     try copyMeta(arena, src_git, src_common, dest_git);
 
-    const pack_bytes = packDirBytes(arena, dst_pack);
+    var pack_bytes: u64 = 0;
+    var pack_count: u64 = 0;
+    packDirStats(arena, dst_pack, &pack_bytes, &pack_count);
     if (pack_bytes > 0) {
-        try diskPreflight(dest_git, pack_bytes * 2 + DISK_SLACK_BYTES);
+        try diskPreflightEstimate(dest_git, pack_bytes, pack_count);
     }
 
     var store: objects.Store = undefined;
@@ -1372,11 +1442,11 @@ pub fn installRefs(arena: *arena_mod.Arena, dest_dir: []const u8, refs: []const 
 pub fn checkoutHead(arena: *arena_mod.Arena, dest_dir: []const u8) GitError!void {
     const dest_git = try join2(arena, dest_dir, "/.git");
     const pack_dir = try join2(arena, dest_git, "/objects/pack");
-    const pack_bytes = packDirBytes(arena, pack_dir);
+    var pack_bytes: u64 = 0;
+    var pack_count: u64 = 0;
+    packDirStats(arena, pack_dir, &pack_bytes, &pack_count);
     if (pack_bytes > 0) {
-        // The packed form is already on disk; reserve another copy for the
-        // materialized worktree plus the checkout/object scratch.
-        try diskPreflight(dest_git, pack_bytes * 2 + DISK_SLACK_BYTES);
+        try diskPreflightEstimate(dest_git, pack_bytes, pack_count);
     }
     var store: objects.Store = undefined;
     try openStore(arena, dest_git, &store);
@@ -1677,11 +1747,11 @@ pub fn checkoutRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []con
     try commitTree(arena, &store, target_commit, &target_tree);
     const root = try worktreeRoot(arena, git_dir);
 
-    try preflightTree(arena, &store, true, old_tree, target_tree, root, 0);
-    try removeAbsent(arena, &store, old_tree, target_tree, root, 0);
     const scratch_raw = checkoutScratchAlloc(arena) orelse return error.OutOfMemory;
     defer pack_mod.dynFree(scratch_raw);
     var scratch = arena_mod.init(scratch_raw[0..scratch_raw.len]);
+    try preflightTree(arena, &scratch, &store, true, old_tree, target_tree, root, 0);
+    try removeAbsent(arena, &scratch, &store, old_tree, target_tree, root, 0);
     try materializeTree(arena, &scratch, &store, target_tree, root, 0);
     try updateHead(arena, git_dir, target, target_commit);
 }

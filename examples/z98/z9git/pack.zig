@@ -57,6 +57,84 @@ pub fn dynFree(buf: []u8) void {
     }
 }
 
+// Large object/delta-base buffers are file-backed where possible: a temp file in
+// the destination git dir is sized, mapped shared, then unlinked immediately.
+// The pages live on temp disk/pagefile, not the app arena; the 32-bit address
+// space remains the hard ceiling. Windows falls back to VirtualAlloc (Win9x has
+// no cheap file mapping through this layer).
+var g_tmp_dir: [4096]u8 = undefined;
+var g_tmp_dir_len: usize = 0;
+var g_tmp_seq: u32 = 0;
+
+pub fn setTempDir(dir: []const u8) void {
+    if (dir.len == 0 or dir.len >= g_tmp_dir.len) {
+        g_tmp_dir_len = 0;
+        return;
+    }
+    var i: usize = 0;
+    while (i < dir.len) : (i += 1) g_tmp_dir[i] = dir[i];
+    g_tmp_dir_len = dir.len;
+}
+
+fn buildTempPath(out: []u8) usize {
+    if (g_tmp_dir_len == 0) return 0;
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < g_tmp_dir_len) : (i += 1) out[n + i] = g_tmp_dir[i];
+    n += g_tmp_dir_len;
+    if (out[n - 1] != '/' and out[n - 1] != '\\') {
+        if (n + 1 >= out.len) return 0;
+        out[n] = '/';
+        n += 1;
+    }
+    const prefix: []const u8 = "z9big-";
+    if (n + prefix.len + 16 >= out.len) return 0;
+    i = 0;
+    while (i < prefix.len) : (i += 1) out[n + i] = prefix[i];
+    n += prefix.len;
+    n += putDecimal(out[n..], @intCast(u64, g_tmp_seq));
+    g_tmp_seq += 1;
+    const suffix: []const u8 = ".tmp";
+    if (n + suffix.len >= out.len) return 0;
+    i = 0;
+    while (i < suffix.len) : (i += 1) out[n + i] = suffix[i];
+    n += suffix.len;
+    return n;
+}
+
+pub fn dynAllocFile(arena: *arena_mod.Arena, n0: usize) ?[]u8 {
+    var n = n0;
+    if (n == 0) n = 1;
+    if (!@isWindows() and g_tmp_dir_len != 0) {
+        var pb: [4096]u8 = undefined;
+        const plen = buildTempPath(pb[0..]);
+        if (plen != 0) {
+            const f = file_mod.open(arena, pb[0..plen], file_mod.Mode.ReadWrite) catch return dynAlloc(n);
+            var ok = true;
+            _ = file_mod.seek(&f, @intCast(i64, n - 1), file_mod.SeekWhence.Set) catch {
+                ok = false;
+            };
+            if (ok) {
+                var z: [1]u8 = [_]u8{0};
+                const w = file_mod.write(&f, z[0..]) catch 0;
+                if (w != 1) ok = false;
+            }
+            if (!ok) {
+                file_mod.close(&f);
+                file_mod.remove(pb[0..plen]) catch {};
+                return dynAlloc(n);
+            }
+            const fd: i32 = @intCast(i32, @ptrToInt(f.handle));
+            const p = mmap(nullVoid(), n, 3, 1, fd, 0);
+            file_mod.close(&f);
+            file_mod.remove(pb[0..plen]) catch {};
+            if (@ptrToInt(p) >= 0xFFFFF000) return dynAlloc(n);
+            return @ptrCast([*]u8, p)[0..n];
+        }
+    }
+    return dynAlloc(n);
+}
+
 pub const ObjectId = [20]u8;
 
 pub const Kind = enum(u8) {
@@ -429,12 +507,11 @@ fn decompressEntry(arena: *arena_mod.Arena, p: *Pack, payload_off: u64, size: u6
     return Inflated{ .data = out, .used = used, .big = false };
 }
 
-fn decompressEntryBig(p: *Pack, payload_off: u64, size: u64) !Inflated {
+fn decompressEntryBig(arena: *arena_mod.Arena, p: *Pack, payload_off: u64, size: u64) !Inflated {
     if (size > MAX_U32) return error.Corrupt;
     const usize_size: usize = @intCast(usize, size);
-    const out_raw = dynAlloc(usize_size) orelse return error.OutOfMemory;
+    const out_raw = dynAllocFile(arena, usize_size) orelse return error.OutOfMemory;
     const out: []u8 = out_raw[0..usize_size];
-
     if (payload_off > p.file_size) {
         dynFree(out_raw);
         return error.Corrupt;
@@ -456,7 +533,7 @@ fn decompressEntryBig(p: *Pack, payload_off: u64, size: u64) !Inflated {
         return error.Corrupt;
     }
     const cap: usize = @intCast(usize, cap64);
-    const in_raw = dynAlloc(cap) orelse {
+    const in_raw = dynAllocFile(arena, cap) orelse {
         dynFree(out_raw);
         return error.OutOfMemory;
     };
@@ -629,9 +706,9 @@ pub fn readEntry(arena: *arena_mod.Arena, p: *Pack, offset: u64) !RawEntry {
     return out;
 }
 
-pub fn readEntryBig(p: *Pack, offset: u64) !RawEntry {
+pub fn readEntryBig(arena: *arena_mod.Arena, p: *Pack, offset: u64) !RawEntry {
     const h = try parseEntryHeader(p, offset);
-    const got = try decompressEntryBig(p, h.payload_off, h.size);
+    const got = try decompressEntryBig(arena, p, h.payload_off, h.size);
     var out: RawEntry = undefined;
     out.kind = h.kind;
     out.size = h.size;
@@ -1162,7 +1239,7 @@ pub fn readEntryMaybeBig(scratch: *arena_mod.Arena, p: *Pack, offset: u64) !RawE
     // size + size/4. Require roughly four times the object size to remain so a
     // near-threshold object cannot consume the output then fail the input alloc.
     if (h.size > @intCast(u64, scratch.capacity / 4) or h.size > @intCast(u64, avail / 4)) {
-        return readEntryBig(p, offset);
+        return readEntryBig(scratch, p, offset);
     }
     return readEntry(scratch, p, offset);
 }

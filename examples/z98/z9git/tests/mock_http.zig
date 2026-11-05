@@ -247,6 +247,7 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
         if (e == error.Transport) failCode("mock_http: transport", 2);
         if (e == error.Protocol) failCode("mock_http: protocol", 3);
         if (e == error.ObjectStore) failCode("mock_http: object-store", 4);
+        if (e == error.DiskFull) failCode("mock_http: disk full", 5);
         if (e == error.Io) failCode("mock_http: io", 5);
         failCode("mock_http: out of memory", 5);
     };

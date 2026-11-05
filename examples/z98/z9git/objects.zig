@@ -279,6 +279,10 @@ fn copyIdPath(arena: *arena_mod.Arena, git_dir: []const u8, id: ObjectId) ![]u8 
     return join2(arena, with_dir, hex38[0..]);
 }
 
+pub fn loosePath(arena: *arena_mod.Arena, git_dir: []const u8, id: ObjectId) ![]u8 {
+    return copyIdPath(arena, git_dir, id);
+}
+
 pub fn storeOpen(arena: *arena_mod.Arena, git_dir: []const u8, s: *Store) !void {
     s.arena = arena;
     var i: usize = 0;
@@ -303,6 +307,7 @@ pub fn storeOpen(arena: *arena_mod.Arena, git_dir: []const u8, s: *Store) !void 
     i = 0;
     while (i < git_dir.len) : (i += 1) raw_dir[i] = git_dir[i];
     s.git_dir = raw_dir[0..git_dir.len];
+    pack_mod.setTempDir(s.git_dir);
 
     const pack_dir = try join2(arena, s.git_dir, "/objects/pack");
     const count = countIdx(s, pack_dir);
@@ -380,7 +385,7 @@ fn applyDelta(arena: *arena_mod.Arena, base: Resolved, raw: pack_mod.RawEntry) !
     var out_big = false;
     var out: []u8 = undefined;
     if (tgt_len > arena.capacity / 4 or tgt_len > avail / 2) {
-        const raw_out = pack_mod.dynAlloc(tgt_len) orelse return error.OutOfMemory;
+        const raw_out = pack_mod.dynAllocFile(arena, tgt_len) orelse return error.OutOfMemory;
         out = raw_out[0..tgt_len];
         out_big = true;
     } else {
@@ -434,12 +439,31 @@ fn resolveAt(arena: *arena_mod.Arena, s: *Store, pack_i: usize, offset: u64, exp
     return res;
 }
 
-fn inflateLoose(arena: *arena_mod.Arena, compressed: []const u8) ![]u8 {
-    var cap: usize = 64 * 1024;
+const InflatedLoose = struct {
+    data: []u8,
+    big: bool,
+};
+
+fn allocMaybeBig(arena: *arena_mod.Arena, n0: usize) !InflatedLoose {
+    var n = n0;
+    if (n == 0) n = 1;
+    const avail: usize = if (arena.used >= arena.capacity) 0 else arena.capacity - arena.used;
+    if (n > arena.capacity / 4 or n > avail / 2) {
+        const raw = pack_mod.dynAllocFile(arena, n) orelse return error.OutOfMemory;
+        return InflatedLoose{ .data = raw[0..n], .big = true };
+    }
+    const raw = arena_mod.alloc(arena, n) catch return error.OutOfMemory;
+    return InflatedLoose{ .data = raw[0..n], .big = false };
+}
+
+fn inflateLoose(arena: *arena_mod.Arena, compressed: []const u8) !InflatedLoose {
+    var cap: usize = compressed.len * 2 + 65536;
+    if (cap < 64 * 1024) cap = 64 * 1024;
     while (true) {
-        const raw = arena_mod.alloc(arena, cap) catch return error.OutOfMemory;
+        const buf = try allocMaybeBig(arena, cap);
         var used: usize = 0;
-        const got = deflate.inflateZlib(compressed, raw[0..cap], &used) catch |e| {
+        const got = deflate.inflateZlib(compressed, buf.data, &used) catch |e| {
+            if (buf.big) pack_mod.dynFree(buf.data);
             if (e == error.OutputTooSmall) {
                 if (cap >= 0x40000000) return error.OutOfMemory;
                 cap = cap * 2;
@@ -447,13 +471,34 @@ fn inflateLoose(arena: *arena_mod.Arena, compressed: []const u8) ![]u8 {
             }
             return error.Corrupt;
         };
-        if (used > compressed.len) return error.Corrupt;
-        return raw[0..@intCast(usize, got)];
+        if (used > compressed.len) {
+            if (buf.big) pack_mod.dynFree(buf.data);
+            return error.Corrupt;
+        }
+        const n: usize = @intCast(usize, got);
+        if (buf.big and n != cap) {
+            // dynFree needs the original mapping length, so give big results an
+            // exactly-sized file-backed mapping instead of a shorter slice.
+            pack_mod.dynFree(buf.data);
+            const exact_raw = pack_mod.dynAllocFile(arena, n) orelse return error.OutOfMemory;
+            const exact = exact_raw[0..n];
+            var used2: usize = 0;
+            const got2 = deflate.inflateZlib(compressed, exact, &used2) catch {
+                pack_mod.dynFree(exact_raw);
+                return error.Corrupt;
+            };
+            if (@intCast(usize, got2) != n or used2 != used) {
+                pack_mod.dynFree(exact_raw);
+                return error.Corrupt;
+            }
+            return InflatedLoose{ .data = exact, .big = true };
+        }
+        return InflatedLoose{ .data = buf.data[0..n], .big = buf.big };
     }
 }
 
-fn parseLoose(arena: *arena_mod.Arena, id: ObjectId, compressed: []const u8) !Resolved {
-    const inflated = try inflateLoose(arena, compressed);
+fn parseLoose(arena: *arena_mod.Arena, id: ObjectId, inflated: []u8) !Resolved {
+    _ = arena;
     var nul: usize = 0;
     while (nul < inflated.len and inflated[nul] != 0) : (nul += 1) {}
     if (nul >= inflated.len) return error.Corrupt;
@@ -491,11 +536,49 @@ fn parseLoose(arena: *arena_mod.Arena, id: ObjectId, compressed: []const u8) !Re
     return Resolved{ .ty = ty, .data = body, .big = false };
 }
 
+fn readLooseCompressed(arena: *arena_mod.Arena, path: []const u8) !InflatedLoose {
+    var f = file_mod.open(arena, path, file_mod.Mode.Read) catch return error.Corrupt;
+    const sz = file_mod.size(&f) catch {
+        file_mod.close(&f);
+        return error.Corrupt;
+    };
+    if (sz <= 0) {
+        file_mod.close(&f);
+        return error.Corrupt;
+    }
+    const n: usize = @intCast(usize, sz);
+    const buf = try allocMaybeBig(arena, n);
+    var got: usize = 0;
+    while (got < n) {
+        const r = file_mod.read(&f, buf.data[got..n]) catch {
+            file_mod.close(&f);
+            if (buf.big) pack_mod.dynFree(buf.data);
+            return error.Corrupt;
+        };
+        if (r == 0) break;
+        got += r;
+    }
+    file_mod.close(&f);
+    if (got != n) {
+        if (buf.big) pack_mod.dynFree(buf.data);
+        return error.Corrupt;
+    }
+    return buf;
+}
+
 fn readLoose(arena: *arena_mod.Arena, s: *Store, id: ObjectId) !Resolved {
     const path = try copyIdPath(arena, s.git_dir, id);
     if (!file_mod.exists(path)) return error.NotFound;
-    const compressed = file_mod.readAll(arena, path) catch return error.Corrupt;
-    return parseLoose(arena, id, compressed);
+    const compressed = try readLooseCompressed(arena, path);
+    defer if (compressed.big) pack_mod.dynFree(compressed.data);
+    const inf = try inflateLoose(arena, compressed.data);
+    var res = parseLoose(arena, id, inf.data) catch |e| {
+        if (inf.big) pack_mod.dynFree(inf.data);
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.Corrupt;
+    };
+    res.big = inf.big;
+    return res;
 }
 
 pub fn readById(arena: *arena_mod.Arena, s: *Store, id: ObjectId, depth: usize) !Resolved {

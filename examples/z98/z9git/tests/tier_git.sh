@@ -255,6 +255,31 @@ else
 fi
 check_worktree mock_http "$MOCK_CLONE" "$TD/packed_repo" "$TD/goldens/packed.lstree"
 
+echo "== disk preflight uses Content-Length and PACK count before committing =="
+PF_DATA="$MOCK_DATA/preflight"
+PF_DEST="$OUT/linux/clone_mock_preflight"
+mkdir -p "$PF_DATA"
+printf '0008NAK\n\120\101\103\113\000\000\000\002\377\377\377\377' >"$PF_DATA/upload"
+rm -rf "$PF_DEST"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$PF_DEST" 0 \
+    "$MOCK_DATA/info_refs" "$PF_DATA/upload" "$OUT/linux/mock_preflight_requests.log" \
+    >"$OUT/linux/mock_preflight.log" 2>&1
+PF_RC=$?
+if [ "$PF_RC" -eq 5 ] && grep -q 'disk full' "$OUT/linux/mock_preflight.log"; then
+    pass_case "oversized PACK count fails disk preflight (rc5)"
+else
+    fail_case "oversized PACK count did not fail disk preflight (rc=$PF_RC)"
+    tail -10 "$OUT/linux/mock_preflight.log" | sed 's/^/       /'
+fi
+PF_LEFTOVER=$(find "$PF_DEST/.git/objects/pack" -maxdepth 1 \
+    \( -name '*.pack' -o -name '*.idx' -o -name 'tmp_http_pack.*' \) -print 2>/dev/null)
+if [ -z "$PF_LEFTOVER" ]; then
+    pass_case "disk preflight failure leaves no final pack/idx or temp pack"
+else
+    fail_case "disk preflight failure left files behind"
+    echo "$PF_LEFTOVER" | sed 's/^/       /'
+fi
+
 echo "== mocked-transport refs/pull/* filter =="
 PULL_SRC="$OUT/mock_pull_src"
 PULL_REPO="$OUT/mock_pull.git"
@@ -1233,6 +1258,99 @@ else
 fi
 
 check_worktree loose "$LOOSE" "$TD/loose_repo" "$TD/goldens/loose.lstree"
+
+echo "== 40 MiB loose object at the default 32 MiB arena =="
+LOOSE_BIG_SRC="$OUT/loose_big_src"
+LOOSE_BIG="$OUT/linux/clone_loose_big"
+rm -rf "$LOOSE_BIG_SRC" "$LOOSE_BIG"
+if ! (
+    git init -q "$LOOSE_BIG_SRC" &&
+    cd "$LOOSE_BIG_SRC" &&
+    git config user.name "z9 fixture" &&
+    git config user.email "z9@example.invalid" &&
+    head -c 40000000 /dev/urandom >big.bin &&
+    printf 'small loose\n' >small.txt &&
+    git add big.bin small.txt &&
+    git commit -q -m "40 MiB loose blob"
+) >"$OUT/loose_big_build.log" 2>&1; then
+    fail_case "prepare 40 MiB loose fixture"
+    tail -10 "$OUT/loose_big_build.log" | sed 's/^/       /'
+else
+    "$PROG" clone "$LOOSE_BIG_SRC" "$LOOSE_BIG" >"$OUT/linux/clone_loose_big.log" 2>&1
+    LOOSE_BIG_RC=$?
+    if [ "$LOOSE_BIG_RC" -eq 0 ] && cmp -s "$LOOSE_BIG_SRC/big.bin" "$LOOSE_BIG/big.bin"; then
+        pass_case "40 MiB loose blob clone matches at default arena"
+    else
+        fail_case "40 MiB loose blob clone failed (rc=$LOOSE_BIG_RC)"
+        tail -10 "$OUT/linux/clone_loose_big.log" | sed 's/^/       /'
+    fi
+    if find "$LOOSE_BIG/.git" -name 'z9big-*' -print | grep -q .; then
+        fail_case "40 MiB loose clone left a z9big temp file"
+    else
+        pass_case "40 MiB loose clone left no z9big temp file"
+    fi
+fi
+
+echo "== checkout preflight/removal bounded at the default 32 MiB arena =="
+TREE_SRC="$OUT/tree_src"
+TREE_CLONE="$OUT/linux/clone_tree_4k"
+rm -rf "$TREE_SRC" "$TREE_CLONE"
+TREE_PAD=$(printf '%0200d' 0)
+if ! (
+    git init -q "$TREE_SRC" &&
+    cd "$TREE_SRC" &&
+    git config user.name "z9 fixture" &&
+    git config user.email "z9@example.invalid" &&
+    d=0 && while [ "$d" -lt 100 ]; do
+        mkdir "d$d"
+        f=0 && while [ "$f" -lt 40 ]; do
+            printf 'A\n' >"d$d/f_${d}_${f}_${TREE_PAD}"
+            f=$((f + 1))
+        done
+        d=$((d + 1))
+    done &&
+    git add -A && git commit -q -m A && git branch brA &&
+    d=0 && while [ "$d" -lt 100 ]; do
+        f=0 && while [ "$f" -lt 40 ]; do
+            rm "d$d/f_${d}_${f}_${TREE_PAD}"
+            printf 'B\n' >"d$d/g_${d}_${f}_${TREE_PAD}"
+            f=$((f + 1))
+        done
+        d=$((d + 1))
+    done &&
+    git add -A && git commit -q -m B && git branch brB &&
+    git repack -adq && git prune-packed
+) >"$OUT/tree_build.log" 2>&1; then
+    fail_case "prepare 4k/deep-tree checkout fixture"
+    tail -10 "$OUT/tree_build.log" | sed 's/^/       /'
+else
+    "$PROG" clone "$TREE_SRC" "$TREE_CLONE" >"$OUT/linux/clone_tree_4k.log" 2>&1
+    TREE_CLONE_RC=$?
+    if [ "$TREE_CLONE_RC" -eq 0 ]; then
+        pass_case "4k/deep-tree clone exit 0 at default arena"
+    else
+        fail_case "4k/deep-tree clone failed (rc=$TREE_CLONE_RC)"
+        tail -10 "$OUT/linux/clone_tree_4k.log" | sed 's/^/       /'
+    fi
+    ( cd "$TREE_CLONE" && "$PROG" checkout brA ) >"$OUT/linux/tree_checkout_a.log" 2>&1
+    TREE_CO_A=$?
+    TREE_A_N=$(find "$TREE_CLONE" -path "$TREE_CLONE/.git" -prune -o -type f -name 'f_*' -print | wc -l)
+    if [ "$TREE_CO_A" -eq 0 ] && [ "$TREE_A_N" -eq 4000 ]; then
+        pass_case "4k/deep-tree checkout/removal brA completes at default arena"
+    else
+        fail_case "4k/deep-tree checkout brA failed (rc=$TREE_CO_A files=$TREE_A_N)"
+        tail -10 "$OUT/linux/tree_checkout_a.log" | sed 's/^/       /'
+    fi
+    ( cd "$TREE_CLONE" && "$PROG" checkout brB ) >"$OUT/linux/tree_checkout_b.log" 2>&1
+    TREE_CO_B=$?
+    TREE_B_N=$(find "$TREE_CLONE" -path "$TREE_CLONE/.git" -prune -o -type f -name 'g_*' -print | wc -l)
+    if [ "$TREE_CO_B" -eq 0 ] && [ "$TREE_B_N" -eq 4000 ]; then
+        pass_case "4k/deep-tree checkout/removal brB completes at default arena"
+    else
+        fail_case "4k/deep-tree checkout brB failed (rc=$TREE_CO_B files=$TREE_B_N)"
+        tail -10 "$OUT/linux/tree_checkout_b.log" | sed 's/^/       /'
+    fi
+fi
 
 cat > "$OUT/linux/loose_log.want" <<'EOF'
 cb94782 z9 fixture 2005-04-07T22:13:13+0000 second loose revision

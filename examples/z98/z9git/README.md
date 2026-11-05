@@ -142,19 +142,27 @@ The heavy phases are bounded:
   object array is retained;
 - checkout materializes the target tree with the object store; per-entry
   inflate/decompress buffers come from the arena/scratch and are reset between
-  entries. The largest single object or delta base ceiling is therefore the
-  available 32-bit address space plus free pagefile/temp disk, not the
-  `--arena-mb` value; an object that cannot be reconstructed fails with a clear
-  out-of-memory/object-store error.
+  entries. Loose objects are read and copied without a whole-object app-arena
+  buffer. Large packed objects, loose objects and delta bases use a file-backed
+  temp mapping where the platform supports it (POSIX; Windows falls back to a
+  pagefile-backed mapping), so their pages live on temp disk rather than the
+  `--arena-mb` arena. The ceiling is the 32-bit address space (plus free
+  temp disk/pagefile), not the arena; an object that cannot be reconstructed
+  fails with a clear out-of-memory/object-store error.
 
-Disk preflight runs before the committing work (idx temp files/checkout). It
-uses the pack size actually on disk (which is never less precise than the HTTP
-`Content-Length`) plus an object-count estimate for the idx, external-sort temp
-records and the materialized worktree, and checks free space on the destination
-filesystem (`statvfs` on POSIX, `GetDiskFreeSpaceA` via `GetProcAddress` on
-win32). Insufficient space fails with
+Disk preflight runs before the committing work (idx temp files/checkout). On
+HTTP it uses the `Content-Length` when present, otherwise the actual pack size,
+and always parses the PACK header object count for the idx, external-sort temp
+records and the checkout estimate. The worktree estimate is the packed size plus
+a per-object allowance (a lower bound; extremely compressible packs can exceed
+it). The same object-count estimate is used for local path/`file://` pack
+copies and checkout. It checks free space on the destination filesystem
+(`statvfs` on POSIX, `GetDiskFreeSpaceA` via `GetProcAddress` on win32).
+Insufficient space fails with
 `z9git: not enough free disk space for the pack, idx, temp files and worktree`
-(exit 5) instead of leaving a half-written repository. If the OS free-space
+(exit 5). The HTTP idx is synthesized beside the temp pack and only renamed with
+it after success; a write failure is reported as disk-full/IO and removes the
+temp files, so no final `.pack` is left without its `.idx`. If the OS free-space
 query is unavailable the check is skipped rather than fabricating a limit.
 Win9x FAT32 volumes are limited to 4 GiB (2 GiB practical file sizes) and
 Linux 2.0/ext2 to ~2 GiB; the POSIX `std_file` layer itself is 64-bit, so a

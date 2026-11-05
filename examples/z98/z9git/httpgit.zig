@@ -743,27 +743,22 @@ fn packWriteBytes(s: *PackSink, data: []const u8) http.HttpError!void {
 fn packDecorate(s: *PackSink, data: []const u8) http.HttpError!void {
     if (!s.preflight_done) {
         if (s.have_cl == 0) s.have_cl = headerU64(s.head, "Content-Length");
-        if (s.have_cl > 0) {
-            // Preflight before the first pack byte reaches the temp file.
-            repo.diskPreflightEstimate(s.dest_git, s.have_cl, 0) catch return sinkFail(s, KIND_DISK_FULL);
-            s.preflight_done = true;
-        } else {
-            // No Content-Length: use the PACK object count, read from the
-            // streamed 12-byte header, still before writing any pack bytes.
-            const need = 12 - s.pack_hdr_len;
-            var take = data.len;
-            if (take > need) take = need;
-            var i: usize = 0;
-            while (i < take) : (i += 1) s.pack_hdr[s.pack_hdr_len + i] = data[i];
-            s.pack_hdr_len += take;
-            if (s.pack_hdr_len < 12) return;
-            const count = packCount(s.pack_hdr[0..]);
-            repo.diskPreflightEstimate(s.dest_git, 0, count) catch return sinkFail(s, KIND_DISK_FULL);
-            s.preflight_done = true;
-            try packWriteBytes(s, s.pack_hdr[0..12]);
-            if (take < data.len) try packWriteBytes(s, data[take..]);
-            return;
-        }
+        // Always read the 12-byte PACK header first so the preflight gets the
+        // object count even when Content-Length is present; it selects the
+        // idx/temp/worktree estimate. Nothing is written before this check.
+        const need = 12 - s.pack_hdr_len;
+        var take = data.len;
+        if (take > need) take = need;
+        var i: usize = 0;
+        while (i < take) : (i += 1) s.pack_hdr[s.pack_hdr_len + i] = data[i];
+        s.pack_hdr_len += take;
+        if (s.pack_hdr_len < 12) return;
+        const count = packCount(s.pack_hdr[0..]);
+        repo.diskPreflightEstimate(s.dest_git, s.have_cl, count) catch return sinkFail(s, KIND_DISK_FULL);
+        s.preflight_done = true;
+        try packWriteBytes(s, s.pack_hdr[0..12]);
+        if (take < data.len) try packWriteBytes(s, data[take..]);
+        return;
     }
     try packWriteBytes(s, data);
 }
@@ -925,7 +920,9 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
 
     const dest_git = try repo.prepareCloneDirs(arena, dest_dir);
     const tmp_path = joinUrl(arena, dest_git, "/objects/pack/tmp_http_pack.pack") catch return error.OutOfMemory;
+    const tmp_idx = joinUrl(arena, dest_git, "/objects/pack/tmp_http_pack.idx") catch return error.OutOfMemory;
     if (file_mod.exists(tmp_path)) file_mod.remove(tmp_path) catch return error.Io;
+    if (file_mod.exists(tmp_idx)) file_mod.remove(tmp_idx) catch return error.Io;
     const pack_file = file_mod.open(arena, tmp_path, file_mod.Mode.Write) catch return error.Io;
 
     var no_headers: [1]http.Header = undefined;
@@ -956,6 +953,7 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     defer {
         if (pack_open) file_mod.close(&ps.file);
         if (tmp_live) removeIfExists(tmp_path);
+        removeIfExists(tmp_idx);
     }
     var sink = http.ResponseSink{
         .state = @ptrCast(*void, &ps),
@@ -994,15 +992,28 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     const pack_name = joinUrl(arena, pack_path, hexbuf[0..40]) catch return error.OutOfMemory;
     const final_pack = joinUrl(arena, pack_name, ".pack") catch return error.OutOfMemory;
     const final_idx = joinUrl(arena, pack_name, ".idx") catch return error.OutOfMemory;
-    if (file_mod.exists(final_pack)) file_mod.remove(final_pack) catch return error.Io;
-    if (file_mod.exists(final_idx)) file_mod.remove(final_idx) catch return error.Io;
-    file_mod.rename(tmp_path, final_pack) catch return error.Io;
-    tmp_live = false;
-
-    pack_mod.idxSynthesize(arena, final_pack, final_idx) catch |e| {
+    // Synthesize the idx beside the temp pack and only rename both into place
+    // after success, so a write failure cannot leave a final pack without idx.
+    pack_mod.setTempDir(dest_git);
+    pack_mod.idxSynthesize(arena, tmp_path, tmp_idx) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
+        if (e == error.WriteFailed) return error.DiskFull;
+        if (e == error.OpenFailed) return error.Io;
+        if (e == error.ReadFailed) return error.Io;
         return error.ObjectStore;
     };
+    if (file_mod.exists(final_pack)) file_mod.remove(final_pack) catch return error.Io;
+    if (file_mod.exists(final_idx)) file_mod.remove(final_idx) catch return error.Io;
+    file_mod.rename(tmp_path, final_pack) catch {
+        removeIfExists(final_idx);
+        return error.Io;
+    };
+    file_mod.rename(tmp_idx, final_idx) catch {
+        removeIfExists(final_pack);
+        removeIfExists(final_idx);
+        return error.Io;
+    };
+    tmp_live = false;
 
     var head_target = disc.head_target;
     var head_id: [20]u8 = undefined;
