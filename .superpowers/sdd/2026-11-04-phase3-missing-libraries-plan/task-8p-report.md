@@ -51,7 +51,9 @@ files.
 
 `/usr/bin/time -v`; network rx is `/proc/net/dev` non-loopback bytes before and
 after (container-wide, so treat as ± small background traffic).  Three timed
-runs for clone; medians shown.
+runs for clone; medians shown.  The medians were post-processed from the
+harness's raw `numbers.tsv`; the script records each timed run and does not
+compute medians itself.
 
 | operation | wall | max RSS | network rx | notes |
 |---|---:|---:|---:|---|
@@ -109,7 +111,7 @@ HTTPS clone (`--arena-mb 32`, two runs):
 | TCP+TLS for upload-pack POST | 208–215 ms |
 | pack download (incl. 1.27 MB body) | **2015–2072 ms** |
 | trailer verify + idx synthesis | 366–561 ms |
-| install refs | <1 ms |
+| install refs | 0.11–0.30 s |
 | checkout | 313–552 ms |
 | **total** | **3.34–4.03 s** |
 
@@ -197,7 +199,7 @@ Inclusive: TLS path 84.3%, `httpPostStreamOver` 83.1%, AES-GCM open 80.2%,
 |---|---:|---:|
 | std_cipher (AES-GCM) | 0% | **80.27%** |
 | std_crypto (SHA-1/CRC) | **71.75%** | 10.44% |
-| std_ecc (P-256) | 0% | 3.65% |
+| std_ecc (P-256/P-384 ECDSA verify) | 0% | 3.65% |
 | std_deflate | 18.66% | 2.30% |
 | std_tls | 0% | 0.48% |
 | std_http | 0% | 0.11% |
@@ -206,9 +208,14 @@ Inclusive: TLS path 84.3%, `httpPostStreamOver` 83.1%, AES-GCM open 80.2%,
 | unknown (gcc/libc/PLT) | 2.59% | 0.49% |
 
 The application code is a small fraction of both profiles; std-lib crypto/TLS
-and deflate dominate.
+and deflate dominate.  The HTTPS `std_ecc` cost is certificate-chain ECDSA
+verification (the callgrind call counts show two P-256 and two P-384 verifies);
+the TLS key exchange is x25519 and is ~0.1% of instructions.
 
 ### gprof corroboration (`-g -pg` build)
+
+These numbers come from the `-g -pg` variant built by the gcc wrapper, not from
+the timed `-ffast` binary.
 
 - Local: `sha1Block` 27.3%, `mask` / `rotl32` / `sha1Update` 18.2% each;
   37,294 `sha1Block` calls, 8.35 M each of `rotl32`/`mask`; `decodeSym`
@@ -256,18 +263,24 @@ runs `strace -c` / `perf stat` automatically when those tools are present.
 
 ## Harness
 
-`examples/z98/z9git/tests/profile_small.sh` reproduces all of the above:
+`examples/z98/z9git/tests/profile_small.sh` reproduces the measurement
+categories and records the listed repo facts:
 
+- records the source path, HEAD, and requires a clean `SRC` tree before
+  measuring;
 - records the GitHub API size, clones a system HTTPS mirror, runs system local
   and HTTPS clones, `ls-remote`, and the curl archive with `/usr/bin/time -v`
   wall/RSS plus `/proc/net/dev` rx bytes;
+- writes the HEAD, pack size, idx size, in-pack object count, and
+  `git verify-pack` result for the mirror and app clones to `facts.tsv`;
 - builds the app with `-ffast` through the emitted `build_target.sh` and runs
   local/HTTPS clones at 32 MiB and 16 MiB (`RUNS` repetitions);
 - builds `-g` / `-g -pg` variants by prepending a gcc wrapper on `PATH` (the
   emitted script and sources are untouched), then runs callgrind, gprof, and
-  memcheck, plus `strace -c` / `perf stat` when installed;
-- env: `ZIG`, `OUT`, `URL`, `NET` (0 reuses a mirror), `RUNS`, `ARENA_MB`,
-  `DEEP`.
+  memcheck, plus `strace -c` / `perf stat` when installed; memcheck failures
+  are propagated (nonzero exit) after the `ERROR SUMMARY` capture;
+- env: `ZIG`, `OUT`, `SRC`, `URL`, `NET` (0 reuses a mirror), `RUNS`,
+  `ARENA_MB`, `DEEP`.
 
 The temporary per-phase timers and arena prints were used only in the `/tmp`
 measurement worktree and are **not** committed; this commit is the harness and

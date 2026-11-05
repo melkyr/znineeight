@@ -4,6 +4,7 @@
 # Env:
 #   ZIG        seed-built zig1_5_clean (default /tmp/t8p_build/zig1_5_clean)
 #   OUT        scratch dir (default /tmp/z9git_profile_small)
+#   SRC        clean source tree whose commit is recorded (default repo root)
 #   URL        remote repo (default jwiegley/git-from-the-bottom-up)
 #   NET        1 to fetch/mirror over HTTPS, 0 to reuse an existing mirror
 #   RUNS       timed repetitions per configuration (default 3)
@@ -21,6 +22,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$APP_DIR/../../.." && pwd)"
+SRC="${SRC:-$ROOT}"
 ZIG="${ZIG:-/tmp/t8p_build/zig1_5_clean}"
 OUT="${OUT:-/tmp/z9git_profile_small}"
 URL="${URL:-https://github.com/jwiegley/git-from-the-bottom-up.git}"
@@ -54,11 +56,19 @@ done
 [ -n "$TIME_BIN" ] || die "/usr/bin/time is required for wall+RSS"
 [ "$NET" = "1" ] && { command -v curl >/dev/null 2>&1 || die "curl is required (NET=1)"; }
 
+COMMIT=$(git -C "$SRC" rev-parse HEAD 2>/dev/null) \
+    || die "cannot read HEAD from source tree: $SRC (set SRC)"
+SRC_STATUS=$(git -C "$SRC" status --porcelain 2>/dev/null) \
+    || die "cannot read git status from source tree: $SRC (set SRC)"
+[ -z "$SRC_STATUS" ] \
+    || die "source tree is dirty: $SRC (commit or stash changes, or set SRC)"
+
 if [ "$NET" = "1" ] || [ ! -d "$OUT/work/mirror" ]; then
     rm -rf "$OUT"
 fi
 mkdir -p "$OUT/bin" "$OUT/emit" "$OUT/logs" "$OUT/times" "$OUT/work" "$OUT/prof"
 : > "$OUT/numbers.tsv"
+: > "$OUT/facts.tsv"
 
 sumrx() {
     if [ -r /proc/net/dev ]; then
@@ -88,7 +98,42 @@ run_timed() {
     return $rt_rc
 }
 
+record_git_facts() {
+    rgf_name="$1"
+    rgf_repo="$2"
+    if [ -d "$rgf_repo/.git" ]; then
+        rgf_gitdir="$rgf_repo/.git"
+    else
+        rgf_gitdir="$rgf_repo"
+    fi
+    rgf_head=$(git --git-dir="$rgf_gitdir" rev-parse HEAD 2>/dev/null) || rgf_head=?
+    rgf_idx=$(find "$rgf_gitdir/objects/pack" -maxdepth 1 -name '*.idx' -print -quit 2>/dev/null)
+    rgf_pack_size=?
+    rgf_idx_size=?
+    rgf_objects=$(git --git-dir="$rgf_gitdir" count-objects -v 2>/dev/null \
+        | awk '/^in-pack:/ { print $2 }')
+    rgf_verify=missing
+    if [ -n "$rgf_idx" ]; then
+        rgf_idx_size=$(wc -c <"$rgf_idx" | tr -d ' ')
+        rgf_pack="${rgf_idx%.idx}.pack"
+        if [ -f "$rgf_pack" ]; then
+            rgf_pack_size=$(wc -c <"$rgf_pack" | tr -d ' ')
+        fi
+        if git verify-pack -v "$rgf_idx" >"$OUT/prof/verify_$rgf_name.txt" 2>&1; then
+            rgf_verify=ok
+        else
+            rgf_verify=failed
+        fi
+    fi
+    printf '%s\thead=%s\tpack_bytes=%s\tidx_bytes=%s\tobjects=%s\tverify_pack=%s\n' \
+        "$rgf_name" "$rgf_head" "$rgf_pack_size" "$rgf_idx_size" "${rgf_objects:-?}" "$rgf_verify" \
+        | tee -a "$OUT/facts.tsv"
+}
+
 echo "== repo metadata =="
+echo "source=$SRC"
+echo "commit=$COMMIT"
+echo "source_clean=yes"
 if [ "$NET" = "1" ]; then
     curl -sS --max-time 30 "$API_URL" >"$OUT/work/api.json"
     size_kb=$(grep -o '"size": *[0-9]*' "$OUT/work/api.json" | grep -o '[0-9]*' | head -1)
@@ -120,6 +165,8 @@ run_timed sys_local_clone git clone "$MIRROR" "$OUT/work/sys_local" || true
 run_timed sys_lsremote_local git ls-remote "$MIRROR" || true
 git -C "$MIRROR" count-objects -vH >"$OUT/work/mirror.count" 2>/dev/null || true
 du -sh "$MIRROR" >"$OUT/work/mirror.size" 2>/dev/null || true
+
+record_git_facts mirror "$MIRROR"
 
 echo "== build app (-ffast emit; generated build_target.sh) =="
 "$ZIG" -ffast -o "$OUT/emit" "$APP_DIR/main.zig" >"$OUT/logs/emit.log" 2>&1 \
@@ -156,6 +203,14 @@ while [ "$i" -le "$RUNS" ]; do
     fi
     i=$((i + 1))
 done
+
+echo "== clone facts =="
+if [ -d "$OUT/work/app_local_1" ]; then
+    record_git_facts app_local_1 "$OUT/work/app_local_1"
+fi
+if [ "$NET" = "1" ] && [ -d "$OUT/work/app_https_1" ]; then
+    record_git_facts app_https_1 "$OUT/work/app_https_1"
+fi
 
 if [ "$HAVE_STRACE" = "1" ]; then
     echo "== strace -c (app local) =="
@@ -212,16 +267,20 @@ if [ "$DEEP" = "1" ]; then
     if [ "$HAVE_MEMCHECK" = "1" ]; then
         echo "== valgrind memcheck =="
         rm -rf "$OUT/work/mc_local" "$OUT/work/mc_https"
+        mc_rc_local=0
         valgrind --tool=memcheck --error-exitcode=99 --leak-check=summary \
             "$OUT/bin/prog" clone "$MIRROR" "$OUT/work/mc_local" --arena-mb "$ARENA_MB" \
-            >"$OUT/logs/mc_local.log" 2>"$OUT/logs/mc_local.err" || true
+            >"$OUT/logs/mc_local.log" 2>"$OUT/logs/mc_local.err" || mc_rc_local=$?
+        mc_rc_https=0
         if [ "$NET" = "1" ]; then
             valgrind --tool=memcheck --error-exitcode=99 --leak-check=summary \
                 "$OUT/bin/prog" clone "$URL" "$OUT/work/mc_https" --arena-mb "$ARENA_MB" \
-                >"$OUT/logs/mc_https.log" 2>"$OUT/logs/mc_https.err" || true
+                >"$OUT/logs/mc_https.log" 2>"$OUT/logs/mc_https.err" || mc_rc_https=$?
         fi
         grep -E 'ERROR SUMMARY' "$OUT/logs/mc_local.err" "$OUT/logs/mc_https.err" 2>/dev/null \
             >"$OUT/prof/memcheck.txt" || true
+        [ "$mc_rc_local" -eq 0 ] && [ "$mc_rc_https" -eq 0 ] \
+            || die "memcheck reported errors (local rc=$mc_rc_local, https rc=$mc_rc_https; see $OUT/prof/memcheck.txt)"
     fi
 fi
 
@@ -229,4 +288,4 @@ echo
 echo "== numbers =="
 cat "$OUT/numbers.tsv"
 echo
-echo "artifacts: $OUT (numbers.tsv, logs/, times/, prof/)"
+echo "artifacts: $OUT (numbers.tsv, facts.tsv, logs/, times/, prof/)"
