@@ -125,6 +125,9 @@ pagefile-backed, so the OS may page it instead of forcing it resident. A failed
 allocation is a clear `z9git: cannot allocate the requested arena` error
 (exit 5).
 
+**Minimum RAM: 64 MB suggested. On lower-spec systems, expect system slowness
+or paging to disk.**
+
 The heavy phases are bounded:
 
 - ref discovery and destination setup use the main arena;
