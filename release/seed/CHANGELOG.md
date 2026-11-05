@@ -15,6 +15,61 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-05 — seed v137 (HEAD c4bb4fa2)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12473249 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+Task 5 fix round 1 adds `std_zstd.zstdFrameContentSize(src: []const u8) ?u64`:
+the public exact-content-size reader (header parse, skippable/multi-frame
+aware; returns the summed declared size or null) shared by the decoder's
+up-front size check and the `z9zstddecomp` CLI (which no longer carries its own
+frame/block walker). `zstdDecompress`/`zstdDecompressDict` behavior is
+unchanged. This rotation's battery is deliberately **std_zstd-only**: the seven
+`repro/mi_matrix/stdlib_zstd_*` fixtures are **7 PASS / 0 FAIL** and the
+crosscheck is **10 PASS / 0 FAIL** (the full compiler/std battery is not
+re-run here). No compiler source changed, so the fixed point is unchanged and
+`lib/` remains **52** std `.zig`.
+
+| field | value |
+|---|---|
+| date | 2026-11-05 |
+| HEAD | `c4bb4fa2` |
+| seed binary md5 | `cf68f192900e7f6618c11e1712b74b3a` |
+| self-emission C | 48 `.c` + 49 `.h` (12473249 bytes) |
+| fixed point | `cf68f192900e7f6618c11e1712b74b3a` |
+| lib manifest | `lib/manifest.md5` (52 std files; md5 `de5e037d08e4e45b0dc522dea976ecb5`) |
+| archive md5 | `1ba4a6904f2d241aad9a92fbae8c9609` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `0754180d161823e30681347f3c9a925c` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 52 std `.zig` + `manifest.md5` |
+| HEAD/date | `c4bb4fa2` / 2026-11-05 |
+
+Provenance note: the archived binary (md5 cf68f192900e7f6618c11e1712b74b3a) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+c4bb4fa2; gcc of the archive's self-emission C reproduces the fixed point
+`cf68f192900e7f6618c11e1712b74b3a` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-11-04 — seed v136 (HEAD 315939a2)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir

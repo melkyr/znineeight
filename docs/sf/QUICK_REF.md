@@ -30,33 +30,36 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-04 — seed v136]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-05 — seed v137]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v136 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v137 CHANGELOG entry.
 
-**Current seed: v136** (rotated 2026-11-04 for the Phase 3 Milestone-1 std
-closeout — `std_zstd` dictionaries / full RFC 8878 via `zstdDecompressDict`,
-the new `std_deflate` inflater (`inflateRaw` / `inflateZlib`, both with the
-mandatory `used` out-param), and `std_http` POST + streaming response sink
-(`httpPostOver`, `httpPostStreamOver`, `ResponseSink`, `post`); packaging base
-HEAD `315939a2`).
-Archived binary md5 (= fixed point) `cf68f192900e7f6618c11e1712b74b3a`;
-archive md5 `d0f1d191689ad996bedcade688de1f2b`; Win9x zip md5
-`8fc02b8123ab04fac77ab8932ac60beb`; `gen/` 48 `.c` + 49 `.h` (12,473,249
+**Current seed: v137** (rotated 2026-11-05 for the Task 5 fix:
+`std_zstd.zstdFrameContentSize(src) ?u64`, the public exact content-size reader
+shared by the decoder's up-front size check and the `z9zstddecomp` CLI;
+`zstdDecompress` / `zstdDecompressDict` behavior is unchanged; packaging base
+HEAD `c4bb4fa2`). Archived binary md5 (= fixed point)
+`cf68f192900e7f6618c11e1712b74b3a`; archive md5
+`1ba4a6904f2d241aad9a92fbae8c9609`; Win9x zip md5
+`0754180d161823e30681347f3c9a925c`; `gen/` 48 `.c` + 49 `.h` (12,473,249
 bytes); `lib/` **52** std `.zig` (`std.zig` + 51 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`1906480f9b15dcd4e152cf8c247f2e61`; adds `std_deflate.zig`). A rebuild
-from the committed v136 archive is two-hop
+`de5e037d08e4e45b0dc522dea976ecb5`; `std_zstd.zig` updated, no new module).
+A rebuild from the committed v137 archive is two-hop
 **hop1 == hop2 == `cf68f192…`**. The compiler source is **`-fsafe`-clean**.
-Markers (`--markers --dump-c89` on `mud_server`): **3397 lines / 39012 B**
-(unchanged). The 8 pins (unchanged), the frozen-1124 corpus (md5
-`518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the goldens (5/5), the 26
-examples and the **356/0** stdlib + **10/10** crosscheck are all exact. The
-live corpus is re-measured by Task 9; the v135 baseline was 1240 =
+
+The v137 rotation battery is deliberately **std_zstd-only**: the seven
+`repro/mi_matrix/stdlib_zstd_*` fixtures are **7 PASS / 0 FAIL** and the
+crosscheck is **10 PASS / 0 FAIL**. The v136 full-battery measurements below
+are historical and were **not** re-run or re-claimed for v137: markers
+(`--markers --dump-c89` on `mud_server`) **3397 lines / 39012 B**; the 8 pins,
+the frozen-1124 corpus (md5 `518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the
+goldens (5/5), the 26 examples and the **356/0** stdlib + **10/10** crosscheck.
+The live corpus is re-measured by Task 9; the v135 baseline was 1240 =
 **1053 OK / 63 GREEN / 124 FAIL** (class md5
 `d9011c94cdbae01aa1765ca1047656a4`) and the 14 new std fixture dirs are
 additive.
@@ -160,7 +163,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v136 carries the full 52 std `.zig`** = `std.zig` plus
+tracked seed archive **v137 carries the full 52 std `.zig`** = `std.zig` plus
 51 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -672,9 +675,9 @@ Default `-s0` = all on disk. Deactivation order (oldest-spill-first): **S-AST �
 S-RES → S-SIDE → S-EXTRA** — `-s1` moves AST to RAM, `-s2` also LIR, ... `-s6` = all RAM (no spill
 files). S-EXTRA is the AST index-side `extra_children`/`extra_ranges` write-through pool pair
 (`.zig1_extra_ec.tmp` / `.zig1_extra_er.tmp`). Higher `-s` = more RAM, less disk I/O; emission is
-**byte-identical in every mode** (same data, different storage). **Current v136 spill ladder
-(unchanged from v135 — same fixed point `cf68f192…`; the numbers were measured on the v135
-seed on 2026-11-05, not re-measured for v136):** `-s0` pool=18677K (18.2 MB, all disk);
+**byte-identical in every mode** (same data, different storage). **Current v137 spill ladder
+(unchanged from v135/v136 — same fixed point `cf68f192…`; the numbers were measured on the v135
+seed on 2026-11-05, not re-measured for v136 or v137):** `-s0` pool=18677K (18.2 MB, all disk);
 `-s1` pool=50421K (49.2 MB); `-s2`/`-s3` pool=119477K (116.7 MB); `-s4` pool=123573K
 (120.7 MB); `-s5` pool=126645K (123.7 MB); `-s6` pool=131765K (128.7 MB, all RAM). `-s0`
 and `-s1` fit the 64 MB `-mm` default; `-s2`–`-s5` must be paired with `-mm128`, and
