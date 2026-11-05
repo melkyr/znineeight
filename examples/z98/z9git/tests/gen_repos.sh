@@ -106,6 +106,7 @@ git init -q "$WORK/packed_src"
     git tag lightweight
 )
 git clone --bare --no-hardlinks -q "$WORK/packed_src" "$TD/packed_repo"
+git --git-dir="$TD/packed_repo" remote remove origin
 git --git-dir="$TD/packed_repo" -c pack.useOfsDelta=true gc --prune=now -q
 
 ofs_idx="$(ls "$TD/packed_repo"/objects/pack/*.idx | head -1)"
@@ -155,7 +156,7 @@ printf '%s\n' $ofs_delta_ids | git --git-dir="$GD" cat-file --batch |
     head -c -1 > "$TD/goldens/packed_ofs_deltas.catfile"
 
 unpack_refs "$GD"
-rm -f "$GD/objects/info/packs"
+rm -f "$GD/objects/info/packs" "$GD/info/refs"
 
 echo "== loose_repo =="
 git init -q "$WORK/loose_src"
@@ -174,6 +175,7 @@ git init -q "$WORK/loose_src"
     git tag lightweight
 )
 git clone --bare --no-hardlinks -q "$WORK/loose_src" "$TD/loose_repo"
+git --git-dir="$TD/loose_repo" remote remove origin
 rm -rf "$TD/loose_repo/objects/pack"
 if find "$TD/loose_repo/objects" -name '*.pack' -o -name '*.idx' | grep -q .; then
     echo "error: loose_repo unexpectedly contains pack/idx files" >&2
@@ -182,7 +184,7 @@ fi
 git --git-dir="$TD/loose_repo" cat-file --batch-all-objects --batch > "$TD/goldens/loose.catfile"
 git --git-dir="$TD/loose_repo" ls-tree -r HEAD > "$TD/goldens/loose.lstree"
 unpack_refs "$TD/loose_repo"
-rm -f "$TD/loose_repo/objects/info/packs"
+rm -f "$TD/loose_repo/objects/info/packs" "$TD/loose_repo/info/refs"
 
 echo "== synthetic fixtures =="
 gcc -O2 -o "$WORK/gen_synthetic" "$SCRIPT_DIR/gen_synthetic.c" -lz

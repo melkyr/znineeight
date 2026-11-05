@@ -29,6 +29,7 @@ pub const TypedObject = struct {
 
 const CACHE_SLOTS: usize = 16;
 const MAX_DELTA_DEPTH: usize = 64;
+const MAX_LEN: usize = 0xFFFFFFFF;
 const MAX_U64: u64 = 0xFFFFFFFFFFFFFFFF;
 
 const CacheEntry = struct {
@@ -42,6 +43,9 @@ const CacheEntry = struct {
     data: []const u8,
 };
 
+// Store owns one open read handle per pack until storeClose (or process exit).
+// The slices/pointers point into the caller's arena; storeOpen does not copy
+// pack payloads.  Task 7 may call storeClose after it has finished reading.
 pub const Store = struct {
     arena: *arena_mod.Arena,
     git_dir: []const u8,
@@ -147,7 +151,7 @@ fn cacheAdd(s: *Store, id: ObjectId, pack_i: usize, offset: u64, ty: ObjType, da
 }
 
 fn lenAdd(a: usize, b: usize) !usize {
-    if (a > 0xFFFFFFFF - b) return error.OutOfMemory;
+    if (a > MAX_LEN or b > MAX_LEN or a > MAX_LEN - b) return error.OutOfMemory;
     return a + b;
 }
 
@@ -258,6 +262,16 @@ pub fn storeOpen(arena: *arena_mod.Arena, git_dir: []const u8, s: *Store) !void 
     }
     file_mod.closeDir(&d);
     s.packs = s.packs[0..filled];
+}
+
+// Release the pack read handles.  Additive (the pinned API is unchanged);
+// Task 7 can call this before reusing the same process for another repo.
+pub fn storeClose(s: *Store) void {
+    var i: usize = 0;
+    while (i < s.packs.len) : (i += 1) {
+        file_mod.close(&s.packs[i].file);
+    }
+    s.packs = s.packs[0..0];
 }
 
 fn verifyId(id: ObjectId, ty: ObjType, data: []const u8) !void {

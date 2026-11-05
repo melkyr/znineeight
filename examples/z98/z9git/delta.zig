@@ -15,8 +15,7 @@ const MAX_U64: u64 = 0xFFFFFFFFFFFFFFFF;
 fn readVarint(delta: []const u8, pos: *usize) !u64 {
     var result: u64 = 0;
     var shift: usize = 0;
-    while (true) {
-        if (pos.* >= delta.len) return error.Corrupt;
+    while (pos.* < delta.len) {
         const b: u8 = delta[pos.*];
         pos.* += 1;
         if (shift >= 64) return error.Corrupt;

@@ -17,6 +17,7 @@ const objects = @import("../objects.zig");
 const delta = @import("../delta.zig");
 
 const ARENA_BYTES: usize = 16 * 1024 * 1024;
+const MAX_LEN: usize = 0xFFFFFFFF;
 
 var arena_buf: [ARENA_BYTES]u8 = undefined;
 var arena: arena_mod.Arena = undefined;
@@ -53,7 +54,7 @@ fn bytesEq(a: []const u8, b: []const u8) bool {
 }
 
 fn lenAdd(a: usize, b: usize) !usize {
-    if (a > 0xFFFFFFFF - b) return error.OutOfMemory;
+    if (a > MAX_LEN or b > MAX_LEN or a > MAX_LEN - b) return error.OutOfMemory;
     return a + b;
 }
 
@@ -240,6 +241,47 @@ fn tLargeOffset() bool {
     return runGolden("large_offset.catfile", "large_offset_repo");
 }
 
+fn nextIdLine(g: []const u8, pos: *usize, id: *[20]u8) bool {
+    const start = pos.*;
+    if (start + 40 > g.len) return false;
+    if (!parseId(g[start .. start + 40], id)) return false;
+    pos.* = start + 40;
+    if (pos.* < g.len and g[pos.*] == '\n') pos.* += 1;
+    return true;
+}
+
+// Review Focus 5 through the store path: the target idx offset is encoded in
+// the 8-byte large-offset table, the entry is a REF_DELTA, and its COPY
+// instruction names source offset 0xFFFFFFFE with size 4.  A naive 32-bit
+// offset+size would wrap to 2; storeReadTyped must surface error.Corrupt.
+fn tLargeOffsetDeltaCorrupt() bool {
+    arena_mod.reset(&arena);
+    const ids_path = join3(test_dir, "/testdata/goldens/", "large_offset_delta.ids") catch return false;
+    const ids = file_mod.readAll(&arena, ids_path) catch return false;
+    var pos: usize = 0;
+    var target_id: [20]u8 = undefined;
+    var base_id: [20]u8 = undefined;
+    if (!nextIdLine(ids, &pos, &target_id)) return false;
+    if (!nextIdLine(ids, &pos, &base_id)) return false;
+
+    const repo = join3(test_dir, "/testdata/", "large_offset_delta_repo") catch return false;
+    var s: objects.Store = undefined;
+    if (!openStore(repo, &s)) return false;
+
+    // The normal base entry (ordinary 4-byte idx offset) must still read.
+    var base_out: objects.TypedObject = undefined;
+    objects.storeReadTyped(&arena, &s, base_id, &base_out) catch return false;
+    if (base_out.ty != objects.ObjType.blob) return false;
+    if (!strEq(base_out.data, "base")) return false;
+
+    var out: objects.TypedObject = undefined;
+    var got_corrupt = false;
+    objects.storeReadTyped(&arena, &s, target_id, &out) catch |e| {
+        if (e == error.Corrupt) got_corrupt = true;
+    };
+    return got_corrupt;
+}
+
 fn tWriteLoose() bool {
     arena_mod.reset(&arena);
     const gpath = join3(test_dir, "/testdata/goldens/", "loose.catfile") catch return false;
@@ -282,21 +324,45 @@ fn tNotFound() bool {
     return found_not_found;
 }
 
-fn tMalformedIdx() bool {
-    arena_mod.reset(&arena);
-    const dir = join3(scratch_dir, "/", "bad_idx") catch return false;
-    const path = join3(dir, "/objects/pack/", "bad.idx") catch return false;
-    var junk: [17]u8 = undefined;
-    var i: usize = 0;
-    while (i < junk.len) : (i += 1) junk[i] = 0xFF;
-    file_mod.writeAll(path, junk[0..]) catch return false;
-
+fn storeIsCorrupt(dir: []const u8) bool {
     var s: objects.Store = undefined;
     var got_corrupt = false;
     objects.storeOpen(&arena, dir, &s) catch |e| {
         if (e == error.Corrupt) got_corrupt = true;
     };
     return got_corrupt;
+}
+
+fn tMalformedIdx() bool {
+    arena_mod.reset(&arena);
+    const dir = join3(scratch_dir, "/", "bad_idx") catch return false;
+    const path = join3(dir, "/objects/pack/", "bad.idx") catch return false;
+
+    // Too short to contain even the v2 header + fanout + trailers.
+    var junk: [17]u8 = undefined;
+    var i: usize = 0;
+    while (i < junk.len) : (i += 1) junk[i] = 0xFF;
+    file_mod.writeAll(path, junk[0..]) catch return false;
+    if (!storeIsCorrupt(dir)) return false;
+
+    const src_packdir = join2(test_dir, "/testdata/packed_repo/objects/pack") catch return false;
+    var idx_name: []const u8 = undefined;
+    if (!(findFirstIdx(src_packdir, &idx_name) catch return false)) return false;
+    const src_idx = join3(src_packdir, "/", idx_name) catch return false;
+
+    // Valid length, altered magic.
+    const magic_bad = file_mod.readAll(&arena, src_idx) catch return false;
+    if (magic_bad.len < 8) return false;
+    magic_bad[0] = magic_bad[0] ^ 0xFF;
+    file_mod.writeAll(path, magic_bad) catch return false;
+    if (!storeIsCorrupt(dir)) return false;
+
+    // Valid length/magic, flipped idx trailer checksum byte.
+    const trailer_bad = file_mod.readAll(&arena, src_idx) catch return false;
+    if (trailer_bad.len < 20) return false;
+    trailer_bad[trailer_bad.len - 1] = trailer_bad[trailer_bad.len - 1] ^ 0xFF;
+    file_mod.writeAll(path, trailer_bad) catch return false;
+    return storeIsCorrupt(dir);
 }
 
 fn findFirstIdx(dir: []const u8, out_name: *[]const u8) !bool {
@@ -379,8 +445,8 @@ fn tDeltaOutOfRange() bool {
 }
 
 fn tDeltaBadSrc() bool {
-    // The "out-of-range delta src" case through the pack path is covered by the
-    // direct copy-offset test above; malformed delta headers are Corrupt too.
+    // Overflowing delta size varint.  The out-of-range copy-offset case through
+    // the pack/large-offset path is in tLargeOffsetDeltaCorrupt above.
     const a = [_]u8{ 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02 };
     var out_a: [4]u8 = undefined;
     return expectDeltaCorrupt("", a[0..], out_a[0..]);
@@ -402,6 +468,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     report("ref_delta_pack", tRefDeltas());
     report("hybrid_ref_delta_across_loose", tHybrid());
     report("large_offset_idx_decode", tLargeOffset());
+    report("large_offset_delta_corrupt", tLargeOffsetDeltaCorrupt());
     report("store_write_loose_roundtrip", tWriteLoose());
     report("missing_object_not_found", tNotFound());
     report("malformed_idx_corrupt", tMalformedIdx());

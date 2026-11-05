@@ -93,20 +93,6 @@ fn mulU64(a: u64, b: u64) !u64 {
     return a * b;
 }
 
-fn copyBytes(dst: []u8, src: []const u8) void {
-    var i: usize = 0;
-    while (i < src.len) : (i += 1) dst[i] = src[i];
-}
-
-fn endsWith(s: []const u8, suffix: []const u8) bool {
-    if (s.len < suffix.len) return false;
-    var i: usize = 0;
-    while (i < suffix.len) : (i += 1) {
-        if (s[s.len - suffix.len + i] != suffix[i]) return false;
-    }
-    return true;
-}
-
 fn sha1Slice(data: []const u8, out: *ObjectId) void {
     var h = crypto.sha1Init();
     crypto.sha1Update(&h, data);
