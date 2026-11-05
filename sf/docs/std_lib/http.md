@@ -19,9 +19,11 @@ sends `Connection: close`; there is no keep-alive, no `Host` virtual hosting
 beyond the URL authority, and no chunked **request** body (the POST body is
 length-delimited). Response bodies are decoded from `Content-Length`, chunked
 transfer-encoding, or connection close. The buffered paths cap the header block
-at 8 KiB and the body at 1 MiB; the streaming POST path routes de-chunked body
-bytes to a caller sink through a fixed ~1 MiB buffer and is not subject to the
-1 MiB whole-body cap.
+at 8 KiB and the body at 1 MiB; the streaming POST/GET paths route de-chunked
+body bytes to a caller sink through a fixed ~1 MiB buffer and are not subject
+to the 1 MiB whole-body cap. GET can carry caller headers (including `Range`)
+for static servers, and a POST body can come from a streaming `RequestSource`
+instead of a contiguous slice.
 
 Everything allocated comes from the caller's arena (R1). The module's one error
 set is `HttpError` (R2); transport callbacks may return their own errors, which
@@ -108,9 +110,10 @@ paths).
 
 **Signature** — `pub const HttpError = error{ BadUrl, DnsFailed, ConnectFailed, Timeout, BadResponse, BadHeader, TooLarge, OutOfMemory };`
 
-**Gotchas** — `BadHeader` is produced only by a caller-supplied POST
-`content_type`/`accept` containing CR, LF, or NUL. `TooLarge` covers the 8 KiB
-header cap, the 1 MiB buffered-body cap, and oversized streaming lengths.
+**Gotchas** — `BadHeader` is produced by a caller-supplied POST
+`content_type`/`accept` or an `httpGetHeadersOver`/`httpGetStreamOver` header
+name/value containing CR, LF, or NUL. `TooLarge` covers the 8 KiB header cap,
+the 1 MiB buffered-body cap, and oversized streaming lengths.
 
 ### `parseUrl`
 
@@ -344,7 +347,93 @@ trailers are consumed internally. Body length is unbounded apart from the
 32-bit chunk/`Content-Length` accounting and hardware. A sink error aborts the
 transfer and propagates after the transport is closed.
 
+### `RequestSource`
+
+**Purpose** — a caller-supplied stream for a POST request body that is not
+already materialized in memory.
+
+**Signature** — `pub const RequestSource = struct { state: *void, read_fn: fn (*void, []u8) HttpError!usize };`
+
+**Parameters** (fields)
+- `state` — opaque pointer passed to `read_fn`.
+- `read_fn` — fills up to the slice length with body bytes and returns the
+  count; returns `0` at the declared end. Returning `0` before the declared
+  `body_len`, or more than the slice length, is `error.BadResponse`.
+
+**Gotchas** — the declared `body_len` is written as `Content-Length`, so the
+source must produce exactly that many bytes; there is no chunked request body.
+
+### `httpGetHeadersOver`
+
+**Purpose** — a buffered GET with caller-supplied request headers, including
+`Range` for a static/dumb HTTP server.
+
+**When to use** — self-hosted static object servers where a byte range is
+available; GitHub/GitLab smart HTTP is POST-based and does not use this path.
+
+**Signature** — `pub fn httpGetHeadersOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, extra_headers: []const Header, out: *Response) !void`
+
+**Parameters**
+- `arena` — source for the request buffer, headers, and body.
+- `t` — the transport; closed before return.
+- `url` — `http://` or `https://` URL.
+- `extra_headers` — additional request header lines, e.g.
+  `Header{ .name = "Range", .value = "bytes=0-1023" }`. Empty values are sent
+  as an empty header value; CR/LF/NUL in a name or value is `error.BadHeader`.
+- `out` — receives the buffered response (1 MiB body cap).
+
+**Errors** — `HttpError` members plus transport errors.
+
+**Gotchas** — the header list is appended after `Connection: close`; duplicate
+names are allowed (the server decides). `Host`/`Connection` are owned by the
+module and cannot be overridden here.
+
+### `httpGetStreamOver`
+
+**Purpose** — performs a GET and streams the de-chunked response body to a
+`ResponseSink`, while returning the status and headers separately.
+
+**When to use** — a large static download over an `http://`/`https://`
+transport where the body must not be buffered.
+
+**Signature** — `pub fn httpGetStreamOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, extra_headers: []const Header, sink: *ResponseSink, out_head: *Response) !void`
+
+**Parameters** — as `httpGetHeadersOver`, but the body goes to `sink` and
+`out_head` receives the status/headers with an empty body. The fixed ~1 MiB
+stream buffer comes from `arena`; the body length is unbounded apart from the
+32-bit accounting and hardware.
+
+**Errors** — `HttpError` members plus transport/sink errors. Truncated or
+malformed chunk framing is `error.BadResponse`.
+
+**Gotchas** — the sink sees de-chunked body bytes only; trailing headers are
+consumed. The response `Content-Length`, when present, is the body byte count
+(not the encoded chunk framing).
+
+### `httpPostStreamBodyOver`
+
+**Purpose** — a POST whose request body comes from a `RequestSource` in bounded
+chunks, with the response streamed to a `ResponseSink`.
+
+**When to use** — a body assembled from a writer/pipeline (for example a want
+list built without a contiguous arena buffer) whose response is large.
+
+**Signature** — `pub fn httpPostStreamBodyOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body_len: usize, content_type: []const u8, accept: []const u8, body: *RequestSource, sink: *ResponseSink, out_head: *Response) !void`
+
+**Parameters**
+- `body_len` — exact `Content-Length` bytes the source will produce.
+- `body` — the streaming body source.
+- `content_type` / `accept` — as for `httpPostOver` (empty omits the header).
+- `sink` / `out_head` — as for `httpPostStreamOver`.
+
+**Errors** — `HttpError` members plus transport/sink errors. A source that
+returns `0` early is `error.BadResponse`.
+
+**Gotchas** — the source is read into a fixed 64 KiB stack buffer and written
+straight to the transport; the request body itself is never buffered whole.
+
 ### `get`
+
 
 **Purpose** — performs a plain-TCP HTTP GET with a timeout, following one
 redirect.

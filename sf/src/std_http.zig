@@ -327,6 +327,15 @@ pub const ResponseSink = struct {
     write_fn: fn (*void, []const u8) HttpError!void,
 };
 
+// Streaming request body source. `read_fn` fills `dst` with up to dst.len body
+// bytes and returns 0 at the declared end (a short read before `body_len` is
+// BadResponse). Used by callers that do not want to materialize a large POST
+// body in the arena (the git want list).
+pub const RequestSource = struct {
+    state: *void,
+    read_fn: fn (*void, []u8) HttpError!usize,
+};
+
 const Conn = struct {
     t: *HttpTransport,
     buf: [4096]u8,
@@ -825,6 +834,144 @@ pub fn httpGetOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, 
     }
 
     out.* = Response{ .status = ph.status, .headers = ph.headers, .body = std.buf.slice(&body) };
+}
+
+// --- extra-header / streaming GET and streaming request body ----------------
+
+fn validateHeaderList(headers: []const Header) HttpError!void {
+    var i: usize = 0;
+    while (i < headers.len) : (i += 1) {
+        if (headers[i].name.len == 0) return error.BadHeader;
+        if (hasHeaderInjection(headers[i].name)) return error.BadHeader;
+        if (hasHeaderInjection(headers[i].value)) return error.BadHeader;
+    }
+}
+
+fn buildGetHead(arena: *std.arena.Arena, url: []const u8, extra_headers: []const Header) HttpError!std.buf.Buf {
+    const u = try parseTransportUrl(url);
+    const scheme_sep = findFrom(url, "://", 0);
+    var default_port: u16 = DEFAULT_PORT;
+    if (scheme_sep < url.len and eqBytes(url[0..scheme_sep], "https")) default_port = 443;
+
+    var req = std.buf.init(arena);
+    try std.buf.append(&req, "GET ");
+    try std.buf.append(&req, u.path);
+    if (u.query.len > 0) {
+        try std.buf.appendByte(&req, '?');
+        try std.buf.append(&req, u.query);
+    }
+    try std.buf.append(&req, " HTTP/1.1\r\nHost: ");
+    try std.buf.append(&req, u.host);
+    if (u.port != default_port) {
+        try std.buf.appendByte(&req, ':');
+        try appendU16(&req, u.port);
+    }
+    try std.buf.append(&req, "\r\nConnection: close\r\n");
+    var i: usize = 0;
+    while (i < extra_headers.len) : (i += 1) {
+        try std.buf.append(&req, extra_headers[i].name);
+        try std.buf.append(&req, ": ");
+        try std.buf.append(&req, extra_headers[i].value);
+        try std.buf.append(&req, "\r\n");
+    }
+    try std.buf.append(&req, "\r\n");
+    return req;
+}
+
+fn readResponseBodyBuffered(arena: *std.arena.Arena, c: *Conn, ph: RespHead) HttpError!Response {
+    var body = std.buf.init(arena);
+    if (ph.have_chunked) {
+        try readChunked(c, &body);
+    } else if (ph.have_cl) {
+        if (ph.clen > MAX_BODY_BYTES) return error.TooLarge;
+        try std.buf.reserve(&body, ph.clen);
+        var got: usize = 0;
+        while (got < ph.clen) {
+            const n = try connReadSome(c, body.data[body.len + got .. body.len + ph.clen]);
+            if (n == 0) return error.BadResponse;
+            got += n;
+        }
+        body.len += ph.clen;
+    } else {
+        var tmp: [4096]u8 = undefined;
+        while (true) {
+            const n = try connReadSome(c, tmp[0..]);
+            if (n == 0) break;
+            if (body.len + n > MAX_BODY_BYTES) return error.TooLarge;
+            try std.buf.append(&body, tmp[0..n]);
+        }
+    }
+    return Response{ .status = ph.status, .headers = ph.headers, .body = std.buf.slice(&body) };
+}
+
+fn streamResponseBody(arena: *std.arena.Arena, c: *Conn, ph: RespHead, sink: *ResponseSink, out_head: *Response) HttpError!void {
+    const empty_body = try allocBytes(arena, 0);
+    out_head.* = Response{ .status = ph.status, .headers = ph.headers, .body = empty_body };
+
+    const sbuf = try allocBytes(arena, STREAM_BUF_BYTES);
+    var sb = StreamBuf{ .buf = sbuf, .len = 0, .sink = sink };
+
+    if (ph.have_chunked) {
+        try readChunkedStream(c, &sb);
+    } else if (ph.have_cl) {
+        try streamReadN(c, &sb, ph.clen);
+        try streamFlush(&sb);
+    } else {
+        try readCloseDelimitedStream(c, &sb);
+    }
+}
+
+// Buffered GET with caller-supplied headers (for a dumb/static server this is
+// where `Range: bytes=...` goes). The 1 MiB whole-body cap is unchanged.
+pub fn httpGetHeadersOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, extra_headers: []const Header, out: *Response) !void {
+    defer t.close_fn(t.state);
+    try validateHeaderList(extra_headers);
+    const req = try buildGetHead(arena, url, extra_headers);
+    try transportWriteAll(t, std.buf.slice(&req));
+
+    var c = Conn{ .t = t, .buf = undefined, .pos = 0, .len = 0, .eof = false };
+    const ph = try readResponseHeadOver(arena, &c, false);
+    out.* = try readResponseBodyBuffered(arena, &c, ph);
+}
+
+// Streaming GET with caller-supplied headers. The de-chunked body flows to
+// `sink` in bounded ~1 MiB slices; headers/status land in `out_head` with an
+// empty body. The body length is unbounded (hardware-capped).
+pub fn httpGetStreamOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, extra_headers: []const Header, sink: *ResponseSink, out_head: *Response) !void {
+    defer t.close_fn(t.state);
+    try validateHeaderList(extra_headers);
+    const req = try buildGetHead(arena, url, extra_headers);
+    try transportWriteAll(t, std.buf.slice(&req));
+
+    var c = Conn{ .t = t, .buf = undefined, .pos = 0, .len = 0, .eof = false };
+    const ph = try readResponseHeadOver(arena, &c, true);
+    try streamResponseBody(arena, &c, ph, sink, out_head);
+}
+
+// POST with a streaming request body and a streaming response body. The caller
+// declares `body_len` and fills it from `body` in bounded chunks; the response
+// path is identical to httpPostStreamOver.
+pub fn httpPostStreamBodyOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body_len: usize, content_type: []const u8, accept: []const u8, body: *RequestSource, sink: *ResponseSink, out_head: *Response) !void {
+    defer t.close_fn(t.state);
+    try validatePostHeaders(content_type, accept);
+    const req = try buildPostHead(arena, url, body_len, content_type, accept);
+    try transportWriteAll(t, std.buf.slice(&req));
+
+    var sent: usize = 0;
+    var chunk: [65536]u8 = undefined;
+    while (sent < body_len) {
+        var want = body_len - sent;
+        if (want > chunk.len) want = chunk.len;
+        const n = try body.read_fn(body.state, chunk[0..want]);
+        if (n == 0) return error.BadResponse;
+        if (n > want) return error.BadResponse;
+        try transportWriteAll(t, chunk[0..n]);
+        sent += n;
+    }
+
+    var c = Conn{ .t = t, .buf = undefined, .pos = 0, .len = 0, .eof = false };
+    const ph = try readResponseHeadOver(arena, &c, true);
+    try streamResponseBody(arena, &c, ph, sink, out_head);
 }
 
 // --- get (network) -----------------------------------------------------------
