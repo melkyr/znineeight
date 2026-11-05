@@ -916,6 +916,93 @@ pub fn cloneLocal(arena: *arena_mod.Arena, src_path: []const u8, dest_dir: []con
     try commitTree(arena, &store, commit, &tree);
     try materializeTree(arena, &store, tree, dest_dir, 0);
 }
+pub fn prepareCloneDirs(arena: *arena_mod.Arena, dest_dir: []const u8) GitError![]const u8 {
+    try mkdirPath(dest_dir);
+    const dest_git = try join2(arena, dest_dir, "/.git");
+    try mkdirPath(dest_git);
+    const dst_objects = try join2(arena, dest_git, "/objects");
+    try mkdirPath(dst_objects);
+    const dst_pack = try join2(arena, dst_objects, "/pack");
+    try mkdirPath(dst_pack);
+    const dst_refs = try join2(arena, dest_git, "/refs");
+    try mkdirPath(dst_refs);
+    return dest_git;
+}
+
+pub const RefEntry = struct { name: []const u8, id: ObjectId };
+
+fn refNameSafe(name: []const u8) bool {
+    if (!startsWith(name, "refs/")) return false;
+    if (name.len > 1024) return false;
+    var i: usize = 0;
+    while (i < name.len) : (i += 1) {
+        if (name[i] == '\\' or name[i] == ':' or name[i] == 0) return false;
+    }
+    var start: usize = 0;
+    while (start <= name.len) {
+        var end = start;
+        while (end < name.len and name[end] != '/') : (end += 1) {}
+        const comp = name[start..end];
+        if (comp.len == 0 or eq(comp, ".") or eq(comp, "..")) return false;
+        if (end == name.len) break;
+        start = end + 1;
+    }
+    return true;
+}
+
+// Write the refs advertised by a smart-HTTP server, then a symbolic or
+// detached HEAD. Task 8 calls this before checkoutHead.
+pub fn installRefs(arena: *arena_mod.Arena, dest_dir: []const u8, refs: []const RefEntry, head_target: []const u8, head_id: ObjectId, has_head_id: bool) GitError!void {
+    const dest_git = try join2(arena, dest_dir, "/.git");
+    try mkdirPath(dest_git);
+    const dst_refs = try join2(arena, dest_git, "/refs");
+    try mkdirPath(dst_refs);
+    var i: usize = 0;
+    while (i < refs.len) : (i += 1) {
+        const r = refs[i];
+        if (!refNameSafe(r.name)) return error.Protocol;
+        const path = try join3(arena, dest_git, "/", r.name);
+        var cut: usize = path.len;
+        while (cut > 0) {
+            if (path[cut - 1] == '/') break;
+            cut -= 1;
+        }
+        if (cut == 0) return error.Protocol;
+        try mkdirPath(path[0 .. cut - 1]);
+        var buf: [41]u8 = undefined;
+        hexId(r.id, buf[0..40]);
+        buf[40] = '\n';
+        file_mod.writeAll(path, buf[0..41]) catch return error.Io;
+    }
+    const head_path = try join2(arena, dest_git, "/HEAD");
+    if (startsWith(head_target, "refs/")) {
+        const content = try join3(arena, "ref: ", head_target, "\n");
+        file_mod.writeAll(head_path, content) catch return error.Io;
+    } else if (has_head_id) {
+        var buf: [41]u8 = undefined;
+        hexId(head_id, buf[0..40]);
+        buf[40] = '\n';
+        file_mod.writeAll(head_path, buf[0..41]) catch return error.Io;
+    } else {
+        return error.Protocol;
+    }
+}
+
+pub fn checkoutHead(arena: *arena_mod.Arena, dest_dir: []const u8) GitError!void {
+    const dest_git = try join2(arena, dest_dir, "/.git");
+    var store: objects.Store = undefined;
+    objects.storeOpen(arena, dest_git, &store) catch return error.ObjectStore;
+    defer objects.storeClose(&store);
+
+    var head: Resolved = undefined;
+    if (!(try resolveHead(arena, dest_git, &head))) return error.ObjectStore;
+    var commit: ObjectId = undefined;
+    try peelToCommit(arena, &store, head.id, &commit);
+    var tree: ObjectId = undefined;
+    try commitTree(arena, &store, commit, &tree);
+    try materializeTree(arena, &store, tree, dest_dir, 0);
+}
+
 
 fn parseAuthor(s: []const u8, name: *[]const u8, ts: *i64, tz: *i64) void {
     name.* = s;

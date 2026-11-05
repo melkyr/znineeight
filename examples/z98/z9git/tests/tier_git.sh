@@ -1,26 +1,30 @@
 #!/bin/sh
-# tier_git.sh -- Phase 3 Task 7 gate for the z9git local CLI.
+# tier_git.sh -- Phase 3 Task 7/8 gate for the z9git CLI.
 #
 # Builds examples/z98/z9git/main.zig with a seed-built zig1, then exercises the
-# local transports against the committed Task 6 fixtures:
+# local transports against the committed Task 6 fixtures plus the Task 8
+# smart-HTTP clone:
 #   - clone packed_repo: copied pack+idx bytes, copied refs/HEAD, worktree
 #     matches goldens/packed.lstree, log golden, checkout <branch> golden
 #     (tracked-but-absent files removed, untracked files left alone);
 #   - clone loose_repo: loose objects copied verbatim (SHA-1 names preserved);
 #   - file:// clone, clone-from-worktree source, packed-refs-only source;
-#   - -h rc0, bad args rc1, and the not-yet-implemented HTTP transport rc2;
+#   - pkt-line unit cases; mocked-transport smart HTTP with request-byte,
+#     streaming-pack and synthesized-idx assertions; end-to-end git
+#     http-backend clone over 127.0.0.1 and a --max-down pacing floor;
+#   - -h rc0, bad args rc1, and a refused HTTP connection rc2 (no side effects);
 #   - Windows: bare -osw emit, MinGW no-CRT build through the emitted
 #     build_target.sh, check_win9x_imports.sh ... 9x PASS, then Wine clone+log
-#     on packed_repo. A no-CRT build/run failure is a hard FAIL (never a
-#     CRT/nt fallback).
+#     on packed_repo and the mocked-transport HTTP case. A no-CRT build/run
+#     failure is a hard FAIL (never a CRT/nt fallback).
 #
 # The committed fixture bytes are consumed as-is; gen_repos.sh is dev-time
-# only. Git 2.39 is used for goldens/inspection only: the clone itself never
-# shells out to git.
+# only. Git 2.39 is used for goldens/inspection, the scripted mocked pack, and
+# the e2e server; the clone itself never shells out to git.
 #
 # POSIX sh + coreutils. Run from anywhere (paths resolved from this script).
 #
-# Env: ZIG       seed-built zig1_5_clean (default /tmp/p3_t7_base/zig1_5_clean)
+# Env: ZIG       seed-built zig1_5_clean (default /tmp/p3_t8_base/zig1_5_clean)
 #      OUT       scratch dir (default /tmp/z9git_tier)
 #      WINEPREFIX default $OUT/wineprefix
 
@@ -29,7 +33,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$APP_DIR/../../.." && pwd)"
-ZIG="${ZIG:-/tmp/p3_t7_base/zig1_5_clean}"
+ZIG="${ZIG:-/tmp/p3_t8_base/zig1_5_clean}"
 OUT="${OUT:-/tmp/z9git_tier}"
 TD="$APP_DIR/tests/testdata"
 CHECK="$ROOT/scripts/win32_cross/check_win9x_imports.sh"
@@ -57,7 +61,7 @@ finish() {
 
 if [ ! -x "$ZIG" ]; then
     echo "FAIL: compiler not found: $ZIG"
-    echo "      build it: bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/p3_t7_base"
+    echo "      build it: bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/p3_t8_base"
     exit 1
 fi
 for tool in git cmp find sort wine i686-w64-mingw32-gcc i686-w64-mingw32-objdump; do
@@ -117,6 +121,198 @@ PROG="$OUT/bin/prog"
 [ -x "$PROG" ] || { echo "FAIL: $PROG not built"; exit 1; }
 pass_case "Linux build produced $PROG"
 
+echo "== pkt-line unit =="
+PKT_DIR="$OUT/pkt"
+mkdir -p "$PKT_DIR"
+if ! "$ZIG" -fsafe -o "$PKT_DIR" "$APP_DIR/tests/pkt_test.zig" >"$OUT/pkt_zig.log" 2>&1; then
+    fail_case "pkt_test compile (see $OUT/pkt_zig.log)"
+    tail -30 "$OUT/pkt_zig.log" | sed 's/^/       /'
+    finish
+fi
+if ! sh "$PKT_DIR/build_target.sh" linux "$PKT_DIR/pkt_test" >"$OUT/pkt_build.log" 2>&1; then
+    fail_case "pkt_test link (see $OUT/pkt_build.log)"
+    tail -30 "$OUT/pkt_build.log" | sed 's/^/       /'
+    finish
+fi
+"$PKT_DIR/pkt_test" >"$OUT/pkt_run.log" 2>&1
+PKT_RC=$?
+if [ "$PKT_RC" -eq 0 ]; then
+    pass_case "pkt-line encode/decode/flush edge cases"
+else
+    fail_case "pkt-line unit (rc=$PKT_RC)"
+    sed 's/^/       /' "$OUT/pkt_run.log" | tail -25
+fi
+
+echo "== mocked-transport smart HTTP clone =="
+MOCK_DATA="$OUT/mockdata"
+MOCK_DIR="$OUT/mock"
+mkdir -p "$MOCK_DATA" "$MOCK_DIR"
+if ! git upload-pack --stateless-rpc --advertise-refs "$TD/packed_repo" >"$MOCK_DATA/adv" 2>"$OUT/mock_adv.err"; then
+    fail_case "prepare mocked ref advertisement"
+    tail -10 "$OUT/mock_adv.err" | sed 's/^/       /'
+    finish
+fi
+{ printf '001e# service=git-upload-pack\n0000'; cat "$MOCK_DATA/adv"; } >"$MOCK_DATA/info_refs"
+if ! git --git-dir="$TD/packed_repo" pack-objects --stdout --all >"$MOCK_DATA/pack" 2>"$OUT/mock_pack.err"; then
+    fail_case "prepare mocked upload-pack archive"
+    tail -10 "$OUT/mock_pack.err" | sed 's/^/       /'
+    finish
+fi
+{ printf '0008NAK\n'; cat "$MOCK_DATA/pack"; } >"$MOCK_DATA/upload"
+
+if ! "$ZIG" -fsafe -o "$MOCK_DIR" "$APP_DIR/tests/mock_http.zig" >"$OUT/mock_zig.log" 2>&1; then
+    fail_case "mock_http compile (see $OUT/mock_zig.log)"
+    tail -30 "$OUT/mock_zig.log" | sed 's/^/       /'
+    finish
+fi
+if ! sh "$MOCK_DIR/build_target.sh" linux "$MOCK_DIR/mock_http" >"$OUT/mock_build.log" 2>&1; then
+    fail_case "mock_http link (see $OUT/mock_build.log)"
+    tail -30 "$OUT/mock_build.log" | sed 's/^/       /'
+    finish
+fi
+
+MOCK_CLONE="$OUT/linux/clone_mock_http"
+rm -rf "$MOCK_CLONE"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$MOCK_CLONE" 0 \
+    "$MOCK_DATA/info_refs" "$MOCK_DATA/upload" "$OUT/linux/mock_requests.log" \
+    >"$OUT/linux/mock_clone.log" 2>&1
+MOCK_RC=$?
+if [ "$MOCK_RC" -eq 0 ] && [ -f "$MOCK_CLONE/.git/HEAD" ]; then
+    pass_case "mocked smart HTTP clone exit 0"
+else
+    fail_case "mocked smart HTTP clone (rc=$MOCK_RC)"
+    tail -15 "$OUT/linux/mock_clone.log" | sed 's/^/       /'
+fi
+
+MOCK_REQ="$OUT/linux/mock_requests.log"
+MOCK_MASTER=$(git --git-dir="$TD/packed_repo" rev-parse refs/heads/master)
+MOCK_REFDELTA=$(git --git-dir="$TD/packed_repo" rev-parse refs/heads/refdelta)
+MOCK_TAG=$(git --git-dir="$TD/packed_repo" rev-parse refs/tags/v1)
+if grep -q 'GET /r.git/info/refs?service=git-upload-pack HTTP/1.1' "$MOCK_REQ" && \
+   grep -q 'POST /r.git/git-upload-pack HTTP/1.1' "$MOCK_REQ" && \
+   grep -q 'Content-Type: application/x-git-upload-pack-request' "$MOCK_REQ" && \
+   grep -q 'Accept: application/x-git-upload-pack-result' "$MOCK_REQ" && \
+   grep -q "want $MOCK_MASTER" "$MOCK_REQ" && \
+   grep -q "want $MOCK_REFDELTA" "$MOCK_REQ" && \
+   grep -q "want $MOCK_TAG" "$MOCK_REQ" && \
+   grep -q '0009done' "$MOCK_REQ"; then
+    pass_case "request bytes: info/refs GET, upload-pack POST want/done"
+else
+    fail_case "request bytes/content types are wrong"
+    sed 's/^/       /' "$MOCK_REQ" | head -30
+fi
+
+MOCK_IDX=$(find "$MOCK_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' | head -1)
+if [ -n "$MOCK_IDX" ] && git verify-pack -v "$MOCK_IDX" >"$OUT/linux/mock_verify.log" 2>&1; then
+    pass_case "git verify-pack accepts streamed+synthesized idx"
+else
+    fail_case "git verify-pack rejected mocked clone idx"
+    tail -10 "$OUT/linux/mock_verify.log" 2>/dev/null | sed 's/^/       /'
+fi
+
+if cmp -s "$TD/packed_repo/HEAD" "$MOCK_CLONE/.git/HEAD"; then
+    pass_case "mocked clone HEAD matches source"
+else
+    fail_case "mocked clone HEAD differs"
+fi
+git --git-dir="$TD/packed_repo" for-each-ref --format='%(objectname) %(refname)' >"$OUT/linux/mock_refs.want"
+git --git-dir="$MOCK_CLONE/.git" for-each-ref --format='%(objectname) %(refname)' >"$OUT/linux/mock_refs.out"
+if cmp -s "$OUT/linux/mock_refs.want" "$OUT/linux/mock_refs.out"; then
+    pass_case "mocked clone refs match source"
+else
+    fail_case "mocked clone refs differ"
+    diff "$OUT/linux/mock_refs.want" "$OUT/linux/mock_refs.out" | sed 's/^/       /' | head -20
+fi
+check_worktree mock_http "$MOCK_CLONE" "$TD/packed_repo" "$TD/goldens/packed.lstree"
+
+echo "== end-to-end smart HTTP (git http-backend) =="
+E2E_PID=""
+cleanup_e2e() {
+    if [ -n "${E2E_PID:-}" ]; then
+        kill "$E2E_PID" 2>/dev/null
+        wait "$E2E_PID" 2>/dev/null
+        E2E_PID=""
+    fi
+}
+if [ -x "$(git --exec-path)/git-http-backend" ]; then
+    trap cleanup_e2e EXIT
+    E2E="$OUT/e2e"
+    mkdir -p "$E2E/www"
+    cp -R "$TD/packed_repo" "$E2E/www/r.git"
+    rm -f "$E2E/port"
+    python3 "$APP_DIR/tests/git_http_server.py" "$E2E/www" "$E2E/port" \
+        >"$E2E/server.log" 2>&1 &
+    E2E_PID=$!
+    E2E_WAIT=0
+    while [ ! -s "$E2E/port" ] && [ "$E2E_WAIT" -lt 100 ]; do
+        sleep 0.1
+        E2E_WAIT=$((E2E_WAIT + 1))
+    done
+    E2E_PORT=$(cat "$E2E/port" 2>/dev/null)
+    if [ -z "$E2E_PORT" ]; then
+        fail_case "start git http-backend CGI server"
+        tail -10 "$E2E/server.log" 2>/dev/null | sed 's/^/       /'
+    else
+        pass_case "started git http-backend CGI server on 127.0.0.1:$E2E_PORT"
+        E2E_FILE="$E2E/file_golden"
+        E2E_HTTP="$E2E/http_clone"
+        rm -rf "$E2E_FILE" "$E2E_HTTP"
+        "$PROG" clone "file://$TD/packed_repo" "$E2E_FILE" >"$E2E/file.log" 2>&1
+        E2E_FILE_RC=$?
+        "$PROG" clone "http://127.0.0.1:$E2E_PORT/r.git" "$E2E_HTTP" >"$E2E/http.log" 2>&1
+        E2E_HTTP_RC=$?
+        if [ "$E2E_FILE_RC" -eq 0 ] && [ "$E2E_HTTP_RC" -eq 0 ] && [ -f "$E2E_HTTP/.git/HEAD" ]; then
+            pass_case "clone http://127.0.0.1:<port>/r.git exit 0"
+        else
+            fail_case "end-to-end HTTP clone (file rc=$E2E_FILE_RC http rc=$E2E_HTTP_RC)"
+            tail -15 "$E2E/http.log" | sed 's/^/       /'
+        fi
+        if [ "$E2E_FILE_RC" -eq 0 ] && [ "$E2E_HTTP_RC" -eq 0 ] && \
+           diff -r --exclude=.git "$E2E_FILE" "$E2E_HTTP" >"$E2E/worktree.diff" 2>&1; then
+            pass_case "HTTP worktree identical to file:// clone"
+        else
+            fail_case "HTTP worktree differs from file:// clone"
+            head -20 "$E2E/worktree.diff" 2>/dev/null | sed 's/^/       /'
+        fi
+        if [ "$E2E_HTTP_RC" -eq 0 ] && cmp -s "$E2E_FILE/.git/HEAD" "$E2E_HTTP/.git/HEAD"; then
+            pass_case "HTTP HEAD matches file:// clone"
+        else
+            fail_case "HTTP HEAD differs from file:// clone"
+        fi
+        if [ "$E2E_HTTP_RC" -eq 0 ] && diff -r "$E2E_FILE/.git/refs" "$E2E_HTTP/.git/refs" >"$E2E/refs.diff" 2>&1; then
+            pass_case "HTTP refs match file:// clone"
+        else
+            fail_case "HTTP refs differ from file:// clone"
+            head -20 "$E2E/refs.diff" 2>/dev/null | sed 's/^/       /'
+        fi
+        E2E_IDX=$(find "$E2E_HTTP/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
+        if [ -n "$E2E_IDX" ] && git verify-pack -v "$E2E_IDX" >"$E2E/verify.log" 2>&1; then
+            pass_case "git verify-pack accepts e2e idx"
+        else
+            fail_case "git verify-pack rejected e2e idx"
+            tail -10 "$E2E/verify.log" 2>/dev/null | sed 's/^/       /'
+        fi
+
+        E2E_PACED="$E2E/http_paced"
+        rm -rf "$E2E_PACED"
+        PACE_T0=$(date +%s)
+        "$PROG" clone "http://127.0.0.1:$E2E_PORT/r.git" "$E2E_PACED" --max-down 1 >"$E2E/paced.log" 2>&1
+        E2E_PACED_RC=$?
+        PACE_T1=$(date +%s)
+        PACE_ELAPSED=$((PACE_T1 - PACE_T0))
+        if [ "$E2E_PACED_RC" -eq 0 ] && [ "$PACE_ELAPSED" -ge 2 ] && [ -f "$E2E_PACED/.git/HEAD" ]; then
+            pass_case "--max-down 1 pacing floor (${PACE_ELAPSED}s >= 2s)"
+        else
+            fail_case "--max-down 1 pacing floor (rc=$E2E_PACED_RC elapsed=${PACE_ELAPSED}s)"
+            tail -10 "$E2E/paced.log" | sed 's/^/       /'
+        fi
+    fi
+    cleanup_e2e
+    trap - EXIT
+else
+    echo "SKIP - end-to-end smart HTTP: git http-backend not installed; the mocked-transport case above is not vacuous"
+fi
+
 echo "== CLI contract =="
 "$PROG" -h >"$OUT/linux/help.out" 2>"$OUT/linux/help.err"
 HELP_RC=$?
@@ -150,13 +346,13 @@ else
     fail_case "bad args (checkout without ref) exit 1 (got $NOCHECKOUT_RC)"
 fi
 
-rm -rf "$OUT/linux/http_clone"
-"$PROG" clone http://example.invalid/repo.git "$OUT/linux/http_clone" >"$OUT/linux/http.out" 2>&1
+rm -rf "$OUT/linux/http_refused"
+"$PROG" clone http://127.0.0.1:1/repo.git "$OUT/linux/http_refused" >"$OUT/linux/http_refused.out" 2>&1
 HTTP_RC=$?
-if [ "$HTTP_RC" -eq 2 ] && [ ! -e "$OUT/linux/http_clone" ]; then
-    pass_case "http:// transport is a clear rc2 error (Task 8)"
+if [ "$HTTP_RC" -eq 2 ] && [ ! -e "$OUT/linux/http_refused" ]; then
+    pass_case "http:// connection failure is rc2 without side effects"
 else
-    fail_case "http:// transport rc2 without side effects (got $HTTP_RC)"
+    fail_case "http:// connection failure rc2 without side effects (got $HTTP_RC)"
 fi
 
 echo "== clone packed_repo =="
@@ -597,6 +793,7 @@ else
 fi
 tail -3 "$OUT/imports.log" | sed 's/^/       /'
 
+mkdir -p "$WINEPREFIX"
 cp -R "$TD/packed_repo" "$OUT/wine/packed_repo"
 rm -rf "$OUT/wine/clone_win"
 ( cd "$OUT/wine" && timeout 180 wine "$EXE" clone packed_repo clone_win ) \
@@ -618,6 +815,71 @@ else
     fail_case "Wine log golden (rc=$WIN_LOG_RC; STOP: see $OUT/wine_log.err)"
     diff "$OUT/linux/packed_log.want" "$OUT/wine_log.out" | sed 's/^/       /' | head -20
     tail -10 "$OUT/wine_log.err" | sed 's/^/       /'
+fi
+
+echo "== Windows: mocked smart HTTP under Wine =="
+mkdir -p "$OUT/mock_emit"
+timeout 300 "$ZIG" -osw -o "$OUT/mock_emit" "$APP_DIR/tests/mock_http.zig" >"$OUT/mock_emit.log" 2>&1
+MOCK_EMIT_RC=$?
+if [ "$MOCK_EMIT_RC" -ne 0 ]; then
+    fail_case "mock_http bare -osw emit (rc=$MOCK_EMIT_RC; STOP)"
+    tail -20 "$OUT/mock_emit.log" | sed 's/^/       /'
+    finish
+fi
+pass_case "mock_http bare -osw emit"
+
+if [ -f "$OUT/mock_emit/build_target.sh" ] && \
+   grep -q -- '-DZIG_NO_CRT' "$OUT/mock_emit/build_target.sh" && \
+   grep -q -- '-nostdlib' "$OUT/mock_emit/build_target.sh" && \
+   grep -q -- '-lkernel32' "$OUT/mock_emit/build_target.sh"; then
+    pass_case "mock_http emitted recipe is 9x no-CRT"
+else
+    fail_case "mock_http emitted build_target.sh is not the 9x no-CRT recipe (STOP)"
+    finish
+fi
+
+MOCK_EXE="$OUT/mock_http.exe"
+if sh "$OUT/mock_emit/build_target.sh" mingw "$MOCK_EXE" >"$OUT/mock_win_build.log" 2>&1 && [ -f "$MOCK_EXE" ]; then
+    pass_case "MinGW no-CRT build produced mock_http.exe"
+else
+    fail_case "MinGW no-CRT mock_http build failed (STOP: no CRT/nt fallback)"
+    tail -20 "$OUT/mock_win_build.log" | sed 's/^/       /'
+    finish
+fi
+if bash "$CHECK" "$MOCK_EXE" 9x >"$OUT/mock_imports.log" 2>&1; then
+    pass_case "mock_http check_win9x_imports.sh 9x PASS"
+else
+    fail_case "mock_http import gate FAILED (STOP; see $OUT/mock_imports.log)"
+    tail -20 "$OUT/mock_imports.log" | sed 's/^/       /'
+    finish
+fi
+
+cp "$MOCK_DATA/info_refs" "$OUT/wine/info_refs"
+cp "$MOCK_DATA/upload" "$OUT/wine/upload"
+rm -rf "$OUT/wine/clone_mock_win"
+( cd "$OUT/wine" && timeout 180 wine "$MOCK_EXE" "http://mock.invalid/r.git" clone_mock_win 0 info_refs upload mock_requests_win.log ) \
+    >"$OUT/wine_mock.log" 2>&1
+WIN_MOCK_RC=$?
+if [ "$WIN_MOCK_RC" -eq 0 ] && [ -f "$OUT/wine/clone_mock_win/.git/HEAD" ]; then
+    pass_case "Wine mocked-transport clone exit 0"
+else
+    fail_case "Wine mocked-transport clone (got $WIN_MOCK_RC; STOP: see $OUT/wine_mock.log)"
+    tail -15 "$OUT/wine_mock.log" | sed 's/^/       /'
+    finish
+fi
+WIN_MOCK_IDX=$(find "$OUT/wine/clone_mock_win/.git/objects/pack" -maxdepth 1 -name '*.idx' | head -1)
+if [ -n "$WIN_MOCK_IDX" ] && git verify-pack -v "$WIN_MOCK_IDX" >"$OUT/wine_mock_verify.log" 2>&1; then
+    pass_case "Wine mocked clone idx verifies"
+else
+    fail_case "Wine mocked clone idx failed verify-pack"
+    tail -10 "$OUT/wine_mock_verify.log" 2>/dev/null | sed 's/^/       /'
+    finish
+fi
+if cmp -s "$TD/packed_repo/HEAD" "$OUT/wine/clone_mock_win/.git/HEAD"; then
+    pass_case "Wine mocked clone HEAD matches source"
+else
+    fail_case "Wine mocked clone HEAD differs (STOP)"
+    finish
 fi
 
 finish

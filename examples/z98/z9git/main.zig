@@ -6,10 +6,10 @@
 //   z9git checkout <ref>
 //   z9git -h | --help
 //
-// Task 7 covers local sources only: a bare git dir path, a worktree path (the
-// <path>/.git inside it is used), and file://<path>.  http:// and https:// are
-// Task 8's smart-HTTP transport; this build reports them as a transport error
-// (rc2) before touching the destination.
+// Local sources: a bare git dir path, a worktree path (the <path>/.git inside
+// it is used), and file://<path>.  http:// and https:// use the smart-HTTP
+// transport in httpgit.zig (clone only).  --max-down is KB/s and is passed to
+// the streaming clone as bytes/s.
 //
 // Exit codes: 0 ok, 1 usage, 2 transport, 3 protocol, 4 object-store, 5 io.
 //
@@ -19,6 +19,7 @@ const arena_mod = @import("std_arena.zig");
 const os = @import("std_os.zig");
 const cli = @import("cli.zig");
 const repo = @import("repo.zig");
+const httpgit = @import("httpgit.zig");
 
 const ARENA_SIZE: usize = 16 * 1024 * 1024;
 
@@ -43,6 +44,21 @@ fn containsScheme(s: []const u8) bool {
 
 fn runClone(arena: *arena_mod.Arena, src: []const u8, dest: []const u8) i32 {
     repo.cloneLocal(arena, src, dest) catch |e| {
+        writeMsg(repo.errorMessage(e));
+        return repo.exitCode(e);
+    };
+    return 0;
+}
+
+// --max-down is KB/s (Ruling 8); the smart-HTTP sink takes bytes/s.
+fn kbpsToBps(kbps: u32) u32 {
+    const v: u64 = @intCast(u64, kbps) * 1024;
+    if (v > 4294967295) return 4294967295;
+    return @intCast(u32, v);
+}
+
+fn runHttpClone(arena: *arena_mod.Arena, url: []const u8, dest: []const u8, max_down_kbps: u32) i32 {
+    httpgit.httpClone(arena, url, dest, kbpsToBps(max_down_kbps)) catch |e| {
         writeMsg(repo.errorMessage(e));
         return repo.exitCode(e);
     };
@@ -91,19 +107,25 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
     if (args.cmd == cli.Command.clone) {
         var src = args.url;
+        var remote = false;
         if (cli.startsWith(src, "file://")) {
             src = src[7..];
         } else if (cli.startsWith(src, "http://") or cli.startsWith(src, "https://")) {
-            fail(cli.EXIT_TRANSPORT, "z9git: http/https transport is not implemented yet (Task 8)\n");
+            remote = true;
         } else if (containsScheme(src)) {
             fail(cli.EXIT_TRANSPORT, "z9git: unsupported transport scheme\n");
         }
         var dest: []const u8 = args.dest;
         if (!args.has_dest) {
-            dest = cli.deriveDest(&arena, src);
+            dest = cli.deriveDest(&arena, if (remote) args.url else src);
             if (dest.len == 0) fail(cli.EXIT_IO, "z9git: out of memory\n");
         }
-        const rc = runClone(&arena, src, dest);
+        var rc: i32 = 0;
+        if (remote) {
+            rc = runHttpClone(&arena, args.url, dest, args.max_down_kbps);
+        } else {
+            rc = runClone(&arena, src, dest);
+        }
         os.exit(rc);
     } else if (args.cmd == cli.Command.log) {
         const ref_name: []const u8 = if (args.has_ref) args.reference else "";

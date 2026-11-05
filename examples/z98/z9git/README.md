@@ -1,13 +1,16 @@
 # z9git
 
-A small read-only Git client for Z98. It clones a local repository (bare git
-dir, worktree, or `file://` URL), walks commit history, and checks out a branch
-or commit into a working tree. Packs (v2) and loose objects are both supported;
-pack deltas (OFS_DELTA and REF_DELTA) are reconstructed by the Task 6 object
-store. Clone never shells out to git.
+A small read-only Git client for Z98. It clones from a local repository (bare
+git dir, worktree, or `file://` URL) or over smart HTTP (`http://`/`https://`),
+walks commit history, and checks out a branch or commit into a working tree.
+Packs (v2) and loose objects are both supported; pack deltas (OFS_DELTA and
+REF_DELTA) are reconstructed by the Task 6 object store. Clone never shells out
+to git.
 
-HTTP and HTTPS are the Task 8 smart-HTTP transport and are not in this build.
-They currently fail early with a transport error (exit 2).
+The smart-HTTP clone streams the upload-pack PACK body to disk, verifies its
+SHA-1 trailer, synthesizes the idx, installs the advertised refs/HEAD, and
+checks out HEAD. `--max-down` paces that download (KB/s); it has no effect on
+local transports.
 
 ## Building with zig1
 
@@ -46,15 +49,16 @@ cd work
 ```
 
 This app uses `std_os`, `std_file`, `std_arena`, `std_crypto`, `std_deflate`,
-and the z9git modules; there is no network code in this task. The 9x **no-CRT**
-build is the gated path: the emitted `build_mingw_nocrt.bat` uses `-DZIG_NO_CRT`
-+ `-nostdlib`, links `-lgcc -lkernel32 -lwinmm`, and imports no `msvcrt.dll`
-+(the import table remains KERNEL32-only).
-`CreateDirectoryA` is resolved through `LoadLibraryA`/`GetProcAddress` (both on
-the 9x import whitelist) so the closed import gate passes. The tier emits with
-bare `-osw`, builds with MinGW no-CRT, runs `check_win9x_imports.sh … 9x`, and
-smoke-tests `clone` + `log` under Wine. A no-CRT build or run failure is a hard
-failure; there is no CRT/`nt` fallback.
+`std_net`, `std_http`, `std_tls`, `std_x509`, and the z9git modules. The 9x
+**no-CRT** build is the gated path: the emitted `build_mingw_nocrt.bat` uses
+`-DZIG_NO_CRT` + `-nostdlib`, links `-lgcc -lkernel32 -lwinmm`, and imports no
+`msvcrt.dll` (the network code adds WSOCK32.DLL; the import table is
+KERNEL32.DLL + WSOCK32.DLL). `CreateDirectoryA` is resolved through
+`LoadLibraryA`/`GetProcAddress` (both on the 9x import whitelist) so the closed
+import gate passes. The tier emits with bare `-osw`, builds with MinGW no-CRT,
+runs `check_win9x_imports.sh … 9x`, smoke-tests `clone` + `log` under Wine, and
+repeats the build/import/Wine run for the scripted mocked-transport HTTP case.
+A no-CRT build or run failure is a hard failure; there is no CRT/`nt` fallback.
 
 ## Usage
 
@@ -65,16 +69,24 @@ z9git checkout <ref>
 z9git -h
 ```
 
-- `clone` copies `objects/pack/*.pack` and the matching `*.idx` verbatim, copies
-  loose objects verbatim (their SHA-1 filenames are preserved), copies `refs/`,
-  `HEAD`, and `packed-refs` when present, then checks out HEAD into the
-  destination. If a source pack has no idx, clone synthesizes one from the pack
-  itself (inflate extents, per-entry CRC32, materialized object ids, sorted
-  names/fanout/large offsets, pack + idx checksums); the reusable entry point is
-  `pack.idxSynthesize`. The destination defaults to the source basename with a
-  trailing `.git` removed.
-- `--max-down <KB/s>` is accepted by the clone grammar for Task 8. It has no
-  effect on local transports.
+- `clone` from a local source copies `objects/pack/*.pack` and the matching
+  `*.idx` verbatim, copies loose objects verbatim (their SHA-1 filenames are
+  preserved), copies `refs/`, `HEAD`, and `packed-refs` when present, then
+  checks out HEAD into the destination. If a source pack has no idx, clone
+  synthesizes one from the pack itself (inflate extents, per-entry CRC32,
+  materialized object ids, sorted names/fanout/large offsets, pack + idx
+  checksums); the reusable entry point is `pack.idxSynthesize`. The destination
+  defaults to the source basename with a trailing `.git` removed.
+- `clone http://…` / `clone https://…` performs smart HTTP v0 ref discovery
+  (`info/refs?service=git-upload-pack`), one `want <sha>` per advertised ref
+  plus `done`, and streams the PACK body to `.git/objects/pack/pack-<sha>.pack`
+  while hashing it. The 20-byte trailer is verified, the missing `.idx` is
+  synthesized with `pack.idxSynthesize`, the advertised refs and `HEAD` are
+  written, and HEAD is checked out. There is no sideband/multi_ack and no thin
+  pack support (a fresh clone is self-contained).
+- `--max-down <KB/s>` paces the HTTP pack download (the CLI multiplies by 1024;
+  the sink sleeps to hold the byte-rate). `0` (the default) is unlimited. It has
+  no effect on local transports.
 - `log [ref]` walks parents from the ref (default `HEAD`). The walk is
   depth-first, first parent first; a commit that is reachable twice is printed
   once.
@@ -90,6 +102,20 @@ z9git -h
 Run `log` and `checkout` from inside the clone (the repository is discovered
 from the current directory or a parent directory's `.git`).
 
+### HTTPS trust store
+
+`https://` uses `std_net` TCP plus `std_tls` with a `std_x509.TrustStore`.
+There is no `--ca` flag (the clone grammar is pinned). The store is looked up
+in this order:
+
+1. `ca_store.bin` in the current directory;
+2. `ca_store.bin` next to the executable (`argv[0]`'s directory);
+3. the repo tree path `examples/z98/demo/tls_demo/ca_store.bin`.
+
+A missing/corrupt store or any TLS handshake/certificate failure is a transport
+error (exit 2). The same PEM-to-store converter and asset are shared with
+`examples/z98/demo/tls_demo`.
+
 ## Transports
 
 | URL form | Status |
@@ -97,8 +123,8 @@ from the current directory or a parent directory's `.git`).
 | `<path>` (bare git dir) | supported |
 | `<path>` (worktree, uses `<path>/.git` dir or `gitdir:` file; linked worktrees use `commondir`) | supported |
 | `file://<path>` | supported (scheme stripped) |
-| `http://…` | Task 8 (smart HTTP); rc 2 here |
-| `https://…` | Task 8 (smart HTTP over TLS); rc 2 here |
+| `http://…` | supported (smart HTTP v0, clone only) |
+| `https://…` | supported (smart HTTP over TLS, clone only) |
 | other schemes (`git://`, ssh) | unsupported; rc 2 |
 
 ## Exit codes
@@ -107,7 +133,7 @@ from the current directory or a parent directory's `.git`).
 |---|---|
 | 0 | success |
 | 1 | usage error (bad command, missing operand, unknown flag) |
-| 2 | transport error (unsupported scheme; http/https not yet implemented) |
+| 2 | transport error (connection/DNS/TLS failure, non-200 response, unsupported scheme) |
 | 3 | protocol error (bad/unresolvable ref, missing pack idx, corrupt revision) |
 | 4 | object-store error (missing/corrupt repository objects) |
 | 5 | io error (file access or out of memory) |
@@ -155,9 +181,21 @@ checks:
   (small git-generated fixture);
 - `file://`, worktree, linked-worktree `gitdir:` file (with `commondir`), and a
   packed-refs-only source;
-- `-h` rc0, bad args rc1, HTTP rc2;
-- bare `-osw` emit, MinGW no-CRT build, `check_win9x_imports.sh … 9x` PASS, and
-  Wine `clone` + `log`.
+- pkt-line v0 unit cases (round-trip, empty/flush/delim/response-end, reserved
+  length, bad hex, truncation, 0xffff edge);
+- a mocked `std_http.HttpTransport` smart-HTTP clone (`tests/mock_http.zig`):
+  asserts the info/refs GET and upload-pack POST request bytes/content types,
+  streams the scripted NAK+PACK response to disk, verifies the synthesized idx
+  with `git verify-pack -v`, and checks refs/HEAD/worktree;
+- end-to-end `git http-backend` behind `tests/git_http_server.py`: clone over
+  `http://127.0.0.1:<port>/r.git`, worktree/HEAD/refs identical to a `file://`
+  clone, and a `--max-down 1` duration floor (skips loudly if `git
+  http-backend` is absent);
+- `-h` rc0, bad args rc1, refused HTTP connection rc2 without side effects;
+- bare `-osw` emit, MinGW no-CRT build, `check_win9x_imports.sh … 9x` PASS
+  (KERNEL32 + WSOCK32, no MSVCRT), Wine `clone` + `log`, and the same
+  no-CRT/import/Wine run for the mocked-transport HTTP case.
 
-Git 2.39 is used only for goldens and inspection; the clone itself does not run
-git. `tests/gen_repos.sh` is the dev-time fixture generator.
+Git 2.39 is used only for goldens, the scripted pack fixture, inspecting the
+result, and as the e2e smart-HTTP server; the clone itself does not run git.
+`tests/gen_repos.sh` is the dev-time fixture generator.

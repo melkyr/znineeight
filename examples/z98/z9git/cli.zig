@@ -85,7 +85,7 @@ pub fn usage() void {
     writeMsg("       z9git log [ref]\n");
     writeMsg("       z9git checkout <ref>\n");
     writeMsg("       z9git -h\n");
-    writeMsg("  local transports: <path> or file://<path>; http:// and https:// are Task 8\n");
+    writeMsg("  transports: <path> or file://<path>; http:// and https:// (smart HTTP)\n");
     writeMsg("exit codes: 0 ok, 1 usage, 2 transport, 3 protocol, 4 object-store, 5 io\n");
 }
 
