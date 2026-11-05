@@ -10,7 +10,12 @@ to git.
 The smart-HTTP clone streams the upload-pack PACK body to disk, verifies its
 SHA-1 trailer, synthesizes the idx, installs the advertised refs/HEAD, and
 checks out HEAD. `--max-down` paces that download (KB/s); it has no effect on
-local transports.
+local transports. The idx is synthesized by a **bounded-memory external-memory
+writer** (two-pass pack walk, temp `(id,offset,crc)` records, external merge
+sort, streamed idx output, per-entry hashing, and a bounded base cache), so a
+large pack does not require an O(pack) array. `--arena-mb` controls the app
+arena (default 32 MiB, minimum 16, no hard upper bound); it is dynamically
+allocated so the OS can page it.
 
 ## Building with zig1
 
@@ -63,9 +68,9 @@ A no-CRT build or run failure is a hard failure; there is no CRT/`nt` fallback.
 ## Usage
 
 ```sh
-z9git clone <url> [dir] [--max-down <KB/s>]
-z9git log [ref]
-z9git checkout <ref>
+z9git clone <url> [dir] [--max-down <KB/s>] [--arena-mb <N>]
+z9git log [ref] [--arena-mb <N>]
+z9git checkout <ref> [--arena-mb <N>]
 z9git -h
 ```
 
@@ -73,10 +78,12 @@ z9git -h
   `*.idx` verbatim, copies loose objects verbatim (their SHA-1 filenames are
   preserved), copies `refs/`, `HEAD`, and `packed-refs` when present, then
   checks out HEAD into the destination. If a source pack has no idx, clone
-  synthesizes one from the pack itself (inflate extents, per-entry CRC32,
-  materialized object ids, sorted names/fanout/large offsets, pack + idx
-  checksums); the reusable entry point is `pack.idxSynthesize`. The destination
-  defaults to the source basename with a trailing `.git` removed.
+  synthesizes one from the pack itself with the external-memory writer
+  (two-pass walk, inflate extents, per-entry CRC32 and object hashing, temp
+  `(id,offset,crc)` records, external merge sort, sorted names/fanout/large
+  offsets, pack + idx checksums); the reusable entry point is
+  `pack.idxSynthesize`. The destination defaults to the source basename with a
+  trailing `.git` removed.
 - `clone http://…` / `clone https://…` performs smart HTTP v0 ref discovery
   (`info/refs?service=git-upload-pack`), one `want <sha>` per advertised ref
   plus `done`, and streams the PACK body to `.git/objects/pack/pack-<sha>.pack`
@@ -87,6 +94,13 @@ z9git -h
 - `--max-down <KB/s>` paces the HTTP pack download (the CLI multiplies by 1024;
   the sink sleeps to hold the byte-rate). `0` (the default) is unlimited. It has
   no effect on local transports.
+- `--arena-mb <N>` sets the app arena: **default 32 MiB, minimum 16, no hard
+  upper bound**. It is allocated dynamically (`VirtualAlloc` on win32, anonymous
+  `mmap` on POSIX) and is pagefile-backed, so the OS may page it. The heavy
+  phases use a reset-per-entry scratch arena and spill the idx records/sort runs
+  to temp files beside the idx; the per-pack scratch is released after each idx.
+  A request that cannot be allocated fails with a clear out-of-memory error
+  (exit 5).
 - `log [ref]` walks parents from the ref (default `HEAD`). The walk is
   depth-first, first parent first; a commit that is reachable twice is printed
   once.
@@ -102,14 +116,46 @@ z9git -h
 Run `log` and `checkout` from inside the clone (the repository is discovered
 from the current directory or a parent directory's `.git`).
 
-### Memory and pacing limits (Task 8)
+### Memory, disk and pacing limits (Task 8b)
 
-The app arena is a **fixed 16 MiB** allocation. `pack.idxSynthesize` keeps the
-inflated payload of every pack entry (needed for delta reconstruction) and uses
-one reused CRC scratch buffer; a high-single-digit-MiB pack can still exhaust
-the arena and fail with rc 5 (out of memory). `--arena-mb` and the
-external-memory idx are Task 8b, not implemented here. The README and `-h`
-document this ceiling.
+`--arena-mb <N>` is the app arena: **default 32 MiB, minimum 16, no hard upper
+bound**. The allocation is dynamic (`VirtualAlloc` with
+`MEM_COMMIT|MEM_RESERVE` on win32, anonymous `mmap` on POSIX) and
+pagefile-backed, so the OS may page it instead of forcing it resident. A failed
+allocation is a clear `z9git: cannot allocate the requested arena` error
+(exit 5).
+
+The heavy phases are bounded:
+
+- ref discovery and destination setup use the main arena;
+- each pack's idx synthesis uses a dedicated scratch arena reset **per pack
+  entry** and a bounded byte-ring base cache (a fraction of the arena, capped at
+  16 MiB scratch / 8 MiB cache); the per-pack scratch is released before the
+  next pack;
+- idx records and sort runs are temp files beside the idx: the two-pass pack
+  walk writes fixed-size metadata, the delta pass appends `(id,offset,crc)`
+  records, an external merge sort orders them in fixed chunks, and the idx is
+  streamed (names, CRCs, offsets, large offsets, pack/idx trailers). No O(pack)
+  object array is retained;
+- checkout materializes the target tree with the object store; per-entry
+  inflate/decompress buffers come from the arena/scratch and are reset between
+  entries. The largest single object or delta base ceiling is therefore the
+  available 32-bit address space plus free pagefile/temp disk, not the
+  `--arena-mb` value; an object that cannot be reconstructed fails with a clear
+  out-of-memory/object-store error.
+
+Disk preflight runs before the committing work (idx temp files/checkout). It
+uses the pack size actually on disk (which is never less precise than the HTTP
+`Content-Length`) plus an object-count estimate for the idx, external-sort temp
+records and the materialized worktree, and checks free space on the destination
+filesystem (`statvfs` on POSIX, `GetDiskFreeSpaceA` via `GetProcAddress` on
+win32). Insufficient space fails with
+`z9git: not enough free disk space for the pack, idx, temp files and worktree`
+(exit 5) instead of leaving a half-written repository. If the OS free-space
+query is unavailable the check is skipped rather than fabricating a limit.
+Win9x FAT32 volumes are limited to 4 GiB (2 GiB practical file sizes) and
+Linux 2.0/ext2 to ~2 GiB; the POSIX `std_file` layer itself is 64-bit, so a
+larger filesystem is not an app limitation.
 
 `--max-down` is applied inside the response sink using the monotonic clock.
 `std_http.httpPostStreamOver` buffers up to 1 MiB before invoking the sink, so
@@ -188,6 +234,11 @@ checks:
 - loose-object byte-for-byte copy with SHA-1 names preserved;
 - local idx synthesis (delete both fixture `.idx` files, clone, then
   `git verify-pack -v` and a byte comparison against the fixture idx);
+- a 100k-object synthetic pack (`tests/gen_large_pack.py`, ~100 MiB of inflated
+  payload in a small compressible pack): clone at the default 32 MiB arena and
+  at the 16 MiB minimum, `git verify-pack -v`, `git fsck`, the worktree blob,
+  and the recorded peak RSS (kept below 96 MiB); `--arena-mb 64` accepted and
+  `--arena-mb 15`/missing-value usages rejected with rc1;
 - `log` goldens for both fixtures and for the synthesized-idx clone;
 - `checkout <branch>`: worktree update, tracked-but-absent removal, untracked
   preservation, and HEAD updates both ways;

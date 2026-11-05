@@ -36,9 +36,13 @@ pub const Args = struct {
     reference: []const u8,
     has_ref: bool,
     max_down_kbps: u32,
+    arena_mb: u32,
     help: bool,
     bad: bool,
 };
+
+pub const DEFAULT_ARENA_MB: u32 = 32;
+pub const MIN_ARENA_MB: u32 = 16;
 
 fn eq(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
@@ -80,13 +84,21 @@ fn parseU32(s: []const u8) ?u32 {
     return @intCast(u32, v);
 }
 
+fn parseArenaMb(s: []const u8) ?u32 {
+    const v = parseU32(s) orelse return null;
+    if (v < MIN_ARENA_MB) return null;
+    return v;
+}
+
 pub fn usage() void {
-    writeMsg("usage: z9git clone <url> [dir] [--max-down <KB/s>]\n");
-    writeMsg("       z9git log [ref]\n");
-    writeMsg("       z9git checkout <ref>\n");
+    writeMsg("usage: z9git clone <url> [dir] [--max-down <KB/s>] [--arena-mb <N>]\n");
+    writeMsg("       z9git log [ref] [--arena-mb <N>]\n");
+    writeMsg("       z9git checkout <ref> [--arena-mb <N>]\n");
     writeMsg("       z9git -h\n");
     writeMsg("  transports: <path> or file://<path>; http:// and https:// (smart HTTP)\n");
-    writeMsg("  arena: fixed 16 MiB (large packs may run out; --arena-mb is Task 8b)\n");
+    writeMsg("  arena: --arena-mb <N> default 32, minimum 16, no hard upper bound;\n");
+    writeMsg("         allocated dynamically so the OS can page, reset per phase, and\n");
+    writeMsg("         large objects/packs spill to disk (external idx/temp sort)\n");
     writeMsg("exit codes: 0 ok, 1 usage, 2 transport, 3 protocol, 4 object-store, 5 io\n");
 }
 
@@ -103,6 +115,7 @@ pub fn parse() Args {
         .reference = "",
         .has_ref = false,
         .max_down_kbps = 0,
+        .arena_mb = DEFAULT_ARENA_MB,
         .help = false,
         .bad = false,
     };
@@ -140,6 +153,19 @@ pub fn parse() Args {
                     a.bad = true;
                     return a;
                 }
+            } else if (eq(tok, "--arena-mb")) {
+                i += 1;
+                if (i >= n) {
+                    a.bad = true;
+                    return a;
+                }
+                if (parseArenaMb(os.argv(i))) |v| {
+                    a.arena_mb = v;
+                    continue;
+                } else {
+                    a.bad = true;
+                    return a;
+                }
             } else if (tok.len > 0 and tok[0] == '-') {
                 a.bad = true;
                 return a;
@@ -170,7 +196,20 @@ pub fn parse() Args {
                 a.help = true;
                 return a;
             }
-            if (tok.len > 0 and tok[0] == '-') {
+            if (eq(tok, "--arena-mb")) {
+                i += 1;
+                if (i >= n) {
+                    a.bad = true;
+                    return a;
+                }
+                if (parseArenaMb(os.argv(i))) |v| {
+                    a.arena_mb = v;
+                    continue;
+                } else {
+                    a.bad = true;
+                    return a;
+                }
+            } else if (tok.len > 0 and tok[0] == '-') {
                 a.bad = true;
                 return a;
             }
@@ -196,7 +235,20 @@ pub fn parse() Args {
                 a.help = true;
                 return a;
             }
-            if (tok.len > 0 and tok[0] == '-') {
+            if (eq(tok, "--arena-mb")) {
+                i += 1;
+                if (i >= n) {
+                    a.bad = true;
+                    return a;
+                }
+                if (parseArenaMb(os.argv(i))) |v| {
+                    a.arena_mb = v;
+                    continue;
+                } else {
+                    a.bad = true;
+                    return a;
+                }
+            } else if (tok.len > 0 and tok[0] == '-') {
                 a.bad = true;
                 return a;
             }

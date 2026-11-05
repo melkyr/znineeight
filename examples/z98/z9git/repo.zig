@@ -30,7 +30,7 @@ const pack_mod = @import("pack.zig");
 
 pub const ObjectId = objects.ObjectId;
 
-pub const GitError = error{ Usage, Transport, Protocol, ObjectStore, Io, OutOfMemory, UntrackedCollision, UnsupportedTransition };
+pub const GitError = error{ Usage, Transport, Protocol, ObjectStore, Io, OutOfMemory, UntrackedCollision, UnsupportedTransition, DiskFull };
 
 // win32 (kernel32, always present on Win9x) and POSIX directory creation and
 // empty-directory removal.  CreateDirectoryA/RemoveDirectoryA are resolved
@@ -39,10 +39,12 @@ pub const GitError = error{ Usage, Transport, Protocol, ObjectStore, Io, OutOfMe
 // whitelist.  POSIX calls the plain mkdir/rmdir wrappers.
 const CreateDirFn = extern "stdcall" fn(lpPathName: [*]const u8, lpSecurityAttributes: *void) i32;
 const RemoveDirFn = extern "stdcall" fn(lpPathName: [*]const u8) i32;
+const GetDiskFreeSpaceFn = extern "stdcall" fn(lpRootPathName: [*]const u8, lpSectorsPerCluster: *u32, lpBytesPerSector: *u32, lpNumberOfFreeClusters: *u32, lpTotalNumberOfClusters: *u32) i32;
 pub extern "stdcall" fn LoadLibraryA(name: [*]const u8) *void;
 pub extern "stdcall" fn GetProcAddress(mod: *void, name: [*]const u8) *void;
 pub extern "c" fn mkdir(path: [*]const u8, mode: i32) i32;
 pub extern "c" fn rmdir(path: [*]const u8) i32;
+pub extern "c" fn statvfs(path: [*]const u8, buf: *void) i32;
 
 const PATH_BUF: usize = 4096;
 const INDEX_ENTRY_BYTES: usize = 20;
@@ -375,6 +377,139 @@ fn copyTree(arena: *arena_mod.Arena, src_dir: []const u8, dst_dir: []const u8) G
     }
 }
 
+// --- disk preflight ---------------------------------------------------------
+//
+// The estimates are deliberately conservative heuristics: the pack is on disk
+// already, but the worktree, the synthesized idx and the external-sort temp
+// files need room too. A statvfs/GetDiskFreeSpace failure is treated as
+// "unknown" and skips the check rather than fabricating a limit. Win9x FAT32
+// volumes top out at 2-4 GiB and Linux 2.0/ext2 at ~2 GiB; the POSIX std_file
+// layer itself is 64-bit, so a larger filesystem is not an app limitation.
+
+const DISK_SLACK_BYTES: u64 = 16 * 1024 * 1024;
+const U64_MAX: u64 = 0xFFFFFFFFFFFFFFFF;
+
+fn leU32At(b: []const u8, off: usize) u32 {
+    var v: u32 = 0;
+    var i: usize = 0;
+    while (i < 4) : (i += 1) {
+        var mul: u32 = 1;
+        var k: usize = 0;
+        while (k < i) : (k += 1) mul = mul * 256;
+        v += @intCast(u32, b[off + i]) * mul;
+    }
+    return v;
+}
+
+fn leU64At(b: []const u8, off: usize) u64 {
+    var v: u64 = 0;
+    var mul: u64 = 1;
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        v += @intCast(u64, b[off + i]) * mul;
+        if (i < 7) mul = mul * 256;
+    }
+    return v;
+}
+
+var g_get_disk_free: GetDiskFreeSpaceFn = undefined;
+var g_disk_api_state: u8 = 0;
+
+fn resolveDiskApi() void {
+    if (g_disk_api_state != 0) return;
+    g_disk_api_state = 2;
+    if (!@isWindows()) return;
+    var libbuf: [16]u8 = undefined;
+    if (!cstr("kernel32.dll", libbuf[0..])) return;
+    const lib = LoadLibraryA(@ptrCast([*]const u8, &libbuf[0]));
+    if (isNull(lib)) return;
+    var fnbuf: [24]u8 = undefined;
+    if (!cstr("GetDiskFreeSpaceA", fnbuf[0..])) return;
+    const fnp = GetProcAddress(lib, @ptrCast([*]const u8, &fnbuf[0]));
+    if (isNull(fnp)) return;
+    g_get_disk_free = @ptrCast(GetDiskFreeSpaceFn, fnp);
+    g_disk_api_state = 1;
+}
+
+fn freeBytes(path: []const u8) ?u64 {
+    if (@isWindows()) {
+        resolveDiskApi();
+        if (g_disk_api_state != 1) return null;
+        var root: [8]u8 = undefined;
+        if (path.len >= 2 and path[1] == ':') {
+            root[0] = path[0];
+            root[1] = ':';
+            root[2] = '\\';
+            root[3] = 0;
+        } else {
+            root[0] = 'C';
+            root[1] = ':';
+            root[2] = '\\';
+            root[3] = 0;
+        }
+        var spc: u32 = 0;
+        var bps: u32 = 0;
+        var freec: u32 = 0;
+        var totalc: u32 = 0;
+        if (g_get_disk_free(@ptrCast([*]const u8, &root[0]), &spc, &bps, &freec, &totalc) == 0) {
+            return null;
+        }
+        if (spc == 0 or bps == 0) return null;
+        const per: u64 = @intCast(u64, spc) * @intCast(u64, bps);
+        if (per == 0) return null;
+        const fc: u64 = @intCast(u64, freec);
+        if (fc > U64_MAX / per) return U64_MAX;
+        return fc * per;
+    } else {
+        var cbuf: [PATH_BUF]u8 = undefined;
+        if (!cstr(path, cbuf[0..])) return null;
+        // i386 Linux struct statvfs: f_bsize @0, f_frsize @4, f_bavail @24.
+        var st: [256]u8 = undefined;
+        if (statvfs(@ptrCast([*]const u8, &cbuf[0]), @ptrCast(*void, &st[0])) != 0) return null;
+        const bsize: u64 = @intCast(u64, leU32At(st[0..], 0));
+        var frsize: u64 = @intCast(u64, leU32At(st[0..], 4));
+        if (frsize == 0) frsize = bsize;
+        if (frsize == 0) return null;
+        const avail: u64 = leU64At(st[0..], 24);
+        if (avail > U64_MAX / frsize) return U64_MAX;
+        return avail * frsize;
+    }
+}
+
+pub fn diskPreflight(path: []const u8, need_bytes: u64) GitError!void {
+    if (freeBytes(path)) |free| {
+        if (need_bytes > free) return error.DiskFull;
+    }
+}
+
+fn packDirBytes(arena: *arena_mod.Arena, pack_dir: []const u8) u64 {
+    if (!file_mod.exists(pack_dir)) return 0;
+    var d = file_mod.openDir(arena, pack_dir) catch return 0;
+    defer file_mod.closeDir(&d);
+    var total: u64 = 0;
+    while (true) {
+        const maybe = file_mod.readDir(arena, &d) catch break;
+        const e = maybe orelse break;
+        if (e.is_dir or !endsWith(e.name, ".pack")) continue;
+        const p = join3(arena, pack_dir, "/", e.name) catch continue;
+        var f = file_mod.open(arena, p, file_mod.Mode.Read) catch continue;
+        const sz = file_mod.size(&f) catch {
+            file_mod.close(&f);
+            continue;
+        };
+        file_mod.close(&f);
+        if (sz > 0) {
+            const s: u64 = @intCast(u64, sz);
+            if (total > U64_MAX - s) {
+                total = U64_MAX;
+            } else {
+                total += s;
+            }
+        }
+    }
+    return total;
+}
+
 fn copyPacks(arena: *arena_mod.Arena, src_pack_dir: []const u8, dst_pack_dir: []const u8) GitError!void {
     if (!file_mod.exists(src_pack_dir)) return;
     var d = file_mod.openDir(arena, src_pack_dir) catch return error.Io;
@@ -389,11 +524,26 @@ fn copyPacks(arena: *arena_mod.Arena, src_pack_dir: []const u8, dst_pack_dir: []
         const si = try join3(arena, src_pack_dir, "/", idx_name);
         const dp = try join3(arena, dst_pack_dir, "/", e.name);
         const di = try join3(arena, dst_pack_dir, "/", idx_name);
+        var sf = file_mod.open(arena, sp, file_mod.Mode.Read) catch return error.Io;
+        const ssz = file_mod.size(&sf) catch {
+            file_mod.close(&sf);
+            return error.Io;
+        };
+        file_mod.close(&sf);
+        if (ssz > 0) {
+            try diskPreflight(dst_pack_dir, @intCast(u64, ssz) * 3 + DISK_SLACK_BYTES);
+        }
         try copyFile(arena, sp, dp);
         if (file_mod.exists(si)) {
             try copyFile(arena, si, di);
         } else {
-            pack_mod.idxSynthesize(arena, dp, di) catch return error.ObjectStore;
+            pack_mod.idxSynthesize(arena, dp, di) catch |ie| {
+                if (ie == error.OutOfMemory) return error.OutOfMemory;
+                if (ie == error.OpenFailed) return error.Io;
+                if (ie == error.ReadFailed) return error.Io;
+                if (ie == error.WriteFailed) return error.Io;
+                return error.ObjectStore;
+            };
         }
     }
 }
@@ -904,6 +1054,11 @@ pub fn cloneLocal(arena: *arena_mod.Arena, src_path: []const u8, dest_dir: []con
     try copyLoose(arena, src_common, dest_git);
     try copyMeta(arena, src_git, src_common, dest_git);
 
+    const pack_bytes = packDirBytes(arena, dst_pack);
+    if (pack_bytes > 0) {
+        try diskPreflight(dest_git, pack_bytes * 2 + DISK_SLACK_BYTES);
+    }
+
     var store: objects.Store = undefined;
     objects.storeOpen(arena, dest_git, &store) catch return error.ObjectStore;
     defer objects.storeClose(&store);
@@ -990,6 +1145,13 @@ pub fn installRefs(arena: *arena_mod.Arena, dest_dir: []const u8, refs: []const 
 
 pub fn checkoutHead(arena: *arena_mod.Arena, dest_dir: []const u8) GitError!void {
     const dest_git = try join2(arena, dest_dir, "/.git");
+    const pack_dir = try join2(arena, dest_git, "/objects/pack");
+    const pack_bytes = packDirBytes(arena, pack_dir);
+    if (pack_bytes > 0) {
+        // The packed form is already on disk; reserve another copy for the
+        // materialized worktree plus the checkout/object scratch.
+        try diskPreflight(dest_git, pack_bytes * 2 + DISK_SLACK_BYTES);
+    }
     var store: objects.Store = undefined;
     objects.storeOpen(arena, dest_git, &store) catch return error.ObjectStore;
     defer objects.storeClose(&store);
@@ -1308,6 +1470,7 @@ pub fn errorMessage(e: GitError) []const u8 {
     if (e == error.UntrackedCollision) return "z9git: checkout would overwrite an untracked path\n";
     if (e == error.UnsupportedTransition) return "z9git: checkout cannot replace a tracked directory with a file\n";
     if (e == error.ObjectStore) return "z9git: object-store error\n";
+    if (e == error.DiskFull) return "z9git: not enough free disk space for the pack, idx, temp files and worktree\n";
     if (e == error.Io) return "z9git: io error\n";
     return "z9git: out of memory\n";
 }

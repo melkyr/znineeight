@@ -21,9 +21,50 @@ const cli = @import("cli.zig");
 const repo = @import("repo.zig");
 const httpgit = @import("httpgit.zig");
 
-const ARENA_SIZE: usize = 16 * 1024 * 1024;
+// Dynamic arena backing. The default is 32 MiB; --arena-mb may raise it with no
+// hard upper bound (the OS can page it). POSIX uses anonymous mmap and Win32
+// uses VirtualAlloc, both of which are pagefile-backed, so a large arena does
+// not need to be resident.
+extern "c" fn mmap(addr: *void, length: usize, prot: i32, flags: i32, fd: i32, offset: i32) *void;
+extern "c" fn munmap(addr: *void, length: usize) i32;
+extern "stdcall" fn VirtualAlloc(addr: *void, size: usize, alloc_type: u32, protect: u32) *void;
+extern "stdcall" fn VirtualFree(addr: *void, size: usize, free_type: u32) i32;
 
-var g_arena_buf: [ARENA_SIZE]u8 = undefined;
+const PAGES_READ_WRITE: i32 = 3;
+const MAP_PRIVATE_ANON: i32 = 2 + 0x20;
+const MEM_COMMIT_RESERVE: u32 = 0x1000 + 0x2000;
+const PAGE_READWRITE: u32 = 0x04;
+
+fn nullVoid() *void {
+    return @ptrCast(*void, @intToPtr(*void, 0));
+}
+
+fn allocArenaBytes(mb: u32) ?[]u8 {
+    if (mb < cli.MIN_ARENA_MB) return null;
+    const bytes64: u64 = @intCast(u64, mb) * @intCast(u64, 1024 * 1024);
+    // A 32-bit address space cannot hold a 4 GiB arena; any larger request is
+    // an allocation failure, not a hard policy cap.
+    if (bytes64 > @intCast(u64, 0xFFFFFFFF)) return null;
+    const n: usize = @intCast(usize, bytes64);
+    if (@isWindows()) {
+        const p = VirtualAlloc(nullVoid(), n, MEM_COMMIT_RESERVE, PAGE_READWRITE);
+        if (@ptrToInt(p) == 0) return null;
+        return @ptrCast([*]u8, p)[0..n];
+    } else {
+        const p = mmap(nullVoid(), n, PAGES_READ_WRITE, MAP_PRIVATE_ANON, -1, 0);
+        if (@ptrToInt(p) >= 0xFFFFF000) return null;
+        return @ptrCast([*]u8, p)[0..n];
+    }
+}
+
+fn freeArenaBytes(buf: []u8) void {
+    if (buf.len == 0) return;
+    if (@isWindows()) {
+        _ = VirtualFree(@ptrCast(*void, buf.ptr), 0, 0x8000);
+    } else {
+        _ = munmap(@ptrCast(*void, buf.ptr), buf.len);
+    }
+}
 
 fn writeMsg(s: []const u8) void {
     if (s.len != 0) @stdoutWrite(s.ptr, s.len);
@@ -103,7 +144,13 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         os.exit(cli.EXIT_USAGE);
     }
 
-    var arena = arena_mod.init(g_arena_buf[0..]);
+    var arena_buf: []u8 = undefined;
+    if (allocArenaBytes(args.arena_mb)) |b| {
+        arena_buf = b;
+    } else {
+        fail(cli.EXIT_IO, "z9git: cannot allocate the requested arena (--arena-mb)\n");
+    }
+    var arena = arena_mod.init(arena_buf);
 
     if (args.cmd == cli.Command.clone) {
         var src = args.url;

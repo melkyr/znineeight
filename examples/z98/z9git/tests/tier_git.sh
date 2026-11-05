@@ -572,10 +572,11 @@ if [ "$HELP_RC" -eq 0 ] && grep -q 'usage: z9git' "$OUT/linux/help.out"; then
 else
     fail_case "-h exit 0 and prints usage (rc=$HELP_RC)"
 fi
-if grep -q 'arena: fixed 16 MiB' "$OUT/linux/help.out"; then
-    pass_case "-h documents the fixed 16 MiB arena ceiling"
+if grep -q 'arena: --arena-mb <N> default 32' "$OUT/linux/help.out" && \
+   grep -q 'minimum 16' "$OUT/linux/help.out"; then
+    pass_case "-h documents --arena-mb (default 32, minimum 16)"
 else
-    fail_case "-h missing the fixed arena ceiling note"
+    fail_case "-h missing the --arena-mb policy"
 fi
 
 "$PROG" >"$OUT/linux/noargs.out" 2>&1
@@ -609,6 +610,30 @@ if [ "$HTTP_RC" -eq 2 ] && [ ! -e "$OUT/linux/http_refused" ]; then
     pass_case "http:// connection failure is rc2 without side effects"
 else
     fail_case "http:// connection failure rc2 without side effects (got $HTTP_RC)"
+fi
+
+echo "== arena flag contract =="
+"$PROG" clone "$TD/packed_repo" "$OUT/linux/arena64" --arena-mb 64 >"$OUT/linux/arena64.log" 2>&1
+ARENA64_RC=$?
+if [ "$ARENA64_RC" -eq 0 ] && [ -f "$OUT/linux/arena64/.git/HEAD" ]; then
+    pass_case "--arena-mb 64 (no hard upper bound) clone exit 0"
+else
+    fail_case "--arena-mb 64 clone (rc=$ARENA64_RC)"
+    tail -10 "$OUT/linux/arena64.log" | sed 's/^/       /'
+fi
+"$PROG" clone "$TD/packed_repo" "$OUT/linux/arena15" --arena-mb 15 >"$OUT/linux/arena15.log" 2>&1
+ARENA15_RC=$?
+if [ "$ARENA15_RC" -eq 1 ] && grep -q 'usage: z9git' "$OUT/linux/arena15.log"; then
+    pass_case "--arena-mb 15 (below minimum) is a usage error rc1"
+else
+    fail_case "--arena-mb 15 below minimum (rc=$ARENA15_RC)"
+fi
+"$PROG" clone "$TD/packed_repo" "$OUT/linux/arenamissing" --arena-mb >"$OUT/linux/arenamissing.log" 2>&1
+ARENAMISS_RC=$?
+if [ "$ARENAMISS_RC" -eq 1 ]; then
+    pass_case "--arena-mb without a value is rc1"
+else
+    fail_case "--arena-mb without a value (rc=$ARENAMISS_RC)"
 fi
 
 echo "== clone packed_repo =="
@@ -831,6 +856,99 @@ if [ "$SYNTH_OK" -eq 1 ]; then
     else
         fail_case "log golden from synthesized-idx clone"
     fi
+fi
+
+echo "== large synthetic external-memory idx (100k objects) =="
+if [ "$HAVE_PYTHON" -eq 1 ]; then
+    LARGE="$OUT/large_synth"
+    rm -rf "$LARGE"
+    if ! python3 "$APP_DIR/tests/gen_large_pack.py" "$LARGE" 100000 >"$OUT/large_gen.log" 2>&1; then
+        fail_case "generate 100k-object synthetic pack"
+        tail -10 "$OUT/large_gen.log" | sed 's/^/       /'
+    else
+        LARGE_BYTES=$(wc -c <"$LARGE/objects/pack/pack-large.pack" | tr -d ' ')
+        pass_case "prepared 100000-object synthetic pack ($LARGE_BYTES bytes)"
+        TIME_BIN=""
+        if [ -x /usr/bin/time ]; then TIME_BIN="/usr/bin/time"; fi
+
+        LARGE_CLONE="$OUT/linux/clone_large"
+        rm -rf "$LARGE_CLONE"
+        if [ -n "$TIME_BIN" ]; then
+            "$TIME_BIN" -v "$PROG" clone "$LARGE" "$LARGE_CLONE" \
+                >"$OUT/linux/large_clone.log" 2>"$OUT/linux/large_clone.time"
+        else
+            "$PROG" clone "$LARGE" "$LARGE_CLONE" \
+                >"$OUT/linux/large_clone.log" 2>"$OUT/linux/large_clone.time"
+        fi
+        LARGE_RC=$?
+        if [ "$LARGE_RC" -eq 0 ] && [ -f "$LARGE_CLONE/.git/HEAD" ]; then
+            pass_case "clone 100k-object pack within the default 32 MiB arena (rc0)"
+        else
+            fail_case "clone 100k-object pack at default arena (rc=$LARGE_RC)"
+            tail -15 "$OUT/linux/large_clone.log" | sed 's/^/       /'
+        fi
+        LARGE_IDX=$(find "$LARGE_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
+        if [ -n "$LARGE_IDX" ] && git verify-pack -v "$LARGE_IDX" >"$OUT/linux/large_verify.log" 2>&1; then
+            pass_case "git verify-pack accepts the 100k-object synthesized idx"
+        else
+            fail_case "git verify-pack rejected the 100k-object idx"
+            tail -10 "$OUT/linux/large_verify.log" 2>/dev/null | sed 's/^/       /'
+        fi
+        if [ "$LARGE_RC" -eq 0 ] && git --git-dir="$LARGE_CLONE/.git" fsck --full --no-dangling >"$OUT/linux/large_fsck.log" 2>&1; then
+            pass_case "git fsck accepts the 100k-object clone"
+        else
+            fail_case "git fsck rejected the 100k-object clone"
+            tail -10 "$OUT/linux/large_fsck.log" 2>/dev/null | sed 's/^/       /'
+        fi
+        if printf 'hello from the z9git large synthetic pack\n' | cmp -s - "$LARGE_CLONE/hello.txt"; then
+            pass_case "100k-object clone worktree matches the source blob"
+        else
+            fail_case "100k-object clone worktree differs"
+        fi
+        if [ -n "$TIME_BIN" ]; then
+            LARGE_RSS=$(awk '/Maximum resident set size/ {print $6}' "$OUT/linux/large_clone.time" 2>/dev/null)
+            LARGE_ELAPSED=$(awk '/Elapsed \(wall clock\)/ {print $NF}' "$OUT/linux/large_clone.time" 2>/dev/null)
+            if [ -n "$LARGE_RSS" ]; then
+                pass_case "100k-object clone peak RSS ${LARGE_RSS} kB (elapsed ${LARGE_ELAPSED:-?})"
+                if [ "$LARGE_RSS" -lt 98304 ]; then
+                    pass_case "100k-object clone peak RSS is below 96 MiB"
+                else
+                    fail_case "100k-object clone peak RSS ${LARGE_RSS} kB exceeds 96 MiB"
+                fi
+            else
+                fail_case "could not read peak RSS from $OUT/linux/large_clone.time"
+            fi
+        else
+            echo "SKIP - 100k-object peak RSS: /usr/bin/time not available"
+        fi
+
+        LARGE_CLONE16="$OUT/linux/clone_large_16"
+        rm -rf "$LARGE_CLONE16"
+        "$PROG" clone "$LARGE" "$LARGE_CLONE16" --arena-mb 16 \
+            >"$OUT/linux/large_clone16.log" 2>"$OUT/linux/large_clone16.time"
+        LARGE16_RC=$?
+        if [ "$LARGE16_RC" -eq 0 ] && [ -f "$LARGE_CLONE16/.git/HEAD" ]; then
+            pass_case "clone 100k-object pack with --arena-mb 16 (minimum)"
+        else
+            fail_case "clone 100k-object pack with --arena-mb 16 (rc=$LARGE16_RC)"
+            tail -15 "$OUT/linux/large_clone16.log" | sed 's/^/       /'
+        fi
+        LARGE16_IDX=$(find "$LARGE_CLONE16/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
+        if [ -n "$LARGE16_IDX" ] && git verify-pack -v "$LARGE16_IDX" >"$OUT/linux/large16_verify.log" 2>&1; then
+            pass_case "git verify-pack accepts the --arena-mb 16 synthesized idx"
+        else
+            fail_case "git verify-pack rejected the --arena-mb 16 idx"
+            tail -10 "$OUT/linux/large16_verify.log" 2>/dev/null | sed 's/^/       /'
+        fi
+        if [ "$LARGE16_RC" -eq 0 ] && git --git-dir="$LARGE_CLONE16/.git" fsck --full --no-dangling >"$OUT/linux/large16_fsck.log" 2>&1; then
+            pass_case "git fsck accepts the --arena-mb 16 clone"
+        else
+            fail_case "git fsck rejected the --arena-mb 16 clone"
+            tail -10 "$OUT/linux/large16_fsck.log" 2>/dev/null | sed 's/^/       /'
+        fi
+    fi
+else
+    echo "SKIP - large synthetic external-memory idx: python3 not installed"
 fi
 
 echo "== clone loose_repo =="

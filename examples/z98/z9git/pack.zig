@@ -21,6 +21,42 @@ const crypto = @import("std_crypto.zig");
 const deflate = @import("std_deflate.zig");
 const delta_mod = @import("delta.zig");
 
+// Work buffers for the external idx (scratch, base cache, sort chunks) are
+// allocated outside the app arena and released when the idx is done, so several
+// packs in one clone do not accumulate their per-pack scratch.  Both mappings
+// are pagefile-backed and the OS may page them.
+extern "c" fn mmap(addr: *void, length: usize, prot: i32, flags: i32, fd: i32, offset: i32) *void;
+extern "c" fn munmap(addr: *void, length: usize) i32;
+extern "stdcall" fn VirtualAlloc(addr: *void, size: usize, alloc_type: u32, protect: u32) *void;
+extern "stdcall" fn VirtualFree(addr: *void, size: usize, free_type: u32) i32;
+
+fn nullVoid() *void {
+    return @ptrCast(*void, @intToPtr(*void, 0));
+}
+
+fn dynAlloc(n0: usize) ?[]u8 {
+    var n = n0;
+    if (n == 0) n = 1;
+    if (@isWindows()) {
+        const p = VirtualAlloc(nullVoid(), n, 0x1000 + 0x2000, 0x04);
+        if (@ptrToInt(p) == 0) return null;
+        return @ptrCast([*]u8, p)[0..n];
+    } else {
+        const p = mmap(nullVoid(), n, 3, 2 + 0x20, -1, 0);
+        if (@ptrToInt(p) >= 0xFFFFF000) return null;
+        return @ptrCast([*]u8, p)[0..n];
+    }
+}
+
+fn dynFree(buf: []u8) void {
+    if (buf.len == 0) return;
+    if (@isWindows()) {
+        _ = VirtualFree(@ptrCast(*void, buf.ptr), 0, 0x8000);
+    } else {
+        _ = munmap(@ptrCast(*void, buf.ptr), buf.len);
+    }
+}
+
 pub const ObjectId = [20]u8;
 
 pub const Kind = enum(u8) {
@@ -466,34 +502,128 @@ pub fn readEntry(arena: *arena_mod.Arena, p: *Pack, offset: u64) !RawEntry {
     };
 }
 
-// --- idx v2 synthesis -------------------------------------------------------
+// --- external-memory idx v2 synthesis ---------------------------------------
 //
-// idxSynthesize(arena, pack_path, idx_path) is the reusable Task 8 entry point:
-// it walks a self-contained pack v2 from offset 12, inflates every entry with
-// std_deflate's `used` extent (the stream end), CRCs the raw packed bytes,
-// materializes OFS_DELTA/REF_DELTA objects against same-pack bases, and writes
-// a canonical idx v2 (sorted names, fanout, per-entry CRC, 31-bit offsets plus
-// the large-offset table, pack SHA-1, idx SHA-1).  It does not need an existing
-// idx and never shells out to git.  A REF_DELTA base outside the pack is
-// rejected as Corrupt (local object-store packs are self-contained).
+// idxSynthesize(arena, pack_path, idx_path) is the reusable Task 8 entry point.
+// The T8b rewrite keeps the same API and output bytes but bounds memory:
+//
+//   pass 1  walk the pack once, inflate every entry only to find its zlib
+//           extent, CRC the raw packed bytes, write fixed-size (id,offset,crc)
+//           records for non-delta objects, and write one metadata record per
+//           entry to a temp file.  Payloads are dropped after hashing.
+//   pass 2  resolve delta ids in pack order.  Bases are reconstructed on
+//           demand from the pack into a reset-per-entry scratch arena; a
+//           bounded byte-ring caches small bases.  Each resolved delta appends
+//           one (id,offset,crc) record.
+//   sort    external merge sort: fixed-size chunks sorted in memory, written as
+//           runs, then merged pairwise.  No O(pack) array survives.
+//   stream  the sorted records are scanned three times (names, CRCs, offsets)
+//           and written straight to the idx; the large-offset table is spilled
+//           to a temp file and appended.  The trailers are hashed on the flow.
+//
+// Temp files live beside the idx and are removed on normal and error paths.
+// A self-contained pack is required: a REF_DELTA whose base is not another
+// entry in the pack is Corrupt (a thin pack is not a valid object store).
 
-const SynthEntry = struct {
-    offset: u64,
-    end: u64,
-    kind: Kind,
-    base_off: u64,
-    base_id: ObjectId,
-    payload: []u8,
-    crc: u32,
-    id: ObjectId,
-    id_known: bool,
+const META_REC: usize = 64;
+const ID_REC: usize = 32;
+const SORT_CHUNK_DEFAULT: usize = 8192;
+const IDX_TRAILER: usize = 40;
+const CACHE_SLOTS: usize = 256;
+
+const Resolved = struct {
     ty: Kind,
-    data: []const u8,
+    data: []u8,
+    id: ObjectId,
 };
+
+const CacheEntry = struct {
+    valid: bool,
+    offset: u64,
+    id: ObjectId,
+    ty: Kind,
+    d_off: usize,
+    d_len: usize,
+};
+
+const Cache = struct {
+    buf: []u8,
+    used: usize,
+    next: usize,
+    entries: [CACHE_SLOTS]CacheEntry,
+};
+
+const SortRec = struct {
+    id: ObjectId,
+    offset: u64,
+    crc: u32,
+};
+
+const FileWriter = struct {
+    f: file_mod.File,
+    buf: [8192]u8,
+    len: usize,
+    hashing: bool,
+    hash: crypto.Sha1,
+};
+
+const FileReader = struct {
+    f: file_mod.File,
+    buf: [8192]u8,
+    pos: usize,
+    len: usize,
+    eof: bool,
+};
+
+fn getU32le(b: []const u8, off: usize) u32 {
+    var v: u32 = @intCast(u32, b[off]);
+    v |= @intCast(u32, b[off + 1]) << 8;
+    v |= @intCast(u32, b[off + 2]) << 16;
+    v |= @intCast(u32, b[off + 3]) << 24;
+    return v;
+}
+
+fn getU64le(b: []const u8, off: usize) u64 {
+    var v: u64 = 0;
+    var mul: u64 = 1;
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        v += @intCast(u64, b[off + i]) * mul;
+        if (i < 7) mul = mul * 256;
+    }
+    return v;
+}
+
+fn putU32le(b: []u8, off: usize, v: u32) void {
+    b[off] = @intCast(u8, v & 0xFF);
+    b[off + 1] = @intCast(u8, (v >> 8) & 0xFF);
+    b[off + 2] = @intCast(u8, (v >> 16) & 0xFF);
+    b[off + 3] = @intCast(u8, (v >> 24) & 0xFF);
+}
+
+fn putU64le(b: []u8, off: usize, v: u64) void {
+    var x = v;
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        b[off + i] = @intCast(u8, x & 0xFF);
+        x = x / 256;
+    }
+}
+
+fn removeIfExists(path: []const u8) void {
+    file_mod.remove(path) catch {};
+}
 
 fn copyId(dst: *ObjectId, src: ObjectId) void {
     var i: usize = 0;
     while (i < 20) : (i += 1) dst[i] = src[i];
+}
+
+fn bitMask(i: usize) u8 {
+    var m: u8 = 1;
+    var s: usize = i % 8;
+    while (s > 0) : (s -= 1) m = m * 2;
+    return m;
 }
 
 fn idEql(a: ObjectId, b: ObjectId) bool {
@@ -576,89 +706,367 @@ fn putBe64(dst: []u8, off: usize, v: u64) void {
     dst[off + 7] = @intCast(u8, v & 0xFF);
 }
 
-fn findOffsetIndex(entries: []SynthEntry, n: usize, offset: u64) ?usize {
-    var lo: usize = 0;
-    var hi: usize = n;
-    while (lo < hi) {
-        const mid: usize = lo + (hi - lo) / 2;
-        if (entries[mid].offset < offset) {
-            lo = mid + 1;
-        } else if (entries[mid].offset > offset) {
-            hi = mid;
-        } else {
-            return mid;
-        }
-    }
-    return null;
-}
-
-fn findKnownById(entries: []SynthEntry, n: usize, id: ObjectId) ?usize {
+fn pathSuffix(arena: *arena_mod.Arena, base: []const u8, suffix: []const u8) ![]u8 {
+    const n64 = try addU64(@intCast(u64, base.len), @intCast(u64, suffix.len));
+    if (n64 > 0xFFFFFFFF) return error.OutOfMemory;
+    const n: usize = @intCast(usize, n64);
+    const raw = arena_mod.alloc(arena, n) catch return error.OutOfMemory;
     var i: usize = 0;
-    while (i < n) : (i += 1) {
-        if (entries[i].id_known and idEql(entries[i].id, id)) return i;
+    while (i < base.len) : (i += 1) raw[i] = base[i];
+    i = 0;
+    while (i < suffix.len) : (i += 1) raw[base.len + i] = suffix[i];
+    return raw[0..n];
+}
+
+fn pathSuffixInt(arena: *arena_mod.Arena, base: []const u8, suffix: []const u8, v: u32) ![]u8 {
+    const extra: usize = base.len + suffix.len + 12;
+    const raw = arena_mod.alloc(arena, extra) catch return error.OutOfMemory;
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < base.len) : (i += 1) {
+        raw[n] = base[i];
+        n += 1;
+    }
+    i = 0;
+    while (i < suffix.len) : (i += 1) {
+        raw[n] = suffix[i];
+        n += 1;
+    }
+    n += putDecimal(raw[n..extra], @intCast(u64, v));
+    return raw[0..n];
+}
+
+fn metaOffset(b: []const u8) u64 {
+    return getU64le(b, 0);
+}
+
+fn metaEnd(b: []const u8) u64 {
+    return getU64le(b, 8);
+}
+
+fn metaBaseOff(b: []const u8) u64 {
+    return getU64le(b, 16);
+}
+
+fn metaCrc(b: []const u8) u32 {
+    return getU32le(b, 24);
+}
+
+fn metaKind(b: []const u8) Kind {
+    return typeFromKind(b[28]) catch Kind.blob;
+}
+
+fn metaBaseId(b: []const u8, out: *ObjectId) void {
+    var i: usize = 0;
+    while (i < 20) : (i += 1) out[i] = b[30 + i];
+}
+
+fn metaFill(b: []u8, offset: u64, end: u64, crc: u32, kind: Kind, base_off: u64, base_id: ObjectId) void {
+    var i: usize = 0;
+    while (i < META_REC) : (i += 1) b[i] = 0;
+    putU64le(b, 0, offset);
+    putU64le(b, 8, end);
+    putU64le(b, 16, base_off);
+    putU32le(b, 24, crc);
+    b[28] = @intCast(u8, @enumToInt(kind));
+    i = 0;
+    while (i < 20) : (i += 1) b[30 + i] = base_id[i];
+}
+
+fn idRecFill(b: []u8, id: ObjectId, offset: u64, crc: u32) void {
+    var i: usize = 0;
+    while (i < 20) : (i += 1) b[i] = id[i];
+    putU64le(b, 20, offset);
+    putU32le(b, 28, crc);
+}
+
+fn idRecId(b: []const u8, out: *ObjectId) void {
+    var i: usize = 0;
+    while (i < 20) : (i += 1) out[i] = b[i];
+}
+
+fn idRecOffset(b: []const u8) u64 {
+    return getU64le(b, 20);
+}
+
+fn idRecCrc(b: []const u8) u32 {
+    return getU32le(b, 28);
+}
+
+// --- bounded base cache ------------------------------------------------------
+
+fn cacheInit(c: *Cache, buf: []u8) void {
+    c.buf = buf;
+    c.used = 0;
+    c.next = 0;
+    var i: usize = 0;
+    while (i < CACHE_SLOTS) : (i += 1) c.entries[i].valid = false;
+}
+
+fn cacheClear(c: *Cache) void {
+    c.used = 0;
+    var i: usize = 0;
+    while (i < CACHE_SLOTS) : (i += 1) c.entries[i].valid = false;
+}
+
+fn cacheFindOffset(c: *Cache, offset: u64) ?*CacheEntry {
+    var i: usize = 0;
+    while (i < CACHE_SLOTS) : (i += 1) {
+        const e = &c.entries[i];
+        if (e.valid and e.offset == offset) return e;
     }
     return null;
 }
 
-fn resolveNormal(entry: *SynthEntry) void {
-    entry.ty = entry.kind;
-    entry.data = entry.payload;
-    var id: ObjectId = undefined;
-    synthObjectId(entry.kind, entry.data, &id);
-    copyId(&entry.id, id);
-    entry.id_known = true;
+fn cacheAdd(c: *Cache, offset: u64, id: ObjectId, ty: Kind, data: []const u8) void {
+    // Objects larger than a quarter of the cache are never retained; a delta
+    // chain reads them from the pack on demand instead.
+    if (c.buf.len == 0) return;
+    if (data.len > c.buf.len / 4) return;
+    if (c.used + data.len > c.buf.len) cacheClear(c);
+    const slot = c.next % CACHE_SLOTS;
+    c.next += 1;
+    const e = &c.entries[slot];
+    e.valid = true;
+    e.offset = offset;
+    e.ty = ty;
+    var i: usize = 0;
+    while (i < 20) : (i += 1) e.id[i] = id[i];
+    e.d_off = c.used;
+    e.d_len = data.len;
+    i = 0;
+    while (i < data.len) : (i += 1) c.buf[c.used + i] = data[i];
+    c.used += data.len;
 }
 
-fn applyDeltaEntry(arena: *arena_mod.Arena, target: *SynthEntry, base: *SynthEntry) !void {
+// --- buffered readers/writers -----------------------------------------------
+
+fn writerInit(f: file_mod.File, hashing: bool) FileWriter {
+    var w: FileWriter = undefined;
+    w.f = f;
+    w.len = 0;
+    w.hashing = hashing;
+    if (hashing) w.hash = crypto.sha1Init();
+    return w;
+}
+
+fn writerFlush(w: *FileWriter) !void {
+    if (w.len == 0) return;
+    var off: usize = 0;
+    while (off < w.len) {
+        const n = file_mod.write(&w.f, w.buf[off..w.len]) catch return error.WriteFailed;
+        if (n == 0) return error.WriteFailed;
+        off += n;
+    }
+    if (w.hashing) crypto.sha1Update(&w.hash, w.buf[0..w.len]);
+    w.len = 0;
+}
+
+fn writerBytes(w: *FileWriter, data: []const u8) !void {
+    var off: usize = 0;
+    while (off < data.len) {
+        if (w.len == w.buf.len) try writerFlush(w);
+        const room = w.buf.len - w.len;
+        var take = data.len - off;
+        if (take > room) take = room;
+        var i: usize = 0;
+        while (i < take) : (i += 1) w.buf[w.len + i] = data[off + i];
+        w.len += take;
+        off += take;
+    }
+}
+
+fn writerFinish(w: *FileWriter) !void {
+    try writerFlush(w);
+    file_mod.flush(&w.f) catch return error.WriteFailed;
+    file_mod.close(&w.f);
+}
+
+fn readerInit(f: file_mod.File) FileReader {
+    var r: FileReader = undefined;
+    r.f = f;
+    r.pos = 0;
+    r.len = 0;
+    r.eof = false;
+    return r;
+}
+
+fn readerFill(r: *FileReader) !bool {
+    if (r.pos < r.len) return true;
+    r.pos = 0;
+    r.len = 0;
+    if (r.eof) return false;
+    const n = file_mod.read(&r.f, r.buf[0..]) catch return error.ReadFailed;
+    if (n == 0) {
+        r.eof = true;
+        return false;
+    }
+    r.len = n;
+    return true;
+}
+
+fn readerExact(r: *FileReader, dst: []u8) !bool {
+    var got: usize = 0;
+    while (got < dst.len) {
+        if (!try readerFill(r)) {
+            if (got == 0) return false;
+            return error.ReadFailed;
+        }
+        var n = r.len - r.pos;
+        if (n > dst.len - got) n = dst.len - got;
+        var i: usize = 0;
+        while (i < n) : (i += 1) dst[got + i] = r.buf[r.pos + i];
+        r.pos += n;
+        got += n;
+    }
+    return true;
+}
+
+fn readerFinish(r: *FileReader) void {
+    file_mod.close(&r.f);
+}
+
+// --- delta reconstruction with a bounded cache ------------------------------
+
+fn applyDeltaCached(scratch: *arena_mod.Arena, base: Resolved, raw: RawEntry) !Resolved {
     var src_len: usize = 0;
     var tgt_len: usize = 0;
-    delta_mod.deltaSizes(target.payload, &src_len, &tgt_len) catch return error.Corrupt;
+    delta_mod.deltaSizes(raw.payload, &src_len, &tgt_len) catch return error.Corrupt;
     if (src_len != base.data.len) return error.Corrupt;
-    const raw = arena_mod.alloc(arena, tgt_len) catch return error.OutOfMemory;
-    const out = raw[0..tgt_len];
-    delta_mod.deltaApply(base.data, target.payload, out) catch return error.Corrupt;
-    target.ty = base.ty;
-    target.data = out;
+    const raw_out = arena_mod.alloc(scratch, tgt_len) catch return error.OutOfMemory;
+    const out = raw_out[0..tgt_len];
+    delta_mod.deltaApply(base.data, raw.payload, out) catch return error.Corrupt;
     var id: ObjectId = undefined;
-    synthObjectId(target.ty, target.data, &id);
-    copyId(&target.id, id);
-    target.id_known = true;
+    synthObjectId(base.ty, out, &id);
+    return Resolved{ .ty = base.ty, .data = out, .id = id };
 }
 
-fn mergeBlock(entries: []SynthEntry, src: []u32, dst: []u32, lo: usize, mid: usize, hi: usize) void {
-    var i: usize = lo;
-    var j: usize = mid;
-    var k: usize = lo;
+fn findIdOffset(ids_path: []const u8, id: ObjectId) !?u64 {
+    // Pass 2 keeps one ReadWrite handle open so scanning the ids file cannot
+    // trip Win9x's share-mode rules (a second read handle next to the append
+    // handle is a sharing violation). Flush, rewind, scan, then seek back to the
+    // end for the next appended record.
+    if (g_ids_writer) |w0| {
+        const w = w0;
+        try writerFlush(w);
+        _ = file_mod.seek(&w.f, @intCast(i64, 0), file_mod.SeekWhence.Set) catch return error.OpenFailed;
+        var r = readerInit(w.f);
+        var b: [ID_REC]u8 = undefined;
+        var found: ?u64 = null;
+        while (true) {
+            const more = try readerExact(&r, b[0..]);
+            if (!more) break;
+            var got: ObjectId = undefined;
+            idRecId(b[0..], &got);
+            if (idEql(got, id)) {
+                found = idRecOffset(b[0..]);
+                break;
+            }
+        }
+        _ = file_mod.seek(&w.f, @intCast(i64, 0), file_mod.SeekWhence.End) catch return error.OpenFailed;
+        return found;
+    }
+    var f = file_mod.open(arenaFor(ids_path), ids_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    var r = readerInit(f);
+    defer readerFinish(&r);
+    var b: [ID_REC]u8 = undefined;
+    while (true) {
+        const more = try readerExact(&r, b[0..]);
+        if (!more) return null;
+        var got: ObjectId = undefined;
+        idRecId(b[0..], &got);
+        if (idEql(got, id)) return idRecOffset(b[0..]);
+    }
+    return null;
+}
+
+var g_ids_writer: ?*FileWriter = null;
+
+// readEntry/per-entry inflation needs an arena; the caller's scratch arena is
+// supplied through this small module-level handoff so findIdOffset can open the
+// ids file without threading an extra parameter through every recursive call.
+var g_find_arena: ?*arena_mod.Arena = null;
+
+fn arenaFor(path: []const u8) *arena_mod.Arena {
+    _ = path;
+    if (g_find_arena) |a| return a;
+    // Unreachable in normal use; findIdOffset is only called from idxSynthesize
+    // after setting g_find_arena.
+    return @ptrCast(*arena_mod.Arena, @intToPtr(*void, 0));
+}
+
+fn resolveAt(p: *Pack, cache: *Cache, scratch: *arena_mod.Arena, ids_path: []const u8, offset: u64, depth: usize, deferred: *bool) !Resolved {
+    if (depth > 64) return error.Corrupt;
+    if (cacheFindOffset(cache, offset)) |e| {
+        var id: ObjectId = undefined;
+        var i: usize = 0;
+        while (i < 20) : (i += 1) id[i] = e.id[i];
+        return Resolved{ .ty = e.ty, .data = cache.buf[e.d_off .. e.d_off + e.d_len], .id = id };
+    }
+
+    const raw = try readEntry(scratch, p, offset);
+    var res: Resolved = undefined;
+    if (raw.kind == Kind.ofs_delta) {
+        const base = try resolveAt(p, cache, scratch, ids_path, raw.base_off, depth + 1, deferred);
+        if (deferred.*) return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id };
+        res = try applyDeltaCached(scratch, base, raw);
+    } else if (raw.kind == Kind.ref_delta) {
+        const bo = try findIdOffset(ids_path, raw.base_id);
+        if (bo) |base_off| {
+            const base = try resolveAt(p, cache, scratch, ids_path, base_off, depth + 1, deferred);
+            if (deferred.*) return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id };
+            res = try applyDeltaCached(scratch, base, raw);
+        } else {
+            deferred.* = true;
+            return Resolved{ .ty = Kind.blob, .data = cache.buf[0..0], .id = raw.base_id };
+        }
+    } else {
+        if (!isBaseKind(raw.kind)) return error.Corrupt;
+        var id: ObjectId = undefined;
+        synthObjectId(raw.kind, raw.payload, &id);
+        res = Resolved{ .ty = raw.kind, .data = raw.payload, .id = id };
+    }
+    cacheAdd(cache, offset, res.id, res.ty, res.data);
+    return res;
+}
+
+// --- external merge sort -----------------------------------------------------
+
+fn recLess(a: SortRec, b: SortRec) bool {
+    if (idLess(a.id, b.id)) return true;
+    if (idLess(b.id, a.id)) return false;
+    return a.offset < b.offset;
+}
+
+fn mergeRecBlock(a: []SortRec, tmp: []SortRec, lo: usize, mid: usize, hi: usize) void {
+    var i = lo;
+    var j = mid;
+    var k = lo;
     while (i < mid and j < hi) {
-        if (idLess(entries[@intCast(usize, src[i])].id, entries[@intCast(usize, src[j])].id)) {
-            dst[k] = src[i];
+        if (recLess(a[i], a[j])) {
+            tmp[k] = a[i];
             i += 1;
         } else {
-            dst[k] = src[j];
+            tmp[k] = a[j];
             j += 1;
         }
         k += 1;
     }
     while (i < mid) {
-        dst[k] = src[i];
+        tmp[k] = a[i];
         i += 1;
         k += 1;
     }
     while (j < hi) {
-        dst[k] = src[j];
+        tmp[k] = a[j];
         j += 1;
         k += 1;
     }
 }
 
-fn sortIndices(arena: *arena_mod.Arena, entries: []SynthEntry, out: *[]u32) !void {
-    const n = entries.len;
-    const a_raw = arena_mod.alloc(arena, n * 4) catch return error.OutOfMemory;
-    const b_raw = arena_mod.alloc(arena, n * 4) catch return error.OutOfMemory;
-    var a = @ptrCast([*]u32, a_raw)[0..n];
-    var b = @ptrCast([*]u32, b_raw)[0..n];
-    var i: usize = 0;
-    while (i < n) : (i += 1) a[i] = @intCast(u32, i);
+fn sortRecs(a: []SortRec, tmp: []SortRec) void {
+    const n = a.len;
+    if (n < 2) return;
     var width: usize = 1;
     while (width < n) {
         var lo: usize = 0;
@@ -667,31 +1075,276 @@ fn sortIndices(arena: *arena_mod.Arena, entries: []SynthEntry, out: *[]u32) !voi
             if (mid > n) mid = n;
             var hi = lo + width * 2;
             if (hi > n) hi = n;
-            mergeBlock(entries, a, b, lo, mid, hi);
+            mergeRecBlock(a, tmp, lo, mid, hi);
             lo += width * 2;
         }
-        const tmp = a;
-        a = b;
-        b = tmp;
+        var i: usize = 0;
+        while (i < n) : (i += 1) a[i] = tmp[i];
         if (width > n / 2) break;
         width = width * 2;
     }
-    out.* = a[0..n];
+}
+
+fn recToBytes(r: SortRec, b: []u8) void {
+    var i: usize = 0;
+    while (i < 20) : (i += 1) b[i] = r.id[i];
+    putU64le(b, 20, r.offset);
+    putU32le(b, 28, r.crc);
+}
+
+fn recFromBytes(b: []const u8, out: *SortRec) void {
+    var i: usize = 0;
+    while (i < 20) : (i += 1) out.id[i] = b[i];
+    out.offset = getU64le(b, 20);
+    out.crc = getU32le(b, 28);
+}
+
+fn writeRun(arena: *arena_mod.Arena, idx_path: []const u8, run_i: u32, recs: []SortRec, n: usize) !void {
+    const path = try pathSuffixInt(arena, idx_path, ".z9run", run_i);
+    const f = file_mod.open(arena, path, file_mod.Mode.Write) catch return error.OpenFailed;
+    var w = writerInit(f, false);
+    var b: [SORT_REC_BYTES]u8 = undefined;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        recToBytes(recs[i], b[0..]);
+        try writerBytes(&w, b[0..]);
+    }
+    try writerFinish(&w);
+}
+
+const SORT_REC_BYTES: usize = 32;
+
+fn mergeRuns(arena: *arena_mod.Arena, idx_path: []const u8, a_i: u32, b_i: u32, out_i: u32) !void {
+    const pa = try pathSuffixInt(arena, idx_path, ".z9run", a_i);
+    const pb = try pathSuffixInt(arena, idx_path, ".z9run", b_i);
+    const po = try pathSuffixInt(arena, idx_path, ".z9run", out_i);
+    const fa = file_mod.open(arena, pa, file_mod.Mode.Read) catch return error.OpenFailed;
+    var ra = readerInit(fa);
+    defer readerFinish(&ra);
+    const fb = file_mod.open(arena, pb, file_mod.Mode.Read) catch return error.OpenFailed;
+    var rb = readerInit(fb);
+    defer readerFinish(&rb);
+    const fo = file_mod.open(arena, po, file_mod.Mode.Write) catch return error.OpenFailed;
+    var w = writerInit(fo, false);
+
+    var ba: [SORT_REC_BYTES]u8 = undefined;
+    var bb: [SORT_REC_BYTES]u8 = undefined;
+    var ra_rec: SortRec = undefined;
+    var rb_rec: SortRec = undefined;
+    var oa: [SORT_REC_BYTES]u8 = undefined;
+    var have_a = try readerExact(&ra, ba[0..]);
+    var have_b = try readerExact(&rb, bb[0..]);
+    if (have_a) recFromBytes(ba[0..], &ra_rec);
+    if (have_b) recFromBytes(bb[0..], &rb_rec);
+    while (have_a or have_b) {
+        var take_a = false;
+        if (have_a and have_b) {
+            take_a = recLess(ra_rec, rb_rec);
+        } else if (have_a) {
+            take_a = true;
+        }
+        if (take_a) {
+            recToBytes(ra_rec, oa[0..]);
+            try writerBytes(&w, oa[0..]);
+            have_a = try readerExact(&ra, ba[0..]);
+            if (have_a) recFromBytes(ba[0..], &ra_rec);
+        } else {
+            recToBytes(rb_rec, oa[0..]);
+            try writerBytes(&w, oa[0..]);
+            have_b = try readerExact(&rb, bb[0..]);
+            if (have_b) recFromBytes(bb[0..], &rb_rec);
+        }
+    }
+    try writerFinish(&w);
+    removeIfExists(pa);
+    removeIfExists(pb);
+}
+
+// --- streamed idx writer -----------------------------------------------------
+
+fn writeIdxEmpty(idx_path: []const u8) !void {
+    var out: [8 + 1024 + IDX_TRAILER]u8 = undefined;
+    var i: usize = 0;
+    while (i < out.len) : (i += 1) out[i] = 0;
+    out[0] = 0xFF;
+    out[1] = 't';
+    out[2] = 'O';
+    out[3] = 'c';
+    putBe32(out[0..], 4, 2);
+    var h = crypto.sha1Init();
+    crypto.sha1Update(&h, out[0 .. 8 + 1024]);
+    var idx_id: ObjectId = undefined;
+    crypto.sha1Final(&h, &idx_id);
+    i = 0;
+    while (i < 20) : (i += 1) out[8 + 1024 + 20 + i] = idx_id[i];
+    file_mod.writeAll(idx_path, out[0..]) catch return error.WriteFailed;
+}
+
+fn writeIdxStream(arena: *arena_mod.Arena, p: *Pack, idx_path: []const u8, sorted_path: []const u8, large_path: []const u8, n: usize, large_count: usize) !void {
+    _ = large_count;
+    _ = n;
+    const fo = file_mod.open(arena, idx_path, file_mod.Mode.Write) catch return error.OpenFailed;
+    var w = writerInit(fo, true);
+
+    // Header + fanout.
+    var head: [8 + 1024]u8 = undefined;
+    var i: usize = 0;
+    while (i < head.len) : (i += 1) head[i] = 0;
+    head[0] = 0xFF;
+    head[1] = 't';
+    head[2] = 'O';
+    head[3] = 'c';
+    putBe32(head[0..], 4, 2);
+
+    var counts: [256]u32 = undefined;
+    i = 0;
+    while (i < 256) : (i += 1) counts[i] = 0;
+
+    // Fanout pass.
+    var rf = file_mod.open(arena, sorted_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    var rr = readerInit(rf);
+    var b: [SORT_REC_BYTES]u8 = undefined;
+    var rec: SortRec = undefined;
+    while (try readerExact(&rr, b[0..])) {
+        recFromBytes(b[0..], &rec);
+        counts[@intCast(usize, rec.id[0])] += 1;
+    }
+    readerFinish(&rr);
+
+    var cum: u32 = 0;
+    i = 0;
+    while (i < 256) : (i += 1) {
+        cum += counts[i];
+        putBe32(head[0..], 8 + i * 4, cum);
+    }
+    try writerBytes(&w, head[0..]);
+
+    // Names pass.
+    rf = file_mod.open(arena, sorted_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    rr = readerInit(rf);
+    while (try readerExact(&rr, b[0..])) {
+        try writerBytes(&w, b[0..20]);
+    }
+    readerFinish(&rr);
+
+    // CRC pass.
+    rf = file_mod.open(arena, sorted_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    rr = readerInit(rf);
+    while (try readerExact(&rr, b[0..])) {
+        recFromBytes(b[0..], &rec);
+        var cb: [4]u8 = undefined;
+        putBe32(cb[0..], 0, rec.crc);
+        try writerBytes(&w, cb[0..]);
+    }
+    readerFinish(&rr);
+
+    // Offset pass: small offsets inline, large offsets spilled to large_path.
+    const fl = file_mod.open(arena, large_path, file_mod.Mode.Write) catch return error.OpenFailed;
+    var lw = writerInit(fl, false);
+    var large_i: u32 = 0;
+    rf = file_mod.open(arena, sorted_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    rr = readerInit(rf);
+    while (try readerExact(&rr, b[0..])) {
+        recFromBytes(b[0..], &rec);
+        var ob: [4]u8 = undefined;
+        if (rec.offset <= 0x7FFFFFFF) {
+            putBe32(ob[0..], 0, @intCast(u32, rec.offset));
+            try writerBytes(&w, ob[0..]);
+        } else {
+            if (large_i > 0x7FFFFFFF) return error.Corrupt;
+            putBe32(ob[0..], 0, @intCast(u32, 0x80000000) + large_i);
+            try writerBytes(&w, ob[0..]);
+            var lb: [8]u8 = undefined;
+            putBe64(lb[0..], 0, rec.offset);
+            try writerBytes(&lw, lb[0..]);
+            large_i += 1;
+        }
+    }
+    readerFinish(&rr);
+    try writerFinish(&lw);
+
+    // Append the large-offset table.
+    const lf = file_mod.open(arena, large_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    var lr = readerInit(lf);
+    var chunk: [4096]u8 = undefined;
+    while (true) {
+        if (!try readerFill(&lr)) break;
+        const avail = lr.len - lr.pos;
+        const take = if (avail > chunk.len) chunk.len else avail;
+        var k: usize = 0;
+        while (k < take) : (k += 1) chunk[k] = lr.buf[lr.pos + k];
+        lr.pos += take;
+        try writerBytes(&w, chunk[0..take]);
+    }
+    readerFinish(&lr);
+
+    // Pack SHA-1 trailer (from the pack), then this idx's SHA-1 trailer.
+    var pack_id: ObjectId = undefined;
+    const body_end = p.file_size - 20;
+    try readAt(p, body_end, pack_id[0..20]);
+    try writerBytes(&w, pack_id[0..20]);
+
+    var idx_id: ObjectId = undefined;
+    try writerFlush(&w);
+    crypto.sha1Final(&w.hash, &idx_id);
+    w.hashing = false;
+    try writerBytes(&w, idx_id[0..20]);
+
+    try writerFinish(&w);
 }
 
 pub fn idxSynthesize(arena: *arena_mod.Arena, pack_path: []const u8, idx_path: []const u8) !void {
     var p = try packOpenRaw(arena, pack_path);
     defer file_mod.close(&p.file);
     const n: usize = @intCast(usize, p.count);
-    const entries_raw = arena_mod.alloc(arena, n * @sizeOf(SynthEntry)) catch return error.OutOfMemory;
-    const entries = @ptrCast([*]SynthEntry, entries_raw)[0..n];
-
     const body_end = p.file_size - 20;
+
+    const meta_path = try pathSuffix(arena, idx_path, ".z9meta");
+    const ids_path = try pathSuffix(arena, idx_path, ".z9ids");
+    const sorted_path = try pathSuffix(arena, idx_path, ".z9sort");
+    const large_path = try pathSuffix(arena, idx_path, ".z9large");
+    defer removeIfExists(meta_path);
+    defer removeIfExists(ids_path);
+    defer removeIfExists(sorted_path);
+    defer removeIfExists(large_path);
+
+    // Allocate the work scratch, base cache and per-pack tables outside the app
+    // arena. They are freed when this pack's idx is complete, so a clone with
+    // several packs does not accumulate per-pack scratch.
+    var scratch_bytes = arena.capacity / 2;
+    if (scratch_bytes > 16 * 1024 * 1024) scratch_bytes = 16 * 1024 * 1024;
+    if (scratch_bytes < 256 * 1024) scratch_bytes = 256 * 1024;
+    var cache_bytes = arena.capacity / 4;
+    if (cache_bytes > 8 * 1024 * 1024) cache_bytes = 8 * 1024 * 1024;
+    if (cache_bytes < 64 * 1024) cache_bytes = 64 * 1024;
+    const scratch_raw = dynAlloc(scratch_bytes) orelse return error.OutOfMemory;
+    defer dynFree(scratch_raw);
+    var scratch = arena_mod.init(scratch_raw[0..scratch_bytes]);
+    const cache_raw = dynAlloc(cache_bytes) orelse return error.OutOfMemory;
+    defer dynFree(cache_raw);
+    var cache: Cache = undefined;
+    cacheInit(&cache, cache_raw[0..cache_bytes]);
+
+    const resolved_bytes = (n + 7) / 8;
+    const resolved_raw = dynAlloc(if (resolved_bytes == 0) 1 else resolved_bytes) orelse return error.OutOfMemory;
+    defer dynFree(resolved_raw);
+    const resolved = resolved_raw[0..if (resolved_bytes == 0) 1 else resolved_bytes];
+    var ri: usize = 0;
+    while (ri < resolved_bytes) : (ri += 1) resolved[ri] = 0;
+
+    // Pass 1: walk entries, CRC them, write metadata and non-delta ids.
+    var meta_f = file_mod.open(arena, meta_path, file_mod.Mode.Write) catch return error.OpenFailed;
+    var mw = writerInit(meta_f, false);
+    var ids_f = file_mod.open(arena, ids_path, file_mod.Mode.Write) catch return error.OpenFailed;
+    var iw = writerInit(ids_f, false);
+
     var off: u64 = 12;
     var i: usize = 0;
+    var resolved_count: usize = 0;
     var crc_buf: [4096]u8 = undefined;
     while (i < n) : (i += 1) {
-        const raw = try readEntry(arena, &p, off);
+        arena_mod.reset(&scratch);
+        const raw = try readEntry(&scratch, &p, off);
         const end = try addU64(raw.payload_off, @intCast(u64, raw.payload_len));
         if (end > body_end) return error.Corrupt;
         var crc = crypto.crc32Init();
@@ -705,124 +1358,162 @@ pub fn idxSynthesize(arena: *arena_mod.Arena, pack_path: []const u8, idx_path: [
             scan += @intCast(u64, take);
         }
         crc = crypto.crc32Final(crc);
-        entries[i].offset = off;
-        entries[i].end = end;
-        entries[i].kind = raw.kind;
-        entries[i].base_off = raw.base_off;
-        var k: usize = 0;
-        while (k < 20) : (k += 1) {
-            entries[i].base_id[k] = raw.base_id[k];
-            entries[i].id[k] = 0;
+
+        var mrec: [META_REC]u8 = undefined;
+        metaFill(mrec[0..], off, end, crc, raw.kind, raw.base_off, raw.base_id);
+        try writerBytes(&mw, mrec[0..]);
+
+        if (isBaseKind(raw.kind)) {
+            var id: ObjectId = undefined;
+            synthObjectId(raw.kind, raw.payload, &id);
+            var irec: [ID_REC]u8 = undefined;
+            idRecFill(irec[0..], id, off, crc);
+            try writerBytes(&iw, irec[0..]);
+            cacheAdd(&cache, off, id, raw.kind, raw.payload);
+            const bit = i / 8;
+            const mask: u8 = bitMask(i);
+            resolved[bit] |= mask;
+            resolved_count += 1;
+        } else if (raw.kind != Kind.ofs_delta and raw.kind != Kind.ref_delta) {
+            return error.Corrupt;
         }
-        entries[i].payload = raw.payload;
-        entries[i].crc = crc;
-        entries[i].id_known = false;
-        entries[i].ty = raw.kind;
-        entries[i].data = raw.payload[0..0];
         off = end;
     }
     if (off != body_end) return error.Corrupt;
+    try writerFinish(&mw);
+    try writerFinish(&iw);
 
-    var pass: usize = 0;
-    while (pass <= n) : (pass += 1) {
+    // Pass 2: resolve deltas in pack order until every entry has an id record.
+    g_find_arena = &scratch;
+    defer g_find_arena = null;
+    var pass_count: usize = 0;
+    while (resolved_count < n) {
+        pass_count += 1;
+        if (pass_count > 64) return error.Corrupt;
         var progress = false;
+
+        var mf = file_mod.open(arena, meta_path, file_mod.Mode.Read) catch return error.OpenFailed;
+        var mr = readerInit(mf);
+        var ia = file_mod.open(arena, ids_path, file_mod.Mode.ReadWrite) catch return error.OpenFailed;
+        _ = file_mod.seek(&ia, @intCast(i64, 0), file_mod.SeekWhence.End) catch {
+            file_mod.close(&ia);
+            return error.OpenFailed;
+        };
+        var iw2 = writerInit(ia, false);
+        g_ids_writer = &iw2;
+
         i = 0;
-        while (i < n) : (i += 1) {
-            if (entries[i].id_known) continue;
-            if (isBaseKind(entries[i].kind)) {
-                resolveNormal(&entries[i]);
-                progress = true;
-            } else if (entries[i].kind == Kind.ofs_delta) {
-                if (findOffsetIndex(entries, n, entries[i].base_off)) |bi| {
-                    if (entries[bi].id_known) {
-                        try applyDeltaEntry(arena, &entries[i], &entries[bi]);
-                        progress = true;
-                    }
-                } else {
-                    return error.Corrupt;
-                }
-            } else if (entries[i].kind == Kind.ref_delta) {
-                if (findKnownById(entries, n, entries[i].base_id)) |bi| {
-                    try applyDeltaEntry(arena, &entries[i], &entries[bi]);
-                    progress = true;
-                }
-            } else {
+        var mrec: [META_REC]u8 = undefined;
+        while (try readerExact(&mr, mrec[0..])) : (i += 1) {
+            const bit = i / 8;
+            const mask: u8 = bitMask(i);
+            if ((resolved[bit] & mask) != 0) continue;
+            const kind = metaKind(mrec[0..]);
+            if (kind != Kind.ofs_delta and kind != Kind.ref_delta) return error.Corrupt;
+            const entry_off = metaOffset(mrec[0..]);
+            arena_mod.reset(&scratch);
+            try writerFlush(&iw2);
+            var deferred = false;
+            const res = resolveAt(&p, &cache, &scratch, ids_path, entry_off, 0, &deferred) catch |e| {
+                if (e == error.OutOfMemory) return error.OutOfMemory;
                 return error.Corrupt;
+            };
+            if (deferred) continue;
+            var irec: [ID_REC]u8 = undefined;
+            idRecFill(irec[0..], res.id, entry_off, metaCrc(mrec[0..]));
+            try writerBytes(&iw2, irec[0..]);
+            resolved[bit] |= mask;
+            resolved_count += 1;
+            progress = true;
+        }
+        readerFinish(&mr);
+        g_ids_writer = null;
+        try writerFinish(&iw2);
+        if (!progress) return error.Corrupt;
+    }
+
+    // External sort of all id records.
+    const chunk_n: usize = SORT_CHUNK_DEFAULT;
+    const recs_raw = dynAlloc(chunk_n * @sizeOf(SortRec)) orelse return error.OutOfMemory;
+    defer dynFree(recs_raw);
+    const tmp_raw = dynAlloc(chunk_n * @sizeOf(SortRec)) orelse return error.OutOfMemory;
+    defer dynFree(tmp_raw);
+    const recs = @ptrCast([*]SortRec, recs_raw.ptr)[0..chunk_n];
+    const tmp = @ptrCast([*]SortRec, tmp_raw.ptr)[0..chunk_n];
+
+    const initial_runs = (n + chunk_n - 1) / chunk_n;
+    const runs_raw = dynAlloc((initial_runs * 2 + 8) * 4) orelse return error.OutOfMemory;
+    defer dynFree(runs_raw);
+    const runs = @ptrCast([*]u32, runs_raw.ptr)[0..(initial_runs * 2 + 8)];
+
+    var run_count: usize = 0;
+    var next_run: u32 = 0;
+    if (n > 0) {
+        var inf = file_mod.open(arena, ids_path, file_mod.Mode.Read) catch return error.OpenFailed;
+        var inr = readerInit(inf);
+        var rb: [SORT_REC_BYTES]u8 = undefined;
+        while (true) {
+            var got: usize = 0;
+            while (got < chunk_n) {
+                const more = try readerExact(&inr, rb[0..]);
+                if (!more) break;
+                recFromBytes(rb[0..], &recs[got]);
+                got += 1;
             }
+            if (got == 0) break;
+            sortRecs(recs[0..got], tmp[0..got]);
+            try writeRun(arena, idx_path, next_run, recs[0..got], got);
+            runs[run_count] = next_run;
+            run_count += 1;
+            next_run += 1;
         }
-        if (!progress) break;
-    }
-    i = 0;
-    while (i < n) : (i += 1) {
-        if (!entries[i].id_known) return error.Corrupt;
+        readerFinish(&inr);
     }
 
-    var sorted: []u32 = undefined;
-    try sortIndices(arena, entries, &sorted);
+    // Keep every temp run path around for cleanup; the caller removes the final
+    // sorted run too after the idx is written.
+    var final_run: u32 = 0;
+    if (run_count > 0) {
+        while (run_count > 1) {
+            var out_count: usize = 0;
+            var k: usize = 0;
+            while (k + 1 < run_count) {
+                const a_i = runs[k];
+                const b_i = runs[k + 1];
+                const out_i = next_run;
+                next_run += 1;
+                try mergeRuns(arena, idx_path, a_i, b_i, out_i);
+                runs[out_count] = out_i;
+                out_count += 1;
+                k += 2;
+            }
+            if (k < run_count) {
+                runs[out_count] = runs[k];
+                out_count += 1;
+            }
+            run_count = out_count;
+        }
+        final_run = runs[0];
+    }
+    const final_path = try pathSuffixInt(arena, idx_path, ".z9run", final_run);
+    defer removeIfExists(final_path);
+
+    if (n == 0) {
+        try writeIdxEmpty(idx_path);
+        return;
+    }
+
+    // One scan for the large-offset count (the writer detects it again).
     var large_count: usize = 0;
-    i = 0;
-    while (i < n) : (i += 1) {
-        if (entries[@intCast(usize, sorted[i])].offset > 0x7FFFFFFF) large_count += 1;
+    var sf = file_mod.open(arena, final_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    var sr = readerInit(sf);
+    var sb: [SORT_REC_BYTES]u8 = undefined;
+    var srec: SortRec = undefined;
+    while (try readerExact(&sr, sb[0..])) {
+        recFromBytes(sb[0..], &srec);
+        if (srec.offset > 0x7FFFFFFF) large_count += 1;
     }
+    readerFinish(&sr);
 
-    const total64: u64 = 8 + 1024 + @intCast(u64, n) * 20 + @intCast(u64, n) * 4 +
-        @intCast(u64, n) * 4 + @intCast(u64, large_count) * 8 + 40;
-    if (total64 > 0xFFFFFFFF) return error.OutOfMemory;
-    const total: usize = @intCast(usize, total64);
-    const buf = arena_mod.alloc(arena, total) catch return error.OutOfMemory;
-    const out = buf[0..total];
-
-    out[0] = 0xFF;
-    out[1] = 't';
-    out[2] = 'O';
-    out[3] = 'c';
-    putBe32(out, 4, 2);
-    const names_off: usize = 8 + 1024;
-    const crc_off: usize = names_off + n * 20;
-    const offs_off: usize = crc_off + n * 4;
-    const large_off: usize = offs_off + n * 4;
-    const trailer_off: usize = large_off + large_count * 8;
-
-    var counts: [256]u32 = undefined;
-    i = 0;
-    while (i < 256) : (i += 1) counts[i] = 0;
-    i = 0;
-    while (i < n) : (i += 1) {
-        const e = entries[@intCast(usize, sorted[i])];
-        counts[e.id[0]] += 1;
-    }
-    var cum: u32 = 0;
-    i = 0;
-    while (i < 256) : (i += 1) {
-        cum += counts[i];
-        putBe32(out, 8 + i * 4, cum);
-    }
-
-    var large_i: usize = 0;
-    i = 0;
-    while (i < n) : (i += 1) {
-        const e = entries[@intCast(usize, sorted[i])];
-        var k: usize = 0;
-        while (k < 20) : (k += 1) out[names_off + i * 20 + k] = e.id[k];
-        putBe32(out, crc_off + i * 4, e.crc);
-        if (e.offset <= 0x7FFFFFFF) {
-            putBe32(out, offs_off + i * 4, @intCast(u32, e.offset));
-        } else {
-            if (large_i >= 0x7FFFFFFF) return error.Corrupt;
-            putBe32(out, offs_off + i * 4, @intCast(u32, 0x80000000) + @intCast(u32, large_i));
-            putBe64(out, large_off + large_i * 8, e.offset);
-            large_i += 1;
-        }
-    }
-
-    var pack_id: ObjectId = undefined;
-    try readAt(&p, body_end, pack_id[0..20]);
-    i = 0;
-    while (i < 20) : (i += 1) out[trailer_off + i] = pack_id[i];
-    var idx_id: ObjectId = undefined;
-    sha1Slice(out[0 .. trailer_off + 20], &idx_id);
-    i = 0;
-    while (i < 20) : (i += 1) out[trailer_off + 20 + i] = idx_id[i];
-
-    file_mod.writeAll(idx_path, out) catch return error.WriteFailed;
+    try writeIdxStream(arena, &p, idx_path, final_path, large_path, n, large_count);
 }
