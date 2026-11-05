@@ -689,15 +689,21 @@ pub fn idxSynthesize(arena: *arena_mod.Arena, pack_path: []const u8, idx_path: [
     const body_end = p.file_size - 20;
     var off: u64 = 12;
     var i: usize = 0;
+    var crc_buf: [4096]u8 = undefined;
     while (i < n) : (i += 1) {
         const raw = try readEntry(arena, &p, off);
         const end = try addU64(raw.payload_off, @intCast(u64, raw.payload_len));
         if (end > body_end) return error.Corrupt;
-        const raw_len: usize = @intCast(usize, end - off);
-        const raw_buf = arena_mod.alloc(arena, raw_len) catch return error.OutOfMemory;
-        try readAt(&p, off, raw_buf[0..raw_len]);
         var crc = crypto.crc32Init();
-        crc = crypto.crc32Update(crc, raw_buf[0..raw_len]);
+        var scan: u64 = off;
+        while (scan < end) {
+            var take: usize = 4096;
+            const left = end - scan;
+            if (left < @intCast(u64, take)) take = @intCast(usize, left);
+            try readAt(&p, scan, crc_buf[0..take]);
+            crc = crypto.crc32Update(crc, crc_buf[0..take]);
+            scan += @intCast(u64, take);
+        }
         crc = crypto.crc32Final(crc);
         entries[i].offset = off;
         entries[i].end = end;

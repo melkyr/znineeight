@@ -10,8 +10,9 @@
 #   - clone loose_repo: loose objects copied verbatim (SHA-1 names preserved);
 #   - file:// clone, clone-from-worktree source, packed-refs-only source;
 #   - pkt-line unit cases; mocked-transport smart HTTP with request-byte,
-#     streaming-pack and synthesized-idx assertions; end-to-end git
-#     http-backend clone over 127.0.0.1 and a --max-down pacing floor;
+#     streaming-pack, >1 MiB sink-split, cleanup and pacing assertions;
+#     end-to-end git http-backend over HTTP and HTTPS (>328 refs,
+#     tls_demo certs/store), plus an opt-in Z98_NET=1 GitHub probe;
 #   - -h rc0, bad args rc1, and a refused HTTP connection rc2 (no side effects);
 #   - Windows: bare -osw emit, MinGW no-CRT build through the emitted
 #     build_target.sh, check_win9x_imports.sh ... 9x PASS, then Wine clone+log
@@ -27,6 +28,7 @@
 # Env: ZIG       seed-built zig1_5_clean (default /tmp/p3_t8_base/zig1_5_clean)
 #      OUT       scratch dir (default /tmp/z9git_tier)
 #      WINEPREFIX default $OUT/wineprefix
+#      Z98_NET   set 1 to run the opt-in GitHub HTTPS probe (default skip)
 
 set -u
 
@@ -73,6 +75,14 @@ done
 if [ ! -f "$CHECK" ]; then
     echo "FAIL: import gate not found: $CHECK"
     exit 1
+fi
+HAVE_PYTHON=0
+HAVE_PYTHON_SSL=0
+if command -v python3 >/dev/null 2>&1; then
+    HAVE_PYTHON=1
+    if python3 -c 'import ssl' >/dev/null 2>&1; then
+        HAVE_PYTHON_SSL=1
+    fi
 fi
 
 rm -rf "$OUT"
@@ -209,6 +219,12 @@ else
     fail_case "git verify-pack rejected mocked clone idx"
     tail -10 "$OUT/linux/mock_verify.log" 2>/dev/null | sed 's/^/       /'
 fi
+if [ "$MOCK_RC" -eq 0 ] && git --git-dir="$MOCK_CLONE/.git" fsck --full --no-dangling >"$OUT/linux/mock_fsck.log" 2>&1; then
+    pass_case "git fsck accepts mocked clone"
+else
+    fail_case "git fsck rejected mocked clone"
+    tail -10 "$OUT/linux/mock_fsck.log" 2>/dev/null | sed 's/^/       /'
+fi
 
 if cmp -s "$TD/packed_repo/HEAD" "$MOCK_CLONE/.git/HEAD"; then
     pass_case "mocked clone HEAD matches source"
@@ -225,6 +241,112 @@ else
 fi
 check_worktree mock_http "$MOCK_CLONE" "$TD/packed_repo" "$TD/goldens/packed.lstree"
 
+echo "== mocked-transport pacing (independent of python3/e2e) =="
+MOCK_PACED="$OUT/linux/clone_mock_paced"
+rm -rf "$MOCK_PACED"
+PACE_T0=$(date +%s)
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$MOCK_PACED" 1024 \
+    "$MOCK_DATA/info_refs" "$MOCK_DATA/upload" "$OUT/linux/mock_requests_paced.log" \
+    >"$OUT/linux/mock_paced.log" 2>&1
+MOCK_PACED_RC=$?
+PACE_T1=$(date +%s)
+MOCK_PACE_ELAPSED=$((PACE_T1 - PACE_T0))
+if [ "$MOCK_PACED_RC" -eq 0 ] && [ "$MOCK_PACE_ELAPSED" -ge 2 ] && [ -f "$MOCK_PACED/.git/HEAD" ]; then
+    pass_case "mock sink pacing floor 1024 B/s (${MOCK_PACE_ELAPSED}s >= 2s)"
+else
+    fail_case "mock sink pacing floor (rc=$MOCK_PACED_RC elapsed=${MOCK_PACE_ELAPSED}s)"
+    tail -10 "$OUT/linux/mock_paced.log" | sed 's/^/       /'
+fi
+
+echo "== mocked-transport failure cleanup and status classification =="
+MOCK_404="$OUT/linux/clone_mock_404"
+rm -rf "$MOCK_404"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$MOCK_404" 0 \
+    "$MOCK_DATA/info_refs" "$MOCK_DATA/upload" "$OUT/linux/mock_404_requests.log" 404 \
+    >"$OUT/linux/mock_404.log" 2>&1
+MOCK_404_RC=$?
+if [ "$MOCK_404_RC" -eq 2 ] && [ ! -e "$MOCK_404/.git/objects/pack/tmp_http_pack.pack" ]; then
+    pass_case "POST 404 is rc2 and removes tmp pack"
+else
+    fail_case "POST 404 classification/cleanup (rc=$MOCK_404_RC)"
+    tail -10 "$OUT/linux/mock_404.log" | sed 's/^/       /'
+fi
+
+head -c 256 "$MOCK_DATA/upload" >"$MOCK_DATA/upload_trunc"
+MOCK_TRUNC="$OUT/linux/clone_mock_trunc"
+rm -rf "$MOCK_TRUNC"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$MOCK_TRUNC" 0 \
+    "$MOCK_DATA/info_refs" "$MOCK_DATA/upload_trunc" "$OUT/linux/mock_trunc_requests.log" \
+    >"$OUT/linux/mock_trunc.log" 2>&1
+MOCK_TRUNC_RC=$?
+if [ "$MOCK_TRUNC_RC" -eq 3 ] && [ ! -e "$MOCK_TRUNC/.git/objects/pack/tmp_http_pack.pack" ]; then
+    pass_case "truncated pack is rc3 and removes tmp pack"
+else
+    fail_case "truncated pack classification/cleanup (rc=$MOCK_TRUNC_RC)"
+    tail -10 "$OUT/linux/mock_trunc.log" | sed 's/^/       /'
+fi
+
+echo "== mocked-transport >1 MiB pack (sink split) =="
+BIG_SRC="$OUT/mock_big_src"
+BIG_REPO="$OUT/mock_big.git"
+BIG_DATA="$MOCK_DATA/big"
+rm -rf "$BIG_SRC" "$BIG_REPO"
+mkdir -p "$BIG_SRC" "$BIG_DATA"
+if ! (
+    cd "$BIG_SRC" || exit 1
+    git init -q
+    git config user.name "z9 fixture"
+    git config user.email "z9@example.invalid"
+    head -c 1572864 /dev/urandom >big.bin
+    git add big.bin
+    git commit -q -m "large streaming payload"
+) >"$OUT/mock_big_build.log" 2>&1; then
+    fail_case "prepare >1 MiB repository"
+    tail -10 "$OUT/mock_big_build.log" | sed 's/^/       /'
+    finish
+fi
+if ! git clone --bare --no-hardlinks -q "$BIG_SRC" "$BIG_REPO" >>"$OUT/mock_big_build.log" 2>&1; then
+    fail_case "prepare >1 MiB bare repository"
+    tail -10 "$OUT/mock_big_build.log" | sed 's/^/       /'
+    finish
+fi
+git upload-pack --stateless-rpc --advertise-refs "$BIG_REPO" >"$BIG_DATA/adv" 2>>"$OUT/mock_big_build.log"
+{ printf '001e# service=git-upload-pack\n0000'; cat "$BIG_DATA/adv"; } >"$BIG_DATA/info_refs"
+git --git-dir="$BIG_REPO" pack-objects --stdout --all >"$BIG_DATA/pack" 2>>"$OUT/mock_big_build.log"
+{ printf '0008NAK\n'; cat "$BIG_DATA/pack"; } >"$BIG_DATA/upload"
+BIG_PACK_SIZE=$(wc -c <"$BIG_DATA/pack" | tr -d ' ')
+if [ "$BIG_PACK_SIZE" -gt 1048576 ]; then
+    pass_case "prepared >1 MiB scripted pack ($BIG_PACK_SIZE bytes)"
+else
+    fail_case "scripted pack is not >1 MiB ($BIG_PACK_SIZE bytes)"
+fi
+BIG_CLONE="$OUT/linux/clone_mock_big"
+rm -rf "$BIG_CLONE"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$BIG_CLONE" 0 \
+    "$BIG_DATA/info_refs" "$BIG_DATA/upload" "$OUT/linux/mock_big_requests.log" \
+    >"$OUT/linux/mock_big.log" 2>&1
+BIG_RC=$?
+BIG_IDX=$(find "$BIG_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
+BIG_PACK=$(find "$BIG_CLONE/.git/objects/pack" -maxdepth 1 -name '*.pack' 2>/dev/null | head -1)
+if [ "$BIG_RC" -eq 0 ] && [ -n "$BIG_IDX" ] && [ -n "$BIG_PACK" ] && cmp -s "$BIG_DATA/pack" "$BIG_PACK"; then
+    pass_case "streamed >1 MiB pack byte-identical across sink flushes"
+else
+    fail_case "streamed >1 MiB pack (rc=$BIG_RC)"
+    tail -15 "$OUT/linux/mock_big.log" | sed 's/^/       /'
+fi
+if [ -n "$BIG_IDX" ] && git verify-pack -v "$BIG_IDX" >"$OUT/linux/mock_big_verify.log" 2>&1; then
+    pass_case "git verify-pack accepts >1 MiB idx"
+else
+    fail_case "git verify-pack rejected >1 MiB idx"
+    tail -10 "$OUT/linux/mock_big_verify.log" 2>/dev/null | sed 's/^/       /'
+fi
+if [ "$BIG_RC" -eq 0 ] && git --git-dir="$BIG_CLONE/.git" fsck --full --no-dangling >"$OUT/linux/mock_big_fsck.log" 2>&1; then
+    pass_case "git fsck accepts >1 MiB clone"
+else
+    fail_case "git fsck rejected >1 MiB clone"
+    tail -10 "$OUT/linux/mock_big_fsck.log" 2>/dev/null | sed 's/^/       /'
+fi
+
 echo "== end-to-end smart HTTP (git http-backend) =="
 E2E_PID=""
 cleanup_e2e() {
@@ -234,7 +356,7 @@ cleanup_e2e() {
         E2E_PID=""
     fi
 }
-if [ -x "$(git --exec-path)/git-http-backend" ]; then
+if [ "$HAVE_PYTHON" -eq 1 ] && [ -x "$(git --exec-path)/git-http-backend" ]; then
     trap cleanup_e2e EXIT
     E2E="$OUT/e2e"
     mkdir -p "$E2E/www"
@@ -292,6 +414,12 @@ if [ -x "$(git --exec-path)/git-http-backend" ]; then
             fail_case "git verify-pack rejected e2e idx"
             tail -10 "$E2E/verify.log" 2>/dev/null | sed 's/^/       /'
         fi
+        if [ "$E2E_HTTP_RC" -eq 0 ] && git --git-dir="$E2E_HTTP/.git" fsck --full --no-dangling >"$E2E/fsck.log" 2>&1; then
+            pass_case "git fsck accepts e2e clone"
+        else
+            fail_case "git fsck rejected e2e clone"
+            tail -10 "$E2E/fsck.log" 2>/dev/null | sed 's/^/       /'
+        fi
 
         E2E_PACED="$E2E/http_paced"
         rm -rf "$E2E_PACED"
@@ -310,7 +438,130 @@ if [ -x "$(git --exec-path)/git-http-backend" ]; then
     cleanup_e2e
     trap - EXIT
 else
-    echo "SKIP - end-to-end smart HTTP: git http-backend not installed; the mocked-transport case above is not vacuous"
+    if [ "$HAVE_PYTHON" -eq 0 ]; then
+        echo "SKIP - end-to-end smart HTTP: python3 not installed; mocked transport/pacing cases above still ran"
+    else
+        echo "SKIP - end-to-end smart HTTP: git http-backend not installed; mocked transport/pacing cases above still ran"
+    fi
+fi
+
+echo "== end-to-end HTTPS smart HTTP (>328 refs) =="
+TLS_CERTS="$ROOT/examples/z98/demo/tls_demo/tests/certs"
+TLS_STORE="$TLS_CERTS/store.bin"
+if [ "$HAVE_PYTHON_SSL" -eq 1 ] && [ -x "$(git --exec-path)/git-http-backend" ] && \
+   [ -f "$TLS_CERTS/localhost.pem" ] && [ -f "$TLS_CERTS/localhost.key" ] && [ -f "$TLS_STORE" ]; then
+    trap cleanup_e2e EXIT
+    HTTPS="$OUT/https"
+    rm -rf "$HTTPS"
+    mkdir -p "$HTTPS/www"
+    cp -R "$TD/packed_repo" "$HTTPS/www/r.git"
+    cp "$TLS_STORE" "$HTTPS/ca_store.bin"
+    if ! (
+        export GIT_AUTHOR_NAME="z9 fixture"
+        export GIT_AUTHOR_EMAIL="z9@example.invalid"
+        export GIT_COMMITTER_NAME="z9 fixture"
+        export GIT_COMMITTER_EMAIL="z9@example.invalid"
+        gd="$HTTPS/www/r.git"
+        tree=$(git --git-dir="$gd" rev-parse "refs/heads/master^{tree}") || exit 1
+        parent=$(git --git-dir="$gd" rev-parse refs/heads/master) || exit 1
+        i=1
+        while [ "$i" -le 340 ]; do
+            parent=$(printf 'refs count %s\n' "$i" | git --git-dir="$gd" commit-tree "$tree" -p "$parent") || exit 1
+            git --git-dir="$gd" update-ref "refs/heads/count$i" "$parent" || exit 1
+            i=$((i + 1))
+        done
+    ) >"$HTTPS/refs_build.log" 2>&1; then
+        fail_case "prepare >328-reference HTTPS repository"
+        tail -10 "$HTTPS/refs_build.log" | sed 's/^/       /'
+    else
+        HTTPS_REF_COUNT=$(git --git-dir="$HTTPS/www/r.git" for-each-ref | wc -l | tr -d ' ')
+        if [ "$HTTPS_REF_COUNT" -ge 329 ]; then
+            pass_case "prepared $HTTPS_REF_COUNT HTTPS refs (>328)"
+        else
+            fail_case "HTTPS repository has only $HTTPS_REF_COUNT refs"
+        fi
+        rm -f "$HTTPS/port" "$HTTPS/requests.log"
+        GIT_HTTP_REQUEST_LOG="$HTTPS/requests.log" \
+            python3 "$APP_DIR/tests/git_http_server.py" "$HTTPS/www" "$HTTPS/port" \
+            "$TLS_CERTS/localhost.pem" "$TLS_CERTS/localhost.key" \
+            >"$HTTPS/server.log" 2>&1 &
+        E2E_PID=$!
+        HTTPS_WAIT=0
+        while [ ! -s "$HTTPS/port" ] && [ "$HTTPS_WAIT" -lt 100 ]; do
+            sleep 0.1
+            HTTPS_WAIT=$((HTTPS_WAIT + 1))
+        done
+        HTTPS_PORT=$(cat "$HTTPS/port" 2>/dev/null)
+        if [ -z "$HTTPS_PORT" ]; then
+            fail_case "start HTTPS git http-backend CGI server"
+            tail -10 "$HTTPS/server.log" 2>/dev/null | sed 's/^/       /'
+        else
+            pass_case "started HTTPS git http-backend CGI server on 127.0.0.1:$HTTPS_PORT"
+            HTTPS_CLONE="$HTTPS/clone"
+            ( cd "$HTTPS" && timeout 240 "$PROG" clone "https://localhost:$HTTPS_PORT/r.git" "$HTTPS_CLONE" ) \
+                >"$HTTPS/clone.log" 2>&1
+            HTTPS_RC=$?
+            if [ "$HTTPS_RC" -eq 0 ] && [ -f "$HTTPS_CLONE/.git/HEAD" ]; then
+                pass_case "HTTPS clone with >328 refs exit 0"
+            else
+                fail_case "HTTPS clone with >328 refs (rc=$HTTPS_RC)"
+                tail -20 "$HTTPS/clone.log" | sed 's/^/       /'
+            fi
+            HTTPS_POST_LEN=$(awk '$1 == "POST" && $2 ~ /git-upload-pack/ { print $3 }' "$HTTPS/requests.log" 2>/dev/null | sort -nr | head -1)
+            if [ -n "$HTTPS_POST_LEN" ] && [ "$HTTPS_POST_LEN" -gt 16384 ]; then
+                pass_case "HTTPS want-list request body spans TLS records ($HTTPS_POST_LEN > 16384 bytes)"
+            else
+                fail_case "HTTPS want-list body was not >16 KiB (${HTTPS_POST_LEN:-missing})"
+            fi
+            HTTPS_IDX=$(find "$HTTPS_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
+            if [ -n "$HTTPS_IDX" ] && git verify-pack -v "$HTTPS_IDX" >"$HTTPS/verify.log" 2>&1; then
+                pass_case "git verify-pack accepts HTTPS idx"
+            else
+                fail_case "git verify-pack rejected HTTPS idx"
+                tail -10 "$HTTPS/verify.log" 2>/dev/null | sed 's/^/       /'
+            fi
+            if [ "$HTTPS_RC" -eq 0 ] && git --git-dir="$HTTPS_CLONE/.git" fsck --full --no-dangling >"$HTTPS/fsck.log" 2>&1; then
+                pass_case "git fsck accepts HTTPS clone"
+            else
+                fail_case "git fsck rejected HTTPS clone"
+                tail -10 "$HTTPS/fsck.log" 2>/dev/null | sed 's/^/       /'
+            fi
+            if [ "$HTTPS_RC" -eq 0 ] && cmp -s "$TD/packed_repo/HEAD" "$HTTPS_CLONE/.git/HEAD"; then
+                pass_case "HTTPS HEAD matches source"
+            else
+                fail_case "HTTPS HEAD differs from source"
+            fi
+            if [ "$HTTPS_RC" -eq 0 ]; then
+                check_worktree https "$HTTPS_CLONE" "$TD/packed_repo" "$TD/goldens/packed.lstree"
+            fi
+        fi
+    fi
+    cleanup_e2e
+    trap - EXIT
+else
+    echo "SKIP - end-to-end HTTPS smart HTTP: missing python3+ssl, git http-backend, or tls_demo certs/store"
+fi
+
+echo "== opt-in GitHub HTTPS probe =="
+if [ "${Z98_NET:-0}" = "1" ]; then
+    GITHUB_CLONE="$OUT/github_hello"
+    rm -rf "$GITHUB_CLONE"
+    if timeout 300 "$PROG" clone "https://github.com/octocat/Hello-World.git" "$GITHUB_CLONE" \
+        >"$OUT/github_clone.log" 2>&1 && [ -d "$GITHUB_CLONE" ]; then
+        pass_case "GitHub octocat/Hello-World clone exit 0"
+        GITHUB_IDX=$(find "$GITHUB_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
+        if [ -n "$GITHUB_IDX" ] && git verify-pack -v "$GITHUB_IDX" >"$OUT/github_verify.log" 2>&1; then
+            pass_case "GitHub clone idx verifies"
+        else
+            fail_case "GitHub clone idx failed verify-pack"
+            tail -10 "$OUT/github_verify.log" 2>/dev/null | sed 's/^/       /'
+        fi
+    else
+        fail_case "GitHub probe (Z98_NET=1; see $OUT/github_clone.log)"
+        tail -20 "$OUT/github_clone.log" | sed 's/^/       /'
+    fi
+else
+    echo "SKIP - GitHub HTTPS probe: set Z98_NET=1 to enable the network test"
 fi
 
 echo "== CLI contract =="
@@ -320,6 +571,11 @@ if [ "$HELP_RC" -eq 0 ] && grep -q 'usage: z9git' "$OUT/linux/help.out"; then
     pass_case "-h exit 0 and prints usage"
 else
     fail_case "-h exit 0 and prints usage (rc=$HELP_RC)"
+fi
+if grep -q 'arena: fixed 16 MiB' "$OUT/linux/help.out"; then
+    pass_case "-h documents the fixed 16 MiB arena ceiling"
+else
+    fail_case "-h missing the fixed arena ceiling note"
 fi
 
 "$PROG" >"$OUT/linux/noargs.out" 2>&1

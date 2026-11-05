@@ -102,6 +102,21 @@ z9git -h
 Run `log` and `checkout` from inside the clone (the repository is discovered
 from the current directory or a parent directory's `.git`).
 
+### Memory and pacing limits (Task 8)
+
+The app arena is a **fixed 16 MiB** allocation. `pack.idxSynthesize` keeps the
+inflated payload of every pack entry (needed for delta reconstruction) and uses
+one reused CRC scratch buffer; a high-single-digit-MiB pack can still exhaust
+the arena and fail with rc 5 (out of memory). `--arena-mb` and the
+external-memory idx are Task 8b, not implemented here. The README and `-h`
+document this ceiling.
+
+`--max-down` is applied inside the response sink using the monotonic clock.
+`std_http.httpPostStreamOver` buffers up to 1 MiB before invoking the sink, so
+for small packs the body may arrive first and the throttle is applied before
+the clone proceeds rather than shaping each TCP read; large packs flush roughly
+once per MiB. The duration floor is still honored.
+
 ### HTTPS trust store
 
 `https://` uses `std_net` TCP plus `std_tls` with a `std_x509.TrustStore`.
@@ -186,11 +201,16 @@ checks:
 - a mocked `std_http.HttpTransport` smart-HTTP clone (`tests/mock_http.zig`):
   asserts the info/refs GET and upload-pack POST request bytes/content types,
   streams the scripted NAK+PACK response to disk, verifies the synthesized idx
-  with `git verify-pack -v`, and checks refs/HEAD/worktree;
+  with `git verify-pack -v`/`git fsck`, checks refs/HEAD/worktree, exercises a
+  >1 MiB pack across multiple sink flushes, a sink pacing floor independent of
+  python3, non-200 POST classification, and temp-pack cleanup on failure;
 - end-to-end `git http-backend` behind `tests/git_http_server.py`: clone over
   `http://127.0.0.1:<port>/r.git`, worktree/HEAD/refs identical to a `file://`
-  clone, and a `--max-down 1` duration floor (skips loudly if `git
+  clone, and a `--max-down 1` duration floor (skips loudly if python3 or `git
   http-backend` is absent);
+- end-to-end HTTPS with the tls_demo certs/store and a >328-ref want list
+  (>16 KiB request body across multiple TLS records); an opt-in
+  `Z98_NET=1` GitHub `octocat/Hello-World` probe skips loudly when unset;
 - `-h` rc0, bad args rc1, refused HTTP connection rc2 without side effects;
 - bare `-osw` emit, MinGW no-CRT build, `check_win9x_imports.sh … 9x` PASS
   (KERNEL32 + WSOCK32, no MSVCRT), Wine `clone` + `log`, and the same

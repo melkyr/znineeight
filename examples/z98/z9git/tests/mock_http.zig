@@ -1,13 +1,14 @@
 // mock_http.zig -- scripted smart-HTTP clone harness (Task 8).
 //
-// usage: mock_http <url> <dest> <max_down_bps> <info_refs_body> <upload_body> <reqlog>
+// usage: mock_http <url> <dest> <max_down_bps> <info_refs_body> <upload_body> <reqlog> [post_status]
 //
 // Injects a std_http.HttpTransport factory into httpgit.httpCloneOver: the
 // first opened connection serves the supplied info/refs body, the second
 // serves the supplied upload-pack body (NAK pkt-line followed by the raw PACK).
 // The transport hands back at most 7 bytes per read so pkt-line/pack parsing
-// crosses arbitrary read boundaries. Both request byte streams are written to
-// <reqlog> separated by a fixed marker.
+// crosses arbitrary read boundaries. The optional post_status (default 200)
+// scripts a non-200 upload-pack response for error-classification tests. Both
+// request byte streams are written to <reqlog> separated by a fixed marker.
 //
 // Build/run (repo root):
 //   "$ZIG" -fsafe -o "$OUT" examples/z98/z9git/tests/mock_http.zig
@@ -38,15 +39,6 @@ const Mock = struct {
 };
 
 var g_mocks: [2]Mock = undefined;
-
-fn strEq(a: []const u8, b: []const u8) bool {
-    if (a.len != b.len) return false;
-    var i: usize = 0;
-    while (i < a.len) : (i += 1) {
-        if (a[i] != b[i]) return false;
-    }
-    return true;
-}
 
 fn parseU32(s: []const u8) ?u32 {
     if (s.len == 0) return null;
@@ -82,16 +74,23 @@ fn appendDec(out: []u8, pos: *usize, value: usize) void {
     }
 }
 
-fn buildResponse(arena: *arena_mod.Arena, body: []const u8, content_type: []const u8) ![]u8 {
+fn buildResponse(arena: *arena_mod.Arena, status: u16, body: []const u8, content_type: []const u8) ![]u8 {
     const total = body.len + content_type.len + 128;
     const raw = arena_mod.alloc(arena, total) catch return error.OutOfMemory;
     const out = raw[0..total];
-    const prefix: []const u8 = "HTTP/1.1 200 OK\r\nContent-Type: ";
-    const mid: []const u8 = "\r\nContent-Length: ";
+    const prefix: []const u8 = "HTTP/1.1 ";
+    const mid1: []const u8 = " Status\r\nContent-Type: ";
+    const mid2: []const u8 = "\r\nContent-Length: ";
     var pos: usize = 0;
     var i: usize = 0;
     while (i < prefix.len) : (i += 1) {
         out[pos] = prefix[i];
+        pos += 1;
+    }
+    appendDec(out, &pos, @intCast(usize, status));
+    i = 0;
+    while (i < mid1.len) : (i += 1) {
+        out[pos] = mid1[i];
         pos += 1;
     }
     i = 0;
@@ -100,8 +99,8 @@ fn buildResponse(arena: *arena_mod.Arena, body: []const u8, content_type: []cons
         pos += 1;
     }
     i = 0;
-    while (i < mid.len) : (i += 1) {
-        out[pos] = mid[i];
+    while (i < mid2.len) : (i += 1) {
+        out[pos] = mid2[i];
         pos += 1;
     }
     appendDec(out, &pos, body.len);
@@ -174,6 +173,12 @@ fn fail(msg: []const u8) noreturn {
     os.exit(1);
 }
 
+fn failCode(msg: []const u8, code: i32) noreturn {
+    io.write(msg);
+    io.write("\n");
+    os.exit(code);
+}
+
 fn readFileOr(arena: *arena_mod.Arena, path: []const u8, out: *[]u8) bool {
     const data = file_mod.readAll(arena, path) catch return false;
     out.* = data;
@@ -186,8 +191,8 @@ fn allocOr(arena: *arena_mod.Arena, n: usize, out: *[]u8) bool {
     return true;
 }
 
-fn buildResponseOr(arena: *arena_mod.Arena, body: []const u8, content_type: []const u8, out: *[]const u8) bool {
-    const data = buildResponse(arena, body, content_type) catch return false;
+fn buildResponseOr(arena: *arena_mod.Arena, status: u16, body: []const u8, content_type: []const u8, out: *[]const u8) bool {
+    const data = buildResponse(arena, status, body, content_type) catch return false;
     out.* = data;
     return true;
 }
@@ -200,7 +205,7 @@ fn writeFileOr(path: []const u8, data: []const u8) bool {
 pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
     os.initArgs(arg_count, arg_values);
     const n = os.argc();
-    if (n < 7) fail("usage: mock_http <url> <dest> <max_down_bps> <info_refs_body> <upload_body> <reqlog>");
+    if (n < 7) fail("usage: mock_http <url> <dest> <max_down_bps> <info_refs_body> <upload_body> <reqlog> [post_status]");
 
     var arena = arena_mod.init(g_arena_buf[0..]);
     const url = os.argv(1);
@@ -211,16 +216,25 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
     } else {
         fail("mock_http: bad max_down");
     }
+    var post_status: u16 = 200;
+    if (n >= 8) {
+        if (parseU32(os.argv(7))) |v| {
+            if (v < 100 or v > 599) fail("mock_http: bad post_status");
+            post_status = @intCast(u16, v);
+        } else {
+            fail("mock_http: bad post_status");
+        }
+    }
     var info_body: []u8 = undefined;
     if (!readFileOr(&arena, os.argv(4), &info_body)) fail("mock_http: cannot read info/refs body");
     var upload_body: []u8 = undefined;
     if (!readFileOr(&arena, os.argv(5), &upload_body)) fail("mock_http: cannot read upload body");
     const reqlog = os.argv(6);
 
-    if (!buildResponseOr(&arena, info_body, "application/x-git-upload-pack-advertisement", &g_info_resp)) {
+    if (!buildResponseOr(&arena, 200, info_body, "application/x-git-upload-pack-advertisement", &g_info_resp)) {
         fail("mock_http: out of memory");
     }
-    if (!buildResponseOr(&arena, upload_body, "application/x-git-upload-pack-result", &g_upload_resp)) {
+    if (!buildResponseOr(&arena, post_status, upload_body, "application/x-git-upload-pack-result", &g_upload_resp)) {
         fail("mock_http: out of memory");
     }
     g_open_count = 0;
@@ -230,11 +244,11 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
         .open_fn = mockOpen,
     };
     httpgit.httpCloneOver(&arena, url, dest, max_down, &factory) catch |e| {
-        if (e == error.Transport) fail("mock_http: transport");
-        if (e == error.Protocol) fail("mock_http: protocol");
-        if (e == error.ObjectStore) fail("mock_http: object-store");
-        if (e == error.Io) fail("mock_http: io");
-        fail("mock_http: out of memory");
+        if (e == error.Transport) failCode("mock_http: transport", 2);
+        if (e == error.Protocol) failCode("mock_http: protocol", 3);
+        if (e == error.ObjectStore) failCode("mock_http: object-store", 4);
+        if (e == error.Io) failCode("mock_http: io", 5);
+        failCode("mock_http: out of memory", 5);
     };
 
     const get_len = g_mocks[0].req_len;

@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """Tiny CGI front end for `git http-backend` (z9git Task 8 tier).
 
-usage: git_http_server.py <project-root> <port-file>
+usage: git_http_server.py <project-root> <port-file> [cert.pem key.pem]
 
 Binds 127.0.0.1 on an ephemeral port, writes the port number to <port-file>,
 and serves GET/POST requests by invoking `git http-backend` with the CGI
-environment. Response bodies are buffered and returned with a Content-Length
-(the fixture repositories are small); git remains the only smart-HTTP server
-implementation under test.
+environment. With cert/key it wraps the listener in TLS (for the HTTPS e2e
+case). Response bodies are buffered and returned with a Content-Length (the
+fixture repositories are small); git remains the only smart-HTTP server
+implementation under test. If GIT_HTTP_REQUEST_LOG is set, each request
+appends `METHOD PATH LENGTH` to that file.
 """
 
 import http.server
 import os
+import ssl
 import subprocess
 import sys
 import urllib.parse
@@ -20,6 +23,9 @@ import urllib.parse
 def main() -> int:
     root = sys.argv[1]
     port_file = sys.argv[2]
+    cert_file = sys.argv[3] if len(sys.argv) >= 4 else ""
+    key_file = sys.argv[4] if len(sys.argv) >= 5 else ""
+    request_log = os.environ.get("GIT_HTTP_REQUEST_LOG", "")
 
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -42,6 +48,12 @@ def main() -> int:
                 except ValueError:
                     length = 0
                 body = self.rfile.read(length)
+            if request_log:
+                try:
+                    with open(request_log, "a", encoding="ascii") as log:
+                        log.write(f"{self.command} {split.path} {len(body)}\n")
+                except OSError:
+                    pass
 
             env = os.environ.copy()
             env.update(
@@ -104,6 +116,10 @@ def main() -> int:
                 self.wfile.write(response_body)
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    if cert_file:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(cert_file, key_file or None)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
     with open(port_file, "w", encoding="ascii") as fh:
         fh.write(str(server.server_address[1]))
         fh.flush()

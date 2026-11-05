@@ -224,7 +224,6 @@ const TcpConn = struct {
 const TlsConn = struct {
     fd: i32,
     sess: *tls.TlsSession,
-    established: bool,
     closed: bool,
 };
 
@@ -328,7 +327,6 @@ fn tlsHandshake(c: *TlsConn) OpenError!void {
                 act = tls.tlsStep(c.sess, inbuf[0..n], outbuf[0..]) catch return error.Transport;
             },
             .established => {
-                c.established = true;
                 return;
             },
             .closed => return error.Transport,
@@ -380,8 +378,14 @@ fn tlsWrite(state: *void, data: []const u8) !usize {
     var c: *TlsConn = @ptrCast(*TlsConn, state);
     if (data.len == 0) return 0;
     var outbuf: [tls.TLS_MAX_WIRE_RECORD + 64]u8 = undefined;
-    const n = tls.tlsWrite(c.sess, data, outbuf[0..]) catch return error.TooLarge;
-    rawSendAll(c.fd, outbuf[0..n]) catch return error.ConnectFailed;
+    var off: usize = 0;
+    while (off < data.len) {
+        var take = data.len - off;
+        if (take > tls.TLS_MAX_PLAINTEXT_RECORD) take = tls.TLS_MAX_PLAINTEXT_RECORD;
+        const n = tls.tlsWrite(c.sess, data[off .. off + take], outbuf[0..]) catch return error.TooLarge;
+        rawSendAll(c.fd, outbuf[0..n]) catch return error.ConnectFailed;
+        off += take;
+    }
     return data.len;
 }
 
@@ -475,7 +479,7 @@ fn openReal(factory_state: *void, url: []const u8) OpenError!http.HttpTransport 
     tls.tlsInit(&g_tls_session, &cfg);
     const raw = arena_mod.alloc(rf.arena, @sizeOf(TlsConn)) catch return error.OutOfMemory;
     const c: *TlsConn = @ptrCast(*TlsConn, raw);
-    c.* = TlsConn{ .fd = fd, .sess = &g_tls_session, .established = false, .closed = false };
+    c.* = TlsConn{ .fd = fd, .sess = &g_tls_session, .closed = false };
     tlsHandshake(c) catch {
         net.close(fd);
         return error.Transport;
@@ -551,6 +555,8 @@ fn parseDiscovery(arena: *arena_mod.Arena, body: []const u8) repo.GitError!Disco
     var saw_service = false;
     var caps_done = false;
     var head_id: [20]u8 = undefined;
+    var hz: usize = 0;
+    while (hz < 20) : (hz += 1) head_id[hz] = 0;
     var has_head = false;
     var head_target: []const u8 = "";
     var pos: usize = 0;
@@ -803,6 +809,18 @@ fn trailerOrder(s: *PackSink, out: *[20]u8) void {
     while (i < 20) : (i += 1) out[i] = s.hold[(s.hold_pos + i) % 20];
 }
 
+fn removeIfExists(path: []const u8) void {
+    file_mod.remove(path) catch {};
+}
+
+fn openTransport(factory: *const TransportFactory, url: []const u8) repo.GitError!http.HttpTransport {
+    const t = factory.open_fn(factory.state, url) catch |e| {
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.Transport;
+    };
+    return t;
+}
+
 // --- clone entry points -----------------------------------------------------
 
 pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const u8, max_down_bps: u32, factory: *const TransportFactory) repo.GitError!void {
@@ -810,10 +828,7 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     const info_url = joinUrl(arena, parts.base_url, "/info/refs?service=git-upload-pack") catch return error.OutOfMemory;
     const post_url = joinUrl(arena, parts.base_url, "/git-upload-pack") catch return error.OutOfMemory;
 
-    var get_t = factory.open_fn(factory.state, info_url) catch |e| {
-        if (e == error.OutOfMemory) return error.OutOfMemory;
-        return error.Transport;
-    };
+    var get_t = try openTransport(factory, info_url);
     var info_resp: http.Response = undefined;
     http.httpGetOver(arena, &get_t, info_url, &info_resp) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
@@ -847,18 +862,22 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     ps.max_down_bps = max_down_bps;
     ps.pace_start = 0;
     ps.fail_kind = 0;
+    var tmp_live = true;
+    var pack_open = true;
+    defer {
+        if (pack_open) file_mod.close(&ps.file);
+        if (tmp_live) removeIfExists(tmp_path);
+    }
     var sink = http.ResponseSink{
         .state = @ptrCast(*void, &ps),
         .write_fn = packSinkWrite,
     };
-    var post_t = factory.open_fn(factory.state, post_url) catch |e| {
-        file_mod.close(&ps.file);
-        if (e == error.OutOfMemory) return error.OutOfMemory;
-        return error.Transport;
-    };
-    var head: http.Response = undefined;
+    var post_t = try openTransport(factory, post_url);
+    var no_headers: [1]http.Header = undefined;
+    var no_body: [1]u8 = undefined;
+    var head = http.Response{ .status = 0, .headers = no_headers[0..0], .body = no_body[0..0] };
     http.httpPostStreamOver(arena, &post_t, post_url, req_body, "application/x-git-upload-pack-request", "application/x-git-upload-pack-result", &sink, &head) catch |e| {
-        file_mod.close(&ps.file);
+        if (head.status != 0 and head.status != 200) return error.Transport;
         if (ps.fail_kind == KIND_IO) return error.Io;
         if (ps.fail_kind == KIND_PROTOCOL) return error.Protocol;
         if (e == error.OutOfMemory) return error.OutOfMemory;
@@ -868,9 +887,10 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
         return error.Transport;
     };
     file_mod.close(&ps.file);
+    pack_open = false;
+    if (head.status != 200) return error.Transport;
     if (ps.fail_kind == KIND_IO) return error.Io;
     if (ps.fail_kind == KIND_PROTOCOL) return error.Protocol;
-    if (head.status != 200) return error.Transport;
     if (!ps.pack_started or ps.hold_len != 20) return error.Protocol;
 
     var digest: [20]u8 = undefined;
@@ -888,8 +908,12 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     if (file_mod.exists(final_pack)) file_mod.remove(final_pack) catch return error.Io;
     if (file_mod.exists(final_idx)) file_mod.remove(final_idx) catch return error.Io;
     file_mod.rename(tmp_path, final_pack) catch return error.Io;
+    tmp_live = false;
 
-    pack_mod.idxSynthesize(arena, final_pack, final_idx) catch return error.ObjectStore;
+    pack_mod.idxSynthesize(arena, final_pack, final_idx) catch |e| {
+        if (e == error.OutOfMemory) return error.OutOfMemory;
+        return error.ObjectStore;
+    };
 
     var head_target = disc.head_target;
     var head_id: [20]u8 = undefined;

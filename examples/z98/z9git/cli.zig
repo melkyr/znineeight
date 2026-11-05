@@ -86,6 +86,7 @@ pub fn usage() void {
     writeMsg("       z9git checkout <ref>\n");
     writeMsg("       z9git -h\n");
     writeMsg("  transports: <path> or file://<path>; http:// and https:// (smart HTTP)\n");
+    writeMsg("  arena: fixed 16 MiB (large packs may run out; --arena-mb is Task 8b)\n");
     writeMsg("exit codes: 0 ok, 1 usage, 2 transport, 3 protocol, 4 object-store, 5 io\n");
 }
 
