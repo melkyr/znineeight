@@ -734,19 +734,31 @@ fn ghashMulX(x: []const u8, out: []u8) void {
     while (i < 16) : (i += 1) out[i] = y[i];
 }
 
-fn ghashMulX4(x: []const u8, out: []u8) void {
-    var cur: [16]u8 = undefined;
-    var nxt: [16]u8 = undefined;
-    var i: usize = 0;
-    while (i < 16) : (i += 1) cur[i] = x[i];
-    var k: usize = 0;
-    while (k < 4) : (k += 1) {
-        ghashMulX(cur[0..], nxt[0..]);
-        i = 0;
-        while (i < 16) : (i += 1) cur[i] = nxt[i];
+// Reduction constants for a 4-bit right shift of a 128-bit GHASH value:
+// index = low nibble shifted out, values = the two high bytes to XOR back.
+const GHASH_RED0 = [16]u8{
+    0x00, 0x1c, 0x38, 0x24, 0x70, 0x6c, 0x48, 0x54,
+    0xe1, 0xfd, 0xd9, 0xc5, 0x91, 0x8d, 0xa9, 0xb5,
+};
+const GHASH_RED1 = [16]u8{
+    0x00, 0x20, 0x40, 0x60, 0x80, 0xa0, 0xc0, 0xe0,
+    0x00, 0x20, 0x40, 0x60, 0x80, 0xa0, 0xc0, 0xe0,
+};
+
+// r = (r * x^4) ^ tab[nib], fused so the hot path is one 4-bit shift and one
+// table XOR per nibble rather than four bit-at-a-time ghashMulX walks.
+fn ghashMulNib(g: *const GHash, r: []u8, nib: usize) void {
+    const lo: u8 = r[15] & 0x0F;
+    var i: usize = 15;
+    while (i > 0) : (i -= 1) {
+        r[i] = (r[i] >> 4) | (r[i - 1] << 4);
     }
-    i = 0;
-    while (i < 16) : (i += 1) out[i] = cur[i];
+    r[0] = (r[0] >> 4) ^ GHASH_RED0[lo] ^ g.tab[nib * 16];
+    r[1] = r[1] ^ GHASH_RED1[lo] ^ g.tab[nib * 16 + 1];
+    i = 2;
+    while (i < 16) : (i += 1) {
+        r[i] = r[i] ^ g.tab[nib * 16 + i];
+    }
 }
 
 fn ghashInit(g: *GHash, h: []const u8) void {
@@ -788,20 +800,9 @@ fn ghashMulH(g: *const GHash, x: []const u8, out: []u8) void {
     var bi: usize = 16;
     while (bi > 0) {
         bi -= 1;
-        var b: u8 = x[bi];
-        var nib: usize = @intCast(usize, b & 0x0F);
-        var t: [16]u8 = undefined;
-        ghashMulX4(r[0..], t[0..]);
-        i = 0;
-        while (i < 16) : (i += 1) t[i] = t[i] ^ g.tab[nib * 16 + i];
-        i = 0;
-        while (i < 16) : (i += 1) r[i] = t[i];
-        nib = @intCast(usize, (b >> 4) & 0x0F);
-        ghashMulX4(r[0..], t[0..]);
-        i = 0;
-        while (i < 16) : (i += 1) t[i] = t[i] ^ g.tab[nib * 16 + i];
-        i = 0;
-        while (i < 16) : (i += 1) r[i] = t[i];
+        const b: u8 = x[bi];
+        ghashMulNib(g, r[0..], @intCast(usize, b & 0x0F));
+        ghashMulNib(g, r[0..], @intCast(usize, (b >> 4) & 0x0F));
     }
     i = 0;
     while (i < 16) : (i += 1) out[i] = r[i];
