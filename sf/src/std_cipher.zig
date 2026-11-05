@@ -728,7 +728,7 @@ fn ghashMulNib(g: *const GHash, r: []u8, nib: usize) void {
     const lo: u8 = r[15] & 0x0F;
     var i: usize = 15;
     while (i > 0) : (i -= 1) {
-        r[i] = (r[i] >> 4) | (r[i - 1] << 4);
+        r[i] = (r[i] >> 4) | ((r[i - 1] & 0x0F) << 4);
     }
     r[0] = (r[0] >> 4) ^ GHASH_RED0[lo] ^ g.tab[nib * 16];
     r[1] = r[1] ^ GHASH_RED1[lo] ^ g.tab[nib * 16 + 1];
