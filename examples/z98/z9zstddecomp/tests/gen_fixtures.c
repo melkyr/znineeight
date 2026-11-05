@@ -366,5 +366,34 @@ int main(int argc, char **argv) {
     printf("truncated: %lu bytes (from %lu)\n", (unsigned long)(n / 2u),
            (unsigned long)n);
 
+    /* lying FCS: a single-segment frame declares 1 (and 0) bytes but its one
+     * raw block writes 10. Both must be decode errors (rc3), never OOB/hang. */
+    {
+        size_t declared_sz;
+        size_t j;
+        size_t block_bytes = 10u;
+        size_t bh = (block_bytes << 3) | 1u;
+        for (j = 0; j < 2u; j++) {
+            const char *name = (j == 0) ? "fcs-lie-1.zst" : "fcs-lie-0.zst";
+            declared_sz = (j == 0) ? 1u : 0u;
+            frame[0] = 0x28;
+            frame[1] = 0xB5;
+            frame[2] = 0x2F;
+            frame[3] = 0xFD;
+            frame[4] = 0x20; /* single_segment=1, fcs_flag=0 (1-byte FCS) */
+            frame[5] = (unsigned char)declared_sz;
+            frame[6] = (unsigned char)(bh & 0xFFu);
+            frame[7] = (unsigned char)((bh >> 8) & 0xFFu);
+            frame[8] = (unsigned char)((bh >> 16) & 0xFFu);
+            for (i = 0; i < (unsigned)block_bytes; i++)
+                frame[9 + i] = (unsigned char)('B' + i);
+            n = 9u + block_bytes;
+            write_file(dir, name, frame, n);
+            printf("lying FCS: %s %lu bytes (declared %lu, raw block %lu)\n",
+                   name, (unsigned long)n, (unsigned long)declared_sz,
+                   (unsigned long)block_bytes);
+        }
+    }
+
     return 0;
 }

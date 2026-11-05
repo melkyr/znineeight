@@ -1,8 +1,9 @@
 # z9zstddecomp
 
 A single-shot zstd frame decompressor CLI for Z98. It reads a complete `.zst`
-stream, decodes it with `std_zstd`, and writes the plain bytes. Standard frames,
-skippable frames, content checksums, and RFC 8878 dictionaries are supported.
+stream, sizes the destination from `std_zstd.zstdFrameContentSize`, decodes it
+with `std_zstd`, and writes the plain bytes. Standard frames, skippable frames,
+content checksums, and RFC 8878 dictionaries are supported.
 
 ## Building with zig1
 
@@ -26,24 +27,26 @@ sh out/build_target.sh
 
 ### Windows 9x / NT
 
-Run this from the example directory in a Command Prompt. `-osw` selects the
-Windows target and emits the batch scripts.
+Run this from the example directory in a Command Prompt. Bare `-osw` selects
+the default 9x target and emits the batch scripts.
 
 ```bat
 mkdir out
-z1.exe -I lib -osw nt -o out main.zig
+z1.exe -I lib -osw -o out main.zig
 cd out
-build_mingw_crt.bat
+build_mingw_nocrt.bat
 prog.exe <in.zst> <out>
 ```
 
-This app does file I/O through `std_file`, so the Windows smoke path is the
-**CRT** build (`-osw nt`, which sets `ZIG_WIN_NT`; `build_mingw_crt.bat` /
-`build_target_crt.bat` / `build_owc_crt.bat` do not use `-nostdlib`). The
-default 9x no-CRT profile (`-osw`, `-nostdlib`, no `msvcrt.dll`) is not the
-supported path for this example. The MinGW CRT build imports `msvcrt.dll`; the
-`check_win9x_imports.sh ... nt` gate is the relevant import gate. The
-no-msvcrt `9x` gate is for operator-run static-CRT OWC/MSVC builds.
+This app does file I/O through `std_file`, and the 9x **no-CRT** build supports
+it: the emitted `build_mingw_nocrt.bat` uses `-DZIG_NO_CRT` + `-nostdlib`, links
+only `kernel32` (+ `winmm`/`wsock32` when used), and imports no `msvcrt.dll`.
+The tier's Windows smoke is the same shape: bare `-osw` emit, MinGW no-CRT
+build through the emitted `build_target.sh`, Wine runs, and
+`check_win9x_imports.sh ... 9x` PASS. A no-CRT build or run failure is a hard
+failure; there is no CRT/`nt` fallback. The CRT variants (`build_target_crt.bat`,
+`build_owc_crt.bat`, `build_mingw_crt.bat`) remain available but are not the
+gated path.
 
 ## Usage
 
@@ -60,10 +63,12 @@ z9zstddecomp -h
 - `--max-window-log <n>` caps the accepted frame window at `2^n` bytes.
   Default: **27** (the zstd maximum). A smaller value rejects larger-window
   frames with exit code 3 (`WindowTooBig`).
-- `--max-output <n>` caps decoded output at `n` bytes. Default: **16 MiB**.
-  When the frame declares an exact content size, that size is used directly;
-  otherwise the output buffer grows by doubling up to the cap. Exceeding the
-  cap exits 5.
+- `--max-output <n>` caps decoded output at `n` bytes. Default: **16 MiB**;
+  the app's usable output capacity is **32 MiB**, and a larger request is a
+  usage error (exit 1). When the frame declares an exact content size, that
+  size is used directly (a lying declared size is a decode error, exit 3);
+  otherwise the output starts at 64 KiB and grows by doubling up to the cap.
+  Exceeding the cap exits 5.
 
 ## Exit codes
 
@@ -82,10 +87,11 @@ z9zstddecomp -h
 `tests/gen_fixtures.c` (dev-time, links libzstd 1.5.4). They cover plain text,
 4-stream Huffman literals, an RLE block, a skippable frame plus payload, a
 content checksum, a magic dictionary, a raw-content dictionary, a dictionary
-mismatch, and a truncated frame.
+mismatch, a truncated frame, and two lying declared-size (FCS=1/FCS=0) frames.
 
 `tests/tier_zstddecomp.sh` builds this example with a seed-built compiler
-(`ZIG=/tmp/p3_t5_base/zig1_5_clean`), checks every fixture's exit code and
-output md5 on Linux, exercises the exit-code contract, then emits with
-`-osw nt`, builds the MinGW CRT executable, runs the `nt` import gate, and runs
-the plain and magic-dictionary cases under Wine.
+(`ZIG=/tmp/p3_t5_fix/zig1_5_clean`), checks every fixture's exit code and
+output md5/bytes on Linux, exercises the exit-code contract (including missing
+`--dict`, over-capacity `--max-output`, grow-cap, and lying FCS), then emits
+with bare `-osw`, builds the MinGW no-CRT executable, runs the `9x` import gate,
+and runs the plain and magic-dictionary cases under Wine.
