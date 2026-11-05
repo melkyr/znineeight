@@ -55,16 +55,17 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v139** (`release/seed/zig1-seed.tgz`, archive md5
-`c05bf7d54e9f2a3bb14eabd5e8d22295`), with **52** std files (`std.zig` +
+The committed seed is **v140** (`release/seed/zig1-seed.tgz`, archive md5
+`534d36e8e516fe710245464743314a66`), with **52** std files (`std.zig` +
 51 `std_*.zig`) and `lib/manifest.md5` md5
-`ad9abde15b01dd57d9a442b5cbe06685`. The compiler fixed point is
-`cf68f192900e7f6618c11e1712b74b3a`; v139 is the Phase 3 Task 8b std crypto
-CPU-fix rotation (table-driven GHASH in `std_cipher` and the optimized SHA-1
-compression loop in `std_crypto`; existing behavior unchanged, no compiler
-source change, so the fixed point is unchanged from v138). The Win9x companion
-zip is `release/seed/zig1_seed_w9.zip` (md5
-`7acfa50f5bf4bd749f473bdb0776aad7`).
+`039f205f6f7ac4c881d33a0a5860d4e9`. The compiler fixed point is
+`cf68f192900e7f6618c11e1712b74b3a`; v140 is the Phase 3 T8-post-opt std
+optimization rotation (SHA-512/384 + CRC32, deflate + Adler-32,
+SHA-256/BLAKE2s/MD5/ChaCha20) plus the GHASH `-fsafe` nibble pre-mask fix
+(existing behavior unchanged, no compiler source change, so the fixed point
+is unchanged from v139). The Win9x companion zip is
+`release/seed/zig1_seed_w9.zip` (md5
+`278fc54adb9f0b8805278e031aad5e0a`).
 
 ## Phase 1 result — TLS + WireGuard complete
 

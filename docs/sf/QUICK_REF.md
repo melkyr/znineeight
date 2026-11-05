@@ -30,40 +30,45 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-05 — seed v139]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-05 — seed v140]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v139 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v140 CHANGELOG entry.
 
-**Current seed: v139** (rotated 2026-11-05 for the Task 8b std crypto CPU
-fixes: table-driven GHASH in `std_cipher` (`ghashMulNib`) and the optimized
-SHA-1 compression loop in `std_crypto`. Existing behavior is unchanged;
-packaging base HEAD `6e49471d`). Archived binary md5
+**Current seed: v140** (rotated 2026-11-05 for the T8-post-opt std
+optimizations — SHA-512/384 + CRC32, deflate + Adler-32, SHA-256/BLAKE2s/MD5/
+ChaCha20 — plus the GHASH `-fsafe` nibble pre-mask fix. Existing behavior is
+unchanged; packaging base HEAD `ae694a0b`). Archived binary md5
 (= fixed point) `cf68f192900e7f6618c11e1712b74b3a`; archive md5
-`c05bf7d54e9f2a3bb14eabd5e8d22295`; Win9x zip md5
-`7acfa50f5bf4bd749f473bdb0776aad7`; `gen/` 48 `.c` + 49 `.h` (12,473,249
+`534d36e8e516fe710245464743314a66`; Win9x zip md5
+`278fc54adb9f0b8805278e031aad5e0a`; `gen/` 48 `.c` + 49 `.h` (12,473,249
 bytes); `lib/` **52** std `.zig` (`std.zig` + 51 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`ad9abde15b01dd57d9a442b5cbe06685`; `std_cipher.zig` and `std_crypto.zig`
-updated, no new module).
-A rebuild from the committed v139 archive is two-hop
+`039f205f6f7ac4c881d33a0a5860d4e9`; `std_crypto.zig`, `std_deflate.zig`
+and `std_cipher.zig` updated, no new module).
+A rebuild from the committed v140 archive is two-hop
 **hop1 == hop2 == `cf68f192…`**. The compiler source is **`-fsafe`-clean**.
 
-The v139 rotation battery is deliberately **crypto-fixture-only**: the ten
-`repro/mi_matrix/stdlib_{aes_gcm,chacha_poly,crypto_*}_xmod` fixtures
-(AES-GCM, ChaCha20-Poly1305, and the eight `stdlib_crypto_*`) are
-**10 PASS / 0 FAIL**. The v136 full-battery measurements below
-are historical and were **not** re-run or re-claimed for v137/v138/v139: markers
-(`--markers --dump-c89` on `mud_server`) **3397 lines / 39012 B**; the 8 pins,
-the frozen-1124 corpus (md5 `518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the
-goldens (5/5), the 26 examples and the **356/0** stdlib + **10/10** crosscheck.
-The live corpus is re-measured by Task 9; the v135 baseline was 1240 =
-**1053 OK / 63 GREEN / 124 FAIL** (class md5
-`d9011c94cdbae01aa1765ca1047656a4`) and the 14 new std fixture dirs are
-additive.
+The v140 rotation battery records the truthful pre-fix full run plus the
+post-rotation focused fixtures. The full `verify_stdlib` (**356 PASS / 0
+FAIL**) + crosscheck (**10 PASS / 0 FAIL**) ran at `b199c191` **before** the
+one-line GHASH `-fsafe` pre-mask fix and was not re-run for v140.
+Post-rotation focused set on the archive-rebuilt compiler: **14 PASS / 0
+FAIL** (AES-GCM, ChaCha20-Poly1305, PRF, SHA-256, MD5, CRC32, SHA-384/512 and
+the seven `stdlib_deflate_*` in `-ffast`) plus AES-GCM **`-fsafe` PASS**. TLS
+demo **15 passed / 0 failed / 1 skipped** (`Z98_NET` unset). WireGuard tier
+**SKIP** (no kernel-WireGuard/netns tools; not claimed PASS). The v136
+full-battery measurements below are historical and were **not** re-run or
+re-claimed for v137–v140: markers (`--markers --dump-c89` on `mud_server`)
+**3397 lines / 39012 B**; the 8 pins, the frozen-1124 corpus (md5
+`518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the goldens (5/5), the 26
+examples and the **356/0** stdlib + **10/10** crosscheck. The live corpus is
+re-measured by Task 9; the v135 baseline was 1240 = **1053 OK / 63 GREEN /
+124 FAIL** (class md5 `d9011c94cdbae01aa1765ca1047656a4`) and the 14 new std
+fixture dirs are additive.
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
 `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
