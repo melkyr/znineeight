@@ -80,8 +80,17 @@ const MIN_BLOCK: usize = 16;
 const SMALL_LIMIT: usize = 4096;
 const MAX_SMALL_BLOCK: usize = 65535;
 const NUM_HEADS: usize = 192;
-const SIZE_MASK: u32 = 0xFFFFFFF8;
+// Small-block header layout (u32):
+//   bit 0        FREE
+//   bits 1..16   block size in bytes (16 bits, max 65535)
+//   bits 17..28  requested live bytes (12 bits, max 4095)
+//   bits 29..31  reserved
+// The footer is a pure boundary tag: bit 0 FREE, bits 1..16 size, bits 17..31
+// zero. Requested bytes therefore never alias the coalescing footer/header
+// size fields.
+const SIZE_MASK: u32 = 0x0001FFFE;
 const FREE_BIT: u32 = 1;
+const REQ_MASK: u32 = 0x1FFE0000;
 
 const Block = struct {
     header: u32,
@@ -364,7 +373,7 @@ fn setLinkPrev(b: *Block, v: usize) void {
 }
 
 fn blockSize(b: *Block) usize {
-    return @intCast(usize, b.header & SIZE_MASK);
+    return @intCast(usize, (b.header & SIZE_MASK) >> 1);
 }
 
 fn isFree(b: *Block) bool {
@@ -373,6 +382,7 @@ fn isFree(b: *Block) bool {
 
 fn setBlock(b: *Block, size: usize, free: bool) void {
     var v: u32 = @intCast(u32, size);
+    v = v << 1;
     if (free) v = v | FREE_BIT;
     b.header = v;
     const pb: [*]u8 = @ptrCast([*]u8, b);
@@ -380,20 +390,15 @@ fn setBlock(b: *Block, size: usize, free: bool) void {
     fp.* = v;
 }
 
-// For an allocated block the footer is otherwise dead metadata (it is only
-// read for *free* blocks during coalescing), so store the exact requested size
-// there. gpaStats then reports requested live bytes without widening the 4-byte
-// header or changing the classic TLSF layout.
+// Requested live bytes occupy the top 12 bits of the allocated header; the
+// footer stays a pure FREE|size boundary tag for coalescing.
 fn blockRequested(b: *Block) usize {
-    const pb: [*]u8 = @ptrCast([*]u8, b);
-    const fp: *u32 = @ptrCast(*u32, pb + blockSize(b) - 4);
-    return @intCast(usize, fp.*);
+    return @intCast(usize, (b.header & REQ_MASK) >> 17);
 }
 
 fn setBlockRequested(b: *Block, requested: usize) void {
-    const pb: [*]u8 = @ptrCast([*]u8, b);
-    const fp: *u32 = @ptrCast(*u32, pb + blockSize(b) - 4);
-    fp.* = @intCast(u32, requested);
+    const bits: u32 = (@intCast(u32, requested) & 0xFFF) << 17;
+    b.header = (b.header & ~REQ_MASK) | bits;
 }
 
 fn shufflePos(g: *Gpa, count: usize) usize {
@@ -528,7 +533,7 @@ fn freeBlock(g: *Gpa, r: *Region, b0: *Block) void {
         const fp: *u32 = @ptrCast(*u32, pb - 4);
         const pv = fp.*;
         if ((pv & FREE_BIT) != 0) {
-            const psz: usize = @intCast(usize, pv & SIZE_MASK);
+            const psz: usize = @intCast(usize, (pv & SIZE_MASK) >> 1);
             const prev: *Block = @ptrCast(*Block, pb - psz);
             removeFreeAt(r, sizeClass(psz), prev);
             b = prev;

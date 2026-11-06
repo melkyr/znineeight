@@ -229,6 +229,56 @@ pub fn main() void {
             if (overlaps(qp, 1000, bp, 4000)) reuse_ok = false;
         }
     }
+    // --- odd requested sizes with a freed neighbor: header/footer stays a
+    // pure boundary tag and small_bytes tracks the exact requested bytes ---
+    var odd_cfg = gpa.gpaConfigTarget64();
+    var godd = gpa.gpaInit(odd_cfg) catch @panic("odd init");
+    const o1 = must(gpa.gpaAlloc(&godd, 1, 8), "odd 1");
+    const o3 = must(gpa.gpaAlloc(&godd, 3, 8), "odd 3");
+    const o5 = must(gpa.gpaAlloc(&godd, 5, 8), "odd 5");
+    const on = must(gpa.gpaAlloc(&godd, 32, 8), "odd neighbor");
+    var odd_ok: bool = true;
+    o1[0] = 0x01;
+    o3[0] = 0x03;
+    o3[2] = 0x33;
+    o5[0] = 0x05;
+    o5[4] = 0x55;
+    on[0] = 0x77;
+    on[31] = 0xAA;
+    var ost = gpa.gpaStats(&godd);
+    if (ost.small_bytes != 41 or ost.live_allocs != 4) odd_ok = false;
+
+    if (!gpa.gpaFree(&godd, on)) odd_ok = false;
+    ost = gpa.gpaStats(&godd);
+    if (ost.small_bytes != 9 or ost.live_allocs != 3) odd_ok = false;
+    if (o1[0] != 0x01 or o3[0] != 0x03 or o3[2] != 0x33 or
+        o5[0] != 0x05 or o5[4] != 0x55) odd_ok = false;
+
+    // Mixed-order frees after the neighbor's footer became a free boundary tag.
+    if (!gpa.gpaFree(&godd, o5)) odd_ok = false;
+    if (!gpa.gpaFree(&godd, o1)) odd_ok = false;
+    if (!gpa.gpaFree(&godd, o3)) odd_ok = false;
+    ost = gpa.gpaStats(&godd);
+    if (ost.small_bytes != 0 or ost.live_allocs != 0) odd_ok = false;
+
+    // Mixed-order reuse of the odd sizes, with exact stats at each step.
+    const r5 = must(gpa.gpaAlloc(&godd, 5, 8), "odd realloc 5");
+    const r1 = must(gpa.gpaAlloc(&godd, 1, 8), "odd realloc 1");
+    const r3 = must(gpa.gpaAlloc(&godd, 3, 8), "odd realloc 3");
+    r5[0] = 0xAA;
+    r5[4] = 0x5A;
+    r1[0] = 0xA1;
+    r3[0] = 0xA3;
+    r3[2] = 0x3A;
+    ost = gpa.gpaStats(&godd);
+    if (ost.small_bytes != 9 or ost.live_allocs != 3) odd_ok = false;
+    if (r5[0] != 0xAA or r5[4] != 0x5A or r1[0] != 0xA1 or
+        r3[0] != 0xA3 or r3[2] != 0x3A) odd_ok = false;
+    if (!gpa.gpaFree(&godd, r1) or !gpa.gpaFree(&godd, r3) or
+        !gpa.gpaFree(&godd, r5)) odd_ok = false;
+    gpa.gpaDeinit(&godd);
+    if (!odd_ok) reuse_ok = false;
+
     ck("reuse", reuse_ok);
 
     // --- a pointer outside every region is unowned ---
