@@ -557,3 +557,124 @@ deepen suites. `sh -n` and `git diff --check` are clean.
   the file wrapper), same class as the existing Win32 state write.
 - Real-network probes remain opt-in (`Z98_NET=1`); melonDS was intentionally
   not measured in this task.
+
+## Task 8c end-of-round melonDS measurement
+
+Status: **DONE**. Both `-ffast` and `-fsafe` cloned melonDS from GitHub over
+HTTPS and exited 0. This is the only post-fix melonDS measurement in Task 8c;
+no pre-fix melonDS run was performed in this task (the baseline numbers in the
+comparison below are the previously recorded pre-fix values from the brief).
+
+- HEAD: `d60610c89e7e4249a238b1b69df7c4e1cd768f1f` (`d60610c8`).
+- Seed: v141, `release/seed/zig1-seed.tgz` (archive md5
+  `3e99af1b8117b982c26b074a1ccd35f7`).
+- Compiler: fresh build from that seed, two-hop fixed point OK,
+  md5 `cf68f192900e7f6618c11e1712b74b3a`.
+- Scratch: `/tmp/t8c_melon2`.
+- `git ls-remote https://github.com/melonDS-emu/melonDS.git HEAD` before the
+  runs: `497aa6cdd26f45f8064b78916b00a773eab4ded7  HEAD`, which matches the
+  HEAD checked out by both clones.
+
+### Exact build commands
+
+```sh
+mkdir -p /tmp/t8c_melon2
+FIXED_POINT_MD5=cf68f192900e7f6618c11e1712b74b3a \
+  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t8c_melon2/seed
+mkdir -p /tmp/t8c_melon2/ffast /tmp/t8c_melon2/safe
+
+/tmp/t8c_melon2/seed/zig1_5_clean -ffast -o /tmp/t8c_melon2/ffast \
+  examples/z98/z9git/main.zig
+sh /tmp/t8c_melon2/ffast/build_target.sh linux /tmp/t8c_melon2/ffast/prog
+cp examples/z98/demo/tls_demo/ca_store.bin /tmp/t8c_melon2/ffast/ca_store.bin
+cp examples/z98/demo/tls_demo/ca_store.bin /tmp/t8c_melon2/ca_store.bin
+
+/tmp/t8c_melon2/seed/zig1_5_clean -fsafe -o /tmp/t8c_melon2/safe \
+  examples/z98/z9git/main.zig
+sh /tmp/t8c_melon2/safe/build_target.sh linux /tmp/t8c_melon2/safe/prog
+cp examples/z98/demo/tls_demo/ca_store.bin /tmp/t8c_melon2/safe/ca_store.bin
+```
+
+### Exact run commands
+
+Sequential, fresh destinations, default `--arena-mb 32`:
+
+```sh
+rm -rf /tmp/t8c_melon2/clone_ffast
+/usr/bin/time -v timeout 1800 /tmp/t8c_melon2/ffast/prog clone \
+  https://github.com/melonDS-emu/melonDS.git /tmp/t8c_melon2/clone_ffast \
+  --arena-mb 32 > /tmp/t8c_melon2/ffast.log 2> /tmp/t8c_melon2/ffast.time
+echo "ffast_rc=$?"
+
+rm -rf /tmp/t8c_melon2/clone_safe
+/usr/bin/time -v timeout 1800 /tmp/t8c_melon2/safe/prog clone \
+  https://github.com/melonDS-emu/melonDS.git /tmp/t8c_melon2/clone_safe \
+  --arena-mb 32 > /tmp/t8c_melon2/safe.log 2> /tmp/t8c_melon2/safe.time
+echo "safe_rc=$?"
+```
+
+Both invocations were allowed 1830 seconds by the harness; neither needed a
+retry or a longer timeout.
+
+### `-ffast` result
+
+| metric | value |
+|---|---|
+| rc | 0 |
+| wall | 1:07.06 |
+| user / system | 61.49 s / 0.35 s |
+| CPU | 92% |
+| max RSS | 43,320 KB (~42.3 MiB) |
+| `git fsck --full --no-dangling` | rc 0 |
+| HEAD | `497aa6cdd26f45f8064b78916b00a773eab4ded7` |
+| `ls-tree -r HEAD` count | 778 |
+| worktree file count (excluding `.git`) | 778 |
+| packs | one |
+| first `.idx` | `.git/objects/pack/pack-711f609e2e8e4490999137998c1a8b7cbb4b3123.idx` |
+| `verify-pack -v` | `pack-...pack: ok`; tag 14, commit 3,868, tree 10,879, blob 12,452 (27,213 objects) |
+| pack bytes | 14,312,893 |
+| clone size on disk | 29 MiB |
+
+### `-fsafe` result
+
+| metric | value |
+|---|---|
+| rc | 0 (not rc124) |
+| wall | 12:04.74 |
+| user / system | 718.99 s / 0.86 s |
+| CPU | 99% |
+| max RSS | 43,972 KB (~42.9 MiB) |
+| `git fsck --full --no-dangling` | rc 0 |
+| HEAD | `497aa6cdd26f45f8064b78916b00a773eab4ded7` |
+| `ls-tree -r HEAD` count | 778 |
+| worktree file count (excluding `.git`) | 778 |
+| packs | one |
+| first `.idx` | `.git/objects/pack/pack-711f609e2e8e4490999137998c1a8b7cbb4b3123.idx` |
+| `verify-pack -v` | `pack-...pack: ok`; tag 14, commit 3,868, tree 10,879, blob 12,452 (27,213 objects) |
+| pack bytes | 14,312,893 |
+| clone size on disk | 29 MiB |
+
+The two clones produced the same pack id and object counts, and both worktree
+counts match the tree entry count.
+
+### Comparison to the pre-fix baseline
+
+| run | pre-fix baseline | post-fix (this measurement) |
+|---|---|---|
+| `-ffast` melonDS | 6:04.03 / 5:55.03 wall, RSS ~76.3 MB | 1:07.06 wall, 42.3 MiB RSS, rc 0 |
+| `-fsafe` melonDS | 30:00 timeout, rc124 | 12:04.74 wall, 42.9 MiB RSS, rc 0 |
+| synthetic large | 5.50 s / 1:05.69 (not melonDS) | not re-run here |
+
+`-ffast` is about 5.4x faster than the recorded 6:04.03 pre-fix run.
+`-fsafe` now finishes well inside the 1800-second cap, where the pre-fix run
+hit the 30-minute timeout. RSS is about 44% lower than the ~76.3 MB pre-fix
+fast figure.
+
+### Throughput / network caveat
+
+The clone was CPU-bound, not network-bound: `-ffast` used 92% CPU and
+`-fsafe` 99% CPU, with only ~14.3 MB of pack data. Raw pack-bytes/wall is
+about 213 KB/s for `-ffast` and 19.7 KB/s for `-fsafe`; those figures reflect
+z9git's CPU work (especially `-fsafe`) and must not be read as GitHub network
+throughput. GitHub was reachable directly (no mirror), and both runs got the
+same remote HEAD `497aa6cdd26f45f8064b78916b00a773eab4ded7`.
