@@ -1157,9 +1157,14 @@ fn writeObjectToFile(scratch: *arena_mod.Arena, store: *objects.Store, id: Objec
 }
 
 fn fetchMissingInTree(arena: *arena_mod.Arena, scratch: *arena_mod.Arena, store: *objects.Store, entries: []TreeEntry, fetcher: ?*BlobFetcher) GitError!void {
+    _ = arena;
     const f = fetcher orelse return;
-    const raw_ptr = arena_mod.alloc(arena, entries.len * 20) catch return error.OutOfMemory;
-    const raw = raw_ptr[0 .. entries.len * 20];
+    if (entries.len == 0) return;
+    // Per-directory scratch, freed before returning: the missing id list must
+    // not accumulate in the app arena across a deep tree walk.
+    const raw_buf = pack_mod.dynAlloc(entries.len * 20) orelse return error.OutOfMemory;
+    defer pack_mod.dynFree(raw_buf);
+    const raw = raw_buf[0 .. entries.len * 20];
 
     var count: usize = 0;
     var i: usize = 0;
@@ -1896,9 +1901,17 @@ pub fn readShallow(arena: *arena_mod.Arena, git_dir: []const u8, out_raw: *[]u8,
     out_count.* = count;
 }
 
+fn removeQuiet(path: []const u8) void {
+    file_mod.remove(path) catch {};
+}
+
 pub fn writeShallow(arena: *arena_mod.Arena, git_dir: []const u8, raw: []const u8, count: usize) GitError!void {
     const path = try join2(arena, git_dir, "/shallow");
+    const tmp_path = try join2(arena, git_dir, "/shallow.tmp");
+    const bak_path = try join2(arena, git_dir, "/shallow.bak");
+    removeQuiet(tmp_path);
     if (count == 0) {
+        removeQuiet(bak_path);
         file_mod.remove(path) catch {};
         return;
     }
@@ -1912,7 +1925,32 @@ pub fn writeShallow(arena: *arena_mod.Arena, git_dir: []const u8, raw: []const u
         text[pos + 40] = '\n';
         pos += 41;
     }
-    file_mod.writeAll(path, text[0..pos]) catch return error.Io;
+    file_mod.writeAll(tmp_path, text[0..pos]) catch {
+        removeQuiet(tmp_path);
+        return error.Io;
+    };
+    if (@isWindows()) {
+        // MoveFileA does not replace an existing destination. Keep the old
+        // boundary file until the replacement is ready, then swap via .bak.
+        if (file_mod.exists(path)) {
+            removeQuiet(bak_path);
+            file_mod.rename(path, bak_path) catch {
+                removeQuiet(tmp_path);
+                return error.Io;
+            };
+            file_mod.rename(tmp_path, path) catch {
+                file_mod.rename(bak_path, path) catch {};
+                removeQuiet(tmp_path);
+                return error.Io;
+            };
+            removeQuiet(bak_path);
+            return;
+        }
+    }
+    file_mod.rename(tmp_path, path) catch {
+        removeQuiet(tmp_path);
+        return error.Io;
+    };
 }
 
 
@@ -2021,7 +2059,18 @@ fn shallowHas(raw: []const u8, count: usize, id: ObjectId) bool {
     return idInRaw(raw, count, id);
 }
 
-
+fn packIdFor(s: *objects.Store, id: ObjectId, out: *ObjectId) bool {
+    var i: usize = 0;
+    while (i < s.packs.len) : (i += 1) {
+        const off = pack_mod.idxFind(&s.packs[i].idx, id) catch null;
+        if (off != null) {
+            var k: usize = 0;
+            while (k < 20) : (k += 1) out.*[k] = s.packs[i].idx.pack_id[k];
+            return true;
+        }
+    }
+    return false;
+}
 
 fn storeHas(arena: *arena_mod.Arena, s: *objects.Store, id: ObjectId) bool {
     const lp = objects.loosePath(arena, s.git_dir, id) catch return false;
@@ -2039,18 +2088,27 @@ fn storeHas(arena: *arena_mod.Arena, s: *objects.Store, id: ObjectId) bool {
 // the commit/tree closure the upload-pack `have` fallback can safely promise.
 
 
-// True when every object reachable from `tip` is present locally.  Shallow
-// boundaries are terminal for the parent walk.  In a partial clone blobs are
-// intentionally absent, so `ignore_blobs` limits the check to the
+// True when every object reachable from `tip` is present locally.  A tip in a
+// pack recorded as complete is trusted and returned immediately (the response
+// carried its full closure).  Prefix, loose and unknown tips still traverse.
+// Shallow boundaries are terminal for the parent walk.  In a partial clone
+// blobs are intentionally absent, so `ignore_blobs` limits the check to the
 // commit/tree closure the upload-pack `have` fallback can safely promise.
 // Traversal overflow means "incomplete" (never Protocol).
-pub fn closureComplete(arena: *arena_mod.Arena, git_dir: []const u8, tip: ObjectId, shallow_raw: []const u8, shallow_count: usize, ignore_blobs: bool) GitError!bool {
+pub fn closureComplete(arena: *arena_mod.Arena, git_dir: []const u8, tip: ObjectId, shallow_raw: []const u8, shallow_count: usize, ignore_blobs: bool, complete_raw: []const u8, complete_count: usize) GitError!bool {
     const sraw = pack_mod.dynAlloc(16 * 1024 * 1024) orelse return error.OutOfMemory;
     defer pack_mod.dynFree(sraw);
     var sarena = arena_mod.init(sraw[0 .. 16 * 1024 * 1024]);
     var store: objects.Store = undefined;
     try openStore(&sarena, git_dir, &store);
     defer objects.storeClose(&store);
+
+    if (complete_count > 0) {
+        var pid: ObjectId = undefined;
+        if (packIdFor(&store, tip, &pid)) {
+            if (idInRaw(complete_raw, complete_count, pid)) return true;
+        }
+    }
 
     const wraw = pack_mod.dynAlloc(8 * 1024 * 1024) orelse return error.OutOfMemory;
     defer pack_mod.dynFree(wraw);
@@ -2063,9 +2121,6 @@ pub fn closureComplete(arena: *arena_mod.Arena, git_dir: []const u8, tip: Object
     defer pack_mod.dynFree(seen_raw);
     const stack = stack_raw[0 .. cap * 20];
     const seen = seen_raw[0 .. cap * 20];
-
-
-
 
     var sp: usize = 0;
     var seen_count: usize = 0;
@@ -2084,14 +2139,6 @@ pub fn closureComplete(arena: *arena_mod.Arena, git_dir: []const u8, tip: Object
         var obj: objects.TypedObject = undefined;
         readTyped(&work, &store, id, &obj) catch return false;
 
-
-
-
-
-
-
-
-
         if (obj.ty == objects.ObjType.blob) {
             objects.freeTyped(&obj);
             continue;
@@ -2099,7 +2146,6 @@ pub fn closureComplete(arena: *arena_mod.Arena, git_dir: []const u8, tip: Object
         if (obj.ty == objects.ObjType.commit) {
             var tree: ObjectId = undefined;
             commitTree(&work, &store, id, &tree) catch {
-
                 objects.freeTyped(&obj);
                 return false;
             };
@@ -2108,15 +2154,11 @@ pub fn closureComplete(arena: *arena_mod.Arena, git_dir: []const u8, tip: Object
             const pc = parseParents(obj.data, parents[0..]) catch {
                 objects.freeTyped(&obj);
                 return false;
-
-
             };
             if (!shallowHas(shallow_raw, shallow_count, id)) {
                 if (sp + pc + 1 > cap) {
                     objects.freeTyped(&obj);
                     return false;
-
-
                 }
                 var j: usize = 0;
                 while (j < pc) : (j += 1) {
@@ -2129,49 +2171,40 @@ pub fn closureComplete(arena: *arena_mod.Arena, git_dir: []const u8, tip: Object
             if (sp + 1 > cap) {
                 objects.freeTyped(&obj);
                 return false;
-
-
             }
             idToBytes(stack[0 .. cap * 20], sp * 20, tree);
             sp += 1;
         } else if (obj.ty == objects.ObjType.tree) {
             const entries = parseTree(&work, obj.data) catch {
-
-
-
-
-
                 objects.freeTyped(&obj);
                 return false;
-
-
             };
-            if (sp + entries.len > cap) {
-                objects.freeTyped(&obj);
-                return false;
-
-
-            }
             var j: usize = 0;
             while (j < entries.len) : (j += 1) {
                 if (entries[j].mode == MODE_GITLINK) continue;
-                if (ignore_blobs and !entries[j].is_dir) continue;
-                idToBytes(stack[0 .. cap * 20], sp * 20, entries[j].id);
-                sp += 1;
+                if (entries[j].is_dir) {
+                    if (sp + 1 > cap) {
+                        objects.freeTyped(&obj);
+                        return false;
+                    }
+                    idToBytes(stack[0 .. cap * 20], sp * 20, entries[j].id);
+                    sp += 1;
+                } else if (!ignore_blobs) {
+                    if (!storeHas(&work, &store, entries[j].id)) {
+                        objects.freeTyped(&obj);
+                        return false;
+                    }
+                }
             }
         } else {
             var target: ObjectId = undefined;
             if (!parseTagTarget(obj.data, &target)) {
                 objects.freeTyped(&obj);
                 return false;
-
-
             }
             if (sp + 1 > cap) {
                 objects.freeTyped(&obj);
                 return false;
-
-
             }
             idToBytes(stack[0 .. cap * 20], sp * 20, target);
             sp += 1;
@@ -2196,7 +2229,7 @@ fn appendHave(arena: *arena_mod.Arena, out_raw: *[]u8, out_len: *usize, out_cap:
 
 // Haves come from local refs (or verified state candidates), never from the
 // server advertisement.  A shallow boundary makes its commit's closure complete.
-pub fn collectHaves(arena: *arena_mod.Arena, git_dir: []const u8, refs: []const RefEntry, shallow_raw: []const u8, shallow_count: usize, partial: bool, out_raw: *[]u8, out_count: *usize) GitError!void {
+pub fn collectHaves(arena: *arena_mod.Arena, git_dir: []const u8, refs: []const RefEntry, shallow_raw: []const u8, shallow_count: usize, partial: bool, complete_raw: []const u8, complete_count: usize, out_raw: *[]u8, out_count: *usize) GitError!void {
 
 
 
@@ -2206,7 +2239,7 @@ pub fn collectHaves(arena: *arena_mod.Arena, git_dir: []const u8, refs: []const 
     out_raw.* = zero[0..0];
     var i: usize = 0;
     while (i < refs.len) : (i += 1) {
-        if (!(try closureComplete(arena, git_dir, refs[i].id, shallow_raw, shallow_count, partial))) continue;
+        if (!(try closureComplete(arena, git_dir, refs[i].id, shallow_raw, shallow_count, partial, complete_raw, complete_count))) continue;
 
         try appendHave(arena, out_raw, &out_len, &out_cap, refs[i].id);
     }
@@ -2215,7 +2248,7 @@ pub fn collectHaves(arena: *arena_mod.Arena, git_dir: []const u8, refs: []const 
 
 
 
-pub fn verifyHaves(arena: *arena_mod.Arena, git_dir: []const u8, candidate_raw: []const u8, candidate_count: usize, shallow_raw: []const u8, shallow_count: usize, partial: bool, out_raw: *[]u8, out_count: *usize) GitError!void {
+pub fn verifyHaves(arena: *arena_mod.Arena, git_dir: []const u8, candidate_raw: []const u8, candidate_count: usize, shallow_raw: []const u8, shallow_count: usize, partial: bool, complete_raw: []const u8, complete_count: usize, out_raw: *[]u8, out_count: *usize) GitError!void {
 
 
 
@@ -2227,7 +2260,7 @@ pub fn verifyHaves(arena: *arena_mod.Arena, git_dir: []const u8, candidate_raw: 
     while (i < candidate_count) : (i += 1) {
         var id: ObjectId = undefined;
         idFromBytes(candidate_raw, i * 20, &id);
-        if (!(try closureComplete(arena, git_dir, id, shallow_raw, shallow_count, partial))) continue;
+        if (!(try closureComplete(arena, git_dir, id, shallow_raw, shallow_count, partial, complete_raw, complete_count))) continue;
 
         try appendHave(arena, out_raw, &out_len, &out_cap, id);
     }
@@ -2238,7 +2271,7 @@ pub fn verifyHaves(arena: *arena_mod.Arena, git_dir: []const u8, candidate_raw: 
 // Only refs whose closure is locally complete may be installed.  An incomplete
 // new/moved ref is left uninstalled instead of being written with missing
 // objects.
-pub fn filterRefsForInstall(arena: *arena_mod.Arena, git_dir: []const u8, refs: []const RefEntry, shallow_raw: []const u8, shallow_count: usize, partial: bool) GitError![]RefEntry {
+pub fn filterRefsForInstall(arena: *arena_mod.Arena, git_dir: []const u8, refs: []const RefEntry, shallow_raw: []const u8, shallow_count: usize, partial: bool, complete_raw: []const u8, complete_count: usize) GitError![]RefEntry {
 
 
     const raw = arena_mod.alloc(arena, refs.len * @sizeOf(RefEntry)) catch return error.OutOfMemory;
@@ -2246,7 +2279,7 @@ pub fn filterRefsForInstall(arena: *arena_mod.Arena, git_dir: []const u8, refs: 
     var n: usize = 0;
     var i: usize = 0;
     while (i < refs.len) : (i += 1) {
-        if (!(try closureComplete(arena, git_dir, refs[i].id, shallow_raw, shallow_count, partial))) continue;
+        if (!(try closureComplete(arena, git_dir, refs[i].id, shallow_raw, shallow_count, partial, complete_raw, complete_count))) continue;
 
         out[n] = refs[i];
         n += 1;

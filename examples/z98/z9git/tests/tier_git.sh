@@ -694,6 +694,19 @@ if ! (
     printf 'partial b\n' >d/b.txt
     printf 'partial c\n' >e/c.txt
     printf 'partial d\n' >f/g/d.txt
+    d=0 && while [ "$d" -lt 5 ]; do
+        path="bulk/b$d"
+        e=0 && while [ "$e" -lt 20 ]; do
+            path="$path/n$e"
+            mkdir -p "$path"
+            e=$((e + 1))
+        done
+        f=0 && while [ "$f" -lt 200 ]; do
+            printf 'bulk %s %s\n' "$d" "$f" >"$path/f$f.txt"
+            f=$((f + 1))
+        done
+        d=$((d + 1))
+    done
     git add .
     git commit -q -m "partial one"
     printf 'partial a2\n' >a.txt
@@ -747,6 +760,12 @@ else
     fail_case "partial clone packs/fsck failed"
     tail -10 "$OUT/linux/partial_fsck.log" 2>/dev/null | sed 's/^/       /'
 fi
+PARTIAL_BULK=$(find "$PARTIAL_CLONE/bulk" -type f 2>/dev/null | wc -l | tr -d ' ')
+if [ "$PARTIAL_RC" -eq 0 ] && [ "$PARTIAL_BULK" -eq 1000 ]; then
+    pass_case "partial clone with 100+ nested directories checks out at the 32 MiB arena"
+else
+    fail_case "partial many-directory checkout failed (files=$PARTIAL_BULK)"
+fi
 
 echo "== shallow boundary and deepen request (mock) =="
 SH_DATA="$MOCK_DATA/shallow"
@@ -777,6 +796,72 @@ if [ "$SH_RC" -eq 0 ] && grep -q '^depth 1$' "$SH_CLONE/.git/z9git-state"; then
     pass_case "shallow clone records its depth in .git/z9git-state"
 else
     fail_case "shallow clone state depth missing"
+fi
+
+echo "== >4096 shallow boundaries (growable list) =="
+SHMANY_SRC="$OUT/shallow_many_src"
+SHMANY_REPO="$OUT/shallow_many.git"
+SHMANY_DATA="$MOCK_DATA/shallow_many"
+SHMANY_CLONE="$OUT/linux/clone_shallow_many"
+SHMANY_COUNT=4097
+rm -rf "$SHMANY_SRC" "$SHMANY_REPO" "$SHMANY_DATA" "$SHMANY_CLONE"
+mkdir -p "$SHMANY_SRC" "$SHMANY_DATA"
+if ! (
+    cd "$SHMANY_SRC" || exit 1
+    git init -q
+    git config user.name "z9 fixture"
+    git config user.email "z9@example.invalid"
+    tree=$(git mktree </dev/null)
+    parent=""
+    i=0
+    while [ "$i" -lt "$SHMANY_COUNT" ]; do
+        if [ -z "$parent" ]; then
+            parent=$(printf 'shallow many %s\n' "$i" | git commit-tree "$tree")
+        else
+            parent=$(printf 'shallow many %s\n' "$i" | git commit-tree "$tree" -p "$parent")
+        fi
+        printf '%s\n' "$parent"
+        i=$((i + 1))
+    done >"$SHMANY_DATA/ids"
+    git update-ref refs/heads/master "$parent"
+    git symbolic-ref HEAD refs/heads/master
+) >"$OUT/linux/shallow_many_build.log" 2>&1 || \
+   ! git clone --bare --no-hardlinks -q "$SHMANY_SRC" "$SHMANY_REPO" >>"$OUT/linux/shallow_many_build.log" 2>&1; then
+    fail_case "prepare >4096-commit shallow fixture"
+    tail -10 "$OUT/linux/shallow_many_build.log" | sed 's/^/       /'
+    finish
+fi
+git upload-pack --stateless-rpc --advertise-refs "$SHMANY_REPO" >"$SHMANY_DATA/adv" 2>"$OUT/linux/shallow_many_adv.err"
+{ printf '001e# service=git-upload-pack\n0000'; cat "$SHMANY_DATA/adv"; } >"$SHMANY_DATA/info_refs"
+git --git-dir="$SHMANY_REPO" pack-objects --stdout --all >"$SHMANY_DATA/pack" 2>"$OUT/linux/shallow_many_pack.err"
+{
+    while IFS= read -r cid; do printf '0035shallow %s\n' "$cid"; done <"$SHMANY_DATA/ids"
+    printf '0008NAK\n'
+    cat "$SHMANY_DATA/pack"
+} >"$SHMANY_DATA/upload"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$SHMANY_CLONE" 0 \
+    "$SHMANY_DATA/info_refs" "$SHMANY_DATA/upload" "$OUT/linux/shallow_many_req.log" 200 shallow \
+    >"$OUT/linux/shallow_many_clone.log" 2>&1
+SHMANY_RC=$?
+SHMANY_LINES=0
+SHMANY_LOG=0
+if [ -f "$SHMANY_CLONE/.git/shallow" ]; then
+    SHMANY_LINES=$(wc -l <"$SHMANY_CLONE/.git/shallow" | tr -d ' ')
+fi
+SHMANY_LOG=$( cd "$SHMANY_CLONE" 2>/dev/null && "$PROG" log 2>/dev/null | wc -l | tr -d ' ' )
+sort "$SHMANY_DATA/ids" >"$OUT/linux/shallow_many_ids.want"
+sort "$SHMANY_CLONE/.git/shallow" >"$OUT/linux/shallow_many_ids.out" 2>/dev/null || true
+if [ "$SHMANY_RC" -eq 0 ] && [ "$SHMANY_LINES" = "$SHMANY_COUNT" ] && \
+   cmp -s "$OUT/linux/shallow_many_ids.want" "$OUT/linux/shallow_many_ids.out"; then
+    pass_case ">4096 shallow lines are all written to .git/shallow (no truncation)"
+else
+    fail_case ">4096 shallow boundaries truncated (rc=$SHMANY_RC lines=$SHMANY_LINES)"
+    tail -10 "$OUT/linux/shallow_many_clone.log" | sed 's/^/       /'
+fi
+if [ "$SHMANY_RC" -eq 0 ] && [ "$SHMANY_LOG" = "1" ]; then
+    pass_case "log stops at the >4096 shallow boundary set"
+else
+    fail_case "log did not stop at the shallow boundary (lines=$SHMANY_LOG)"
 fi
 
 echo "== abort-mid-pack resume (raw EOF) =="
@@ -894,6 +979,129 @@ if [ "$MOVE_BADURL_RC" -eq 1 ]; then
     pass_case "invalid state URL is rejected as a usage error"
 else
     fail_case "invalid state URL was not rejected (rc=$MOVE_BADURL_RC)"
+fi
+
+echo "== complete-pack trust and fetch HEAD preservation =="
+CT_DATA="$MOCK_DATA/complete_trust"
+CT_CLONE1="$OUT/linux/clone_complete_trust"
+CT_CLONE2="$OUT/linux/clone_unknown_verify"
+CT_CLONE3="$OUT/linux/clone_fetch_detached"
+rm -rf "$CT_DATA" "$CT_CLONE1" "$CT_CLONE2" "$CT_CLONE3"
+mkdir -p "$CT_DATA"
+CT_TIP="$MOCK_MASTER"
+CT_PARENT=$(git --git-dir="$TD/packed_repo" rev-list --parents -n1 refs/heads/master | awk '{print $2}')
+git --git-dir="$TD/packed_repo" rev-list --objects "$CT_TIP" "^$CT_PARENT" | awk '{print $1}' >"$CT_DATA/objs"
+git --git-dir="$TD/packed_repo" pack-objects --stdout <"$CT_DATA/objs" >"$CT_DATA/tip.pack" 2>"$OUT/linux/complete_trust_pack.err"
+{ printf '0035shallow %s\n0008NAK\n' "$CT_TIP"; cat "$CT_DATA/tip.pack"; } >"$CT_DATA/upload"
+CT_AUX_OBJ=$(git --git-dir="$TD/packed_repo" rev-list --objects --all | awk 'NF == 2 { print $1; exit }')
+printf '%s\n' "$CT_AUX_OBJ" | git --git-dir="$TD/packed_repo" pack-objects --stdout >"$CT_DATA/aux.pack" 2>"$OUT/linux/complete_trust_aux.err"
+{ printf '0008NAK\n'; cat "$CT_DATA/aux.pack"; } >"$CT_DATA/upload_empty"
+cp "$MOCK_DATA/info_refs" "$CT_DATA/info_refs"
+printf '003f%s refs/heads/newref\n' "$CT_TIP" >>"$CT_DATA/info_refs"
+cp "$MOCK_DATA/info_refs" "$CT_DATA/info_refs2"
+printf '0040%s refs/heads/newref2\n' "$CT_TIP" >>"$CT_DATA/info_refs2"
+
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$CT_CLONE1" 0 \
+    "$MOCK_DATA/info_refs" "$CT_DATA/upload" "$OUT/linux/complete_trust_clone1.log" 200 shallow \
+    >"$OUT/linux/complete_trust_clone1.out" 2>&1
+CT_CLONE1_RC=$?
+cp "$CT_CLONE1/.git/HEAD" "$CT_DATA/head1.before" 2>/dev/null || true
+rm -f "$CT_CLONE1/.git/shallow"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$CT_CLONE1" 0 \
+    "$CT_DATA/info_refs" "$CT_DATA/upload_empty" "$OUT/linux/complete_trust_fetch1.log" 200 fetch1 \
+    >"$OUT/linux/complete_trust_fetch1.out" 2>&1
+CT_FETCH1_RC=$?
+CT_NEWREF_OK=no
+if [ -f "$CT_CLONE1/.git/refs/heads/newref" ] && \
+   [ "$(cat "$CT_CLONE1/.git/refs/heads/newref" 2>/dev/null)" = "$CT_TIP" ]; then
+    CT_NEWREF_OK=yes
+fi
+if [ "$CT_CLONE1_RC" -eq 0 ] && [ "$CT_FETCH1_RC" -eq 0 ] && [ "$CT_NEWREF_OK" = "yes" ]; then
+    pass_case "complete-pack tip short-circuits closure (new ref installed without full traversal)"
+else
+    fail_case "complete-pack trust failed (clone=$CT_CLONE1_RC fetch=$CT_FETCH1_RC ref=$CT_NEWREF_OK)"
+    tail -10 "$OUT/linux/complete_trust_fetch1.out" | sed 's/^/       /'
+fi
+if [ "$CT_FETCH1_RC" -eq 0 ] && cmp -s "$CT_DATA/head1.before" "$CT_CLONE1/.git/HEAD"; then
+    pass_case "fetch keeps the existing symbolic HEAD"
+else
+    fail_case "fetch changed the existing symbolic HEAD"
+fi
+
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$CT_CLONE2" 0 \
+    "$MOCK_DATA/info_refs" "$CT_DATA/upload" "$OUT/linux/complete_trust_clone2.log" 200 shallow \
+    >"$OUT/linux/complete_trust_clone2.out" 2>&1
+CT_CLONE2_RC=$?
+cp "$CT_CLONE2/.git/HEAD" "$CT_DATA/head2.before" 2>/dev/null || true
+CT2_COMPLETE=$(grep -c '^complete-pack ' "$CT_CLONE2/.git/z9git-state" 2>/dev/null || true)
+grep -v '^complete-pack ' "$CT_CLONE2/.git/z9git-state" >"$CT_CLONE2/.git/z9git-state.tmp" 2>/dev/null || true
+mv "$CT_CLONE2/.git/z9git-state.tmp" "$CT_CLONE2/.git/z9git-state"
+rm -f "$CT_CLONE2/.git/shallow"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$CT_CLONE2" 0 \
+    "$CT_DATA/info_refs2" "$CT_DATA/upload_empty" "$OUT/linux/complete_trust_fetch2.log" 200 fetch1 \
+    >"$OUT/linux/complete_trust_fetch2.out" 2>&1
+CT_FETCH2_RC=$?
+if [ "$CT_CLONE2_RC" -eq 0 ] && [ "$CT2_COMPLETE" -gt 0 ] && [ "$CT_FETCH2_RC" -eq 0 ] && \
+   [ ! -e "$CT_CLONE2/.git/refs/heads/newref2" ]; then
+    pass_case "prefix/unknown tip is verified and the incomplete ref is not installed"
+else
+    fail_case "unknown-pack verification failed (clone=$CT_CLONE2_RC fetch=$CT_FETCH2_RC complete=$CT2_COMPLETE)"
+    tail -10 "$OUT/linux/complete_trust_fetch2.out" | sed 's/^/       /'
+fi
+if [ "$CT_FETCH2_RC" -eq 0 ] && cmp -s "$CT_DATA/head2.before" "$CT_CLONE2/.git/HEAD"; then
+    pass_case "fetch leaves HEAD unchanged when its symbolic target is filtered"
+else
+    fail_case "fetch retargeted HEAD for a filtered/missing symbolic target"
+fi
+
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$CT_CLONE3" 0 \
+    "$MOCK_DATA/info_refs" "$CT_DATA/upload" "$OUT/linux/complete_trust_clone3.log" 200 shallow \
+    >"$OUT/linux/complete_trust_clone3.out" 2>&1
+CT_CLONE3_RC=$?
+printf '%s\n' "$CT_TIP" >"$CT_CLONE3/.git/HEAD"
+cp "$CT_CLONE3/.git/HEAD" "$CT_DATA/head3.before"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$CT_CLONE3" 0 \
+    "$MOCK_DATA/info_refs" "$CT_DATA/upload_empty" "$OUT/linux/complete_trust_fetch3.log" 200 fetch1 \
+    >"$OUT/linux/complete_trust_fetch3.out" 2>&1
+CT_FETCH3_RC=$?
+if [ "$CT_CLONE3_RC" -eq 0 ] && [ "$CT_FETCH3_RC" -eq 0 ] && \
+   cmp -s "$CT_DATA/head3.before" "$CT_CLONE3/.git/HEAD"; then
+    pass_case "fetch keeps a detached HEAD detached"
+else
+    fail_case "fetch changed a detached HEAD"
+fi
+
+echo "== incomplete prefix preserves .git/shallow =="
+EARLY_ABORT="$OUT/linux/early_abort.pkt"
+printf '0035sha' >"$EARLY_ABORT"
+cp "$SH_CLONE/.git/shallow" "$OUT/linux/shallow_before_abort"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$SH_CLONE" 0 \
+    "$MOCK_DATA/info_refs" "$EARLY_ABORT:abort" "$OUT/linux/shallow_early_abort_req.log" 200 fetch1 \
+    >"$OUT/linux/shallow_early_abort.log" 2>&1
+SH_EARLY_RC=$?
+if [ "$SH_EARLY_RC" -ne 0 ] && cmp -s "$OUT/linux/shallow_before_abort" "$SH_CLONE/.git/shallow" && \
+   [ ! -e "$SH_CLONE/.git/shallow.tmp" ]; then
+    pass_case "abort before the shallow section preserves the existing .git/shallow"
+else
+    fail_case "incomplete prefix clobbered .git/shallow (rc=$SH_EARLY_RC)"
+    tail -10 "$OUT/linux/shallow_early_abort.log" | sed 's/^/       /'
+fi
+SH_EMPTY_CLONE="$OUT/linux/clone_shallow_empty_result"
+rm -rf "$SH_EMPTY_CLONE"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$SH_EMPTY_CLONE" 0 \
+    "$MOCK_DATA/info_refs" "$SH_DATA/upload" "$OUT/linux/shallow_empty_clone.log" 200 shallow \
+    >"$OUT/linux/shallow_empty_clone.out" 2>&1
+SH_EMPTY_CLONE_RC=$?
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$SH_EMPTY_CLONE" 0 \
+    "$MOCK_DATA/info_refs" "$CT_DATA/upload_empty" "$OUT/linux/shallow_empty_fetch.log" 200 fetch1 \
+    >"$OUT/linux/shallow_empty_fetch.out" 2>&1
+SH_EMPTY_RC=$?
+if [ "$SH_EMPTY_CLONE_RC" -eq 0 ] && [ "$SH_EMPTY_RC" -eq 0 ] && \
+   [ ! -e "$SH_EMPTY_CLONE/.git/shallow" ]; then
+    pass_case "complete known-empty shallow result removes .git/shallow"
+else
+    fail_case "complete empty shallow result did not remove .git/shallow (clone=$SH_EMPTY_CLONE_RC fetch=$SH_EMPTY_RC)"
+    tail -10 "$OUT/linux/shallow_empty_fetch.out" | sed 's/^/       /'
 fi
 
 echo "== end-to-end smart HTTP (git http-backend) =="

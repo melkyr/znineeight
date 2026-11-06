@@ -94,11 +94,16 @@ z9git -h
   pack support (a fresh clone is self-contained). `ofs-delta` is requested.
 - `--depth <n>` requests a shallow smart-HTTP clone (`deepen <n>`); the returned
   `shallow <sha>` boundaries are written to `.git/shallow`, and `log` stops at a
-  boundary instead of walking missing parents. `fetch --deepen <n>` is
-  **HTTP(S)-only** and must be run inside the clone: it reads
-  `.git/z9git-state`, sends the requested wire `deepen <n>` (relative), installs
-  the new pack, and advances the local depth only on success. `.git/shallow` is
-  authoritative for both the request and `log`.
+  boundary instead of walking missing parents. The boundary list is growable
+  (no 4096-entry truncation) and is written via a temp file: POSIX rename is
+  atomic, and Win32 keeps the old file until the replacement is ready.
+  `fetch --deepen <n>` is **HTTP(S)-only** and must be run inside the clone: it
+  reads `.git/z9git-state`, sends the requested wire `deepen <n>` (relative),
+  installs the new pack, and advances the local depth only on success.
+  `.git/shallow` is authoritative for both the request and `log`. If a prefix
+  response is interrupted before its NAK/ACK the existing boundary file is
+  preserved; a new list is committed only when the shallow section is complete,
+  and the file is removed only for a complete known-empty result.
 - `--partial` requests `filter=blob:none` (GitHub/GitLab standard smart HTTP):
   the commit/tree pack is stored first, then checkout walks the worktree one
   directory at a time and fetches just that directory's missing blobs in a
@@ -112,11 +117,16 @@ z9git -h
 - **Resume:** an interrupted HTTP download with at least one complete pack entry
   is finalized as a prefix pack: the pack is truncated at the last complete
   entry, a fresh SHA-1 trailer is appended, an idx is synthesized, and the pack
-  is installed. `.git/z9git-state` records the URL, depth, shallow boundary,
-  completed packs, the prefix offset, `have` commits whose closure is complete,
-  and the advertised refs. The clone retries with those `have` entries (and so
-  normally receives only the missing closure); re-running `clone` or
-  `fetch --deepen` reads the same state. Multiple packs are expected and legal;
+  is installed. `.git/z9git-state` records the URL, depth, the authoritative
+  shallow file reference, complete vs prefix/unknown packs, the prefix offset,
+  `have` commits whose closure is complete, and the advertised refs. A tip in a
+  pack recorded complete trusts its downloaded closure; prefix, loose and
+  unknown tips are verified by traversal (blob leaves use a local-existence
+  check instead of inflation). `have`/install filtering uses the same check, and
+  haves still come only from local refs. The clone retries with those `have`
+  entries (and so normally receives only the missing closure); re-running
+  `clone` or `fetch --deepen` reads the same state. Multiple packs are expected
+  and legal;
   pack order is not significant because the store resolves objects across all
   packs. If the prefix has no complete entry the temp pack is removed and the
   original transport/protocol error is reported. Temp names (`tmp_http_pack.*`,
@@ -127,6 +137,10 @@ z9git -h
 - `--max-down <KB/s>` paces the HTTP pack download (the CLI multiplies by 1024;
   the sink sleeps to hold the byte-rate). `0` (the default) is unlimited. It has
   no effect on local transports.
+- **Fetch preserves local HEAD.** A symbolic target that survives ref filtering
+  stays selected; a detached HEAD stays detached; and if the old target is
+  missing or filtered, HEAD is left unchanged. Fetch never falls back to another
+  branch (clone keeps its initial-branch fallback).
 - `--arena-mb <N>` sets the app arena: **default 32 MiB, minimum 16, no hard
   upper bound**. It is allocated dynamically (`VirtualAlloc` on win32, anonymous
   `mmap` on POSIX) and is pagefile-backed, so the OS may page it. The heavy
@@ -218,14 +232,17 @@ once per MiB. The duration floor is still honored.
   `.git/z9git-state` is removed before `MoveFileA` because the `std_file`
   rename wrapper does not replace an existing file. This leaves a small
   non-atomic window; the POSIX path is temp-file + rename and remains atomic.
-- **State helper lists cap at 4096 entries.** The `have` and completed-pack
-  lists recorded in `.git/z9git-state` are bounded. `.git/shallow` is the
-  authoritative shallow source, and correctness relies on local ref/object
-  scans (local refs plus installed packs), not on the state helper lists.
+- **State helper lists cap at 4096 entries.** The `have`, pack and
+  complete-pack lists recorded in `.git/z9git-state` are bounded. `.git/shallow`
+  is the authoritative shallow source, and correctness relies on local
+  ref/object scans (local refs plus installed packs), not on the state helper
+  lists. A dropped completion marker only makes the next check verify instead
+  of trusting the pack.
 - **Partial clone fetches blobs per directory.** Checkout requests only the
-  missing blobs for one directory at a time. A tree with many directories can
-  therefore issue many upload-pack requests; this trades request count for
-  bounded memory. There is no global tree-count cap.
+  missing blobs for one directory at a time; the id list uses a freed
+  per-directory scratch mapping, not the app arena. A tree with many
+  directories can therefore issue many upload-pack requests; this trades
+  request count for bounded memory. There is no global tree-count cap.
 - **Partial checkout over HTTPS uses the existing trust store.** It looks for
   `ca_store.bin` in the current directory, beside the executable, or at the
   repo-tree path, exactly like clone. There is no new CA path or flag.

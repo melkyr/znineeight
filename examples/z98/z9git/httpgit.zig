@@ -42,7 +42,7 @@ const KIND_PROTOCOL: u8 = 2;
 const KIND_DISK_FULL: u8 = 3;
 
 const DISK_GUARD_BYTES: u64 = 4 * 1024 * 1024;
-const SHALLOW_MAX: usize = 4096;
+const STATE_ID_CAP: usize = 4096;
 const MAX_ATTEMPTS: usize = 4;
 
 
@@ -819,8 +819,12 @@ const PackSink = struct {
     guard_next: u64,
     pack_hdr: [12]u8,
     pack_hdr_len: usize,
-    shallow_raw: [SHALLOW_MAX * 20]u8,
+    arena: *arena_mod.Arena,
+    shallow_raw: []u8,
     shallow_count: usize,
+    shallow_cap: usize,
+    shallow_complete: bool,
+
 };
 
 
@@ -909,7 +913,7 @@ fn packDecorate(s: *PackSink, data: []const u8) http.HttpError!void {
     try packWriteBytes(s, data);
 }
 
-fn shallowAdd(s: *PackSink, id: [20]u8) void {
+fn shallowAdd(s: *PackSink, id: [20]u8) http.HttpError!void {
     var i: usize = 0;
     while (i < s.shallow_count) : (i += 1) {
         var same = true;
@@ -922,11 +926,20 @@ fn shallowAdd(s: *PackSink, id: [20]u8) void {
         }
         if (same) return;
     }
-    if (s.shallow_count >= SHALLOW_MAX) return;
+    if (s.shallow_count == s.shallow_cap) {
+        var ncap = s.shallow_cap * 2;
+        if (ncap == 0) ncap = 64;
+        const raw = arena_mod.alloc(s.arena, ncap * 20) catch return error.OutOfMemory;
+        var j: usize = 0;
+        while (j < s.shallow_count * 20) : (j += 1) raw[j] = s.shallow_raw[j];
+        s.shallow_raw = raw[0 .. ncap * 20];
+        s.shallow_cap = ncap;
+    }
     var k: usize = 0;
     while (k < 20) : (k += 1) s.shallow_raw[s.shallow_count * 20 + k] = id[k];
     s.shallow_count += 1;
 }
+
 
 fn shallowRemove(s: *PackSink, id: [20]u8) void {
     var i: usize = 0;
@@ -969,7 +982,8 @@ fn pktPayloadDone(s: *PackSink) http.HttpError!void {
     if (is_err) return sinkFail(s, KIND_PROTOCOL);
     if (hlen >= 48 and startsWith(s.pkt_head[0..hlen], "shallow ")) {
         var id: [20]u8 = undefined;
-        if (parseId(s.pkt_head[8..48], &id)) shallowAdd(s, id);
+        if (parseId(s.pkt_head[8..48], &id)) try shallowAdd(s, id);
+
         s.phase = .len;
         return;
     }
@@ -981,6 +995,7 @@ fn pktPayloadDone(s: *PackSink) http.HttpError!void {
     }
 
     if (is_nak or is_ack) {
+        s.shallow_complete = true;
         s.phase = .pack;
         return;
     }
@@ -1108,12 +1123,12 @@ const State = struct {
     url: []const u8,
     depth: u32,
     partial: bool,
-    shallow_raw: []u8,
-    shallow_count: usize,
     have_raw: []u8,
     have_count: usize,
     pack_raw: []u8,
     pack_count: usize,
+    complete_raw: []u8,
+    complete_count: usize,
     has_prefix: bool,
     prefix_recorded: bool,
     prefix_id: [20]u8,
@@ -1128,12 +1143,12 @@ fn stateEmpty(arena: *arena_mod.Arena) State {
     s.url = "";
     s.depth = 0;
     s.partial = false;
-    s.shallow_raw = g_empty_byte[0..0];
     s.have_raw = g_empty_byte[0..0];
     s.pack_raw = g_empty_byte[0..0];
-    s.shallow_count = 0;
+    s.complete_raw = g_empty_byte[0..0];
     s.have_count = 0;
     s.pack_count = 0;
+    s.complete_count = 0;
     s.has_prefix = false;
     s.prefix_recorded = false;
 
@@ -1159,13 +1174,13 @@ fn parseDecSlice(s: []const u8) u64 {
 
 fn stateInitArrays(arena: *arena_mod.Arena, data_len: usize, s: *State) bool {
     var cap: usize = data_len / 40 + 8;
-    if (cap < SHALLOW_MAX) cap = SHALLOW_MAX;
-    const a = arena_mod.alloc(arena, cap * 20) catch return false;
+    if (cap < STATE_ID_CAP) cap = STATE_ID_CAP;
     const b = arena_mod.alloc(arena, cap * 20) catch return false;
     const c = arena_mod.alloc(arena, cap * 20) catch return false;
-    s.shallow_raw = a[0 .. cap * 20];
+    const d = arena_mod.alloc(arena, cap * 20) catch return false;
     s.have_raw = b[0 .. cap * 20];
     s.pack_raw = c[0 .. cap * 20];
+    s.complete_raw = d[0 .. cap * 20];
     return true;
 }
 
@@ -1253,6 +1268,13 @@ fn stateLoad(arena: *arena_mod.Arena, git_dir: []const u8, s: *State) bool {
             if (parseStateLineId(line[5..], &id)) {
                 var cap = s.pack_raw.len / 20;
                 rawAdd(s.pack_raw, &s.pack_count, cap, id);
+                _ = cap;
+            }
+        } else if (startsWith(line, "complete-pack ")) {
+            var id: [20]u8 = undefined;
+            if (parseStateLineId(line[14..], &id)) {
+                var cap = s.complete_raw.len / 20;
+                rawAdd(s.complete_raw, &s.complete_count, cap, id);
                 _ = cap;
             }
         } else if (startsWith(line, "prefix ")) {
@@ -1393,6 +1415,40 @@ fn chooseHead(disc: *const Discovery, refs: []const repo.RefEntry, head_target: 
     has_head.* = false;
 }
 
+fn trimWs(s: []const u8) []const u8 {
+    var start: usize = 0;
+    var end = s.len;
+    while (start < end and (s[start] == ' ' or s[start] == '\t' or s[start] == '\r' or s[start] == '\n')) : (start += 1) {}
+    while (end > start and (s[end - 1] == ' ' or s[end - 1] == '\t' or s[end - 1] == '\r' or s[end - 1] == '\n')) end -= 1;
+    return s[start..end];
+}
+
+// Fetch preserves the existing HEAD: keep a symbolic target when it survives
+// filtering, leave detached HEAD detached, and never fall back to another
+// branch. installRefsOnly leaves HEAD untouched in every other case.
+fn installFetchHeadRefs(arena: *arena_mod.Arena, git_dir: []const u8, dest_dir: []const u8, refs: []const repo.RefEntry) repo.GitError!void {
+    const head_path = joinUrl(arena, git_dir, "/HEAD") catch return error.OutOfMemory;
+    var target: []const u8 = "";
+    var target_idx: usize = 0;
+    var has_target = false;
+    if (file_mod.exists(head_path)) {
+        const raw = file_mod.readAll(arena, head_path) catch return error.Io;
+        const s = trimWs(raw);
+        if (startsWith(s, "ref: ")) {
+            const name = trimWs(s[5..]);
+            if (findRefByName(refs, name)) |idx| {
+                target = refs[idx].name;
+                target_idx = idx;
+                has_target = true;
+            }
+        }
+    }
+    if (has_target) {
+        try repo.installRefs(arena, dest_dir, refs, target, refs[target_idx].id, true);
+    } else {
+        try repo.installRefsOnly(arena, dest_dir, refs);
+    }
+}
 
 fn stateSave(arena: *arena_mod.Arena, git_dir: []const u8, s: *const State, disc: *const Discovery) repo.GitError!void {
 
@@ -1403,7 +1459,7 @@ fn stateSave(arena: *arena_mod.Arena, git_dir: []const u8, s: *const State, disc
     var ref_names: usize = 0;
     var ri: usize = 0;
     while (ri < disc.refs.len) : (ri += 1) ref_names += disc.refs[ri].name.len + 56;
-    const total = 4096 + s.url.len + ref_names + (sh_count + s.have_count + s.pack_count) * 52;
+    const total = 4096 + s.url.len + ref_names + (sh_count + s.have_count + s.pack_count + s.complete_count) * 60;
 
 
     const raw = arena_mod.alloc(arena, total) catch return error.OutOfMemory;
@@ -1442,6 +1498,15 @@ fn stateSave(arena: *arena_mod.Arena, git_dir: []const u8, s: *const State, disc
         var k: usize = 0;
         while (k < 20) : (k += 1) id[k] = s.pack_raw[i * 20 + k];
         textAppend(out, &pos, "pack ");
+        textAppendId(out, &pos, id);
+        textAppend(out, &pos, "\n");
+    }
+    i = 0;
+    while (i < s.complete_count) : (i += 1) {
+        var id: [20]u8 = undefined;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) id[k] = s.complete_raw[i * 20 + k];
+        textAppend(out, &pos, "complete-pack ");
         textAppendId(out, &pos, id);
         textAppend(out, &pos, "\n");
     }
@@ -1595,6 +1660,12 @@ fn stateAddPack(s: *State, id: [20]u8) void {
     rawAdd(s.pack_raw, &s.pack_count, cap, id);
 }
 
+fn stateAddCompletePack(s: *State, id: [20]u8) void {
+    stateAddPack(s, id);
+    const cap = s.complete_raw.len / 20;
+    rawAdd(s.complete_raw, &s.complete_count, cap, id);
+}
+
 fn stateAddHave(s: *State, id: [20]u8) void {
     const cap = s.have_raw.len / 20;
     rawAdd(s.have_raw, &s.have_count, cap, id);
@@ -1605,7 +1676,7 @@ fn addCompleteHaves(arena: *arena_mod.Arena, dest_git: []const u8, disc: *const 
     while (i < disc.refs.len) : (i += 1) {
         if (startsWith(disc.refs[i].name, "refs/pull/")) continue;
         if (rawHas(s.have_raw, s.have_count, disc.refs[i].id)) continue;
-        const ok = repo.closureComplete(arena, dest_git, disc.refs[i].id, shallow_raw, shallow_count, partial) catch false;
+        const ok = repo.closureComplete(arena, dest_git, disc.refs[i].id, shallow_raw, shallow_count, partial, s.complete_raw, s.complete_count) catch false;
         if (ok) stateAddHave(s, disc.refs[i].id);
 
 
@@ -1620,6 +1691,7 @@ const Attempt = struct {
     pack_bytes: u64,
     shallow_raw: []u8,
     shallow_count: usize,
+    shallow_complete: bool,
     status: u16,
     fail_kind: u8,
     transport: bool,
@@ -1634,6 +1706,7 @@ fn postPack(arena: *arena_mod.Arena, factory: *const TransportFactory, post_url:
     out.transport = false;
     out.redirect = "";
     out.shallow_count = 0;
+    out.shallow_complete = false;
     const empty_shallow = arena_mod.alloc(arena, 0) catch return error.OutOfMemory;
     out.shallow_raw = empty_shallow[0..0];
 
@@ -1668,7 +1741,11 @@ fn postPack(arena: *arena_mod.Arena, factory: *const TransportFactory, post_url:
     ps.pack_hdr_len = 0;
     ps.pack_count = 0;
     ps.guard_next = 0;
+    ps.arena = arena;
+    ps.shallow_raw = empty_shallow[0..0];
     ps.shallow_count = 0;
+    ps.shallow_cap = 0;
+    ps.shallow_complete = false;
     var sink = http.ResponseSink{
         .state = @ptrCast(*void, &ps),
         .write_fn = packSinkWrite,
@@ -1691,6 +1768,7 @@ fn postPack(arena: *arena_mod.Arena, factory: *const TransportFactory, post_url:
     out.status = head.status;
     out.pack_bytes = ps.pack_bytes;
     out.fail_kind = ps.fail_kind;
+    out.shallow_complete = ps.shallow_complete;
     const sc = ps.shallow_count;
     const sraw = arena_mod.alloc(arena, if (sc == 0) 0 else sc * 20) catch return error.OutOfMemory;
     i = 0;
@@ -1788,8 +1866,12 @@ fn downloadWanted(arena: *arena_mod.Arena, factory: *const TransportFactory, dis
         }
         if (at.complete) {
             try installPack(arena, opts.dest_git, tmp_path, tmp_idx, at.id);
-            stateAddPack(s, at.id);
-            try repo.writeShallow(arena, opts.dest_git, at.shallow_raw, at.shallow_count);
+            stateAddCompletePack(s, at.id);
+            if (at.shallow_complete) {
+                try repo.writeShallow(arena, opts.dest_git, at.shallow_raw, at.shallow_count);
+                opts.shallow_raw = at.shallow_raw;
+                opts.shallow_count = at.shallow_count;
+            }
             try stateSave(arena, opts.dest_git, s, disc);
             var r: DownloadResult = undefined;
             r.shallow_raw = at.shallow_raw;
@@ -1806,8 +1888,15 @@ fn downloadWanted(arena: *arena_mod.Arena, factory: *const TransportFactory, dis
         const pref_ok = tryPrefix(arena, opts.dest_git, tmp_path, s);
 
         if (pref_ok) {
-            try repo.writeShallow(arena, opts.dest_git, at.shallow_raw, at.shallow_count);
-            addCompleteHaves(arena, opts.dest_git, disc, at.shallow_raw, at.shallow_count, opts.partial, s);
+            // Only a response that reached NAK/ACK has a complete shallow
+            // section. An interrupted prefix leaves the existing .git/shallow
+            // untouched (the boundary list is never guessed).
+            if (at.shallow_complete) {
+                try repo.writeShallow(arena, opts.dest_git, at.shallow_raw, at.shallow_count);
+                opts.shallow_raw = at.shallow_raw;
+                opts.shallow_count = at.shallow_count;
+            }
+            addCompleteHaves(arena, opts.dest_git, disc, opts.shallow_raw, opts.shallow_count, opts.partial, s);
 
             try stateSave(arena, opts.dest_git, s, disc);
             continue;
@@ -1830,8 +1919,9 @@ fn downloadWanted(arena: *arena_mod.Arena, factory: *const TransportFactory, dis
 fn downloadBlobIds(arena: *arena_mod.Arena, factory: *const TransportFactory, post_url0: []const u8, dest_git: []const u8, max_down_bps: u32, want_raw: []const u8, want_count: usize) repo.GitError!void {
     const tmp_path = joinUrl(arena, dest_git, "/objects/pack/tmp_http_blob.pack") catch return error.OutOfMemory;
     const tmp_idx = joinUrl(arena, dest_git, "/objects/pack/tmp_http_blob.idx") catch return error.OutOfMemory;
-    var bstate: State = undefined;
-    _ = stateLoad(arena, dest_git, &bstate);
+    // Blob packs are per-directory and this state is never persisted; avoid a
+    // stateLoad (and its fixed id arrays) on every directory.
+    var bstate = stateEmpty(arena);
     var post_url = post_url0;
     var attempts: usize = 0;
     while (attempts < MAX_ATTEMPTS) : (attempts += 1) {
@@ -1846,7 +1936,7 @@ fn downloadBlobIds(arena: *arena_mod.Arena, factory: *const TransportFactory, po
         }
         if (at.complete) {
             try installPack(arena, dest_git, tmp_path, tmp_idx, at.id);
-            stateAddPack(&bstate, at.id);
+            stateAddCompletePack(&bstate, at.id);
             return;
         }
         if (tryPrefix(arena, dest_git, tmp_path, &bstate)) {
@@ -1932,12 +2022,8 @@ pub fn httpCloneOverOpts(arena: *arena_mod.Arena, url: []const u8, dest_dir: []c
     st.url = norm;
     st.depth = depth;
     st.partial = partial;
-    st.shallow_raw = res.shallow_raw;
-    st.shallow_count = res.shallow_count;
-    try repo.writeShallow(arena, dest_git, res.shallow_raw, res.shallow_count);
-
     const all_entries = try discEntries(arena, &disc);
-    const entries = try repo.filterRefsForInstall(arena, dest_git, all_entries, res.shallow_raw, res.shallow_count, partial);
+    const entries = try repo.filterRefsForInstall(arena, dest_git, all_entries, res.shallow_raw, res.shallow_count, partial, st.complete_raw, st.complete_count);
     var head_target: []const u8 = "";
     var head_id: [20]u8 = undefined;
     var has_head = false;
@@ -1947,7 +2033,7 @@ pub fn httpCloneOverOpts(arena: *arena_mod.Arena, url: []const u8, dest_dir: []c
     const local2 = try repo.localRefs(arena, dest_git);
     var h2: []u8 = undefined;
     var h2c: usize = 0;
-    try repo.collectHaves(arena, dest_git, local2, res.shallow_raw, res.shallow_count, partial, &h2, &h2c);
+    try repo.collectHaves(arena, dest_git, local2, res.shallow_raw, res.shallow_count, partial, st.complete_raw, st.complete_count, &h2, &h2c);
     st.have_raw = h2;
     st.have_count = h2c;
     try stateSave(arena, dest_git, &st, &disc);
@@ -1994,9 +2080,9 @@ pub fn httpFetchOver(arena: *arena_mod.Arena, git_dir: []const u8, deepen: u32, 
     var haves_count: usize = 0;
     const local = try repo.localRefs(arena, git_dir);
     if (local.len > 0) {
-        try repo.collectHaves(arena, git_dir, local, sh_raw, sh_count, st.partial, &haves_raw, &haves_count);
+        try repo.collectHaves(arena, git_dir, local, sh_raw, sh_count, st.partial, st.complete_raw, st.complete_count, &haves_raw, &haves_count);
     } else {
-        try repo.verifyHaves(arena, git_dir, st.have_raw, st.have_count, sh_raw, sh_count, st.partial, &haves_raw, &haves_count);
+        try repo.verifyHaves(arena, git_dir, st.have_raw, st.have_count, sh_raw, sh_count, st.partial, st.complete_raw, st.complete_count, &haves_raw, &haves_count);
     }
     st.have_raw = haves_raw;
     st.have_count = haves_count;
@@ -2017,25 +2103,16 @@ pub fn httpFetchOver(arena: *arena_mod.Arena, git_dir: []const u8, deepen: u32, 
 
     st.url = norm;
     st.depth = @intCast(u32, new_depth);
-    try repo.writeShallow(arena, git_dir, res.shallow_raw, res.shallow_count);
 
     const all_entries = try discEntries(arena, &disc);
-    const entries = try repo.filterRefsForInstall(arena, git_dir, all_entries, res.shallow_raw, res.shallow_count, st.partial);
-    var head_target: []const u8 = "";
-    var head_id: [20]u8 = undefined;
-    var has_head = false;
-    chooseHead(&disc, entries, &head_target, &head_id, &has_head);
+    const entries = try repo.filterRefsForInstall(arena, git_dir, all_entries, res.shallow_raw, res.shallow_count, st.partial, st.complete_raw, st.complete_count);
     const wt = worktreeOf(git_dir);
-    if (has_head) {
-        try repo.installRefs(arena, wt, entries, head_target, head_id, has_head);
-    } else {
-        try repo.installRefsOnly(arena, wt, entries);
-    }
+    try installFetchHeadRefs(arena, git_dir, wt, entries);
 
     const new_local = try repo.localRefs(arena, git_dir);
     var new_haves: []u8 = undefined;
     var new_have_count: usize = 0;
-    try repo.collectHaves(arena, git_dir, new_local, res.shallow_raw, res.shallow_count, st.partial, &new_haves, &new_have_count);
+    try repo.collectHaves(arena, git_dir, new_local, res.shallow_raw, res.shallow_count, st.partial, st.complete_raw, st.complete_count, &new_haves, &new_have_count);
     st.have_raw = new_haves;
     st.have_count = new_have_count;
     try stateSave(arena, git_dir, &st, &disc);
