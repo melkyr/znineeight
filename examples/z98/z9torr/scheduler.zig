@@ -6,18 +6,19 @@
 // `max_peers` `Peer` slots, and a small ring of recently-seen `PeerAddr`s used
 // to skip duplicate connections.
 //
-// Rarest-first WITHOUT sorting: `pickPiece` linear-scans eligible pieces in
-// ascending index order and keeps the first minimum-count piece, so ties break
-// by the lowest piece index (spec §9 M3 determinism).
+// Rarest-first WITHOUT sorting: one bitset bucket per rarest count holds the
+// `missing` pieces, and `pickPiece` takes the lowest index in the lowest bucket
+// the peer can serve (spec §9 M3 determinism). Per-peer bucket counts let an
+// empty bucket be skipped without scanning every piece.
 //
 // Claim/owner model: a peer holds at most one claimed piece at a time (the M2
 // coroutine works on a single `PieceState`). `pickPiece` stashes the choosing
 // peer's slot in `pending_owner`; the caller then calls `claim(index)`, which
-// marks the piece `requested` and records that slot in `piece_owner`. There is
-// no suspension between the two calls (both are plain functions), so the
-// pairing is deterministic. `release(peer)` returns every piece owned by the
-// peer's slot to `missing` (block state is retained; the resume sidecar's
-// `partial[]` survives claim/release, spec §7).
+// marks the piece `requested` and records that slot in `piece_owner` and
+// `peer_owned`. There is no suspension between the two calls (both are plain
+// functions), so the pairing is deterministic. `release(peer)` is O(1) and
+// returns the peer's single owned piece to `missing` (block state is retained;
+// the resume sidecar's `partial[]` survives claim/release, spec §7).
 //
 // `piece_state` is the authoritative per-piece status array (`PieceStatus`:
 // only {index, state}); the working block state lives in the owning peer's
@@ -41,6 +42,8 @@ pub const NO_OWNER: u32 = 0xFFFFFFFF;
 
 // Recently-seen address ring capacity (spec §12 item 8).
 const SEEN_RING: u32 = 8;
+// Rarest counts run 0..16 (MAX_RUNTIME_PEERS); one bucket per value.
+const MAX_BUCKETS: usize = 17;
 
 pub const SchedulerError = error{OutOfMemory};
 
@@ -64,6 +67,15 @@ pub const Scheduler = struct {
     // Internal fields the plan's behavior needs.
     piece_owner: []u32, // piece index -> owning peer slot (NO_OWNER if free)
     pending_owner: u32, // slot stashed by `pickPiece`, consumed by `claim`
+    // One bitset per rarest count (0..MAX_BUCKETS-1) holding only `missing`
+    // pieces. `bucket_min[r]` caches the lowest index still in bucket `r`.
+    bucket_bits: [17][]u8,
+    bucket_min: [17]u32,
+    // Per-peer count of missing pieces in each rarest bucket. Lets `pickPiece`
+    // skip buckets the peer cannot serve without scanning every piece.
+    peer_bucket_counts: []u32,
+    // Each peer claims at most one piece; `release` is O(1) via this map.
+    peer_owned: []u32,
     seen: [8]tracker.PeerAddr, // recent-address ring (dedupe)
     seen_count: u32,
     seen_next: u32,
@@ -76,6 +88,8 @@ var g_empty_u32: [1]u32;
 var g_empty_piece_status: [1]PieceStatus;
 var g_empty_peer: [1]peer.Peer;
 var g_zero_seen: [8]tracker.PeerAddr;
+var g_zero_buckets: [17][]u8;
+var g_zero_bucket_min: [17]u32;
 
 fn emptyBits() []u8 {
     return g_empty_bits[0..0];
@@ -98,6 +112,94 @@ fn peerHas(p: *peer.Peer, i: u32) bool {
     var byte: usize = @intCast(usize, i / 8);
     if (byte >= p.bitfield.len) return false;
     return piece.bitGet(p.bitfield, i);
+}
+
+// --- rarest buckets -------------------------------------------------------
+
+fn bucketGet(s: *Scheduler, r: u32, i: u32) bool {
+    var ri: usize = @intCast(usize, r);
+    if (ri >= MAX_BUCKETS) return false;
+    var bits = s.bucket_bits[ri];
+    var byte: usize = @intCast(usize, i / 8);
+    if (byte >= bits.len) return false;
+    return piece.bitGet(bits, i);
+}
+
+fn bucketNextSet(s: *Scheduler, r: u32, start: u32) u32 {
+    var n: u32 = @intCast(u32, s.piece_state.len);
+    var i: u32 = start;
+    while (i < n) : (i += 1) {
+        if (bucketGet(s, r, i)) return i;
+    }
+    return NO_OWNER;
+}
+
+fn bucketSet(s: *Scheduler, r: u32, i: u32) void {
+    var ri: usize = @intCast(usize, r);
+    if (ri >= MAX_BUCKETS) return;
+    var bits = s.bucket_bits[ri];
+    var byte: usize = @intCast(usize, i / 8);
+    if (byte >= bits.len) return;
+    piece.bitSet(bits, i);
+    if (s.bucket_min[ri] == NO_OWNER or i < s.bucket_min[ri]) s.bucket_min[ri] = i;
+}
+
+fn bucketClear(s: *Scheduler, r: u32, i: u32) void {
+    var ri: usize = @intCast(usize, r);
+    if (ri >= MAX_BUCKETS) return;
+    var bits = s.bucket_bits[ri];
+    var byte: usize = @intCast(usize, i / 8);
+    if (byte >= bits.len) return;
+    var sh: u8 = @intCast(u8, 7 - (i % 8));
+    var m: u8 = @intCast(u8, 1) << sh;
+    bits[byte] = bits[byte] & ~m;
+    if (s.bucket_min[ri] == i) s.bucket_min[ri] = bucketNextSet(s, r, i + 1);
+}
+
+fn bucketOf(s: *Scheduler, index: u32) u32 {
+    var r: u32 = s.piece_rarest[@intCast(usize, index)];
+    if (r >= @intCast(u32, MAX_BUCKETS)) r = @intCast(u32, MAX_BUCKETS - 1);
+    return r;
+}
+
+// Move every active peer's per-bucket count for `index` from `old_r` to
+// `new_r`. Called only while the piece is `missing`.
+fn movePeerCounts(s: *Scheduler, index: u32, old_r: u32, new_r: u32) void {
+    if (old_r == new_r) return;
+    var oi: usize = @intCast(usize, old_r);
+    var ni: usize = @intCast(usize, new_r);
+    if (oi >= MAX_BUCKETS or ni >= MAX_BUCKETS) return;
+    for (0..s.peers.len) |q| {
+        if (!s.peers[q].active) continue;
+        if (!peerHas(&s.peers[q], index)) continue;
+        var ci: usize = @intCast(usize, q) * MAX_BUCKETS + oi;
+        if (ci < s.peer_bucket_counts.len and s.peer_bucket_counts[ci] > 0) s.peer_bucket_counts[ci] -= 1;
+        var cj: usize = @intCast(usize, q) * MAX_BUCKETS + ni;
+        if (cj < s.peer_bucket_counts.len) s.peer_bucket_counts[cj] += 1;
+    }
+}
+
+// Remove/add `index` from/to every active peer's count for its current bucket.
+fn removePeerCount(s: *Scheduler, index: u32) void {
+    var r: u32 = bucketOf(s, index);
+    var ri: usize = @intCast(usize, r);
+    for (0..s.peers.len) |q| {
+        if (!s.peers[q].active) continue;
+        if (!peerHas(&s.peers[q], index)) continue;
+        var ci: usize = @intCast(usize, q) * MAX_BUCKETS + ri;
+        if (ci < s.peer_bucket_counts.len and s.peer_bucket_counts[ci] > 0) s.peer_bucket_counts[ci] -= 1;
+    }
+}
+
+fn addPeerCount(s: *Scheduler, index: u32) void {
+    var r: u32 = bucketOf(s, index);
+    var ri: usize = @intCast(usize, r);
+    for (0..s.peers.len) |q| {
+        if (!s.peers[q].active) continue;
+        if (!peerHas(&s.peers[q], index)) continue;
+        var ci: usize = @intCast(usize, q) * MAX_BUCKETS + ri;
+        if (ci < s.peer_bucket_counts.len) s.peer_bucket_counts[ci] += 1;
+    }
 }
 
 pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32) SchedulerError!Scheduler {
@@ -140,11 +242,55 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
         }
     }
 
+    var mp: u32 = max_peers;
+    if (mp > @intCast(u32, MAX_BUCKETS - 1)) mp = @intCast(u32, MAX_BUCKETS - 1);
+
+    // One bitset per rarest count; initially every piece is missing in bucket 0.
+    var bset: [17][]u8 = g_zero_buckets;
+    var bmin: [17]u32 = g_zero_bucket_min;
+    for (0..MAX_BUCKETS) |r| {
+        bset[r] = emptyBits();
+        bmin[r] = NO_OWNER;
+    }
+    if (n_pieces > 0) {
+        var nbits: usize = (@intCast(usize, n_pieces) + 7) / 8;
+        var rawb = std.arena.alloc(arena, MAX_BUCKETS * nbits) catch return error.OutOfMemory;
+        var all: []u8 = rawb[0 .. MAX_BUCKETS * nbits];
+        for (all) |*item| {
+            item.* = 0;
+        }
+        for (0..MAX_BUCKETS) |r| {
+            var start: usize = @intCast(usize, r) * nbits;
+            bset[r] = all[start .. start + nbits];
+        }
+        for (0..n_pieces) |i| {
+            piece.bitSet(bset[0], @intCast(u32, i));
+        }
+        bmin[0] = 0;
+    }
+
+    var pbc: []u32 = emptyU32();
+    if (mp > 0) {
+        var rawc = std.arena.alloc(arena, @intCast(usize, mp) * MAX_BUCKETS * @sizeOf(u32)) catch return error.OutOfMemory;
+        pbc = @ptrCast([*]u32, rawc)[0 .. @intCast(usize, mp) * MAX_BUCKETS];
+        for (pbc) |*item| {
+            item.* = 0;
+        }
+    }
+    var pown: []u32 = emptyU32();
+    if (mp > 0) {
+        var rawo2 = std.arena.alloc(arena, @intCast(usize, mp) * @sizeOf(u32)) catch return error.OutOfMemory;
+        pown = @ptrCast([*]u32, rawo2)[0..@intCast(usize, mp)];
+        for (pown) |*item| {
+            item.* = NO_OWNER;
+        }
+    }
+
     var peers: []peer.Peer = emptyPeers();
-    if (max_peers > 0) {
-        var rawp = std.arena.alloc(arena, @intCast(usize, max_peers) * @sizeOf(peer.Peer)) catch return error.OutOfMemory;
-        peers = @ptrCast([*]peer.Peer, rawp)[0..@intCast(usize, max_peers)];
-        for (0..max_peers) |j| {
+    if (mp > 0) {
+        var rawp = std.arena.alloc(arena, @intCast(usize, mp) * @sizeOf(peer.Peer)) catch return error.OutOfMemory;
+        peers = @ptrCast([*]peer.Peer, rawp)[0..@intCast(usize, mp)];
+        for (0..mp) |j| {
             // `ps`/`io` are fully zero-initialised: `saveResume` walks every
             // ACTIVE peer slot and reads `ps` before `peerRun` has acquired a
             // piece (`pieceInit`), so an undefined `ps` would poison-read (and
@@ -175,6 +321,10 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
         .active_peer_count = 0,
         .piece_owner = own,
         .pending_owner = NO_OWNER,
+        .bucket_bits = bset,
+        .bucket_min = bmin,
+        .peer_bucket_counts = pbc,
+        .peer_owned = pown,
         .seen = g_zero_seen,
         .seen_count = 0,
         .seen_next = 0,
@@ -187,21 +337,24 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
 // the peer holds no eligible piece. On success the owner slot is stashed for the
 // immediately-following `claim`.
 pub fn pickPiece(s: *Scheduler, p: *peer.Peer) ?u32 {
-    var best: u32 = NO_OWNER;
-    var best_r: u32 = 0xFFFFFFFF;
-    var n: u32 = @intCast(u32, s.piece_state.len);
-    for (0..n) |i| {
-        if (s.piece_state[@intCast(usize, i)].state != piece.BlockState.missing) continue;
-        if (!peerHas(p, i)) continue;
-        var r: u32 = s.piece_rarest[@intCast(usize, i)];
-        if (r < best_r) {
-            best_r = r;
-            best = i;
+    var r: usize = 0;
+    while (r < MAX_BUCKETS) : (r += 1) {
+        var ci: usize = @intCast(usize, p.slot) * MAX_BUCKETS + r;
+        if (ci >= s.peer_bucket_counts.len) continue;
+        if (s.peer_bucket_counts[ci] == 0) continue;
+        var start: u32 = s.bucket_min[r];
+        if (start == NO_OWNER) start = 0;
+        var n: u32 = @intCast(u32, s.piece_state.len);
+        var i: u32 = start;
+        while (i < n) : (i += 1) {
+            if (!bucketGet(s, @intCast(u32, r), i)) continue;
+            if (!peerHas(p, i)) continue;
+            if (s.piece_state[@intCast(usize, i)].state != piece.BlockState.missing) continue;
+            s.pending_owner = p.slot;
+            return i;
         }
     }
-    if (best == NO_OWNER) return null;
-    s.pending_owner = p.slot;
-    return best;
+    return null;
 }
 
 // Record that `p` now holds piece `index`: set the peer's availability bit (if
@@ -213,8 +366,16 @@ pub fn noteHave(s: *Scheduler, p: *peer.Peer, index: u32) void {
     if (ui >= s.piece_rarest.len) return;
     if (ui / 8 >= p.bitfield.len) return;
     if (peerHas(p, index)) return; // already counted
+    var old_r: u32 = s.piece_rarest[ui];
+    var new_r: u32 = old_r + 1;
+    if (new_r >= @intCast(u32, MAX_BUCKETS)) new_r = @intCast(u32, MAX_BUCKETS - 1);
     piece.bitSet(p.bitfield, index);
-    s.piece_rarest[ui] += 1;
+    s.piece_rarest[ui] = new_r;
+    if (s.piece_state[ui].state == piece.BlockState.missing and old_r != new_r) {
+        bucketClear(s, old_r, index);
+        bucketSet(s, new_r, index);
+        movePeerCounts(s, index, old_r, new_r);
+    }
 }
 
 // Mark piece `index` requested and record the owner stashed by `pickPiece`.
@@ -229,17 +390,45 @@ pub fn claim(s: *Scheduler, index: u32) void {
     if (s.piece_state[ui].state != piece.BlockState.missing) {
         @panic("scheduler: claim of a non-missing piece (double claim)");
     }
+    var r: u32 = bucketOf(s, index);
+    bucketClear(s, r, index);
+    removePeerCount(s, index);
     s.piece_state[ui].state = piece.BlockState.requested;
     if (ui < s.piece_owner.len) s.piece_owner[ui] = s.pending_owner;
+    if (@intCast(usize, s.pending_owner) < s.peer_owned.len) {
+        s.peer_owned[@intCast(usize, s.pending_owner)] = index;
+    }
 }
 
-// Mark piece `index` verified (clear its owner).
+// Mark piece `index` verified and clear its owner. Used both by the download
+// path (`complete`) and by `main` when seeding resume-verified pieces.
 pub fn complete(s: *Scheduler, index: u32) void {
     var n: u32 = @intCast(u32, s.piece_state.len);
     if (index >= n) return;
     var ui: usize = @intCast(usize, index);
+    var was_missing: bool = s.piece_state[ui].state == piece.BlockState.missing;
+    var old_owner: u32 = NO_OWNER;
+    if (ui < s.piece_owner.len) {
+        old_owner = s.piece_owner[ui];
+        s.piece_owner[ui] = NO_OWNER;
+    }
+    if (old_owner != NO_OWNER and @intCast(usize, old_owner) < s.peer_owned.len) {
+        if (s.peer_owned[@intCast(usize, old_owner)] == index) {
+            s.peer_owned[@intCast(usize, old_owner)] = NO_OWNER;
+        }
+    }
+    if (was_missing) {
+        var r: u32 = bucketOf(s, index);
+        bucketClear(s, r, index);
+        removePeerCount(s, index);
+    }
     s.piece_state[ui].state = piece.BlockState.verified;
-    if (ui < s.piece_owner.len) s.piece_owner[ui] = NO_OWNER;
+}
+
+// Seed a piece already verified from a resume sidecar without going through a
+// claim. `complete` already handles the missing -> verified transition.
+pub fn markVerified(s: *Scheduler, index: u32) void {
+    complete(s, index);
 }
 
 // A corrupted piece returns to `missing` (written-through blocks are retained
@@ -248,20 +437,41 @@ pub fn corrupt(s: *Scheduler, index: u32) void {
     var n: u32 = @intCast(u32, s.piece_state.len);
     if (index >= n) return;
     var ui: usize = @intCast(usize, index);
+    var was_missing: bool = s.piece_state[ui].state == piece.BlockState.missing;
+    var old_owner: u32 = NO_OWNER;
+    if (ui < s.piece_owner.len) {
+        old_owner = s.piece_owner[ui];
+        s.piece_owner[ui] = NO_OWNER;
+    }
+    if (old_owner != NO_OWNER and @intCast(usize, old_owner) < s.peer_owned.len) {
+        if (s.peer_owned[@intCast(usize, old_owner)] == index) {
+            s.peer_owned[@intCast(usize, old_owner)] = NO_OWNER;
+        }
+    }
     s.piece_state[ui].state = piece.BlockState.missing;
-    if (ui < s.piece_owner.len) s.piece_owner[ui] = NO_OWNER;
+    if (!was_missing) {
+        var r: u32 = bucketOf(s, index);
+        bucketSet(s, r, index);
+        addPeerCount(s, index);
+    }
 }
 
-// Return every piece claimed by `p` (owner slot) to `missing`, retaining its
-// written-through block mask.
+// Return the single piece claimed by `p` (owner slot) to `missing`, retaining
+// its written-through block mask. O(1): a peer never owns more than one piece.
 pub fn release(s: *Scheduler, p: *peer.Peer) void {
-    var n: u32 = @intCast(u32, s.piece_state.len);
-    for (0..n) |i| {
-        var ui: usize = @intCast(usize, i);
-        if (ui >= s.piece_owner.len) continue;
-        if (s.piece_owner[ui] == p.slot and s.piece_state[ui].state == piece.BlockState.requested) {
-            s.piece_state[ui].state = piece.BlockState.missing;
-            s.piece_owner[ui] = NO_OWNER;
+    var si: usize = @intCast(usize, p.slot);
+    if (si < s.peer_owned.len) {
+        var idx: u32 = s.peer_owned[si];
+        if (idx != NO_OWNER) {
+            var ui: usize = @intCast(usize, idx);
+            if (ui < s.piece_state.len and s.piece_state[ui].state == piece.BlockState.requested) {
+                s.piece_state[ui].state = piece.BlockState.missing;
+                if (ui < s.piece_owner.len) s.piece_owner[ui] = NO_OWNER;
+                var r: u32 = bucketOf(s, idx);
+                bucketSet(s, r, idx);
+                addPeerCount(s, idx);
+            }
+            s.peer_owned[si] = NO_OWNER;
         }
     }
     p.have_piece = false;
@@ -337,7 +547,24 @@ pub fn removePeer(s: *Scheduler, p: *peer.Peer) void {
                 // set bit must have a non-zero count. Underflow is a bug.
                 unreachable;
             }
-            s.piece_rarest[ui] -= 1;
+            var old_r: u32 = s.piece_rarest[ui];
+            var new_r: u32 = old_r - 1;
+            s.piece_rarest[ui] = new_r;
+            if (s.piece_state[ui].state == piece.BlockState.missing) {
+                bucketClear(s, old_r, i);
+                bucketSet(s, new_r, i);
+                movePeerCounts(s, i, old_r, new_r);
+            }
+        }
+    }
+    var si: usize = @intCast(usize, p.slot);
+    if (si < s.peer_owned.len) {
+        s.peer_owned[si] = NO_OWNER;
+    }
+    if (si < s.peers.len) {
+        for (0..MAX_BUCKETS) |r| {
+            var ci: usize = si * MAX_BUCKETS + r;
+            if (ci < s.peer_bucket_counts.len) s.peer_bucket_counts[ci] = 0;
         }
     }
     p.active = false;

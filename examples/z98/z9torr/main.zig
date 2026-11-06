@@ -51,10 +51,11 @@ var g_save_buf: [262144]u8;
 // M4: scratch arena for BEP 10/11 extended-message decoding (reset per message).
 var g_pex_buf: [131072]u8;
 // Dedicated scheduler arena. `schedulerInit` carves three per-piece arrays
-// (PieceStatus: 8 B/piece; piece_rarest + piece_owner: 4 B each) plus
-// `max_peers * sizeof(Peer)` (≈64 KiB each). At the parser's `MAX_PIECES`
-// (157286) that is ≈ 157286*(8+4+4) ≈ 2.4 MiB plus ≈ 1.0 MiB of peers ≈ 3.4 MiB,
-// so 4 MiB fits the largest torrent the parser accepts (M3 final-review fix 4).
+// (PieceStatus: 8 B/piece; piece_rarest + piece_owner: 4 B each), 17 rarest
+// bucket bitsets (1 bit/piece each), and `max_peers * sizeof(Peer)` (≈64 KiB
+// each). At the parser's `MAX_PIECES` (157286) that is ≈ 2.4 MiB per-piece
+// arrays + ≈ 0.33 MiB buckets + ≈ 1.0 MiB peers ≈ 3.8 MiB, so 4 MiB fits the
+// largest torrent the parser accepts (M3 final-review fix 4).
 var g_sched_buf: [4194304]u8;
 var g_work_arena: std.arena.Arena;
 var g_save_arena: std.arena.Arena;
@@ -415,7 +416,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     };
     for (0..n_pieces) |seed_i| {
         if (piecemod.bitGet(rstate.completed_bits, seed_i)) {
-            g_sched.piece_state[@intCast(usize, seed_i)].state = piecemod.BlockState.verified;
+            schedmod.markVerified(&g_sched, @intCast(u32, seed_i));
         }
     }
 

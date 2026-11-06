@@ -7,9 +7,11 @@
 // Asserts:
 //   1. `pickPiece` prefers the rarer piece and ties break by lowest index;
 //   2. `pickPiece` never returns a `requested` (already claimed) piece;
-//   3. `release(peer)` returns the peer's claimed pieces to `missing`;
-//   4. `addPeer` skips a recently-seen `PeerAddr` and a freed slot is reused.
-//
+//   3. `release(peer)` is O(1) and frees the peer's single claimed piece;
+//   4. `corrupt` requeues a requested piece and it can be picked again;
+//   5. `removePeer` decrements counts; `addPeer` skips seen addresses and reuses
+//      freed slots.
+
 // Build (binding recipe), entry is this file:
 //   mkdir -p out
 //   timeout 120 /tmp/z9_m0_seed/zig1_5_clean -fsafe -o out testdata/scheduler_test.zig
@@ -135,25 +137,32 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // piece_rarest = [1,1,2,2,0,0]: 0/1 tie at 1, 2/3 tie at 2.
     checkCounts(&s, "piece_rarest after noteHave");
 
-    // Test 1: rarest-first (count 1 before count 2) with lowest-index tie-break
-    // at both equal pairs (0 before 1; 2 before 3).
+    // Test 1: rarest-first (count 1 before count 2) with lowest-index tie-break.
+    // Complete each piece before the next pick so the peer's single-claim
+    // invariant holds.
     checkPick(&s, pa, 0, "tie-break: index 0 over 1");
+    scheduler.complete(&s, 0);
     checkPick(&s, pa, 1, "tie-break: index 1 next");
+    scheduler.complete(&s, 1);
     checkPick(&s, pa, 2, "tie-break: index 2 over 3");
-    checkPick(&s, pa, 3, "tie-break: index 3 next");
-    checkNull(&s, pa, "A has no missing piece left");
 
-    // Test 2: B's only pieces (2,3) are `requested` -> never returned.
-    checkNull(&s, pb, "pickPiece returned a requested piece");
+    // Test 2: A's requested piece 2 is never returned to B, which takes 3.
+    checkPick(&s, pb, 3, "B skips A's requested piece 2");
 
-    // Test 3: release returns A's claimed pieces to `missing`.
-    scheduler.release(&s, pa);
-    if (s.piece_state[0].state != .missing) fail("release did not free piece 0");
-    if (s.piece_state[2].state != .missing) fail("release did not free piece 2");
-    checkPick(&s, pb, 2, "B now picks released tie-lowest piece 2");
+    // Test 3: release is O(1) and frees only the peer's single claimed piece.
     scheduler.release(&s, pb);
+    if (s.piece_state[3].state != .missing) fail("release did not free B's piece 3");
+    scheduler.release(&s, pa);
+    if (s.piece_state[2].state != .missing) fail("release did not free A's piece 2");
 
-    // Test 4: removePeer decrements the counts for the peer's set bits.
+    // Test 4: a corrupt piece is requeued and can be picked again.
+    checkPick(&s, pa, 2, "A picks piece 2 before corrupt");
+    scheduler.corrupt(&s, 2);
+    if (s.piece_state[2].state != .missing) fail("corrupt did not requeue piece 2");
+    checkPick(&s, pa, 2, "A re-picks the requeued piece 2");
+    scheduler.release(&s, pa);
+    if (s.piece_state[2].state != .missing) fail("requeue release did not free piece 2");
+    // Test 5: removePeer decrements the counts for the peer's set bits.
     scheduler.removePeer(&s, pa);
     if (s.active_peer_count != 1) fail("removePeer did not drop active count");
     if (s.peers[0].active) fail("removed slot still active");
