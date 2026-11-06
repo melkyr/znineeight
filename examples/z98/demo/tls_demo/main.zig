@@ -1,13 +1,17 @@
 // main.zig — tls_demo: HTTPS fetch over std_net + std_tls through
-// std_http.httpGetOver (Phase 1 M4 Task 3).
+// std_http.httpGetOver (GET) or std_http.httpPostOver (POST).
 //
 // usage: tls_demo [url] [store] [clock_override_unix]
+//        tls_demo --post <url> --body <file> [--content-type <ct>]
+//                 [--accept <a>] [--store <path>] [--clock <unix>]
 //
 // Defaults: url https://www.google.com/, store ca_store.bin (falling back to
 // the tree path examples/z98/demo/tls_demo/ca_store.bin), clock from
 // std_time.wallClockUnix().  The optional clock override exists for Win9x
 // machines with a dead RTC; without it a nonsensical system clock fails
-// cleanly as `cert: time`.
+// cleanly as `cert: time`.  POST bodies are read into the arena and capped at
+// 1 MiB; empty content-type/accept omit those headers.  Neither mode follows
+// redirects; custom headers and gzip are not supported.
 //
 // Output: `status=N`, the first 4 KiB of the response body, then
 //   tls_demo ok status=N bytes=N arena_peak=N rss_peak=N cpu_ms=N
@@ -22,6 +26,7 @@ const filemod = @import("std_file.zig");
 
 const DEFAULT_URL = "https://www.google.com/";
 const BODY_PRINT_CAP: usize = 4096;
+const POST_BODY_CAP: usize = 1024 * 1024;
 const CONNECT_TIMEOUT_MS: u32 = 15000;
 const IO_TIMEOUT_MS: u32 = 15000;
 const ARENA_SIZE: usize = 4 * 1024 * 1024;
@@ -599,8 +604,141 @@ fn loadStore(path: []const u8) DemoError!void {
     };
 }
 
+fn printUsage() void {
+    out("usage: tls_demo [url] [store] [clock_override_unix]\n");
+    out("       tls_demo --post <url> --body <file> [--content-type <ct>]\n");
+    out("                [--accept <a>] [--store <path>] [--clock <unix>]\n");
+    out("\n");
+    out("The positional form is a GET (the default). POST sends a file body to\n");
+    out("an HTTPS URL. POST body cap: 1048576 bytes; response body cap: 1048576\n");
+    out("bytes. Redirects are not followed; custom headers and gzip are not\n");
+    out("supported (same as GET). -h, --help: print this usage and exit 0.\n");
+}
+
+fn readBodyFile(path: []const u8) DemoError![]u8 {
+    var f = filemod.open(&g_arena, path, .Read) catch return DemoError.BadArgs;
+    const sz = filemod.size(&f) catch {
+        filemod.close(&f);
+        return DemoError.BadArgs;
+    };
+    if (sz < 0 or sz > @intCast(i64, POST_BODY_CAP)) {
+        filemod.close(&f);
+        return DemoError.BadArgs;
+    }
+    const n: usize = @intCast(usize, sz);
+    const raw = std.arena.alloc(&g_arena, n) catch {
+        filemod.close(&f);
+        return DemoError.OutOfMemory;
+    };
+    var got: usize = 0;
+    while (got < n) {
+        const r = filemod.read(&f, raw[got..n]) catch {
+            filemod.close(&f);
+            return DemoError.BadArgs;
+        };
+        if (r == 0) break;
+        got += r;
+    }
+    filemod.close(&f);
+    return raw[0..got];
+}
+
+fn runPost(argc: usize, argv: [*][*]u8) DemoError!void {
+    if (argc < 3) return DemoError.BadArgs;
+
+    const url = argAt(argv, 2);
+    var body_path: []const u8 = "";
+    var content_type: []const u8 = "";
+    var accept: []const u8 = "";
+    var store_path: []const u8 = "ca_store.bin";
+    var have_store: bool = false;
+    var now_unix: i64 = 0;
+    var have_clock: bool = false;
+
+    var i: usize = 3;
+    while (i < argc) : (i += 1) {
+        const a = argAt(argv, i);
+        if (eqBytes(a, "--body")) {
+            i += 1;
+            if (i >= argc) return DemoError.BadArgs;
+            body_path = argAt(argv, i);
+        } else if (eqBytes(a, "--content-type")) {
+            i += 1;
+            if (i >= argc) return DemoError.BadArgs;
+            content_type = argAt(argv, i);
+        } else if (eqBytes(a, "--accept")) {
+            i += 1;
+            if (i >= argc) return DemoError.BadArgs;
+            accept = argAt(argv, i);
+        } else if (eqBytes(a, "--store")) {
+            i += 1;
+            if (i >= argc) return DemoError.BadArgs;
+            store_path = argAt(argv, i);
+            have_store = true;
+        } else if (eqBytes(a, "--clock")) {
+            i += 1;
+            if (i >= argc) return DemoError.BadArgs;
+            now_unix = parseI64Clock(argAt(argv, i)) orelse return DemoError.BadArgs;
+            have_clock = true;
+        } else {
+            return DemoError.BadArgs;
+        }
+    }
+    if (url.len == 0 or body_path.len == 0) return DemoError.BadArgs;
+
+    if (!have_store and !filemod.exists(store_path)) {
+        store_path = "examples/z98/demo/tls_demo/ca_store.bin";
+    }
+    if (have_clock) {
+        if (now_unix <= 0) return DemoError.Time;
+    } else {
+        now_unix = std.time.wallClockUnix();
+        if (now_unix < 946684800 or now_unix > 4102444800) return DemoError.Time;
+    }
+
+    const body = try readBodyFile(body_path);
+    try loadStore(store_path);
+
+    var c = try openTls(url, now_unix);
+    var transport = http.HttpTransport{
+        .state = @ptrCast(*void, &c),
+        .read_fn = trRead,
+        .write_fn = trWrite,
+        .close_fn = trClose,
+    };
+
+    var resp: http.Response = undefined;
+    http.httpPostOver(&g_arena, &transport, url, body, content_type, accept, &resp) catch |e| {
+        if (e == error.BadUrl) return DemoError.HttpBadUrl;
+        if (e == error.BadHeader) return DemoError.BadArgs;
+        if (e == error.BadResponse) return DemoError.HttpBadResponse;
+        if (e == error.TooLarge) return DemoError.HttpTooLarge;
+        if (e == error.Timeout) return DemoError.Timeout;
+        if (e == error.OutOfMemory) return DemoError.OutOfMemory;
+        if (e == error.DnsFailed) return DemoError.DnsFailed;
+        return DemoError.HttpFailed;
+    };
+
+    printStatus(resp.status);
+    printBody(resp.body);
+    printResource(resp.status, resp.body.len, g_arena.used, rssPeakKb(), cpuMs());
+}
+
 fn run(argc: i32, argv: [*][*]u8) DemoError!void {
     const n: usize = @intCast(usize, argc);
+
+    var k: usize = 1;
+    while (k < n) : (k += 1) {
+        const a = argAt(argv, k);
+        if (eqBytes(a, "-h") or eqBytes(a, "--help")) {
+            printUsage();
+            return;
+        }
+    }
+    if (n >= 2 and eqBytes(argAt(argv, 1), "--post")) {
+        try runPost(n, argv);
+        return;
+    }
     if (n > 4) return DemoError.BadArgs;
 
     var url: []const u8 = DEFAULT_URL;

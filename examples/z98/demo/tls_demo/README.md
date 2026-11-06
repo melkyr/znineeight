@@ -1,7 +1,8 @@
-# tls_demo — HTTPS fetch over `std_net` + `std_tls` (Phase 1 M4/M5)
+# tls_demo — HTTPS GET/POST over `std_net` + `std_tls` (Phase 1 M4/M5)
 
 `tls_demo` is a Z98 program that fetches an HTTPS URL through
-`std_http.httpGetOver` using a transport built on `std_net` TCP and the
+`std_http.httpGetOver` (GET) or sends a file body through
+`std_http.httpPostOver` (POST) using a transport built on `std_net` TCP and the
 sans-I/O `std_tls` TLS 1.2/1.3 client. The session offers TLS 1.3 first and
 falls back to TLS 1.2 when the server selects it. Server certificates are
 validated against the pinned `ca_store.bin` trust store (M3) with the
@@ -10,7 +11,12 @@ driver-supplied wall clock. It runs on Linux and builds as a `-osw` Win9x
 
 ```
 tls_demo [url] [store] [clock_override_unix]
+tls_demo --post <url> --body <file> [--content-type <ct>] [--accept <a>]
+         [--store <path>] [--clock <unix>]
 ```
+
+The positional form remains the GET path, unchanged. The `--post` form sends a
+file body and keeps the same certificate validation and resource line.
 
 - `url` — default `https://www.google.com/`.
 - `store` — default `ca_store.bin`; if that file is not in the current
@@ -20,9 +26,20 @@ tls_demo [url] [store] [clock_override_unix]
   machine with a dead/incorrect RTC. Without it the demo reads
   `std_time.wallClockUnix()`; an implausible system clock fails cleanly as
   `cert: time`.
+- `--post` — selects POST mode; the URL follows immediately.
+- `--body` — file read into the demo arena. The body is capped at 1 MiB; a
+  larger or unreadable file fails as `tls: BadArgs`.
+- `--content-type`, `--accept` — optional POST request headers. An empty value
+  omits that header.
+- `--store`, `--clock` — POST-mode equivalents of the positional `store` and
+  `clock_override_unix`.
 
-Only HTTPS URLs are accepted. HTTP redirects and gzip are deferred, so the URL
-must return the response directly (no `301`/`302` follow).
+Only HTTPS URLs are accepted. Neither GET nor POST follows HTTP redirects
+(`301`/`302` are returned as-is), supports custom headers beyond the POST
+`Content-Type`/`Accept` above, or decompresses gzip, so the URL must return the
+response directly. Buffered response bodies are capped at 1 MiB. The demo uses
+`httpGetOver`/`httpPostOver`; the streaming POST variant
+(`httpPostStreamOver`, exercised by `z9git`) is not used here.
 
 ## TLS 1.3 notes
 
@@ -74,8 +91,12 @@ sh /tmp/tls_demo_win/build_target.sh mingw /tmp/tls_demo_win/tls_demo.exe
 Copy `tls_demo.exe` and `ca_store.bin` to the Win9x machine and run:
 
 ```bat
-tls_demo.exe https://example.com/ ca_store.bin 1790000000
+tls_demo.exe https://example.com/ ca_store.bin
+tls_demo.exe --post https://example.com/upload --body payload.bin --store ca_store.bin
 ```
+
+The system clock is the default. Only when the RTC is dead, pass a current
+seconds-since-epoch value as the trailing GET argument or via `--clock`.
 
 The executable imports only `KERNEL32.DLL` and `WSOCK32.DLL` (no CRT/msvcrt)
 and passes `scripts/win32_cross/check_win9x_imports.sh 9x`. Win95 needs the
@@ -147,7 +168,8 @@ tls: HttpFailed
 
 The demo is a 32-bit program with fixed static state: `TlsSession` is 124400
 bytes (about 121.5 KiB), the store arena is 512 KiB, and the fetch arena is
-4 MiB. The response body itself is capped at 1 MiB by `std_http`.
+4 MiB. The response body itself is capped at 1 MiB by `std_http`, and a POST
+request body is capped at 1 MiB by the demo before the request is sent.
 
 Measured at Phase 1 M7 closeout on the seed-v119 compiler
 (`45158dce…`). Linux rows are local `openssl s_server` fetches
@@ -187,8 +209,11 @@ bash examples/z98/demo/tls_demo/tests/tier_tls.sh
 Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
 ```
 
-The tier builds the demo, runs a local `openssl s_server -tls1_2` fallback
-happy path and TLS 1.3 happy paths for both suites (`-tls1_3
+The tier builds the demo, checks `-h` usage (rc 0) and bad POST arguments
+(rc 1), then runs a hermetic HTTPS POST against `tests/https_echo.py` (python3
+TLS server with the committed localhost certificate) and asserts the status,
+echoed body bytes, and `bytes`. It also runs a local `openssl s_server -tls1_2`
+fallback happy path and TLS 1.3 happy paths for both suites (`-tls1_3
 -ciphersuites TLS_AES_128_GCM_SHA256` and `TLS_CHACHA20_POLY1305_SHA256`) with
 an exact body, asserts the expired/wrong-host/untrusted negatives, checks the
 `Z98_NET` internet smoke (google.com + example.com; RSA-PSS TLS 1.3 via
@@ -245,4 +270,6 @@ Common failures:
 They were generated with host `openssl` (RSA-2048, SHA-256) and `store.bin` with
 `sibling/caconv root.pem store.bin` (`wrote 1 anchors`). The local tier uses
 `openssl s_server -WWW` (with `-tls1_2` or `-tls1_3`) so the body is
-file-exact; the RSA leaf exercises RSA-PSS CertificateVerify under TLS 1.3.
+file-exact; the RSA leaf exercises RSA-PSS CertificateVerify under TLS 1.3. The
+hermetic POST echo case uses `tests/https_echo.py` with the same localhost
+certificate and `store.bin`.

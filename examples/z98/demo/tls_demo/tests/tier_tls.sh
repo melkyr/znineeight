@@ -79,6 +79,26 @@ else
     exit 1
 fi
 
+echo "== (a) CLI: help and bad POST args =="
+timeout 10 "$BIN" -h >"$OUT/help.out" 2>"$OUT/help.err"
+HELP_RC=$?
+if [ "$HELP_RC" -eq 0 ] && grep -q -- '--post' "$OUT/help.out"; then
+    pass_case "-h prints usage (--post) and exits 0"
+else
+    fail_case "-h usage (rc=$HELP_RC; see $OUT/help.out / $OUT/help.err)"
+    sed 's/^/       /' "$OUT/help.out" "$OUT/help.err" 2>/dev/null | head -10
+fi
+
+timeout 10 "$BIN" --post "https://localhost:9/x" --store "$STORE" \
+    >"$OUT/post_badargs.out" 2>"$OUT/post_badargs.err"
+BADPOST_RC=$?
+if [ "$BADPOST_RC" -eq 1 ] \
+   && [ "$(cat "$OUT/post_badargs.out" "$OUT/post_badargs.err" 2>/dev/null)" = "tls: BadArgs" ]; then
+    pass_case "bad POST args (missing --body) -> rc1 tls: BadArgs"
+else
+    fail_case "bad POST args (rc=$BADPOST_RC, got '$(cat "$OUT/post_badargs.out" "$OUT/post_badargs.err" 2>/dev/null)')"
+fi
+
 free_port() {
     python3 -c 'import socket
 s = socket.socket()
@@ -110,6 +130,36 @@ stop_server() {
     fi
 }
 trap stop_server EXIT INT TERM
+
+echo "== (a) hermetic HTTPS POST echo =="
+POST_TEXT="tls post echo body"
+printf '%s\n' "$POST_TEXT" >"$WORK/post_body.txt"
+POST_LEN="$(printf '%s\n' "$POST_TEXT" | wc -c | tr -d ' ')"
+POST_PORT="$(free_port)"
+( exec python3 "$SCRIPT_DIR/https_echo.py" --port "$POST_PORT" \
+    --cert "$CERTS/localhost.pem" --key "$CERTS/localhost.key" ) \
+    >"$OUT/srv_post.log" 2>&1 &
+SERVER_PID=$!
+if ! wait_port "$POST_PORT" "$SERVER_PID"; then
+    fail_case "hermetic HTTPS POST echo server start (see $OUT/srv_post.log)"
+    stop_server
+else
+    timeout 40 "$BIN" --post "https://localhost:$POST_PORT/echo" \
+        --body "$WORK/post_body.txt" --content-type "text/plain" \
+        --accept "text/plain" --store "$STORE" --clock "$LOCAL_CLOCK" \
+        >"$OUT/post.out" 2>"$OUT/post.err"
+    POST_RC=$?
+    stop_server
+    if [ "$POST_RC" -eq 0 ] \
+       && [ "$(sed -n '1p' "$OUT/post.out")" = "status=200" ] \
+       && [ "$(sed -n '2p' "$OUT/post.out")" = "$POST_TEXT" ] \
+       && grep -Eq "^tls_demo ok status=200 bytes=$POST_LEN arena_peak=[0-9]+ rss_peak=[0-9]+ cpu_ms=[0-9]+$" "$OUT/post.out"; then
+        pass_case "hermetic HTTPS POST echo: status=200, echoed body, bytes=$POST_LEN"
+    else
+        fail_case "hermetic HTTPS POST echo (rc=$POST_RC; see $OUT/post.out / $OUT/post.err / $OUT/srv_post.log)"
+        sed 's/^/       /' "$OUT/post.out" "$OUT/post.err" 2>/dev/null | head -20
+    fi
+fi
 
 run_local() {
     local cert="$1" key="$2" chain="$3" url_path="$4" log="$5" port
