@@ -680,7 +680,11 @@ fn streamReadN(c: *Conn, s: *StreamBuf, total: usize) HttpError!void {
         var want: usize = total - got;
         if (want > room) want = room;
         const n = try connReadSome(c, s.buf[s.len .. s.len + want]);
-        if (n == 0) return error.BadResponse;
+        if (n == 0) {
+            try streamFlush(s);
+            return error.BadResponse;
+        }
+
         s.len += n;
         got += n;
     }
