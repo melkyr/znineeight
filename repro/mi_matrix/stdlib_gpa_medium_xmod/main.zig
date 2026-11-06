@@ -203,6 +203,72 @@ pub fn main() void {
     if (overlaps(w8, 8192, w16, 16384)) stress_ok = false;
     if (overlaps(w8, 8192, w64, 65536)) stress_ok = false;
     if (overlaps(w16, 16384, w64, 65536)) stress_ok = false;
+
+    // --- coalescing-only sequence: fill a fresh chunk, then merge two runs ---
+    // 63 * 8 pages = 504 pages, leaving < 8 pages of the 509-page target64
+    // chunk. Freeing two adjacent 8-page blocks only yields a 16-page run if
+    // freeMedium coalesces; a build without coalescing cannot serve the
+    // 65536-byte request from this chunk (it would have to make a new one).
+    var cfg2 = gpa.gpaConfigTarget64();
+    var g2 = gpa.gpaInit(cfg2) catch @panic("coalesce init");
+    var cb: [64]?[*]u8 = undefined;
+    var ci: usize = 0;
+    while (ci < 64) : (ci += 1) {
+        cb[ci] = null;
+    }
+    ci = 0;
+    while (ci < 63) : (ci += 1) {
+        const bp = must(gpa.gpaAlloc(&g2, 32768, 8), "coalesce fill");
+        cb[ci] = bp;
+        bp[0] = @intCast(u8, ci & 0xFF);
+        bp[32767] = @intCast(u8, (ci ^ 0xA5) & 0xFF);
+    }
+
+    if (cb[0]) |b0| {
+        if (cb[1]) |b1| {
+            if (@ptrToInt(b1) != @ptrToInt(b0) + 32768) stress_ok = false;
+            if (!gpa.gpaFree(&g2, b0)) stress_ok = false;
+            if (!gpa.gpaFree(&g2, b1)) stress_ok = false;
+            cb[0] = null;
+            cb[1] = null;
+
+            const c16 = gpa.gpaAlloc(&g2, 65536, 8);
+            if (c16) |cp| {
+                // The merge must reuse the freed adjacent run, not a new chunk.
+                if (@ptrToInt(cp) != @ptrToInt(b0)) stress_ok = false;
+                var k: usize = 2;
+                while (k < 63) : (k += 1) {
+                    if (cb[k]) |q| {
+                        if (overlaps(cp, 65536, q, 32768)) stress_ok = false;
+                    }
+                }
+                cp[0] = 0xC1;
+                cp[65535] = 0x1C;
+                if (cp[0] != 0xC1 or cp[65535] != 0x1C) stress_ok = false;
+                if (!gpa.gpaFree(&g2, cp)) stress_ok = false;
+                const c16b = gpa.gpaAlloc(&g2, 65536, 8);
+                if (c16b) |cp2| {
+                    if (cp2[0] != 0xC1 or cp2[65535] != 0x1C) stress_ok = false;
+                    k = 2;
+                    while (k < 63) : (k += 1) {
+                        if (cb[k]) |q| {
+                            if (overlaps(cp2, 65536, q, 32768)) stress_ok = false;
+                        }
+                    }
+                    if (!gpa.gpaFree(&g2, cp2)) stress_ok = false;
+                } else {
+                    stress_ok = false;
+                }
+            } else {
+                stress_ok = false;
+            }
+        } else {
+            stress_ok = false;
+        }
+    } else {
+        stress_ok = false;
+    }
+    gpa.gpaDeinit(&g2);
     ck("stress", stress_ok);
 
     // --- a pointer outside every chunk/region is unowned ---
