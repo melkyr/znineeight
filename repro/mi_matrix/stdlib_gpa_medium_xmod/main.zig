@@ -172,6 +172,37 @@ pub fn main() void {
             live[s] = null;
         }
     }
+
+    // --- free the remaining allocations, then split the whole-chunk run ---
+    if (!gpa.gpaFree(&g, q4)) stress_ok = false;
+    if (!gpa.gpaFree(&g, q8)) stress_ok = false;
+    if (!gpa.gpaFree(&g, q16)) stress_ok = false;
+    if (!gpa.gpaFree(&g, q64)) stress_ok = false;
+    if (!gpa.gpaFree(&g, a16)) stress_ok = false;
+    if (!gpa.gpaFree(&g, a4096)) stress_ok = false;
+
+    const w4 = must(gpa.gpaAlloc(&g, 4096, 8), "whole 4096");
+    const w8 = must(gpa.gpaAlloc(&g, 8192, 8), "whole 8192");
+    const w16 = must(gpa.gpaAlloc(&g, 16384, 8), "whole 16384");
+    const w64 = must(gpa.gpaAlloc(&g, 65536, 8), "whole 65536");
+    w4[0] = 0x61;
+    w4[4095] = 0x16;
+    w8[0] = 0x62;
+    w8[8191] = 0x26;
+    w16[0] = 0x63;
+    w16[16383] = 0x36;
+    w64[0] = 0x64;
+    w64[65535] = 0x46;
+    if (w4[0] != 0x61 or w4[4095] != 0x16) stress_ok = false;
+    if (w8[0] != 0x62 or w8[8191] != 0x26) stress_ok = false;
+    if (w16[0] != 0x63 or w16[16383] != 0x36) stress_ok = false;
+    if (w64[0] != 0x64 or w64[65535] != 0x46) stress_ok = false;
+    if (overlaps(w4, 4096, w8, 8192)) stress_ok = false;
+    if (overlaps(w4, 4096, w16, 16384)) stress_ok = false;
+    if (overlaps(w4, 4096, w64, 65536)) stress_ok = false;
+    if (overlaps(w8, 8192, w16, 16384)) stress_ok = false;
+    if (overlaps(w8, 8192, w64, 65536)) stress_ok = false;
+    if (overlaps(w16, 16384, w64, 65536)) stress_ok = false;
     ck("stress", stress_ok);
 
     // --- a pointer outside every chunk/region is unowned ---

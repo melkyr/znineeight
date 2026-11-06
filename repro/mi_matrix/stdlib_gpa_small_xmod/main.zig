@@ -3,8 +3,8 @@
 // Contract (Phase 3.1 Layer 2, Task 2): 64 KiB TLSF regions, block sizes below
 // 4096, 8-byte alignment, best-fit/split/coalesce free lists, mixed-order free
 // and reuse, range-walk ownership for gpaFree, and the pinned zero/alignment
-// rejection contracts. Until the medium/large tiers land, align > 8 and
-// size >= 4096 return null; this fixture only exercises the small tier.
+// rejection contracts. The 4096 boundary now routes to the medium tier and
+// returns a page-aligned pointer; this fixture otherwise exercises the small tier.
 //
 // GREEN (contract): deterministic byte-exact stdout ending `gpa small ok\n`
 // (RUNRC=0). Each line is `<check> 1` on success; a failed check prints 0 and
@@ -28,6 +28,11 @@ fn ck(what: []const u8, cond: bool) void {
 fn must(p: ?[*]u8, what: []const u8) [*]u8 {
     if (p) |q| return q;
     @panic(what);
+}
+
+fn pageAlignedOpt(p: ?[*]u8) bool {
+    if (p) |q| return @ptrToInt(q) % 4096 == 0;
+    return false;
 }
 
 fn overlaps(a: [*]u8, alen: usize, b: [*]u8, blen: usize) bool {
@@ -84,14 +89,14 @@ pub fn main() void {
         @ptrToInt(p1000) % 8 == 0 and @ptrToInt(p4000) % 8 == 0 and
         @ptrToInt(p4095) % 8 == 0);
 
-    // --- alignment, zero-size, and exact medium-boundary rejection ---
+    // --- alignment, zero-size rejection, and 4096 medium-boundary success ---
     ck("reject", gpa.gpaAlloc(&g, 16, 0) == null and
         gpa.gpaAlloc(&g, 16, 3) == null and
         gpa.gpaAlloc(&g, 16, 7) == null and
         gpa.gpaAlloc(&g, 16, 8192) == null and
         gpa.gpaAlloc(&g, 0, 8) == null and
         gpa.gpaAllocZeroed(&g, 0, 8) == null and
-        gpa.gpaAlloc(&g, 4096, 8) == null);
+        pageAlignedOpt(gpa.gpaAlloc(&g, 4096, 8)));
 
     // --- zeroed allocation is zero-filled ---
     const z = must(gpa.gpaAllocZeroed(&g, 64, 8), "allocZeroed 64");
