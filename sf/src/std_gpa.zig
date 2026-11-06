@@ -9,7 +9,7 @@
 // Small tier (TLSF):
 //   - 64 KiB region, 4096-aligned; region header at offset 0, block area after.
 //   - region metadata: fl_bitmap: u32, sl_bitmap: [32]u32,
-//     free_heads: [128]?*Block (FL 4..11 x 16 SL = 128 heads).
+//     free_heads: [192]?*Block (FL 4..15 x 16 SL = 192 heads).
 //   - block: 4-byte size/flags header, 4-byte footer, free-list links in the
 //     payload; minimum 16 bytes; 8-byte alignment. The header has no region
 //     pointer: ownership is a range walk over the region list.
@@ -43,9 +43,9 @@ pub const GpaConfig = struct {
 };
 
 const REGION_BYTES: usize = 65536;
-// Region header reserve: next + fl_bitmap + sl_bitmap + the 128 optional
-// free-head pointers (~1.2 KiB on the 32-bit target). 2 KiB leaves room for
-// safe-check fields and keeps the block start at a fixed 4-mod-8 offset.
+// Region header reserve: next + fl_bitmap + sl_bitmap + the 192 optional
+// free-head pointers (1536 B; ~1.7 KiB total on the 32-bit target). 2 KiB
+// leaves room for safe-check fields and keeps the block start at 4 mod 8.
 const HEADER_BYTES: usize = 2048;
 // A block is a 4-byte header + payload + 4-byte footer. Starting the block
 // area at 4 mod 8 makes the returned payload (header + 4) 8-byte aligned while
@@ -55,7 +55,8 @@ const BLOCK_START: usize = HEADER_BYTES + 4;
 const BLOCK_END: usize = REGION_BYTES - 4;
 const MIN_BLOCK: usize = 16;
 const SMALL_LIMIT: usize = 4096;
-const MAX_SMALL_BLOCK: usize = 4095;
+const MAX_SMALL_BLOCK: usize = 65535;
+const NUM_HEADS: usize = 192;
 const SIZE_MASK: u32 = 0xFFFFFFF8;
 const FREE_BIT: u32 = 1;
 
@@ -67,7 +68,7 @@ const Region = struct {
     next: usize,
     fl_bitmap: u32,
     sl_bitmap: [32]u32,
-    free_heads: [128]?*Block,
+    free_heads: [192]?*Block,
 };
 
 pub const Gpa = struct {
@@ -163,7 +164,7 @@ fn sizeClass(size0: usize) usize {
     if (size > MAX_SMALL_BLOCK) size = MAX_SMALL_BLOCK;
     var fl: usize = floorLog2(size);
     if (fl < 4) fl = 4;
-    if (fl > 11) fl = 11;
+    if (fl > 15) fl = 15;
     const sl: usize = (size >> @intCast(usize, fl - 4)) & 15;
     return (fl - 4) * 16 + sl;
 }
@@ -179,6 +180,62 @@ fn classSl(idx: usize) usize {
 fn bitMask(i: usize) u32 {
     const one: u32 = 1;
     return one << @intCast(u32, i);
+}
+
+fn lowestBit(v0: u32) usize {
+    var v: u32 = v0;
+    var i: usize = 0;
+    while (i < 32) : (i += 1) {
+        if ((v & 1) != 0) return i;
+        v = v >> 1;
+    }
+    return 32;
+}
+
+// Bits at positions >= start. Equivalent to `~0u32 << start`, but avoids the
+// checked left-shift overflow trap under -fsafe (the high bits leave the word).
+fn maskFrom(start: usize) u32 {
+    const b = bitMask(start);
+    return ~(b - 1);
+}
+
+fn classIndex(fl: usize, sl: usize) usize {
+    return (fl - 4) * 16 + sl;
+}
+
+fn firstClass(r: *Region, need: usize) usize {
+    const start = sizeClass(need);
+    const fl = classFl(start);
+    const sl = classSl(start);
+    const m = r.sl_bitmap[fl] & maskFrom(sl);
+    if (m != 0) return classIndex(fl, lowestBit(m));
+    if (fl < 15) {
+        const fm = r.fl_bitmap & maskFrom(fl + 1);
+        if (fm == 0) return NUM_HEADS;
+        const fl2 = lowestBit(fm);
+        const sm = r.sl_bitmap[fl2];
+        if (sm == 0) return NUM_HEADS;
+        return classIndex(fl2, lowestBit(sm));
+    }
+    return NUM_HEADS;
+}
+
+fn nextClass(r: *Region, idx: usize) usize {
+    const fl = classFl(idx);
+    const sl = classSl(idx);
+    if (sl < 15) {
+        const m = r.sl_bitmap[fl] & maskFrom(sl + 1);
+        if (m != 0) return classIndex(fl, lowestBit(m));
+    }
+    if (fl < 15) {
+        const fm = r.fl_bitmap & maskFrom(fl + 1);
+        if (fm == 0) return NUM_HEADS;
+        const fl2 = lowestBit(fm);
+        const sm = r.sl_bitmap[fl2];
+        if (sm == 0) return NUM_HEADS;
+        return classIndex(fl2, lowestBit(sm));
+    }
+    return NUM_HEADS;
 }
 
 fn asBlock(v: usize) ?*Block {
@@ -296,9 +353,8 @@ fn allocateFrom(r: *Region, b: *Block, need: usize) [*]u8 {
 }
 
 fn allocInRegion(r: *Region, need: usize) ?[*]u8 {
-    const start = sizeClass(need);
-    var idx: usize = start;
-    while (idx < 128) : (idx += 1) {
+    var idx: usize = firstClass(r, need);
+    while (idx < NUM_HEADS) {
         var cur = r.free_heads[idx];
         while (cur) |b| {
             if (blockSize(b) >= need) {
@@ -307,6 +363,7 @@ fn allocInRegion(r: *Region, need: usize) ?[*]u8 {
             }
             cur = asBlock(linkNext(b));
         }
+        idx = nextClass(r, idx);
     }
     return null;
 }
@@ -356,6 +413,17 @@ fn findRegion(g: *Gpa, ptr: [*]u8) ?*Region {
     return null;
 }
 
+fn blockForPayload(g: *Gpa, ptr: [*]u8) ?*Block {
+    const r = findRegion(g, ptr) orelse return null;
+    const base: usize = @ptrToInt(r);
+    const a: usize = @ptrToInt(ptr);
+    if (a < base + BLOCK_START + 4) return null;
+    const off: usize = a - base - 4;
+    if (off + MIN_BLOCK > BLOCK_END) return null;
+    const raw: [*]u8 = @ptrCast([*]u8, r);
+    return blockAt(raw, off);
+}
+
 fn newRegion(g: *Gpa) ?*Region {
     const raw = page_mod.pageReserve(&g.page, REGION_BYTES) orelse return null;
     if (!page_mod.pageCommit(&g.page, raw, REGION_BYTES)) {
@@ -370,7 +438,7 @@ fn newRegion(g: *Gpa) ?*Region {
         r.sl_bitmap[i] = 0;
     }
     i = 0;
-    while (i < 128) : (i += 1) {
+    while (i < NUM_HEADS) : (i += 1) {
         r.free_heads[i] = null;
     }
     const base: [*]u8 = @ptrCast([*]u8, r);
@@ -428,14 +496,8 @@ pub fn gpaAllocZeroed(g: *Gpa, size: usize, align: usize) ?[*]u8 {
 }
 
 pub fn gpaFree(g: *Gpa, ptr: [*]u8) bool {
+    const b = blockForPayload(g, ptr) orelse return false;
     const r = findRegion(g, ptr) orelse return false;
-    const base: usize = @ptrToInt(r);
-    const a: usize = @ptrToInt(ptr);
-    if (a < base + BLOCK_START + 4) return false;
-    const off: usize = a - base - 4;
-    if (off + MIN_BLOCK > BLOCK_END) return false;
-    const raw: [*]u8 = @ptrCast([*]u8, r);
-    const b = blockAt(raw, off);
     freeBlock(r, b);
     if (g.live_allocs > 0) g.live_allocs -= 1;
     return true;
@@ -448,14 +510,7 @@ pub fn gpaResize(g: *Gpa, ptr: [*]u8, new_size: usize, align: usize) ?[*]u8 {
     if (new_size >= SMALL_LIMIT) return null;
     const need = blockBytes(new_size) orelse return null;
 
-    const r = findRegion(g, ptr) orelse return null;
-    const base: usize = @ptrToInt(r);
-    const a: usize = @ptrToInt(ptr);
-    if (a < base + BLOCK_START + 4) return null;
-    const off: usize = a - base - 4;
-    if (off + MIN_BLOCK > BLOCK_END) return null;
-    const raw: [*]u8 = @ptrCast([*]u8, r);
-    const b = blockAt(raw, off);
+    const b = blockForPayload(g, ptr) orelse return null;
     const old_size = blockSize(b);
     if (need <= old_size) return ptr;
 

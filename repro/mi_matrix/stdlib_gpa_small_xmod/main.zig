@@ -30,6 +30,14 @@ fn must(p: ?[*]u8, what: []const u8) [*]u8 {
     @panic(what);
 }
 
+fn overlaps(a: [*]u8, alen: usize, b: [*]u8, blen: usize) bool {
+    const a0: usize = @ptrToInt(a);
+    const b0: usize = @ptrToInt(b);
+    const a1: usize = a0 + alen;
+    const b1: usize = b0 + blen;
+    return a0 < b1 and b0 < a1;
+}
+
 pub fn main() void {
     const gpa = std.gpa;
 
@@ -46,9 +54,10 @@ pub fn main() void {
     const p16 = must(gpa.gpaAlloc(&g, 16, 8), "alloc 16");
     const p100 = must(gpa.gpaAlloc(&g, 100, 8), "alloc 100");
     const p1000 = must(gpa.gpaAlloc(&g, 1000, 8), "alloc 1000");
+    const p4000 = must(gpa.gpaAlloc(&g, 4000, 8), "alloc 4000");
     const p4095 = must(gpa.gpaAlloc(&g, 4095, 8), "alloc 4095");
     ck("alloc", p1 != ZERO and p8 != ZERO and p16 != ZERO and
-        p100 != ZERO and p1000 != ZERO and p4095 != ZERO);
+        p100 != ZERO and p1000 != ZERO and p4000 != ZERO and p4095 != ZERO);
 
     p1[0] = 0xA1;
     p8[0] = 0xA8;
@@ -59,25 +68,30 @@ pub fn main() void {
     p100[99] = 0x99;
     p1000[0] = 0xA2;
     p1000[999] = 0xE9;
+    p4000[0] = 0xA3;
+    p4000[3999] = 0x39;
     p4095[0] = 0xA4;
     p4095[4094] = 0x4E;
     ck("bytes", p1[0] == 0xA1 and p8[0] == 0xA8 and p8[7] == 0x18 and
         p16[0] == 0xA6 and p16[15] == 0x16 and
         p100[0] == 0xA0 and p100[99] == 0x99 and
         p1000[0] == 0xA2 and p1000[999] == 0xE9 and
+        p4000[0] == 0xA3 and p4000[3999] == 0x39 and
         p4095[0] == 0xA4 and p4095[4094] == 0x4E);
 
     ck("align", @ptrToInt(p1) % 8 == 0 and @ptrToInt(p8) % 8 == 0 and
         @ptrToInt(p16) % 8 == 0 and @ptrToInt(p100) % 8 == 0 and
-        @ptrToInt(p1000) % 8 == 0 and @ptrToInt(p4095) % 8 == 0);
+        @ptrToInt(p1000) % 8 == 0 and @ptrToInt(p4000) % 8 == 0 and
+        @ptrToInt(p4095) % 8 == 0);
 
-    // --- alignment and zero-size rejection ---
+    // --- alignment, zero-size, and exact medium-boundary rejection ---
     ck("reject", gpa.gpaAlloc(&g, 16, 0) == null and
         gpa.gpaAlloc(&g, 16, 3) == null and
         gpa.gpaAlloc(&g, 16, 7) == null and
         gpa.gpaAlloc(&g, 16, 8192) == null and
         gpa.gpaAlloc(&g, 0, 8) == null and
-        gpa.gpaAllocZeroed(&g, 0, 8) == null);
+        gpa.gpaAllocZeroed(&g, 0, 8) == null and
+        gpa.gpaAlloc(&g, 4096, 8) == null);
 
     // --- zeroed allocation is zero-filled ---
     const z = must(gpa.gpaAllocZeroed(&g, 64, 8), "allocZeroed 64");
@@ -106,14 +120,111 @@ pub fn main() void {
     r[0] = 0x5A;
     ck("resize0", rz == null and r[0] == 0x5A);
 
-    // --- mixed-order free, then reuse of the coalesced region ---
-    ck("free", gpa.gpaFree(&g, r) and gpa.gpaFree(&g, p16) and
-        gpa.gpaFree(&g, p8) and gpa.gpaFree(&g, p100) and
+    // --- bitmap class selection: free 16/100/4000, allocate again ---
+    var flow_ok: bool = true;
+    if (!gpa.gpaFree(&g, p16)) flow_ok = false;
+    if (!gpa.gpaFree(&g, p100)) flow_ok = false;
+    if (!gpa.gpaFree(&g, p4000)) flow_ok = false;
+
+    const b16 = gpa.gpaAlloc(&g, 16, 8);
+    const b100 = gpa.gpaAlloc(&g, 100, 8);
+    const b4000 = gpa.gpaAlloc(&g, 4000, 8);
+    if (b16) |bp| {
+        if (@ptrToInt(bp) % 8 != 0) flow_ok = false;
+        bp[0] = 0x61;
+    } else {
+        flow_ok = false;
+    }
+    if (b100) |bp| {
+        if (@ptrToInt(bp) % 8 != 0) flow_ok = false;
+        bp[0] = 0x64;
+    } else {
+        flow_ok = false;
+    }
+    if (b4000) |bp| {
+        if (@ptrToInt(bp) % 8 != 0) flow_ok = false;
+        bp[0] = 0xFA;
+        bp[3999] = 0xAF;
+    } else {
+        flow_ok = false;
+    }
+
+    // --- split the upper-class region tail, mixed frees, reallocate ---
+    var tail: [32]?[*]u8 = undefined;
+    var ti: usize = 0;
+    while (ti < 32) : (ti += 1) {
+        tail[ti] = gpa.gpaAlloc(&g, 1200, 8);
+        const tp = tail[ti];
+        if (tp) |p| {
+            if (@ptrToInt(p) % 8 != 0) flow_ok = false;
+            p[0] = 0x7A;
+            p[1199] = 0x7A;
+        } else {
+            flow_ok = false;
+        }
+    }
+
+    ti = 0;
+    while (ti < 32) : (ti += 2) {
+        const tp = tail[ti];
+        if (tp) |p| {
+            if (!gpa.gpaFree(&g, p)) flow_ok = false;
+            tail[ti] = null;
+        }
+    }
+    var tj: usize = 32;
+    while (tj > 0) {
+        tj -= 1;
+        if (tj % 2 == 1) {
+            const tp = tail[tj];
+            if (tp) |p| {
+                if (!gpa.gpaFree(&g, p)) flow_ok = false;
+                tail[tj] = null;
+            }
+        }
+    }
+
+    ti = 0;
+    while (ti < 32) : (ti += 2) {
+        tail[ti] = gpa.gpaAlloc(&g, 1200, 8);
+        const tp = tail[ti];
+        if (tp) |p| {
+            if (@ptrToInt(p) % 8 != 0) flow_ok = false;
+            p[0] = 0x7B;
+        } else {
+            flow_ok = false;
+        }
+    }
+    ti = 0;
+    while (ti < 32) : (ti += 1) {
+        const tp = tail[ti];
+        if (tp) |p| {
+            if (!gpa.gpaFree(&g, p)) flow_ok = false;
+            tail[ti] = null;
+        }
+    }
+
+    // Leave p8/b16/b100/b4000 live so reuse must not overlap live blocks.
+    ck("free", flow_ok and gpa.gpaFree(&g, r) and
         gpa.gpaFree(&g, p1) and gpa.gpaFree(&g, p4095) and
         gpa.gpaFree(&g, z));
 
-    const q = must(gpa.gpaAlloc(&g, 1000, 8), "reuse 1000");
-    ck("reuse", q == p1 and @ptrToInt(q) % 8 == 0);
+    const q = gpa.gpaAlloc(&g, 1000, 8);
+    var reuse_ok: bool = q != null;
+    if (q) |qp| {
+        if (@ptrToInt(qp) % 8 != 0) reuse_ok = false;
+        if (overlaps(qp, 1000, p8, 8)) reuse_ok = false;
+        if (b16) |bp| {
+            if (overlaps(qp, 1000, bp, 16)) reuse_ok = false;
+        }
+        if (b100) |bp| {
+            if (overlaps(qp, 1000, bp, 100)) reuse_ok = false;
+        }
+        if (b4000) |bp| {
+            if (overlaps(qp, 1000, bp, 4000)) reuse_ok = false;
+        }
+    }
+    ck("reuse", reuse_ok);
 
     // --- a pointer outside every region is unowned ---
     var local: [8]u8 = undefined;
