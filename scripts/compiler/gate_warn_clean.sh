@@ -16,8 +16,9 @@ set -uo pipefail
 #   (b) shipped runtime C: sf/src/include/{zig_runtime,zig_pal,zig_nocrt}.c
 #       and sf/src/c_exit.c
 #   (c) representative programs: examples/z98/hello/main.zig, the std-heavy
-#       examples/z98/lisp_interpreter_curr/main.zig, and the wide-enum-macro
-#       fixtures under repro/mi_matrix/ (every emitted .c)
+#       examples/z98/lisp_interpreter_curr/main.zig, the wide-enum-macro
+#       fixtures under repro/mi_matrix/ (every emitted .c), plus the std_page
+#       fixture emitted for the Linux target (the POSIX prelude path)
 #
 # `-c` is required: `-fsyntax-only` would suppress -Wunused-function.
 # zig1 defaults to $ROOT/zig1. Builds must be run sequentially (a zig1 process
@@ -114,8 +115,26 @@ for entry in \
     rm -f "$WORK/$label"/.zig1_*.tmp
 done
 
+# The std_page fixture is a Linux-target probe: its prelude carries the POSIX
+# mmap/mprotect/munmap prototypes under _POSIX_C_SOURCE (the point of the
+# first-in-TU macro ordering). The Windows target path needs <windows.h>, which
+# the host gcc cannot parse; it is gated separately by
+# scripts/win32_cross/cross_build_run.sh + check_win9x_imports.sh.
+page_entry=repro/mi_matrix/stdlib_page_xmod/main.zig
+page_label="$(basename "$(dirname "$page_entry")")"
+mkdir -p "$WORK/$page_label"
+( cd "$ROOT" && timeout 600 "$ZIG1" -osl -o "$WORK/$page_label" "$page_entry" ) \
+    || { echo "[warn-clean] $page_label dump FAILED" >&2; fail=1; }
+if ls "$WORK/$page_label"/*.c >/dev/null 2>&1; then
+    compile_tree "$page_label" "$WORK/$page_label"
+else
+    echo "[warn-clean] $page_label: no .c emitted" >&2
+    fail=1
+fi
+rm -f "$WORK/$page_label"/.zig1_*.tmp
+
 if [ "$fail" -ne 0 ]; then
     echo "[warn-clean] FAILED (gcc -m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long)" >&2
     exit 1
 fi
-echo "[warn-clean] OK: self-emission + shipped runtime + hello + lisp_interpreter_curr + wide enum macros"
+echo "[warn-clean] OK: self-emission + shipped runtime + hello + lisp_interpreter_curr + wide enum macros + stdlib_page_xmod"

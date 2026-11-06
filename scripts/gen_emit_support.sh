@@ -16,8 +16,9 @@ set -euo pipefail
 #   emitted net_prelude.h     -> sf/src/include/net_prelude.h
 #   emitted std_os_prelude.h  -> sf/src/include/std_os_prelude.h
 #   emitted std_time_prelude.h-> sf/src/include/std_time_prelude.h
+#   emitted std_page_prelude.h-> sf/src/include/std_page_prelude.h
 #
-# The compiler's own sf/src/main.zig exercises the core support; the three
+# The compiler's own sf/src/main.zig exercises the core support; the four
 # conditional preludes are emitted only for programs that reach their module, so
 # one small fixture per prelude supplies them. The copy is byte-for-byte and
 # uses no generated timestamps, so repeated runs are deterministic.
@@ -48,6 +49,7 @@ probe main sf/src/main.zig
 probe net  repro/mi_matrix/net_bind_startup_xmod/main.zig
 probe os   repro/mi_matrix/stdlib_os_cwd_xmod/main.zig
 probe time repro/mi_matrix/stdlib_time_monotonic_xmod/main.zig
+probe page repro/mi_matrix/stdlib_page_xmod/main.zig
 
 copy_one() {
     local emitted="$1" canonical="$2"
@@ -65,5 +67,6 @@ copy_one "$WORK/main/c_exit.c"      "$ROOT/sf/src/c_exit.c"
 copy_one "$WORK/net/net_prelude.h"  "$ROOT/sf/src/include/net_prelude.h"
 copy_one "$WORK/os/std_os_prelude.h" "$ROOT/sf/src/include/std_os_prelude.h"
 copy_one "$WORK/time/std_time_prelude.h" "$ROOT/sf/src/include/std_time_prelude.h"
+copy_one "$WORK/page/std_page_prelude.h" "$ROOT/sf/src/include/std_page_prelude.h"
 
 echo "[gen] canonical runtime support refreshed from $ZIG1"

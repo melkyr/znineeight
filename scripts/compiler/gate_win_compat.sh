@@ -68,7 +68,7 @@ RESERVED='cdecl|near|far|huge|pascal|fortran|interrupt|stdcall|fastcall|asm|inli
 
 is_support_file() {
     case "$(basename "$1" | tr '[:upper:]' '[:lower:]')" in
-        zig_compat.h|zig_runtime.h|zig_runtime.c|zig_pal.c|zig_nocrt.c|c_exit.c|net_prelude.h|std_os_prelude.h|std_time_prelude.h)
+        zig_compat.h|zig_runtime.h|zig_runtime.c|zig_pal.c|zig_nocrt.c|c_exit.c|net_prelude.h|std_os_prelude.h|std_time_prelude.h|std_page_prelude.h)
             return 0 ;;
     esac
     return 1

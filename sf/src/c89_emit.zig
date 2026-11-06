@@ -924,6 +924,18 @@ pub fn emitSupportFiles(emitter: *C89Emitter, dir_path: []const u8) void {
         pal.fileClose(fd7);
     }
 
+    // std_page_prelude.h is emitted only when std_page is reachable (the module
+    // carrying the `<std_page_prelude.h>` c-include). Same conditional rule as
+    // net_prelude.h / std_os_prelude.h / std_time_prelude.h: self-contained
+    // output means present iff referenced (the D3 value-ref closure).
+    if (scriptStdPageEmitted(emitter) != @intCast(u8, 0)) {
+        var fd8: usize = openSupportOutputFile(dir_path, "std_page_prelude.h");
+        var w8: BufferedWriter = bufferedWriterInitFd(fd8);
+        emit_support.emitStdPagePreludeHSupport(&w8);
+        bufferedWriterFlush(&w8);
+        pal.fileClose(fd8);
+    }
+
     var fd3: usize = openSupportOutputFile(dir_path, "zig_runtime.c");
     var w3: BufferedWriter = bufferedWriterInitFd(fd3);
     emit_support.emitZigRuntimeCSupport(&w3, emitter.safe_checks);
@@ -9652,6 +9664,11 @@ fn scriptStdOsEmitted(emitter: *C89Emitter) u8 {
 
 fn scriptStdTimeEmitted(emitter: *C89Emitter) u8 {
     var target: []const u8 = "<std_time_prelude.h>";
+    return scriptIncludeEmitted(emitter, target);
+}
+
+fn scriptStdPageEmitted(emitter: *C89Emitter) u8 {
+    var target: []const u8 = "<std_page_prelude.h>";
     return scriptIncludeEmitted(emitter, target);
 }
 

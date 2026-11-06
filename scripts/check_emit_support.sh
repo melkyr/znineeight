@@ -31,7 +31,8 @@ fi
 DIR="$(mktemp -d "${TMPDIR:-/tmp}/check_emit_support.XXXXXX")"
 DIR2="$(mktemp -d "${TMPDIR:-/tmp}/check_emit_support_os.XXXXXX")"
 DIR3="$(mktemp -d "${TMPDIR:-/tmp}/check_emit_support_time.XXXXXX")"
-trap 'rm -rf "$DIR" "$DIR2" "$DIR3"' EXIT
+DIR4="$(mktemp -d "${TMPDIR:-/tmp}/check_emit_support_page.XXXXXX")"
+trap 'rm -rf "$DIR" "$DIR2" "$DIR3" "$DIR4"' EXIT
 
 ( cd "$ROOT" && timeout 120 "$ZIG1" -o "$DIR" examples/z98/hello/main.zig ) \
     || { echo "error: dump failed (zig1 '$ZIG1')" >&2; exit 1; }
@@ -132,5 +133,31 @@ else
     fail=1
 fi
 
+# std_page_prelude.h is emitted ONLY when a program actually reaches std_page
+# (use-gating: std_page has no runtime-init global). hello imports std but uses
+# only std.io, so it must NOT emit the prelude.
+if [ -e "$DIR/std_page_prelude.h" ]; then
+    echo "[check] FAIL std_page_prelude.h emitted though std_page is not used" >&2
+    fail=1
+else
+    echo "[check] std_page_prelude.h correctly absent (std_page not used)"
+fi
+
+# ... and a std_page-using fixture must emit it byte-identical to canonical.
+( cd "$ROOT" && timeout 120 "$ZIG1" -o "$DIR4" repro/mi_matrix/stdlib_page_xmod/main.zig ) \
+    || { echo "error: std_page fixture dump failed (zig1 '$ZIG1')" >&2; exit 1; }
+if [ -e "$DIR4/std_page_prelude.h" ]; then
+    if cmp -s "$DIR4/std_page_prelude.h" "$ROOT/sf/src/include/std_page_prelude.h"; then
+        echo "[check] emitted std_page_prelude.h == $ROOT/sf/src/include/std_page_prelude.h"
+    else
+        echo "[check] FAIL emitted std_page_prelude.h != canonical" >&2
+        cmp "$DIR4/std_page_prelude.h" "$ROOT/sf/src/include/std_page_prelude.h" >&2 || true
+        fail=1
+    fi
+else
+    echo "[check] FAIL std_page_prelude.h missing though std_page is used" >&2
+    fail=1
+fi
+
 [ "$fail" = 0 ] || { echo "error: emitted support files differ from canonical" >&2; exit 1; }
-echo "[check] OK: 8/8 support files byte-identical to canonical (6 core + 2 conditional preludes)"
+echo "[check] OK: 9/9 support files byte-identical to canonical (6 core + 3 conditional preludes)"

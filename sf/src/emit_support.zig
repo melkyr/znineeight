@@ -218,6 +218,25 @@ pub fn emitStdTimePreludeHSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#endif /* STD_TIME_PRELUDE_H */\n");
 }
 
+pub fn emitStdPagePreludeHSupport(writer: *BufferedWriter) void {
+    c89_mod.bufferedWriterWrite(writer, "#ifndef STD_PAGE_PRELUDE_H\n");
+    c89_mod.bufferedWriterWrite(writer, "#define STD_PAGE_PRELUDE_H\n");
+    c89_mod.bufferedWriterWrite(writer, "#ifdef _WIN32\n");
+    c89_mod.bufferedWriterWrite(writer, "#define WIN32_LEAN_AND_MEAN\n");
+    c89_mod.bufferedWriterWrite(writer, "#include <windows.h>\n");
+    c89_mod.bufferedWriterWrite(writer, "#else\n");
+    c89_mod.bufferedWriterWrite(writer, "#ifndef _POSIX_C_SOURCE\n");
+    c89_mod.bufferedWriterWrite(writer, "#define _POSIX_C_SOURCE 199309L\n");
+    c89_mod.bufferedWriterWrite(writer, "#endif\n");
+    c89_mod.bufferedWriterWrite(writer, "#ifndef _DEFAULT_SOURCE\n");
+    c89_mod.bufferedWriterWrite(writer, "#define _DEFAULT_SOURCE 1\n");
+    c89_mod.bufferedWriterWrite(writer, "#endif\n");
+    c89_mod.bufferedWriterWrite(writer, "#include <sys/mman.h>\n");
+    c89_mod.bufferedWriterWrite(writer, "#include <unistd.h>\n");
+    c89_mod.bufferedWriterWrite(writer, "#endif\n");
+    c89_mod.bufferedWriterWrite(writer, "#endif\n");
+}
+
 pub fn emitCExitCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#include <stdlib.h>\n");
     c89_mod.bufferedWriterWrite(writer, "#if defined(_WIN32) && defined(ZIG_NO_CRT)\n");
