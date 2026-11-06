@@ -60,14 +60,15 @@ FAIL** (AES-GCM, ChaCha20-Poly1305, PRF, SHA-256, MD5, CRC32, SHA-384/512 and
 the seven `stdlib_deflate_*` in `-ffast`) plus AES-GCM **`-fsafe` PASS**. TLS
 demo **15 passed / 0 failed / 1 skipped** (`Z98_NET` unset). WireGuard tier
 **SKIP** (no kernel-WireGuard/netns tools; not claimed PASS). The v136
-full-battery measurements below are historical and were **not** re-run or
-re-claimed for v137–v140: markers (`--markers --dump-c89` on `mud_server`)
+full-battery measurements below are historical: they were **not** re-run for
+v137–v140 and were re-measured at v141 by Task 9 — markers (`--markers --dump-c89` on `mud_server`)
 **3397 lines / 39012 B**; the 8 pins, the frozen-1124 corpus (md5
-`518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the goldens (5/5), the 26
-examples and the **356/0** stdlib + **10/10** crosscheck. The live corpus is
-re-measured by Task 9; the v135 baseline was 1240 = **1053 OK / 63 GREEN /
-124 FAIL** (class md5 `d9011c94cdbae01aa1765ca1047656a4`) and the 14 new std
-fixture dirs are additive.
+`518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the goldens (5/5), the 28
+examples and the **356/0** stdlib + **10/10** crosscheck. The live corpus at
+v141 is 1256 = **1069 OK / 63 GREEN / 124 FAIL** (class md5
+`a2dd8b02023d49b1dff7ad47139b9a9e`); the +16 dirs vs the v135 baseline are the
+14 new std fixture dirs plus the `z9git`/`z9zstddecomp` example dirs (additive,
+frozen-1124 unchanged).
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
 `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
@@ -1215,6 +1216,11 @@ immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transfor
   (`@cInclude` + `extern fn`).
 - `examples/zig0/` is legacy oracle material only; do not use it as the current
   build/example reference.
+- **Phase 3 app entries (matrix 28/28):** `examples/z98/z9git` (local/`file://` +
+  smart HTTP(S) clone/log/checkout, shallow/partial/resume; gate
+  `tests/tier_git.sh`) and `examples/z98/z9zstddecomp` (`std_zstd` frame/dict
+  CLI; gate `tests/tier_zstddecomp.sh`). Example READMEs carry the exact CLI,
+  flags and exit codes.
 
 ### Compile + run an example with the seed-built compiler
 

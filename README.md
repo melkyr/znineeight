@@ -48,13 +48,14 @@ canonical, MSVC 6 `/MT`, MinGW CRT) with the Linux artifacts. It rolls up the v1
 the z9play/z9torr optimizations, example idiom modernization, and the portable switch /
 negative-case / enum emission fixes. The **self-hosted milestone is complete**: `zig1`
 compiles itself, the compilation is **deterministic to a fixed point** (current self-compile
-binary md5 `cf68f192900e7f6618c11e1712b74b3a`; committed seed **v135**,
-`release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
-[Determinism](#determinism)), and the maintained example matrix is **26/26** dump/gcc/link.
+binary md5 `cf68f192900e7f6618c11e1712b74b3a`; committed seed **v141**,
+`release/seed/zig1-seed.tgz`; fixed point unchanged since v135), the 4-program emission gate
+is byte-identical (see [Determinism](#determinism)), and the maintained example matrix is
+**28/28** dump/gcc/link.
 The mi_matrix corpus at `-s0` is enumerated by the canonical generator
-[`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); at v135 the live
-classification is 1240 dirs = 1053 OK / 63 GREEN / 124 FAIL / 0 ICE / 0 CRASH, with goldens
-5/5 and stdlib 342/0 + crosscheck 10/10. The upgraded showcase gate
+[`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the live v141
+classification is 1256 dirs = 1069 OK / 63 GREEN / 124 FAIL / 0 ICE / 0 CRASH, with goldens
+5/5 and stdlib 356/0 + crosscheck 10/10. The upgraded showcase gate
 (`scripts/closeout/verify_upgraded.sh`) passes its full A1–B7 battery.
 
 **Phase 1 (TLS + WireGuard) is complete.** The std library now carries the
@@ -113,12 +114,12 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
 - **Current self-compile fixed point:** self-compiled `zig1` binary md5
   `cf68f192900e7f6618c11e1712b74b3a` (48 module `.c` + 49 module `.h`, 0 `error[`, 0 PANIC;
   the v135 rotation build from the v134 seed closed at hop1 == hop2 ==
-  `cf68f192900e7f6618c11e1712b74b3a`; a rebuild from the committed v135 archive is
-  hop1 == hop2 == `cf68f192…`), committed seed **v135** (`release/seed/zig1-seed.tgz`, archive md5
-  `c01a8261aa9b9d84f2d414724011b3db`; Win9x zip md5
-  `49242d99702f0521ac5d06a29c2d96c3`; `lib/manifest.md5` md5
-  `62008632c1f057c42b04bf5883f6da5d`, 51 std files; unchanged because no new std file was
-  added). v134 `8dff7650…` was the switch-emission fix rotation; the v129 fixed point
+  `cf68f192900e7f6618c11e1712b74b3a`; a rebuild from the committed v141 archive is
+  hop1 == hop2 == `cf68f192…`, and the fixed point is unchanged across v136–v141),
+  committed seed **v141** (`release/seed/zig1-seed.tgz`, archive md5
+  `3e99af1b8117b982c26b074a1ccd35f7`; Win9x zip md5
+  `c45c26f72b6a81b153a9238550456b37`; `lib/manifest.md5` md5
+  `4c979389dceb2d12442e557aaeabf44d`, 52 std files). v134 `8dff7650…` was the switch-emission fix rotation; the v129 fixed point
   `c1bb4c0e…` was the 0.21.0 release; v130/v131 were the Win9x emission-fix rotations
   included in that hotfix. Earlier fixed points (`18b4b10c…` v128, `45158dce…` M2 T1C-F,
   `a567926c…` iterative lowering, and the v119-v127 payload rotations) are historical.
@@ -132,7 +133,7 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
   emitted `.c`/`.h` only). Output is byte-identical at every `-s0`…`-s6` spill level and under
   both target flavours (linux / `-osw`).
 
-**4-program emission gate** (current v135, measured 2026-11-04; md5 of `zig1 --dump-c89 …`;
+**4-program emission gate** (v135 measurements, re-confirmed at v141; md5 of `zig1 --dump-c89 …`;
 repo-root CWD; reference `zig1` md5 `cf68f192900e7f6618c11e1712b74b3a`; rows are the default
 `-fsafe` emission — the full 8-pin safe/fast table is in `docs/sf/QUICK_REF.md`):
 
@@ -143,13 +144,13 @@ repo-root CWD; reference `zig1` md5 `cf68f192900e7f6618c11e1712b74b3a`; rows are
 | `examples/z98/json_parser/main.zig` | `c8a8ddf0585e2d964e74c3bf4fde897f` |
 | `examples/z98/mud_server/main.zig` | `725ef46e3facd5be7d00f5284eb740d1` |
 
-These four v135 hashes were re-confirmed by `gate_lower_depth.sh` case 5 (lisp emits
+These four hashes were re-confirmed at v141 by `gate_lower_depth.sh` case 5 (lisp emits
 `warning[3037]` diagnostics on stderr; they do not contaminate the stdout hash; the 8 pins are
 unchanged). Corpus/golden summary: the corpus universe is enumerated by
-`scripts/corpus/list_corpus_dirs.sh`; live v135 is 1240 dirs = 1053 OK / 63 GREEN / 124 FAIL /
-0 ICE / 0 CRASH (class md5 `d9011c94…`; the +28 dirs vs v134 are the additive
-switch/enum/paren/bool repros — removing them reproduces the v134 live class file exactly,
-0 existing movers; frozen-1124 md5 `518eca1a…`, 0 movers); goldens 5/5; example matrix 26/26; stdlib 342/0 +
+`scripts/corpus/list_corpus_dirs.sh`; live v141 is 1256 dirs = 1069 OK / 63 GREEN / 124 FAIL /
+0 ICE / 0 CRASH (class md5 `a2dd8b02…`; the +16 dirs vs the v135 baseline are the 14 additive
+stdlib fixtures plus the `z9git`/`z9zstddecomp` example dirs; frozen-1124 md5
+`518eca1a…`, 0 movers); goldens 5/5; example matrix 28/28; stdlib 356/0 +
 crosscheck 10/10.
 
 ## Build Machine & Toolchain
@@ -349,7 +350,7 @@ over) and pool 18,871K (18.4 MB; +2.4 MB over).
 ## Minimum Requirements
 | Requirement | Linux | Windows 9x |
 |---|---|---|
-| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 51-file `lib/` std set next to it (auto-discovered); **~20 MB peak RSS at `-s0` at v135** (D-safe 20,716 kB / 20.2 MB; D-fast 20,100 kB / 19.6 MB; spill `-s0` pool 18,677K / 18.2 MB); the <16 MB goal is not met | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); **runtime not measured** — Wine is evidence only |
+| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 52-file `lib/` std set next to it (auto-discovered); **~20 MB peak RSS at `-s0` at v135** (D-safe 20,716 kB / 20.2 MB; D-fast 20,100 kB / 19.6 MB; spill `-s0` pool 18,677K / 18.2 MB); the <16 MB goal is not met | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); **runtime not measured** — Wine is evidence only |
 | **BUILDING the compiler from source** | gcc (C89) for the emitted C — gcc backend **~177 MB** peak (Row E, 181,564 kB); rebuild from the committed seed (no zig0) | the three Windows compilers: `zig1_w32.exe` (OpenWatcom static CLIB, canonical), `zig1_w32_msvc.exe` (MSVC 6 `/MT`), and `z98_mingw_crt_w32.exe` (MinGW CRT, requires `msvcrt.dll`); built from the release seed zip (v135 for 0.21.2); cross-compile not measured here |
 
 > **At v135, Linux `zig1` self-compiles at ~20 MB peak RSS / ~18.2 MB pool at `-s0` — the
@@ -412,7 +413,7 @@ sh out/build_target.sh          # or: ./out/build_target.sh after the first run
 objects, so no repo include path and no hand-listed runtime trio are needed. `--dump-c89` is now a
 **debug alias**: on its own it writes a single C file to stdout; with `-o <dir>` it writes
 per-module `.c`/`.h` files.
-(Install the shipped **51-file `lib/`** — `std.zig` plus 50 `std_*.zig` — next to the `zig1`
+(Install the shipped **52-file `lib/`** — `std.zig` plus 51 `std_*.zig` — next to the `zig1`
 binary in a `lib/` dir for `@import("std")`; windows users pass `-I <lib>` explicitly.)
 The authoritative, always-verified command set lives in [docs/sf/QUICK_REF.md](docs/sf/QUICK_REF.md);
 the build script is `scripts/seed/build_from_seed.sh`. Release binaries (`zig1_linux32` /
@@ -459,7 +460,7 @@ Runtime safety defaults to `-fsafe`. The compiler self-build passes `-ffast`, so
 - **Corpus gate**: the corpus universe is listed by `scripts/corpus/list_corpus_dirs.sh`
   (manifest `repro/mi_matrix/EXPECTED_FAIL.md`, v130) — run `zig1 --dump-c89` + gcc `-c` per dir,
   classified OK/FAIL/GREEN per the QUICK_REF classifier. No corpus total is asserted.
-- **Example matrix**: 26 `examples/z98` programs, 26/26 dump/gcc/link.
+- **Example matrix**: 28 `examples/z98` programs, 28/28 dump/gcc/link.
 - **Golden fixtures**: 9/9 golden outputs.
 - **Upgraded-showcase gate**: `scripts/closeout/verify_upgraded.sh` (A1–B7) gates
   `lisp_interpreter_upgraded` and `rogue_mud_upgraded` against their committed canonical/demo
@@ -470,10 +471,10 @@ Runtime safety defaults to `-fsafe`. The compiler self-build passes `-ffast`, so
 ## Minimal Distribution
 To build a Z98 program on a target machine you need:
 1. **`zig1`** (or `zig1_w32.exe`) — the self-hosted compiler binary.
-2. **The std modules** — the shipped `lib/` set is **51 files**: `std.zig` plus 50
+2. **The std modules** — the shipped `lib/` set is **52 files**: `std.zig` plus 51
    `std_*.zig`. `std.zig` re-exports the 14 core modules (`io`, `fmt`, `arena`, `str`,
    `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `buf`, `fold`); the
-   by-path modules (31 public + 5 `*_pal` companions) are the same inventory documented
+   by-path modules (32 public + 5 `*_pal` companions) are the same inventory documented
    under [Standard Library](#standard-library) above
    (linux: in a `lib/` dir beside the binary; windows: on the `-I` search path).
 3. **Runtime sources & headers** — emitted into the program's output dir by `zig1 -o <dir>`
@@ -496,13 +497,13 @@ To build a Z98 program on a target machine you need:
 - [README_zig0_bootstrap.md](README_zig0_bootstrap.md) — the preserved bootstrap-era (`zig0`)
   README, kept byte-verbatim.
 
-## Standard Library  [updated: 2026-11-03 — v134–v135]
-The Z98 standard library lives in `sf/src/`. The shipped seed payload is **51**
-files: `std.zig` plus **50** `std_*.zig`. `std.zig` re-exports **14** modules
+## Standard Library  [updated: 2026-11-06 — v141]
+The Z98 standard library lives in `sf/src/`. The shipped seed payload is **52**
+files: `std.zig` plus **51** `std_*.zig`. `std.zig` re-exports **14** modules
 (`io`, `fmt`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`,
-`os`, `time`, `buf`, `fold`); the remaining **36** `std_*.zig` files are
-imported by path — **31** public modules (`std_asn1`, `std_base64`,
-`std_bencode`, `std_cipher`, `std_crypto`, `std_ecc`, `std_file`, `std_fft`, `std_gfx`,
+`os`, `time`, `buf`, `fold`); the remaining **37** `std_*.zig` files are
+imported by path — **32** public modules (`std_asn1`, `std_base64`,
+`std_bencode`, `std_cipher`, `std_crypto`, `std_deflate`, `std_ecc`, `std_file`, `std_fft`, `std_gfx`,
 `std_heap`, `std_hex`, `std_hpa`, `std_http`, `std_lz4`, `std_map`, `std_noise`,
 `std_num`, `std_parse`, `std_pathfind`, `std_physics`, `std_rand`, `std_rle`,
 `std_sort`, `std_stdin`, `std_stream`, `std_tcpip`, `std_tls`, `std_utf8`,
@@ -525,7 +526,7 @@ guide for the library's model and an index that links each domain's detailed doc
 - [STD_README.MD](STD_README.MD) — the Z98 standard library guide and index.
 
 ## Example Showcase
-`examples/z98/` carries the maintained example suite (matrix 26/26 dump/gcc/link), including
+`examples/z98/` carries the maintained example suite (matrix 28/28 dump/gcc/link), including
 complete programs that exercise the language-wins features and the PAL/networking runtime:
 - **`game_of_life`** — interactive simulation on the PAL UI layer.
 - **`lisp_interpreter_curr`** and the upgraded **`lisp_interpreter_upgraded`** — a complete Lisp
@@ -540,6 +541,10 @@ complete programs that exercise the language-wins features and the PAL/networkin
 - **`rogue_mud`** and the upgraded **`rogue_mud_upgraded`** — a networked roguelike (A* pathfinding,
   BSP maps, export symbols, coroutine NPC AI / per-client broadcast, and a `demo/` client/server pair
   `net_main.zig` / `net_demo_client.zig` using `std_net.createTcpClient`).
+- **`z9git`** — a read-only Git client (local/`file://` plus smart HTTP(S) clone, log, checkout;
+  shallow/partial clone, resumable prefix packs, and a bounded external-memory idx writer).
+- **`z9zstddecomp`** — a single-shot zstd frame decompressor CLI (`std_zstd` frames, skippable
+  frames, checksums, and RFC 8878 magic/raw dictionaries; bounded output and window caps).
 - Plus the classic single/multi-module programs (`hello`, `prime`, `fibonacci`, `days_in_month`,
   `heapsort`, `quicksort`, `sort_strings`, `mandelbrot`, `lzw`, `func_ptr_return`, `tco_*`).
 
