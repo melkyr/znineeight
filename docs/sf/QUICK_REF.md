@@ -30,26 +30,25 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-05 — seed v140]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-06 — seed v141]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v140 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v141 CHANGELOG entry.
 
-**Current seed: v140** (rotated 2026-11-05 for the T8-post-opt std
-optimizations — SHA-512/384 + CRC32, deflate + Adler-32, SHA-256/BLAKE2s/MD5/
-ChaCha20 — plus the GHASH `-fsafe` nibble pre-mask fix. Existing behavior is
-unchanged; packaging base HEAD `ae694a0b`). Archived binary md5
+**Current seed: v141** (rotated 2026-11-06 for the Task 8c `std_http` streaming
+EOF-flush fix: `streamReadN` flushes buffered body bytes to the sink before
+returning on an early transport EOF, so a tiny raw-EOF pack tail is not lost.
+No compiler-source change; packaging base HEAD `1f3baae3`). Archived binary md5
 (= fixed point) `cf68f192900e7f6618c11e1712b74b3a`; archive md5
-`534d36e8e516fe710245464743314a66`; Win9x zip md5
-`278fc54adb9f0b8805278e031aad5e0a`; `gen/` 48 `.c` + 49 `.h` (12,473,249
+`3e99af1b8117b982c26b074a1ccd35f7`; Win9x zip md5
+`c45c26f72b6a81b153a9238550456b37`; `gen/` 48 `.c` + 49 `.h` (12,473,249
 bytes); `lib/` **52** std `.zig` (`std.zig` + 51 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`039f205f6f7ac4c881d33a0a5860d4e9`; `std_crypto.zig`, `std_deflate.zig`
-and `std_cipher.zig` updated, no new module).
-A rebuild from the committed v140 archive is two-hop
+`4c979389dceb2d12442e557aaeabf44d`; `std_http.zig` updated, no new module).
+A rebuild from the committed v141 archive is two-hop
 **hop1 == hop2 == `cf68f192…`**. The compiler source is **`-fsafe`-clean**.
 
 The v140 rotation battery records the truthful pre-fix full run plus the
