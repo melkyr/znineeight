@@ -350,7 +350,7 @@ over) and pool 18,871K (18.4 MB; +2.4 MB over).
 ## Minimum Requirements
 | Requirement | Linux | Windows 9x |
 |---|---|---|
-| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 52-file `lib/` std set next to it (auto-discovered); **~20 MB peak RSS at `-s0` at v135** (D-safe 20,716 kB / 20.2 MB; D-fast 20,100 kB / 19.6 MB; spill `-s0` pool 18,677K / 18.2 MB); the <16 MB goal is not met | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); **runtime not measured** — Wine is evidence only |
+| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 52-file `lib/` std set next to it (auto-discovered; current v141 seed); **~20 MB peak RSS at `-s0` at v135** (fixed point unchanged at v141; D-safe 20,716 kB / 20.2 MB; D-fast 20,100 kB / 19.6 MB; spill `-s0` pool 18,677K / 18.2 MB); the <16 MB goal is not met | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); **runtime not measured** — Wine is evidence only |
 | **BUILDING the compiler from source** | gcc (C89) for the emitted C — gcc backend **~177 MB** peak (Row E, 181,564 kB); rebuild from the committed seed (no zig0) | the three Windows compilers: `zig1_w32.exe` (OpenWatcom static CLIB, canonical), `zig1_w32_msvc.exe` (MSVC 6 `/MT`), and `z98_mingw_crt_w32.exe` (MinGW CRT, requires `msvcrt.dll`); built from the release seed zip (v135 for 0.21.2); cross-compile not measured here |
 
 > **At v135, Linux `zig1` self-compiles at ~20 MB peak RSS / ~18.2 MB pool at `-s0` — the
@@ -393,8 +393,9 @@ Two workflows: run a released binary, or build `zig1` from the source archive.
 
 **Build `zig1` from source** — download the release source archive **`zig1_src.tgz`** (linux) or
 **`zig1_src.zip`** (win9x-unpackable). It contains the full compiler source tree (`sf/src/*.zig` +
-`sf/src/include/`), a `RELEASE_README.txt` with the exact where/how build commands, and the
-51-file `lib/` std payload. This source is a Zig-subset program, **not** directly compilable by a C toolchain: the
+`sf/src/include/`), a `RELEASE_README.txt` with the exact where/how build commands, and a
+`lib/` std payload. The current repo seed is **v141** with **52** std files; the historical
+0.21.2 release source archive carried 51. This source is a Zig-subset program, **not** directly compilable by a C toolchain: the
 seed model is the only rebuild path — rebuild it from the committed seed
 `release/seed/zig1-seed.tgz` with only `gcc` via
 `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>` (two-hop fixed-point
@@ -413,13 +414,14 @@ sh out/build_target.sh          # or: ./out/build_target.sh after the first run
 objects, so no repo include path and no hand-listed runtime trio are needed. `--dump-c89` is now a
 **debug alias**: on its own it writes a single C file to stdout; with `-o <dir>` it writes
 per-module `.c`/`.h` files.
-(Install the shipped **52-file `lib/`** — `std.zig` plus 51 `std_*.zig` — next to the `zig1`
-binary in a `lib/` dir for `@import("std")`; windows users pass `-I <lib>` explicitly.)
+(For the current repo seed, install the **52-file `lib/`** — `std.zig` plus 51 `std_*.zig` —
+next to the `zig1` binary in a `lib/` dir for `@import("std")`; the historical 0.21.2 release
+shipped 51 files. Windows users pass `-I <lib>` explicitly.)
 The authoritative, always-verified command set lives in [docs/sf/QUICK_REF.md](docs/sf/QUICK_REF.md);
 the build script is `scripts/seed/build_from_seed.sh`. Release binaries (`zig1_linux32` /
 `zig1_w32.exe`) ship with a sibling `lib/` and `MANIFEST.txt` (md5/sha256/sizes).
 
-**Release artifacts (0.21.2, seed v135)** — `zig1_linux32` (md5 `cf68f192900e7f6618c11e1712b74b3a`, the v135
+**Historical release artifacts (0.21.2, seed v135; separate from the current v141/52-file repo seed — see [Determinism](#determinism))** — `zig1_linux32` (md5 `cf68f192900e7f6618c11e1712b74b3a`, the v135
 fixed point); `zig1_w32.exe` (OpenWatcom static CLIB, md5 `3e944a2c4d4842422ff9108d534a9f42`);
 `zig1_w32_msvc.exe` (MSVC 6 `/MT`, md5 `1141ecbf15e720da955b0434eeb8624d`); `z98_mingw_crt_w32.exe`
 (MinGW CRT, md5 `f08ddae7fc7924e7a372174c437ed380`; requires `msvcrt.dll`);

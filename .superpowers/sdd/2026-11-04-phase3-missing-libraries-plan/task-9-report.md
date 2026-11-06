@@ -28,7 +28,7 @@ Compiler under test: `/tmp/t9_seed/zig1_5_clean` (v141 `lib/`, 52 std files).
 
 All commands run sequentially; long jobs used explicit timeouts. `Z98_NET` was
 unset for the two full `tier_git` runs (the opt-in remotes are recorded
-separately in §2.3).
+separately in §2.6).
 
 ### 2.1 Corpus and goldens
 
@@ -72,8 +72,8 @@ and all runtime/guard cases passed.
 
 Matrix definition (the historical maintained set): all immediate
 `examples/z98/` entries present at v98 (`566589b9`) plus the two Phase 3 app
-dirs `z9git` and `z9zstddecomp`; `demo`, `z9dbg`, and `z9edit` are outside the
-matrix, as in prior closeouts. Each entry was emitted with
+dirs `z9git` and `z9zstddecomp`; `demo`, `gfx_demo`, `z9dbg`, and `z9edit` are
+outside the matrix, as in prior closeouts. Each entry was emitted with
 `zig1_5_clean -fsafe -o <fresh-dir> <entry>` and linked with the emitted
 `build_target.sh linux prog`.
 
@@ -133,9 +133,15 @@ z9git clone https://github.com/git/git.git /tmp/t9_git_opt/gitgit \
 
 Timed out at the 30-minute bound: `Exit status: 124`, `Elapsed 30:00.00`, peak
 RSS 49,708 kB. No local `git/git` mirror remained from Task 8b (the previous
-mirror path no longer exists), so a local re-run was not possible. This is the
-same network-throughput limitation recorded by Task 8b (HTTPS ~80 KB/s); the
-correctness path was not re-profiled.
+mirror path no longer exists), so a local re-run was not possible. Task 8b's
+earlier local-mirror attempt had failed rc4 `object-store` at the default
+32 MiB arena (~34,628 kB peak RSS, 3:59.81) before the fix wave; the blockers
+recorded then were the whole-idx/checkout retention plus git/git's three
+symlinks (`RelNotes`, `subprojects/git-gui`, `subprojects/gitk`) and the
+`sha1collisiondetection` gitlink/submodule. That measurement is historical
+context, not a re-run here. The current round could therefore only retry over
+the network, where the same throughput limitation recorded by Task 8b (HTTPS
+~80 KB/s) prevented completion; the correctness path was not re-profiled.
 
 ### 2.7 Scope notes
 
@@ -208,7 +214,10 @@ No compiler, std, `examples/z98/z9git`, or seed payload changes.
 ## 6. Skipped / failed items
 
 - **`git/git` opt-in remote clone: SKIP**, network timeout (rc 124 at 30:00),
-  no local mirror. Not claimed PASS.
+  no local mirror. Task 8b's historical local-mirror attempt was rc4
+  `object-store` (retained idx/checkout data plus symlink/gitlink blockers);
+  the mirror was not retained, so this round could only retry the network.
+  Not claimed PASS.
 - **`gate_win_compat` PE import gate: SKIP**, VM-only (no operator-built PE
   supplied); all local text/emit/cross-compile checks passed.
 - **`gate_lower_depth` md5 sub-cases 6/8/9/10–12: SKIP**, no
@@ -217,3 +226,29 @@ No compiler, std, `examples/z98/z9git`, or seed payload changes.
 - No measured git performance profile was re-run.
 
 No required local battery check failed.
+
+## 7. Fix round 1 — README truth-up and accuracy notes (docs only)
+
+Review finding: the README truth-up left contradictory 51-file/v135 references.
+
+Changes:
+
+- `README.md` Minimum Requirements: the 52-file `lib/` is now tied to the
+  current v141 seed; the ~20 MB RSS figures remain explicitly labelled as v135
+  measurements with the fixed point unchanged at v141.
+- `README.md` Getting Started / install guidance: the current repo seed is
+  v141 with 52 std files; the historical 0.21.2 source archive's 51-file
+  payload is called out separately.
+- `README.md` release artifacts: relabelled **Historical release artifacts
+  (0.21.2, seed v135; separate from the current v141/52-file repo seed)**. The
+  historical 51-file `lib/` and manifest `62008632…` are retained only under
+  that label, so they no longer contradict the current v141/52-file state.
+- `task-9-report.md`: §2 pointer corrected from §2.3 to §2.6; `gfx_demo` added
+  to the example-matrix exclusions; the `git/git` SKIP now records the Task 8b
+  historical local-mirror rc4 `object-store` result and the symlink/gitlink
+  blocker context, not only the 30-minute network timeout.
+
+Verification: `git diff --check` clean (rc 0); grep confirms every remaining
+51-file / seed-v135 statement is either a clearly labelled historical release
+artifact or a v135 measurement label, with no contradictory current count.
+Docs only — no code/compiler/std/seed change and no battery re-run.
