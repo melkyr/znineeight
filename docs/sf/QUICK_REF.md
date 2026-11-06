@@ -41,7 +41,7 @@ current md5s in the archive's `zig1-seed/SEED_README.txt` and the v141 CHANGELOG
 **Current seed: v141** (rotated 2026-11-06 for the Task 8c `std_http` streaming
 EOF-flush fix: `streamReadN` flushes buffered body bytes to the sink before
 returning on an early transport EOF, so a tiny raw-EOF pack tail is not lost.
-No compiler-source change; packaging base HEAD `1f3baae3`). Archived binary md5
+No compiler-source change; packaging base HEAD `7dbd5e32`). Archived binary md5
 (= fixed point) `cf68f192900e7f6618c11e1712b74b3a`; archive md5
 `3e99af1b8117b982c26b074a1ccd35f7`; Win9x zip md5
 `c45c26f72b6a81b153a9238550456b37`; `gen/` 48 `.c` + 49 `.h` (12,473,249

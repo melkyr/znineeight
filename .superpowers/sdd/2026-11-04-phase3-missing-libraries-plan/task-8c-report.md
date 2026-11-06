@@ -352,7 +352,7 @@ GL=0     # GitLab smart HTTP shallow; idx verifies
 
 | field | value |
 |---|---|
-| seed | v141 (packaging base `1f3baae3`) |
+| seed | v141 (packaging base `7dbd5e32`) |
 | fixed point | `cf68f192900e7f6618c11e1712b74b3a` (unchanged) |
 | archive md5 | `3e99af1b8117b982c26b074a1ccd35f7` |
 | Win9x zip md5 | `c45c26f72b6a81b153a9238550456b37` |
@@ -361,6 +361,13 @@ GL=0     # GitLab smart HTTP shallow; idx verifies
 
 The archive contains the `streamReadN` EOF-flush change; a rebuild from the
 rotated archive closes two-hop at the unchanged fixed point.
+
+Provenance: the archive was built from the `std_http` EOF-flush source
+committed at `7dbd5e32`, not `1f3baae3` (the earlier label was stale). The
+archive, zip and manifest md5s are unchanged. The extracted
+`zig1-seed/lib/std_http.zig` md5 `9319ec842aabc1375b147355541a202d` matches
+`7dbd5e32:sf/src/std_http.zig`, current `sf/src/std_http.zig`, and the
+`lib/manifest.md5` entry.
 
 ### Files changed
 
@@ -399,3 +406,35 @@ rotated archive closes two-hop at the unchanged fixed point.
 - Partial checkout over HTTPS still uses the existing clone trust-store lookup
   (CWD, executable dir, repo tree); no new CA path.
 - Real-network probes remain opt-in (`Z98_NET=1`); the default tier skips them.
+
+## Performance / melonDS timing
+
+The recorded melonDS numbers are from Task 8b re-review harness runs **before**
+the Task 8c root fixes. Exact disk evidence:
+
+| evidence | mode | result |
+|---|---|---|
+| `/tmp/t8br_tier_final/linux/melon.time` | `-ffast` | 6:04.03 wall, max RSS 76,500 kB, exit 0 |
+| `/tmp/t8br_tier_final2/linux/melon.time` | `-ffast` | 5:55.03 wall, max RSS 76,292 kB, exit 0 |
+| `/tmp/t8br_tier_final/linux/melon_safe.time` | `-fsafe` | timeout 30:00.00, rc 124, user 1791.06 s |
+
+The default Task 8c tier skipped the real melonDS probe (`Z98_NET` unset);
+the GitHub/GitLab opt-in probes passed. **Post-root-fix melonDS timing is
+unmeasured.** The operator's remembered ~6 min fast / 30+ min safe matches the
+recorded pre-Task-8c melon data.
+
+Synthetic large clone (not melonDS), `/tmp/t8cr_tier5/linux/`:
+`large_clone.time` is `-ffast` 0:05.50; `large_safe.time` is `-fsafe` 1:05.69.
+
+## Docs/provenance update
+
+- Files: `examples/z98/z9git/README.md` (known limitations),
+  `release/seed/CHANGELOG.md` and `docs/sf/QUICK_REF.md` (v141 base
+  `7dbd5e32`), this report. `STD_README.MD` already carried the correct
+  archive/fixed-point provenance with no stale base, so it was not changed.
+- Verification: `git diff --check`; extracted archive `std_http.zig` md5
+  `9319ec842aabc1375b147355541a202d` equals `7dbd5e32:sf/src/std_http.zig` and
+  current `sf/src/std_http.zig`; no build, network, or tier rerun.
+- Concerns: post-root-fix melonDS timing remains unmeasured; the win32 state
+  write retains its small non-atomic window; state helper lists remain capped
+  at 4096.

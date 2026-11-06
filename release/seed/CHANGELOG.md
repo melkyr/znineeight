@@ -15,17 +15,20 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
-## 2026-11-06 — seed v141 (HEAD 1f3baae3)
+## 2026-11-06 — seed v141 (HEAD 7dbd5e32)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
 `zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
 emitted `zig_special_types.h`, 12473249 bytes), `c_exit.c` (top level),
 `runtime/`, `lib/`, `SEED_README.txt`.
 
+Provenance: the archive was built from the `std_http` EOF-flush source
+committed at `7dbd5e32`; the earlier `1f3baae3` packaging-base label was stale.
+
 | field | value |
 |---|---|
 | date | 2026-11-06 |
-| HEAD | `1f3baae3` |
+| HEAD | `7dbd5e32` |
 | seed binary md5 | `cf68f192900e7f6618c11e1712b74b3a` |
 | self-emission C | 48 `.c` + 49 `.h` (12473249 bytes) |
 | fixed point | `cf68f192900e7f6618c11e1712b74b3a` |
@@ -44,11 +47,11 @@ emitted `zig_special_types.h`, 12473249 bytes), `c_exit.c` (top level),
 | no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
 | status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
 | lib | 52 std `.zig` + `manifest.md5` |
-| HEAD/date | `1f3baae3` / 2026-11-06 |
+| HEAD/date | `7dbd5e32` / 2026-11-06 |
 
 Provenance note: the archived binary (md5 cf68f192900e7f6618c11e1712b74b3a) was captured by
 scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
-1f3baae3; gcc of the archive's self-emission C reproduces the fixed point
+7dbd5e32; gcc of the archive's self-emission C reproduces the fixed point
 `cf68f192900e7f6618c11e1712b74b3a` — the binary and the C are the same compiler state. If sf/src
 carried uncommitted changes at capture time, the packaging base HEAD alone
 does not identify that source; the exact source commit is named in that

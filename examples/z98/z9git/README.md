@@ -212,6 +212,29 @@ for small packs the body may arrive first and the throttle is applied before
 the clone proceeds rather than shaping each TCP read; large packs flush roughly
 once per MiB. The duration floor is still honored.
 
+### Known limitations
+
+- **Win32 state write is remove-then-rename.** On Windows the old
+  `.git/z9git-state` is removed before `MoveFileA` because the `std_file`
+  rename wrapper does not replace an existing file. This leaves a small
+  non-atomic window; the POSIX path is temp-file + rename and remains atomic.
+- **State helper lists cap at 4096 entries.** The `have` and completed-pack
+  lists recorded in `.git/z9git-state` are bounded. `.git/shallow` is the
+  authoritative shallow source, and correctness relies on local ref/object
+  scans (local refs plus installed packs), not on the state helper lists.
+- **Partial clone fetches blobs per directory.** Checkout requests only the
+  missing blobs for one directory at a time. A tree with many directories can
+  therefore issue many upload-pack requests; this trades request count for
+  bounded memory. There is no global tree-count cap.
+- **Partial checkout over HTTPS uses the existing trust store.** It looks for
+  `ca_store.bin` in the current directory, beside the executable, or at the
+  repo-tree path, exactly like clone. There is no new CA path or flag.
+- **`fetch --deepen` is HTTP(S)-only.** Local sources have no URL state and do
+  not implement depth/deepen; `--depth` and `--partial` are rejected for local
+  clones rather than silently ignored.
+- **Real-network probes are opt-in.** The GitHub/GitLab probes run only with
+  `Z98_NET=1`; the default tier skips them.
+
 ### HTTPS trust store
 
 `https://` uses `std_net` TCP plus `std_tls` with a `std_x509.TrustStore`.
