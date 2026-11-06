@@ -42,6 +42,7 @@ pub const PieceState = struct {
     index: u32,
     state: BlockState,
     blocks: []BlockState,
+    block_mask: []u8,
     received_bytes: u32,
     received_count: u32,
     outstanding_count: u32,
@@ -108,6 +109,33 @@ pub fn bitSet(bits: []u8, i: u32) void {
     bits[byte] = bits[byte] | mask;
 }
 
+// Per-piece received-block mask (LSB-first within each byte, matching the
+// resume sidecar's `partial[].block_mask`). Maintained incrementally so
+// `saveResume` never has to rescan every block of every live piece.
+pub fn maskSet(state: *PieceState, i: u32) void {
+    if (i >= state.nblocks) return;
+    var byte: usize = @intCast(usize, i / 8);
+    if (byte >= state.block_mask.len) return;
+    var sh: u8 = @intCast(u8, i % 8);
+    var m: u8 = @intCast(u8, 1) << sh;
+    state.block_mask[byte] = state.block_mask[byte] | m;
+}
+
+pub fn maskClear(state: *PieceState, i: u32) void {
+    if (i >= state.nblocks) return;
+    var byte: usize = @intCast(usize, i / 8);
+    if (byte >= state.block_mask.len) return;
+    var sh: u8 = @intCast(u8, i % 8);
+    var m: u8 = @intCast(u8, 1) << sh;
+    state.block_mask[byte] = state.block_mask[byte] & ~m;
+}
+
+pub fn maskClearAll(state: *PieceState) void {
+    for (state.block_mask) |*item| {
+        item.* = 0;
+    }
+}
+
 // Initialise `state` for piece `index`: size the block vector, zero the
 // counters, and copy the expected SHA-1 out of `t.piece_hashes`.
 pub fn pieceInit(arena: *std.arena.Arena, t: torrent.Torrent, state: *PieceState, index: u32) PieceError!void {
@@ -122,9 +150,17 @@ pub fn pieceInit(arena: *std.arena.Arena, t: torrent.Torrent, state: *PieceState
         item.* = BlockState.missing;
     }
 
+    var mbytes: usize = (@intCast(usize, n) + 7) / 8;
+    var mraw = std.arena.alloc(arena, mbytes) catch return error.OutOfMemory;
+    var mask: []u8 = mraw[0..mbytes];
+    for (mask) |*item| {
+        item.* = 0;
+    }
+
     state.index = index;
     state.state = BlockState.missing;
     state.blocks = blocks;
+    state.block_mask = mask;
     state.received_bytes = 0;
     state.received_count = 0;
     state.outstanding_count = 0;
@@ -185,19 +221,27 @@ pub fn onBlock(state: *PieceState, begin: u32, bytes: []const u8, io: *PieceIO) 
         state.received_count += 1;
     }
     state.blocks[biu] = BlockState.received;
+    maskSet(state, bi);
     state.received_bytes += @intCast(u32, bytes.len);
 
     // All blocks present? (O(1): the counter is exact on every transition.)
     if (state.received_count != state.nblocks) return BlockResult.Continue;
 
-    // Verify-on-complete: read the piece back and SHA-1 it (spec §7).
-    var raw = std.arena.alloc(io.arena, @intCast(usize, state.length)) catch return error.OutOfMemory;
-    var buf: []u8 = raw[0..@intCast(usize, state.length)];
-    var got: usize = disk.readPiece(io.f, io.t, state.index, buf) catch return error.DiskFailed;
-    if (got != @intCast(usize, state.length)) return BlockResult.Corrupt;
-
+    // Verify-on-complete: read the piece back in fixed bounded chunks and
+    // SHA-1 it (spec §7). Never allocate the whole piece: the work arena is
+    // 1 MiB while legal piece lengths go up to 16 MiB.
+    var raw = std.arena.alloc(io.arena, @intCast(usize, BLOCK_SIZE)) catch return error.OutOfMemory;
+    var buf: []u8 = raw[0..@intCast(usize, BLOCK_SIZE)];
     var hs = crypto.sha1Init();
-    crypto.sha1Update(&hs, buf);
+    var off: u32 = 0;
+    while (off < state.length) {
+        var want: u32 = state.length - off;
+        if (want > BLOCK_SIZE) want = BLOCK_SIZE;
+        var got: usize = disk.readPieceAt(io.f, io.t, state.index, off, buf[0..@intCast(usize, want)]) catch return error.DiskFailed;
+        if (got != @intCast(usize, want)) return BlockResult.Corrupt;
+        crypto.sha1Update(&hs, buf[0..@intCast(usize, want)]);
+        off += want;
+    }
     var h: [20]u8 = [20]u8{0};
     for (h) |*item| {
         item.* = 0;
@@ -223,6 +267,7 @@ pub fn onBlock(state: *PieceState, begin: u32, bytes: []const u8, io: *PieceIO) 
     for (0..state.nblocks) |i| {
         state.blocks[@intCast(usize, i)] = BlockState.missing;
     }
+    maskClearAll(state);
     state.received_bytes = 0;
     state.received_count = 0;
     state.outstanding_count = 0;

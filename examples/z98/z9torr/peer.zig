@@ -558,6 +558,7 @@ fn revertBlock(ps: *piece.PieceState, begin: u32) void {
             },
             else => {},
         }
+        piece.maskClear(ps, bi);
         ps.blocks[bu] = piece.BlockState.missing;
     }
 }
@@ -690,20 +691,13 @@ fn seedPartial(ctx: *RunCtx, ps: *piece.PieceState) void {
                             ps.received_count += 1;
                         }
                         ps.blocks[bu] = piece.BlockState.received;
+                        piece.maskSet(ps, b);
                     }
                 }
             }
             return;
         }
     }
-}
-
-// True if `ps` holds at least one received (written-through) block.
-fn hasReceived(ps: *piece.PieceState) bool {
-    for (0..ps.nblocks) |i| {
-        if (ps.blocks[@intCast(usize, i)] == piece.BlockState.received) return true;
-    }
-    return false;
 }
 
 // True if the partial list `pp[0..count]` already holds `index`.
@@ -714,26 +708,11 @@ fn indexIn(pp: []resumemod.PartialPiece, count: usize, index: u32) bool {
     return false;
 }
 
-// Encode `ps`'s received-block mask into the save arena and write the entry
-// into `dst`. Returns false on arena exhaustion (caller aborts the save).
-fn fillMask(ctx: *RunCtx, ps: *piece.PieceState, dst: *resumemod.PartialPiece) bool {
-    var mbytes: usize = (@intCast(usize, ps.nblocks) + 7) / 8;
-    var mraw = std.arena.alloc(ctx.save_arena, mbytes) catch return false;
-    var mask: []u8 = mraw[0..mbytes];
-    for (0..mbytes) |z| {
-        mask[z] = 0;
-    }
-    var i: u32 = 0;
-    while (i < ps.nblocks) : (i += 1) {
-        if (ps.blocks[@intCast(usize, i)] == piece.BlockState.received) {
-            var byte: usize = @intCast(usize, i / 8);
-            var sh: u8 = @intCast(u8, i % 8);
-            var bit: u8 = @intCast(u8, 1) << sh;
-            mask[byte] = mask[byte] | bit;
-        }
-    }
+// Point `dst` at `ps`'s incrementally maintained received-block mask. The
+// sidecar is encoded before `saveResume` returns, so no arena copy is needed.
+fn fillMask(ps: *piece.PieceState, dst: *resumemod.PartialPiece) bool {
     dst.index = ps.index;
-    dst.block_mask = mask;
+    dst.block_mask = ps.block_mask;
     return true;
 }
 
@@ -758,16 +737,16 @@ fn saveResume(ctx: *RunCtx, ps: *piece.PieceState) void {
         if (!lpe.active) continue;
         if (lpe.ps.state == piece.BlockState.verified) continue;
         if (lpe.ps.nblocks == 0) continue;
-        if (!hasReceived(&lpe.ps)) continue;
+        if (lpe.ps.received_count == 0) continue;
         if (indexIn(pp, count, lpe.ps.index)) continue;
-        if (!fillMask(ctx, &lpe.ps, &pp[count])) return;
+        if (!fillMask(&lpe.ps, &pp[count])) return;
         count += 1;
     }
 
     // 2. The calling peer (M2 path where it is not in `ctx.peers`).
-    if (ps.state != piece.BlockState.verified and ps.nblocks > 0 and hasReceived(ps)) {
+    if (ps.state != piece.BlockState.verified and ps.nblocks > 0 and ps.received_count > 0) {
         if (!indexIn(pp, count, ps.index)) {
-            if (!fillMask(ctx, ps, &pp[count])) return;
+            if (!fillMask(ps, &pp[count])) return;
             count += 1;
         }
     }

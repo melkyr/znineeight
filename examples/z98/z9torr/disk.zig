@@ -80,14 +80,15 @@ pub fn writeBlock(f: *filemod.File, t: torrent.Torrent, piece_index: u32, block_
     }
 }
 
-// Read piece `index` into `out`; returns the number of bytes read (the piece
-// length, or `out.len` if smaller). Short reads stop at EOF.
-pub fn readPiece(f: *filemod.File, t: torrent.Torrent, index: u32, out: []u8) DiskError!usize {
+// Read up to `out.len` bytes of piece `index`, starting `piece_off` bytes into
+// the piece; returns the number of bytes read. Used by the bounded chunked
+// verifier so a piece never has to be held in memory whole.
+pub fn readPieceAt(f: *filemod.File, t: torrent.Torrent, index: u32, piece_off: u32, out: []u8) DiskError!usize {
     var plen: u32 = pieceLength(t, index);
-    if (plen == 0) return 0;
-    var want: usize = @intCast(usize, plen);
+    if (plen == 0 or piece_off >= plen) return 0;
+    var want: usize = @intCast(usize, plen - piece_off);
     if (want > out.len) want = out.len;
-    var start: u64 = pieceStart(t, index);
+    var start: u64 = pieceStart(t, index) + @intCast(u64, piece_off);
     _ = filemod.seek(f, @intCast(i64, start), filemod.SeekWhence.Set) catch return error.SeekFailed;
     var got: usize = 0;
     while (got < want) {
@@ -96,4 +97,10 @@ pub fn readPiece(f: *filemod.File, t: torrent.Torrent, index: u32, out: []u8) Di
         got += r;
     }
     return got;
+}
+
+// Read piece `index` into `out`; returns the number of bytes read (the piece
+// length, or `out.len` if smaller). Short reads stop at EOF.
+pub fn readPiece(f: *filemod.File, t: torrent.Torrent, index: u32, out: []u8) DiskError!usize {
+    return readPieceAt(f, t, index, 0, out);
 }

@@ -114,26 +114,31 @@ fn allocEntries(ar: *std.arena.Arena, n: usize) ResumeError![]bencode.Entry {
     return @ptrCast([*]bencode.Entry, p)[0..n];
 }
 
-// SHA-1 `piece index` from `f` (via disk.readPiece) and compare to
-// `t.piece_hashes[index*20 .. index*20+20]`.
+// SHA-1 `piece index` from `f` in fixed bounded chunks (via
+// disk.readPieceAt) and compare to `t.piece_hashes[index*20 .. index*20+20]`.
+// `buf` is a reusable chunk buffer, never the whole piece.
 fn verifyPiece(t: torrent.Torrent, f: *filemod.File, index: u32, buf: []u8) bool {
     var plen: u32 = disk.pieceLength(t, index);
-    if (plen == 0) return false;
-    var want: usize = @intCast(usize, plen);
-    if (want > buf.len) return false;
-    var got: usize = disk.readPiece(f, t, index, buf[0..want]) catch return false;
-    if (got != want) return false;
+    if (plen == 0 or buf.len == 0) return false;
     var hs = crypto.sha1Init();
-    crypto.sha1Update(&hs, buf[0..got]);
+    var off: u32 = 0;
+    while (off < plen) {
+        var want: u32 = plen - off;
+        if (want > @intCast(u32, buf.len)) want = @intCast(u32, buf.len);
+        var got: usize = disk.readPieceAt(f, t, index, off, buf[0..@intCast(usize, want)]) catch return false;
+        if (got != @intCast(usize, want)) return false;
+        crypto.sha1Update(&hs, buf[0..got]);
+        off += want;
+    }
     var h: [20]u8 = [20]u8{0};
     for (h) |*item| {
         item.* = 0;
     }
     crypto.sha1Final(&hs, &h);
-    var off: usize = @intCast(usize, index) * HASH_LEN;
-    if (off + HASH_LEN > t.piece_hashes.len) return false;
+    var off2: usize = @intCast(usize, index) * HASH_LEN;
+    if (off2 + HASH_LEN > t.piece_hashes.len) return false;
     for (0..HASH_LEN) |k| {
-        if (h[k] != t.piece_hashes[off + k]) return false;
+        if (h[k] != t.piece_hashes[off2 + k]) return false;
     }
     return true;
 }
@@ -294,10 +299,9 @@ pub fn rehash(arena: *std.arena.Arena, t: torrent.Torrent, f: *filemod.File, sta
     var n: u32 = pieceCount(t);
     var needed: usize = bitsBytes(n);
     if (state.completed_bits.len < needed) return error.OutOfMemory;
-    var plen: usize = @intCast(usize, t.piece_length);
-    if (plen == 0) return error.OutOfMemory;
-    var raw = std.arena.alloc(arena, plen) catch return error.OutOfMemory;
-    var buf: []u8 = raw[0..plen];
+    const HASH_CHUNK: usize = 16384;
+    var raw = std.arena.alloc(arena, HASH_CHUNK) catch return error.OutOfMemory;
+    var buf: []u8 = raw[0..HASH_CHUNK];
     for (0..n) |i| {
         if (!bitGet(state.completed_bits, i)) {
             if (verifyPiece(t, f, i, buf)) {

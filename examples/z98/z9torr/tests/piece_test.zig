@@ -31,7 +31,7 @@ const BLOCK = piece.BLOCK_SIZE;
 
 var g_state_buf: [1048576]u8;
 var g_io_buf: [1048576]u8;
-var g_data: [5 * 16384]u8;
+var g_data: [96 * 16384]u8;
 var g_hash: [20]u8;
 var g_zero_alist: [8][]const u8;
 
@@ -291,7 +291,38 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     checkU32(q.tail, 2, "(e) requeue nextRequests tail != 2");
     checkU32(pe.outstanding_count, 2, "(e) requeue nextRequests outstanding != 2");
 
-    var p: []const u8 = "piece_test: PASS (a) complete-once (b) duplicate (c) malformed (d) requests (e) requeue\n";
+    // --- (f) >1 MiB piece verifies without a whole-piece work-arena alloc ----
+    // 96 * 16 KiB = 1.5 MiB, larger than the 1 MiB `g_io_buf` work arena.
+    var nf: u32 = 96;
+    var total_f: u32 = nf * BLOCK;
+    fillData(total_f);
+    hashPiece(g_data[0..@intCast(usize, total_f)]);
+    var tf = makeTorrent("/tmp/z9torr_piece_f.bin", nf);
+    var ff = disk.openTarget(&io_arena, tf) catch {
+        fail("(f) open target");
+        return;
+    };
+    var iof = piece.PieceIO{ .arena = &io_arena, .t = tf, .f = &ff };
+    var pf: piece.PieceState = piece.zeroPieceState();
+    piece.pieceInit(&state_arena, tf, &pf, 0) catch {
+        fail("(f) pieceInit");
+        return;
+    };
+    var completes_f: u32 = 0;
+    var bf: u32 = 0;
+    while (bf < nf) : (bf += 1) {
+        var rf = piece.onBlock(&pf, bf * BLOCK, blockData(bf * BLOCK, BLOCK), &iof) catch {
+            fail("(f) onBlock error");
+            return;
+        };
+        if (rf == piece.BlockResult.Complete) completes_f += 1;
+        if (bf + 1 < nf and rf != piece.BlockResult.Continue) fail("(f) early non-Continue");
+    }
+    checkU32(completes_f, 1, "(f) Complete was not reported exactly once");
+    checkU32(pf.received_count, nf, "(f) received_count after Complete");
+    if (pf.state != piece.BlockState.verified) fail("(f) >1 MiB piece not verified");
+
+    var p: []const u8 = "piece_test: PASS (a) complete-once (b) duplicate (c) malformed (d) requests (e) requeue (f) >1MiB\n";
     std.io.write(p);
     std.os.exit(0);
 }
