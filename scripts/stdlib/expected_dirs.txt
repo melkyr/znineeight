@@ -142,6 +142,7 @@ repro/mi_matrix/stdlib_fold_u32_ok_xmod
 repro/mi_matrix/stdlib_fold_usize_ok_xmod
 repro/mi_matrix/stdlib_for_continue_xmod
 repro/mi_matrix/stdlib_for_index_range_xmod
+repro/mi_matrix/stdlib_gpa_small_xmod
 repro/mi_matrix/stdlib_hash_sha384_512_xmod
 repro/mi_matrix/stdlib_heap_init_xmod
 repro/mi_matrix/stdlib_heap_len_xmod
