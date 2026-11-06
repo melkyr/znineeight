@@ -1,0 +1,190 @@
+// stdlib_gpa_medium_xmod — STDLIB std_gpa page-run medium-tier GREEN fixture.
+//
+// Contract (Phase 3.1 Layer 2, Task 3): 2 MiB chunks, 4 KiB page runs, split and
+// coalesce, mixed free order, resize, and align > 8 routing through page-aligned
+// medium runs. The medium tier covers 4096..medium_max (64 KiB for target64).
+//
+// GREEN (contract): deterministic byte-exact stdout ending `gpa medium ok\n`
+// (RUNRC=0). Each line is `<check> 1` on success; a failed check prints 0 and
+// the trailer is `gpa medium FAIL`.
+const std = @import("std");
+
+var g_fail: u32 = 0;
+
+const ZERO: [*]u8 = @ptrCast([*]u8, @intToPtr(*void, 0));
+
+fn ck(what: []const u8, cond: bool) void {
+    std.io.write(what);
+    if (cond) {
+        std.io.write(" 1\n");
+    } else {
+        std.io.write(" 0\n");
+        g_fail += 1;
+    }
+}
+
+fn must(p: ?[*]u8, what: []const u8) [*]u8 {
+    if (p) |q| return q;
+    @panic(what);
+}
+
+fn overlaps(a: [*]u8, alen: usize, b: [*]u8, blen: usize) bool {
+    const a0: usize = @ptrToInt(a);
+    const b0: usize = @ptrToInt(b);
+    const a1: usize = a0 + alen;
+    const b1: usize = b0 + blen;
+    return a0 < b1 and b0 < a1;
+}
+
+fn aligned(p: [*]u8, a: usize) bool {
+    return @ptrToInt(p) % a == 0;
+}
+
+pub fn main() void {
+    const gpa = std.gpa;
+
+    var cfg = gpa.gpaConfigTarget64();
+    var g = gpa.gpaInit(cfg) catch {
+        std.io.write("gpa medium FAIL\n");
+        return;
+    };
+    ck("init", true);
+
+    // --- medium sizes 4096..65536, marker at both ends ---
+    const p4 = must(gpa.gpaAlloc(&g, 4096, 8), "alloc 4096");
+    const p8 = must(gpa.gpaAlloc(&g, 8192, 8), "alloc 8192");
+    const p16 = must(gpa.gpaAlloc(&g, 16384, 8), "alloc 16384");
+    const p64 = must(gpa.gpaAlloc(&g, 65536, 8), "alloc 65536");
+    ck("alloc", p4 != ZERO and p8 != ZERO and p16 != ZERO and p64 != ZERO);
+
+    p4[0] = 0x11;
+    p4[4095] = 0xE1;
+    p8[0] = 0x22;
+    p8[8191] = 0xE2;
+    p16[0] = 0x33;
+    p16[16383] = 0xE3;
+    p64[0] = 0x44;
+    p64[65535] = 0xE4;
+    ck("bytes", p4[0] == 0x11 and p4[4095] == 0xE1 and
+        p8[0] == 0x22 and p8[8191] == 0xE2 and
+        p16[0] == 0x33 and p16[16383] == 0xE3 and
+        p64[0] == 0x44 and p64[65535] == 0xE4);
+
+    // --- align > 8 routing: small requests occupy page-aligned runs ---
+    const a16 = must(gpa.gpaAlloc(&g, 16, 16), "alloc align 16");
+    const a4096 = must(gpa.gpaAlloc(&g, 16, 4096), "alloc align 4096");
+    ck("align", aligned(p4, 4096) and aligned(p8, 4096) and
+        aligned(p16, 4096) and aligned(p64, 4096) and
+        aligned(a16, 16) and aligned(a4096, 4096));
+
+    // --- resize 4096 -> 8192 keeps the original bytes ---
+    const rp = must(gpa.gpaResize(&g, p4, 8192, 8), "resize 4096->8192");
+    ck("resize", aligned(rp, 8) and rp[0] == 0x11 and rp[4095] == 0xE1);
+
+    // --- mixed-order free; reallocate and verify reuse/coalescing ---
+    ck("free", gpa.gpaFree(&g, p16) and gpa.gpaFree(&g, p8) and
+        gpa.gpaFree(&g, p64) and gpa.gpaFree(&g, rp));
+
+    const q4 = must(gpa.gpaAlloc(&g, 4096, 8), "reuse 4096");
+    const q8 = must(gpa.gpaAlloc(&g, 8192, 8), "reuse 8192");
+    const q16 = must(gpa.gpaAlloc(&g, 16384, 8), "reuse 16384");
+    const q64 = must(gpa.gpaAlloc(&g, 65536, 8), "reuse 65536");
+    var reuse_ok: bool = aligned(q4, 4096) and aligned(q8, 4096) and
+        aligned(q16, 4096) and aligned(q64, 4096);
+    if (overlaps(q4, 4096, a16, 16) or overlaps(q4, 4096, a4096, 16)) reuse_ok = false;
+    if (overlaps(q8, 8192, a16, 16) or overlaps(q8, 8192, a4096, 16)) reuse_ok = false;
+    if (overlaps(q16, 16384, a16, 16) or overlaps(q16, 16384, a4096, 16)) reuse_ok = false;
+    if (overlaps(q64, 65536, a16, 16) or overlaps(q64, 65536, a4096, 16)) reuse_ok = false;
+    if (overlaps(q4, 4096, q8, 8192)) reuse_ok = false;
+    if (overlaps(q4, 4096, q16, 16384)) reuse_ok = false;
+    if (overlaps(q4, 4096, q64, 65536)) reuse_ok = false;
+    if (overlaps(q8, 8192, q16, 16384)) reuse_ok = false;
+    if (overlaps(q8, 8192, q64, 65536)) reuse_ok = false;
+    if (overlaps(q16, 16384, q64, 65536)) reuse_ok = false;
+    q4[0] = 0x51;
+    q4[4095] = 0x15;
+    q8[0] = 0x52;
+    q8[8191] = 0x25;
+    q16[0] = 0x53;
+    q16[16383] = 0x35;
+    q64[0] = 0x54;
+    q64[65535] = 0x45;
+    if (q4[0] != 0x51 or q4[4095] != 0x15) reuse_ok = false;
+    if (q8[0] != 0x52 or q8[8191] != 0x25) reuse_ok = false;
+    if (q16[0] != 0x53 or q16[16383] != 0x35) reuse_ok = false;
+    if (q64[0] != 0x54 or q64[65535] != 0x45) reuse_ok = false;
+    ck("reuse", reuse_ok);
+
+    // --- 1000-op medium stress: no duplicate live pointers, no corruption ---
+    var live: [8]?[*]u8 = undefined;
+    var sizes: [8]usize = undefined;
+    var marks0: [8]u8 = undefined;
+    var marks1: [8]u8 = undefined;
+    var initslot: usize = 0;
+    while (initslot < 8) : (initslot += 1) {
+        live[initslot] = null;
+        sizes[initslot] = 0;
+        marks0[initslot] = 0;
+        marks1[initslot] = 0;
+    }
+
+    var stress_ok: bool = true;
+    var i: usize = 0;
+    while (i < 1000) : (i += 1) {
+        const slot = i % 8;
+        if (live[slot]) |old| {
+            if (old[0] != marks0[slot] or old[sizes[slot] - 1] != marks1[slot]) {
+                stress_ok = false;
+            }
+            if (!gpa.gpaFree(&g, old)) stress_ok = false;
+            live[slot] = null;
+        }
+
+        const sz: usize = 4096 + (i % 4) * 4096;
+        const np = gpa.gpaAlloc(&g, sz, 8);
+        if (np) |p| {
+            var j: usize = 0;
+            while (j < 8) : (j += 1) {
+                if (live[j]) |q| {
+                    if (q == p) stress_ok = false;
+                    if (overlaps(p, sz, q, sizes[j])) stress_ok = false;
+                }
+            }
+            const m0: u8 = @intCast(u8, (i & 0xFF) ^ 0x5A);
+            const m1: u8 = @intCast(u8, (i & 0xFF) ^ 0xA5);
+            p[0] = m0;
+            p[sz - 1] = m1;
+            live[slot] = p;
+            sizes[slot] = sz;
+            marks0[slot] = m0;
+            marks1[slot] = m1;
+        } else {
+            stress_ok = false;
+            break;
+        }
+    }
+
+    var s: usize = 0;
+    while (s < 8) : (s += 1) {
+        if (live[s]) |p| {
+            if (p[0] != marks0[s] or p[sizes[s] - 1] != marks1[s]) stress_ok = false;
+            if (!gpa.gpaFree(&g, p)) stress_ok = false;
+            live[s] = null;
+        }
+    }
+    ck("stress", stress_ok);
+
+    // --- a pointer outside every chunk/region is unowned ---
+    var local: [8]u8 = undefined;
+    const foreign: [*]u8 = local[0..].ptr;
+    ck("foreign", !gpa.gpaFree(&g, foreign));
+
+    gpa.gpaDeinit(&g);
+    ck("deinit", true);
+
+    if (g_fail == 0) {
+        std.io.write("gpa medium ok\n");
+    } else {
+        std.io.write("gpa medium FAIL\n");
+    }
+}
