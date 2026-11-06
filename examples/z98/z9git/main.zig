@@ -140,17 +140,14 @@ fn runCheckout(arena: *arena_mod.Arena, ref_name: []const u8) i32 {
         writeMsg(dr.msg);
         return dr.code;
     }
-    httpgit.httpFetchBlobsForRef(arena, dr.git_dir, ref_name, 0) catch |e| {
-        writeMsg(repo.errorMessage(e));
-        return repo.exitCode(e);
-    };
-    repo.checkoutRef(arena, dr.git_dir, ref_name) catch |e| {
-
+    httpgit.httpCheckoutRef(arena, dr.git_dir, ref_name, 0) catch |e| {
         writeMsg(repo.errorMessage(e));
         return repo.exitCode(e);
     };
     return 0;
 }
+
+
 
 pub fn main(argc: i32, argv: [*][*]u8) void {
     os.initArgs(argc, argv);
