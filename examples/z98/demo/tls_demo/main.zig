@@ -469,8 +469,12 @@ fn trRead(state: *void, buf: []u8) !usize {
 fn trWrite(state: *void, data: []const u8) !usize {
     var c: *Conn = @ptrCast(*Conn, state);
     if (data.len == 0) return 0;
+    // tlsWrite sizes the output for every record it generates, so feed it one
+    // TLS plaintext record per call. transportWriteAll loops over the rest.
+    var take: usize = data.len;
+    if (take > tls.TLS_MAX_PLAINTEXT_RECORD) take = tls.TLS_MAX_PLAINTEXT_RECORD;
     var outbuf: [tls.TLS_MAX_WIRE_RECORD + 64]u8 = undefined;
-    const n = tls.tlsWrite(c.sess, data, outbuf[0..]) catch |e| {
+    const n = tls.tlsWrite(c.sess, data[0..take], outbuf[0..]) catch |e| {
         if (e == error.OutputTooSmall) return error.TooLarge;
         return error.ConnectFailed;
     };
@@ -478,7 +482,7 @@ fn trWrite(state: *void, data: []const u8) !usize {
         if (e == DemoError.Timeout) return error.Timeout;
         return error.ConnectFailed;
     };
-    return data.len;
+    return take;
 }
 
 fn trClose(state: *void) void {

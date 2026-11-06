@@ -211,8 +211,9 @@ Z98_NET=1 bash examples/z98/demo/tls_demo/tests/tier_tls.sh
 
 The tier builds the demo, checks `-h` usage (rc 0) and bad POST arguments
 (rc 1), then runs a hermetic HTTPS POST against `tests/https_echo.py` (python3
-TLS server with the committed localhost certificate) and asserts the status,
-echoed body bytes, and `bytes`. It also runs a local `openssl s_server -tls1_2`
+TLS server with the committed localhost certificate) with a small body and a
+1 MiB multi-record body, and asserts the status, echoed body bytes, and
+`bytes`. It also runs a local `openssl s_server -tls1_2`
 fallback happy path and TLS 1.3 happy paths for both suites (`-tls1_3
 -ciphersuites TLS_AES_128_GCM_SHA256` and `TLS_CHACHA20_POLY1305_SHA256`) with
 an exact body, asserts the expired/wrong-host/untrusted negatives, checks the

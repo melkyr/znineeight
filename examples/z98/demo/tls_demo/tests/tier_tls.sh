@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# tier_tls.sh — Phase 1 M4/M5 integration tier for tls_demo.
+# tier_tls.sh — Phase 1 M4/M5 integration tier for tls_demo (GET and POST).
+#
+# Also: CLI `-h`/bad-arg checks and a hermetic HTTPS POST echo via
+# `tests/https_echo.py` (small and 1 MiB multi-record bodies).
 #
 # (a) local `openssl s_server` (committed test certs) happy paths: TLS 1.2
 #     fallback (client offers 1.3+1.2, server -tls1_2) and TLS 1.3 with both
@@ -158,6 +161,37 @@ else
     else
         fail_case "hermetic HTTPS POST echo (rc=$POST_RC; see $OUT/post.out / $OUT/post.err / $OUT/srv_post.log)"
         sed 's/^/       /' "$OUT/post.out" "$OUT/post.err" 2>/dev/null | head -20
+    fi
+fi
+
+echo "== (a) hermetic HTTPS POST echo (1 MiB, multi-record) =="
+POST_BIG_LEN=1048576
+head -c "$POST_BIG_LEN" /dev/zero | tr '\0' 'A' >"$WORK/post_big_body.bin"
+head -c 4096 "$WORK/post_big_body.bin" >"$OUT/post_big_prefix"
+printf '\n' >>"$OUT/post_big_prefix"
+POST_BIG_PORT="$(free_port)"
+( exec python3 "$SCRIPT_DIR/https_echo.py" --port "$POST_BIG_PORT" \
+    --cert "$CERTS/localhost.pem" --key "$CERTS/localhost.key" ) \
+    >"$OUT/srv_post_big.log" 2>&1 &
+SERVER_PID=$!
+if ! wait_port "$POST_BIG_PORT" "$SERVER_PID"; then
+    fail_case "large HTTPS POST echo server start (see $OUT/srv_post_big.log)"
+    stop_server
+else
+    timeout 60 "$BIN" --post "https://localhost:$POST_BIG_PORT/echo" \
+        --body "$WORK/post_big_body.bin" --store "$STORE" \
+        --clock "$LOCAL_CLOCK" >"$OUT/post_big.out" 2>"$OUT/post_big.err"
+    POST_BIG_RC=$?
+    stop_server
+    sed -n '2p' "$OUT/post_big.out" >"$OUT/post_big_got" 2>/dev/null
+    if [ "$POST_BIG_RC" -eq 0 ] \
+       && [ "$(sed -n '1p' "$OUT/post_big.out")" = "status=200" ] \
+       && cmp -s "$OUT/post_big_prefix" "$OUT/post_big_got" \
+       && grep -Eq "^tls_demo ok status=200 bytes=$POST_BIG_LEN arena_peak=[0-9]+ rss_peak=[0-9]+ cpu_ms=[0-9]+$" "$OUT/post_big.out"; then
+        pass_case "large HTTPS POST echo: status=200, echoed body prefix, bytes=$POST_BIG_LEN"
+    else
+        fail_case "large HTTPS POST echo (rc=$POST_BIG_RC; see $OUT/post_big.out / $OUT/post_big.err / $OUT/srv_post_big.log)"
+        sed 's/^/       /' "$OUT/post_big.out" "$OUT/post_big.err" 2>/dev/null | head -20
     fi
 fi
 
