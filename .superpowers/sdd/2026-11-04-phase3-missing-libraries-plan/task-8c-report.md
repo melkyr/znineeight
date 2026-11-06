@@ -201,12 +201,6 @@ No `sf/`, `docs/sf/` or `release/seed/` files changed.
 
 ## Concerns / scope notes
 
-- `std_http.httpPostStreamOver` buffers up to ~1 MiB before calling the sink.
-  A transport EOF on a tiny (<1 MiB) pack can therefore lose the unflushed
-  tail; the resume tests use a truncated pack response (the pack-level abort
-  case) so the prefix is deterministic. On real large packs the sink has
-  already flushed most data, which is the modem/interrupt case Task 8c targets.
-  Fixing the tiny-pack flush would be a `std_http` change, outside this task.
 - `checkout` on a partial clone over HTTPS uses the existing trust-store lookup
   (CWD, executable dir, repo-tree path). Running it from an arbitrary clone
   directory without a discoverable `ca_store.bin` is a transport error, exactly
@@ -438,3 +432,128 @@ Synthetic large clone (not melonDS), `/tmp/t8cr_tier5/linux/`:
 - Concerns: post-root-fix melonDS timing remains unmeasured; the win32 state
   write retains its small non-atomic window; state helper lists remain capped
   at 4096.
+
+## Task 8c fix round 2 (A/B)
+
+Status: **DONE**. Base `9e6b9038`; no std/compiler/seed change (v141 stays).
+No melonDS measurement was run (the controller dispatches that separately).
+
+### Commits
+
+- `fix(z9git): trust complete packs and bound shallow/fetch memory`
+- `docs(sdd): record Task 8c fix round`
+
+### A1 — no 4096 shallow truncation
+
+- `PackSink.shallow_raw` is now a growable slice (`shallow_cap`, arena-backed);
+  `shallowAdd` doubles the capacity and never silently drops a boundary.
+  `shallowRemove` operates on the same slice.
+- `.git/shallow` remains authoritative; `repo.writeShallow` writes a temp file
+  and renames. POSIX rename is atomic; Win32 moves the old file to
+  `shallow.bak`, renames the new file into place, then removes the backup (and
+  restores it if the swap fails).
+- New tier fixture builds a 4097-commit linear history, sends 4097 `shallow`
+  pkt-lines, and asserts the `.git/shallow` line set exactly equals the commit
+  set and `log` prints one line.
+- RED: baseline `9e6b9038` mock clone against the same fixture wrote 4096
+  lines (expected 4097).
+
+### A2 — trust complete packs
+
+- State records `complete-pack <id>` in addition to the existing `pack <id>`
+  list. A missing marker (legacy state, prefix or unknown) is verified.
+- `repo.closureComplete` short-circuits a tip found in a recorded complete pack;
+  prefix/loose/unknown tips traverse as before. Tree blob leaves are checked
+  with `storeHas` rather than inflated.
+- `filterRefsForInstall`, `collectHaves`, `verifyHaves` and
+  `addCompleteHaves` share the same complete/prefix/unknown helper; haves stay
+  local-ref only and only complete refs are installed.
+- New tests: complete-pack tip installs a new ref after `.git/shallow` is
+  removed (would require a missing parent if traversed); removing the
+  `complete-pack` marker makes the same tip verify-and-reject; existing
+  moved-ref/shallow/partial cases remain green.
+- RED: baseline `9e6b9038` did not install `refs/heads/newref` in the
+  complete-pack scenario (traversed into the omitted parent and failed).
+
+### A3 — preserve `.git/shallow` on an incomplete prefix
+
+- `PackSink.shallow_complete` is set only when the parser reaches NAK/ACK.
+  `Attempt.shallow_complete` carries it out of `postPack`.
+- `downloadWanted` writes the new list only when the shallow section is
+  complete. A prefix response interrupted before NAK/ACK leaves the existing
+  file untouched and uses the old list for the retry. A complete known-empty
+  result still removes the file.
+- Tests: abort before the shallow section with an existing `.git/shallow`
+  (file byte-compared before/after); complete shallow clone; complete empty
+  result removes `.git/shallow`.
+
+### A4 — fetch preserves HEAD
+
+- Fetch reads the existing HEAD. A symbolic target that survives ref filtering
+  is kept; detached HEAD is left detached; a missing/filtered target leaves
+  HEAD untouched via `installRefsOnly`. Fetch never falls back to another
+  branch. Clone keeps `chooseHead`.
+- Tests: normal symbolic fetch, filtered/missing symbolic target, detached
+  fetch, plus the complete/unknown cases above.
+
+### A5 — bound per-directory missing-blob IDs
+
+- `repo.fetchMissingInTree` allocates the per-directory id list with
+  `pack_mod.dynAlloc` and frees it after `fetch_fn`; the app arena no longer
+  grows by the sum of every directory's missing ids.
+- `downloadBlobIds` no longer calls `stateLoad` (and its fixed id arrays) for
+  every directory; that state is never persisted, so it uses `stateEmpty`.
+- The partial fixture now has 5 bulk chains of 20 nested directories (100+
+  directories) with 1000 files; checkout succeeds at the default 32 MiB arena
+  and the existing per-directory POST/fsck assertions remain green.
+
+### A6 — stale report text
+
+- Removed the old “tiny-pack EOF flush is outside this task” concern; the
+  `std_http` EOF flush is implemented and shipped in v141.
+
+### Verification
+
+Compiler: existing v141 seed build `/tmp/t8cr_v141/zig1_5_clean`
+(fixed point `cf68f192900e7f6618c11e1712b74b3a`).
+
+Final full tier:
+
+```text
+$ ZIG=/tmp/t8cr_v141/zig1_5_clean OUT=/tmp/t8c_fix2_tier5 \
+    timeout 1800 bash examples/z98/z9git/tests/tier_git.sh
+== tier_git summary: 205 passed, 0 failed ==
+TIER_GIT PASS
+```
+
+This includes the Win9x no-CRT/`9x` emit/import/binary gates, Wine clone/log,
+Wine mocked HTTP, all new A/B cases, and the existing shallow/partial/prefix/
+deepen suites. `sh -n` and `git diff --check` are clean.
+
+### Files changed
+
+- `examples/z98/z9git/httpgit.zig` — growable shallow sink, shallow-complete
+  tracking, complete-pack state/trust, fetch HEAD preservation, per-directory
+  blob state/memory.
+- `examples/z98/z9git/repo.zig` — atomic/backup `.git/shallow` write, complete
+  tip short-circuit, `storeHas` blob leaves, dynAlloc per-directory id list,
+  complete-list parameters for closure/haves/install filtering.
+- `examples/z98/z9git/tests/tier_git.sh` — >4096 shallow, complete/unknown
+  trust, fetch HEAD, incomplete-shallow preservation, many-directory partial
+  cases.
+- `examples/z98/z9git/README.md` — growable/atomic shallow, complete-pack
+  trust, fetch HEAD, bounded per-directory memory, updated limitations.
+- `.superpowers/sdd/2026-11-04-phase3-missing-libraries-plan/task-8c-report.md`
+  — this section.
+
+### Concerns
+
+- The many-directory partial test uses five leaf directories (100+ total
+  nested directories); the mock keeps one blob pack per leaf fetch, so a much
+  larger leaf count would hit the pre-existing per-pack read-window budget
+  rather than the fixed per-directory id list. No `pack.zig` change was made.
+- Win32 `.git/shallow` replacement keeps the old file until the new one is
+  ready, but the swap is still a two-rename window (no atomic replace API in
+  the file wrapper), same class as the existing Win32 state write.
+- Real-network probes remain opt-in (`Z98_NET=1`); melonDS was intentionally
+  not measured in this task.
