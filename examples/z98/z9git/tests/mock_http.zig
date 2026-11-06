@@ -23,12 +23,14 @@ const httpgit = @import("../httpgit.zig");
 
 const ARENA_BYTES: usize = 32 * 1024 * 1024;
 const REQ_BYTES: usize = 16384;
+const MAX_CONNS: usize = 20;
 const MARKER: []const u8 = "\n---POST---\n";
 
 var g_arena_buf: [ARENA_BYTES]u8 = undefined;
 var g_open_count: usize = 0;
 var g_info_resp: []const u8 = undefined;
-var g_upload_resp: []const u8 = undefined;
+var g_upload_resp: [MAX_CONNS][]const u8 = undefined;
+var g_upload_count: usize = 0;
 
 const Mock = struct {
     resp: []const u8,
@@ -38,7 +40,17 @@ const Mock = struct {
     closed: bool,
 };
 
-var g_mocks: [2]Mock = undefined;
+var g_mocks: [MAX_CONNS]Mock = undefined;
+
+
+fn endsWith(s: []const u8, suffix: []const u8) bool {
+    if (s.len < suffix.len) return false;
+    var i: usize = 0;
+    while (i < suffix.len) : (i += 1) {
+        if (s[s.len - suffix.len + i] != suffix[i]) return false;
+    }
+    return true;
+}
 
 fn eqStr(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
@@ -61,6 +73,7 @@ fn parseU32(s: []const u8) ?u32 {
     }
     return @intCast(u32, v);
 }
+
 
 fn appendDec(out: []u8, pos: *usize, value: usize) void {
     var tmp: [20]u8 = undefined;
@@ -215,6 +228,61 @@ fn buildChunkedResponseOr(arena: *arena_mod.Arena, status: u16, body: []const u8
     return true;
 }
 
+// Declare more bytes than the mock actually serves: the client sees EOF in the
+// middle of the pack, which is the mid-transfer abort the resume path handles.
+fn buildAbortResponse(arena: *arena_mod.Arena, status: u16, body: []const u8, content_type: []const u8) ![]u8 {
+    const total = body.len + content_type.len + 160;
+    const raw = arena_mod.alloc(arena, total) catch return error.OutOfMemory;
+    const out = raw[0..total];
+    const prefix: []const u8 = "HTTP/1.1 ";
+    const mid1: []const u8 = " Status\r\nContent-Type: ";
+    const mid2: []const u8 = "\r\nContent-Length: ";
+    var pos: usize = 0;
+    var i: usize = 0;
+    while (i < prefix.len) : (i += 1) {
+        out[pos] = prefix[i];
+        pos += 1;
+    }
+    appendDec(out, &pos, @intCast(usize, status));
+    i = 0;
+    while (i < mid1.len) : (i += 1) {
+        out[pos] = mid1[i];
+        pos += 1;
+    }
+    i = 0;
+    while (i < content_type.len) : (i += 1) {
+        out[pos] = content_type[i];
+        pos += 1;
+    }
+    i = 0;
+    while (i < mid2.len) : (i += 1) {
+        out[pos] = mid2[i];
+        pos += 1;
+    }
+    appendDec(out, &pos, body.len + 4096);
+    out[pos] = '\r';
+    pos += 1;
+    out[pos] = '\n';
+    pos += 1;
+    out[pos] = '\r';
+    pos += 1;
+    out[pos] = '\n';
+    pos += 1;
+    i = 0;
+    while (i < body.len) : (i += 1) {
+        out[pos] = body[i];
+        pos += 1;
+    }
+    return out[0..pos];
+}
+
+fn buildAbortResponseOr(arena: *arena_mod.Arena, status: u16, body: []const u8, content_type: []const u8, out: *[]const u8) bool {
+    const r = buildAbortResponse(arena, status, body, content_type) catch return false;
+    out.* = r;
+    return true;
+}
+
+
 fn mockRead(state: *void, buf: []u8) !usize {
     var m: *Mock = @ptrCast(*Mock, state);
     if (m.pos >= m.resp.len) return 0;
@@ -248,9 +316,9 @@ fn mockOpen(state: *void, url: []const u8) httpgit.OpenError!http.HttpTransport 
     _ = url;
     const idx = g_open_count;
     g_open_count += 1;
-    if (idx >= 2) return error.Transport;
+    if (idx >= g_upload_count + 1) return error.Transport;
     var m: *Mock = &g_mocks[idx];
-    m.resp = if (idx == 0) g_info_resp else g_upload_resp;
+    m.resp = if (idx == 0) g_info_resp else g_upload_resp[idx - 1];
     m.pos = 0;
     m.req_len = 0;
     m.closed = false;
@@ -261,6 +329,7 @@ fn mockOpen(state: *void, url: []const u8) httpgit.OpenError!http.HttpTransport 
         .close_fn = mockClose,
     };
 }
+
 
 fn fail(msg: []const u8) noreturn {
     io.write(msg);
@@ -321,30 +390,72 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
         }
     }
     var chunked = false;
+    var clone_mode: u8 = 0;
     if (n >= 9) {
         if (eqStr(os.argv(8), "chunked")) {
             chunked = true;
+        } else if (eqStr(os.argv(8), "identity")) {
+            chunked = false;
+        } else if (eqStr(os.argv(8), "partial")) {
+            clone_mode = 1;
+        } else if (eqStr(os.argv(8), "shallow")) {
+            clone_mode = 2;
         } else {
             fail("mock_http: bad mode");
         }
     }
     var info_body: []u8 = undefined;
     if (!readFileOr(&arena, os.argv(4), &info_body)) fail("mock_http: cannot read info/refs body");
-    var upload_body: []u8 = undefined;
-    if (!readFileOr(&arena, os.argv(5), &upload_body)) fail("mock_http: cannot read upload body");
     const reqlog = os.argv(6);
 
     if (!buildResponseOr(&arena, 200, info_body, "application/x-git-upload-pack-advertisement", &g_info_resp)) {
         fail("mock_http: out of memory");
     }
-    if (chunked) {
-        if (!buildChunkedResponseOr(&arena, post_status, upload_body, "application/x-git-upload-pack-result", &g_upload_resp)) {
+
+    var upload_path = os.argv(5);
+    var primary_abort = false;
+    if (endsWith(upload_path, ":abort")) {
+        upload_path = upload_path[0 .. upload_path.len - 6];
+        primary_abort = true;
+    }
+    var upload_body: []u8 = undefined;
+    if (!readFileOr(&arena, upload_path, &upload_body)) fail("mock_http: cannot read upload body");
+    if (primary_abort) {
+        if (!buildAbortResponseOr(&arena, post_status, upload_body, "application/x-git-upload-pack-result", &g_upload_resp[0])) {
+            fail("mock_http: out of memory");
+        }
+    } else if (chunked) {
+        if (!buildChunkedResponseOr(&arena, post_status, upload_body, "application/x-git-upload-pack-result", &g_upload_resp[0])) {
             fail("mock_http: out of memory");
         }
     } else {
-        if (!buildResponseOr(&arena, post_status, upload_body, "application/x-git-upload-pack-result", &g_upload_resp)) {
+        if (!buildResponseOr(&arena, post_status, upload_body, "application/x-git-upload-pack-result", &g_upload_resp[0])) {
             fail("mock_http: out of memory");
         }
+    }
+    g_upload_count = 1;
+
+    var ai: usize = 9;
+    while (ai < n) : (ai += 1) {
+        if (g_upload_count >= MAX_CONNS) fail("mock_http: too many upload responses");
+        var p = os.argv(ai);
+        var extra_abort = false;
+        if (endsWith(p, ":abort")) {
+            p = p[0 .. p.len - 6];
+            extra_abort = true;
+        }
+        var extra_body: []u8 = undefined;
+        if (!readFileOr(&arena, p, &extra_body)) fail("mock_http: cannot read extra upload body");
+        if (extra_abort) {
+            if (!buildAbortResponseOr(&arena, post_status, extra_body, "application/x-git-upload-pack-result", &g_upload_resp[g_upload_count])) {
+                fail("mock_http: out of memory");
+            }
+        } else {
+            if (!buildResponseOr(&arena, post_status, extra_body, "application/x-git-upload-pack-result", &g_upload_resp[g_upload_count])) {
+                fail("mock_http: out of memory");
+            }
+        }
+        g_upload_count += 1;
     }
     g_open_count = 0;
 
@@ -352,35 +463,55 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
         .state = @ptrCast(*void, &g_open_count),
         .open_fn = mockOpen,
     };
-    httpgit.httpCloneOver(&arena, url, dest, max_down, &factory) catch |e| {
-        if (e == error.Transport) failCode("mock_http: transport", 2);
-        if (e == error.Protocol) failCode("mock_http: protocol", 3);
-        if (e == error.ObjectStore) failCode("mock_http: object-store", 4);
-        if (e == error.DiskFull) failCode("mock_http: disk full", 5);
-        if (e == error.Io) failCode("mock_http: io", 5);
-        failCode("mock_http: out of memory", 5);
-    };
+    if (clone_mode == 0) {
+        httpgit.httpCloneOver(&arena, url, dest, max_down, &factory) catch |e| {
+            if (e == error.Transport) failCode("mock_http: transport", 2);
+            if (e == error.Protocol) failCode("mock_http: protocol", 3);
+            if (e == error.ObjectStore) failCode("mock_http: object-store", 4);
+            if (e == error.DiskFull) failCode("mock_http: disk full", 5);
+            if (e == error.Io) failCode("mock_http: io", 5);
+            failCode("mock_http: out of memory", 5);
+        };
+    } else if (clone_mode == 1) {
+        httpgit.httpCloneOverOpts(&arena, url, dest, max_down, 0, true, &factory) catch |e| {
+            if (e == error.Transport) failCode("mock_http: transport", 2);
+            if (e == error.Protocol) failCode("mock_http: protocol", 3);
+            if (e == error.ObjectStore) failCode("mock_http: object-store", 4);
+            if (e == error.DiskFull) failCode("mock_http: disk full", 5);
+            if (e == error.Io) failCode("mock_http: io", 5);
+            failCode("mock_http: out of memory", 5);
+        };
+    } else {
+        httpgit.httpCloneOverOpts(&arena, url, dest, max_down, 1, false, &factory) catch |e| {
+            if (e == error.Transport) failCode("mock_http: transport", 2);
+            if (e == error.Protocol) failCode("mock_http: protocol", 3);
+            if (e == error.ObjectStore) failCode("mock_http: object-store", 4);
+            if (e == error.DiskFull) failCode("mock_http: disk full", 5);
+            if (e == error.Io) failCode("mock_http: io", 5);
+            failCode("mock_http: out of memory", 5);
+        };
+    }
 
-    const get_len = g_mocks[0].req_len;
-    const post_len = g_mocks[1].req_len;
-    const total = get_len + MARKER.len + post_len;
+    var total: usize = 0;
+    var ci: usize = 0;
+    while (ci < g_open_count) : (ci += 1) {
+        total += g_mocks[ci].req_len + MARKER.len;
+    }
     var raw: []u8 = undefined;
     if (!allocOr(&arena, total, &raw)) fail("mock_http: out of memory");
     var pos: usize = 0;
-    var i: usize = 0;
-    while (i < get_len) : (i += 1) {
-        raw[pos] = g_mocks[0].req[i];
-        pos += 1;
-    }
-    i = 0;
-    while (i < MARKER.len) : (i += 1) {
-        raw[pos] = MARKER[i];
-        pos += 1;
-    }
-    i = 0;
-    while (i < post_len) : (i += 1) {
-        raw[pos] = g_mocks[1].req[i];
-        pos += 1;
+    ci = 0;
+    while (ci < g_open_count) : (ci += 1) {
+        var i: usize = 0;
+        while (i < g_mocks[ci].req_len) : (i += 1) {
+            raw[pos] = g_mocks[ci].req[i];
+            pos += 1;
+        }
+        i = 0;
+        while (i < MARKER.len) : (i += 1) {
+            raw[pos] = MARKER[i];
+            pos += 1;
+        }
     }
     if (!writeFileOr(reqlog, raw[0..pos])) fail("mock_http: cannot write request log");
     io.write("mock http clone ok\n");

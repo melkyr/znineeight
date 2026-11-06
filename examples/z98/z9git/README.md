@@ -68,7 +68,8 @@ A no-CRT build or run failure is a hard failure; there is no CRT/`nt` fallback.
 ## Usage
 
 ```sh
-z9git clone <url> [dir] [--max-down <KB/s>] [--arena-mb <N>]
+z9git clone <url> [dir] [--depth <n>] [--partial] [--max-down <KB/s>] [--arena-mb <N>]
+z9git fetch --deepen <n> [--arena-mb <N>]
 z9git log [ref] [--arena-mb <N>]
 z9git checkout <ref> [--arena-mb <N>]
 z9git -h
@@ -90,7 +91,34 @@ z9git -h
   while hashing it. The 20-byte trailer is verified, the missing `.idx` is
   synthesized with `pack.idxSynthesize`, the advertised refs and `HEAD` are
   written, and HEAD is checked out. There is no sideband/multi_ack and no thin
-  pack support (a fresh clone is self-contained).
+  pack support (a fresh clone is self-contained). `ofs-delta` is requested.
+- `--depth <n>` requests a shallow smart-HTTP clone (`deepen <n>`); the returned
+  `shallow <sha>` boundaries are written to `.git/shallow`, and `log` stops at a
+  boundary instead of walking missing parents. `fetch --deepen <n>` must be run
+  inside the clone: it reads `.git/z9git-state`, sends the old boundaries plus a
+  relative `deepen`, installs the new pack, and overwrites `.git/shallow`.
+- `--partial` requests `filter=blob:none` (GitHub/GitLab standard smart HTTP):
+  the commit/tree pack is stored first, then checkout discovers the blobs the
+  HEAD tree needs and fetches just those blobs in a second pack. Later
+  `checkout <ref>` on a partial clone fetches any missing blobs for that ref
+  before materializing it. Use `--partial --depth 1` for modem/old-machine
+  clones of large repositories; a full clone on Linux avoids the lazy blob
+  round-trip.
+- **Resume:** an interrupted HTTP download with at least one complete pack entry
+  is finalized as a prefix pack: the pack is truncated at the last complete
+  entry, a fresh SHA-1 trailer is appended, an idx is synthesized, and the pack
+  is installed. `.git/z9git-state` records the URL, depth, shallow boundary,
+  completed packs, the prefix offset, `have` commits whose closure is complete,
+  and the advertised refs. The clone retries with those `have` entries (and so
+  normally receives only the missing closure); re-running `clone` or
+  `fetch --deepen` reads the same state. Multiple packs are expected and legal;
+  pack order is not significant because the store resolves objects across all
+  packs. If the prefix has no complete entry the temp pack is removed and the
+  original transport/protocol error is reported. Temp names (`tmp_http_pack.*`,
+  `tmp_prefix.*`, `tmp_http_blob.*`, idx `.z9*` scratch) are cleaned on success
+  and ordinary failure. The caveat is that a REF_DELTA whose base lies after
+  the truncation point cannot be recovered from the prefix; the retry fetches it
+  as part of the missing closure.
 - `--max-down <KB/s>` paces the HTTP pack download (the CLI multiplies by 1024;
   the sink sleeps to hold the byte-rate). `0` (the default) is unlimited. It has
   no effect on local transports.
@@ -200,9 +228,14 @@ error (exit 2). The same PEM-to-store converter and asset are shared with
 | `<path>` (bare git dir) | supported |
 | `<path>` (worktree, uses `<path>/.git` dir or `gitdir:` file; linked worktrees use `commondir`) | supported |
 | `file://<path>` | supported (scheme stripped) |
-| `http://…` | supported (smart HTTP v0, clone only) |
-| `https://…` | supported (smart HTTP over TLS, clone only) |
+| `http://…` | supported (smart HTTP v0; clone/fetch) |
+| `https://…` | supported (smart HTTP over TLS; clone/fetch; redirects, trust store) |
 | other schemes (`git://`, ssh) | unsupported; rc 2 |
+
+For `github.com` and `gitlab.com`, a missing `.git` suffix is normalized before
+the smart-HTTP URLs are built. HTTP redirects on discovery and upload-pack are
+followed (up to six hops), including a fresh POST to the redirect target.
+Only public repositories are supported; there is no authentication or LFS.
 
 ## Exit codes
 

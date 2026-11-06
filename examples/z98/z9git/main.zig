@@ -1,15 +1,16 @@
 // main.zig -- z9git: read-only Git client for Z98 (local transports).
 //
 // Usage:
-//   z9git clone <url> [dir] [--max-down <KB/s>]
+//   z9git clone <url> [dir] [--depth <n>] [--partial] [--max-down <KB/s>]
+//   z9git fetch --deepen <n>
 //   z9git log [ref]
 //   z9git checkout <ref>
 //   z9git -h | --help
 //
 // Local sources: a bare git dir path, a worktree path (the <path>/.git inside
 // it is used), and file://<path>.  http:// and https:// use the smart-HTTP
-// transport in httpgit.zig (clone only).  --max-down is KB/s and is passed to
-// the streaming clone as bytes/s.
+// transport in httpgit.zig (clone/fetch; shallow, partial and resume).
+// --max-down is KB/s and is passed to the streaming clone as bytes/s.
 //
 // Exit codes: 0 ok, 1 usage, 2 transport, 3 protocol, 4 object-store, 5 io.
 //
@@ -98,13 +99,27 @@ fn kbpsToBps(kbps: u32) u32 {
     return @intCast(u32, v);
 }
 
-fn runHttpClone(arena: *arena_mod.Arena, url: []const u8, dest: []const u8, max_down_kbps: u32) i32 {
-    httpgit.httpClone(arena, url, dest, kbpsToBps(max_down_kbps)) catch |e| {
+fn runHttpClone(arena: *arena_mod.Arena, url: []const u8, dest: []const u8, max_down_kbps: u32, depth: u32, partial: bool) i32 {
+    httpgit.httpCloneWithOpts(arena, url, dest, kbpsToBps(max_down_kbps), depth, partial) catch |e| {
         writeMsg(repo.errorMessage(e));
         return repo.exitCode(e);
     };
     return 0;
 }
+
+fn runFetch(arena: *arena_mod.Arena, deepen: u32) i32 {
+    const dr = repo.discoverResult(arena);
+    if (!dr.ok) {
+        writeMsg(dr.msg);
+        return dr.code;
+    }
+    httpgit.httpFetch(arena, dr.git_dir, deepen, 0) catch |e| {
+        writeMsg(repo.errorMessage(e));
+        return repo.exitCode(e);
+    };
+    return 0;
+}
+
 
 fn runLog(arena: *arena_mod.Arena, ref_name: []const u8) i32 {
     const dr = repo.discoverResult(arena);
@@ -125,7 +140,12 @@ fn runCheckout(arena: *arena_mod.Arena, ref_name: []const u8) i32 {
         writeMsg(dr.msg);
         return dr.code;
     }
+    httpgit.httpFetchBlobsForRef(arena, dr.git_dir, ref_name, 0) catch |e| {
+        writeMsg(repo.errorMessage(e));
+        return repo.exitCode(e);
+    };
     repo.checkoutRef(arena, dr.git_dir, ref_name) catch |e| {
+
         writeMsg(repo.errorMessage(e));
         return repo.exitCode(e);
     };
@@ -169,12 +189,19 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         }
         var rc: i32 = 0;
         if (remote) {
-            rc = runHttpClone(&arena, args.url, dest, args.max_down_kbps);
+            rc = runHttpClone(&arena, args.url, dest, args.max_down_kbps, args.depth, args.partial);
         } else {
+            if (args.depth != 0 or args.partial) {
+                fail(cli.EXIT_USAGE, "z9git: --depth/--partial require an http(s) source\n");
+            }
             rc = runClone(&arena, src, dest);
         }
         os.exit(rc);
+    } else if (args.cmd == cli.Command.fetch) {
+        const rc = runFetch(&arena, args.deepen);
+        os.exit(rc);
     } else if (args.cmd == cli.Command.log) {
+
         const ref_name: []const u8 = if (args.has_ref) args.reference else "";
         const rc = runLog(&arena, ref_name);
         os.exit(rc);

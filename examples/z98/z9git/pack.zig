@@ -1668,7 +1668,201 @@ fn writeIdxStream(arena: *arena_mod.Arena, p: *Pack, idx_path: []const u8, sorte
     try writerFinish(&w);
 }
 
+pub const PrefixInfo = struct {
+    id: ObjectId,
+    body_bytes: u64,
+    entries: u64,
+    incomplete: bool,
+};
+
+// Open a streamed pack that may be cut off before its trailer.  Unlike
+// packOpenRaw this does not verify a trailer; prefixFinalize scans complete
+// entries from the front and supplies the missing trailer itself.
+fn packOpenPrefix(arena: *arena_mod.Arena, pack_path: []const u8) !Pack {
+    const file = file_mod.open(arena, pack_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    var p: Pack = undefined;
+    p.file = file;
+    const fsz = file_mod.size(&p.file) catch {
+        file_mod.close(&file);
+        return error.OpenFailed;
+    };
+    if (fsz < 12) {
+        file_mod.close(&file);
+        return error.Corrupt;
+    }
+    // Entry parsing treats the last 20 bytes as a trailer.  The streamed
+    // prefix has no trailer yet; pretend the 20 bytes exist (they are never
+    // read during the entry scan) so the zlib extent checks use the real body
+    // end instead of stopping 20 bytes early.
+    p.file_size = @intCast(u64, fsz) + 20;
+
+    const win_raw = arena_mod.alloc(arena, WINDOW_SIZE) catch {
+        file_mod.close(&file);
+        return error.OutOfMemory;
+    };
+    p.win = win_raw[0..WINDOW_SIZE];
+    p.win_start = 0;
+    p.win_len = 0;
+    p.count = 0;
+    var hdr: [12]u8 = undefined;
+    readAt(&p, 0, hdr[0..12]) catch {
+        file_mod.close(&file);
+        return error.Corrupt;
+    };
+    if (hdr[0] != 'P' or hdr[1] != 'A' or hdr[2] != 'C' or hdr[3] != 'K') {
+        file_mod.close(&file);
+        return error.Corrupt;
+    }
+    if (be32(hdr[0..], 4) != 2) {
+        file_mod.close(&file);
+        return error.Corrupt;
+    }
+    p.count = be32(hdr[0..], 8);
+    return p;
+}
+
+// Finalize the longest complete prefix of a partially downloaded pack.  The
+// prefix is copied (without any partial trailing entry), a fresh SHA-1 trailer
+// is appended, and a normal idx is synthesized beside it.  A prefix with no
+// complete entry is NoEntries, so an interrupt before the first object does not
+// create an empty pack.
+pub fn prefixFinalize(arena: *arena_mod.Arena, src_path: []const u8, dst_pack: []const u8, dst_idx: []const u8, out: *PrefixInfo) !void {
+    var p = try packOpenPrefix(arena, src_path);
+    defer file_mod.close(&p.file);
+    const n: usize = @intCast(usize, p.count);
+    var scratch_bytes = arena.capacity / 2;
+    if (scratch_bytes > 16 * 1024 * 1024) scratch_bytes = 16 * 1024 * 1024;
+    if (scratch_bytes < 256 * 1024) scratch_bytes = 256 * 1024;
+    const scratch_raw = dynAlloc(scratch_bytes) orelse return error.OutOfMemory;
+    defer dynFree(scratch_raw);
+    var scratch = arena_mod.init(scratch_raw[0..scratch_bytes]);
+
+    var off: u64 = 12;
+    var last_end: u64 = 12;
+    var entries: usize = 0;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        arena_mod.reset(&scratch);
+        const raw = readEntryMaybeBig(&scratch, &p, off) catch break;
+        const end = addU64(raw.payload_off, @intCast(u64, raw.payload_len)) catch {
+            if (raw.big) dynFree(raw.payload);
+            break;
+        };
+        if (end > p.file_size) {
+            if (raw.big) dynFree(raw.payload);
+            break;
+        }
+        if (raw.big) dynFree(raw.payload);
+        off = end;
+        last_end = end;
+        entries += 1;
+    }
+
+    if (entries == 0) return error.NoEntries;
+
+
+    const src = file_mod.open(arena, src_path, file_mod.Mode.Read) catch return error.OpenFailed;
+    const dst = file_mod.open(arena, dst_pack, file_mod.Mode.Write) catch {
+        file_mod.close(&src);
+        return error.OpenFailed;
+    };
+    var hdr: [12]u8 = undefined;
+    var got_hdr: usize = 0;
+    while (got_hdr < 12) {
+        const hn = file_mod.read(&src, hdr[got_hdr..12]) catch {
+            file_mod.close(&src);
+            file_mod.close(&dst);
+            return error.ReadFailed;
+        };
+        if (hn == 0) {
+            file_mod.close(&src);
+            file_mod.close(&dst);
+            return error.Corrupt;
+        }
+        got_hdr += hn;
+    }
+    putBe32(hdr[0..], 8, @intCast(u32, entries));
+    var hw: usize = 0;
+    while (hw < 12) {
+        const hn = file_mod.write(&dst, hdr[hw..12]) catch {
+            file_mod.close(&src);
+            file_mod.close(&dst);
+            return error.WriteFailed;
+        };
+        if (hn == 0) {
+            file_mod.close(&src);
+            file_mod.close(&dst);
+            return error.WriteFailed;
+        }
+        hw += hn;
+    }
+    var h = crypto.sha1Init();
+    crypto.sha1Update(&h, hdr[0..12]);
+    var copied: u64 = 12;
+
+    var chunk: [65536]u8 = undefined;
+    var copy_ok = true;
+    while (copied < last_end) {
+        var take: usize = chunk.len;
+        const left = last_end - copied;
+        if (left < @intCast(u64, take)) take = @intCast(usize, left);
+        const nread = file_mod.read(&src, chunk[0..take]) catch {
+            copy_ok = false;
+            break;
+        };
+        if (nread == 0) {
+            copy_ok = false;
+            break;
+        }
+        crypto.sha1Update(&h, chunk[0..nread]);
+        var written: usize = 0;
+        while (written < nread) {
+            const wn = file_mod.write(&dst, chunk[written..nread]) catch {
+                copy_ok = false;
+                break;
+            };
+            if (wn == 0) {
+                copy_ok = false;
+                break;
+            }
+            written += wn;
+        }
+        if (!copy_ok) break;
+        copied += @intCast(u64, nread);
+    }
+    file_mod.close(&src);
+    if (!copy_ok or copied != last_end) {
+        file_mod.close(&dst);
+        return error.WriteFailed;
+    }
+    var id: ObjectId = undefined;
+    crypto.sha1Final(&h, &id);
+    var tw: usize = 0;
+    while (tw < 20) {
+        const wn = file_mod.write(&dst, id[tw..20]) catch {
+            file_mod.close(&dst);
+            return error.WriteFailed;
+        };
+        if (wn == 0) {
+            file_mod.close(&dst);
+            return error.WriteFailed;
+        }
+        tw += wn;
+    }
+    file_mod.flush(&dst) catch {};
+    file_mod.close(&dst);
+
+    var oi: usize = 0;
+    while (oi < 20) : (oi += 1) out.id[oi] = id[oi];
+
+    out.body_bytes = last_end;
+    out.entries = @intCast(u64, entries);
+    out.incomplete = entries < n;
+    try idxSynthesize(arena, dst_pack, dst_idx);
+}
+
 pub fn idxSynthesize(arena: *arena_mod.Arena, pack_path: []const u8, idx_path: []const u8) !void {
+
     var p = try packOpenRaw(arena, pack_path);
     defer file_mod.close(&p.file);
     const n: usize = @intCast(usize, p.count);

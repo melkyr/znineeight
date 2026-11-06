@@ -42,6 +42,9 @@ const KIND_PROTOCOL: u8 = 2;
 const KIND_DISK_FULL: u8 = 3;
 
 const DISK_GUARD_BYTES: u64 = 4 * 1024 * 1024;
+const SHALLOW_MAX: usize = 4096;
+const MAX_ATTEMPTS: usize = 4;
+
 
 
 pub const OpenError = error{ Transport, OutOfMemory };
@@ -230,9 +233,11 @@ const TlsConn = struct {
     closed: bool,
 };
 
+var g_empty_byte: [1]u8 = undefined;
 var g_net_inited: bool = false;
 var g_tls_session: tls.TlsSession = undefined;
 var g_tls_rng: rand.Xoshiro256 = undefined;
+
 
 fn ensureNet() OpenError!void {
     if (g_net_inited) return;
@@ -613,7 +618,35 @@ fn parseDiscovery(arena: *arena_mod.Arena, body: []const u8) repo.GitError!Disco
     return d;
 }
 
-fn buildRequest(arena: *arena_mod.Arena, refs: []const Ref) repo.GitError![]u8 {
+fn copyAt(dst: []u8, pos: *usize, src: []const u8) void {
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) {
+        dst[pos.* + i] = src[i];
+    }
+    pos.* += src.len;
+}
+
+fn appendDecAt(dst: []u8, pos: *usize, v0: u64) void {
+    var tmp: [24]u8 = undefined;
+    var n: usize = 0;
+    var v = v0;
+    if (v == 0) {
+        dst[pos.*] = '0';
+        pos.* += 1;
+        return;
+    }
+    while (v != 0) : (v = v / 10) {
+        tmp[n] = @intCast(u8, v % 10) + '0';
+        n += 1;
+    }
+    var i: usize = n;
+    while (i > 0) : (i -= 1) {
+        dst[pos.*] = tmp[i - 1];
+        pos.* += 1;
+    }
+}
+
+fn collectWanted(arena: *arena_mod.Arena, refs: []const Ref, out_raw: *[]u8, out_count: *usize) repo.GitError!void {
     const ids_raw = arena_mod.alloc(arena, refs.len * 20) catch return error.OutOfMemory;
     var count: usize = 0;
     var i: usize = 0;
@@ -640,14 +673,46 @@ fn buildRequest(arena: *arena_mod.Arena, refs: []const Ref) repo.GitError![]u8 {
         count += 1;
     }
     if (count == 0) return error.Protocol;
+    out_raw.* = ids_raw[0 .. count * 20];
+    out_count.* = count;
+}
 
-    const total = count * 50 + 13;
+fn buildRequestEx(arena: *arena_mod.Arena, want_raw: []const u8, want_count: usize, have_raw: []const u8, have_count: usize, depth: u32, deepen_relative: bool, shallow_raw: []const u8, shallow_count: usize, partial: bool) repo.GitError![]u8 {
+    var caps_buf: [64]u8 = undefined;
+    var caps_len: usize = 0;
+    const base_caps: []const u8 = " ofs-delta";
+
+    var bi: usize = 0;
+    while (bi < base_caps.len) : (bi += 1) {
+        caps_buf[caps_len] = base_caps[bi];
+        caps_len += 1;
+    }
+    if (deepen_relative) {
+        const s: []const u8 = " deepen-relative";
+        bi = 0;
+
+        while (bi < s.len) : (bi += 1) {
+            caps_buf[caps_len] = s[bi];
+            caps_len += 1;
+        }
+    }
+    if (partial) {
+        const s: []const u8 = " filter";
+
+        bi = 0;
+        while (bi < s.len) : (bi += 1) {
+            caps_buf[caps_len] = s[bi];
+            caps_len += 1;
+        }
+    }
+    const per_want = 4 + 46 + caps_len;
+    const total = want_count * per_want + shallow_count * 53 + 64 + have_count * 50 + 13;
     const raw = arena_mod.alloc(arena, total) catch return error.OutOfMemory;
     const body = raw[0..total];
     var pos: usize = 0;
-    i = 0;
-    while (i < count) : (i += 1) {
-        var payload: [46]u8 = undefined;
+    var i: usize = 0;
+    while (i < want_count) : (i += 1) {
+        var payload: [128]u8 = undefined;
         payload[0] = 'w';
         payload[1] = 'a';
         payload[2] = 'n';
@@ -655,15 +720,74 @@ fn buildRequest(arena: *arena_mod.Arena, refs: []const Ref) repo.GitError![]u8 {
         payload[4] = ' ';
         var id: [20]u8 = undefined;
         var k: usize = 0;
-        while (k < 20) : (k += 1) id[k] = ids_raw[i * 20 + k];
+        while (k < 20) : (k += 1) id[k] = want_raw[i * 20 + k];
+        hexId(id, payload[5..45]);
+        var plen: usize = 45;
+        if (i == 0) {
+            var c: usize = 0;
+            while (c < caps_len) : (c += 1) {
+                payload[plen] = caps_buf[c];
+                plen += 1;
+            }
+        }
+        payload[plen] = '\n';
+        plen += 1;
+        pos += pkt.encode(body[pos..], payload[0..plen]) catch return error.Protocol;
+    }
+    i = 0;
+    while (i < shallow_count) : (i += 1) {
+        var payload: [64]u8 = undefined;
+        const prefix: []const u8 = "shallow ";
+        var p: usize = 0;
+        while (p < prefix.len) : (p += 1) payload[p] = prefix[p];
+
+        var id: [20]u8 = undefined;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) id[k] = shallow_raw[i * 20 + k];
+        hexId(id, payload[8..48]);
+        payload[48] = '\n';
+        pos += pkt.encode(body[pos..], payload[0..49]) catch return error.Protocol;
+    }
+    if (depth > 0) {
+        var payload: [32]u8 = undefined;
+        var p: usize = 0;
+        const prefix: []const u8 = "deepen ";
+        copyAt(payload[0..], &p, prefix);
+
+        appendDecAt(payload[0..], &p, @intCast(u64, depth));
+        payload[p] = '\n';
+        p += 1;
+        pos += pkt.encode(body[pos..], payload[0..p]) catch return error.Protocol;
+    }
+    if (partial) {
+        pos += pkt.encode(body[pos..], "filter blob:none\n") catch return error.Protocol;
+    }
+    pos += pkt.encodeFlush(body[pos..]) catch return error.Protocol;
+    i = 0;
+    while (i < have_count) : (i += 1) {
+        var payload: [64]u8 = undefined;
+        const prefix: []const u8 = "have ";
+
+        var p: usize = 0;
+        while (p < prefix.len) : (p += 1) payload[p] = prefix[p];
+        var id: [20]u8 = undefined;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) id[k] = have_raw[i * 20 + k];
         hexId(id, payload[5..45]);
         payload[45] = '\n';
         pos += pkt.encode(body[pos..], payload[0..46]) catch return error.Protocol;
     }
-    pos += pkt.encodeFlush(body[pos..]) catch return error.Protocol;
     pos += pkt.encode(body[pos..], "done\n") catch return error.Protocol;
     return body[0..pos];
 }
+
+fn buildRequest(arena: *arena_mod.Arena, refs: []const Ref) repo.GitError![]u8 {
+    var want_raw: []u8 = undefined;
+    var want_count: usize = 0;
+    try collectWanted(arena, refs, &want_raw, &want_count);
+    return buildRequestEx(arena, want_raw, want_count, want_raw, 0, 0, false, want_raw, 0, false);
+}
+
 
 // --- streaming pack sink ----------------------------------------------------
 
@@ -680,7 +804,7 @@ const PackSink = struct {
     len_pos: usize,
     pkt_remain: usize,
     pkt_total: usize,
-    pkt_head: [16]u8,
+    pkt_head: [64]u8,
     pkt_head_len: usize,
     pack_started: bool,
     pack_bytes: u64,
@@ -695,7 +819,10 @@ const PackSink = struct {
     guard_next: u64,
     pack_hdr: [12]u8,
     pack_hdr_len: usize,
+    shallow_raw: [SHALLOW_MAX * 20]u8,
+    shallow_count: usize,
 };
+
 
 fn sinkFail(s: *PackSink, kind: u8) http.HttpError {
     s.fail_kind = kind;
@@ -756,6 +883,7 @@ fn packWriteBytes(s: *PackSink, data: []const u8) http.HttpError!void {
     }
 }
 
+
 fn packDecorate(s: *PackSink, data: []const u8) http.HttpError!void {
     if (!s.preflight_done) {
         if (s.have_cl == 0) s.have_cl = headerU64(s.head, "Content-Length");
@@ -781,6 +909,50 @@ fn packDecorate(s: *PackSink, data: []const u8) http.HttpError!void {
     try packWriteBytes(s, data);
 }
 
+fn shallowAdd(s: *PackSink, id: [20]u8) void {
+    var i: usize = 0;
+    while (i < s.shallow_count) : (i += 1) {
+        var same = true;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) {
+            if (s.shallow_raw[i * 20 + k] != id[k]) {
+                same = false;
+                break;
+            }
+        }
+        if (same) return;
+    }
+    if (s.shallow_count >= SHALLOW_MAX) return;
+    var k: usize = 0;
+    while (k < 20) : (k += 1) s.shallow_raw[s.shallow_count * 20 + k] = id[k];
+    s.shallow_count += 1;
+}
+
+fn shallowRemove(s: *PackSink, id: [20]u8) void {
+    var i: usize = 0;
+    while (i < s.shallow_count) : (i += 1) {
+        var same = true;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) {
+            if (s.shallow_raw[i * 20 + k] != id[k]) {
+                same = false;
+                break;
+            }
+        }
+        if (same) {
+            var j: usize = i;
+            while (j + 1 < s.shallow_count) : (j += 1) {
+                var m: usize = 0;
+                while (m < 20) : (m += 1) {
+                    s.shallow_raw[j * 20 + m] = s.shallow_raw[(j + 1) * 20 + m];
+                }
+            }
+            s.shallow_count -= 1;
+            return;
+        }
+    }
+}
+
 fn pktPayloadDone(s: *PackSink) http.HttpError!void {
     const plen = s.pkt_total - 4;
     const hlen = s.pkt_head_len;
@@ -795,6 +967,19 @@ fn pktPayloadDone(s: *PackSink) http.HttpError!void {
         if (s.pkt_head[0] == 'E' and s.pkt_head[1] == 'R' and s.pkt_head[2] == 'R' and s.pkt_head[3] == ' ') is_err = true;
     }
     if (is_err) return sinkFail(s, KIND_PROTOCOL);
+    if (hlen >= 48 and startsWith(s.pkt_head[0..hlen], "shallow ")) {
+        var id: [20]u8 = undefined;
+        if (parseId(s.pkt_head[8..48], &id)) shallowAdd(s, id);
+        s.phase = .len;
+        return;
+    }
+    if (hlen >= 50 and startsWith(s.pkt_head[0..hlen], "unshallow ")) {
+        var id: [20]u8 = undefined;
+        if (parseId(s.pkt_head[10..50], &id)) shallowRemove(s, id);
+        s.phase = .len;
+        return;
+    }
+
     if (is_nak or is_ack) {
         s.phase = .pack;
         return;
@@ -804,7 +989,9 @@ fn pktPayloadDone(s: *PackSink) http.HttpError!void {
 
 fn packSinkWrite(state: *void, data: []const u8) http.HttpError!void {
     var s: *PackSink = @ptrCast(*PackSink, state);
+    if (s.head.status >= 300 and s.head.status <= 399) return;
     var off: usize = 0;
+
     while (off < data.len) {
         switch (s.phase) {
             .pack => {
@@ -915,32 +1102,427 @@ fn packCount(hdr: []const u8) u64 {
     return c;
 }
 
-// --- clone entry points -----------------------------------------------------
+// --- resume state, redirects and multi-attempt download ---------------------
 
-pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const u8, max_down_bps: u32, factory: *const TransportFactory) repo.GitError!void {
+const State = struct {
+    url: []const u8,
+    depth: u32,
+    partial: bool,
+    shallow_raw: []u8,
+    shallow_count: usize,
+    have_raw: []u8,
+    have_count: usize,
+    pack_raw: []u8,
+    pack_count: usize,
+    has_prefix: bool,
+    prefix_id: [20]u8,
+    prefix_bytes: u64,
+    prefix_entries: u64,
+};
+
+fn stateEmpty(arena: *arena_mod.Arena) State {
+    _ = arena;
+    var s: State = undefined;
+    s.url = "";
+    s.depth = 0;
+    s.partial = false;
+    s.shallow_raw = g_empty_byte[0..0];
+    s.have_raw = g_empty_byte[0..0];
+    s.pack_raw = g_empty_byte[0..0];
+    s.shallow_count = 0;
+    s.have_count = 0;
+    s.pack_count = 0;
+    s.has_prefix = false;
+    var i: usize = 0;
+    while (i < 20) : (i += 1) s.prefix_id[i] = 0;
+    s.prefix_bytes = 0;
+    s.prefix_entries = 0;
+    return s;
+}
+
+
+fn parseDecSlice(s: []const u8) u64 {
+    var v: u64 = 0;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c < '0' or c > '9') break;
+        v = v * 10 + @intCast(u64, c - '0');
+    }
+    return v;
+}
+
+
+fn stateInitArrays(arena: *arena_mod.Arena, data_len: usize, s: *State) bool {
+    var cap: usize = data_len / 40 + 8;
+    if (cap < SHALLOW_MAX) cap = SHALLOW_MAX;
+    const a = arena_mod.alloc(arena, cap * 20) catch return false;
+    const b = arena_mod.alloc(arena, cap * 20) catch return false;
+    const c = arena_mod.alloc(arena, cap * 20) catch return false;
+    s.shallow_raw = a[0 .. cap * 20];
+    s.have_raw = b[0 .. cap * 20];
+    s.pack_raw = c[0 .. cap * 20];
+    return true;
+}
+
+fn rawHas(raw: []const u8, count: usize, id: [20]u8) bool {
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        var same = true;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) {
+            if (raw[i * 20 + k] != id[k]) {
+                same = false;
+                break;
+            }
+        }
+        if (same) return true;
+    }
+    return false;
+}
+
+fn rawAdd(raw: []u8, count: *usize, cap: usize, id: [20]u8) void {
+    if (rawHas(raw[0 .. cap * 20], count.*, id)) return;
+    if (count.* >= cap) return;
+    var k: usize = 0;
+    while (k < 20) : (k += 1) raw[count.* * 20 + k] = id[k];
+    count.* += 1;
+}
+
+
+fn parseStateLineId(line: []const u8, out: *[20]u8) bool {
+    if (line.len < 40) return false;
+    return parseId(line[0..40], out);
+}
+
+fn stateLoad(arena: *arena_mod.Arena, git_dir: []const u8, s: *State) bool {
+    s.* = stateEmpty(arena);
+    if (!stateInitArrays(arena, 0, s)) return false;
+    const path = joinUrl(arena, git_dir, "/z9git-state") catch return false;
+    if (!file_mod.exists(path)) return false;
+    const data = file_mod.readAll(arena, path) catch return false;
+    if (!stateInitArrays(arena, data.len, s)) return false;
+
+    var pos: usize = 0;
+    var saw_header = false;
+    while (pos < data.len) {
+        var end = pos;
+        while (end < data.len and data[end] != '\n') : (end += 1) {}
+        var line = data[pos..end];
+        if (line.len > 0 and line[line.len - 1] == '\r') line = line[0 .. line.len - 1];
+        pos = end + 1;
+        if (!saw_header) {
+            if (eq(line, "z9git-state 1")) saw_header = true;
+            continue;
+        }
+        if (startsWith(line, "url ")) {
+            s.url = line[4..];
+        } else if (startsWith(line, "depth ")) {
+            const v = parseDecSlice(line[6..]);
+            if (v <= 4294967295) s.depth = @intCast(u32, v);
+        } else if (startsWith(line, "partial ")) {
+            s.partial = line.len >= 9 and line[8] == '1';
+        } else if (startsWith(line, "shallow ")) {
+            var id: [20]u8 = undefined;
+            if (parseStateLineId(line[8..], &id)) {
+                var cap = s.shallow_raw.len / 20;
+                rawAdd(s.shallow_raw, &s.shallow_count, cap, id);
+                _ = cap;
+            }
+        } else if (startsWith(line, "have ")) {
+            var id: [20]u8 = undefined;
+            if (parseStateLineId(line[5..], &id)) {
+                var cap = s.have_raw.len / 20;
+                rawAdd(s.have_raw, &s.have_count, cap, id);
+                _ = cap;
+            }
+        } else if (startsWith(line, "pack ")) {
+            var id: [20]u8 = undefined;
+            if (parseStateLineId(line[5..], &id)) {
+                var cap = s.pack_raw.len / 20;
+                rawAdd(s.pack_raw, &s.pack_count, cap, id);
+                _ = cap;
+            }
+        } else if (startsWith(line, "prefix ")) {
+            var rest = line[7..];
+            var id: [20]u8 = undefined;
+            if (parseStateLineId(rest, &id)) {
+                s.has_prefix = true;
+                var k: usize = 0;
+                while (k < 20) : (k += 1) s.prefix_id[k] = id[k];
+                rest = rest[40..];
+                while (rest.len > 0 and rest[0] == ' ') rest = rest[1..];
+                var sp = 0;
+                while (sp < rest.len and rest[sp] != ' ') : (sp += 1) {}
+                s.prefix_bytes = parseDecSlice(rest[0..sp]);
+                if (sp < rest.len) {
+                    rest = rest[sp + 1..];
+                    s.prefix_entries = parseDecSlice(rest);
+                }
+            }
+        }
+    }
+    return saw_header;
+}
+
+fn textAppend(dst: []u8, pos: *usize, src: []const u8) void {
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) dst[pos.* + i] = src[i];
+    pos.* += src.len;
+}
+
+fn textAppendId(dst: []u8, pos: *usize, id: [20]u8) void {
+    hexId(id, dst[pos.* .. pos.* + 40]);
+    pos.* += 40;
+}
+
+fn discHead(disc: *const Discovery, head_target: *[]const u8, head_id: *[20]u8, has_head: *bool) void {
+    head_target.* = disc.head_target;
+    var hk: usize = 0;
+    while (hk < 20) : (hk += 1) head_id.*[hk] = disc.head_id[hk];
+    has_head.* = disc.has_head;
+    if (head_target.*.len != 0 and !has_head.*) {
+        var i: usize = 0;
+        while (i < disc.refs.len) : (i += 1) {
+            if (eq(disc.refs[i].name, head_target.*)) {
+                var k: usize = 0;
+                while (k < 20) : (k += 1) head_id.*[k] = disc.refs[i].id[k];
+                has_head.* = true;
+                break;
+            }
+        }
+    }
+    if (!has_head.*) {
+        var i: usize = 0;
+        while (i < disc.refs.len) : (i += 1) {
+            if (startsWith(disc.refs[i].name, "refs/heads/")) {
+                head_target.* = disc.refs[i].name;
+                var k: usize = 0;
+                while (k < 20) : (k += 1) head_id.*[k] = disc.refs[i].id[k];
+                has_head.* = true;
+                break;
+            }
+        }
+    }
+}
+
+fn stateSave(arena: *arena_mod.Arena, git_dir: []const u8, s: *const State, disc: *const Discovery) repo.GitError!void {
+    var ref_names: usize = 0;
+    var ri: usize = 0;
+    while (ri < disc.refs.len) : (ri += 1) ref_names += disc.refs[ri].name.len + 56;
+    const total = 4096 + s.url.len + ref_names + (s.shallow_count + s.have_count + s.pack_count) * 52;
+    const raw = arena_mod.alloc(arena, total) catch return error.OutOfMemory;
+    const out = raw[0..total];
+    var pos: usize = 0;
+    textAppend(out, &pos, "z9git-state 1\n");
+    textAppend(out, &pos, "url ");
+    textAppend(out, &pos, s.url);
+    textAppend(out, &pos, "\n");
+    textAppend(out, &pos, "depth ");
+    appendDecAt(out, &pos, @intCast(u64, s.depth));
+    textAppend(out, &pos, "\n");
+    textAppend(out, &pos, if (s.partial) "partial 1\n" else "partial 0\n");
+    var i: usize = 0;
+    while (i < s.shallow_count) : (i += 1) {
+        var id: [20]u8 = undefined;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) id[k] = s.shallow_raw[i * 20 + k];
+        textAppend(out, &pos, "shallow ");
+        textAppendId(out, &pos, id);
+        textAppend(out, &pos, "\n");
+    }
+    i = 0;
+    while (i < s.have_count) : (i += 1) {
+        var id: [20]u8 = undefined;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) id[k] = s.have_raw[i * 20 + k];
+        textAppend(out, &pos, "have ");
+        textAppendId(out, &pos, id);
+        textAppend(out, &pos, "\n");
+    }
+    i = 0;
+    while (i < s.pack_count) : (i += 1) {
+        var id: [20]u8 = undefined;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) id[k] = s.pack_raw[i * 20 + k];
+        textAppend(out, &pos, "pack ");
+        textAppendId(out, &pos, id);
+        textAppend(out, &pos, "\n");
+    }
+    if (s.has_prefix) {
+        textAppend(out, &pos, "prefix ");
+        textAppendId(out, &pos, s.prefix_id);
+        textAppend(out, &pos, " ");
+        appendDecAt(out, &pos, s.prefix_bytes);
+        textAppend(out, &pos, " ");
+        appendDecAt(out, &pos, s.prefix_entries);
+        textAppend(out, &pos, "\n");
+    }
+    i = 0;
+    while (i < disc.refs.len) : (i += 1) {
+        textAppend(out, &pos, "ref ");
+        textAppendId(out, &pos, disc.refs[i].id);
+        textAppend(out, &pos, " ");
+        textAppend(out, &pos, disc.refs[i].name);
+        textAppend(out, &pos, "\n");
+    }
+    var head_target: []const u8 = "";
+    var head_id: [20]u8 = undefined;
+    var has_head = false;
+    discHead(disc, &head_target, &head_id, &has_head);
+    if (startsWith(head_target, "refs/")) {
+        textAppend(out, &pos, "head ");
+        textAppend(out, &pos, head_target);
+        textAppend(out, &pos, "\n");
+    } else if (has_head) {
+        textAppend(out, &pos, "head-id ");
+        textAppendId(out, &pos, head_id);
+        textAppend(out, &pos, "\n");
+    }
+    const path = joinUrl(arena, git_dir, "/z9git-state") catch return error.OutOfMemory;
+    file_mod.writeAll(path, out[0..pos]) catch return error.Io;
+}
+
+fn headerString(head: *http.Response, name: []const u8) []const u8 {
+    var i: usize = 0;
+    while (i < head.headers.len) : (i += 1) {
+        if (headerNameEq(head.headers[i].name, name)) return head.headers[i].value;
+    }
+    return "";
+}
+
+fn resolveLocation(arena: *arena_mod.Arena, base: []const u8, loc: []const u8) ![]u8 {
+    if (startsWith(loc, "http://") or startsWith(loc, "https://")) {
+        return joinUrl(arena, loc, "") catch return error.OutOfMemory;
+    }
+    const sep = findFrom(base, "://", 0);
+    if (sep >= base.len) return error.Transport;
+    var auth_end = sep + 3;
+    while (auth_end < base.len and base[auth_end] != '/' and base[auth_end] != '?') : (auth_end += 1) {}
+    const origin = base[0..auth_end];
+    if (loc.len > 0 and loc[0] == '/') {
+        return joinUrl(arena, origin, loc) catch return error.OutOfMemory;
+    }
+    var cut = base.len;
+    while (cut > auth_end and base[cut - 1] != '/') cut -= 1;
+
+    var prefix: []const u8 = base[0..cut];
+    if (cut == base.len) {
+        prefix = joinUrl(arena, base, "/") catch return error.OutOfMemory;
+    }
+    return joinUrl(arena, prefix, loc) catch return error.OutOfMemory;
+}
+
+fn normalizeUrl(arena: *arena_mod.Arena, url: []const u8) repo.GitError![]const u8 {
     const parts = parseUrl(url) catch return error.Transport;
-    const info_url = joinUrl(arena, parts.base_url, "/info/refs?service=git-upload-pack") catch return error.OutOfMemory;
-    const post_url = joinUrl(arena, parts.base_url, "/git-upload-pack") catch return error.OutOfMemory;
+    var base = parts.base_url;
+    const is_code_host = eq(parts.host, "github.com") or eq(parts.host, "gitlab.com");
+    if (is_code_host and !endsWith(base, ".git")) {
+        return joinUrl(arena, base, ".git") catch return error.OutOfMemory;
+    }
+    return base;
+}
 
-    var get_t = try openTransport(factory, info_url);
-    var info_resp: http.Response = undefined;
-    http.httpGetOver(arena, &get_t, info_url, &info_resp) catch |e| {
+fn httpGetFollow(arena: *arena_mod.Arena, factory: *const TransportFactory, url0: []const u8, out: *http.Response) repo.GitError!void {
+    var url = url0;
+    var tries: usize = 0;
+    while (tries < 6) : (tries += 1) {
+        var t = try openTransport(factory, url);
+        http.httpGetOver(arena, &t, url, out) catch |e| {
+            if (e == error.OutOfMemory) return error.OutOfMemory;
+            if (e == error.BadResponse) return error.Protocol;
+            if (e == error.BadHeader) return error.Protocol;
+            if (e == error.TooLarge) return error.Protocol;
+            return error.Transport;
+        };
+        if (out.status == 301 or out.status == 302 or out.status == 303 or out.status == 307) {
+            const loc = headerString(out, "location");
+            if (loc.len == 0) return error.Protocol;
+            url = resolveLocation(arena, url, loc) catch return error.OutOfMemory;
+            continue;
+        }
+        return;
+    }
+    return error.Transport;
+}
+
+fn installPack(arena: *arena_mod.Arena, dest_git: []const u8, tmp_pack: []const u8, tmp_idx: []const u8, id: [20]u8) repo.GitError!void {
+    pack_mod.setTempDir(dest_git);
+    pack_mod.idxSynthesize(arena, tmp_pack, tmp_idx) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
-        if (e == error.BadResponse) return error.Protocol;
-        if (e == error.BadHeader) return error.Protocol;
-        if (e == error.TooLarge) return error.Protocol;
-        return error.Transport;
+        if (e == error.WriteFailed) return error.DiskFull;
+        if (e == error.OpenFailed) return error.Io;
+        if (e == error.ReadFailed) return error.Io;
+        return error.ObjectStore;
     };
-    if (info_resp.status != 200) return error.Transport;
+    var hexbuf: [40]u8 = undefined;
+    hexId(id, hexbuf[0..40]);
+    const pack_dir = joinUrl(arena, dest_git, "/objects/pack/pack-") catch return error.OutOfMemory;
+    const stem = joinUrl(arena, pack_dir, hexbuf[0..40]) catch return error.OutOfMemory;
+    const final_pack = joinUrl(arena, stem, ".pack") catch return error.OutOfMemory;
+    const final_idx = joinUrl(arena, stem, ".idx") catch return error.OutOfMemory;
+    if (file_mod.exists(final_pack)) file_mod.remove(final_pack) catch return error.Io;
+    if (file_mod.exists(final_idx)) file_mod.remove(final_idx) catch return error.Io;
+    file_mod.rename(tmp_pack, final_pack) catch {
+        removeIfExists(final_idx);
+        return error.Io;
+    };
+    file_mod.rename(tmp_idx, final_idx) catch {
+        removeIfExists(final_pack);
+        removeIfExists(final_idx);
+        return error.Io;
+    };
+}
 
-    const disc = try parseDiscovery(arena, info_resp.body);
-    const req_body = try buildRequest(arena, disc.refs);
+fn stateAddPack(s: *State, id: [20]u8) void {
+    const cap = s.pack_raw.len / 20;
+    rawAdd(s.pack_raw, &s.pack_count, cap, id);
+}
 
-    const dest_git = try repo.prepareCloneDirs(arena, dest_dir);
-    const tmp_path = joinUrl(arena, dest_git, "/objects/pack/tmp_http_pack.pack") catch return error.OutOfMemory;
-    const tmp_idx = joinUrl(arena, dest_git, "/objects/pack/tmp_http_pack.idx") catch return error.OutOfMemory;
-    if (file_mod.exists(tmp_path)) file_mod.remove(tmp_path) catch return error.Io;
-    if (file_mod.exists(tmp_idx)) file_mod.remove(tmp_idx) catch return error.Io;
+fn stateAddHave(s: *State, id: [20]u8) void {
+    const cap = s.have_raw.len / 20;
+    rawAdd(s.have_raw, &s.have_count, cap, id);
+}
+
+fn addCompleteHaves(arena: *arena_mod.Arena, dest_git: []const u8, disc: *const Discovery, partial: bool, s: *State) void {
+    var i: usize = 0;
+    while (i < disc.refs.len) : (i += 1) {
+        if (startsWith(disc.refs[i].name, "refs/pull/")) continue;
+        if (rawHas(s.have_raw, s.have_count, disc.refs[i].id)) continue;
+        const ok = repo.tipClosureComplete(arena, dest_git, disc.refs[i].id, partial) catch false;
+        if (ok) stateAddHave(s, disc.refs[i].id);
+    }
+}
+
+
+
+const Attempt = struct {
+    complete: bool,
+    id: [20]u8,
+    pack_bytes: u64,
+    shallow_raw: []u8,
+    shallow_count: usize,
+    status: u16,
+    fail_kind: u8,
+    transport: bool,
+    redirect: []const u8,
+};
+
+fn postPack(arena: *arena_mod.Arena, factory: *const TransportFactory, post_url: []const u8, req_body: []const u8, max_down_bps: u32, dest_git: []const u8, tmp_path: []const u8, tmp_idx: []const u8, out: *Attempt) repo.GitError!void {
+    out.complete = false;
+    out.pack_bytes = 0;
+    out.status = 0;
+    out.fail_kind = 0;
+    out.transport = false;
+    out.redirect = "";
+    out.shallow_count = 0;
+    const empty_shallow = arena_mod.alloc(arena, 0) catch return error.OutOfMemory;
+    out.shallow_raw = empty_shallow[0..0];
+
+    var i: usize = 0;
+    while (i < 20) : (i += 1) out.id[i] = 0;
+    removeIfExists(tmp_path);
+    removeIfExists(tmp_idx);
     const pack_file = file_mod.open(arena, tmp_path, file_mod.Mode.Write) catch return error.Io;
 
     var no_headers: [1]http.Header = undefined;
@@ -968,104 +1550,250 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
     ps.pack_hdr_len = 0;
     ps.pack_count = 0;
     ps.guard_next = 0;
-    var tmp_live = true;
-    var pack_open = true;
-    defer {
-        if (pack_open) file_mod.close(&ps.file);
-        if (tmp_live) removeIfExists(tmp_path);
-        removeIfExists(tmp_idx);
-    }
+    ps.shallow_count = 0;
     var sink = http.ResponseSink{
         .state = @ptrCast(*void, &ps),
         .write_fn = packSinkWrite,
     };
-    var post_t = try openTransport(factory, post_url);
-
+    var post_t = openTransport(factory, post_url) catch {
+        file_mod.close(&ps.file);
+        out.transport = true;
+        return;
+    };
     http.httpPostStreamOver(arena, &post_t, post_url, req_body, "application/x-git-upload-pack-request", "application/x-git-upload-pack-result", &sink, &head) catch |e| {
-        if (head.status != 0 and head.status != 200) return error.Transport;
-        if (ps.fail_kind == KIND_DISK_FULL) return error.DiskFull;
-        if (ps.fail_kind == KIND_IO) return error.Io;
-        if (ps.fail_kind == KIND_PROTOCOL) return error.Protocol;
-        if (e == error.OutOfMemory) return error.OutOfMemory;
-        if (e == error.BadResponse) return error.Protocol;
-        if (e == error.BadHeader) return error.Protocol;
-        if (e == error.TooLarge) return error.Protocol;
-        return error.Transport;
+        if (e == error.OutOfMemory) {
+            file_mod.close(&ps.file);
+            return error.OutOfMemory;
+        }
+        out.fail_kind = ps.fail_kind;
+        if (ps.fail_kind == 0) out.transport = true;
     };
     file_mod.close(&ps.file);
-    pack_open = false;
-    if (head.status != 200) return error.Transport;
-    if (ps.fail_kind == KIND_DISK_FULL) return error.DiskFull;
-    if (ps.fail_kind == KIND_IO) return error.Io;
-    if (ps.fail_kind == KIND_PROTOCOL) return error.Protocol;
-    if (!ps.pack_started or ps.hold_len != 20) return error.Protocol;
+
+    out.status = head.status;
+    out.pack_bytes = ps.pack_bytes;
+    out.fail_kind = ps.fail_kind;
+    const sc = ps.shallow_count;
+    const sraw = arena_mod.alloc(arena, if (sc == 0) 0 else sc * 20) catch return error.OutOfMemory;
+    i = 0;
+    while (i < sc * 20) : (i += 1) sraw[i] = ps.shallow_raw[i];
+    out.shallow_raw = sraw[0 .. sc * 20];
+    out.shallow_count = sc;
+
+    if (head.status == 301 or head.status == 302 or head.status == 303 or head.status == 307) {
+        out.redirect = headerString(&head, "location");
+        return;
+    }
+    if (head.status != 200) return;
+    if (!ps.pack_started or ps.hold_len != 20) return;
 
     var digest: [20]u8 = undefined;
     crypto.sha1Final(&ps.hasher, &digest);
     var trailer: [20]u8 = undefined;
     trailerOrder(&ps, &trailer);
-    if (!idEql(digest, trailer)) return error.Protocol;
+    if (!idEql(digest, trailer)) return;
+    out.complete = true;
+    i = 0;
+    while (i < 20) : (i += 1) out.id[i] = trailer[i];
+}
 
-    var hexbuf: [40]u8 = undefined;
-    hexId(trailer, hexbuf[0..40]);
-    const pack_path = joinUrl(arena, dest_git, "/objects/pack/pack-") catch return error.OutOfMemory;
-    const pack_name = joinUrl(arena, pack_path, hexbuf[0..40]) catch return error.OutOfMemory;
-    const final_pack = joinUrl(arena, pack_name, ".pack") catch return error.OutOfMemory;
-    const final_idx = joinUrl(arena, pack_name, ".idx") catch return error.OutOfMemory;
-    // Synthesize the idx beside the temp pack and only rename both into place
-    // after success, so a write failure cannot leave a final pack without idx.
+fn tryPrefix(arena: *arena_mod.Arena, dest_git: []const u8, tmp_path: []const u8, s: *State) bool {
+    const tmp_pack = joinUrl(arena, dest_git, "/objects/pack/tmp_prefix.pack") catch return false;
+    const tmp_idx = joinUrl(arena, dest_git, "/objects/pack/tmp_prefix.idx") catch return false;
+    removeIfExists(tmp_pack);
+    removeIfExists(tmp_idx);
     pack_mod.setTempDir(dest_git);
-    pack_mod.idxSynthesize(arena, tmp_path, tmp_idx) catch |e| {
-        if (e == error.OutOfMemory) return error.OutOfMemory;
-        if (e == error.WriteFailed) return error.DiskFull;
-        if (e == error.OpenFailed) return error.Io;
-        if (e == error.ReadFailed) return error.Io;
-        return error.ObjectStore;
-    };
-    if (file_mod.exists(final_pack)) file_mod.remove(final_pack) catch return error.Io;
-    if (file_mod.exists(final_idx)) file_mod.remove(final_idx) catch return error.Io;
-    file_mod.rename(tmp_path, final_pack) catch {
-        removeIfExists(final_idx);
-        return error.Io;
-    };
-    file_mod.rename(tmp_idx, final_idx) catch {
-        removeIfExists(final_pack);
-        removeIfExists(final_idx);
-        return error.Io;
-    };
-    tmp_live = false;
+    var info: pack_mod.PrefixInfo = undefined;
+    pack_mod.prefixFinalize(arena, tmp_path, tmp_pack, tmp_idx, &info) catch {
 
-    var head_target = disc.head_target;
+        removeIfExists(tmp_pack);
+        removeIfExists(tmp_idx);
+        removeIfExists(tmp_path);
+        return false;
+    };
+
+    installPack(arena, dest_git, tmp_pack, tmp_idx, info.id) catch {
+        removeIfExists(tmp_pack);
+        removeIfExists(tmp_idx);
+        removeIfExists(tmp_path);
+        return false;
+    };
+    removeIfExists(tmp_pack);
+    removeIfExists(tmp_idx);
+    removeIfExists(tmp_path);
+    stateAddPack(s, info.id);
+    s.has_prefix = true;
+    var pk: usize = 0;
+    while (pk < 20) : (pk += 1) s.prefix_id[pk] = info.id[pk];
+
+    s.prefix_bytes = info.body_bytes;
+    s.prefix_entries = info.entries;
+    return true;
+}
+
+const WantOpts = struct {
+    post_url: []const u8,
+    dest_git: []const u8,
+    max_down_bps: u32,
+    depth: u32,
+    deepen_relative: bool,
+    partial: bool,
+    shallow_raw: []const u8,
+    shallow_count: usize,
+};
+
+const DownloadResult = struct {
+    shallow_raw: []u8,
+    shallow_count: usize,
+};
+
+fn downloadWanted(arena: *arena_mod.Arena, factory: *const TransportFactory, disc: *const Discovery, opts: *WantOpts, s: *State) repo.GitError!DownloadResult {
+    var want_raw: []u8 = undefined;
+    var want_count: usize = 0;
+    try collectWanted(arena, disc.refs, &want_raw, &want_count);
+    const tmp_path = joinUrl(arena, opts.dest_git, "/objects/pack/tmp_http_pack.pack") catch return error.OutOfMemory;
+    const tmp_idx = joinUrl(arena, opts.dest_git, "/objects/pack/tmp_http_pack.idx") catch return error.OutOfMemory;
+    var attempts: usize = 0;
+    while (attempts < MAX_ATTEMPTS) : (attempts += 1) {
+        const req = try buildRequestEx(arena, want_raw, want_count, s.have_raw, s.have_count, opts.depth, opts.deepen_relative, opts.shallow_raw, opts.shallow_count, opts.partial);
+        var at: Attempt = undefined;
+        try postPack(arena, factory, opts.post_url, req, opts.max_down_bps, opts.dest_git, tmp_path, tmp_idx, &at);
+
+
+        if (at.redirect.len != 0) {
+            opts.post_url = resolveLocation(arena, opts.post_url, at.redirect) catch return error.OutOfMemory;
+            removeIfExists(tmp_path);
+            removeIfExists(tmp_idx);
+            continue;
+        }
+        if (at.complete) {
+            try installPack(arena, opts.dest_git, tmp_path, tmp_idx, at.id);
+            stateAddPack(s, at.id);
+
+            s.shallow_raw = at.shallow_raw;
+            s.shallow_count = at.shallow_count;
+            s.depth = opts.depth;
+            try stateSave(arena, opts.dest_git, s, disc);
+            var r: DownloadResult = undefined;
+            r.shallow_raw = at.shallow_raw;
+            r.shallow_count = at.shallow_count;
+            return r;
+        }
+        if (at.status != 0 and at.status != 200 and at.pack_bytes <= 12) {
+            removeIfExists(tmp_path);
+            removeIfExists(tmp_idx);
+            if (at.status >= 400) return error.Transport;
+            return error.Protocol;
+        }
+        const pref_ok = tryPrefix(arena, opts.dest_git, tmp_path, s);
+
+        if (pref_ok) {
+            s.shallow_raw = at.shallow_raw;
+            s.shallow_count = at.shallow_count;
+
+            s.depth = opts.depth;
+            addCompleteHaves(arena, opts.dest_git, disc, opts.partial, s);
+            try stateSave(arena, opts.dest_git, s, disc);
+            continue;
+        }
+        removeIfExists(tmp_path);
+        removeIfExists(tmp_idx);
+        if (at.fail_kind == KIND_DISK_FULL) return error.DiskFull;
+        if (at.fail_kind == KIND_IO) return error.Io;
+        if (at.fail_kind == KIND_PROTOCOL) return error.Protocol;
+        return error.Transport;
+    }
+    removeIfExists(tmp_path);
+    removeIfExists(tmp_idx);
+    return error.Transport;
+}
+
+fn downloadBlobIds(arena: *arena_mod.Arena, factory: *const TransportFactory, post_url0: []const u8, dest_git: []const u8, max_down_bps: u32, want_raw: []const u8, want_count: usize) repo.GitError!void {
+    const tmp_path = joinUrl(arena, dest_git, "/objects/pack/tmp_http_blob.pack") catch return error.OutOfMemory;
+    const tmp_idx = joinUrl(arena, dest_git, "/objects/pack/tmp_http_blob.idx") catch return error.OutOfMemory;
+    var post_url = post_url0;
+    var attempts: usize = 0;
+    while (attempts < MAX_ATTEMPTS) : (attempts += 1) {
+        const req = try buildRequestEx(arena, want_raw, want_count, want_raw, 0, 0, false, want_raw, 0, false);
+        var at: Attempt = undefined;
+        try postPack(arena, factory, post_url, req, max_down_bps, dest_git, tmp_path, tmp_idx, &at);
+        if (at.redirect.len != 0) {
+            post_url = resolveLocation(arena, post_url, at.redirect) catch return error.OutOfMemory;
+            removeIfExists(tmp_path);
+            removeIfExists(tmp_idx);
+            continue;
+        }
+        if (at.complete) {
+            try installPack(arena, dest_git, tmp_path, tmp_idx, at.id);
+            return;
+        }
+        removeIfExists(tmp_path);
+        removeIfExists(tmp_idx);
+        if (at.status != 0 and at.status != 200) return error.Transport;
+        if (at.fail_kind == KIND_DISK_FULL) return error.DiskFull;
+        if (at.fail_kind == KIND_IO) return error.Io;
+        if (at.fail_kind == KIND_PROTOCOL) return error.Protocol;
+    }
+    return error.Transport;
+}
+
+fn worktreeOf(git_dir: []const u8) []const u8 {
+    if (endsWith(git_dir, "/.git")) return git_dir[0 .. git_dir.len - 5];
+    if (eq(git_dir, ".git")) return ".";
+    return git_dir;
+}
+
+pub fn httpCloneOverOpts(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const u8, max_down_bps: u32, depth0: u32, partial0: bool, factory: *const TransportFactory) repo.GitError!void {
+    const norm = try normalizeUrl(arena, url);
+    const parts = parseUrl(norm) catch return error.Transport;
+    const info_url = joinUrl(arena, norm, "/info/refs?service=git-upload-pack") catch return error.OutOfMemory;
+    var post_url: []const u8 = joinUrl(arena, norm, "/git-upload-pack") catch return error.OutOfMemory;
+
+    _ = parts;
+
+    var info_resp: http.Response = undefined;
+    try httpGetFollow(arena, factory, info_url, &info_resp);
+    if (info_resp.status != 200) return error.Transport;
+    const disc = try parseDiscovery(arena, info_resp.body);
+
+    const dest_git = try repo.prepareCloneDirs(arena, dest_dir);
+    var st: State = undefined;
+    const had_state = stateLoad(arena, dest_git, &st);
+    _ = had_state;
+    var depth = depth0;
+
+
+    var partial = partial0;
+    if (depth == 0 and st.depth > 0) depth = st.depth;
+    if (st.partial) partial = true;
+    st.url = norm;
+
+    var opts = WantOpts{
+        .post_url = post_url,
+        .dest_git = dest_git,
+        .max_down_bps = max_down_bps,
+        .depth = depth,
+        .deepen_relative = false,
+        .partial = partial,
+        .shallow_raw = st.shallow_raw,
+        .shallow_count = st.shallow_count,
+    };
+    const res = try downloadWanted(arena, factory, &disc, &opts, &st);
+    post_url = opts.post_url;
+    st.url = norm;
+    st.depth = depth;
+    st.partial = partial;
+    st.shallow_raw = res.shallow_raw;
+    st.shallow_count = res.shallow_count;
+    try repo.writeShallow(arena, dest_git, st.shallow_raw, st.shallow_count);
+
+    var head_target: []const u8 = "";
     var head_id: [20]u8 = undefined;
-    var hk: usize = 0;
-    while (hk < 20) : (hk += 1) head_id[hk] = disc.head_id[hk];
-    var has_head = disc.has_head;
-    if (head_target.len != 0 and !has_head) {
-        var i: usize = 0;
-        while (i < disc.refs.len) : (i += 1) {
-            if (eq(disc.refs[i].name, head_target)) {
-                var k: usize = 0;
-                while (k < 20) : (k += 1) head_id[k] = disc.refs[i].id[k];
-                has_head = true;
-                break;
-            }
-        }
-    }
-    if (!has_head) {
-        var i: usize = 0;
-        while (i < disc.refs.len) : (i += 1) {
-            if (startsWith(disc.refs[i].name, "refs/heads/")) {
-                head_target = disc.refs[i].name;
-                var k: usize = 0;
-                while (k < 20) : (k += 1) head_id[k] = disc.refs[i].id[k];
-                has_head = true;
-                break;
-            }
-        }
-    }
+    var has_head = false;
+    discHead(&disc, &head_target, &head_id, &has_head);
     if (!has_head) return error.Protocol;
 
-    var entries_raw = arena_mod.alloc(arena, disc.refs.len * @sizeOf(repo.RefEntry)) catch return error.OutOfMemory;
+    const entries_raw = arena_mod.alloc(arena, disc.refs.len * @sizeOf(repo.RefEntry)) catch return error.OutOfMemory;
     const entries = @ptrCast([*]repo.RefEntry, entries_raw)[0..disc.refs.len];
     var i: usize = 0;
     while (i < disc.refs.len) : (i += 1) {
@@ -1074,8 +1802,115 @@ pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const
         while (k < 20) : (k += 1) entries[i].id[k] = disc.refs[i].id[k];
     }
     try repo.installRefs(arena, dest_dir, entries, head_target, head_id, has_head);
+    try stateSave(arena, dest_git, &st, &disc);
+
+    if (partial) {
+        var blob_raw: []u8 = undefined;
+        var blob_count: usize = 0;
+        try repo.missingBlobsForRef(arena, dest_git, "", &blob_raw, &blob_count);
+        if (blob_count > 0) {
+            try downloadBlobIds(arena, factory, post_url, dest_git, max_down_bps, blob_raw, blob_count);
+            try stateSave(arena, dest_git, &st, &disc);
+        }
+    }
     try repo.checkoutHead(arena, dest_dir);
 }
+
+pub fn httpFetch(arena: *arena_mod.Arena, git_dir: []const u8, deepen: u32, max_down_bps: u32) repo.GitError!void {
+    var st: State = undefined;
+    if (!stateLoad(arena, git_dir, &st)) return error.Usage;
+    if (st.url.len == 0 or st.depth == 0) return error.Usage;
+    const norm = try normalizeUrl(arena, st.url);
+    const info_url = joinUrl(arena, norm, "/info/refs?service=git-upload-pack") catch return error.OutOfMemory;
+    var rf: RealFactory = undefined;
+    const parts0 = parseUrl(norm) catch return error.Transport;
+    rf.scheme = parts0.scheme;
+    rf.arena = arena;
+    rf.store_loaded = false;
+    var factory = TransportFactory{ .state = @ptrCast(*void, &rf), .open_fn = openReal };
+    var info_resp: http.Response = undefined;
+    try httpGetFollow(arena, &factory, info_url, &info_resp);
+    if (info_resp.status != 200) return error.Transport;
+    const disc = try parseDiscovery(arena, info_resp.body);
+    var hi: usize = 0;
+    while (hi < disc.refs.len) : (hi += 1) {
+        if (!startsWith(disc.refs[hi].name, "refs/pull/")) stateAddHave(&st, disc.refs[hi].id);
+    }
+    var new_depth: u64 = @intCast(u64, st.depth) + @intCast(u64, deepen);
+
+    if (new_depth > 4294967295) return error.Usage;
+    var opts = WantOpts{
+        .post_url = joinUrl(arena, norm, "/git-upload-pack") catch return error.OutOfMemory,
+        .dest_git = git_dir,
+        .max_down_bps = max_down_bps,
+        .depth = @intCast(u32, new_depth),
+        .deepen_relative = true,
+        .partial = st.partial,
+        .shallow_raw = st.shallow_raw,
+        .shallow_count = st.shallow_count,
+    };
+    const res = try downloadWanted(arena, &factory, &disc, &opts, &st);
+    st.url = norm;
+    st.depth = @intCast(u32, new_depth);
+    st.shallow_raw = res.shallow_raw;
+    st.shallow_count = res.shallow_count;
+    try repo.writeShallow(arena, git_dir, st.shallow_raw, st.shallow_count);
+
+    var head_target: []const u8 = "";
+    var head_id: [20]u8 = undefined;
+    var has_head = false;
+    discHead(&disc, &head_target, &head_id, &has_head);
+    if (!has_head) return error.Protocol;
+    const wt = worktreeOf(git_dir);
+    const entries_raw = arena_mod.alloc(arena, disc.refs.len * @sizeOf(repo.RefEntry)) catch return error.OutOfMemory;
+    const entries = @ptrCast([*]repo.RefEntry, entries_raw)[0..disc.refs.len];
+    var i: usize = 0;
+    while (i < disc.refs.len) : (i += 1) {
+        entries[i].name = disc.refs[i].name;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) entries[i].id[k] = disc.refs[i].id[k];
+    }
+    try repo.installRefs(arena, wt, entries, head_target, head_id, has_head);
+    try stateSave(arena, git_dir, &st, &disc);
+}
+
+pub fn httpFetchBlobsForRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []const u8, max_down_bps: u32) repo.GitError!void {
+    var st: State = undefined;
+    if (!stateLoad(arena, git_dir, &st)) return;
+    if (!st.partial or st.url.len == 0) return;
+    var want_raw: []u8 = undefined;
+    var want_count: usize = 0;
+    try repo.missingBlobsForRef(arena, git_dir, ref_name, &want_raw, &want_count);
+    if (want_count == 0) return;
+    const norm = try normalizeUrl(arena, st.url);
+    const parts = parseUrl(norm) catch return error.Transport;
+    var rf: RealFactory = undefined;
+    rf.scheme = parts.scheme;
+    rf.arena = arena;
+    rf.store_loaded = false;
+    var factory = TransportFactory{ .state = @ptrCast(*void, &rf), .open_fn = openReal };
+    const post_url = joinUrl(arena, norm, "/git-upload-pack") catch return error.OutOfMemory;
+    try downloadBlobIds(arena, &factory, post_url, git_dir, max_down_bps, want_raw, want_count);
+}
+
+pub fn httpCloneWithOpts(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const u8, max_down_bps: u32, depth: u32, partial: bool) repo.GitError!void {
+    const norm = try normalizeUrl(arena, url);
+    const parts = parseUrl(norm) catch return error.Transport;
+    var rf: RealFactory = undefined;
+    rf.scheme = parts.scheme;
+    rf.arena = arena;
+    rf.store_loaded = false;
+    var factory = TransportFactory{
+        .state = @ptrCast(*void, &rf),
+        .open_fn = openReal,
+    };
+    try httpCloneOverOpts(arena, url, dest_dir, max_down_bps, depth, partial, &factory);
+}
+
+pub fn httpCloneOver(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const u8, max_down_bps: u32, factory: *const TransportFactory) repo.GitError!void {
+    try httpCloneOverOpts(arena, url, dest_dir, max_down_bps, 0, false, factory);
+}
+
 
 pub fn httpClone(arena: *arena_mod.Arena, url: []const u8, dest_dir: []const u8, max_down_bps: u32) repo.GitError!void {
     const parts = parseUrl(url) catch return error.Transport;

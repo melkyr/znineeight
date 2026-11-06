@@ -11,8 +11,10 @@
 #   - file:// clone, clone-from-worktree source, packed-refs-only source;
 #   - pkt-line unit cases; mocked-transport smart HTTP with request-byte,
 #     streaming-pack, >1 MiB sink-split, cleanup and pacing assertions;
-#     end-to-end git http-backend over HTTP and HTTPS (>328 refs,
-#     tls_demo certs/store), plus an opt-in Z98_NET=1 GitHub probe;
+#     interrupted prefix + have resume/re-run; filter=blob:none partial clone;
+#     shallow boundary and deepen request; end-to-end git http-backend over
+#     HTTP/HTTPS (>328 refs, tls_demo certs/store) including --depth/--deepen,
+#     plus opt-in Z98_NET=1 GitHub redirect/TLS and GitLab probes;
 #   - -h rc0, bad args rc1, and a refused HTTP connection rc2 (no side effects);
 #   - Windows: bare -osw emit, MinGW no-CRT build through the emitted
 #     build_target.sh, check_win9x_imports.sh ... 9x PASS, then Wine clone+log
@@ -28,7 +30,7 @@
 # Env: ZIG       seed-built zig1_5_clean (default /tmp/p3_t8_base/zig1_5_clean)
 #      OUT       scratch dir (default /tmp/z9git_tier)
 #      WINEPREFIX default $OUT/wineprefix
-#      Z98_NET   set 1 to run the opt-in GitHub HTTPS probe (default skip)
+#      Z98_NET   set 1 to run the opt-in GitHub/GitLab HTTPS probes (default skip)
 
 set -u
 
@@ -486,15 +488,15 @@ else
     tail -10 "$OUT/linux/mock_404.log" | sed 's/^/       /'
 fi
 
-head -c 256 "$MOCK_DATA/upload" >"$MOCK_DATA/upload_trunc"
+head -c 20 "$MOCK_DATA/upload" >"$MOCK_DATA/upload_trunc"
 MOCK_TRUNC="$OUT/linux/clone_mock_trunc"
 rm -rf "$MOCK_TRUNC"
 "$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$MOCK_TRUNC" 0 \
     "$MOCK_DATA/info_refs" "$MOCK_DATA/upload_trunc" "$OUT/linux/mock_trunc_requests.log" \
     >"$OUT/linux/mock_trunc.log" 2>&1
 MOCK_TRUNC_RC=$?
-if [ "$MOCK_TRUNC_RC" -eq 3 ] && [ ! -e "$MOCK_TRUNC/.git/objects/pack/tmp_http_pack.pack" ]; then
-    pass_case "truncated pack is rc3 and removes tmp pack"
+if [ "$MOCK_TRUNC_RC" -eq 2 ] && [ ! -e "$MOCK_TRUNC/.git/objects/pack/tmp_http_pack.pack" ]; then
+    pass_case "truncated pack without a complete entry is rc2 and removes tmp pack"
 else
     fail_case "truncated pack classification/cleanup (rc=$MOCK_TRUNC_RC)"
     tail -10 "$OUT/linux/mock_trunc.log" | sed 's/^/       /'
@@ -559,6 +561,213 @@ if [ "$BIG_RC" -eq 0 ] && git --git-dir="$BIG_CLONE/.git" fsck --full --no-dangl
 else
     fail_case "git fsck rejected >1 MiB clone"
     tail -10 "$OUT/linux/mock_big_fsck.log" 2>/dev/null | sed 's/^/       /'
+fi
+
+echo "== resumable prefix + have fallback (mock) =="
+RSRC="$OUT/mock_resume_src"
+RREPO="$OUT/mock_resume.git"
+RDATA="$MOCK_DATA/resume"
+rm -rf "$RSRC" "$RREPO" "$RDATA"
+mkdir -p "$RSRC" "$RDATA"
+if ! (
+    cd "$RSRC" || exit 1
+    git init -q
+    git config user.name "z9 fixture"
+    git config user.email "z9@example.invalid"
+    mkdir -p a b
+    printf 'a1\n' >a/a.txt
+    printf 'b1\n' >b/b.txt
+    git add .
+    git commit -q -m "resume base"
+    printf 'a2\n' >a/a.txt
+    git add .
+    git commit -q -m "resume a"
+    git rev-parse HEAD >"$RDATA/A"
+    git checkout -q -b other HEAD~1
+    printf 'b2\n' >b/b.txt
+    git add .
+    git commit -q -m "resume b"
+    git rev-parse HEAD >"$RDATA/B"
+    git checkout -q other
+) >"$OUT/linux/resume_build.log" 2>&1; then
+    fail_case "prepare resume fixture"
+    tail -10 "$OUT/linux/resume_build.log" | sed 's/^/       /'
+    finish
+fi
+if ! git clone --bare --no-hardlinks -q "$RSRC" "$RREPO" >>"$OUT/linux/resume_build.log" 2>&1 || \
+   ! git --git-dir="$RREPO" symbolic-ref HEAD refs/heads/other >>"$OUT/linux/resume_build.log" 2>&1; then
+    fail_case "prepare resume bare fixture"
+    tail -10 "$OUT/linux/resume_build.log" | sed 's/^/       /'
+    finish
+fi
+RESUME_A=$(cat "$RDATA/A")
+RESUME_B=$(cat "$RDATA/B")
+git upload-pack --stateless-rpc --advertise-refs "$RREPO" >"$RDATA/adv" 2>"$OUT/linux/resume_adv.err"
+{ printf '001e# service=git-upload-pack\n0000'; cat "$RDATA/adv"; } >"$RDATA/info_refs"
+{ git --git-dir="$RREPO" rev-list --objects "$RESUME_A"; \
+  git --git-dir="$RREPO" rev-list --objects "$RESUME_B" --not "$RESUME_A"; } | awk '{print $1}' >"$RDATA/order"
+git --git-dir="$RREPO" pack-objects --stdout <"$RDATA/order" >"$RDATA/full.pack" 2>"$OUT/linux/resume_pack.err"
+if ! git --git-dir="$RREPO" index-pack -o "$RDATA/full.idx" "$RDATA/full.pack" >"$OUT/linux/resume_idx.log" 2>&1; then
+    fail_case "index resume fixture pack"
+    tail -10 "$OUT/linux/resume_idx.log" | sed 's/^/       /'
+    finish
+fi
+RESUME_BOFF=$(git --git-dir="$RREPO" verify-pack -v "$RDATA/full.idx" | awk -v b="$RESUME_B" '$1==b {print $5; exit}')
+if [ -z "$RESUME_BOFF" ]; then
+    fail_case "locate the second-branch pack offset"
+    finish
+fi
+head -c "$RESUME_BOFF" "$RDATA/full.pack" >"$RDATA/prefix.bin"
+git --git-dir="$RREPO" rev-list --objects "$RESUME_B" --not "$RESUME_A" | awk '{print $1}' | \
+    git --git-dir="$RREPO" pack-objects --stdout >"$RDATA/bonly.pack" 2>"$OUT/linux/resume_bonly.err"
+{ printf '0008NAK\n'; cat "$RDATA/prefix.bin"; } >"$RDATA/upload_prefix"
+{ printf '0008NAK\n'; cat "$RDATA/bonly.pack"; } >"$RDATA/upload_bonly"
+
+RESUME_CLONE="$OUT/linux/clone_resume_auto"
+RESUME_REQ="$OUT/linux/resume_auto_requests.log"
+rm -rf "$RESUME_CLONE"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$RESUME_CLONE" 0 \
+    "$RDATA/info_refs" "$RDATA/upload_prefix" "$RESUME_REQ" 200 identity "$RDATA/upload_bonly" \
+    >"$OUT/linux/resume_auto.log" 2>&1
+RESUME_RC=$?
+if [ "$RESUME_RC" -eq 0 ] && grep -q '^prefix ' "$RESUME_CLONE/.git/z9git-state" && \
+   grep -q "^have $RESUME_A" "$RESUME_CLONE/.git/z9git-state"; then
+    pass_case "aborted prefix clone finalizes the prefix, retries with have, and finishes"
+else
+    fail_case "aborted prefix clone did not resume (rc=$RESUME_RC)"
+    tail -15 "$OUT/linux/resume_auto.log" | sed 's/^/       /'
+    [ -f "$RESUME_CLONE/.git/z9git-state" ] && sed 's/^/       /' "$RESUME_CLONE/.git/z9git-state" | head -20
+fi
+if [ "$RESUME_RC" -eq 0 ] && grep -a -q "have $RESUME_A" "$RESUME_REQ"; then
+    pass_case "prefix retry sends have for the complete-closure commit"
+else
+    fail_case "prefix retry did not send the complete-closure have"
+    grep -a 'have ' "$RESUME_REQ" 2>/dev/null | sed 's/^/       /' | head
+fi
+RESUME_IDX_COUNT=$(find "$RESUME_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' | wc -l | tr -d ' ')
+if [ "$RESUME_RC" -eq 0 ] && [ "$RESUME_IDX_COUNT" -ge 2 ] && \
+   git --git-dir="$RESUME_CLONE/.git" fsck --full --no-dangling >"$OUT/linux/resume_fsck.log" 2>&1; then
+    pass_case "resumed clone keeps multiple packs and passes git fsck"
+else
+    fail_case "resumed clone packs/fsck failed"
+    tail -10 "$OUT/linux/resume_fsck.log" 2>/dev/null | sed 's/^/       /'
+fi
+if [ "$RESUME_RC" -eq 0 ] && \
+   git --git-dir="$RREPO" cat-file blob "$RESUME_B:a/a.txt" | cmp -s - "$RESUME_CLONE/a/a.txt" && \
+   git --git-dir="$RREPO" cat-file blob "$RESUME_B:b/b.txt" | cmp -s - "$RESUME_CLONE/b/b.txt"; then
+    pass_case "resumed clone worktree matches the second branch"
+else
+    fail_case "resumed clone worktree differs"
+fi
+
+RESUME_RERUN="$OUT/linux/clone_resume_rerun"
+rm -rf "$RESUME_RERUN"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$RESUME_RERUN" 0 \
+    "$RDATA/info_refs" "$RDATA/upload_prefix" "$OUT/linux/resume_rerun1.log" 200 identity \
+    >"$OUT/linux/resume_rerun1.out" 2>&1
+RESUME_RERUN1_RC=$?
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$RESUME_RERUN" 0 \
+    "$RDATA/info_refs" "$RDATA/upload_bonly" "$OUT/linux/resume_rerun2.log" 200 identity \
+    >"$OUT/linux/resume_rerun2.out" 2>&1
+RESUME_RERUN2_RC=$?
+if [ "$RESUME_RERUN1_RC" -ne 0 ] && grep -q '^prefix ' "$RESUME_RERUN/.git/z9git-state" && \
+   [ "$RESUME_RERUN2_RC" -eq 0 ] && \
+   git --git-dir="$RESUME_RERUN/.git" fsck --full --no-dangling >/dev/null 2>&1; then
+    pass_case "re-running clone resumes from .git/z9git-state and finishes"
+else
+    fail_case "clone re-run resume failed (rc1=$RESUME_RERUN1_RC rc2=$RESUME_RERUN2_RC)"
+fi
+
+echo "== partial clone (mock, filter=blob:none) =="
+PSRC="$OUT/mock_partial_src"
+PREPO="$OUT/mock_partial.git"
+PDATA="$MOCK_DATA/partial"
+rm -rf "$PSRC" "$PREPO" "$PDATA"
+mkdir -p "$PSRC" "$PDATA"
+if ! (
+    cd "$PSRC" || exit 1
+    git init -q
+    git config user.name "z9 fixture"
+    git config user.email "z9@example.invalid"
+    printf 'partial a\n' >a.txt
+    mkdir -p d
+    printf 'partial b\n' >d/b.txt
+    git add .
+    git commit -q -m "partial one"
+    printf 'partial a2\n' >a.txt
+    git commit -q -am "partial two"
+) >"$OUT/linux/partial_build.log" 2>&1 || \
+   ! git clone --bare --no-hardlinks -q "$PSRC" "$PREPO" >>"$OUT/linux/partial_build.log" 2>&1; then
+    fail_case "prepare partial-clone fixture"
+    tail -10 "$OUT/linux/partial_build.log" | sed 's/^/       /'
+    finish
+fi
+git upload-pack --stateless-rpc --advertise-refs "$PREPO" >"$PDATA/adv" 2>"$OUT/linux/partial_adv.err"
+{ printf '001e# service=git-upload-pack\n0000'; cat "$PDATA/adv"; } >"$PDATA/info_refs"
+git --git-dir="$PREPO" rev-list --objects --all | awk '{print $1}' >"$PDATA/objs"
+git --git-dir="$PREPO" pack-objects --stdout --revs --filter=blob:none <"$PDATA/objs" >"$PDATA/partial.pack" 2>"$OUT/linux/partial_pack.err"
+git --git-dir="$PREPO" cat-file --batch-check='%(objecttype) %(objectname)' <"$PDATA/objs" | \
+    awk '$1=="blob" {print $2}' >"$PDATA/blobids"
+git --git-dir="$PREPO" pack-objects --stdout <"$PDATA/blobids" >"$PDATA/blob.pack" 2>"$OUT/linux/partial_blob.err"
+{ printf '0008NAK\n'; cat "$PDATA/partial.pack"; } >"$PDATA/upload_partial"
+{ printf '0008NAK\n'; cat "$PDATA/blob.pack"; } >"$PDATA/upload_blob"
+PARTIAL_CLONE="$OUT/linux/clone_mock_partial"
+PARTIAL_REQ="$OUT/linux/partial_requests.log"
+rm -rf "$PARTIAL_CLONE"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$PARTIAL_CLONE" 0 \
+    "$PDATA/info_refs" "$PDATA/upload_partial" "$PARTIAL_REQ" 200 partial "$PDATA/upload_blob" \
+    >"$OUT/linux/partial_run.log" 2>&1
+PARTIAL_RC=$?
+if [ "$PARTIAL_RC" -eq 0 ] && grep -q '^partial 1' "$PARTIAL_CLONE/.git/z9git-state" && \
+   cmp -s "$PSRC/a.txt" "$PARTIAL_CLONE/a.txt" && cmp -s "$PSRC/d/b.txt" "$PARTIAL_CLONE/d/b.txt"; then
+    pass_case "partial clone fetches checkout blobs on demand and materializes the worktree"
+else
+    fail_case "partial clone failed (rc=$PARTIAL_RC)"
+    tail -15 "$OUT/linux/partial_run.log" | sed 's/^/       /'
+fi
+if [ "$PARTIAL_RC" -eq 0 ] && grep -a -q 'filter blob:none' "$PARTIAL_REQ"; then
+    pass_case "partial clone sends filter=blob:none"
+else
+    fail_case "partial clone request omitted filter=blob:none"
+fi
+if [ "$PARTIAL_RC" -eq 0 ] && \
+   [ "$(find "$PARTIAL_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' | wc -l | tr -d ' ')" -ge 2 ] && \
+   git --git-dir="$PARTIAL_CLONE/.git" fsck --full --no-dangling >"$OUT/linux/partial_fsck.log" 2>&1; then
+    pass_case "partial clone has the commit/tree and blob packs and passes git fsck"
+else
+    fail_case "partial clone packs/fsck failed"
+    tail -10 "$OUT/linux/partial_fsck.log" 2>/dev/null | sed 's/^/       /'
+fi
+
+echo "== shallow boundary and deepen request (mock) =="
+SH_DATA="$MOCK_DATA/shallow"
+mkdir -p "$SH_DATA"
+SH_TIP=$(git --git-dir="$TD/packed_repo" rev-parse refs/heads/master)
+{ printf '0035shallow %s\n0008NAK\n' "$SH_TIP"; cat "$MOCK_DATA/pack"; } >"$SH_DATA/upload"
+SH_CLONE="$OUT/linux/clone_mock_shallow"
+SH_REQ="$OUT/linux/mock_shallow_requests.log"
+rm -rf "$SH_CLONE"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$SH_CLONE" 0 \
+    "$MOCK_DATA/info_refs" "$SH_DATA/upload" "$SH_REQ" 200 shallow \
+    >"$OUT/linux/mock_shallow.log" 2>&1
+SH_RC=$?
+SH_LOG_LINES=$( cd "$SH_CLONE" 2>/dev/null && "$PROG" log 2>/dev/null | wc -l | tr -d ' ' )
+if [ "$SH_RC" -eq 0 ] && [ -f "$SH_CLONE/.git/shallow" ] && \
+   grep -q "^$SH_TIP$" "$SH_CLONE/.git/shallow" && [ "$SH_LOG_LINES" = "1" ]; then
+    pass_case "shallow clone writes .git/shallow and log stops at the boundary"
+else
+    fail_case "shallow clone boundary/log failed (rc=$SH_RC lines=$SH_LOG_LINES)"
+    tail -10 "$OUT/linux/mock_shallow.log" | sed 's/^/       /'
+fi
+if [ "$SH_RC" -eq 0 ] && grep -a -q 'deepen 1' "$SH_REQ"; then
+    pass_case "shallow clone sends deepen 1"
+else
+    fail_case "shallow clone request omitted deepen 1"
+fi
+if [ "$SH_RC" -eq 0 ] && grep -q '^depth 1$' "$SH_CLONE/.git/z9git-state"; then
+    pass_case "shallow clone records its depth in .git/z9git-state"
+else
+    fail_case "shallow clone state depth missing"
 fi
 
 echo "== end-to-end smart HTTP (git http-backend) =="
@@ -635,6 +844,29 @@ if [ "$HAVE_PYTHON" -eq 1 ] && [ -x "$(git --exec-path)/git-http-backend" ]; the
             tail -10 "$E2E/fsck.log" 2>/dev/null | sed 's/^/       /'
         fi
 
+        E2E_SHALLOW="$E2E/http_shallow"
+        rm -rf "$E2E_SHALLOW"
+        "$PROG" clone "http://127.0.0.1:$E2E_PORT/r.git" "$E2E_SHALLOW" --depth 1 \
+            >"$E2E/shallow.log" 2>&1
+        E2E_SHALLOW_RC=$?
+        E2E_SHALLOW_LOG=$( cd "$E2E_SHALLOW" 2>/dev/null && "$PROG" log 2>/dev/null | wc -l | tr -d ' ' )
+        if [ "$E2E_SHALLOW_RC" -eq 0 ] && [ -s "$E2E_SHALLOW/.git/shallow" ] && \
+           [ "$E2E_SHALLOW_LOG" = "1" ]; then
+            pass_case "e2e shallow clone --depth 1 writes .git/shallow and log stops at the boundary"
+        else
+            fail_case "e2e shallow clone failed (rc=$E2E_SHALLOW_RC lines=$E2E_SHALLOW_LOG)"
+            tail -15 "$E2E/shallow.log" 2>/dev/null | sed 's/^/       /'
+        fi
+        ( cd "$E2E_SHALLOW" 2>/dev/null && "$PROG" fetch --deepen 1 ) >"$E2E/deepen.log" 2>&1
+        E2E_DEEPEN_RC=$?
+        E2E_DEEPEN_LOG=$( cd "$E2E_SHALLOW" 2>/dev/null && "$PROG" log 2>/dev/null | wc -l | tr -d ' ' )
+        if [ "$E2E_DEEPEN_RC" -eq 0 ] && [ "$E2E_DEEPEN_LOG" -gt "$E2E_SHALLOW_LOG" ] && \
+           git --git-dir="$E2E_SHALLOW/.git" fsck --full --no-dangling >"$E2E/shallow_fsck.log" 2>&1; then
+            pass_case "e2e fetch --deepen 1 extends history past the shallow boundary"
+        else
+            fail_case "e2e fetch --deepen failed (rc=$E2E_DEEPEN_RC lines=$E2E_DEEPEN_LOG)"
+            tail -15 "$E2E/deepen.log" 2>/dev/null | sed 's/^/       /'
+        fi
         E2E_PACED="$E2E/http_paced"
         rm -rf "$E2E_PACED"
         PACE_T0=$(date +%s)
@@ -756,13 +988,15 @@ else
     echo "SKIP - end-to-end HTTPS smart HTTP: missing python3+ssl, git http-backend, or tls_demo certs/store"
 fi
 
-echo "== opt-in GitHub HTTPS probe =="
+echo "== opt-in GitHub/GitLab HTTPS probes =="
 if [ "${Z98_NET:-0}" = "1" ]; then
     GITHUB_CLONE="$OUT/github_hello"
     rm -rf "$GITHUB_CLONE"
-    if timeout 300 "$PROG" clone "https://github.com/octocat/Hello-World.git" "$GITHUB_CLONE" \
+    # No .git suffix exercises the GitHub .git/redirect normalization; depth 1
+    # exercises TLS, redirects, shallow and the trust store together.
+    if timeout 300 "$PROG" clone "https://github.com/octocat/Hello-World" "$GITHUB_CLONE" --depth 1 \
         >"$OUT/github_clone.log" 2>&1 && [ -d "$GITHUB_CLONE" ]; then
-        pass_case "GitHub octocat/Hello-World clone exit 0"
+        pass_case "GitHub octocat/Hello-World redirect/TLS/shallow clone exit 0"
         GITHUB_IDX=$(find "$GITHUB_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
         if [ -n "$GITHUB_IDX" ] && git verify-pack -v "$GITHUB_IDX" >"$OUT/github_verify.log" 2>&1; then
             pass_case "GitHub clone idx verifies"
@@ -770,12 +1004,34 @@ if [ "${Z98_NET:-0}" = "1" ]; then
             fail_case "GitHub clone idx failed verify-pack"
             tail -10 "$OUT/github_verify.log" 2>/dev/null | sed 's/^/       /'
         fi
+        if [ -s "$GITHUB_CLONE/.git/shallow" ]; then
+            pass_case "GitHub shallow boundary written"
+        else
+            fail_case "GitHub clone did not write .git/shallow"
+        fi
     else
         fail_case "GitHub probe (Z98_NET=1; see $OUT/github_clone.log)"
         tail -20 "$OUT/github_clone.log" | sed 's/^/       /'
     fi
+
+    GITLAB_CLONE="$OUT/gitlab_test"
+    rm -rf "$GITLAB_CLONE"
+    if timeout 300 "$PROG" clone "https://gitlab.com/gitlab-org/gitlab-test.git" "$GITLAB_CLONE" --depth 1 \
+        >"$OUT/gitlab_clone.log" 2>&1 && [ -d "$GITLAB_CLONE" ]; then
+        pass_case "GitLab smart-HTTP shallow clone exit 0"
+        GITLAB_IDX=$(find "$GITLAB_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' 2>/dev/null | head -1)
+        if [ -n "$GITLAB_IDX" ] && git verify-pack -v "$GITLAB_IDX" >"$OUT/gitlab_verify.log" 2>&1; then
+            pass_case "GitLab clone idx verifies"
+        else
+            fail_case "GitLab clone idx failed verify-pack"
+            tail -10 "$OUT/gitlab_verify.log" 2>/dev/null | sed 's/^/       /'
+        fi
+    else
+        fail_case "GitLab probe (Z98_NET=1; see $OUT/gitlab_clone.log)"
+        tail -20 "$OUT/gitlab_clone.log" | sed 's/^/       /'
+    fi
 else
-    echo "SKIP - GitHub HTTPS probe: set Z98_NET=1 to enable the network test"
+    echo "SKIP - GitHub/GitLab HTTPS probes: set Z98_NET=1 to enable the network tests"
 fi
 
 echo "== CLI contract =="
@@ -791,6 +1047,29 @@ if grep -q 'arena: --arena-mb <N> default 32' "$OUT/linux/help.out" && \
     pass_case "-h documents --arena-mb (default 32, minimum 16)"
 else
     fail_case "-h missing the --arena-mb policy"
+fi
+if grep -q -- '--depth <n>' "$OUT/linux/help.out" && \
+   grep -q -- '--deepen <n>' "$OUT/linux/help.out" && \
+   grep -q -- '--partial' "$OUT/linux/help.out" && \
+   grep -q 'resume: interrupted' "$OUT/linux/help.out"; then
+    pass_case "-h documents --depth/--deepen/--partial and resume"
+else
+    fail_case "-h missing the shallow/partial/resume contract"
+fi
+
+"$PROG" clone "$TD/packed_repo" "$OUT/linux/baddepth" --depth 0 >"$OUT/linux/baddepth.log" 2>&1
+BADDEPTH_RC=$?
+if [ "$BADDEPTH_RC" -eq 1 ]; then
+    pass_case "clone --depth 0 is a usage error rc1"
+else
+    fail_case "clone --depth 0 (rc=$BADDEPTH_RC)"
+fi
+"$PROG" fetch >"$OUT/linux/fetchmissing.log" 2>&1
+FETCHMISS_RC=$?
+if [ "$FETCHMISS_RC" -eq 1 ]; then
+    pass_case "fetch without --deepen is a usage error rc1"
+else
+    fail_case "fetch without --deepen (rc=$FETCHMISS_RC)"
 fi
 
 "$PROG" >"$OUT/linux/noargs.out" 2>&1

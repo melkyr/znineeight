@@ -1,7 +1,8 @@
 // cli.zig -- z9git command-line parsing and the exit-code contract.
 //
 // Commands:
-//   z9git clone <url> [dir] [--max-down <KB/s>]
+//   z9git clone <url> [dir] [--depth <n>] [--partial] [--max-down <KB/s>]
+//   z9git fetch --deepen <n>
 //   z9git log [ref]
 //   z9git checkout <ref>
 //   z9git -h | --help
@@ -26,7 +27,7 @@ pub const EXIT_PROTOCOL: i32 = 3;
 pub const EXIT_OBJECT_STORE: i32 = 4;
 pub const EXIT_IO: i32 = 5;
 
-pub const Command = enum { none, help, clone, log, checkout };
+pub const Command = enum { none, help, clone, fetch, log, checkout };
 
 pub const Args = struct {
     cmd: Command,
@@ -37,9 +38,13 @@ pub const Args = struct {
     has_ref: bool,
     max_down_kbps: u32,
     arena_mb: u32,
+    depth: u32,
+    deepen: u32,
+    partial: bool,
     help: bool,
     bad: bool,
 };
+
 
 pub const DEFAULT_ARENA_MB: u32 = 32;
 pub const MIN_ARENA_MB: u32 = 16;
@@ -91,16 +96,23 @@ fn parseArenaMb(s: []const u8) ?u32 {
 }
 
 pub fn usage() void {
-    writeMsg("usage: z9git clone <url> [dir] [--max-down <KB/s>] [--arena-mb <N>]\n");
+    writeMsg("usage: z9git clone <url> [dir] [--depth <n>] [--partial] [--max-down <KB/s>] [--arena-mb <N>]\n");
+    writeMsg("       z9git fetch --deepen <n> [--arena-mb <N>]\n");
     writeMsg("       z9git log [ref] [--arena-mb <N>]\n");
     writeMsg("       z9git checkout <ref> [--arena-mb <N>]\n");
     writeMsg("       z9git -h\n");
     writeMsg("  transports: <path> or file://<path>; http:// and https:// (smart HTTP)\n");
+    writeMsg("  resume: interrupted http(s) clones keep .git/z9git-state and a verified\n");
+    writeMsg("          prefix pack; re-run clone or fetch --deepen <n> to continue\n");
+    writeMsg("  shallow: --depth <n> writes .git/shallow; log stops at the boundary\n");
+    writeMsg("  partial: --partial requests filter=blob:none and fetches checkout blobs\n");
+    writeMsg("           on demand (recommended with --depth for modem/large repos)\n");
     writeMsg("  arena: --arena-mb <N> default 32, minimum 16, no hard upper bound;\n");
     writeMsg("         allocated dynamically so the OS can page, reset per phase, and\n");
     writeMsg("         large objects/packs spill to disk (external idx/temp sort)\n");
     writeMsg("exit codes: 0 ok, 1 usage, 2 transport, 3 protocol, 4 object-store, 5 io\n");
 }
+
 
 fn writeMsg(s: []const u8) void {
     if (s.len != 0) @stdoutWrite(s.ptr, s.len);
@@ -116,6 +128,9 @@ pub fn parse() Args {
         .has_ref = false,
         .max_down_kbps = 0,
         .arena_mb = DEFAULT_ARENA_MB,
+        .depth = 0,
+        .deepen = 0,
+        .partial = false,
         .help = false,
         .bad = false,
     };
@@ -124,6 +139,7 @@ pub fn parse() Args {
         a.bad = true;
         return a;
     }
+
     const cmd = os.argv(1);
     if (eq(cmd, "-h") or eq(cmd, "--help")) {
         a.cmd = Command.help;
@@ -166,7 +182,26 @@ pub fn parse() Args {
                     a.bad = true;
                     return a;
                 }
+            } else if (eq(tok, "--depth")) {
+                i += 1;
+                if (i >= n) {
+                    a.bad = true;
+                    return a;
+                }
+                if (parseU32(os.argv(i))) |v| {
+                    if (v == 0) {
+                        a.bad = true;
+                        return a;
+                    }
+                    a.depth = v;
+                } else {
+                    a.bad = true;
+                    return a;
+                }
+            } else if (eq(tok, "--partial")) {
+                a.partial = true;
             } else if (tok.len > 0 and tok[0] == '-') {
+
                 a.bad = true;
                 return a;
             } else {
@@ -185,7 +220,54 @@ pub fn parse() Args {
         if (positional < 1) a.bad = true;
         return a;
     }
+    if (eq(cmd, "fetch")) {
+        a.cmd = Command.fetch;
+        var i: usize = 2;
+        while (i < n) : (i += 1) {
+            const tok = os.argv(i);
+            if (eq(tok, "-h") or eq(tok, "--help")) {
+                a.cmd = Command.help;
+                a.help = true;
+                return a;
+            }
+            if (eq(tok, "--deepen")) {
+                i += 1;
+                if (i >= n) {
+                    a.bad = true;
+                    return a;
+                }
+                if (parseU32(os.argv(i))) |v| {
+                    if (v == 0) {
+                        a.bad = true;
+                        return a;
+                    }
+                    a.deepen = v;
+                } else {
+                    a.bad = true;
+                    return a;
+                }
+            } else if (eq(tok, "--arena-mb")) {
+                i += 1;
+                if (i >= n) {
+                    a.bad = true;
+                    return a;
+                }
+                if (parseArenaMb(os.argv(i))) |v| {
+                    a.arena_mb = v;
+                } else {
+                    a.bad = true;
+                    return a;
+                }
+            } else {
+                a.bad = true;
+                return a;
+            }
+        }
+        if (a.deepen == 0) a.bad = true;
+        return a;
+    }
     if (eq(cmd, "log")) {
+
         a.cmd = Command.log;
         var positional: usize = 0;
         var i: usize = 2;

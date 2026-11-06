@@ -690,6 +690,11 @@ fn copyMeta(arena: *arena_mod.Arena, head_dir: []const u8, common_dir: []const u
         const dst_pr = try join2(arena, dst_git, "/packed-refs");
         try copyFile(arena, src_pr, dst_pr);
     }
+    const src_shallow = try join2(arena, common_dir, "/shallow");
+    if (file_mod.exists(src_shallow)) {
+        const dst_shallow = try join2(arena, dst_git, "/shallow");
+        try copyFile(arena, src_shallow, dst_shallow);
+    }
 }
 
 // A linked worktree's gitdir carries a `commondir` file pointing at the main
@@ -1706,10 +1711,11 @@ fn idToBytes(dst: []u8, off: usize, id: ObjectId) void {
     while (i < 20) : (i += 1) dst[off + i] = id[i];
 }
 
-fn idFromBytes(src: []u8, off: usize, out: *ObjectId) void {
+fn idFromBytes(src: []const u8, off: usize, out: *ObjectId) void {
     var i: usize = 0;
     while (i < 20) : (i += 1) out[i] = src[off + i];
 }
+
 
 fn visitedHas(seen: []u8, count: usize, id: ObjectId) bool {
     var i: usize = 0;
@@ -1727,7 +1733,253 @@ fn visitedHas(seen: []u8, count: usize, id: ObjectId) bool {
     return false;
 }
 
+fn parseTagTarget(data: []const u8, out: *ObjectId) bool {
+    if (!startsWith(data, "object ")) return false;
+    if (data.len < 47) return false;
+    return parseId(data[7..47], out);
+}
+
+fn idInRaw(raw: []const u8, count: usize, id: ObjectId) bool {
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        var same = true;
+        var k: usize = 0;
+        while (k < 20) : (k += 1) {
+            if (raw[i * 20 + k] != id[k]) {
+                same = false;
+                break;
+            }
+        }
+        if (same) return true;
+    }
+    return false;
+}
+
+// Read `.git/shallow` into packed 20-byte ids.  A missing file is an empty
+// boundary; malformed lines are ignored so a partial write cannot wedge log.
+pub fn readShallow(arena: *arena_mod.Arena, git_dir: []const u8, out_raw: *[]u8, out_count: *usize) GitError!void {
+    out_count.* = 0;
+    const path = try join2(arena, git_dir, "/shallow");
+    if (!file_mod.exists(path)) return;
+    const data = file_mod.readAll(arena, path) catch return error.Io;
+    var cap: usize = data.len / 41 + 1;
+    if (cap == 0) cap = 1;
+    const raw = arena_mod.alloc(arena, cap * 20) catch return error.OutOfMemory;
+    var pos: usize = 0;
+    var count: usize = 0;
+    while (pos < data.len) {
+        var end = pos;
+        while (end < data.len and data[end] != '\n' and data[end] != '\r') : (end += 1) {}
+        if (end - pos >= 40) {
+            var id: ObjectId = undefined;
+            if (parseId(data[pos .. pos + 40], &id)) {
+                idToBytes(raw[0 .. cap * 20], count * 20, id);
+                count += 1;
+            }
+        }
+        pos = end;
+        while (pos < data.len and (data[pos] == '\n' or data[pos] == '\r')) : (pos += 1) {}
+    }
+    out_raw.* = raw[0 .. cap * 20];
+    out_count.* = count;
+}
+
+pub fn writeShallow(arena: *arena_mod.Arena, git_dir: []const u8, raw: []const u8, count: usize) GitError!void {
+    const path = try join2(arena, git_dir, "/shallow");
+    if (count == 0) {
+        file_mod.remove(path) catch {};
+        return;
+    }
+    const text = arena_mod.alloc(arena, count * 41) catch return error.OutOfMemory;
+    var pos: usize = 0;
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        var id: ObjectId = undefined;
+        idFromBytes(raw, i * 20, &id);
+        hexId(id, text[pos .. pos + 40]);
+        text[pos + 40] = '\n';
+        pos += 41;
+    }
+    file_mod.writeAll(path, text[0..pos]) catch return error.Io;
+}
+
+fn storeHas(arena: *arena_mod.Arena, s: *objects.Store, id: ObjectId) bool {
+    const lp = objects.loosePath(arena, s.git_dir, id) catch return false;
+    if (file_mod.exists(lp)) return true;
+    var i: usize = 0;
+    while (i < s.packs.len) : (i += 1) {
+        const off = pack_mod.idxFind(&s.packs[i].idx, id) catch null;
+        if (off != null) return true;
+    }
+    return false;
+}
+
+// True when every object reachable from `tip` is present locally.  In a partial
+// clone blobs are intentionally absent, so `ignore_blobs` limits the check to
+// the commit/tree closure the upload-pack `have` fallback can safely promise.
+pub fn tipClosureComplete(arena: *arena_mod.Arena, git_dir: []const u8, tip: ObjectId, ignore_blobs: bool) GitError!bool {
+    var store: objects.Store = undefined;
+    try openStore(arena, git_dir, &store);
+    defer objects.storeClose(&store);
+
+    const cap: usize = 65536;
+    const stack = arena_mod.alloc(arena, cap * 20) catch return error.OutOfMemory;
+    const seen = arena_mod.alloc(arena, cap * 20) catch return error.OutOfMemory;
+    var sp: usize = 0;
+    var seen_count: usize = 0;
+    idToBytes(stack[0 .. cap * 20], sp * 20, tip);
+    sp += 1;
+    while (sp > 0) {
+        sp -= 1;
+        var id: ObjectId = undefined;
+        idFromBytes(stack[0 .. cap * 20], sp * 20, &id);
+        if (visitedHas(seen[0 .. cap * 20], seen_count, id)) continue;
+        if (seen_count >= cap) return error.Protocol;
+        idToBytes(seen[0 .. cap * 20], seen_count * 20, id);
+        seen_count += 1;
+        var obj: objects.TypedObject = undefined;
+        readTyped(arena, &store, id, &obj) catch return false;
+        if (obj.ty == objects.ObjType.blob) {
+            objects.freeTyped(&obj);
+            continue;
+        }
+        if (obj.ty == objects.ObjType.commit) {
+            var tree: ObjectId = undefined;
+            commitTree(arena, &store, id, &tree) catch {
+                objects.freeTyped(&obj);
+                return false;
+            };
+            var parents: [32 * 20]u8 = undefined;
+            const pc = parseParents(obj.data, parents[0..]) catch {
+                objects.freeTyped(&obj);
+                return false;
+            };
+            if (sp + pc + 1 > cap) {
+                objects.freeTyped(&obj);
+                return error.Protocol;
+            }
+            idToBytes(stack[0 .. cap * 20], sp * 20, tree);
+            sp += 1;
+            var j: usize = 0;
+            while (j < pc) : (j += 1) {
+                var pid: ObjectId = undefined;
+                idFromBytes(parents[0..], j * 20, &pid);
+                idToBytes(stack[0 .. cap * 20], sp * 20, pid);
+                sp += 1;
+            }
+        } else if (obj.ty == objects.ObjType.tree) {
+            const entries = parseTree(arena, obj.data) catch {
+                objects.freeTyped(&obj);
+                return false;
+            };
+            if (sp + entries.len > cap) {
+                objects.freeTyped(&obj);
+                return error.Protocol;
+            }
+            var j: usize = 0;
+            while (j < entries.len) : (j += 1) {
+                if (entries[j].mode == MODE_GITLINK) continue;
+                if (ignore_blobs and !entries[j].is_dir) continue;
+                idToBytes(stack[0 .. cap * 20], sp * 20, entries[j].id);
+                sp += 1;
+            }
+        } else {
+            var target: ObjectId = undefined;
+            if (!parseTagTarget(obj.data, &target)) {
+                objects.freeTyped(&obj);
+                return false;
+            }
+            if (sp + 1 > cap) {
+                objects.freeTyped(&obj);
+                return error.Protocol;
+            }
+            idToBytes(stack[0 .. cap * 20], sp * 20, target);
+            sp += 1;
+        }
+        objects.freeTyped(&obj);
+    }
+    return true;
+}
+
+
+fn idsAppend(arena: *arena_mod.Arena, buf: *[]u8, len: *usize, cap: *usize, id: ObjectId) GitError!void {
+    if (len.* == cap.*) {
+        var ncap = cap.* * 2;
+        if (ncap == 0) ncap = 256;
+        const raw = arena_mod.alloc(arena, ncap * 20) catch return error.OutOfMemory;
+        var i: usize = 0;
+        while (i < len.* * 20) : (i += 1) raw[i] = buf.*[i];
+        buf.* = raw[0 .. ncap * 20];
+        cap.* = ncap;
+    }
+    idToBytes(buf.*, len.* * 20, id);
+    len.* += 1;
+}
+
+// Blob ids reachable from `ref_name`'s tree that are not present locally.  The
+// partial-clone checkout uses this to request exactly the missing blobs.
+pub fn missingBlobsForRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []const u8, out_raw: *[]u8, out_count: *usize) GitError!void {
+    var store: objects.Store = undefined;
+    try openStore(arena, git_dir, &store);
+    defer objects.storeClose(&store);
+    const start_ref = try resolveUserRef(arena, git_dir, ref_name);
+    var commit: ObjectId = undefined;
+    try peelToCommit(arena, &store, start_ref.id, &commit);
+    var root_tree: ObjectId = undefined;
+    try commitTree(arena, &store, commit, &root_tree);
+
+    const cap_trees: usize = 65536;
+    const stack = arena_mod.alloc(arena, cap_trees * 20) catch return error.OutOfMemory;
+    const seen = arena_mod.alloc(arena, cap_trees * 20) catch return error.OutOfMemory;
+    var sp: usize = 0;
+    var seen_count: usize = 0;
+    idToBytes(stack[0 .. cap_trees * 20], sp * 20, root_tree);
+    sp += 1;
+    var out_len: usize = 0;
+    var out_cap: usize = 0;
+    const zero = arena_mod.alloc(arena, 0) catch return error.OutOfMemory;
+    out_raw.* = zero[0..0];
+
+    while (sp > 0) {
+        sp -= 1;
+        var tree_id: ObjectId = undefined;
+        idFromBytes(stack[0 .. cap_trees * 20], sp * 20, &tree_id);
+        if (visitedHas(seen[0 .. cap_trees * 20], seen_count, tree_id)) continue;
+        if (seen_count >= cap_trees) return error.Protocol;
+        idToBytes(seen[0 .. cap_trees * 20], seen_count * 20, tree_id);
+        seen_count += 1;
+        var obj: objects.TypedObject = undefined;
+        readTyped(arena, &store, tree_id, &obj) catch return error.ObjectStore;
+        if (obj.ty != objects.ObjType.tree) {
+            objects.freeTyped(&obj);
+            return error.Protocol;
+        }
+        const entries = parseTree(arena, obj.data) catch {
+            objects.freeTyped(&obj);
+            return error.Protocol;
+        };
+        var j: usize = 0;
+        while (j < entries.len) : (j += 1) {
+            if (entries[j].is_dir) {
+                if (sp >= cap_trees) {
+                    objects.freeTyped(&obj);
+                    return error.Protocol;
+                }
+                idToBytes(stack[0 .. cap_trees * 20], sp * 20, entries[j].id);
+                sp += 1;
+            } else if (entries[j].mode != MODE_GITLINK) {
+                if (!storeHas(arena, &store, entries[j].id)) {
+                    try idsAppend(arena, out_raw, &out_len, &out_cap, entries[j].id);
+                }
+            }
+        }
+        objects.freeTyped(&obj);
+    }
+    out_count.* = out_len;
+}
+
 pub fn logRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []const u8) GitError!void {
+
     var store: objects.Store = undefined;
     try openStore(arena, git_dir, &store);
     defer objects.storeClose(&store);
@@ -1735,6 +1987,10 @@ pub fn logRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []const u8
     const start_ref = try resolveUserRef(arena, git_dir, ref_name);
     var start: ObjectId = undefined;
     try peelToCommit(arena, &store, start_ref.id, &start);
+    var shallow_raw: []u8 = undefined;
+    var shallow_count: usize = 0;
+    try readShallow(arena, git_dir, &shallow_raw, &shallow_count);
+
     const cap: usize = 65536;
     const stack = arena_mod.alloc(arena, cap * 20) catch return error.OutOfMemory;
     const seen = arena_mod.alloc(arena, cap * 20) catch return error.OutOfMemory;
@@ -1755,6 +2011,7 @@ pub fn logRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []const u8
         defer objects.freeTyped(&obj);
         if (obj.ty != objects.ObjType.commit) return error.Protocol;
         try printCommit(id, obj.data);
+        if (idInRaw(shallow_raw, shallow_count, id)) continue;
         var parents: [32 * 20]u8 = undefined;
         const pc = parseParents(obj.data, parents[0..]) catch return error.Protocol;
         var j: usize = pc;
@@ -1766,6 +2023,8 @@ pub fn logRef(arena: *arena_mod.Arena, git_dir: []const u8, ref_name: []const u8
             idToBytes(stack[0 .. cap * 20], sp * 20, parent_id);
             sp += 1;
         }
+
+
     }
 }
 
