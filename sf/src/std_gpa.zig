@@ -1,10 +1,10 @@
 // std_gpa.zig — Z98 std lib L2: single-threaded general-purpose allocator.
 //
-// Phase 3.1, Task 3: the TLSF small tier, the page-run medium tier, plus the
-// GPA configuration, ownership, alignment, zero-size, and resize contracts.
-// Direct large mappings land in Task 4; sizes above medium_max return null
-// until then. `std.page` owns the OS mappings; every 64 KiB small region and
-// every medium chunk is reserved and committed through it.
+// Phase 3.1, Task 4: the TLSF small tier, the page-run medium tier, direct large
+// mappings, plus the GPA configuration, ownership, alignment, zero-size, resize,
+// stats, and optional shuffle contracts. `std.page` owns the OS mappings; every
+// 64 KiB small region, every medium chunk, and every large mapping is reserved
+// and committed through it.
 //
 // Small tier (TLSF):
 //   - 64 KiB region, 4096-aligned; region header at offset 0, block area after.
@@ -14,7 +14,8 @@
 //     payload; minimum 16 bytes; 8-byte alignment. The header has no region
 //     pointer: ownership is a range walk over the region list.
 //   - size mapping is a bounded 32-iteration floor-log2 scan (no @clz); free
-//     list insertion is at the class head (shuffle lands in Task 4).
+//     list insertion is at the class head, or a seeded LCG position when
+//     shuffle is enabled.
 //
 // Medium tier (page runs):
 //   - chunk_bytes default 2 MiB, reserved with pageReserve; the chunk header
@@ -26,6 +27,17 @@
 //     allocation; with safe_checks a fully free run is decommitted.
 //   - align > 8 routes here: a run start is page-aligned, so it satisfies every
 //     allowed align. A small align > 8 request therefore costs a full page run.
+//
+// Large tier (direct mappings):
+//   - sizes above medium_max reserve size + a page for the header, rounded to
+//     64 KiB; the header records size/class/magic and the data starts on the
+//     next page, so every allowed align <= PAGE_SIZE is satisfied.
+//   - ownership is a range walk over the live large-mapping list; free releases
+//     the whole mapping and resize reuses it when the new size fits.
+//
+// Stats: live_allocs is always tracked; per-tier byte counters track requested
+// live bytes. Shuffle permutes TLSF class and medium run insertion order with a
+// 32-bit LCG seeded from shuffle_seed (non-security, off by default).
 //
 // Contracts:
 //   - gpaAlloc returns uninitialized memory or null; gpaAllocZeroed is the only
@@ -96,6 +108,7 @@ const PageMeta = struct {
     run_len: u32,
     next_free: u32,
     prev_free: u32,
+    used_bytes: u32,
 };
 
 const MediumChunk = struct {
@@ -106,12 +119,38 @@ const MediumChunk = struct {
     free_heads: [MAX_RUN_CLASSES]u32,
 };
 
+const LARGE_MAGIC: u32 = 0xDEADBEEF;
+
+// A large mapping reserves a full page for this header (so the data pointer is
+// page-aligned) plus the requested bytes, rounded up to the reserve granularity.
+const LargeMapping = struct {
+    next: usize,
+    mapping_bytes: usize,
+    size: usize,
+    size_class: u32,
+    magic: u32,
+};
+
+pub const GpaStats = struct {
+    small_bytes: usize,
+    medium_bytes: usize,
+    large_bytes: usize,
+    live_allocs: usize,
+    chunks: usize,
+    regions: usize,
+};
+
 pub const Gpa = struct {
     page: page_mod.PageAllocator,
     cfg: GpaConfig,
     regions: ?*Region,
     medium: ?*MediumChunk,
+    large: ?*LargeMapping,
     live_allocs: usize,
+    small_bytes: usize,
+    medium_bytes: usize,
+    large_bytes: usize,
+    shuffle_state: u32,
 };
 
 fn makeConfig(target: TargetProfile, medium_max: usize, chunk_bytes: usize) GpaConfig {
@@ -160,7 +199,18 @@ pub fn gpaInit(cfg: GpaConfig) page_mod.PageError!Gpa {
     if (cfg.chunk_bytes % page_mod.RESERVE_GRANULARITY != 0) return error.InvalidConfig;
     if (cfg.chunk_bytes <= cfg.medium_max) return error.InvalidConfig;
     const pa = page_mod.pageInit(cfg.page) catch return error.InvalidConfig;
-    return Gpa{ .page = pa, .cfg = cfg, .regions = null, .medium = null, .live_allocs = 0 };
+    return Gpa{
+        .page = pa,
+        .cfg = cfg,
+        .regions = null,
+        .medium = null,
+        .large = null,
+        .live_allocs = 0,
+        .small_bytes = 0,
+        .medium_bytes = 0,
+        .large_bytes = 0,
+        .shuffle_state = cfg.shuffle_seed,
+    };
 }
 
 fn validAlign(align: usize) bool {
@@ -330,6 +380,30 @@ fn setBlock(b: *Block, size: usize, free: bool) void {
     fp.* = v;
 }
 
+// For an allocated block the footer is otherwise dead metadata (it is only
+// read for *free* blocks during coalescing), so store the exact requested size
+// there. gpaStats then reports requested live bytes without widening the 4-byte
+// header or changing the classic TLSF layout.
+fn blockRequested(b: *Block) usize {
+    const pb: [*]u8 = @ptrCast([*]u8, b);
+    const fp: *u32 = @ptrCast(*u32, pb + blockSize(b) - 4);
+    return @intCast(usize, fp.*);
+}
+
+fn setBlockRequested(b: *Block, requested: usize) void {
+    const pb: [*]u8 = @ptrCast([*]u8, b);
+    const fp: *u32 = @ptrCast(*u32, pb + blockSize(b) - 4);
+    fp.* = @intCast(u32, requested);
+}
+
+fn shufflePos(g: *Gpa, count: usize) usize {
+    const s: u32 = g.shuffle_state *% 1103515245 +% 12345;
+    g.shuffle_state = s;
+    if (count == 0) return 0;
+    const span: u32 = @intCast(u32, count + 1);
+    return @intCast(usize, s % span);
+}
+
 fn removeFreeAt(r: *Region, idx: usize, b: *Block) void {
     const p = linkPrev(b);
     const n = linkNext(b);
@@ -357,10 +431,48 @@ fn removeFreeAt(r: *Region, idx: usize, b: *Block) void {
     }
 }
 
-fn insertFree(r: *Region, b: *Block) void {
+fn insertFreeAfter(r: *Region, idx: usize, b: *Block, after: *Block) void {
+    const n = linkNext(after);
+    setLinkNext(after, @ptrToInt(b));
+    setLinkPrev(b, @ptrToInt(after));
+    setLinkNext(b, n);
+    if (n != 0) {
+        const nb: *Block = @intToPtr(*Block, n);
+        setLinkPrev(nb, @ptrToInt(b));
+    }
+    const fl = classFl(idx);
+    const sl = classSl(idx);
+    r.fl_bitmap = r.fl_bitmap | bitMask(fl);
+    r.sl_bitmap[fl] = r.sl_bitmap[fl] | bitMask(sl);
+}
+
+fn insertFree(g: *Gpa, r: *Region, b: *Block) void {
     const idx = sizeClass(blockSize(b));
     const fl = classFl(idx);
     const sl = classSl(idx);
+
+    if (g.cfg.shuffle) {
+        var count: usize = 0;
+        var walk = r.free_heads[idx];
+        while (walk) |node| {
+            count += 1;
+            walk = asBlock(linkNext(node));
+        }
+        const pos = shufflePos(g, count);
+        if (pos > 0 and count > 0) {
+            var after = r.free_heads[idx];
+            var k: usize = 0;
+            while (after) |node| {
+                if (k + 1 == pos) {
+                    insertFreeAfter(r, idx, b, node);
+                    return;
+                }
+                k += 1;
+                after = asBlock(linkNext(node));
+            }
+        }
+    }
+
     setLinkPrev(b, 0);
     if (r.free_heads[idx]) |old| {
         setLinkNext(b, @ptrToInt(old));
@@ -373,29 +485,30 @@ fn insertFree(r: *Region, b: *Block) void {
     r.sl_bitmap[fl] = r.sl_bitmap[fl] | bitMask(sl);
 }
 
-fn allocateFrom(r: *Region, b: *Block, need: usize) [*]u8 {
+fn allocateFrom(g: *Gpa, r: *Region, b: *Block, need: usize, requested: usize) [*]u8 {
     const sz = blockSize(b);
     if (sz - need >= MIN_BLOCK) {
         setBlock(b, need, false);
         const pb: [*]u8 = @ptrCast([*]u8, b);
         const rem: *Block = @ptrCast(*Block, pb + need);
         setBlock(rem, sz - need, true);
-        insertFree(r, rem);
+        insertFree(g, r, rem);
     } else {
         setBlock(b, sz, false);
     }
+    setBlockRequested(b, requested);
     const out: [*]u8 = @ptrCast([*]u8, b);
     return out + 4;
 }
 
-fn allocInRegion(r: *Region, need: usize) ?[*]u8 {
+fn allocInRegion(g: *Gpa, r: *Region, need: usize, requested: usize) ?[*]u8 {
     var idx: usize = firstClass(r, need);
     while (idx < NUM_HEADS) {
         var cur = r.free_heads[idx];
         while (cur) |b| {
             if (blockSize(b) >= need) {
                 removeFreeAt(r, idx, b);
-                return allocateFrom(r, b, need);
+                return allocateFrom(g, r, b, need, requested);
             }
             cur = asBlock(linkNext(b));
         }
@@ -404,7 +517,7 @@ fn allocInRegion(r: *Region, need: usize) ?[*]u8 {
     return null;
 }
 
-fn freeBlock(r: *Region, b0: *Block) void {
+fn freeBlock(g: *Gpa, r: *Region, b0: *Block) void {
     var b: *Block = b0;
     var size: usize = blockSize(b);
     const base: usize = @ptrToInt(r);
@@ -435,7 +548,7 @@ fn freeBlock(r: *Region, b0: *Block) void {
     }
 
     setBlock(b, size, true);
-    insertFree(r, b);
+    insertFree(g, r, b);
 }
 
 fn asMedium(v: usize) ?*MediumChunk {
@@ -473,15 +586,54 @@ fn markRun(meta: [*]PageMeta, start: usize, len: usize, state: u32) void {
         meta[i].run_len = @intCast(u32, len);
         meta[i].next_free = NO_PAGE;
         meta[i].prev_free = NO_PAGE;
+        meta[i].used_bytes = 0;
     }
 }
 
-fn insertFreeRun(c: *MediumChunk, start: usize) void {
+fn mediumInsertAfter(c: *MediumChunk, start: usize, after: usize) void {
+    const meta = chunkMeta(c);
+    const n = meta[after].next_free;
+    meta[start].next_free = n;
+    meta[start].prev_free = @intCast(u32, after);
+    meta[after].next_free = @intCast(u32, start);
+    if (n != NO_PAGE) {
+        const ni = @intCast(usize, n);
+        meta[ni].prev_free = @intCast(u32, start);
+    }
+}
+
+fn insertFreeRun(g: *Gpa, c: *MediumChunk, start: usize) void {
     const meta = chunkMeta(c);
     const len = @intCast(usize, meta[start].run_len);
     const cls = classOfPages(len);
-    const head = c.free_heads[cls];
     meta[start].state = PAGE_FREE;
+    meta[start].used_bytes = 0;
+
+    if (g.cfg.shuffle) {
+        var count: usize = 0;
+        var walk = c.free_heads[cls];
+        while (walk != NO_PAGE) {
+            const wi = @intCast(usize, walk);
+            count += 1;
+            walk = meta[wi].next_free;
+        }
+        const pos = shufflePos(g, count);
+        if (pos > 0 and count > 0) {
+            var cur = c.free_heads[cls];
+            var k: usize = 0;
+            while (cur != NO_PAGE) {
+                const ci = @intCast(usize, cur);
+                if (k + 1 == pos) {
+                    mediumInsertAfter(c, start, ci);
+                    return;
+                }
+                k += 1;
+                cur = meta[ci].next_free;
+            }
+        }
+    }
+
+    const head = c.free_heads[cls];
     meta[start].next_free = head;
     meta[start].prev_free = NO_PAGE;
     if (head != NO_PAGE) {
@@ -536,7 +688,7 @@ fn findFit(c: *MediumChunk, need_pages: usize) ?usize {
     return null;
 }
 
-fn takeRun(g: *Gpa, c: *MediumChunk, start: usize, need_pages: usize) ?[*]u8 {
+fn takeRun(g: *Gpa, c: *MediumChunk, start: usize, need_pages: usize, size: usize) ?[*]u8 {
     const meta = chunkMeta(c);
     const len = @intCast(usize, meta[start].run_len);
     const data = chunkData(c);
@@ -549,10 +701,11 @@ fn takeRun(g: *Gpa, c: *MediumChunk, start: usize, need_pages: usize) ?[*]u8 {
         const rem = start + need_pages;
         const rlen = len - need_pages;
         markRun(meta, rem, rlen, PAGE_FREE);
-        insertFreeRun(c, rem);
+        insertFreeRun(g, c, rem);
     } else {
         markRun(meta, start, len, PAGE_USED);
     }
+    meta[start].used_bytes = @intCast(u32, size);
     return ptr;
 }
 
@@ -590,7 +743,7 @@ fn newMediumChunk(g: *Gpa) ?*MediumChunk {
     }
     const meta = chunkMeta(c);
     markRun(meta, 0, page_count, PAGE_FREE);
-    insertFreeRun(c, 0);
+    insertFreeRun(g, c, 0);
     if (g.medium) |old| {
         c.next = @ptrToInt(old);
     }
@@ -631,6 +784,13 @@ fn freeMedium(g: *Gpa, c: *MediumChunk, ptr: [*]u8) bool {
     var len = @intCast(usize, meta[idx].run_len);
     if (start + len > page_count) return false;
 
+    const used = @intCast(usize, meta[start].used_bytes);
+    if (g.medium_bytes >= used) {
+        g.medium_bytes -= used;
+    } else {
+        g.medium_bytes = 0;
+    }
+
     if (start > 0) {
         if (meta[start - 1].state == PAGE_FREE) {
             const pstart = @intCast(usize, meta[start - 1].run_start);
@@ -649,7 +809,7 @@ fn freeMedium(g: *Gpa, c: *MediumChunk, ptr: [*]u8) bool {
         }
     }
     markRun(meta, start, len, PAGE_FREE);
-    insertFreeRun(c, start);
+    insertFreeRun(g, c, start);
     if (g.cfg.safe_checks) {
         const data = chunkData(c);
         _ = page_mod.pageDecommit(&g.page, data + start * page_mod.PAGE_SIZE, len * page_mod.PAGE_SIZE);
@@ -670,14 +830,93 @@ fn allocMedium(g: *Gpa, size: usize, align: usize) ?[*]u8 {
     var cur = g.medium;
     while (cur) |c| {
         if (findFit(c, need_pages)) |start| {
-            return takeRun(g, c, start, need_pages);
+            return takeRun(g, c, start, need_pages, size);
         }
         cur = asMedium(c.next);
     }
 
     const c = newMediumChunk(g) orelse return null;
     const start = findFit(c, need_pages) orelse return null;
-    return takeRun(g, c, start, need_pages);
+    return takeRun(g, c, start, need_pages, size);
+}
+
+fn asLarge(v: usize) ?*LargeMapping {
+    if (v == 0) return null;
+    return @intToPtr(*LargeMapping, v);
+}
+
+fn largeMappingBytes(size: usize) ?usize {
+    const sz: u64 = @intCast(u64, size);
+    const hdr: u64 = @intCast(u64, page_mod.PAGE_SIZE);
+    const gran: u64 = @intCast(u64, page_mod.RESERVE_GRANULARITY);
+    const limit: u64 = @intCast(u64, 0xFFFFFFFF);
+    var total: u64 = sz + hdr;
+    if (total > limit) return null;
+    total = ((total + gran - 1) / gran) * gran;
+    if (total > limit) return null;
+    return @intCast(usize, total);
+}
+
+fn allocLarge(g: *Gpa, size: usize) ?[*]u8 {
+    const total = largeMappingBytes(size) orelse return null;
+    const raw = page_mod.pageReserve(&g.page, total) orelse return null;
+    if (!page_mod.pageCommit(&g.page, raw, total)) {
+        page_mod.pageRelease(&g.page, raw, total);
+        return null;
+    }
+    const m: *LargeMapping = @ptrCast(*LargeMapping, raw);
+    m.next = 0;
+    if (g.large) |old| {
+        m.next = @ptrToInt(old);
+    }
+    m.mapping_bytes = total;
+    m.size = size;
+    m.size_class = @intCast(u32, floorLog2(size));
+    m.magic = LARGE_MAGIC;
+    g.large = m;
+    const base: [*]u8 = @ptrCast([*]u8, m);
+    return base + page_mod.PAGE_SIZE;
+}
+
+fn findLarge(g: *Gpa, ptr: [*]u8) ?*LargeMapping {
+    const a: usize = @ptrToInt(ptr);
+    var cur = g.large;
+    while (cur) |m| {
+        const base: usize = @ptrToInt(m);
+        if (a >= base and a < base + m.mapping_bytes) {
+            if (a == base + page_mod.PAGE_SIZE) return m;
+            return null;
+        }
+        cur = asLarge(m.next);
+    }
+    return null;
+}
+
+fn freeLarge(g: *Gpa, m: *LargeMapping) bool {
+    var prev: ?*LargeMapping = null;
+    var cur = g.large;
+    while (cur) |c| {
+        if (c == m) {
+            if (prev) |p| {
+                p.next = c.next;
+            } else {
+                g.large = asLarge(c.next);
+            }
+            break;
+        }
+        prev = c;
+        cur = asLarge(c.next);
+    }
+    const used = m.size;
+    const raw: [*]u8 = @ptrCast([*]u8, m);
+    const bytes = m.mapping_bytes;
+    page_mod.pageRelease(&g.page, raw, bytes);
+    if (g.large_bytes >= used) {
+        g.large_bytes -= used;
+    } else {
+        g.large_bytes = 0;
+    }
+    return true;
 }
 
 fn findRegion(g: *Gpa, ptr: [*]u8) ?*Region {
@@ -722,7 +961,7 @@ fn newRegion(g: *Gpa) ?*Region {
     const base: [*]u8 = @ptrCast([*]u8, r);
     const b = blockAt(base, BLOCK_START);
     setBlock(b, BLOCK_END - BLOCK_START, true);
-    insertFree(r, b);
+    insertFree(g, r, b);
     if (g.regions) |old| {
         r.next = @ptrToInt(old);
     }
@@ -748,19 +987,38 @@ pub fn gpaDeinit(g: *Gpa) void {
         mc = nxt;
     }
     g.medium = null;
+
+    var lm = g.large;
+    while (lm) |m| {
+        const nxt = asLarge(m.next);
+        const raw: [*]u8 = @ptrCast([*]u8, m);
+        page_mod.pageRelease(&g.page, raw, m.mapping_bytes);
+        lm = nxt;
+    }
+    g.large = null;
     g.live_allocs = 0;
+    g.small_bytes = 0;
+    g.medium_bytes = 0;
+    g.large_bytes = 0;
 }
 
 pub fn gpaAlloc(g: *Gpa, size: usize, align: usize) ?[*]u8 {
     if (size == 0) return null;
     if (!validAlign(align)) return null;
 
+    if (size > g.cfg.medium_max) {
+        const p = allocLarge(g, size) orelse return null;
+        g.live_allocs += 1;
+        g.large_bytes += size;
+        return p;
+    }
+
     // A page-aligned run start satisfies every allowed align, so align > 8
     // (and every size at or above the small limit) routes to the medium tier.
     if (align > 8 or size >= SMALL_LIMIT) {
-        if (size > g.cfg.medium_max) return null;
         const p = allocMedium(g, size, align) orelse return null;
         g.live_allocs += 1;
+        g.medium_bytes += size;
         return p;
     }
 
@@ -768,16 +1026,18 @@ pub fn gpaAlloc(g: *Gpa, size: usize, align: usize) ?[*]u8 {
 
     var cur = g.regions;
     while (cur) |r| {
-        if (allocInRegion(r, need)) |p| {
+        if (allocInRegion(g, r, need, size)) |p| {
             g.live_allocs += 1;
+            g.small_bytes += size;
             return p;
         }
         cur = asRegion(r.next);
     }
 
     const r = newRegion(g) orelse return null;
-    const p = allocInRegion(r, need) orelse return null;
+    const p = allocInRegion(g, r, need, size) orelse return null;
     g.live_allocs += 1;
+    g.small_bytes += size;
     return p;
 }
 
@@ -796,9 +1056,20 @@ pub fn gpaFree(g: *Gpa, ptr: [*]u8) bool {
         if (g.live_allocs > 0) g.live_allocs -= 1;
         return true;
     }
+    if (findLarge(g, ptr)) |m| {
+        if (!freeLarge(g, m)) return false;
+        if (g.live_allocs > 0) g.live_allocs -= 1;
+        return true;
+    }
     const b = blockForPayload(g, ptr) orelse return false;
     const r = findRegion(g, ptr) orelse return false;
-    freeBlock(r, b);
+    const requested = blockRequested(b);
+    freeBlock(g, r, b);
+    if (g.small_bytes >= requested) {
+        g.small_bytes -= requested;
+    } else {
+        g.small_bytes = 0;
+    }
     if (g.live_allocs > 0) g.live_allocs -= 1;
     return true;
 }
@@ -810,12 +1081,46 @@ pub fn gpaResize(g: *Gpa, ptr: [*]u8, new_size: usize, align: usize) ?[*]u8 {
     if (findMedium(g, ptr)) |c| {
         const idx = mediumPageIndex(c, ptr) orelse return null;
         const meta = chunkMeta(c);
+        const start = @intCast(usize, meta[idx].run_start);
         const capacity = @intCast(usize, meta[idx].run_len) * page_mod.PAGE_SIZE;
+        const old = @intCast(usize, meta[start].used_bytes);
         // Run starts are page-aligned, so a fitting run always satisfies align.
-        if (new_size <= capacity) return ptr;
-        if (new_size > g.cfg.medium_max) return null;
+        if (new_size <= capacity) {
+            meta[start].used_bytes = @intCast(u32, new_size);
+            if (new_size >= old) {
+                g.medium_bytes += new_size - old;
+            } else {
+                g.medium_bytes -= old - new_size;
+            }
+            return ptr;
+        }
         const newp = gpaAlloc(g, new_size, align) orelse return null;
-        var copy_len = capacity;
+        var copy_len = old;
+        if (new_size < copy_len) copy_len = new_size;
+        var i: usize = 0;
+        while (i < copy_len) : (i += 1) {
+            newp[i] = ptr[i];
+        }
+        _ = gpaFree(g, ptr);
+        return newp;
+    }
+
+    if (findLarge(g, ptr)) |m| {
+        const capacity = m.mapping_bytes - page_mod.PAGE_SIZE;
+        const old = m.size;
+        // Large data is page-aligned, so a fitting mapping satisfies align.
+        if (new_size <= capacity) {
+            m.size = new_size;
+            m.size_class = @intCast(u32, floorLog2(new_size));
+            if (new_size >= old) {
+                g.large_bytes += new_size - old;
+            } else {
+                g.large_bytes -= old - new_size;
+            }
+            return ptr;
+        }
+        const newp = gpaAlloc(g, new_size, align) orelse return null;
+        var copy_len = old;
         if (new_size < copy_len) copy_len = new_size;
         var i: usize = 0;
         while (i < copy_len) : (i += 1) {
@@ -827,14 +1132,22 @@ pub fn gpaResize(g: *Gpa, ptr: [*]u8, new_size: usize, align: usize) ?[*]u8 {
 
     const b = blockForPayload(g, ptr) orelse return null;
     const old_size = blockSize(b);
+    const old_requested = blockRequested(b);
     if (new_size < SMALL_LIMIT and align == 8) {
         const need = blockBytes(new_size) orelse return null;
-        if (need <= old_size) return ptr;
+        if (need <= old_size) {
+            setBlockRequested(b, new_size);
+            if (new_size >= old_requested) {
+                g.small_bytes += new_size - old_requested;
+            } else {
+                g.small_bytes -= old_requested - new_size;
+            }
+            return ptr;
+        }
     }
 
     const newp = gpaAlloc(g, new_size, align) orelse return null;
-    const old_usable = old_size - 8;
-    var copy_len = old_usable;
+    var copy_len = old_requested;
     if (new_size < copy_len) copy_len = new_size;
     var i: usize = 0;
     while (i < copy_len) : (i += 1) {
@@ -842,4 +1155,26 @@ pub fn gpaResize(g: *Gpa, ptr: [*]u8, new_size: usize, align: usize) ?[*]u8 {
     }
     _ = gpaFree(g, ptr);
     return newp;
+}
+
+pub fn gpaStats(g: *Gpa) GpaStats {
+    var s = GpaStats{
+        .small_bytes = g.small_bytes,
+        .medium_bytes = g.medium_bytes,
+        .large_bytes = g.large_bytes,
+        .live_allocs = g.live_allocs,
+        .chunks = 0,
+        .regions = 0,
+    };
+    var rcur = g.regions;
+    while (rcur) |r| {
+        s.regions += 1;
+        rcur = asRegion(r.next);
+    }
+    var ccur = g.medium;
+    while (ccur) |c| {
+        s.chunks += 1;
+        ccur = asMedium(c.next);
+    }
+    return s;
 }
