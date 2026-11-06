@@ -690,8 +690,10 @@ if ! (
     git config user.name "z9 fixture"
     git config user.email "z9@example.invalid"
     printf 'partial a\n' >a.txt
-    mkdir -p d
+    mkdir -p d e f/g
     printf 'partial b\n' >d/b.txt
+    printf 'partial c\n' >e/c.txt
+    printf 'partial d\n' >f/g/d.txt
     git add .
     git commit -q -m "partial one"
     printf 'partial a2\n' >a.txt
@@ -719,8 +721,9 @@ rm -rf "$PARTIAL_CLONE"
     >"$OUT/linux/partial_run.log" 2>&1
 PARTIAL_RC=$?
 if [ "$PARTIAL_RC" -eq 0 ] && grep -q '^partial 1' "$PARTIAL_CLONE/.git/z9git-state" && \
-   cmp -s "$PSRC/a.txt" "$PARTIAL_CLONE/a.txt" && cmp -s "$PSRC/d/b.txt" "$PARTIAL_CLONE/d/b.txt"; then
-    pass_case "partial clone fetches checkout blobs on demand and materializes the worktree"
+   cmp -s "$PSRC/a.txt" "$PARTIAL_CLONE/a.txt" && cmp -s "$PSRC/d/b.txt" "$PARTIAL_CLONE/d/b.txt" && \
+   cmp -s "$PSRC/e/c.txt" "$PARTIAL_CLONE/e/c.txt" && cmp -s "$PSRC/f/g/d.txt" "$PARTIAL_CLONE/f/g/d.txt"; then
+    pass_case "partial clone fetches checkout blobs per directory and materializes the worktree"
 else
     fail_case "partial clone failed (rc=$PARTIAL_RC)"
     tail -15 "$OUT/linux/partial_run.log" | sed 's/^/       /'
@@ -729,6 +732,12 @@ if [ "$PARTIAL_RC" -eq 0 ] && grep -a -q 'filter blob:none' "$PARTIAL_REQ"; then
     pass_case "partial clone sends filter=blob:none"
 else
     fail_case "partial clone request omitted filter=blob:none"
+fi
+PARTIAL_POSTS=$(grep -a -c 'POST .*git-upload-pack' "$PARTIAL_REQ" 2>/dev/null | tr -d ' ')
+if [ "$PARTIAL_RC" -eq 0 ] && [ "${PARTIAL_POSTS:-0}" -ge 5 ]; then
+    pass_case "partial clone issued per-directory blob fetches ($PARTIAL_POSTS POSTs)"
+else
+    fail_case "partial clone did not issue per-directory blob fetches (${PARTIAL_POSTS:-0} POSTs)"
 fi
 if [ "$PARTIAL_RC" -eq 0 ] && \
    [ "$(find "$PARTIAL_CLONE/.git/objects/pack" -maxdepth 1 -name '*.idx' | wc -l | tr -d ' ')" -ge 2 ] && \
@@ -768,6 +777,123 @@ if [ "$SH_RC" -eq 0 ] && grep -q '^depth 1$' "$SH_CLONE/.git/z9git-state"; then
     pass_case "shallow clone records its depth in .git/z9git-state"
 else
     fail_case "shallow clone state depth missing"
+fi
+
+echo "== abort-mid-pack resume (raw EOF) =="
+TINY_ABORT="$OUT/linux/clone_resume_tiny_abort"
+rm -rf "$TINY_ABORT"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$TINY_ABORT" 0 \
+    "$RDATA/info_refs" "$RDATA/upload_prefix:abort" "$OUT/linux/tiny_abort_req.log" \
+    200 identity "$RDATA/upload_bonly" >"$OUT/linux/tiny_abort.log" 2>&1
+TINY_ABORT_RC=$?
+if [ "$TINY_ABORT_RC" -eq 0 ] && grep -q '^prefix ' "$TINY_ABORT/.git/z9git-state" && \
+   grep -q "^have $RESUME_A" "$TINY_ABORT/.git/z9git-state" && \
+   git --git-dir="$TINY_ABORT/.git" fsck --full --no-dangling >/dev/null 2>&1 && \
+   [ -z "$(find "$TINY_ABORT/.git/objects/pack" -name 'tmp_*' -print)" ]; then
+    pass_case "tiny (<1 MiB) raw-EOF abort flushes the tail, finalizes the prefix and retries"
+else
+    fail_case "tiny raw-EOF abort resume failed (rc=$TINY_ABORT_RC)"
+    tail -15 "$OUT/linux/tiny_abort.log" | sed 's/^/       /'
+fi
+
+ABORT_SRC="$OUT/mock_abort_big_src"
+ABORT_REPO="$OUT/mock_abort_big.git"
+ABORT_DATA="$MOCK_DATA/abort_big"
+rm -rf "$ABORT_SRC" "$ABORT_REPO" "$ABORT_DATA"
+mkdir -p "$ABORT_SRC" "$ABORT_DATA"
+if ! (
+    cd "$ABORT_SRC" || exit 1
+    git init -q
+    git config user.name "z9 fixture"
+    git config user.email "z9@example.invalid"
+    i=0
+    while [ "$i" -lt 900 ]; do
+        head -c 2048 /dev/urandom >"f$i.bin"
+        i=$((i + 1))
+    done
+    git add .
+    git commit -q -m "abort >1MiB fixture"
+) >"$OUT/linux/abort_build.log" 2>&1 || \
+   ! git clone --bare --no-hardlinks -q "$ABORT_SRC" "$ABORT_REPO" >>"$OUT/linux/abort_build.log" 2>&1; then
+    fail_case "prepare >1 MiB abort fixture"
+    tail -10 "$OUT/linux/abort_build.log" | sed 's/^/       /'
+    finish
+fi
+git upload-pack --stateless-rpc --advertise-refs "$ABORT_REPO" >"$ABORT_DATA/adv" 2>"$OUT/linux/abort_adv.err"
+{ printf '001e# service=git-upload-pack\n0000'; cat "$ABORT_DATA/adv"; } >"$ABORT_DATA/info_refs"
+git --git-dir="$ABORT_REPO" pack-objects --stdout --all >"$ABORT_DATA/full.pack" 2>"$OUT/linux/abort_pack.err"
+ABORT_FULL=$(wc -c <"$ABORT_DATA/full.pack" | tr -d ' ')
+ABORT_CUT=$((ABORT_FULL * 85 / 100))
+head -c "$ABORT_CUT" "$ABORT_DATA/full.pack" >"$ABORT_DATA/prefix.bin"
+{ printf '0008NAK\n'; cat "$ABORT_DATA/prefix.bin"; } >"$ABORT_DATA/upload_prefix"
+{ printf '0008NAK\n'; cat "$ABORT_DATA/full.pack"; } >"$ABORT_DATA/upload_full"
+ABORT_CLONE="$OUT/linux/clone_abort_big"
+rm -rf "$ABORT_CLONE"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$ABORT_CLONE" 0 \
+    "$ABORT_DATA/info_refs" "$ABORT_DATA/upload_prefix:abort" "$OUT/linux/abort_req.log" \
+    200 identity "$ABORT_DATA/upload_full" >"$OUT/linux/abort_run.log" 2>&1
+ABORT_RC=$?
+ABORT_PREFIX_BYTES=$(awk '$1 == "prefix" {print $3}' "$ABORT_CLONE/.git/z9git-state" 2>/dev/null)
+if [ "$ABORT_RC" -eq 0 ] && [ -n "$ABORT_PREFIX_BYTES" ] && \
+   [ "$ABORT_PREFIX_BYTES" -gt 1048576 ] && \
+   git --git-dir="$ABORT_CLONE/.git" fsck --full --no-dangling >"$OUT/linux/abort_fsck.log" 2>&1 && \
+   cmp -s "$ABORT_SRC/f899.bin" "$ABORT_CLONE/f899.bin" && \
+   [ -z "$(find "$ABORT_CLONE/.git/objects/pack" -name 'tmp_*' -print)" ]; then
+    pass_case ">1 MiB raw-EOF abort installs a verified prefix and resumes to a matching worktree"
+else
+    fail_case ">1 MiB abort resume failed (rc=$ABORT_RC prefix=${ABORT_PREFIX_BYTES:-none})"
+    tail -15 "$OUT/linux/abort_run.log" | sed 's/^/       /'
+fi
+
+echo "== shallow moved-ref fetch, haves and deepen wire value =="
+MOVE_CLONE="$OUT/linux/clone_move_ref"
+rm -rf "$MOVE_CLONE"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$MOVE_CLONE" 0 \
+    "$MOCK_DATA/info_refs" "$SH_DATA/upload" "$OUT/linux/move_clone.log" 200 shallow \
+    >"$OUT/linux/move_clone.out" 2>&1
+MOVE_CLONE_RC=$?
+MOVE_FAKE=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+MOVE_PARENT=$(git --git-dir="$TD/packed_repo" rev-list --parents -n1 refs/heads/master | awk '{print $2}')
+cp "$MOCK_DATA/info_refs" "$OUT/linux/move_info_refs"
+printf '003f%s refs/heads/newref\n' "$MOVE_FAKE" >>"$OUT/linux/move_info_refs"
+{ printf '0035shallow %s\n0008NAK\n' "$MOVE_PARENT"; cat "$MOCK_DATA/pack"; } >"$OUT/linux/move_upload"
+"$MOCK_DIR/mock_http" "http://mock.invalid/r.git" "$MOVE_CLONE" 0 \
+    "$OUT/linux/move_info_refs" "$OUT/linux/move_upload" "$OUT/linux/move_req.log" 200 fetch1 \
+    >"$OUT/linux/move_fetch.log" 2>&1
+MOVE_RC=$?
+MOVE_LOG_LINES=$( cd "$MOVE_CLONE" 2>/dev/null && "$PROG" log 2>/dev/null | wc -l | tr -d ' ' )
+if [ "$MOVE_CLONE_RC" -eq 0 ] && [ "$MOVE_RC" -eq 0 ] && \
+   [ ! -e "$MOVE_CLONE/.git/refs/heads/newref" ] && \
+   git --git-dir="$MOVE_CLONE/.git" fsck --full --no-dangling >"$OUT/linux/move_fsck.log" 2>&1 && \
+   grep -a -q "have $SH_TIP" "$OUT/linux/move_req.log" && \
+   ! grep -a -q "have $MOVE_FAKE" "$OUT/linux/move_req.log"; then
+    pass_case "fetch uses local shallow-aware haves and does not install the incomplete moved ref"
+else
+    fail_case "moved-ref fetch failed (clone=$MOVE_CLONE_RC fetch=$MOVE_RC)"
+    tail -15 "$OUT/linux/move_fetch.log" | sed 's/^/       /'
+fi
+if [ "$MOVE_RC" -eq 0 ] && grep -a -q 'deepen 1' "$OUT/linux/move_req.log" && \
+   ! grep -a -q 'deepen 2' "$OUT/linux/move_req.log" && \
+   grep -q '^depth 2$' "$MOVE_CLONE/.git/z9git-state" && [ "$MOVE_LOG_LINES" = "2" ]; then
+    pass_case "fetch --deepen sends the requested wire depth and advances local depth only on success"
+else
+    fail_case "fetch deepen wire/local depth failed (lines=$MOVE_LOG_LINES)"
+    grep -a -o 'deepen [0-9]*' "$OUT/linux/move_req.log" 2>/dev/null | sed 's/^/       /' | head
+fi
+if [ ! -e "$MOVE_CLONE/.git/z9git-state.tmp" ]; then
+    pass_case "state writes are atomic (no .git/z9git-state.tmp left behind)"
+else
+    fail_case "state temp file left behind"
+fi
+cp "$MOVE_CLONE/.git/z9git-state" "$OUT/linux/move_state.bak"
+sed -i 's|^url .*|url ftp://invalid/repo.git|' "$MOVE_CLONE/.git/z9git-state"
+( cd "$MOVE_CLONE" && "$PROG" fetch --deepen 1 ) >"$OUT/linux/move_badurl.log" 2>&1
+MOVE_BADURL_RC=$?
+cp "$OUT/linux/move_state.bak" "$MOVE_CLONE/.git/z9git-state"
+if [ "$MOVE_BADURL_RC" -eq 1 ]; then
+    pass_case "invalid state URL is rejected as a usage error"
+else
+    fail_case "invalid state URL was not rejected (rc=$MOVE_BADURL_RC)"
 fi
 
 echo "== end-to-end smart HTTP (git http-backend) =="

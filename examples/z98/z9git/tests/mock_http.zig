@@ -31,6 +31,8 @@ var g_open_count: usize = 0;
 var g_info_resp: []const u8 = undefined;
 var g_upload_resp: [MAX_CONNS][]const u8 = undefined;
 var g_upload_count: usize = 0;
+var g_reuse_last: bool = false;
+
 
 const Mock = struct {
     resp: []const u8,
@@ -316,9 +318,17 @@ fn mockOpen(state: *void, url: []const u8) httpgit.OpenError!http.HttpTransport 
     _ = url;
     const idx = g_open_count;
     g_open_count += 1;
-    if (idx >= g_upload_count + 1) return error.Transport;
+    if (idx >= g_upload_count + 1) {
+        if (!g_reuse_last or g_upload_count == 0) return error.Transport;
+    }
     var m: *Mock = &g_mocks[idx];
-    m.resp = if (idx == 0) g_info_resp else g_upload_resp[idx - 1];
+    if (idx == 0) {
+        m.resp = g_info_resp;
+    } else if (idx <= g_upload_count) {
+        m.resp = g_upload_resp[idx - 1];
+    } else {
+        m.resp = g_upload_resp[g_upload_count - 1];
+    }
     m.pos = 0;
     m.req_len = 0;
     m.closed = false;
@@ -329,6 +339,7 @@ fn mockOpen(state: *void, url: []const u8) httpgit.OpenError!http.HttpTransport 
         .close_fn = mockClose,
     };
 }
+
 
 
 fn fail(msg: []const u8) noreturn {
@@ -400,6 +411,11 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
             clone_mode = 1;
         } else if (eqStr(os.argv(8), "shallow")) {
             clone_mode = 2;
+        } else if (eqStr(os.argv(8), "fetch1")) {
+            clone_mode = 3;
+        } else if (eqStr(os.argv(8), "fetch2")) {
+            clone_mode = 4;
+
         } else {
             fail("mock_http: bad mode");
         }
@@ -458,6 +474,8 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
         g_upload_count += 1;
     }
     g_open_count = 0;
+    g_reuse_last = clone_mode == 1;
+
 
     var factory = httpgit.TransportFactory{
         .state = @ptrCast(*void, &g_open_count),
@@ -481,7 +499,7 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
             if (e == error.Io) failCode("mock_http: io", 5);
             failCode("mock_http: out of memory", 5);
         };
-    } else {
+    } else if (clone_mode == 2) {
         httpgit.httpCloneOverOpts(&arena, url, dest, max_down, 1, false, &factory) catch |e| {
             if (e == error.Transport) failCode("mock_http: transport", 2);
             if (e == error.Protocol) failCode("mock_http: protocol", 3);
@@ -490,7 +508,26 @@ pub fn main(arg_count: i32, arg_values: [*][*]u8) void {
             if (e == error.Io) failCode("mock_http: io", 5);
             failCode("mock_http: out of memory", 5);
         };
+    } else {
+        const gd_raw = arena_mod.alloc(&arena, dest.len + 5) catch fail("mock_http: out of memory");
+        var gd_i: usize = 0;
+        while (gd_i < dest.len) : (gd_i += 1) gd_raw[gd_i] = dest[gd_i];
+        const gd_suffix: []const u8 = "/.git";
+        gd_i = 0;
+        while (gd_i < gd_suffix.len) : (gd_i += 1) gd_raw[dest.len + gd_i] = gd_suffix[gd_i];
+        const git_dir = gd_raw[0 .. dest.len + 5];
+        const wire_deepen: u32 = if (clone_mode == 3) 1 else 2;
+        httpgit.httpFetchOver(&arena, git_dir, wire_deepen, max_down, &factory) catch |e| {
+            if (e == error.Usage) failCode("mock_http: usage", 1);
+            if (e == error.Transport) failCode("mock_http: transport", 2);
+            if (e == error.Protocol) failCode("mock_http: protocol", 3);
+            if (e == error.ObjectStore) failCode("mock_http: object-store", 4);
+            if (e == error.DiskFull) failCode("mock_http: disk full", 5);
+            if (e == error.Io) failCode("mock_http: io", 5);
+            failCode("mock_http: out of memory", 5);
+        };
     }
+
 
     var total: usize = 0;
     var ci: usize = 0;

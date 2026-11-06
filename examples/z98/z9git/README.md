@@ -94,16 +94,21 @@ z9git -h
   pack support (a fresh clone is self-contained). `ofs-delta` is requested.
 - `--depth <n>` requests a shallow smart-HTTP clone (`deepen <n>`); the returned
   `shallow <sha>` boundaries are written to `.git/shallow`, and `log` stops at a
-  boundary instead of walking missing parents. `fetch --deepen <n>` must be run
-  inside the clone: it reads `.git/z9git-state`, sends the old boundaries plus a
-  relative `deepen`, installs the new pack, and overwrites `.git/shallow`.
+  boundary instead of walking missing parents. `fetch --deepen <n>` is
+  **HTTP(S)-only** and must be run inside the clone: it reads
+  `.git/z9git-state`, sends the requested wire `deepen <n>` (relative), installs
+  the new pack, and advances the local depth only on success. `.git/shallow` is
+  authoritative for both the request and `log`.
 - `--partial` requests `filter=blob:none` (GitHub/GitLab standard smart HTTP):
-  the commit/tree pack is stored first, then checkout discovers the blobs the
-  HEAD tree needs and fetches just those blobs in a second pack. Later
-  `checkout <ref>` on a partial clone fetches any missing blobs for that ref
+  the commit/tree pack is stored first, then checkout walks the worktree one
+  directory at a time and fetches just that directory's missing blobs in a
+  bounded batch. There is no global tree/object walk or fixed tree-count cap.
+  Later `checkout <ref>` on a partial clone uses the same per-directory fetch
   before materializing it. Use `--partial --depth 1` for modem/old-machine
   clones of large repositories; a full clone on Linux avoids the lazy blob
-  round-trip.
+  round-trip. The checkout blob fetch is HTTPS and therefore uses the same
+  trust-store lookup as clone (store in CWD, beside the executable, or the repo
+  tree); it does not add another CA path.
 - **Resume:** an interrupted HTTP download with at least one complete pack entry
   is finalized as a prefix pack: the pack is truncated at the last complete
   entry, a fresh SHA-1 trailer is appended, an idx is synthesized, and the pack
