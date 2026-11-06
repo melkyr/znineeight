@@ -106,6 +106,13 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     };
     if (s.piece_state.len != 6) fail("n_pieces != 6");
 
+    // Important latent-init guard: `peer.zeroPieceState` must fully initialise
+    // the new `block_mask` slice before any peer acquires a piece.
+    for (0..s.peers.len) |pi| {
+        if (s.peers[pi].ps.nblocks != 0) fail("schedulerInit peer ps.nblocks != 0");
+        if (s.peers[pi].ps.block_mask.len != 0) fail("schedulerInit peer ps.block_mask not empty");
+    }
+
     var addr_a: tracker.PeerAddr = tracker.PeerAddr{ .ip_be = 1, .port = 1000 };
     var addr_b: tracker.PeerAddr = tracker.PeerAddr{ .ip_be = 2, .port = 2000 };
     var addr_c: tracker.PeerAddr = tracker.PeerAddr{ .ip_be = 3, .port = 3000 };

@@ -297,6 +297,7 @@ pub fn zeroPieceState() piece.PieceState {
         .index = 0,
         .state = piece.BlockState.missing,
         .blocks = emptyBlockStates(),
+        .block_mask = emptyU8(),
         .received_bytes = 0,
         .received_count = 0,
         .outstanding_count = 0,

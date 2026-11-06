@@ -10,7 +10,8 @@
 //   (b) a duplicate block leaves the counters unchanged;
 //   (c) a malformed/short block is rejected and leaves the counters unchanged;
 //   (d) `nextRequests` returns the expected request set for an in-progress piece;
-//   (e) a corrupt-piece requeue resets both counters consistently.
+//   (e) a corrupt-piece requeue resets both counters consistently;
+//   (f) a piece longer than 1 MiB verifies through the bounded chunk path.
 //
 // Build (binding recipe), entry is this file:
 //   mkdir -p out
