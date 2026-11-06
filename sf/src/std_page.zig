@@ -153,5 +153,10 @@ pub fn pageRelease(self: *PageAllocator, ptr: [*]u8, bytes: usize) void {
         _ = pal.VirtualFree(@ptrCast(*void, ptr), 0, pal.MEM_RELEASE);
         return;
     }
-    _ = pal.munmap(@ptrCast(*void, ptr), bytes);
+    // pageReserve rounded the mapping up to RESERVE_GRANULARITY; release the
+    // same length, not just the unrounded caller request. If rounding would
+    // overflow, fall back to the caller's bytes (the reserve itself could not
+    // have succeeded with an overflowing rounded length).
+    const n: usize = roundUp(bytes, RESERVE_GRANULARITY) orelse bytes;
+    _ = pal.munmap(@ptrCast(*void, ptr), n);
 }

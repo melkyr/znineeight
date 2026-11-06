@@ -213,6 +213,8 @@ repro/mi_matrix/stdlib_os_argc_xmod
 repro/mi_matrix/stdlib_os_cwd_xmod
 repro/mi_matrix/stdlib_os_env_xmod
 repro/mi_matrix/stdlib_os_exit_xmod
+repro/mi_matrix/stdlib_page_modern_xmod
+repro/mi_matrix/stdlib_page_xmod
 repro/mi_matrix/stdlib_parse_ftoa_xmod
 repro/mi_matrix/stdlib_parse_invalid_xmod
 repro/mi_matrix/stdlib_parse_itoa64_xmod
@@ -225,8 +227,6 @@ repro/mi_matrix/stdlib_parse_parseuint_xmod
 repro/mi_matrix/stdlib_parse_stress_xmod
 repro/mi_matrix/stdlib_parse_utoa64_xmod
 repro/mi_matrix/stdlib_parse_utoa_xmod
-repro/mi_matrix/stdlib_page_modern_xmod
-repro/mi_matrix/stdlib_page_xmod
 repro/mi_matrix/stdlib_pathfind_basic_xmod
 repro/mi_matrix/stdlib_pathfind_cross_xmod
 repro/mi_matrix/stdlib_pathfind_plus_xmod

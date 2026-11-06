@@ -54,6 +54,8 @@ pub fn main() void {
     page.pageRelease(&a, r1, 0);
     r1[2] = 0x11;
     ck(r1[2] == 0x11, "pageRelease(ptr, 0) no-op");
+    ck(!page.pageCommit(&a, r1, page.PAGE_SIZE + 1), "non-multiple pageCommit -> false");
+    ck(!page.pageDecommit(&a, r1, page.PAGE_SIZE + 1), "non-multiple pageDecommit -> false");
 
     // --- protect allocator: same reserve/commit/decommit/recommit cycle ---
     var pcfg = page.pageConfigDefault();

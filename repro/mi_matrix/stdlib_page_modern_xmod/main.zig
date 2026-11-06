@@ -14,7 +14,10 @@ const std = @import("std");
 
 extern "c" fn madvise(addr: *void, len: usize, advice: i32) i32;
 
+var g_madvise_calls: u32 = 0;
+
 fn shim(p: *void, n: usize, advice: i32) i32 {
+    g_madvise_calls += 1;
     return madvise(p, n, advice);
 }
 
@@ -47,12 +50,16 @@ fn run(mode: std.page.PosixMode, what: []const u8) void {
     ck(r[0] == 0xA5, what);
     ck(r[page.PAGE_SIZE] == 0xA5, what);
 
+    const calls_before: u32 = g_madvise_calls;
     ck(page.pageDecommit(&a, r, two), what);
+    ck(g_madvise_calls == calls_before + 1, what);
     ck(page.pageCommit(&a, r, two), what);
     ck(@ptrToInt(r) == addr, what);
 
     // MADV_DONTNEED discards anonymous-private page contents; the recommitted
-    // mapping is at the same address and writable, so fresh contents survive.
+    // mapping is at the same address and reads back zero before fresh writes.
+    ck(r[0] == 0, what);
+    ck(r[page.PAGE_SIZE] == 0, what);
     r[0] = 0x3C;
     r[page.PAGE_SIZE] = 0xC3;
     ck(r[0] == 0x3C, what);
