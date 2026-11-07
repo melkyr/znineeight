@@ -15,6 +15,60 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-07 — seed v143 (HEAD a9c6d323)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12503400 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-11-07 |
+| HEAD | `a9c6d323` |
+| seed binary md5 | `cd8d283b917749009961f4445043666b` |
+| self-emission C | 48 `.c` + 49 `.h` (12503400 bytes) |
+| fixed point | `cd8d283b917749009961f4445043666b` |
+| lib manifest | `lib/manifest.md5` (56 std files; md5 `ec2170933d878c2dda786ba742001be3`) |
+| archive md5 | `0f8c0548e7ebf99d04f38e9cf2f169ef` |
+| markers | `4245 lines / 49192 B` (`--markers --dump-c89` on `mud_server`; canonical v142 archive compiler+lib baseline `4231 lines / 49045 B`; delta **+14 lines / +147 B**) |
+| rotation cause | authorized `std_gpa` medium-decommit-failure fix (std-only; fixed point unchanged from v142) |
+
+Marker cause: the `std_gpa` fix adds `PAGE_POISONED`/`NO_SKIP`,
+`unlinkMediumChunk`, the `findFit` skip argument and the retry/poison logic;
+because `--dump-c89` includes the `std_gpa` module C, the 8 emission pins and
+the `mud_server` marker stream move while the compiler fixed point stays
+`cd8d283b…`. The v142 marker record `4232/49084` does not reproduce against the
+v142 archive's own compiler+lib (canonical `4231/49045`); that is a pre-existing
+record erratum, not a v143 change.
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `c553c45e6d44ae0a7f31efb2f068b6c7` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 56 std `.zig` + `manifest.md5` |
+| HEAD/date | `a9c6d323` / 2026-11-07 |
+
+Provenance note: the archived binary (md5 cd8d283b917749009961f4445043666b) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+a9c6d323; gcc of the archive's self-emission C reproduces the fixed point
+`cd8d283b917749009961f4445043666b` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-11-07 — seed v142 (HEAD 1518e08c)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir

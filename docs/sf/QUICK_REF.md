@@ -30,33 +30,42 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-07 — seed v142]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-07 — seed v143]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v142 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v143 CHANGELOG entry.
 
-**Current seed: v142** (rotated 2026-11-07 for Phase 3.1 general-purpose
-allocators: the `sf/src/std.zig` `std.page`/`std.gpa`/`std.pool` barrel exports
-plus the Task 1/7 compiler-source changes — `std_page_prelude.h` emission,
-`error[3079]`, and GPA ownership recognition in the analyzer; packaging base
-HEAD `1518e08c`). Archived binary md5 (= fixed point)
-`cd8d283b917749009961f4445043666b`, moved from v141 `cf68f192…` by the Tasks
-1/7 compiler-source changes (the std payload alone does not move it); archive
-md5 `1bd6201b039b10f0be50d518878dfecb`; Win9x zip md5
-`8f6b813d1141336978b5b30c18cb783b`; `gen/` 48 `.c` + 49 `.h` (12,503,400
-bytes); `lib/` **56** std `.zig` (`std.zig` + 55 `std_*.zig`) plus
+**Current seed: v143** (rotated 2026-11-07 for the authorized `std_gpa`
+medium-decommit-failure fix; a **std-only** rotation, packaging base HEAD
+`a9c6d323`). Archived binary md5 (= fixed point)
+`cd8d283b917749009961f4445043666b`, unchanged from v142 (the fix does not touch
+the compiler source); archive md5 `0f8c0548e7ebf99d04f38e9cf2f169ef`; Win9x
+zip md5 `c553c45e6d44ae0a7f31efb2f068b6c7`; `gen/` 48 `.c` + 49 `.h`
+(12,503,400 bytes); `lib/` **56** std `.zig` (`std.zig` + 55 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`a356e5b2a082340e464adf64dc356cd0`; adds `std_page.zig`,
+`ec2170933d878c2dda786ba742001be3`; retains `std_page.zig`,
 `std_page_pal.zig`, `std_gpa.zig`, `std_pool.zig`).
-A rebuild from the committed v142 archive is two-hop
+A rebuild from the committed v143 archive is two-hop
 **hop1 == hop2 == `cd8d283b…`**. The compiler source is **`-fsafe`-clean**.
+
+v143 measurement (authorized second anchor move; targeted checks only, no full
+battery rerun): markers (`--markers --dump-c89` on `mud_server`, canonical
+v142 archive compiler+lib baseline **4231 lines / 49045 B**)
+**4245 lines / 49192 B**, delta **+14 lines / +147 B**; the 8 pins were
+re-baselined a second time (table below). Cause attribution: the `std_gpa`
+decommit-failure fix adds `PAGE_POISONED`/`NO_SKIP`, `unlinkMediumChunk`, the
+`findFit` skip argument and the retry/poison logic; because `--dump-c89`
+includes the `std_gpa` module C, all four programs' 8-pin hashes move. The
+v143 fixed point is unchanged, confirming the compiler source did not move.
 
 The v142 rotation battery was re-measured **once** after the barrel exports
 (fold-era accounting): markers (`--markers --dump-c89` on `mud_server`)
-**4232 lines / 49084 B**; the 8 pins re-baselined once (table below); the
+**4232 lines / 49084 B** (v142 record; canonical re-measurement of the v142
+archive's own compiler+lib gives **4231 lines / 49045 B** — pre-existing
+erratum, used as the v143 delta baseline); the 8 pins re-baselined once (table below); the
 frozen-1124 corpus md5 `518eca1a9b5d3e1cc5a48abce214abd8` with **0 movers**;
 the goldens **5/5** byte-identical; live corpus **1265 = 1078 OK / 63 GREEN /
 124 FAIL** (class md5 `3c8f85038483959312487a328acbc540`; the 9 new
@@ -171,7 +180,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v142 carries the full 56 std `.zig`** = `std.zig` plus
+tracked seed archive **v143 carries the full 56 std `.zig`** = `std.zig` plus
 55 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -765,21 +774,30 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (2026-11-07 — Phase 3.1 Task 8 std_page/std_gpa/std_pool barrel re-baseline).**
-Measured with the seed-built compiler from the repo root with relative entry
-paths: `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`.
+**8-pin table (2026-11-07 — v143 authorized second re-baseline, `std_gpa`
+medium-decommit-failure fix).** Measured with the v143-produced compiler
+(`build_from_seed.sh` from the committed archive) from the repo root with
+relative entry paths:
+`<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`.
 
-**All 8 moved once**, by design: `sf/src/std.zig` now re-exports `std.page`,
-`std.gpa`, and `std.pool` (`pub const page/gpa/pool = @import(...)`). The new
-modules are interned for every `std`-importing program, shifting later type ids
-and the global `ERROR_*` tag numbering, so both `-fsafe` and `-ffast` dump bytes
-move. The verified-delta showed only the new module C, module-list /
-forward-declaration / typedef additions, and type/error-tag intern ripple; the
-compiler-only delta against the pre-3.1 `lib/` was byte-identical. Runtime
-behavior is unchanged: goldens 5/5 byte-identical (gol/lisp/json/mud),
-frozen-1124 corpus 0 movers, live corpus additive by exactly the 9 new fixture
-dirs. Previous values are the historical tables below. The absolute pin values
-are **compiler-build dependent**, so only same-build comparisons are meaningful.
+**All 8 moved a second time**, by authorization: the `std_gpa` fix adds
+`PAGE_POISONED`/`NO_SKIP`, `unlinkMediumChunk`, the `findFit` skip argument and
+the retry/poison logic, and `--dump-c89` includes the `std_gpa` module C. The
+compiler source is unchanged (v143 fixed point == v142), so this is a std-payload
+declaration/interning effect, not a compiler-behavior change. Only targeted GPA
+fixtures + the emission gate were re-run (operator ruling; no full battery).
+Previous values are the historical tables below. The absolute pin values are
+**compiler-build dependent**, so only same-build comparisons are meaningful.
+
+| Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
+|---|---|---|
+| `examples/z98/mud_server/main.zig` | `b487f404e4f290d45e348f57867c7293` | `2771a1c69fb548d5db755b1d5eba91f0` |
+| `examples/z98/game_of_life/main.zig` | `a5e2a7556f5ab051a26728afa236d77d` | `2469bc11d40a2717690251a0e20e1c5a` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `15ebc406050f3a6f70f70265de226a2f` | `98d60a9cc72ebc3a248784443bf2ead3` |
+| `examples/z98/json_parser/main.zig` | `cc0deb57e2367a9e4482a52a5cb81c41` | `097174bd480867381e133278fdfc26cc` |
+
+Historical 8-pin table (2026-11-07, v142 Phase 3.1 Task 8
+std_page/std_gpa/std_pool barrel re-baseline; superseded above):
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|

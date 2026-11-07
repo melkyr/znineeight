@@ -55,18 +55,19 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v142** (`release/seed/zig1-seed.tgz`, archive md5
-`1bd6201b039b10f0be50d518878dfecb`), with **56** std files (`std.zig` +
+The committed seed is **v143** (`release/seed/zig1-seed.tgz`, archive md5
+`0f8c0548e7ebf99d04f38e9cf2f169ef`), with **56** std files (`std.zig` +
 55 `std_*.zig`) and `lib/manifest.md5` md5
-`a356e5b2a082340e464adf64dc356cd0`. v142 is the Phase 3.1 general-purpose
-allocator rotation: it adds `std_page.zig`, `std_page_pal.zig`, `std_gpa.zig`,
-and `std_pool.zig` (barrel-exported as `std.page`/`std.gpa`/`std.pool`) plus
-the Task 1/7 compiler-source changes (`std_page_prelude.h` emission,
-`error[3079]`, GPA analyzer ownership recognition). The compiler fixed point is
-`cd8d283b917749009961f4445043666b`, moved from `cf68f192…` by those
-compiler-source changes (the std payload alone does not move it). The Win9x
-companion zip is `release/seed/zig1_seed_w9.zip` (md5
-`8f6b813d1141336978b5b30c18cb783b`).
+`ec2170933d878c2dda786ba742001be3`. v143 is a std-only rotation for the
+authorized `std_gpa` medium-decommit-failure fix; it retains the v142
+general-purpose allocator inventory (`std_page.zig`, `std_page_pal.zig`,
+`std_gpa.zig`, `std_pool.zig`, barrel-exported as
+`std.page`/`std.gpa`/`std.pool`) plus the Task 1/7 compiler-source changes
+(`std_page_prelude.h` emission, `error[3079]`, GPA analyzer ownership
+recognition). The compiler fixed point is unchanged from v142:
+`cd8d283b917749009961f4445043666b` (the fix does not touch compiler source).
+The Win9x companion zip is `release/seed/zig1_seed_w9.zip` (md5
+`c553c45e6d44ae0a7f31efb2f068b6c7`).
 
 ## Phase 1 result — TLS + WireGuard complete
 
