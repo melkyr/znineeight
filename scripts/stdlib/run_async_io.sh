@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Coroutine socket-I/O gate for the Phase 3.3 std fixtures.
 #
-# usage: run_async_io.sh <zig1> [net]
+# usage: run_async_io.sh <zig1> [net|tlsio]
 #
 # `net` (default) emits repro/mi_matrix/stdlib_net_async_xmod under BOTH -ffast
 # and -fsafe (default), builds each through the emitted build_target.sh, checks
 # the argless usage golden, then starts a local Node TCP echo server and runs
 # each binary against it. Expected: stdout `async=hello`, rc 0, both modes.
 #
-# Task 3 adds the `tlsio` mode (stdlib_tls_io_xmod); this script is the shared
-# driver home for both modes.
+# `tlsio` emits repro/mi_matrix/stdlib_tls_io_xmod the same way and runs it
+# against a local Node TLS echo server (committed localhost certificate).
+# Expected: stdout `tlsio=ping` + `wb>=1`, rc 0, both modes.
 #
 # If Node is unavailable the server-backed checks print SKIP and never claim
 # PASS.
@@ -22,7 +23,7 @@ cd "$ROOT" || exit 2
 export Z98_SEED=1
 
 if [ "$#" -lt 1 ]; then
-    echo "usage: run_async_io.sh <zig1> [net]" >&2
+    echo "usage: run_async_io.sh <zig1> [net|tlsio]" >&2
     exit 2
 fi
 
@@ -34,9 +35,15 @@ case "$MODE" in
     net)
         DIR="repro/mi_matrix/stdlib_net_async_xmod"
         WANT="async=hello"
+        RUN_HOST="127.0.0.1"
+        ;;
+    tlsio)
+        DIR="repro/mi_matrix/stdlib_tls_io_xmod"
+        WANT=$'tlsio=ping\nwb>=1'
+        RUN_HOST="localhost"
         ;;
     *)
-        echo "error: unknown mode '$MODE' (supported: net)" >&2
+        echo "error: unknown mode '$MODE' (supported: net, tlsio)" >&2
         exit 2
         ;;
 esac
@@ -120,8 +127,30 @@ else
     diff -u "$DIR/expected.txt" "$tmp/usage.out" 2>/dev/null | head -10 | sed 's/^/    /' >&2 || true
 fi
 
-echo "== local Node TCP echo server =="
-cat >"$tmp/echo.js" <<'JS'
+CERTS="$ROOT/examples/z98/demo/tls_demo/tests/certs"
+if [ "$MODE" = "tlsio" ]; then
+    echo "== local Node TLS echo server =="
+    cat >"$tmp/echo.js" <<'JS'
+const tls = require("tls");
+const fs = require("fs");
+const ready = process.env.ECHO_READY;
+const srv = tls.createServer({
+    key: fs.readFileSync(process.env.ECHO_KEY),
+    cert: fs.readFileSync(process.env.ECHO_CERT),
+}, (c) => {
+    c.on("error", () => {});
+    c.pipe(c);
+});
+srv.on("tlsClientError", () => {});
+srv.listen(0, "127.0.0.1", () => {
+    fs.writeFileSync(ready, String(srv.address().port));
+});
+process.on("SIGTERM", () => { srv.close(); process.exit(0); });
+process.on("SIGINT", () => { srv.close(); process.exit(0); });
+JS
+else
+    echo "== local Node TCP echo server =="
+    cat >"$tmp/echo.js" <<'JS'
 const net = require("net");
 const fs = require("fs");
 const ready = process.env.ECHO_READY;
@@ -135,10 +164,12 @@ srv.listen(0, "127.0.0.1", () => {
 process.on("SIGTERM", () => { srv.close(); process.exit(0); });
 process.on("SIGINT", () => { srv.close(); process.exit(0); });
 JS
+fi
 
 ready="$tmp/echo.ready"
 rm -f "$ready"
-ECHO_READY="$ready" node "$tmp/echo.js" >"$tmp/server.log" 2>&1 &
+ECHO_READY="$ready" ECHO_KEY="$CERTS/localhost.key" ECHO_CERT="$CERTS/localhost.pem" \
+    node "$tmp/echo.js" >"$tmp/server.log" 2>&1 &
 SERVER_PID=$!
 
 i=0
@@ -154,7 +185,7 @@ if [ ! -s "$ready" ]; then
 else
     read -r port <"$ready"
     for label in fast safe; do
-        timeout 40 "$tmp/$label/prog" "127.0.0.1:$port" \
+        timeout 40 "$tmp/$label/prog" "$RUN_HOST:$port" \
             >"$tmp/$label/run.out" 2>"$tmp/$label/run.err"
         rc=$?
         got="$(tr -d '\r' < "$tmp/$label/run.out")"
