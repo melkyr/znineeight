@@ -4,6 +4,7 @@ sink=6
 source=70000
 large=too_large
 small_buf=too_large
+too_large_flush=1
 fail_id_release=1
 slow_ok=1
 arena_ok=1

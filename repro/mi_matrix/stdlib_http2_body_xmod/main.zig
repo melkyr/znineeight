@@ -37,6 +37,8 @@ const SLOW_BODY_LEN: usize = 40000;
 const SOURCE_BODY_LEN: usize = 70000;
 const LARGE_CHUNK: usize = 16384;
 const LARGE_CHUNKS: usize = 65;
+const TOO_CHUNK_LEN: usize = 16384;
+const NORMAL_BODY_LEN: usize = 33000;
 
 const Script = struct {
     rbuf: [1200000]u8,
@@ -80,6 +82,10 @@ var g_small_out_buf: [4]u8 = undefined;
 var g_large_out_buf: [1048576 + 16384]u8 = undefined;
 var g_fail_body: [16]u8 = undefined;
 var g_fail_reuse: [16]u8 = undefined;
+var g_too_chunk: [TOO_CHUNK_LEN]u8 = undefined;
+var g_normal_body: [NORMAL_BODY_LEN]u8 = undefined;
+var g_rej_out_buf: [100]u8 = undefined;
+var g_normal_out_buf: [40000]u8 = undefined;
 
 const SinkState = struct {
     buf: []u8,
@@ -181,6 +187,21 @@ fn buildStage(s: *Script, stage: usize) void {
         const id: u32 = @intCast(u32, stage * 2 + 1);
         emitStatus(s, id);
         emitData(s, id, 0x1, "z");
+    } else if (s.dyn_kind == 4) {
+        if (stage == 0) {
+            var empty = [_]u8{0};
+            scriptEmit(s, h2.FrameType.settings, 0, 0, empty[0..0]);
+            emitStatus(s, 1);
+            emitData(s, 1, 0, g_too_chunk[0..]);
+        } else if (stage == 1) {
+            emitStatus(s, 3);
+            emitData(s, 3, 0, g_too_chunk[0..]);
+        } else if (stage == 2) {
+            emitStatus(s, 5);
+            emitData(s, 5, 0, g_normal_body[0..16384]);
+            emitData(s, 5, 0, g_normal_body[16384..32768]);
+            emitData(s, 5, 0x1, g_normal_body[32768..NORMAL_BODY_LEN]);
+        }
     }
     scriptEnd(s);
 }
@@ -593,8 +614,8 @@ fn scenarioSink() void {
 
     var ss = SinkState{ .buf = g_sink_buf[0..], .len = 0, .fail = false };
     var sink = http.ResponseSink{ .state = @ptrCast(*void, &ss), .write_fn = sinkWrite };
+    // Streaming mode must not read out.body; leave it undefined on purpose.
     var out: http.Response = undefined;
-    out.body = g_empty_body[0..0];
     var hs = [1]http.Header{http.Header{ .name = "X-Custom", .value = "Value" }};
     var args = StreamArgs{ .c = c, .url = "https://example.com/s", .headers = hs[0..], .sink = &sink, .out = &out, .ok = 0, .id = 0 };
 
@@ -662,8 +683,8 @@ fn scenarioSource() void {
     var sink = http.ResponseSink{ .state = @ptrCast(*void, &ss), .write_fn = sinkWrite };
     var src_state = SourceState{ .body = g_source_body[0..], .pos = 0, .reads = 0 };
     var src = http.RequestSource{ .state = @ptrCast(*void, &src_state), .read_fn = sourceRead };
+    // Streaming mode must not read out.body; leave it undefined on purpose.
     var out: http.Response = undefined;
-    out.body = g_empty_body[0..0];
     var args = PostStreamArgs{
         .c = c,
         .url = "https://example.com/post",
@@ -781,6 +802,75 @@ fn scenarioSmallBuf() void {
     }
     if (!too_large) @panic("small: not rejected");
     std.io.write("small_buf=too_large\n");
+    h2.http2Close(c);
+}
+
+fn scenarioTooLargeFlush() void {
+    const s = &g_script;
+    scriptReset(s);
+    s.dynamic = true;
+    s.dyn_kind = 4;
+    s.cycles_ready = 0;
+
+    var ar = std.arena.init(g_arena_backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch @panic("too_large_flush: open");
+
+    var got1: bool = false;
+    var out1: http.Response = undefined;
+    var r1 = makeGet(&out1);
+    out1.body = g_rej_out_buf[0..];
+    const id1 = h2.http2Submit(c, &r1) catch @panic("too_large_flush: submit1");
+    s.cycles_ready = 1;
+    var it: usize = 0;
+    while (it < 4000) : (it += 1) {
+        _ = h2.http2Pump(c) catch |e| {
+            if (e == error.TooLarge) got1 = true;
+            break;
+        };
+        if (r1.done or r1.failed) break;
+    }
+    h2.http2Release(c, id1) catch {
+        got1 = false;
+    };
+    const credit1: bool = (c.conn_recv_pending == 0 and c.conn_recv_window == 65535);
+
+    var got2: bool = false;
+    var out2: http.Response = undefined;
+    var r2 = makeGet(&out2);
+    out2.body = g_rej_out_buf[0..];
+    const id2 = h2.http2Submit(c, &r2) catch @panic("too_large_flush: submit2");
+    s.cycles_ready = 2;
+    it = 0;
+    while (it < 4000) : (it += 1) {
+        _ = h2.http2Pump(c) catch |e| {
+            if (e == error.TooLarge) got2 = true;
+            break;
+        };
+        if (r2.done or r2.failed) break;
+    }
+    h2.http2Release(c, id2) catch {
+        got2 = false;
+    };
+    const credit2: bool = (c.conn_recv_pending == 0 and c.conn_recv_window == 65535);
+
+    var out3: http.Response = undefined;
+    var r3 = makeGet(&out3);
+    out3.body = g_normal_out_buf[0..];
+    const id3 = h2.http2Submit(c, &r3) catch @panic("too_large_flush: submit3");
+    s.cycles_ready = 3;
+    var normal_ok: bool = false;
+    it = 0;
+    while (it < 4000) : (it += 1) {
+        _ = h2.http2Pump(c) catch break;
+        if (r3.done or r3.failed) break;
+    }
+    if (r3.done and out3.status == 200 and out3.body.len == NORMAL_BODY_LEN) normal_ok = true;
+    h2.http2Release(c, id3) catch {
+        normal_ok = false;
+    };
+
+    printFlag("too_large_flush", got1 and got2 and credit1 and credit2 and normal_ok);
     h2.http2Close(c);
 }
 
@@ -1022,11 +1112,14 @@ pub fn main() void {
     fillPattern(g_slow_body[0..], 17);
     fillPattern(g_source_body[0..], 43);
     fillPattern(g_large_body[0..], 91);
+    fillPattern(g_too_chunk[0..], 53);
+    fillPattern(g_normal_body[0..], 67);
     scenarioBody();
     scenarioSink();
     scenarioSource();
     scenarioLarge();
     scenarioSmallBuf();
+    scenarioTooLargeFlush();
     scenarioSinkError();
     scenarioFailIdRelease();
     scenarioSlow();

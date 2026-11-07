@@ -786,14 +786,21 @@ fn resetStream(c: *Http2Conn, st: *Stream, id: u32, req: *Http2Request) void {
     st.body_off = 0;
     st.src_sent = 0;
     st.headers_received = false;
-    st.body_out = req.out.body;
+    // Streaming mode neither reads nor writes out.body. Capture the caller
+    // capacity only for buffered responses, then truncate it for the response.
+    if (req.sink == null) {
+        st.body_out = req.out.body;
+        req.out.body = st.body_out[0..0];
+    } else {
+        st.body_out = c.empty_bytes[0..0];
+        req.out.body = c.empty_bytes[0..0];
+    }
     st.body_written = 0;
     req.stream_id = id;
     req.done = false;
     req.failed = false;
     req.out.status = 0;
     req.out.headers = c.empty_headers[0..0];
-    req.out.body = st.body_out[0..0];
 }
 
 fn hasInjection(s: []const u8) bool {
@@ -1236,6 +1243,20 @@ fn sendRstStream(c: *Http2Conn, stream_id: u32, code: u32) void {
     frameAppend(&c.writer, FrameType.rst_stream, 0, stream_id, p[0..4]) catch {};
 }
 
+// A rejected buffered body already debited the connection receive window for
+// this DATA frame. Return that credit immediately instead of waiting for the
+// half-window threshold (which only an accepted DATA frame would trigger), and
+// fail the stream so the lease is releasable and http2Wait cannot hang.
+fn failBufferedTooLarge(c: *Http2Conn, st: *Stream) void {
+    st.req.failed = true;
+    st.state = StreamState.reset;
+    sendRstStream(c, st.id, 0x2);
+    if (c.conn_recv_pending > 0) {
+        sendWindowUpdate(c, 0, c.conn_recv_pending) catch {};
+        c.conn_recv_pending = 0;
+    }
+}
+
 fn dispatchData(c: *Http2Conn, f: *Frame) Http2Error!void {
     const st = findStream(c, f.stream_id) orelse return error.StreamClosed;
     if (st.state == StreamState.reset or st.state == StreamState.closed) {
@@ -1273,18 +1294,15 @@ fn dispatchData(c: *Http2Conn, f: *Frame) Http2Error!void {
         };
     } else {
         if (st.body_written > st.body_out.len) {
-            st.state = StreamState.reset;
-            st.req.failed = true;
+            failBufferedTooLarge(c, st);
             return error.TooLarge;
         }
         if (body.len > st.body_out.len - st.body_written) {
-            st.state = StreamState.reset;
-            st.req.failed = true;
+            failBufferedTooLarge(c, st);
             return error.TooLarge;
         }
         if (st.body_written + body.len > MAX_BUFFERED_BODY) {
-            st.state = StreamState.reset;
-            st.req.failed = true;
+            failBufferedTooLarge(c, st);
             return error.TooLarge;
         }
         var k: usize = 0;
