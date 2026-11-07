@@ -1,0 +1,11 @@
+streams=2
+status=200
+body=a/b
+settings_ack=1
+ping_ack=1
+goaway=1
+rst=1
+wb_resume=1
+zero_wu=protocol
+win_delta=ok
+arena_ok=1
