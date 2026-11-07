@@ -30,27 +30,25 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-07 — seed v144]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-07 — seed v145]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v144 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v145 CHANGELOG entry.
 
-**Current seed: v144** (rotated 2026-11-07 for Phase 3.3 HTTP/2: adds
-`std_tls_io.zig`, `std_hpack.zig`, and `std_http2.zig` to the shipped std set;
-packaging base HEAD `952b0bb3`). Archived binary md5 (= fixed point)
-`cd8d283b917749009961f4445043666b`, unchanged from v143 (the new modules are
-not in the compiler import graph); archive md5
-`140bd00dca94a7140e4b5469bf2495a8`; Win9x zip md5
-`e4c21d2c34ffa1766ede224a50048072`; `gen/` 48 `.c` + 49 `.h` (12,503,400
+**Current seed: v145** (rotated 2026-11-07 to repackage the final Phase 3.3
+HTTP/2 closeout fixes; packaging base HEAD `07144129`). Archived binary md5
+(= fixed point) `cd8d283b917749009961f4445043666b`, unchanged from v144 (the
+new modules are not in the compiler import graph); archive md5
+`abbc017de15ca2eb1ae1edd4a976ecd7`; Win9x zip md5
+`20821b5fdc32e48dfb5e1b3d694de52b`; `gen/` 48 `.c` + 49 `.h` (12,503,400
 bytes); `lib/` **59** std `.zig` (`std.zig` + 58 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`e89c93ee9e7eda25d080eb392dea5d91`; adds `std_tls_io.zig`, `std_hpack.zig`,
-`std_http2.zig`; retains `std_page.zig`, `std_page_pal.zig`, `std_gpa.zig`,
-`std_pool.zig`).
-A rebuild from the committed v144 archive is two-hop
+`6be2fe3690949cd9601d9db1ac71e48b`; includes `std_tls_io.zig`,
+`std_hpack.zig`, `std_http2.zig`).
+A rebuild from the committed v145 archive is two-hop
 **hop1 == hop2 == `cd8d283b…`**. The compiler source is **`-fsafe`-clean**.
 
 v143 measurement (authorized second anchor move; targeted checks only, no full
@@ -192,7 +190,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v144 carries the full 59 std `.zig`** = `std.zig` plus
+tracked seed archive **v145 carries the full 59 std `.zig`** = `std.zig` plus
 58 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.

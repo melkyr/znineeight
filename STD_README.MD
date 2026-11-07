@@ -55,19 +55,20 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v144** (`release/seed/zig1-seed.tgz`, archive md5
-`140bd00dca94a7140e4b5469bf2495a8`), with **59** std files (`std.zig` +
+The committed seed is **v145** (`release/seed/zig1-seed.tgz`, archive md5
+`abbc017de15ca2eb1ae1edd4a976ecd7`), with **59** std files (`std.zig` +
 58 `std_*.zig`) and `lib/manifest.md5` md5
-`e89c93ee9e7eda25d080eb392dea5d91`. v144 is a std-only Phase 3.3 rotation that
-adds `std_tls_io.zig`, `std_hpack.zig`, and `std_http2.zig`; it retains the
+`6be2fe3690949cd9601d9db1ac71e48b`. v145 is a std-only Phase 3.3 closeout
+rotation that repackages the final `std_http2.zig`/`std_tls_io.zig` fixes and
+ships `std_tls_io.zig`, `std_hpack.zig`, and `std_http2.zig`; it retains the
 v142 general-purpose allocator inventory (`std_page.zig`, `std_page_pal.zig`,
 `std_gpa.zig`, `std_pool.zig`, barrel-exported as
 `std.page`/`std.gpa`/`std.pool`) plus the Task 1/7 compiler-source changes
 (`std_page_prelude.h` emission, `error[3079]`, GPA analyzer ownership
-recognition). The compiler fixed point is unchanged from v142/v143:
+recognition). The compiler fixed point is unchanged from v142-v144:
 `cd8d283b917749009961f4445043666b` (the new modules are not in the compiler
 import graph). The Win9x companion zip is `release/seed/zig1_seed_w9.zip` (md5
-`e4c21d2c34ffa1766ede224a50048072`).
+`20821b5fdc32e48dfb5e1b3d694de52b`).
 
 **Phase 3.3 HTTP/2 surface.** `std_tls` gains ALPN (`alpn_h2`,
 `tlsAlpnSelected`) and the opt-in `prefer_chacha20` suite/group ordering;
