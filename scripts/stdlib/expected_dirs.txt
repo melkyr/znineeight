@@ -165,6 +165,9 @@ repro/mi_matrix/stdlib_hex_roundtrip_xmod
 repro/mi_matrix/stdlib_hex_stress_xmod
 repro/mi_matrix/stdlib_hpa_basic_xmod
 repro/mi_matrix/stdlib_hpa_cross_xmod
+repro/mi_matrix/stdlib_hpack_dynamic_xmod
+repro/mi_matrix/stdlib_hpack_huffman_xmod
+repro/mi_matrix/stdlib_hpack_vectors_xmod
 repro/mi_matrix/stdlib_http_badurl_xmod
 repro/mi_matrix/stdlib_http_parseresponse_chunked_reject_xmod
 repro/mi_matrix/stdlib_http_parseresponse_xmod

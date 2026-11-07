@@ -1,0 +1,49 @@
+C.2.1
+custom-key: custom-header
+C.2.2
+:path: /sample/path
+C.2.3
+password: secret
+C.2.4
+:method: GET
+C.3.1
+:method: GET
+:scheme: http
+:path: /
+:authority: www.example.com
+C.3.2
+:method: GET
+:scheme: http
+:path: /
+:authority: www.example.com
+cache-control: no-cache
+C.3.3
+:method: GET
+:scheme: https
+:path: /index.html
+:authority: www.example.com
+custom-key: custom-value
+C.4.1
+:method: GET
+:scheme: http
+:path: /
+:authority: www.example.com
+C.4.2
+:method: GET
+:scheme: http
+:path: /
+:authority: www.example.com
+cache-control: no-cache
+C.4.3
+:method: GET
+:scheme: https
+:path: /index.html
+:authority: www.example.com
+custom-key: custom-value
+encode-roundtrip
+:method: GET
+:path: /xyz
+x-test: value
+corrupt
+corrupt
+corrupt
