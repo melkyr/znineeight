@@ -3,9 +3,9 @@
 Tracks only **open** compiler defects found while building the example programs.
 Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
-deleted numbers are not reused. Next free slot: **D14**.
+deleted numbers are not reused. Next free slot: **D15**.
 
-Open: **D3**, **D4**, **D5**, **D7.3**, **D8**, **D10**, **D12**, **D13**.
+Open: **D3**, **D4**, **D5**, **D7.3**, **D8**, **D10**, **D12**, **D13**, **D14**.
 
 _(Add new entries at the next free slot as they are found; entries are doc-only
 unless a compiler fix is separately authorized.)_
@@ -261,3 +261,42 @@ stated in `docs/reference/Language_Spec_Z98.md` §1.3 and the emission notes in
 `em_items[].value`; fixtures `enum_u64_max_reject_xmod`,
 `enum_u64_max_implicit_reject_xmod`; Task 6c brief STOP condition on enum
 storage/layout changes.
+
+---
+
+## D14 — Suspending convenience wrapper cannot return an error-union payload
+
+**Status:** OPEN — documented compiler limitation (found 2026-11-07 during
+Phase 3.3 Task 7; no compiler fix authorized).
+
+**Defect.** A suspending function that calls another suspending function and
+then returns a non-void error-union payload is rejected in the convenience
+wrapper shape. `http2Get(...) Http2Error!u32` produced
+`error[3043]: async parent_result slot type mismatch`; as a plain tail return
+the emitted step ABI is GCC-incompatible. The same payload type works when the
+suspension is internal (`recvSomeAsync` returns `NetError!usize`), so the
+limitation is specific to the wrapper/implicit-await-plus-non-void-error-union
+result shape, not to error-union returns in general.
+
+**Reproducer.**
+
+```zig
+fn waitAndReturn(c: *Conn) Http2Error!u32 {
+    try wait(c);          // suspending callee: implicit await
+    return 32;            // non-void error-union result across the frame
+}
+```
+
+Observed: `error[3043]: async parent_result slot type mismatch`; a tail-return
+variant emits a step function whose parent-result handling is not
+GCC-compatible.
+
+**Workaround.** Use `Http2Error!void` and write the value through an
+out-parameter (`id_out: *u32`), as
+`std_http2.http2Get/Post/GetStream/PostStream` now do; or make the convenience
+function submit-only and call `http2Wait` separately.
+
+**Reference points.** `sf/src/std_http2.zig` convenience wrappers; async
+frame/result lowering (`sf/src/async_state_machine.zig`,
+`sf/src/async_frame_layout.zig`); Task 7 report
+`.superpowers/sdd/2026-11-07-phase33-http2-plan/task-7-report.md` fix round 2.
