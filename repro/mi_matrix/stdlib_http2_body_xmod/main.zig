@@ -86,6 +86,7 @@ var g_too_chunk: [TOO_CHUNK_LEN]u8 = undefined;
 var g_normal_body: [NORMAL_BODY_LEN]u8 = undefined;
 var g_rej_out_buf: [100]u8 = undefined;
 var g_normal_out_buf: [40000]u8 = undefined;
+var g_stream_body: [3]u8 = undefined;
 
 const SinkState = struct {
     buf: []u8,
@@ -614,8 +615,12 @@ fn scenarioSink() void {
 
     var ss = SinkState{ .buf = g_sink_buf[0..], .len = 0, .fail = false };
     var sink = http.ResponseSink{ .state = @ptrCast(*void, &ss), .write_fn = sinkWrite };
-    // Streaming mode must not read out.body; leave it undefined on purpose.
+    // Streaming mode must not read or write out.body; use a sentinel slice.
+    g_stream_body[0] = 's';
+    g_stream_body[1] = 'b';
+    g_stream_body[2] = 'k';
     var out: http.Response = undefined;
+    out.body = g_stream_body[0..];
     var hs = [1]http.Header{http.Header{ .name = "X-Custom", .value = "Value" }};
     var args = StreamArgs{ .c = c, .url = "https://example.com/s", .headers = hs[0..], .sink = &sink, .out = &out, .ok = 0, .id = 0 };
 
@@ -635,6 +640,7 @@ fn scenarioSink() void {
     if (more != null or args.ok != 1) @panic("sink: api failed");
     if (out.status != 200) @panic("sink: status");
     if (ss.len != 6) @panic("sink: length");
+    const stream_body_kept: bool = (out.body.len == 3 and out.body[0] == 's' and out.body[1] == 'b' and out.body[2] == 'k');
     if (!containsBytes(ss.buf[0..6], "abcdef")) @panic("sink: bytes");
 
     const wire = s.wbuf[0..s.wlen];
@@ -665,6 +671,7 @@ fn scenarioSink() void {
     std.io.write("sink=");
     std.io.printInt(@intCast(i32, ss.len));
     std.io.writeByte('\n');
+    printFlag("stream_body_kept", stream_body_kept);
     h2.http2Close(c);
 }
 

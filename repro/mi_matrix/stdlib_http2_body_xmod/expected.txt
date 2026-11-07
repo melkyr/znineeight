@@ -1,6 +1,7 @@
 body=hello/world
 release=1
 sink=6
+stream_body_kept=1
 source=70000
 large=too_large
 small_buf=too_large

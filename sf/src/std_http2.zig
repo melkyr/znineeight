@@ -793,7 +793,6 @@ fn resetStream(c: *Http2Conn, st: *Stream, id: u32, req: *Http2Request) void {
         req.out.body = st.body_out[0..0];
     } else {
         st.body_out = c.empty_bytes[0..0];
-        req.out.body = c.empty_bytes[0..0];
     }
     st.body_written = 0;
     req.stream_id = id;
@@ -1252,7 +1251,9 @@ fn failBufferedTooLarge(c: *Http2Conn, st: *Stream) void {
     st.state = StreamState.reset;
     sendRstStream(c, st.id, 0x2);
     if (c.conn_recv_pending > 0) {
-        sendWindowUpdate(c, 0, c.conn_recv_pending) catch {};
+        sendWindowUpdate(c, 0, c.conn_recv_pending) catch {
+            return;
+        };
         c.conn_recv_pending = 0;
     }
 }
