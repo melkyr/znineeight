@@ -240,6 +240,7 @@ repro/mi_matrix/stdlib_physics_basic_xmod
 repro/mi_matrix/stdlib_physics_cross_xmod
 repro/mi_matrix/stdlib_physics_panic_distance_xmod
 repro/mi_matrix/stdlib_physics_panic_xmod
+repro/mi_matrix/stdlib_pool_xmod
 repro/mi_matrix/stdlib_print_alias_xmod
 repro/mi_matrix/stdlib_print_autoimport_xmod
 repro/mi_matrix/stdlib_print_dispatch_xmod
