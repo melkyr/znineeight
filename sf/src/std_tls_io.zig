@@ -201,6 +201,30 @@ pub fn tlsIoClose(io: *TlsIo) void {
     io.out_off = 0;
 }
 
+// Unconditional teardown. One best-effort nonblocking flush (a blocked or
+// failed send is ignored), then the socket is closed even if ciphertext could
+// not be sent. Idempotent: a completed close makes later calls a no-op.
+pub fn tlsIoCloseForce(io: *TlsIo) void {
+    if (io.sock_closed) {
+        io.close_pending = false;
+        io.closed = true;
+        io.established = false;
+        io.out_len = 0;
+        io.out_off = 0;
+        return;
+    }
+    if (io.out_off < io.out_len) {
+        flushOut(io) catch {};
+    }
+    net.close(io.sock);
+    io.sock_closed = true;
+    io.close_pending = false;
+    io.closed = true;
+    io.established = false;
+    io.out_len = 0;
+    io.out_off = 0;
+}
+
 pub fn tlsIoClosePending(io: *const TlsIo) bool {
     return io.close_pending;
 }

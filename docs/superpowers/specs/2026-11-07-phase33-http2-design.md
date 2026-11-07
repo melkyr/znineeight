@@ -305,10 +305,14 @@ caller waits for writability and calls `http2Close` again until it returns
 the connection finalized.
 
 `http2CloseForce` is the unconditional teardown path: it makes one best-effort
-flush, then invokes `close_fn` exactly once and marks the connection closed. It
-explicitly drops unsent frames; callers use it when they will not retry a
-graceful close. `http2ClosePending` remains available for event loops that
-prefer polling to the status return.
+flush, then closes exactly once and marks the connection closed. On the TLS
+path it invokes `tlsIoCloseForce`, which performs one best-effort nonblocking
+flush and then closes the socket even if that flush would block, so the fd is
+guaranteed closed (graceful close remains the retryable path for callers that
+want to send the final bytes). On the TCP/Transport path it invokes `close_fn`.
+Either way it explicitly drops unsent frames and is idempotent; callers use it
+when they will not retry a graceful close. `http2ClosePending` remains
+available for event loops that prefer polling to the status return.
 
 Buffered mode (`sink == null`) uses **caller-owned response storage**:
 `out.body` is the capacity buffer at submit time. The response body is copied

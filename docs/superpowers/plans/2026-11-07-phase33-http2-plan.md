@@ -441,7 +441,9 @@ closed. The fix is **CloseStatus + force**, not a required `Transport` field:
 - `http2Close(c) CloseStatus` is graceful/retryable: `.pending` leaves the
   socket open and `close_called` false; the caller retries on writability.
 - `http2CloseForce(c) void` is unconditional teardown: one best-effort flush,
-  close exactly once, drops unsent frames.
+  close exactly once, drops unsent frames. The TLS path uses
+  `tlsIoCloseForce`, which guarantees the fd closes even when the final
+  ciphertext flush would block; TCP/Transport uses `close_fn`.
 - `http2ClosePending(c) bool` remains for event loops.
 - `TooLarge` is stream-local: `http2Pump` continues; `http2Wait` returns
   `error.TooLarge`.

@@ -1733,7 +1733,13 @@ pub fn http2CloseForce(c: *Http2Conn) void {
     c.closed = true;
     c.close_called = true;
     c.close_pending = false;
-    c.transport.close_fn(c.transport.state);
+    if (c.tls_io) |io| {
+        // Force the TLS driver to close its own fd even when ciphertext is
+        // still queued and the socket would block, so force close cannot leak.
+        tls_io.tlsIoCloseForce(io);
+    } else {
+        c.transport.close_fn(c.transport.state);
+    }
 }
 
 pub fn http2ClosePending(c: *const Http2Conn) bool {

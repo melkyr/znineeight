@@ -27,6 +27,7 @@ const std = @import("std");
 const h2 = @import("std_http2.zig");
 const http = @import("std_http.zig");
 const tls_io = @import("std_tls_io.zig");
+const file_mod = @import("std_file.zig");
 
 const PREFACE_BYTES = [_]u8{
     'P', 'R', 'I', ' ', '*', ' ', 'H', 'T', 'T', 'P', '/', '2', '.', '0',
@@ -1341,9 +1342,68 @@ fn scenarioClose() void {
     h2.http2CloseForce(c3);
     const force_idem = s.close_count == 1;
 
+    // D. TLS force: a real fd with pending ciphertext and a failing (blocked
+    // path) send. Graceful close defers; force closes the fd, clears the TLS
+    // pending state, and a second force (HTTP2 and TlsIo) is a no-op.
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    scriptEnd(s);
+    var backing4: [262144]u8 = undefined;
+    var ar4 = std.arena.init(backing4[0..]);
+    var t4 = makeTransport(s);
+    var c4 = h2.http2OpenTransport(&ar4, &t4, defaultConfig()) catch {
+        std.io.write("close_force_tls=0\n");
+        return;
+    };
+    // A regular-file fd on POSIX gives a real fd whose send fails without
+    // SIGPIPE; writing it after force proves the fd was actually closed.
+    var fd_probe_ok: bool = true;
+    var probe_file: file_mod.File = undefined;
+    var have_probe: bool = false;
+    if (@isWindows()) {
+        g_tio.sock = -1;
+    } else {
+        var fa_buf: [2048]u8 = undefined;
+        var fa = std.arena.init(fa_buf[0..]);
+        probe_file = file_mod.open(&fa, "h2_force_tmp", file_mod.Mode.Write) catch {
+            std.io.write("close_force_tls=0\n");
+            return;
+        };
+        have_probe = true;
+        g_tio.sock = @intCast(i32, @ptrToInt(probe_file.handle));
+    }
+    g_tio.out[0] = 'x';
+    g_tio.out[1] = 'y';
+    g_tio.out_len = 2;
+    g_tio.out_off = 0;
+    g_tio.established = true;
+    g_tio.closed = false;
+    g_tio.sock_closed = false;
+    g_tio.close_pending = true;
+    c4.tls_io = &g_tio;
+    const td1 = h2.http2Close(c4);
+    const tls_force_grace = td1 == h2.CloseStatus.pending and tls_io.tlsIoClosePending(&g_tio) and
+        !g_tio.sock_closed and !c4.close_called;
+    h2.http2CloseForce(c4);
+    if (have_probe) {
+        var closed_ok: bool = false;
+        _ = file_mod.write(&probe_file, "z") catch {
+            closed_ok = true;
+        };
+        fd_probe_ok = closed_ok;
+    }
+    const tls_forced = fd_probe_ok and g_tio.sock_closed and !tls_io.tlsIoClosePending(&g_tio) and
+        g_tio.closed and !g_tio.established and g_tio.out_len == 0 and g_tio.out_off == 0 and
+        c4.close_called and c4.closed and !h2.http2ClosePending(c4);
+    h2.http2CloseForce(c4);
+    tls_io.tlsIoCloseForce(&g_tio);
+    const tls_force_idem = g_tio.sock_closed and !tls_io.tlsIoClosePending(&g_tio) and c4.close_called;
+
     printFlag("close_graceful", graceful_pending and graceful_closed and graceful_idem);
     printFlag("close_tls", tls_pending and tls_closed);
     printFlag("close_force", force_ok and force_idem);
+    printFlag("close_force_tls", tls_force_grace and tls_forced and tls_force_idem);
 }
 
 fn scenarioWait() void {
