@@ -1778,8 +1778,8 @@ fn submitUrl(c: *Http2Conn, method: []const u8, url: []const u8, headers: []cons
         .failed = false,
     };
     const id = try submitOnStream(c, st, &st.own_req);
-    try http2Wait(c, id);
     id_out.* = id;
+    try http2Wait(c, id);
 }
 
 pub fn http2Get(c: *Http2Conn, url: []const u8, out: *http.Response, id_out: *u32) Http2Error!void {

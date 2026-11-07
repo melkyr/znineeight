@@ -78,6 +78,8 @@ var g_good_out_buf: [16]u8 = undefined;
 var g_slow_out_buf: [16]u8 = undefined;
 var g_small_out_buf: [4]u8 = undefined;
 var g_large_out_buf: [1048576 + 16384]u8 = undefined;
+var g_fail_body: [16]u8 = undefined;
+var g_fail_reuse: [16]u8 = undefined;
 
 const SinkState = struct {
     buf: []u8,
@@ -259,6 +261,11 @@ fn emitWindowUpdate(s: *Script, sid: u32, inc: u32) void {
     p[2] = @intCast(u8, (inc >> 8) & 0xFF);
     p[3] = @intCast(u8, inc & 0xFF);
     scriptEmit(s, h2.FrameType.window_update, 0, sid, p[0..4]);
+}
+
+fn emitRst(s: *Script, sid: u32) void {
+    var p = [_]u8{ 0, 0, 0, 0x08 };
+    scriptEmit(s, h2.FrameType.rst_stream, 0, sid, p[0..4]);
 }
 
 fn emptyResponse(out: *http.Response) void {
@@ -454,6 +461,21 @@ fn postStreamWorker(args: *PostStreamArgs) void {
         return;
     };
     args.ok = 1;
+}
+
+const FailArgs = struct {
+    c: *h2.Http2Conn,
+    out: *http.Response,
+    id: u32,
+    got_error: u8,
+};
+
+fn failWorker(args: *FailArgs) void {
+    h2.http2Get(args.c, "https://example.com/f", args.out, &args.id) catch |e| {
+        if (e == error.StreamReset) args.got_error = 1;
+        return;
+    };
+    args.got_error = 0;
 }
 
 fn initContext(buf: []u8) *void {
@@ -801,6 +823,60 @@ fn scenarioSinkError() void {
     h2.http2Close(c);
 }
 
+fn scenarioFailIdRelease() void {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    emitRst(s, 1);
+    scriptEnd(s);
+
+    var ar = std.arena.init(g_arena_backing[0..]);
+    var t = makeTransport(s);
+    var cfg = defaultConfig();
+    cfg.max_streams = 1;
+    var c = h2.http2OpenTransport(&ar, &t, cfg) catch @panic("fail: open");
+
+    var out: http.Response = undefined;
+    out.body = g_fail_body[0..];
+    var args = FailArgs{ .c = c, .out = &out, .id = 0, .got_error = 0 };
+
+    var cbuf: [32768]u8 = undefined;
+    var fbuf: [8192]u8 = undefined;
+    var ctx = initContext(cbuf[0..]);
+    var ap: *FailArgs = &args;
+    var args_ptr: *const void = @ptrCast(*const void, &ap);
+    var f: *void = @asyncInit(ctx, &fbuf, failWorker, args_ptr);
+
+    var more: ?*void = @asyncResume(f, null);
+    var it: usize = 0;
+    while (more != null and it < 4000) : (it += 1) {
+        _ = h2.http2Pump(c) catch @panic("fail: pump");
+        more = @asyncResume(f, null);
+    }
+    if (more != null) @panic("fail: worker stuck");
+
+    var good: bool = (args.got_error == 1 and args.id == 1);
+    if (args.id == 0) good = false;
+    if (good) {
+        h2.http2Release(c, args.id) catch {
+            good = false;
+        };
+        var gone: bool = false;
+        _ = h2.http2StreamState(c, args.id) catch |e| {
+            gone = (e == error.NoStream);
+        };
+        if (!gone) good = false;
+        var out3: http.Response = undefined;
+        var r3 = makeGet(&out3);
+        out3.body = g_fail_reuse[0..];
+        const id3 = h2.http2Submit(c, &r3) catch @panic("fail: reuse submit");
+        if (id3 != 3) good = false;
+    }
+    printFlag("fail_id_release", good);
+    h2.http2Close(c);
+}
+
 fn scenarioSlow() void {
     const s = &g_script;
     scriptReset(s);
@@ -952,6 +1028,7 @@ pub fn main() void {
     scenarioLarge();
     scenarioSmallBuf();
     scenarioSinkError();
+    scenarioFailIdRelease();
     scenarioSlow();
     scenarioArenaCycles();
 }
