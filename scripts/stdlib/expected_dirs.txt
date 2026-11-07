@@ -168,6 +168,7 @@ repro/mi_matrix/stdlib_hpa_cross_xmod
 repro/mi_matrix/stdlib_hpack_dynamic_xmod
 repro/mi_matrix/stdlib_hpack_huffman_xmod
 repro/mi_matrix/stdlib_hpack_vectors_xmod
+repro/mi_matrix/stdlib_http2_body_xmod
 repro/mi_matrix/stdlib_http2_frames_xmod
 repro/mi_matrix/stdlib_http2_state_xmod
 repro/mi_matrix/stdlib_http_badurl_xmod

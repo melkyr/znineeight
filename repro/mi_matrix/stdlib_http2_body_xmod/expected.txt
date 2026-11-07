@@ -1,0 +1,5 @@
+body=hello/world
+sink=6
+source=70000
+large=too_large
+slow_ok=1

@@ -15,6 +15,9 @@ const arena_mod = @import("std_arena.zig");
 const buf_mod = @import("std_buf.zig");
 const hpack_mod = @import("std_hpack.zig");
 const http = @import("std_http.zig");
+const tls_mod = @import("std_tls.zig");
+const tls_io = @import("std_tls_io.zig");
+const net = @import("std_net.zig");
 
 pub const FrameType = enum(u8) {
     data = 0,
@@ -46,6 +49,8 @@ pub const Http2Error = error{
     GoAway,
     NoStream,
     Busy,
+    BadCertificate,
+    AuthenticationFailed,
 };
 
 pub const FRAME_HEADER_LEN: usize = 9;
@@ -545,6 +550,7 @@ pub const Http2Conn = struct {
     closed: bool,
     close_called: bool,
     peer_closed: bool,
+    fd: net.Socket,
     settings_ack_count: u32,
     ping_ack_count: u32,
     goaway_count: u32,
@@ -691,6 +697,7 @@ pub fn http2OpenTransport(arena: *arena_mod.Arena, t: *const Transport, cfg: Htt
     c.closed = false;
     c.close_called = false;
     c.peer_closed = false;
+    c.fd = INVALID_FD;
     c.settings_ack_count = 0;
     c.ping_ack_count = 0;
     c.goaway_count = 0;
@@ -774,9 +781,63 @@ fn resetStream(c: *Http2Conn, st: *Stream, id: u32, req: *Http2Request) void {
     req.out.body = c.empty_bytes[0..0];
 }
 
+fn hasInjection(s: []const u8) bool {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '\r' or c == '\n' or c == 0) return true;
+    }
+    return false;
+}
+
+fn lowerByte(c: u8) u8 {
+    if (c >= 'A' and c <= 'Z') return c + @intCast(u8, 32);
+    return c;
+}
+
+fn eqLowerName(name: []const u8, lower: []const u8) bool {
+    if (name.len != lower.len) return false;
+    var i: usize = 0;
+    while (i < name.len) : (i += 1) {
+        if (lowerByte(name[i]) != lower[i]) return false;
+    }
+    return true;
+}
+
+fn eqLowerValue(value: []const u8, lower: []const u8) bool {
+    return eqLowerName(value, lower);
+}
+
+fn headerNameChar(c: u8) bool {
+    if (c <= 32 or c >= 127) return false;
+    if (c == ':' or c == '(' or c == ')' or c == '<' or c == '>' or c == '@') return false;
+    if (c == ',' or c == ';' or c == '\\' or c == '"' or c == '/' or c == '[' or c == ']') return false;
+    if (c == '?' or c == '=' or c == '{' or c == '}') return false;
+    return true;
+}
+
+fn forbiddenHeader(name: []const u8) bool {
+    if (eqLowerName(name, "connection")) return true;
+    if (eqLowerName(name, "keep-alive")) return true;
+    if (eqLowerName(name, "proxy-connection")) return true;
+    if (eqLowerName(name, "transfer-encoding")) return true;
+    if (eqLowerName(name, "upgrade")) return true;
+    return false;
+}
+
+fn lowerHeaderName(a: *arena_mod.Arena, name: []const u8) Http2Error![]const u8 {
+    const raw = arena_mod.alloc(a, name.len) catch return error.OutOfMemory;
+    var i: usize = 0;
+    while (i < name.len) : (i += 1) raw[i] = lowerByte(name[i]);
+    return raw[0..name.len];
+}
+
 fn encodeRequestHeaders(c: *Http2Conn, st: *Stream) Http2Error!void {
     const req = st.req;
     if (req.headers.len > 60) return error.TooLarge;
+    if (req.method.len == 0 or req.scheme.len == 0 or req.authority.len == 0) return error.Protocol;
+    if (req.path.len == 0) return error.Protocol;
+    if (hasInjection(req.method) or hasInjection(req.scheme) or hasInjection(req.authority) or hasInjection(req.path)) return error.Protocol;
     var hs: [64]hpack_mod.HpackHeader = undefined;
     var n: usize = 0;
     hs[n] = hpack_mod.HpackHeader{ .name = ":method", .value = req.method };
@@ -787,9 +848,20 @@ fn encodeRequestHeaders(c: *Http2Conn, st: *Stream) Http2Error!void {
     n += 1;
     hs[n] = hpack_mod.HpackHeader{ .name = ":path", .value = req.path };
     n += 1;
+    var la = arena_mod.init(st.hdr_arena_buf);
     var i: usize = 0;
     while (i < req.headers.len) : (i += 1) {
-        hs[n] = hpack_mod.HpackHeader{ .name = req.headers[i].name, .value = req.headers[i].value };
+        const hn = req.headers[i].name;
+        const hv = req.headers[i].value;
+        if (hn.len == 0) return error.Protocol;
+        if (hasInjection(hn) or hasInjection(hv)) return error.Protocol;
+        var k: usize = 0;
+        while (k < hn.len) : (k += 1) {
+            if (!headerNameChar(hn[k])) return error.Protocol;
+        }
+        if (forbiddenHeader(hn)) return error.Protocol;
+        if (eqLowerName(hn, "te") and !eqLowerValue(hv, "trailers")) return error.Protocol;
+        hs[n] = hpack_mod.HpackHeader{ .name = try lowerHeaderName(&la, hn), .value = hv };
         n += 1;
     }
 
@@ -834,7 +906,11 @@ pub fn http2Submit(c: *Http2Conn, req: *Http2Request) Http2Error!u32 {
     const id = c.next_stream_id;
     c.next_stream_id += 2;
     resetStream(c, st, id, req);
-    try encodeRequestHeaders(c, st);
+    encodeRequestHeaders(c, st) catch |e| {
+        st.state = StreamState.idle;
+        st.id = 0;
+        return e;
+    };
     return id;
 }
 
@@ -1081,13 +1157,17 @@ fn sendWindowUpdate(c: *Http2Conn, stream_id: u32, inc: i32) Http2Error!void {
     }
 }
 
-fn maybeWindowUpdate(c: *Http2Conn, st: *Stream) Http2Error!void {
+fn maybeConnWindowUpdate(c: *Http2Conn) Http2Error!void {
     const conn_half: i32 = DEFAULT_INITIAL_WINDOW / 2;
-    const stream_half: i32 = @intCast(i32, c.cfg.initial_window / 2);
     if (c.conn_recv_pending > 0 and (c.conn_recv_pending >= conn_half or c.conn_recv_window <= 0)) {
         try sendWindowUpdate(c, 0, c.conn_recv_pending);
         c.conn_recv_pending = 0;
     }
+}
+
+fn maybeWindowUpdate(c: *Http2Conn, st: *Stream) Http2Error!void {
+    const stream_half: i32 = @intCast(i32, c.cfg.initial_window / 2);
+    try maybeConnWindowUpdate(c);
     if (st.recv_pending > 0 and (st.recv_pending >= stream_half or st.recv_window <= 0)) {
         try sendWindowUpdate(c, st.id, st.recv_pending);
         st.recv_pending = 0;
@@ -1123,9 +1203,28 @@ fn localEnd(c: *Http2Conn, st: *Stream) void {
     }
 }
 
+fn sendRstStream(c: *Http2Conn, stream_id: u32, code: u32) void {
+    var p: [4]u8 = undefined;
+    p[0] = @intCast(u8, (code >> 24) & 0xFF);
+    p[1] = @intCast(u8, (code >> 16) & 0xFF);
+    p[2] = @intCast(u8, (code >> 8) & 0xFF);
+    p[3] = @intCast(u8, code & 0xFF);
+    frameAppend(&c.writer, FrameType.rst_stream, 0, stream_id, p[0..4]) catch {};
+}
+
 fn dispatchData(c: *Http2Conn, f: *Frame) Http2Error!void {
     const st = findStream(c, f.stream_id) orelse return error.StreamClosed;
-    if (st.state == StreamState.reset or st.state == StreamState.closed or st.state == StreamState.idle) return error.StreamClosed;
+    if (st.state == StreamState.reset or st.state == StreamState.closed) {
+        // A local sink failure resets the stream. Keep connection flow control
+        // honest and drop the bytes so another stream is never aborted.
+        const ignored: i32 = @intCast(i32, f.payload.len);
+        if (ignored > c.conn_recv_window) return error.Protocol;
+        c.conn_recv_window -= ignored;
+        c.conn_recv_pending += ignored;
+        try maybeConnWindowUpdate(c);
+        return;
+    }
+    if (st.state == StreamState.idle) return error.StreamClosed;
     const wire: i32 = @intCast(i32, f.payload.len);
     if (wire > st.recv_window or wire > c.conn_recv_window) return error.Protocol;
     var body: []const u8 = f.payload;
@@ -1134,17 +1233,29 @@ fn dispatchData(c: *Http2Conn, f: *Frame) Http2Error!void {
         if (pad > f.payload.len - 1) return error.Protocol;
         body = f.payload[1 .. f.payload.len - pad];
     }
-    st.recv_window -= wire;
-    st.recv_pending += wire;
+
+    // The connection window accounts for every received DATA byte regardless
+    // of whether this stream can accept the body.
     c.conn_recv_window -= wire;
     c.conn_recv_pending += wire;
 
     if (st.req.sink) |snk| {
-        snk.write_fn(snk.state, body) catch return error.Io;
+        snk.write_fn(snk.state, body) catch {
+            st.state = StreamState.reset;
+            st.req.failed = true;
+            sendRstStream(c, st.id, 0x2);
+            try maybeConnWindowUpdate(c);
+            return;
+        };
     } else {
         if (st.resp_body.len + body.len > MAX_BUFFERED_BODY) return error.TooLarge;
         buf_mod.append(&st.resp_body, body) catch return error.OutOfMemory;
     }
+
+    // The stream receive window is consumed only after the body was accepted
+    // (buffered or written to the sink).
+    st.recv_window -= wire;
+    st.recv_pending += wire;
     try maybeWindowUpdate(c, st);
     if ((f.flags & 0x1) != 0) try finishStream(c, st);
 }
@@ -1313,18 +1424,27 @@ fn queueRequestData(c: *Http2Conn) Http2Error!bool {
 
 pub fn http2Pump(c: *Http2Conn) Http2Error!PumpStatus {
     if (c.closed) return PumpStatus.closed;
-    if (try flushOutput(c)) return PumpStatus.would_block;
     var progressed: bool = false;
-    var would_block: bool = false;
+    var read_blocked: bool = false;
+    var write_blocked: bool = false;
+    var hit_write_block: bool = false;
     while (true) {
         if (try processBuffered(c)) progressed = true;
         if (try queueRequestData(c)) progressed = true;
-        if (try flushOutput(c)) return PumpStatus.would_block;
+        write_blocked = try flushOutput(c);
+        if (write_blocked) {
+            hit_write_block = true;
+            // Keep reading while output is pending (another stream must not
+            // stall behind a slow write side), but do not grow the fixed
+            // writer past what a WINDOW_UPDATE/PING ACK can still append.
+            const remaining: usize = c.writer.buf.len - c.writer.len;
+            if (remaining < FRAME_HEADER_LEN + 8) break;
+        }
         const free = frameReaderFree(&c.reader);
         if (free.len == 0) return error.TooLarge;
         const n = c.transport.read_fn(c.transport.state, free) catch |e| {
             if (e == error.WouldBlock) {
-                would_block = true;
+                read_blocked = true;
                 break;
             }
             if (e == error.Closed) {
@@ -1340,9 +1460,10 @@ pub fn http2Pump(c: *Http2Conn) Http2Error!PumpStatus {
         frameReaderAdvance(&c.reader, n);
         progressed = true;
     }
-    if (try flushOutput(c)) return PumpStatus.would_block;
+    write_blocked = try flushOutput(c);
     if (c.closed) return PumpStatus.closed;
-    if (progressed or !would_block) return PumpStatus.progress;
+    if (write_blocked or hit_write_block) return PumpStatus.would_block;
+    if (progressed or !read_blocked) return PumpStatus.progress;
     return PumpStatus.would_block;
 }
 
@@ -1367,4 +1488,253 @@ pub fn http2Close(c: *Http2Conn) void {
     c.closed = true;
     c.close_called = true;
     c.transport.close_fn(c.transport.state);
+}
+
+// ===== Transport adapters and body API (Task 7) =====
+
+const INVALID_FD: net.Socket = -1;
+
+pub fn http2Fd(c: *const Http2Conn) net.Socket {
+    return c.fd;
+}
+
+fn allocTransportPtr(a: *arena_mod.Arena, t: Transport) Http2Error!*Transport {
+    const raw = arena_mod.alloc(a, @sizeOf(Transport)) catch return error.OutOfMemory;
+    const p: *Transport = @ptrCast(*Transport, raw);
+    p.* = t;
+    return p;
+}
+
+// TlsIoError -> Http2Error, collapsing only at this boundary. Certificate
+// validation failures all name the same local condition; every other transport
+// failure either has a direct Http2Error spelling or is a generic Io.
+pub fn http2MapTlsError(e: tls_io.TlsIoError) Http2Error {
+    if (e == error.CertificateExpired) return error.BadCertificate;
+    if (e == error.CertificateNotYetValid) return error.BadCertificate;
+    if (e == error.UnknownIssuer) return error.BadCertificate;
+    if (e == error.HostnameMismatch) return error.BadCertificate;
+    if (e == error.BadSignature) return error.BadCertificate;
+    if (e == error.ChainTooLong) return error.BadCertificate;
+    if (e == error.UnsupportedAlgorithm) return error.BadCertificate;
+    if (e == error.WeakPublicKey) return error.BadCertificate;
+    if (e == error.AuthenticationFailed) return error.AuthenticationFailed;
+    if (e == error.HandshakeFailed) return error.AuthenticationFailed;
+    if (e == error.Closed) return error.Closed;
+    if (e == error.Corrupt) return error.Corrupt;
+    if (e == error.BadConfig) return error.BadConfig;
+    if (e == error.AppTooLarge) return error.TooLarge;
+    if (e == error.OutputTooSmall) return error.TooLarge;
+    if (e == error.RecordTooLarge) return error.TooLarge;
+    if (e == error.WouldBlock) return error.Busy;
+    return error.Io;
+}
+
+fn tlsErrorToTransport(e: tls_io.TlsIoError) TransportError {
+    const mapped = http2MapTlsError(e);
+    if (mapped == error.Busy) return error.WouldBlock;
+    if (mapped == error.Closed) return error.Closed;
+    return error.Io;
+}
+
+fn tlsTransportRead(state: *void, dst: []u8) TransportError!usize {
+    const io: *tls_io.TlsIo = @ptrCast(*tls_io.TlsIo, state);
+    const n = tls_io.tlsIoReadPump(io, dst) catch |e| {
+        return tlsErrorToTransport(e);
+    };
+    return n;
+}
+
+fn tlsTransportWrite(state: *void, data: []const u8) TransportError!usize {
+    const io: *tls_io.TlsIo = @ptrCast(*tls_io.TlsIo, state);
+    const n = tls_io.tlsIoWritePump(io, data) catch |e| {
+        return tlsErrorToTransport(e);
+    };
+    return n;
+}
+
+fn tlsTransportClose(state: *void) void {
+    const io: *tls_io.TlsIo = @ptrCast(*tls_io.TlsIo, state);
+    tls_io.tlsIoClose(io);
+}
+
+pub fn http2OpenTls(arena: *arena_mod.Arena, io: *tls_io.TlsIo, cfg: Http2Config) Http2Error!*Http2Conn {
+    if (tls_mod.tlsAlpnSelected(io.sess) != tls_mod.AlpnProtocol.h2) return error.NotHttp2;
+    const t = Transport{
+        .state = @ptrCast(*void, io),
+        .read_fn = tlsTransportRead,
+        .write_fn = tlsTransportWrite,
+        .close_fn = tlsTransportClose,
+    };
+    const tp = try allocTransportPtr(arena, t);
+    const c = try http2OpenTransport(arena, tp, cfg);
+    c.fd = io.sock;
+    return c;
+}
+
+const TcpState = struct {
+    sock: net.Socket,
+};
+
+fn netErrorToTransport(e: net.NetError) TransportError {
+    if (e == error.WouldBlock) return error.WouldBlock;
+    return error.Io;
+}
+
+fn tcpTransportRead(state: *void, dst: []u8) TransportError!usize {
+    const ts: *TcpState = @ptrCast(*TcpState, state);
+    const n = net.recvNonBlocking(&ts.sock, dst) catch |e| {
+        return netErrorToTransport(e);
+    };
+    return n;
+}
+
+fn tcpTransportWrite(state: *void, data: []const u8) TransportError!usize {
+    const ts: *TcpState = @ptrCast(*TcpState, state);
+    const n = net.sendNonBlocking(&ts.sock, data) catch |e| {
+        return netErrorToTransport(e);
+    };
+    return n;
+}
+
+fn tcpTransportClose(state: *void) void {
+    const ts: *TcpState = @ptrCast(*TcpState, state);
+    net.close(ts.sock);
+}
+
+pub fn http2OpenTcp(arena: *arena_mod.Arena, sock: net.Socket, cfg: Http2Config) Http2Error!*Http2Conn {
+    const raw = arena_mod.alloc(arena, @sizeOf(TcpState)) catch return error.OutOfMemory;
+    const ts: *TcpState = @ptrCast(*TcpState, raw);
+    ts.sock = sock;
+    const t = Transport{
+        .state = @ptrCast(*void, ts),
+        .read_fn = tcpTransportRead,
+        .write_fn = tcpTransportWrite,
+        .close_fn = tcpTransportClose,
+    };
+    const tp = try allocTransportPtr(arena, t);
+    const c = try http2OpenTransport(arena, tp, cfg);
+    c.fd = sock;
+    return c;
+}
+
+const UrlParts = struct {
+    scheme: []const u8,
+    authority: []const u8,
+    path: []const u8,
+};
+
+fn findFrom(hay: []const u8, needle: []const u8, from: usize) usize {
+    if (needle.len == 0) return from;
+    if (from > hay.len) return hay.len;
+    var i: usize = from;
+    while (i + needle.len <= hay.len) : (i += 1) {
+        var j: usize = 0;
+        while (j < needle.len) : (j += 1) {
+            if (hay[i + j] != needle[j]) break;
+        }
+        if (j == needle.len) return i;
+    }
+    return hay.len;
+}
+
+fn endsWith(hay: []const u8, suffix: []const u8) bool {
+    if (suffix.len > hay.len) return false;
+    return eqBytes(hay[hay.len - suffix.len ..], suffix);
+}
+
+fn authorityPart(raw: []const u8, https: bool) []const u8 {
+    if (https and raw.len > 4 and endsWith(raw, ":443")) return raw[0 .. raw.len - 4];
+    if (!https and raw.len > 3 and endsWith(raw, ":80")) return raw[0 .. raw.len - 3];
+    return raw;
+}
+
+fn splitUrl(a: *arena_mod.Arena, url: []const u8) Http2Error!UrlParts {
+    const sep = findFrom(url, "://", 0);
+    if (sep >= url.len) return error.Protocol;
+    const scheme_raw = url[0..sep];
+    const is_https: bool = eqLowerName(scheme_raw, "https");
+    if (!is_https and !eqLowerName(scheme_raw, "http")) return error.Protocol;
+    const scheme = try lowerHeaderName(a, scheme_raw);
+    const auth_start = sep + 3;
+    var auth_end: usize = auth_start;
+    while (auth_end < url.len and url[auth_end] != '/' and url[auth_end] != '?' and url[auth_end] != '#') : (auth_end += 1) {}
+    if (auth_end == auth_start) return error.Protocol;
+    const authority = authorityPart(url[auth_start..auth_end], is_https);
+
+    var path: []const u8 = "/";
+    if (auth_end < url.len) {
+        var end = url.len;
+        const hash = findFrom(url, "#", auth_end);
+        if (hash < url.len) end = hash;
+        if (url[auth_end] == '/') {
+            path = url[auth_end..end];
+        } else if (url[auth_end] == '?') {
+            const rest = url[auth_end..end];
+            const raw = arena_mod.alloc(a, rest.len + 1) catch return error.OutOfMemory;
+            raw[0] = '/';
+            var i: usize = 0;
+            while (i < rest.len) : (i += 1) raw[i + 1] = rest[i];
+            path = raw[0 .. rest.len + 1];
+        }
+    }
+    if (path.len == 0) path = "/";
+    return UrlParts{ .scheme = scheme, .authority = authority, .path = path };
+}
+
+fn postHeaders(c: *Http2Conn, content_type: []const u8, accept: []const u8) Http2Error![]http.Header {
+    const raw = arena_mod.alloc(c.arena, 2 * @sizeOf(http.Header)) catch return error.OutOfMemory;
+    const hs: [*]http.Header = @ptrCast([*]http.Header, raw);
+    var n: usize = 0;
+    if (content_type.len > 0) {
+        hs[n] = http.Header{ .name = "content-type", .value = content_type };
+        n += 1;
+    }
+    if (accept.len > 0) {
+        hs[n] = http.Header{ .name = "accept", .value = accept };
+        n += 1;
+    }
+    return hs[0..n];
+}
+
+fn submitUrl(c: *Http2Conn, method: []const u8, url: []const u8, headers: []const http.Header, body: []const u8, body_len: usize, body_source: ?*http.RequestSource, sink: ?*http.ResponseSink, out: *http.Response) Http2Error!void {
+    const parts = try splitUrl(c.arena, url);
+    // The request descriptor must outlive a coroutine suspension, so it lives
+    // in the connection arena rather than in the caller's async frame.
+    const raw = arena_mod.alloc(c.arena, @sizeOf(Http2Request)) catch return error.OutOfMemory;
+    const req: *Http2Request = @ptrCast(*Http2Request, raw);
+    req.* = Http2Request{
+        .method = method,
+        .scheme = parts.scheme,
+        .authority = parts.authority,
+        .path = parts.path,
+        .headers = headers,
+        .body = body,
+        .body_len = body_len,
+        .body_source = body_source,
+        .sink = sink,
+        .out = out,
+        .stream_id = 0,
+        .done = false,
+        .failed = false,
+    };
+    const id = try http2Submit(c, req);
+    try http2Wait(c, id);
+}
+
+pub fn http2Get(c: *Http2Conn, url: []const u8, out: *http.Response) Http2Error!void {
+    try submitUrl(c, "GET", url, c.empty_headers[0..0], c.empty_bytes[0..0], 0, null, null, out);
+}
+
+pub fn http2Post(c: *Http2Conn, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, out: *http.Response) Http2Error!void {
+    const hs = try postHeaders(c, content_type, accept);
+    try submitUrl(c, "POST", url, hs, body, body.len, null, null, out);
+}
+
+pub fn http2GetStream(c: *Http2Conn, url: []const u8, headers: []const http.Header, sink: *http.ResponseSink, out_head: *http.Response) Http2Error!void {
+    try submitUrl(c, "GET", url, headers, c.empty_bytes[0..0], 0, null, sink, out_head);
+}
+
+pub fn http2PostStream(c: *Http2Conn, url: []const u8, body_len: usize, content_type: []const u8, accept: []const u8, body: *http.RequestSource, sink: *http.ResponseSink, out_head: *http.Response) Http2Error!void {
+    const hs = try postHeaders(c, content_type, accept);
+    try submitUrl(c, "POST", url, hs, c.empty_bytes[0..0], body_len, body, sink, out_head);
 }
