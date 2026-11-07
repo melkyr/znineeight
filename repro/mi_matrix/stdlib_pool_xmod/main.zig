@@ -46,6 +46,7 @@ fn aligned(p: [*]u8, a: usize) bool {
 var g_raw: [4104]u8 = undefined;
 var g_foreign: [64]u8 = undefined;
 var g_tiny: [31]u8 = undefined;
+var g_round_raw: [68]u8 = undefined;
 
 pub fn main() void {
     const raw_ptr: [*]u8 = g_raw[0..].ptr;
@@ -105,6 +106,24 @@ pub fn main() void {
     ck("align_big", std.pool.poolInit(buf, 32, 8192) == null);
     const tiny_buf: []u8 = g_tiny[0..];
     ck("too_small", std.pool.poolInit(tiny_buf, 32, 8) == null);
+    ck("huge_block", std.pool.poolInit(buf, 0xFFFFFFFF, 8) == null);
+
+    // --- block_size 13 rounds up to 16: a 60-byte buffer holds 3 blocks (not
+    // the 4 an unrounded 13-byte block would give). ---
+    const round_raw: [*]u8 = g_round_raw[0..].ptr;
+    const round_addr: usize = @ptrToInt(round_raw);
+    const round_start: usize = (round_addr + mask) & ~mask;
+    const round_ptr: [*]u8 = @intToPtr([*]u8, round_start);
+    const round_buf: []u8 = round_ptr[0..60];
+    var rmaybe = std.pool.poolInit(round_buf, 13, 8);
+    var rpool = mustPool(rmaybe, "round init");
+    ck("round_init", std.pool.poolLen(&rpool) == 0);
+    var rcount: usize = 0;
+    while (true) {
+        var rq = std.pool.poolAlloc(&rpool) orelse break;
+        if (rq != ZERO) rcount += 1;
+    }
+    ck("round_16", rcount == 3);
 
     if (g_fail == 0) {
         std.io.write("pool ok\n");

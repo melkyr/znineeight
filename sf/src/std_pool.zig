@@ -69,15 +69,23 @@ pub fn poolInit(buf: []u8, block_size: usize, align: usize) ?Pool {
     if (align < 8 or align > 4096) return null;
     if ((align & (align - 1)) != 0) return null;
 
-    const mask: usize = align - 1;
-    const rounded: usize = (block_size + mask) & ~mask;
+    // Round in u64 so block_size near usize max cannot wrap; anything above
+    // 0xFFFFFFFF fails the call instead of becoming a malformed pool.
+    const limit: u64 = @intCast(u64, 0xFFFFFFFF);
+    const mask: u64 = @intCast(u64, align - 1);
+    const bs: u64 = @intCast(u64, block_size);
+    const rounded: u64 = (bs + mask) & ~mask;
+    if (rounded > limit) return null;
     // align is at least 8, so rounded already holds a pointer on the 32-bit
     // target; keep the minimum explicit in case the rule ever changes.
-    var block: usize = rounded;
+    var block: usize = @intCast(usize, rounded);
     if (block < @sizeOf(usize)) block = @sizeOf(usize);
 
-    const raw: usize = @ptrToInt(buf.ptr);
-    const start: usize = (raw + mask) & ~mask;
+    const raw64: u64 = @intCast(u64, @ptrToInt(buf.ptr));
+    const start64: u64 = (raw64 + mask) & ~mask;
+    if (start64 > limit) return null;
+    const raw: usize = @intCast(usize, raw64);
+    const start: usize = @intCast(usize, start64);
     const offset: usize = start - raw;
     if (offset >= buf.len) return null;
     const usable: usize = buf.len - offset;
