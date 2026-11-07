@@ -8,4 +8,7 @@ rst=1
 wb_resume=1
 zero_wu=protocol
 win_delta=ok
+conn_win=ok
+early_end=ok
+stream_full=ok
 arena_ok=1

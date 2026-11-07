@@ -656,7 +656,7 @@ pub fn http2OpenTransport(arena: *arena_mod.Arena, t: *const Transport, cfg: Htt
     };
 
     c.conn_send_window = DEFAULT_INITIAL_WINDOW;
-    c.conn_recv_window = @intCast(i32, cfg.initial_window);
+    c.conn_recv_window = DEFAULT_INITIAL_WINDOW;
     c.conn_recv_pending = 0;
 
     c.streams = try allocStreams(arena, @intCast(usize, cfg.max_streams));
@@ -1082,12 +1082,13 @@ fn sendWindowUpdate(c: *Http2Conn, stream_id: u32, inc: i32) Http2Error!void {
 }
 
 fn maybeWindowUpdate(c: *Http2Conn, st: *Stream) Http2Error!void {
-    const half: i32 = @intCast(i32, c.cfg.initial_window / 2);
-    if (c.conn_recv_pending > 0 and (c.conn_recv_pending >= half or c.conn_recv_window <= 0)) {
+    const conn_half: i32 = DEFAULT_INITIAL_WINDOW / 2;
+    const stream_half: i32 = @intCast(i32, c.cfg.initial_window / 2);
+    if (c.conn_recv_pending > 0 and (c.conn_recv_pending >= conn_half or c.conn_recv_window <= 0)) {
         try sendWindowUpdate(c, 0, c.conn_recv_pending);
         c.conn_recv_pending = 0;
     }
-    if (st.recv_pending > 0 and (st.recv_pending >= half or st.recv_window <= 0)) {
+    if (st.recv_pending > 0 and (st.recv_pending >= stream_half or st.recv_window <= 0)) {
         try sendWindowUpdate(c, st.id, st.recv_pending);
         st.recv_pending = 0;
     }
@@ -1098,14 +1099,28 @@ fn finishStream(c: *Http2Conn, st: *Stream) Http2Error!void {
         try sendWindowUpdate(c, st.id, st.recv_pending);
         st.recv_pending = 0;
     }
+    if (st.req.sink == null) {
+        st.req.out.body = buf_mod.slice(&st.resp_body);
+    }
+    if (st.state == StreamState.open) {
+        st.state = StreamState.half_closed_remote;
+        return;
+    }
     if (!st.req.done) {
         st.req.done = true;
-        if (st.req.sink == null) {
-            st.req.out.body = buf_mod.slice(&st.resp_body);
-        }
     }
     st.state = StreamState.closed;
     if (c.goaway and activeStreams(c) == 0) c.closed = true;
+}
+
+fn localEnd(c: *Http2Conn, st: *Stream) void {
+    if (st.state == StreamState.half_closed_remote) {
+        if (!st.req.done) st.req.done = true;
+        st.state = StreamState.closed;
+        if (c.goaway and activeStreams(c) == 0) c.closed = true;
+    } else if (st.state == StreamState.open) {
+        st.state = StreamState.half_closed_local;
+    }
 }
 
 fn dispatchData(c: *Http2Conn, f: *Frame) Http2Error!void {
@@ -1226,13 +1241,13 @@ fn dispatchRst(c: *Http2Conn, f: *Frame) Http2Error!void {
 }
 
 fn sendOneData(c: *Http2Conn, st: *Stream) Http2Error!bool {
-    if (st.state != StreamState.open) return false;
+    if (st.state != StreamState.open and st.state != StreamState.half_closed_remote) return false;
     if (c.conn_send_window <= 0 or st.send_window <= 0) return false;
     const req = st.req;
     if (req.body_source) |src0| {
         if (st.src_sent >= req.body_len) {
             try frameAppend(&c.writer, FrameType.data, 0x1, st.id, req.body[0..0]);
-            st.state = StreamState.half_closed_local;
+            localEnd(c, st);
             return true;
         }
         var want: usize = req.body_len - st.src_sent;
@@ -1242,6 +1257,10 @@ fn sendOneData(c: *Http2Conn, st: *Stream) Http2Error!bool {
         if (want > sw) want = sw;
         if (want > @intCast(usize, c.remote.max_frame_size)) want = @intCast(usize, c.remote.max_frame_size);
         if (want > c.send_scratch.len) want = c.send_scratch.len;
+        const free: usize = c.writer.buf.len - c.writer.len;
+        if (free <= FRAME_HEADER_LEN) return false;
+        const cap: usize = free - FRAME_HEADER_LEN;
+        if (want > cap) want = cap;
         if (want == 0) return false;
         const got = src0.read_fn(src0.state, c.send_scratch[0..want]) catch return error.Io;
         if (got == 0) return error.Io;
@@ -1251,7 +1270,7 @@ fn sendOneData(c: *Http2Conn, st: *Stream) Http2Error!bool {
         c.conn_send_window -= @intCast(i32, got);
         st.send_window -= @intCast(i32, got);
         st.src_sent += got;
-        if ((flags & 0x1) != 0) st.state = StreamState.half_closed_local;
+        if ((flags & 0x1) != 0) localEnd(c, st);
         return true;
     }
     if (st.body_off >= req.body.len) return false;
@@ -1272,7 +1291,7 @@ fn sendOneData(c: *Http2Conn, st: *Stream) Http2Error!bool {
     st.body_off += want;
     c.conn_send_window -= @intCast(i32, want);
     st.send_window -= @intCast(i32, want);
-    if ((flags2 & 0x1) != 0) st.state = StreamState.half_closed_local;
+    if ((flags2 & 0x1) != 0) localEnd(c, st);
     return true;
 }
 

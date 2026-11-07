@@ -31,10 +31,10 @@ const PREFACE_BYTES = [_]u8{
 };
 
 const Script = struct {
-    rbuf: [8192]u8,
+    rbuf: [131072]u8,
     rlen: usize,
     rpos: usize,
-    wbuf: [65536]u8,
+    wbuf: [262144]u8,
     wlen: usize,
     chunk: usize,
     base: usize,
@@ -44,6 +44,7 @@ const Script = struct {
     stall_delivered: bool,
     close_called: bool,
     dynamic: bool,
+    dyn_kind: u8,
     cycles_ready: usize,
     cycles_served: usize,
     emit_preface: bool,
@@ -64,6 +65,10 @@ var g_script: Script = undefined;
 var g_headers: [1]http.Header = undefined;
 var g_out_headers: [1]http.Header = undefined;
 var g_out_body: [1]u8 = undefined;
+var g_win_small: [16000]u8 = undefined;
+var g_early_body: [100000]u8 = undefined;
+var g_src1_body: [70000]u8 = undefined;
+var g_src2_body: [20000]u8 = undefined;
 
 fn scriptReset(s: *Script) void {
     s.rlen = 0;
@@ -76,6 +81,7 @@ fn scriptReset(s: *Script) void {
     s.stall_delivered = false;
     s.close_called = false;
     s.dynamic = false;
+    s.dyn_kind = 0;
     s.cycles_ready = 0;
     s.cycles_served = 0;
     s.emit_preface = true;
@@ -106,7 +112,11 @@ fn scriptRead(state: *void, dst: []u8) h2.TransportError!usize {
     const s: *Script = @ptrCast(*Script, state);
     if (s.rpos >= s.rlen) {
         if (s.dynamic and s.cycles_served < s.cycles_ready) {
-            buildCycle(s, s.cycles_served);
+            if (s.dyn_kind == 1) {
+                buildEarlyStage(s, s.cycles_served);
+            } else {
+                buildCycle(s, s.cycles_served);
+            }
             s.cycles_served += 1;
         } else {
             return error.WouldBlock;
@@ -218,6 +228,15 @@ fn emitPing(s: *Script) void {
     scriptEmit(s, h2.FrameType.ping, 0, 0, p[0..8]);
 }
 
+fn emitWindowUpdate(s: *Script, sid: u32, inc: u32) void {
+    var p = [_]u8{ 0, 0, 0, 0 };
+    p[0] = @intCast(u8, (inc >> 24) & 0xFF);
+    p[1] = @intCast(u8, (inc >> 16) & 0xFF);
+    p[2] = @intCast(u8, (inc >> 8) & 0xFF);
+    p[3] = @intCast(u8, inc & 0xFF);
+    scriptEmit(s, h2.FrameType.window_update, 0, sid, p[0..4]);
+}
+
 fn emptyResponse(out: *http.Response) void {
     out.status = 0;
     out.headers = g_out_headers[0..0];
@@ -262,6 +281,119 @@ fn makePost(out: *http.Response) h2.Http2Request {
     };
 }
 
+const SourceState = struct { body: []const u8, pos: usize, reads: usize };
+
+fn sourceRead(state: *void, dst: []u8) http.HttpError!usize {
+    const ss: *SourceState = @ptrCast(*SourceState, state);
+    var n: usize = ss.body.len - ss.pos;
+    if (n > dst.len) n = dst.len;
+    var i: usize = 0;
+    while (i < n) : (i += 1) dst[i] = ss.body[ss.pos + i];
+    ss.pos += n;
+    ss.reads += 1;
+    return n;
+}
+
+fn makeBodyRequest(out: *http.Response, body: []const u8) h2.Http2Request {
+    emptyResponse(out);
+    return h2.Http2Request{
+        .method = "POST",
+        .scheme = "https",
+        .authority = "example.com",
+        .path = "/b",
+        .headers = g_headers[0..0],
+        .body = body,
+        .body_len = body.len,
+        .body_source = null,
+        .sink = null,
+        .out = out,
+        .stream_id = 0,
+        .done = false,
+        .failed = false,
+    };
+}
+
+fn makeStreamRequest(out: *http.Response, src: *http.RequestSource, body_len: usize) h2.Http2Request {
+    emptyResponse(out);
+    return h2.Http2Request{
+        .method = "POST",
+        .scheme = "https",
+        .authority = "example.com",
+        .path = "/s",
+        .headers = g_headers[0..0],
+        .body = "",
+        .body_len = body_len,
+        .body_source = src,
+        .sink = null,
+        .out = out,
+        .stream_id = 0,
+        .done = false,
+        .failed = false,
+    };
+}
+
+fn fillPattern(buf: []u8, seed: u8) void {
+    var i: usize = 0;
+    while (i < buf.len) : (i += 1) {
+        buf[i] = @intCast(u8, (@intCast(u32, seed) + @intCast(u32, i % 97)) & 0xFF);
+    }
+}
+
+fn frameStreamId(bytes: []const u8, pos: usize) u32 {
+    return (@intCast(u32, bytes[pos + 5] & 0x7F) << 24) |
+        (@intCast(u32, bytes[pos + 6]) << 16) |
+        (@intCast(u32, bytes[pos + 7]) << 8) |
+        @intCast(u32, bytes[pos + 8]);
+}
+
+fn frameLength(bytes: []const u8, pos: usize) usize {
+    return (@intCast(usize, bytes[pos]) << 16) |
+        (@intCast(usize, bytes[pos + 1]) << 8) |
+        @intCast(usize, bytes[pos + 2]);
+}
+
+fn windowIncrementSum(bytes: []const u8, start: usize, want_sid: u32) i64 {
+    var pos: usize = start;
+    var sum: i64 = 0;
+    while (pos + 9 <= bytes.len) {
+        const len = frameLength(bytes, pos);
+        if (pos + 9 + len > bytes.len) break;
+        const typ: u8 = bytes[pos + 3];
+        if (typ == 8 and frameStreamId(bytes, pos) == want_sid and len == 4) {
+            const inc: u32 = (@intCast(u32, bytes[pos + 9]) << 24) |
+                (@intCast(u32, bytes[pos + 10]) << 16) |
+                (@intCast(u32, bytes[pos + 11]) << 8) |
+                @intCast(u32, bytes[pos + 12]);
+            sum += @intCast(i64, inc & 0x7FFFFFFF);
+        }
+        pos += 9 + len;
+    }
+    return sum;
+}
+
+fn verifyDataBody(bytes: []const u8, start: usize, sid: u32, body: []const u8) bool {
+    var pos: usize = start;
+    var off: usize = 0;
+    var ended: bool = false;
+    while (pos + 9 <= bytes.len) {
+        const len = frameLength(bytes, pos);
+        if (pos + 9 + len > bytes.len) return false;
+        const typ: u8 = bytes[pos + 3];
+        const flags: u8 = bytes[pos + 4];
+        if (typ == 0 and frameStreamId(bytes, pos) == sid) {
+            if (off + len > body.len) return false;
+            var i: usize = 0;
+            while (i < len) : (i += 1) {
+                if (bytes[pos + 9 + i] != body[off + i]) return false;
+            }
+            off += len;
+            if ((flags & 0x1) != 0) ended = true;
+        }
+        pos += 9 + len;
+    }
+    return off == body.len and ended;
+}
+
 fn defaultConfig() h2.Http2Config {
     return h2.Http2Config{
         .max_streams = 4,
@@ -284,6 +416,15 @@ fn printFlag(label: []const u8, ok: bool) void {
         std.io.write("=1\n");
     } else {
         std.io.write("=0\n");
+    }
+}
+
+fn printOk(label: []const u8, ok: bool) void {
+    std.io.write(label);
+    if (ok) {
+        std.io.write("=ok\n");
+    } else {
+        std.io.write("=fail\n");
     }
 }
 
@@ -566,6 +707,198 @@ fn scenarioWindowDelta() void {
     }
 }
 
+fn connWindowSmall() bool {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    emitStatus(s, 1);
+    emitData(s, 1, 0x1, g_win_small[0..900]);
+    emitStatus(s, 3);
+    emitData(s, 3, 0x1, g_win_small[0..900]);
+    scriptEnd(s);
+
+    var backing: [262144]u8 = undefined;
+    var ar = std.arena.init(backing[0..]);
+    var t = makeTransport(s);
+    var cfg = defaultConfig();
+    cfg.initial_window = 1000;
+    var c = h2.http2OpenTransport(&ar, &t, cfg) catch return false;
+    var out1: http.Response = undefined;
+    var out2: http.Response = undefined;
+    var r1 = makeRequest(&out1);
+    var r2 = makeRequest(&out2);
+    _ = h2.http2Submit(c, &r1) catch return false;
+    _ = h2.http2Submit(c, &r2) catch return false;
+    var it: usize = 0;
+    while (it < 4000) : (it += 1) {
+        _ = h2.http2Pump(c) catch return false;
+        if (r1.done and r2.done) break;
+    }
+    const ok = r1.done and r2.done and out1.status == 200 and out2.status == 200 and
+        windowIncrementSum(s.wbuf[0..s.wlen], 24, 0) == 0;
+    h2.http2Close(c);
+    return ok;
+}
+
+fn connWindowLarge() bool {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    emitStatus(s, 1);
+    emitData(s, 1, 0x1, g_win_small[0..16000]);
+    emitStatus(s, 3);
+    emitData(s, 3, 0x1, g_win_small[0..16000]);
+    emitStatus(s, 5);
+    emitData(s, 5, 0x1, g_win_small[0..16000]);
+    emitStatus(s, 7);
+    emitData(s, 7, 0x1, g_win_small[0..16000]);
+    scriptEnd(s);
+
+    var backing: [262144]u8 = undefined;
+    var ar = std.arena.init(backing[0..]);
+    var t = makeTransport(s);
+    var cfg = defaultConfig();
+    cfg.initial_window = 200000;
+    var c = h2.http2OpenTransport(&ar, &t, cfg) catch return false;
+
+    var o1: http.Response = undefined;
+    var o2: http.Response = undefined;
+    var o3: http.Response = undefined;
+    var o4: http.Response = undefined;
+    var r1 = makeRequest(&o1);
+    var r2 = makeRequest(&o2);
+    var r3 = makeRequest(&o3);
+    var r4 = makeRequest(&o4);
+    _ = h2.http2Submit(c, &r1) catch return false;
+    _ = h2.http2Submit(c, &r2) catch return false;
+    _ = h2.http2Submit(c, &r3) catch return false;
+    _ = h2.http2Submit(c, &r4) catch return false;
+
+    var it: usize = 0;
+    while (it < 4000) : (it += 1) {
+        _ = h2.http2Pump(c) catch return false;
+        if (r1.done and r2.done and r3.done and r4.done) break;
+    }
+    const all_done = r1.done and r2.done and r3.done and r4.done;
+    const ok = all_done and o1.status == 200 and o2.status == 200 and o3.status == 200 and
+        o4.status == 200 and windowIncrementSum(s.wbuf[0..s.wlen], 24, 0) > 0;
+    h2.http2Close(c);
+    return ok;
+}
+
+fn scenarioConnWindow() void {
+    printOk("conn_win", connWindowSmall() and connWindowLarge());
+}
+
+fn buildEarlyStage(s: *Script, stage: usize) void {
+    scriptBegin(s);
+    if (stage == 0) {
+        emitSettingsEmpty(s);
+        emitStatus(s, 1);
+        emitData(s, 1, 0x1, "z");
+    } else if (stage == 1) {
+        emitWindowUpdate(s, 0, 65535);
+        emitWindowUpdate(s, 1, 65535);
+    }
+    scriptEnd(s);
+}
+
+fn scenarioEarlyEnd() void {
+    const s = &g_script;
+    scriptReset(s);
+    s.dynamic = true;
+    s.dyn_kind = 1;
+
+    var backing: [262144]u8 = undefined;
+    var ar = std.arena.init(backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch {
+        std.io.write("early_end=0\n");
+        return;
+    };
+    var out: http.Response = undefined;
+    var r = makeBodyRequest(&out, g_early_body[0..]);
+    const id = h2.http2Submit(c, &r) catch {
+        std.io.write("early_end=0\n");
+        return;
+    };
+
+    s.cycles_ready = 1;
+    _ = h2.http2Pump(c) catch {
+        std.io.write("early_end=0\n");
+        return;
+    };
+    var state_ok: bool = false;
+    const st0 = h2.http2StreamState(c, id) catch h2.StreamState.closed;
+    if (st0 == h2.StreamState.half_closed_remote) state_ok = true;
+    const not_done = !r.done;
+
+    s.cycles_ready = 2;
+    var it: usize = 0;
+    while (it < 8000) : (it += 1) {
+        _ = h2.http2Pump(c) catch {
+            std.io.write("early_end=0\n");
+            return;
+        };
+        if (r.done) break;
+    }
+    const sent_ok = verifyDataBody(s.wbuf[0..s.wlen], 24, id, g_early_body[0..]);
+    const resp_ok = out.status == 200 and out.body.len == 1 and out.body[0] == 'z';
+    printOk("early_end", state_ok and not_done and r.done and sent_ok and resp_ok);
+    h2.http2Close(c);
+}
+
+fn scenarioStreamFull() void {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    emitWindowUpdate(s, 0, 200000);
+    emitWindowUpdate(s, 1, 200000);
+    emitWindowUpdate(s, 3, 200000);
+    scriptEnd(s);
+
+    var backing: [262144]u8 = undefined;
+    var ar = std.arena.init(backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch {
+        std.io.write("stream_full=0\n");
+        return;
+    };
+    var ss1 = SourceState{ .body = g_src1_body[0..], .pos = 0, .reads = 0 };
+    var ss2 = SourceState{ .body = g_src2_body[0..], .pos = 0, .reads = 0 };
+    var src1 = http.RequestSource{ .state = @ptrCast(*void, &ss1), .read_fn = sourceRead };
+    var src2 = http.RequestSource{ .state = @ptrCast(*void, &ss2), .read_fn = sourceRead };
+    var o1: http.Response = undefined;
+    var o2: http.Response = undefined;
+    var r1 = makeStreamRequest(&o1, &src1, g_src1_body.len);
+    var r2 = makeStreamRequest(&o2, &src2, g_src2_body.len);
+    const id1 = h2.http2Submit(c, &r1) catch {
+        std.io.write("stream_full=0\n");
+        return;
+    };
+    const id2 = h2.http2Submit(c, &r2) catch {
+        std.io.write("stream_full=0\n");
+        return;
+    };
+
+    var it: usize = 0;
+    while (it < 8) : (it += 1) {
+        _ = h2.http2Pump(c) catch {
+            std.io.write("stream_full=0\n");
+            return;
+        };
+    }
+    const consumed = ss1.pos == g_src1_body.len and ss2.pos == g_src2_body.len;
+    const body_ok = verifyDataBody(s.wbuf[0..s.wlen], 24, id1, g_src1_body[0..]) and
+        verifyDataBody(s.wbuf[0..s.wlen], 24, id2, g_src2_body[0..]);
+
+    printOk("stream_full", consumed and body_ok and ss1.reads > 0 and ss2.reads > 0);
+    h2.http2Close(c);
+}
+
 fn buildCycle(s: *Script, cycle: usize) void {
     scriptBegin(s);
     if (cycle == 0) emitSettingsEmpty(s);
@@ -680,12 +1013,19 @@ fn scenarioWait() void {
 }
 
 pub fn main() void {
+    fillPattern(g_win_small[0..], 11);
+    fillPattern(g_early_body[0..], 21);
+    fillPattern(g_src1_body[0..], 31);
+    fillPattern(g_src2_body[0..], 71);
     scenarioBasic();
     scenarioGoaway();
     scenarioRst();
     scenarioWouldBlock();
     scenarioZeroWindow();
     scenarioWindowDelta();
+    scenarioConnWindow();
+    scenarioEarlyEnd();
+    scenarioStreamFull();
     scenarioWait();
     scenarioArena();
 }
