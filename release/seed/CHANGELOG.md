@@ -22,6 +22,24 @@ Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
 emitted `zig_special_types.h`, 12503400 bytes), `c_exit.c` (top level),
 `runtime/`, `lib/`, `SEED_README.txt`.
 
+Phase 3.3 scope: adds the HTTP/2 client stack to the std payload —
+`std_tls_io.zig` (nonblocking `TlsIo` socket driver over `std_net`; the
+`TlsIoError` name union is the full `TlsError`∪`NetError` set, 31 names),
+`std_hpack.zig` (full HPACK decode with canonical Huffman and a ring dynamic
+table; literal-only encode), and `std_http2.zig` (frames/settings,
+connection/streams/flow control, TLS+ALPN and h2c prior-knowledge adapters,
+and the body API). `std_tls` gains ALPN (`alpn_h2`, `tlsAlpnSelected`) and the
+opt-in `prefer_chacha20` suite/group ordering; the HTTP/2 path sets it, the
+default `false` keeps existing wire fixtures byte-identical. The caller owns an
+event loop that selects read **and** write readiness with a bounded timeout and
+a stall watchdog and drives the non-suspending `http2Pump`; request coroutines
+suspend in `http2Wait`. Streams are leased until `http2Release`; buffered
+bodies copy into the caller-owned `out.body` capacity and are capped at 1 MiB
+(larger bodies use `ResponseSink`). No server push, no priority scheduling, no
+HTTP/2 Upgrade. Local h2 tests use an ephemeral Node 18+ server, print `SKIP`
+when Node is absent, and pin argless usage goldens; z9git remains HTTP/1.1.
+Win9x evidence is cross-build/emission only (no h2 hardware claim).
+
 | field | value |
 |---|---|
 | date | 2026-11-07 |

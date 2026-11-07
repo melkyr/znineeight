@@ -55,19 +55,35 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v143** (`release/seed/zig1-seed.tgz`, archive md5
-`0f8c0548e7ebf99d04f38e9cf2f169ef`), with **56** std files (`std.zig` +
-55 `std_*.zig`) and `lib/manifest.md5` md5
-`ec2170933d878c2dda786ba742001be3`. v143 is a std-only rotation for the
-authorized `std_gpa` medium-decommit-failure fix; it retains the v142
-general-purpose allocator inventory (`std_page.zig`, `std_page_pal.zig`,
+The committed seed is **v144** (`release/seed/zig1-seed.tgz`, archive md5
+`140bd00dca94a7140e4b5469bf2495a8`), with **59** std files (`std.zig` +
+58 `std_*.zig`) and `lib/manifest.md5` md5
+`e89c93ee9e7eda25d080eb392dea5d91`. v144 is a std-only Phase 3.3 rotation that
+adds `std_tls_io.zig`, `std_hpack.zig`, and `std_http2.zig`; it retains the
+v142 general-purpose allocator inventory (`std_page.zig`, `std_page_pal.zig`,
 `std_gpa.zig`, `std_pool.zig`, barrel-exported as
 `std.page`/`std.gpa`/`std.pool`) plus the Task 1/7 compiler-source changes
 (`std_page_prelude.h` emission, `error[3079]`, GPA analyzer ownership
-recognition). The compiler fixed point is unchanged from v142:
-`cd8d283b917749009961f4445043666b` (the fix does not touch compiler source).
-The Win9x companion zip is `release/seed/zig1_seed_w9.zip` (md5
-`c553c45e6d44ae0a7f31efb2f068b6c7`).
+recognition). The compiler fixed point is unchanged from v142/v143:
+`cd8d283b917749009961f4445043666b` (the new modules are not in the compiler
+import graph). The Win9x companion zip is `release/seed/zig1_seed_w9.zip` (md5
+`e4c21d2c34ffa1766ede224a50048072`).
+
+**Phase 3.3 HTTP/2 surface.** `std_tls` gains ALPN (`alpn_h2`,
+`tlsAlpnSelected`) and the opt-in `prefer_chacha20` suite/group ordering;
+`std_tls_io` adds the nonblocking `TlsIo` socket driver over `std_net`;
+`std_hpack` provides full HPACK decode with a literal-only encoder; and
+`std_http2` provides a coroutine-driven HTTP/2 client over TLS+ALPN `h2` and
+cleartext h2c prior knowledge (no Upgrade). The caller drives a non-suspending
+`http2Pump` from an event loop that selects **read and write** readiness with a
+bounded timeout and a stall watchdog; request coroutines suspend in
+`http2Wait`. Streams are leased until `http2Release`; buffered bodies are
+copied into the caller-owned `out.body` capacity and capped at 1 MiB (larger
+bodies use `ResponseSink`). There is no server push, no priority scheduling,
+and no HTTP/2 Upgrade. The local integration tier uses an ephemeral Node 18+
+server and prints `SKIP` when Node is absent; server-backed fixtures pin
+argless usage goldens. z9git remains on HTTP/1.1. Win9x evidence for the
+HTTP/2 path is cross-build/emission only (no h2 hardware claim).
 
 ## Phase 1 result — TLS + WireGuard complete
 
@@ -96,7 +112,7 @@ strict: lower layers only, never siblings, never higher (R3).
 | **L2** | Data layer built on L0 — string slices and growable buffers | `std.str`, `std.buf` |
 | **L3** | Resources — owned-handle files, stdin, and sockets | `std_file`, `std_stdin`, `std.net` |
 | **L4** | Collections and byte codecs — concrete maps, sort/search, a stable min-heap, RLE, LZ4 block decode, zstd frame/dictionary decode, and raw DEFLATE/zlib inflate | `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_lz4`, `std_zstd`, `std_deflate` |
-| **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, DER/X.509 parsing and chain verification, TLS 1.2/1.3 client, WireGuard initiator protocol, userspace IPv4/TCP/UDP/DNS/ICMP stack, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_wireguard`, `std_tcpip`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
+| **L5** | Codecs, cryptography, numerics, and search — base64/hex, UTF-8, streaming hashes/PRFs/HKDF/BLAKE2s, RSA verify, symmetric ciphers, elliptic curves, DER/X.509 parsing and chain verification, TLS 1.2/1.3 client + ALPN/nonblocking driver, HPACK, HTTP/2 client, WireGuard initiator protocol, userspace IPv4/TCP/UDP/DNS/ICMP stack, number parse/format, explicit adaptive ODE integration, grid pathfinding, hierarchical HPA\* pathfinding, position-based physics | `std_base64`, `std_hex`, `std_utf8`, `std_crypto`, `std_cipher`, `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_tls_io`, `std_hpack`, `std_http2`, `std_wireguard`, `std_tcpip`, `std_parse`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics` |
 | **L6** | Composition — coroutine-aware line and frame readers | `std_stream` |
 | async runtime | Outside L0–L6 — the cooperative scheduler and child-frame pool | `std.async` |
 | **GUI** | Windowed cell-grid drawing, input events, and clipboard; app-facing contract over a per-OS backend | `std_gfx`, `std_gfx_pal` |
@@ -130,7 +146,10 @@ apply to its modules.
   `Async` suffix, in the same module). The async form is a **separate
   implementation** that yields via the `@asyncSuspend` builtin; there is no
   executor and no poll loop, and no transitive coloring. The caller owns the
-  scheduler and advances the world explicitly with `std.async.tick`.
+  scheduler and advances the world explicitly with `std.async.tick`. The HTTP/2
+  client follows this contract directly: the caller's readiness loop drives the
+  non-suspending `http2Pump` (select read **and** write, bounded timeout, stall
+  watchdog), while request coroutines suspend in `http2Wait`.
 - **R5 — Single-threaded.** No locking, no atomics, no concurrency.
 - **R6 — Determinism.** No output may depend on addresses, the wall clock, or
   the process ID unless the module's contract says so. The `-fsafe` `0xAA`
@@ -171,6 +190,9 @@ apply to its modules.
 | Zstd frame decode, including RFC 8878 dictionaries | `std_zstd` | [zstd.md](sf/docs/std_lib/zstd.md) |
 | Raw DEFLATE / zlib inflate with consumed-input reporting | `std_deflate` | [deflate.md](sf/docs/std_lib/deflate.md) |
 | HTTP/1.1 GET/POST over a caller transport; streaming response sink | `std_http` | [http.md](sf/docs/std_lib/http.md) |
+| HTTP/2 client over TLS+ALPN `h2` or h2c prior knowledge; multiplexed streams | `std_http2` | [QUICK_REF](docs/sf/QUICK_REF.md) |
+| HPACK decode (Huffman + dynamic table); literal-only encode | `std_hpack` | [QUICK_REF](docs/sf/QUICK_REF.md) |
+| Nonblocking TLS socket driver (handshake/read/write pumps) | `std_tls_io` | [tls.md](sf/docs/std_lib/tls.md) |
 | Adaptive ODE integration (explicit Dormand–Prince RK45) | `std_num` | [num.md](sf/docs/std_lib/num.md) |
 | Grid pathfinding (JPS, preprocessed JPS+) | `std_pathfind` | [pathfind.md](sf/docs/std_lib/pathfind.md) |
 | Hierarchical pathfinding (HPA\*, exact transition tiles) | `std_hpa` | [hpa.md](sf/docs/std_lib/hpa.md) |
@@ -187,6 +209,7 @@ apply to its modules.
 | DER TLV read/scan (streaming, no allocation) | `std_asn1` | [asn1.md](sf/docs/std_lib/asn1.md) |
 | X.509 certificate parse, chain verify, hostname match, trust store | `std_x509` | [x509.md](sf/docs/std_lib/x509.md) |
 | TLS 1.2/1.3 client (sans-I/O records + handshakes) | `std_tls` | [tls.md](sf/docs/std_lib/tls.md) |
+| TLS ALPN negotiation + ChaCha20-first suite/group preference | `std_tls` | [tls.md](sf/docs/std_lib/tls.md) |
 | WireGuard initiator (NoiseIK handshake, transport, timers, replay) | `std_wireguard` | [wireguard.md](sf/docs/std_lib/wireguard.md) |
 | Userspace IPv4/TCP client, UDP, DNS A, ICMP echo | `std_tcpip` | [tcpip.md](sf/docs/std_lib/tcpip.md) |
 | Window/input/cell-grid text drawing | `std_gfx` + `std_gfx_pal` | [gfx.md](sf/docs/std_lib/gfx.md) |
@@ -303,6 +326,10 @@ entry for each public function. Read the one for the job at hand:
   consumed-input `used` out-param and no heap.
 - [http.md](sf/docs/std_lib/http.md) — `std_http`: HTTP/1.1 GET and POST over
   a caller-supplied transport, plus a streaming response sink for large bodies.
+- [QUICK_REF](docs/sf/QUICK_REF.md) — `std_tls_io`, `std_hpack`, `std_http2`:
+  Phase 3.3 HTTP/2 surface notes (there is no dedicated domain doc yet; the API
+  source of truth is `sf/src/std_tls_io.zig`, `sf/src/std_hpack.zig`, and
+  `sf/src/std_http2.zig`).
 - [num.md](sf/docs/std_lib/num.md) — `std_num`: explicit adaptive
   Dormand–Prince RK45 with a caller-supplied state vector and derivative
   callback.

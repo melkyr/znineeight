@@ -48,9 +48,9 @@ canonical, MSVC 6 `/MT`, MinGW CRT) with the Linux artifacts. It rolls up the v1
 the z9play/z9torr optimizations, example idiom modernization, and the portable switch /
 negative-case / enum emission fixes. The **self-hosted milestone is complete**: `zig1`
 compiles itself, the compilation is **deterministic to a fixed point** (current self-compile
-binary md5 `cd8d283b917749009961f4445043666b`; committed seed **v143**,
+binary md5 `cd8d283b917749009961f4445043666b`; committed seed **v144**,
 `release/seed/zig1-seed.tgz`; the fixed point moved from v141 `cf68f192…` by the Phase 3.1
-Task 1/7 compiler-source changes, not by the std payload), the 4-program emission gate
+Task 1/7 compiler-source changes, and v142-v144 std-only rotations retain it), the 4-program emission gate
 is byte-identical (see [Determinism](#determinism)), and the maintained example matrix is
 **28/28** dump/gcc/link.
 The mi_matrix corpus at `-s0` is enumerated by the canonical generator
@@ -70,6 +70,28 @@ through a real Linux kernel WireGuard tunnel; the `-osw` builds are
 emission/import-gated and are **not executed by `tier_tls`**. `tier_wireguard`
 additionally executes its demo under Wine, while `tls_demo/README.md` documents
 a manual Wine run. Measured RAM/CPU tables are in the two demo READMEs.
+
+**Phase 3.3 (HTTP/2) is complete and shipped in seed v144.** The std library adds
+`std_tls_io` (nonblocking `TlsIo` socket driver over `std_net`), `std_hpack`
+(full HPACK decode with a literal-only encoder), and `std_http2` (coroutine-driven
+HTTP/2 client with connection reuse and multiplexing). TLS gains ALPN
+(`alpn_h2`, `tlsAlpnSelected`) and the opt-in `prefer_chacha20` suite/group
+ordering; the HTTP/2 path sets it, and the default `false` keeps existing wire
+fixtures byte-identical. Both transports work: TLS+ALPN `h2` and cleartext h2c
+via prior knowledge only (no HTTP/2 Upgrade). The caller owns the event loop:
+select **read and write** readiness with a bounded timeout and a stall watchdog,
+and re-arm for writability whenever `http2Pump` reports pending output; the
+non-suspending pump returns `WouldBlock` and request coroutines suspend in
+`http2Wait`. HPACK decoding is full (canonical Huffman + ring dynamic table);
+encoding is literal-only. Closed/reset streams are **leased** until
+`http2Release`; buffered response bodies are copied into the caller-owned
+`out.body` capacity and capped at 1 MiB (larger bodies use `ResponseSink`).
+There is no server push, no priority scheduling, and no HTTP/2 Upgrade. The
+local integration tier uses an ephemeral Node 18+ `http2` server generated in
+`/tmp`; when Node is absent it prints `SKIP` and never claims PASS. Server-backed
+fixtures pin argless usage goldens, and z9git remains unchanged on HTTP/1.1.
+Win9x evidence for the HTTP/2 path is cross-build/emission only — no h2 hardware
+run is claimed.
 
 ## Key Features
 **Language-wins builtins & semantics** (the zig1 feature set):
@@ -115,18 +137,20 @@ The self-hosted compiler is deterministic end-to-end. Successive self-host hops 
 C89** and rebuild **byte-identical binaries** — the self-compile fixed point is closed.
 
 - **Current self-compile fixed point:** self-compiled `zig1` binary md5
-  `cd8d283b917749009961f4445043666b` (48 module `.c` + 49 module `.h`, 0 `error[`, 0 PANIC;
-  a rebuild from the committed v143 archive is hop1 == hop2 ==
-  `cd8d283b917749009961f4445043666b`), committed seed **v143**
-  (`release/seed/zig1-seed.tgz`, archive md5
-  `0f8c0548e7ebf99d04f38e9cf2f169ef`; Win9x zip md5
-  `c553c45e6d44ae0a7f31efb2f068b6c7`; `lib/manifest.md5` md5
-  `ec2170933d878c2dda786ba742001be3`, 56 std files). v143 is a std-only
-  rotation (the authorized `std_gpa` medium-decommit-failure fix), so it retains
-  the v142 fixed point. The fixed point moved from v141 `cf68f192…` to v142
-  `cd8d283b…` by the Task 1/7 compiler-source changes (`std_page_prelude.h`
-  emission, `error[3079]`, GPA analyzer ownership recognition), not by the std
-  payload. v135-v141 kept `cf68f192…`; v134 `8dff7650…` was the switch-emission fix
+  `cd8d283b917749009961f4445043666b` (48 module `.c` + 49 module `.h`,
+  12,503,400 bytes, 0 `error[`, 0 PANIC; a rebuild from the committed v144
+  archive is hop1 == hop2 == `cd8d283b917749009961f4445043666b`), committed
+  seed **v144** (`release/seed/zig1-seed.tgz`, archive md5
+  `140bd00dca94a7140e4b5469bf2495a8`; Win9x zip md5
+  `e4c21d2c34ffa1766ede224a50048072`; `lib/manifest.md5` md5
+  `e89c93ee9e7eda25d080eb392dea5d91`, 59 std files). v144 is a std-only
+  rotation (Phase 3.3 adds `std_tls_io`, `std_hpack`, `std_http2`), so it
+  retains the v142/v143 fixed point; v143 was the earlier std-only
+  `std_gpa` medium-decommit-failure rotation. The fixed point moved from v141
+  `cf68f192…` to v142 `cd8d283b…` by the Task 1/7 compiler-source changes
+  (`std_page_prelude.h` emission, `error[3079]`, GPA analyzer ownership
+  recognition), not by the std payload. v135-v141 kept `cf68f192…`; v134
+  `8dff7650…` was the switch-emission fix
   rotation; the v129 fixed point `c1bb4c0e…` was the 0.21.0 release; v130/v131 were
   the Win9x emission-fix rotations included in that hotfix. Earlier fixed points
   (`18b4b10c…` v128, `45158dce…` M2 T1C-F, `a567926c…` iterative lowering, and the
@@ -365,7 +389,7 @@ over) and pool 18,871K (18.4 MB; +2.4 MB over).
 ## Minimum Requirements
 | Requirement | Linux | Windows 9x |
 |---|---|---|
-| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 56-file `lib/` std set next to it (auto-discovered; current v143 seed); **~20 MB peak RSS at `-s0` at v135** (historical measurement; v143 fixed point `cd8d283b…`; D-safe 20,716 kB / 20.2 MB; D-fast 20,100 kB / 19.6 MB; spill `-s0` pool 18,677K / 18.2 MB); the <16 MB goal is not met | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); **runtime not measured** — Wine is evidence only |
+| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 59-file `lib/` std set next to it (auto-discovered; current v144 seed); **~20 MB peak RSS at `-s0` at v135** (historical measurement; v144 fixed point `cd8d283b…`; D-safe 20,716 kB / 20.2 MB; D-fast 20,100 kB / 19.6 MB; spill `-s0` pool 18,677K / 18.2 MB); the <16 MB goal is not met | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); **runtime not measured** — Wine is evidence only |
 | **BUILDING the compiler from source** | gcc (C89) for the emitted C — gcc backend **~177 MB** peak (Row E, 181,564 kB); rebuild from the committed seed (no zig0) | the three Windows compilers: `zig1_w32.exe` (OpenWatcom static CLIB, canonical), `zig1_w32_msvc.exe` (MSVC 6 `/MT`), and `z98_mingw_crt_w32.exe` (MinGW CRT, requires `msvcrt.dll`); built from the release seed zip (v135 for 0.21.2); cross-compile not measured here |
 
 > **At v135, Linux `zig1` self-compiles at ~20 MB peak RSS / ~18.2 MB pool at `-s0` — the
@@ -409,7 +433,7 @@ Two workflows: run a released binary, or build `zig1` from the source archive.
 **Build `zig1` from source** — download the release source archive **`zig1_src.tgz`** (linux) or
 **`zig1_src.zip`** (win9x-unpackable). It contains the full compiler source tree (`sf/src/*.zig` +
 `sf/src/include/`), a `RELEASE_README.txt` with the exact where/how build commands, and a
-`lib/` std payload. The current repo seed is **v143** with **56** std files; the historical
+`lib/` std payload. The current repo seed is **v144** with **59** std files; the historical
 0.21.2 release source archive carried 51. This source is a Zig-subset program, **not** directly compilable by a C toolchain: the
 seed model is the only rebuild path — rebuild it from the committed seed
 `release/seed/zig1-seed.tgz` with only `gcc` via
@@ -429,14 +453,14 @@ sh out/build_target.sh          # or: ./out/build_target.sh after the first run
 objects, so no repo include path and no hand-listed runtime trio are needed. `--dump-c89` is now a
 **debug alias**: on its own it writes a single C file to stdout; with `-o <dir>` it writes
 per-module `.c`/`.h` files.
-(For the current repo seed, install the **56-file `lib/`** — `std.zig` plus 55 `std_*.zig` —
+(For the current repo seed, install the **59-file `lib/`** — `std.zig` plus 58 `std_*.zig` —
 next to the `zig1` binary in a `lib/` dir for `@import("std")`; the historical 0.21.2 release
 shipped 51 files. Windows users pass `-I <lib>` explicitly.)
 The authoritative, always-verified command set lives in [docs/sf/QUICK_REF.md](docs/sf/QUICK_REF.md);
 the build script is `scripts/seed/build_from_seed.sh`. Release binaries (`zig1_linux32` /
 `zig1_w32.exe`) ship with a sibling `lib/` and `MANIFEST.txt` (md5/sha256/sizes).
 
-**Historical release artifacts (0.21.2, seed v135; separate from the current v143/56-file repo seed — see [Determinism](#determinism))** — `zig1_linux32` (md5 `cf68f192900e7f6618c11e1712b74b3a`, the v135
+**Historical release artifacts (0.21.2, seed v135; separate from the current v144/59-file repo seed — see [Determinism](#determinism))** — `zig1_linux32` (md5 `cf68f192900e7f6618c11e1712b74b3a`, the v135
 fixed point); `zig1_w32.exe` (OpenWatcom static CLIB, md5 `3e944a2c4d4842422ff9108d534a9f42`);
 `zig1_w32_msvc.exe` (MSVC 6 `/MT`, md5 `1141ecbf15e720da955b0434eeb8624d`); `z98_mingw_crt_w32.exe`
 (MinGW CRT, md5 `f08ddae7fc7924e7a372174c437ed380`; requires `msvcrt.dll`);
@@ -488,10 +512,10 @@ Runtime safety defaults to `-fsafe`. The compiler self-build passes `-ffast`, so
 ## Minimal Distribution
 To build a Z98 program on a target machine you need:
 1. **`zig1`** (or `zig1_w32.exe`) — the self-hosted compiler binary.
-2. **The std modules** — the shipped `lib/` set is **56 files**: `std.zig` plus 55
+2. **The std modules** — the shipped `lib/` set is **59 files**: `std.zig` plus 58
    `std_*.zig`. `std.zig` re-exports the 17 core modules (`io`, `fmt`, `arena`, `str`,
    `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `page`, `gpa`,
-   `pool`, `buf`, `fold`); the by-path modules (32 public + 6 `*_pal` companions) are the same inventory documented
+   `pool`, `buf`, `fold`); the by-path modules (35 public + 6 `*_pal` companions) are the same inventory documented
    under [Standard Library](#standard-library) above
    (linux: in a `lib/` dir beside the binary; windows: on the `-I` search path).
 3. **Runtime sources & headers** — emitted into the program's output dir by `zig1 -o <dir>`
@@ -514,16 +538,16 @@ To build a Z98 program on a target machine you need:
 - [README_zig0_bootstrap.md](README_zig0_bootstrap.md) — the preserved bootstrap-era (`zig0`)
   README, kept byte-verbatim.
 
-## Standard Library  [updated: 2026-11-07 — v143]
-The Z98 standard library lives in `sf/src/`. The shipped seed payload is **56**
-files: `std.zig` plus **55** `std_*.zig`. `std.zig` re-exports **17** modules
+## Standard Library  [updated: 2026-11-07 — v144]
+The Z98 standard library lives in `sf/src/`. The shipped seed payload is **59**
+files: `std.zig` plus **58** `std_*.zig`. `std.zig` re-exports **17** modules
 (`io`, `fmt`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`,
-`os`, `time`, `page`, `gpa`, `pool`, `buf`, `fold`); the remaining **38**
-`std_*.zig` files are imported by path — **32** public modules (`std_asn1`, `std_base64`,
+`os`, `time`, `page`, `gpa`, `pool`, `buf`, `fold`); the remaining **41**
+`std_*.zig` files are imported by path — **35** public modules (`std_asn1`, `std_base64`,
 `std_bencode`, `std_cipher`, `std_crypto`, `std_deflate`, `std_ecc`, `std_file`, `std_fft`, `std_gfx`,
-`std_heap`, `std_hex`, `std_hpa`, `std_http`, `std_lz4`, `std_map`, `std_noise`,
+`std_heap`, `std_hex`, `std_hpa`, `std_hpack`, `std_http`, `std_http2`, `std_lz4`, `std_map`, `std_noise`,
 `std_num`, `std_parse`, `std_pathfind`, `std_physics`, `std_rand`, `std_rle`,
-`std_sort`, `std_stdin`, `std_stream`, `std_tcpip`, `std_tls`, `std_utf8`,
+`std_sort`, `std_stdin`, `std_stream`, `std_tcpip`, `std_tls`, `std_tls_io`, `std_utf8`,
 `std_wireguard`, `std_x509`, `std_zstd`) plus **6** platform companions
 (`std_file_pal`, `std_gfx_pal`, `std_os_pal`, `std_page_pal`, `std_stdin_pal`,
 `std_time_pal`). `std_page` provides the portable page reservation API
@@ -538,7 +562,14 @@ provides ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128, and AES-128-GCM (const 
 provides the streaming DER reader and `std_x509` certificate parsing, leaf-to-anchor chain
 verification, SAN dNSName hostname matching, and the pinned trust-store loader; `std_tls`
 provides the sans-I/O TLS 1.2/1.3 record layer and client handshakes (TLS 1.3 suites,
-x25519, HKDF-Expand-Label key schedule, ECDSA/P-384/RSA-PSS CertificateVerify);
+x25519, HKDF-Expand-Label key schedule, ECDSA/P-384/RSA-PSS CertificateVerify), ALPN
+negotiation (`alpn_h2`, `tlsAlpnSelected`), and the opt-in `prefer_chacha20` suite/group
+ordering; `std_tls_io` provides the nonblocking `TlsIo` socket driver over `std_net`
+(handshake/read/write pumps returning `WouldBlock`); `std_hpack` provides full HPACK
+decode with a literal-only encoder; `std_http2` provides the coroutine-driven HTTP/2
+client (frames, connection reuse, multiplexing, flow control, TLS+ALPN and h2c prior
+knowledge; a non-suspending `http2Pump`, suspending `http2Wait`, leased streams released
+with `http2Release`, and caller-owned `out.body` capacity capped at 1 MiB);
 `std_wireguard` provides the sans-I/O WireGuard initiator (NoiseIK handshake, transport
 data path, timers, replay window, and cookie consumption); and `std_tcpip` provides the
 client-only userspace IPv4/TCP/UDP/DNS/ICMP stack driven by a sans-I/O poll pump. See the
