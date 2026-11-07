@@ -117,6 +117,10 @@ const MAX_RUN_CLASSES: usize = 16;
 const NO_PAGE: u32 = 0xFFFFFFFF;
 const PAGE_FREE: u32 = 0;
 const PAGE_USED: u32 = 1;
+// A run whose decommit failed (or whose commit cannot be completed) is taken
+// out of service: it is never inserted on a free list and findFit never sees
+// it, so a possibly-unmapped range can never be returned to a caller.
+const PAGE_POISONED: u32 = 2;
 
 // Medium chunks are page-run allocators. The chunk header and the per-page
 // metadata array live in the first committed pages; data pages start at
@@ -717,7 +721,11 @@ fn removeFreeRun(c: *MediumChunk, start: usize) void {
     meta[start].prev_free = NO_PAGE;
 }
 
-fn findFit(c: *MediumChunk, need_pages: usize) ?usize {
+// NO_SKIP is never a valid run start (run indices are < page_count), so the
+// retry loop in allocMedium can exclude the candidate that just failed.
+const NO_SKIP: usize = 0xFFFFFFFF;
+
+fn findFit(c: *MediumChunk, need_pages: usize, skip: usize) ?usize {
     const meta = chunkMeta(c);
     var cls = classOfPages(need_pages);
     while (cls < MAX_RUN_CLASSES) : (cls += 1) {
@@ -727,12 +735,14 @@ fn findFit(c: *MediumChunk, need_pages: usize) ?usize {
         var cur = c.free_heads[cls];
         while (cur != NO_PAGE) {
             const idx = @intCast(usize, cur);
-            const len = @intCast(usize, meta[idx].run_len);
-            if (len >= need_pages) {
-                if (!have_best or len < best_len) {
-                    best = idx;
-                    best_len = len;
-                    have_best = true;
+            if (idx != skip) {
+                const len = @intCast(usize, meta[idx].run_len);
+                if (len >= need_pages) {
+                    if (!have_best or len < best_len) {
+                        best = idx;
+                        best_len = len;
+                        have_best = true;
+                    }
                 }
             }
             cur = meta[idx].next_free;
@@ -748,7 +758,14 @@ fn takeRun(g: *Gpa, c: *MediumChunk, start: usize, need_pages: usize, size: usiz
     const data = chunkData(c);
     const ptr = data + start * page_mod.PAGE_SIZE;
     const commit_bytes = need_pages * page_mod.PAGE_SIZE;
-    if (!page_mod.pageCommit(&g.page, ptr, commit_bytes)) return null;
+    if (!page_mod.pageCommit(&g.page, ptr, commit_bytes)) {
+        // The candidate range cannot be committed. Retire it (rather than
+        // leaving it at the head of the free list for allocMedium to pick
+        // again) and let the caller scan the other runs/chunks.
+        removeFreeRun(c, start);
+        markRun(meta, start, len, PAGE_POISONED);
+        return null;
+    }
     removeFreeRun(c, start);
     if (len > need_pages) {
         markRun(meta, start, need_pages, PAGE_USED);
@@ -879,12 +896,43 @@ fn freeMedium(g: *Gpa, c: *MediumChunk, ptr: [*]u8) bool {
         }
     }
     markRun(meta, start, len, PAGE_FREE);
-    insertFreeRun(g, c, start);
     if (g.cfg.safe_checks) {
         const data = chunkData(c);
-        _ = page_mod.pageDecommit(&g.page, data + start * page_mod.PAGE_SIZE, len * page_mod.PAGE_SIZE);
+        const ok = page_mod.pageDecommit(&g.page, data + start * page_mod.PAGE_SIZE, len * page_mod.PAGE_SIZE);
+        if (!ok) {
+            // The range may now be unmapped even though the metadata says
+            // free. Never publish it on a free list: release the whole chunk
+            // when this run is all of it, otherwise poison the run so
+            // findFit/takeRun can never hand it out.
+            if (start == 0 and len == page_count) {
+                unlinkMediumChunk(g, c);
+                const raw: [*]u8 = @ptrCast([*]u8, c);
+                page_mod.pageRelease(&g.page, raw, c.chunk_bytes);
+            } else {
+                markRun(meta, start, len, PAGE_POISONED);
+            }
+            return true;
+        }
     }
+    insertFreeRun(g, c, start);
     return true;
+}
+
+fn unlinkMediumChunk(g: *Gpa, c: *MediumChunk) void {
+    var prev: ?*MediumChunk = null;
+    var cur = g.medium;
+    while (cur) |mc| {
+        if (mc == c) {
+            if (prev) |p| {
+                p.next = mc.next;
+            } else {
+                g.medium = asMedium(mc.next);
+            }
+            return;
+        }
+        prev = mc;
+        cur = asMedium(mc.next);
+    }
 }
 
 fn allocMedium(g: *Gpa, size: usize, align: usize) ?[*]u8 {
@@ -899,14 +947,18 @@ fn allocMedium(g: *Gpa, size: usize, align: usize) ?[*]u8 {
 
     var cur = g.medium;
     while (cur) |c| {
-        if (findFit(c, need_pages)) |start| {
-            return takeRun(g, c, start, need_pages, size);
+        var skip: usize = NO_SKIP;
+        while (findFit(c, need_pages, skip)) |start| {
+            if (takeRun(g, c, start, need_pages, size)) |p| return p;
+            // takeRun retired this candidate; skip it and keep scanning so a
+            // failed commit does not abort the whole allocation.
+            skip = start;
         }
         cur = asMedium(c.next);
     }
 
     const c = newMediumChunk(g) orelse return null;
-    const start = findFit(c, need_pages) orelse return null;
+    const start = findFit(c, need_pages, NO_SKIP) orelse return null;
     return takeRun(g, c, start, need_pages, size);
 }
 

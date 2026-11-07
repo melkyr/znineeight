@@ -41,6 +41,14 @@ fn aligned(p: [*]u8, a: usize) bool {
     return @ptrToInt(p) % a == 0;
 }
 
+fn overlaps(a: [*]u8, alen: usize, b: [*]u8, blen: usize) bool {
+    const a0: usize = @ptrToInt(a);
+    const b0: usize = @ptrToInt(b);
+    const a1: usize = a0 + alen;
+    const b1: usize = b0 + blen;
+    return a0 < b1 and b0 < a1;
+}
+
 // Small-block introspection (the fixture knows the packed header layout):
 // bit 0 free, bits 1..16 block size, bits 17..28 requested bytes.
 fn smallBlockSize(p: [*]u8) usize {
@@ -51,6 +59,15 @@ fn smallBlockSize(p: [*]u8) usize {
 fn magicPtr(p: [*]u8) *u32 {
     const b: usize = @ptrToInt(p) - 4;
     return @intToPtr(*u32, b + smallBlockSize(p) - 8);
+}
+
+// A decommit callback that always fails models a range that the PAL may have
+// left unmapped while the allocator still has metadata for it.
+fn failDecommit(p: *void, n: usize, advice: i32) i32 {
+    _ = p;
+    _ = n;
+    _ = advice;
+    return 1;
 }
 
 pub fn main() void {
@@ -261,6 +278,69 @@ pub fn main() void {
     ck("region_reacquire_release", st.regions == 0 and st.small_bytes == 0);
     gpa.gpaDeinit(&gc);
     ck("safe_deinit", true);
+
+    // ===== failed decommit: a freed run must not return to the free lists ===
+    // `.modern` plus a callback that always fails models a decommit that may
+    // leave the range unmapped while page metadata still describes it. Safe
+    // mode must release a fully free chunk and poison a partially free run.
+    var dcfg = gpa.gpaConfigTarget64();
+    dcfg.safe_checks = true;
+    dcfg.page.posix_mode = .modern;
+    dcfg.page.madvise_fn = failDecommit;
+    var gd = gpa.gpaInit(dcfg) catch {
+        std.io.write("gpa safe FAIL\n");
+        return;
+    };
+    ck("decommit_init", gd.cfg.safe_checks);
+
+    // Whole chunk free: the chunk is released, so repeated cycles do not leak
+    // chunks.
+    var decommit_ok: bool = true;
+    var di: usize = 0;
+    while (di < 4) : (di += 1) {
+        const dp = must(gpa.gpaAlloc(&gd, 8192, 8), "decommit cycle alloc");
+        dp[0] = @intCast(u8, 0x90 + di);
+        dp[8191] = @intCast(u8, 0x19 + di);
+        if (dp[0] != @intCast(u8, 0x90 + di) or dp[8191] != @intCast(u8, 0x19 + di)) decommit_ok = false;
+        if (!gpa.gpaFree(&gd, dp)) decommit_ok = false;
+        if (gpa.gpaStats(&gd).chunks != 0) decommit_ok = false;
+    }
+    ck("decommit_chunk_release", decommit_ok);
+
+    // Partially free chunk: the failed run is poisoned; the next allocation
+    // must skip it (different address, no overlap with the live neighbor) and
+    // still succeed from another run or chunk.
+    const pa = must(gpa.gpaAlloc(&gd, 8192, 8), "decommit keep a");
+    const pb = must(gpa.gpaAlloc(&gd, 8192, 8), "decommit keep b");
+    pa[0] = 0xA7;
+    pa[8191] = 0x7A;
+    pb[0] = 0xB7;
+    pb[8191] = 0x7B;
+    const pa_addr: usize = @ptrToInt(pa);
+    if (!gpa.gpaFree(&gd, pa)) decommit_ok = false;
+    const pc = must(gpa.gpaAlloc(&gd, 8192, 8), "decommit after fail");
+    var poison_ok: bool = decommit_ok;
+    if (@ptrToInt(pc) == pa_addr) poison_ok = false;
+    if (overlaps(pc, 8192, pb, 8192)) poison_ok = false;
+    pc[0] = 0xC7;
+    pc[8191] = 0x7C;
+    if (pc[0] != 0xC7 or pc[8191] != 0x7C) poison_ok = false;
+    if (pb[0] != 0xB7 or pb[8191] != 0x7B) poison_ok = false;
+    if (!gpa.gpaFree(&gd, pb)) poison_ok = false;
+    if (!gpa.gpaFree(&gd, pc)) poison_ok = false;
+    ck("decommit_poison", poison_ok);
+
+    // The poisoned chunk cannot serve the request; allocation still succeeds
+    // (from a later chunk) and the retained chunk count stays bounded.
+    const pd = must(gpa.gpaAlloc(&gd, 8192, 8), "decommit later");
+    pd[0] = 0xD7;
+    pd[8191] = 0x7D;
+    const later_ok = pd[0] == 0xD7 and pd[8191] == 0x7D and
+        !overlaps(pd, 8192, pb, 8192);
+    ck("decommit_later", later_ok and gpa.gpaStats(&gd).chunks == 2);
+    ck("decommit_later_free", gpa.gpaFree(&gd, pd) and gpa.gpaStats(&gd).chunks == 1);
+    gpa.gpaDeinit(&gd);
+    ck("decommit_deinit", true);
 
     // ===== -fsafe alone does not enable checks (runs last: corrupts) =====
     var fcfg = gpa.gpaConfigTarget64();

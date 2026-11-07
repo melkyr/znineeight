@@ -525,7 +525,7 @@ files: `std.zig` plus **55** `std_*.zig`. `std.zig` re-exports **17** modules
 the TLSF/medium/large general-purpose allocator (default `target64`: 64 KiB
 medium cap, 2 MiB chunks, 64 MB target; `align` a power of two in `[8, 4096]`;
 `safe_checks` explicit, not implied by `-fsafe`), and `std_pool` a fixed-block
-pool; TLS remains design-only and `.encrypted` is deferred. `std_crypto` provides streaming SHA-1/256/384/512, MD5,
+pool; thread-local storage (TLS) remains design-only and `.encrypted` is deferred. `std_crypto` provides streaming SHA-1/256/384/512, MD5,
 CRC-32, HMAC-SHA256, HKDF, BLAKE2s, RC4, modexp, and RSA PKCS#1 v1.5 / PSS verify; `std_cipher`
 provides ChaCha20, Poly1305, ChaCha20-Poly1305, AES-128, and AES-128-GCM (const T-tables);
 `std_ecc` provides X25519, P-256 keygen/ECDH/ECDSA verify, and P-384 ECDSA verify; `std_asn1`
