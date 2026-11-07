@@ -496,6 +496,9 @@ pub const Http2Request = struct {
     failed: bool,
 };
 
+pub const OWN_SCHEME_MAX: usize = 8;
+pub const OWN_PATH_MAX: usize = 256;
+
 pub const Stream = struct {
     id: u32,
     state: StreamState,
@@ -510,6 +513,15 @@ pub const Stream = struct {
     hdr_arena_buf: []u8,
     hdr_slots: []hpack_mod.HpackHeader,
     hdr_out: []http.Header,
+    // Convenience-API request descriptor. Lives in the stream slot so repeated
+    // http2Get/http2Post calls do not grow the connection arena; reused when
+    // the slot is reused after close. Only the lowercased scheme and the two
+    // synthesized POST headers need bounded storage; authority and ordinary
+    // paths stay slices of the caller's still-live URL argument.
+    own_req: Http2Request,
+    own_headers: [2]http.Header,
+    own_scheme: [OWN_SCHEME_MAX]u8,
+    own_path: [OWN_PATH_MAX]u8,
 };
 
 pub const Http2Conn = struct {
@@ -894,7 +906,7 @@ fn encodeRequestHeaders(c: *Http2Conn, st: *Stream) Http2Error!void {
     if (!has_body) st.state = StreamState.half_closed_local;
 }
 
-pub fn http2Submit(c: *Http2Conn, req: *Http2Request) Http2Error!u32 {
+fn acquireStream(c: *Http2Conn) Http2Error!*Stream {
     if (c.closed or c.goaway) return error.GoAway;
     const active = activeStreams(c);
     if (active >= @intCast(usize, c.cfg.max_streams)) return error.Busy;
@@ -902,6 +914,10 @@ pub fn http2Submit(c: *Http2Conn, req: *Http2Request) Http2Error!u32 {
         if (active >= @intCast(usize, c.remote.max_concurrent_streams)) return error.Busy;
     }
     const st = findFreeStream(c) orelse return error.Busy;
+    return st;
+}
+
+fn submitOnStream(c: *Http2Conn, st: *Stream, req: *Http2Request) Http2Error!u32 {
     if (c.next_stream_id > 0x7FFFFFFF) return error.GoAway;
     const id = c.next_stream_id;
     c.next_stream_id += 2;
@@ -912,6 +928,11 @@ pub fn http2Submit(c: *Http2Conn, req: *Http2Request) Http2Error!u32 {
         return e;
     };
     return id;
+}
+
+pub fn http2Submit(c: *Http2Conn, req: *Http2Request) Http2Error!u32 {
+    const st = try acquireStream(c);
+    return submitOnStream(c, st, req);
 }
 
 pub fn http2StreamState(c: *Http2Conn, stream_id: u32) Http2Error!StreamState {
@@ -1648,66 +1669,69 @@ fn authorityPart(raw: []const u8, https: bool) []const u8 {
     return raw;
 }
 
-fn splitUrl(a: *arena_mod.Arena, url: []const u8) Http2Error!UrlParts {
+fn splitUrl(url: []const u8) Http2Error!UrlParts {
     const sep = findFrom(url, "://", 0);
     if (sep >= url.len) return error.Protocol;
     const scheme_raw = url[0..sep];
     const is_https: bool = eqLowerName(scheme_raw, "https");
     if (!is_https and !eqLowerName(scheme_raw, "http")) return error.Protocol;
-    const scheme = try lowerHeaderName(a, scheme_raw);
     const auth_start = sep + 3;
     var auth_end: usize = auth_start;
     while (auth_end < url.len and url[auth_end] != '/' and url[auth_end] != '?' and url[auth_end] != '#') : (auth_end += 1) {}
     if (auth_end == auth_start) return error.Protocol;
     const authority = authorityPart(url[auth_start..auth_end], is_https);
 
-    var path: []const u8 = "/";
+    var path: []const u8 = "";
     if (auth_end < url.len) {
         var end = url.len;
         const hash = findFrom(url, "#", auth_end);
         if (hash < url.len) end = hash;
-        if (url[auth_end] == '/') {
-            path = url[auth_end..end];
-        } else if (url[auth_end] == '?') {
-            const rest = url[auth_end..end];
-            const raw = arena_mod.alloc(a, rest.len + 1) catch return error.OutOfMemory;
-            raw[0] = '/';
-            var i: usize = 0;
-            while (i < rest.len) : (i += 1) raw[i + 1] = rest[i];
-            path = raw[0 .. rest.len + 1];
+        path = url[auth_end..end];
+    }
+    return UrlParts{ .scheme = scheme_raw, .authority = authority, .path = path };
+}
+
+fn submitUrl(c: *Http2Conn, method: []const u8, url: []const u8, headers: []const http.Header, body: []const u8, body_len: usize, body_source: ?*http.RequestSource, sink: ?*http.ResponseSink, out: *http.Response, content_type: []const u8, accept: []const u8) Http2Error!void {
+    const st = try acquireStream(c);
+    const parts = try splitUrl(url);
+
+    if (parts.scheme.len > st.own_scheme.len) return error.TooLarge;
+    var i: usize = 0;
+    while (i < parts.scheme.len) : (i += 1) st.own_scheme[i] = lowerByte(parts.scheme[i]);
+
+    var req_path: []const u8 = parts.path;
+    if (parts.path.len == 0) {
+        req_path = "/";
+    } else if (parts.path[0] == '?') {
+        if (parts.path.len + 1 > st.own_path.len) return error.TooLarge;
+        st.own_path[0] = '/';
+        i = 0;
+        while (i < parts.path.len) : (i += 1) st.own_path[i + 1] = parts.path[i];
+        req_path = st.own_path[0 .. parts.path.len + 1];
+    }
+
+    var req_headers: []const http.Header = headers;
+    if (content_type.len > 0 or accept.len > 0) {
+        var hn: usize = 0;
+        if (content_type.len > 0) {
+            st.own_headers[hn] = http.Header{ .name = "content-type", .value = content_type };
+            hn += 1;
         }
+        if (accept.len > 0) {
+            st.own_headers[hn] = http.Header{ .name = "accept", .value = accept };
+            hn += 1;
+        }
+        req_headers = st.own_headers[0..hn];
     }
-    if (path.len == 0) path = "/";
-    return UrlParts{ .scheme = scheme, .authority = authority, .path = path };
-}
 
-fn postHeaders(c: *Http2Conn, content_type: []const u8, accept: []const u8) Http2Error![]http.Header {
-    const raw = arena_mod.alloc(c.arena, 2 * @sizeOf(http.Header)) catch return error.OutOfMemory;
-    const hs: [*]http.Header = @ptrCast([*]http.Header, raw);
-    var n: usize = 0;
-    if (content_type.len > 0) {
-        hs[n] = http.Header{ .name = "content-type", .value = content_type };
-        n += 1;
-    }
-    if (accept.len > 0) {
-        hs[n] = http.Header{ .name = "accept", .value = accept };
-        n += 1;
-    }
-    return hs[0..n];
-}
-
-fn submitUrl(c: *Http2Conn, method: []const u8, url: []const u8, headers: []const http.Header, body: []const u8, body_len: usize, body_source: ?*http.RequestSource, sink: ?*http.ResponseSink, out: *http.Response) Http2Error!void {
-    const parts = try splitUrl(c.arena, url);
-    // The request descriptor must outlive a coroutine suspension, so it lives
-    // in the connection arena rather than in the caller's async frame.
-    const raw = arena_mod.alloc(c.arena, @sizeOf(Http2Request)) catch return error.OutOfMemory;
-    const req: *Http2Request = @ptrCast(*Http2Request, raw);
-    req.* = Http2Request{
+    // The descriptor and all its bounded buffers live in this stream slot, so
+    // it survives @asyncSuspend and is reused when the slot is reused.
+    st.own_req = Http2Request{
         .method = method,
-        .scheme = parts.scheme,
+        .scheme = st.own_scheme[0..parts.scheme.len],
         .authority = parts.authority,
-        .path = parts.path,
-        .headers = headers,
+        .path = req_path,
+        .headers = req_headers,
         .body = body,
         .body_len = body_len,
         .body_source = body_source,
@@ -1717,24 +1741,22 @@ fn submitUrl(c: *Http2Conn, method: []const u8, url: []const u8, headers: []cons
         .done = false,
         .failed = false,
     };
-    const id = try http2Submit(c, req);
+    const id = try submitOnStream(c, st, &st.own_req);
     try http2Wait(c, id);
 }
 
 pub fn http2Get(c: *Http2Conn, url: []const u8, out: *http.Response) Http2Error!void {
-    try submitUrl(c, "GET", url, c.empty_headers[0..0], c.empty_bytes[0..0], 0, null, null, out);
+    try submitUrl(c, "GET", url, c.empty_headers[0..0], c.empty_bytes[0..0], 0, null, null, out, "", "");
 }
 
 pub fn http2Post(c: *Http2Conn, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, out: *http.Response) Http2Error!void {
-    const hs = try postHeaders(c, content_type, accept);
-    try submitUrl(c, "POST", url, hs, body, body.len, null, null, out);
+    try submitUrl(c, "POST", url, c.empty_headers[0..0], body, body.len, null, null, out, content_type, accept);
 }
 
 pub fn http2GetStream(c: *Http2Conn, url: []const u8, headers: []const http.Header, sink: *http.ResponseSink, out_head: *http.Response) Http2Error!void {
-    try submitUrl(c, "GET", url, headers, c.empty_bytes[0..0], 0, null, sink, out_head);
+    try submitUrl(c, "GET", url, headers, c.empty_bytes[0..0], 0, null, sink, out_head, "", "");
 }
 
 pub fn http2PostStream(c: *Http2Conn, url: []const u8, body_len: usize, content_type: []const u8, accept: []const u8, body: *http.RequestSource, sink: *http.ResponseSink, out_head: *http.Response) Http2Error!void {
-    const hs = try postHeaders(c, content_type, accept);
-    try submitUrl(c, "POST", url, hs, c.empty_bytes[0..0], body_len, body, sink, out_head);
+    try submitUrl(c, "POST", url, c.empty_headers[0..0], c.empty_bytes[0..0], body_len, body, sink, out_head, content_type, accept);
 }

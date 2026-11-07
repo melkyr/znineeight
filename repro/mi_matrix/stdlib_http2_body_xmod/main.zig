@@ -69,6 +69,7 @@ var g_large_body: [LARGE_CHUNK]u8 = undefined;
 
 var g_sink_buf: [64]u8 = undefined;
 var g_slow_sink_buf: [SLOW_BODY_LEN]u8 = undefined;
+var g_cycle_out: http.Response = undefined;
 
 const SinkState = struct {
     buf: []u8,
@@ -162,6 +163,14 @@ fn buildStage(s: *Script, stage: usize) void {
             emitWindowUpdate(s, 0, 200000);
             emitWindowUpdate(s, 1, 200000);
         }
+    } else if (s.dyn_kind == 3) {
+        if (stage == 0) {
+            var empty = [_]u8{0};
+            scriptEmit(s, h2.FrameType.settings, 0, 0, empty[0..0]);
+        }
+        const id: u32 = @intCast(u32, stage * 2 + 1);
+        emitStatus(s, id);
+        emitData(s, id, 0x1, "z");
     }
     scriptEnd(s);
 }
@@ -763,6 +772,85 @@ fn scenarioSlow() void {
     h2.http2Close(c);
 }
 
+fn printFlag(label: []const u8, ok: bool) void {
+    std.io.write(label);
+    if (ok) {
+        std.io.write("=1\n");
+    } else {
+        std.io.write("=0\n");
+    }
+}
+
+const CyclesArgs = struct {
+    c: *h2.Http2Conn,
+    s: *Script,
+    ar: *std.arena.Arena,
+    ok: u8,
+    used2: usize,
+    peak: usize,
+    final_used: usize,
+};
+
+fn cyclesWorker(args: *CyclesArgs) void {
+    var i: usize = 0;
+    while (i < 100) : (i += 1) {
+        args.s.cycles_ready = i + 1;
+        if ((i % 2) == 0) {
+            h2.http2Get(args.c, "https://example.com/c", &g_cycle_out) catch {
+                args.ok = 0;
+                return;
+            };
+        } else {
+            h2.http2Post(args.c, "https://example.com/c", "p", "text/plain", "*/*", &g_cycle_out) catch {
+                args.ok = 0;
+                return;
+            };
+        }
+        if (g_cycle_out.status != 200) {
+            args.ok = 0;
+            return;
+        }
+        const used = args.ar.used;
+        if (used > args.peak) args.peak = used;
+        if (i == 1) args.used2 = used;
+    }
+    args.final_used = args.ar.used;
+    args.ok = 1;
+}
+
+fn scenarioArenaCycles() void {
+    const s = &g_script;
+    scriptReset(s);
+    s.dynamic = true;
+    s.dyn_kind = 3;
+    s.cycles_ready = 0;
+
+    var ar = std.arena.init(g_arena_backing[0..]);
+    var t = makeTransport(s);
+    var cfg = defaultConfig();
+    cfg.max_streams = 2;
+    var c = h2.http2OpenTransport(&ar, &t, cfg) catch @panic("cycles: open");
+
+    var ca = CyclesArgs{ .c = c, .s = s, .ar = &ar, .ok = 0, .used2 = 0, .peak = 0, .final_used = 0 };
+    var cbuf: [32768]u8 = undefined;
+    var fbuf: [8192]u8 = undefined;
+    var ctx = initContext(cbuf[0..]);
+    var cap: *CyclesArgs = &ca;
+    var args_ptr: *const void = @ptrCast(*const void, &cap);
+    var f: *void = @asyncInit(ctx, &fbuf, cyclesWorker, args_ptr);
+
+    var more: ?*void = @asyncResume(f, null);
+    var it: usize = 0;
+    while (more != null and it < 20000) : (it += 1) {
+        _ = h2.http2Pump(c) catch @panic("cycles: pump");
+        more = @asyncResume(f, null);
+    }
+    if (more != null or ca.ok != 1) @panic("cycles: worker failed");
+    const stable: bool = (ca.used2 > 0 and ca.final_used == ca.used2 and ca.peak <= ca.used2);
+    printFlag("arena_ok", stable);
+    h2.http2Close(c);
+}
+
 pub fn main() void {
     fillPattern(g_slow_body[0..], 17);
     fillPattern(g_source_body[0..], 43);
@@ -773,4 +861,5 @@ pub fn main() void {
     scenarioLarge();
     scenarioSinkError();
     scenarioSlow();
+    scenarioArenaCycles();
 }
