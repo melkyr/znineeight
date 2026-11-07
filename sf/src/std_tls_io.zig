@@ -10,6 +10,7 @@ pub const TlsIo = struct {
     in: [tls.TLS_MAX_WIRE_RECORD]u8,
     established: bool,
     closed: bool,
+    sock_closed: bool,
 };
 
 pub const TlsIoError = error{
@@ -53,6 +54,7 @@ pub fn tlsIoInit(io: *TlsIo, sess: *tls.TlsSession, sock: net.Socket) void {
     io.out_off = 0;
     io.established = false;
     io.closed = false;
+    io.sock_closed = false;
 }
 
 fn flushOut(io: *TlsIo) TlsIoError!void {
@@ -166,7 +168,10 @@ pub fn tlsIoWritePump(io: *TlsIo, data: []const u8) TlsIoError!usize {
 }
 
 pub fn tlsIoClose(io: *TlsIo) void {
-    if (!io.closed) net.close(io.sock);
+    if (!io.sock_closed) {
+        net.close(io.sock);
+        io.sock_closed = true;
+    }
     io.closed = true;
     io.established = false;
     io.out_len = 0;

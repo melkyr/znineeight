@@ -39,7 +39,7 @@ case "$MODE" in
         ;;
     tlsio)
         DIR="repro/mi_matrix/stdlib_tls_io_xmod"
-        WANT=$'tlsio=ping\nwb>=1'
+        WANT=$'tlsio=ping\nwb>=1\nsock_closed=1'
         RUN_HOST="localhost"
         ;;
     *)
@@ -139,7 +139,10 @@ const srv = tls.createServer({
     cert: fs.readFileSync(process.env.ECHO_CERT),
 }, (c) => {
     c.on("error", () => {});
-    c.pipe(c);
+    c.once("data", (d) => {
+        c.write(d);
+        setTimeout(() => { c.end(); }, 100);
+    });
 });
 srv.on("tlsClientError", () => {});
 srv.listen(0, "127.0.0.1", () => {

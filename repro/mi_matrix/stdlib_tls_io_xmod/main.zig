@@ -72,6 +72,7 @@ const Run = struct {
     failed: bool,
     spins: u32,
     buf: [WANT]u8,
+    drain: [1]u8,
 };
 
 var g_store_arena_buf: [32768]u8 = undefined;
@@ -128,6 +129,15 @@ fn waitReady(io: *tio.TlsIo) void {
 // The coroutine parameter is copied positionally from this record by
 // `@asyncInit` (the Track-3 ABI).
 const Args = struct { run: *Run };
+
+// Proves the driver closed the fd: a send on a closed descriptor must error.
+fn sendProbeClosed(sock: net.Socket) bool {
+    var s: net.Socket = sock;
+    _ = net.sendNonBlocking(&s, "x") catch {
+        return true;
+    };
+    return false;
+}
 
 fn worker(run: *Run) void {
     var established: bool = false;
@@ -191,6 +201,28 @@ fn worker(run: *Run) void {
         if (n == 0) break;
         total += n;
     }
+
+    // Server closes after echoing: read through close_notify/FIN until 0.
+    var eof: bool = false;
+    while (!eof) {
+        const n = tio.tlsIoReadPump(run.io, run.drain[0..]) catch |e| {
+            if (e == error.WouldBlock) {
+                run.wb += 1;
+                run.spins += 1;
+                if (run.spins > 500) {
+                    run.failed = true;
+                    return;
+                }
+                waitReady(run.io);
+                _ = @asyncSuspend(null);
+                continue;
+            }
+            run.failed = true;
+            return;
+        };
+        if (n == 0) eof = true;
+    }
+
     run.got = total;
     run.done = true;
 }
@@ -244,12 +276,13 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .failed = false,
         .spins = 0,
         .buf = [WANT]u8{ 0, 0, 0, 0 },
+        .drain = [1]u8{0},
     };
     var args = Args{ .run = &g_run };
 
     var pool: [128]u64 = undefined;
     var ctx = std.async.contextInit(@ptrCast([*]u8, &pool)[0..128 * 8]);
-    var frame_store: [1024]u8 = undefined;
+    var frame_store: [2048]u8 = undefined;
     var task: std.async.Task = undefined;
     task.frame = @asyncInit(@ptrCast(*void, ctx), &frame_store, worker, @ptrCast(*const void, &args));
     task.ctx = ctx;
@@ -270,6 +303,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     };
 
     tio.tlsIoClose(&g_io);
+    const sock_closed = sendProbeClosed(g_io.sock);
     net.cleanup();
 
     if (g_run.failed or g_run.got != WANT) {
@@ -283,6 +317,11 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         out("wb>=1\n");
     } else {
         out("wb=0\n");
+    }
+    if (sock_closed) {
+        out("sock_closed=1\n");
+    } else {
+        out("sock_closed=0\n");
     }
     os.exit(0);
 }
