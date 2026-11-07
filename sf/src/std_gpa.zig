@@ -1054,6 +1054,36 @@ fn newRegion(g: *Gpa) ?*Region {
     return r;
 }
 
+// Safe mode releases a small region once it has collapsed to the single free
+// block spanning the entire block area. The caller must be done touching the
+// region: it is unlinked before pageRelease, so no later scan can visit it.
+fn releaseEmptyRegion(g: *Gpa, r: *Region) bool {
+    const base: [*]u8 = @ptrCast([*]u8, r);
+    const b = blockAt(base, BLOCK_START);
+    if (!isFree(b)) return false;
+    if (blockSize(b) != BLOCK_END - BLOCK_START) return false;
+
+    var prev: ?*Region = null;
+    var cur = g.regions;
+    var found = false;
+    while (cur) |c| {
+        if (c == r) {
+            if (prev) |p| {
+                p.next = c.next;
+            } else {
+                g.regions = asRegion(c.next);
+            }
+            found = true;
+            break;
+        }
+        prev = c;
+        cur = asRegion(c.next);
+    }
+    if (!found) return false;
+    page_mod.pageRelease(&g.page, base, REGION_BYTES);
+    return true;
+}
+
 pub fn gpaDeinit(g: *Gpa) void {
     var cur = g.regions;
     while (cur) |r| {
@@ -1171,6 +1201,9 @@ pub fn gpaFree(g: *Gpa, ptr: [*]u8) bool {
         }
     }
     freeBlock(g, r, b);
+    if (g.cfg.safe_checks) {
+        _ = releaseEmptyRegion(g, r);
+    }
     if (g.small_bytes >= requested) {
         g.small_bytes -= requested;
     } else {

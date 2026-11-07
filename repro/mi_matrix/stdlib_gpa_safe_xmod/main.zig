@@ -227,6 +227,38 @@ pub fn main() void {
     ck("region_free", gpa.gpaFree(&gc, post));
     st = gpa.gpaStats(&gc);
     ck("safe_empty", st.live_allocs == 0 and st.small_bytes == 0);
+
+    // --- safe mode releases a small region once it is empty ---
+    var many: [16]?[*]u8 = undefined;
+    var mi: usize = 0;
+    while (mi < 16) : (mi += 1) {
+        many[mi] = gpa.gpaAlloc(&gc, 800, 8);
+    }
+    var many_ok = gpa.gpaStats(&gc).regions == 1;
+    mi = 0;
+    while (mi < 16) : (mi += 1) {
+        if (many[mi]) |p| {
+            p[0] = @intCast(u8, mi & 0xFF);
+            p[799] = 0xE8;
+            if (!gpa.gpaFree(&gc, p)) many_ok = false;
+            many[mi] = null;
+        } else {
+            many_ok = false;
+        }
+    }
+    st = gpa.gpaStats(&gc);
+    ck("region_release", many_ok and st.regions == 0 and
+        st.small_bytes == 0 and st.live_allocs == 0);
+
+    const fresh = must(gpa.gpaAlloc(&gc, 128, 8), "fresh region");
+    fresh[0] = 0x81;
+    fresh[127] = 0x18;
+    st = gpa.gpaStats(&gc);
+    ck("region_reacquire", st.regions == 1 and magicPtr(fresh).* == LIVE and
+        fresh[0] == 0x81 and fresh[127] == 0x18);
+    ck("region_reacquire_free", gpa.gpaFree(&gc, fresh));
+    st = gpa.gpaStats(&gc);
+    ck("region_reacquire_release", st.regions == 0 and st.small_bytes == 0);
     gpa.gpaDeinit(&gc);
     ck("safe_deinit", true);
 
