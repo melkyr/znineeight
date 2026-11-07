@@ -170,7 +170,9 @@ repro/mi_matrix/stdlib_hpack_huffman_xmod
 repro/mi_matrix/stdlib_hpack_vectors_xmod
 repro/mi_matrix/stdlib_http2_body_xmod
 repro/mi_matrix/stdlib_http2_frames_xmod
+repro/mi_matrix/stdlib_http2_h2c_xmod
 repro/mi_matrix/stdlib_http2_state_xmod
+repro/mi_matrix/stdlib_http2_tls_xmod
 repro/mi_matrix/stdlib_http_badurl_xmod
 repro/mi_matrix/stdlib_http_parseresponse_chunked_reject_xmod
 repro/mi_matrix/stdlib_http_parseresponse_xmod

@@ -536,7 +536,6 @@ pub const Http2Conn = struct {
     write_off: usize,
     preface_off: usize,
     preface_sent: bool,
-    peer_preface_done: bool,
     hpack: hpack_mod.Hpack,
     hpack_storage: []u8,
     enc_storage: []u8,
@@ -652,7 +651,6 @@ pub fn http2OpenTransport(arena: *arena_mod.Arena, t: *const Transport, cfg: Htt
     c.write_off = 0;
     c.preface_off = 0;
     c.preface_sent = false;
-    c.peer_preface_done = false;
 
     c.hpack_storage = try allocBytes(arena, @intCast(usize, cfg.header_table_size));
     hpack_mod.hpackInit(&c.hpack, c.hpack_storage);
@@ -1009,21 +1007,6 @@ fn copyInto(dst: []u8, src: []const u8) void {
 
 fn processBuffered(c: *Http2Conn) Http2Error!bool {
     var progressed: bool = false;
-    if (!c.peer_preface_done) {
-        const avail = frameReaderBuffered(&c.reader);
-        if (avail < CLIENT_PREFACE.len) return false;
-        var i: usize = 0;
-        while (i < CLIENT_PREFACE.len) : (i += 1) {
-            if (c.reader.buf[c.reader.start + i] != CLIENT_PREFACE[i]) return error.NotHttp2;
-        }
-        c.reader.start += CLIENT_PREFACE.len;
-        if (c.reader.start == c.reader.end) {
-            c.reader.start = 0;
-            c.reader.end = 0;
-        }
-        c.peer_preface_done = true;
-        progressed = true;
-    }
     var f: Frame = undefined;
     while (true) {
         const got = try frameNext(&c.reader, &f);

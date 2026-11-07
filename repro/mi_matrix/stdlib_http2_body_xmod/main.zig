@@ -1,9 +1,11 @@
 // stdlib_http2_body_xmod — HTTP/2 body API and streaming (Phase 3.3 Task 7).
 //
 // Drives `std_http2` through `http2OpenTransport` with a scripted,
-// non-suspending `Transport`. The script supplies the server preface/SETTINGS,
-// HEADERS/DATA responses, and gated WINDOW_UPDATE stages.
+// non-suspending `Transport`. The script supplies literal server frames
+// (SETTINGS, HEADERS/DATA responses, gated WINDOW_UPDATE stages); it never
+// includes the client PRI preface in the server→client stream.
 //
+
 // Scenarios:
 //   body     http2Get + http2Post: pseudo-headers from the URL, lowercased
 //            request header names, status/body mapping. Prints body=<g>/<p>.
@@ -47,7 +49,6 @@ const Script = struct {
     wbuf: [262144]u8,
     wlen: usize,
     chunk: usize,
-    base: usize,
     fw: h2.FrameWriter,
     block_writes: bool,
     close_called: bool,
@@ -55,7 +56,7 @@ const Script = struct {
     dyn_kind: u8,
     cycles_ready: usize,
     cycles_served: usize,
-    emit_preface: bool,
+
 };
 
 const Ctx = struct { used: u32, capacity: u32, oom: u8 };
@@ -126,26 +127,18 @@ fn scriptReset(s: *Script) void {
     s.rpos = 0;
     s.wlen = 0;
     s.chunk = 13;
-    s.base = 0;
+
     s.block_writes = false;
     s.close_called = false;
     s.dynamic = false;
     s.dyn_kind = 0;
     s.cycles_ready = 0;
     s.cycles_served = 0;
-    s.emit_preface = true;
+
 }
 
 fn scriptBegin(s: *Script) void {
-    var base: usize = 0;
-    if (s.emit_preface) {
-        var i: usize = 0;
-        while (i < 24) : (i += 1) s.rbuf[i] = PREFACE_BYTES[i];
-        s.emit_preface = false;
-        base = 24;
-    }
-    s.base = base;
-    h2.frameWriterInit(&s.fw, s.rbuf[base..], 16384);
+    h2.frameWriterInit(&s.fw, s.rbuf[0..], 16384);
 }
 
 fn scriptEmit(s: *Script, t: h2.FrameType, flags: u8, sid: u32, payload: []const u8) void {
@@ -153,7 +146,7 @@ fn scriptEmit(s: *Script, t: h2.FrameType, flags: u8, sid: u32, payload: []const
 }
 
 fn scriptEnd(s: *Script) void {
-    s.rlen = s.base + s.fw.len;
+    s.rlen = s.fw.len;
     s.rpos = 0;
 }
 
@@ -567,6 +560,27 @@ fn scenarioBody() void {
     if (!containsBytes(wire, "payload")) @panic("body: post data");
     if (!containsBytes(wire, "text/plain")) @panic("body: content-type");
     if (!containsBytes(wire, "*/*")) @panic("body: accept");
+
+    // Literal client wire vector: exactly one 24-byte PRI preface, then
+    // literal frames. PREFACE_BYTES is a local literal, never server input.
+    var preface_ok: bool = wire.len >= 24;
+    var pi: usize = 0;
+    if (preface_ok) {
+        while (pi < 24) : (pi += 1) {
+            if (wire[pi] != PREFACE_BYTES[pi]) preface_ok = false;
+        }
+    }
+    var preface_count: usize = 0;
+    var pp: usize = 0;
+    while (pp + 24 <= wire.len) : (pp += 1) {
+        var pm: bool = true;
+        var pk: usize = 0;
+        while (pk < 24) : (pk += 1) {
+            if (wire[pp + pk] != PREFACE_BYTES[pk]) pm = false;
+        }
+        if (pm) preface_count += 1;
+    }
+    if (!preface_ok or preface_count != 1) @panic("body: client preface");
 
     std.io.write("body=");
     std.io.write(out1.body);

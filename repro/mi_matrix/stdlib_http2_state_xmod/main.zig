@@ -1,10 +1,12 @@
 // stdlib_http2_state_xmod — HTTP/2 connection, streams, and flow control.
 //
 // Drives `std_http2` through `http2OpenTransport` with a scripted, entirely
-// non-suspending `Transport`. The script supplies the server preface, SETTINGS,
-// PING, HEADERS/DATA responses, GOAWAY, RST_STREAM, WINDOW_UPDATE, and
-// SETTINGS frames; the transport write side records client output and can
-// stall after a chosen byte offset to model a partial `WouldBlock` write.
+// non-suspending `Transport`. The script supplies literal server frames
+// (SETTINGS, PING, HEADERS/DATA, GOAWAY, RST_STREAM, WINDOW_UPDATE); the
+// transport write side records client output and can stall after a chosen byte
+// offset to model a partial `WouldBlock` write. The scripted server data never
+// includes the client PRI preface: the server connection preface is SETTINGS.
+
 //
 // Scenarios (one connection each):
 //   basic     two GETs, response bodies "a" and "b", status 200, odd ids 1/3,
@@ -37,7 +39,7 @@ const Script = struct {
     wbuf: [262144]u8,
     wlen: usize,
     chunk: usize,
-    base: usize,
+
     fw: h2.FrameWriter,
     stall_at: usize,
     stall_accepted: usize,
@@ -47,7 +49,7 @@ const Script = struct {
     dyn_kind: u8,
     cycles_ready: usize,
     cycles_served: usize,
-    emit_preface: bool,
+
 };
 
 const Ctx = struct { used: u32, capacity: u32, oom: u8 };
@@ -76,7 +78,7 @@ fn scriptReset(s: *Script) void {
     s.rpos = 0;
     s.wlen = 0;
     s.chunk = 7;
-    s.base = 0;
+
     s.stall_at = 0;
     s.stall_accepted = 0;
     s.stall_delivered = false;
@@ -85,19 +87,11 @@ fn scriptReset(s: *Script) void {
     s.dyn_kind = 0;
     s.cycles_ready = 0;
     s.cycles_served = 0;
-    s.emit_preface = true;
+
 }
 
 fn scriptBegin(s: *Script) void {
-    var base: usize = 0;
-    if (s.emit_preface) {
-        var i: usize = 0;
-        while (i < 24) : (i += 1) s.rbuf[i] = PREFACE_BYTES[i];
-        s.emit_preface = false;
-        base = 24;
-    }
-    s.base = base;
-    h2.frameWriterInit(&s.fw, s.rbuf[base..], 16384);
+    h2.frameWriterInit(&s.fw, s.rbuf[0..], 16384);
 }
 
 fn scriptEmit(s: *Script, t: h2.FrameType, flags: u8, sid: u32, payload: []const u8) void {
@@ -105,7 +99,7 @@ fn scriptEmit(s: *Script, t: h2.FrameType, flags: u8, sid: u32, payload: []const
 }
 
 fn scriptEnd(s: *Script) void {
-    s.rlen = s.base + s.fw.len;
+    s.rlen = s.fw.len;
     s.rpos = 0;
 }
 
@@ -632,13 +626,29 @@ fn scenarioWouldBlock() void {
         if (h2.http2PendingOutput(c) == 0 and c.preface_sent) break;
     }
 
-    var preface_ok: bool = true;
+    // Literal client wire vector: the client must emit the 24-byte PRI
+    // preface exactly once, then literal SETTINGS/frames. PREFACE_BYTES is a
+    // local literal here (not imported from the production code).
+    var preface_ok: bool = s.wlen >= 24;
     var i: usize = 0;
-    while (i < 24) : (i += 1) {
-        if (s.wbuf[i] != PREFACE_BYTES[i]) preface_ok = false;
+    if (preface_ok) {
+        while (i < 24) : (i += 1) {
+            if (s.wbuf[i] != PREFACE_BYTES[i]) preface_ok = false;
+        }
+    }
+    var preface_count: usize = 0;
+    var p: usize = 0;
+    while (p + 24 <= s.wlen) : (p += 1) {
+        var match: bool = true;
+        var k: usize = 0;
+        while (k < 24) : (k += 1) {
+            if (s.wbuf[p + k] != PREFACE_BYTES[k]) match = false;
+        }
+        if (match) preface_count += 1;
     }
     const frames_ok = frameTypesWellFormed(s.wbuf[0..s.wlen], 24);
-    const ok = saw_wb and s.stall_delivered and preface_ok and frames_ok and (h2.http2PendingOutput(c) == 0);
+    const ok = saw_wb and s.stall_delivered and preface_ok and preface_count == 1 and frames_ok and (h2.http2PendingOutput(c) == 0);
+
     printFlag("wb_resume", ok);
 }
 
@@ -928,7 +938,7 @@ fn scenarioArena() void {
     const s = &g_script;
     scriptReset(s);
     s.dynamic = true;
-    s.emit_preface = true;
+
 
     var backing: [262144]u8 = undefined;
     var ar = std.arena.init(backing[0..]);
