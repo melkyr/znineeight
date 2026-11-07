@@ -491,6 +491,7 @@ pub const FailReason = enum(u8) {
     stream_reset = 3,
     goaway = 4,
     io = 5,
+    header_protocol = 6,
 };
 
 pub const Http2Request = struct {
@@ -1186,7 +1187,15 @@ fn dispatchHeaders(c: *Http2Conn, f: *Frame) Http2Error!void {
         return;
     }
     if ((f.flags & 0x4) != 0) {
-        try decodeHeaderBlock(c, st, block);
+        decodeHeaderBlock(c, st, block) catch |e| {
+            if (e == error.Protocol) {
+                // RFC 7540 §8.1.2.6: malformed response headers are a stream
+                // error (PROTOCOL_ERROR), not a connection error.
+                failStreamWithCode(c, st, FailReason.header_protocol, 0x1);
+                return;
+            }
+            return e;
+        };
         st.headers_received = true;
         if ((f.flags & 0x1) != 0) try finishStream(c, st);
     } else {
@@ -1221,7 +1230,17 @@ fn dispatchContinuation(c: *Http2Conn, f: *Frame) Http2Error!void {
         }
         const st = found orelse return;
         if (!c.cont_discard and !st.headers_received) {
-            try decodeHeaderBlock(c, st, c.hscratch[0..c.hscratch_len]);
+            decodeHeaderBlock(c, st, c.hscratch[0..c.hscratch_len]) catch |e| {
+                if (e == error.Protocol) {
+                    failStreamWithCode(c, st, FailReason.header_protocol, 0x1);
+                    c.cont_pending = false;
+                    c.cont_discard = false;
+                    c.cont_end_stream = false;
+                    c.hscratch_len = 0;
+                    return;
+                }
+                return e;
+            };
             st.headers_received = true;
         }
         const finish = c.cont_end_stream;
@@ -1309,13 +1328,18 @@ fn sendRstStream(c: *Http2Conn, stream_id: u32, code: u32) void {
     frameAppend(&c.writer, FrameType.rst_stream, 0, stream_id, p[0..4]) catch {};
 }
 
-// A local stream failure (source read error, sink error, capacity) resets only
-// this stream; other streams and the connection keep running.
-fn failStreamLocally(c: *Http2Conn, st: *Stream, reason: FailReason) void {
+// A local stream failure (source read error, sink error, capacity, malformed
+// response headers) resets only this stream; other streams and the connection
+// keep running.
+fn failStreamWithCode(c: *Http2Conn, st: *Stream, reason: FailReason, code: u32) void {
     st.req.failed = true;
     st.fail_reason = reason;
     st.state = StreamState.reset;
-    sendRstStream(c, st.id, 0x2);
+    sendRstStream(c, st.id, code);
+}
+
+fn failStreamLocally(c: *Http2Conn, st: *Stream, reason: FailReason) void {
+    failStreamWithCode(c, st, reason, 0x2);
 }
 
 // Peer EOF (or a dead write side) retires every active lease with `Closed`
@@ -1663,6 +1687,7 @@ pub fn http2Wait(c: *Http2Conn, stream_id: u32) Http2Error!void {
         if (st.req.failed) {
             if (st.fail_reason == FailReason.too_large) return error.TooLarge;
             if (st.fail_reason == FailReason.io) return error.Io;
+            if (st.fail_reason == FailReason.header_protocol) return error.Protocol;
             if (st.fail_reason == FailReason.closed) return error.Closed;
             if (st.fail_reason == FailReason.goaway) return error.GoAway;
             if (st.fail_reason == FailReason.stream_reset) {
@@ -1709,18 +1734,29 @@ pub fn http2Close(c: *Http2Conn) CloseStatus {
     if (flush_blocked) blocked = true;
     if (!blocked) {
         if (c.tls_io) |io| {
-            if (tls_io.tlsIoClosePending(io)) blocked = true;
+            // A write pump can return success with ciphertext still queued
+            // (out_off < out_len) while close_pending is false. Never finalize
+            // that state: the caller drains it (pump) and retries.
+            if (tls_io.tlsIoPending(io) or tls_io.tlsIoClosePending(io)) blocked = true;
         }
     }
     if (blocked) {
         c.close_pending = true;
         return CloseStatus.pending;
     }
+    c.transport.close_fn(c.transport.state);
+    // The transport close can still defer (tlsIoClose on a WouldBlock flush):
+    // only mark closed/close_called once the TLS driver has no pending bytes.
+    if (c.tls_io) |io| {
+        if (tls_io.tlsIoPending(io) or tls_io.tlsIoClosePending(io)) {
+            c.close_pending = true;
+            return CloseStatus.pending;
+        }
+    }
     reclaimStreams(c);
     c.closed = true;
     c.close_called = true;
     c.close_pending = false;
-    c.transport.close_fn(c.transport.state);
     return CloseStatus.closed;
 }
 

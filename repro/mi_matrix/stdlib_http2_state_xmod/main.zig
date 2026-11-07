@@ -81,6 +81,8 @@ fn waitErrWorker(args: *WaitErrArgs) void {
             args.err = 4;
         } else if (e == error.StreamReset) {
             args.err = 5;
+        } else if (e == error.Protocol) {
+            args.err = 6;
         } else {
             args.err = 9;
         }
@@ -1167,34 +1169,64 @@ fn scenarioLateFrames() void {
     h2.http2CloseForce(c);
 }
 
-fn headerRejected(block: []const u8) bool {
+// A malformed response-header block is a stream error (RFC 7540 §8.1.2.6):
+// stream 1 must fail with Protocol/RST while stream 3 completes in the same
+// pump, and the pump itself must not return an error.
+fn headerStreamFailed(block: []const u8) bool {
     const s = &g_script;
     scriptReset(s);
     scriptBegin(s);
     emitSettingsEmpty(s);
     scriptEmit(s, h2.FrameType.headers, 0x4, 1, block);
+    emitStatus(s, 3);
+    emitData(s, 3, 0x1, "ok");
     scriptEnd(s);
 
     var backing: [262144]u8 = undefined;
     var ar = std.arena.init(backing[0..]);
     var t = makeTransport(s);
     var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch return false;
-    var out: http.Response = undefined;
-    var r = makeRequest(&out);
-    _ = h2.http2Submit(c, &r) catch {
+    var out1: http.Response = undefined;
+    var out2: http.Response = undefined;
+    var r1 = makeRequest(&out1);
+    var r2 = makeRequest(&out2);
+    out1.body = g_out_body[0..];
+    out2.body = g_out_body2[0..];
+    const id1 = h2.http2Submit(c, &r1) catch {
         h2.http2CloseForce(c);
         return false;
     };
+    const id2 = h2.http2Submit(c, &r2) catch {
+        h2.http2CloseForce(c);
+        return false;
+    };
+
+    var wa = WaitErrArgs{ .c = c, .id = id1, .err = 0, .done = false };
+    var cbuf: [1024]u8 = undefined;
+    var fbuf: [512]u8 = undefined;
+    var ctxv: *Ctx = @ptrCast(*Ctx, &cbuf);
+    ctxv.capacity = 1024;
+    var wap: *WaitErrArgs = &wa;
+    var ctxp: *void = @ptrCast(*void, &cbuf);
+    var args: *const void = @ptrCast(*const void, &wap);
+    var frame: *void = @asyncInit(ctxp, &fbuf, waitErrWorker, args);
+    var more: ?*void = @asyncResume(frame, null);
+
+    var pump_ok: bool = true;
     var it: usize = 0;
-    while (it < 400) : (it += 1) {
-        _ = h2.http2Pump(c) catch |e| {
-            h2.http2CloseForce(c);
-            return e == error.Protocol or e == error.Corrupt;
+    while ((more != null or !r2.done) and it < 4000) : (it += 1) {
+        _ = h2.http2Pump(c) catch {
+            pump_ok = false;
+            break;
         };
-        if (r.failed) break;
+        more = @asyncResume(frame, null);
     }
+    const ok = pump_ok and more == null and wa.err == 6 and r1.failed and r2.done and
+        out2.status == 200 and out2.body.len == 2 and out2.body[0] == 'o' and out2.body[1] == 'k';
+    h2.http2Release(c, id1) catch {};
+    h2.http2Release(c, id2) catch {};
     h2.http2CloseForce(c);
-    return false;
+    return ok;
 }
 
 fn scenarioHeaderValidation() void {
@@ -1206,10 +1238,15 @@ fn scenarioHeaderValidation() void {
     var nostatus = [_]u8{ 0x00, 0x06, 'x', '-', 't', 'e', 's', 't', 0x01, 'v' };
     // :status after a regular field (also a duplicate pseudo-header).
     var pseudo = [_]u8{ 0x88, 0x00, 0x06, 'x', '-', 't', 'e', 's', 't', 0x01, 'v', 0x88 };
-    printFlag("hdr_crlf", headerRejected(crlf[0..]));
-    printFlag("hdr_upper", headerRejected(upper[0..]));
-    printFlag("hdr_nostatus", headerRejected(nostatus[0..]));
-    printFlag("hdr_pseudo", headerRejected(pseudo[0..]));
+    const a = headerStreamFailed(crlf[0..]);
+    const b = headerStreamFailed(upper[0..]);
+    const d = headerStreamFailed(nostatus[0..]);
+    const e = headerStreamFailed(pseudo[0..]);
+    printFlag("hdr_crlf", a);
+    printFlag("hdr_upper", b);
+    printFlag("hdr_nostatus", d);
+    printFlag("hdr_pseudo", e);
+    printFlag("hdr_stream", a and b and d and e);
 }
 
 fn configRejected(cfg: h2.Http2Config) bool {
@@ -1307,6 +1344,12 @@ fn scenarioClose() void {
         std.io.write("close_tls=fail\n");
         return;
     };
+    g_tio.sock = -1;
+    g_tio.out_len = 0;
+    g_tio.out_off = 0;
+    g_tio.established = false;
+    g_tio.closed = false;
+    g_tio.sock_closed = false;
     g_tio.close_pending = true;
     c2.tls_io = &g_tio;
     const tt1 = h2.http2Close(c2);
@@ -1380,11 +1423,19 @@ fn scenarioClose() void {
     g_tio.established = true;
     g_tio.closed = false;
     g_tio.sock_closed = false;
-    g_tio.close_pending = true;
+    // Queued ciphertext with close_pending false: graceful close must not
+    // finalize (the old code only checked close_pending and leaked the fd).
+    g_tio.close_pending = false;
     c4.tls_io = &g_tio;
     const td1 = h2.http2Close(c4);
-    const tls_force_grace = td1 == h2.CloseStatus.pending and tls_io.tlsIoClosePending(&g_tio) and
-        !g_tio.sock_closed and !c4.close_called;
+    var fd_open_after_grace = false;
+    if (have_probe) {
+        const gwn = file_mod.write(&probe_file, "y") catch 0;
+        if (gwn > 0) fd_open_after_grace = true;
+    }
+    const tls_force_grace = td1 == h2.CloseStatus.pending and tls_io.tlsIoPending(&g_tio) and
+        !tls_io.tlsIoClosePending(&g_tio) and !g_tio.sock_closed and !c4.close_called and
+        fd_open_after_grace;
     h2.http2CloseForce(c4);
     if (have_probe) {
         var closed_ok: bool = false;
@@ -1394,11 +1445,13 @@ fn scenarioClose() void {
         fd_probe_ok = closed_ok;
     }
     const tls_forced = fd_probe_ok and g_tio.sock_closed and !tls_io.tlsIoClosePending(&g_tio) and
-        g_tio.closed and !g_tio.established and g_tio.out_len == 0 and g_tio.out_off == 0 and
+        !tls_io.tlsIoPending(&g_tio) and g_tio.closed and !g_tio.established and
+        g_tio.out_len == 0 and g_tio.out_off == 0 and
         c4.close_called and c4.closed and !h2.http2ClosePending(c4);
     h2.http2CloseForce(c4);
     tls_io.tlsIoCloseForce(&g_tio);
-    const tls_force_idem = g_tio.sock_closed and !tls_io.tlsIoClosePending(&g_tio) and c4.close_called;
+    const tls_force_idem = g_tio.sock_closed and !tls_io.tlsIoClosePending(&g_tio) and
+        !tls_io.tlsIoPending(&g_tio) and c4.close_called;
 
     printFlag("close_graceful", graceful_pending and graceful_closed and graceful_idem);
     printFlag("close_tls", tls_pending and tls_closed);

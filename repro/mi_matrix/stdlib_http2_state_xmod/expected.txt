@@ -17,6 +17,7 @@ hdr_crlf=1
 hdr_upper=1
 hdr_nostatus=1
 hdr_pseudo=1
+hdr_stream=1
 config=1
 close_graceful=1
 close_tls=1

@@ -225,6 +225,13 @@ pub fn tlsIoCloseForce(io: *TlsIo) void {
     io.out_off = 0;
 }
 
+// True while protected record bytes are still queued for the socket. A write
+// pump can return success with this set (it treats WouldBlock as "consumed"),
+// so a graceful close must consult it before finalizing.
+pub fn tlsIoPending(io: *const TlsIo) bool {
+    return io.out_off < io.out_len;
+}
+
 pub fn tlsIoClosePending(io: *const TlsIo) bool {
     return io.close_pending;
 }

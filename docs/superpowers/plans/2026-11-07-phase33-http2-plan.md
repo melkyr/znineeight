@@ -174,7 +174,7 @@ Run `bash scripts/compiler/gate_lower_depth.sh "$ZIG1"`: the 8 pins move (std_ne
 
 **Interfaces:**
 - Consumes: Task 1 `tlsAlpnSelected`; Task 2 socket helpers; current `tlsStep`/`tlsRead`/`tlsWrite`.
-- Produces: `TlsIo`, `TlsIoError`, `tlsIoInit`, `tlsIoHandshakePump`, `tlsIoReadPump`, `tlsIoWritePump`, `tlsIoClose` exactly as specified in the spec.
+- Produces: `TlsIo`, `TlsIoError`, `tlsIoInit`, `tlsIoHandshakePump`, `tlsIoReadPump`, `tlsIoWritePump`, `tlsIoClose`, `tlsIoCloseForce`, `tlsIoPending`, `tlsIoClosePending` exactly as specified in the spec.
 
 - [ ] **Step 1: Write the failing fixture**
 Connect to a Node TLS echo server with localhost certs; use `tlsIoHandshakePump` until established; write `ping`; read 4 bytes; print `tlsio=ping`. The fixture runs under `std.async` and calls the pump from the scheduler task while a readiness loop drives the socket. The argless run prints a usage line and exits 2 (pinned golden).
@@ -447,6 +447,12 @@ closed. The fix is **CloseStatus + force**, not a required `Transport` field:
 - `http2ClosePending(c) bool` remains for event loops.
 - `TooLarge` is stream-local: `http2Pump` continues; `http2Wait` returns
   `error.TooLarge`.
+- Graceful close also checks `tlsIoPending` (queued ciphertext) and
+  `tlsIoClosePending`; it never finalizes until the TLS fd is actually closed,
+  and re-checks after `close_fn` in case the close deferred.
+- Malformed response header semantics are stream-local (RFC 7540 §8.1.2.6):
+  RST that stream, keep the pump running, and `http2Wait` returns
+  `error.Protocol`; HPACK `Corrupt` stays connection-level.
 - Seed v144 rotated before this wave is stale; rotate **v145** from the final
   HEAD and rerun the full battery.
 

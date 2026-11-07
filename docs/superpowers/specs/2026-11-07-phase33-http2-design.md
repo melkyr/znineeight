@@ -173,8 +173,16 @@ pub fn tlsIoInit(io: *TlsIo, sess: *tls.TlsSession, sock: net.Socket) void;
 pub fn tlsIoHandshakePump(io: *TlsIo) TlsIoError!bool; // true = established
 pub fn tlsIoReadPump(io: *TlsIo, out: []u8) TlsIoError!usize; // 0 = closed
 pub fn tlsIoWritePump(io: *TlsIo, data: []const u8) TlsIoError!usize;
-pub fn tlsIoClose(io: *TlsIo) void;
+pub fn tlsIoClose(io: *TlsIo) void;          // graceful; may defer (close_pending)
+pub fn tlsIoCloseForce(io: *TlsIo) void;     // flush best-effort, then close the fd
+pub fn tlsIoPending(io: *const TlsIo) bool;  // out_off < out_len (queued ciphertext)
+pub fn tlsIoClosePending(io: *const TlsIo) bool; // a prior close deferred
 ```
+
+`tlsIoPending` exposes queued ciphertext that a write pump may have accepted
+even though it was not flushed; graceful `http2Close` consults it (and
+`tlsIoClosePending`) before finalizing. `tlsIoCloseForce` is the unconditional
+teardown that closes the fd even when the final flush would block.
 
 `tlsIo*Pump` are non-suspending. They flush pending wire bytes, use
 `sendNonBlocking`/`recvNonBlocking`, and return `WouldBlock` when the socket is
@@ -297,12 +305,15 @@ streams are reclaimed by `http2Close`/`http2CloseForce`. Callers must read
 `out.headers` before release.
 
 `http2Close` is **graceful and retryable**. It flushes HTTP output first; if
-that flush or the `TlsIo.close_pending` ciphertext state (tracked internally on
-`Http2Conn`) still has pending output, it leaves `close_called` false, does not
-invoke `close_fn`, returns `.pending`, and sets `http2ClosePending` true. The
-caller waits for writability and calls `http2Close` again until it returns
-`.closed` (usually one retry). A blocked close never leaks the socket or marks
-the connection finalized.
+that flush still has pending output, or the TLS driver has queued ciphertext
+(`tlsIoPending`) or a deferred close (`tlsIoClosePending`) tracked internally on
+`Http2Conn`, it leaves `close_called` false, does not invoke `close_fn`, returns
+`.pending`, and sets `http2ClosePending` true. The caller drains the transport
+(pump/readiness) and calls `http2Close` again until it returns `.closed`
+(usually one retry). After invoking `close_fn` it re-checks the TLS pending
+state; if the close deferred, it again returns `.pending` without marking the
+connection finalized. A blocked close never leaks the socket or marks the
+connection finalized.
 
 `http2CloseForce` is the unconditional teardown path: it makes one best-effort
 flush, then closes exactly once and marks the connection closed. On the TLS
@@ -346,7 +357,12 @@ contract.
 - `http2Pump` enforces server `MAX_CONCURRENT_STREAMS` when submitting.
 - Headers and trailers: request pseudo-headers `:method`, `:scheme`,
   `:authority`, `:path`; response `:status`; other pseudo-headers are errors.
-  Trailers are ignored after the first headers block.
+  Trailers are ignored after the first headers block. Malformed response header
+  semantics (empty/uppercase/non-token names, CR/LF/NUL values, missing,
+  duplicate or misordered `:status`) are a **stream** error (RFC 7540
+  §8.1.2.6): RST_STREAM(PROTOCOL_ERROR) that stream, `http2Wait` returns
+  `error.Protocol`, and the pump keeps dispatching other streams. HPACK
+  `Corrupt` remains a connection-level error.
 
 **Flow control**
 
