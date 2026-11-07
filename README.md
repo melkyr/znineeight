@@ -151,8 +151,11 @@ repo-root CWD; reference `zig1` md5 `cd8d283b917749009961f4445043666b`; rows are
 
 These four hashes were re-recorded at v142 by `gate_lower_depth.sh` case 5. The new std
 modules add three `warning[3037]` diagnostics on mud/gol/json and, through the Task 7
-qualified-call analyzer, four `warning[3038]` leak diagnostics on lisp, all on stderr; they do
-not contaminate the stdout hash, and the runtime goldens remain byte-identical. Corpus/golden
+qualified-call analyzer, four `warning[3038]` leak diagnostics on lisp, all on stderr. The
+four leak diagnostics are expected and desirable now that the GPA-aware analyzer recognizes
+module-qualified arena allocations (`sand_mod.sand_alloc`) as allocations: lisp's arena
+blocks are intentionally never freed. They do not contaminate the stdout hash, and the
+runtime goldens remain byte-identical. Corpus/golden
 summary: the corpus universe is enumerated by
 `scripts/corpus/list_corpus_dirs.sh`; live v142 is 1265 dirs = 1078 OK / 63 GREEN / 124 FAIL /
 0 ICE / 0 CRASH (class md5 `3c8f8503…`; the 9 new `stdlib_*_xmod` fixture dirs are the only
