@@ -385,20 +385,16 @@ const ApiArgs = struct {
 
 fn apiWorker(args: *ApiArgs) void {
     if (args.kind == 0) {
-        args.id = h2.http2Get(args.c, "https://example.com/get", args.out) catch {
+        h2.http2Get(args.c, "https://example.com/get", args.out, &args.id) catch {
             args.ok = 0;
             return;
         };
     } else {
-        args.id = h2.http2Post(args.c, "https://example.com/post?x=1", args.body, args.ct, args.accept, args.out) catch {
+        h2.http2Post(args.c, "https://example.com/post?x=1", args.body, args.ct, args.accept, args.out, &args.id) catch {
             args.ok = 0;
             return;
         };
     }
-    h2.http2Wait(args.c, args.id) catch {
-        args.ok = 0;
-        return;
-    };
     args.ok = 1;
 }
 
@@ -413,11 +409,7 @@ const StreamArgs = struct {
 };
 
 fn getStreamWorker(args: *StreamArgs) void {
-    args.id = h2.http2GetStream(args.c, args.url, args.headers, args.sink, args.out) catch {
-        args.ok = 0;
-        return;
-    };
-    h2.http2Wait(args.c, args.id) catch {
+    h2.http2GetStream(args.c, args.url, args.headers, args.sink, args.out, &args.id) catch {
         args.ok = 0;
         return;
     };
@@ -434,11 +426,11 @@ const RejectArgs = struct {
 };
 
 fn rejectWorker(args: *RejectArgs) void {
-    const id = h2.http2GetStream(args.c, args.url, args.headers, args.sink, args.out) catch |e| {
+    var id: u32 = 0;
+    h2.http2GetStream(args.c, args.url, args.headers, args.sink, args.out, &id) catch |e| {
         if (e == error.Protocol) args.ok = 1;
         return;
     };
-    h2.http2Wait(args.c, id) catch {};
     h2.http2Release(args.c, id) catch {};
     args.ok = 0;
 }
@@ -457,11 +449,7 @@ const PostStreamArgs = struct {
 };
 
 fn postStreamWorker(args: *PostStreamArgs) void {
-    args.id = h2.http2PostStream(args.c, args.url, args.body_len, args.ct, args.accept, args.src, args.sink, args.out) catch {
-        args.ok = 0;
-        return;
-    };
-    h2.http2Wait(args.c, args.id) catch {
+    h2.http2PostStream(args.c, args.url, args.body_len, args.ct, args.accept, args.src, args.sink, args.out, &args.id) catch {
         args.ok = 0;
         return;
     };
@@ -526,6 +514,7 @@ fn scenarioBody() void {
     if (out1.status != 200 or out2.status != 200) @panic("body: status");
     if (!containsBytes(out1.body, "hello")) @panic("body: get body");
     if (!containsBytes(out2.body, "world")) @panic("body: post body");
+    if (out1.body.len != 5 or out2.body.len != 5) @panic("body: convenience did not wait");
 
     const wire = s.wbuf[0..s.wlen];
     if (!containsBytes(wire, "example.com")) @panic("body: authority");
@@ -894,20 +883,16 @@ fn cyclesWorker(args: *CyclesArgs) void {
         g_cycle_out.body = g_cycle_body[0..];
         var id: u32 = 0;
         if ((i % 2) == 0) {
-            id = h2.http2Get(args.c, "https://example.com/c", &g_cycle_out) catch {
+            h2.http2Get(args.c, "https://example.com/c", &g_cycle_out, &id) catch {
                 args.ok = 0;
                 return;
             };
         } else {
-            id = h2.http2Post(args.c, "https://example.com/c", "p", "text/plain", "*/*", &g_cycle_out) catch {
+            h2.http2Post(args.c, "https://example.com/c", "p", "text/plain", "*/*", &g_cycle_out, &id) catch {
                 args.ok = 0;
                 return;
             };
         }
-        h2.http2Wait(args.c, id) catch {
-            args.ok = 0;
-            return;
-        };
         if (g_cycle_out.status != 200) {
             args.ok = 0;
             return;
