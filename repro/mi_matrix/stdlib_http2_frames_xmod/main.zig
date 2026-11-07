@@ -24,7 +24,8 @@ fn typeName(t: h2.FrameType) []const u8 {
     if (v == 6) return "ping";
     if (v == 7) return "goaway";
     if (v == 8) return "window_update";
-    return "continuation";
+    if (v == 9) return "continuation";
+    return "unknown";
 }
 
 fn printFrame(f: h2.Frame) void {
@@ -93,6 +94,23 @@ fn expectBad(bytes: []const u8) void {
     }
 }
 
+fn expectBadCapacity(bytes: []const u8) void {
+    var buf: [32]u8 = undefined;
+    var r: h2.FrameReader = undefined;
+    h2.frameReaderInit(&r, buf[0..]);
+    _ = h2.frameReaderAppend(&r, bytes);
+    var f: h2.Frame = undefined;
+    const got = h2.frameNext(&r, &f) catch {
+        std.io.write("bad\n");
+        return;
+    };
+    if (got) {
+        std.io.write("unexpected-ok\n");
+    } else {
+        std.io.write("incomplete\n");
+    }
+}
+
 pub fn main() void {
     var rbuf: [4096]u8 = undefined;
     var r: h2.FrameReader = undefined;
@@ -129,6 +147,15 @@ pub fn main() void {
 
     var rst_stream = [_]u8{ 0x00, 0x00, 0x04, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x08 };
     feedPrint(&r, rst_stream[0..]);
+
+    // Unknown frame type 0x0a (extension space) followed by a known PING:
+    // RFC 7540 §4.1 says the unknown frame is ignored/discarded.
+    std.io.write("unknown-skip ");
+    var unknown_then_ping = [_]u8{
+        0x00, 0x00, 0x04, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF,
+        0x00, 0x00, 0x08, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    };
+    feedPrint(&r, unknown_then_ping[0..]);
 
     var s: h2.Settings = undefined;
     h2.settingsParse(settings[9..], &s) catch {
@@ -199,4 +226,9 @@ pub fn main() void {
     // Malformed: CONTINUATION without END_HEADERS and no preceding HEADERS.
     var bad_cont = [_]u8{ 0x00, 0x00, 0x02, 0x09, 0x00, 0x00, 0x00, 0x00, 0x01, 0x82, 0x86 };
     expectBad(bad_cont[0..]);
+
+    // Malformed: declared length exceeds the reader buffer capacity (100 > 32-9).
+    // Must fail closed, not return false forever.
+    var bad_capacity = [_]u8{ 0x00, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01 };
+    expectBadCapacity(bad_capacity[0..]);
 }

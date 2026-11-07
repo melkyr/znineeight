@@ -22,6 +22,9 @@ pub const FrameType = enum(u8) {
     goaway = 7,
     window_update = 8,
     continuation = 9,
+    // Concrete sentinel for an extension frame type (Z98 has no
+    // non-exhaustive enums). `raw_type` carries the exact wire byte.
+    unknown = 255,
 };
 
 pub const Http2Error = error{
@@ -55,6 +58,7 @@ pub const FrameHeader = struct {
     typ: FrameType,
     flags: u8,
     stream_id: u32,
+    raw_type: u8,
 };
 
 pub const Frame = struct {
@@ -62,6 +66,7 @@ pub const Frame = struct {
     flags: u8,
     stream_id: u32,
     payload: []const u8,
+    raw_type: u8,
 };
 
 pub const Settings = struct {
@@ -142,6 +147,13 @@ pub fn settingsEncode(out: []u8, s: Settings) Http2Error!usize {
     return p;
 }
 
+// Unknown wire types are not an error (RFC 7540 §4.1); they map to the
+// concrete `.unknown` variant and keep the raw byte in `raw_type`.
+pub fn frameTypeFromRaw(raw: u8) FrameType {
+    if (raw > 9) return FrameType.unknown;
+    return @intToEnum(FrameType, raw);
+}
+
 pub fn frameParseHeader(raw: []const u8) Http2Error!FrameHeader {
     if (raw.len < FRAME_HEADER_LEN) return error.Corrupt;
     const length: u32 = (@intCast(u32, raw[0]) << 16) |
@@ -149,7 +161,6 @@ pub fn frameParseHeader(raw: []const u8) Http2Error!FrameHeader {
         @intCast(u32, raw[2]);
     if (length > MAX_PARSE_FRAME) return error.TooLarge;
     const tv: u8 = raw[3];
-    if (tv > 9) return error.Protocol;
     const flags: u8 = raw[4];
     const stream_id: u32 = (@intCast(u32, raw[5] & 0x7F) << 24) |
         (@intCast(u32, raw[6]) << 16) |
@@ -157,9 +168,10 @@ pub fn frameParseHeader(raw: []const u8) Http2Error!FrameHeader {
         @intCast(u32, raw[8]);
     return FrameHeader{
         .length = length,
-        .typ = @intToEnum(FrameType, tv),
+        .typ = frameTypeFromRaw(tv),
         .flags = flags,
         .stream_id = stream_id,
+        .raw_type = tv,
     };
 }
 
@@ -310,41 +322,59 @@ pub fn frameReaderAppend(r: *FrameReader, src: []const u8) usize {
 }
 
 pub fn frameNext(r: *FrameReader, out: *Frame) Http2Error!bool {
-    const avail = r.end - r.start;
-    if (avail < FRAME_HEADER_LEN) return false;
-    const hdr = try frameParseHeader(r.buf[r.start .. r.start + FRAME_HEADER_LEN]);
-    if (r.expect_continuation) {
-        if (hdr.typ != .continuation) return error.Protocol;
-        if (hdr.stream_id != r.continuation_stream) return error.Protocol;
-    } else if (hdr.typ == .continuation) {
-        return error.Protocol;
-    }
-    const need: usize = FRAME_HEADER_LEN + @intCast(usize, hdr.length);
-    if (avail < need) return false;
-    const pstart: usize = r.start + FRAME_HEADER_LEN;
-    const pend: usize = pstart + @intCast(usize, hdr.length);
-    const payload: []const u8 = r.buf[pstart..pend];
-    try validatePayload(hdr.typ, hdr.flags, hdr.stream_id, payload);
+    while (true) {
+        const avail = r.end - r.start;
+        if (avail < FRAME_HEADER_LEN) return false;
+        const hdr = try frameParseHeader(r.buf[r.start .. r.start + FRAME_HEADER_LEN]);
+        const need: usize = FRAME_HEADER_LEN + @intCast(usize, hdr.length);
+        // A declared length that cannot fit this reader's buffer must fail
+        // closed; waiting for impossible bytes would wedge forever.
+        if (need > r.buf.len) return error.TooLarge;
+        if (avail < need) return false;
 
-    if (hdr.typ == .headers or hdr.typ == .push_promise or hdr.typ == .continuation) {
-        if ((hdr.flags & 0x4) == 0) {
-            r.expect_continuation = true;
-            r.continuation_stream = hdr.stream_id;
-        } else {
-            r.expect_continuation = false;
+        // RFC 7540 §4.1: ignore and discard frames with an unknown type.
+        if (hdr.typ == .unknown) {
+            r.start += need;
+            if (r.start == r.end) {
+                r.start = 0;
+                r.end = 0;
+            }
+            continue;
         }
-    }
 
-    out.typ = hdr.typ;
-    out.flags = hdr.flags;
-    out.stream_id = hdr.stream_id;
-    out.payload = payload;
-    r.start = pend;
-    if (r.start == r.end) {
-        r.start = 0;
-        r.end = 0;
+        if (r.expect_continuation) {
+            if (hdr.typ != .continuation) return error.Protocol;
+            if (hdr.stream_id != r.continuation_stream) return error.Protocol;
+        } else if (hdr.typ == .continuation) {
+            return error.Protocol;
+        }
+        const pstart: usize = r.start + FRAME_HEADER_LEN;
+        const pend: usize = pstart + @intCast(usize, hdr.length);
+        const payload: []const u8 = r.buf[pstart..pend];
+        try validatePayload(hdr.typ, hdr.flags, hdr.stream_id, payload);
+
+        if (hdr.typ == .headers or hdr.typ == .push_promise or hdr.typ == .continuation) {
+            if ((hdr.flags & 0x4) == 0) {
+                r.expect_continuation = true;
+                r.continuation_stream = hdr.stream_id;
+            } else {
+                r.expect_continuation = false;
+            }
+        }
+
+        out.typ = hdr.typ;
+        out.flags = hdr.flags;
+        out.stream_id = hdr.stream_id;
+        out.payload = payload;
+        out.raw_type = hdr.raw_type;
+        r.start = pend;
+        if (r.start == r.end) {
+            r.start = 0;
+            r.end = 0;
+        }
+        return true;
     }
-    return true;
+    return false;
 }
 
 // Append writer. `buf` is caller-owned (64 KiB in the connection layer) and
