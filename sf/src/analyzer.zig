@@ -372,6 +372,20 @@ fn checkUseAfterFreeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32)
         checkUseAfterFreeExpr(ctx, state, node.child_0);
         return;
     }
+    if (kind == AstKind.block) {
+        var stmts_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, expr_idx);
+        var si: usize = 0;
+        while (si < @intCast(usize, stmts_n)) : (si += 1) {
+            checkUseAfterFreeExpr(ctx, state, ast_mod.astStoreNodeExtraChildAt(ctx.store, expr_idx, @intCast(u32, si)));
+        }
+        return;
+    }
+    // Arithmetic/comparison/boolean/unary/compound-assign and other wrapper
+    // nodes: reach any deref/index/field use in their child slots. Bare
+    // identifier operands remain non-uses (the ident branch is empty).
+    if (node.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(kind, @intCast(u8, 0))) checkUseAfterFreeExpr(ctx, state, node.child_0);
+    if (node.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(kind, @intCast(u8, 1))) checkUseAfterFreeExpr(ctx, state, node.child_1);
+    if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(kind, @intCast(u8, 2))) checkUseAfterFreeExpr(ctx, state, node.child_2);
 }
 
 pub fn handleAllocCall(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, init_idx: u32) void {

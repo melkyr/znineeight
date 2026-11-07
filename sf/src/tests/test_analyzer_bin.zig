@@ -1854,7 +1854,7 @@ pub fn main() void {
     testFixture("tests/analyzers/dead_arm.zig", "fixture dead_arm", @intCast(i32, 0), @intCast(i32, 0));
     testFixture("tests/analyzers/surface_types.zig", "fixture surface_types", @intCast(i32, 0), @intCast(i32, 0));
     testFixture("tests/analyzers/gpa_double_free.zig", "fixture gpa_double_free", @intCast(i32, 1), @intCast(i32, -1));
-    testFixture("tests/analyzers/gpa_use_after_free.zig", "fixture gpa_use_after_free", @intCast(i32, 1), @intCast(i32, -1));
+    testFixture("tests/analyzers/gpa_use_after_free.zig", "fixture gpa_use_after_free", @intCast(i32, 4), @intCast(i32, -1));
     testFixture("tests/analyzers/gpa_leak.zig", "fixture gpa_leak", @intCast(i32, 0), @intCast(i32, 1));
     testFixture("tests/analyzers/gpa_alias_negative.zig", "fixture gpa_alias_negative", @intCast(i32, 0), @intCast(i32, 0));
     var msg: []const u8 = "Analyzer tests passed.\n";

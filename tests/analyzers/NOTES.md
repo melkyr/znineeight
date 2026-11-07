@@ -29,7 +29,7 @@ literal under those checks (toolchain semantics, pre-existing).
 | `dead_arm.zig` | 0 errors, 0 warnings | Comptime-untaken arms do not exist for analysis (T3 Zig rule): double free + local-address behind `if (false)` produce nothing |
 | `surface_types.zig` | 0 errors, 0 warnings | Current surface: arbitrary-width ints (`i7`/`u48`/`i3`/`u33`), packed-union types, tagged-union `.tag` member access |
 | `gpa_double_free.zig` | >=1 error | GPA ownership (Task 7): module-qualified `gpa.gpaAlloc` / `gpa.gpaFree` calls recognized by final identifier; second free -> ERR_2005 |
-| `gpa_use_after_free.zig` | >=1 error | GPA ownership (Task 7): module-qualified alloc/free; indexed read after free -> ERR_2006 (error[3079]) |
+| `gpa_use_after_free.zig` | >=4 errors | GPA ownership (Task 7): module-qualified alloc/free; direct indexed read plus comparison, compound-assignment, and arithmetic wrapper uses after free -> ERR_2006 (error[3079]) |
 | `gpa_leak.zig` | 0 errors, >=1 warning | GPA ownership (Task 7): bare `gpaAlloc` allocation without a free in the same block -> WARN_6005_MEMORY_LEAK |
 | `gpa_alias_negative.zig` | 0 errors, 0 warnings | GPA ownership (Task 7) documented limitation: copied pointer used after freeing the original is not tracked (no alias claims), and the original free clears the leak warning |
 
