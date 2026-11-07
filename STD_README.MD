@@ -33,11 +33,11 @@ same on linux and win32.
 
 ## How to import
 
-Fourteen core modules are re-exported through `@import("std")` — reach them as
+Seventeen core modules are re-exported through `@import("std")` — reach them as
 `std.<name>`:
 
 > `io`, `fmt`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`,
-> `time`, `buf`, `fold`
+> `time`, `page`, `gpa`, `pool`, `buf`, `fold`
 
 ```zig
 const std = @import("std");
@@ -55,16 +55,18 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v141** (`release/seed/zig1-seed.tgz`, archive md5
-`3e99af1b8117b982c26b074a1ccd35f7`), with **52** std files (`std.zig` +
-51 `std_*.zig`) and `lib/manifest.md5` md5
-`4c979389dceb2d12442e557aaeabf44d`. The compiler fixed point is
-`cf68f192900e7f6618c11e1712b74b3a`; v141 is the Task 8c `std_http` streaming
-EOF-flush rotation (`streamReadN` flushes buffered body bytes to the sink
-before returning on an early transport EOF; no compiler source change, so the
-fixed point is unchanged from v140). The Win9x companion zip is
-`release/seed/zig1_seed_w9.zip` (md5
-`c45c26f72b6a81b153a9238550456b37`).
+The committed seed is **v142** (`release/seed/zig1-seed.tgz`, archive md5
+`1bd6201b039b10f0be50d518878dfecb`), with **56** std files (`std.zig` +
+55 `std_*.zig`) and `lib/manifest.md5` md5
+`a356e5b2a082340e464adf64dc356cd0`. v142 is the Phase 3.1 general-purpose
+allocator rotation: it adds `std_page.zig`, `std_page_pal.zig`, `std_gpa.zig`,
+and `std_pool.zig` (barrel-exported as `std.page`/`std.gpa`/`std.pool`) plus
+the Task 1/7 compiler-source changes (`std_page_prelude.h` emission,
+`error[3079]`, GPA analyzer ownership recognition). The compiler fixed point is
+`cd8d283b917749009961f4445043666b`, moved from `cf68f192…` by those
+compiler-source changes (the std payload alone does not move it). The Win9x
+companion zip is `release/seed/zig1_seed_w9.zip` (md5
+`8f6b813d1141336978b5b30c18cb783b`).
 
 ## Phase 1 result — TLS + WireGuard complete
 
@@ -88,6 +90,7 @@ strict: lower layers only, never siblings, never higher (R3).
 |---|---|---|
 | Core | Builtin-backed console + descriptor I/O | `std.io` |
 | **L0** | Foundation — no library imports; arena, raw memory, pure bit/integer math | `std.arena`, `std.mem`, `std.bits`, `std.math`, `std_fold` |
+| **Alloc** | Explicit allocator stack over the page layer: portable reservation/commit, general-purpose allocator (TLSF small + page-run medium + large), fixed-block pool | `std.page` (+ private `std_page_pal`), `std.gpa`, `std.pool` |
 | **L1** | Process, clocks, and diagnostics over the builtins and a per-OS PAL | `std.os`, `std.time`, `std.debug` |
 | **L2** | Data layer built on L0 — string slices and growable buffers | `std.str`, `std.buf` |
 | **L3** | Resources — owned-handle files, stdin, and sockets | `std_file`, `std_stdin`, `std.net` |
@@ -102,17 +105,21 @@ strict: lower layers only, never siblings, never higher (R3).
 These rules hold across the whole library. Each domain doc states the ones that
 apply to its modules.
 
-- **R1 — Arena.** Every allocating function takes `arena: *std.arena.Arena` as
-  its first parameter and returns `error.OutOfMemory` (alone or inside the
-  module's error set) when the caller-owned backing buffer is exhausted.
-  Functions never own memory across calls, and memory is reclaimed only in bulk
-  by `std.arena.reset` — there is no `free`. The caller keeps the backing buffer
-  alive and aligned for as long as any pointer from the arena is used.
+- **R1 — Arena by default.** Every arena-allocating function takes
+  `arena: *std.arena.Arena` as its first parameter and returns
+  `error.OutOfMemory` (alone or inside the module's error set) when the
+  caller-owned backing buffer is exhausted. Functions never own memory across
+  calls, and arena memory is reclaimed only in bulk by `std.arena.reset`. The
+  caller keeps the backing buffer alive and aligned for as long as any pointer
+  from the arena is used. The sanctioned explicit exceptions are `std.gpa`
+  (non-nested lifetimes: `gpaAlloc`/`gpaFree`/`gpaResize`, default `target64`
+  profile, `align` a power of two in `[8, 4096]`, `safe_checks` explicit) and
+  `std.pool` (fixed-block pool over caller storage); both sit on `std.page`.
 - **R2 — One error set per module.** Each module declares a single named error
   set at the top of its file. Translation between modules happens at the call
   site; there is no `catch unreachable` in the library.
 - **R3 — Imports.** Import direction is strict — lower layers only, never
-  siblings, never higher. All fourteen core names are re-exported through
+  siblings, never higher. All seventeen core names are re-exported through
   `std.zig`; everything else is imported by path. Two sanctioned exceptions:
   `std_debug` (L1) imports `std_buf` (L2) and `std_io` for `backtrace` and
   logging, and `std_stdin` (L3) imports `std_file` (L3) to share the

@@ -30,45 +30,47 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-06 — seed v141]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-07 — seed v142]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v141 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v142 CHANGELOG entry.
 
-**Current seed: v141** (rotated 2026-11-06 for the Task 8c `std_http` streaming
-EOF-flush fix: `streamReadN` flushes buffered body bytes to the sink before
-returning on an early transport EOF, so a tiny raw-EOF pack tail is not lost.
-No compiler-source change; packaging base HEAD `7dbd5e32`). Archived binary md5
-(= fixed point) `cf68f192900e7f6618c11e1712b74b3a`; archive md5
-`3e99af1b8117b982c26b074a1ccd35f7`; Win9x zip md5
-`c45c26f72b6a81b153a9238550456b37`; `gen/` 48 `.c` + 49 `.h` (12,473,249
-bytes); `lib/` **52** std `.zig` (`std.zig` + 51 `std_*.zig`) plus
+**Current seed: v142** (rotated 2026-11-07 for Phase 3.1 general-purpose
+allocators: the `sf/src/std.zig` `std.page`/`std.gpa`/`std.pool` barrel exports
+plus the Task 1/7 compiler-source changes — `std_page_prelude.h` emission,
+`error[3079]`, and GPA ownership recognition in the analyzer; packaging base
+HEAD `1518e08c`). Archived binary md5 (= fixed point)
+`cd8d283b917749009961f4445043666b`, moved from v141 `cf68f192…` by the Tasks
+1/7 compiler-source changes (the std payload alone does not move it); archive
+md5 `1bd6201b039b10f0be50d518878dfecb`; Win9x zip md5
+`8f6b813d1141336978b5b30c18cb783b`; `gen/` 48 `.c` + 49 `.h` (12,503,400
+bytes); `lib/` **56** std `.zig` (`std.zig` + 55 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`4c979389dceb2d12442e557aaeabf44d`; `std_http.zig` updated, no new module).
-A rebuild from the committed v141 archive is two-hop
-**hop1 == hop2 == `cf68f192…`**. The compiler source is **`-fsafe`-clean**.
+`a356e5b2a082340e464adf64dc356cd0`; adds `std_page.zig`,
+`std_page_pal.zig`, `std_gpa.zig`, `std_pool.zig`).
+A rebuild from the committed v142 archive is two-hop
+**hop1 == hop2 == `cd8d283b…`**. The compiler source is **`-fsafe`-clean**.
 
-The v140 rotation battery records the truthful pre-fix full run plus the
-post-rotation focused fixtures. The full `verify_stdlib` (**356 PASS / 0
-FAIL**) + crosscheck (**10 PASS / 0 FAIL**) ran at `b199c191` **before** the
-one-line GHASH `-fsafe` pre-mask fix and was not re-run for v140.
-Post-rotation focused set on the archive-rebuilt compiler: **14 PASS / 0
-FAIL** (AES-GCM, ChaCha20-Poly1305, PRF, SHA-256, MD5, CRC32, SHA-384/512 and
-the seven `stdlib_deflate_*` in `-ffast`) plus AES-GCM **`-fsafe` PASS**. TLS
-demo **15 passed / 0 failed / 1 skipped** (`Z98_NET` unset). WireGuard tier
-**SKIP** (no kernel-WireGuard/netns tools; not claimed PASS). The v136
-full-battery measurements below are historical: they were **not** re-run for
-v137–v140 and were re-measured at v141 by Task 9 — markers (`--markers --dump-c89` on `mud_server`)
-**3397 lines / 39012 B**; the 8 pins, the frozen-1124 corpus (md5
-`518eca1a9b5d3e1cc5a48abce214abd8`, 0 movers), the goldens (5/5), the 28
-examples and the **356/0** stdlib + **10/10** crosscheck. The live corpus at
-v141 is 1256 = **1069 OK / 63 GREEN / 124 FAIL** (class md5
-`a2dd8b02023d49b1dff7ad47139b9a9e`); the +16 dirs vs the v135 baseline are the
-14 new std fixture dirs plus the `z9git`/`z9zstddecomp` example dirs (additive,
-frozen-1124 unchanged).
+The v142 rotation battery was re-measured **once** after the barrel exports
+(fold-era accounting): markers (`--markers --dump-c89` on `mud_server`)
+**4232 lines / 49084 B**; the 8 pins re-baselined once (table below); the
+frozen-1124 corpus md5 `518eca1a9b5d3e1cc5a48abce214abd8` with **0 movers**;
+the goldens **5/5** byte-identical; live corpus **1265 = 1078 OK / 63 GREEN /
+124 FAIL** (class md5 `3c8f85038483959312487a328acbc540`; the 9 new
+`stdlib_*_xmod` fixture dirs are the only growth vs v141); stdlib **365 PASS
+/ 0 FAIL** + crosscheck **10/10**. The v141 battery (markers 3397/39012, live
+corpus 1256 = 1069/63/124 class md5 `a2dd8b02…`, stdlib 356/0) is historical.
+
+Marker cause (ruling A, +835 lines / +10072 B vs v141 3397/39012): the
+authorized barrel addition interns the new `std_page`/`std_gpa`/`std_pool`
+declarations (INT +479, DC +138, FE +39, IRP +12, X +11, RaD12 declaration
+ordering +114), plus extra arena-growth lines and 3 `warning[3037]` lines from
+the newly reachable modules; 3 of the INT lines are Task 7's analyzer interning
+of the gpa call names. The compiler-only dump delta against the pre-3.1 `lib/`
+is byte-identical, so this is declaration/interning volume, not a logic change.
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
 `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` is the Windows-target
@@ -169,15 +171,16 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v137 carries the full 52 std `.zig`** = `std.zig` plus
-51 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
+tracked seed archive **v142 carries the full 56 std `.zig`** = `std.zig` plus
+55 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
 
-**Std-module inventory:** the `sf/src` std set is **51** `std_*.zig` + `std.zig`
+**Std-module inventory:** the `sf/src` std set is **55** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
 `std_net`, `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`,
-`std_time_pal`, `std_buf`, `std_file`, `std_file_pal`, `std_stdin`,
+`std_time_pal`, `std_page`, `std_page_pal`, `std_gpa`, `std_pool`, `std_buf`,
+`std_file`, `std_file_pal`, `std_stdin`,
 `std_stdin_pal`, `std_stream`, `std_crypto`, `std_cipher`, `std_ecc`,
 `std_parse`, `std_bencode`,
 `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`,
@@ -185,9 +188,22 @@ and `SEED_README.txt`.
 `std_deflate`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics`, `std_asn1`, `std_x509`,
 `std_tls`, `std_wireguard`, `std_tcpip`, `std_gfx`, `std_gfx_pal`,
 `std_fold`, `std_fft`). `std.zig` re-exports
-the core **14** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/buf/fold`);
+the core **17** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/page/gpa/pool/buf/fold`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
-`scripts/seed/build_from_seed.sh` installs all 52 into the rebuilt compiler's `lib/`.
+`scripts/seed/build_from_seed.sh` installs all 56 into the rebuilt compiler's `lib/`.
+
+**Phase 3.1 allocators (`std.page`/`std.gpa`/`std.pool`) — scope and limits.**
+`std.page` exposes `posix_mode` = `auto`/`remap`/`protect`/`modern` (POSIX
+`mmap`/`mprotect`; Windows `VirtualAlloc`); the optional `madvise_fn` callback is
+used only by the `modern` mode. Win32 `pageRelease` is
+`VirtualFree(ptr, 0, MEM_RELEASE)` — the size argument is deliberately 0, unlike
+POSIX `munmap`, which rounds the reservation size. `std.gpa` profiles are
+`target32/64/128/256/512/modern`; the default is `target64` (64 KiB medium cap,
+2 MiB chunks, 64 MB target). `align` must be a power of two in `[8, 4096]`.
+`safe_checks` is explicit in `GpaConfig`: `-fsafe` alone does **not** enable the
+GPA magic/ownership validation. TLS is design-only; `.encrypted` is deferred;
+there is no compiler allocator migration and no security or cycle-target claim.
+Win9x evidence is cross-build/Wine only.
 **`std_crypto` (M4):** carries streaming SHA-1/SHA-256/MD5 + CRC-32 plus RC4 (`rc4Init`/`rc4Apply`, RFC 6229 vectors) and modular exponentiation (`modpow`, fixed 32-bit limbs sized for the MSE/PE 768-bit Diffie-Hellman prime) for the encrypted handshake.
 **`std_crypto` M2 additions:** SHA-384/512, HMAC-SHA256 (one-shot + streaming), HKDF extract/expand (RFC 5869), BLAKE2s + HMAC-BLAKE2s (RFC 7693 / WireGuard MAC), and verify-only RSA PKCS#1 v1.5 / PSS (RFC 8017, generic modexp cap 4096-bit). Errors: `BadSignature` / `Corrupt` (`UnsupportedAlgorithm` is unrepresentable via `HashAlg`).
 **`std_cipher` (M2):** ChaCha20 (RFC 8439, 20 rounds unrolled), Poly1305 (donna 5×26-bit limbs, constant-time), ChaCha20-Poly1305 AEAD (`error.AuthenticationFailed`), AES-128 (FIPS-197, 4 KiB `const` T-tables `R/r` rodata), AES-128-GCM (SP800-38D, GHASH 4-bit tables). Pure, no heap/arena; fixtures `stdlib_chacha_poly_xmod` + `stdlib_aes_gcm_xmod`; T-table gate `scripts/compiler/gate_cipher_rodata.sh`. Doc: `sf/docs/std_lib/cipher.md`.
@@ -749,19 +765,30 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (2026-10-28 — Phase 2.5 Task 5 std_fold barrel re-baseline).**
+**8-pin table (2026-11-07 — Phase 3.1 Task 8 std_page/std_gpa/std_pool barrel re-baseline).**
 Measured with the seed-built compiler from the repo root with relative entry
 paths: `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`.
 
-**All 8 moved once**, by design: `sf/src/std.zig` now re-exports
-`std_fold` (`pub const fold = @import("std_fold.zig");`). Its three per-type
-signatures (u32/i32/usize slice + fn-pointer types) are interned for every
-`std`-importing program, shifting later type ids, so both `-fsafe` and
-`-ffast` dump bytes move. Runtime behavior is unchanged: goldens 5/5
-byte-identical (gol/lisp/json/mud) and corpus classification 0 pre-existing
-movers.
-Previous values are the historical tables below. The absolute pin values are
-**compiler-build dependent**, so only same-build comparisons are meaningful.
+**All 8 moved once**, by design: `sf/src/std.zig` now re-exports `std.page`,
+`std.gpa`, and `std.pool` (`pub const page/gpa/pool = @import(...)`). The new
+modules are interned for every `std`-importing program, shifting later type ids
+and the global `ERROR_*` tag numbering, so both `-fsafe` and `-ffast` dump bytes
+move. The verified-delta showed only the new module C, module-list /
+forward-declaration / typedef additions, and type/error-tag intern ripple; the
+compiler-only delta against the pre-3.1 `lib/` was byte-identical. Runtime
+behavior is unchanged: goldens 5/5 byte-identical (gol/lisp/json/mud),
+frozen-1124 corpus 0 movers, live corpus additive by exactly the 9 new fixture
+dirs. Previous values are the historical tables below. The absolute pin values
+are **compiler-build dependent**, so only same-build comparisons are meaningful.
+
+| Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
+|---|---|---|
+| `examples/z98/mud_server/main.zig` | `aa438dbea196ab0fbefa4145e807256c` | `f235212319accab00bdf65ea1f88e6d5` |
+| `examples/z98/game_of_life/main.zig` | `443216d2cb422abdd4cb30482eb38bd5` | `a7755eb31161af109f231889b3ba1f40` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `7ba21baed8e3a44fdc1824cb5aed5653` | `9ff2b6b262b8b647f558d37018149cbe` |
+| `examples/z98/json_parser/main.zig` | `a5c0bdda1c48daa3511a341eb98d90c6` | `744853f691b2b3c7475af4179810daf7` |
+
+Historical 8-pin table (2026-10-28, Phase 2.5 Task 5 std_fold barrel re-baseline; superseded above):
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|

@@ -42,7 +42,9 @@ set -euo pipefail
 #   lib/        repo sf/src/{std.zig, std_io.zig, std_fmt.zig, std_arena.zig,
 #               std_net.zig, std_str.zig, std_mem.zig, std_math.zig,
 #               std_debug.zig, std_async.zig, std_bits.zig, std_os.zig,
-#               std_os_pal.zig, std_time.zig, std_time_pal.zig, std_buf.zig,
+#               std_os_pal.zig, std_time.zig, std_time_pal.zig,
+#               std_page.zig, std_page_pal.zig, std_gpa.zig, std_pool.zig,
+#               std_buf.zig,
 #               std_file.zig, std_file_pal.zig, std_stdin.zig,
 #               std_stdin_pal.zig, std_stream.zig, std_crypto.zig,
 #               std_cipher.zig, std_ecc.zig, std_parse.zig, std_bencode.zig, std_map.zig,
@@ -151,7 +153,7 @@ cp "$GENDIR"/*.c "$GENDIR"/*.h "$SEED/gen/"
 # (Phase-1 reproduced: link rc=1 multiple definition of std_panic). Keep gen/ =
 # the module emission only (net_prelude.h is deliberately not part of the seed
 # — see SEED_README.txt).
-for f in zig_runtime.c zig_pal.c zig_nocrt.c c_exit.c zig_compat.h zig_runtime.h net_prelude.h; do
+for f in zig_runtime.c zig_pal.c zig_nocrt.c c_exit.c zig_compat.h zig_runtime.h net_prelude.h std_page_prelude.h; do
     rm -f "$SEED/gen/$f"
 done
 C_COUNT=$(ls "$SEED/gen"/*.c 2>/dev/null | wc -l)
@@ -178,7 +180,7 @@ else
         cp "$ROOT/sf/src/include/$f" "$SEED/runtime/"
     done
 fi
-for f in std.zig std_io.zig std_fmt.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig std_bits.zig std_os.zig std_os_pal.zig std_time.zig std_time_pal.zig std_buf.zig std_file.zig std_file_pal.zig std_stdin.zig std_stdin_pal.zig std_stream.zig std_crypto.zig std_cipher.zig std_ecc.zig std_parse.zig std_bencode.zig std_map.zig std_sort.zig std_heap.zig std_rle.zig std_base64.zig std_hex.zig std_utf8.zig std_http.zig std_rand.zig std_noise.zig std_lz4.zig std_zstd.zig std_deflate.zig std_num.zig std_pathfind.zig std_physics.zig std_hpa.zig std_asn1.zig std_x509.zig std_tls.zig std_wireguard.zig std_tcpip.zig std_gfx.zig std_gfx_pal.zig std_fold.zig std_fft.zig; do
+for f in std.zig std_io.zig std_fmt.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig std_bits.zig std_os.zig std_os_pal.zig std_time.zig std_time_pal.zig std_page.zig std_page_pal.zig std_gpa.zig std_pool.zig std_buf.zig std_file.zig std_file_pal.zig std_stdin.zig std_stdin_pal.zig std_stream.zig std_crypto.zig std_cipher.zig std_ecc.zig std_parse.zig std_bencode.zig std_map.zig std_sort.zig std_heap.zig std_rle.zig std_base64.zig std_hex.zig std_utf8.zig std_http.zig std_rand.zig std_noise.zig std_lz4.zig std_zstd.zig std_deflate.zig std_num.zig std_pathfind.zig std_physics.zig std_hpa.zig std_asn1.zig std_x509.zig std_tls.zig std_wireguard.zig std_tcpip.zig std_gfx.zig std_gfx_pal.zig std_fold.zig std_fft.zig; do
     cp "$ROOT/sf/src/$f" "$SEED/lib/"
 done
 ( cd "$SEED/lib" && LC_ALL=C md5sum *.zig > manifest.md5 )
@@ -373,11 +375,12 @@ zig1-seed/runtime/    link/include sources needed to compile gen/:
                       mode-specific support so a gcc-only rebuild reproduces
                       the seed binary's fixed point; canonical repo copies for
                       pre-EMITEMIT gen dirs)
-zig1-seed/lib/        the 52 std .zig (std.zig, std_io.zig, std_fmt.zig,
+zig1-seed/lib/        the 56 std .zig (std.zig, std_io.zig, std_fmt.zig,
                       std_arena.zig, std_net.zig, std_str.zig, std_mem.zig,
                       std_math.zig, std_debug.zig, std_async.zig, std_bits.zig,
                       std_os.zig, std_os_pal.zig, std_time.zig,
-                      std_time_pal.zig, std_buf.zig, std_file.zig,
+                      std_time_pal.zig, std_page.zig, std_page_pal.zig,
+                      std_gpa.zig, std_pool.zig, std_buf.zig, std_file.zig,
                       std_file_pal.zig, std_stdin.zig, std_stdin_pal.zig,
                       std_stream.zig, std_crypto.zig, std_cipher.zig, std_ecc.zig, std_parse.zig,
                       std_bencode.zig,
@@ -389,7 +392,7 @@ zig1-seed/lib/        the 52 std .zig (std.zig, std_io.zig, std_fmt.zig,
                       std_hpa.zig, std_asn1.zig, std_x509.zig, std_tls.zig,
                       std_wireguard.zig, std_tcpip.zig, std_gfx.zig,
                       std_gfx_pal.zig, std_fold.zig, std_fft.zig)
-zig1-seed/lib/manifest.md5  per-file md5 of every lib/*.zig (52 std files,
+zig1-seed/lib/manifest.md5  per-file md5 of every lib/*.zig (56 std files,
                       the std attribution pin)
 zig1-seed/SEED_README.txt  this file
 
@@ -487,7 +490,7 @@ linked as objects; dropping them onto the link line as sources omits the
 canonical flags (notably -Wall) and links a different object set/order, so the
 fixed point is NOT reproduced.
 
-std install: the produced binary needs the std lib next to it (lib/ with the 52
+std install: the produced binary needs the std lib next to it (lib/ with the 56
 std .zig) - copied from zig1-seed/lib/ or the binary's lib-dir.
 
 CRITICAL FLAG SET RULE (operator amendment 2026-09-07)

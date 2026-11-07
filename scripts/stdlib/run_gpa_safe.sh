@@ -8,8 +8,8 @@
 #
 # usage: run_gpa_safe.sh <zig1> [<dir>...]
 #
-# Default dirs are the Phase 3.1 page fixtures; callers pass their own fixture
-# dirs explicitly (Task 8 sets the default to the full nine). Any trap (SIGTRAP
+# Default dirs are the full nine Phase 3.1 fixtures; callers may pass their own
+# fixture dirs explicitly. Any trap (SIGTRAP
 # rc 133), nonzero rc, or stdout mismatch is a loud FAIL.
 set -uo pipefail
 
@@ -34,6 +34,13 @@ else
   declare -a DIRS=(
     "repro/mi_matrix/stdlib_page_xmod"
     "repro/mi_matrix/stdlib_page_modern_xmod"
+    "repro/mi_matrix/stdlib_gpa_small_xmod"
+    "repro/mi_matrix/stdlib_gpa_medium_xmod"
+    "repro/mi_matrix/stdlib_gpa_large_xmod"
+    "repro/mi_matrix/stdlib_gpa_resize_xmod"
+    "repro/mi_matrix/stdlib_gpa_safe_xmod"
+    "repro/mi_matrix/stdlib_gpa_shuffle_xmod"
+    "repro/mi_matrix/stdlib_pool_xmod"
   )
 fi
 

@@ -15,6 +15,76 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-07 — seed v142 (HEAD 1518e08c)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12503400 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+Phase 3.1 scope: adds the general-purpose allocator stack to the std payload —
+`std_page.zig`/`std_page_pal.zig` (portable page reservation/commit; optional
+`madvise` in `modern` mode; Win32 `pageRelease` passes size 0), `std_gpa.zig`
+(TLSF small + page-run medium + large with profiles; default `target64` = 64 KiB
+medium cap / 2 MiB chunks / 64 MB target; `align` a power of two in `[8, 4096]`;
+`safe_checks` explicit, not implied by `-fsafe`; deterministic `shuffle`), and
+`std_pool.zig` (fixed-block pool); `sf/src/std.zig` barrel-exports
+`page`/`gpa`/`pool`. Compiler-source changes: conditional
+`std_page_prelude.h` emission, `ERR_2006_USE_AFTER_FREE = 3079`, and GPA
+analyzer ownership recognition (bare + qualified calls). Limits: TLS is
+design-only; `.encrypted` deferred; no compiler allocator migration; no security
+or cycle-target claim; Win9x evidence is cross-build/Wine only.
+
+Measured battery (one-time fold-era re-baseline after the barrel exports):
+goldens 5/5 byte-identical; frozen-1124 md5 `518eca1a…` 0 movers; live corpus
+1265 = 1078 OK / 63 GREEN / 124 FAIL (only the 9 new fixture dirs added); the
+8 pins re-recorded (mud `aa438dbe…`/`f2352123…`, gol `443216d2…`/`a7755eb3…`,
+lisp `7ba21bae…`/`9ff2b6b2…`, json `a5c0bdda…`/`744853f6…`); markers
+`--markers --dump-c89` on `mud_server` 4232 lines / 49084 B (cause: the barrel
+interns the new page/gpa/pool declarations — INT +479, DC +138, FE +39, IRP
++12, X +11, RaD12 ordering +114 — plus arena-growth lines and 3 new
+`warning[3037]`; 3 INT lines are Task 7's analyzer interning of the gpa call
+names); stdlib 365/0 + crosscheck 10/10. The fixed point moved from
+`cf68f192…` to `cd8d283b…` by the Tasks 1/7 compiler-source changes only (the
+std payload alone does not move it).
+
+| field | value |
+|---|---|
+| date | 2026-11-07 |
+| HEAD | `1518e08c` |
+| seed binary md5 | `cd8d283b917749009961f4445043666b` |
+| self-emission C | 48 `.c` + 49 `.h` (12503400 bytes) |
+| fixed point | `cd8d283b917749009961f4445043666b` |
+| lib manifest | `lib/manifest.md5` (56 std files; md5 `a356e5b2a082340e464adf64dc356cd0`) |
+| archive md5 | `1bd6201b039b10f0be50d518878dfecb` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `8f6b813d1141336978b5b30c18cb783b` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 56 std `.zig` + `manifest.md5` |
+| HEAD/date | `1518e08c` / 2026-11-07 |
+
+Provenance note: the archived binary (md5 cd8d283b917749009961f4445043666b) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+1518e08c; gcc of the archive's self-emission C reproduces the fixed point
+`cd8d283b917749009961f4445043666b` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-11-06 — seed v141 (HEAD 7dbd5e32)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
