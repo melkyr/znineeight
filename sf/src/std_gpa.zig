@@ -1,18 +1,20 @@
 // std_gpa.zig — Z98 std lib L2: single-threaded general-purpose allocator.
 //
-// Phase 3.1, Task 4: the TLSF small tier, the page-run medium tier, direct large
-// mappings, plus the GPA configuration, ownership, alignment, zero-size, resize,
-// stats, and optional shuffle contracts. `std.page` owns the OS mappings; every
-// 64 KiB small region, every medium chunk, and every large mapping is reserved
-// and committed through it.
+// Phase 3.1, Tasks 4-5: the TLSF small tier, the page-run medium tier, direct
+// large mappings, plus the GPA configuration, ownership, alignment, zero-size,
+// resize, stats, optional shuffle, and safe-check contracts. `std.page` owns
+// the OS mappings; every 64 KiB small region, every medium chunk, and every
+// large mapping is reserved and committed through it.
 //
 // Small tier (TLSF):
 //   - 64 KiB region, 4096-aligned; region header at offset 0, block area after.
 //   - region metadata: fl_bitmap: u32, sl_bitmap: [32]u32,
 //     free_heads: [192]?*Block (FL 4..15 x 16 SL = 192 heads).
 //   - block: 4-byte size/flags header, 4-byte footer, free-list links in the
-//     payload; minimum 16 bytes; 8-byte alignment. The header has no region
-//     pointer: ownership is a range walk over the region list.
+//     payload; minimum 16 bytes (24 in safe mode, where a 4-byte live/freed
+//     magic suffix sits immediately before the footer); 8-byte alignment. The
+//     header has no region pointer: ownership is a range walk over the region
+//     list.
 //   - size mapping is a bounded 32-iteration floor-log2 scan (no @clz); free
 //     list insertion is at the class head, or a seeded LCG position when
 //     shuffle is enabled.
@@ -47,8 +49,10 @@
 //     old block valid; all size arithmetic uses u64 intermediate guards.
 //   - gpaFree returns false for a pointer outside every region in all modes
 //     and touches no metadata. Owned fast-path frees return true with no
-//     further validation; a fast-path double free is a caller bug (safe_checks
-//     detection lands in Task 5).
+//     further validation; a fast-path double free is a caller bug. With
+//     safe_checks=true, small magic (and medium page state / large mapping
+//     magic) rejects a double free or corrupt header with false, and the
+//     requested payload is filled with 0xDD on free.
 //   - gpaInit validates medium_max/chunk_bytes and never allocates.
 
 const page_mod = @import("std_page.zig");
@@ -77,6 +81,12 @@ const HEADER_BYTES: usize = 2048;
 const BLOCK_START: usize = HEADER_BYTES + 4;
 const BLOCK_END: usize = REGION_BYTES - 4;
 const MIN_BLOCK: usize = 16;
+// Safe-mode small blocks reserve 4 extra bytes for a magic suffix immediately
+// before the footer; the minimum must still hold the two free-list links, the
+// magic, and the footer.
+const MIN_BLOCK_SAFE: usize = 24;
+const SMALL_MAGIC: u32 = 0xDEADBEEF;
+const SMALL_MAGIC_FREED: u32 = 0xFEEDFACE;
 const SMALL_LIMIT: usize = 4096;
 const MAX_SMALL_BLOCK: usize = 65535;
 const NUM_HEADS: usize = 192;
@@ -227,11 +237,15 @@ fn validAlign(align: usize) bool {
     return (align & (align - 1)) == 0;
 }
 
-fn blockBytes(request: usize) ?usize {
+fn blockBytes(g: *Gpa, request: usize) ?usize {
     const v: u64 = @intCast(u64, request);
-    const hdr: u64 = @intCast(u64, 8);
+    var hdr: u64 = @intCast(u64, 8);
+    var min_block: u64 = @intCast(u64, MIN_BLOCK);
+    if (g.cfg.safe_checks) {
+        hdr = @intCast(u64, 12);
+        min_block = @intCast(u64, MIN_BLOCK_SAFE);
+    }
     const seven: u64 = @intCast(u64, 7);
-    const min_block: u64 = @intCast(u64, MIN_BLOCK);
     const limit: u64 = @intCast(u64, 0xFFFFFFFF);
     var sum: u64 = v + hdr;
     if (sum > limit) return null;
@@ -239,6 +253,25 @@ fn blockBytes(request: usize) ?usize {
     if (sum < min_block) sum = min_block;
     if (sum > limit) return null;
     return @intCast(usize, sum);
+}
+
+fn minBlock(g: *Gpa) usize {
+    if (g.cfg.safe_checks) return MIN_BLOCK_SAFE;
+    return MIN_BLOCK;
+}
+
+// The safe-mode small-block magic lives four bytes before the footer.
+fn magicAt(g: *Gpa, b: *Block) *u32 {
+    _ = g;
+    const pb: [*]u8 = @ptrCast([*]u8, b);
+    return @ptrCast(*u32, pb + blockSize(b) - 8);
+}
+
+fn writeMagic(g: *Gpa, b: *Block, size: usize, magic: u32) void {
+    _ = g;
+    const pb: [*]u8 = @ptrCast([*]u8, b);
+    const mp: *u32 = @ptrCast(*u32, pb + size - 8);
+    mp.* = magic;
 }
 
 fn floorLog2(v0: usize) usize {
@@ -492,16 +525,23 @@ fn insertFree(g: *Gpa, r: *Region, b: *Block) void {
 
 fn allocateFrom(g: *Gpa, r: *Region, b: *Block, need: usize, requested: usize) [*]u8 {
     const sz = blockSize(b);
-    if (sz - need >= MIN_BLOCK) {
+    const min = minBlock(g);
+    if (sz - need >= min) {
         setBlock(b, need, false);
         const pb: [*]u8 = @ptrCast([*]u8, b);
         const rem: *Block = @ptrCast(*Block, pb + need);
         setBlock(rem, sz - need, true);
+        if (g.cfg.safe_checks) {
+            writeMagic(g, rem, sz - need, SMALL_MAGIC_FREED);
+        }
         insertFree(g, r, rem);
     } else {
         setBlock(b, sz, false);
     }
     setBlockRequested(b, requested);
+    if (g.cfg.safe_checks) {
+        writeMagic(g, b, blockSize(b), SMALL_MAGIC);
+    }
     const out: [*]u8 = @ptrCast([*]u8, b);
     return out + 4;
 }
@@ -527,6 +567,12 @@ fn freeBlock(g: *Gpa, r: *Region, b0: *Block) void {
     var size: usize = blockSize(b);
     const base: usize = @ptrToInt(r);
     var off: usize = @ptrToInt(b) - base;
+    // Mark the caller's block freed before coalescing so a second free of the
+    // same pointer is rejected even when this block gets merged into a larger
+    // free block away from its original start.
+    if (g.cfg.safe_checks) {
+        writeMagic(g, b0, size, SMALL_MAGIC_FREED);
+    }
 
     if (off > BLOCK_START) {
         const pb: [*]u8 = @ptrCast([*]u8, b);
@@ -542,7 +588,7 @@ fn freeBlock(g: *Gpa, r: *Region, b0: *Block) void {
         }
     }
 
-    if (off + size + MIN_BLOCK <= BLOCK_END) {
+    if (off + size + minBlock(g) <= BLOCK_END) {
         const pb: [*]u8 = @ptrCast([*]u8, b);
         const next: *Block = @ptrCast(*Block, pb + size);
         if (isFree(next)) {
@@ -553,6 +599,9 @@ fn freeBlock(g: *Gpa, r: *Region, b0: *Block) void {
     }
 
     setBlock(b, size, true);
+    if (g.cfg.safe_checks) {
+        writeMagic(g, b, size, SMALL_MAGIC_FREED);
+    }
     insertFree(g, r, b);
 }
 
@@ -788,8 +837,24 @@ fn freeMedium(g: *Gpa, c: *MediumChunk, ptr: [*]u8) bool {
     var start = @intCast(usize, meta[idx].run_start);
     var len = @intCast(usize, meta[idx].run_len);
     if (start + len > page_count) return false;
+    if (g.cfg.safe_checks) {
+        // Page metadata is the medium-tier state: a free (or unowned) page
+        // means a double free or a stale pointer, and no metadata is touched.
+        if (meta[idx].state != PAGE_USED) return false;
+        if (idx < start or idx >= start + len) return false;
+    }
 
     const used = @intCast(usize, meta[start].used_bytes);
+    if (g.cfg.safe_checks) {
+        if (used > len * page_mod.PAGE_SIZE) return false;
+        // Fill the freed run's used bytes before decommit discards the pages.
+        const data = chunkData(c);
+        const run_data = data + start * page_mod.PAGE_SIZE;
+        var fi: usize = 0;
+        while (fi < used) : (fi += 1) {
+            run_data[fi] = 0xDD;
+        }
+    }
     if (g.medium_bytes >= used) {
         g.medium_bytes -= used;
     } else {
@@ -898,6 +963,17 @@ fn findLarge(g: *Gpa, ptr: [*]u8) ?*LargeMapping {
 }
 
 fn freeLarge(g: *Gpa, m: *LargeMapping) bool {
+    if (g.cfg.safe_checks) {
+        // The mapping header magic catches a stale/corrupt large header before
+        // any list surgery; the data is filled (then released) on free.
+        if (m.magic != LARGE_MAGIC) return false;
+        const raw: [*]u8 = @ptrCast([*]u8, m);
+        const data = raw + page_mod.PAGE_SIZE;
+        var fi: usize = 0;
+        while (fi < m.size) : (fi += 1) {
+            data[fi] = 0xDD;
+        }
+    }
     var prev: ?*LargeMapping = null;
     var cur = g.large;
     while (cur) |c| {
@@ -941,7 +1017,7 @@ fn blockForPayload(g: *Gpa, ptr: [*]u8) ?*Block {
     const a: usize = @ptrToInt(ptr);
     if (a < base + BLOCK_START + 4) return null;
     const off: usize = a - base - 4;
-    if (off + MIN_BLOCK > BLOCK_END) return null;
+    if (off + minBlock(g) > BLOCK_END) return null;
     const raw: [*]u8 = @ptrCast([*]u8, r);
     return blockAt(raw, off);
 }
@@ -965,7 +1041,11 @@ fn newRegion(g: *Gpa) ?*Region {
     }
     const base: [*]u8 = @ptrCast([*]u8, r);
     const b = blockAt(base, BLOCK_START);
-    setBlock(b, BLOCK_END - BLOCK_START, true);
+    const init_size = BLOCK_END - BLOCK_START;
+    setBlock(b, init_size, true);
+    if (g.cfg.safe_checks) {
+        writeMagic(g, b, init_size, SMALL_MAGIC_FREED);
+    }
     insertFree(g, r, b);
     if (g.regions) |old| {
         r.next = @ptrToInt(old);
@@ -1027,7 +1107,7 @@ pub fn gpaAlloc(g: *Gpa, size: usize, align: usize) ?[*]u8 {
         return p;
     }
 
-    const need = blockBytes(size) orelse return null;
+    const need = blockBytes(g, size) orelse return null;
 
     var cur = g.regions;
     while (cur) |r| {
@@ -1066,9 +1146,30 @@ pub fn gpaFree(g: *Gpa, ptr: [*]u8) bool {
         if (g.live_allocs > 0) g.live_allocs -= 1;
         return true;
     }
-    const b = blockForPayload(g, ptr) orelse return false;
     const r = findRegion(g, ptr) orelse return false;
+    const b = blockForPayload(g, ptr) orelse return false;
+    if (g.cfg.safe_checks) {
+        // Validate the packed size and range before trusting the suffix magic.
+        const sz = blockSize(b);
+        if (sz % 8 != 0) return false;
+        if (sz < MIN_BLOCK_SAFE) return false;
+        const base = @ptrToInt(r);
+        const baddr = @ptrToInt(b);
+        const region_end = base + REGION_BYTES;
+        if (baddr < base or baddr >= region_end) return false;
+        if (sz > region_end - baddr) return false;
+        if (magicAt(g, b).* != SMALL_MAGIC) return false;
+    }
     const requested = blockRequested(b);
+    if (g.cfg.safe_checks) {
+        if (requested > blockSize(b) - 12) return false;
+        // Fill the requested payload only; the magic, links, and footer keep
+        // their allocator state.
+        var fi: usize = 0;
+        while (fi < requested) : (fi += 1) {
+            ptr[fi] = 0xDD;
+        }
+    }
     freeBlock(g, r, b);
     if (g.small_bytes >= requested) {
         g.small_bytes -= requested;
@@ -1139,7 +1240,7 @@ pub fn gpaResize(g: *Gpa, ptr: [*]u8, new_size: usize, align: usize) ?[*]u8 {
     const old_size = blockSize(b);
     const old_requested = blockRequested(b);
     if (new_size < SMALL_LIMIT and align == 8) {
-        const need = blockBytes(new_size) orelse return null;
+        const need = blockBytes(g, new_size) orelse return null;
         if (need <= old_size) {
             setBlockRequested(b, new_size);
             if (new_size >= old_requested) {
