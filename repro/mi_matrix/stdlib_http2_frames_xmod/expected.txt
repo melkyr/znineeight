@@ -1,0 +1,18 @@
+settings 0 0 36
+settings 1 0 0
+headers 4 1 3
+data 1 1 5
+window_update 0 1 4
+ping 0 0 8
+goaway 0 0 8
+rst_stream 0 1 4
+settings header_table_size=4096 enable_push=0 max_concurrent_streams=100 initial_window_size=65535 max_frame_size=16384 max_header_list_size=65536
+writer len=12
+bad
+settings-encode 36
+settings-encode-ok
+bad
+bad
+bad
+bad
+bad
