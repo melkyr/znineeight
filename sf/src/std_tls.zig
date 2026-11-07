@@ -69,6 +69,15 @@ pub const CipherSuite = enum {
     tls13_chacha20_poly1305_sha256,
 };
 
+// RFC 7301 ALPN selection. `none` means no protocol was negotiated (either the
+// client did not offer one or the server selected none).
+pub const AlpnProtocol = enum(u8) {
+    none = 0,
+    h2 = 1,
+    http11 = 2,
+    other = 3,
+};
+
 pub const RecordError = error{
     Corrupt,
     AuthenticationFailed,
@@ -461,6 +470,7 @@ const ext_ec_point_formats: u16 = 0x000B;
 const ext_signature_algorithms: u16 = 0x000D;
 const ext_supported_versions: u16 = 0x002B;
 const ext_key_share: u16 = 0x0033;
+const ext_alpn: u16 = 0x0010;
 
 const OID_EC_PUBLIC_KEY = [_]u8{ 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01 };
 const OID_PRIME256V1 = [_]u8{ 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07 };
@@ -507,6 +517,12 @@ pub const TlsConfig = struct {
     now_unix: i64,
     min_version: u16,
     max_version: u16,
+    // Offer ALPN `h2` then `http/1.1`. `false` emits no extension, keeping the
+    // pre-ALPN ClientHello wire image byte-identical.
+    alpn_h2: bool,
+    // Offer ChaCha20-Poly1305 / x25519 first. `false` preserves the original
+    // suite and supported-group order byte-for-byte.
+    prefer_chacha20: bool,
 };
 
 pub const HandshakeState = enum {
@@ -546,6 +562,7 @@ pub const TlsSession = struct {
     server_random: [32]u8,
     version: u16,
     suite: CipherSuite,
+    alpn: AlpnProtocol,
     peer_group: u16,
     peer_pub: [65]u8,
     peer_pub_len: usize,
@@ -708,6 +725,57 @@ fn suiteFromId(id: u16) TlsError!CipherSuite {
     if (id == suite_tls13_aes_128_gcm_sha256) return CipherSuite.tls13_aes_128_gcm_sha256;
     if (id == suite_tls13_chacha20_poly1305_sha256) return CipherSuite.tls13_chacha20_poly1305_sha256;
     return error.UnsupportedSuite;
+}
+
+// Append the ALPN ClientHello extension (RFC 7301): ProtocolNameList with
+// `h2` then `http/1.1`. Returns the new write offset.
+fn writeAlpnExtension(msg: []u8, off_in: usize) usize {
+    var off = off_in;
+    putU16(msg, off, ext_alpn);
+    off += 2;
+    putU16(msg, off, 14); // extension_data length: 2 + 12
+    off += 2;
+    putU16(msg, off, 12); // ProtocolNameList content length
+    off += 2;
+    msg[off] = 2;
+    off += 1;
+    msg[off] = 'h';
+    off += 1;
+    msg[off] = '2';
+    off += 1;
+    msg[off] = 8;
+    off += 1;
+    copyBytes(msg[off .. off + 8], "http/1.1");
+    off += 8;
+    return off;
+}
+
+// Parse the server's ALPN extension (ServerHello for TLS 1.2, EncryptedExtensions
+// for TLS 1.3). The wire encoding is a ProtocolNameList carrying exactly one
+// selected name. Fail closed when the selection was not offered.
+fn parseAlpnExtension(sess: *TlsSession, data: []const u8) TlsError!void {
+    if (!sess.cfg.alpn_h2) return error.HandshakeFailed;
+    if (data.len < 2) return error.Corrupt;
+    const list_len = @intCast(usize, loadU16be(data, 0));
+    if (list_len == 0 or 2 + list_len != data.len) return error.Corrupt;
+    const end = 2 + list_len;
+    var pos: usize = 2;
+    var count: usize = 0;
+    while (pos < end) {
+        const n = @intCast(usize, data[pos]);
+        pos += 1;
+        if (n == 0 or n > end - pos) return error.Corrupt;
+        if (eqSlice(data[pos .. pos + n], "h2")) {
+            sess.alpn = .h2;
+        } else if (eqSlice(data[pos .. pos + n], "http/1.1")) {
+            sess.alpn = .http11;
+        } else {
+            return error.HandshakeFailed;
+        }
+        pos += n;
+        count += 1;
+    }
+    if (count != 1) return error.HandshakeFailed;
 }
 
 fn derIntFixed(data: []const u8, out: []u8) TlsError!void {
@@ -1011,14 +1079,25 @@ fn sendClientHello(sess: *TlsSession) TlsError!void {
 
         putU16(msg2[0..], off2, 8);
         off2 += 2;
-        putU16(msg2[0..], off2, suite_ecdsa_aes_128_gcm_sha256);
-        off2 += 2;
-        putU16(msg2[0..], off2, suite_rsa_aes_128_gcm_sha256);
-        off2 += 2;
-        putU16(msg2[0..], off2, suite_ecdsa_chacha20_poly1305_sha256);
-        off2 += 2;
-        putU16(msg2[0..], off2, suite_rsa_chacha20_poly1305_sha256);
-        off2 += 2;
+        if (sess.cfg.prefer_chacha20) {
+            putU16(msg2[0..], off2, suite_ecdsa_chacha20_poly1305_sha256);
+            off2 += 2;
+            putU16(msg2[0..], off2, suite_rsa_chacha20_poly1305_sha256);
+            off2 += 2;
+            putU16(msg2[0..], off2, suite_ecdsa_aes_128_gcm_sha256);
+            off2 += 2;
+            putU16(msg2[0..], off2, suite_rsa_aes_128_gcm_sha256);
+            off2 += 2;
+        } else {
+            putU16(msg2[0..], off2, suite_ecdsa_aes_128_gcm_sha256);
+            off2 += 2;
+            putU16(msg2[0..], off2, suite_rsa_aes_128_gcm_sha256);
+            off2 += 2;
+            putU16(msg2[0..], off2, suite_ecdsa_chacha20_poly1305_sha256);
+            off2 += 2;
+            putU16(msg2[0..], off2, suite_rsa_chacha20_poly1305_sha256);
+            off2 += 2;
+        }
 
         msg2[off2] = 1;
         off2 += 1;
@@ -1048,10 +1127,17 @@ fn sendClientHello(sess: *TlsSession) TlsError!void {
         off2 += 2;
         putU16(msg2[0..], off2, 4);
         off2 += 2;
-        putU16(msg2[0..], off2, group_secp256r1);
-        off2 += 2;
-        putU16(msg2[0..], off2, group_x25519);
-        off2 += 2;
+        if (sess.cfg.prefer_chacha20) {
+            putU16(msg2[0..], off2, group_x25519);
+            off2 += 2;
+            putU16(msg2[0..], off2, group_secp256r1);
+            off2 += 2;
+        } else {
+            putU16(msg2[0..], off2, group_secp256r1);
+            off2 += 2;
+            putU16(msg2[0..], off2, group_x25519);
+            off2 += 2;
+        }
 
         putU16(msg2[0..], off2, ext_ec_point_formats);
         off2 += 2;
@@ -1072,6 +1158,8 @@ fn sendClientHello(sess: *TlsSession) TlsError!void {
         off2 += 2;
         putU16(msg2[0..], off2, sig_rsa_pkcs1_sha256);
         off2 += 2;
+
+        if (sess.cfg.alpn_h2) off2 = writeAlpnExtension(msg2[0..], off2);
 
         putU16(msg2[0..], ext_len_off2, @intCast(u16, off2 - ext_start2));
         msg2[0] = hs_client_hello;
@@ -1099,19 +1187,37 @@ fn sendClientHello(sess: *TlsSession) TlsError!void {
     if (offer_12) suite_count += 4;
     putU16(msg[0..], off, @intCast(u16, 2 * suite_count));
     off += 2;
-    putU16(msg[0..], off, suite_tls13_aes_128_gcm_sha256);
-    off += 2;
-    putU16(msg[0..], off, suite_tls13_chacha20_poly1305_sha256);
-    off += 2;
+    if (sess.cfg.prefer_chacha20) {
+        putU16(msg[0..], off, suite_tls13_chacha20_poly1305_sha256);
+        off += 2;
+        putU16(msg[0..], off, suite_tls13_aes_128_gcm_sha256);
+        off += 2;
+    } else {
+        putU16(msg[0..], off, suite_tls13_aes_128_gcm_sha256);
+        off += 2;
+        putU16(msg[0..], off, suite_tls13_chacha20_poly1305_sha256);
+        off += 2;
+    }
     if (offer_12) {
-        putU16(msg[0..], off, suite_ecdsa_aes_128_gcm_sha256);
-        off += 2;
-        putU16(msg[0..], off, suite_rsa_aes_128_gcm_sha256);
-        off += 2;
-        putU16(msg[0..], off, suite_ecdsa_chacha20_poly1305_sha256);
-        off += 2;
-        putU16(msg[0..], off, suite_rsa_chacha20_poly1305_sha256);
-        off += 2;
+        if (sess.cfg.prefer_chacha20) {
+            putU16(msg[0..], off, suite_ecdsa_chacha20_poly1305_sha256);
+            off += 2;
+            putU16(msg[0..], off, suite_rsa_chacha20_poly1305_sha256);
+            off += 2;
+            putU16(msg[0..], off, suite_ecdsa_aes_128_gcm_sha256);
+            off += 2;
+            putU16(msg[0..], off, suite_rsa_aes_128_gcm_sha256);
+            off += 2;
+        } else {
+            putU16(msg[0..], off, suite_ecdsa_aes_128_gcm_sha256);
+            off += 2;
+            putU16(msg[0..], off, suite_rsa_aes_128_gcm_sha256);
+            off += 2;
+            putU16(msg[0..], off, suite_ecdsa_chacha20_poly1305_sha256);
+            off += 2;
+            putU16(msg[0..], off, suite_rsa_chacha20_poly1305_sha256);
+            off += 2;
+        }
     }
 
     msg[off] = 1; // compression methods
@@ -1143,12 +1249,21 @@ fn sendClientHello(sess: *TlsSession) TlsError!void {
     off += 2;
     putU16(msg[0..], off, @intCast(u16, groups_len));
     off += 2;
-    if (offer_12) {
-        putU16(msg[0..], off, group_secp256r1);
+    if (sess.cfg.prefer_chacha20) {
+        putU16(msg[0..], off, group_x25519);
+        off += 2;
+        if (offer_12) {
+            putU16(msg[0..], off, group_secp256r1);
+            off += 2;
+        }
+    } else {
+        if (offer_12) {
+            putU16(msg[0..], off, group_secp256r1);
+            off += 2;
+        }
+        putU16(msg[0..], off, group_x25519);
         off += 2;
     }
-    putU16(msg[0..], off, group_x25519);
-    off += 2;
 
     if (offer_12) {
         putU16(msg[0..], off, ext_ec_point_formats);
@@ -1214,6 +1329,8 @@ fn sendClientHello(sess: *TlsSession) TlsError!void {
     copyBytes(msg[off .. off + 32], sess.client_pub[0..]);
     off += 32;
 
+    if (sess.cfg.alpn_h2) off = writeAlpnExtension(msg[0..], off);
+
     putU16(msg[0..], ext_len_off, @intCast(u16, off - ext_start));
     msg[0] = hs_client_hello;
     putU24(msg[0..], 1, off - 4);
@@ -1249,6 +1366,9 @@ fn handleServerHello(sess: *TlsSession, body: []const u8) TlsError!void {
     var selected_version = legacy_version;
     var have_supported_versions = false;
     var have_key_share = false;
+    var have_alpn = false;
+    var alpn_start: usize = 0;
+    var alpn_len: usize = 0;
     var peer_group: u16 = 0;
     var peer_len: usize = 0;
     var peer_start: usize = 0;
@@ -1276,6 +1396,10 @@ fn handleServerHello(sess: *TlsSession, body: []const u8) TlsError!void {
                 if (peer_len + 4 > ext_len) return error.Corrupt;
                 peer_start = pos + 4;
                 have_key_share = true;
+            } else if (ext_type == ext_alpn) {
+                alpn_start = pos;
+                alpn_len = ext_len;
+                have_alpn = true;
             }
             pos += ext_len;
         }
@@ -1316,6 +1440,7 @@ fn handleServerHello(sess: *TlsSession, body: []const u8) TlsError!void {
     sess.version = TLS_VERSION_12;
     sess.suite = try suiteFromId(suite_id);
     if (suiteIsTls13(sess.suite)) return error.UnsupportedSuite;
+    if (have_alpn) try parseAlpnExtension(sess, body[alpn_start .. alpn_start + alpn_len]);
 }
 fn handleCertificate(sess: *TlsSession, body: []const u8, tls13: bool) TlsError!void {
     var pos: usize = 0;
@@ -1556,6 +1681,18 @@ fn handleHandshakeMessage(sess: *TlsSession, msg_type: u8, body: []const u8) Tls
         if (body.len < 2) return error.Corrupt;
         const ext_len = @intCast(usize, loadU16be(body, 0));
         if (2 + ext_len != body.len) return error.Corrupt;
+        const end = 2 + ext_len;
+        var pos: usize = 2;
+        while (pos < end) {
+            if (end - pos < 4) return error.Corrupt;
+            const ext_type = loadU16be(body, pos);
+            const elen = @intCast(usize, loadU16be(body, pos + 2));
+            pos += 4;
+            if (elen > end - pos) return error.Corrupt;
+            if (ext_type == ext_alpn) try parseAlpnExtension(sess, body[pos .. pos + elen]);
+            pos += elen;
+        }
+        if (pos != end) return error.Corrupt;
         sess.state = .RecvCertificate;
         return;
     }
@@ -1756,6 +1893,7 @@ pub fn tlsInit(sess: *TlsSession, cfg: *TlsConfig) void {
     sess.transcript = crypto.sha256Init();
     sess.version = 0;
     sess.suite = CipherSuite.ecdsa_aes_128_gcm_sha256;
+    sess.alpn = AlpnProtocol.none;
     sess.peer_group = 0;
     sess.peer_pub_len = 0;
     sess.peer_key.kind = 0;
@@ -1771,6 +1909,10 @@ pub fn tlsInit(sess: *TlsSession, cfg: *TlsConfig) void {
     sess.pending_len = 0;
     sess.app_start = 0;
     sess.app_end = 0;
+}
+
+pub fn tlsAlpnSelected(sess: *const TlsSession) AlpnProtocol {
+    return sess.alpn;
 }
 
 fn drainRecords(sess: *TlsSession) TlsError!void {

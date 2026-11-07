@@ -483,6 +483,8 @@ fn openReal(factory_state: *void, url: []const u8) OpenError!http.HttpTransport 
         .now_unix = now_unix,
         .min_version = tls.TLS_VERSION_12,
         .max_version = tls.TLS_VERSION_13,
+        .alpn_h2 = false,
+        .prefer_chacha20 = false,
     };
     tls.tlsInit(&g_tls_session, &cfg);
     const raw = arena_mod.alloc(rf.arena, @sizeOf(TlsConn)) catch return error.OutOfMemory;

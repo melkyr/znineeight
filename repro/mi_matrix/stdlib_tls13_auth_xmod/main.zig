@@ -84,6 +84,8 @@ fn driveRaw(raw: []const u8) !void {
         .now_unix = rsa_pss.now_unix,
         .min_version = tls.TLS_VERSION_13,
         .max_version = tls.TLS_VERSION_13,
+        .alpn_h2 = false,
+        .prefer_chacha20 = false,
     };
     tls.tlsInit(&g_session, &cfg);
 
