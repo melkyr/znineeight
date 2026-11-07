@@ -458,10 +458,6 @@ pub const Transport = struct {
     state: *void,
     read_fn: fn (*void, []u8) TransportError!usize,
     write_fn: fn (*void, []const u8) TransportError!usize,
-    // True while the transport still owns unflushed close output (TLS
-    // ciphertext); http2Close must not finalize while this or HTTP output is
-    // pending.
-    pending_fn: fn (*void) bool,
     close_fn: fn (*void) void,
 };
 
@@ -474,6 +470,8 @@ pub const Http2Config = struct {
 };
 
 pub const PumpStatus = enum(u8) { progress = 0, would_block = 1, closed = 2 };
+
+pub const CloseStatus = enum(u8) { closed = 0, pending = 1 };
 
 pub const StreamState = enum(u8) {
     idle = 0,
@@ -580,6 +578,9 @@ pub const Http2Conn = struct {
     close_pending: bool,
     peer_closed: bool,
     fd: net.Socket,
+    // Set only by http2OpenTls. The TLS adapter's close-pending state is
+    // tracked here, not in the public four-field Transport.
+    tls_io: ?*tls_io.TlsIo,
     settings_ack_count: u32,
     ping_ack_count: u32,
     goaway_count: u32,
@@ -736,6 +737,7 @@ pub fn http2OpenTransport(arena: *arena_mod.Arena, t: *const Transport, cfg: Htt
     c.close_pending = false;
     c.peer_closed = false;
     c.fd = INVALID_FD;
+    c.tls_io = null;
     c.settings_ack_count = 0;
     c.ping_ack_count = 0;
     c.goaway_count = 0;
@@ -1397,15 +1399,15 @@ fn dispatchData(c: *Http2Conn, f: *Frame) Http2Error!void {
     } else {
         if (st.body_written > st.body_out.len) {
             failBufferedTooLarge(c, st);
-            return error.TooLarge;
+            return;
         }
         if (body.len > st.body_out.len - st.body_written) {
             failBufferedTooLarge(c, st);
-            return error.TooLarge;
+            return;
         }
         if (st.body_written + body.len > MAX_BUFFERED_BODY) {
             failBufferedTooLarge(c, st);
-            return error.TooLarge;
+            return;
         }
         var k: usize = 0;
         while (k < body.len) : (k += 1) {
@@ -1687,28 +1689,47 @@ pub fn http2Release(c: *Http2Conn, stream_id: u32) Http2Error!void {
     st.id = 0;
 }
 
-// Flush HTTP output and the transport's own pending close output first. If
-// either would block, leave the connection open (close_called false) and set
-// close_pending; the caller retries after writability. This prevents marking a
-// half-closed connection finalized or leaking the socket through a
-// WouldBlock close flush.
-pub fn http2Close(c: *Http2Conn) void {
-    if (c.close_called) return;
-    var blocked: bool = false;
-    const flush_blocked: bool = flushOutput(c) catch false;
-    if (flush_blocked) blocked = true;
-    if (!blocked) {
-        if (c.transport.pending_fn(c.transport.state)) blocked = true;
-    }
-    if (blocked) {
-        c.close_pending = true;
-        return;
-    }
+fn reclaimStreams(c: *Http2Conn) void {
     var i: usize = 0;
     while (i < c.streams.len) : (i += 1) {
         c.streams[i].state = StreamState.idle;
         c.streams[i].id = 0;
     }
+}
+
+// Graceful, retryable close: flush HTTP output and honor the internal TLS
+// close-pending state. If either is pending, leave the connection open
+// (close_called false), set close_pending, and return `.pending`; the caller
+// retries on writability. This prevents a half-closed connection from being
+// marked finalized or leaking its socket through a WouldBlock close flush.
+pub fn http2Close(c: *Http2Conn) CloseStatus {
+    if (c.close_called) return CloseStatus.closed;
+    var blocked: bool = false;
+    const flush_blocked: bool = flushOutput(c) catch false;
+    if (flush_blocked) blocked = true;
+    if (!blocked) {
+        if (c.tls_io) |io| {
+            if (tls_io.tlsIoClosePending(io)) blocked = true;
+        }
+    }
+    if (blocked) {
+        c.close_pending = true;
+        return CloseStatus.pending;
+    }
+    reclaimStreams(c);
+    c.closed = true;
+    c.close_called = true;
+    c.close_pending = false;
+    c.transport.close_fn(c.transport.state);
+    return CloseStatus.closed;
+}
+
+// Unconditional teardown: one best-effort HTTP flush, then close the transport
+// exactly once and mark the connection closed. Unsent frames are dropped.
+pub fn http2CloseForce(c: *Http2Conn) void {
+    if (c.close_called) return;
+    _ = flushOutput(c) catch false;
+    reclaimStreams(c);
     c.closed = true;
     c.close_called = true;
     c.close_pending = false;
@@ -1781,11 +1802,6 @@ fn tlsTransportWrite(state: *void, data: []const u8) TransportError!usize {
     return n;
 }
 
-fn tlsTransportPending(state: *void) bool {
-    const io: *tls_io.TlsIo = @ptrCast(*tls_io.TlsIo, state);
-    return tls_io.tlsIoClosePending(io);
-}
-
 fn tlsTransportClose(state: *void) void {
     const io: *tls_io.TlsIo = @ptrCast(*tls_io.TlsIo, state);
     tls_io.tlsIoClose(io);
@@ -1797,12 +1813,12 @@ pub fn http2OpenTls(arena: *arena_mod.Arena, io: *tls_io.TlsIo, cfg: Http2Config
         .state = @ptrCast(*void, io),
         .read_fn = tlsTransportRead,
         .write_fn = tlsTransportWrite,
-        .pending_fn = tlsTransportPending,
         .close_fn = tlsTransportClose,
     };
     const tp = try allocTransportPtr(arena, t);
     const c = try http2OpenTransport(arena, tp, cfg);
     c.fd = io.sock;
+    c.tls_io = io;
     return c;
 }
 
@@ -1831,11 +1847,6 @@ fn tcpTransportWrite(state: *void, data: []const u8) TransportError!usize {
     return n;
 }
 
-fn tcpTransportPending(state: *void) bool {
-    _ = state;
-    return false;
-}
-
 fn tcpTransportClose(state: *void) void {
     const ts: *TcpState = @ptrCast(*TcpState, state);
     net.close(ts.sock);
@@ -1849,7 +1860,6 @@ pub fn http2OpenTcp(arena: *arena_mod.Arena, sock: net.Socket, cfg: Http2Config)
         .state = @ptrCast(*void, ts),
         .read_fn = tcpTransportRead,
         .write_fn = tcpTransportWrite,
-        .pending_fn = tcpTransportPending,
         .close_fn = tcpTransportClose,
     };
     const tp = try allocTransportPtr(arena, t);

@@ -206,14 +206,14 @@ pub const Transport = struct {
     state: *void,
     read_fn: fn (*void, []u8) TransportError!usize,
     write_fn: fn (*void, []const u8) TransportError!usize,
-    // True while the transport still owns unflushed close output (TLS
-    // ciphertext); http2Close must not finalize while this or HTTP output is
-    // pending.
-    pending_fn: fn (*void) bool,
     close_fn: fn (*void) void,
 };
 pub const TransportError = error{ WouldBlock, Closed, Io };
 ```
+
+The TLS adapter's close-pending state is tracked internally on `Http2Conn`
+(`tls_io`), not in the public `Transport` table, so external `Transport`
+literals keep the four-field shape.
 
 The table is non-suspending, so function-pointer dispatch is safe (no async
 propagation through a pointer). A suspending function address is rejected
@@ -252,7 +252,9 @@ pub fn http2Get(c: *Http2Conn, url: []const u8, out: *http.Response, id_out: *u3
 pub fn http2Post(c: *Http2Conn, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, out: *http.Response, id_out: *u32) Http2Error!void;
 pub fn http2GetStream(c: *Http2Conn, url: []const u8, headers: []const http.Header, sink: *http.ResponseSink, out_head: *http.Response, id_out: *u32) Http2Error!void;
 pub fn http2PostStream(c: *Http2Conn, url: []const u8, body_len: usize, content_type: []const u8, accept: []const u8, body: *http.RequestSource, sink: *http.ResponseSink, out_head: *http.Response, id_out: *u32) Http2Error!void;
-pub fn http2Close(c: *Http2Conn) void;              // retryable while pending
+pub const CloseStatus = enum(u8) { closed = 0, pending = 1 };
+pub fn http2Close(c: *Http2Conn) CloseStatus;     // graceful; retry on pending
+pub fn http2CloseForce(c: *Http2Conn) void;       // unconditional teardown; drops unsent output
 pub fn http2ClosePending(c: *const Http2Conn) bool; // true = call http2Close again
 pub fn http2Fd(c: *const Http2Conn) net.Socket;
 ```
@@ -291,16 +293,22 @@ closed/reset slot is not a free slot; only `idle` slots and explicitly released
 slots are reusable. `http2Wait` by id remains valid for the whole lease,
 including after protocol close/reset. `http2Release` is idempotent only in the
 sense that it returns `NoStream` for an unknown/already-released id; abandoned
-streams are reclaimed by `http2Close`. Callers must read `out.headers` before
-release.
+streams are reclaimed by `http2Close`/`http2CloseForce`. Callers must read
+`out.headers` before release.
 
-`http2Close` is **retryable**. It flushes HTTP output first; if that flush or
-the transport's `pending_fn` reports pending close output (for TLS, the
-`TlsIo.close_pending` ciphertext flush), it leaves `close_called` false, does
-not invoke `close_fn`, and sets `http2ClosePending` true. The caller waits for
-writability and calls `http2Close` again until `http2ClosePending` is false
-(usually one retry). A blocked close never leaks the socket or marks the
-connection finalized.
+`http2Close` is **graceful and retryable**. It flushes HTTP output first; if
+that flush or the `TlsIo.close_pending` ciphertext state (tracked internally on
+`Http2Conn`) still has pending output, it leaves `close_called` false, does not
+invoke `close_fn`, returns `.pending`, and sets `http2ClosePending` true. The
+caller waits for writability and calls `http2Close` again until it returns
+`.closed` (usually one retry). A blocked close never leaks the socket or marks
+the connection finalized.
+
+`http2CloseForce` is the unconditional teardown path: it makes one best-effort
+flush, then invokes `close_fn` exactly once and marks the connection closed. It
+explicitly drops unsent frames; callers use it when they will not retry a
+graceful close. `http2ClosePending` remains available for event loops that
+prefer polling to the status return.
 
 Buffered mode (`sink == null`) uses **caller-owned response storage**:
 `out.body` is the capacity buffer at submit time. The response body is copied
@@ -353,10 +361,12 @@ contract.
   fields); no stream-table scans.
 - Buffered response bodies are capped at 1 MiB and must fit the caller's
   `out.body` capacity; larger bodies use a sink. On a buffered `TooLarge`, the
-  stream fails and the connection receive credit for the rejected DATA is
-  returned immediately via WINDOW_UPDATE (no stranded connection window). The
-  stream stays leased until `http2Release`. Streaming mode neither reads nor
-  writes `out.body`.
+  stream fails with `FailReason.too_large`, the connection receive credit for
+  the rejected DATA is returned immediately via WINDOW_UPDATE, and **the pump
+  continues**: a stream-local capacity failure is not a connection-level pump
+  error. Low-level callers observe it via `http2Wait`/stream state; other
+  streams in the same pump continue. The stream stays leased until
+  `http2Release`. Streaming mode neither reads nor writes `out.body`.
 
 **Frames and settings**
 
@@ -475,8 +485,10 @@ the existing `std_http` HTTP/1.1 path. z9git never enables `alpn_h2`.
 - `std_net` anchor re-baseline: verified-delta dump diff, goldens 5/5 identical,
   frozen-1124 zero movers, 8 pins and markers re-recorded once, **at the Task 2
   commit** (gate never red; later path modules move nothing).
-- Seed v144 at closeout; lib count 59 (56 + `std_tls_io`, `std_hpack`,
-  `std_http2`); fixed point expected unchanged.
+- Seed v145 at closeout, rotated **after** the final fix wave; lib count 59
+  (56 + `std_tls_io`, `std_hpack`, `std_http2`); fixed point expected unchanged.
+  A seed rotated before a later std-source fix must be re-rotated, not shipped
+  stale.
 
 ## 9. Security and performance
 

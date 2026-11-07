@@ -459,7 +459,7 @@ fn openTlsIsNotHttp2(ar: *std.arena.Arena, cfg: h2.Http2Config) bool {
         if (e == error.NotHttp2) return true;
         return false;
     };
-    h2.http2Close(opened);
+    h2.http2CloseForce(opened);
     return false;
 }
 
@@ -569,7 +569,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         runError(url, "/rst", ErrKind.stream_reset, "rst");
     }
 
-    h2.http2Close(g_conn);
+    h2.http2CloseForce(g_conn);
     net.cleanup();
     os.exit(0);
 }

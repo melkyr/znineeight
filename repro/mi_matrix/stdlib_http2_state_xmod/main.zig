@@ -26,6 +26,7 @@
 const std = @import("std");
 const h2 = @import("std_http2.zig");
 const http = @import("std_http.zig");
+const tls_io = @import("std_tls_io.zig");
 
 const PREFACE_BYTES = [_]u8{
     'P', 'R', 'I', ' ', '*', ' ', 'H', 'T', 'T', 'P', '/', '2', '.', '0',
@@ -45,9 +46,9 @@ const Script = struct {
     stall_accepted: usize,
     stall_delivered: bool,
     close_called: bool,
+    close_count: u32,
     peer_eof: bool,
     block_writes: bool,
-    close_pending_flag: bool,
     dynamic: bool,
     dyn_kind: u8,
     cycles_ready: usize,
@@ -90,6 +91,7 @@ fn waitErrWorker(args: *WaitErrArgs) void {
 }
 
 var g_script: Script = undefined;
+var g_tio: tls_io.TlsIo = undefined;
 var g_headers: [1]http.Header = undefined;
 var g_out_headers: [1]http.Header = undefined;
 var g_out_body: [16000]u8 = undefined;
@@ -109,9 +111,9 @@ fn scriptReset(s: *Script) void {
     s.stall_accepted = 0;
     s.stall_delivered = false;
     s.close_called = false;
+    s.close_count = 0;
     s.peer_eof = false;
     s.block_writes = false;
-    s.close_pending_flag = false;
     s.dynamic = false;
     s.dyn_kind = 0;
     s.cycles_ready = 0;
@@ -189,11 +191,7 @@ fn scriptWrite(state: *void, data: []const u8) h2.TransportError!usize {
 fn scriptClose(state: *void) void {
     const s: *Script = @ptrCast(*Script, state);
     s.close_called = true;
-}
-
-fn scriptPending(state: *void) bool {
-    const s: *Script = @ptrCast(*Script, state);
-    return s.close_pending_flag;
+    s.close_count += 1;
 }
 
 fn makeTransport(s: *Script) h2.Transport {
@@ -201,7 +199,6 @@ fn makeTransport(s: *Script) h2.Transport {
         .state = @ptrCast(*void, s),
         .read_fn = scriptRead,
         .write_fn = scriptWrite,
-        .pending_fn = scriptPending,
         .close_fn = scriptClose,
     };
 }
@@ -536,7 +533,7 @@ fn scenarioBasic() void {
     printCounter("settings_ack=", c.settings_ack_count);
     printCounter("ping_ack=", c.ping_ack_count);
 
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioGoaway() void {
@@ -794,7 +791,7 @@ fn connWindowSmall() bool {
         windowIncrementSum(s.wbuf[0..s.wlen], 24, 0) == 0;
     h2.http2Release(c, id1) catch return false;
     h2.http2Release(c, id2) catch return false;
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
     return ok;
 }
 
@@ -845,7 +842,7 @@ fn connWindowLarge() bool {
     h2.http2Release(c, id2) catch return false;
     h2.http2Release(c, id3) catch return false;
     h2.http2Release(c, id4) catch return false;
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
     return ok;
 }
 
@@ -909,7 +906,7 @@ fn scenarioEarlyEnd() void {
     const resp_ok = out.status == 200 and out.body.len == 1 and out.body[0] == 'z';
     h2.http2Release(c, id) catch @panic("fixture: release early_end");
     printOk("early_end", state_ok and not_done and r.done and sent_ok and resp_ok);
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioStreamFull() void {
@@ -958,7 +955,7 @@ fn scenarioStreamFull() void {
         verifyDataBody(s.wbuf[0..s.wlen], 24, id2, g_src2_body[0..]);
 
     printOk("stream_full", consumed and body_ok and ss1.reads > 0 and ss2.reads > 0);
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn buildCycle(s: *Script, cycle: usize) void {
@@ -1091,7 +1088,7 @@ fn scenarioPeerEof() void {
         std.io.write("peer_eof=fail\n");
     }
     h2.http2Release(c, id) catch {};
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioLateFrames() void {
@@ -1166,7 +1163,7 @@ fn scenarioLateFrames() void {
         std.io.write("late_frames=fail\n");
     }
     h2.http2Release(c, id3) catch {};
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn headerRejected(block: []const u8) bool {
@@ -1184,18 +1181,18 @@ fn headerRejected(block: []const u8) bool {
     var out: http.Response = undefined;
     var r = makeRequest(&out);
     _ = h2.http2Submit(c, &r) catch {
-        h2.http2Close(c);
+        h2.http2CloseForce(c);
         return false;
     };
     var it: usize = 0;
     while (it < 400) : (it += 1) {
         _ = h2.http2Pump(c) catch |e| {
-            h2.http2Close(c);
+            h2.http2CloseForce(c);
             return e == error.Protocol or e == error.Corrupt;
         };
         if (r.failed) break;
     }
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
     return false;
 }
 
@@ -1239,7 +1236,7 @@ fn configAccepted(cfg: h2.Http2Config) bool {
     var ar = std.arena.init(backing[0..]);
     var t = makeTransport(s);
     var c = h2.http2OpenTransport(&ar, &t, cfg) catch return false;
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
     return true;
 }
 
@@ -1265,43 +1262,88 @@ fn scenarioConfig() void {
 
 fn scenarioClose() void {
     const s = &g_script;
+
+    // A. Graceful close: pending HTTP output defers; a writable retry closes
+    // exactly once and a third call stays idempotent.
     scriptReset(s);
     scriptBegin(s);
     emitSettingsEmpty(s);
     scriptEnd(s);
     s.block_writes = true;
-
-    var backing: [262144]u8 = undefined;
-    var ar = std.arena.init(backing[0..]);
-    var t = makeTransport(s);
-    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch {
-        std.io.write("close_pending=fail\n");
+    var backing1: [262144]u8 = undefined;
+    var ar1 = std.arena.init(backing1[0..]);
+    var t1 = makeTransport(s);
+    var c1 = h2.http2OpenTransport(&ar1, &t1, defaultConfig()) catch {
+        std.io.write("close_graceful=fail\n");
         return;
     };
-    var out: http.Response = undefined;
-    var r = makeRequest(&out);
-    _ = h2.http2Submit(c, &r) catch {
-        std.io.write("close_pending=fail\n");
+    var out1: http.Response = undefined;
+    var r1 = makeRequest(&out1);
+    _ = h2.http2Submit(c1, &r1) catch {
+        std.io.write("close_graceful=fail\n");
         return;
     };
-
-    // HTTP output (preface/SETTINGS/HEADERS) is pending: the close must not
-    // finalize or call the transport close.
-    h2.http2Close(c);
-    const first_pending = h2.http2ClosePending(c) and !s.close_called and !c.close_called;
-
-    // Output can now flush, but the transport reports its own pending close
-    // bytes (the TLS close_pending case): still not finalized.
+    const st1 = h2.http2Close(c1);
+    const graceful_pending = st1 == h2.CloseStatus.pending and h2.http2ClosePending(c1) and
+        s.close_count == 0 and !c1.close_called;
     s.block_writes = false;
-    s.close_pending_flag = true;
-    h2.http2Close(c);
-    const second_pending = h2.http2ClosePending(c) and !s.close_called;
+    const st2 = h2.http2Close(c1);
+    const graceful_closed = st2 == h2.CloseStatus.closed and s.close_count == 1 and
+        !h2.http2ClosePending(c1) and c1.close_called;
+    const st3 = h2.http2Close(c1);
+    const graceful_idem = st3 == h2.CloseStatus.closed and s.close_count == 1;
 
-    // Transport pending clears; the retry completes the close exactly once.
-    s.close_pending_flag = false;
-    h2.http2Close(c);
-    const done = s.close_called and !h2.http2ClosePending(c) and c.close_called;
-    printFlag("close_pending", first_pending and second_pending and done);
+    // B. TLS close-pending is tracked internally on Http2Conn (no public
+    // Transport field): it defers, then the retry closes exactly once.
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    scriptEnd(s);
+    var backing2: [262144]u8 = undefined;
+    var ar2 = std.arena.init(backing2[0..]);
+    var t2 = makeTransport(s);
+    var c2 = h2.http2OpenTransport(&ar2, &t2, defaultConfig()) catch {
+        std.io.write("close_tls=fail\n");
+        return;
+    };
+    g_tio.close_pending = true;
+    c2.tls_io = &g_tio;
+    const tt1 = h2.http2Close(c2);
+    const tls_pending = tt1 == h2.CloseStatus.pending and h2.http2ClosePending(c2) and
+        s.close_count == 0 and !c2.close_called;
+    g_tio.close_pending = false;
+    const tt2 = h2.http2Close(c2);
+    const tls_closed = tt2 == h2.CloseStatus.closed and s.close_count == 1 and
+        !h2.http2ClosePending(c2) and c2.close_called;
+
+    // C. Force: pending HTTP output is dropped, the transport is closed once,
+    // and repeated force calls do not close it again.
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    scriptEnd(s);
+    s.block_writes = true;
+    var backing3: [262144]u8 = undefined;
+    var ar3 = std.arena.init(backing3[0..]);
+    var t3 = makeTransport(s);
+    var c3 = h2.http2OpenTransport(&ar3, &t3, defaultConfig()) catch {
+        std.io.write("close_force=fail\n");
+        return;
+    };
+    var out3: http.Response = undefined;
+    var r3 = makeRequest(&out3);
+    _ = h2.http2Submit(c3, &r3) catch {
+        std.io.write("close_force=fail\n");
+        return;
+    };
+    h2.http2CloseForce(c3);
+    const force_ok = s.close_count == 1 and !h2.http2ClosePending(c3) and c3.close_called and c3.closed;
+    h2.http2CloseForce(c3);
+    const force_idem = s.close_count == 1;
+
+    printFlag("close_graceful", graceful_pending and graceful_closed and graceful_idem);
+    printFlag("close_tls", tls_pending and tls_closed);
+    printFlag("close_force", force_ok and force_idem);
 }
 
 fn scenarioWait() void {
@@ -1343,7 +1385,7 @@ fn scenarioWait() void {
     }
     if (!ok or !r.done) @panic("fixture: http2Wait did not complete");
     h2.http2Release(c, id) catch @panic("fixture: release wait");
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 pub fn main() void {

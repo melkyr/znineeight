@@ -35,7 +35,8 @@
   HPACK encoding is literal-only.
 - Buffered response bodies are capped at 1 MiB; larger bodies use `ResponseSink`.
 - Header/frame/window/stream limits are checked before allocation; size math uses `u64` and rejects `> 0xFFFFFFFF`.
-- Seed only at Task 9b. `std_net` is barrel-exported; its 8-pin/marker
+- Seed only at Task 9b **after** any final std-source fix; a seed rotated before
+  a later fix is re-rotated, never shipped stale. `std_net` is barrel-exported; its 8-pin/marker
   re-baseline lands **immediately at the Task 2 commit** (fold-era
   verified-delta); later path modules move no pins.
 - Server-dependent fixtures pin an argless usage golden (`expected.txt` usage
@@ -268,9 +269,9 @@ Run `bash scripts/stdlib/run_fixtures.sh "$ZIG1" repro/mi_matrix/stdlib_http2_fr
 **Interfaces:**
 - Consumes: Task 4 HPACK; Task 5 frames/settings.
 - Produces:
-  - `pub const Transport = struct { state: *void, read_fn: fn (*void, []u8) TransportError!usize, write_fn: fn (*void, []const u8) TransportError!usize, pending_fn: fn (*void) bool, close_fn: fn (*void) void };`
+  - `pub const Transport = struct { state: *void, read_fn: fn (*void, []u8) TransportError!usize, write_fn: fn (*void, []const u8) TransportError!usize, close_fn: fn (*void) void };` (four fields; TLS close-pending is tracked internally on `Http2Conn`)
   - `pub const Http2Config`, `Http2Request`, `PumpStatus`, `Http2Conn` as in the spec.
-  - `http2OpenTransport`, `http2Submit`, `http2Pump`, `http2Wait`, `http2Release`, `http2Close`, `http2ClosePending`.
+  - `http2OpenTransport`, `http2Submit`, `http2Pump`, `http2Wait`, `http2Release`, `http2Close` (`CloseStatus`), `http2CloseForce`, `http2ClosePending`.
 
 - [ ] **Step 1: Write the failing state fixture**
 Use a scripted `Transport` in the fixture: it returns the server preface/SETTINGS, then a HEADERS block and DATA for one stream. Submit two requests; pump; assert `:status`, body, stream ids, flow-control windows, SETTINGS ACK, and PING ACK. Add a scripted GOAWAY and an RST case; a partial write (`WouldBlock` mid-frame) resumed across pumps with no lost output; a zero-increment WINDOW_UPDATE → `error.Protocol`; a mid-stream `SETTINGS_INITIAL_WINDOW_SIZE` change with signed window delta; and a many-stream run asserting bounded arena growth (peak stays under a fixed cap after 100 submit/complete cycles).
@@ -300,7 +301,7 @@ Run `bash scripts/stdlib/run_fixtures.sh "$ZIG1" repro/mi_matrix/stdlib_http2_st
   - `http2OpenTls`, `http2OpenTcp`, `http2Fd`, `http2Get`, `http2Post`, `http2GetStream`, `http2PostStream`, `http2Release`.
   - Convenience functions are `Http2Error!void` with a trailing `id_out: *u32`; they submit, wait internally via `http2Wait`, write the stream id, and do not release. Callers read headers/body then `http2Release`.
   - `http2OpenTls` returns `error.NotHttp2` unless `tlsAlpnSelected(io.sess) == .h2`.
-  - Buffered bodies are capped at 1 MiB and copied into the caller's **`out.body` capacity**; `TooLarge` if it does not fit. Headers remain valid until release. `sink`/`body_source` use the existing `std_http` types.
+  - Buffered bodies are capped at 1 MiB and copied into the caller's **`out.body` capacity**; `TooLarge` if it does not fit. `TooLarge` is stream-local: `http2Pump` continues, `http2Wait` returns `error.TooLarge`, and other streams keep running. Headers remain valid until release. `sink`/`body_source` use the existing `std_http` types.
 
 - [ ] **Step 1: Write the failing body fixture**
 Use the scripted transport to test: buffered GET, buffered POST, streaming response sink, streaming request source, body > 1 MiB rejection for buffered mode, body-too-small rejection, one stream's sink error not corrupting another, and a slow sink (short `write_fn` accepts) on one stream while a second stream completes — assert deferred WINDOW_UPDATE on the slow stream and no stall on the other. For each buffered request, set `out.body` to a caller buffer, `http2Wait`, read headers/body, then `http2Release`; assert the stream is `NoStream` after release and the slot is reusable. Print `body=<...>`, `sink=<n>`, `source=<n>`, `large=too_large`, `small_buf=too_large`, `release=1`, `slow_ok=1`. The h2 test configs set `prefer_chacha20 = true` (Suite order is exercised in Task 1; here it only rides along).
@@ -368,7 +369,7 @@ If the battery run required no test/source edits, make no empty commit; record t
 
 ---
 
-### Task 9b: Seed v144
+### Task 9b: Seed v145
 
 **Files:**
 - Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (copy lists: `std_tls_io.zig`, `std_hpack.zig`, `std_http2.zig`; counts 56 -> 59; header comments, `SEED_README.txt` heredoc strings at `archive_seed.sh:378,395,493`, `build_from_seed.sh:24,146`).
@@ -376,13 +377,13 @@ If the battery run required no test/source edits, make no empty commit; record t
 
 **Interfaces:**
 - Consumes: Task 9a green battery.
-- Produces: seed v144.
+- Produces: seed v145.
 
-- [ ] **Step 1: Rotate seed v144**
+- [ ] **Step 1: Rotate seed v145**
 Add the three new modules to the copy lists and update every 56 -> 59 string. Run `archive_seed.sh` and the two-hop `build_from_seed.sh` closure. Expected: hop1 == hop2; fixed point unchanged (compiler does not import the new modules); lib 59; archive/zip/manifest md5 recorded.
 - [ ] **Step 2: Commit**
 `git add scripts/seed release/seed docs/sf/QUICK_REF.md`
-`git commit -m "chore(seed): rotate v144 (phase 3.3 HTTP/2)"`
+`git commit -m "chore(seed): rotate v145 (phase 3.3 HTTP/2)"`
 
 ---
 
@@ -433,11 +434,19 @@ Hand the branch back. Do not merge/push unless the operator asks. z9git remains 
 
 The final review found `http2Close` could not honor `TlsIo.close_pending`: a
 flush that would block left the socket open after the connection marked itself
-closed. The fix adds a transport `pending_fn` hook and a public
-`http2ClosePending(c) bool`; `http2Close` becomes retryable and does not mark
-`close_called`/invoke `close_fn` while HTTP or transport output is pending. This
-is an intentional public-surface addition (spec §7.2 updated) because a void
-close with no observable pending state cannot be safely retried.
+closed. The fix is **CloseStatus + force**, not a required `Transport` field:
+
+- `Transport` keeps its four public fields; TLS close-pending is tracked
+  internally on `Http2Conn` (`tls_io`), set by `http2OpenTls`.
+- `http2Close(c) CloseStatus` is graceful/retryable: `.pending` leaves the
+  socket open and `close_called` false; the caller retries on writability.
+- `http2CloseForce(c) void` is unconditional teardown: one best-effort flush,
+  close exactly once, drops unsent frames.
+- `http2ClosePending(c) bool` remains for event loops.
+- `TooLarge` is stream-local: `http2Pump` continues; `http2Wait` returns
+  `error.TooLarge`.
+- Seed v144 rotated before this wave is stale; rotate **v145** from the final
+  HEAD and rerun the full battery.
 
 ---
 

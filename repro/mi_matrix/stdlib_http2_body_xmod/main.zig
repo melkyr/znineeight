@@ -245,17 +245,11 @@ fn scriptClose(state: *void) void {
     s.close_called = true;
 }
 
-fn scriptPending(state: *void) bool {
-    _ = state;
-    return false;
-}
-
 fn makeTransport(s: *Script) h2.Transport {
     return h2.Transport{
         .state = @ptrCast(*void, s),
         .read_fn = scriptRead,
         .write_fn = scriptWrite,
-        .pending_fn = scriptPending,
         .close_fn = scriptClose,
     };
 }
@@ -688,7 +682,7 @@ fn scenarioBody() void {
     const id5 = h2.http2Submit(c, &r3) catch @panic("body: slot not reusable");
     if (id5 != 5) @panic("body: reuse id");
     std.io.write("release=1\n");
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioSink() void {
@@ -764,7 +758,7 @@ fn scenarioSink() void {
     std.io.printInt(@intCast(i32, ss.len));
     std.io.writeByte('\n');
     printFlag("stream_body_kept", stream_body_kept);
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioSource() void {
@@ -832,7 +826,7 @@ fn scenarioSource() void {
     std.io.write("source=");
     std.io.printInt(@intCast(i32, src_state.pos));
     std.io.writeByte('\n');
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioLarge() void {
@@ -858,18 +852,18 @@ fn scenarioLarge() void {
     out.body = g_large_out_buf[0..];
     _ = h2.http2Submit(c, &r) catch @panic("large: submit");
 
-    var too_large: bool = false;
+    var pump_ok: bool = true;
     var it: usize = 0;
     while (it < 200000) : (it += 1) {
-        _ = h2.http2Pump(c) catch |e| {
-            if (e == error.TooLarge) too_large = true;
+        _ = h2.http2Pump(c) catch {
+            pump_ok = false;
             break;
         };
         if (r.done or r.failed) break;
     }
-    if (!too_large) @panic("large: not rejected");
+    if (!pump_ok or !r.failed) @panic("large: not rejected");
     std.io.write("large=too_large\n");
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioSmallBuf() void {
@@ -890,18 +884,18 @@ fn scenarioSmallBuf() void {
     out.body = g_small_out_buf[0..];
     _ = h2.http2Submit(c, &r) catch @panic("small: submit");
 
-    var too_large: bool = false;
+    var pump_ok: bool = true;
     var it: usize = 0;
     while (it < 4000) : (it += 1) {
-        _ = h2.http2Pump(c) catch |e| {
-            if (e == error.TooLarge) too_large = true;
+        _ = h2.http2Pump(c) catch {
+            pump_ok = false;
             break;
         };
         if (r.done or r.failed) break;
     }
-    if (!too_large) @panic("small: not rejected");
+    if (!pump_ok or !r.failed) @panic("small: not rejected");
     std.io.write("small_buf=too_large\n");
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioTooLargeFlush() void {
@@ -916,6 +910,7 @@ fn scenarioTooLargeFlush() void {
     var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch @panic("too_large_flush: open");
 
     var got1: bool = false;
+    var pump_ok1: bool = true;
     var out1: http.Response = undefined;
     var r1 = makeGet(&out1);
     out1.body = g_rej_out_buf[0..];
@@ -923,18 +918,20 @@ fn scenarioTooLargeFlush() void {
     s.cycles_ready = 1;
     var it: usize = 0;
     while (it < 4000) : (it += 1) {
-        _ = h2.http2Pump(c) catch |e| {
-            if (e == error.TooLarge) got1 = true;
+        _ = h2.http2Pump(c) catch {
+            pump_ok1 = false;
             break;
         };
         if (r1.done or r1.failed) break;
     }
+    got1 = pump_ok1 and r1.failed;
     h2.http2Release(c, id1) catch {
         got1 = false;
     };
     const credit1: bool = (c.conn_recv_pending == 0 and c.conn_recv_window == 65535);
 
     var got2: bool = false;
+    var pump_ok2: bool = true;
     var out2: http.Response = undefined;
     var r2 = makeGet(&out2);
     out2.body = g_rej_out_buf[0..];
@@ -942,12 +939,13 @@ fn scenarioTooLargeFlush() void {
     s.cycles_ready = 2;
     it = 0;
     while (it < 4000) : (it += 1) {
-        _ = h2.http2Pump(c) catch |e| {
-            if (e == error.TooLarge) got2 = true;
+        _ = h2.http2Pump(c) catch {
+            pump_ok2 = false;
             break;
         };
         if (r2.done or r2.failed) break;
     }
+    got2 = pump_ok2 and r2.failed;
     h2.http2Release(c, id2) catch {
         got2 = false;
     };
@@ -970,7 +968,7 @@ fn scenarioTooLargeFlush() void {
     };
 
     printFlag("too_large_flush", got1 and got2 and credit1 and credit2 and normal_ok);
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioSinkError() void {
@@ -1009,7 +1007,7 @@ fn scenarioSinkError() void {
     if (!containsBytes(out2.body, "good")) @panic("error: good body corrupted");
     h2.http2Release(c, id1) catch @panic("error: release failed stream");
     h2.http2Release(c, id2) catch @panic("error: release good stream");
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioFailIdRelease() void {
@@ -1063,7 +1061,7 @@ fn scenarioFailIdRelease() void {
         if (id3 != 3) good = false;
     }
     printFlag("fail_id_release", good);
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioSourceError() void {
@@ -1142,7 +1140,7 @@ fn scenarioSourceError() void {
     }
     h2.http2Release(c, id1) catch {};
     h2.http2Release(c, id2) catch {};
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn scenarioTooLargeApi() void {
@@ -1182,7 +1180,62 @@ fn scenarioTooLargeApi() void {
         std.io.write("too_large_api=fail\n");
     }
     h2.http2Release(c, wa.id) catch {};
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
+}
+
+fn scenarioTooLargeIsolated() void {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    emitStatus(s, 1);
+    emitData(s, 1, 0x1, "12345678");
+    emitStatus(s, 3);
+    emitData(s, 3, 0x1, "ok");
+    scriptEnd(s);
+
+    var ar = std.arena.init(g_arena_backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch @panic("too_large_isolated: open");
+
+    var out1: http.Response = undefined;
+    var out2: http.Response = undefined;
+    var r1 = makeGet(&out1);
+    var r2 = makeGet(&out2);
+    out1.body = g_small_out_buf[0..];
+    out2.body = g_good_out_buf[0..];
+    const id1 = h2.http2Submit(c, &r1) catch @panic("too_large_isolated: submit1");
+    const id2 = h2.http2Submit(c, &r2) catch @panic("too_large_isolated: submit2");
+
+    var wa = WaitErrArgs{ .c = c, .id = id1, .err = 0, .done = false };
+    var cbuf: [32768]u8 = undefined;
+    var fbuf: [8192]u8 = undefined;
+    var ctx = initContext(cbuf[0..]);
+    var wp: *WaitErrArgs = &wa;
+    var args_ptr: *const void = @ptrCast(*const void, &wp);
+    var f: *void = @asyncInit(ctx, &fbuf, waitErrWorker, args_ptr);
+    var more: ?*void = @asyncResume(f, null);
+
+    var pump_ok: bool = true;
+    var it: usize = 0;
+    while ((more != null or !r2.done) and it < 8000) : (it += 1) {
+        _ = h2.http2Pump(c) catch {
+            pump_ok = false;
+            break;
+        };
+        more = @asyncResume(f, null);
+    }
+
+    const ok = pump_ok and (more == null) and wa.err == 3 and r1.failed and
+        r2.done and out2.status == 200 and containsBytes(out2.body, "ok");
+    if (ok) {
+        std.io.write("too_large_isolated=1\n");
+    } else {
+        std.io.write("too_large_isolated=0\n");
+    }
+    h2.http2Release(c, id1) catch {};
+    h2.http2Release(c, id2) catch {};
+    h2.http2CloseForce(c);
 }
 
 fn scenarioSlow() void {
@@ -1238,7 +1291,7 @@ fn scenarioSlow() void {
 
     h2.http2Release(c, id2) catch @panic("slow: release second stream");
     std.io.write("slow_ok=1\n");
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 fn printFlag(label: []const u8, ok: bool) void {
@@ -1323,7 +1376,7 @@ fn scenarioArenaCycles() void {
     if (more != null or ca.ok != 1) @panic("cycles: worker failed");
     const stable: bool = (ca.used2 > 0 and ca.final_used == ca.used2 and ca.peak <= ca.used2);
     printFlag("arena_ok", stable);
-    h2.http2Close(c);
+    h2.http2CloseForce(c);
 }
 
 pub fn main() void {
@@ -1342,6 +1395,7 @@ pub fn main() void {
     scenarioFailIdRelease();
     scenarioSourceError();
     scenarioTooLargeApi();
+    scenarioTooLargeIsolated();
     scenarioSlow();
     scenarioArenaCycles();
 }

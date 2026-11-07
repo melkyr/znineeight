@@ -487,7 +487,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         runError(url, "/rst", ErrKind.stream_reset, "rst");
     }
 
-    h2.http2Close(g_conn);
+    h2.http2CloseForce(g_conn);
     net.cleanup();
     os.exit(0);
 }
