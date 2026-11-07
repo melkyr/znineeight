@@ -61,6 +61,16 @@ decommit-failure fix adds `PAGE_POISONED`/`NO_SKIP`, `unlinkMediumChunk`, the
 includes the `std_gpa` module C, all four programs' 8-pin hashes move. The
 v143 fixed point is unchanged, confirming the compiler source did not move.
 
+Phase 3.3 Task 2 marker re-baseline (2026-11-07, fold-era verified-delta):
+markers (`--markers --dump-c89` on `mud_server`, v143 compiler+lib baseline
+**4245 lines / 49192 B**) **4281 lines / 49573 B**, delta **+36 lines /
++381 B**. Cause attribution (ruling A): the two new suspending `std_net`
+helpers (`sendAllAsync`/`recvSomeAsync`) add type/function interning
+(DC +7, FE +7, FWD +2, INT +16, P0 +2; IRP count stays 69 but declaration
+ordering and `n` ids shift) plus one `arena import_scratch` growth value
+change (`25917` -> `27191`). The compiler binary/source is unchanged; the
+8 pins below are the same-commit re-baseline.
+
 The v142 rotation battery was re-measured **once** after the barrel exports
 (fold-era accounting): markers (`--markers --dump-c89` on `mud_server`)
 **4232 lines / 49084 B** (v142 record; canonical re-measurement of the v142
@@ -774,20 +784,31 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (2026-11-07 — v143 authorized second re-baseline, `std_gpa`
-medium-decommit-failure fix).** Measured with the v143-produced compiler
-(`build_from_seed.sh` from the committed archive) from the repo root with
-relative entry paths:
+**8-pin table (2026-11-07 — Phase 3.3 Task 2 `std_net` coroutine-helper
+re-baseline).** Measured with the v143-produced compiler (`build_from_seed.sh`
+from the committed archive) from the repo root with relative entry paths:
 `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`.
 
-**All 8 moved a second time**, by authorization: the `std_gpa` fix adds
-`PAGE_POISONED`/`NO_SKIP`, `unlinkMediumChunk`, the `findFit` skip argument and
-the retry/poison logic, and `--dump-c89` includes the `std_gpa` module C. The
-compiler source is unchanged (v143 fixed point == v142), so this is a std-payload
-declaration/interning effect, not a compiler-behavior change. Only targeted GPA
-fixtures + the emission gate were re-run (operator ruling; no full battery).
-Previous values are the historical tables below. The absolute pin values are
+**All 8 moved** by the verified-delta re-baseline: `std_net` is barrel-exported
+by `std.zig`, and the two new suspending helpers (`sendAllAsync`/
+`recvSomeAsync`) add their step-machine code plus type-identifier interning;
+`--dump-c89` includes the `std_net` module C. The compiler source is unchanged
+(v143 fixed point), so this is a std-payload declaration/interning effect, not
+a compiler-behavior change. Every non-step dump hunk is a type-ID rename or a
+new step-function prototype; goldens 5/5 byte-identical, frozen-1124 md5
+unchanged, and the live corpus moved only by the new fixture dir. Previous
+values are the historical tables below. The absolute pin values are
 **compiler-build dependent**, so only same-build comparisons are meaningful.
+
+| Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
+|---|---|---|
+| `examples/z98/mud_server/main.zig` | `3ccd5941c64b76f745d7106894b07740` | `bec9b6ba6d4c05c9bbdd1c99aff55416` |
+| `examples/z98/game_of_life/main.zig` | `3b1f65e5cd3eaeec51db6f353f9cb07e` | `8f4f5c1293e719023b6d4d8855404cd9` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `14256edf3082525b7977742a4c250143` | `9c609ee3007f4112ef67d1d05067a707` |
+| `examples/z98/json_parser/main.zig` | `4428efad03a82a7f09a2b362f0afdf3a` | `31b00de8f3bea1c33d43645f6e4f9492` |
+
+Historical 8-pin table (2026-11-07, v143 authorized second re-baseline,
+`std_gpa` medium-decommit-failure fix; superseded above):
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|

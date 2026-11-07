@@ -454,6 +454,45 @@ pub fn sendNonBlocking(s: *Socket, buf: []const u8) NetError!usize {
     return @intCast(usize, rc);
 }
 
+// --- Coroutine transfer helpers (Phase 3.3 Task 2) --------------------------
+//
+// Same Model C contract as the non-blocking wrappers, but the caller is a
+// suspending function run under std.async: on WouldBlock this yields via
+// `@asyncSuspend(null)` and retries on the next scheduler tick instead of
+// returning the error. `sendAllAsync` advances its offset only after a
+// positive send count (a 0 count is a hard Io failure); `recvSomeAsync`
+// returns a single successful chunk and propagates 0 (peer EOF) verbatim.
+
+pub fn sendAllAsync(s: *Socket, data: []const u8) NetError!void {
+    var sent: usize = 0;
+    while (sent < data.len) {
+        const r = sendNonBlocking(s, data[sent..]) catch |e| {
+            if (e == error.WouldBlock) {
+                _ = @asyncSuspend(null);
+                continue;
+            }
+            return e;
+        };
+        if (r == 0) return error.Io;
+        sent += r;
+    }
+    return;
+}
+
+pub fn recvSomeAsync(s: *Socket, buf: []u8) NetError!usize {
+    while (true) {
+        const r = recvNonBlocking(s, buf) catch |e| {
+            if (e == error.WouldBlock) {
+                _ = @asyncSuspend(null);
+                continue;
+            }
+            return e;
+        };
+        return r;
+    }
+    return 0;
+}
+
 pub fn fdZero(s: *u8) void {
     if (@isWindows()) {
         var fs = @ptrCast(*fd_set, s);
