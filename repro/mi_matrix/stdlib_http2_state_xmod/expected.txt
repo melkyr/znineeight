@@ -23,4 +23,5 @@ close_graceful=1
 close_tls=1
 close_force=1
 close_force_tls=1
+close_writable_tls=1
 arena_ok=1

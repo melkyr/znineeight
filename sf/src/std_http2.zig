@@ -1732,13 +1732,17 @@ pub fn http2Close(c: *Http2Conn) CloseStatus {
     var blocked: bool = false;
     const flush_blocked: bool = flushOutput(c) catch false;
     if (flush_blocked) blocked = true;
-    if (!blocked) {
-        if (c.tls_io) |io| {
-            // A write pump can return success with ciphertext still queued
-            // (out_off < out_len) while close_pending is false. Never finalize
-            // that state: the caller drains it (pump) and retries.
-            if (tls_io.tlsIoPending(io) or tls_io.tlsIoClosePending(io)) blocked = true;
+    if (c.tls_io) |io| {
+        // A write pump can return success with ciphertext still queued
+        // (out_off < out_len) while close_pending is false. Make one
+        // nonblocking flush attempt per http2Close call (empty slice) so a
+        // writable socket completes the graceful close without caller help.
+        if (tls_io.tlsIoPending(io) or tls_io.tlsIoClosePending(io)) {
+            _ = tls_io.tlsIoWritePump(io, c.empty_bytes[0..0]) catch false;
         }
+        // A deferred close is retried by close_fn below only after the queued
+        // ciphertext has actually drained.
+        if (tls_io.tlsIoPending(io) or tls_io.tlsIoClosePending(io)) blocked = true;
     }
     if (blocked) {
         c.close_pending = true;

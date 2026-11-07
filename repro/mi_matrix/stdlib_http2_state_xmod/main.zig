@@ -28,6 +28,9 @@ const h2 = @import("std_http2.zig");
 const http = @import("std_http.zig");
 const tls_io = @import("std_tls_io.zig");
 const file_mod = @import("std_file.zig");
+const net = @import("std_net.zig");
+
+extern fn socketpair(domain: i32, typ: i32, protocol: i32, sv: [*]i32) i32;
 
 const PREFACE_BYTES = [_]u8{
     'P', 'R', 'I', ' ', '*', ' ', 'H', 'T', 'T', 'P', '/', '2', '.', '0',
@@ -204,6 +207,19 @@ fn makeTransport(s: *Script) h2.Transport {
         .write_fn = scriptWrite,
         .close_fn = scriptClose,
     };
+}
+
+// Transport whose close hook closes the synthetic TLS driver (used to model
+// the real TLS adapter's close_fn while keeping scripted HTTP I/O).
+fn tlsProbeClose(state: *void) void {
+    _ = state;
+    tls_io.tlsIoClose(&g_tio);
+}
+
+fn makeTlsTransport(s: *Script) h2.Transport {
+    var t = makeTransport(s);
+    t.close_fn = tlsProbeClose;
+    return t;
 }
 
 fn emitSettingsEmpty(s: *Script) void {
@@ -1345,17 +1361,21 @@ fn scenarioClose() void {
         return;
     };
     g_tio.sock = -1;
-    g_tio.out_len = 0;
+    g_tio.out[0] = 'a';
+    g_tio.out[1] = 'b';
+    g_tio.out_len = 2;
     g_tio.out_off = 0;
-    g_tio.established = false;
+    g_tio.established = true;
     g_tio.closed = false;
     g_tio.sock_closed = false;
-    g_tio.close_pending = true;
+    g_tio.close_pending = false;
     c2.tls_io = &g_tio;
     const tt1 = h2.http2Close(c2);
     const tls_pending = tt1 == h2.CloseStatus.pending and h2.http2ClosePending(c2) and
         s.close_count == 0 and !c2.close_called;
-    g_tio.close_pending = false;
+    // Simulate the caller-driven drain (the synthetic fd send fails above).
+    g_tio.out_len = 0;
+    g_tio.out_off = 0;
     const tt2 = h2.http2Close(c2);
     const tls_closed = tt2 == h2.CloseStatus.closed and s.close_count == 1 and
         !h2.http2ClosePending(c2) and c2.close_called;
@@ -1453,10 +1473,50 @@ fn scenarioClose() void {
     const tls_force_idem = g_tio.sock_closed and !tls_io.tlsIoClosePending(&g_tio) and
         !tls_io.tlsIoPending(&g_tio) and c4.close_called;
 
+    // E. Graceful close with queued ciphertext on a writable socket: one
+    // http2Close call flushes it via tlsIoWritePump and closes with no caller
+    // flush, proving the queued-ciphertext path makes progress by itself.
+    var writable_tls_ok: bool = false;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    scriptEnd(s);
+    var backing5: [262144]u8 = undefined;
+    var ar5 = std.arena.init(backing5[0..]);
+    var t5 = makeTlsTransport(s);
+    var c5 = h2.http2OpenTransport(&ar5, &t5, defaultConfig()) catch {
+        std.io.write("close_writable_tls=0\n");
+        return;
+    };
+    var svp: [2]i32 = undefined;
+    if (socketpair(1, 1, 0, &svp[0]) == 0) {
+        net.setNonBlocking(&svp[1]) catch {};
+        g_tio.sock = svp[0];
+        g_tio.out[0] = 'x';
+        g_tio.out[1] = 'y';
+        g_tio.out_len = 2;
+        g_tio.out_off = 0;
+        g_tio.established = true;
+        g_tio.closed = false;
+        g_tio.sock_closed = false;
+        g_tio.close_pending = false;
+        c5.tls_io = &g_tio;
+        const st5 = h2.http2Close(c5);
+        var rb: [4]u8 = undefined;
+        const rn = net.recvNonBlocking(&svp[1], rb[0..]) catch 0;
+        const got_bytes = rn == 2 and rb[0] == 'x' and rb[1] == 'y';
+        net.close(svp[1]);
+        writable_tls_ok = st5 == h2.CloseStatus.closed and got_bytes and
+            g_tio.sock_closed and !tls_io.tlsIoPending(&g_tio) and
+            !tls_io.tlsIoClosePending(&g_tio) and c5.close_called and
+            !h2.http2ClosePending(c5);
+    }
+
     printFlag("close_graceful", graceful_pending and graceful_closed and graceful_idem);
     printFlag("close_tls", tls_pending and tls_closed);
     printFlag("close_force", force_ok and force_idem);
     printFlag("close_force_tls", tls_force_grace and tls_forced and tls_force_idem);
+    printFlag("close_writable_tls", writable_tls_ok);
 }
 
 fn scenarioWait() void {

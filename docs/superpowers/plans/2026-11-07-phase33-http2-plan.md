@@ -448,8 +448,10 @@ closed. The fix is **CloseStatus + force**, not a required `Transport` field:
 - `TooLarge` is stream-local: `http2Pump` continues; `http2Wait` returns
   `error.TooLarge`.
 - Graceful close also checks `tlsIoPending` (queued ciphertext) and
-  `tlsIoClosePending`; it never finalizes until the TLS fd is actually closed,
-  and re-checks after `close_fn` in case the close deferred.
+  `tlsIoClosePending`; it drives one nonblocking `tlsIoWritePump(io, empty)`
+  when ciphertext is queued, never finalizes until the TLS fd is actually
+  closed, and re-checks after `close_fn` in case the close deferred. Repeated
+  `http2Close` therefore makes progress without the caller touching `TlsIo`.
 - Malformed response header semantics are stream-local (RFC 7540 §8.1.2.6):
   RST that stream, keep the pump running, and `http2Wait` returns
   `error.Protocol`; HPACK `Corrupt` stays connection-level.

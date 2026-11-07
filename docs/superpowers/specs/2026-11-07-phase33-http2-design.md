@@ -305,15 +305,16 @@ streams are reclaimed by `http2Close`/`http2CloseForce`. Callers must read
 `out.headers` before release.
 
 `http2Close` is **graceful and retryable**. It flushes HTTP output first; if
-that flush still has pending output, or the TLS driver has queued ciphertext
-(`tlsIoPending`) or a deferred close (`tlsIoClosePending`) tracked internally on
-`Http2Conn`, it leaves `close_called` false, does not invoke `close_fn`, returns
-`.pending`, and sets `http2ClosePending` true. The caller drains the transport
-(pump/readiness) and calls `http2Close` again until it returns `.closed`
-(usually one retry). After invoking `close_fn` it re-checks the TLS pending
-state; if the close deferred, it again returns `.pending` without marking the
-connection finalized. A blocked close never leaks the socket or marks the
-connection finalized.
+queued TLS ciphertext remains (`tlsIoPending`), it drives one nonblocking
+`tlsIoWritePump(io, empty)` to flush it. If that flush still has pending output,
+or the TLS driver has a deferred close (`tlsIoClosePending`) tracked internally
+on `Http2Conn`, it leaves `close_called` false, does not invoke `close_fn`,
+returns `.pending`, and sets `http2ClosePending` true. The caller waits for
+writability and calls `http2Close` again until it returns `.closed` (usually one
+retry); repeated graceful close itself makes progress on queued TLS ciphertext.
+After invoking `close_fn` it re-checks the TLS pending state; if the close
+deferred, it again returns `.pending` without marking the connection finalized.
+A blocked close never leaks the socket or marks the connection finalized.
 
 `http2CloseForce` is the unconditional teardown path: it makes one best-effort
 flush, then closes exactly once and marks the connection closed. On the TLS
