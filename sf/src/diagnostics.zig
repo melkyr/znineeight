@@ -285,6 +285,12 @@ pub const ErrorCode = enum(u16) {
     // value, not storage) or an array value that lowering would copy. The item
     // is not registered; the optional index capture is still registered.
     ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED = 3078,
+    // Task 7 (Phase 3.1): use-after-free of a same-block allocation. A free
+    // followed by a dereference/index/field use of the same identifier is
+    // reported; a bare pointer copy is not a use. Explicit `= 3079` at the
+    // enum tail keeps every earlier auto-increment member (notably bare
+    // `ERR_2005_DOUBLE_FREE`, real value 3035) and the explicit 3045 stable.
+    ERR_2006_USE_AFTER_FREE = 3079,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

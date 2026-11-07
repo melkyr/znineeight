@@ -48,6 +48,9 @@ pub const AllocState = enum(u8) {
     returned_val = 3,
     transferred = 4,
     unknown = 5,
+    // Same-block use after free already reported: the name stays freed for
+    // double-free purposes but a later use does not emit a second ERR_2006.
+    freed_reported = 6,
 };
 
 fn identNameId(store: *AstStore, node_idx: u32) u32 {
@@ -219,14 +222,27 @@ pub fn checkReturnProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: 
     }
 }
 
+// Final callee identifier for both call shapes: a bare `ident_expr`
+// (`gpaAlloc(g, n, a)`) and a module-qualified member call (`gpa.gpaAlloc(...)`)
+// whose callee is a `field_access` carrying the final name id in its payload.
+fn calleeFinalNameId(ctx: *AnalyzerContext, callee_idx: u32) ?u32 {
+    if (callee_idx == @intCast(u32, 0)) return null;
+    var callee = ast_mod.astStoreNodeAt(ctx.store, callee_idx);
+    if (callee.kind == AstKind.ident_expr) return identNameId(ctx.store, callee_idx);
+    if (callee.kind == AstKind.field_access) {
+        var final_id = ast_mod.astStoreNodePayload(ctx.store, callee_idx);
+        if (final_id == @intCast(u32, 0)) return null;
+        return final_id;
+    }
+    return null;
+}
+
 pub fn isAllocCall(ctx: *AnalyzerContext, expr_idx: u32) bool {
     if (expr_idx == @intCast(u32, 0)) return false;
     var node = ast_mod.astStoreNodeAt(ctx.store, expr_idx);
     if (node.kind == AstKind.try_expr) return isAllocCall(ctx, node.child_0);
     if (node.kind != AstKind.fn_call) return false;
-    var callee = ast_mod.astStoreNodeAt(ctx.store, node.child_0);
-    if (callee.kind != AstKind.ident_expr) return false;
-    var name_id = identNameId(ctx.store, node.child_0);
+    var name_id = calleeFinalNameId(ctx, node.child_0) orelse return false;
     var s_sandAlloc: []const u8 = "sandAlloc";
     var sand_nid = interner_mod.stringInternerIntern(ctx.interner, s_sandAlloc);
     if (name_id == sand_nid) return true;
@@ -236,6 +252,12 @@ pub fn isAllocCall(ctx: *AnalyzerContext, expr_idx: u32) bool {
     var s_arena_alloc: []const u8 = "arena_alloc";
     var arena_nid = interner_mod.stringInternerIntern(ctx.interner, s_arena_alloc);
     if (name_id == arena_nid) return true;
+    var s_gpa_alloc: []const u8 = "gpaAlloc";
+    var gpa_alloc_nid = interner_mod.stringInternerIntern(ctx.interner, s_gpa_alloc);
+    if (name_id == gpa_alloc_nid) return true;
+    var s_gpa_alloc_zeroed: []const u8 = "gpaAllocZeroed";
+    var gpa_alloc_zeroed_nid = interner_mod.stringInternerIntern(ctx.interner, s_gpa_alloc_zeroed);
+    if (name_id == gpa_alloc_zeroed_nid) return true;
     return false;
 }
 
@@ -243,14 +265,15 @@ pub fn isFreeCall(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     if (expr_idx == @intCast(u32, 0)) return null;
     var node = ast_mod.astStoreNodeAt(ctx.store, expr_idx);
     if (node.kind != AstKind.fn_call) return null;
-    var callee = ast_mod.astStoreNodeAt(ctx.store, node.child_0);
-    if (callee.kind != AstKind.ident_expr) return null;
-    var name_id = identNameId(ctx.store, node.child_0);
+    var name_id = calleeFinalNameId(ctx, node.child_0) orelse return null;
     var s_arena_free: []const u8 = "arena_free";
     var arena_free_nid = interner_mod.stringInternerIntern(ctx.interner, s_arena_free);
     var s_sand_free: []const u8 = "sandFree";
     var sand_free_nid = interner_mod.stringInternerIntern(ctx.interner, s_sand_free);
-    if (name_id != arena_free_nid and name_id != sand_free_nid) return null;
+    var s_gpa_free: []const u8 = "gpaFree";
+    var gpa_free_nid = interner_mod.stringInternerIntern(ctx.interner, s_gpa_free);
+    if (name_id != arena_free_nid and name_id != sand_free_nid and name_id != gpa_free_nid) return null;
+    // `gpaFree(g, ptr)` keeps the arg-1 pointer convention.
     var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, expr_idx);
     if (args_n < @intCast(u32, 2)) return null;
     var args1 = ast_mod.astStoreNodeExtraChildAt(ctx.store, expr_idx, @intCast(u32, 1));
@@ -283,6 +306,74 @@ pub fn compositeNameId(interner: *StringInterner, base_id: u32, field_id: u32) u
     return interner_mod.stringInternerIntern(interner, buf[0..pos]);
 }
 
+// Report the first same-block dereference/index/field use of a freed name and
+// latch it as `freed_reported` so later uses do not duplicate the diagnostic.
+fn reportUseAfterFree(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, node_idx: u32) void {
+    if (name_id == @intCast(u32, 0)) return;
+    var current = smap_mod.stateMapGet(state, name_id);
+    if (current) |c| {
+        if (c == @enumToInt(AllocState.freed)) {
+            var pn = interner_mod.stringInternerGet(ctx.interner, name_id);
+            var up1: []const u8 = "use after free of pointer '";
+            var up2: []const u8 = "'";
+            var uparts: [3][]const u8 = [3][]const u8{up1, pn, up2};
+            var umsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &uparts[0], @intCast(u32, 3));
+            var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2006_USE_AFTER_FREE)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), umsg);
+            smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed_reported));
+        }
+    }
+}
+
+// Same-block only: walk a statement expression for dereference/index/field
+// uses and report the identifier they bottom out at. A bare pointer copy
+// (`q = p` / `var q = p`) and a bare identifier statement are not uses.
+fn checkUseAfterFreeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void {
+    if (expr_idx == @intCast(u32, 0)) return;
+    var node = ast_mod.astStoreNodeAt(ctx.store, expr_idx);
+    var kind = node.kind;
+    if (kind == AstKind.deref) {
+        if (resolveOrigin(ctx, node.child_0)) |nid| reportUseAfterFree(ctx, state, nid, expr_idx);
+        checkUseAfterFreeExpr(ctx, state, node.child_0);
+        return;
+    }
+    if (kind == AstKind.index_access) {
+        if (resolveOrigin(ctx, node.child_0)) |nid| reportUseAfterFree(ctx, state, nid, expr_idx);
+        checkUseAfterFreeExpr(ctx, state, node.child_0);
+        checkUseAfterFreeExpr(ctx, state, node.child_1);
+        return;
+    }
+    if (kind == AstKind.field_access) {
+        if (resolveOrigin(ctx, node.child_0)) |nid| reportUseAfterFree(ctx, state, nid, expr_idx);
+        checkUseAfterFreeExpr(ctx, state, node.child_0);
+        return;
+    }
+    if (kind == AstKind.fn_call or kind == AstKind.builtin_call) {
+        var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, expr_idx);
+        var ai: usize = 0;
+        while (ai < @intCast(usize, args_n)) : (ai += 1) {
+            checkUseAfterFreeExpr(ctx, state, ast_mod.astStoreNodeExtraChildAt(ctx.store, expr_idx, @intCast(u32, ai)));
+        }
+        return;
+    }
+    if (kind == AstKind.var_decl) {
+        checkUseAfterFreeExpr(ctx, state, node.child_1);
+        return;
+    }
+    if (kind == AstKind.plain_assign) {
+        checkUseAfterFreeExpr(ctx, state, node.child_0);
+        checkUseAfterFreeExpr(ctx, state, node.child_1);
+        return;
+    }
+    if (kind == AstKind.return_stmt or kind == AstKind.expr_stmt or
+        kind == AstKind.try_expr or kind == AstKind.paren_expr or
+        kind == AstKind.address_of or kind == AstKind.orelse_expr or
+        kind == AstKind.catch_expr or kind == AstKind.slice_expr) {
+        checkUseAfterFreeExpr(ctx, state, node.child_0);
+        return;
+    }
+}
+
 pub fn handleAllocCall(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, init_idx: u32) void {
     if (!isAllocCall(ctx, init_idx)) return;
     smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.allocated));
@@ -298,7 +389,7 @@ pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) vo
             smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed));
             return;
         }
-        if (c == @enumToInt(AllocState.freed)) {
+        if (c == @enumToInt(AllocState.freed) or c == @enumToInt(AllocState.freed_reported)) {
             var pn = interner_mod.stringInternerGet(ctx.interner, name_id);
             var dp1: []const u8 = "double free of pointer '";
             var dp2: []const u8 = "'";
@@ -980,6 +1071,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
     var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
     var kind = node.kind;
     if (kind == AstKind.if_stmt or kind == AstKind.if_capture) {
+        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+            checkUseAfterFreeExpr(ctx, state, node.child_0);
+        }
         // T5 (T3 rule): a capture-free comptime-known condition takes the live
         // arm only — the untaken arm does not exist for analysis.
         var t5_fold = analyzerFoldComptimeBool(ctx, node.child_0, 0);
@@ -1005,6 +1099,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         if (node.child_2 != @intCast(u32, 0)) walkBlock(ctx, else_state, node.child_2, visit_fn);
         smap_mod.stateMapMergeStates(state, then_state, else_state, @intCast(u8, 99));
     } else if (kind == AstKind.while_stmt or kind == AstKind.while_capture) {
+        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+            checkUseAfterFreeExpr(ctx, state, node.child_0);
+        }
         analyzeExpr(ctx, state, node.child_0);
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
         var t5_wcap = captureNameIdOf(ctx.store, node_idx);
@@ -1012,6 +1109,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         walkBlock(ctx, body_state, node.child_1, visit_fn);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.swt_ex) {
+        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+            checkUseAfterFreeExpr(ctx, state, node.child_0);
+        }
         analyzeExpr(ctx, state, node.child_0);
         var prongs_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, node_idx);
         var si: usize = 0;
@@ -1097,6 +1197,7 @@ fn onLifetimeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
 
 fn onDoubleFreeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
+    checkUseAfterFreeExpr(ctx, state, node_idx);
     if (node.kind == AstKind.var_decl) {
         handleAllocCall(ctx, state, ast_mod.astStoreNodePayload(ctx.store, node_idx), node.child_1);
      }

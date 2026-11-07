@@ -749,6 +749,15 @@ fn testAllocStateEnumValues() void {
     helpers.ok(okaev);
 }
 
+fn testUseAfterFreeEnumValue() void {
+    if (@enumToInt(diag_mod.ErrorCode.ERR_2006_USE_AFTER_FREE) != @intCast(u16, 3079)) {
+        var msg: []const u8 = "testUseAfterFreeEnumValue: ERR_2006 should be 3079\n";
+        pal.stdout_write(msg);
+        pal.exit(1);
+    }
+    helpers.ok("testUseAfterFreeEnumValue");
+}
+
 fn testIsAllocCall() void {
     var arena: Sand = undefined;
     var interner: StringInterner = undefined;
@@ -1811,6 +1820,7 @@ pub fn main() void {
     testReturnPtrViaLocal();
     testReturnSliceLocal();
     testAllocStateEnumValues();
+    testUseAfterFreeEnumValue();
     testIsAllocCall();
     testIsFreeCall();
     testHandleAllocCall();
@@ -1843,6 +1853,10 @@ pub fn main() void {
     testFixture("tests/analyzers/capture_double_free.zig", "fixture capture_double_free", @intCast(i32, 1), @intCast(i32, -1));
     testFixture("tests/analyzers/dead_arm.zig", "fixture dead_arm", @intCast(i32, 0), @intCast(i32, 0));
     testFixture("tests/analyzers/surface_types.zig", "fixture surface_types", @intCast(i32, 0), @intCast(i32, 0));
+    testFixture("tests/analyzers/gpa_double_free.zig", "fixture gpa_double_free", @intCast(i32, 1), @intCast(i32, -1));
+    testFixture("tests/analyzers/gpa_use_after_free.zig", "fixture gpa_use_after_free", @intCast(i32, 1), @intCast(i32, -1));
+    testFixture("tests/analyzers/gpa_leak.zig", "fixture gpa_leak", @intCast(i32, 0), @intCast(i32, 1));
+    testFixture("tests/analyzers/gpa_alias_negative.zig", "fixture gpa_alias_negative", @intCast(i32, 0), @intCast(i32, 0));
     var msg: []const u8 = "Analyzer tests passed.\n";
     pal.stdout_write(msg);
 }

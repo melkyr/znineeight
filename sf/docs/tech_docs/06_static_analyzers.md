@@ -77,18 +77,26 @@ Used by the lifetime analyzer to track where pointers originate. Checked by `che
 | `returned_val` | Allocated pointer was returned from function |
 | `transferred` | Ownership was passed to another function |
 | `unknown` | State after overwrite with unknown value |
+| `freed_reported` | Freed and a same-block use-after-free was already reported |
 
 State machine for the double-free analyzer. Transitions:
 - `assign null_literal → untracked`
 - `alloc call → allocated`
 - `free call on allocated → freed`
-- `free call on freed → ERR_2005_DOUBLE_FREE`
+- `free call on freed (or freed_reported) → ERR_2005_DOUBLE_FREE`
 - `free call on a name with no state entry → WARN_6006_FREEING_UNTRACKED`
 - `free call on any other tracked state → freed` (no diagnostic)
+- `dereference/index/field use of freed (first use in the same block) → ERR_2006_USE_AFTER_FREE`, then `freed_reported`; a bare pointer copy is not a use
 - `return of allocated → returned_val`
 - `pass allocated to fn → transferred`
 - `overwrite allocated → WARN_6005_MEMORY_LEAK`
 - `scope exit with allocated → WARN_6005_MEMORY_LEAK`
+
+The alloc/free matchers accept both bare calls (`gpaAlloc(g, n, a)`,
+`sandAlloc(...)`, `arena_alloc(...)`, `gpaFree(g, p)`, `sandFree(...)`,
+`arena_free(...)`) and module-qualified member calls (`gpa.gpaAlloc(...)`,
+`gpa.gpaFree(...)`), matching on the callee's final identifier. UAF/leak
+tracking is same-block only; no interprocedural/alias claims.
 
 ---
 
@@ -208,7 +216,7 @@ Marks a variable as allocated. Called from `onDoubleFreeStmt` for `var_decl` wit
 
 ### handleFreeCall (`sf/src/analyzer.zig`)
 
-`[inference: isFreeCall → current state → allocated→freed; freed→ERR_2005_DOUBLE_FREE; no entry→WARN_6006_FREEING_UNTRACKED; other tracked→freed]`
+`[inference: isFreeCall → current state → allocated→freed; freed/freed_reported→ERR_2005_DOUBLE_FREE; no entry→WARN_6006_FREEING_UNTRACKED; other tracked→freed]`
 
 State machine transition on free. Emits diagnostics for double-free (error) and freeing untracked pointers (warning).
 
@@ -487,7 +495,7 @@ stores its handler in `AnalyzerContext.on_stmt_cb`.
 |-------------|-------------------|---------------------|
 | `runNullAnalyzer` | `onNullStmt` | ERR_2004, WARN_6001, WARN_6002 |
 | `runLifetimeAnalyzer` | `onLifetimeStmt` | ERR_2020, ERR_2021, WARN_6010, WARN_6011 |
-| `runDoubleFreeAnalyzer` | `onDoubleFreeStmt` | ERR_2005, WARN_6006, WARN_6005 |
+| `runDoubleFreeAnalyzer` | `onDoubleFreeStmt` | ERR_2005, ERR_2006, WARN_6006, WARN_6005 |
 
 Because `detectorVisit` recurses through `visitStatement`, nested control flow
 (if/while/switch/for) is analyzed recursively. `onDoubleFreeStmt` additionally
@@ -513,7 +521,7 @@ Statement handler for the lifetime analyzer. Tracks provenance on variable decla
 
 ### onDoubleFreeStmt (`sf/src/analyzer.zig`)
 
-`[inference: var_decl → handleAllocCall; plain_assign → handleAllocAssign; fn_call → handleFreeCall then handleOwnershipPass]`
+`[inference: checkUseAfterFreeExpr (deref/index/field on freed → ERR_2006); var_decl → handleAllocCall; plain_assign → handleAllocAssign; fn_call → handleFreeCall then handleOwnershipPass]`
 
 Statement handler for the double-free analyzer. Routes to the appropriate alloc-state transition function.
 
@@ -816,6 +824,7 @@ or direct GDB breakpoints on the analyzer entry points.
 |------|----------|-----------|
 | `ERR_2004_DEFINITE_NULL_DEREF` | error | Dereference of provably-null pointer |
 | `ERR_2005_DOUBLE_FREE` | error | Freeing already-freed pointer |
+| `ERR_2006_USE_AFTER_FREE` | error | Dereference/index/field use of a same-block freed pointer (first use; bare copies excluded) |
 | `ERR_2010_VOID_PARAMETER` | error | `void` used as parameter type |
 | `ERR_2011_INCOMPLETE_TYPE` | error | Incomplete type in function signature |
 | `ERR_2012_ANYTYPE_NOT_SUPPORTED` | error | `anytype` in a signature/type position (direct or nested; renders as `error[16]`, one per node, with file:line:col + caret — A1-F) |
