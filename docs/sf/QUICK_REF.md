@@ -30,25 +30,27 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-07 — seed v143]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-07 — seed v144]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v143 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v144 CHANGELOG entry.
 
-**Current seed: v143** (rotated 2026-11-07 for the authorized `std_gpa`
-medium-decommit-failure fix; a **std-only** rotation, packaging base HEAD
-`a9c6d323`). Archived binary md5 (= fixed point)
-`cd8d283b917749009961f4445043666b`, unchanged from v142 (the fix does not touch
-the compiler source); archive md5 `0f8c0548e7ebf99d04f38e9cf2f169ef`; Win9x
-zip md5 `c553c45e6d44ae0a7f31efb2f068b6c7`; `gen/` 48 `.c` + 49 `.h`
-(12,503,400 bytes); `lib/` **56** std `.zig` (`std.zig` + 55 `std_*.zig`) plus
+**Current seed: v144** (rotated 2026-11-07 for Phase 3.3 HTTP/2: adds
+`std_tls_io.zig`, `std_hpack.zig`, and `std_http2.zig` to the shipped std set;
+packaging base HEAD `952b0bb3`). Archived binary md5 (= fixed point)
+`cd8d283b917749009961f4445043666b`, unchanged from v143 (the new modules are
+not in the compiler import graph); archive md5
+`140bd00dca94a7140e4b5469bf2495a8`; Win9x zip md5
+`e4c21d2c34ffa1766ede224a50048072`; `gen/` 48 `.c` + 49 `.h` (12,503,400
+bytes); `lib/` **59** std `.zig` (`std.zig` + 58 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`ec2170933d878c2dda786ba742001be3`; retains `std_page.zig`,
-`std_page_pal.zig`, `std_gpa.zig`, `std_pool.zig`).
-A rebuild from the committed v143 archive is two-hop
+`e89c93ee9e7eda25d080eb392dea5d91`; adds `std_tls_io.zig`, `std_hpack.zig`,
+`std_http2.zig`; retains `std_page.zig`, `std_page_pal.zig`, `std_gpa.zig`,
+`std_pool.zig`).
+A rebuild from the committed v144 archive is two-hop
 **hop1 == hop2 == `cd8d283b…`**. The compiler source is **`-fsafe`-clean**.
 
 v143 measurement (authorized second anchor move; targeted checks only, no full
@@ -190,12 +192,12 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v143 carries the full 56 std `.zig`** = `std.zig` plus
-55 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
+tracked seed archive **v143 carries the full 59 std `.zig`** = `std.zig` plus
+58 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
 
-**Std-module inventory:** the `sf/src` std set is **55** `std_*.zig` + `std.zig`
+**Std-module inventory:** the `sf/src` std set is **58** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
 `std_net`, `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`,
 `std_time_pal`, `std_page`, `std_page_pal`, `std_gpa`, `std_pool`, `std_buf`,
@@ -205,11 +207,11 @@ and `SEED_README.txt`.
 `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`,
 `std_utf8`, `std_http`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
 `std_deflate`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics`, `std_asn1`, `std_x509`,
-`std_tls`, `std_wireguard`, `std_tcpip`, `std_gfx`, `std_gfx_pal`,
+`std_tls`, `std_tls_io`, `std_hpack`, `std_http2`, `std_wireguard`, `std_tcpip`, `std_gfx`, `std_gfx_pal`,
 `std_fold`, `std_fft`). `std.zig` re-exports
 the core **17** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/page/gpa/pool/buf/fold`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
-`scripts/seed/build_from_seed.sh` installs all 56 into the rebuilt compiler's `lib/`.
+`scripts/seed/build_from_seed.sh` installs all 59 into the rebuilt compiler's `lib/`.
 
 **Phase 3.1 allocators (`std.page`/`std.gpa`/`std.pool`) — scope and limits.**
 `std.page` exposes `posix_mode` = `auto`/`remap`/`protect`/`modern` (POSIX
@@ -514,7 +516,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   via the search path: (1) importer's dir, (2) `-I`/`--lib-dir` dirs in CLI order, (3) the default
   install path `<exe_dir>/lib`, (4) CWD. To run a migrated example/repro you must first install the
   canonical std lib next to the compiler under test:
-  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_fmt.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig sf/src/std_crypto.zig sf/src/std_cipher.zig sf/src/std_ecc.zig sf/src/std_parse.zig sf/src/std_bencode.zig sf/src/std_map.zig sf/src/std_sort.zig sf/src/std_heap.zig sf/src/std_rle.zig sf/src/std_base64.zig sf/src/std_hex.zig sf/src/std_utf8.zig sf/src/std_http.zig sf/src/std_rand.zig sf/src/std_noise.zig sf/src/std_lz4.zig sf/src/std_zstd.zig sf/src/std_deflate.zig sf/src/std_num.zig sf/src/std_pathfind.zig sf/src/std_physics.zig sf/src/std_hpa.zig sf/src/std_asn1.zig sf/src/std_x509.zig sf/src/std_tls.zig sf/src/std_wireguard.zig sf/src/std_tcpip.zig sf/src/std_gfx.zig sf/src/std_gfx_pal.zig sf/src/std_fold.zig sf/src/std_fft.zig <exe_dir>/lib/`
+  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_fmt.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig sf/src/std_crypto.zig sf/src/std_cipher.zig sf/src/std_ecc.zig sf/src/std_parse.zig sf/src/std_bencode.zig sf/src/std_map.zig sf/src/std_sort.zig sf/src/std_heap.zig sf/src/std_rle.zig sf/src/std_base64.zig sf/src/std_hex.zig sf/src/std_utf8.zig sf/src/std_http.zig sf/src/std_rand.zig sf/src/std_noise.zig sf/src/std_lz4.zig sf/src/std_zstd.zig sf/src/std_deflate.zig sf/src/std_num.zig sf/src/std_pathfind.zig sf/src/std_physics.zig sf/src/std_hpa.zig sf/src/std_asn1.zig sf/src/std_x509.zig sf/src/std_tls.zig sf/src/std_tls_io.zig sf/src/std_hpack.zig sf/src/std_http2.zig sf/src/std_wireguard.zig sf/src/std_tcpip.zig sf/src/std_gfx.zig sf/src/std_gfx_pal.zig sf/src/std_fold.zig sf/src/std_fft.zig <exe_dir>/lib/`
   (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The canonical set
   includes `std_fmt.zig` (the print-formatting layer, auto-imported by the compiler
   whenever a `print` is lowered); a compiler whose `lib/` predates it can resolve a
