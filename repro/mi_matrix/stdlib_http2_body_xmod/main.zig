@@ -70,6 +70,14 @@ var g_large_body: [LARGE_CHUNK]u8 = undefined;
 var g_sink_buf: [64]u8 = undefined;
 var g_slow_sink_buf: [SLOW_BODY_LEN]u8 = undefined;
 var g_cycle_out: http.Response = undefined;
+var g_body_get: [16]u8 = undefined;
+var g_body_post: [16]u8 = undefined;
+var g_body_again: [16]u8 = undefined;
+var g_cycle_body: [16]u8 = undefined;
+var g_good_out_buf: [16]u8 = undefined;
+var g_slow_out_buf: [16]u8 = undefined;
+var g_small_out_buf: [4]u8 = undefined;
+var g_large_out_buf: [1048576 + 16384]u8 = undefined;
 
 const SinkState = struct {
     buf: []u8,
@@ -372,20 +380,25 @@ const ApiArgs = struct {
     accept: []const u8,
     kind: u8,
     ok: u8,
+    id: u32,
 };
 
 fn apiWorker(args: *ApiArgs) void {
     if (args.kind == 0) {
-        h2.http2Get(args.c, "https://example.com/get", args.out) catch {
+        args.id = h2.http2Get(args.c, "https://example.com/get", args.out) catch {
             args.ok = 0;
             return;
         };
     } else {
-        h2.http2Post(args.c, "https://example.com/post?x=1", args.body, args.ct, args.accept, args.out) catch {
+        args.id = h2.http2Post(args.c, "https://example.com/post?x=1", args.body, args.ct, args.accept, args.out) catch {
             args.ok = 0;
             return;
         };
     }
+    h2.http2Wait(args.c, args.id) catch {
+        args.ok = 0;
+        return;
+    };
     args.ok = 1;
 }
 
@@ -396,10 +409,15 @@ const StreamArgs = struct {
     sink: *http.ResponseSink,
     out: *http.Response,
     ok: u8,
+    id: u32,
 };
 
 fn getStreamWorker(args: *StreamArgs) void {
-    h2.http2GetStream(args.c, args.url, args.headers, args.sink, args.out) catch {
+    args.id = h2.http2GetStream(args.c, args.url, args.headers, args.sink, args.out) catch {
+        args.ok = 0;
+        return;
+    };
+    h2.http2Wait(args.c, args.id) catch {
         args.ok = 0;
         return;
     };
@@ -416,10 +434,12 @@ const RejectArgs = struct {
 };
 
 fn rejectWorker(args: *RejectArgs) void {
-    h2.http2GetStream(args.c, args.url, args.headers, args.sink, args.out) catch |e| {
+    const id = h2.http2GetStream(args.c, args.url, args.headers, args.sink, args.out) catch |e| {
         if (e == error.Protocol) args.ok = 1;
         return;
     };
+    h2.http2Wait(args.c, id) catch {};
+    h2.http2Release(args.c, id) catch {};
     args.ok = 0;
 }
 
@@ -433,10 +453,15 @@ const PostStreamArgs = struct {
     sink: *http.ResponseSink,
     out: *http.Response,
     ok: u8,
+    id: u32,
 };
 
 fn postStreamWorker(args: *PostStreamArgs) void {
-    h2.http2PostStream(args.c, args.url, args.body_len, args.ct, args.accept, args.src, args.sink, args.out) catch {
+    args.id = h2.http2PostStream(args.c, args.url, args.body_len, args.ct, args.accept, args.src, args.sink, args.out) catch {
+        args.ok = 0;
+        return;
+    };
+    h2.http2Wait(args.c, args.id) catch {
         args.ok = 0;
         return;
     };
@@ -464,12 +489,16 @@ fn scenarioBody() void {
 
     var ar = std.arena.init(g_arena_backing[0..]);
     var t = makeTransport(s);
-    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch @panic("body: open");
+    var cfg = defaultConfig();
+    cfg.max_streams = 2;
+    var c = h2.http2OpenTransport(&ar, &t, cfg) catch @panic("body: open");
 
     var out1: http.Response = undefined;
     var out2: http.Response = undefined;
-    var a1 = ApiArgs{ .c = c, .out = &out1, .body = "", .ct = "", .accept = "", .kind = 0, .ok = 0 };
-    var a2 = ApiArgs{ .c = c, .out = &out2, .body = "payload", .ct = "text/plain", .accept = "*/*", .kind = 1, .ok = 0 };
+    out1.body = g_body_get[0..];
+    out2.body = g_body_post[0..];
+    var a1 = ApiArgs{ .c = c, .out = &out1, .body = "", .ct = "", .accept = "", .kind = 0, .ok = 0, .id = 0 };
+    var a2 = ApiArgs{ .c = c, .out = &out2, .body = "payload", .ct = "text/plain", .accept = "*/*", .kind = 1, .ok = 0, .id = 0 };
 
     var c1buf: [32768]u8 = undefined;
     var c2buf: [32768]u8 = undefined;
@@ -511,6 +540,29 @@ fn scenarioBody() void {
     std.io.writeByte('/');
     std.io.write(out2.body);
     std.io.writeByte('\n');
+
+    h2.http2Release(c, a1.id) catch @panic("body: release get");
+    h2.http2Release(c, a2.id) catch @panic("body: release post");
+    var gone1: bool = false;
+    var gone2: bool = false;
+    _ = h2.http2StreamState(c, a1.id) catch |e| {
+        gone1 = (e == error.NoStream);
+    };
+    _ = h2.http2StreamState(c, a2.id) catch |e| {
+        gone2 = (e == error.NoStream);
+    };
+    var again: bool = false;
+    h2.http2Release(c, a1.id) catch |e| {
+        again = (e == error.NoStream);
+    };
+    if (!gone1 or !gone2 or !again) @panic("body: released id not NoStream");
+
+    var out3: http.Response = undefined;
+    var r3 = makeGet(&out3);
+    out3.body = g_body_again[0..];
+    const id5 = h2.http2Submit(c, &r3) catch @panic("body: slot not reusable");
+    if (id5 != 5) @panic("body: reuse id");
+    std.io.write("release=1\n");
     h2.http2Close(c);
 }
 
@@ -531,8 +583,9 @@ fn scenarioSink() void {
     var ss = SinkState{ .buf = g_sink_buf[0..], .len = 0, .fail = false };
     var sink = http.ResponseSink{ .state = @ptrCast(*void, &ss), .write_fn = sinkWrite };
     var out: http.Response = undefined;
+    out.body = g_empty_body[0..0];
     var hs = [1]http.Header{http.Header{ .name = "X-Custom", .value = "Value" }};
-    var args = StreamArgs{ .c = c, .url = "https://example.com/s", .headers = hs[0..], .sink = &sink, .out = &out, .ok = 0 };
+    var args = StreamArgs{ .c = c, .url = "https://example.com/s", .headers = hs[0..], .sink = &sink, .out = &out, .ok = 0, .id = 0 };
 
     var cbuf: [32768]u8 = undefined;
     var fbuf: [8192]u8 = undefined;
@@ -559,6 +612,7 @@ fn scenarioSink() void {
 
     var bad = [1]http.Header{http.Header{ .name = "Connection", .value = "close" }};
     var out2: http.Response = undefined;
+    out2.body = g_empty_body[0..0];
     var ra = RejectArgs{ .c = c, .url = "https://example.com/r", .headers = bad[0..], .sink = &sink, .out = &out2, .ok = 0 };
 
     var rcbuf: [32768]u8 = undefined;
@@ -575,6 +629,7 @@ fn scenarioSink() void {
     }
     if (rmore != null or ra.ok != 1) @panic("sink: connection header not rejected");
 
+    h2.http2Release(c, args.id) catch @panic("sink: release");
     std.io.write("sink=");
     std.io.printInt(@intCast(i32, ss.len));
     std.io.writeByte('\n');
@@ -597,6 +652,7 @@ fn scenarioSource() void {
     var src_state = SourceState{ .body = g_source_body[0..], .pos = 0, .reads = 0 };
     var src = http.RequestSource{ .state = @ptrCast(*void, &src_state), .read_fn = sourceRead };
     var out: http.Response = undefined;
+    out.body = g_empty_body[0..0];
     var args = PostStreamArgs{
         .c = c,
         .url = "https://example.com/post",
@@ -607,6 +663,7 @@ fn scenarioSource() void {
         .sink = &sink,
         .out = &out,
         .ok = 0,
+        .id = 0,
     };
 
     var cbuf: [32768]u8 = undefined;
@@ -640,6 +697,7 @@ fn scenarioSource() void {
     if (sent != SOURCE_BODY_LEN) @panic("source: DATA length");
     if (!ended) @panic("source: missing END_STREAM");
 
+    h2.http2Release(c, args.id) catch @panic("source: release");
     std.io.write("source=");
     std.io.printInt(@intCast(i32, src_state.pos));
     std.io.writeByte('\n');
@@ -666,6 +724,7 @@ fn scenarioLarge() void {
 
     var out: http.Response = undefined;
     var r = makeGet(&out);
+    out.body = g_large_out_buf[0..];
     _ = h2.http2Submit(c, &r) catch @panic("large: submit");
 
     var too_large: bool = false;
@@ -679,6 +738,38 @@ fn scenarioLarge() void {
     }
     if (!too_large) @panic("large: not rejected");
     std.io.write("large=too_large\n");
+    h2.http2Close(c);
+}
+
+fn scenarioSmallBuf() void {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    emitStatus(s, 1);
+    emitData(s, 1, 0x1, "12345678");
+    scriptEnd(s);
+
+    var ar = std.arena.init(g_arena_backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch @panic("small: open");
+
+    var out: http.Response = undefined;
+    var r = makeGet(&out);
+    out.body = g_small_out_buf[0..];
+    _ = h2.http2Submit(c, &r) catch @panic("small: submit");
+
+    var too_large: bool = false;
+    var it: usize = 0;
+    while (it < 4000) : (it += 1) {
+        _ = h2.http2Pump(c) catch |e| {
+            if (e == error.TooLarge) too_large = true;
+            break;
+        };
+        if (r.done or r.failed) break;
+    }
+    if (!too_large) @panic("small: not rejected");
+    std.io.write("small_buf=too_large\n");
     h2.http2Close(c);
 }
 
@@ -704,8 +795,9 @@ fn scenarioSinkError() void {
     var out2: http.Response = undefined;
     var r1 = makeGetSink(&out1, &bad_sink);
     var r2 = makeGet(&out2);
-    _ = h2.http2Submit(c, &r1) catch @panic("error: submit1");
-    _ = h2.http2Submit(c, &r2) catch @panic("error: submit2");
+    out2.body = g_good_out_buf[0..];
+    const id1 = h2.http2Submit(c, &r1) catch @panic("error: submit1");
+    const id2 = h2.http2Submit(c, &r2) catch @panic("error: submit2");
 
     var it: usize = 0;
     while (it < 4000) : (it += 1) {
@@ -715,6 +807,8 @@ fn scenarioSinkError() void {
     if (!r1.failed) @panic("error: failing stream not marked failed");
     if (!r2.done or out2.status != 200) @panic("error: good stream incomplete");
     if (!containsBytes(out2.body, "good")) @panic("error: good body corrupted");
+    h2.http2Release(c, id1) catch @panic("error: release failed stream");
+    h2.http2Release(c, id2) catch @panic("error: release good stream");
     h2.http2Close(c);
 }
 
@@ -735,6 +829,7 @@ fn scenarioSlow() void {
     var out2: http.Response = undefined;
     var r1 = makeGetSink(&out1, &sink);
     var r2 = makeGet(&out2);
+    out2.body = g_slow_out_buf[0..];
     const id1 = h2.http2Submit(c, &r1) catch @panic("slow: submit1");
     const id2 = h2.http2Submit(c, &r2) catch @panic("slow: submit2");
     if (id1 != 1 or id2 != 3) @panic("slow: stream ids");
@@ -768,6 +863,7 @@ fn scenarioSlow() void {
     const delivered = windowIncrementSum(s.wbuf[0..s.wlen], 24, 1);
     if (delivered < @intCast(i64, SLOW_BODY_LEN)) @panic("slow: deferred window update lost");
 
+    h2.http2Release(c, id2) catch @panic("slow: release second stream");
     std.io.write("slow_ok=1\n");
     h2.http2Close(c);
 }
@@ -795,21 +891,31 @@ fn cyclesWorker(args: *CyclesArgs) void {
     var i: usize = 0;
     while (i < 100) : (i += 1) {
         args.s.cycles_ready = i + 1;
+        g_cycle_out.body = g_cycle_body[0..];
+        var id: u32 = 0;
         if ((i % 2) == 0) {
-            h2.http2Get(args.c, "https://example.com/c", &g_cycle_out) catch {
+            id = h2.http2Get(args.c, "https://example.com/c", &g_cycle_out) catch {
                 args.ok = 0;
                 return;
             };
         } else {
-            h2.http2Post(args.c, "https://example.com/c", "p", "text/plain", "*/*", &g_cycle_out) catch {
+            id = h2.http2Post(args.c, "https://example.com/c", "p", "text/plain", "*/*", &g_cycle_out) catch {
                 args.ok = 0;
                 return;
             };
         }
+        h2.http2Wait(args.c, id) catch {
+            args.ok = 0;
+            return;
+        };
         if (g_cycle_out.status != 200) {
             args.ok = 0;
             return;
         }
+        h2.http2Release(args.c, id) catch {
+            args.ok = 0;
+            return;
+        };
         const used = args.ar.used;
         if (used > args.peak) args.peak = used;
         if (i == 1) args.used2 = used;
@@ -859,6 +965,7 @@ pub fn main() void {
     scenarioSink();
     scenarioSource();
     scenarioLarge();
+    scenarioSmallBuf();
     scenarioSinkError();
     scenarioSlow();
     scenarioArenaCycles();

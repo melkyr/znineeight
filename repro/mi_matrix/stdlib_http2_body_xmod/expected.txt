@@ -1,6 +1,8 @@
 body=hello/world
+release=1
 sink=6
 source=70000
 large=too_large
+small_buf=too_large
 slow_ok=1
 arena_ok=1

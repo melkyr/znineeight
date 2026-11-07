@@ -509,7 +509,8 @@ pub const Stream = struct {
     body_off: usize,
     src_sent: usize,
     headers_received: bool,
-    resp_body: buf_mod.Buf,
+    body_out: []u8,
+    body_written: usize,
     hdr_arena_buf: []u8,
     hdr_slots: []hpack_mod.HpackHeader,
     hdr_out: []http.Header,
@@ -695,7 +696,8 @@ pub fn http2OpenTransport(arena: *arena_mod.Arena, t: *const Transport, cfg: Htt
         st.body_off = 0;
         st.src_sent = 0;
         st.headers_received = false;
-        st.resp_body = buf_mod.init(arena);
+        st.body_out = c.empty_bytes[0..0];
+        st.body_written = 0;
         st.hdr_arena_buf = try allocBytes(arena, cfg.max_header_list);
         const base: usize = i * c.fields_per_stream;
         st.hdr_slots = c.hdr_slots[base .. base + c.fields_per_stream];
@@ -738,7 +740,7 @@ fn findFreeStream(c: *Http2Conn) ?*Stream {
     var i: usize = 0;
     while (i < c.streams.len) : (i += 1) {
         const st = &c.streams[i];
-        if (st.state == StreamState.idle or st.state == StreamState.closed or st.state == StreamState.reset) return st;
+        if (st.state == StreamState.idle) return st;
     }
     return null;
 }
@@ -784,13 +786,14 @@ fn resetStream(c: *Http2Conn, st: *Stream, id: u32, req: *Http2Request) void {
     st.body_off = 0;
     st.src_sent = 0;
     st.headers_received = false;
-    buf_mod.clear(&st.resp_body);
+    st.body_out = req.out.body;
+    st.body_written = 0;
     req.stream_id = id;
     req.done = false;
     req.failed = false;
     req.out.status = 0;
     req.out.headers = c.empty_headers[0..0];
-    req.out.body = c.empty_bytes[0..0];
+    req.out.body = st.body_out[0..0];
 }
 
 fn hasInjection(s: []const u8) bool {
@@ -1201,7 +1204,7 @@ fn finishStream(c: *Http2Conn, st: *Stream) Http2Error!void {
         st.recv_pending = 0;
     }
     if (st.req.sink == null) {
-        st.req.out.body = buf_mod.slice(&st.resp_body);
+        st.req.out.body = st.body_out[0..st.body_written];
     }
     if (st.state == StreamState.open) {
         st.state = StreamState.half_closed_remote;
@@ -1269,8 +1272,27 @@ fn dispatchData(c: *Http2Conn, f: *Frame) Http2Error!void {
             return;
         };
     } else {
-        if (st.resp_body.len + body.len > MAX_BUFFERED_BODY) return error.TooLarge;
-        buf_mod.append(&st.resp_body, body) catch return error.OutOfMemory;
+        if (st.body_written > st.body_out.len) {
+            st.state = StreamState.reset;
+            st.req.failed = true;
+            return error.TooLarge;
+        }
+        if (body.len > st.body_out.len - st.body_written) {
+            st.state = StreamState.reset;
+            st.req.failed = true;
+            return error.TooLarge;
+        }
+        if (st.body_written + body.len > MAX_BUFFERED_BODY) {
+            st.state = StreamState.reset;
+            st.req.failed = true;
+            return error.TooLarge;
+        }
+        var k: usize = 0;
+        while (k < body.len) : (k += 1) {
+            st.body_out[st.body_written + k] = body[k];
+        }
+        st.body_written += body.len;
+        st.req.out.body = st.body_out[0..st.body_written];
     }
 
     // The stream receive window is consumed only after the body was accepted
@@ -1503,9 +1525,23 @@ pub fn http2Wait(c: *Http2Conn, stream_id: u32) Http2Error!void {
     }
 }
 
+pub fn http2Release(c: *Http2Conn, stream_id: u32) Http2Error!void {
+    const st = findStream(c, stream_id) orelse return error.NoStream;
+    if (st.state == StreamState.open or st.state == StreamState.half_closed_local or st.state == StreamState.half_closed_remote) {
+        return error.Busy;
+    }
+    st.state = StreamState.idle;
+    st.id = 0;
+}
+
 pub fn http2Close(c: *Http2Conn) void {
     if (c.close_called) return;
     _ = flushOutput(c) catch {};
+    var i: usize = 0;
+    while (i < c.streams.len) : (i += 1) {
+        c.streams[i].state = StreamState.idle;
+        c.streams[i].id = 0;
+    }
     c.closed = true;
     c.close_called = true;
     c.transport.close_fn(c.transport.state);
@@ -1691,7 +1727,7 @@ fn splitUrl(url: []const u8) Http2Error!UrlParts {
     return UrlParts{ .scheme = scheme_raw, .authority = authority, .path = path };
 }
 
-fn submitUrl(c: *Http2Conn, method: []const u8, url: []const u8, headers: []const http.Header, body: []const u8, body_len: usize, body_source: ?*http.RequestSource, sink: ?*http.ResponseSink, out: *http.Response, content_type: []const u8, accept: []const u8) Http2Error!void {
+fn submitUrl(c: *Http2Conn, method: []const u8, url: []const u8, headers: []const http.Header, body: []const u8, body_len: usize, body_source: ?*http.RequestSource, sink: ?*http.ResponseSink, out: *http.Response, content_type: []const u8, accept: []const u8) Http2Error!u32 {
     const st = try acquireStream(c);
     const parts = try splitUrl(url);
 
@@ -1742,21 +1778,21 @@ fn submitUrl(c: *Http2Conn, method: []const u8, url: []const u8, headers: []cons
         .failed = false,
     };
     const id = try submitOnStream(c, st, &st.own_req);
-    try http2Wait(c, id);
+    return id;
 }
 
-pub fn http2Get(c: *Http2Conn, url: []const u8, out: *http.Response) Http2Error!void {
-    try submitUrl(c, "GET", url, c.empty_headers[0..0], c.empty_bytes[0..0], 0, null, null, out, "", "");
+pub fn http2Get(c: *Http2Conn, url: []const u8, out: *http.Response) Http2Error!u32 {
+    return submitUrl(c, "GET", url, c.empty_headers[0..0], c.empty_bytes[0..0], 0, null, null, out, "", "");
 }
 
-pub fn http2Post(c: *Http2Conn, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, out: *http.Response) Http2Error!void {
-    try submitUrl(c, "POST", url, c.empty_headers[0..0], body, body.len, null, null, out, content_type, accept);
+pub fn http2Post(c: *Http2Conn, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, out: *http.Response) Http2Error!u32 {
+    return submitUrl(c, "POST", url, c.empty_headers[0..0], body, body.len, null, null, out, content_type, accept);
 }
 
-pub fn http2GetStream(c: *Http2Conn, url: []const u8, headers: []const http.Header, sink: *http.ResponseSink, out_head: *http.Response) Http2Error!void {
-    try submitUrl(c, "GET", url, headers, c.empty_bytes[0..0], 0, null, sink, out_head, "", "");
+pub fn http2GetStream(c: *Http2Conn, url: []const u8, headers: []const http.Header, sink: *http.ResponseSink, out_head: *http.Response) Http2Error!u32 {
+    return submitUrl(c, "GET", url, headers, c.empty_bytes[0..0], 0, null, sink, out_head, "", "");
 }
 
-pub fn http2PostStream(c: *Http2Conn, url: []const u8, body_len: usize, content_type: []const u8, accept: []const u8, body: *http.RequestSource, sink: *http.ResponseSink, out_head: *http.Response) Http2Error!void {
-    try submitUrl(c, "POST", url, c.empty_headers[0..0], c.empty_bytes[0..0], body_len, body, sink, out_head, content_type, accept);
+pub fn http2PostStream(c: *Http2Conn, url: []const u8, body_len: usize, content_type: []const u8, accept: []const u8, body: *http.RequestSource, sink: *http.ResponseSink, out_head: *http.Response) Http2Error!u32 {
+    return submitUrl(c, "POST", url, c.empty_headers[0..0], c.empty_bytes[0..0], body_len, body, sink, out_head, content_type, accept);
 }

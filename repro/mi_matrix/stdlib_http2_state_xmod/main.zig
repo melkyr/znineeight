@@ -64,7 +64,8 @@ fn waitWorker(args: *WaitArgs) void {
 var g_script: Script = undefined;
 var g_headers: [1]http.Header = undefined;
 var g_out_headers: [1]http.Header = undefined;
-var g_out_body: [1]u8 = undefined;
+var g_out_body: [16000]u8 = undefined;
+var g_out_body2: [16000]u8 = undefined;
 var g_win_small: [16000]u8 = undefined;
 var g_early_body: [100000]u8 = undefined;
 var g_src1_body: [70000]u8 = undefined;
@@ -240,7 +241,7 @@ fn emitWindowUpdate(s: *Script, sid: u32, inc: u32) void {
 fn emptyResponse(out: *http.Response) void {
     out.status = 0;
     out.headers = g_out_headers[0..0];
-    out.body = g_out_body[0..0];
+    out.body = g_out_body[0..];
 }
 
 fn makeRequest(out: *http.Response) h2.Http2Request {
@@ -264,6 +265,7 @@ fn makeRequest(out: *http.Response) h2.Http2Request {
 
 fn makePost(out: *http.Response) h2.Http2Request {
     emptyResponse(out);
+    out.body = g_out_body2[0..];
     return h2.Http2Request{
         .method = "POST",
         .scheme = "https",
@@ -496,6 +498,9 @@ fn scenarioBasic() void {
     std.io.write(out2.body);
     std.io.writeByte('\n');
 
+    h2.http2Release(c, id1) catch @panic("fixture: release id1");
+    h2.http2Release(c, id2) catch @panic("fixture: release id2");
+
     printCounter("settings_ack=", c.settings_ack_count);
     printCounter("ping_ack=", c.ping_ack_count);
 
@@ -519,7 +524,7 @@ fn scenarioGoaway() void {
     };
     var out: http.Response = undefined;
     var r = makeRequest(&out);
-    _ = h2.http2Submit(c, &r) catch {
+    const id = h2.http2Submit(c, &r) catch {
         std.io.write("goaway=0\n");
         return;
     };
@@ -528,6 +533,7 @@ fn scenarioGoaway() void {
         _ = h2.http2Pump(c) catch break;
         if (r.failed) break;
     }
+    h2.http2Release(c, id) catch @panic("fixture: release goaway");
     printFlag("goaway", r.failed and c.goaway_count == 1);
 }
 
@@ -548,7 +554,7 @@ fn scenarioRst() void {
     };
     var out: http.Response = undefined;
     var r = makeRequest(&out);
-    _ = h2.http2Submit(c, &r) catch {
+    const id = h2.http2Submit(c, &r) catch {
         std.io.write("rst=0\n");
         return;
     };
@@ -557,6 +563,7 @@ fn scenarioRst() void {
         _ = h2.http2Pump(c) catch break;
         if (r.failed) break;
     }
+    h2.http2Release(c, id) catch @panic("fixture: release rst");
     printFlag("rst", r.failed and c.rst_count == 1);
 }
 
@@ -728,8 +735,8 @@ fn connWindowSmall() bool {
     var out2: http.Response = undefined;
     var r1 = makeRequest(&out1);
     var r2 = makeRequest(&out2);
-    _ = h2.http2Submit(c, &r1) catch return false;
-    _ = h2.http2Submit(c, &r2) catch return false;
+    const id1 = h2.http2Submit(c, &r1) catch return false;
+    const id2 = h2.http2Submit(c, &r2) catch return false;
     var it: usize = 0;
     while (it < 4000) : (it += 1) {
         _ = h2.http2Pump(c) catch return false;
@@ -737,6 +744,8 @@ fn connWindowSmall() bool {
     }
     const ok = r1.done and r2.done and out1.status == 200 and out2.status == 200 and
         windowIncrementSum(s.wbuf[0..s.wlen], 24, 0) == 0;
+    h2.http2Release(c, id1) catch return false;
+    h2.http2Release(c, id2) catch return false;
     h2.http2Close(c);
     return ok;
 }
@@ -771,10 +780,10 @@ fn connWindowLarge() bool {
     var r2 = makeRequest(&o2);
     var r3 = makeRequest(&o3);
     var r4 = makeRequest(&o4);
-    _ = h2.http2Submit(c, &r1) catch return false;
-    _ = h2.http2Submit(c, &r2) catch return false;
-    _ = h2.http2Submit(c, &r3) catch return false;
-    _ = h2.http2Submit(c, &r4) catch return false;
+    const id1 = h2.http2Submit(c, &r1) catch return false;
+    const id2 = h2.http2Submit(c, &r2) catch return false;
+    const id3 = h2.http2Submit(c, &r3) catch return false;
+    const id4 = h2.http2Submit(c, &r4) catch return false;
 
     var it: usize = 0;
     while (it < 4000) : (it += 1) {
@@ -784,6 +793,10 @@ fn connWindowLarge() bool {
     const all_done = r1.done and r2.done and r3.done and r4.done;
     const ok = all_done and o1.status == 200 and o2.status == 200 and o3.status == 200 and
         o4.status == 200 and windowIncrementSum(s.wbuf[0..s.wlen], 24, 0) > 0;
+    h2.http2Release(c, id1) catch return false;
+    h2.http2Release(c, id2) catch return false;
+    h2.http2Release(c, id3) catch return false;
+    h2.http2Release(c, id4) catch return false;
     h2.http2Close(c);
     return ok;
 }
@@ -846,6 +859,7 @@ fn scenarioEarlyEnd() void {
     }
     const sent_ok = verifyDataBody(s.wbuf[0..s.wlen], 24, id, g_early_body[0..]);
     const resp_ok = out.status == 200 and out.body.len == 1 and out.body[0] == 'z';
+    h2.http2Release(c, id) catch @panic("fixture: release early_end");
     printOk("early_end", state_ok and not_done and r.done and sent_ok and resp_ok);
     h2.http2Close(c);
 }
@@ -939,11 +953,11 @@ fn scenarioArena() void {
         var out2: http.Response = undefined;
         var r1 = makeRequest(&out1);
         var r2 = makeRequest(&out2);
-        _ = h2.http2Submit(c, &r1) catch {
+        const id1 = h2.http2Submit(c, &r1) catch {
             std.io.write("arena_ok=0\n");
             return;
         };
-        _ = h2.http2Submit(c, &r2) catch {
+        const id2 = h2.http2Submit(c, &r2) catch {
             std.io.write("arena_ok=0\n");
             return;
         };
@@ -960,6 +974,14 @@ fn scenarioArena() void {
             std.io.write("arena_ok=0\n");
             return;
         }
+        h2.http2Release(c, id1) catch {
+            std.io.write("arena_ok=0\n");
+            return;
+        };
+        h2.http2Release(c, id2) catch {
+            std.io.write("arena_ok=0\n");
+            return;
+        };
         if (ar.used > peak) peak = ar.used;
         if (cycle == 1) used_after_two = ar.used;
     }
@@ -1009,6 +1031,7 @@ fn scenarioWait() void {
         more = @asyncResume(frame, null);
     }
     if (!ok or !r.done) @panic("fixture: http2Wait did not complete");
+    h2.http2Release(c, id) catch @panic("fixture: release wait");
     h2.http2Close(c);
 }
 
