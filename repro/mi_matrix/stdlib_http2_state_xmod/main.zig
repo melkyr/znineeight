@@ -45,6 +45,9 @@ const Script = struct {
     stall_accepted: usize,
     stall_delivered: bool,
     close_called: bool,
+    peer_eof: bool,
+    block_writes: bool,
+    close_pending_flag: bool,
     dynamic: bool,
     dyn_kind: u8,
     cycles_ready: usize,
@@ -54,6 +57,7 @@ const Script = struct {
 
 const Ctx = struct { used: u32, capacity: u32, oom: u8 };
 const WaitArgs = struct { c: *h2.Http2Conn, id: u32, ok: *bool };
+const WaitErrArgs = struct { c: *h2.Http2Conn, id: u32, err: u8, done: bool };
 
 fn waitWorker(args: *WaitArgs) void {
     h2.http2Wait(args.c, args.id) catch {
@@ -61,6 +65,28 @@ fn waitWorker(args: *WaitArgs) void {
         return;
     };
     args.ok.* = true;
+}
+
+fn waitErrWorker(args: *WaitErrArgs) void {
+    h2.http2Wait(args.c, args.id) catch |e| {
+        if (e == error.Closed) {
+            args.err = 1;
+        } else if (e == error.Io) {
+            args.err = 2;
+        } else if (e == error.TooLarge) {
+            args.err = 3;
+        } else if (e == error.GoAway) {
+            args.err = 4;
+        } else if (e == error.StreamReset) {
+            args.err = 5;
+        } else {
+            args.err = 9;
+        }
+        args.done = true;
+        return;
+    };
+    args.err = 0;
+    args.done = true;
 }
 
 var g_script: Script = undefined;
@@ -83,6 +109,9 @@ fn scriptReset(s: *Script) void {
     s.stall_accepted = 0;
     s.stall_delivered = false;
     s.close_called = false;
+    s.peer_eof = false;
+    s.block_writes = false;
+    s.close_pending_flag = false;
     s.dynamic = false;
     s.dyn_kind = 0;
     s.cycles_ready = 0;
@@ -113,6 +142,8 @@ fn scriptRead(state: *void, dst: []u8) h2.TransportError!usize {
                 buildCycle(s, s.cycles_served);
             }
             s.cycles_served += 1;
+        } else if (s.peer_eof) {
+            return 0;
         } else {
             return error.WouldBlock;
         }
@@ -128,6 +159,7 @@ fn scriptRead(state: *void, dst: []u8) h2.TransportError!usize {
 
 fn scriptWrite(state: *void, data: []const u8) h2.TransportError!usize {
     const s: *Script = @ptrCast(*Script, state);
+    if (s.block_writes) return error.WouldBlock;
     if (s.stall_at > 0 and !s.stall_delivered) {
         if (s.stall_accepted >= s.stall_at) {
             s.stall_delivered = true;
@@ -159,11 +191,17 @@ fn scriptClose(state: *void) void {
     s.close_called = true;
 }
 
+fn scriptPending(state: *void) bool {
+    const s: *Script = @ptrCast(*Script, state);
+    return s.close_pending_flag;
+}
+
 fn makeTransport(s: *Script) h2.Transport {
     return h2.Transport{
         .state = @ptrCast(*void, s),
         .read_fn = scriptRead,
         .write_fn = scriptWrite,
+        .pending_fn = scriptPending,
         .close_fn = scriptClose,
     };
 }
@@ -1003,6 +1041,269 @@ fn scenarioArena() void {
     }
 }
 
+fn scenarioPeerEof() void {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    scriptEnd(s);
+    s.peer_eof = true;
+
+    var backing: [262144]u8 = undefined;
+    var ar = std.arena.init(backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch {
+        std.io.write("peer_eof=fail\n");
+        return;
+    };
+    var out: http.Response = undefined;
+    var r = makeRequest(&out);
+    const id = h2.http2Submit(c, &r) catch {
+        std.io.write("peer_eof=fail\n");
+        return;
+    };
+
+    var wa = WaitErrArgs{ .c = c, .id = id, .err = 0, .done = false };
+    var cbuf: [1024]u8 = undefined;
+    var fbuf: [512]u8 = undefined;
+    var ctxv: *Ctx = @ptrCast(*Ctx, &cbuf);
+    ctxv.capacity = 1024;
+    var wap: *WaitErrArgs = &wa;
+    var ctxp: *void = @ptrCast(*void, &cbuf);
+    var args: *const void = @ptrCast(*const void, &wap);
+    var frame: *void = @asyncInit(ctxp, &fbuf, waitErrWorker, args);
+    var more: ?*void = @asyncResume(frame, null);
+
+    var saw_closed: bool = false;
+    var it: usize = 0;
+    while (more != null and it < 4000) : (it += 1) {
+        const st = h2.http2Pump(c) catch {
+            std.io.write("peer_eof=fail\n");
+            return;
+        };
+        if (st == h2.PumpStatus.closed) saw_closed = true;
+        more = @asyncResume(frame, null);
+    }
+    const ok = (more == null) and wa.done and wa.err == 1 and r.failed and saw_closed;
+    if (ok) {
+        std.io.write("peer_eof=ok\n");
+    } else {
+        std.io.write("peer_eof=fail\n");
+    }
+    h2.http2Release(c, id) catch {};
+    h2.http2Close(c);
+}
+
+fn scenarioLateFrames() void {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    emitStatus(s, 1);
+    emitData(s, 1, 0x1, "a");
+    scriptEnd(s);
+
+    var backing: [262144]u8 = undefined;
+    var ar = std.arena.init(backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch {
+        std.io.write("late_frames=fail\n");
+        return;
+    };
+    var out1: http.Response = undefined;
+    var r1 = makeRequest(&out1);
+    const id1 = h2.http2Submit(c, &r1) catch {
+        std.io.write("late_frames=fail\n");
+        return;
+    };
+    var it: usize = 0;
+    while (it < 2000) : (it += 1) {
+        _ = h2.http2Pump(c) catch {
+            std.io.write("late_frames=fail\n");
+            return;
+        };
+        if (r1.done) break;
+    }
+    if (!r1.done) {
+        std.io.write("late_frames=fail\n");
+        return;
+    }
+    h2.http2Release(c, id1) catch {
+        std.io.write("late_frames=fail\n");
+        return;
+    };
+
+    // A released id is stale: late DATA and a split HEADERS/CONTINUATION must
+    // be ignored/accounted, not abort the connection for the next stream.
+    scriptBegin(s);
+    emitData(s, id1, 0, "late");
+    emitStatusSplit(s, id1);
+    emitStatus(s, 3);
+    emitData(s, 3, 0x1, "b");
+    scriptEnd(s);
+
+    var body3: [16]u8 = undefined;
+    var out3: http.Response = undefined;
+    var r3 = makeRequest(&out3);
+    out3.body = body3[0..];
+    const id3 = h2.http2Submit(c, &r3) catch {
+        std.io.write("late_frames=fail\n");
+        return;
+    };
+    var pump_ok: bool = true;
+    it = 0;
+    while (it < 2000) : (it += 1) {
+        _ = h2.http2Pump(c) catch {
+            pump_ok = false;
+            break;
+        };
+        if (r3.done) break;
+    }
+    const ok = pump_ok and r3.done and out3.status == 200 and out3.body.len == 1 and out3.body[0] == 'b';
+    if (ok) {
+        std.io.write("late_frames=ok\n");
+    } else {
+        std.io.write("late_frames=fail\n");
+    }
+    h2.http2Release(c, id3) catch {};
+    h2.http2Close(c);
+}
+
+fn headerRejected(block: []const u8) bool {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    scriptEmit(s, h2.FrameType.headers, 0x4, 1, block);
+    scriptEnd(s);
+
+    var backing: [262144]u8 = undefined;
+    var ar = std.arena.init(backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch return false;
+    var out: http.Response = undefined;
+    var r = makeRequest(&out);
+    _ = h2.http2Submit(c, &r) catch {
+        h2.http2Close(c);
+        return false;
+    };
+    var it: usize = 0;
+    while (it < 400) : (it += 1) {
+        _ = h2.http2Pump(c) catch |e| {
+            h2.http2Close(c);
+            return e == error.Protocol or e == error.Corrupt;
+        };
+        if (r.failed) break;
+    }
+    h2.http2Close(c);
+    return false;
+}
+
+fn scenarioHeaderValidation() void {
+    // Indexed :status 200 + literal x-test with a Huffman-free CRLF value.
+    var crlf = [_]u8{ 0x88, 0x00, 0x06, 'x', '-', 't', 'e', 's', 't', 0x04, 'a', '\r', '\n', 'b' };
+    // Uppercase response field name.
+    var upper = [_]u8{ 0x88, 0x00, 0x06, 'X', '-', 'T', 'e', 's', 't', 0x01, 'v' };
+    // No :status at all.
+    var nostatus = [_]u8{ 0x00, 0x06, 'x', '-', 't', 'e', 's', 't', 0x01, 'v' };
+    // :status after a regular field (also a duplicate pseudo-header).
+    var pseudo = [_]u8{ 0x88, 0x00, 0x06, 'x', '-', 't', 'e', 's', 't', 0x01, 'v', 0x88 };
+    printFlag("hdr_crlf", headerRejected(crlf[0..]));
+    printFlag("hdr_upper", headerRejected(upper[0..]));
+    printFlag("hdr_nostatus", headerRejected(nostatus[0..]));
+    printFlag("hdr_pseudo", headerRejected(pseudo[0..]));
+}
+
+fn configRejected(cfg: h2.Http2Config) bool {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    scriptEnd(s);
+    var backing: [262144]u8 = undefined;
+    var ar = std.arena.init(backing[0..]);
+    var t = makeTransport(s);
+    _ = h2.http2OpenTransport(&ar, &t, cfg) catch |e| {
+        return e == error.BadConfig;
+    };
+    return false;
+}
+
+fn configAccepted(cfg: h2.Http2Config) bool {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    scriptEnd(s);
+    var backing: [262144]u8 = undefined;
+    var ar = std.arena.init(backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, cfg) catch return false;
+    h2.http2Close(c);
+    return true;
+}
+
+fn scenarioConfig() void {
+    var a_cfg = defaultConfig();
+    a_cfg.max_frame_size = @intCast(u32, h2.READ_BUF_LEN - h2.FRAME_HEADER_LEN) + 1;
+    const a = configRejected(a_cfg);
+
+    var b_cfg = defaultConfig();
+    b_cfg.max_frame_size = h2.MAX_MAX_FRAME_SIZE;
+    const b = configRejected(b_cfg);
+
+    var c_cfg = defaultConfig();
+    c_cfg.initial_window = 0;
+    const c = configRejected(c_cfg);
+
+    var d_cfg = defaultConfig();
+    d_cfg.max_frame_size = @intCast(u32, h2.READ_BUF_LEN - h2.FRAME_HEADER_LEN);
+    const d = configAccepted(d_cfg);
+
+    printFlag("config", a and b and c and d);
+}
+
+fn scenarioClose() void {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    scriptEnd(s);
+    s.block_writes = true;
+
+    var backing: [262144]u8 = undefined;
+    var ar = std.arena.init(backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch {
+        std.io.write("close_pending=fail\n");
+        return;
+    };
+    var out: http.Response = undefined;
+    var r = makeRequest(&out);
+    _ = h2.http2Submit(c, &r) catch {
+        std.io.write("close_pending=fail\n");
+        return;
+    };
+
+    // HTTP output (preface/SETTINGS/HEADERS) is pending: the close must not
+    // finalize or call the transport close.
+    h2.http2Close(c);
+    const first_pending = h2.http2ClosePending(c) and !s.close_called and !c.close_called;
+
+    // Output can now flush, but the transport reports its own pending close
+    // bytes (the TLS close_pending case): still not finalized.
+    s.block_writes = false;
+    s.close_pending_flag = true;
+    h2.http2Close(c);
+    const second_pending = h2.http2ClosePending(c) and !s.close_called;
+
+    // Transport pending clears; the retry completes the close exactly once.
+    s.close_pending_flag = false;
+    h2.http2Close(c);
+    const done = s.close_called and !h2.http2ClosePending(c) and c.close_called;
+    printFlag("close_pending", first_pending and second_pending and done);
+}
+
 fn scenarioWait() void {
     const s = &g_script;
     scriptReset(s);
@@ -1059,6 +1360,11 @@ pub fn main() void {
     scenarioConnWindow();
     scenarioEarlyEnd();
     scenarioStreamFull();
+    scenarioPeerEof();
+    scenarioLateFrames();
+    scenarioHeaderValidation();
+    scenarioConfig();
+    scenarioClose();
     scenarioWait();
     scenarioArena();
 }

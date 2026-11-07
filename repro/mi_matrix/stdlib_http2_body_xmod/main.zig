@@ -122,6 +122,15 @@ fn sourceRead(state: *void, dst: []u8) http.HttpError!usize {
     return n;
 }
 
+const SourceFailState = struct { reads: usize };
+
+fn sourceFailRead(state: *void, dst: []u8) http.HttpError!usize {
+    const ss: *SourceFailState = @ptrCast(*SourceFailState, state);
+    _ = dst;
+    ss.reads += 1;
+    return error.BadResponse;
+}
+
 fn scriptReset(s: *Script) void {
     s.rlen = 0;
     s.rpos = 0;
@@ -236,11 +245,17 @@ fn scriptClose(state: *void) void {
     s.close_called = true;
 }
 
+fn scriptPending(state: *void) bool {
+    _ = state;
+    return false;
+}
+
 fn makeTransport(s: *Script) h2.Transport {
     return h2.Transport{
         .state = @ptrCast(*void, s),
         .read_fn = scriptRead,
         .write_fn = scriptWrite,
+        .pending_fn = scriptPending,
         .close_fn = scriptClose,
     };
 }
@@ -392,6 +407,69 @@ fn dataBytesAndEnd(bytes: []const u8, start: usize, want_sid: u32, sum_out: *usi
         }
         pos += 9 + len;
     }
+}
+
+fn countFrameType(bytes: []const u8, start: usize, typ: u8) i32 {
+    var pos: usize = start;
+    var n: i32 = 0;
+    while (pos + 9 <= bytes.len) {
+        const len = frameLength(bytes, pos);
+        if (pos + 9 + len > bytes.len) break;
+        if (bytes[pos + 3] == typ) n += 1;
+        pos += 9 + len;
+    }
+    return n;
+}
+
+const ConvErrArgs = struct {
+    c: *h2.Http2Conn,
+    out: *http.Response,
+    err: u8,
+    done: bool,
+    id: u32,
+};
+
+fn convErrWorker(args: *ConvErrArgs) void {
+    h2.http2Get(args.c, "https://example.com/t", args.out, &args.id) catch |e| {
+        if (e == error.TooLarge) {
+            args.err = 3;
+        } else if (e == error.StreamReset) {
+            args.err = 5;
+        } else {
+            args.err = 9;
+        }
+        args.done = true;
+        return;
+    };
+    args.err = 0;
+    args.done = true;
+}
+
+const WaitErrArgs = struct {
+    c: *h2.Http2Conn,
+    id: u32,
+    err: u8,
+    done: bool,
+};
+
+fn waitErrWorker(args: *WaitErrArgs) void {
+    h2.http2Wait(args.c, args.id) catch |e| {
+        if (e == error.TooLarge) {
+            args.err = 3;
+        } else if (e == error.Io) {
+            args.err = 2;
+        } else if (e == error.Closed) {
+            args.err = 1;
+        } else if (e == error.StreamReset) {
+            args.err = 5;
+        } else {
+            args.err = 9;
+        }
+        args.done = true;
+        return;
+    };
+    args.err = 0;
+    args.done = true;
 }
 
 const ApiArgs = struct {
@@ -988,6 +1066,125 @@ fn scenarioFailIdRelease() void {
     h2.http2Close(c);
 }
 
+fn scenarioSourceError() void {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    emitStatus(s, 3);
+    emitData(s, 3, 0x1, "ok");
+    scriptEnd(s);
+
+    var ar = std.arena.init(g_arena_backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch @panic("source_err: open");
+
+    var src_state = SourceFailState{ .reads = 0 };
+    var src = http.RequestSource{ .state = @ptrCast(*void, &src_state), .read_fn = sourceFailRead };
+    var out1: http.Response = undefined;
+    var r1 = h2.Http2Request{
+        .method = "POST",
+        .scheme = "https",
+        .authority = "example.com",
+        .path = "/err",
+        .headers = g_out_headers[0..0],
+        .body = "",
+        .body_len = 100,
+        .body_source = &src,
+        .sink = null,
+        .out = &out1,
+        .stream_id = 0,
+        .done = false,
+        .failed = false,
+    };
+    out1.body = g_fail_body[0..];
+    var out2: http.Response = undefined;
+    var r2 = makeGet(&out2);
+    out2.body = g_good_out_buf[0..];
+    const id1 = h2.http2Submit(c, &r1) catch @panic("source_err: submit1");
+    const id2 = h2.http2Submit(c, &r2) catch @panic("source_err: submit2");
+
+    var pump_ok: bool = true;
+    var it: usize = 0;
+    while (it < 4000) : (it += 1) {
+        _ = h2.http2Pump(c) catch {
+            pump_ok = false;
+            break;
+        };
+        if (r1.failed and r2.done) break;
+    }
+
+    var wait_err: u8 = 0;
+    if (r1.failed) {
+        var wa = WaitErrArgs{ .c = c, .id = id1, .err = 0, .done = false };
+        var cbuf: [32768]u8 = undefined;
+        var fbuf: [8192]u8 = undefined;
+        var ctx = initContext(cbuf[0..]);
+        var wp: *WaitErrArgs = &wa;
+        var args_ptr: *const void = @ptrCast(*const void, &wp);
+        var f: *void = @asyncInit(ctx, &fbuf, waitErrWorker, args_ptr);
+        var more: ?*void = @asyncResume(f, null);
+        var wit: usize = 0;
+        while (more != null and wit < 4000) : (wit += 1) {
+            _ = h2.http2Pump(c) catch {};
+            more = @asyncResume(f, null);
+        }
+        if (more == null) wait_err = wa.err;
+    }
+
+    const rst_sent = countFrameType(s.wbuf[0..s.wlen], 24, 3) >= 1;
+    const ok = pump_ok and r1.failed and r2.done and wait_err == 2 and rst_sent and
+        out2.status == 200 and containsBytes(out2.body, "ok");
+    if (ok) {
+        std.io.write("source_err=io\n");
+    } else {
+        std.io.write("source_err=fail\n");
+    }
+    h2.http2Release(c, id1) catch {};
+    h2.http2Release(c, id2) catch {};
+    h2.http2Close(c);
+}
+
+fn scenarioTooLargeApi() void {
+    const s = &g_script;
+    scriptReset(s);
+    scriptBegin(s);
+    emitSettingsEmpty(s);
+    emitStatus(s, 1);
+    emitData(s, 1, 0x1, "12345678");
+    scriptEnd(s);
+
+    var ar = std.arena.init(g_arena_backing[0..]);
+    var t = makeTransport(s);
+    var c = h2.http2OpenTransport(&ar, &t, defaultConfig()) catch @panic("too_large_api: open");
+
+    var out: http.Response = undefined;
+    out.body = g_small_out_buf[0..];
+    var wa = ConvErrArgs{ .c = c, .out = &out, .err = 0, .done = false, .id = 0 };
+
+    var cbuf: [32768]u8 = undefined;
+    var fbuf: [8192]u8 = undefined;
+    var ctx = initContext(cbuf[0..]);
+    var wp: *ConvErrArgs = &wa;
+    var args_ptr: *const void = @ptrCast(*const void, &wp);
+    var f: *void = @asyncInit(ctx, &fbuf, convErrWorker, args_ptr);
+
+    var more: ?*void = @asyncResume(f, null);
+    var it: usize = 0;
+    while (more != null and it < 8000) : (it += 1) {
+        _ = h2.http2Pump(c) catch {};
+        more = @asyncResume(f, null);
+    }
+    const ok = (more == null) and wa.err == 3;
+    if (ok) {
+        std.io.write("too_large_api=too_large\n");
+    } else {
+        std.io.write("too_large_api=fail\n");
+    }
+    h2.http2Release(c, wa.id) catch {};
+    h2.http2Close(c);
+}
+
 fn scenarioSlow() void {
     const s = &g_script;
     scriptReset(s);
@@ -1143,6 +1340,8 @@ pub fn main() void {
     scenarioTooLargeFlush();
     scenarioSinkError();
     scenarioFailIdRelease();
+    scenarioSourceError();
+    scenarioTooLargeApi();
     scenarioSlow();
     scenarioArenaCycles();
 }

@@ -7,5 +7,7 @@ large=too_large
 small_buf=too_large
 too_large_flush=1
 fail_id_release=1
+source_err=io
+too_large_api=too_large
 slow_ok=1
 arena_ok=1

@@ -458,6 +458,10 @@ pub const Transport = struct {
     state: *void,
     read_fn: fn (*void, []u8) TransportError!usize,
     write_fn: fn (*void, []const u8) TransportError!usize,
+    // True while the transport still owns unflushed close output (TLS
+    // ciphertext); http2Close must not finalize while this or HTTP output is
+    // pending.
+    pending_fn: fn (*void) bool,
     close_fn: fn (*void) void,
 };
 
@@ -478,6 +482,17 @@ pub const StreamState = enum(u8) {
     half_closed_remote = 3,
     closed = 4,
     reset = 5,
+};
+
+// Why a stream failed. http2Wait maps this to the public error so a local
+// capacity failure (TooLarge) is distinguishable from a server RST/EOF.
+pub const FailReason = enum(u8) {
+    none = 0,
+    closed = 1,
+    too_large = 2,
+    stream_reset = 3,
+    goaway = 4,
+    io = 5,
 };
 
 pub const Http2Request = struct {
@@ -503,6 +518,7 @@ pub const Stream = struct {
     id: u32,
     state: StreamState,
     req: *Http2Request,
+    fail_reason: FailReason,
     send_window: i32,
     recv_window: i32,
     recv_pending: i32,
@@ -561,6 +577,7 @@ pub const Http2Conn = struct {
     goaway_last_stream_id: u32,
     closed: bool,
     close_called: bool,
+    close_pending: bool,
     peer_closed: bool,
     fd: net.Socket,
     settings_ack_count: u32,
@@ -585,8 +602,15 @@ fn validateConfig(cfg: Http2Config) Http2Error!void {
     if (cfg.max_streams == 0 or cfg.max_streams > 65535) return error.BadConfig;
     if (cfg.max_header_list == 0) return error.BadConfig;
     if (cfg.max_header_list > 0xFFFFFFFF) return error.BadConfig;
+    // A zero initial window strands every peer DATA frame (the stream window
+    // never opens), so it is rejected rather than advertised.
+    if (cfg.initial_window == 0) return error.BadConfig;
     if (cfg.initial_window > MAX_INITIAL_WINDOW) return error.BadConfig;
-    if (cfg.max_frame_size < MIN_MAX_FRAME_SIZE or cfg.max_frame_size > MAX_MAX_FRAME_SIZE) return error.BadConfig;
+    // The reader/writer are fixed 64 KiB buffers; a frame (9-byte header plus
+    // payload) must fit one of them. Advertising more would make the peer send
+    // frames frameNext can only reject as TooLarge.
+    const local_max: u32 = @intCast(u32, READ_BUF_LEN - FRAME_HEADER_LEN);
+    if (cfg.max_frame_size < MIN_MAX_FRAME_SIZE or cfg.max_frame_size > local_max) return error.BadConfig;
 }
 
 fn allocBytes(a: *arena_mod.Arena, n: usize) Http2Error![]u8 {
@@ -688,6 +712,7 @@ pub fn http2OpenTransport(arena: *arena_mod.Arena, t: *const Transport, cfg: Htt
         st.id = 0;
         st.state = StreamState.idle;
         st.req = undefined;
+        st.fail_reason = FailReason.none;
         st.send_window = 0;
         st.recv_window = 0;
         st.recv_pending = 0;
@@ -708,6 +733,7 @@ pub fn http2OpenTransport(arena: *arena_mod.Arena, t: *const Transport, cfg: Htt
     c.goaway_last_stream_id = 0;
     c.closed = false;
     c.close_called = false;
+    c.close_pending = false;
     c.peer_closed = false;
     c.fd = INVALID_FD;
     c.settings_ack_count = 0;
@@ -778,6 +804,7 @@ fn resetStream(c: *Http2Conn, st: *Stream, id: u32, req: *Http2Request) void {
     st.id = id;
     st.state = StreamState.open;
     st.req = req;
+    st.fail_reason = FailReason.none;
     st.send_window = @intCast(i32, c.remote.initial_window_size);
     st.recv_window = @intCast(i32, c.cfg.initial_window);
     st.recv_pending = 0;
@@ -1068,6 +1095,31 @@ fn headerBlockSlice(f: *Frame) Http2Error![]const u8 {
     return f.payload[start .. f.payload.len - pad];
 }
 
+// Response field names are lowercase HTTP/2 tokens; values must not carry
+// CR/LF/NUL (a Huffman-coded CRLF would otherwise slip through). Any malformed
+// field fails the whole connection as Protocol/Corrupt.
+fn validResponseHeaderName(name: []const u8) bool {
+    if (name.len == 0) return false;
+    var i: usize = 0;
+    while (i < name.len) : (i += 1) {
+        const ch = name[i];
+        if (ch >= 'A' and ch <= 'Z') return false;
+        if (!headerNameChar(ch)) return false;
+    }
+    return true;
+}
+
+fn validResponseHeaderValue(value: []const u8) bool {
+    var i: usize = 0;
+    while (i < value.len) : (i += 1) {
+        const ch = value[i];
+        if (ch == '\r' or ch == '\n' or ch == 0) return false;
+        if (ch < 0x20 and ch != '\t') return false;
+        if (ch == 0x7f) return false;
+    }
+    return true;
+}
+
 fn decodeHeaderBlock(c: *Http2Conn, st: *Stream, block: []const u8) Http2Error!void {
     var ar = arena_mod.init(st.hdr_arena_buf);
     const n = hpack_mod.hpackDecode(&c.hpack, block, st.hdr_slots, &ar) catch |e| {
@@ -1076,36 +1128,56 @@ fn decodeHeaderBlock(c: *Http2Conn, st: *Stream, block: []const u8) Http2Error!v
     };
     var outn: usize = 0;
     var status: u16 = 0;
+    var status_seen: bool = false;
+    var seen_regular: bool = false;
     var i: usize = 0;
     while (i < n) : (i += 1) {
         const hh = st.hdr_slots[i];
         if (hh.name.len > 0 and hh.name[0] == ':') {
-            if (eqBytes(hh.name, ":status")) {
-                status = try parseStatus(hh.value);
-            } else {
-                return error.Protocol;
-            }
+            // Pseudo headers precede regular fields, exactly one :status only.
+            if (seen_regular or status_seen) return error.Protocol;
+            if (!eqBytes(hh.name, ":status")) return error.Protocol;
+            status_seen = true;
+            status = try parseStatus(hh.value);
         } else {
+            seen_regular = true;
+            if (!validResponseHeaderName(hh.name)) return error.Protocol;
+            if (!validResponseHeaderValue(hh.value)) return error.Protocol;
             if (outn >= st.hdr_out.len) return error.TooLarge;
             st.hdr_out[outn] = http.Header{ .name = hh.name, .value = hh.value };
             outn += 1;
         }
     }
+    if (!status_seen) return error.Protocol;
     st.req.out.status = status;
     st.req.out.headers = st.hdr_out[0..outn];
 }
 
+fn beginDiscardContinuation(c: *Http2Conn, f: *Frame) void {
+    c.hscratch_len = 0;
+    c.cont_pending = true;
+    c.cont_discard = true;
+    c.cont_end_stream = (f.flags & 0x1) != 0;
+    c.cont_stream = f.stream_id;
+}
+
 fn dispatchHeaders(c: *Http2Conn, f: *Frame) Http2Error!void {
-    const st = findStream(c, f.stream_id) orelse return error.Protocol;
-    if (st.state == StreamState.reset or st.state == StreamState.closed or st.state == StreamState.idle) return error.StreamClosed;
+    const found = findStream(c, f.stream_id);
+    if (found == null) {
+        // Released/unknown stream: ignore the block (and any CONTINUATION),
+        // never abort the connection for one stale stream.
+        if ((f.flags & 0x4) == 0) beginDiscardContinuation(c, f);
+        return;
+    }
+    const st = found orelse return;
+    if (st.state == StreamState.reset or st.state == StreamState.closed or st.state == StreamState.idle) {
+        if ((f.flags & 0x4) == 0) beginDiscardContinuation(c, f);
+        return;
+    }
     const block = try headerBlockSlice(f);
     if (st.headers_received) {
         if ((f.flags & 0x4) == 0) {
-            c.hscratch_len = 0;
-            c.cont_pending = true;
-            c.cont_discard = true;
-            c.cont_end_stream = (f.flags & 0x1) != 0;
-            c.cont_stream = f.stream_id;
+            beginDiscardContinuation(c, f);
         } else {
             if ((f.flags & 0x1) != 0) try finishStream(c, st);
         }
@@ -1135,7 +1207,17 @@ fn dispatchContinuation(c: *Http2Conn, f: *Frame) Http2Error!void {
         c.hscratch_len += f.payload.len;
     }
     if ((f.flags & 0x4) != 0) {
-        const st = findStream(c, f.stream_id) orelse return error.Protocol;
+        const found = findStream(c, f.stream_id);
+        if (found == null) {
+            // The stream was released/closed while its CONTINUATION was in
+            // flight; drop the joined block and keep the connection alive.
+            c.cont_pending = false;
+            c.cont_discard = false;
+            c.cont_end_stream = false;
+            c.hscratch_len = 0;
+            return;
+        }
+        const st = found orelse return;
         if (!c.cont_discard and !st.headers_received) {
             try decodeHeaderBlock(c, st, c.hscratch[0..c.hscratch_len]);
             st.headers_received = true;
@@ -1225,14 +1307,39 @@ fn sendRstStream(c: *Http2Conn, stream_id: u32, code: u32) void {
     frameAppend(&c.writer, FrameType.rst_stream, 0, stream_id, p[0..4]) catch {};
 }
 
+// A local stream failure (source read error, sink error, capacity) resets only
+// this stream; other streams and the connection keep running.
+fn failStreamLocally(c: *Http2Conn, st: *Stream, reason: FailReason) void {
+    st.req.failed = true;
+    st.fail_reason = reason;
+    st.state = StreamState.reset;
+    sendRstStream(c, st.id, 0x2);
+}
+
+// Peer EOF (or a dead write side) retires every active lease with `Closed`
+// so http2Wait returns instead of suspending forever.
+fn failStreamsOnClose(c: *Http2Conn) void {
+    c.closed = true;
+    var i: usize = 0;
+    while (i < c.streams.len) : (i += 1) {
+        const st = &c.streams[i];
+        if (st.state == StreamState.idle) continue;
+        if (!st.req.done and st.fail_reason == FailReason.none) {
+            st.req.failed = true;
+            st.fail_reason = FailReason.closed;
+        }
+        if (st.state == StreamState.open or st.state == StreamState.half_closed_local or st.state == StreamState.half_closed_remote) {
+            st.state = StreamState.closed;
+        }
+    }
+}
+
 // A rejected buffered body already debited the connection receive window for
 // this DATA frame. Return that credit immediately instead of waiting for the
 // half-window threshold (which only an accepted DATA frame would trigger), and
 // fail the stream so the lease is releasable and http2Wait cannot hang.
 fn failBufferedTooLarge(c: *Http2Conn, st: *Stream) void {
-    st.req.failed = true;
-    st.state = StreamState.reset;
-    sendRstStream(c, st.id, 0x2);
+    failStreamLocally(c, st, FailReason.too_large);
     if (c.conn_recv_pending > 0) {
         sendWindowUpdate(c, 0, c.conn_recv_pending) catch {
             return;
@@ -1241,19 +1348,32 @@ fn failBufferedTooLarge(c: *Http2Conn, st: *Stream) void {
     }
 }
 
+// DATA for an unknown/released/closed/reset stream still consumes connection
+// flow credit; drop the bytes and keep the connection (and other streams)
+// alive. The full frame payload counts, including padding.
+fn accountIgnoredData(c: *Http2Conn, f: *Frame) Http2Error!void {
+    const ignored: i32 = @intCast(i32, f.payload.len);
+    if (ignored > c.conn_recv_window) return error.Protocol;
+    c.conn_recv_window -= ignored;
+    c.conn_recv_pending += ignored;
+    try maybeConnWindowUpdate(c);
+}
+
 fn dispatchData(c: *Http2Conn, f: *Frame) Http2Error!void {
-    const st = findStream(c, f.stream_id) orelse return error.StreamClosed;
-    if (st.state == StreamState.reset or st.state == StreamState.closed) {
-        // A local sink failure resets the stream. Keep connection flow control
-        // honest and drop the bytes so another stream is never aborted.
-        const ignored: i32 = @intCast(i32, f.payload.len);
-        if (ignored > c.conn_recv_window) return error.Protocol;
-        c.conn_recv_window -= ignored;
-        c.conn_recv_pending += ignored;
-        try maybeConnWindowUpdate(c);
+    const found = findStream(c, f.stream_id);
+    if (found == null) {
+        try accountIgnoredData(c, f);
         return;
     }
-    if (st.state == StreamState.idle) return error.StreamClosed;
+    const st = found orelse return;
+    if (st.state == StreamState.reset or st.state == StreamState.closed) {
+        try accountIgnoredData(c, f);
+        return;
+    }
+    if (st.state == StreamState.idle) {
+        try accountIgnoredData(c, f);
+        return;
+    }
     const wire: i32 = @intCast(i32, f.payload.len);
     if (wire > st.recv_window or wire > c.conn_recv_window) return error.Protocol;
     var body: []const u8 = f.payload;
@@ -1270,9 +1390,7 @@ fn dispatchData(c: *Http2Conn, f: *Frame) Http2Error!void {
 
     if (st.req.sink) |snk| {
         snk.write_fn(snk.state, body) catch {
-            st.state = StreamState.reset;
-            st.req.failed = true;
-            sendRstStream(c, st.id, 0x2);
+            failStreamLocally(c, st, FailReason.io);
             try maybeConnWindowUpdate(c);
             return;
         };
@@ -1384,6 +1502,7 @@ fn dispatchGoaway(c: *Http2Conn, f: *Frame) Http2Error!void {
         if (st.id > last) {
             st.state = StreamState.reset;
             st.req.failed = true;
+            st.fail_reason = FailReason.goaway;
         }
     }
     if (activeStreams(c) == 0) c.closed = true;
@@ -1394,6 +1513,15 @@ fn dispatchRst(c: *Http2Conn, f: *Frame) Http2Error!void {
     const st = findStream(c, f.stream_id) orelse return;
     st.state = StreamState.reset;
     st.req.failed = true;
+    if (st.fail_reason == FailReason.none) {
+        // A GOAWAY already seen on this connection stays the reported cause
+        // even when a follow-up RST retires the stream.
+        if (c.goaway) {
+            st.fail_reason = FailReason.goaway;
+        } else {
+            st.fail_reason = FailReason.stream_reset;
+        }
+    }
 }
 
 fn sendOneData(c: *Http2Conn, st: *Stream) Http2Error!bool {
@@ -1418,8 +1546,16 @@ fn sendOneData(c: *Http2Conn, st: *Stream) Http2Error!bool {
         const cap: usize = free - FRAME_HEADER_LEN;
         if (want > cap) want = cap;
         if (want == 0) return false;
-        const got = src0.read_fn(src0.state, c.send_scratch[0..want]) catch return error.Io;
-        if (got == 0) return error.Io;
+        const got = src0.read_fn(src0.state, c.send_scratch[0..want]) catch {
+            // A truncated/failed request body is a stream failure, not a
+            // connection-level pump error: reset this stream and let others run.
+            failStreamLocally(c, st, FailReason.io);
+            return true;
+        };
+        if (got == 0) {
+            failStreamLocally(c, st, FailReason.io);
+            return true;
+        }
         var flags: u8 = 0;
         if (st.src_sent + got >= req.body_len) flags = 0x1;
         try frameAppend(&c.writer, FrameType.data, flags, st.id, c.send_scratch[0..got]);
@@ -1505,8 +1641,15 @@ pub fn http2Pump(c: *Http2Conn) Http2Error!PumpStatus {
         frameReaderAdvance(&c.reader, n);
         progressed = true;
     }
-    write_blocked = try flushOutput(c);
-    if (c.closed) return PumpStatus.closed;
+    if (!c.peer_closed) {
+        write_blocked = try flushOutput(c);
+    }
+    if (c.peer_closed or c.closed) {
+        // EOF/Closed (read or write) retires active leases with Closed; a
+        // caller blocked in http2Wait resumes with an error instead of hanging.
+        failStreamsOnClose(c);
+        return PumpStatus.closed;
+    }
     if (write_blocked or hit_write_block) return PumpStatus.would_block;
     if (progressed or !read_blocked) return PumpStatus.progress;
     return PumpStatus.would_block;
@@ -1516,6 +1659,14 @@ pub fn http2Wait(c: *Http2Conn, stream_id: u32) Http2Error!void {
     while (true) {
         const st = findStream(c, stream_id) orelse return error.NoStream;
         if (st.req.failed) {
+            if (st.fail_reason == FailReason.too_large) return error.TooLarge;
+            if (st.fail_reason == FailReason.io) return error.Io;
+            if (st.fail_reason == FailReason.closed) return error.Closed;
+            if (st.fail_reason == FailReason.goaway) return error.GoAway;
+            if (st.fail_reason == FailReason.stream_reset) {
+                if (c.goaway) return error.GoAway;
+                return error.StreamReset;
+            }
             if (st.state == StreamState.reset) {
                 if (c.goaway) return error.GoAway;
                 return error.StreamReset;
@@ -1536,9 +1687,23 @@ pub fn http2Release(c: *Http2Conn, stream_id: u32) Http2Error!void {
     st.id = 0;
 }
 
+// Flush HTTP output and the transport's own pending close output first. If
+// either would block, leave the connection open (close_called false) and set
+// close_pending; the caller retries after writability. This prevents marking a
+// half-closed connection finalized or leaking the socket through a
+// WouldBlock close flush.
 pub fn http2Close(c: *Http2Conn) void {
     if (c.close_called) return;
-    _ = flushOutput(c) catch {};
+    var blocked: bool = false;
+    const flush_blocked: bool = flushOutput(c) catch false;
+    if (flush_blocked) blocked = true;
+    if (!blocked) {
+        if (c.transport.pending_fn(c.transport.state)) blocked = true;
+    }
+    if (blocked) {
+        c.close_pending = true;
+        return;
+    }
     var i: usize = 0;
     while (i < c.streams.len) : (i += 1) {
         c.streams[i].state = StreamState.idle;
@@ -1546,7 +1711,12 @@ pub fn http2Close(c: *Http2Conn) void {
     }
     c.closed = true;
     c.close_called = true;
+    c.close_pending = false;
     c.transport.close_fn(c.transport.state);
+}
+
+pub fn http2ClosePending(c: *const Http2Conn) bool {
+    return c.close_pending;
 }
 
 // ===== Transport adapters and body API (Task 7) =====
@@ -1611,6 +1781,11 @@ fn tlsTransportWrite(state: *void, data: []const u8) TransportError!usize {
     return n;
 }
 
+fn tlsTransportPending(state: *void) bool {
+    const io: *tls_io.TlsIo = @ptrCast(*tls_io.TlsIo, state);
+    return tls_io.tlsIoClosePending(io);
+}
+
 fn tlsTransportClose(state: *void) void {
     const io: *tls_io.TlsIo = @ptrCast(*tls_io.TlsIo, state);
     tls_io.tlsIoClose(io);
@@ -1622,6 +1797,7 @@ pub fn http2OpenTls(arena: *arena_mod.Arena, io: *tls_io.TlsIo, cfg: Http2Config
         .state = @ptrCast(*void, io),
         .read_fn = tlsTransportRead,
         .write_fn = tlsTransportWrite,
+        .pending_fn = tlsTransportPending,
         .close_fn = tlsTransportClose,
     };
     const tp = try allocTransportPtr(arena, t);
@@ -1655,6 +1831,11 @@ fn tcpTransportWrite(state: *void, data: []const u8) TransportError!usize {
     return n;
 }
 
+fn tcpTransportPending(state: *void) bool {
+    _ = state;
+    return false;
+}
+
 fn tcpTransportClose(state: *void) void {
     const ts: *TcpState = @ptrCast(*TcpState, state);
     net.close(ts.sock);
@@ -1668,6 +1849,7 @@ pub fn http2OpenTcp(arena: *arena_mod.Arena, sock: net.Socket, cfg: Http2Config)
         .state = @ptrCast(*void, ts),
         .read_fn = tcpTransportRead,
         .write_fn = tcpTransportWrite,
+        .pending_fn = tcpTransportPending,
         .close_fn = tcpTransportClose,
     };
     const tp = try allocTransportPtr(arena, t);
