@@ -11,6 +11,7 @@ pub const TlsIo = struct {
     established: bool,
     closed: bool,
     sock_closed: bool,
+    close_pending: bool,
 };
 
 pub const TlsIoError = error{
@@ -55,6 +56,7 @@ pub fn tlsIoInit(io: *TlsIo, sess: *tls.TlsSession, sock: net.Socket) void {
     io.established = false;
     io.closed = false;
     io.sock_closed = false;
+    io.close_pending = false;
 }
 
 fn flushOut(io: *TlsIo) TlsIoError!void {
@@ -112,19 +114,19 @@ pub fn tlsIoHandshakePump(io: *TlsIo) TlsIoError!bool {
 }
 
 pub fn tlsIoReadPump(io: *TlsIo, out: []u8) TlsIoError!usize {
-    if (io.closed) return 0;
     if (!io.established) return error.HandshakeFailed;
     if (out.len == 0) return 0;
 
     const buffered = try tls.tlsRead(io.sess, out);
     if (buffered > 0) return buffered;
+    if (io.closed) return 0;
 
     while (true) {
         try flushOut(io);
         const rn = try net.recvNonBlocking(&io.sock, io.in[0..]);
         if (rn == 0) {
             io.closed = true;
-            return 0;
+            return try tls.tlsRead(io.sess, out);
         }
         const act = try tls.tlsStep(io.sess, io.in[0..rn], io.out[0..]);
         switch (act) {
@@ -138,7 +140,7 @@ pub fn tlsIoReadPump(io: *TlsIo, out: []u8) TlsIoError!usize {
             .established => {},
             .closed => {
                 io.closed = true;
-                return 0;
+                return try tls.tlsRead(io.sess, out);
             },
             else => {},
         }
@@ -167,13 +169,38 @@ pub fn tlsIoWritePump(io: *TlsIo, data: []const u8) TlsIoError!usize {
     return take;
 }
 
+// tlsIoClose flushes pending wire output before closing. If the flush would
+// block, the socket stays open, `close_pending` is set, and the caller must
+// retry tlsIoClose (preferably when the socket is writable) until
+// tlsIoClosePending returns false. A retry after a completed close is a no-op.
 pub fn tlsIoClose(io: *TlsIo) void {
-    if (!io.sock_closed) {
-        net.close(io.sock);
-        io.sock_closed = true;
+    if (io.sock_closed) {
+        io.close_pending = false;
+        io.closed = true;
+        io.established = false;
+        io.out_len = 0;
+        io.out_off = 0;
+        return;
     }
+
+    if (io.out_off < io.out_len) {
+        flushOut(io) catch |e| {
+            if (e == error.WouldBlock) {
+                io.close_pending = true;
+                return;
+            }
+        };
+    }
+
+    net.close(io.sock);
+    io.sock_closed = true;
+    io.close_pending = false;
     io.closed = true;
     io.established = false;
     io.out_len = 0;
     io.out_off = 0;
+}
+
+pub fn tlsIoClosePending(io: *const TlsIo) bool {
+    return io.close_pending;
 }

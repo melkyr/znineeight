@@ -22,6 +22,7 @@ const net = @import("std_net.zig");
 const os = @import("std_os.zig");
 const rand = @import("std_rand.zig");
 const x509 = @import("std_x509.zig");
+const time = @import("std_time.zig");
 
 const usage_line = "usage: stdlib_tls_io_xmod <host:port>\n";
 const now_unix: i64 = 1893456000; // 2030-01-01, inside the committed cert window
@@ -79,9 +80,19 @@ var g_store_arena_buf: [32768]u8 = undefined;
 var g_session: tls.TlsSession = undefined;
 var g_io: tio.TlsIo = undefined;
 var g_run: Run = undefined;
+var g_coalesce: bool = false;
 
 fn out(s: []const u8) void {
     std.io.write(s);
+}
+
+fn eqBytes(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
 }
 
 fn parsePort(s: []const u8, out_port: *u16) bool {
@@ -139,6 +150,94 @@ fn sendProbeClosed(sock: net.Socket) bool {
     return false;
 }
 
+// Proves the fd is still open: a send succeeds or yields WouldBlock, not Io.
+fn sendProbeOpen(sock: net.Socket) bool {
+    var s: net.Socket = sock;
+    _ = net.sendNonBlocking(&s, "z") catch |e| {
+        if (e == error.WouldBlock) return true;
+        return false;
+    };
+    return true;
+}
+
+fn fillSendBuf(sock: *net.Socket) bool {
+    var junk: [4096]u8 = undefined;
+    var i: usize = 0;
+    while (i < junk.len) : (i += 1) junk[i] = 0x41;
+    while (true) {
+        _ = net.sendNonBlocking(sock, junk[0..]) catch |e| {
+            if (e == error.WouldBlock) return true;
+            return false;
+        };
+    }
+    return false;
+}
+
+fn runClosePending(host: []const u8, port: u16) void {
+    if (net.init() != 0) {
+        out("closepending=0\n");
+        return;
+    }
+    const ip = net.resolve(host) catch {
+        out("closepending=0\n");
+        net.cleanup();
+        return;
+    };
+    const sock = net.tcpSocket() catch {
+        out("closepending=0\n");
+        net.cleanup();
+        return;
+    };
+    net.connectToIp(sock, ip, port, CONNECT_TIMEOUT_MS) catch {
+        out("closepending=0\n");
+        net.close(sock);
+        net.cleanup();
+        return;
+    };
+    tio.tlsIoInit(&g_io, &g_session, sock);
+    if (!fillSendBuf(&g_io.sock)) {
+        out("closepending=0\n");
+        tio.tlsIoClose(&g_io);
+        net.cleanup();
+        return;
+    }
+
+    // Synthetic pending wire bytes: the send buffer is full, so the close
+    // flush must report WouldBlock instead of discarding the record.
+    g_io.out[0] = 0x17;
+    g_io.out[1] = 0x03;
+    g_io.out[2] = 0x03;
+    g_io.out[3] = 0x00;
+    g_io.out[4] = 0x00;
+    g_io.out[5] = 0x01;
+    g_io.out[6] = 0x00;
+    g_io.out[7] = 0x00;
+    g_io.out_len = 8;
+    g_io.out_off = 0;
+
+    tio.tlsIoClose(&g_io);
+    if (!tio.tlsIoClosePending(&g_io)) {
+        out("closepending=0\n");
+        net.cleanup();
+        return;
+    }
+    const was_open = sendProbeOpen(g_io.sock);
+
+    var tries: usize = 0;
+    while (tio.tlsIoClosePending(&g_io) and tries < 1000) : (tries += 1) {
+        waitReady(&g_io);
+        tio.tlsIoClose(&g_io);
+    }
+    const still_pending = tio.tlsIoClosePending(&g_io);
+    const closed_after = sendProbeClosed(g_io.sock);
+    net.cleanup();
+    if (was_open and !still_pending and closed_after) {
+        out("closepending=1\n");
+    } else {
+        out("closepending=0\n");
+    }
+}
+
 fn worker(run: *Run) void {
     var established: bool = false;
     while (!established) {
@@ -180,6 +279,9 @@ fn worker(run: *Run) void {
         };
         sent += n;
     }
+
+    // Coalesce case: let the echo record and close_notify queue in one recv.
+    if (g_coalesce) time.sleepMs(@intCast(u32, 150));
 
     var total: usize = 0;
     while (total < WANT) {
@@ -229,7 +331,7 @@ fn worker(run: *Run) void {
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
     os.initArgs(argc, argv);
-    if (os.argc() != 2) {
+    if (os.argc() != 2 and os.argc() != 3) {
         out(usage_line);
         os.exit(2);
     }
@@ -240,6 +342,17 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         out(usage_line);
         os.exit(2);
     }
+    var mode: []const u8 = "";
+    if (os.argc() == 3) mode = os.argv(2);
+    if (mode.len > 0 and !eqBytes(mode, "coalesce") and !eqBytes(mode, "closepending")) {
+        out(usage_line);
+        os.exit(2);
+    }
+    if (eqBytes(mode, "closepending")) {
+        runClosePending(host, port);
+        os.exit(0);
+    }
+    g_coalesce = eqBytes(mode, "coalesce");
 
     var arena = std.arena.init(g_store_arena_buf[0..]);
     var store: x509.TrustStore = undefined;
@@ -323,5 +436,6 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     } else {
         out("sock_closed=0\n");
     }
+    if (g_coalesce) out("coalesce=1\n");
     os.exit(0);
 }

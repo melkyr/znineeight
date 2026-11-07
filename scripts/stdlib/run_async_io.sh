@@ -139,10 +139,17 @@ const srv = tls.createServer({
     cert: fs.readFileSync(process.env.ECHO_CERT),
 }, (c) => {
     c.on("error", () => {});
-    c.once("data", (d) => {
-        c.write(d);
-        setTimeout(() => { c.end(); }, 100);
-    });
+    const mode = process.env.ECHO_MODE || "delayed";
+    if (mode === "coalesce") {
+        c.once("data", (d) => { c.end(d); });
+    } else if (mode === "drain") {
+        c.on("data", () => {});
+    } else {
+        c.once("data", (d) => {
+            c.write(d);
+            setTimeout(() => { c.end(); }, 100);
+        });
+    }
 });
 srv.on("tlsClientError", () => {});
 srv.listen(0, "127.0.0.1", () => {
@@ -202,6 +209,93 @@ else
 fi
 
 stop_server
+
+if [ "$MODE" = "tlsio" ]; then
+    echo "== TLS immediate close (echo + close_notify coalesced) =="
+    ready="$tmp/echo2.ready"
+    rm -f "$ready"
+    ECHO_MODE=coalesce ECHO_READY="$ready" ECHO_KEY="$CERTS/localhost.key" ECHO_CERT="$CERTS/localhost.pem" \
+        node "$tmp/echo.js" >"$tmp/server2.log" 2>&1 &
+    SERVER_PID=$!
+
+    i=0
+    while [ "$i" -lt 50 ]; do
+        if [ -s "$ready" ]; then break; fi
+        if ! kill -0 "$SERVER_PID" 2>/dev/null; then break; fi
+        i=$((i + 1))
+        sleep 0.1
+    done
+    want_coalesce=$'tlsio=ping\nwb>=1\nsock_closed=1\ncoalesce=1'
+    if [ ! -s "$ready" ]; then
+        fail_case "tlsio coalesce server start (see $tmp/server2.log)"
+        head -5 "$tmp/server2.log" 2>/dev/null | sed 's/^/    /' >&2 || true
+    else
+        read -r port <"$ready"
+        for label in fast safe; do
+            timeout 40 "$tmp/$label/prog" "$RUN_HOST:$port" coalesce \
+                >"$tmp/coalesce.$label.out" 2>"$tmp/coalesce.$label.err"
+            rc=$?
+            got="$(tr -d '\r' < "$tmp/coalesce.$label.out")"
+            if [ "$rc" -eq 0 ] && [ "$got" = "$want_coalesce" ]; then
+                pass_case "tlsio coalesce $label -> coalesce=1"
+            else
+                fail_case "tlsio coalesce $label (rc=$rc got='$got' want='$want_coalesce')"
+                head -3 "$tmp/coalesce.$label.err" 2>/dev/null | sed 's/^/    /' >&2 || true
+            fi
+        done
+    fi
+    stop_server
+fi
+
+if [ "$MODE" = "tlsio" ]; then
+    echo "== TLS close with pending output (WouldBlock retry) =="
+    cat >"$tmp/drain.js" <<'JS'
+const net = require("net");
+const fs = require("fs");
+const ready = process.env.DRAIN_READY;
+const srv = net.createServer((c) => {
+    c.on("error", () => {});
+    c.pause();
+    setTimeout(() => { c.resume(); }, 250);
+});
+srv.listen(0, "127.0.0.1", () => {
+    fs.writeFileSync(ready, String(srv.address().port));
+});
+process.on("SIGTERM", () => { srv.close(); process.exit(0); });
+process.on("SIGINT", () => { srv.close(); process.exit(0); });
+JS
+    ready="$tmp/drain.ready"
+    rm -f "$ready"
+    DRAIN_READY="$ready" node "$tmp/drain.js" >"$tmp/drain.log" 2>&1 &
+    SERVER_PID=$!
+
+    i=0
+    while [ "$i" -lt 50 ]; do
+        if [ -s "$ready" ]; then break; fi
+        if ! kill -0 "$SERVER_PID" 2>/dev/null; then break; fi
+        i=$((i + 1))
+        sleep 0.1
+    done
+    if [ ! -s "$ready" ]; then
+        fail_case "tlsio closepending server start (see $tmp/drain.log)"
+        head -5 "$tmp/drain.log" 2>/dev/null | sed 's/^/    /' >&2 || true
+    else
+        read -r port <"$ready"
+        for label in fast safe; do
+            timeout 40 "$tmp/$label/prog" "$RUN_HOST:$port" closepending \
+                >"$tmp/pending.$label.out" 2>"$tmp/pending.$label.err"
+            rc=$?
+            got="$(tr -d '\r' < "$tmp/pending.$label.out")"
+            if [ "$rc" -eq 0 ] && [ "$got" = "closepending=1" ]; then
+                pass_case "tlsio closepending $label -> closepending=1"
+            else
+                fail_case "tlsio closepending $label (rc=$rc got='$got' want='closepending=1')"
+                head -3 "$tmp/pending.$label.err" 2>/dev/null | sed 's/^/    /' >&2 || true
+            fi
+        done
+    fi
+    stop_server
+fi
 
 echo "----------------------------------------"
 echo "run_async_io: $pass PASS / $fail FAIL"
