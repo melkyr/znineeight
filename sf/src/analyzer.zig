@@ -73,59 +73,229 @@ fn resolveOrigin(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     return null;
 }
 
-// DF-1: alias relation for allocation state. Aliases share one canonical
-// name, so freeing any alias updates the same allocation. The table is reset
-// per function by `runDoubleFreeAnalyzer`; the analyzer is a single-threaded
-// post-sema pass, so a module-scoped table avoids widening AnalyzerContext.
-const ALIAS_CAP: usize = 4096;
-var alias_names: [ALIAS_CAP]u32 = undefined;
-var alias_canons: [ALIAS_CAP]u32 = undefined;
+// DF-1: alias relation for allocation state. Aliases are scoped to the
+// StateMap that records them, so a branch fork and its sibling cannot see each
+// other's aliases and a merge imports only the relation both arms agree on.
+// Every name keeps its own allocation-state copy (taken when the alias is
+// created), so reassigning one name detaches it without rebinding the others.
+const ALIAS_CAP: usize = 8192;
+const AliasEntry = struct {
+    scope: *StateMap,
+    name_id: u32,
+    canon_id: u32,
+};
+var alias_entries: [ALIAS_CAP]AliasEntry = undefined;
 var alias_len: usize = 0;
+
+// Scratch for branch merges. Merges run after a branch walk completes and do
+// not nest, so static scratch is safe and keeps the per-function sand budget
+// untouched.
+var alias_merge_names: [ALIAS_CAP]u32 = undefined;
+var alias_merge_a: [ALIAS_CAP]u32 = undefined;
+var alias_merge_b: [ALIAS_CAP]u32 = undefined;
 
 fn aliasReset() void {
     alias_len = @intCast(usize, 0);
 }
 
-fn aliasEntryIndex(name_id: u32) ?usize {
-    var i: usize = 0;
-    while (i < alias_len) : (i += 1) {
-        if (alias_names[i] == name_id) return i;
+fn aliasLookupCanon(scope: *StateMap, name_id: u32) ?u32 {
+    var s: ?*StateMap = scope;
+    while (s) |sp| {
+        var i = alias_len;
+        while (i > 0) {
+            i -= 1;
+            if (alias_entries[i].scope == sp and alias_entries[i].name_id == name_id) {
+                return alias_entries[i].canon_id;
+            }
+        }
+        s = sp.parent;
     }
     return null;
 }
 
-fn aliasResolveName(name_id: u32) u32 {
+fn aliasResolveName(scope: *StateMap, name_id: u32) u32 {
     if (name_id == @intCast(u32, 0)) return name_id;
     var cur = name_id;
     var guard: u32 = 0;
     while (guard < @intCast(u32, 64)) : (guard += 1) {
-        var idx = aliasEntryIndex(cur) orelse return cur;
-        var next = alias_canons[idx];
+        var next = aliasLookupCanon(scope, cur) orelse return cur;
         if (next == cur) return cur;
         cur = next;
     }
     return cur;
 }
 
-fn aliasRecord(alias_id: u32, canonical_id: u32) void {
-    if (alias_id == @intCast(u32, 0) or canonical_id == @intCast(u32, 0)) return;
-    var canon = aliasResolveName(canonical_id);
-    if (canon == alias_id) return;
-    if (aliasEntryIndex(alias_id)) |idx| {
-        alias_canons[idx] = canon;
-        return;
+fn aliasSet(scope: *StateMap, name_id: u32, canon_id: u32) void {
+    if (name_id == @intCast(u32, 0)) return;
+    var i = alias_len;
+    while (i > 0) {
+        i -= 1;
+        if (alias_entries[i].scope == scope and alias_entries[i].name_id == name_id) {
+            alias_entries[i].canon_id = canon_id;
+            return;
+        }
     }
     if (alias_len >= ALIAS_CAP) return;
-    alias_names[alias_len] = alias_id;
-    alias_canons[alias_len] = canon;
+    alias_entries[alias_len] = AliasEntry{ .scope = scope, .name_id = name_id, .canon_id = canon_id };
     alias_len += 1;
 }
 
-fn aliasForget(name_id: u32) void {
-    if (aliasEntryIndex(name_id)) |idx| {
-        alias_canons[idx] = name_id;
+fn aliasRecord(scope: *StateMap, alias_id: u32, canonical_id: u32) void {
+    if (alias_id == @intCast(u32, 0)) return;
+    if (canonical_id == @intCast(u32, 0)) return;
+    var canon = aliasResolveName(scope, canonical_id);
+    aliasSet(scope, alias_id, canon);
+}
+
+fn aliasForget(scope: *StateMap, name_id: u32) void {
+    if (name_id == @intCast(u32, 0)) return;
+    aliasSet(scope, name_id, name_id);
+}
+
+fn aliasCopyState(state: *StateMap, alias_id: u32, canonical_id: u32) void {
+    if (alias_id == @intCast(u32, 0) or canonical_id == @intCast(u32, 0)) return;
+    var canon = aliasResolveName(state, canonical_id);
+    if (smap_mod.stateMapGet(state, canon)) |st| {
+        smap_mod.stateMapSet(state, alias_id, st);
     }
 }
+
+fn aliasHasInbound(state: *StateMap, root: u32) bool {
+    var i: usize = 0;
+    while (i < alias_len) : (i += 1) {
+        var name_id = alias_entries[i].name_id;
+        if (name_id == root) continue;
+        if (aliasResolveName(state, name_id) == root) return true;
+    }
+    return false;
+}
+
+fn aliasDetachInbound(state: *StateMap, root: u32) void {
+    var snap = alias_len;
+    var i: usize = 0;
+    while (i < snap) : (i += 1) {
+        var name_id = alias_entries[i].name_id;
+        if (name_id == root) continue;
+        if (aliasResolveName(state, name_id) == root) aliasForget(state, name_id);
+    }
+}
+
+const AliasClassSummary = struct {
+    saw_any: bool,
+    saw_allocated: bool,
+    saw_freed: bool,
+    saw_unowned: bool,
+};
+
+fn aliasClassSummary(state: *StateMap, root: u32) AliasClassSummary {
+    var out = AliasClassSummary{
+        .saw_any = false,
+        .saw_allocated = false,
+        .saw_freed = false,
+        .saw_unowned = false,
+    };
+    var i: usize = 0;
+    if (smap_mod.stateMapGet(state, root)) |st| {
+        out.saw_any = true;
+        if (st == @enumToInt(AllocState.allocated)) out.saw_allocated = true;
+        if (st == @enumToInt(AllocState.freed) or st == @enumToInt(AllocState.freed_reported)) out.saw_freed = true;
+        if (st == @enumToInt(AllocState.transferred) or st == @enumToInt(AllocState.returned_val) or
+            st == @enumToInt(AllocState.unknown)) out.saw_unowned = true;
+    }
+    i = 0;
+    while (i < alias_len) : (i += 1) {
+        var name_id = alias_entries[i].name_id;
+        if (name_id == root) continue;
+        if (aliasResolveName(state, name_id) != root) continue;
+        if (smap_mod.stateMapGet(state, name_id)) |st| {
+            out.saw_any = true;
+            if (st == @enumToInt(AllocState.allocated)) out.saw_allocated = true;
+            if (st == @enumToInt(AllocState.freed) or st == @enumToInt(AllocState.freed_reported)) out.saw_freed = true;
+            if (st == @enumToInt(AllocState.transferred) or st == @enumToInt(AllocState.returned_val) or
+                st == @enumToInt(AllocState.unknown)) out.saw_unowned = true;
+        }
+    }
+    return out;
+}
+
+fn aliasSetClassState(state: *StateMap, root: u32, new_state: u8) void {
+    smap_mod.stateMapSet(state, root, new_state);
+    var snap = alias_len;
+    var i: usize = 0;
+    while (i < snap) : (i += 1) {
+        var name_id = alias_entries[i].name_id;
+        if (name_id == root) continue;
+        if (aliasResolveName(state, name_id) == root) {
+            smap_mod.stateMapSet(state, name_id, new_state);
+        }
+    }
+}
+
+fn aliasNameInList(names: []const u32, count: usize, name_id: u32) bool {
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        if (names[i] == name_id) return true;
+    }
+    return false;
+}
+
+// Merge the alias relation of one loop/switch body into its enclosing state.
+// Only names touched in the body are considered; a body that disagrees with the
+// pre-body relation tombstones the parent relation (conservative).
+fn aliasMergeBranchInto(parent: *StateMap, body: *StateMap) void {
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < alias_len) : (i += 1) {
+        var e = alias_entries[i];
+        if (e.scope != body) continue;
+        if (aliasNameInList(alias_merge_names[0..], n, e.name_id)) continue;
+        if (n >= ALIAS_CAP) break;
+        alias_merge_names[n] = e.name_id;
+        n += 1;
+    }
+    i = 0;
+    while (i < n) : (i += 1) {
+        alias_merge_a[i] = aliasResolveName(parent, alias_merge_names[i]);
+        alias_merge_b[i] = aliasResolveName(body, alias_merge_names[i]);
+    }
+    i = 0;
+    while (i < n) : (i += 1) {
+        if (alias_merge_a[i] == alias_merge_b[i]) {
+            aliasSet(parent, alias_merge_names[i], alias_merge_a[i]);
+        } else {
+            aliasForget(parent, alias_merge_names[i]);
+        }
+    }
+}
+
+// Merge a fork pair after `stateMapMergeStates`. A relation survives only when
+// both arms resolve the name the same way.
+fn aliasMergeBranches(parent: *StateMap, branch_a: *StateMap, branch_b: *StateMap) void {
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i < alias_len) : (i += 1) {
+        var e = alias_entries[i];
+        if (e.scope != branch_a and e.scope != branch_b) continue;
+        if (aliasNameInList(alias_merge_names[0..], n, e.name_id)) continue;
+        if (n >= ALIAS_CAP) break;
+        alias_merge_names[n] = e.name_id;
+        n += 1;
+    }
+    i = 0;
+    while (i < n) : (i += 1) {
+        alias_merge_a[i] = aliasResolveName(branch_a, alias_merge_names[i]);
+        alias_merge_b[i] = aliasResolveName(branch_b, alias_merge_names[i]);
+    }
+    i = 0;
+    while (i < n) : (i += 1) {
+        if (alias_merge_a[i] == alias_merge_b[i]) {
+            aliasSet(parent, alias_merge_names[i], alias_merge_a[i]);
+        } else {
+            aliasForget(parent, alias_merge_names[i]);
+        }
+    }
+}
+
 
 // DF-3: allocator handles seen as the first argument of a recognized
 // alloc/free call. They are never ownership transfers.
@@ -432,6 +602,9 @@ pub fn compositeNameId(interner: *StringInterner, base_id: u32, field_id: u32) u
 // latch it as `freed_reported` so later uses do not duplicate the diagnostic.
 fn reportUseAfterFree(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, node_idx: u32) void {
     if (name_id == @intCast(u32, 0)) return;
+    // DF-1 documented limitation: a same-block use-after-free through an alias
+    // copy is still not claimed. Only the canonical name reports.
+    if (aliasResolveName(state, name_id) != name_id) return;
     var current = smap_mod.stateMapGet(state, name_id);
     if (current) |c| {
         if (c == @enumToInt(AllocState.freed)) {
@@ -513,6 +686,7 @@ fn checkUseAfterFreeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32)
 pub fn handleAllocCall(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, init_idx: u32) void {
     if (!isAllocCall(ctx, init_idx)) return;
     smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.allocated));
+    recordAllocatorHandle(ctx, init_idx);
 }
 
 fn emitFreeingUntracked(ctx: *AnalyzerContext, name_id: u32, node_idx: u32) void {
@@ -528,33 +702,31 @@ fn emitFreeingUntracked(ctx: *AnalyzerContext, name_id: u32, node_idx: u32) void
 pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void {
     var target_id = isFreeCall(ctx, expr_idx) orelse return;
     if (target_id == @intCast(u32, 0)) return;
-    var name_id = aliasResolveName(target_id);
-    var current = smap_mod.stateMapGet(state, name_id);
+    var root = aliasResolveName(state, target_id);
+    var summary = aliasClassSummary(state, root);
     var node = ast_mod.astStoreNodeAt(ctx.store, expr_idx);
-    if (current) |c| {
-        if (c == @enumToInt(AllocState.allocated)) {
-            smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed));
-            return;
-        }
-        if (c == @enumToInt(AllocState.freed) or c == @enumToInt(AllocState.freed_reported)) {
-            var pn = interner_mod.stringInternerGet(ctx.interner, target_id);
-            var dp1: []const u8 = "double free of pointer '";
-            var dp2: []const u8 = "'";
-            var dparts: [3][]const u8 = [3][]const u8{dp1, pn, dp2};
-            var dmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &dparts[0], @intCast(u32, 3));
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), dmsg);
-            return;
-        }
-        // DF-4: `transferred`, `returned_val`, and `unknown` are not owned
-        // here; keep the state (no silent -> freed) and emit the documented
-        // untracked-free diagnostic instead of a false double free.
-        if (c == @enumToInt(AllocState.transferred) or
-            c == @enumToInt(AllocState.returned_val) or
-            c == @enumToInt(AllocState.unknown)) {
-            emitFreeingUntracked(ctx, target_id, expr_idx);
-            return;
-        }
-        smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed));
+    if (summary.saw_freed) {
+        var pn = interner_mod.stringInternerGet(ctx.interner, target_id);
+        var dp1: []const u8 = "double free of pointer '";
+        var dp2: []const u8 = "'";
+        var dparts: [3][]const u8 = [3][]const u8{dp1, pn, dp2};
+        var dmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &dparts[0], @intCast(u32, 3));
+        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), dmsg);
+        return;
+    }
+    if (summary.saw_allocated) {
+        aliasSetClassState(state, root, @enumToInt(AllocState.freed));
+        return;
+    }
+    // DF-4: `transferred`, `returned_val`, and `unknown` are not owned here;
+    // keep the state (no silent -> freed) and emit the documented untracked-free
+    // diagnostic instead of a false double free.
+    if (summary.saw_unowned) {
+        emitFreeingUntracked(ctx, target_id, expr_idx);
+        return;
+    }
+    if (summary.saw_any) {
+        aliasSetClassState(state, root, @enumToInt(AllocState.freed));
     } else {
         emitFreeingUntracked(ctx, target_id, expr_idx);
     }
@@ -565,6 +737,9 @@ pub fn checkLeaksOnScopeExit(ctx: *AnalyzerContext, state: *StateMap) void {
     var ei: usize = 0;
     while (ei < entries.len) : (ei += 1) {
         if (entries[ei].state == @enumToInt(AllocState.allocated)) {
+            // One allocation, one leak diagnostic: aliases mirror the canonical
+            // name's state, so report only the class root.
+            if (aliasResolveName(state, entries[ei].name_id) != entries[ei].name_id) continue;
             var pn = interner_mod.stringInternerGet(ctx.interner, entries[ei].name_id);
             var lp1: []const u8 = "memory leak: pointer '";
             var lp2: []const u8 = "' not freed";
@@ -580,40 +755,53 @@ pub fn handleAllocAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
     var lhs_idx = node.child_0;
     var rhs_idx = node.child_1;
     var lhs_name_id = resolveLValueIdentity(ctx, lhs_idx) orelse return;
-    var lhs_canon = aliasResolveName(lhs_name_id);
-    var current = smap_mod.stateMapGet(state, lhs_canon);
+    var lhs_root = aliasResolveName(state, lhs_name_id);
+    var current = smap_mod.stateMapGet(state, lhs_root);
     if (current) |c| {
         if (c == @enumToInt(AllocState.allocated)) {
-            var pn = interner_mod.stringInternerGet(ctx.interner, lhs_name_id);
-            var op1: []const u8 = "memory leak: pointer '";
-            var op2: []const u8 = "' overwritten before free";
-            var oparts: [3][]const u8 = [3][]const u8{op1, pn, op2};
-            var lmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &oparts[0], @intCast(u32, 3));
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), lmsg);
+            // Reassigning an alias never loses the allocation (the class root
+            // still owns it); reassigning the root is only a leak when no
+            // alias still references the old allocation.
+            var report_leak = lhs_name_id == lhs_root and !aliasHasInbound(state, lhs_root);
+            if (report_leak) {
+                var pn = interner_mod.stringInternerGet(ctx.interner, lhs_name_id);
+                var op1: []const u8 = "memory leak: pointer '";
+                var op2: []const u8 = "' overwritten before free";
+                var oparts: [3][]const u8 = [3][]const u8{op1, pn, op2};
+                var lmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &oparts[0], @intCast(u32, 3));
+                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), lmsg);
+            }
         }
     }
+    if (lhs_name_id == lhs_root) {
+        aliasDetachInbound(state, lhs_root);
+    } else {
+        aliasForget(state, lhs_name_id);
+    }
     if (isAllocCall(ctx, rhs_idx)) {
-        aliasForget(lhs_name_id);
+        aliasForget(state, lhs_name_id);
         smap_mod.stateMapSet(state, lhs_name_id, @enumToInt(AllocState.allocated));
+        recordAllocatorHandle(ctx, rhs_idx);
         return;
     }
     if (rhs_idx != @intCast(u32, 0)) {
         var rhs_node = ast_mod.astStoreNodeAt(ctx.store, rhs_idx);
         if (rhs_node.kind == AstKind.null_literal) {
-            aliasForget(lhs_name_id);
+            aliasForget(state, lhs_name_id);
             smap_mod.stateMapSet(state, lhs_name_id, @enumToInt(AllocState.untracked));
             return;
         }
         var rhs_name_id = resolveLValueIdentity(ctx, rhs_idx) orelse 0;
         if (rhs_name_id != @intCast(u32, 0)) {
-            var rhs_canon = aliasResolveName(rhs_name_id);
-            if (smap_mod.stateMapGet(state, rhs_canon) != null) {
-                aliasRecord(lhs_name_id, rhs_canon);
+            var rhs_root = aliasResolveName(state, rhs_name_id);
+            if (smap_mod.stateMapGet(state, rhs_root) != null) {
+                aliasRecord(state, lhs_name_id, rhs_root);
+                aliasCopyState(state, lhs_name_id, rhs_root);
                 return;
             }
         }
     }
-    aliasForget(lhs_name_id);
+    aliasForget(state, lhs_name_id);
     smap_mod.stateMapSet(state, lhs_name_id, @enumToInt(AllocState.unknown));
 }
 
@@ -625,9 +813,10 @@ pub fn handleAllocVarDecl(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32
     if (name_id == @intCast(u32, 0)) return;
     var rhs_idx = node.child_1;
     if (rhs_idx == @intCast(u32, 0)) return;
-    aliasForget(name_id);
+    aliasForget(state, name_id);
     if (isAllocCall(ctx, rhs_idx)) {
         smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.allocated));
+        recordAllocatorHandle(ctx, rhs_idx);
         return;
     }
     var rhs_node = ast_mod.astStoreNodeAt(ctx.store, rhs_idx);
@@ -636,33 +825,66 @@ pub fn handleAllocVarDecl(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32
         return;
     }
     var rhs_name_id = resolveLValueIdentity(ctx, rhs_idx) orelse return;
-    var rhs_canon = aliasResolveName(rhs_name_id);
-    if (smap_mod.stateMapGet(state, rhs_canon) != null) {
-        aliasRecord(name_id, rhs_canon);
+    var rhs_root = aliasResolveName(state, rhs_name_id);
+    if (smap_mod.stateMapGet(state, rhs_root) != null) {
+        aliasRecord(state, name_id, rhs_root);
+        aliasCopyState(state, name_id, rhs_root);
     }
 }
 
 pub fn handleOwnershipReturn(ctx: *AnalyzerContext, state: *StateMap, ret_expr_idx: u32) void {
     if (ret_expr_idx == @intCast(u32, 0)) return;
     var ret_id = resolveLValueIdentity(ctx, ret_expr_idx) orelse return;
-    var name_id = aliasResolveName(ret_id);
-    var current = smap_mod.stateMapGet(state, name_id);
+    var root = aliasResolveName(state, ret_id);
+    var current = smap_mod.stateMapGet(state, root);
     if (current) |c| {
         if (c == @enumToInt(AllocState.allocated)) {
-            smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.returned_val));
+            aliasSetClassState(state, root, @enumToInt(AllocState.returned_val));
         }
     }
 }
 
-// DF-3: only a real ownership-taking call transfers. Allocator/free calls are
-// never ownership transfers, and a name known to be an allocator handle (the
-// first argument of a recognized alloc/free call) is skipped.
+// DF-3: only a real ownership-taking call transfers. The callee name must name
+// an ownership-taking operation; unknown calls (reads, logging, plain helpers)
+// never transfer. Allocator/free calls are excluded and a name known to be an
+// allocator handle is skipped.
+fn isOwnershipTakingNameId(ctx: *AnalyzerContext, name_id: u32) bool {
+    var s_take: []const u8 = "take";
+    if (name_id == interner_mod.stringInternerIntern(ctx.interner, s_take)) return true;
+    var s_take_own: []const u8 = "takeOwnership";
+    if (name_id == interner_mod.stringInternerIntern(ctx.interner, s_take_own)) return true;
+    var s_take_own2: []const u8 = "take_ownership";
+    if (name_id == interner_mod.stringInternerIntern(ctx.interner, s_take_own2)) return true;
+    var s_transfer: []const u8 = "transfer_ownership";
+    if (name_id == interner_mod.stringInternerIntern(ctx.interner, s_transfer)) return true;
+    var s_consume: []const u8 = "consume";
+    if (name_id == interner_mod.stringInternerIntern(ctx.interner, s_consume)) return true;
+    var s_destroy: []const u8 = "destroy";
+    if (name_id == interner_mod.stringInternerIntern(ctx.interner, s_destroy)) return true;
+    var s_deinit: []const u8 = "deinit";
+    if (name_id == interner_mod.stringInternerIntern(ctx.interner, s_deinit)) return true;
+    var s_release: []const u8 = "release";
+    if (name_id == interner_mod.stringInternerIntern(ctx.interner, s_release)) return true;
+    var s_drop: []const u8 = "drop";
+    if (name_id == interner_mod.stringInternerIntern(ctx.interner, s_drop)) return true;
+    return false;
+}
+
+fn isOwnershipTakingCall(ctx: *AnalyzerContext, fn_call_idx: u32) bool {
+    if (fn_call_idx == @intCast(u32, 0)) return false;
+    var node = ast_mod.astStoreNodeAt(ctx.store, fn_call_idx);
+    if (node.kind != AstKind.fn_call) return false;
+    var name_id = calleeFinalNameId(ctx, node.child_0) orelse return false;
+    return isOwnershipTakingNameId(ctx, name_id);
+}
+
 pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx: u32) void {
     if (fn_call_idx == @intCast(u32, 0)) return;
     var node = ast_mod.astStoreNodeAt(ctx.store, fn_call_idx);
     if (node.kind != AstKind.fn_call) return;
     if (isAllocCall(ctx, fn_call_idx)) return;
     if (isFreeCall(ctx, fn_call_idx) != null) return;
+    if (!isOwnershipTakingCall(ctx, fn_call_idx)) return;
     var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, fn_call_idx);
     var ai: usize = 0;
     while (ai < @intCast(usize, args_n)) : (ai += 1) {
@@ -670,12 +892,12 @@ pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx:
         var arg_node = ast_mod.astStoreNodeAt(ctx.store, args_i);
         if (arg_node.kind != AstKind.ident_expr) continue;
         var arg_name_id = identNameId(ctx.store, args_i);
-        var name_id = aliasResolveName(arg_name_id);
-        if (handleIs(arg_name_id) or handleIs(name_id)) continue;
-        var current = smap_mod.stateMapGet(state, name_id);
+        var root = aliasResolveName(state, arg_name_id);
+        if (handleIs(arg_name_id) or handleIs(root)) continue;
+        var current = smap_mod.stateMapGet(state, root);
         if (current) |c| {
             if (c == @enumToInt(AllocState.allocated)) {
-                smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.transferred));
+                aliasSetClassState(state, root, @enumToInt(AllocState.transferred));
                 var pn = interner_mod.stringInternerGet(ctx.interner, arg_name_id);
                 var tp1: []const u8 = "ownership of '";
                 var tp2: []const u8 = "' transferred to function";
@@ -691,10 +913,20 @@ pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx:
 
 // DF-3: remember the allocator handle (first argument of a recognized
 // alloc/free call) so a later call cannot mistake it for owned memory.
-pub fn recordAllocatorHandle(ctx: *AnalyzerContext, fn_call_idx: u32) void {
-    var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, fn_call_idx);
+pub fn recordAllocatorHandle(ctx: *AnalyzerContext, call_idx: u32) void {
+    if (call_idx == @intCast(u32, 0)) return;
+    var idx = call_idx;
+    var node = ast_mod.astStoreNodeAt(ctx.store, idx);
+    // `var p = try sandAlloc(...)`: the allocator call is under `try`.
+    if (node.kind == AstKind.try_expr) {
+        idx = node.child_0;
+        if (idx == @intCast(u32, 0)) return;
+        node = ast_mod.astStoreNodeAt(ctx.store, idx);
+    }
+    if (node.kind != AstKind.fn_call) return;
+    var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, idx);
     if (args_n < @intCast(u32, 1)) return;
-    var args0 = ast_mod.astStoreNodeExtraChildAt(ctx.store, fn_call_idx, @intCast(u32, 0));
+    var args0 = ast_mod.astStoreNodeExtraChildAt(ctx.store, idx, @intCast(u32, 0));
     var id = resolveLValueIdentity(ctx, args0) orelse return;
     handleRecord(id);
 }
@@ -1230,9 +1462,10 @@ fn bindCaptureState(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, src_e
         var orig = resolveLValueIdentity(ctx, src_expr);
         if (orig == null) orig = resolveOrigin(ctx, src_expr);
         if (orig) |oid| {
-            var ocanon = aliasResolveName(oid);
+            var ocanon = aliasResolveName(state, oid);
             if (smap_mod.stateMapGet(state, ocanon) != null) {
-                aliasRecord(name_id, ocanon);
+                aliasRecord(state, name_id, ocanon);
+                aliasCopyState(state, name_id, ocanon);
             }
         }
     }
@@ -1350,6 +1583,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         walkBlock(ctx, then_state, node.child_1, visit_fn);
         if (node.child_2 != @intCast(u32, 0)) walkBlock(ctx, else_state, node.child_2, visit_fn);
         smap_mod.stateMapMergeStates(state, then_state, else_state, @intCast(u8, 99));
+        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+            aliasMergeBranches(state, then_state, else_state);
+        }
     } else if (kind == AstKind.while_stmt or kind == AstKind.while_capture) {
         if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
             checkUseAfterFreeExpr(ctx, state, node.child_0);
@@ -1360,6 +1596,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         bindCaptureState(ctx, body_state, t5_wcap, node.child_0);
         walkBlock(ctx, body_state, node.child_1, visit_fn);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
+        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+            aliasMergeBranchInto(state, body_state);
+        }
     } else if (kind == AstKind.swt_ex) {
         if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
             checkUseAfterFreeExpr(ctx, state, node.child_0);
@@ -1383,6 +1622,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             smap_mod.stateMapMergeStates(state, state, ps, @intCast(u8, 99));
             if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
                 smap_mod.stateMapMergeInsertMissing(state, ps, @intCast(u8, @enumToInt(AllocState.unknown)));
+                aliasMergeBranchInto(state, ps);
             }
         }
     } else if (kind == AstKind.for_stmt) {
@@ -1391,6 +1631,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         bindCaptureState(ctx, body_state, t5_fcap, node.child_0);
         walkBlock(ctx, body_state, node.child_1, visit_fn);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
+        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+            aliasMergeBranchInto(state, body_state);
+        }
     } else if (kind == AstKind.return_stmt) {
         if (node.child_0 != @intCast(u32, 0)) {
             // NP-2: return expressions are in scope for null derefs. The walk

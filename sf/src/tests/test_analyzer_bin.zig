@@ -1080,10 +1080,13 @@ fn testOwnershipNoTransfer() void {
     az_mod.handleOwnershipPass(&ac, &st, call_node);
     var result = smap_mod.stateMapGet(&st, nid);
     if (result) |v| {
-        if (v != @enumToInt(az_mod.AllocState.transferred)) {
-            var fmsg: []const u8 = "testOwnershipNoTransfer: expected transferred\n";
+        if (v != @enumToInt(az_mod.AllocState.allocated)) {
+            var fmsg: []const u8 = "testOwnershipNoTransfer: expected allocated (read-only call)\n";
             pal.stdout_write(fmsg); pal.exit(1);
         }
+    } else {
+        var fmsg: []const u8 = "testOwnershipNoTransfer: name not found\n";
+        pal.stdout_write(fmsg); pal.exit(1);
     }
     var ok_msg: []const u8 = "testOwnershipNoTransfer";
     helpers.ok(ok_msg);
@@ -1228,7 +1231,9 @@ fn testOwnershipPassArg() void {
     var arg_buf: [1]u32 = undefined;
     arg_buf[0] = ptr_node;
     var payload = ast_mod.astStoreAddExtraChildren(&store, arg_buf[0..1]);
-    var callee_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
+    var take_s: []const u8 = "take";
+    var take_nid = interner_mod.stringInternerIntern(&interner, take_s);
+    var callee_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, take_nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var call_node = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee_id_node, @intCast(u32, 0), @intCast(u32, 0), payload);
     az_mod.handleOwnershipPass(&ac, &st, call_node);
     var result = smap_mod.stateMapGet(&st, nid);
@@ -1992,6 +1997,11 @@ pub fn main() void {
     testFixture("tests/analyzers/df_owner_handle.zig", "fixture df_owner_handle", fx_no_expect[0..]);
     var e_df_xfer = [_]DiagExpectation{ expectCode(c_info, 1), expectCode(c_untracked, 1) };
     testFixture("tests/analyzers/df_transferred_free.zig", "fixture df_transferred_free", e_df_xfer[0..]);
+
+    testFixture("tests/analyzers/df_alias_reassign.zig", "fixture df_alias_reassign", fx_no_expect[0..]);
+    testFixture("tests/analyzers/df_alias_branch.zig", "fixture df_alias_branch", fx_no_expect[0..]);
+    testFixture("tests/analyzers/df_unknown_call.zig", "fixture df_unknown_call", fx_no_expect[0..]);
+    testFixture("tests/analyzers/df_alloc_handle_var.zig", "fixture df_alloc_handle_var", fx_no_expect[0..]);
 
     var msg: []const u8 = "Analyzer tests passed.\n";
     pal.stdout_write(msg);

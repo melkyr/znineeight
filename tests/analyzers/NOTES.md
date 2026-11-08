@@ -37,7 +37,16 @@ literal under those checks (toolchain semantics, pre-existing).
 | `df_field.zig` | exactly 1 ERR_2005 | DF-2: allocation stored in `st.p`, freed twice through the field chain; no false INFO_7001 |
 | `df_index.zig` | exactly 1 ERR_2005 | DF-2: allocation stored in `arr[0]`, freed twice through the index chain; no false INFO_7001 |
 | `df_owner_handle.zig` | 0 diagnostics | DF-3: allocator handles are not ownership-transferred; leak/double-free state stays correct |
-| `df_transferred_free.zig` | 1 INFO_7001, 1 WARN_6006 | DF-4: freeing a `transferred` pointer keeps its state and reports the documented untracked-free diagnostic (no false ERR_2005/leak) |
+| `df_transferred_free.zig` | 1 INFO_7001, 1 WARN_6006 | DF-4: a real ownership-taking call (`take`) transfers; freeing the `transferred` pointer keeps its state and reports the documented untracked-free diagnostic (no false ERR_2005/leak) |
+| `df_alias_reassign.zig` | 0 diagnostics | DF-1 fix: reassigning the canonical name detaches its inbound aliases; `q` keeps the first allocation while `p` gets the second, so freeing both is not a double free and overwriting `p` is not a leak |
+| `df_alias_branch.zig` | 0 diagnostics | DF-1 fix: aliases fork/merge with the state map; a then-arm alias cannot leak into the else fork (no false overwrite/leak) |
+| `df_unknown_call.zig` | 0 diagnostics | DF-3 fix: unknown calls (`read`) do not transfer ownership, so `read(p); sandFree(s, p)` emits neither INFO_7001 nor WARN_6006 |
+| `df_alloc_handle_var.zig` | 0 diagnostics | DF-3 fix: allocator handles supplied by `var` initializers (not only statement-level calls) are recorded, so `take(h)` on a handle is not a transfer |
+
+Ownership transfer is restricted to explicit ownership-taking callee names
+(`take`, `takeOwnership`, `take_ownership`, `transfer_ownership`, `consume`,
+`destroy`, `deinit`, `release`, `drop`). Everything else is a read/plain call
+and leaves allocation state unchanged.
 
 `self_test_dive.md` is a historical C++-bootstrap deep dive (kept; not a
 fixture).
