@@ -30,6 +30,7 @@ const lir_mod = @import("lir.zig");
 const LirFunction = @import("lir.zig").LirFunction;
 const LirParam = @import("lir.zig").LirParam;
 const lir_stream_mod = @import("lir_stream.zig");
+const spill_mod = @import("spill_store.zig");
 const lir_opt_mod = @import("lir_opt_pass.zig");
 const emit_support = @import("emit_support.zig");
 const debug_map = @import("debug_map.zig");
@@ -2056,6 +2057,28 @@ fn emitCalleeExpr(emitter: *C89Emitter, fn_type_id: u32, name: []const u8) void 
         }
     }
     bufferedWriterWrite(&emitter.writer, name);
+}
+
+// `func_ref` name selection: a referenced extern DEFINITION is emitted under
+// its original C symbol, while the pinned cdecl extern DECLARATION value shape
+// stays mangled (pre-Task-5 bytes). The two-bit streamed `is_extern` header
+// carries the distinction (bit 1 = extern definition / original linkage);
+// only the header bytes are read, never the whole function.
+fn funcRefHasExternDefinition(emitter: *C89Emitter, name_id: u32) bool {
+    var i: usize = @intCast(usize, 0);
+    while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
+        var slot = emitter.fn_slots[emitter.fn_slots_start + i];
+        var hdr: [13]u8 = undefined;
+        spill_mod.spillReadAt(&emitter.spill.spill, slot.disk_offset, hdr[0..]);
+        var nm: u32 = @intCast(u32, 0);
+        nm = nm | @intCast(u32, hdr[0]);
+        nm = nm | (@intCast(u32, hdr[1]) << @intCast(u32, 8));
+        nm = nm | (@intCast(u32, hdr[2]) << @intCast(u32, 16));
+        nm = nm | (@intCast(u32, hdr[3]) << @intCast(u32, 24));
+        if (nm != name_id) continue;
+        if ((hdr[12] & @intCast(u8, 2)) != @intCast(u8, 0)) return true;
+    }
+    return false;
 }
 
 // D3-7: shared parameter-list emitter. `want_names`=0 reproduces the forward
@@ -9149,7 +9172,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 }
             }
             var fr_name: []const u8 = undefined;
-            if (fr_is_extern != @intCast(u8, 0) and fr_is_stdcall != @intCast(u8, 0)) {
+            if (fr_is_extern != @intCast(u8, 0) and (fr_is_stdcall != @intCast(u8, 0) or funcRefHasExternDefinition(emitter, fr.name_id))) {
                 fr_name = interner_mod.stringInternerGet(emitter.interner, fr.name_id);
             } else {
                 var fr_mangled = nm_mod.nameManglerMangle(emitter.mangler, fr.name_id, @intCast(u8, 0), fr.module_id);
