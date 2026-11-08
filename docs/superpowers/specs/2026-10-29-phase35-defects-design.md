@@ -1,12 +1,12 @@
 # Phase 3.5 — Defect Closure + Documentation Truth: Design
 
-**Status:** approved for planning (operator, 2026-10-29).
-**Milestone:** 3.5 (between the 0.21.0 release closeout and Phase 3 libraries).
+**Status:** approved for planning (operator, 2026-10-29); amended 2026-11-07 to include D13/D14 and the v145 baseline.
+**Milestone:** 3.5 (after Phase 3.1 and Phase 3.3; compiler-improvement milestone).
 
 ## 1. Intent
 
 Close every open compiler defect tracked in `examples/torrent_example_defects.md`
-(D3, D4, D5, D7.3, D8, D10, D12) and bring the documentation back to truth:
+(D3, D4, D5, D7.3, D8, D10, D12, D13, D14) and bring the documentation back to truth:
 the living language spec must describe the compiler that exists, and the
 self-host documentation must live in one place, split by nature (observed
 implementation vs original design intent).
@@ -20,18 +20,20 @@ layers, not a one-off patch.
 ## 2. Goals
 
 - **D12** — module-scope untyped array literal (`pub var arr: [3]u32 = .{ 1, 2, 3 };`) emits valid C (today it emits an illegal array-to-array assignment).
+- **D13** — support the full `enum(u64)` discriminant range, including values above i64 max, without silently truncating or rejecting valid source.
+- **D14** — a suspending wrapper may return a non-void error-union payload; `Http2Error!u32`-shaped wrappers compile and propagate success/error with a GCC-compatible step ABI.
 - **D7.3** — nested aggregate writes (`arr[i].field[0..] = ...`) land in real storage, never in a by-value temporary.
 - **D8** — the stdout/stderr/getchar builtins route through the PAL (OS-native), ending the buffered-C-stdio vs unbuffered-PAL split. The remaining C-runtime surface is inventoried and a reduction path recorded.
 - **D3** — true lazy `@import`: a comptime-dead arm never opens its file (full Zig semantics, not a broader parse probe).
 - **D5 + D10** — first-class calling conventions on **definitions**: `extern "stdcall" fn f(...) { ... }` emits a balanced stdcall definition; `extern fn f(...) { ... }` emits a cdecl definition (the body is no longer silently dropped).
 - **D4** — the static analyzers get a real upgrade. First a written audit (what each analyzer should do, claims vs reality, the lie list), then the fix wave to that bar.
 - **Docs** — self-host docs consolidated into `sf/docs/` with `tech_docs/` (observed) and `initial_design/` (design intent); the language spec loses its zig0-era claims (the "AST lifting" lie first) and gains the missing current-era facts.
-- **Closeout** — full battery, one authorized 8-pin re-baseline, seed **v129**.
+- **Closeout** — full battery, one authorized 8-pin re-baseline, seed **v146**.
 
 ## 3. Non-goals
 
-- No new language features beyond calling-convention definitions.
-- No new std modules; no GUI/debugger/async changes.
+- No new language features beyond calling-convention definitions and the full `enum(u64)` range.
+- No new std modules; no GUI/debugger changes. D14 is a compiler async-lowering fix, not a new async API.
 - No removal of the C runtime — only routing the stdout family off it and documenting the reduction path.
 - No touching the zig0-era docs (`docs/reference/compilation_model.md`, `docs/reference/c89_emission.md`, `docs/design/**`): they stay as-is for bootstrap-vs-zig1 comparison and get archived only when the zig0 `/src` is packed into its `zig0/` folder.
 - No corpus reclassification work: the frozen-1124 component must keep its exact md5.
@@ -40,12 +42,12 @@ layers, not a one-off patch.
 
 - Operator is sole authority; only this plan is authorized. STOP and present on ambiguity. `edit`/`fastedit` only; no sed/perl/python source transforms; sequential `zig1` runs (CWD `.zig1_*.tmp` collision); no push; explicit-path staging; `run.err` untouched.
 - **Runtime single source:** emitted C support files (`zig_compat.h`, `zig_runtime.{h,c}`, `zig_pal.c`, `zig_nocrt.c`, `c_exit.c`) are generated from `sf/src/emit_support.zig` via `scripts/gen_emit_support.sh`; `scripts/check_emit_support.sh` must report 8/8 after every runtime edit.
-- **Single re-baseline:** emission-shifting tasks (D8, D3) are verified functionally during development; the one authorized 8-pin re-record + full battery + seed rotation happens at closeout (Task 10).
+- **Single re-baseline:** emission-shifting tasks (D8, D3, D14; D13 if its representation changes existing enum emission) are verified functionally during development; the one authorized 8-pin re-record + full battery + seed rotation happens at closeout (Task 12).
 - Current anchors (must hold through the milestone except where an authorized re-baseline moves them):
-  - Seed v128: fixed point `18b4b10c8e014b486b648392d55ccdbe`; archive md5 `5093ca9eaacd03bdb29c07777749cc16`; Win9x zip md5 `eb96956e3281711c452d78c05a8587da`; lib 50; manifest md5 `8b78593a7dabb86f9f01cd9e7994ab9f`.
-  - Corpus live list: 1193 dirs = 1017 OK / 58 GREEN / 118 FAIL / 0 ICE / 0 CRASH; class md5 `5167393439ffb80049ba5d3d87a2773f`; frozen-1124 md5 `518eca1a9b5d3e1cc5a48abce214abd8` (this md5 never moves).
-  - 8 pins (safe / fast): mud `c52b9bb9267917fa13fa7207ae84e706` / `beea82815abed32cec443b4393f18cfb`; gol `078c7c6ce29b86f4ad8b369f534eb337` / `d9eb5b2f5ef7820af4d03a568cb1203f`; lisp `4d08641e5eed3e5c90a67ab5489c5957` / `8a1905f24bc3fe0cdb0c5eeb55af4ac3`; json `c03d635c051beb66f9226b5f55285038` / `f43bb7b8be53d609edebeeee471e9fd5`.
-  - Markers 3304 lines / 37896 B; stdlib 339 fixtures + 10 crosscheck; examples 26/26.
+  - Seed v145: fixed point `cd8d283b917749009961f4445043666b`; archive md5 `abbc017de15ca2eb1ae1edd4a976ecd7`; Win9x zip md5 `20821b5fdc32e48dfb5e1b3d694de52b`; lib 59; manifest md5 `6be2fe3690949cd9601d9db1ac71e48b`.
+  - Corpus live list: re-measured before Task 1; growth must be additive only. Last recorded live count at the 3.1 closeout was 1265; Phase 3.3 added its own fixture dirs. Frozen-1124 md5 `518eca1a9b5d3e1cc5a48abce214abd8` (this md5 never moves).
+  - 8 pins (safe / fast): mud `3ccd5941c64b76f745d7106894b07740` / `bec9b6ba6d4c05c9bbdd1c99aff55416`; gol `3b1f65e5cd3eaeec51db6f353f9cb07e` / `8f4f5c1293e719023b6d4d8855404cd9`; lisp `14256edf3082525b7977742a4c250143` / `9c609ee3007f4112ef67d1d05067a707`; json `4428efad03a82a7f09a2b362f0afdf3a` / `31b00de8f3bea1c33d43645f6e4f9492`. Re-verify at Task 1; re-record only at Task 12.
+  - Markers 4281 lines / 49573 B (v145-era; re-record at Task 12); stdlib 376 fixtures + 10 crosscheck; examples 28/28.
 - Byte-identity comparisons between two compilers use a shared `--lib-dir` (name-hash tokens are path-dependent).
 - New fixtures live under `repro/mi_matrix/` (or `known_excluded/` when they must stay out of the corpus); the live corpus count and class md5 are re-anchored only at closeout.
 - `examples/torrent_example_defects.md` stays open-only: each fixed entry is removed and its history lives in git + SDD reports (the established Phase 2.5 convention).
@@ -53,7 +55,9 @@ layers, not a one-off patch.
 ## 5. Approaches
 
 **Chosen: Approach 1 — risk-ordered, single re-baseline.**
-Safe emitter fixes first (D12, D7.3), then the emission-wide shifts (D8, D3) so they land before the language feature (D5/D10), then the analyzer work (audit → upgrade), then documentation, then closeout. Only D8 and D3 move existing emitted C, so the pin re-baseline is one event at the end. Trade: if D3's interner landmine trips late, earlier work is safe but closeout stalls — mitigated by making the interner re-verification the first step of Task 4.
+Safe emitter fixes first (D12, D7.3), then the emission-wide shifts (D8, D3, D14) so they land before the language/type features (D5/D10, D13), then the analyzer work (audit → upgrade), then documentation, then closeout. D8, D3, and D14 move existing emitted C (D13 does too if its representation changes existing enum emission), so the pin re-baseline is one event at the end. Trade: if D3's interner landmine trips late, earlier work is safe but closeout stalls — mitigated by making the interner re-verification the first step of Task 4.
+
+Task 0 is test-only: create one committed repro per defect plus an adjacent/sibling inventory before any fix. Later tasks consume those repros; Task 0 makes no source fix. Task 0.1 re-tests the D14 exact `Http2Error!u32` shape; Task 0.2 tests the two-level, multi-await, cross-module, and order variants to classify frontend `error[3043]` vs the tail GCC ABI (or both). Task 0.5 then maps each defect to its upstream root cause; every fixing task must verify that root cause before editing and must not patch a downstream symptom. If the evidence refutes the §5.7 claim, STOP for the operator decision rather than re-scoping inside the task.
 
 **Dropped: subsystem batches** (parser/sema, emitter, analyzers). Grouping by phase would still force two re-baselines (D8 and D3 each move emission) and interleaves dependent syntax work (D5/D10 needs the spec decision, the spec task needs D5/D10 landed).
 
@@ -125,12 +129,52 @@ The analyzers "can analyze but are barely working" — some output lies. Two tas
 - The zig0-era documents **stay untouched**: `docs/reference/compilation_model.md`, `docs/reference/c89_emission.md`, and all of `docs/design/` (including `ControlFlowLifter.md`, `AST_Parser.md`) — preserved so anyone can compare bootstrap vs zig1; archived only with the future `zig0/` packing.
 - The living language spec `docs/reference/Language_Spec_Z98.md` is the one exception: it must be true. Its "AST lifting" claim (`:435`) is false for zig1 (no lifting pass exists; `grep -ri lift sf/src` is empty — the lowerer's phase machines emit branches and result temps straight into LIR) and gets replaced with the real mechanism, alongside the other truth-up items (§7).
 
-## 6. Spec truth-up contents (Task 9)
+### 5.6 D13 depth (operator-directed; amended 2026-11-07)
+
+Support the full `enum(u64)` discriminant range. Today `EnumMember.value` is an
+`i64` (`sf/src/type_registry.zig:108`), the shared member walk uses
+`evalConstI64Full` (`sf/src/type_resolver.zig:1405`), and the backing-fit
+validators explicitly reject values above i64 max
+(`type_resolver.zig:1761/1787`, `semantic_analyzer.zig:2418/2458`).
+
+The Task 6 audit chooses the concrete representation — either a 64-bit raw
+value plus backing-signed interpretation, or a paired signed/unsigned value —
+and must preserve existing behavior for signed and within-i64 enums. It covers
+explicit literals above i64 max, implicit successors, duplicate detection,
+backing-fit checks, const-init/lowering consumers, and the C emitter's u64
+constant form. If full support requires a broad enum-layout migration or
+changes emitted C for existing enums beyond the new range, STOP and present
+before coding.
+
+### 5.7 D14 depth (operator-directed; amended 2026-11-07)
+
+The original D14 report claimed a non-tail suspending wrapper returning a
+non-void error-union payload hits
+`error[3043]`/async parent-result slot mismatch
+(`sf/src/async_state_machine.zig:447-454`). Task 0.2 could not reproduce that
+frontend error: the exact two-level `Http2Error!u32` shape and 19 variants
+emitted C with rc 0. The reproducible defect is the **tail-return step ABI**:
+`return wait(c);` emits GCC-incompatible C (`EU`/`Opt` result mismatch; nested
+tail/tail also calls the wrong tail callee). The non-tail payload itself
+compiles and runs. The `error[3043]` frontend claim is marked
+**[suspicious]** and must not be assumed.
+
+Task 7 fixes the reproducible tail-return lowering/ABI with two root changes:
+(a) suppress the generic tail-call optimization for a suspending callee so the
+call remains `call_direct` and is rewritten as the normal implicit await, and
+(b) fix `copyTailCall` so it rebases only real temp indices and preserves the
+callee name id. It then corrects the result/parent-result typing and tail
+emission. It does not change the `std_http2` public API: keep the existing
+`id_out` workaround and document that the compiler limitation is gone. If the
+fix requires redefining the step ABI for all suspending functions or breaks the
+`mud_server` async shape, STOP and present before coding.
+
+## 6. Spec truth-up contents (Task 11)
 
 `docs/reference/Language_Spec_Z98.md`:
 
 1. Replace the **AST lifting** bullet with the real lowering mechanism.
-2. Fix the std barrel list (`:352`): 12 → 14 re-exports (`fmt`, `fold` missing).
+2. Fix the std barrel list (`:352`): verify against the current `sf/src/std.zig`; it currently has **17** re-exports (not the old 12→14 claim).
 3. Document `error[3077]` (`SEMA_GUARD_MAX` = 130 nesting limit) and the codes added by this milestone's fixes, if any.
 4. Document the `--check` CLI mode (sema-only, rc 0/2, `-W` warnings→2).
 5. Add the calling-convention rules from Task 5 (§5.1 above).
@@ -138,6 +182,8 @@ The analyzers "can analyze but are barely working" — some output lies. Two tas
 7. Reconcile the §4 builtins list with the compiler's real registration (sema `BuiltinDesc`, lower name table, `comptime_eval`) — the spec lists `@addr`, `@name`, `@enumFromInt`, `@typeName`, `@cInclude` which are not in the sema table.
 8. Re-verify §5 limitations and §7 "Not Yet Supported" against the current compiler and the mi/corpus; correct every stale claim.
 9. Verify every fixture named in the spec exists, and that the corpus's capability surface is reflected.
+10. Document full `enum(u64)` discriminant support, including values above i64 max and the implicit-successor rejection at `u64` max.
+11. Document the suspending-wrapper error-union payload rule (D14), including that the `std_http2` `id_out` workaround remains valid but is no longer required by the compiler.
 
 ## 7. What is left to the builder
 

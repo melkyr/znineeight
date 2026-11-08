@@ -266,17 +266,20 @@ storage/layout changes.
 
 ## D14 — Suspending convenience wrapper cannot return an error-union payload
 
-**Status:** OPEN — documented compiler limitation (found 2026-11-07 during
-Phase 3.3 Task 7; no compiler fix authorized).
+**Status:** OPEN — **[suspicious]** documented compiler limitation (found
+2026-11-07 during Phase 3.3 Task 7; no compiler fix authorized).
 
-**Defect.** A suspending function that calls another suspending function and
-then returns a non-void error-union payload is rejected in the convenience
-wrapper shape. `http2Get(...) Http2Error!u32` produced
-`error[3043]: async parent_result slot type mismatch`; as a plain tail return
-the emitted step ABI is GCC-incompatible. The same payload type works when the
-suspension is internal (`recvSomeAsync` returns `NetError!usize`), so the
-limitation is specific to the wrapper/implicit-await-plus-non-void-error-union
-result shape, not to error-union returns in general.
+**Defect.** The original D14 report claimed that a suspending function which
+calls another suspending function and returns a non-void error-union payload
+was rejected with `error[3043]: async parent_result slot type mismatch`. Task
+0.2 could not reproduce that frontend error: the exact two-level
+`Http2Error!u32` shape and 19 matrix variants emitted C with zig1 rc 0 and no
+frontend diagnostic. The reproducible defect is the **tail-return step ABI**:
+`return wait(c);` from an EU-returning suspending wrapper emits GCC-incompatible
+C (`EU`/`Opt` result mismatch; nested tail/tail also calls the wrong tail
+callee). The non-tail payload itself compiles and runs. D14 remains planned to
+fix the reproducible tail-return lowering/ABI issue; the `error[3043]`
+frontend claim is marked **[suspicious]** and is not to be assumed.
 
 **Reproducer.**
 
@@ -287,9 +290,9 @@ fn waitAndReturn(c: *Conn) Http2Error!u32 {
 }
 ```
 
-Observed: `error[3043]: async parent_result slot type mismatch`; a tail-return
-variant emits a step function whose parent-result handling is not
-GCC-compatible.
+Observed (Task 0.2): the exact non-tail shape compiles and runs; the
+tail-return variant emits a step function whose result handling is not
+GCC-compatible. No `error[3043]` was observed in any run.
 
 **Workaround.** Use `Http2Error!void` and write the value through an
 out-parameter (`id_out: *u32`), as
@@ -299,4 +302,7 @@ function submit-only and call `http2Wait` separately.
 **Reference points.** `sf/src/std_http2.zig` convenience wrappers; async
 frame/result lowering (`sf/src/async_state_machine.zig`,
 `sf/src/async_frame_layout.zig`); Task 7 report
-`.superpowers/sdd/2026-11-07-phase33-http2-plan/task-7-report.md` fix round 2.
+`.superpowers/sdd/2026-11-07-phase33-http2-plan/task-7-report.md` fix round 2;
+Task 0.2 report/inventory
+`.superpowers/sdd/2026-10-29-phase35-defects-plan/task-0.2-report.md` and
+`docs/superpowers/specs/2026-10-29-phase35-repro-inventory.md` §9.

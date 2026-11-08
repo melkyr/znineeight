@@ -6,8 +6,8 @@
 (md5 `cd8d283b917749009961f4445043666b`) — not rebuilt or modified.
 **Evidence base:** `docs/superpowers/specs/2026-10-29-phase35-repro-inventory.md`
 §1–§9; Task 0/0.1/0.2 reports; `examples/torrent_example_defects.md`; the
-Phase 3.5 design. Four confirming runs were made for this task (D12, D7.3,
-D14-tail, D5); they are recorded in §11.
+Phase 3.5 design. Five confirming runs were made for this task (D12, D7.3,
+D14-tail, D5, local-untyped-array control); they are recorded in §11.
 
 This report maps each defect to the **first pass where state becomes wrong**,
 not the first place the symptom is visible. A “fix contract” binds the fixing
@@ -656,12 +656,12 @@ the shape works — hence the tail-vs-non-tail split.
    (`lower.zig:14098-14108` vs `async_state_machine.zig:163-173`).
 2. `copyTailCall` rebases the callee **name id** as if it were a temp
    (`async_state_machine.zig:317-323`), corrupting the emitted tail callee for
-   any tail call inside an async frame (it also reproduces on a synchronous tail
-   call).
+   any tail call inside an async frame; Task 7 must add a synchronous-tail
+   probe for this latent path.
 
-Fixing (1) alone leaves (2) latent for genuine synchronous tail calls inside
-async functions; fixing (2) alone leaves the tail EU wrapper un-awaited. Both
-must be fixed for the RED to go green.
+Fixing (1) removes the current tail-RED because every RED callee is
+transitively suspending; (2) is required latent correctness for synchronous
+tail calls inside async frames. The plan's fix contract still requires both.
 
 ### Fix contract
 - **Must become true:** a tail return of a suspending call is lowered as the

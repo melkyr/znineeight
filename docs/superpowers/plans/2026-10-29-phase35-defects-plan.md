@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close all seven open defects (D3, D4, D5, D7.3, D8, D10, D12) and restore documentation truth (one self-host doc home, a spec that describes the real compiler), then rotate seed v130.
+> **Milestone order (2026-11-07):** milestones **3.1 — general-purpose allocator** and **3.3 — HTTP/2 client** (separate plans/specs) precede this plan. 3.5 remains the compiler-improvement milestone and now includes D13/D14; nothing else in this plan changes.
 
-**Architecture:** Risk-ordered single pass — safe emitter fixes first, then the two emission-wide shifts (D8 PAL routing, D3 lazy import), then the calling-convention language feature, then the analyzer audit→upgrade pair, then docs, then one closeout re-baseline. Emission shifts accumulate; the 8 pins move once, at closeout.
+**Goal:** Close all nine open defects (D3, D4, D5, D7.3, D8, D10, D12, D13, D14) and restore documentation truth (one self-host doc home, a spec that describes the real compiler), then rotate seed v146.
+
+**Architecture:** Risk-ordered single pass — safe emitter fixes first (D12, D7.3), then the emission-wide shifts (D8 PAL routing, D3 lazy import, D14 async result ABI), then the language/type features (D5/D10 calling conventions, D13 full `enum(u64)`), then the analyzer audit→upgrade pair, then docs, then one closeout re-baseline. Emission shifts accumulate; the 8 pins move once, at closeout.
 
 **Tech Stack:** Z98 (strict Zig subset) compiler `sf/src/*.zig` emitting C89; PAL runtime (`zig_pal.c`, `zig_nocrt.c`, `zig_runtime.c` via `sf/src/emit_support.zig` single source); shell gates under `scripts/compiler/`; fixtures under `repro/mi_matrix/`; Wine/i686-w64-mingw32-gcc for Win32 checks.
 
@@ -14,11 +16,12 @@
 
 - Only this plan is authorized. STOP and present on ambiguity; if the plan says A, do A. `edit`/`fastedit` only (no sed/perl/python/awk source transforms); one edit at a time; no subagents inside implementers; explicit-path staging only; no push; `run.err` untouched; sequential `zig1` runs in separate CWDs (`.zig1_*.tmp` collide).
 - **Runtime single source:** any edit to emitted C support files goes through `sf/src/emit_support.zig` → `bash scripts/gen_emit_support.sh <zig1>` → `bash scripts/check_emit_support.sh <zig1>` = 8/8. Never edit `sf/src/include/*` by hand.
-- **Single re-baseline:** the 8 pins move exactly once, in Task 10. Tasks 3 and 4 change emission; verify them functionally and record interim diffs — do NOT touch `gate_lower_depth.sh` pins or the QUICK_REF pin table before Task 10.
-- Anchors (hold unless Task 10 re-anchors them): frozen-1124 md5 `518eca1a9b5d3e1cc5a48abce214abd8` NEVER moves; **seed baseline is v129** (the operator-authorized Win9x truth hotfix, executed inside the 0.21.0 release plan, rotates v128 → v129 first and moves the fixed point, pins, and possibly corpus/marker anchors — re-read the hotfix report for the new values before starting Task 1); corpus live 1193 = 1017/58/118/0/0, class md5 `5167393439ffb80049ba5d3d87a2773f`; markers 3304 lines / 37896 B; stdlib 339 + crosscheck 10; examples 26/26; 8 pins = spec §4 list.
+- **Single re-baseline:** the 8 pins move exactly once, in Task 12. Tasks 3, 4, and 7 change emission; Task 6 may shift enum emission; verify them functionally and record interim diffs — do NOT touch `gate_lower_depth.sh` pins or the QUICK_REF pin table before Task 12.
+- **Root-cause gate:** Task 0.5's report is the upstream map. Every fixing task (Tasks 1–9) must begin by verifying the report's root cause against its repro. If the symptom is only downstream, or the report's cause does not match, STOP. Do not patch a downstream symptom.
+- Anchors (hold unless Task 12 re-anchors them): frozen-1124 md5 `518eca1a9b5d3e1cc5a48abce214abd8` NEVER moves; **seed baseline is v145** (`abbc017d…`, fixed point `cd8d283b…`); corpus live list re-measured before Task 1 (last 3.1-closeout count 1265; 3.3 added fixture dirs), growth additive only; markers 4281 lines / 49573 B (re-record at Task 12); stdlib 376 + crosscheck 10; examples 28/28; 8 pins = spec §4 list.
 - **Reserved-word escape coordination (hotfix ↔ D5/D10):** the Win9x hotfix extends the mangler's C-keyword escape to the Microsoft/OpenWatcom extension words (`cdecl`, `pascal`, `near`, `far`, `huge`, `fortran`, `interrupt`, `export`, `readonly`, `stdcall`, `self`, `segment`, …) and to the Z98 runtime names (`Z98_*`, `zig_*`, `pal_*`). It escapes **source identifiers only**; emitter template tokens and convention spellings stay raw. Task 5's `extern "stdcall"` definitions must write `Z98_STDCALL` as raw template text and must not route the convention token through the mangler; its fixtures may freely use `cdecl`/`stdcall` as local names.
 - Byte-identity between two compilers: shared `--lib-dir`, sequential runs.
-- New fixtures: `repro/mi_matrix/` (corpus-visible) or `repro/mi_matrix/known_excluded/` (kept out). The live corpus count/class md5 is re-anchored in Task 10 only.
+- New fixtures: `repro/mi_matrix/` (corpus-visible) or `repro/mi_matrix/known_excluded/` (kept out). The live corpus count/class md5 is re-anchored in Task 12 only.
 - Defects doc `examples/torrent_example_defects.md` stays open-only: each fixed entry is deleted in the same commit as its fix; history lives in git + the SDD report.
 - Windows-facing checks run under Wine (timeout-guarded, sequential); real Win98/MSVC/OWC validation is operator-owned.
 - SDD workspace: `.superpowers/sdd/2026-10-29-phase35-defects-plan/` (ledger `progress.md`, per-task briefs/reports). Every task appends its report there.
@@ -32,40 +35,135 @@
 | 3 | D3 false-load surface: a dead arm importing a file that EXISTS but is unparsable on this target must also not load (not just missing files) | Task 4: fixture with an unparsable dead-arm import |
 | 4 | D5/D10 ABI balance: a `extern "stdcall"` definition called directly (not via fn pointer) and registered as a Win32 callback must both clean the stack correctly; prototype and definition conventions must agree | Task 5: objdump `ret $N` check + Wine C-host callback run |
 | 5 | D12/D7.3 non-regression: the already-working typed array-literal and simple aggregate-write paths must stay byte-identical | Tasks 1–2: emitted-C diff on the working shapes (must be empty) |
+| 6 | D13 enum range: `enum(u64)` at `18446744073709551615`, implicit successor beyond `u64` max, negative/`enum(i64)` behavior, duplicate tags | Task 6: `enum_u64_max_ok_xmod`, `enum_u64_max_implicit_reject_xmod`, existing signed/duplicate fixtures |
+| 7 | D14 tail-return EU wrapper: `return wait(c);` must emit a GCC-compatible step ABI, with the nested tail/tail wrong-callee symptom gone; the non-tail `error[3043]` claim is **[suspicious]** and not assumed | Task 7: `d14_original_http2_eu`, `d14_two_level_matrix`, existing `recvSomeAsync`/`mud_server` shapes |
 
 ---
+
+### Task 0: Repro inventory — all nine defects + adjacent/sibling scan
+
+**Files:**
+- Create: `docs/superpowers/specs/2026-10-29-phase35-repro-inventory.md`
+- Create: `repro/mi_matrix/module_untyped_array_init_ok_xmod/` (D12)
+- Create: `repro/mi_matrix/known_excluded/nested_agg_write_ok/` (D7.3)
+- Create: `repro/mi_matrix/known_excluded/stdout_order_ok/` (D8)
+- Create: `repro/mi_matrix/known_excluded/lazy_import_fold_ok/` and `known_excluded/lazy_import_unparsable_dead_ok/` (D3)
+- Create: `repro/mi_matrix/known_excluded/stdcall_def_ok/` and `known_excluded/cdecl_def_ok/` (D5/D10)
+- Create: `repro/mi_matrix/enum_u64_max_ok_xmod/` (D13)
+- Create: `repro/mi_matrix/async_wrapper_eu_payload_ok_xmod/` (D14)
+- Create: `tests/analyzers/d4_contract_probe.zig` (D4 probe; the audit expands this set)
+
+**Interfaces:**
+- Produces: one committed repro per defect (D4 is a probe set), a written inventory, and the **adjacent/sibling findings list**. Tasks 1–9 consume these fixtures; they do not recreate them. No fix is made here.
+- Consumes: the defect descriptions in `examples/torrent_example_defects.md` and the code locations in the Phase 3.5 spec.
+
+- [ ] **Step 1: Create the inventory document.** Table columns: defect, fixture path, expected post-fix contract, current RED/baseline evidence, owner task. Add an "Adjacent/sibling findings" section with `ADJ-<n>` entries and a disposition (`in-scope under D<n>` or `deferred / next free D15+`). No fixes in this task.
+- [ ] **Step 2: D12 repro.** `pub var arr: [3]u32 = .{ 1, 2, 3 };` + mutation/print; expected post-fix output; current RED is gcc `assignment to expression with array type`. Also cover a 1-D struct-array and a 2-D untyped literal as sibling probes; record whether they are the same or adjacent.
+- [ ] **Step 3: D7.3 repro.** `arr[i].field[0..] = ...` / `arr[i].field = ...` where `field` is a slice/array; expected post-fix storage; current RED shows pre-write values. Add a sibling probe for pointer-to-aggregate and nested index/field chains.
+- [ ] **Step 4: D8 repro.** Interleave `std.io.print("A\n")`, `@stdoutWrite("B\n")`, `@putChar('C')`, `@getChar()`; expect program order. Record the current CRT and no-CRT baseline; the ordering value is proven post-fix on both.
+- [ ] **Step 5: D3 repros.** `if (1 == 1) @import("exists.zig") else @import("missing.zig")` and the same with an **unparsable** dead-arm file. Current RED is the parse-probe `error[3048]` class. Add sibling probes for `switch`, `and`/`or`, nested dead imports, and live-arm selection.
+- [ ] **Step 6: D5/D10 repros.** `pub extern "stdcall" fn cb(x: u32) i32 { return x + 1; }` and a bare/`"c"` body definition. Current RED is no definition / `'cb' undeclared`. Add sibling probes for variadic externs, prototype/definition convention mismatch, and direct vs fn-pointer calls; the Wine callback host stays Task 5.
+- [ ] **Step 7: D13 repro.** `const E = enum(u64) { A = 18446744073709551615 };` with a runtime read/print; current RED is the explicit `error[3000]` limitation. Keep the existing `enum_u64_max_reject_xmod` and `enum_u64_max_implicit_reject_xmod` as current-behavior fixtures; Task 6 retires the max-reject fixture and retargets the implicit-reject fixture to the `u64` max successor. Add sibling probes for signed enums, implicit successors, duplicate tags, and const enum switches.
+- [ ] **Step 8: D14 repro.** Suspending `wait(c)` plus `fn wrapper(c: *u32) E!u32 { try wait(c); return 32; }`, success and error paths. Record the current evidence and classify it: `error[3043]` if actually reproduced (**[suspicious]/unproven**) or the tail-return GCC-incompatible step ABI. Add sibling probes for void, optional, aggregate, and tail-vs-non-tail returns.
+- [ ] **Step 9: D4 probe.** `tests/analyzers/d4_contract_probe.zig` captures a current false positive/negative across the four analyzers (Lifetime/Provenance, NullPointer, DoubleFree, Signature). Record current diagnostics; the Task 8 audit defines the full must-work set.
+- [ ] **Step 10: Run everything and record evidence.** For each repro: exact command, rc, diagnostics, emitted-C/compile result, and expected post-fix output. Use `-ffast` and `-fsafe` where the fixture runs. A fixture that is expected to fail pre-fix records the failure; a fixture that passes pre-fix records why it is a regression oracle.
+- [ ] **Step 11: Adjacent/sibling scan.** For each defect, inspect the same lowering/emitter/analyzer/import/async path and record `ADJ-<n>` findings. Classify in-scope vs deferred. If an adjacent finding blocks the planned fix or contradicts the spec, STOP and present; do not fix it here.
+- [ ] **Step 12: Commit.** These are compiler repros, not stdlib fixtures: do **not** edit `scripts/stdlib/expected_dirs.txt`. Corpus-visible dirs are classified by `scripts/corpus/`; `known_excluded/` and `tests/analyzers/` stay out. Commit `test(repro): add Phase 3.5 defect repros and inventory` + the inventory doc. No source fix in this commit.
+
+### Task 0.1: D14 exact-shape repro retry (test-only)
+
+**Files:**
+- Modify: `repro/mi_matrix/async_wrapper_eu_payload_ok_xmod/main.zig` (add the exact `Http2Error`-shaped error set + runtime id shape)
+- Create: `repro/mi_matrix/known_excluded/d14_http2_wrapper_ok/` (real `std_http2.http2Wait`/`http2Get` wrapper shapes; compile-only if a server is required)
+- Create: `repro/mi_matrix/known_excluded/d14_tail_http2_wrapper_ok/` (exact-shape tail-return variant)
+- Modify: `docs/superpowers/specs/2026-10-29-phase35-repro-inventory.md` (D14 / ADJ-17 evidence)
+- No source fix; no Task 7 work.
+
+**Interfaces:**
+- Consumes: Task 0's D14 fixtures and inventory; `examples/torrent_example_defects.md` D14; Phase 3.5 spec §5.7; `sf/src/std_http2.zig` convenience wrappers.
+- Produces: a definitive D14 matrix — exact `Http2Error!u32` shape, non-tail `try wait(c); return id;`, tail `return wait(c);`, error propagation, and the real `http2Wait`/`http2Get` wrapper shapes. Either a committed fixture that reproduces `error[3043]`, or exact evidence that it is not reproducible and the spec claim is wrong. The tail-return GCC ABI RED must remain a required D14 fix.
+
+- [ ] **Step 1: Context pass.** Read the spec §5.7, the D14 entry, Task 0's D14 fixture/inventory, and `std_http2.http2Wait`/`http2Get`. Record the exact documented shape and the current claim before writing fixtures.
+- [ ] **Step 2: Exact local shape.** Use an error set with the same name count/shape as `Http2Error` (not `error{Boom}`) and a runtime `id` value, not a literal `32`; test non-tail `try wait(c); return id;`.
+- [ ] **Step 3: Tail shape.** Test `fn wrapper(c) E!u32 { return wait(c); }` with the exact error set; preserve the `sibling_tail.zig` GCC ABI failure as the known RED.
+- [ ] **Step 4: Real std_http2 shapes.** Compile `http2Wait` and `http2Get` wrapper forms against the current `std_http2`; if a live server is needed, do compile-only and record that limitation.
+- [ ] **Step 5: Error/edge matrix.** Test error propagation, optional payload, aggregate payload, and non-tail vs tail; record which pass and which fail.
+- [ ] **Step 6: Run and record.** Use `/workspace/znineeight/zig1/zig1_5_clean`; for each shape record exact command, rc, diagnostics, emitted-C/compile result, and `-ffast`/`-fsafe` where runnable. Do not claim an unobserved `error[3043]`.
+- [ ] **Step 7: Resolve and STOP.** If `error[3043]` reproduces, commit the fixture and inventory evidence. If it does not, commit the exact-shape fixture plus the negative evidence and STOP; do not amend the spec or re-scope Task 7 in this task. If the evidence contradicts the spec, present it and wait for the operator.
+- [ ] **Step 8: Commit** `test(repro): retry D14 exact-shape wrapper and record evidence` (only Task 0.1 files). No source fix.
+
+### Task 0.2: D14 frontend-vs-tail-ABI matrix (test-only)
+
+**Files:**
+- Create: `repro/mi_matrix/known_excluded/d14_original_http2_eu/` (exact old `Http2Error!u32` two-level shape)
+- Create: `repro/mi_matrix/known_excluded/d14_two_level_matrix/` (multi-await/order/type variants)
+- Modify: `docs/superpowers/specs/2026-10-29-phase35-repro-inventory.md`
+- No source fix; no Task 7 work.
+
+**Interfaces:**
+- Consumes: Task 0.1's exact-shape evidence; the old `submitUrl`/`http2Get` shape in `git show 022a59f2:sf/src/std_http2.zig` (and `022a59f2^` for the prior void shape); `sf/src/async_analysis.zig` P2 and `sf/src/async_state_machine.zig` P4.
+- Produces: a frontend-vs-ABI classification. Either a fixture that reproduces the D14-specific `error[3043]` (`async parent_result slot type mismatch`), or exact evidence that only the GCC tail ABI fails. If both occur, record **two distinct D14 bugs**.
+
+- [ ] **Step 1: Reconstruct the exact chain.** Use `git show 022a59f2:sf/src/std_http2.zig` to recover the `submitUrl(...) Http2Error!u32 { ...; try http2Wait(c, id); return id; }` + `http2Get(...) Http2Error!u32 { return submitUrl(...); }` shape. Reproduce it compile-only in `d14_original_http2_eu`; do not edit `std_http2`.
+- [ ] **Step 2: Two-level matrix.** Add: inner `E!u32` with one leaf await; outer tail `return inner(c);`; outer non-tail `var x = try inner(c); return x;`; local 15-name `E` vs imported `h2.Http2Error`; exact runtime id.
+- [ ] **Step 3: Order matrix.** Add two value-returning awaits in source order and swapped; mixed void/value awaits in both orders; nested non-tail/tail. Record which shape changes P2/P4 slot order.
+- [ ] **Step 4: Wrapper matrix.** Add `try`/`catch`/`if` wrappers around the awaits; record whether they change slot reservation.
+- [ ] **Step 5: Run and classify.** For each shape run `zig1 -ffast` and `-fsafe` with `--dump-c89` and `-o`; record rc, exact diagnostic, emitted-C presence, and gcc result. Classify: frontend `error[3043]` exact message / GCC tail ABI / both / unrelated.
+- [ ] **Step 6: STOP and record.** Update the inventory with the exact evidence and classification. If the frontend message reproduces, commit it. If only the tail ABI reproduces, commit the negative frontend evidence. If both reproduce, record two D14 bugs and STOP for the operator. Do not amend the spec or re-scope Task 7 in this task.
+- [ ] **Step 7: Commit** `test(repro): classify D14 frontend vs tail-ABI triggers` (only Task 0.2 files). No source fix.
+
+### Task 0.5: Upstream root-cause investigation (no fixes)
+
+**Files:**
+- Create: `docs/superpowers/specs/2026-10-29-phase35-upstream-root-cause.md`
+- Read-only inputs: the Task 0/0.1/0.2 repros, `docs/superpowers/specs/2026-10-29-phase35-repro-inventory.md`, `examples/torrent_example_defects.md`, the Phase 3.5 spec, and the compiler pipeline (`sf/src/parser.zig`, `semantic_analyzer.zig`, `type_resolver.zig`, `type_registry.zig`, `lower.zig`, `c89_emit.zig`, `analyzer.zig`, `async_*.zig`, `import_resolver.zig`)
+- No source fix; no Task 1 work.
+
+**Interfaces:**
+- Consumes: the nine defect repros and their recorded RED/baseline evidence.
+- Produces: one upstream root-cause entry per defect, with the failing pass/layer, exact `file:line`, the causal chain from source to symptom, why lower-layer patches would be wrong, a **fix contract** (what must become true at the root), and the regression probes that prove it. D5 and D10 get separate entries if their causes differ; D4 is one cluster with per-analyzer causes; D14 records the tail-ABI root cause and the **[suspicious]** `error[3043]` claim separately.
+
+- [ ] **Step 1: Build the matrix.** For each defect, list the repro path, exact symptom, whether it is frontend/ICE, emitted-C/gcc, analyzer, or documentation, and the pass where the wrong state first appears.
+- [ ] **Step 2: Trace each defect upstream.** Follow the pipeline from parsing/type resolution through lowering and emission (or analyzer/import/async) to the first incorrect state. Record `file:line` and the code responsible, not the first place the symptom is visible.
+- [ ] **Step 3: Separate root cause from symptom.** For each defect, list the downstream sites that could be patched and why each would be a patch. The report must name the single upstream cause (or explicitly say the defect has two independent causes).
+- [ ] **Step 4: Write the fix contract.** For each defect, state what must change at the root, what must not change, and the exact repros/sibling probes that prove the root fix. The fixing task must verify this contract before editing.
+- [ ] **Step 5: D14 split.** Record the tail-return step-ABI root cause separately from the `error[3043]` frontend claim. State that `error[3043]` is **[suspicious]**/unreproduced and must not be “fixed” by guessing.
+- [ ] **Step 6: STOP gate.** If a root cause cannot be established, if two defects share a cause, or if the evidence contradicts the spec/plan, STOP and present the ambiguity instead of inventing a cause.
+- [ ] **Step 7: Commit** `docs(specs): Phase 3.5 upstream root-cause investigation` (only the report). No source fix.
 
 ### Task 1: D12 — module-scope untyped array literal
 
 **Files:**
-- Modify: `sf/src/lower.zig` (module-init / global-store lowering of array-literal values)
+- Modify: `sf/src/semantic_analyzer.zig` (module-scope var-decl typing; mirror the local rule at `:6681-6685`). Use `sf/src/lower.zig` only if the sema rule cannot be applied there; the emitter is not the fix site.
 - Test: `repro/mi_matrix/module_untyped_array_init_ok_xmod/main.zig` (+ `expected.txt`/`expected.rc`)
 
 **Interfaces:**
-- Consumes: the existing typed array-literal path (the one `repro/mi_matrix/multiarray_literal_init_xmod` exercises — element-wise copy, no whole-aggregate `=`).
+- Consumes: the existing typed array-literal path (the one `repro/mi_matrix/multiarray_literal_init_xmod` exercises — element-wise copy, no whole-aggregate `=`) and the local var-decl typing rule.
 - Produces: `pub var arr: [3]u32 = .{ 1, 2, 3 };` compiles rc=0 and the emitted C builds with gcc. Later tasks rely on nothing else from this fix.
 
-- [ ] **Step 1: Write the failing fixture.** `pub var arr: [3]u32 = .{ 1, 2, 3 };` + a `main` that mutates `arr[0]` and prints `arr` values; expected output is the mutated values.
+- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D12 report entry; compare its cause/evidence with `module_untyped_array_init_ok_xmod`. If it does not match or is only a downstream symptom, STOP. Do not patch a symptom.
+- [ ] **Step 1: Run the Task 0 fixture.** Use `module_untyped_array_init_ok_xmod` from Task 0; confirm its expected post-fix contract and RED baseline. If Task 0 recorded an adjacent D12 shape, extend this fixture here; do not recreate the base repro.
 - [ ] **Step 2: Verify RED.** `zig1 -o out module_untyped_array_init_ok_xmod/main.zig` → rc=0 today but gcc rejects the emitted C with `assignment to expression with array type` (the defect). Record the exact C (`zG_..._arr = zT_...;`).
-- [ ] **Step 3: Fix** so the module-init path applies the declared array type's literal annotation (or lowers through the typed array-literal path) instead of materialising a `Tup_*` temp + whole-aggregate assignment. The emitted form must be the element-wise copy the typed literal already uses.
+- [ ] **Step 3: Fix at the root** — apply the declared array type to the module-scope initializer in sema, mirroring the local `var` rule at `sf/src/semantic_analyzer.zig:6681-6685`, so lowering uses the existing element-wise array path instead of materialising a `Tup_*` temp + whole-aggregate assignment. Do not patch the emitter.
 - [ ] **Step 4: Verify GREEN** — fixture compiles, gcc-clean, output matches `expected.txt`, rc matches. Re-emit `multiarray_literal_init_xmod` and diff its C against the pre-fix emission: **must be unchanged** (Review Focus 5).
-- [ ] **Step 5: Commit** `fix(lower): module-scope untyped array literal emits element-wise init (Phase3.5 D12)` + delete D12 from `examples/torrent_example_defects.md` + SDD report.
+- [ ] **Step 5: Commit** `fix(sema): type module-scope untyped array literals as the declared array (Phase3.5 D12)` + delete D12 from `examples/torrent_example_defects.md` + SDD report.
 
 ### Task 2: D7.3 — nested aggregate write targets a by-value temp
 
 **Files:**
-- Modify: `sf/src/lower.zig` and/or `sf/src/c89_emit.zig` (lvalue/temporary materialisation for nested aggregate field indexing)
-- Test: `repro/mi_matrix/known_excluded/nested_agg_write_ok/main.zig` (+ expected)
+- Modify: `sf/src/lower.zig` (slice-base lvalue composition and the `slice_expr` assignment arm). Do not patch `c89_emit.zig`.
+- Test: `repro/mi_matrix/known_excluded/nested_agg_write_ok/main.zig` (+ expected), plus the sibling `sibling_slice_of_array.zig` direct-assignment case
 
 **Interfaces:**
 - Consumes: nothing from Task 1.
-- Produces: `arr[i].field[0..] = ...` / `arr[i].field = ...` writes land in `arr`'s storage. The wireguard demo's explicit-pointer workaround becomes unnecessary (but is left in place).
+- Produces: `arr[i].field[0..] = ...` / `arr[i].field = ...` writes land in `arr`'s storage, including the direct slice-assignment form. The wireguard demo's explicit-pointer workaround becomes unnecessary (but is left in place).
 
-- [ ] **Step 1: Minimal repro** (RED). Program: `var arr: [2]S = ...; arr[0].field[0..] = ...` (S has a slice/array field) then print `arr[0].field` values. The demo's shape (`examples/z98/demo/wireguard_demo/NOTES.md`) is the source. Today the store is lost (output shows pre-write values).
+- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D7.3 report entry; compare its cause/evidence with `nested_agg_write_ok`. If it does not match or is only a downstream symptom, STOP. Do not patch a symptom.
+- [ ] **Step 1: Run the Task 0 fixture.** Use `known_excluded/nested_agg_write_ok` from Task 0; confirm the store is lost pre-fix (output shows pre-write values). Extend it here if the adjacent scan found another nested-store shape in scope; do not recreate the base repro.
 - [ ] **Step 2: Locate the temp** — identify where the nested write materialises a by-value temp (lowering of `field_access`/`index_access` lvalues, emitter `emitBaseIdxAccess` family). Record the mechanism in the report before fixing.
-- [ ] **Step 3: Fix** so the write targets the storage address (compose the lvalue instead of copying).
-- [ ] **Step 4: Verify GREEN** — repro output shows the mutated values; the simple working shapes (`s.f = v`, `a[i] = v`, typed slice writes) re-emit **byte-identical** (Review Focus 5).
-- [ ] **Step 5: Commit** `fix(lower): nested aggregate writes target storage, not temporaries (Phase3.5 D7.3)` + delete D7.3 + report.
+- [ ] **Step 3: Fix both root causes.** (a) Compose the slice base as an lvalue storage address instead of lowering it as an rvalue (`sf/src/lower.zig:12527`); reuse the existing `lowerLValueAddr` composition. (b) Add the missing `slice_expr` arm to `lowerAssignLValue` (`:6664`) so direct `arr[i].field[0..] = src[0..]` composes the same storage address instead of hitting the unsupported-lvalue ICE.
+- [ ] **Step 4: Verify GREEN** — `nested_agg_write_ok` prints `77 88 77 88`; `sibling_slice_of_array.zig` builds and writes to the aggregate; `sibling_nested_chain` prints the written values; the simple working shapes (`s.f = v`, `a[i] = v`, typed slice writes) re-emit **byte-identical** (Review Focus 5).
+- [ ] **Step 5: Commit** `fix(lower): compose slice lvalues for nested aggregate writes (Phase3.5 D7.3)` + delete D7.3 + report.
 
 ### Task 3: D8 — stdout builtins through the PAL + runtime-C surface doc
 
@@ -77,9 +175,10 @@
 
 **Interfaces:**
 - Consumes: PAL print entry points (`pal_print_stdout` in `zig_pal.c`); the runtime single-source loop.
-- Produces: `pal_print_stderr`, `pal_putchar`, `pal_getchar` (or equivalent PAL read) usable by the emitter; emitted stdio dependency from the stdout family removed. Task 9 documents the new behavior in the spec.
+- Produces: `pal_print_stderr`, `pal_putchar`, `pal_getchar` (or equivalent PAL read) usable by the emitter; emitted stdio dependency from the stdout family removed. D8 has no pre-fix RED (it passes by luck); the fixture is the post-fix CRT + no-CRT regression oracle. Task 11 documents the new behavior in the spec.
 
-- [ ] **Step 1: RED fixture** — interleaves `std.io.print("A\n")`, `@stdoutWrite("B\n")`, `@putChar('C')`, then reads one byte with `@getChar()`; asserts program-order output on stdout. Run once against the pre-fix compiler: it may pass or pass-by-luck; the ordering test's value is post-fix on BOTH CRT and no-CRT.
+- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D8 report entry; compare its cause/evidence with `stdout_order_ok`. If it does not match or is only a downstream symptom, STOP. Do not patch a symptom.
+- [ ] **Step 1: Run the Task 0 fixture.** Use `known_excluded/stdout_order_ok` from Task 0; record the pre-fix CRT and no-CRT baseline. It may pass or pass-by-luck; the ordering test's value is post-fix on BOTH paths. Extend it here only if the adjacent scan found an in-scope stdout shape.
 - [ ] **Step 2: Inventory the current surface** (write-first): which emitted symbols come from `stdio.h`, `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c`, `__bootstrap_*`. Record in the report; this becomes the doc body.
 - [ ] **Step 3: Implement PAL routing** — lower the four builtins to PAL calls; add the missing PAL putchar/getchar in `emit_support.zig`; regen + `check_emit_support.sh` 8/8.
 - [ ] **Step 4: Verify** — ordering fixture byte-exact under gcc CRT AND `scripts/win32_cross/cross_nocrt.sh` (no-CRT); existing stdlib/examples outputs unchanged (they use `std.io.print`, already PAL); `check_emit_support.sh` 8/8; gate `gate_warn_clean.sh` still GREEN (the new PAL calls must stay `-m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long`-clean). Record the emitted-C diff vs base (expected non-empty for std.io users — this is the authorized shift).
@@ -94,11 +193,12 @@
 
 **Interfaces:**
 - Consumes: `parserFoldComptimeBool` / `dead_import_depth` (current probe), `comptimeEvalEvaluate`'s fold set (the superset), the F1 fix from `.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/` (T4.1).
-- Produces: a comptime-dead `@import` arm never opens its file. Task 9 documents the semantics.
+- Produces: a comptime-dead `@import` arm never opens its file. Task 11 documents the semantics.
 
+- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D3 report entry; compare its cause/evidence with the lazy-import repros. If it does not match or is only a downstream symptom, STOP. Do not patch a symptom.
 - [ ] **Step 1: Re-verify the interner landmine (gate before any code).** With the current tree: confirm `stdlib_crypto_modpow_xmod` is OK; then perturb intern order (one extra intern before source lexing) in a throwaway build and confirm/deny the OK→GREEN flip. Result goes in the report. **If it still flips:** apply/extend the T4.1 F1 fix and re-verify before proceeding. If unfixable in-scope: STOP and present.
-- [ ] **Step 2: RED fixtures** — `if (1 == 1) @import("exists.zig") else @import("missing.zig")` and a variant whose dead arm is an *unparsable* file; both must compile rc=0 today they fail with `error[3048]`-class diagnostics.
-- [ ] **Step 3: Implement true lazy import** — resolution defers opening to the point where the arm survives evaluation (probe ⊂ evaluator is the bug: extend to the evaluator's fold class or restructure loading). Wrong-module selection must remain impossible.
+- [ ] **Step 2: Run the Task 0 fixtures.** Use `known_excluded/lazy_import_fold_ok` and `known_excluded/lazy_import_unparsable_dead_ok` from Task 0; confirm the current `error[3048]`-class RED. Extend them here if the adjacent scan found another dead-arm shape in scope.
+- [ ] **Step 3: Implement full deferral.** `@import` resolution must be deferred until the comptime evaluator selects the live arm; the parse-time probe must no longer be the gate that opens files. Extending `parserFoldComptimeBool` to match more fold cases is a symptom patch and is not sufficient. Wrong-module selection must remain impossible.
 - [ ] **Step 4: Verify GREEN** — both fixtures rc=0, no file open on the dead arm (strace/open-count evidence in report); the established conditional-import shapes (`@isWindows()` idiom, `conditional_import_lazy_xmod`) unchanged; full corpus run: only new fixtures move, `stdlib_crypto_modpow_xmod` stays OK, frozen-1124 md5 unchanged. Record emitted-C diff vs base (authorized shift).
 - [ ] **Step 5: Commit** `fix(import): comptime-dead import arms never load files (Phase3.5 D3)` + delete D3 + report.
 
@@ -110,43 +210,83 @@
 
 **Interfaces:**
 - Consumes: `Z98_STDCALL` macro (`sf/src/include/zig_compat.h` — via `emit_support.zig` if changed), existing convention strings on declarations/fn-pointer types.
-- Produces: `extern "stdcall" fn f(...) { ... }` = stdcall definition; `extern fn f(...) { ... }` = cdecl definition; `callconv(...)` still rejects. Task 9 documents this.
+- Produces: `extern "stdcall" fn f(...) { ... }` = stdcall definition; `extern fn f(...) { ... }` = cdecl definition; `callconv(...)` still rejects. Task 11 documents this.
 
-- [ ] **Step 1: RED probes.** `pub extern "stdcall" fn cb(x: u32) i32 { return x + 1; }` today emits NO definition (the D5 silent-drop: `'cb' undeclared` at gcc, zero Z98 diagnostics). Record the current emission.
-- [ ] **Step 2: Implement definitions.** Extern-with-body emits a real C definition; `"stdcall"` writes `Z98_STDCALL` on it; bare/`"c"` emits cdecl. Prototype and definition conventions must agree (sema check). `callconv(...)` still rejects `error[2000]`.
+- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D5 and D10 report entries; compare them with the definition fixtures. If either is only a downstream symptom, STOP. Do not patch a symptom.
+- [ ] **Step 1: Run the Task 0 fixtures.** Use `known_excluded/stdcall_def_ok` and `known_excluded/cdecl_def_ok` from Task 0; record the current emission (no definition / `'cb' undeclared` at gcc, zero Z98 diagnostics). Extend them here if the adjacent scan found another definition shape in scope.
+- [ ] **Step 2: Implement definitions at the root.** Fix the `is_extern` conflation (`sf/src/lower.zig:15006`): `is_extern` must mean declaration-only (no body); a body-carrying `extern` is a definition under the original symbol name (extern linkage), not a mangled name. Emit `Z98_STDCALL` for `"stdcall"` and cdecl for bare/`"c"`. Prototype and definition conventions must agree (sema check). `callconv(...)` still rejects `error[2000]`. Do not fix this by only flipping the emitter’s definition gate.
 - [ ] **Step 3: ABI evidence.** Build the stdcall fixture with i686-w64-mingw32-gcc; objdump the definition showing the callee-cleanup epilogue (`ret $N`, N = arg bytes); a Wine run where a small C host registers the Z98-defined function as a callback and invokes it (balanced stack, correct return) — the shape z9play M6 needed.
 - [ ] **Step 4: Verify GREEN** — both fixtures rc=0 gcc-clean; existing extern *declarations* unchanged (byte-identical C for declaration-only programs); corpus + stdlib green; `callconv` still rejects (fixture).
 - [ ] **Step 5: Commit** `feat(sema): extern function definitions with calling conventions (Phase3.5 D5/D10)` + delete D5 and D10 + report.
 
-### Task 6: D4-pre — analyzer audit (no code)
+### Task 6: D13 — full `enum(u64)` discriminant range
+
+**Files:**
+- Modify: `sf/src/type_registry.zig` (`EnumMember.value` representation), `sf/src/type_resolver.zig` (`enumMembersResolve`, the `evalConstI64Full`/u64 constant path, `validateLocalEnumBackingFit`, `evalConstEnumSourceExceedsI64Max`), `sf/src/semantic_analyzer.zig` (`semanticAnalyzerGateEnumTypeDecl` and local enum validation), `sf/src/const_init_eval.zig` (enum-member consumers), `sf/src/c89_emit.zig` (u64 constant emission if needed)
+- Test: `repro/mi_matrix/enum_u64_max_ok_xmod/`, `repro/mi_matrix/enum_u64_max_implicit_reject_xmod/`, plus the existing signed/negative/duplicate enum fixtures
+
+**Interfaces:**
+- Consumes: the current `EnumMember` (`name_id`, `value: i64`) and the shared `enumMembersResolve` walk; `evalConstI64Full`; the existing enum-member consumers in the type resolver, semantic analyzer, emitter, and const-init evaluator.
+- Produces: full `enum(u64)` discriminants. `18446744073709551615` is accepted and emitted correctly; an implicit successor beyond `u64` max is rejected cleanly; signed/negative enums and duplicate-tag behavior are unchanged. Later tasks rely only on the compiler accepting the new range.
+
+- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D13 report entry; compare its cause/evidence with `enum_u64_max_ok_xmod`. If it does not match or is only a downstream symptom, STOP. Do not patch a symptom.
+- [ ] **Step 1: Run the Task 0 fixture.** Use `enum_u64_max_ok_xmod` from Task 0; confirm the current `error[3000]` RED. Also run the existing `enum_u64_max_reject_xmod` and `enum_u64_max_implicit_reject_xmod` (current-behavior fixtures). Do not recreate the success repro; extend it here if the adjacent scan found another in-scope enum shape. Retire `enum_u64_max_reject_xmod` and retarget `enum_u64_max_implicit_reject_xmod` to an implicit successor beyond `u64` max as part of this task.
+- [ ] **Step 2: Verify RED.** `zig1 -o out enum_u64_max_ok_xmod/main.zig` → rc 2 with `error[3000]: enum member value exceeds the supported enum value range (values above 9223372036854775807 require u64 enum storage, not supported yet)`. Record the emitted diagnostic and the rejected member.
+- [ ] **Step 3: Audit and STOP gate.** The root is the `i64` `EnumMember.value` / `evalConstI64Full` representation (`sf/src/type_registry.zig:108`, `sf/src/type_resolver.zig:1405-1408`); the validators are downstream. Map every `em_items[].value` consumer and choose the representation (64-bit raw value plus backing-signed interpretation, or paired signed/unsigned). If full support requires a broad enum-layout migration or changes emitted C for existing enums beyond the new range, STOP and present the options before coding.
+- [ ] **Step 4: Implement the representation change.** Change `EnumMember.value` and the constant-evaluation path to carry the full u64 range, then update the shared member walk, duplicate/auto-successor logic, backing-fit validation, const-init/lowering consumers, and the C emitter. Do not merely relax the validators. Keep signed behavior and the existing `error[3062]`/`error[3055]` paths intact.
+- [ ] **Step 5: Verify GREEN.** The max fixture compiles and selects the max branch (prints `7`); the emitted C carries the u64 max constant or a comparison against the literal, proving the numeric value, not only branch selection; the implicit-successor fixture rejects at `u64` max; signed/negative/duplicate fixtures are unchanged; emitted C is gcc-clean under `-ffast` and `-fsafe`; the fixture stays corpus-visible (or moves to `known_excluded/` if it must stay out of the corpus).
+- [ ] **Step 6: Commit** `feat(type): support the full enum(u64) discriminant range (Phase3.5 D13)` + delete D13 from `examples/torrent_example_defects.md` + SDD report.
+
+### Task 7: D14 — tail-return EU wrapper step ABI
+
+**Files:**
+- Modify: `sf/src/lower.zig` (tail-call suppression for suspending callees), `sf/src/async_state_machine.zig` (tail-call handling, parent-result slot typing and step result path), `sf/src/async_frame_layout.zig` (result/parent-result fields), and `sf/src/async_analysis.zig` only if P2 reservation/counting needs adjustment
+- Create: `repro/mi_matrix/known_excluded/d14_sync_tail_ok/` (synchronous tail call inside an async frame; the `copyTailCall` name-id probe)
+- Test: `repro/mi_matrix/known_excluded/d14_original_http2_eu/`, `repro/mi_matrix/known_excluded/d14_two_level_matrix/`, `repro/mi_matrix/known_excluded/d14_sync_tail_ok/`, `repro/mi_matrix/known_excluded/d14_tail_http2_wrapper_ok/`, and `async_wrapper_eu_payload_ok_xmod/` (success and error propagation), plus existing `recvSomeAsync`/`mud_server` async shapes
+
+**Interfaces:**
+- Consumes: Task 0.2's classification; the current P2/P3/P4 async layout and step ABI; the ASYNC_FIELD_RESULT / ASYNC_FIELD_PARENT_RESULT machinery; `@asyncSuspend`/implicit-await lowering.
+- Produces: a tail-returning suspending EU wrapper emits a GCC-compatible step ABI. The non-tail `error[3043]` claim is **[suspicious]/unproven** and is not a Task 7 target. `std_http2` keeps its `id_out` workaround; no public API change is required.
+
+- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D14 tail-ABI report entry; confirm the tail-callee/result root cause matches the tail fixtures. The `error[3043]` frontend claim is [suspicious]; if the report treats it as real without evidence, STOP. Do not patch a symptom.
+- [ ] **Step 1: Run the Task 0.2 result.** Task 0.2 records no reproducible frontend `error[3043]`; the scope is the tail-return GCC step ABI. If it ever records a frontend `error[3043]`, STOP and present rather than fix an unproven frontend defect. Do not assume the non-tail RED.
+- [ ] **Step 2: Verify RED.** Record the tail-return failure only: the exact `EU`/`Opt` result mismatch, and the nested tail/tail wrong-callee symptom. Keep the exact diagnostics and emitted step signature in the report.
+- [ ] **Step 3: Audit and STOP gate.** Map the P2/P3/P4 layout, the reserved parent-result slot, and the step-result return path for the tail-return shape. If the fix requires redefining the step ABI for all suspending functions or breaks the `mud_server` async shape, STOP and present the options before coding.
+- [ ] **Step 4: Implement both root fixes.** (a) Suppress the generic tail-call optimization for a suspending callee so the call remains `call_direct` and is rewritten into the normal implicit await (do not teach the async transform to treat `.tail_call` as an await; the tail call is not a real tail call here). (b) Fix `copyTailCall` so it rebases only real temp indices and preserves the callee name id (`sf/src/async_state_machine.zig:317-323`). Then correct the tail-return result/parent-result typing so the EU payload is returned through the GCC-compatible step ABI; preserve async frame sizes and `recvSomeAsync` behavior where possible.
+- [ ] **Step 5: Verify GREEN.** The imported exact fixture compiles (compile-only; expected `d14 original http2 eu compile-only`), the local tail fixture builds and runs (`42 0`/`0 1`), and the new synchronous-tail probe proves the `copyTailCall` name-id fix (the tail/tail wrong-callee alone is not sufficient because TCO suppression removes it); the non-tail, two-value-order, mixed void/value, `try`, `catch`, and `if` shapes stay green; `recvSomeAsync`, `http2Wait`, `mud_server`, and z9torr async fixtures remain green in `-ffast` and `-fsafe`; record the emitted-C diff versus base.
+- [ ] **Step 6: Commit** `fix(async): correct the tail-return EU wrapper step ABI (Phase3.5 D14)` + delete D14 from the defects doc + SDD report.
+
+### Task 8: D4-pre — analyzer audit (no code)
 
 **Files:**
 - Create: `docs/superpowers/specs/2026-10-29-phase35-analyzer-audit.md`
-- Inputs (read-only): `sf/src/analyzer*.zig`, `sf/src/semantic_analyzer.zig`, `docs/tech_debt/static_analyzers.md`, the D4 cluster entry in `examples/torrent_example_defects.md`, `.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/task-5-report.md`, `sf/docs/initial_design/STATIC_ANALYZERS_p2.md` (after Task 8's move; else `docs/sf/STATIC_ANALYZERS_p2.md`)
+- Inputs (read-only): `sf/src/analyzer*.zig`, `sf/src/semantic_analyzer.zig`, `docs/tech_debt/static_analyzers.md`, the D4 cluster entry in `examples/torrent_example_defects.md`, `.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/task-5-report.md`, the Task 0 `tests/analyzers/d4_contract_probe.zig` and `docs/superpowers/specs/2026-10-29-phase35-repro-inventory.md`, `sf/docs/initial_design/STATIC_ANALYZERS_p2.md` (after Task 10's move; else `docs/sf/STATIC_ANALYZERS_p2.md`)
 
+- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D4 report entries; compare their per-analyzer causes with the D4 probe. If a cause is only a downstream symptom, STOP.
 - [ ] **Step 1: Contract inventory** — for each analyzer (Lifetime/Provenance, NullPointer, DoubleFree, Signature): what it *should* do (design intent + what the diagnostics promise).
 - [ ] **Step 2: Reality map** — what each actually does; every inert path with `file:line` (symbol-table provenance dead for locals/params; unseeded param null state; un-walked `return`/init expressions; DoubleFree alias-chain blindness; the comptime-dead-arm gap).
 - [ ] **Step 3: Lie list** — every confident-but-wrong or vacuous diagnostic class with repro evidence (anchor: the 44 false `WARN_6002` on self-source; measure the current count — it may have shifted). Include "silently passes real defect" classes.
-- [ ] **Step 4: Bar + must-work set** — the gap to a real-analyzer bar, and the concrete must-work list Task 7 implements. Fixture-driven test strategy (`tests/analyzers/**`) replaces hand-fed symbols.
+- [ ] **Step 4: Bar + must-work set** — the gap to a real-analyzer bar, and the concrete must-work list Task 9 implements. Fixture-driven test strategy (`tests/analyzers/**`) replaces hand-fed symbols.
 - [ ] **Step 5: Commit** `docs(specs): static-analyzer audit — contracts, inert paths, lie list (Phase3.5 D4-pre)`.
 
-### Task 7: D4-upgrade — make them real analyzers
+### Task 9: D4-upgrade — make them real analyzers
 
 **Files:**
 - Modify: `sf/src/analyzer*.zig`, `sf/src/semantic_analyzer.zig` (dead-arm parity plumbing), `sf/src/main.zig`/`sf/src/comptime_eval.zig` (AnalyzerContext fold plumbing if the audit requires it), `sf/src/tests/test_analyzer_bin.zig` (Symbol `file_id`, fixture-driven harness)
 - Test: `tests/analyzers/**` fixtures (the T5 direction), self-source false-positive measurement
 
 **Interfaces:**
-- Consumes: Task 6's must-work set (binding — the audit is the bar).
+- Consumes: Task 8's must-work set (binding — the audit is the bar).
 - Produces: analyzers that match their contracts on the must-work set; `WARN_6002` false-positive count on self-source driven to the audit's target (the 44-class must collapse, not move).
 
+- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D4 report entries; confirm each must-work item maps to a root cause, not a symptom patch. If not, STOP.
 - [ ] **Step 1: Write-first plan** — map each must-work item to its fix; append to the SDD report before editing.
 - [ ] **Step 2: Fix the lies first** (wrong diagnostics), then **close the inert paths** (return/init walks, param seeding, alias propagation, local provenance), then **extend** to the audit's must-work set.
-- [ ] **Step 3: Test migration** — fixture-driven cases under `tests/analyzers/**`; delete/retire the vacuous hand-fed-symbol tests (the (e) pattern); fix `Symbol` test-init `file_id` (the (g) item); docs residue (the (f) item) cleaned in `docs/tech_debt/static_analyzers.md`.
+- [ ] **Step 3: Test migration** — fixture-driven cases under `tests/analyzers/**`; register `tests/analyzers/d4_contract_probe.zig` (and the Task 0 probes) in `sf/src/tests/test_analyzer_bin.zig` and assert the expected per-analyzer diagnostics from the Task 0.5 report §2 fix contracts; delete/retire the vacuous hand-fed-symbol tests (the (e) pattern); fix `Symbol` test-init `file_id` (the (g) item); docs residue (the (f) item) cleaned in `docs/sf/STATIC_ANALYZERS_p2.md` §5.3 and `docs/tech_debt/static_analyzers.md`. `docs/design/static_analyzers.md` is zig0-era and stays untouched per spec §5.5; its residue is deferred with the zig0 archive.
 - [ ] **Step 4: Verify** — analyzer suites green; self-source `WARN_6002` false positives measured at the audit's target; no NEW false positives on corpus examples; corpus/stdlib/examples unchanged (analyzers are post-sema, no emission change — verify emitted C diff is empty).
-- [ ] **Step 5: Commit** `fix(analyzer): contracts honored, lies removed, fixture-driven tests (Phase3.5 D4)` + rewrite the D4 entry out of the defects doc + report.
+- [ ] **Step 5: Commit** `fix(analyzer): contracts honored, lies removed, fixture-driven tests (Phase3.5 D4)` + rewrite the D4 entry out of the defects doc + report. Record the deferred `docs/design/static_analyzers.md` residue (zig0-era, spec §5.5) in the SDD report so removing D4 does not silently drop it.
 
-### Task 8: Doc consolidation
+### Task 10: Doc consolidation
 
 **Files:**
 - Create dir: `sf/docs/initial_design/`
@@ -160,23 +300,23 @@
 - [ ] **Step 4: Verify** — no dangling references (grep pass); `git status` shows pure renames + reference edits; no file content changed except cross-refs and the new INDEX.
 - [ ] **Step 5: Commit** `docs(sf): consolidate self-host docs — tech_docs (observed) + initial_design (intent) (Phase3.5)`.
 
-### Task 9: Spec truth-up
+### Task 11: Spec truth-up
 
 **Files:**
 - Modify: `docs/reference/Language_Spec_Z98.md` (only this spec; the other stale docs stay)
 
 **Interfaces:**
-- Consumes: Task 3's PAL routing (D8 semantics), Task 4's lazy import (D3 semantics), Task 5's conventions (D5/D10 syntax), Task 7's analyzer status (for the §5/§7 accuracy check).
+- Consumes: Task 3's PAL routing (D8 semantics), Task 4's lazy import (D3 semantics), Task 5's conventions (D5/D10 syntax), Task 6's full `enum(u64)` range (D13), Task 7's async EU-payload rule (D14), Task 9's analyzer status (for the §5/§7 accuracy check).
 - Produces: a spec that matches the compiler.
 
 - [ ] **Step 1: Kill the lifting lie** — replace the `:435` "AST Lifting" bullet with the real mechanism (lowerer phase machines emit branches + result temporaries in LIR; no AST transformation pass exists).
-- [ ] **Step 2: Barrel list** — `:352` re-exports 12 → 14 (`fmt`, `fold`); verify against `sf/src/std.zig`.
-- [ ] **Step 3: Missing facts** — `error[3077]` (limit 130), `--check` mode, the §5.1 conventions rules, the §5.3 lazy-import semantics.
+- [ ] **Step 2: Barrel list** — verify against the current `sf/src/std.zig`; it has 17 re-exports today, not the old 12 → 14 claim.
+- [ ] **Step 3: Missing facts** — `error[3077]` (limit 130), `--check` mode, the §5.1 conventions rules, the §5.3 lazy-import semantics, full `enum(u64)` discriminants (D13), and the suspending-wrapper error-union payload rule (D14).
 - [ ] **Step 4: Builtins reconciliation** — §4 list vs the compiler's real registration (sema `BuiltinDesc` + lower + `comptime_eval`); resolve `@addr`/`@name`/`@enumFromInt`/`@typeName`/`@cInclude` claims.
 - [ ] **Step 5: §5/§7 re-verification** — every limitation and "Not Yet Supported" item re-checked against the current compiler and mi/corpus; correct stale claims; verify every fixture path named in the spec exists.
 - [ ] **Step 6: Commit** `docs(spec): language spec truth-up — real lowering, current features (Phase3.5)` + report.
 
-### Task 10: Closeout — battery, re-baseline, seed v130
+### Task 12: Closeout — battery, re-baseline, seed v146
 
 **Files:**
 - Modify: `scripts/compiler/gate_lower_depth.sh` (the 8 pins), `docs/sf/QUICK_REF.md` (pin table + counts), `README.md` (seed/fixed-point facts), `release/seed/CHANGELOG.md`, `release/seed/zig1-seed.tgz`, `release/seed/zig1_seed_w9.zip`, `examples/torrent_example_defects.md` (final open-only state)
@@ -184,15 +324,15 @@
 
 **Interfaces:**
 - Consumes: every prior task's landed state.
-- Produces: seed v129 → **v130** with a new fixed point (F_new moved by Tasks 3–5), re-anchored corpus counts/class md5, re-recorded markers, all gates green.
+- Produces: seed v145 → **v146** with a new fixed point (F_new moved by Tasks 3–7), re-anchored corpus counts/class md5, re-recorded markers, all gates green.
 
-- [ ] **Step 1: Full battery on the current tree** (report-only at first): corpus live (record new count/class md5; expect growth from new fixtures; frozen-1124 md5 MUST still be `518eca1a...` with 0 movers), goldens, markers (record new value), examples 26/26, stdlib 339+3? (new fixtures land where they land — record actual), crosscheck 10/10, all compiler gates (`gate_lower_depth`, `gate_builtin_names`, `gate_mutable_for`, `gate_debug_map`, `gate_crlf`, `gate_warn_clean`, `gate_reserved_names`, `check_emit_support` 8/8), tiers (`tier_dbg`, `tier_dbg_core`, `tier_gfx`, `tier_edit`, `tier_edit_gui`) — GUI tiers only if std_gfx touched (it is not expected to be).
-- [ ] **Step 2: STOP-check** — if anything unexpected moved beyond the known emission shifts (D8/D3), STOP and present. Expected movers: 8 pins (all), corpus additions, marker counts, any goldens touching stdout ordering.
+- [ ] **Step 1: Full battery on the current tree** (report-only at first): corpus live (record new count/class md5; expect growth from new fixtures; frozen-1124 md5 MUST still be `518eca1a...` with 0 movers), goldens, markers (record new value), examples 28/28, stdlib 376 + any new fixtures (record actual), crosscheck 10/10, all compiler gates (`gate_lower_depth`, `gate_builtin_names`, `gate_mutable_for`, `gate_debug_map`, `gate_crlf`, `gate_warn_clean`, `gate_reserved_names`, `check_emit_support` 8/8), tiers (`tier_dbg`, `tier_dbg_core`, `tier_gfx`, `tier_edit`, `tier_edit_gui`) — GUI tiers only if std_gfx touched (it is not expected to be).
+- [ ] **Step 2: STOP-check** — if anything unexpected moved beyond the known emission shifts (D8/D3/D14, and D13 if its representation changes existing enum emission), STOP and present. Expected movers: 8 pins (all), corpus additions, marker counts, any goldens touching stdout ordering or async.
 - [ ] **Step 3: Single re-baseline** — re-record the 8 pins in `gate_lower_depth.sh` + `QUICK_REF.md` (the authorized once-only move); re-anchor corpus counts/class md5 and markers in the docs.
-- [ ] **Step 4: Seed rotation** — `scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/phase35_close` → closure (moving point: hop2 == hop3 with hop1 from the prior seed); full battery values recorded; `scripts/seed/archive_seed.sh <bin> <gen> release/seed/zig1-seed.tgz --update-changelog --win9x-zip release/seed/zig1_seed_w9.zip`; verify every CHANGELOG claim (the v121 false-status class must not repeat); lib/ counts (50 baseline + any new std file — expected unchanged); rebuild from the NEW archive reproduces the fixed point.
-- [ ] **Step 5: Defects doc final state** — open-only; the fixed entries are gone; any new findings land at the next free slot (D13+).
-- [ ] **Step 6: Commit** `chore(seed): rotate v130 (Phase3.5 defect closure + docs)` + `docs(sdd)` final report. No push, no tag.
+- [ ] **Step 4: Seed rotation** — `scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/phase35_close` → closure (two-hop: hop1 == hop2 == the new fixed point); full battery values recorded; `scripts/seed/archive_seed.sh <bin> <gen> release/seed/zig1-seed.tgz --update-changelog --win9x-zip release/seed/zig1_seed_w9.zip`; verify every CHANGELOG claim (the v121 false-status class must not repeat); lib/ counts (59 baseline; expected unchanged — no new std file); rebuild from the NEW archive reproduces the fixed point.
+- [ ] **Step 5: Defects doc final state** — open-only; the fixed entries (D3, D4, D5, D7.3, D8, D10, D12, D13, D14) are gone; any new findings land at the next free slot (D15+).
+- [ ] **Step 6: Commit** `chore(seed): rotate v146 (Phase3.5 defect closure + docs)` + `docs(sdd)` final report. No push, no tag.
 
 ---
 
-**Execution note:** tasks run in the listed order (the operator fixed it: 1, 2, 3, 4, 5, then the analyzer pair, then docs, then closeout). Tasks 3 and 4 are the emission shifts — their diffs are expected and recorded, not re-baselined. Task 6 is investigation-only. Task 8 must land before Task 9's spec work references `sf/docs/initial_design/` paths.
+**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), then the analyzer pair, then docs, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Task 8 is investigation-only. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths.
