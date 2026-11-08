@@ -43,6 +43,13 @@ pub const Provenance = enum(u8) {
     // and interiors are safe to return; the bare address of the binding still
     // dangles (classified param_addr).
     external = 6,
+    // Internal marker for an array-typed local binding. Arrays are stack
+    // storage, but returning the array BY VALUE copies it, so this must not
+    // be treated as `local` by `checkReturnProvenance` (WARN_6010). It is
+    // consumed only by the `slice_expr` arm, which maps it back to `local`
+    // for WARN_6011 (a slice escapes the stack). Address-of and interior
+    // paths already fall through to `local`.
+    local_array = 7,
 };
 
 pub const AllocState = enum(u8) {
@@ -466,7 +473,12 @@ pub fn classifyProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32
         var base_id = resolveOrigin(ctx, node.child_0);
         if (base_id) |bid| {
             var result = smap_mod.stateMapGet(state, bid);
-            if (result) |v| return v;
+            if (result) |v| {
+                // An array local is `local_array` so a by-value return stays
+                // clean; slicing it is still an escape of stack storage.
+                if (v == @intCast(u8, @enumToInt(Provenance.local_array))) return @intCast(u8, @enumToInt(Provenance.local));
+                return v;
+            }
             var base_sym = sym_mod.symbolTableLookup(ctx.symbols, bid);
             if (base_sym) |s| {
                 if (s.kind == SymbolKind.global) return @intCast(u8, @enumToInt(Provenance.global));
@@ -1728,9 +1740,12 @@ fn onLifetimeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
     if (node.kind == AstKind.var_decl) {
         // An array binding is stack storage regardless of what its
         // initializer's expression provenance says (`undefined`, a literal,
-        // or a call): slicing it must classify local for WARN_6011. Pointer
-        // bindings still take their initializer's provenance so an indirect
-        // pointer (e.g. `@ptrCast` of a heap allocation) is not mislabeled.
+        // or a call): slicing it must classify local for WARN_6011. Record
+        // the distinct `local_array` marker so a by-value array return is not
+        // misreported as WARN_6010; the `slice_expr` arm maps it to `local`.
+        // Pointer bindings still take their initializer's provenance so an
+        // indirect pointer (e.g. `@ptrCast` of a heap allocation) is not
+        // mislabeled.
         var t5_array_local: u8 = @intCast(u8, 0);
         if (node.child_0 != @intCast(u32, 0)) {
             var type_node = ast_mod.astStoreNodeAt(ctx.store, node.child_0);
@@ -1741,7 +1756,7 @@ fn onLifetimeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
             if (init_node.kind == AstKind.array_init) t5_array_local = @intCast(u8, 1);
         }
         if (t5_array_local != @intCast(u8, 0)) {
-            smap_mod.stateMapSet(state, ast_mod.astStoreNodePayload(ctx.store, node_idx), @intCast(u8, @enumToInt(Provenance.local)));
+            smap_mod.stateMapSet(state, ast_mod.astStoreNodePayload(ctx.store, node_idx), @intCast(u8, @enumToInt(Provenance.local_array)));
         } else if (node.child_1 != @intCast(u32, 0)) {
             var prov = classifyProvenance(ctx, state, node.child_1);
             smap_mod.stateMapSet(state, ast_mod.astStoreNodePayload(ctx.store, node_idx), prov);

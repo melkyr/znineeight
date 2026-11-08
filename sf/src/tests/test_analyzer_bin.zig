@@ -1509,8 +1509,6 @@ fn testCaptureLifetimePropagation() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var xs: []const u8 = "x";
     var x_nid = interner_mod.stringInternerIntern(&interner, xs);
-    var local_sym = sym_mod.Symbol{ .name_id = x_nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
-    _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
     var ten_node = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 10), @intCast(u32, 0), @intCast(u32, 4));
     var xdecl_node = ast_mod.astStoreAddNode(&store, AstKind.var_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), ten_node, @intCast(u32, 0), x_nid);
     var x_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, x_nid, @intCast(u32, 0), @intCast(u32, 0));
@@ -1981,6 +1979,8 @@ pub fn main() void {
         expectAt(c_param_addr, 1, FIXTURE_FILE_ID, @intCast(u32, 27)),
     };
     testFixture("tests/analyzers/lifetime_param.zig", "fixture lifetime_param", e_life_param[0..]);
+    // By-value array return copies out of the call frame; no lifetime warning.
+    testFixture("tests/analyzers/array_value_return_ok.zig", "fixture array_value_return_ok", fx_no_expect[0..]);
     var e_cap_life = [_]DiagExpectation{ expectCode(c_ret_var, 1) };
     testFixture("tests/analyzers/capture_lifetime.zig", "fixture capture_lifetime", e_cap_life[0..]);
     var e_cap_df = [_]DiagExpectation{ expectCode(c_double, 1) };
