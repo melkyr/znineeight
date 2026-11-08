@@ -4100,23 +4100,52 @@ fn semanticAnalyzerImportExprModuleType(self: *SemanticAnalyzer, import_idx: u32
     return @intCast(u32, 0);
 }
 
+// D3 (Phase 3.5): recursive conditional-`@import` shape — a bare
+// `import_expr`, or a capture-free `if_expr`/`swt_ex` whose arms/prong bodies
+// are themselves import-alias shapes (paren-transparent). Mirrors lowering's
+// `lowerInitIsImportAliasShaped`, so a NESTED selection
+// (`if (c1) (if (c2) @import(a) else @import(b)) else @import(c)`) binds the
+// live module instead of leaking a `module_type` into the emitted C.
+fn semanticAnalyzerImportAliasShape(self: *SemanticAnalyzer, expr_idx: u32) bool {
+    var t4_as_idx = expr_idx;
+    var t4_as_uw: usize = @intCast(usize, 0);
+    while (t4_as_uw < @intCast(usize, 8)) : (t4_as_uw += 1) {
+        if (t4_as_idx == @intCast(u32, 0)) return false;
+        var t4_as_n = ast_mod.astStoreNodeAt(self.store, t4_as_idx);
+        if (t4_as_n.kind == AstKind.paren_expr) { t4_as_idx = t4_as_n.child_0; continue; }
+        break;
+    }
+    if (t4_as_idx == @intCast(u32, 0)) return false;
+    var t4_as_n2 = ast_mod.astStoreNodeAt(self.store, t4_as_idx);
+    if (t4_as_n2.kind == AstKind.import_expr) return true;
+    if (t4_as_n2.kind == AstKind.if_expr) {
+        if (ast_mod.astStoreNodePayload(self.store, t4_as_idx) != @intCast(u32, 0)) return false;
+        if (t4_as_n2.child_1 == @intCast(u32, 0) or t4_as_n2.child_2 == @intCast(u32, 0)) return false;
+        return semanticAnalyzerImportAliasShape(self, t4_as_n2.child_1) and
+            semanticAnalyzerImportAliasShape(self, t4_as_n2.child_2);
+    }
+    if (t4_as_n2.kind == AstKind.swt_ex) {
+        var t4_as_sp_n = ast_mod.astStoreNodeExtraChildCount(self.store, t4_as_idx);
+        if (t4_as_sp_n == @intCast(usize, 0)) return false;
+        var t4_as_si: usize = 0;
+        while (t4_as_si < t4_as_sp_n) : (t4_as_si += 1) {
+            var t4_as_sp = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, t4_as_idx, @intCast(u32, t4_as_si)));
+            if (t4_as_sp.child_0 == @intCast(u32, 0)) return false;
+            if (!semanticAnalyzerImportAliasShape(self, t4_as_sp.child_0)) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
 // T4 (spec §4): is this `switch` the conditional-`@import` idiom — every prong
-// body an `import_expr` (paren-transparent)? Only then is the switch a
-// comptime module selection; every other switch keeps the pre-T4 paths.
+// body an import-alias shape (paren-transparent, nested selections included)?
+// Only then is the switch a comptime module selection; every other switch
+// keeps the pre-T4 paths.
 fn semanticAnalyzerSwitchIsImportIdiom(self: *SemanticAnalyzer, node_idx: u32) bool {
     var t4_sn = ast_mod.astStoreNodeAt(self.store, node_idx);
     if (t4_sn.kind != AstKind.swt_ex) return false;
-    var t4_sp_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
-    if (t4_sp_n == @intCast(usize, 0)) return false;
-    var t4_si: usize = 0;
-    while (t4_si < t4_sp_n) : (t4_si += 1) {
-        var t4_sp = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, t4_si)));
-        if (t4_sp.child_0 == @intCast(u32, 0)) return false;
-        var t4_body = semaUnwrapParens(self, t4_sp.child_0);
-        var t4_bn = ast_mod.astStoreNodeAt(self.store, t4_body);
-        if (t4_bn.kind != AstKind.import_expr) return false;
-    }
-    return true;
+    return semanticAnalyzerImportAliasShape(self, node_idx);
 }
 
 // T4 (spec §4): the module type bound by a module-scope `const impl = <init>`
@@ -4145,16 +4174,31 @@ fn semanticAnalyzerModuleAliasInitType(self: *SemanticAnalyzer, init_idx: u32) u
         if (semanticAnalyzerIfComptimeCondition(self, t4_idx)) |t4_tv| {
             var t4_arm: u32 = if (t4_tv) t4_n2.child_1 else t4_n2.child_2;
             if (t4_arm == @intCast(u32, 0)) return @intCast(u32, 0);
-            var t4_an = ast_mod.astStoreNodeAt(self.store, semaUnwrapParens(self, t4_arm));
-            if (t4_an.kind == AstKind.import_expr) {
-                return semanticAnalyzerImportExprModuleType(self, semaUnwrapParens(self, t4_arm));
-            }
+            // D3: recurse so a NESTED conditional import
+            // (`if (c1) (if (c2) @import(a) else @import(b)) else @import(c)`)
+            // selects its live module instead of leaving the binding untyped.
+            return semanticAnalyzerModuleAliasInitType(self, t4_arm);
         }
         return @intCast(u32, 0);
     }
     if (t4_n2.kind == AstKind.swt_ex) {
         if (!semanticAnalyzerSwitchIsImportIdiom(self, t4_idx)) return @intCast(u32, 0);
-        if (semanticAnalyzerCondComptimeBool(self, t4_n2.child_0)) |t4_cv| {
+        var t4_cv_opt = semanticAnalyzerCondComptimeBool(self, t4_n2.child_0);
+        if (t4_cv_opt == null) {
+            // D3: `phase_ComptimeEvaluation` sweeps `if` conditions (and
+            // builtin calls) but not `switch` selectors, so an evaluator-
+            // foldable selector like `switch (1 == 1)` has no table entry.
+            // Fold it here with the same evaluator the deferred import walk
+            // uses; a table hit keeps the target-correct `@isWindows()` value.
+            var t4_ce = semaComptimeEvalInit(self);
+            t4_ce.host_is_windows = self.module_reg.target_is_windows;
+            if (ce_mod.comptimeEvalEvaluate(&t4_ce, t4_n2.child_0)) |t4_sv| {
+                if (t4_sv.kind == ce_mod.KIND_BOOL) {
+                    t4_cv_opt = !ce_mod.ciIsZero(t4_sv.v);
+                }
+            }
+        }
+        if (t4_cv_opt) |t4_cv| {
             var t4_pr_n = ast_mod.astStoreNodeExtraChildCount(self.store, t4_idx);
             var t4_live: u32 = @intCast(u32, 0);
             var t4_els: u32 = @intCast(u32, 0);
@@ -4179,11 +4223,9 @@ fn semanticAnalyzerModuleAliasInitType(self: *SemanticAnalyzer, init_idx: u32) u
             if (t4_live != @intCast(u32, 0)) {
                 var t4_lb = ast_mod.astStoreNodeAt(self.store, t4_live).child_0;
                 if (t4_lb == @intCast(u32, 0)) return @intCast(u32, 0);
-                var t4_lb_u = semaUnwrapParens(self, t4_lb);
-                var t4_lbn = ast_mod.astStoreNodeAt(self.store, t4_lb_u);
-                if (t4_lbn.kind == AstKind.import_expr) {
-                    return semanticAnalyzerImportExprModuleType(self, t4_lb_u);
-                }
+                // D3: recurse — a prong body may itself be a nested
+                // conditional import.
+                return semanticAnalyzerModuleAliasInitType(self, t4_lb);
             }
         }
         return @intCast(u32, 0);
@@ -7433,9 +7475,11 @@ fn semanticAnalyzerInitIsImportAlias(self: *SemanticAnalyzer, init_idx: u32) boo
     if (t4_ia_n2.kind == AstKind.if_expr) {
         if (ast_mod.astStoreNodePayload(self.store, t4_ia_idx) != @intCast(u32, 0)) return false;
         if (t4_ia_n2.child_1 == @intCast(u32, 0) or t4_ia_n2.child_2 == @intCast(u32, 0)) return false;
-        var t4_ia_a1 = ast_mod.astStoreNodeAt(self.store, semaUnwrapParens(self, t4_ia_n2.child_1));
-        var t4_ia_a2 = ast_mod.astStoreNodeAt(self.store, semaUnwrapParens(self, t4_ia_n2.child_2));
-        return t4_ia_a1.kind == AstKind.import_expr and t4_ia_a2.kind == AstKind.import_expr;
+        // D3: recursive — both arms may themselves be nested conditional
+        // imports; recognize the whole shape so the decl gets the C1b
+        // no-runtime-value treatment (the symbol is typed at use).
+        return semanticAnalyzerImportAliasShape(self, t4_ia_n2.child_1) and
+            semanticAnalyzerImportAliasShape(self, t4_ia_n2.child_2);
     }
     if (t4_ia_n2.kind == AstKind.swt_ex) {
         if (!semanticAnalyzerSwitchIsImportIdiom(self, t4_ia_idx)) return false;
