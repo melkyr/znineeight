@@ -402,27 +402,28 @@ pub fn classifyProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32
         var found_name_id = resolveOrigin(ctx, node.child_0);
         if (found_name_id) |name_id| {
             var t5_base: u8 = @intCast(u8, 255);
+            // Module-root globals are the only name class the real
+            // symbol_registrator inserts. Function locals, params, and
+            // captures never enter that table, so their provenance comes
+            // from the analyzer state map (seeded params, tracked vars,
+            // captures). The old SymbolKind.local/.param arm was therefore
+            // structurally dead on the real pipeline and is deleted
+            // (LIFE-2 / L12). Non-local symbol kinds still cannot be
+            // storage-provenanced here and stay conservative.
             var sym = sym_mod.symbolTableLookup(ctx.symbols, name_id);
             if (sym) |s| {
-                if (s.kind == SymbolKind.local) {
-                    t5_base = @intCast(u8, @enumToInt(Provenance.local));
-                } else if (s.kind == SymbolKind.param) {
-                    t5_base = @intCast(u8, @enumToInt(Provenance.param));
-                } else if (s.kind == SymbolKind.global) {
+                if (s.kind == SymbolKind.global) {
                     t5_base = @intCast(u8, @enumToInt(Provenance.global));
-                } else {
+                } else if (s.kind != SymbolKind.local and s.kind != SymbolKind.param) {
                     return @intCast(u8, @enumToInt(Provenance.unknown));
                 }
-            } else {
-                // The real pipeline's symbol tables hold module-level names
-                // only (symbol_registrator.zig) — fn locals/params/captures
-                // are absent. Params arrive seeded (`param`/`external`),
-                // vars/captures carry their tracked value provenance, and an
-                // untracked binding is a conservative local.
+            }
+            if (t5_base == @intCast(u8, 255)) {
                 var pv = smap_mod.stateMapGet(state, name_id);
                 if (pv) |v| {
                     t5_base = v;
                 } else {
+                    // An untracked binding is a conservative local.
                     t5_base = @intCast(u8, @enumToInt(Provenance.local));
                 }
             }
@@ -453,10 +454,27 @@ pub fn classifyProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32
         return @intCast(u8, @enumToInt(Provenance.unknown));
     }
     if (kind == AstKind.slice_expr) {
+        // WARN_6011 needs the base's storage class, not just a tracked
+        // value: `var arr: [N]T = ...; return arr[0..n]` escapes the stack
+        // even though the initializer itself carries no provenance. Array
+        // declarations are recorded `local` by onLifetimeStmt. A tracked
+        // value wins (external/heap/global/local, including unknown for an
+        // indirect pointer initializer such as `@ptrCast`); a module-root
+        // global is safe; an untracked name is conservative local storage. A
+        // dereference base is still not resolved (documented
+        // no-alias-through-deref limit).
         var base_id = resolveOrigin(ctx, node.child_0);
         if (base_id) |bid| {
             var result = smap_mod.stateMapGet(state, bid);
             if (result) |v| return v;
+            var base_sym = sym_mod.symbolTableLookup(ctx.symbols, bid);
+            if (base_sym) |s| {
+                if (s.kind == SymbolKind.global) return @intCast(u8, @enumToInt(Provenance.global));
+                if (s.kind != SymbolKind.local and s.kind != SymbolKind.param) {
+                    return @intCast(u8, @enumToInt(Provenance.unknown));
+                }
+            }
+            return @intCast(u8, @enumToInt(Provenance.local));
         }
         return @intCast(u8, @enumToInt(Provenance.unknown));
     }
@@ -1708,7 +1726,23 @@ pub fn onNullStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
 fn onLifetimeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
     if (node.kind == AstKind.var_decl) {
-        if (node.child_1 != @intCast(u32, 0)) {
+        // An array binding is stack storage regardless of what its
+        // initializer's expression provenance says (`undefined`, a literal,
+        // or a call): slicing it must classify local for WARN_6011. Pointer
+        // bindings still take their initializer's provenance so an indirect
+        // pointer (e.g. `@ptrCast` of a heap allocation) is not mislabeled.
+        var t5_array_local: u8 = @intCast(u8, 0);
+        if (node.child_0 != @intCast(u32, 0)) {
+            var type_node = ast_mod.astStoreNodeAt(ctx.store, node.child_0);
+            if (type_node.kind == AstKind.array_type) t5_array_local = @intCast(u8, 1);
+        }
+        if (t5_array_local == @intCast(u8, 0) and node.child_1 != @intCast(u32, 0)) {
+            var init_node = ast_mod.astStoreNodeAt(ctx.store, node.child_1);
+            if (init_node.kind == AstKind.array_init) t5_array_local = @intCast(u8, 1);
+        }
+        if (t5_array_local != @intCast(u8, 0)) {
+            smap_mod.stateMapSet(state, ast_mod.astStoreNodePayload(ctx.store, node_idx), @intCast(u8, @enumToInt(Provenance.local)));
+        } else if (node.child_1 != @intCast(u32, 0)) {
             var prov = classifyProvenance(ctx, state, node.child_1);
             smap_mod.stateMapSet(state, ast_mod.astStoreNodePayload(ctx.store, node_idx), prov);
         } else {
@@ -1779,26 +1813,26 @@ pub fn runNullAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx: u32
 
 pub fn runLifetimeAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx: u32) void {
     var state = smap_mod.stateMapInit(ctx.alloc);
-    var decl = ast_mod.astStoreNodeAt(ctx.store, fn_decl_idx);
-    if (ast_mod.astStoreNodePayload(ctx.store, fn_decl_idx) != @intCast(u32, 0)) {
-        var proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, fn_decl_idx))];
-        var pp: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
-        var params_n = ast_mod.astStoreGetExtraChildCount(ctx.store, pp);
-        var pi: usize = 0;
-        while (pi < @intCast(usize, params_n)) : (pi += 1) {
-            var pnode = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi)));
-            if (pnode.kind == AstKind.param_decl) {
-                // T5 (§2.1 base): pointer-like params (`*T`, `[*]T`, `[]T`,
-                // fn-ptr) seed `external` — their pointee is caller-owned, so
-                // interiors (`&p.field`) are safe to return; the bare address
-                // of the binding (`&p`) still dangles (param_addr). By-value
-                // params seed `param` — interiors are call-frame storage.
-                var t5_pseed: u8 = @intCast(u8, @enumToInt(Provenance.param));
-                if (paramTypeIsPointerLike(ctx, pnode.child_0)) {
-                    t5_pseed = @intCast(u8, @enumToInt(Provenance.external));
-                }
-                smap_mod.stateMapSet(&state, ast_mod.astStoreNodePayload(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi))), t5_pseed);
+    // A function's proto index may legitimately be 0 (the first proto in the
+    // store), so the payload is not an absence sentinel. (Task 9b flagged the
+    // latent first-proto seed bug; this is the lifetime-pass fix for it.)
+    var proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, fn_decl_idx))];
+    var pp: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
+    var params_n = ast_mod.astStoreGetExtraChildCount(ctx.store, pp);
+    var pi: usize = 0;
+    while (pi < @intCast(usize, params_n)) : (pi += 1) {
+        var pnode = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi)));
+        if (pnode.kind == AstKind.param_decl) {
+            // T5 (§2.1 base): pointer-like params (`*T`, `[*]T`, `[]T`,
+            // fn-ptr) seed `external` — their pointee is caller-owned, so
+            // interiors (`&p.field`) are safe to return; the bare address
+            // of the binding (`&p`) still dangles (param_addr). By-value
+            // params seed `param` — interiors are call-frame storage.
+            var t5_pseed: u8 = @intCast(u8, @enumToInt(Provenance.param));
+            if (paramTypeIsPointerLike(ctx, pnode.child_0)) {
+                t5_pseed = @intCast(u8, @enumToInt(Provenance.external));
             }
+            smap_mod.stateMapSet(&state, ast_mod.astStoreNodePayload(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi))), t5_pseed);
         }
     }
     ctx.lifetime_analysis_mode = @intCast(u8, 1);

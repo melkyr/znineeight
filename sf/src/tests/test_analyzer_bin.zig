@@ -543,8 +543,8 @@ fn testClassifyAddrLocal() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "x";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
-    _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
+    // LIFE-2/L12: no hand-fed Symbol. The real pipeline has no fn-local
+    // symbol; an untracked address-of base is conservatively local.
     var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var result = az_mod.classifyProvenance(&ac, &st, addr_node);
@@ -569,8 +569,9 @@ fn testClassifyAddrParam() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "param";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var param_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.param, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
-    _ = sym_mod.symbolTableInsert(&sym_table, param_sym);
+    // LIFE-2/L12: params arrive through the analyzer state map, not a
+    // hand-fed symbol. Seed the real path explicitly.
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.Provenance.param));
     var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var result = az_mod.classifyProvenance(&ac, &st, addr_node);
@@ -638,8 +639,8 @@ fn testReturnAddrLocal() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "x";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
-    _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
+    // LIFE-2/L12: the true positive goes through the untracked-local
+    // fallback of the real state-map path (no hand-fed Symbol).
     var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), addr_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -665,8 +666,8 @@ fn testReturnAddrParam() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "p";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var param_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.param, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
-    _ = sym_mod.symbolTableInsert(&sym_table, param_sym);
+    // LIFE-2/L12: seed the parameter in the real analyzer state map.
+    smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.Provenance.param));
     var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), addr_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -690,18 +691,13 @@ fn testReturnPtrViaLocal() void {
     var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
-    var ns: []const u8 = "x";
-    var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
-    _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
-    var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
-    var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    // LIFE-2/L12: a var holding `&local` carries `local` in the analyzer
+    // state map; no hand-fed Symbol is involved.
     var pn: []const u8 = "p";
     var pid = interner_mod.stringInternerIntern(&interner, pn);
     var p_id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, pid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     smap_mod.stateMapSet(&st, pid, @enumToInt(az_mod.Provenance.local));
     var ret_node = ast_mod.astStoreAddNode(&store, AstKind.return_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), p_id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    _ = addr_node;
     az_mod.checkReturnProvenance(&ac, &st, p_id_node, ret_node);
     if (diag.warning_count == @intCast(usize, 0)) {
         var fmsg: []const u8 = "testReturnPtrViaLocal: expected warning\n";
@@ -724,8 +720,7 @@ fn testReturnSliceLocal() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "arr";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
-    _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
+    // LIFE-2/L12: local array provenance lives in the analyzer state map.
     var arr_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var slice_node = ast_mod.astStoreAddNode(&store, AstKind.slice_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), arr_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     smap_mod.stateMapSet(&st, nid, @enumToInt(az_mod.Provenance.local));
@@ -1943,6 +1938,8 @@ pub fn main() void {
     var c_untracked: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6006_FREEING_UNTRACKED));
     var c_double: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE));
     var c_local_addr: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL));
+    var c_param_addr: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2021_RETURNING_ADDRESS_OF_PARAM));
+    var c_ret_slice: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6011_RETURNING_SLICE_OF_LOCAL));
     var c_uaf: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2006_USE_AFTER_FREE));
     var c_leak: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK));
     var c_info: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.INFO_7001_OWNERSHIP_TRANSFERRED));
@@ -1972,6 +1969,18 @@ pub fn main() void {
     testFixture("tests/analyzers/dead_arm_switch.zig", "fixture dead_arm_switch", e_dead_switch[0..]);
 
     testFixture("tests/analyzers/fnptr_opt_aggregate.zig", "fixture fnptr_opt_aggregate", fx_no_expect[0..]);
+    var e_life_local = [_]DiagExpectation{
+        expectAt(c_local_addr, 1, FIXTURE_FILE_ID, @intCast(u32, 16)),
+        expectAt(c_local_addr, 1, FIXTURE_FILE_ID, @intCast(u32, 21)),
+        expectAt(c_ret_var, 1, FIXTURE_FILE_ID, @intCast(u32, 27)),
+        expectAt(c_ret_slice, 1, FIXTURE_FILE_ID, @intCast(u32, 32)),
+    };
+    testFixture("tests/analyzers/lifetime_local.zig", "fixture lifetime_local", e_life_local[0..]);
+    var e_life_param = [_]DiagExpectation{
+        expectAt(c_param_addr, 1, FIXTURE_FILE_ID, @intCast(u32, 15)),
+        expectAt(c_param_addr, 1, FIXTURE_FILE_ID, @intCast(u32, 27)),
+    };
+    testFixture("tests/analyzers/lifetime_param.zig", "fixture lifetime_param", e_life_param[0..]);
     var e_cap_life = [_]DiagExpectation{ expectCode(c_ret_var, 1) };
     testFixture("tests/analyzers/capture_lifetime.zig", "fixture capture_lifetime", e_cap_life[0..]);
     var e_cap_df = [_]DiagExpectation{ expectCode(c_double, 1) };
