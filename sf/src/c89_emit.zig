@@ -2455,7 +2455,7 @@ fn emitStdargInclude(emitter: *C89Emitter) void {
     }
 }
 
-fn moduleHasStdioBuiltin(emitter: *C89Emitter) u8 {
+fn moduleHasStdoutFamily(emitter: *C89Emitter) u8 {
     var vi: usize = @intCast(usize, 0);
     while (vi < emitter.fn_slots_len) : (vi += @intCast(usize, 1)) {
         var vf = faultIn(emitter, vi);
@@ -2545,9 +2545,9 @@ fn moduleHasConsoleBuiltin(emitter: *C89Emitter) u8 {
 }
 
 fn emitBuiltinIncludes(emitter: *C89Emitter) void {
-    if (moduleHasStdioBuiltin(emitter) != @intCast(u8, 0)) {
-        var stdio_inc: []const u8 = "#include <stdio.h>\n";
-        bufferedWriterWrite(&emitter.writer, stdio_inc);
+    if (moduleHasStdoutFamily(emitter) != @intCast(u8, 0)) {
+        var pal_decls: []const u8 = "extern void pal_print_stdout();\nextern void pal_print_stderr();\nextern int pal_putchar();\nextern int pal_getchar();\n";
+        bufferedWriterWrite(&emitter.writer, pal_decls);
     }
     if (moduleHasExitBuiltin(emitter) != @intCast(u8, 0)) {
         var stdlib_inc: []const u8 = "#include <stdlib.h>\n";
@@ -6930,26 +6930,22 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
      return nm_mod.nameManglerMintTemp(emitter.mangler, temp_id);
  }
 
- fn emitFwriteCall(emitter: *C89Emitter, ptr: u32, len: u32, is_stdout: u8) void {
+ fn emitPalWriteCall(emitter: *C89Emitter, ptr: u32, len: u32, is_stdout: u8) void {
     bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-    var f0: []const u8 = "fwrite(";
+    var f0: []const u8 = "pal_print_stdout(";
+    if (is_stdout == @intCast(u8, 0)) {
+        var fserr: []const u8 = "pal_print_stderr(";
+        f0 = fserr;
+    }
     bufferedWriterWrite(&emitter.writer, f0);
     var fp = resolveTempName(emitter, ptr);
     bufferedWriterWrite(&emitter.writer, fp);
-    var f1: []const u8 = ", 1, ";
+    var f1: []const u8 = ", ";
     bufferedWriterWrite(&emitter.writer, f1);
     var fl = resolveTempName(emitter, len);
     bufferedWriterWrite(&emitter.writer, fl);
-    var f2: []const u8 = ", ";
+    var f2: []const u8 = ");\n";
     bufferedWriterWrite(&emitter.writer, f2);
-    var fs: []const u8 = "stdout";
-    if (is_stdout == @intCast(u8, 0)) {
-        var fserr: []const u8 = "stderr";
-        fs = fserr;
-    }
-    bufferedWriterWrite(&emitter.writer, fs);
-    var f3: []const u8 = ");\n";
-    bufferedWriterWrite(&emitter.writer, f3);
  }
 
  fn emitConsoleClear(emitter: *C89Emitter) void {
@@ -8895,7 +8891,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
         },
         .builtin_put_char => |bpc| {
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-            var bpc1: []const u8 = "putchar(";
+            var bpc1: []const u8 = "pal_putchar(";
             bufferedWriterWrite(&emitter.writer, bpc1);
             var bpc_v = resolveTempName(emitter, bpc.value);
             bufferedWriterWrite(&emitter.writer, bpc_v);
@@ -8903,20 +8899,20 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             bufferedWriterWrite(&emitter.writer, bpc2);
         },
         .builtin_stdout_write => |bsow| {
-            emitFwriteCall(emitter, bsow.ptr, bsow.len, @intCast(u8, 1));
+            emitPalWriteCall(emitter, bsow.ptr, bsow.len, @intCast(u8, 1));
         },
         .builtin_stderr_write => |bsew| {
-            emitFwriteCall(emitter, bsew.ptr, bsew.len, @intCast(u8, 0));
+            emitPalWriteCall(emitter, bsew.ptr, bsew.len, @intCast(u8, 0));
         },
         .builtin_get_char => |bgc| {
             var bgc_res = resolveTempName(emitter, bgc.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             if (dceTempIsDead(emitter, bgc.result)) {
-                var vp: []const u8 = "(void)getchar();\n";
+                var vp: []const u8 = "(void)pal_getchar();\n";
                 bufferedWriterWrite(&emitter.writer, vp);
             } else {
             bufferedWriterWrite(&emitter.writer, bgc_res);
-            var bgc1: []const u8 = " = getchar();\n";
+            var bgc1: []const u8 = " = pal_getchar();\n";
             bufferedWriterWrite(&emitter.writer, bgc1);
             }
         },

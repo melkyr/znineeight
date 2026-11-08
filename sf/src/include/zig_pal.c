@@ -98,6 +98,43 @@ void pal_print_stdout(const char* msg, usize len)
 #endif
 }
 
+int pal_putchar(int c)
+{
+#ifdef _WIN32
+    char ch;
+    DWORD written = 0;
+    HANDLE h;
+    ch = (char)c;
+    h = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (h == INVALID_HANDLE_VALUE || h == NULL) return -1;
+    if (!WriteConsoleA(h, &ch, 1, &written, NULL))
+        if (!WriteFile(h, &ch, 1, &written, NULL)) return -1;
+    return (unsigned char)c;
+#else
+    unsigned char ch;
+    ch = (unsigned char)c;
+    if (write(1, &ch, 1) != 1) return -1;
+    return (unsigned char)c;
+#endif
+}
+
+int pal_getchar(void)
+{
+#ifdef _WIN32
+    char ch;
+    DWORD read_count = 0;
+    HANDLE h;
+    h = GetStdHandle(STD_INPUT_HANDLE);
+    if (h == INVALID_HANDLE_VALUE || h == NULL) return -1;
+    if (!ReadFile(h, &ch, 1, &read_count, NULL) || read_count == 0) return -1;
+    return (unsigned char)ch;
+#else
+    unsigned char ch;
+    if (read(0, &ch, 1) != 1) return -1;
+    return (int)ch;
+#endif
+}
+
 /* Trap handler hook (std_debug). A Z98-installed handler is invoked before the
  * trap instruction; the register capture is GCC/x86-only, so other compilers
  * get a zero-filled context (the handler still receives a valid pointer). The

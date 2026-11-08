@@ -1,4 +1,4 @@
-# 10 — C Runtime Layer [updated: 2026-10-28 — Phase 2.5 Task 9 (emission warning-clean at the origin): the `-fsafe` helpers (`zig_ovf_*`, `zig_wrap_*`, `zig_overflow_flag_*`, `zig_cast_checked_s/u`) and the `__bootstrap_*` casts are now **external definitions in `zig_runtime.c` + prototypes in `zig_runtime.h`** (no longer header statics) — one definition per program, link-level ABI; `zig_pal.c` gained a POSIX feature-selection preamble (`_DEFAULT_SOURCE` before libc headers) so `readlink`/`usleep` are declared under strict `-std=c89`. Runtime/support text has ONE hand-edited source, `sf/src/emit_support.zig`; `sf/src/include/*` + `sf/src/c_exit.c` are generated snapshots refreshed by `scripts/gen_emit_support.sh` and guarded by `scripts/check_emit_support.sh`. New gate `scripts/compiler/gate_warn_clean.sh` (gcc `-m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long`, sole suppression) compiles the runtime TUs.] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `pal_f64_to_str` (both lockstep copies) omits the `'.'`+fraction for an integral value (`7.0` → `7`); `std_fmt.zig`'s `printHexI32/I64` print `-` + hex magnitude for negative values (Zig oracle); the Q2 float residuals are unchanged.][updated: 2026-09-24 — Task 1 (z98-print-formatting): the `std_print_i32/u32/i64/u64/f64/bool/char/str/hex_*` formatting bodies were retired from `zig_runtime.c` (canonical) and `emit_support.zig` (emitted copy) and now live in the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`), called through the same PAL primitives (`pal_print_stdout` + `pal_i64/u64/f64_to_str`). `std_print`/`std_print_len` remain the raw-bytes runtime helpers.] [updated: 2026-09-20 — refreshed against current source: `pal_trap`/trap handler, `pal_file_read`/`pal_dir_exists`/`pal_get_default_lib_path`, 15 print helpers incl. hex, 20 `__bootstrap_*` helpers, the `-fsafe` overflow/checked-cast/poison helpers, the three target-neutral preludes, `c_exit.c`, and the dead `extern_c_z98.zig`; emitted-support relationship now via `emit_support.zig`; line references and dated evidence removed]
+# 10 — C Runtime Layer [updated: 2026-11-08 — Phase 3.5 Task 3 (D8): the `@stdoutWrite`/`@stderrWrite`/`@putChar`/`@getChar` builtins now lower to the PAL (`pal_print_stdout`/`pal_print_stderr`/new `pal_putchar`/new `pal_getchar`), so the stdout family is one unbuffered OS-native stack and no longer emits `<stdio.h>`/`fwrite`/`putchar`/`getchar`. The D8 section below now carries the post-fix C-runtime inventory and the reduction path toward a C-free backend.] [updated: 2026-10-28 — Phase 2.5 Task 9 (emission warning-clean at the origin): the `-fsafe` helpers (`zig_ovf_*`, `zig_wrap_*`, `zig_overflow_flag_*`, `zig_cast_checked_s/u`) and the `__bootstrap_*` casts are now **external definitions in `zig_runtime.c` + prototypes in `zig_runtime.h`** (no longer header statics) — one definition per program, link-level ABI; `zig_pal.c` gained a POSIX feature-selection preamble (`_DEFAULT_SOURCE` before libc headers) so `readlink`/`usleep` are declared under strict `-std=c89`. Runtime/support text has ONE hand-edited source, `sf/src/emit_support.zig`; `sf/src/include/*` + `sf/src/c_exit.c` are generated snapshots refreshed by `scripts/gen_emit_support.sh` and guarded by `scripts/check_emit_support.sh`. New gate `scripts/compiler/gate_warn_clean.sh` (gcc `-m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long`, sole suppression) compiles the runtime TUs.] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `pal_f64_to_str` (both lockstep copies) omits the `'.'`+fraction for an integral value (`7.0` → `7`); `std_fmt.zig`'s `printHexI32/I64` print `-` + hex magnitude for negative values (Zig oracle); the Q2 float residuals are unchanged.][updated: 2026-09-24 — Task 1 (z98-print-formatting): the `std_print_i32/u32/i64/u64/f64/bool/char/str/hex_*` formatting bodies were retired from `zig_runtime.c` (canonical) and `emit_support.zig` (emitted copy) and now live in the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`), called through the same PAL primitives (`pal_print_stdout` + `pal_i64/u64/f64_to_str`). `std_print`/`std_print_len` remain the raw-bytes runtime helpers.] [updated: 2026-09-20 — refreshed against current source: `pal_trap`/trap handler, `pal_file_read`/`pal_dir_exists`/`pal_get_default_lib_path`, 15 print helpers incl. hex, 20 `__bootstrap_*` helpers, the `-fsafe` overflow/checked-cast/poison helpers, the three target-neutral preludes, `c_exit.c`, and the dead `extern_c_z98.zig`; emitted-support relationship now via `emit_support.zig`; line references and dated evidence removed]
 
 > Covers: `sf/src/include/*`, `c_exit.c`, `extern_c.zig`, `extern_c_z98.zig`
 
@@ -8,7 +8,7 @@
 |----------|-------|-------|
 | Header files | 8 | `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `net_prelude.h`, `std_os_prelude.h`, `std_time_prelude.h`, `net_runtime.h` (legacy), `optstar_repro.h` (repro stub) |
 | C source files | 3 | `zig_runtime.c`, `zig_pal.c`, `net_runtime.c` (legacy, unlinked) |
-| PAL functions | 15 | `pal_print_stderr`/`stdout`, `pal_set_trap_handler`, `pal_abort`, `pal_trap`, `pal_i64/u64/f64_to_str`, `pal_file_open`/`read`/`write`/`close`, `pal_dir_exists`, `pal_get_default_lib_path`, `mainCRTStartup` (Win32 `ZIG_NO_CRT`), plus 4 file-static helpers |
+| PAL functions | 17 | `pal_print_stderr`/`stdout`, `pal_putchar`, `pal_getchar`, `pal_set_trap_handler`, `pal_abort`, `pal_trap`, `pal_i64/u64/f64_to_str`, `pal_file_open`/`read`/`write`/`close`, `pal_dir_exists`, `pal_get_default_lib_path`, `mainCRTStartup` (Win32 `ZIG_NO_CRT`), plus 4 file-static helpers |
 | Runtime print helpers | 3 | `std_panic`, `std_print`, `std_print_len` — the typed `std_print_i32/u32/i64/u64/f64/bool/char/str/hex_*` formatting bodies moved to `sf/src/std_fmt.zig` (`std.fmt`) in Task 1, 2026-09-24 |
 | Checked cast functions | 8 | `std_checked_cast_i8..u64` — **legacy, NOT emitted by zig1** (upper-bound-only) |
 | `__bootstrap_<DST>_from_<SRC>` helpers | 20 | Retained `@intCast` range-check support: external defs in `zig_runtime.c` + prototypes in `zig_runtime.h`; panic `"integer cast overflow in @intCast"` on out-of-range. The emitter no longer selects them (see `08_c89_emission.md`) |
@@ -85,8 +85,10 @@ The live `zig_runtime.c` no longer defines the `__bootstrap_print*`/`__bootstrap
 | `pal_memcpy` | static | Memory copy | (unused) | `memcpy` (Unix) | Win32 byte loop; Unix wraps libc |
 | `pal_reverse` | static | In-place char buffer reversal | `pal_u64_to_str_buf` | none | Two-pointer swap |
 | `pal_u64_to_str_buf` | static | Unsigned int to decimal string | `pal_u64_to_str`, `pal_i64_to_str` | `pal_reverse` | Reverse digit extraction; handles zero |
-| `pal_print_stderr` | extern | Write `len` bytes to stderr (fd 2) | `std_panic`, diagnostics | `write` / `WriteConsoleA`+`WriteFile` | Win32 tries Console then File |
-| `pal_print_stdout` | extern | Write `len` bytes to stdout (fd 1) | `std_print`, `std_print_len`, `std.fmt` printers (`std_fmt.zig`) | `write` / `WriteConsoleA`+`WriteFile` | Same dual-path as stderr; **unbuffered on POSIX** (`write(1)`) — the `std.fmt` printers use it (not the buffered `@stdoutWrite`) so print output ordering is unchanged |
+| `pal_print_stderr` | extern | Write `len` bytes to stderr (fd 2) | `std_panic`, diagnostics, `@stderrWrite` | `write` / `WriteConsoleA`+`WriteFile` | Win32 tries Console then File |
+| `pal_print_stdout` | extern | Write `len` bytes to stdout (fd 1) | `std_print`, `std_print_len`, `std.fmt` printers (`std_fmt.zig`), `std.io`/`std.debug`, `@stdoutWrite` | `write` / `WriteConsoleA`+`WriteFile` | Same dual-path as stderr; **unbuffered on POSIX** (`write(1)`) — one stack with the `std.fmt` printers |
+| `pal_putchar` | extern | Write one byte to stdout | `@putChar` / `std_io.writeByte` | `write(1,…)` / `WriteConsoleA`+`WriteFile` | Returns the byte on success, `-1` on write failure; unbuffered like `pal_print_stdout` |
+| `pal_getchar` | extern | Read one byte from stdin | `@getChar` / `std_io.readByte` | `read(0,…)` / `ReadFile` | Returns the byte (0–255) or `-1` at EOF/error |
 | `pal_set_trap_handler` | extern | Install a Z98 trap handler | `std_debug.zig` | none | `TrapContext` layout must match `std_debug.zig` (10 × `unsigned int`) |
 | `pal_abort` | extern | Abort process | `pal_trap` fallback | `abort()` / `TerminateProcess` | Win32 uses exit code 3 |
 | `pal_trap` | extern | Invoke handler, then `int3` | `std_panic`, `-fsafe` guards | `g_trap_handler`, inline asm, `pal_abort` | Register capture GCC/x86-only; `int3` on x86, `pal_abort` elsewhere |
@@ -158,8 +160,10 @@ The compiler does not link the `sf/src/include/*` files at emission time; `emit_
 ```
 zig1 emitted C89 code
   │
-  ├─ std.debug.print(...) → std_print*(...) → pal_print_stdout → write(1,...)
-  ├─ std.io.print(fmt, .{...}) → mangled std.fmt.<printer>(...) (std_fmt.zig) → pal_print_stdout → write(1,...)
+  ├─ std.io.write/writeStr/printInt, std.debug.log/logInt, @stdoutWrite, @putChar → pal_print_stdout / pal_putchar → write(1,…)
+  ├─ @stderrWrite → pal_print_stderr → write(2,…)
+  ├─ @getChar / std.io.readByte → pal_getchar → read(0,…)
+  ├─ std.io.print(fmt, .{...}) → mangled std.fmt.<printer>(...) (std_fmt.zig) → pal_print_stdout → write(1,…)
   ├─ @panic(...) → std_panic(msg) → pal_print_stderr("panic: " + msg) → pal_trap() → int3 / pal_abort
   ├─ @intCast(T, val) checked [-fsafe] → zig_cast_checked_s/u(val, src_w, src_s, dst_w) → range check → return/trap
   ├─ legacy `__bootstrap_<DST>_from_<SRC>` helpers — retained, no longer selected by the emitter
@@ -204,7 +208,7 @@ rebuild MUST include it in the gcc line, else the link fails with `undefined ref
 ## Known Issues
 
 - **`__bootstrap_print` / `__bootstrap_print_int` are declared with no live definition.** `extern_c.zig` declares them and the `zig_runtime.h`/`zig_runtime.c` backward-compat aliases were removed (F4, 2026-08-08); the live runtime defines neither, and the last copy (the dead `emitZigRuntimeC` mirror in `c89_emit.zig`) was removed at the print-formatting closeout (Task 7, 2026-09-25). `pal.zig` uses only `ext_c.write`, so no live release caller links against them; they are retained legacy import surface.
-- **`pal_print_stdout` is not declared in `zig_runtime.h`.** It is forward-declared inside `zig_runtime.c` and defined in `zig_pal.c`; an emitted TU that calls it must supply its own declaration. `std_fmt.zig` declares it `extern "c"` (the emitter skips prototypes for extern fns; the emitted `std_fmt` TU calls it with a C89 implicit declaration, as `std_io` already does for `pal_file_*`).
+- **PAL output functions are not declared in `zig_runtime.h`.** `pal_print_stdout`, `pal_print_stderr`, `pal_putchar` and `pal_getchar` are defined in `zig_pal.c`; `zig_runtime.h` only declares `pal_print_stderr` plus the non-output PAL surface. An emitted TU that calls the output PAL supplies its own C89 old-style declarations: `std_fmt.zig`/`std_io.zig` declare them `extern "c"`, and since Phase 3.5 Task 3 the C89 emitter writes no-prototype declarations (`extern void pal_print_stdout();` / `extern int pal_putchar();`) into any module that lowers `@stdoutWrite`/`@stderrWrite`/`@putChar`/`@getChar`.
 - **`net_runtime.c` / `net_runtime.h` are dead.** None of the 12 socket helpers declared in `net_runtime.h` are referenced by `sf/src`; 6 carry the `plat_socket_*` prefix (`plat_socket_init`/`cleanup`/`select`/`fd_zero`/`fd_set`/`fd_isset`), the other 6 are the remaining socket helpers (`plat_create_tcp_server`, `plat_bind_listen`, `plat_accept`, `plat_recv`, `plat_send`, `plat_close_socket`). `std_net` is now the extern surface via `net_prelude.h`. The file remains only for legacy/pre-F6 example builds.
 - **`optstar_repro.h` is a repro stub** referencing `extFn` and `fopen` with mangled types; it is included by no live TU.
 - **`extern_c_z98.zig` is dead.** It is not imported by the 40-module build, and its `@cInclude("pal.h")` names a header that is not present in the tree.
@@ -212,23 +216,97 @@ rebuild MUST include it in the gcc line, else the link fails with `undefined ref
 
 ---
 
-## D8 — stdout is split across two runtime layers [documented: 2026-10-24 — P3-M3/M4]
+## D8 — stdout family is one PAL stack [fixed: 2026-11-08 — Phase 3.5 Task 3]
 
-The stdout/stderr/getchar **builtins** lower to C stdio (`fwrite`/`putchar`/
-`getchar`, with `<stdio.h>` emitted per module), while `std.fmt`/`std.io.print`
-go through the PAL (`pal_print_stdout`/`pal_print_stderr`). The PAL path is
-unbuffered; the builtin `fwrite` path is buffered, so mixing the two on one
-stream can reorder output. The comments in `std_io.zig`/`std_debug.zig` saying
-"no cstdio" mean "no direct `@cInclude`", not "no C stdio in the emitted C".
+**Status:** FIXED. The four stdout-family compiler builtins lower to the PAL, so
+`@stdoutWrite`/`@stderrWrite`/`@putChar`/`@getChar`, `std.io`, `std.debug` and
+`std.fmt` share one unbuffered OS-native stack on both the CRT and no-CRT
+profiles. `examples/torrent_example_defects.md` D8 was deleted. D8 had no
+pre-fix RED: its fixture (`repro/mi_matrix/known_excluded/stdout_order_ok`)
+passed by luck because the buffered C-stdio data happened to flush at normal
+exit after the unbuffered PAL writes; it is the post-fix regression oracle.
 
-On the Win9x no-CRT profile `sf/src/include/zig_nocrt.c` shims `fwrite`,
-`putchar`, `getchar`, etc. over `GetStdHandle`/`WriteFile`, so **no msvcrt is
-needed**. `z9dbg` keeps all of its own output on the buffered builtin path and
-its `flushOut()` is compile-time guarded on Windows (`if (!@isWindows())`): the
-no-CRT shim has no `fflush`, and its `fwrite` is already unbuffered.
+### What changed
 
-Operator ruling A (2026-10-24): **no emission change**. Unifying the two paths
-would re-baseline every pin/golden and needs its own plan + seed rotation.
-Until then, document the split and avoid mixed `print`/`write` usage on
-latency-sensitive or panic-path output. Full record:
-`examples/torrent_example_defects.md` D8.
+- The emitter now lowers `.builtin_stdout_write`/`.builtin_stderr_write` to
+  `pal_print_stdout`/`pal_print_stderr`, `.builtin_put_char` to `pal_putchar`,
+  and `.builtin_get_char` to `pal_getchar` (`sf/src/c89_emit.zig`).
+- `#include <stdio.h>` is no longer emitted for those builtins;
+  `moduleHasStdoutFamily` instead writes no-prototype PAL declarations into the
+  module `.c`. Programs that use `@consoleClear`/`@consoleGotoxy`/
+  `@consoleSetColor` still include `<stdio.h>` for their own `sprintf` path,
+  which is unrelated to D8.
+- `sf/src/emit_support.zig` gained `pal_putchar` (one-byte stdout write) and
+  `pal_getchar` (one-byte stdin read) over the same POSIX `write`/`read` and
+  Win32 `WriteConsoleA`/`WriteFile`/`ReadFile` primitives as the existing PAL
+  print functions. `sf/src/include/zig_pal.c` was regenerated from that single
+  source; `sf/src/include/*` must not be hand-edited.
+- The `zig_nocrt.c` C-stdio shims (`fwrite`, `putchar`, `getchar`, …) were left
+  in place for compatibility with externally-authored C, but no emitted Z98
+  stdout-family call reaches them any more. The Win9x no-CRT binary imports only
+  `KERNEL32.dll` (verified with `objdump -p`).
+
+### Current C-runtime surface (post-D8)
+
+| Surface | Provider | Used by | Notes |
+|---|---|---|---|
+| stdout/stderr bytes | `zig_pal.c`: `pal_print_stdout`, `pal_print_stderr`, `pal_putchar` | `@stdoutWrite`, `@stderrWrite`, `@putChar`, `std_io`, `std_debug`, `std_fmt` | POSIX `write(1/2,…)`; Win32 `WriteConsoleA` then `WriteFile`; unbuffered |
+| stdin bytes | `zig_pal.c`: `pal_getchar` | `@getChar`, `std_io.readByte` | POSIX `read(0,…)`; Win32 `ReadFile` |
+| formatted output bodies | `sf/src/std_fmt.zig` | `std.io.print(fmt, …)` | Z98 code over `pal_print_stdout` + `pal_i64/u64/f64_to_str` |
+| panic / trap | `zig_runtime.c` `std_panic`; `zig_pal.c` `pal_trap`, `pal_abort`, `pal_set_trap_handler` | `@panic`, `assert`, `-fsafe` guards | Ends in `int3`/`TerminateProcess`/`abort` |
+| checked casts / overflow | `zig_runtime.c`: `__bootstrap_*` (20, retained), `std_checked_cast_*` (legacy), `zig_cast_checked_s/u`, `zig_wrap_*`, `zig_ovf_*`, `zig_overflow_flag_*`, `zig_poison_fill` | `@intCast`, `-fsafe` arithmetic, `undefined` | Pure integer helpers, no OS calls |
+| file / dir / env / time | `zig_pal.c`: `pal_file_*`, `pal_dir_exists`, `pal_get_default_lib_path`, `pal_getenv`, `pal_wallclock_unix` | `std.io` file API, `std_os`, `std_time`, compiler CLI | POSIX `open`/`read`/`write`/`close`/`stat`/`getenv`; Win32 `CreateFileA`/`ReadFile`/`WriteFile`/`GetFileAttributesA`/… |
+| memory / string | CRT libc, or `zig_runtime.c` under `ZIG_NO_CRT` | emitted code | `ZIG_NO_CRT` defines `strlen`/`memcpy`/`memset`/`strncmp` |
+| process startup / exit | `zig_pal.c` `mainCRTStartup` (`ZIG_NO_CRT`), `c_exit.c`; otherwise the toolchain CRT | every program | no-CRT entry calls `main` and `exit` |
+| headers | `zig_compat.h`, `zig_special_types.h`, module `.h`; conditional `net_prelude.h`/`std_os_prelude.h`/`std_time_prelude.h`/`std_page_prelude.h` | all programs | `<windows.h>`/`<unistd.h>` appear only where the PAL or a prelude needs them |
+| console ANSI builtins | `<windows.h>` / `<stdio.h>` + `sprintf` | `@consoleGotoxy`, `@consoleSetColor` | Separate from the stdout family; the remaining C-stdio writer in emitted code |
+| `zig_nocrt.c` shims | `fwrite`/`fflush`/`getchar`/`getc`/`fgetc`/`putchar`/`putc`/`fputc`/`_filbuf`/`_flsbuf`/`getenv`/`time` | external C callers only | Retained compatibility surface; no Z98 builtin depends on it after D8 |
+
+The CRT dependency of the stdout family is therefore gone: on CRT builds the
+calls compile to `write`/`read` (POSIX) or Win32 console/file calls, and on
+no-CRT builds the same Win32 calls are made directly. Buffered C-stdio data can
+no longer be lost or reordered relative to PAL output.
+
+### Reduction path toward a C-free backend
+
+The PAL is the intended seam between emitted code and the host. A backend that
+emits machine code instead of C can replace each PAL entry point as follows:
+
+- `pal_print_stdout` / `pal_print_stderr` / `pal_putchar` → a raw `write` syscall
+  on POSIX, or `WriteFile`/`WriteConsoleA` on Win32; no buffering layer.
+- `pal_getchar` → raw `read` syscall / `ReadFile`.
+- `pal_file_open`/`read`/`write`/`close`/`seek64`/`size`/`mtime` → the native
+  file syscalls or Win32 file calls the PAL already selects.
+- `pal_dir_exists` / `pal_getenv` / `pal_get_default_lib_path` /
+  `pal_wallclock_unix` → `stat`/`getenv`/`readlink`/`gettimeofday` syscalls, or
+  the Win32 equivalents.
+- `pal_abort` / `pal_trap` / `pal_set_trap_handler` → a direct trap instruction
+  plus an optional in-process handler.
+- The `__bootstrap_<DST>_from_<SRC>`, `std_checked_cast_*`,
+  `zig_cast_checked_s/u`, `zig_wrap_*`, `zig_ovf_*`, `zig_overflow_flag_*` and
+  `zig_poison_fill` helpers → inline sign/zero extension, width masks and
+  overflow flags; the `-fsafe` variants become guarded branches/traps.
+- The `ZIG_NO_CRT` `strlen`/`memcpy`/`memset`/`strncmp` shims → inline loops or
+  string instructions.
+- `mainCRTStartup` / `c_exit.c` → the target's native entry stub and exit path
+  (ELF `_start` + `exit` syscall; PE entry + `ExitProcess`).
+- The remaining `sprintf` use in the console ANSI builtins can move onto the
+  same PAL formatting helpers, removing the last emitted `<stdio.h>` writer.
+
+What remains after that reduction is only the OS-call seam (which any backend
+must have) and the user-requested `@cInclude` surface; there is no required C
+runtime call left for the stdout family.
+
+### Verification
+
+- `stdout_order_ok` prints `A\nB\nC\nDZ\n`, rc 0, with stdin `Z`, byte-exact
+  under gcc CRT and `scripts/win32_cross/cross_nocrt.sh` + Wine, in both
+  `-ffast` and `-fsafe`. The no-CRT PE imports only `KERNEL32.dll`.
+- Emitted `main`/`std_io` for the fixture contain `pal_print_stdout`,
+  `pal_putchar`, `pal_getchar` and no `fwrite`/`putchar`/`getchar`/`<stdio.h>`.
+- `scripts/check_emit_support.sh` passes (9/9: 6 core + 3 conditional preludes
+  in the current script enumeration); `scripts/compiler/gate_warn_clean.sh` is
+  GREEN under `-m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long`.
+- Representative stdlib/example programs (hello, `tco_factorial`,
+  `lisp_interpreter_curr`, the `stdlib_print_*`/`stdlib_debug_*`/`stdlib_os_*`
+  fixtures) keep their pre-fix stdout byte-for-byte.
