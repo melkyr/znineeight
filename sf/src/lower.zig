@@ -6775,12 +6775,13 @@ fn lowerSliceAssignCopy(self: *LirLowerer, dst_node_idx: u32, src_node_idx: u32,
     }
     if (elem_tid == type_mod.TYPE_UNDEFINED or elem_tid == type_mod.TYPE_VOID) return false;
     if (@intCast(usize, elem_tid) >= self.ctx.registry.types_len) return false;
-    if (elem_tid != dst_sl.elem) return false;
-    if (self.ctx.registry.types_items[@intCast(usize, elem_tid)].kind == type_mod.TypeKind.array_type) {
+    if (@intCast(usize, dst_sl.elem) >= self.ctx.registry.types_len) return false;
+    if (self.ctx.registry.types_items[@intCast(usize, elem_tid)].kind == type_mod.TypeKind.array_type or self.ctx.registry.types_items[@intCast(usize, dst_sl.elem)].kind == type_mod.TypeKind.array_type) {
         var elem_msg: []const u8 = "cannot assign a slice whose element type is an array; copy the elements individually";
         lowerSliceAssignReject(self, dst_node_idx, elem_msg);
         return true;
     }
+    if (elem_tid != dst_sl.elem) return false;
     var static_equal: u8 = @intCast(u8, 0);
     if (dst_static) |ds| {
         if (src_static) |ss| {
@@ -6847,6 +6848,62 @@ fn d5IndexAssignArrayType(self: *LirLowerer, node_idx: u32) ?u32 {
             if (ft != type_mod.TYPE_UNDEFINED and ft != type_mod.TYPE_VOID and @intCast(usize, ft) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, ft)].kind == type_mod.TypeKind.array_type) {
                 return ft;
             }
+            return null;
+        }
+    }
+    return null;
+}
+
+fn lowerFieldAccessDeclaredArrayType(self: *LirLowerer, node_idx: u32) ?u32 {
+    var store = self.ctx.store;
+    var cur = node_idx;
+    var guard: u32 = @intCast(u32, 0);
+    while (cur != @intCast(u32, 0) and guard < @intCast(u32, 8)) : (guard += 1) {
+        var pn = ast_mod.astStoreNodeAt(store, cur);
+        if (pn.kind != AstKind.paren_expr) break;
+        cur = pn.child_0;
+    }
+    if (cur == @intCast(u32, 0)) return null;
+    var node = ast_mod.astStoreNodeAt(store, cur);
+    if (node.kind != AstKind.field_access) return null;
+    var res_t: u32 = @intCast(u32, 0);
+    if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, cur)) |t| { res_t = t; } else return null;
+    if (res_t == @intCast(u32, 0) or res_t == type_mod.TYPE_UNDEFINED or res_t == type_mod.TYPE_VOID) return null;
+    if (@intCast(usize, res_t) >= self.ctx.registry.types_len) return null;
+    var rty = self.ctx.registry.types_items[@intCast(usize, res_t)];
+    if (rty.kind != type_mod.TypeKind.ptr_type and rty.kind != type_mod.TypeKind.many_ptr_type) return null;
+    var fname: u32 = ast_mod.astStoreNodePayload(store, cur);
+    var cid: u32 = @intCast(u32, 0);
+    if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0)) |t| { cid = t; } else return null;
+    if (cid == @intCast(u32, 0) or cid == type_mod.TYPE_UNDEFINED or cid == type_mod.TYPE_VOID) return null;
+    if (@intCast(usize, cid) >= self.ctx.registry.types_len) return null;
+    var cty = self.ctx.registry.types_items[@intCast(usize, cid)];
+    if (cty.kind == type_mod.TypeKind.ptr_type or cty.kind == type_mod.TypeKind.many_ptr_type) {
+        cid = self.ctx.registry.ptr_items[@intCast(usize, cty.payload_idx)].base;
+        if (@intCast(usize, cid) >= self.ctx.registry.types_len) return null;
+        cty = self.ctx.registry.types_items[@intCast(usize, cid)];
+    }
+    if (cty.kind == type_mod.TypeKind.tuple_type) {
+        var tord = type_mod.typeRegistryTupleOrdinalFromNameId(self.ctx.registry, fname) orelse return null;
+        var tp = self.ctx.registry.tup_items[@intCast(usize, cty.payload_idx)];
+        if (tord >= @intCast(u32, tp.elems_count)) return null;
+        var tet = self.ctx.registry.xt_items[@intCast(usize, tp.elems_start + tord)];
+        if (@intCast(usize, tet) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, tet)].kind == type_mod.TypeKind.array_type) return tet;
+        return null;
+    }
+    var fields: []FieldEntry = undefined;
+    if (cty.kind == type_mod.TypeKind.struct_type) {
+        type_mod.typeRegistryGetStructFields(self.ctx.registry, cid, &fields);
+    } else if (cty.kind == type_mod.TypeKind.union_type or cty.kind == type_mod.TypeKind.packed_union_type) {
+        type_mod.typeRegistryGetUnionFields(self.ctx.registry, cid, &fields);
+    } else {
+        return null;
+    }
+    var fi: usize = 0;
+    while (fi < fields.len) : (fi += 1) {
+        if (fields[fi].name_id == fname) {
+            var ft = fields[fi].type_id;
+            if (@intCast(usize, ft) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, ft)].kind == type_mod.TypeKind.array_type) return ft;
             return null;
         }
     }
@@ -7307,6 +7364,33 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
                         emitIntConst(self, @intCast(u64, fs_ap.length), fs_len);
                         lowerElemCopyLoop(self, fs_addr, fs_sptr, fs_len, fs_ap.elem);
                         return;
+                    }
+                }
+                // D7.3 (Phase 3.5 fix round 3): `peers[1].field = peers[0].field`
+                // decays both array fields to element pointers, so the value
+                // temp type never equals the declared field array type and the
+                // store above is skipped. Recover the RHS field's declared
+                // array type and copy the whole field storage element-wise.
+                if (fs_ptr_ok != @intCast(u8, 0) and fs_field_t != type_mod.TYPE_UNDEFINED and fs_field_t != type_mod.TYPE_VOID and @intCast(usize, fs_field_t) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, fs_field_t)].kind == type_mod.TypeKind.array_type) {
+                    if (diag_node_idx != @intCast(u32, 0)) {
+                        var ff_node = ast_mod.astStoreNodeAt(self.ctx.store, diag_node_idx);
+                        if (ff_node.kind == AstKind.plain_assign) {
+                            if (lowerFieldAccessDeclaredArrayType(self, ff_node.child_1)) |ff_rhs_t| {
+                                if (ff_rhs_t == fs_field_t) {
+                                    var ff_ap = self.ctx.registry.array_items[@intCast(usize, self.ctx.registry.types_items[@intCast(usize, fs_field_t)].payload_idx)];
+                                    if (@intCast(usize, ff_ap.elem) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, ff_ap.elem)].kind != type_mod.TypeKind.array_type) {
+                                        var ff_fptr_t = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, fs_field_t, false);
+                                        var ff_dst = nextTemp(self, ff_fptr_t);
+                                        emitInst(self, LirInst{ .addr_of_field = .{ .base = base_temp, .field_id = field_id, .result = ff_dst } });
+                                        var ff_src = lowerLValueAddr(self, ff_node.child_1, ff_fptr_t);
+                                        var ff_len = nextTemp(self, type_mod.TYPE_USIZE);
+                                        emitIntConst(self, @intCast(u64, ff_ap.length), ff_len);
+                                        lowerElemCopyLoop(self, ff_dst, ff_src, ff_len, ff_ap.elem);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
