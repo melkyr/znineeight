@@ -868,21 +868,12 @@ fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
     }
     var end_pos: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
     _ = parserAdvance(self);
-    // C1b (true Zig laziness, spec §4 + Amendment 2): an `@import` in a
-    // comptime-untaken `if`/`switch` arm NEVER loads its file — the node is
-    // still created (the fold stamps it dead) but no module is registered,
-    // queued, or read (no error[3048] for a missing dead-arm file). Untaken
-    // context is the parser's `dead_import_depth`; live imports resolve
-    // exactly as before.
-    if (self.dead_import_depth == @intCast(u32, 0)) {
-        if (self.module_reg) |reg| {
-            if (self.import_scratch) |is| {
-                alloc_mod.sandReset(is);
-                var resolved = mr_mod.moduleRegistryResolveImport(reg, path_id, self.current_module_id, is);
-                _ = resolved;
-            }
-        }
-    }
+    // D3 (Phase 3.5): `@import` is NOT resolved here. The parser only records
+    // the path; the import resolver defers resolution until its comptime
+    // evaluator selects the live arm/prong, so a comptime-dead arm never
+    // registers, queues, opens or parses its file. (The old parse-time probe
+    // gated this call; that probe is an approximation, not the language
+    // semantics, and is no longer the file-open gate.)
     return ast_mod.astStoreAddNode(self.store, AstKind.import_expr, 0,
         bi_tok.span_start, end_pos, 0, 0, 0, path_id);
 }

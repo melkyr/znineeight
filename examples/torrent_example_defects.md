@@ -5,26 +5,10 @@ Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
 deleted numbers are not reused. Next free slot: **D15**.
 
-Open: **D3**, **D4**, **D5**, **D10**, **D13**, **D14**.
+Open: **D4**, **D5**, **D10**, **D13**, **D14**.
 
 _(Add new entries at the next free slot as they are found; entries are doc-only
 unless a compiler fix is separately authorized.)_
-
----
-
-## D3 — Conditional `@import`: lazy-load gap class (evaluator-foldable conditions the parse-time probe misses)
-
-**Status:** OPEN / DEFERRED (found 2026-10-16 during the conditional-`@import` work, Task 4; derived from that solution; not a defect in that work's scoped idiom — a feature-completeness item).
-
-**Symptom.** With the conditional-`@import` idiom (`const impl = if (@isWindows()) @import("a.zig") else @import("b.zig");`, or the `switch` form), the untaken arm's `@import` is eliminated semantically (T3 comptime-if fold) and never emitted (T3 module-closure fix backstops any `@cInclude` leak), but a **parse-time eager load** still opens the dead arm's file when the condition is not folded by the parse-time probe (`parserFoldComptimeBool`). If that file is absent or unparsable on the current target, the compile fails with a spurious `error[3048]`-class diagnostic where Zig (lazy file loading) would never open the file.
-
-**Gap class.** The parse probe folds `@isWindows()`, bool literals, `!`/`and`/`or`, and in-order same-module simple-bool consts — but NOT the evaluator's broader constant-fold `KIND_BOOL` class: comparison/arith const inits (`if (1 == 1) …`), module-scope forward-ref consts, cross-module const conditions. For those shapes the dead arm is semantically dead yet its `@import` file is still loaded. Failure direction is **false REJECT only** (over-load; never wrong-module selection — probe ⊊ evaluator). Target idiom (`@isWindows()` and the M6/M7 shapes) is unaffected; z9play M6 is unblocked.
-
-**Why deferred (feature, not gap-in-scope).** Full semantics = true Zig laziness for every comptime-known condition, i.e. the import-queue/phase restructure (deferred option (c)). This milestone's task set is not adequate to feature-complete it; the parse-probe gate is a conservative approximation.
-
-**Relation to F1 (interner id-order landmine).** The full (c) fix moves module resolution across phases and inevitably perturbs interner id assignment order; ANY intern before source lexing deterministically flips `stdlib_crypto_modpow_xmod` OK→GREEN. F1 was root-caused/fixed in its own Investigate/Fix round (T4.1); **the (c) fix must not be attempted until interner-order sensitivity is re-verified.** Evidence: Task 4 report (`.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/task-4-report.md`, incl. the `conditional_import_lazy_xmod` pin and the F2 boundary analysis) + the T4.1 F1 report (same workspace) — these two documents are the strategy inputs for a future correction.
-
-**Reference points.** Parse gate: `parserFoldComptimeBool` / `dead_import_depth` (`sf/src/parser.zig`); evaluator fold set: `comptimeEvalEvaluate` (`sf/src/comptime_eval.zig:859-984`); T3 sema gate: `semantic_analyzer.zig:3948`; closure fix: `sf/src/main.zig` runtime-init reachability. Same clobber class family: `parserParseBuiltinCall` `child_buf_len = 0` (fixed in T4 C2 ruling) and `parserParseFnDecl` param `child_buf` (F4, folded into T4.1).
 
 ---
 

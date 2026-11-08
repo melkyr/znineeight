@@ -593,7 +593,7 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
     var path_id = interner_mod.stringInternerIntern(ctx.interner, root_path);
     var mod_id = mr_mod.moduleRegistryAddModule(ctx.module_reg, path_id);
     mr_mod.importQueueEnqueue(&ctx.module_reg.import_queue, mod_id);
-    import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
+    import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store, ctx.typereg, ctx.symbol_reg);
     // Task 1 auto-import: whenever the program can lower a `print`, bring the
     // std_fmt module (and its PAL backing) into the graph so the mangled
     // `std.fmt` call sites the emitter writes have a definition. The user needs
@@ -608,7 +608,7 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
         if (mr_mod.moduleResolverResolve(&ctx.module_reg.resolver, root_path, fmt_name, &ctx.alloc.scratch) != null) {
             var fmt_path_id = interner_mod.stringInternerIntern(ctx.interner, fmt_name);
             _ = mr_mod.moduleRegistryResolveImport(ctx.module_reg, fmt_path_id, mod_id, &ctx.alloc.scratch);
-            import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
+            import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store, ctx.typereg, ctx.symbol_reg);
         }
     }
     var hash_spill_path: [512]u8 = undefined;
