@@ -373,6 +373,20 @@
 
 
 
+#### Task 9g: Restore stale analyzer/semantic test binaries
+
+**Files:**
+- Modify: `sf/src/tests/test_semantic_bin.zig` (current `semanticAnalyzerInit` arity and required setup), `sf/src/tests/test_analyzer_integration_bin.zig` (stale `examples/hello/main.zig` path)
+- Test: both binaries compile and run green
+
+**Interfaces:**
+- Consumes: Task 9a's `AnalyzerContext` fields; the current `semanticAnalyzerInit` signature.
+- Produces: the two pre-existing red test binaries green. This is a harness repair, not analyzer behavior and not a compiler fix.
+
+- [ ] **Step 1: Confirm the cause is test staleness.** `semanticAnalyzerInit` now takes 16 args (module/source ids, coercion/enum/tuple/error-code tables, interner, call/cp maps, module registry, suspending fns); the test still passes 8. The integration test reads `examples/hello/main.zig`; the file is `examples/z98/hello/main.zig`. If either failure is actually a compiler/analyzer defect, STOP and present.
+- [ ] **Step 2: Repair the harnesses only** — update the init call/setup and the example path; do not change analyzer or compiler behavior to make them pass.
+- [ ] **Step 3: Verify** both binaries compile and run green; record output; commit `test: restore analyzer/semantic test binaries (Phase3.5 D4g)`.
+
 ### Task 10: Doc consolidation
 
 **Files:**
