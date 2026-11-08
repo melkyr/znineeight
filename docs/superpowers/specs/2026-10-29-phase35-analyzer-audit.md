@@ -25,11 +25,11 @@ is no STOP.
 
 | Analyzer | Task 0.5 cause | Current-code confirmation | Verdict |
 |---|---|---|---|
-| Lifetime / Provenance | Symbol-table provenance is structurally dead for fn locals/params; the analyzer-internal substrate is the real path; dead-arm parity is partial. | `classifyProvenance` queries `symbolTableLookup` first (`sf/src/analyzer.zig:89`); `symbol_registrator.zig` registers module-root decls only (`:473-502`); the no-symbol fallback is the state map (`analyzer.zig:100-111`). Params are seeded only in `runLifetimeAnalyzer` (`:1243-1266`). Fold table is absent from `AnalyzerContext` (`:518-541`). | **Confirmed upstream** (analyzer substrate, not a symptom of another pass). |
-| NullPointer | Params are not seeded; `return` and `var` initializer expressions are not walked. | `runNullAnalyzer` seeds nothing (`analyzer.zig:1235-1241`); unknown idents fall to `maybe` (`:849-853`); `visitStatement` handles `return_stmt` without `analyzeExpr` (`:1149-1158`); `handleNullVarDecl` classifies but does not walk the initializer (`:916-926`). Targeted fixtures `np_return.zig`, `np_init.zig`, `np_assign_null.zig` all pass silently (rc=0, no diagnostic). | **Confirmed upstream** (walk/seed coverage). |
+| Lifetime / Provenance | Symbol-table provenance is structurally dead for fn locals/params; the analyzer-internal substrate is the real path; dead-arm parity is partial. | `classifyProvenance` queries `symbolTableLookup` first (`sf/src/analyzer.zig:89`); `symbol_registrator.zig` registers module-root decls only (`:473-502`); the no-symbol fallback is the state map (`analyzer.zig:100-111`). Params are seeded only in `runLifetimeAnalyzer` (`:1243-1266`). Fold table is absent from `AnalyzerContext` (`:518-544`). | **Confirmed upstream** (analyzer substrate, not a symptom of another pass). |
+| NullPointer | Params are not seeded; `return` and `var` initializer expressions are not walked. | `runNullAnalyzer` seeds nothing (`analyzer.zig:1235-1241`); unknown idents fall to `maybe` (`:849-853`); `visitStatement` handles `return_stmt` without `analyzeExpr` (`:1149-1158`); `handleNullVarDecl` classifies but does not walk the initializer (`:916-926`). Targeted fixtures `np_return_null.zig`, `np_init_null.zig`, `np_assign_null.zig` all pass silently (rc=0, no diagnostic). | **Confirmed upstream** (walk/seed coverage). |
 | DoubleFree | Ownership is name-keyed; assignment does not propagate allocation state; only captures inherit state. | `handleAllocAssign` writes `unknown` for an identifier RHS (`analyzer.zig:441-471`, especially `:470`); `onDoubleFreeStmt` handles `var_decl` with `handleAllocCall` only (`:1215-1217`); state inheritance exists only in `bindCaptureState` (`:1018-1031`). D4 probe shows `warning[3039] freeing untracked pointer 'q'` and no double-free for the alias chain. | **Confirmed upstream** (state model, not a diagnostic-format symptom). |
 | Signature | Analyzer logic stands at T5; remaining items are test/doc residue. | `analyzeSignature` / `validateSignatureType` / `validateSignatureNamed` are recursive and active (`analyzer.zig:562-579`, `:679-727`); probe's `?Aggregate`, `E!Aggregate`, and arbitrary-width ints are clean. The residue is hand-fed-symbol tests (`sf/src/tests/test_analyzer_bin.zig:545`, `:571`, `:640`, `:667`, `:694`, `:726` omit `file_id`; `:1511` has it), aggregate-only `testFixture`, and docs. | **Confirmed: test/doc only**, not analyzer logic. |
-| Cross-cutting dead-arm | The shared fold table exists but is not plumbed into the analyzer. | `phase_ComptimeEvaluation` runs before `phase_StaticAnalyzers` (`sf/src/main.zig:476`, `:483`); sema is bound to the table (`:838`); lowering consumes it (`sf/src/lower.zig:8013`); `phase_StaticAnalyzers` does not pass it (`main.zig:873-913`), and `AnalyzerContext` has no field for it (`analyzer.zig:518-541`). | **Confirmed upstream**; the table is available, the consumer is missing. |
+| Cross-cutting dead-arm | The shared fold table exists but is not plumbed into the analyzer. | `phase_ComptimeEvaluation` runs before `phase_StaticAnalyzers` (`sf/src/main.zig:476`, `:483`); sema is bound to the table (`:838`); lowering consumes it (`sf/src/lower.zig:8013`); `phase_StaticAnalyzers` does not pass it (`main.zig:873-913`), and `AnalyzerContext` has no field for it (`analyzer.zig:518-544`). | **Confirmed upstream**; the table is available, the consumer is missing. |
 
 Probe replay at this base (`tests/analyzers/d4_contract_probe.zig`, real
 `--check` pipeline) reproduces the Task 0 inventory exactly:
@@ -217,7 +217,7 @@ Any diagnostic on this surface is a false positive.
 - **The dead path is what the unit tests exercise.** Hand-fed `Symbol{...}`
   records in `sf/src/tests/test_analyzer_bin.zig` make the symbol-table arm
   pass while the real pipeline never takes it (see §2.5).
-- **`resolveOrigin` loses provenance through dereferences** (`:65`):
+- **`resolveOrigin` loses provenance through dereferences** (`:67`):
   `*ptr = &local; return *ptr` and `return (*p).field` are not caught. This is
   a documented limitation, but it means the "provenance" model is
   address-expression-local, not alias-aware.
@@ -231,7 +231,7 @@ Any diagnostic on this surface is a false positive.
   (`:773-798`, `:1087-1103`), but `switch`/`swt_ex` prongs are never folded
   (`:1125-1142`). `phase_ComptimeEvaluation` runs before the analyzers
   (`main.zig:476`, `:483`) and populates `ctx.comptime_folds`; `AnalyzerContext`
-  has no `comptime_folds` field (`analyzer.zig:518-541`) and
+  has no `comptime_folds` field (`analyzer.zig:518-544`) and
   `phase_StaticAnalyzers` never passes it (`main.zig:873-913`). Sema/lowering
   do consume it (`main.zig:838`, `lower.zig:8013`), so the analyzer is the
   odd one out.
@@ -428,7 +428,7 @@ class", plus a per-site justification for any residual after seeding. The
 
 | ID | Diagnostic / class | What is wrong | Repro evidence |
 |---|---|---|---|
-| **L1** | `WARN_6002` on non-optional pointer parameters | Parameters are not seeded in the null state map; `p.*` on `*T` is reported `maybe` | `np_cond.zig`: 3 warnings for one `p.*`; self-source 43 unique / 86 raw; D4 probe 2 warnings for one walked condition |
+| **L1** | `WARN_6002` on non-optional pointer parameters | Parameters are not seeded in the null state map; `p.*` on `*T` is reported `maybe` | `np_cond.zig`: 3 warnings for one `p.*`; self-source 43 null-pass / 86 raw (pass-class counts, not unique sites); D4 probe 2 warnings for one walked condition |
 | **L2** | `WARN_6002` duplicated across passes | `analyzeExpr` runs in every analyzer mode from `visitStatement` conditions; the double-free pass re-emits the null warning | Self-source: null-only 43, double-free-only 43, all 86. `np_cond.zig`: null-only 1, lifetime-only 1, double-free-only 1, all 3. Probe: all 2, isolated 1+1+0 |
 | **L3** | `WARN_6006 freeing untracked pointer 'q'` on an alias | `var q = p` does not inherit `p`'s `allocated` state; `q` looks untracked | D4 probe emits `warning[3039]` for `q`; the same chain's real double free is not reported (L8) |
 | **L4** | `ERR_2005` in a comptime-dead arm | The analyzer walks both arms of evaluator-foldable conditions and every switch prong | D4 probe `if (1 == 0)` → `error[3035]`; `dead_const.zig` (`const K = false`) and `dead_switch.zig` (dead prong) → `error[3035]` |
@@ -494,7 +494,7 @@ warning count moves:
 | **NP-3** | Walk `var` initializers and assignment RHS through `analyzeExpr` | `np_init_null.zig`, `np_assign_null.zig` | `ERR_2004` for `p = null; var q = p.*` and `q = p.*` |
 | **NP-4** | Emit null diagnostics only from the null pass (or gate `analyzeExpr` by mode) | `np_single_deref.zig` (one guarded/unseeded deref) | exactly one `WARN_6002`, not 2/3 |
 | **NP-5** | Keep guard/capture refinement and the true positive set | existing `capture_lifetime.zig`, new `np_guard_ok.zig` | no warning after `if (p != null)` / `if (p) |q|`; `ERR_2004` for a proved-null deref |
-| **DF-1** | Propagate allocation state on identifier RHS for `var` init and assignment; maintain an alias relation | `df_alias_chain.zig` | `ERR_2005` for `free(p); free(q)` after `var q = p`; no `WARN_6006` |
+| **DF-1** | Propagate allocation state on identifier RHS for `var` init and assignment; maintain an alias relation, including the capture shape `var p = alloc; var op = p; if (op) \|q\| ...` | `df_alias_chain.zig`, existing `capture_double_free.zig`, new `df_capture_alias_chain.zig` (exact defect-c shape) | `ERR_2005` for `free(p); free(q)` after `var q = p`; `ERR_2005` for the second free through the capture alias; no `WARN_6006` |
 | **DF-2** | Resolve frees through field/index/member chains (at least the alias chain the design promises) | `df_field.zig`, `df_index.zig` | `ERR_2005` on the second free; no false `INFO_7001` for the allocator handle |
 | **DF-3** | Make ownership-pass precise: only real ownership-taking call sites transfer; allocator handles are not transferred | `df_owner_handle.zig` | no `INFO_7001` for `sandFree(s, p)`; leak/double-free state remains correct |
 | **DF-4** | Do not silently convert `transferred`/`returned_val`/`unknown` to `freed` on free | `df_transferred_free.zig` | documented diagnostic or no state loss; no false `ERR_2005`/silent pass |
@@ -507,9 +507,10 @@ warning count moves:
 | **TEST-1** | Fixture harness asserts exact diagnostic codes/counts, discovers `tests/analyzers/**`, and registers the D4 probe | harness change + probe | `d4_contract_probe.zig` runs through `testFixture`; expected code list matches |
 
 Items NP-1..NP-4, DF-1, DED-1/DED-2, LIFE-1, and TEST-1 are the minimum for
-the bar. DF-2/DF-3/DF-4 and DX-1 are the next tranche; Task 9 should state
-which it lands and which it defers, but must not leave a must-work item
-silently passing.
+the bar. DED-1 and DED-2 are assigned to Task 9a (shared infrastructure), not
+left for a later sub-task. DF-2/DF-3/DF-4 and DX-1 are the next tranche; Task 9
+should state which it lands and which it defers, but must not leave a must-work
+item silently passing.
 
 ### 4.3 Fixture-driven test strategy
 
@@ -558,9 +559,9 @@ throwaway reproductions; the committed repros remain
 | Repro | Command | Observed |
 |---|---|---|
 | D4 probe | `zig1_5_clean -ffast --check tests/analyzers/d4_contract_probe.zig` | rc=2; 2× `warning[3037]`, `warning[3039] 'q'`, `error[3035] 'p'`, `error[3030] 'x'` |
-| Probe, null only | `--no-lifetime-check --no-leak-check` | 1× `warning[3037]`; `error[3030]` |
-| Probe, lifetime only | `--no-null-check --no-leak-check` | 0× `warning[3037]`; `error[3030]` |
-| Probe, double-free only | `--no-null-check --no-lifetime-check` | 1× `warning[3037]`; `error[3030]` |
+| Probe, null only | `--no-lifetime-check --no-leak-check` | 1× `warning[3037]` only; no `error[3030]` |
+| Probe, lifetime only | `--no-null-check --no-leak-check` | 0× `warning[3037]`; `error[3030] 'x'` |
+| Probe, double-free only | `--no-null-check --no-lifetime-check` | 1× `warning[3037]`, 1× `warning[3039] 'q'`, 1× `error[3035] 'p'`; no `error[3030]` |
 | Self-source, all | `--check -I sf/src sf/src/main.zig` | rc=0; 86× `warning[3037]`, 13× `warning[18]` |
 | Self-source, null only | add `--no-lifetime-check --no-leak-check` | 43× `warning[3037]` |
 | Self-source, double-free only | add `--no-null-check --no-lifetime-check` | 43× `warning[3037]` |
@@ -588,11 +589,13 @@ throwaway reproductions; the committed repros remain
 2. **Cross-mode duplication is a separate bug from the false positive.** Do
    not fix L1 by lowering the warning level or filtering by message; fix the
    walk/mode gating and the duplication together (NP-4).
-3. **The fold table is already available.** `phase_ComptimeEvaluation` runs
-   before `phase_StaticAnalyzers`; the missing piece is the
-   `AnalyzerContext.comptime_folds` field and the `main.zig` wiring. A
-   `switch` fold path may need a selector table/evaluator call beyond a plain
-   `comptimeFoldTableGet` (sema's own comment at
+3. **The fold table is already available, and Task 9a owns DED-1/DED-2.**
+   `phase_ComptimeEvaluation` runs before `phase_StaticAnalyzers`; the missing
+   piece is the `AnalyzerContext.comptime_folds` field and the `main.zig`
+   wiring. Task 9a explicitly owns both DED-1 (plumb and consult the fold
+   table) and DED-2 (`switch`-prong gating), per the plan's Task 9a
+   Interfaces. A `switch` fold path may need a selector table/evaluator call
+   beyond a plain `comptimeFoldTableGet` (sema's own comment at
    `semantic_analyzer.zig:4179` notes foldable switch selectors may have no
    table entry), so DED-2 is not just a table pass-through.
 4. **DF-3 (ownership precision) changes warning/info volume on live code.**
