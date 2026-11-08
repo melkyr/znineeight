@@ -7429,6 +7429,29 @@ fn semanticAnalyzerInitIsImportAlias(self: *SemanticAnalyzer, init_idx: u32) boo
     return false;
 }
 
+// D12 (Phase 3.5): apply a declared array type to an untyped tuple literal and,
+// recursively, to nested array-literal elements. The typed array-literal path
+// already resolves each nested literal from its annotation; this gives the
+// untyped `.{}` form the same resolved types so lowering uses the element-wise
+// array path at every level. Non-tuple (e.g. struct literal) elements and
+// non-array expected types are left untouched.
+fn semanticAnalyzerTypeArrayLiteralTree(self: *SemanticAnalyzer, node_idx: u32, ty: u32) void {
+    if (@intCast(usize, ty) >= self.registry.types_len) return;
+    if (self.registry.types_items[@intCast(usize, ty)].kind != type_mod.TypeKind.array_type) return;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind != AstKind.tuple_literal) return;
+    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, ty);
+    var elem_t = self.registry.array_items[@intCast(usize, self.registry.types_items[@intCast(usize, ty)].payload_idx)].elem;
+    if (@intCast(usize, elem_t) >= self.registry.types_len) return;
+    if (self.registry.types_items[@intCast(usize, elem_t)].kind != type_mod.TypeKind.array_type) return;
+    var ec_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+    var i: usize = @intCast(usize, 0);
+    while (i < @intCast(usize, ec_n)) : (i += @intCast(usize, 1)) {
+        var child = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));
+        semanticAnalyzerTypeArrayLiteralTree(self, child, elem_t);
+    }
+}
+
 pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u32) u32 {
     var decl = ast_mod.astStoreNodeAt(self.store, decl_idx);
     if (decl.child_1 == @intCast(u32, 0)) return @intCast(u32, type_mod.TYPE_UNDEFINED);
@@ -7519,6 +7542,19 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
         if (ck != coercion_mod.CoercionKind.none) {
             coercion_mod.coercionTableAdd(self.coercion_table, decl.child_1, ck, decl_type);
         }
+        }
+    }
+    // D12 (Phase 3.5): mirror the function-local var-decl rule at
+    // `:6681-6685`. A module-scope untyped array literal (`.{ ... }`) is
+    // resolved as a tuple because the expected-type stack does not rewrite it;
+    // without this rule lowering materialises a tuple temp and the global
+    // store emits an illegal whole-array C assignment. When no coercion was
+    // recorded, type the initializer as the declared array.
+    if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and
+        @intCast(usize, decl_type) < self.registry.types_len and
+        self.registry.types_items[@intCast(usize, decl_type)].kind == type_mod.TypeKind.array_type) {
+        if (coercion_mod.coercionTableGet(self.coercion_table, decl.child_1) == null) {
+            semanticAnalyzerTypeArrayLiteralTree(self, decl.child_1, decl_type);
         }
     }
     return it;
