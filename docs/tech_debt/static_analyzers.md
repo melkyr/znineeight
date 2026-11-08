@@ -52,31 +52,36 @@ Member access (e.g., `s.ptr`) is conservatively treated as `PS_MAYBE`. It does n
 
 ## 4. Cross-cutting (T5 truth-up)
 
-### 4.1 Comptime-Dead Arms — Partial Fold Probe [updated: 2026-10-17 — D1/D2 surface + drift truth-up]
+### 4.1 Comptime-Dead Arms [RESOLVED — updated: 2026-11-08 — Phase 3.5 D4a]
 Per Zig semantics (T3 rule) a comptime-untaken arm does not exist for
-analysis. The analyzers now fold a conservative bool-literal family
-(`analyzerFoldComptimeBool`: literals, parens, `!`/`&&`/`||`) and walk only
-the live arm of a capture-free `if`. The shared comptime-fold table is not
-plumbed into `AnalyzerContext` (would touch `main.zig`/`comptime_eval.zig`,
-outside T5's touch set), so evaluator-only folds (named consts, compounds,
-`@isWindows()`) and `switch` prongs still walk both sides.
-- **Status**: Partial; full parity needs the fold table plumbed into the
-  analyzer context.
+analysis. `AnalyzerContext` now carries the shared `ComptimeFoldTable`
+(`comptime_folds`), `phase_StaticAnalyzers` passes it, and
+`analyzerFoldComptimeVal` consults it before falling back to the same
+`comptimeEvalInit`/`comptimeEvalEvaluate` machinery sema and lowering use.
+Capture-free `if` arms and `switch` prongs with a decisive selector walk only
+the live arm; a dead prong emits nothing. An undecidable selector/label keeps
+every prong live (conservative).
+- **Status**: Resolved; fixtures `tests/analyzers/dead_arm.zig` and
+  `tests/analyzers/dead_arm_switch.zig`.
 
-### 4.2 NullPointer Return/Init Expressions Not Walked [updated: 2026-10-17 — D1/D2 surface + drift truth-up]
-`analyzeExpr` is invoked for conditions, expression statements, and
-assignment RHS, but NOT for `return`-statement expressions or `var`
-initializers — a deref there (`return p.*`) is unchecked. Parameters are not
-seeded in the null state map, so `param.*` patterns conservatively warn
-(measured: 44 false WARN_6002 on the compiler self-source).
-- **Status**: Pre-existing; disclosed, not fixed at T5 (would shift warning
-  volume on live code; separate task).
+### 4.2 NullPointer Return/Init Expressions [RESOLVED — updated: 2026-11-08 — Phase 3.5 D4b]
+`analyzeExpr` now runs on `return`-statement expressions and on `var`
+initializer / assignment RHS expressions, so a deref there (`return p.*`) is
+checked. Non-optional pointer-like parameters (`*T`, `[*]T`, `[]T`, fn-ptr)
+are seeded `safe` in the null state map; optional parameters stay unseeded
+(`maybe`) until a guard or capture refines them, so they remain conservative
+by design.
+- **Status**: Resolved; fixtures `np_return_null.zig`, `np_init_null.zig`,
+  `np_assign_null.zig`, `np_param_safe.zig`, and `np_single_deref.zig`.
 
-### 4.3 Capture Aliasing Limits (DoubleFree) [updated: 2026-10-17 — D1/D2 surface + drift truth-up]
-A capture inherits the origin's state when the origin already has one
-(`var op = sandAlloc(...); if (op) |q| { ... }`). Alias chains
-(`var p = alloc(); var op = p; if (op) |q|`) keep `op` untracked (the
-assign-propagation gap of §1.5's transfer model), so frees through `q` in
-that shape stay "untracked" warnings; freeing via one name and then another
-alias is not cross-checked.
-- **Status**: Limited by name-keyed single-map tracking (cf. §2.2).
+### 4.3 Capture/Aliasing Limits (DoubleFree) [PARTIALLY RESOLVED — updated: 2026-11-08 — Phase 3.5 D4c]
+Allocation state now propagates through identifier RHS copies for `var`
+initializers and assignments, and captures inherit the origin's state, so
+`var p = alloc(); var op = p; if (op) |q| { free(p); free(q); }` reports the
+second free as `ERR_2005` (DF-1). Alias classes fork/merge with the state map,
+and reassigning the canonical name re-roots the surviving aliases.
+- **Remaining limit**: a same-block use-after-free through an alias copy is
+  still not claimed (only the canonical name reports), and unknown calls do not
+  transfer ownership. See §2.2.
+- **Status**: Fixtures `df_alias_chain.zig`, `df_capture_alias_chain.zig`,
+  `df_alias_reassign*.zig`, `df_unknown_call.zig`.

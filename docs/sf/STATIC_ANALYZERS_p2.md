@@ -660,23 +660,31 @@ pub const Provenance = enum(u8) {
     global = 4,       // Points to a global — safe to return
     heap = 5,         // Arena-allocated — safe to return (within arena lifetime)
     external = 6,     // T5: pointer-like parameter / caller-owned pointee — values and interiors safe; bare `&p` still dangles
+    local_array = 7,  // Internal marker for an array-typed local; by-value return is safe, slicing maps back to `local`
 };
 ```
 
 ### 5.3 Analysis Rules
+
+[updated: 2026-11-08 — Phase 3.5 D4d/D4e] The landed rules use the
+`Provenance` values in §5.2 and the analyzer state map (params seeded there,
+not in a symbol table):
 
 | Pattern | Provenance | Return OK? | Diagnostic |
 |---|---|---|---|
 | `return &local_var;` | `local` | NO | ERR 2020: returning address of local variable |
 | `return &param;` | `param_addr` | NO | ERR 2021: returning address of parameter |
 | `var p = &local; return p;` | `local` (tracked) | NO | WARN 6010: returning pointer to local via variable |
-| `if (op) \|ptr\| { return ptr; }` [updated: 2026-10-17 — D1/D2 surface + drift truth-up] | `local` (capture inherits `op`) | NO | WARN 6010 — tech-debt §2.1, fixture `tests/analyzers/capture_lifetime.zig` |
-| `return param_ptr;` | `param` | YES | — (caller manages lifetime) |
+| `if (op) \|ptr\| { return ptr; }` | `local` (capture inherits `op`) | NO | WARN 6010 — fixture `tests/analyzers/capture_lifetime.zig` |
+| `return param_ptr;` | `external` (pointer-like param) / `param` (by-value) | YES | — (caller manages lifetime) |
+| `return &param_ptr.field;` | `external` (caller-owned interior) | YES | — |
+| `return &p;` (by-value or pointer-like param) | `param_addr` | NO | ERR 2021 |
 | `return &global;` | `global` | YES | — |
-| `return arena_alloc(...)` | `heap` | YES | — |
+| `return arena_alloc(...)` | `heap` | YES | — (a call result is `heap`) |
 | `return &s.field;` | `local` (field of local) | NO | ERR 2020 |
 | `return &arr[i];` | `local` (element of local) | NO | ERR 2020 |
-| `return local_arr[0..5];` | `local` (slice of local) | NO | WARN 6011: returning slice of local array |
+| `return local_arr[0..5];` | `local` (slice of local array) | NO | WARN 6011: returning slice of local array — fixture `tests/analyzers/lifetime_local.zig` |
+| `return local_arr;` (by value) | `local_array` | YES | — (the value is copied out) |
 
 ### 5.4 Origin Resolution
 

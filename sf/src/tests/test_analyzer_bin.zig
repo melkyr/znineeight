@@ -22,6 +22,36 @@ const token_mod = @import("../token.zig");
 const lexer_mod = @import("../lexer.zig");
 const parser_mod = @import("../parser.zig");
 
+fn countDiagCode(diag: *DiagnosticCollector, code: u16) u32 {
+    var diags = diag_mod.diagnosticArrayListGetSlice(diag.diagnostics);
+    var n: u32 = @intCast(u32, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < diags.len) : (i += 1) {
+        if (diags[i].code == code) n += 1;
+    }
+    return n;
+}
+
+fn expectSigOnly(diag: *DiagnosticCollector, code: u16, count: u32, name: []const u8) void {
+    var got = countDiagCode(diag, code);
+    var total = @intCast(u32, diag.diagnostics.len);
+    if (got != count or total != count) {
+        pal.stderr_write(name);
+        var msg: []const u8 = ": signature diagnostic code/count mismatch\n";
+        pal.stderr_write(msg);
+        helpers.fail(name);
+    }
+}
+
+fn expectSigClean(diag: *DiagnosticCollector, name: []const u8) void {
+    if (diag.diagnostics.len != @intCast(usize, 0)) {
+        pal.stderr_write(name);
+        var msg: []const u8 = ": expected no signature diagnostics\n";
+        pal.stderr_write(msg);
+        helpers.fail(name);
+    }
+}
+
 fn testSignatureVoidParam() void {
     var arena: Sand = undefined;
     var interner: StringInterner = undefined;
@@ -41,6 +71,8 @@ fn testSignatureVoidParam() void {
     var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
     var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
     az_mod.analyzeSignature(&ac, fn_node);
+    var code = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2010_VOID_PARAMETER));
+    expectSigOnly(&diag, code, @intCast(u32, 1), "testSignatureVoidParam");
     helpers.ok("testSignatureVoidParam");
 }
 
@@ -54,11 +86,18 @@ fn testSignatureLargeReturn() void {
     var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
-    var type_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, type_mod.TYPE_U8, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
+    var bs: []const u8 = "BigReturn";
+    var bnid = interner_mod.stringInternerIntern(&interner, bs);
+    var btid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), bnid, type_mod.TypeKind.struct_type);
+    typereg.types_items[@intCast(usize, btid)].state = @intCast(u8, 2);
+    typereg.types_items[@intCast(usize, btid)].size = @intCast(u32, 65);
+    var type_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, bnid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var proto = ast_mod.FnProto{ .name_id = @intCast(u32, 0), .params_start = @intCast(u32, 0), .params_count = @intCast(u16, 0), .call_conv = @intCast(u8, 0), .return_type_node = type_node };
     var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
     var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
     az_mod.analyzeSignature(&ac, fn_node);
+    var code = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_7010_LARGE_RETURN));
+    expectSigOnly(&diag, code, @intCast(u32, 1), "testSignatureLargeReturn");
     helpers.ok("testSignatureLargeReturn");
 }
 
@@ -85,10 +124,8 @@ fn testSignatureIncompleteType() void {
     var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
     var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
     az_mod.analyzeSignature(&ac, fn_node);
-    if (diag.error_count == @intCast(usize, 0)) {
-        var fmsg: []const u8 = "testSignatureIncompleteType expected diagnostic\n";
-        pal.stdout_write(fmsg); pal.exit(1);
-    }
+    var code = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2011_INCOMPLETE_TYPE));
+    expectSigOnly(&diag, code, @intCast(u32, 1), "testSignatureIncompleteType");
     helpers.ok("testSignatureIncompleteType");
 }
 
@@ -106,10 +143,8 @@ fn testSignatureAnyType() void {
     var anid = interner_mod.stringInternerIntern(&interner, as);
     var type_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, anid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     az_mod.validateSignatureType(&ac, type_node, @intCast(u32, 0));
-    if (diag.error_count == @intCast(usize, 0)) {
-        var fmsg: []const u8 = "testSignatureAnyType expected diagnostic\n";
-        pal.stdout_write(fmsg); pal.exit(1);
-    }
+    var code = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2012_ANYTYPE_NOT_SUPPORTED));
+    expectSigOnly(&diag, code, @intCast(u32, 1), "testSignatureAnyType");
     helpers.ok("testSignatureAnyType");
 }
 
@@ -1351,10 +1386,7 @@ fn testSignatureFnPtrOptAggregate() void {
     var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
     var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
     az_mod.analyzeSignature(&ac, fn_node);
-    if (diag.error_count != @intCast(usize, 0)) {
-        var fmsg: []const u8 = "testSignatureFnPtrOptAggregate: expected 0 errors\n";
-        pal.stdout_write(fmsg); pal.exit(1);
-    }
+    expectSigClean(&diag, "testSignatureFnPtrOptAggregate");
     helpers.ok("testSignatureFnPtrOptAggregate");
 }
 
@@ -1379,10 +1411,7 @@ fn testSignatureFnPtrErrUnionAggregate() void {
     var proto_idx = ast_mod.astStoreAddFnProto(&store, proto);
     var fn_node = ast_mod.astStoreAddNode(&store, AstKind.fn_decl, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), proto_idx);
     az_mod.analyzeSignature(&ac, fn_node);
-    if (diag.error_count != @intCast(usize, 0)) {
-        var fmsg: []const u8 = "testSignatureFnPtrErrUnionAggregate: expected 0 errors\n";
-        pal.stdout_write(fmsg); pal.exit(1);
-    }
+    expectSigClean(&diag, "testSignatureFnPtrErrUnionAggregate");
     helpers.ok("testSignatureFnPtrErrUnionAggregate");
 }
 
@@ -1403,10 +1432,8 @@ fn testSignatureNestedIncomplete() void {
     var foo_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, fnid, @intCast(u32, 0), @intCast(u32, 0));
     var opt_node = ast_mod.astStoreAddNode(&store, AstKind.optional_type, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), foo_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     az_mod.validateSignatureType(&ac, opt_node, @intCast(u32, 1));
-    if (diag.error_count == @intCast(usize, 0)) {
-        var fmsg: []const u8 = "testSignatureNestedIncomplete: expected incomplete-type error\n";
-        pal.stdout_write(fmsg); pal.exit(1);
-    }
+    var code = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2011_INCOMPLETE_TYPE));
+    expectSigOnly(&diag, code, @intCast(u32, 1), "testSignatureNestedIncomplete");
     helpers.ok("testSignatureNestedIncomplete");
 }
 
@@ -1431,10 +1458,7 @@ fn testSignatureArbIntAccepted() void {
     var node48 = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, n48, @intCast(u32, 0), @intCast(u32, 0));
     az_mod.validateSignatureType(&ac, node48, @intCast(u32, 0));
     az_mod.validateSignatureType(&ac, node48, @intCast(u32, 1));
-    if (diag.error_count != @intCast(usize, 0)) {
-        var fmsg: []const u8 = "testSignatureArbIntAccepted: expected 0 errors\n";
-        pal.stdout_write(fmsg); pal.exit(1);
-    }
+    expectSigClean(&diag, "testSignatureArbIntAccepted");
     helpers.ok("testSignatureArbIntAccepted");
 }
 
@@ -1454,10 +1478,8 @@ fn testSignaturePackedUnionIncomplete() void {
     _ = ptid;
     var pu_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, pnid, @intCast(u32, 0), @intCast(u32, 0));
     az_mod.validateSignatureType(&ac, pu_node, @intCast(u32, 0));
-    if (diag.error_count == @intCast(usize, 0)) {
-        var fmsg: []const u8 = "testSignaturePackedUnionIncomplete: expected incomplete-type error\n";
-        pal.stdout_write(fmsg); pal.exit(1);
-    }
+    var code = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2011_INCOMPLETE_TYPE));
+    expectSigOnly(&diag, code, @intCast(u32, 1), "testSignaturePackedUnionIncomplete");
     helpers.ok("testSignaturePackedUnionIncomplete");
 }
 
@@ -1480,10 +1502,7 @@ fn testSignatureMemberTypeAccepted() void {
     var base_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, mnid, @intCast(u32, 0), @intCast(u32, 0));
     var fa_node = ast_mod.astStoreAddNode(&store, AstKind.field_access, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), base_node, @intCast(u32, 0), @intCast(u32, 0), knid);
     az_mod.validateSignatureType(&ac, fa_node, @intCast(u32, 1));
-    if (diag.error_count != @intCast(usize, 0)) {
-        var fmsg: []const u8 = "testSignatureMemberTypeAccepted: expected 0 errors\n";
-        pal.stdout_write(fmsg); pal.exit(1);
-    }
+    expectSigClean(&diag, "testSignatureMemberTypeAccepted");
     helpers.ok("testSignatureMemberTypeAccepted");
 }
 
@@ -1763,7 +1782,20 @@ fn fixtureLineOf(content: []const u8, off: u32) u32 {
 
 var fx_no_expect: [0]DiagExpectation = undefined;
 
+const FixtureNamedType = struct {
+    name: []const u8,
+    kind: type_mod.TypeKind,
+    state: u8,
+    size: u32,
+};
+
+var fx_no_types: [0]FixtureNamedType = undefined;
+
 fn testFixture(path: []const u8, name: []const u8, expect: []const DiagExpectation) void {
+    testFixtureWithTypes(path, name, expect, fx_no_types[0..]);
+}
+
+fn testFixtureWithTypes(path: []const u8, name: []const u8, expect: []const DiagExpectation, types: []const FixtureNamedType) void {
     var perm = alloc_mod.sandInit(fx_perm_buf[0..]);
     var scratch = alloc_mod.sandInit(fx_scratch_buf[0..]);
     token_mod.initKeywordTable(&perm);
@@ -1801,6 +1833,14 @@ fn testFixture(path: []const u8, name: []const u8, expect: []const DiagExpectati
     var type_db = alloc_mod.sandInit(fx_type_buf[0..]);
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
+    var ti: usize = @intCast(usize, 0);
+    while (ti < types.len) : (ti += 1) {
+        var ft = types[ti];
+        var ft_nid = interner_mod.stringInternerIntern(&interner, ft.name);
+        var ft_tid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), ft_nid, ft.kind);
+        typereg.types_items[@intCast(usize, ft_tid)].state = ft.state;
+        typereg.types_items[@intCast(usize, ft_tid)].size = ft.size;
+    }
     var sym_reg = sym_mod.symbolRegistryInit(&perm);
     var sym_table = sym_mod.symbolRegistryGetTable(&sym_reg, @intCast(u32, 0));
     var ac = AnalyzerContext{
@@ -1941,6 +1981,10 @@ pub fn main() void {
     var c_uaf: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2006_USE_AFTER_FREE));
     var c_leak: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK));
     var c_info: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.INFO_7001_OWNERSHIP_TRANSFERRED));
+    var c_sig_void: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2010_VOID_PARAMETER));
+    var c_sig_incomplete: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2011_INCOMPLETE_TYPE));
+    var c_sig_anytype: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2012_ANYTYPE_NOT_SUPPORTED));
+    var c_sig_large_ret: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_7010_LARGE_RETURN));
 
     var e_d4 = [_]DiagExpectation{
         expectAt(c_double, 1, FIXTURE_FILE_ID, @intCast(u32, 57)),
@@ -1967,6 +2011,17 @@ pub fn main() void {
     testFixture("tests/analyzers/dead_arm_switch.zig", "fixture dead_arm_switch", e_dead_switch[0..]);
 
     testFixture("tests/analyzers/fnptr_opt_aggregate.zig", "fixture fnptr_opt_aggregate", fx_no_expect[0..]);
+    var e_sig_neg = [_]DiagExpectation{
+        expectCode(c_sig_void, 1),
+        expectCode(c_sig_incomplete, 1),
+        expectCode(c_sig_anytype, 1),
+        expectCode(c_sig_large_ret, 1),
+    };
+    var fx_sig_types = [_]FixtureNamedType{
+        .{ .name = "Incomplete", .kind = type_mod.TypeKind.struct_type, .state = @intCast(u8, 0), .size = @intCast(u32, 0) },
+        .{ .name = "Big", .kind = type_mod.TypeKind.struct_type, .state = @intCast(u8, 2), .size = @intCast(u32, 65) },
+    };
+    testFixtureWithTypes("tests/analyzers/sig_negative.zig", "fixture sig_negative", e_sig_neg[0..], fx_sig_types[0..]);
     var e_life_local = [_]DiagExpectation{
         expectAt(c_local_addr, 1, FIXTURE_FILE_ID, @intCast(u32, 16)),
         expectAt(c_local_addr, 1, FIXTURE_FILE_ID, @intCast(u32, 21)),
@@ -1987,6 +2042,7 @@ pub fn main() void {
     testFixture("tests/analyzers/capture_double_free.zig", "fixture capture_double_free", e_cap_df[0..]);
     testFixture("tests/analyzers/dead_arm.zig", "fixture dead_arm", fx_no_expect[0..]);
     testFixture("tests/analyzers/surface_types.zig", "fixture surface_types", fx_no_expect[0..]);
+    testFixture("tests/analyzers/sig_arb_width.zig", "fixture sig_arb_width", fx_no_expect[0..]);
     var e_gpa_df = [_]DiagExpectation{ expectCode(c_double, 1) };
     testFixture("tests/analyzers/gpa_double_free.zig", "fixture gpa_double_free", e_gpa_df[0..]);
     var e_gpa_uaf = [_]DiagExpectation{ expectCode(c_uaf, 4) };

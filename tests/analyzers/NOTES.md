@@ -27,7 +27,9 @@ literal under those checks (toolchain semantics, pre-existing).
 | `capture_lifetime.zig` | 0 errors, >=1 warning | LifetimeAnalyzer capture propagation (tech-debt §2.1): `if (op) \|ptr\| { return ptr; }` inherits `op`'s local provenance -> WARN_6010 |
 | `capture_double_free.zig` | exactly 1 ERR_2005 | DoubleFreeAnalyzer capture propagation: the capture is an alias of the allocation; double `sandFree` through the capture -> ERR_2005 |
 | `dead_arm.zig` | 0 errors, 0 warnings | Comptime-untaken arms do not exist for analysis (T3 Zig rule): double free + local-address behind `if (false)` produce nothing |
-| `surface_types.zig` | 0 errors, 0 warnings | Current surface: arbitrary-width ints (`i7`/`u48`/`i3`/`u33`), packed-union types, tagged-union `.tag` member access |
+| `surface_types.zig` | 0 diagnostics | Current surface: arbitrary-width ints (`i7`/`u48`/`i3`/`u33`), packed-union types, tagged-union `.tag` member access |
+| `sig_arb_width.zig` | 0 diagnostics | SIG-1: arbitrary-width ints (`i7`/`u48`/`i3`/`i63`/`u64`/`u1`) in parameters and returns are accepted |
+| `sig_negative.zig` | exactly one each of `ERR_2010`, `ERR_2011`, `ERR_2012`, `WARN_7010` | SIG-1 negative shapes: `void` parameter, incomplete base nested in `?`, `anytype`, and a named return larger than 64 bytes |
 | `gpa_double_free.zig` | >=1 error | GPA ownership (Task 7): module-qualified `gpa.gpaAlloc` / `gpa.gpaFree` calls recognized by final identifier; second free -> ERR_2005 |
 | `gpa_use_after_free.zig` | >=4 errors | GPA ownership (Task 7): module-qualified alloc/free; direct indexed read plus comparison, compound-assignment, and arithmetic wrapper uses after free -> ERR_2006 (error[3079]) |
 | `gpa_leak.zig` | 0 errors, >=1 warning | GPA ownership (Task 7): bare `gpaAlloc` allocation without a free in the same block -> WARN_6005_MEMORY_LEAK |
