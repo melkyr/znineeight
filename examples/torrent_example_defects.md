@@ -5,7 +5,7 @@ Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
 deleted numbers are not reused. Next free slot: **D15**.
 
-Open: **D3**, **D4**, **D5**, **D7.3**, **D8**, **D10**, **D13**, **D14**.
+Open: **D3**, **D4**, **D5**, **D8**, **D10**, **D13**, **D14**.
 
 _(Add new entries at the next free slot as they are found; entries are doc-only
 unless a compiler fix is separately authorized.)_
@@ -73,14 +73,6 @@ unless a compiler fix is separately authorized.)_
 **Evidence.** T2 review of `d86b3441` (`.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/review-323bff07..d86b3441.diff`): objdump of the emitted callback path shows a plain `ret` (cdecl) where a `__stdcall` callback must `ret $4`, so the `@ptrCast(CtrlHandler, onCtrl)` bridge is a real stack-cleanup mismatch. Direct probe: the compiler accepts `pub extern "stdcall" fn onCtrl(t: u32) i32 { ... }` with rc=0, emits only the registration-site reference (`zT_1 = ((...)onCtrl);`) and no definition, and mingw then rejects the emitted C with `error: 'onCtrl' undeclared` (no Z98 diagnostic); see the T2 fix-round report (`.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/task-2-report.md`, "Fix round 1"). Workaround verification: the new `-osw` probe dump has no `SetConsoleCtrlHandler`/`PHANDLER_ROUTINE`/`onCtrl`/cast, `XRUNRC=0`, `--dump-c89` md5 `81c052098c89218b96da2ea908f77310`.
 
 **Reference points.** `sf/src/parser.zig` `parserParseExternDecl`/`parserParseFnDecl` (`is_extern` + body accepted); `docs/superpowers/specs/2026-09-13-win9x-calling-convention-design.md` §1 (conventions only on extern declarations + fn-pointer types; non-extern definitions never carry a convention); the D4 entry above for the intake style.
-
----
-
-## D7.3 — `arr[i].field[0..]` write can target a by-value temporary (emitter)
-
-**Status:** **OPEN / DEFERRED — demo-worked-around** (found 2026-10-23 building `wireguard_demo`, Phase 1 M7 T3; recorded in `examples/z98/demo/wireguard_demo/NOTES.md`). Operator decision 2026-10-23: not worth a standalone milestone now; it remains open until a future compiler milestone and the demo keeps the explicit-pointer workaround.
-
-**Defect.** In the current emitter a nested write through an indexed aggregate field can materialise a by-value temporary, so the store is lost. The demo takes an explicit pointer first (`var pp: *wg.WgPeer = &g_peers[0];` then `pp.field[0..]`) and works. This is an emitter lvalue/temporary-materialisation defect in nested aggregate field indexing (a distinct family from the type-identity/typedef-ordering and comptime-dead-arm defects). No compiler fix was authorized in Phase 1 and `sf/src` was frozen at closeout. A future compiler plan should reproduce it with a minimal `arr[i].field = ...` fixture before fixing.
 
 ---
 

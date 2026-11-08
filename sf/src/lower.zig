@@ -5099,6 +5099,11 @@ fn lowerSliceExprStep(self: *LirLowerer, f: *ExprFrame) u32 {
          iceSliceUnsupported(self, node_idx);
          return @intCast(u32, 0);
     }
+    if (lowerSliceBaseAddrPtrType(self, node.child_0)) |slb_pty| {
+        f.slot0 = lowerLValueAddr(self, node.child_0, slb_pty);
+        f.phase = @intCast(u16, 1);
+        return lowerSliceExprStep(self, f);
+    }
     lowerExprPushChild(self, f, node.child_0, @intCast(u16, 1));
     return TEMP_NONE;
 }
@@ -5888,6 +5893,20 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
         // `indexBaseAfterArrayDeref`), the slice `.ptr` extract, the root-index
         // check (always; self-gated on `safe_checks`) and the unified
         // ptr-to-array rule all live there.
+        var lv_ibn = ast_mod.astStoreNodeAt(store, lv_node.child_0);
+        if (lv_ibn.kind == AstKind.field_access) {
+            if (d5BaseChainHasIndex(self, lv_node.child_0)) {
+                if (d5IndexAssignArrayType(self, lv_node.child_0)) |lv_barr_t| {
+                    var lv_bptr_t = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, lv_barr_t, false);
+                    var lv_baddr = lowerLValueAddr(self, lv_node.child_0, lv_bptr_t);
+                    var lv_bidx = lowerExpr(self, lv_node.child_1);
+                    emitSafeCheckIndex(self, lv_baddr, lv_node.child_0, lv_bidx);
+                    var lv_beaddr = nextTemp(self, result_type);
+                    emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = lv_baddr, .index = lv_bidx, .result = lv_beaddr, .decay = @intCast(u8, 1) } });
+                    return lv_beaddr;
+                }
+            }
+        }
         var lv_ia = lowerIndexElemAddr(self, lv_node_idx, lv_node.child_0, lv_node.child_1, result_type, @intCast(u8, 1));
         if (lv_ia.is_tuple != @intCast(u8, 0)) {
             var lv_ix_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, lv_ia.tuple_bt, false);
@@ -6661,10 +6680,81 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
         lowerDerefStore(self, lv_node_idx, value_temp);
     } else if (lv_node.kind == AstKind.paren_expr) {
         lowerAssignLValue(self, lv_node.child_0, value_temp, diag_node_idx);
+    } else if (lv_node.kind == AstKind.slice_expr) {
+        if (lowerSliceAssignCopy(self, lv_node_idx, value_temp)) return;
+        iceAssignLValueUnsupported(self, diag_node_idx);
     } else {
         iceAssignLValueUnsupported(self, diag_node_idx);
     }
 }
+
+fn lowerSliceAssignCopy(self: *LirLowerer, dst_node_idx: u32, src_temp: u32) bool {
+    var dst_temp = lowerExpr(self, dst_node_idx);
+    var dst_tid = getTempType(self, dst_temp);
+    if (dst_tid == type_mod.TYPE_UNDEFINED or dst_tid == type_mod.TYPE_VOID) return false;
+    if (@intCast(usize, dst_tid) >= self.ctx.registry.types_len) return false;
+    var dst_ty = self.ctx.registry.types_items[@intCast(usize, dst_tid)];
+    if (dst_ty.kind != type_mod.TypeKind.slice_type) return false;
+    var dst_sl = self.ctx.registry.slice_items[@intCast(usize, dst_ty.payload_idx)];
+    var src_tid = getTempType(self, src_temp);
+    if (src_tid == type_mod.TYPE_UNDEFINED or src_tid == type_mod.TYPE_VOID) return false;
+    if (@intCast(usize, src_tid) >= self.ctx.registry.types_len) return false;
+    var src_ty = self.ctx.registry.types_items[@intCast(usize, src_tid)];
+    var elem_tid: u32 = type_mod.TYPE_UNDEFINED;
+    var src_ptr: u32 = TEMP_NONE;
+    var src_len: u32 = TEMP_NONE;
+    if (src_ty.kind == type_mod.TypeKind.slice_type) {
+        var src_sl = self.ctx.registry.slice_items[@intCast(usize, src_ty.payload_idx)];
+        elem_tid = src_sl.elem;
+        var spty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_tid, false);
+        src_ptr = nextTemp(self, spty);
+        emitInst(self, LirInst{ .load_field = .{ .name_id = nameMapGet(self, src_temp), .base = src_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = src_ptr } });
+        src_len = nextTemp(self, type_mod.TYPE_USIZE);
+        emitInst(self, LirInst{ .load_field = .{ .name_id = nameMapGet(self, src_temp), .base = src_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = src_len } });
+    } else if (src_ty.kind == type_mod.TypeKind.array_type) {
+        var src_ap = self.ctx.registry.array_items[@intCast(usize, src_ty.payload_idx)];
+        elem_tid = src_ap.elem;
+        var spty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_tid, false);
+        src_ptr = nextTemp(self, spty);
+        emitInst(self, LirInst{ .ptr_cast = .{ .value = src_temp, .target = spty, .result = src_ptr } });
+        src_len = nextTemp(self, type_mod.TYPE_USIZE);
+        emitIntConst(self, @intCast(u64, src_ap.length), src_len);
+    } else {
+        return false;
+    }
+    if (elem_tid == type_mod.TYPE_UNDEFINED or elem_tid == type_mod.TYPE_VOID) return false;
+    if (@intCast(usize, elem_tid) >= self.ctx.registry.types_len) return false;
+    if (elem_tid != dst_sl.elem) return false;
+    if (self.ctx.registry.types_items[@intCast(usize, elem_tid)].kind == type_mod.TypeKind.array_type) return false;
+    var dst_ptr = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, dst_sl.elem, false));
+    emitInst(self, LirInst{ .load_field = .{ .name_id = nameMapGet(self, dst_temp), .base = dst_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = dst_ptr } });
+    var i_temp = nextTemp(self, type_mod.TYPE_USIZE);
+    emitIntConst(self, @intCast(u64, 0), i_temp);
+    var cond_bb = createBlock(self);
+    var body_bb = createBlock(self);
+    var exit_bb = createBlock(self);
+    emitInst(self, LirInst{ .jump = cond_bb });
+    self.current_bb = cond_bb;
+    self.block_terminated = @intCast(u8, 0);
+    var cond = nextTemp(self, type_mod.TYPE_BOOL);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = i_temp, .rhs = src_len, .result = cond } });
+    emitInst(self, LirInst{ .branch = .{ .cond = cond, .then_bb = body_bb, .else_bb = exit_bb } });
+    self.current_bb = body_bb;
+    self.block_terminated = @intCast(u8, 0);
+    var elem_temp = nextTemp(self, elem_tid);
+    emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = src_ptr, .index = i_temp, .result = elem_temp, .decay = @intCast(u8, 0) } });
+    emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = dst_ptr, .index = i_temp, .src = elem_temp } });
+    var one_temp = nextTemp(self, type_mod.TYPE_USIZE);
+    emitIntConst(self, @intCast(u64, 1), one_temp);
+    var next_i = nextTemp(self, type_mod.TYPE_USIZE);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = i_temp, .rhs = one_temp, .result = next_i } });
+    emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = i_temp, .src = next_i } });
+    emitInst(self, LirInst{ .jump = cond_bb });
+    self.current_bb = exit_bb;
+    self.block_terminated = @intCast(u8, 0);
+    return true;
+}
+
 // D5 (F5): the declared ARRAY type of an index-assign base that is an aggregate
 // l-value chain, or null. `semanticAnalyzerResolveFieldAccess` decays an array
 // field to a bare ELEMENT pointer, so `resolvedTypeTableGet` reports a pointer
@@ -12520,11 +12610,42 @@ fn lowerExprSwitch(self: *LirLowerer, node_idx: u32) u32 {
     }
 }
 
+fn lowerSliceBaseAddrPtrType(self: *LirLowerer, base_node: u32) ?u32 {
+    var store = self.ctx.store;
+    var bn = ast_mod.astStoreNodeAt(store, base_node);
+    if (bn.kind == AstKind.field_access or bn.kind == AstKind.index_access or bn.kind == AstKind.deref or bn.kind == AstKind.paren_expr) {
+        if (d5BaseChainHasIndex(self, base_node)) {
+            var arr_t: ?u32 = d5IndexAssignArrayType(self, base_node);
+            if (arr_t == null and bn.kind == AstKind.index_access) {
+                if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, bn.child_0)) |bt| {
+                    if (bt != type_mod.TYPE_UNDEFINED and bt != type_mod.TYPE_VOID) {
+                        var et = type_mod.typeRegistryIndexedElemType(self.ctx.registry, bt);
+                        if (et != type_mod.TYPE_UNDEFINED and et != type_mod.TYPE_VOID and @intCast(usize, et) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, et)].kind == type_mod.TypeKind.array_type) {
+                            arr_t = et;
+                        }
+                    }
+                }
+            }
+            if (arr_t) |at| {
+                return type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, at, false);
+            }
+        }
+    }
+    return null;
+}
+
+fn lowerSliceBase(self: *LirLowerer, base_node: u32) u32 {
+    if (lowerSliceBaseAddrPtrType(self, base_node)) |pty| {
+        return lowerLValueAddr(self, base_node, pty);
+    }
+    return lowerExpr(self, base_node);
+}
+
 fn lowerExprSlice(self: *LirLowerer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     var store = self.ctx.store;
     if (node.kind == AstKind.slice_expr) {
-         var se_base = lowerExpr(self, node.child_0);
+         var se_base = lowerSliceBase(self, node.child_0);
          var se_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
          var sem_m: []const u8 = "SEM:bt"; pal.markerWrite(sem_m);
          var sem_tb: [10]u8 = undefined; var sem_tl = itoa_mod.itoa(se_base, sem_tb[0..]); var sem_ts: usize = @intCast(usize, 9) - @intCast(usize, sem_tl); pal.markerWrite(sem_tb[sem_ts..@intCast(usize, 9)]);
