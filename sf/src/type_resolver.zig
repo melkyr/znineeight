@@ -1395,31 +1395,33 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
 }
 
 
-// Task 5 (Task 1 §6.5): exact enum/const-initializer fold materialised to the
-// i64 storage pattern. The exact value must fit `[i64 min, u64 max]` (the
-// registry's i64 member storage); a value outside that window is unfoldable
-// (the caller's `error[3055]` path) and the two's-complement low 64 bits are
-// returned for the fit values. This replaces the old 64-bit wrapping evaluator:
-// a wrapping shape such as `18446744073709551615 + 1` is no longer silently
-// stored as 0 (Zig rejects it; `enum(u64)` values must fit the backing).
+// Task 5 (Task 1 §6.5): exact const-initializer fold materialised as the
+// 64-bit two's-complement pattern for signed consumers (slice bounds, switch
+// constants). Enum members use `evalConstEnumRawU64` so the full u64 range is
+// preserved. The exact value must fit `[i64 min, u64 max]`; outside that window
+// it is unfoldable and the two's-complement low 64 bits are returned.
 pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
     var v = evalConstIntFull(env, node_idx, depth) orelse return null;
     if (!comptime_eval.comptimeIntFits64(v)) return null;
     return @bitCast(i64, comptime_eval.ciToU64(v));
 }
 
-// Task 6a: classify an unsigned enum member initializer whose materialised i64
-// storage value is negative. `true` means the EXACT source value is a positive
-// integer above i64 max that wrapped the i64 slot (a documented `enum(u64)`
-// limitation, reported with the clear range message); `false` means the source
-// value is genuinely negative (keep the pre-existing `error[3062]` wording) or
-// could not be classified from the shared 256-bit fold.
-pub fn evalConstEnumSourceExceedsI64Max(env: *TypeResolveEnv, node_idx: u32) bool {
+// Raw 64-bit enum-member fold: the exact value must fit `[i64 min, u64 max]`
+// and its low 64 bits are stored (signed values keep their two's-complement
+// pattern). This carries the full `enum(u64)` discriminant range.
+pub fn evalConstEnumRawU64(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?u64 {
+    var v = evalConstIntFull(env, node_idx, depth) orelse return null;
+    if (!comptime_eval.comptimeIntFits64(v)) return null;
+    return comptime_eval.ciToU64(v);
+}
+
+// True when the EXACT initializer value is genuinely negative (nonzero). Used
+// by the unsigned backing-fit validators to keep `error[3062]` for a negative
+// literal while accepting positive values above i64 max.
+pub fn evalConstEnumSourceIsNegative(env: *TypeResolveEnv, node_idx: u32) bool {
     if (node_idx == @intCast(u32, 0)) return false;
     var v = evalConstIntFull(env, node_idx, @intCast(u32, 0)) orelse return false;
-    if (v.neg) return false;
-    var lim = comptime_eval.ciFromU64(@intCast(u64, 0x7FFFFFFFFFFFFFFF));
-    return comptime_eval.ciCmp(v, lim) > 0;
+    return v.neg and !comptime_eval.ciIsZero(v);
 }
 
 
@@ -1473,17 +1475,17 @@ pub fn enumMembersResolve(
 ) bool {
     // check_only (function-local enums, whose type is not registered) keeps the
     // previously computed member values here instead of in `em_items`.
-    var seen: [256]i64 = undefined;
+    var seen: [256]u64 = undefined;
     var children_n = ast_mod.astStoreNodeExtraChildCount(env.store, enum_node);
-    var auto_val: i64 = @intCast(i64, 0);
+    var auto_val: u64 = @intCast(u64, 0);
     var k: u32 = 0;
     var i: usize = 0;
     while (i < children_n) : (i += 1) {
         var mnode = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i)));
         if (mnode.kind != AstKind.field_decl) continue;
-        var mval: i64 = auto_val;
+        var mval: u64 = auto_val;
         if (mnode.child_1 != @intCast(u32, 0)) {
-            var ev_opt = evalConstI64Full(env, mnode.child_1, @intCast(u32, 0));
+            var ev_opt = evalConstEnumRawU64(env, mnode.child_1, @intCast(u32, 0));
             if (ev_opt) |ev| {
                 mval = ev;
             } else if (strict) {
@@ -1498,24 +1500,17 @@ pub fn enumMembersResolve(
             if (check_only and dj_lim > @intCast(u32, 256)) dj_lim = @intCast(u32, 256);
             var dj: u32 = 0;
             while (dj < dj_lim) : (dj += 1) {
-                var prev: i64 = undefined;
+                var prev: u64 = undefined;
                 if (check_only) {
                     prev = seen[@intCast(usize, dj)];
                 } else {
                     prev = env.typereg.em_items[@intCast(usize, mstart) + @intCast(usize, dj)].value;
                 }
                 if (prev == mval) {
-                    // Task 6a: an implicit member after the stored i64 maximum
-                    // holds a provisional duplicate maximum (see the guarded
-                    // successor increment below). Do not report a duplicate tag
-                    // here; the signed-range/unsigned-width validators report
-                    // the implicit-successor overflow instead.
-                    if (!(mnode.child_1 == @intCast(u32, 0) and mval == @intCast(i64, 0x7FFFFFFFFFFFFFFF))) {
-                        out_fail_node.* = ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i));
-                        out_fail_kind.* = @intCast(u32, 2);
-                        out_count.* = k;
-                        return false;
-                    }
+                    out_fail_node.* = ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i));
+                    out_fail_kind.* = @intCast(u32, 2);
+                    out_count.* = k;
+                    return false;
                 }
             }
         }
@@ -1530,21 +1525,9 @@ pub fn enumMembersResolve(
             env.typereg.em_items[@intCast(usize, mstart) + @intCast(usize, k)].value = mval;
         }
         k += 1;
-        // Task 6a: the i64 `em_items[].value` slot cannot represent a successor
-        // above i64 max. Guard the increment so a single member at i64 max (a
-        // legal `enum(i64)`/`enum(u63)` value) does not overflow the storage; an
-        // implicit successor is stored as a provisional duplicate maximum and
-        // the existing signed-range/unsigned-width validators own the reject.
-        // Clean future option: have this shared walk return `fail_kind = 3` and
-        // report the implicit-successor overflow itself (single owner, no
-        // duplicate special case), which would need the backing signedness/width
-        // plumbed into this walk.
-        var max_i64: i64 = @intCast(i64, 0x7FFFFFFFFFFFFFFF);
-        if (mval == max_i64) {
-            auto_val = mval;
-        } else {
-            auto_val = mval + @intCast(i64, 1);
-        }
+        // Raw 64-bit successor. Two's-complement +1 matches signed ordinals;
+        // backing-width/signedness overflow is owned by the validators.
+        auto_val = mval +% @intCast(u64, 1);
     }
     out_count.* = k;
     return true;
@@ -1734,7 +1717,7 @@ fn validateLocalEnumBackingFit(env: *TypeResolveEnv, enum_node: u32, diag: *Diag
         max_s = half - @intCast(i64, 1);
         min_s = -half;
     }
-    var auto_val: i64 = @intCast(i64, 0);
+    var auto_val: u64 = @intCast(u64, 0);
     var prev_u: u64 = @intCast(u64, 0);
     var prev_s: i64 = @intCast(i64, 0);
     var have_prev: bool = false;
@@ -1745,51 +1728,35 @@ fn validateLocalEnumBackingFit(env: *TypeResolveEnv, enum_node: u32, diag: *Diag
         if (mnode.kind != AstKind.field_decl) continue;
         var at_max: bool = false;
         if (is_signed) { at_max = prev_s == max_s; } else { at_max = prev_u == max_u; }
-        // Task 6a fix round 1: the shared i64 member storage can only represent
-        // successors up to i64 max, even when the declared backing is wider
-        // (`u64`). Treat an implicit member whose predecessor is the STORAGE
-        // maximum as overflow too; otherwise it silently duplicates the max tag.
-        var at_storage_max: bool = prev_s == @intCast(i64, 0x7FFFFFFFFFFFFFFF);
-        if (have_prev and mnode.child_1 == @intCast(u32, 0) and (at_max or at_storage_max)) {
+        if (have_prev and mnode.child_1 == @intCast(u32, 0) and at_max) {
             var osp = mnode.span_start;
             var oep = osp + @intCast(u32, mnode.span_len);
             var ov_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
             if (is_signed) {
                 var sov: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation";
                 ov_msg = sov;
-            } else if (!at_max and at_storage_max) {
-                var lim: []const u8 = "enum member value exceeds the supported enum value range (values above 9223372036854775807 require u64 enum storage, not supported yet)";
-                ov_msg = lim;
             }
             _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, osp, oep, ov_msg);
             return;
         }
-        var mval: i64 = auto_val;
+        var mval: u64 = auto_val;
         if (mnode.child_1 != @intCast(u32, 0)) {
-            if (evalConstI64Full(env, mnode.child_1, @intCast(u32, 0))) |ev| { mval = ev; } else { return; }
+            if (evalConstEnumRawU64(env, mnode.child_1, @intCast(u32, 0))) |ev| { mval = ev; } else { return; }
         }
         if (is_signed) {
-            if (mval > max_s or mval < min_s) {
+            var ms: i64 = @bitCast(i64, mval);
+            if (ms > max_s or ms < min_s) {
                 var msp = mnode.span_start;
                 var mep = msp + @intCast(u32, mnode.span_len);
                 var mv_msg: []const u8 = "enum tag value does not fit the enum backing range (-2^(N-1) .. 2^(N-1)-1); no silent truncation";
                 _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, msp, mep, mv_msg);
                 return;
             }
-        } else if (mval < @intCast(i64, 0)) {
+        } else if (mnode.child_1 != @intCast(u32, 0) and evalConstEnumSourceIsNegative(env, mnode.child_1)) {
             var msp = mnode.span_start;
             var mep = msp + @intCast(u32, mnode.span_len);
-            // Task 6a: a positive source value above i64 max wrapped the i64
-            // member slot. Report the documented range limitation instead of
-            // the misleading negative-literal wording; genuine negative
-            // initializers keep the pre-existing error[3062].
-            if (mnode.child_1 != @intCast(u32, 0) and evalConstEnumSourceExceedsI64Max(env, mnode.child_1)) {
-                var lim_msg: []const u8 = "enum member value exceeds the supported enum value range (values above 9223372036854775807 require u64 enum storage, not supported yet)";
-                _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, msp, mep, lim_msg);
-                return;
-            }
             var num_buf: [24]u8 = undefined;
-            var mag: u64 = @intCast(u64, 0) -% @bitCast(u64, mval);
+            var mag: u64 = @intCast(u64, 0) -% mval;
             var dl = itoa_mod.itoa64(mag, num_buf[1..]);
             var ds: usize = @intCast(usize, num_buf.len) - @intCast(usize, dl) - @intCast(usize, 1);
             num_buf[ds - @intCast(usize, 1)] = @intCast(u8, 45);
@@ -1802,25 +1769,17 @@ fn validateLocalEnumBackingFit(env: *TypeResolveEnv, enum_node: u32, diag: *Diag
             var neg_msg = diag_mod.diagnosticBuilderMakeMsg(env.interner, &parts[0], @intCast(u32, 5));
             _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), env.source_file_id, msp, mep, neg_msg);
             return;
-        } else if (@bitCast(u64, mval) > max_u) {
+        } else if (mval > max_u) {
             var msp = mnode.span_start;
             var mep = msp + @intCast(u32, mnode.span_len);
             var mv_msg: []const u8 = "enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation";
             _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, msp, mep, mv_msg);
             return;
         }
-        prev_u = @bitCast(u64, mval);
-        prev_s = mval;
+        prev_u = mval;
+        prev_s = @bitCast(i64, mval);
         have_prev = true;
-        // Task 6a: guard the i64 STORAGE maximum, not only the signed backing
-        // maximum. `enum(u63)` max is exactly i64 max, so the unguarded
-        // increment trapped a -fsafe compiler even though the member is legal.
-        var max_i64: i64 = @intCast(i64, 0x7FFFFFFFFFFFFFFF);
-        if (mval == max_i64) {
-            auto_val = mval;
-        } else {
-            auto_val = mval + @intCast(i64, 1);
-        }
+        auto_val = mval +% @intCast(u64, 1);
     }
 }
 

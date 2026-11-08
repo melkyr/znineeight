@@ -1594,7 +1594,11 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
         var macro_nid = interner_mod.stringInternerIntern(emitter.interner, mem_buf[0..mp]);
         var macro_str = interner_mod.stringInternerGet(emitter.interner, macro_nid);
         var tu_em: []const u8 = "";
-        emitDefineMacro(emitter, macro_str, tu_em, tu_em, @intCast(u32, @intCast(i64, member.value)));
+        if (member.value > @intCast(u64, 0xFFFFFFFF)) {
+            emitDefineMacroWide(emitter, macro_str, tu_em, tu_em, member.value);
+        } else {
+            emitDefineMacro(emitter, macro_str, tu_em, tu_em, @intCast(u32, member.value));
+        }
     }
     var t0a: []const u8 = "struct "; bufferedWriterWrite(&emitter.writer, t0a);
     bufferedWriterWrite(&emitter.writer, base_str);
@@ -1906,8 +1910,9 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
         var member = emitter.registry.em_items[@intCast(usize, ep.members_start) + @intCast(usize, mi)];
         var mname = interner_mod.stringInternerGet(emitter.interner, member.name_id);
         var uf_us: []const u8 = "_";
-        if (signed_backing and member.value < @intCast(i64, 0)) {
-            var magnitude: u64 = @intCast(u64, 0) -% @bitCast(u64, member.value);
+        var msv: i64 = @bitCast(i64, member.value);
+        if (signed_backing and msv < @intCast(i64, 0)) {
+            var magnitude: u64 = @intCast(u64, 0) -% member.value;
             if (backing_width == @intCast(u32, 64) and magnitude == @intCast(u64, 0x8000000000000000)) {
                 var i64_min_lit: []const u8 = "Z98_I64_MIN";
                 emitDefineMacroWideLit(emitter, mangled_name, uf_us, mname, i64_min_lit);
@@ -1918,7 +1923,7 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
                 emitDefineMacroWideNeg(emitter, mangled_name, uf_us, mname, magnitude);
             }
         } else {
-            emitDefineMacroWide(emitter, mangled_name, uf_us, mname, @bitCast(u64, member.value));
+            emitDefineMacroWide(emitter, mangled_name, uf_us, mname, member.value);
         }
     }
     var nl: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl);

@@ -332,9 +332,10 @@ fn classifyScalar(ec: *ConstInitEvalCtx, module_id: u32, node_idx: u32, type_id:
         return tableAddNode(ec.tbl, CIE_BOOL, bv, @intCast(u32, 0), @intCast(u32, 0));
     }
     if (node.kind == AstKind.enum_literal) {
-        // F2 fix round 1: the u32 `enum_values` table truncates a signed enum
+        // F2 fix round 1: the u32 `enum_values` table truncates a wide enum
         // discriminant. When the declaration's expected type is an enum, take
-        // the exact i64 member value so `.A` initializers keep the sign.
+        // the exact 64-bit member value and interpret it by the backing
+        // signedness, so `.A` initializers keep the sign and the full u64 range.
         if (typeKindOf(ec, type_id) == @intCast(u32, @enumToInt(type_mod.TypeKind.enum_type))) {
             var el_name_id = ast_mod.astStoreIdentifier(ec.store, node_idx);
             var el_ty = ec.registry.types_items[@intCast(usize, type_id)];
@@ -345,10 +346,12 @@ fn classifyScalar(ec: *ConstInitEvalCtx, module_id: u32, node_idx: u32, type_id:
             while (el_i < el_count) : (el_i += @intCast(usize, 1)) {
                 var el_m = ec.registry.em_items[el_start + el_i];
                 if (el_m.name_id == el_name_id) {
-                    var el_mag: u64 = @bitCast(u64, el_m.value);
-                    if (el_m.value < @intCast(i64, 0)) { el_mag = @intCast(u64, 0) -% el_mag; }
+                    var el_signed = type_mod.typeRegistryIntIsSigned(ec.registry, el_ep.backing_type);
+                    var el_neg: bool = el_signed and @bitCast(i64, el_m.value) < @intCast(i64, 0);
+                    var el_mag: u64 = el_m.value;
+                    if (el_neg) { el_mag = @intCast(u64, 0) -% el_mag; }
                     var el_pv = ce_mod.ciFromU64(el_mag);
-                    if (el_m.value < @intCast(i64, 0)) { el_pv.neg = true; }
+                    if (el_neg) { el_pv.neg = true; }
                     return valNodeFromComptime(ec, ce_mod.ciIntVal(el_pv), type_id);
                 }
             }
@@ -709,7 +712,7 @@ fn classifyAgg(ec: *ConstInitEvalCtx, module_id: u32, node_idx: u32, type_id: u3
             while (em < ep.members_count) : (em += @intCast(u16, 1)) {
                 var mem = ec.registry.em_items[@intCast(usize, ep.members_start) + @intCast(usize, em)];
                 if (mem.name_id == fn6) {
-                    tag_val = @intCast(u64, @intCast(i64, mem.value));
+                    tag_val = mem.value;
                     found_t = true;
                     break;
                 }

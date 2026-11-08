@@ -105,7 +105,7 @@ pub const UnresolvedPayload = struct { name_id: u32, module_id: u32 };
 pub const FieldEntry = struct { name_id: u32, type_id: TypeId, offset: u32 };
 pub const PackedBitField = struct { bit_offset: u32, bit_width: u16 };
 pub const PackedStructInfo = struct { pk_start: u32, pk_count: u16, total_bits: u32 };
-pub const EnumMember = struct { name_id: u32, value: i64 };
+pub const EnumMember = struct { name_id: u32, value: u64 };
 pub const FnParam = struct { name_id: u32, type_id: TypeId };
 
 pub const TypeRegistry = struct {

@@ -1,10 +1,10 @@
 # enum_u64_max_ok_xmod — D13 full enum(u64) range
 
-Phase 3.5 Task 0 repro (test-only; no fix here).
+Phase 3.5 Task 0 repro; fixed by Task 6 (full u64 representation).
 
-The existing `enum_u64_max_reject_xmod` and
-`enum_u64_max_implicit_reject_xmod` stay as current-behavior fixtures; Task 6
-retires the first and converts the second to the implicit-successor rejection.
+`enum_u64_max_reject_xmod` is retired (the value is now valid).
+`enum_u64_max_implicit_reject_xmod` is retargeted to an implicit successor
+beyond u64 max.
 
 Sibling probes in this directory:
 
