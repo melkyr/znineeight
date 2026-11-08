@@ -1933,6 +1933,7 @@ pub fn main() void {
     testCaptureDoubleFree();
     testDeadArmSkipped();
     var c_null: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6002_POTENTIAL_NULL_DEREF));
+    var c_defnull: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2004_DEFINITE_NULL_DEREF));
     var c_ret_var: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6010_RETURNING_POINTER_VIA_VARIABLE));
     var c_untracked: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6006_FREEING_UNTRACKED));
     var c_double: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE));
@@ -1941,7 +1942,6 @@ pub fn main() void {
     var c_leak: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK));
 
     var e_d4 = [_]DiagExpectation{
-        expectAt(c_null, 1, FIXTURE_FILE_ID, @intCast(u32, 43)),
         expectAt(c_untracked, 1, FIXTURE_FILE_ID, @intCast(u32, 57)),
         expectAt(c_local_addr, 1, FIXTURE_FILE_ID, @intCast(u32, 73)),
     };
@@ -1949,6 +1949,18 @@ pub fn main() void {
 
     var e_np_cond = [_]DiagExpectation{ expectCode(c_null, 1) };
     testFixture("tests/analyzers/np_cond.zig", "fixture np_cond", e_np_cond[0..]);
+
+    testFixture("tests/analyzers/np_param_safe.zig", "fixture np_param_safe", fx_no_expect[0..]);
+    var e_np_return = [_]DiagExpectation{ expectCode(c_defnull, 1) };
+    testFixture("tests/analyzers/np_return_null.zig", "fixture np_return_null", e_np_return[0..]);
+    var e_np_init = [_]DiagExpectation{ expectCode(c_defnull, 1) };
+    testFixture("tests/analyzers/np_init_null.zig", "fixture np_init_null", e_np_init[0..]);
+    var e_np_assign = [_]DiagExpectation{ expectCode(c_defnull, 1) };
+    testFixture("tests/analyzers/np_assign_null.zig", "fixture np_assign_null", e_np_assign[0..]);
+    var e_np_single = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/np_single_deref.zig", "fixture np_single_deref", e_np_single[0..]);
+    var e_np_guard = [_]DiagExpectation{ expectCode(c_defnull, 1) };
+    testFixture("tests/analyzers/np_guard_ok.zig", "fixture np_guard_ok", e_np_guard[0..]);
 
     var e_dead_switch = [_]DiagExpectation{ expectCode(c_double, 1) };
     testFixture("tests/analyzers/dead_arm_switch.zig", "fixture dead_arm_switch", e_dead_switch[0..]);

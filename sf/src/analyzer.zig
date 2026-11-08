@@ -939,6 +939,8 @@ pub fn handleNullVarDecl(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
     var name_id: u32 = ast_mod.astStoreNodePayload(ctx.store, node_idx);
     var init_idx = node.child_1;
     if (init_idx != @intCast(u32, 0)) {
+        // NP-3: `var` initializers are in scope for null derefs.
+        analyzeExpr(ctx, state, init_idx);
         var st = classifyExpr(ctx, state, init_idx);
         smap_mod.stateMapSet(state, name_id, st);
     } else {
@@ -949,6 +951,8 @@ pub fn handleNullVarDecl(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
 pub fn handleNullAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
     var rhs = node.child_1;
+    // NP-3: assignment RHS expressions are in scope for null derefs.
+    analyzeExpr(ctx, state, rhs);
     var rhs_state = classifyExpr(ctx, state, rhs);
     var lhs_idx = node.child_0;
     var lhs_node = ast_mod.astStoreNodeAt(ctx.store, lhs_idx);
@@ -1207,6 +1211,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.return_stmt) {
         if (node.child_0 != @intCast(u32, 0)) {
+            // NP-2: return expressions are in scope for null derefs. The walk
+            // is mode-gated inside `analyzeExpr`.
+            analyzeExpr(ctx, state, node.child_0);
             if (ctx.lifetime_analysis_mode != @intCast(u8, 0)) {
                 checkReturnProvenance(ctx, state, node.child_0, node_idx);
             }
@@ -1291,8 +1298,24 @@ fn detectorVisit(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
     visitStatement(ctx, state, node_idx, ctx.on_stmt_cb, detectorVisit);
 }
 
-pub fn runNullAnalyzer(ctx: *AnalyzerContext, fn_body_idx: u32) void {
+pub fn runNullAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx: u32) void {
     var state = smap_mod.stateMapInit(ctx.alloc);
+    // NP-1: a non-optional pointer-like parameter (`*T`, `[*]T`, `[]T`,
+    // fn-ptr) is caller-provided and non-null, so seed it `safe`. Optional
+    // parameters are deliberately left unseeded (`maybe`, conservative) until
+    // a guard or capture refines them.
+    // NB: a function's proto index may legitimately be 0 (the first proto in
+    // the store), so do not use payload==0 as an absence sentinel here.
+    var proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, fn_decl_idx))];
+    var pp: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
+    var params_n = ast_mod.astStoreGetExtraChildCount(ctx.store, pp);
+    var pi: usize = 0;
+    while (pi < @intCast(usize, params_n)) : (pi += 1) {
+        var pnode = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi)));
+        if (pnode.kind == AstKind.param_decl and paramTypeIsPointerLike(ctx, pnode.child_0)) {
+            smap_mod.stateMapSet(&state, ast_mod.astStoreNodePayload(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi))), @enumToInt(PtrState.safe));
+        }
+    }
     ctx.null_analysis_mode = @intCast(u8, 1);
     ctx.on_stmt_cb = onNullStmt;
     walkBlock(ctx, &state, fn_body_idx, detectorVisit);
@@ -1358,7 +1381,7 @@ pub fn runAllAnalyzers(ctx: *AnalyzerContext, module_root_idx: u32) void {
         alloc_mod.sandReset(ctx.alloc);
         resetDeferQueue(ctx);
         if (ctx.skip_null_check == @intCast(u8, 0)) {
-            runNullAnalyzer(ctx, decl.child_0);
+            runNullAnalyzer(ctx, decl_idx, decl.child_0);
             alloc_mod.sandReset(ctx.alloc);
             resetDeferQueue(ctx);
         }
