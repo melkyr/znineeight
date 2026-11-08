@@ -14,6 +14,9 @@ const interner_mod = @import("string_interner.zig");
 const SymbolTable = @import("symbol_table.zig").SymbolTable;
 const SymbolKind = @import("symbol_table.zig").SymbolKind;
 const sym_mod = @import("symbol_table.zig");
+const SymbolRegistry = @import("symbol_table.zig").SymbolRegistry;
+const ce_mod = @import("comptime_eval.zig");
+const import_resolver = @import("import_resolver.zig");
 
 pub const DeferEntry = struct {
     kind: u8,
@@ -169,11 +172,11 @@ pub fn checkReturnProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: 
                 var rp2: []const u8 = "'";
                 var rparts: [3][]const u8 = [3][]const u8{rp1, nm, rp2};
                 var msg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &rparts[0], @intCast(u32, 3));
-                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL)), @intCast(u32, 0), start, end, msg);
+                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL)), ctx.source_file_id, start, end, msg);
                 return;
             }
             var dmsg: []const u8 = "returning address of local variable";
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL)), @intCast(u32, 0), start, end, dmsg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL)), ctx.source_file_id, start, end, dmsg);
             return;
         }
         if (expr_node.kind == AstKind.slice_expr) {
@@ -184,11 +187,11 @@ pub fn checkReturnProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: 
                 var rp2: []const u8 = "'";
                 var rparts: [3][]const u8 = [3][]const u8{rp1, nm, rp2};
                 var msg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &rparts[0], @intCast(u32, 3));
-                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6011_RETURNING_SLICE_OF_LOCAL)), @intCast(u32, 0), start, end, msg);
+                diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6011_RETURNING_SLICE_OF_LOCAL)), ctx.source_file_id, start, end, msg);
                 return;
             }
             var dmsg: []const u8 = "returning slice of local array";
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6011_RETURNING_SLICE_OF_LOCAL)), @intCast(u32, 0), start, end, dmsg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6011_RETURNING_SLICE_OF_LOCAL)), ctx.source_file_id, start, end, dmsg);
             return;
         }
         var name_opt = resolveOrigin(ctx, expr_idx);
@@ -198,11 +201,11 @@ pub fn checkReturnProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: 
             var rp2: []const u8 = "'";
             var rparts: [3][]const u8 = [3][]const u8{rp1, nm, rp2};
             var msg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &rparts[0], @intCast(u32, 3));
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6010_RETURNING_POINTER_VIA_VARIABLE)), @intCast(u32, 0), start, end, msg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6010_RETURNING_POINTER_VIA_VARIABLE)), ctx.source_file_id, start, end, msg);
             return;
         }
         var dmsg: []const u8 = "returning pointer to local via variable";
-        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6010_RETURNING_POINTER_VIA_VARIABLE)), @intCast(u32, 0), start, end, dmsg);
+        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6010_RETURNING_POINTER_VIA_VARIABLE)), ctx.source_file_id, start, end, dmsg);
         return;
     }
     if (prov == ppa) {
@@ -213,11 +216,11 @@ pub fn checkReturnProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: 
             var rp2: []const u8 = "'";
             var rparts: [3][]const u8 = [3][]const u8{rp1, nm, rp2};
             var msg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &rparts[0], @intCast(u32, 3));
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2021_RETURNING_ADDRESS_OF_PARAM)), @intCast(u32, 0), start, end, msg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2021_RETURNING_ADDRESS_OF_PARAM)), ctx.source_file_id, start, end, msg);
             return;
         }
         var dmsg: []const u8 = "returning address of function parameter";
-        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2021_RETURNING_ADDRESS_OF_PARAM)), @intCast(u32, 0), start, end, dmsg);
+        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2021_RETURNING_ADDRESS_OF_PARAM)), ctx.source_file_id, start, end, dmsg);
         return;
     }
 }
@@ -319,7 +322,7 @@ fn reportUseAfterFree(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, nod
             var uparts: [3][]const u8 = [3][]const u8{up1, pn, up2};
             var umsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &uparts[0], @intCast(u32, 3));
             var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2006_USE_AFTER_FREE)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), umsg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2006_USE_AFTER_FREE)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), umsg);
             smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed_reported));
         }
     }
@@ -409,7 +412,7 @@ pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) vo
             var dp2: []const u8 = "'";
             var dparts: [3][]const u8 = [3][]const u8{dp1, pn, dp2};
             var dmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &dparts[0], @intCast(u32, 3));
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), dmsg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), dmsg);
             return;
         }
         smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed));
@@ -419,7 +422,7 @@ pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) vo
         var up2: []const u8 = "'";
         var uparts: [3][]const u8 = [3][]const u8{up1, pn, up2};
         var umsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &uparts[0], @intCast(u32, 3));
-        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6006_FREEING_UNTRACKED)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), umsg);
+        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6006_FREEING_UNTRACKED)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), umsg);
     }
 }
 
@@ -433,7 +436,7 @@ pub fn checkLeaksOnScopeExit(ctx: *AnalyzerContext, state: *StateMap) void {
             var lp2: []const u8 = "' not freed";
             var lparts: [3][]const u8 = [3][]const u8{lp1, pn, lp2};
             var lmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &lparts[0], @intCast(u32, 3));
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), lmsg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), ctx.source_file_id, ctx.current_fn_span_start, ctx.current_fn_span_end, lmsg);
         }
     }
 }
@@ -453,7 +456,7 @@ pub fn handleAllocAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
             var op2: []const u8 = "' overwritten before free";
             var oparts: [3][]const u8 = [3][]const u8{op1, pn, op2};
             var lmsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &oparts[0], @intCast(u32, 3));
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), @intCast(u32, 0), node.span_start, node.span_start + @intCast(u32, node.span_len), lmsg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), lmsg);
         }
     }
     if (isAllocCall(ctx, rhs_idx)) {
@@ -538,6 +541,20 @@ pub const AnalyzerContext = struct {
     lifetime_analysis_mode: u8,
     doublefree_analysis_mode: u8,
     source_file_id: u32,
+    // T9a (D4a): shared comptime fold table written by
+    // `phase_ComptimeEvaluation` (and sema's local-const stamping). Analyzer
+    // consumers consult THIS table — never a parallel copy — for dead-arm
+    // parity with sema/lowering.
+    comptime_folds: ?*ce_mod.ComptimeFoldTable,
+    // T9a: the module symbol registry + target flag let the DED-2 selector
+    // fallback construct the same evaluator sema/lowering use when the shared
+    // fold table has no entry for a switch selector.
+    symbol_reg: ?*SymbolRegistry,
+    target_is_windows: bool,
+    // T9a (DX-1): the enclosing function declaration span used to attribute
+    // scope-exit leak diagnostics (which have no statement node of their own).
+    current_fn_span_start: u32,
+    current_fn_span_end: u32,
 };
 
 pub fn deferQueueEnsureCapacity(ctx: *AnalyzerContext, new_cap: usize) void {
@@ -727,6 +744,10 @@ pub fn validateSignatureType(ctx: *AnalyzerContext, type_node_idx: u32, is_retur
 }
 
 pub fn analyzeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void {
+    // T9a (D4a / audit L2): null tracking and null diagnostics belong to the
+    // null pass only. The lifetime/double-free passes keep their own on_stmt
+    // state; they must not re-emit null diagnostics from condition walks.
+    if (ctx.null_analysis_mode == @intCast(u8, 0)) return;
     if (expr_idx == @intCast(u32, 0)) return;
     var node = ast_mod.astStoreNodeAt(ctx.store, expr_idx);
     var kind = node.kind;
@@ -736,13 +757,13 @@ pub fn analyzeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void 
         var end = node.span_start + @intCast(u32, node.span_len);
         if (st == @enumToInt(PtrState.is_null)) {
             var msg: []const u8 = "definite null pointer dereference";
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2004_DEFINITE_NULL_DEREF)), @intCast(u32, 0), start, end, msg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2004_DEFINITE_NULL_DEREF)), ctx.source_file_id, start, end, msg);
         } else if (st == @enumToInt(PtrState.uninit)) {
             var msg: []const u8 = "dereference of uninitialized pointer";
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6001_UNINIT_DEREF)), @intCast(u32, 0), start, end, msg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6001_UNINIT_DEREF)), ctx.source_file_id, start, end, msg);
         } else if (st == @enumToInt(PtrState.maybe)) {
             var msg: []const u8 = "potential null pointer dereference";
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6002_POTENTIAL_NULL_DEREF)), @intCast(u32, 0), start, end, msg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6002_POTENTIAL_NULL_DEREF)), ctx.source_file_id, start, end, msg);
         }
         return;
     }
@@ -1031,15 +1052,46 @@ fn bindCaptureState(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, src_e
     }
 }
 
+// T9a (D4a): the single fold accessor for the analyzers. The shared
+// `ComptimeFoldTable` is authoritative (it is the same object sema and
+// lowering consume); when a node has no table entry, fall back to the same
+// comptime evaluator they use. No parallel fold table exists.
+fn analyzerFoldComptimeVal(ctx: *AnalyzerContext, node_idx: u32) ?ce_mod.ComptimeVal {
+    if (node_idx == @intCast(u32, 0)) return null;
+    if (ctx.comptime_folds) |ft| {
+        if (ce_mod.comptimeFoldTableGet(ft, node_idx)) |cv| return cv;
+    }
+    var sr = ctx.symbol_reg orelse return null;
+    var ce = ce_mod.comptimeEvalInit(ctx.registry, ctx.store, ctx.interner, sr);
+    ce.host_is_windows = ctx.target_is_windows;
+    return ce_mod.comptimeEvalEvaluate(&ce, node_idx);
+}
+
+// T9a (DED-2): select the live switch prong with the SAME shared selector
+// sema's conditional-import path uses. A table miss falls back to the
+// evaluator (e.g. `switch (1 == 1)` has no fold-table entry). Non-decisive
+// (unknown selector or an unevaluable case label) keeps every prong live.
+fn analyzerSwitchSelection(ctx: *AnalyzerContext, sw_idx: u32) import_resolver.ImportSwitchSelection {
+    var out = import_resolver.ImportSwitchSelection{ .decisive = false, .prong = @intCast(u32, 0) };
+    var sn = ast_mod.astStoreNodeAt(ctx.store, sw_idx);
+    var sv = analyzerFoldComptimeVal(ctx, sn.child_0) orelse return out;
+    var sr = ctx.symbol_reg orelse return out;
+    var ce = ce_mod.comptimeEvalInit(ctx.registry, ctx.store, ctx.interner, sr);
+    ce.host_is_windows = ctx.target_is_windows;
+    return import_resolver.importSwitchSelectProng(ctx.store, &ce, sw_idx, sv);
+}
+
 // T5 (T3 interaction — comptime-dead arms): per Zig semantics a
-// comptime-untaken arm does not exist for analysis. Fold the same conservative
-// bool-literal family as the parse-time probe (`parserFoldComptimeBool`:
-// literals, parens, `!`/`&&`/`||`); evaluator-only folds (consts, compounds,
-// `@isWindows`) return null and keep eager walking — see
-// docs/tech_debt/static_analyzers.md.
+// comptime-untaken arm does not exist for analysis. The shared fold table is
+// consulted first (T9a/D4a); the conservative bool-literal family
+// (`parserFoldComptimeBool`: literals, parens, `!`/`&&`/`||`) remains as the
+// fallback.
 fn analyzerFoldComptimeBool(ctx: *AnalyzerContext, node_idx: u32, depth: u32) ?bool {
     if (node_idx == @intCast(u32, 0)) return null;
     if (depth >= @intCast(u32, 8)) return null;
+    if (analyzerFoldComptimeVal(ctx, node_idx)) |cv| {
+        if (cv.kind == ce_mod.KIND_BOOL) return !ce_mod.ciIsZero(cv.v);
+    }
     var n = ast_mod.astStoreNodeAt(ctx.store, node_idx);
     if (n.kind == AstKind.bool_literal) {
         return (n.flags & @intCast(u8, 1)) != @intCast(u8, 0);
@@ -1127,12 +1179,19 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             checkUseAfterFreeExpr(ctx, state, node.child_0);
         }
         analyzeExpr(ctx, state, node.child_0);
+        // T9a (DED-2): a comptime-known selector makes exactly one prong (or
+        // the `else` prong) live; a dead prong does not exist for analysis and
+        // must not emit analyzer diagnostics. An undecidable selector/label
+        // keeps every prong live (conservative).
+        var sel = analyzerSwitchSelection(ctx, node_idx);
         var prongs_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, node_idx);
         var si: usize = 0;
         while (si < @intCast(usize, prongs_n)) : (si += 1) {
-            var prong = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, node_idx, @intCast(u32, si)));
+            var prong_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, node_idx, @intCast(u32, si));
+            if (sel.decisive and prong_idx != sel.prong) continue;
+            var prong = ast_mod.astStoreNodeAt(ctx.store, prong_idx);
             var ps = smap_mod.stateMapFork(state, ctx.alloc);
-            var t5_pcap = captureNameIdOf(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, node_idx, @intCast(u32, si)));
+            var t5_pcap = captureNameIdOf(ctx.store, prong_idx);
             bindCaptureState(ctx, ps, t5_pcap, node.child_0);
             walkBlock(ctx, ps, prong.child_0, visit_fn);
             smap_mod.stateMapMergeStates(state, state, ps, @intCast(u8, 99));
@@ -1292,6 +1351,9 @@ pub fn runAllAnalyzers(ctx: *AnalyzerContext, module_root_idx: u32) void {
         if (decl.child_0 == @intCast(u32, 0)) continue;
         alloc_mod.sandResetPeak(ctx.alloc);
         ctx.current_fn_name = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decl_idx))].name_id;
+        ctx.current_fn_span_start = decl.span_start;
+        ctx.current_fn_span_end = decl.span_start + @intCast(u32, decl.span_len);
+        if (ctx.current_fn_span_end <= ctx.current_fn_span_start) ctx.current_fn_span_end = ctx.current_fn_span_start + @intCast(u32, 1);
         runSignatureAnalyzer(ctx, decl_idx);
         alloc_mod.sandReset(ctx.alloc);
         resetDeferQueue(ctx);

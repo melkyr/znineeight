@@ -430,6 +430,7 @@ fn testDerefIsNull() void {
     var ac: AnalyzerContext = undefined;
     var sym_table = sym_mod.symbolTableInit(&arena);
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
+    ac.null_analysis_mode = @intCast(u8, 1);
     az_mod.analyzeExpr(&ac, &st, deref_node);
     if (diag.error_count == @intCast(usize, 0)) {
         var fmsg: []const u8 = "testDerefIsNull: expected error\n";
@@ -542,7 +543,7 @@ fn testClassifyAddrLocal() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "x";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
     var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -568,7 +569,7 @@ fn testClassifyAddrParam() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "param";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var param_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.param, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    var param_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.param, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, param_sym);
     var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -637,7 +638,7 @@ fn testReturnAddrLocal() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "x";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
     var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -664,7 +665,7 @@ fn testReturnAddrParam() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "p";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var param_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.param, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    var param_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.param, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, param_sym);
     var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -691,7 +692,7 @@ fn testReturnPtrViaLocal() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "x";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
     var id_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var addr_node = ast_mod.astStoreAddNode(&store, AstKind.address_of, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), id_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -723,7 +724,7 @@ fn testReturnSliceLocal() void {
     helpers.initCtx(&ac, &store, &typereg, &interner, &diag, &arena, &sym_table);
     var ns: []const u8 = "arr";
     var nid = interner_mod.stringInternerIntern(&interner, ns);
-    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0) };
+    var local_sym = sym_mod.Symbol{ .name_id = nid, .type_id = @intCast(u32, 0), .kind = sym_mod.SymbolKind.local, .flags = @intCast(u16, 0), .decl_node = @intCast(u32, 0), .module_id = @intCast(u32, 0), .scope_level = @intCast(u32, 0), .file_id = @intCast(u32, 0) };
     _ = sym_mod.symbolTableInsert(&sym_table, local_sym);
     var arr_node = ast_mod.astStoreAddIdentifier(&store, AstKind.ident_expr, nid, @intCast(u32, 0), @intCast(u32, 0) + @intCast(u32, 0));
     var slice_node = ast_mod.astStoreAddNode(&store, AstKind.slice_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), arr_node, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
@@ -1710,17 +1711,67 @@ var fx_scratch_buf: [262144]u8 = undefined;
 var fx_type_buf: [131072]u8 = undefined;
 var fx_tok_buf: [32768]Token = undefined;
 
-// T5 fixture runner for tests/analyzers/**: lex + parse each fixture and run
-// runAllAnalyzers over the parsed module. err_spec/warn_spec: 0 = must be
-// zero, -1 = don't care, N > 0 = must be >= N. Run the binary from the repo
-// root (fixture paths are repo-relative).
-fn testFixture(path: []const u8, name: []const u8, err_spec: i32, warn_spec: i32) void {
+// T9a: code-aware fixture harness. Each fixture runs lex + parse +
+// runAllAnalyzers over the real analyzer pipeline (no sema), and asserts the
+// EXACT diagnostic code/count set. A located expectation additionally pins the
+// source file id and line (DX-1 source attribution). Run the binary from the
+// repo root (fixture paths are repo-relative).
+const FIXTURE_FILE_ID: u32 = @intCast(u32, 1);
+
+const DiagExpectation = struct {
+    code: u16,
+    count: u32,
+    file_id: u32,
+    line: u32,
+};
+
+fn expectCode(code: u16, count: u32) DiagExpectation {
+    return DiagExpectation{ .code = code, .count = count, .file_id = @intCast(u32, 0), .line = @intCast(u32, 0) };
+}
+
+fn expectAt(code: u16, count: u32, file_id: u32, line: u32) DiagExpectation {
+    return DiagExpectation{ .code = code, .count = count, .file_id = file_id, .line = line };
+}
+
+fn writeU32(val: u32) void {
+    var buf: [16]u8 = undefined;
+    var i: u32 = 16;
+    var v = val;
+    if (v == 0) {
+        buf[15] = 48;
+        var s = buf[15..16];
+        pal.stderr_write(s);
+        return;
+    }
+    while (v > 0 and i > 0) {
+        i -= 1;
+        buf[@intCast(usize, i)] = @intCast(u8, @intCast(u32, 48 + @intCast(u32, v % 10)));
+        v = v / 10;
+    }
+    var s = buf[i..16];
+    pal.stderr_write(s);
+}
+
+fn fixtureLineOf(content: []const u8, off: u32) u32 {
+    var line: u32 = @intCast(u32, 1);
+    var i: usize = @intCast(usize, 0);
+    var limit = @intCast(usize, off);
+    if (limit > content.len) limit = content.len;
+    while (i < limit) : (i += 1) {
+        if (content[i] == @intCast(u8, 10)) line += 1;
+    }
+    return line;
+}
+
+var fx_no_expect: [0]DiagExpectation = undefined;
+
+fn testFixture(path: []const u8, name: []const u8, expect: []const DiagExpectation) void {
     var perm = alloc_mod.sandInit(fx_perm_buf[0..]);
     var scratch = alloc_mod.sandInit(fx_scratch_buf[0..]);
     token_mod.initKeywordTable(&perm);
     var interner = interner_mod.stringInternerInit(&perm, 4);
     var diag = diag_mod.diagnosticCollectorInit(&perm, undefined, &interner);
-    var content = pal.readFile(path, &scratch) orelse {
+    var content = pal.readFile(path, &perm) orelse {
         var emsg: []const u8 = "FAIL: could not read fixture: ";
         pal.stderr_write(emsg);
         pal.stderr_write(path);
@@ -1730,7 +1781,7 @@ fn testFixture(path: []const u8, name: []const u8, err_spec: i32, warn_spec: i32
         return;
     };
     var tok_len: usize = 0;
-    var lex = lexer_mod.lexerInit(content, @intCast(u32, 0), &interner, &diag, &scratch);
+    var lex = lexer_mod.lexerInit(content, FIXTURE_FILE_ID, &interner, &diag, &scratch);
     while (true) {
         var t = lexer_mod.lexerNextToken(&lex);
         fx_tok_buf[tok_len] = t;
@@ -1752,10 +1803,11 @@ fn testFixture(path: []const u8, name: []const u8, err_spec: i32, warn_spec: i32
     var type_db = alloc_mod.sandInit(fx_type_buf[0..]);
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
-    var sym_table = sym_mod.symbolTableInit(&scratch);
+    var sym_reg = sym_mod.symbolRegistryInit(&perm);
+    var sym_table = sym_mod.symbolRegistryGetTable(&sym_reg, @intCast(u32, 0));
     var ac = AnalyzerContext{
         .store = &store, .registry = &typereg, .interner = &interner,
-        .diag = &diag, .symbols = &sym_table, .alloc = &scratch,
+        .diag = &diag, .symbols = sym_table, .alloc = &scratch,
         .current_fn_name = @intCast(u32, 0),
         .defer_queue_items = undefined, .defer_queue_len = @intCast(usize, 0),
         .defer_queue_cap = @intCast(usize, 0), .defer_queue_alloc = &scratch,
@@ -1769,24 +1821,56 @@ fn testFixture(path: []const u8, name: []const u8, err_spec: i32, warn_spec: i32
         .in_defer_exec = @intCast(u8, 0),
         .lifetime_analysis_mode = @intCast(u8, 0),
         .doublefree_analysis_mode = @intCast(u8, 0),
-        .source_file_id = @intCast(u32, 0),
+        .source_file_id = FIXTURE_FILE_ID,
+        .comptime_folds = null,
+        .symbol_reg = &sym_reg,
+        .target_is_windows = false,
+        .current_fn_span_start = @intCast(u32, 0),
+        .current_fn_span_end = @intCast(u32, 0),
     };
     az_mod.runAllAnalyzers(&ac, ast_root);
-    if (err_spec == @intCast(i32, 0) and diag.error_count != @intCast(usize, 0)) {
-        pal.stderr_write(name);
-        helpers.fail(" fixture: expected 0 errors");
+    var diags = diag_mod.diagnosticArrayListGetSlice(diag.diagnostics);
+    var expected_total: usize = @intCast(usize, 0);
+    var ei: usize = @intCast(usize, 0);
+    while (ei < expect.len) : (ei += 1) {
+        var e = expect[ei];
+        var matched: u32 = @intCast(u32, 0);
+        var dj: usize = @intCast(usize, 0);
+        while (dj < diags.len) : (dj += 1) {
+            var d = diags[dj];
+            if (d.code != e.code) continue;
+            if (e.file_id != @intCast(u32, 0) and d.file_id != e.file_id) continue;
+            if (e.line != @intCast(u32, 0) and fixtureLineOf(content, d.span_start) != e.line) continue;
+            matched += 1;
+        }
+        if (matched != e.count) {
+            pal.stderr_write(name);
+            var cm: []const u8 = " fixture: code ";
+            pal.stderr_write(cm);
+            writeU32(@intCast(u32, e.code));
+            var em: []const u8 = " expected ";
+            pal.stderr_write(em);
+            writeU32(e.count);
+            var gm: []const u8 = " got ";
+            pal.stderr_write(gm);
+            writeU32(matched);
+            var nl2: []const u8 = "\n";
+            pal.stderr_write(nl2);
+            helpers.fail(" fixture: diagnostic mismatch");
+        }
+        expected_total += @intCast(usize, e.count);
     }
-    if (err_spec > @intCast(i32, 0) and diag.error_count < @intCast(usize, err_spec)) {
+    if (expected_total != diags.len) {
         pal.stderr_write(name);
-        helpers.fail(" fixture: expected errors");
-    }
-    if (warn_spec == @intCast(i32, 0) and diag.warning_count != @intCast(usize, 0)) {
-        pal.stderr_write(name);
-        helpers.fail(" fixture: expected 0 warnings");
-    }
-    if (warn_spec > @intCast(i32, 0) and diag.warning_count < @intCast(usize, warn_spec)) {
-        pal.stderr_write(name);
-        helpers.fail(" fixture: expected warnings");
+        var tm: []const u8 = " fixture: total expected ";
+        pal.stderr_write(tm);
+        writeU32(@intCast(u32, expected_total));
+        var tm2: []const u8 = " got ";
+        pal.stderr_write(tm2);
+        writeU32(@intCast(u32, diags.len));
+        var nl3: []const u8 = "\n";
+        pal.stderr_write(nl3);
+        helpers.fail(" fixture: unlisted diagnostics");
     }
     helpers.ok(name);
 }
@@ -1848,15 +1932,41 @@ pub fn main() void {
     testCaptureNullSafe();
     testCaptureDoubleFree();
     testDeadArmSkipped();
-    testFixture("tests/analyzers/fnptr_opt_aggregate.zig", "fixture fnptr_opt_aggregate", @intCast(i32, 0), @intCast(i32, 0));
-    testFixture("tests/analyzers/capture_lifetime.zig", "fixture capture_lifetime", @intCast(i32, 0), @intCast(i32, 1));
-    testFixture("tests/analyzers/capture_double_free.zig", "fixture capture_double_free", @intCast(i32, 1), @intCast(i32, -1));
-    testFixture("tests/analyzers/dead_arm.zig", "fixture dead_arm", @intCast(i32, 0), @intCast(i32, 0));
-    testFixture("tests/analyzers/surface_types.zig", "fixture surface_types", @intCast(i32, 0), @intCast(i32, 0));
-    testFixture("tests/analyzers/gpa_double_free.zig", "fixture gpa_double_free", @intCast(i32, 1), @intCast(i32, -1));
-    testFixture("tests/analyzers/gpa_use_after_free.zig", "fixture gpa_use_after_free", @intCast(i32, 4), @intCast(i32, -1));
-    testFixture("tests/analyzers/gpa_leak.zig", "fixture gpa_leak", @intCast(i32, 0), @intCast(i32, 1));
-    testFixture("tests/analyzers/gpa_alias_negative.zig", "fixture gpa_alias_negative", @intCast(i32, 0), @intCast(i32, 0));
+    var c_null: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6002_POTENTIAL_NULL_DEREF));
+    var c_ret_var: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6010_RETURNING_POINTER_VIA_VARIABLE));
+    var c_untracked: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6006_FREEING_UNTRACKED));
+    var c_double: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE));
+    var c_local_addr: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL));
+    var c_uaf: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2006_USE_AFTER_FREE));
+    var c_leak: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK));
+
+    var e_d4 = [_]DiagExpectation{
+        expectAt(c_null, 1, FIXTURE_FILE_ID, @intCast(u32, 43)),
+        expectAt(c_untracked, 1, FIXTURE_FILE_ID, @intCast(u32, 57)),
+        expectAt(c_local_addr, 1, FIXTURE_FILE_ID, @intCast(u32, 73)),
+    };
+    testFixture("tests/analyzers/d4_contract_probe.zig", "fixture d4_contract_probe", e_d4[0..]);
+
+    var e_np_cond = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/np_cond.zig", "fixture np_cond", e_np_cond[0..]);
+
+    var e_dead_switch = [_]DiagExpectation{ expectCode(c_double, 1) };
+    testFixture("tests/analyzers/dead_arm_switch.zig", "fixture dead_arm_switch", e_dead_switch[0..]);
+
+    testFixture("tests/analyzers/fnptr_opt_aggregate.zig", "fixture fnptr_opt_aggregate", fx_no_expect[0..]);
+    var e_cap_life = [_]DiagExpectation{ expectCode(c_ret_var, 1) };
+    testFixture("tests/analyzers/capture_lifetime.zig", "fixture capture_lifetime", e_cap_life[0..]);
+    var e_cap_df = [_]DiagExpectation{ expectCode(c_double, 1) };
+    testFixture("tests/analyzers/capture_double_free.zig", "fixture capture_double_free", e_cap_df[0..]);
+    testFixture("tests/analyzers/dead_arm.zig", "fixture dead_arm", fx_no_expect[0..]);
+    testFixture("tests/analyzers/surface_types.zig", "fixture surface_types", fx_no_expect[0..]);
+    var e_gpa_df = [_]DiagExpectation{ expectCode(c_double, 1) };
+    testFixture("tests/analyzers/gpa_double_free.zig", "fixture gpa_double_free", e_gpa_df[0..]);
+    var e_gpa_uaf = [_]DiagExpectation{ expectCode(c_uaf, 4) };
+    testFixture("tests/analyzers/gpa_use_after_free.zig", "fixture gpa_use_after_free", e_gpa_uaf[0..]);
+    var e_gpa_leak = [_]DiagExpectation{ expectCode(c_leak, 1) };
+    testFixture("tests/analyzers/gpa_leak.zig", "fixture gpa_leak", e_gpa_leak[0..]);
+    testFixture("tests/analyzers/gpa_alias_negative.zig", "fixture gpa_alias_negative", fx_no_expect[0..]);
     var msg: []const u8 = "Analyzer tests passed.\n";
     pal.stdout_write(msg);
 }

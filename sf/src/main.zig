@@ -905,6 +905,11 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
                 .lifetime_analysis_mode = @intCast(u8, 0),
                 .doublefree_analysis_mode = @intCast(u8, 0),
                 .source_file_id = mods[mi].source_file_id,
+                // T9a (D4a): bind the same shared fold table sema/lowering use,
+                // plus the evaluator inputs for the DED-2 selector fallback.
+                .comptime_folds = &ctx.comptime_folds,
+                .symbol_reg = ctx.symbol_reg,
+                .target_is_windows = ctx.module_reg.target_is_windows,
             };
             az_mod.runAllAnalyzers(&ac, ast_root);
             sm_mod.sourceManagerResetFaults(ctx.source_man);
