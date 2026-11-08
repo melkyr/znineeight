@@ -4624,6 +4624,18 @@ fn semanticAnalyzerIsLValueConst(self: *SemanticAnalyzer, node_idx: u32) bool {
     return false;
 }
 
+// D7.3 (Phase 3.5): a whole-array store through a field/index/deref l-value
+// chain (`arr[i].field = srcArray`). Field access decays an array field to its
+// element pointer, so the type-level assignability test sees `array ->
+// pointer` and warns even though lowering copies the elements into the field
+// storage. Accept exactly the same-array-type shape; any other pair keeps the
+// existing mismatch diagnostic.
+fn semanticAnalyzerAssignArrayFieldSameType(self: *SemanticAnalyzer, lhs_node_idx: u32, rhs_type: u32) bool {
+    var lhs_array = semanticAnalyzerFieldAccessArrayType(self, lhs_node_idx);
+    if (lhs_array == @intCast(u32, 0)) return false;
+    return lhs_array == rhs_type;
+}
+
 fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var ase: []const u8 = "ASE"; pal_mod.markerWrite(ase);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -4678,6 +4690,9 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     // narrow.
     var as_fst = semanticAnalyzerFloatNarrowStatus(self, node.child_1, eff_src, lhs);
     var as_assign = type_mod.typeRegistryIsAssignable(self.registry, eff_src, lhs);
+    if (!as_assign and semanticAnalyzerAssignArrayFieldSameType(self, node.child_0, eff_src)) {
+        as_assign = true;
+    }
     if (as_fst == FLOAT_NARROW_REJECT) {
         var asr_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
         semanticAnalyzerTypeMismatchReport(self, node.child_1, eff_src, lhs, asr_msg, false);
