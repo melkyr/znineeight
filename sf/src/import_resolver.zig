@@ -69,6 +69,55 @@ fn importDeferredValEq(a: ce_mod.ComptimeVal, b: ce_mod.ComptimeVal) bool {
     return ce_mod.ciCmp(a.v, b.v) == @intCast(i32, 0);
 }
 
+// D3 fix (Phase 3.5): shared switch-prong selection for the deferred import
+// resolver and the semantic analyzer. A selection is decisive only when the
+// selector value is known AND every non-else case label can be evaluated and
+// compared. An unevaluable label (a range, or a foldable-but-unevaluated
+// expression) could match the selector, so the result is NOT decisive:
+// import resolution then scans every prong (over-load only, never under-load)
+// and the analyzer declines to pick a module (never the wrong module).
+pub const ImportSwitchSelection = struct {
+    decisive: bool,
+    prong: u32,
+};
+
+pub fn importSwitchSelectProng(store: *ast_mod.AstStore, ce: *ce_mod.ComptimeEval, sw_idx: u32, sv: ce_mod.ComptimeVal) ImportSwitchSelection {
+    var out = ImportSwitchSelection{ .decisive = false, .prong = @intCast(u32, 0) };
+    if (sw_idx == @intCast(u32, 0)) return out;
+    var sn = ast_mod.astStoreNodeAt(store, sw_idx);
+    if (sn.kind != AstKind.swt_ex) return out;
+    var prong_n = ast_mod.astStoreNodeExtraChildCount(store, sw_idx);
+    var matched: u32 = @intCast(u32, 0);
+    var else_prong: u32 = @intCast(u32, 0);
+    var pi: u32 = 0;
+    while (pi < prong_n) : (pi += 1) {
+        var prong = ast_mod.astStoreNodeExtraChildAt(store, sw_idx, pi);
+        var pn = ast_mod.astStoreNodeAt(store, prong);
+        if ((pn.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
+            if (else_prong == @intCast(u32, 0)) else_prong = prong;
+            continue;
+        }
+        var ci_n = ast_mod.astStoreNodeExtraChildCount(store, prong);
+        var cj: u32 = 0;
+        var hit: bool = false;
+        while (cj < ci_n) : (cj += 1) {
+            var item = ast_mod.astStoreNodeExtraChildAt(store, prong, cj);
+            if (ce_mod.comptimeEvalEvaluate(ce, item)) |iv| {
+                if (importDeferredValEq(sv, iv)) hit = true;
+            } else {
+                // Do not short-circuit on an earlier matching item: ANY
+                // undecidable label in the switch forces the conservative path.
+                return out;
+            }
+        }
+        if (hit and matched == @intCast(u32, 0)) matched = prong;
+    }
+    if (matched == @intCast(u32, 0)) matched = else_prong;
+    out.decisive = true;
+    out.prong = matched;
+    return out;
+}
+
 fn importDeferredFoldBool(ce: *ce_mod.ComptimeEval, node_idx: u32) ?bool {
     if (node_idx == @intCast(u32, 0)) return null;
     if (ce_mod.comptimeEvalEvaluate(ce, node_idx)) |cv| {
@@ -144,50 +193,27 @@ fn importDeferredScanNode(reg: *mr_mod.ModuleRegistry, importer_id: u32, scratch
     if (n.kind == AstKind.swt_ex) {
         importDeferredScanNode(reg, importer_id, scratch, store, ce, scope, memo, n.child_0, depth + @intCast(u32, 1));
         var sel = ce_mod.comptimeEvalEvaluate(ce, n.child_0);
-        var sel_known: bool = sel != null;
-        var prong_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
-        var matched: u32 = @intCast(u32, 0);
-        var else_prong: u32 = @intCast(u32, 0);
-        var pi: u32 = 0;
+        var selection = ImportSwitchSelection{ .decisive = false, .prong = @intCast(u32, 0) };
         if (sel) |sv| {
-            while (pi < prong_n) : (pi += 1) {
-                var prong = ast_mod.astStoreNodeExtraChildAt(store, node_idx, pi);
-                var pn = ast_mod.astStoreNodeAt(store, prong);
-                var ci_n = ast_mod.astStoreNodeExtraChildCount(store, prong);
-                var cii: u32 = 0;
-                while (cii < ci_n) : (cii += 1) {
-                    importDeferredScanNode(reg, importer_id, scratch, store, ce, scope, memo, ast_mod.astStoreNodeExtraChildAt(store, prong, cii), depth + @intCast(u32, 1));
-                }
-                if ((pn.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
-                    if (else_prong == @intCast(u32, 0)) else_prong = prong;
-                } else if (matched == @intCast(u32, 0)) {
-                    var hit: bool = false;
-                    var cj: u32 = 0;
-                    while (cj < ci_n) : (cj += 1) {
-                        var item = ast_mod.astStoreNodeExtraChildAt(store, prong, cj);
-                        if (ce_mod.comptimeEvalEvaluate(ce, item)) |iv| {
-                            if (importDeferredValEq(sv, iv)) { hit = true; break; }
-                        }
-                    }
-                    if (hit) matched = prong;
-                }
-            }
-            if (matched == @intCast(u32, 0)) matched = else_prong;
+            selection = importSwitchSelectProng(store, ce, node_idx, sv);
         }
-        pi = 0;
+        var prong_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
+        var pi: u32 = 0;
         while (pi < prong_n) : (pi += 1) {
             var prong = ast_mod.astStoreNodeExtraChildAt(store, node_idx, pi);
             var pn = ast_mod.astStoreNodeAt(store, prong);
-            if (sel_known) {
-                if (prong == matched) {
+            var ci_n = ast_mod.astStoreNodeExtraChildCount(store, prong);
+            var cii: u32 = 0;
+            while (cii < ci_n) : (cii += 1) {
+                importDeferredScanNode(reg, importer_id, scratch, store, ce, scope, memo, ast_mod.astStoreNodeExtraChildAt(store, prong, cii), depth + @intCast(u32, 1));
+            }
+            if (selection.decisive) {
+                if (prong == selection.prong) {
                     importDeferredScanNode(reg, importer_id, scratch, store, ce, scope, memo, pn.child_0, depth + @intCast(u32, 1));
                 }
             } else {
-                var ci_n2 = ast_mod.astStoreNodeExtraChildCount(store, prong);
-                var cii2: u32 = 0;
-                while (cii2 < ci_n2) : (cii2 += 1) {
-                    importDeferredScanNode(reg, importer_id, scratch, store, ce, scope, memo, ast_mod.astStoreNodeExtraChildAt(store, prong, cii2), depth + @intCast(u32, 1));
-                }
+                // Unknown selector OR an undecidable case label (range,
+                // foldable-but-unevaluated, ...): every prong stays live.
                 importDeferredScanNode(reg, importer_id, scratch, store, ce, scope, memo, pn.child_0, depth + @intCast(u32, 1));
             }
         }

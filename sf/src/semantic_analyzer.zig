@@ -23,6 +23,9 @@ const async_analysis = @import("async_analysis.zig");
 // Task 9B (b): the if-without-else comptime-true allowance consults the same
 // fold evaluator the lowering pass uses (`comptime_eval.zig`).
 const ce_mod = @import("comptime_eval.zig");
+// D3 fix (Phase 3.5): the switch-prong selector is shared with the deferred
+// import resolver so the same evaluated case labels drive registration/typing.
+const import_resolver = @import("import_resolver.zig");
 
 // Task 2b (iterative lowering, D9 mitigation): recursion-depth ceiling for
 // `semanticAnalyzerResolveExprDepthGuard`. `semanticAnalyzerResolveExpr` is
@@ -4199,29 +4202,19 @@ fn semanticAnalyzerModuleAliasInitType(self: *SemanticAnalyzer, init_idx: u32) u
             }
         }
         if (t4_cv_opt) |t4_cv| {
-            var t4_pr_n = ast_mod.astStoreNodeExtraChildCount(self.store, t4_idx);
-            var t4_live: u32 = @intCast(u32, 0);
-            var t4_els: u32 = @intCast(u32, 0);
-            var t4_pi: usize = 0;
-            while (t4_pi < t4_pr_n) : (t4_pi += 1) {
-                var t4_p_i = ast_mod.astStoreNodeExtraChildAt(self.store, t4_idx, @intCast(u32, t4_pi));
-                var t4_p = ast_mod.astStoreNodeAt(self.store, t4_p_i);
-                if ((t4_p.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { t4_els = t4_p_i; continue; }
-                var t4_ci_n = ast_mod.astStoreNodeExtraChildCount(self.store, t4_p_i);
-                var t4_cii: usize = 0;
-                while (t4_cii < t4_ci_n) : (t4_cii += 1) {
-                    var t4_c_i = ast_mod.astStoreNodeExtraChildAt(self.store, t4_p_i, @intCast(u32, t4_cii));
-                    var t4_c = ast_mod.astStoreNodeAt(self.store, t4_c_i);
-                    if (t4_c.kind == AstKind.bool_literal) {
-                        var t4_cvv: bool = (t4_c.flags & @intCast(u8, 1)) != @intCast(u8, 0);
-                        if (t4_cvv == t4_cv) { t4_live = t4_p_i; break; }
-                    }
-                }
-                if (t4_live != @intCast(u32, 0)) break;
-            }
-            if (t4_live == @intCast(u32, 0)) { t4_live = t4_els; }
-            if (t4_live != @intCast(u32, 0)) {
-                var t4_lb = ast_mod.astStoreNodeAt(self.store, t4_live).child_0;
+            // D3 fix: evaluate the case labels with the SAME shared selector the
+            // deferred import resolver uses. This matches evaluated labels
+            // (`const T = true; switch (x) { T => ... }`) rather than only
+            // `bool_literal`s, so registration and typing cannot diverge. An
+            // undecidable label (range, foldable-but-unevaluated, ...) makes the
+            // selection non-decisive and the alias stays untyped rather than
+            // binding the wrong module.
+            var t4_ce = semaComptimeEvalInit(self);
+            t4_ce.host_is_windows = self.module_reg.target_is_windows;
+            var t4_selv = ce_mod.ComptimeVal{ .v = if (t4_cv) ce_mod.ciFromU64(@intCast(u64, 1)) else ce_mod.ciZeroInt(), .kind = ce_mod.KIND_BOOL, .float_bits = @intCast(u64, 0) };
+            var t4_sel = import_resolver.importSwitchSelectProng(self.store, &t4_ce, t4_idx, t4_selv);
+            if (t4_sel.decisive and t4_sel.prong != @intCast(u32, 0)) {
+                var t4_lb = ast_mod.astStoreNodeAt(self.store, t4_sel.prong).child_0;
                 if (t4_lb == @intCast(u32, 0)) return @intCast(u32, 0);
                 // D3: recurse — a prong body may itself be a nested
                 // conditional import.
@@ -4990,27 +4983,29 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             if ((t4_he_sp.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { t4_sw_has_else = @intCast(u8, 1); break; }
         }
         if (t4_sw_has_else == @intCast(u8, 0)) { semanticAnalyzerReportSwitchWithoutElse(self, node_idx); }
-        if (semanticAnalyzerCondComptimeBool(self, node.child_0)) |t4_sw_cv| {
-            var t4_sw_live: u32 = @intCast(u32, 0);
-            var t4_sw_else: u32 = @intCast(u32, 0);
-            var t4_sw_i: usize = 0;
-            while (t4_sw_i < prongs_n) : (t4_sw_i += 1) {
-                var t4_sp_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, t4_sw_i));
-                var t4_sp = ast_mod.astStoreNodeAt(self.store, t4_sp_i);
-                if ((t4_sp.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { t4_sw_else = t4_sp_i; continue; }
-                var t4_sc_n = ast_mod.astStoreNodeExtraChildCount(self.store, t4_sp_i);
-                var t4_sci: usize = 0;
-                while (t4_sci < t4_sc_n) : (t4_sci += 1) {
-                    var t4_sc_i = ast_mod.astStoreNodeExtraChildAt(self.store, t4_sp_i, @intCast(u32, t4_sci));
-                    var t4_sc = ast_mod.astStoreNodeAt(self.store, t4_sc_i);
-                    if (t4_sc.kind == AstKind.bool_literal) {
-                        var t4_scv: bool = (t4_sc.flags & @intCast(u8, 1)) != @intCast(u8, 0);
-                        if (t4_scv == t4_sw_cv) { t4_sw_live = t4_sp_i; break; }
-                    }
+        var t4_sw_cv_opt = semanticAnalyzerCondComptimeBool(self, node.child_0);
+        if (t4_sw_cv_opt == null) {
+            // D3 fix: same evaluator fallback as the alias typing path — a
+            // selector like `switch (1 == 1)` has no fold-table entry.
+            var t4_sw_ce0 = semaComptimeEvalInit(self);
+            t4_sw_ce0.host_is_windows = self.module_reg.target_is_windows;
+            if (ce_mod.comptimeEvalEvaluate(&t4_sw_ce0, node.child_0)) |t4_sw_sv0| {
+                if (t4_sw_sv0.kind == ce_mod.KIND_BOOL) {
+                    t4_sw_cv_opt = !ce_mod.ciIsZero(t4_sw_sv0.v);
                 }
-                if (t4_sw_live != @intCast(u32, 0)) break;
             }
-            if (t4_sw_live == @intCast(u32, 0)) { t4_sw_live = t4_sw_else; }
+        }
+        if (t4_sw_cv_opt) |t4_sw_cv| {
+            // D3 fix: one shared selector with the deferred import resolver so
+            // evaluated case labels drive BOTH registration and typing. A
+            // non-decisive selection (range/undecidable label) leaves the
+            // switch `void` rather than typing the wrong module.
+            var t4_sw_ce = semaComptimeEvalInit(self);
+            t4_sw_ce.host_is_windows = self.module_reg.target_is_windows;
+            var t4_sw_selv = ce_mod.ComptimeVal{ .v = if (t4_sw_cv) ce_mod.ciFromU64(@intCast(u64, 1)) else ce_mod.ciZeroInt(), .kind = ce_mod.KIND_BOOL, .float_bits = @intCast(u64, 0) };
+            var t4_sw_sel = import_resolver.importSwitchSelectProng(self.store, &t4_sw_ce, node_idx, t4_sw_selv);
+            var t4_sw_live: u32 = @intCast(u32, 0);
+            if (t4_sw_sel.decisive) { t4_sw_live = t4_sw_sel.prong; }
             if (t4_sw_live != @intCast(u32, 0)) {
                 var t4_sw_pj: usize = 0;
                 while (t4_sw_pj < prongs_n) : (t4_sw_pj += 1) {
