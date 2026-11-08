@@ -11,5 +11,8 @@ Sibling probes in this directory:
 - `sibling_fnptr.zig` — direct call vs call through a convention-qualified
   function pointer.
 - `sibling_mismatch.zig` — prototype/definition convention mismatch.
+- `sibling_xmod_mismatch.zig` + `sibling_xmod_mismatch_decl.zig` — the same
+  mismatch across modules; sema must reject it with 0 emitted `.c` (fix
+  round 2).
 - `sibling_variadic.zig` — variadic `stdcall` declaration.
 - `sibling_callconv.zig` — `callconv(...)` stays rejected with `error[2000]`.

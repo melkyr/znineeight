@@ -5928,30 +5928,37 @@ fn isBShapeMismatch(self: *SemanticAnalyzer, src_ty: u32, tgt_ty: u32, full: boo
     return false;
 }
 
+// D5/D10 fix round 2: extern linkage is global, so convention agreement is a
+// whole-compilation-unit check. The AST store is shared by every module, and
+// each module's root is reachable from the module registry. Within the
+// defining module the pre-Task-5 scan is preserved (any same-name fn_decl);
+// in every other module only extern fn_decls share the original C symbol (a
+// same-named local function there is a distinct, mangled symbol).
 fn semanticAnalyzerCheckFnConventionAgreement(self: *SemanticAnalyzer, def_node: u32, name_id: u32, def_conv: u8) void {
     var mods = mr_mod.moduleRegistryGetModules(self.module_reg);
-    var root: u32 = @intCast(u32, 0);
     var mi: usize = @intCast(usize, 0);
     while (mi < mods.len) : (mi += @intCast(usize, 1)) {
-        if (mods[mi].id == self.module_id) { root = mods[mi].ast_root; break; }
-    }
-    if (root == @intCast(u32, 0)) return;
-    var decls_n = ast_mod.astStoreNodeExtraChildCount(self.store, root);
-    var di: usize = @intCast(usize, 0);
-    while (di < decls_n) : (di += @intCast(usize, 1)) {
-        var dn_idx = ast_mod.astStoreNodeExtraChildAt(self.store, root, @intCast(u32, di));
-        if (dn_idx == def_node) continue;
-        var dn = ast_mod.astStoreNodeAt(self.store, dn_idx);
-        if (dn.kind != AstKind.fn_decl) continue;
-        var p = self.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, dn_idx))];
-        if (p.name_id != name_id) continue;
-        if (p.call_conv == def_conv) continue;
-        var msg: []const u8 = "prototype and definition calling conventions disagree";
-        var d = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, dn.span_start, dn.span_start + @intCast(u32, dn.span_len), msg);
-        var defn = ast_mod.astStoreNodeAt(self.store, def_node);
-        var note: []const u8 = "definition declared here";
-        diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, d, self.source_file_id, defn.span_start, defn.span_start + @intCast(u32, defn.span_len), note);
-        return;
+        var root: u32 = mods[mi].ast_root;
+        if (root == @intCast(u32, 0)) continue;
+        var same_module = mods[mi].id == self.module_id;
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(self.store, root);
+        var di: usize = @intCast(usize, 0);
+        while (di < decls_n) : (di += @intCast(usize, 1)) {
+            var dn_idx = ast_mod.astStoreNodeExtraChildAt(self.store, root, @intCast(u32, di));
+            if (dn_idx == def_node) continue;
+            var dn = ast_mod.astStoreNodeAt(self.store, dn_idx);
+            if (dn.kind != AstKind.fn_decl) continue;
+            if (!same_module and (dn.flags & @intCast(u8, 0x04)) == @intCast(u8, 0)) continue;
+            var p = self.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, dn_idx))];
+            if (p.name_id != name_id) continue;
+            if (p.call_conv == def_conv) continue;
+            var msg: []const u8 = "prototype and definition calling conventions disagree";
+            var d = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), mods[mi].source_file_id, dn.span_start, dn.span_start + @intCast(u32, dn.span_len), msg);
+            var defn = ast_mod.astStoreNodeAt(self.store, def_node);
+            var note: []const u8 = "definition declared here";
+            diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, d, self.source_file_id, defn.span_start, defn.span_start + @intCast(u32, defn.span_len), note);
+            return;
+        }
     }
 }
 

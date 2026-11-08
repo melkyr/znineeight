@@ -631,6 +631,12 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
       // module/file. Same keys, same dedup result.
       gd_set: U32ToU32Map,
       gg_set: U32ToU32Map,
+      // D5/D10 fix round 2: every extern-definition name across the whole
+      // compilation unit (built once from the full fn-slot range before the
+      // per-module windows are narrowed; bit 1 of the streamed `is_extern`
+      // header marks an extern definition).
+      extern_def_set: U32ToU32Map,
+      extern_def_set_built: u8,
       global_decls: [*]lir_mod.ModuleGlobalDecl,
       global_decls_len: u32,
       // M2 T1C-F: the shared const-init trees (decl -> root) for rodata defs.
@@ -713,6 +719,8 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
            .ts_ref_set = hash_mod.u32ToU32MapInit(persist_alloc),
            .gd_set = hash_mod.u32ToU32MapInit(persist_alloc),
            .gg_set = hash_mod.u32ToU32MapInit(persist_alloc),
+           .extern_def_set = hash_mod.u32ToU32MapInit(persist_alloc),
+           .extern_def_set_built = @intCast(u8, 0),
            .global_decls = undefined,
            .global_decls_len = @intCast(u32, 0),
            .const_inits = undefined,
@@ -1390,6 +1398,9 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
 }
 
 pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32) void {
+    // Fix round 2: still scanning the full fn-slot range here (before the
+    // per-module windows narrow), so precompute the extern-definition set now.
+    ensureExternDefinitionSet(emitter);
     var fg0: []const u8 = "#ifndef ZIG_SPECIAL_TYPES_H\n";
     bufferedWriterWrite(&emitter.writer, fg0);
     var fg1: []const u8 = "#define ZIG_SPECIAL_TYPES_H\n";
@@ -2064,10 +2075,19 @@ fn emitCalleeExpr(emitter: *C89Emitter, fn_type_id: u32, name: []const u8) void 
 // stays mangled (pre-Task-5 bytes). The two-bit streamed `is_extern` header
 // carries the distinction (bit 1 = extern definition / original linkage);
 // only the header bytes are read, never the whole function.
-fn funcRefHasExternDefinition(emitter: *C89Emitter, name_id: u32) bool {
+//
+// Fix round 2: extern definitions are global C symbols, so the name set must
+// cover the whole compilation unit, not just the current module's slot window.
+// It is built once while the emitter still sees the full `0..fn_slots_len`
+// range (`emitSharedHeader` in multi-file mode, `emitModule` in single-file
+// mode) and then reused by every `.func_ref`. Building here as a fallback
+// assumes the full range too (start == 0); the normal emit paths guarantee it.
+fn ensureExternDefinitionSet(emitter: *C89Emitter) void {
+    if (emitter.extern_def_set_built != @intCast(u8, 0)) return;
+    var total: usize = emitter.fn_slots_start + emitter.fn_slots_len;
     var i: usize = @intCast(usize, 0);
-    while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
-        var slot = emitter.fn_slots[emitter.fn_slots_start + i];
+    while (i < total) : (i += @intCast(usize, 1)) {
+        var slot = emitter.fn_slots[i];
         var hdr: [13]u8 = undefined;
         spill_mod.spillReadAt(&emitter.spill.spill, slot.disk_offset, hdr[0..]);
         var nm: u32 = @intCast(u32, 0);
@@ -2075,10 +2095,16 @@ fn funcRefHasExternDefinition(emitter: *C89Emitter, name_id: u32) bool {
         nm = nm | (@intCast(u32, hdr[1]) << @intCast(u32, 8));
         nm = nm | (@intCast(u32, hdr[2]) << @intCast(u32, 16));
         nm = nm | (@intCast(u32, hdr[3]) << @intCast(u32, 24));
-        if (nm != name_id) continue;
-        if ((hdr[12] & @intCast(u8, 2)) != @intCast(u8, 0)) return true;
+        if ((hdr[12] & @intCast(u8, 2)) != @intCast(u8, 0)) {
+            hash_mod.u32ToU32MapPut(&emitter.extern_def_set, nm, @intCast(u32, 1));
+        }
     }
-    return false;
+    emitter.extern_def_set_built = @intCast(u8, 1);
+}
+
+fn funcRefHasExternDefinition(emitter: *C89Emitter, name_id: u32) bool {
+    ensureExternDefinitionSet(emitter);
+    return hash_mod.u32ToU32MapGet(&emitter.extern_def_set, name_id) != null;
 }
 
 // D3-7: shared parameter-list emitter. `want_names`=0 reproduces the forward
@@ -3252,6 +3278,9 @@ fn emitFunctionSet(emitter: *C89Emitter, module_id: u32, all: u8) void {
 // from the `CompilerContext` and completed at the pre-emit boundary; the
 // emitter reads only (the former `ptr_only_ids` fill loop is long gone).
 pub fn emitModule(emitter: *C89Emitter, name: []const u8, c_includes: []u32) void {
+    // Fix round 2: single-file mode still scans the full fn-slot range, so
+    // precompute the whole-unit extern-definition set here.
+    ensureExternDefinitionSet(emitter);
     // P12: the typedef order is planned ONCE at the pre-emit
     // `phase_EmissionClassification` boundary (`c89_plan`); this consumer
     // region reads the carried order and never sorts.

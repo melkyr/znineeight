@@ -11,4 +11,7 @@ Sibling probe in this directory:
 - `sibling_fnptr.zig` — the cdecl definition called directly and through a
   function value (the `atexit(cb)` / callback-registration shape). The value
   must reference the original symbol, not a mangled local name.
+- `sibling_xmod_fnptr.zig` + `sibling_xmod_cv.zig` — the same function-value
+  shape when the extern definition lives in another module; the value must
+  still use the original C symbol (fix round 2).
 
