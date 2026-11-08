@@ -316,11 +316,26 @@ fn copyCallDirect(b: *Build, slot: u32) u32 {
 
 fn copyTailCall(b: *Build, slot: u32) u32 {
     var tc = b.orig.side_table.items[@intCast(usize, slot)].tail_call;
-    tc.callee = tc.callee + b.base;
-    tc.args_start = tc.args_start + b.base;
-    tc.result = tc.result + b.base;
+    // Phase 3.5 D14: a tail call that survives into an async step has a
+    // synchronous callee (TCO is suppressed for suspending callees, so those
+    // stay `call_direct`). The step cannot return the callee's value directly,
+    // so copy it as an ordinary direct call whose result the transform routes
+    // through the normal step return epilogue. `callee` is an interned name id,
+    // not a temp: rebase only the real temp operands (the old unconditional
+    // `+ base` landed on unrelated names such as `id`/`main`/`@asyncSuspend`).
+    var cd = lir_mod.CallDirectData{
+        .name_id = tc.callee,
+        .module_id = tc.module_id,
+        .args_start = tc.args_start + b.base,
+        .args_count = tc.args_count,
+        .result = tc.result + b.base,
+        .return_type = tc.return_type,
+        .is_extern = tc.is_extern,
+        .call_conv = tc.call_conv,
+        .fn_type_id = tc.fn_type_id,
+    };
     var ns: u32 = @intCast(u32, b.step.side_table.len);
-    lir_mod.lirSideEntryArrayListAppend(&b.step.side_table, lir_mod.LirSideEntry{ .tail_call = tc });
+    lir_mod.lirSideEntryArrayListAppend(&b.step.side_table, lir_mod.LirSideEntry{ .call_direct = cd });
     return ns;
 }
 
@@ -353,7 +368,13 @@ fn remapInst(b: *Build, inst: LirInst, sw_off: u32) LirInst {
         .va_start => |x| return LirInst{ .va_start = .{ .va_list_temp = x.va_list_temp + b.base, .last_param_temp = x.last_param_temp + b.base } },
         .va_arg => |x| return LirInst{ .va_arg = .{ .va_list_temp = x.va_list_temp + b.base, .type_id = x.type_id, .result = x.result + b.base } },
         .va_end => |x| return LirInst{ .va_end = .{ .va_list_temp = x.va_list_temp + b.base } },
-        .tail_call => |slot| return LirInst{ .tail_call = copyTailCall(b, slot) },
+        .tail_call => |slot| {
+            var tc = b.orig.side_table.items[@intCast(usize, slot)].tail_call;
+            if (tc.is_indirect != @intCast(u8, 0)) {
+                return LirInst{ .call = .{ .callee = tc.callee + b.base, .args_start = tc.args_start + b.base, .args_count = tc.args_count, .result = tc.result + b.base } };
+            }
+            return LirInst{ .call_direct = copyTailCall(b, slot) };
+        },
         .func_ref => |x| return LirInst{ .func_ref = .{ .name_id = x.name_id, .module_id = x.module_id, .result = x.result + b.base } },
         .unwrap_optional => |x| return LirInst{ .unwrap_optional = .{ .value = x.value + b.base, .result = x.result + b.base } },
         .unwrap_optional_abi => |x| return LirInst{ .unwrap_optional_abi = .{ .value = x.value + b.base, .result = x.result + b.base } },
@@ -999,6 +1020,12 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
             }
             switch (inst) {
                 .ret => { any_ret = true; },
+                // Phase 3.5 D14: a synchronous tail return also delivers a value
+                // through the step result epilogue, so it needs the same path.
+                .tail_call => |tc_slot| {
+                    var tc0 = lir_mod.lirSideGetTailCall(lf, tc_slot);
+                    if (tc0.return_type != type_mod.TYPE_VOID) { any_ret = true; }
+                },
                 else => {},
             }
         }
@@ -1225,6 +1252,34 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
                 if (cd.return_type != type_mod.TYPE_VOID) { pr_k += @intCast(u32, 1); }
                 s += @intCast(u32, 1);
                 cur = state_after[sidx];
+                continue;
+            }
+            // Phase 3.5 D14: a surviving tail call has a synchronous callee.
+            // Emit it as an ordinary direct call and route its value through the
+            // standard step result epilogue instead of the emitter's raw
+            // `return <value>;` (which would return the callee's type where the
+            // step must return `Opt`).
+            var is_tail: bool = false;
+            var tail_v: u32 = @intCast(u32, 0);
+            var tail_void: bool = false;
+            switch (inst) {
+                .tail_call => |tc_slot| {
+                    var tc = lir_mod.lirSideGetTailCall(lf, tc_slot);
+                    is_tail = true;
+                    tail_v = tc.result;
+                    tail_void = (tc.return_type == type_mod.TYPE_VOID);
+                },
+                else => {},
+            }
+            if (is_tail) {
+                emit(&b, cur, remapInst(&b, inst, sw_off));
+                if (b.ret_val_present and !tail_void) {
+                    emit(&b, cur, LirInst{ .assign = .{ .dst = b.ret_val_temp, .src = tail_v + b.base, .name_id = @intCast(u32, 0) } });
+                    emit(&b, cur, LirInst{ .jump = b.ep_store_id });
+                } else {
+                    emit(&b, cur, LirInst{ .jump = terminal_id });
+                }
+                step.blocks.items[@intCast(usize, cur)].is_terminated = @intCast(u8, 1);
                 continue;
             }
             if (b.ret_val_present) {

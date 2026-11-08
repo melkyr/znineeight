@@ -14356,7 +14356,13 @@ fn lowerStmtLeafReturn(self: *LirLowerer, node_idx: u32) void {
                 if ((self.func.is_extern & @intCast(u8, 1)) == @intCast(u8, 0)) {
                     var tci = findTailCall(self, val);
                     if (tci) |ci| {
-                        if (ci.is_self == @intCast(u8, 1) and ci.args_count == @intCast(u32, self.func.params.len)) {
+                        // Phase 3.5 D14: a tail call to a suspending callee is not a
+                        // real tail call. Keep the `call_direct` so the async transform
+                        // rewrites it into the normal implicit await; a `.tail_call`
+                        // would bypass `instSuspendKind` and leave the step ABI wrong.
+                        if (async_analysis.asyncIsSuspending(self.ctx.suspending_fns, ci.module_id, ci.callee)) {
+                            // Fall through to the ordinary return path below.
+                        } else if (ci.is_self == @intCast(u8, 1) and ci.args_count == @intCast(u32, self.func.params.len)) {
                             if (defer_bb_unchanged == @intCast(u8, 1)) {
                                 var di: usize = pre_defer_len;
                                 while (di < post_defer_len) : (di += @intCast(usize, 1)) {
