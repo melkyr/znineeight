@@ -94,6 +94,10 @@ var alias_merge_names: [ALIAS_CAP]u32 = undefined;
 var alias_merge_a: [ALIAS_CAP]u32 = undefined;
 var alias_merge_b: [ALIAS_CAP]u32 = undefined;
 
+// Scratch for canonical reassignment. Collecting names before rewriting keeps
+// resolution stable while the relation is being re-rooted.
+var alias_reroot_names: [ALIAS_CAP]u32 = undefined;
+
 fn aliasReset() void {
     alias_len = @intCast(usize, 0);
 }
@@ -170,14 +174,34 @@ fn aliasHasInbound(state: *StateMap, root: u32) bool {
     return false;
 }
 
-fn aliasDetachInbound(state: *StateMap, root: u32) void {
+// DF-1: on canonical reassignment, keep every inbound alias related as ONE
+// class for the old allocation instead of forgetting each one separately (that
+// fragmented the old allocation into independent roots and produced both false
+// leaks and missed double frees). The first surviving alias becomes the new
+// canonical name and every other survivor re-points at it. Returns the new
+// root, or 0 when no inbound aliases survive.
+fn aliasRerootInbound(state: *StateMap, root: u32) u32 {
+    var n: usize = 0;
     var snap = alias_len;
     var i: usize = 0;
     while (i < snap) : (i += 1) {
         var name_id = alias_entries[i].name_id;
         if (name_id == root) continue;
-        if (aliasResolveName(state, name_id) == root) aliasForget(state, name_id);
+        if (aliasNameInList(alias_reroot_names[0..], n, name_id)) continue;
+        if (aliasResolveName(state, name_id) != root) continue;
+        if (n >= ALIAS_CAP) break;
+        alias_reroot_names[n] = name_id;
+        n += 1;
     }
+    if (n == 0) return @intCast(u32, 0);
+    var survivor = alias_reroot_names[0];
+    aliasForget(state, survivor);
+    i = 0;
+    while (i < n) : (i += 1) {
+        if (alias_reroot_names[i] == survivor) continue;
+        aliasSet(state, alias_reroot_names[i], survivor);
+    }
+    return survivor;
 }
 
 const AliasClassSummary = struct {
@@ -725,11 +749,11 @@ pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) vo
         emitFreeingUntracked(ctx, target_id, expr_idx);
         return;
     }
-    if (summary.saw_any) {
-        aliasSetClassState(state, root, @enumToInt(AllocState.freed));
-    } else {
-        emitFreeingUntracked(ctx, target_id, expr_idx);
-    }
+    // Only `untracked` (or an absent entry) reaches here: `allocated`, `freed`,
+    // and the unowned states are handled above. Preserve the state and report
+    // the untracked free; marking it freed would silently drop the diagnostic
+    // (DF-4 regression).
+    emitFreeingUntracked(ctx, target_id, expr_idx);
 }
 
 pub fn checkLeaksOnScopeExit(ctx: *AnalyzerContext, state: *StateMap) void {
@@ -774,7 +798,7 @@ pub fn handleAllocAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
         }
     }
     if (lhs_name_id == lhs_root) {
-        aliasDetachInbound(state, lhs_root);
+        _ = aliasRerootInbound(state, lhs_root);
     } else {
         aliasForget(state, lhs_name_id);
     }

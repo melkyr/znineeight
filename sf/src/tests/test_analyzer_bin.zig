@@ -2003,6 +2003,14 @@ pub fn main() void {
     testFixture("tests/analyzers/df_unknown_call.zig", "fixture df_unknown_call", fx_no_expect[0..]);
     testFixture("tests/analyzers/df_alloc_handle_var.zig", "fixture df_alloc_handle_var", fx_no_expect[0..]);
 
+    testFixture("tests/analyzers/df_alias_reassign_multi.zig", "fixture df_alias_reassign_multi", fx_no_expect[0..]);
+    var e_df_multi_double = [_]DiagExpectation{ expectCode(c_double, 1) };
+    testFixture("tests/analyzers/df_alias_reassign_multi_double.zig", "fixture df_alias_reassign_multi_double", e_df_multi_double[0..]);
+    var e_df_multi_leak = [_]DiagExpectation{ expectCode(c_leak, 1) };
+    testFixture("tests/analyzers/df_alias_reassign_multi_leak.zig", "fixture df_alias_reassign_multi_leak", e_df_multi_leak[0..]);
+    var e_df_untracked = [_]DiagExpectation{ expectCode(c_untracked, 1) };
+    testFixture("tests/analyzers/df_untracked_free.zig", "fixture df_untracked_free", e_df_untracked[0..]);
+
     var msg: []const u8 = "Analyzer tests passed.\n";
     pal.stdout_write(msg);
 }

@@ -42,6 +42,10 @@ literal under those checks (toolchain semantics, pre-existing).
 | `df_alias_branch.zig` | 0 diagnostics | DF-1 fix: aliases fork/merge with the state map; a then-arm alias cannot leak into the else fork (no false overwrite/leak) |
 | `df_unknown_call.zig` | 0 diagnostics | DF-3 fix: unknown calls (`read`) do not transfer ownership, so `read(p); sandFree(s, p)` emits neither INFO_7001 nor WARN_6006 |
 | `df_alloc_handle_var.zig` | 0 diagnostics | DF-3 fix: allocator handles supplied by `var` initializers (not only statement-level calls) are recorded, so `take(h)` on a handle is not a transfer |
+| `df_alias_reassign_multi.zig` | 0 diagnostics | DF-1 fix round 2: reassigning the canonical name keeps all inbound aliases (`q`, `r`) in one class; freeing `q` releases the old allocation for the class and `r` is not a stale leak |
+| `df_alias_reassign_multi_double.zig` | exactly 1 ERR_2005 | DF-1 fix round 2: after canonical reassignment the survivors are one class, so freeing `q` then `r` is a real double free of the old allocation |
+| `df_alias_reassign_multi_leak.zig` | exactly 1 WARN_6005 | DF-1 fix round 2: one old allocation reported once at scope exit, not once per surviving alias |
+| `df_untracked_free.zig` | exactly 1 WARN_6006 | DF-4 fix round 2: freeing an `untracked` (null) binding preserves the state and reports the untracked free instead of silently marking it freed |
 
 Ownership transfer is restricted to explicit ownership-taking callee names
 (`take`, `takeOwnership`, `take_ownership`, `transfer_ownership`, `consume`,
