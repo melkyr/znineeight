@@ -24,7 +24,7 @@ and must not recreate them. `expected.txt` / `expected.rc` encode the
 | **D5/D10** `extern "stdcall"` definition | `repro/mi_matrix/known_excluded/stdcall_def_ok/` | definition emitted with `Z98_STDCALL`; dump rc=0, gcc clean, stdout `42\n` | dump rc=0, zero Z98 diagnostics; emitted only `((FS_int_unsigned_int)cb)(…)`, no definition; gcc rc=1 `'cb' undeclared` | Task 5 |
 | **D5** bare/`"c"` extern definition | `repro/mi_matrix/known_excluded/cdecl_def_ok/` | cdecl definition emitted; dump rc=0, gcc clean, stdout `44\n` | dump rc=0, zero Z98 diagnostics; emitted `cd(…)`, no definition; link rc=1 `undefined reference to 'cd'` | Task 5 |
 | **D13** full `enum(u64)` range | `repro/mi_matrix/enum_u64_max_ok_xmod/` | max discriminant accepted and read: dump rc=0, run rc=0, stdout `7\n` | dump rc=2, **two** `error[3000]: enum member value exceeds the supported enum value range (values above 9223372036854775807 require u64 enum storage, not supported yet)` | Task 6 |
-| **D14** suspending EU-payload wrapper | `repro/mi_matrix/async_wrapper_eu_payload_ok_xmod/` | non-tail success/error: stdout `32 0\n0 1\n`, rc=0 under `-ffast`/`-fsafe`; tail-return sibling also compiles/runs `55 0\n0 1\n` | **non-tail shape already passes pre-fix** (`32 0\n0 1\n`, `-ffast`/`-fsafe`) — regression oracle. The reproducible RED is the tail-return sibling: gcc rc=1 `stray '@'`, `zF_B6CE39A7_@asyncSuspend`, wrong step result type. See §4 ADJ-17. | Task 7 |
+| **D14** suspending EU-payload wrapper | `repro/mi_matrix/async_wrapper_eu_payload_ok_xmod/` (+ exact-shape tail `known_excluded/d14_tail_http2_wrapper_ok/`, real wrappers `known_excluded/d14_http2_wrapper_ok/`) | exact `Http2Error!u32` shape with runtime id: non-tail stdout `42 0\n0 1\n`, rc=0 under `-ffast`/`-fsafe`; tail-return form GCC-compatible; real `http2Wait`/`http2Get` wrapper shapes compile/build | **non-tail exact shape already passes pre-fix** (`42 0\n0 1\n`, both modes; no `error[3043]`) — regression oracle. The reproducible RED is the tail return: the local exact shape and the real `http2Wait` shape both gcc rc=1 (`EU` step result assigned from `int` / returned where `Opt` expected). `sibling_tail.zig` still shows the older `stray '@'` form. See §4 ADJ-17/ADJ-18 and §8. | Task 7 |
 | **D4** analyzer contracts | `tests/analyzers/d4_contract_probe.zig` (+ `--check` evidence) | Task 8 audit defines the must-work set; Task 9 makes the four analyzers honor it | **probe not runnable through `testFixture` without editing `sf/src/tests/test_analyzer_bin.zig`** (each fixture needs a hard-coded call in `main()`). Supplementary real-pipeline run: `--check` rc=2 with 2× `warning[3037]`, `warning[3039]` freeing untracked `q`, `error[3035]` double free `p`, `error[3030]` returning local `x`. See §4 ADJ-20/21/22. | Task 8 (audit) / Task 9 (upgrade) |
 
 Raw commands use the canonical recipe (`OUT` pre-created):
@@ -107,12 +107,13 @@ Sibling probes:
 | ADJ-14 | Implicit successor at `u64_max - 1` is rejected pre-fix as a range error | `sibling_implicit_ok.zig` dump rc=2 `error[3000]` ×2 | **in-scope under D13** |
 | ADJ-15 | Duplicate tags at `u64` max already reject as `error[3055]` (not range) | `sibling_duplicate.zig` dump rc=2 `error[3055]` | **in-scope under D13** (preserve duplicate behavior) |
 | ADJ-16 | Module-const enum value at `u64` max rejects like the base | `sibling_const_switch.zig` dump rc=2 `error[3000]` ×2 | **in-scope under D13** |
-| ADJ-17 | **Spec contradiction:** the non-tail `try wait(c); return 32;` EU-payload wrapper compiles and runs correctly at BASE; the real `http2Wait` and `http2Get` wrapper shapes also compile. Only the tail-return form reproduces the step-ABI defect. | `async_wrapper_eu_payload_ok_xmod/main.zig` prints `32 0\n0 1\n`; scratch wrappers around `std_http2.http2Wait`/`http2Get` compile rc=0. | **in-scope D14, but spec §5.7 says this shape errors `error[3043]` — STOP-reported concern.** Task 7 should re-scope the RED to the tail-return ABI (or find the narrower trigger). |
-| ADJ-18 | Tail-return EU wrapper emits a GCC-incompatible step ABI | `sibling_tail.zig` build rc=1: `stray '@'`, `zF_B6CE39A7_@asyncSuspend`, `incompatible types when returning type ... EU ... but Opt ... expected` | **in-scope under D14** (the reproducible RED) |
+| ADJ-17 | **Spec contradiction (confirmed by Task 0.1 exact shape):** the non-tail `try wait(c); return id;` EU-payload wrapper shaped exactly like `Http2Error!u32` compiles and runs correctly at BASE; the real `http2Wait` and `http2Get` wrapper shapes also compile/build. Only the tail-return form reproduces the step-ABI defect. | `async_wrapper_eu_payload_ok_xmod/main.zig` prints `42 0\n0 1\n` (`-ffast`/`-fsafe`, no `error[3043]`); `known_excluded/d14_http2_wrapper_ok/main.zig` dump+build rc=0. | **in-scope D14, but spec §5.7 says this shape errors `error[3043]` — STOP-reported concern.** Task 7 should re-scope the RED to the tail-return ABI (or find the narrower trigger). |
+| ADJ-18 | Tail-return EU wrapper emits a GCC-incompatible step ABI | `sibling_tail.zig` build rc=1: `stray '@'`, `zF_B6CE39A7_@asyncSuspend`, `incompatible types when returning type ... EU ... but Opt ... expected`; exact-shape `d14_tail_http2_wrapper_ok/main.zig` and real `d14_http2_wrapper_ok/sibling_wait_tail.zig` build rc=1: assigning to `EU` from `int`, returning `EU` where `Opt` expected (both `-ffast`/`-fsafe`) | **in-scope under D14** (the reproducible RED) |
 | ADJ-19 | Non-tail void/optional/aggregate wrappers pass pre-fix | `sibling_void.zig` `1 0/0 1`, `sibling_optional.zig` `32 0/0 1`, `sibling_aggregate.zig` `34 0/0 1` | **regression oracles**; must stay green post-fix |
 | ADJ-20 | **D4 harness blocker:** `testFixture` has no generic/CLI entry; every fixture needs a hard-coded `testFixture(...)` call in `main()` of `sf/src/tests/test_analyzer_bin.zig` | `sf/src/tests/test_analyzer_bin.zig:1794-1859` | **deferred to Task 9**; Task 0 did not edit the harness |
 | ADJ-21 | Simple `std.io` programs emit 3× `warning[3037] potential null pointer dereference` (unseeded params) | every fixture dump above | **in-scope under D4** (defect (b) false positives) |
 | ADJ-22 | Real-pipeline probe run shows the contract holes | `zig1 -ffast --check tests/analyzers/d4_contract_probe.zig` rc=2: 2× `warning[3037]`, `warning[3039] freeing untracked pointer 'q'`, `error[3035] double free of pointer 'p'` (dead arm), `error[3030] returning address of local variable 'x'` | **in-scope under D4**; the dead-arm double free and null warnings are false positives, the alias-chain miss is a false negative, and the local-address error is the true positive that must stay |
+| ADJ-23 | **Exact-shape D14 retry (Task 0.1):** the non-tail `Http2Error!u32` shape with a runtime id still passes; both tail forms reproduce the step-ABI RED; real `http2Wait`/`http2Get` non-tail wrappers compile/build; the real tail wrapper is RED. `error[3043]` is not reproducible in any tested exact shape. | `async_wrapper_eu_payload_ok_xmod/main.zig` `42 0\n0 1\n` (`-ffast`/`-fsafe`); `d14_http2_wrapper_ok/main.zig` dump+build rc=0; `d14_http2_wrapper_ok/sibling_wait_tail.zig` build rc=1; `d14_tail_http2_wrapper_ok/main.zig` build rc=1 (details §8). | **confirms ADJ-17**: spec §5.7 non-tail `error[3043]` claim is not reproducible; the tail-return ABI RED remains required D14 work. |
 
 ## 5. D4 probe run status (blocker recorded, no harness change)
 
@@ -147,3 +148,37 @@ fixture-driven expansion.
    `testFixture`. Task 8/9 should register it when the harness is expanded.
 3. The three new corpus-visible dirs change the live corpus's class counts
    before Task 1 (additive only); Task 12 re-anchors.
+
+## 8. D14 exact-shape retry (Task 0.1)
+
+Task 0.1 replaced the `error{Boom}` probe with the exact
+`std_http2.Http2Error` shape (15 members) and a runtime `id` payload.
+
+Raw commands (one `OUT` per run; `Z=/workspace/znineeight/zig1/zig1_5_clean`):
+
+```sh
+$Z -ffast|-fsafe -o "$OUT" <fixture>/main.zig
+( cd "$OUT" && sh build_target.sh linux prog )
+```
+
+| Shape | Fixture | `-ffast` | `-fsafe` |
+|---|---|---|---|
+| exact non-tail `try wait(c); return id;` | `async_wrapper_eu_payload_ok_xmod/main.zig` | dump rc=0, build rc=0, run `42 0\n0 1\n` | same |
+| exact tail `return wait2(c, id);` | `known_excluded/d14_tail_http2_wrapper_ok/main.zig` | dump rc=0, build rc=1 | build rc=1 |
+| real non-tail `http2Wait`/`http2Get` | `known_excluded/d14_http2_wrapper_ok/main.zig` | dump rc=0, build rc=0, run `d14 http2 wrapper compile-only\n` | same |
+| real tail `http2Wait` wrapper | `known_excluded/d14_http2_wrapper_ok/sibling_wait_tail.zig` | dump rc=0, build rc=1 | build rc=1 |
+
+Tail diagnostics (both the exact local shape and the real `std_http2` shape) are
+the same class: the emitted step returns `zT_B2DCC375_Opt_*` but builds an
+`zT_3B6EA323_EU_01`, e.g.
+
+```text
+error: incompatible types when assigning to type 'zT_3B6EA323_EU_01' from type 'int'
+error: incompatible types when returning type 'zT_3B6EA323_EU_01' but 'zT_B2DCC375_Opt_82' was expected
+```
+
+No `error[3043]` occurred in any of these runs. The real `http2Wait`/`http2Get`
+wrappers are **compile/build-only**: exercising the suspension needs a live
+HTTP/2 peer, which Task 0.1 did not start. `sibling_tail.zig` remains the
+`error{Boom}` tail probe and still fails with `stray '@'` /
+`zF_B6CE39A7_@asyncSuspend`.
