@@ -24,7 +24,7 @@ and must not recreate them. `expected.txt` / `expected.rc` encode the
 | **D5/D10** `extern "stdcall"` definition | `repro/mi_matrix/known_excluded/stdcall_def_ok/` | definition emitted with `Z98_STDCALL`; dump rc=0, gcc clean, stdout `42\n` | dump rc=0, zero Z98 diagnostics; emitted only `((FS_int_unsigned_int)cb)(…)`, no definition; gcc rc=1 `'cb' undeclared` | Task 5 |
 | **D5** bare/`"c"` extern definition | `repro/mi_matrix/known_excluded/cdecl_def_ok/` | cdecl definition emitted; dump rc=0, gcc clean, stdout `44\n` | dump rc=0, zero Z98 diagnostics; emitted `cd(…)`, no definition; link rc=1 `undefined reference to 'cd'` | Task 5 |
 | **D13** full `enum(u64)` range | `repro/mi_matrix/enum_u64_max_ok_xmod/` | max discriminant accepted and read: dump rc=0, run rc=0, stdout `7\n` | dump rc=2, **two** `error[3000]: enum member value exceeds the supported enum value range (values above 9223372036854775807 require u64 enum storage, not supported yet)` | Task 6 |
-| **D14** suspending EU-payload wrapper | `repro/mi_matrix/async_wrapper_eu_payload_ok_xmod/` (+ exact-shape tail `known_excluded/d14_tail_http2_wrapper_ok/`, real wrappers `known_excluded/d14_http2_wrapper_ok/`) | exact `Http2Error!u32` shape with runtime id: non-tail stdout `42 0\n0 1\n`, rc=0 under `-ffast`/`-fsafe`; tail-return form GCC-compatible; real `http2Wait`/`http2Get` wrapper shapes compile/build | **non-tail exact shape already passes pre-fix** (`42 0\n0 1\n`, both modes; no `error[3043]`) — regression oracle. The reproducible RED is the tail return: the local exact shape and the real `http2Wait` shape both gcc rc=1 (`EU` step result assigned from `int` / returned where `Opt` expected). `sibling_tail.zig` still shows the older `stray '@'` form. See §4 ADJ-17/ADJ-18 and §8. | Task 7 |
+| **D14** suspending EU-payload wrapper | `repro/mi_matrix/async_wrapper_eu_payload_ok_xmod/` (+ exact-shape tail `known_excluded/d14_tail_http2_wrapper_ok/`, real wrappers `known_excluded/d14_http2_wrapper_ok/`, exact original two-level `known_excluded/d14_original_http2_eu/`, local multi-shape matrix `known_excluded/d14_two_level_matrix/`) | exact `Http2Error!u32` shape with runtime id: non-tail stdout `42 0\n0 1\n`, rc=0 under `-ffast`/`-fsafe`; tail-return form GCC-compatible; real `http2Wait`/`http2Get` wrapper shapes compile/build | **non-tail exact shape already passes pre-fix** (`42 0\n0 1\n`, both modes; no `error[3043]`) — regression oracle. The reproducible RED is the tail return: the local exact shape, the exact original two-level imported shape, and the real `http2Wait` shape all gcc rc=1 (`EU` step result assigned from `int` / returned where `Opt` expected). Task 0.2's 19-shape matrix found **no `error[3043]` in any shape**; only tail returns fail at GCC. `sibling_tail.zig` still shows the older `stray '@'` form. See §4 ADJ-17/ADJ-18/ADJ-24 and §8–§9. | Task 7 |
 | **D4** analyzer contracts | `tests/analyzers/d4_contract_probe.zig` (+ `--check` evidence) | Task 8 audit defines the must-work set; Task 9 makes the four analyzers honor it | **probe not runnable through `testFixture` without editing `sf/src/tests/test_analyzer_bin.zig`** (each fixture needs a hard-coded call in `main()`). Supplementary real-pipeline run: `--check` rc=2 with 2× `warning[3037]`, `warning[3039]` freeing untracked `q`, `error[3035]` double free `p`, `error[3030]` returning local `x`. See §4 ADJ-20/21/22. | Task 8 (audit) / Task 9 (upgrade) |
 
 Raw commands use the canonical recipe (`OUT` pre-created):
@@ -114,6 +114,7 @@ Sibling probes:
 | ADJ-21 | Simple `std.io` programs emit 3× `warning[3037] potential null pointer dereference` (unseeded params) | every fixture dump above | **in-scope under D4** (defect (b) false positives) |
 | ADJ-22 | Real-pipeline probe run shows the contract holes | `zig1 -ffast --check tests/analyzers/d4_contract_probe.zig` rc=2: 2× `warning[3037]`, `warning[3039] freeing untracked pointer 'q'`, `error[3035] double free of pointer 'p'` (dead arm), `error[3030] returning address of local variable 'x'` | **in-scope under D4**; the dead-arm double free and null warnings are false positives, the alias-chain miss is a false negative, and the local-address error is the true positive that must stay |
 | ADJ-23 | **Exact-shape D14 retry (Task 0.1):** the non-tail `Http2Error!u32` shape with a runtime id still passes; both tail forms reproduce the step-ABI RED; real `http2Wait`/`http2Get` non-tail wrappers compile/build; the real tail wrapper is RED. `error[3043]` is not reproducible in any tested exact shape. | `async_wrapper_eu_payload_ok_xmod/main.zig` `42 0\n0 1\n` (`-ffast`/`-fsafe`); `d14_http2_wrapper_ok/main.zig` dump+build rc=0; `d14_http2_wrapper_ok/sibling_wait_tail.zig` build rc=1; `d14_tail_http2_wrapper_ok/main.zig` build rc=1 (details §8). | **confirms ADJ-17**: spec §5.7 non-tail `error[3043]` claim is not reproducible; the tail-return ABI RED remains required D14 work. |
+| ADJ-24 | **D14 frontend-vs-tail-ABI matrix (Task 0.2):** across 19 imported/local shapes (exact original two-level, outer non-tail, nested tail/tail, two value waits both orders, mixed void/value both orders, `try`/`catch`/`if` wrappers), `zig1 --dump-c89 -o` emits C for **every** shape under both `-ffast` and `-fsafe` with **no `error[3043]`** and no other frontend error. The only RED is the GCC tail ABI: every shape whose wrapper **tail-returns** a value-returning await fails gcc with `EU` assigned from `int` / `EU` returned where `Opt` expected. Non-tail bindings, two-value orders, mixed void/value orders, and `try`/`catch`/`if` bindings all build and run correctly. | `d14_original_http2_eu/{main,sibling_tail_tail}.zig` and `d14_two_level_matrix/{main,local_tail_tail}.zig` gcc rc=1 (both modes); all other 15 shapes dump rc=0, C emitted, gcc rc=0, run rc=0 with expected stdout; zero `error[3043]` in any `dump.err` (details §9). | **D14 has one reproducible bug class at this BASE: the tail-return GCC step ABI.** The spec §5.7 frontend `error[3043]` trigger remains unproven; no two-bug STOP is warranted. |
 
 ## 5. D4 probe run status (blocker recorded, no harness change)
 
@@ -182,3 +183,93 @@ wrappers are **compile/build-only**: exercising the suspension needs a live
 HTTP/2 peer, which Task 0.1 did not start. `sibling_tail.zig` remains the
 `error{Boom}` tail probe and still fails with `stray '@'` /
 `zF_B6CE39A7_@asyncSuspend`.
+
+## 9. D14 frontend-vs-tail-ABI matrix (Task 0.2)
+
+Task 0.2 reconstructed the exact original two-level shape from
+`git show 022a59f2:sf/src/std_http2.zig` (the `Http2Error!u32` submit helper)
+plus the `try http2Wait` call documented in the Phase 3.3 Task 7 report. Since
+`submitUrl` is private, the shape is reproduced locally with `h2.Http2Error`
+and `h2.http2Wait`; `std_http2` was not edited.
+
+Raw command (one pre-created `OUT` per shape/mode; `Z` as above):
+
+```sh
+$Z -ffast|-fsafe --dump-c89 -o "$OUT" <fixture>.zig
+( cd "$OUT" && sh build_target.sh linux prog )
+```
+
+`d14_original_http2_eu/` (imported `h2.Http2Error`, compile-only):
+
+| Shape | File | dump | C | gcc | run |
+|---|---|---|---|---|---|
+| exact original: inner non-tail + outer tail | `main.zig` | 0 | 20 | **1** | n/a |
+| inner non-tail + outer non-tail (`var x = try ...; return x`) | `sibling_outer_nontail.zig` | 0 | 20 | 0 | 0 |
+| nested tail/tail | `sibling_tail_tail.zig` | 0 | 20 | **1** | n/a |
+| two value waits, A→B | `sibling_two_value_ab.zig` | 0 | 20 | 0 | 0 |
+| two value waits, B→A | `sibling_two_value_ba.zig` | 0 | 20 | 0 | 0 |
+| mixed void→value | `sibling_mixed_void_value.zig` | 0 | 20 | 0 | 0 |
+| mixed value→void | `sibling_mixed_value_void.zig` | 0 | 20 | 0 | 0 |
+| `catch \|e\| return e` binding | `sibling_wrapper_catch.zig` | 0 | 20 | 0 | 0 |
+| await inside `if` arm | `sibling_wrapper_if.zig` | 0 | 20 | 0 | 0 |
+
+`d14_two_level_matrix/` (local 15-member `Http2Error`, runnable):
+
+| Shape | File | dump | C | gcc | run |
+|---|---|---|---|---|---|
+| exact original: inner non-tail + outer tail | `main.zig` | 0 | 6 | **1** | n/a |
+| inner non-tail + outer non-tail | `local_outer_nontail.zig` | 0 | 6 | 0 | 0, `42 0\n0 1\n` |
+| nested tail/tail | `local_tail_tail.zig` | 0 | 6 | **1** | n/a |
+| two value waits, A→B | `local_two_value_ab.zig` | 0 | 6 | 0 | 0, `42043 0\n0 1\n` |
+| two value waits, B→A | `local_two_value_ba.zig` | 0 | 6 | 0 | 0, `43042 0\n0 1\n` |
+| mixed void→value | `local_mixed_void_value.zig` | 0 | 6 | 0 | 0, `42 0\n0 1\n` |
+| mixed value→void | `local_mixed_value_void.zig` | 0 | 6 | 0 | 0, `42 0\n0 1\n` |
+| `const x = try ...; return x` | `local_wrapper_try.zig` | 0 | 6 | 0 | 0, `42 0\n0 1\n` |
+| `const x = ... catch \|e\| return e` | `local_wrapper_catch.zig` | 0 | 6 | 0 | 0, `42 0\n0 1\n` |
+| await inside `if` arm | `local_wrapper_if.zig` | 0 | 6 | 0 | 0, `42 0\n0 1\n` |
+
+Both `-ffast` and `-fsafe` produce the same classification and runtime output.
+**Zero `error[3043]` (or any other frontend `error[...]`) occurred in all 38
+runs**; every dump rc is 0 and every shape emits C. The passing non-tail
+shapes therefore do not reproduce the §5.7 frontend claim.
+
+Exact RED diagnostics (both modes; line numbers shift by mode):
+
+```text
+# d14_original_http2_eu/main.zig (-ffast)
+main_042C7DCE.c:260:12: error: incompatible types when assigning to type 'zT_3B6EA323_EU_01' from type 'int'
+main_042C7DCE.c:261:12: error: incompatible types when returning type 'zT_3B6EA323_EU_01' but 'zT_52BDE952_Opt_180' was expected
+
+# d14_two_level_matrix/main.zig (-ffast)
+main_5554DBF4.c:555:12: error: incompatible types when assigning to type 'zT_3B6EA323_EU_01' from type 'int'
+main_5554DBF4.c:556:12: error: incompatible types when returning type 'zT_3B6EA323_EU_01' but 'zT_B2DCC375_Opt_82' was expected
+
+# d14_original_http2_eu/sibling_tail_tail.zig (-ffast) — same EU/Opt class plus
+# a wrong tail callee in the emitted step
+sibling_tail_tail_EA2F4E35.c:260:12: error: incompatible types when assigning to type 'zT_3B6EA323_EU_01' from type 'int'
+sibling_tail_tail_EA2F4E35.c:261:12: error: incompatible types when returning type 'zT_3B6EA323_EU_01' but 'zT_52BDE952_Opt_180' was expected
+sibling_tail_tail_EA2F4E35.c:295:12: error: too many arguments to function 'zF_EA90E208_main'
+sibling_tail_tail_EA2F4E35.c:295:10: error: void value not ignored as it ought to be
+sibling_tail_tail_EA2F4E35.c:296:12: error: incompatible types when returning type 'zT_3B6EA323_EU_01' but 'zT_52BDE952_Opt_180' was expected
+
+# d14_two_level_matrix/local_tail_tail.zig (-ffast) — one EU/Opt set per tail level
+local_tail_tail_22AEC5D6.c:367:12: error: incompatible types when assigning to type 'zT_3B6EA323_EU_01' from type 'int'
+local_tail_tail_22AEC5D6.c:368:12: error: incompatible types when returning type 'zT_3B6EA323_EU_01' but 'zT_B2DCC375_Opt_82' was expected
+local_tail_tail_22AEC5D6.c:402:12: error: incompatible types when assigning to type 'zT_3B6EA323_EU_01' from type 'int'
+local_tail_tail_22AEC5D6.c:403:12: error: incompatible types when returning type 'zT_3B6EA323_EU_01' but 'zT_B2DCC375_Opt_82' was expected
+```
+
+Classification:
+
+| Class | Shapes |
+|---|---|
+| frontend `error[3043]` exact `async parent_result slot type mismatch` | **none** |
+| GCC tail ABI (`EU`/`Opt`, plus one extra wrong-callee symptom in imported tail/tail) | exact original tail, nested tail/tail (imported and local) |
+| both | **none** |
+| unrelated / clean (regression oracles) | all 15 non-tail, two-value order, mixed void/value order, `try`, `catch`, and `if` shapes |
+
+Result: **D14 remains a single reproducible bug class at this BASE — the
+tail-return GCC step ABI.** The frontend `error[3043]` trigger in §5.7 is not
+reproduced by the exact original shape or any matrix variant, so this task does
+not record a second D14 bug and does not invoke the both-errors STOP. Task 7
+must not assume the non-tail frontend RED exists.
