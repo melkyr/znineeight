@@ -1,7 +1,8 @@
 // D7.3 sibling probe: the whole-array field assignment form
-// (`arr[i].field = srcArray`) through an indexed base. Pre-fix this emits a
-// C array-to-array assignment (`zT->field = src`) that gcc rejects — the same
-// emission class as D12, on a nested lvalue.
+// (`arr[i].field = srcArray`) through an indexed base. GREEN contract: the
+// lowering copies element-wise into the real field storage; stdout `21 24\n`,
+// rc 0. Pre-fix this emits a C array-to-array assignment (`zT->field = src`)
+// that gcc rejects.
 const std = @import("std");
 
 const Peer = struct { field: [4]u8, score: u32 };

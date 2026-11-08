@@ -5817,7 +5817,7 @@ const IndexAddrResult = struct {
     is_tuple: u8,
 };
 
-fn lowerIndexElemAddr(self: *LirLowerer, lv_node_idx: u32, base_node: u32, idx_node: u32, result_type: u32, want_addr: u8) IndexAddrResult {
+fn lowerIndexElemAddr(self: *LirLowerer, lv_node_idx: u32, base_node: u32, idx_node: u32, result_type: u32, want_addr: u8, base_override: u32) IndexAddrResult {
     var res: IndexAddrResult = IndexAddrResult{
         .addr = TEMP_NONE,
         .orig_base = TEMP_NONE,
@@ -5827,7 +5827,7 @@ fn lowerIndexElemAddr(self: *LirLowerer, lv_node_idx: u32, base_node: u32, idx_n
         .tuple_ord = @intCast(u32, 0),
         .is_tuple = @intCast(u8, 0),
     };
-    var base_temp = lowerExpr(self, indexBaseAfterArrayDeref(self, base_node));
+    var base_temp = if (base_override != TEMP_NONE) base_override else lowerExpr(self, indexBaseAfterArrayDeref(self, base_node));
     var bt = getTempType(self, base_temp);
     if (bt != type_mod.TYPE_UNDEFINED and bt != type_mod.TYPE_VOID and @intCast(usize, bt) < self.ctx.registry.types_len) {
         if (self.ctx.registry.types_items[@intCast(usize, bt)].kind == type_mod.TypeKind.tuple_type) {
@@ -5899,15 +5899,12 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
                 if (d5IndexAssignArrayType(self, lv_node.child_0)) |lv_barr_t| {
                     var lv_bptr_t = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, lv_barr_t, false);
                     var lv_baddr = lowerLValueAddr(self, lv_node.child_0, lv_bptr_t);
-                    var lv_bidx = lowerExpr(self, lv_node.child_1);
-                    emitSafeCheckIndex(self, lv_baddr, lv_node.child_0, lv_bidx);
-                    var lv_beaddr = nextTemp(self, result_type);
-                    emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = lv_baddr, .index = lv_bidx, .result = lv_beaddr, .decay = @intCast(u8, 1) } });
-                    return lv_beaddr;
+                    var lv_ia2 = lowerIndexElemAddr(self, lv_node_idx, lv_node.child_0, lv_node.child_1, result_type, @intCast(u8, 1), lv_baddr);
+                    return lv_ia2.addr;
                 }
             }
         }
-        var lv_ia = lowerIndexElemAddr(self, lv_node_idx, lv_node.child_0, lv_node.child_1, result_type, @intCast(u8, 1));
+        var lv_ia = lowerIndexElemAddr(self, lv_node_idx, lv_node.child_0, lv_node.child_1, result_type, @intCast(u8, 1), TEMP_NONE);
         if (lv_ia.is_tuple != @intCast(u8, 0)) {
             var lv_ix_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, lv_ia.tuple_bt, false);
             var lv_ix_addr = lowerLValueAddr(self, lv_node.child_0, lv_ix_ptr_ty);
@@ -6633,7 +6630,7 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
         // -> `emitSafeCheckIndex`) lives in the ONE shared path
         // (`lowerIndexElemAddr`); this arm stores via `assign_index{ptr, idx}`
         // and takes no element address (`want_addr = 0`).
-        var ai_res = lowerIndexElemAddr(self, lv_node_idx, lv_node.child_0, lv_node.child_1, @intCast(u32, 0), @intCast(u8, 0));
+        var ai_res = lowerIndexElemAddr(self, lv_node_idx, lv_node.child_0, lv_node.child_1, @intCast(u32, 0), @intCast(u8, 0), TEMP_NONE);
         // FB (D4): `t[ord] = value` is the field store `t._<ord> = value`
         // (same mechanism as `.0`/`._0`). A base that is itself an l-value
         // chain (field/index/deref/paren) must be taken by ADDRESS, exactly
@@ -6681,14 +6678,65 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
     } else if (lv_node.kind == AstKind.paren_expr) {
         lowerAssignLValue(self, lv_node.child_0, value_temp, diag_node_idx);
     } else if (lv_node.kind == AstKind.slice_expr) {
-        if (lowerSliceAssignCopy(self, lv_node_idx, value_temp)) return;
+        var as_node = ast_mod.astStoreNodeAt(store, diag_node_idx);
+        if (lowerSliceAssignCopy(self, lv_node_idx, as_node.child_1, value_temp)) return;
         iceAssignLValueUnsupported(self, diag_node_idx);
     } else {
         iceAssignLValueUnsupported(self, diag_node_idx);
     }
 }
 
-fn lowerSliceAssignCopy(self: *LirLowerer, dst_node_idx: u32, src_temp: u32) bool {
+fn lowerSliceStaticLen(self: *LirLowerer, node_idx: u32) ?u32 {
+    if (node_idx == @intCast(u32, 0)) return null;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (node.kind != AstKind.slice_expr) return null;
+    var base_n = sliceBaseStaticLen(self, node.child_0) orelse return null;
+    var start_v: i64 = @intCast(i64, 0);
+    if (node.child_1 != @intCast(u32, 0)) {
+        start_v = sliceBoundComptimeI64(self, node.child_1) orelse return null;
+    }
+    if (node.child_2 != @intCast(u32, 0)) {
+        var end_v = sliceBoundComptimeI64(self, node.child_2) orelse return null;
+        if (start_v < @intCast(i64, 0) or end_v < start_v) return null;
+        return @intCast(u32, end_v - start_v);
+    }
+    if (start_v < @intCast(i64, 0) or @intCast(u64, start_v) > @intCast(u64, base_n)) return null;
+    return base_n - @intCast(u32, start_v);
+}
+
+fn lowerSliceAssignReject(self: *LirLowerer, node_idx: u32, msg: []const u8) void {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), self.ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+fn lowerElemCopyLoop(self: *LirLowerer, dst_ptr: u32, src_ptr: u32, bound_temp: u32, elem_tid: u32) void {
+    var i_temp = nextTemp(self, type_mod.TYPE_USIZE);
+    emitIntConst(self, @intCast(u64, 0), i_temp);
+    var cond_bb = createBlock(self);
+    var body_bb = createBlock(self);
+    var exit_bb = createBlock(self);
+    emitInst(self, LirInst{ .jump = cond_bb });
+    self.current_bb = cond_bb;
+    self.block_terminated = @intCast(u8, 0);
+    var cond = nextTemp(self, type_mod.TYPE_BOOL);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = i_temp, .rhs = bound_temp, .result = cond } });
+    emitInst(self, LirInst{ .branch = .{ .cond = cond, .then_bb = body_bb, .else_bb = exit_bb } });
+    self.current_bb = body_bb;
+    self.block_terminated = @intCast(u8, 0);
+    var elem_temp = nextTemp(self, elem_tid);
+    emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = src_ptr, .index = i_temp, .result = elem_temp, .decay = @intCast(u8, 0) } });
+    emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = dst_ptr, .index = i_temp, .src = elem_temp } });
+    var one_temp = nextTemp(self, type_mod.TYPE_USIZE);
+    emitIntConst(self, @intCast(u64, 1), one_temp);
+    var next_i = nextTemp(self, type_mod.TYPE_USIZE);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = i_temp, .rhs = one_temp, .result = next_i } });
+    emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = i_temp, .src = next_i } });
+    emitInst(self, LirInst{ .jump = cond_bb });
+    self.current_bb = exit_bb;
+    self.block_terminated = @intCast(u8, 0);
+}
+
+fn lowerSliceAssignCopy(self: *LirLowerer, dst_node_idx: u32, src_node_idx: u32, src_temp: u32) bool {
     var dst_temp = lowerExpr(self, dst_node_idx);
     var dst_tid = getTempType(self, dst_temp);
     if (dst_tid == type_mod.TYPE_UNDEFINED or dst_tid == type_mod.TYPE_VOID) return false;
@@ -6696,6 +6744,8 @@ fn lowerSliceAssignCopy(self: *LirLowerer, dst_node_idx: u32, src_temp: u32) boo
     var dst_ty = self.ctx.registry.types_items[@intCast(usize, dst_tid)];
     if (dst_ty.kind != type_mod.TypeKind.slice_type) return false;
     var dst_sl = self.ctx.registry.slice_items[@intCast(usize, dst_ty.payload_idx)];
+    var dst_static = lowerSliceStaticLen(self, dst_node_idx);
+    var src_static = lowerSliceStaticLen(self, src_node_idx);
     var src_tid = getTempType(self, src_temp);
     if (src_tid == type_mod.TYPE_UNDEFINED or src_tid == type_mod.TYPE_VOID) return false;
     if (@intCast(usize, src_tid) >= self.ctx.registry.types_len) return false;
@@ -6714,6 +6764,7 @@ fn lowerSliceAssignCopy(self: *LirLowerer, dst_node_idx: u32, src_temp: u32) boo
     } else if (src_ty.kind == type_mod.TypeKind.array_type) {
         var src_ap = self.ctx.registry.array_items[@intCast(usize, src_ty.payload_idx)];
         elem_tid = src_ap.elem;
+        src_static = src_ap.length;
         var spty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_tid, false);
         src_ptr = nextTemp(self, spty);
         emitInst(self, LirInst{ .ptr_cast = .{ .value = src_temp, .target = spty, .result = src_ptr } });
@@ -6725,33 +6776,32 @@ fn lowerSliceAssignCopy(self: *LirLowerer, dst_node_idx: u32, src_temp: u32) boo
     if (elem_tid == type_mod.TYPE_UNDEFINED or elem_tid == type_mod.TYPE_VOID) return false;
     if (@intCast(usize, elem_tid) >= self.ctx.registry.types_len) return false;
     if (elem_tid != dst_sl.elem) return false;
-    if (self.ctx.registry.types_items[@intCast(usize, elem_tid)].kind == type_mod.TypeKind.array_type) return false;
+    if (self.ctx.registry.types_items[@intCast(usize, elem_tid)].kind == type_mod.TypeKind.array_type) {
+        var elem_msg: []const u8 = "cannot assign a slice whose element type is an array; copy the elements individually";
+        lowerSliceAssignReject(self, dst_node_idx, elem_msg);
+        return true;
+    }
+    var static_equal: u8 = @intCast(u8, 0);
+    if (dst_static) |ds| {
+        if (src_static) |ss| {
+            if (ds != ss) {
+                var len_msg: []const u8 = "slice assignment length mismatch: destination and source lengths differ";
+                lowerSliceAssignReject(self, dst_node_idx, len_msg);
+                return true;
+            }
+            static_equal = @intCast(u8, 1);
+        }
+    }
     var dst_ptr = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, dst_sl.elem, false));
     emitInst(self, LirInst{ .load_field = .{ .name_id = nameMapGet(self, dst_temp), .base = dst_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = dst_ptr } });
-    var i_temp = nextTemp(self, type_mod.TYPE_USIZE);
-    emitIntConst(self, @intCast(u64, 0), i_temp);
-    var cond_bb = createBlock(self);
-    var body_bb = createBlock(self);
-    var exit_bb = createBlock(self);
-    emitInst(self, LirInst{ .jump = cond_bb });
-    self.current_bb = cond_bb;
-    self.block_terminated = @intCast(u8, 0);
-    var cond = nextTemp(self, type_mod.TYPE_BOOL);
-    emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = i_temp, .rhs = src_len, .result = cond } });
-    emitInst(self, LirInst{ .branch = .{ .cond = cond, .then_bb = body_bb, .else_bb = exit_bb } });
-    self.current_bb = body_bb;
-    self.block_terminated = @intCast(u8, 0);
-    var elem_temp = nextTemp(self, elem_tid);
-    emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = src_ptr, .index = i_temp, .result = elem_temp, .decay = @intCast(u8, 0) } });
-    emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = dst_ptr, .index = i_temp, .src = elem_temp } });
-    var one_temp = nextTemp(self, type_mod.TYPE_USIZE);
-    emitIntConst(self, @intCast(u64, 1), one_temp);
-    var next_i = nextTemp(self, type_mod.TYPE_USIZE);
-    emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = i_temp, .rhs = one_temp, .result = next_i } });
-    emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = i_temp, .src = next_i } });
-    emitInst(self, LirInst{ .jump = cond_bb });
-    self.current_bb = exit_bb;
-    self.block_terminated = @intCast(u8, 0);
+    var dst_len = nextTemp(self, type_mod.TYPE_USIZE);
+    emitInst(self, LirInst{ .load_field = .{ .name_id = nameMapGet(self, dst_temp), .base = dst_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = dst_len } });
+    if (static_equal == @intCast(u8, 0)) {
+        var eq = nextTemp(self, type_mod.TYPE_BOOL);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_EQ, .lhs = dst_len, .rhs = src_len, .result = eq } });
+        emitInst(self, LirInst{ .check_trap = .{ .cond = eq, .kind = @intCast(u8, 5) } });
+    }
+    lowerElemCopyLoop(self, dst_ptr, src_ptr, src_len, elem_tid);
     return true;
 }
 
@@ -7231,6 +7281,35 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
         if (kind == type_mod.TypeKind.struct_type) {
             var field_id = lowerFindFieldOrdinal(self, type_box[0], field_name_id, @intCast(u8, 0));
             if (field_id == @intCast(u32, 0xFFFFFFFF)) field_id = @intCast(u32, 0);
+            var fs_fields: []FieldEntry = undefined;
+            type_mod.typeRegistryGetStructFields(self.ctx.registry, type_box[0], &fs_fields);
+            if (@intCast(usize, field_id) < fs_fields.len) {
+                var fs_field_t = fs_fields[@intCast(usize, field_id)].type_id;
+                var fs_val_t = getTempType(self, value_temp);
+                var fs_base_t = getTempType(self, base_temp);
+                var fs_ptr_ok: u8 = @intCast(u8, 0);
+                if (fs_base_t != type_mod.TYPE_UNDEFINED and fs_base_t != type_mod.TYPE_VOID and @intCast(usize, fs_base_t) < self.ctx.registry.types_len) {
+                    var fs_bty = self.ctx.registry.types_items[@intCast(usize, fs_base_t)];
+                    if (fs_bty.kind == type_mod.TypeKind.ptr_type or fs_bty.kind == type_mod.TypeKind.many_ptr_type) {
+                        if (self.ctx.registry.ptr_items[@intCast(usize, fs_bty.payload_idx)].base == type_box[0]) fs_ptr_ok = @intCast(u8, 1);
+                    }
+                }
+                if (fs_ptr_ok != @intCast(u8, 0) and fs_field_t != type_mod.TYPE_UNDEFINED and fs_field_t != type_mod.TYPE_VOID and fs_val_t == fs_field_t and @intCast(usize, fs_field_t) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, fs_field_t)].kind == type_mod.TypeKind.array_type) {
+                    var fs_ap = self.ctx.registry.array_items[@intCast(usize, self.ctx.registry.types_items[@intCast(usize, fs_field_t)].payload_idx)];
+                    if (@intCast(usize, fs_ap.elem) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, fs_ap.elem)].kind != type_mod.TypeKind.array_type) {
+                        var fs_fptr_t = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, fs_field_t, false);
+                        var fs_addr = nextTemp(self, fs_fptr_t);
+                        emitInst(self, LirInst{ .addr_of_field = .{ .base = base_temp, .field_id = field_id, .result = fs_addr } });
+                        var fs_sptr_t = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, fs_ap.elem, false);
+                        var fs_sptr = nextTemp(self, fs_sptr_t);
+                        emitInst(self, LirInst{ .ptr_cast = .{ .value = value_temp, .target = fs_sptr_t, .result = fs_sptr } });
+                        var fs_len = nextTemp(self, type_mod.TYPE_USIZE);
+                        emitIntConst(self, @intCast(u64, fs_ap.length), fs_len);
+                        lowerElemCopyLoop(self, fs_addr, fs_sptr, fs_len, fs_ap.elem);
+                        return;
+                    }
+                }
+            }
             var pk_s_msg: []const u8 = "cannot assign a whole packed-struct value to a nested packed-struct field (bit-slice store not supported)";
             if (lowerPackedMemberStore(self, type_box[0], field_id, base_temp, value_temp, @intCast(u8, 0), pk_s_msg) == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });

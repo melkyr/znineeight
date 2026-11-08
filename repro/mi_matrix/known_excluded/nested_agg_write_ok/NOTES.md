@@ -20,4 +20,16 @@ Same result under `-ffast` and `-fsafe`. `sibling_pointer_aggregate.zig`
 `sibling_slice_of_array.zig` hard-fails with
 `error[3043]: internal: unsupported assignment l-value`.
 
+Post-fix sibling contracts (Task 2 fix round 1):
+
+| Sibling | Contract |
+|---|---|
+| `sibling_field_array_assign.zig` | build 0, run 0, stdout `21 24\n` |
+| `sibling_slice_of_array.zig` | build 0, run 0, stdout `21 22 23 24\n` |
+| `sibling_nested_chain.zig` | build 0, run 0, stdout `5 6\n` |
+| `sibling_pointer_aggregate.zig` | build 0, run 0, stdout `7 8\n` |
+| `sibling_slice_assign_array_rhs.zig` | build 0, run 0, stdout `31 34\n` |
+| `sibling_slice_assign_len_mismatch.zig` | clean reject: rc 2, 0 `.c` |
+| `sibling_slice_assign_elem_array.zig` | clean reject: rc 2, 0 `.c` |
+
 Full evidence and dispositions: `docs/superpowers/specs/2026-10-29-phase35-repro-inventory.md`.
