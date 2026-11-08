@@ -1940,9 +1940,10 @@ pub fn main() void {
     var c_local_addr: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2020_RETURNING_ADDRESS_OF_LOCAL));
     var c_uaf: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2006_USE_AFTER_FREE));
     var c_leak: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6005_MEMORY_LEAK));
+    var c_info: u16 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.INFO_7001_OWNERSHIP_TRANSFERRED));
 
     var e_d4 = [_]DiagExpectation{
-        expectAt(c_untracked, 1, FIXTURE_FILE_ID, @intCast(u32, 57)),
+        expectAt(c_double, 1, FIXTURE_FILE_ID, @intCast(u32, 57)),
         expectAt(c_local_addr, 1, FIXTURE_FILE_ID, @intCast(u32, 73)),
     };
     testFixture("tests/analyzers/d4_contract_probe.zig", "fixture d4_contract_probe", e_d4[0..]);
@@ -1979,6 +1980,19 @@ pub fn main() void {
     var e_gpa_leak = [_]DiagExpectation{ expectCode(c_leak, 1) };
     testFixture("tests/analyzers/gpa_leak.zig", "fixture gpa_leak", e_gpa_leak[0..]);
     testFixture("tests/analyzers/gpa_alias_negative.zig", "fixture gpa_alias_negative", fx_no_expect[0..]);
+
+    var e_df_alias = [_]DiagExpectation{ expectCode(c_double, 1) };
+    testFixture("tests/analyzers/df_alias_chain.zig", "fixture df_alias_chain", e_df_alias[0..]);
+    var e_df_cap_alias = [_]DiagExpectation{ expectCode(c_double, 1) };
+    testFixture("tests/analyzers/df_capture_alias_chain.zig", "fixture df_capture_alias_chain", e_df_cap_alias[0..]);
+    var e_df_field = [_]DiagExpectation{ expectCode(c_double, 1) };
+    testFixture("tests/analyzers/df_field.zig", "fixture df_field", e_df_field[0..]);
+    var e_df_index = [_]DiagExpectation{ expectCode(c_double, 1) };
+    testFixture("tests/analyzers/df_index.zig", "fixture df_index", e_df_index[0..]);
+    testFixture("tests/analyzers/df_owner_handle.zig", "fixture df_owner_handle", fx_no_expect[0..]);
+    var e_df_xfer = [_]DiagExpectation{ expectCode(c_info, 1), expectCode(c_untracked, 1) };
+    testFixture("tests/analyzers/df_transferred_free.zig", "fixture df_transferred_free", e_df_xfer[0..]);
+
     var msg: []const u8 = "Analyzer tests passed.\n";
     pal.stdout_write(msg);
 }

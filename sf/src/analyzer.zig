@@ -17,6 +17,7 @@ const sym_mod = @import("symbol_table.zig");
 const SymbolRegistry = @import("symbol_table.zig").SymbolRegistry;
 const ce_mod = @import("comptime_eval.zig");
 const import_resolver = @import("import_resolver.zig");
+const itoa_mod = @import("util/itoa.zig");
 
 pub const DeferEntry = struct {
     kind: u8,
@@ -69,6 +70,124 @@ fn resolveOrigin(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     if (kind == AstKind.index_access) return resolveOrigin(ctx, node.child_0);
     if (kind == AstKind.deref) return null;
     if (kind == AstKind.slice_expr) return resolveOrigin(ctx, node.child_0);
+    return null;
+}
+
+// DF-1: alias relation for allocation state. Aliases share one canonical
+// name, so freeing any alias updates the same allocation. The table is reset
+// per function by `runDoubleFreeAnalyzer`; the analyzer is a single-threaded
+// post-sema pass, so a module-scoped table avoids widening AnalyzerContext.
+const ALIAS_CAP: usize = 4096;
+var alias_names: [ALIAS_CAP]u32 = undefined;
+var alias_canons: [ALIAS_CAP]u32 = undefined;
+var alias_len: usize = 0;
+
+fn aliasReset() void {
+    alias_len = @intCast(usize, 0);
+}
+
+fn aliasEntryIndex(name_id: u32) ?usize {
+    var i: usize = 0;
+    while (i < alias_len) : (i += 1) {
+        if (alias_names[i] == name_id) return i;
+    }
+    return null;
+}
+
+fn aliasResolveName(name_id: u32) u32 {
+    if (name_id == @intCast(u32, 0)) return name_id;
+    var cur = name_id;
+    var guard: u32 = 0;
+    while (guard < @intCast(u32, 64)) : (guard += 1) {
+        var idx = aliasEntryIndex(cur) orelse return cur;
+        var next = alias_canons[idx];
+        if (next == cur) return cur;
+        cur = next;
+    }
+    return cur;
+}
+
+fn aliasRecord(alias_id: u32, canonical_id: u32) void {
+    if (alias_id == @intCast(u32, 0) or canonical_id == @intCast(u32, 0)) return;
+    var canon = aliasResolveName(canonical_id);
+    if (canon == alias_id) return;
+    if (aliasEntryIndex(alias_id)) |idx| {
+        alias_canons[idx] = canon;
+        return;
+    }
+    if (alias_len >= ALIAS_CAP) return;
+    alias_names[alias_len] = alias_id;
+    alias_canons[alias_len] = canon;
+    alias_len += 1;
+}
+
+fn aliasForget(name_id: u32) void {
+    if (aliasEntryIndex(name_id)) |idx| {
+        alias_canons[idx] = name_id;
+    }
+}
+
+// DF-3: allocator handles seen as the first argument of a recognized
+// alloc/free call. They are never ownership transfers.
+const HANDLE_CAP: usize = 256;
+var handle_names: [HANDLE_CAP]u32 = undefined;
+var handle_len: usize = 0;
+
+fn handleReset() void {
+    handle_len = @intCast(usize, 0);
+}
+
+fn handleRecord(name_id: u32) void {
+    if (name_id == @intCast(u32, 0)) return;
+    var i: usize = 0;
+    while (i < handle_len) : (i += 1) {
+        if (handle_names[i] == name_id) return;
+    }
+    if (handle_len >= HANDLE_CAP) return;
+    handle_names[handle_len] = name_id;
+    handle_len += 1;
+}
+
+fn handleIs(name_id: u32) bool {
+    var i: usize = 0;
+    while (i < handle_len) : (i += 1) {
+        if (handle_names[i] == name_id) return true;
+    }
+    return false;
+}
+
+fn indexKeyNameId(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
+    if (expr_idx == @intCast(u32, 0)) return null;
+    var node = ast_mod.astStoreNodeAt(ctx.store, expr_idx);
+    if (node.kind == AstKind.ident_expr) return identNameId(ctx.store, expr_idx);
+    if (node.kind != AstKind.int_literal) return null;
+    var buf: [24]u8 = undefined;
+    var len = itoa_mod.itoa64(ast_mod.astStoreIntValue(ctx.store, expr_idx), buf[0..]);
+    var last = @intCast(usize, buf.len) - @intCast(usize, 1);
+    var start = last - @intCast(usize, len);
+    return interner_mod.stringInternerIntern(ctx.interner, buf[start..last]);
+}
+
+// DF-2: the identity of an assignable/freeable expression. Field and index
+// chains compose onto the base identity (`st.p`, `arr.0`) so allocation,
+// aliasing, and free all key the same state.
+fn resolveLValueIdentity(ctx: *AnalyzerContext, node_idx: u32) ?u32 {
+    if (node_idx == @intCast(u32, 0)) return null;
+    var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
+    var kind = node.kind;
+    if (kind == AstKind.ident_expr) return identNameId(ctx.store, node_idx);
+    if (kind == AstKind.paren_expr) return resolveLValueIdentity(ctx, node.child_0);
+    if (kind == AstKind.field_access) {
+        var base = resolveLValueIdentity(ctx, node.child_0) orelse return null;
+        var field_id = ast_mod.astStoreNodePayload(ctx.store, node_idx);
+        if (field_id == @intCast(u32, 0)) return null;
+        return compositeNameId(ctx.interner, base, field_id);
+    }
+    if (kind == AstKind.index_access) {
+        var base = resolveLValueIdentity(ctx, node.child_0) orelse return null;
+        var key = indexKeyNameId(ctx, node.child_1) orelse return null;
+        return compositeNameId(ctx.interner, base, key);
+    }
     return null;
 }
 
@@ -280,9 +399,9 @@ pub fn isFreeCall(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, expr_idx);
     if (args_n < @intCast(u32, 2)) return null;
     var args1 = ast_mod.astStoreNodeExtraChildAt(ctx.store, expr_idx, @intCast(u32, 1));
-    var ptr_arg = ast_mod.astStoreNodeAt(ctx.store, args1);
-    if (ptr_arg.kind == AstKind.ident_expr) return identNameId(ctx.store, args1);
-    return null;
+    // DF-2: the freed pointer may be a field/index/member chain, not only a
+    // bare identifier. Resolve it to the same identity used by allocation.
+    return resolveLValueIdentity(ctx, args1);
 }
 
 pub fn compositeNameId(interner: *StringInterner, base_id: u32, field_id: u32) u32 {
@@ -396,9 +515,20 @@ pub fn handleAllocCall(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, in
     smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.allocated));
 }
 
+fn emitFreeingUntracked(ctx: *AnalyzerContext, name_id: u32, node_idx: u32) void {
+    var pn = interner_mod.stringInternerGet(ctx.interner, name_id);
+    var up1: []const u8 = "freeing untracked pointer '";
+    var up2: []const u8 = "'";
+    var uparts: [3][]const u8 = [3][]const u8{up1, pn, up2};
+    var umsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &uparts[0], @intCast(u32, 3));
+    var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
+    diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6006_FREEING_UNTRACKED)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), umsg);
+}
+
 pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void {
-    var name_id = isFreeCall(ctx, expr_idx) orelse return;
-    if (name_id == @intCast(u32, 0)) return;
+    var target_id = isFreeCall(ctx, expr_idx) orelse return;
+    if (target_id == @intCast(u32, 0)) return;
+    var name_id = aliasResolveName(target_id);
     var current = smap_mod.stateMapGet(state, name_id);
     var node = ast_mod.astStoreNodeAt(ctx.store, expr_idx);
     if (current) |c| {
@@ -407,7 +537,7 @@ pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) vo
             return;
         }
         if (c == @enumToInt(AllocState.freed) or c == @enumToInt(AllocState.freed_reported)) {
-            var pn = interner_mod.stringInternerGet(ctx.interner, name_id);
+            var pn = interner_mod.stringInternerGet(ctx.interner, target_id);
             var dp1: []const u8 = "double free of pointer '";
             var dp2: []const u8 = "'";
             var dparts: [3][]const u8 = [3][]const u8{dp1, pn, dp2};
@@ -415,14 +545,18 @@ pub fn handleFreeCall(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) vo
             diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2005_DOUBLE_FREE)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), dmsg);
             return;
         }
+        // DF-4: `transferred`, `returned_val`, and `unknown` are not owned
+        // here; keep the state (no silent -> freed) and emit the documented
+        // untracked-free diagnostic instead of a false double free.
+        if (c == @enumToInt(AllocState.transferred) or
+            c == @enumToInt(AllocState.returned_val) or
+            c == @enumToInt(AllocState.unknown)) {
+            emitFreeingUntracked(ctx, target_id, expr_idx);
+            return;
+        }
         smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.freed));
     } else {
-        var pn = interner_mod.stringInternerGet(ctx.interner, name_id);
-        var up1: []const u8 = "freeing untracked pointer '";
-        var up2: []const u8 = "'";
-        var uparts: [3][]const u8 = [3][]const u8{up1, pn, up2};
-        var umsg = diag_mod.diagnosticBuilderMakeMsg(ctx.diag.interner, &uparts[0], @intCast(u32, 3));
-        diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 1), @intCast(u16, @enumToInt(diag_mod.ErrorCode.WARN_6006_FREEING_UNTRACKED)), ctx.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), umsg);
+        emitFreeingUntracked(ctx, target_id, expr_idx);
     }
 }
 
@@ -445,10 +579,9 @@ pub fn handleAllocAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
     var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
     var lhs_idx = node.child_0;
     var rhs_idx = node.child_1;
-    var lhs_node = ast_mod.astStoreNodeAt(ctx.store, lhs_idx);
-    if (lhs_node.kind != AstKind.ident_expr) return;
-    var lhs_name_id = identNameId(ctx.store, lhs_idx);
-    var current = smap_mod.stateMapGet(state, lhs_name_id);
+    var lhs_name_id = resolveLValueIdentity(ctx, lhs_idx) orelse return;
+    var lhs_canon = aliasResolveName(lhs_name_id);
+    var current = smap_mod.stateMapGet(state, lhs_canon);
     if (current) |c| {
         if (c == @enumToInt(AllocState.allocated)) {
             var pn = interner_mod.stringInternerGet(ctx.interner, lhs_name_id);
@@ -460,35 +593,76 @@ pub fn handleAllocAssign(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
         }
     }
     if (isAllocCall(ctx, rhs_idx)) {
+        aliasForget(lhs_name_id);
         smap_mod.stateMapSet(state, lhs_name_id, @enumToInt(AllocState.allocated));
         return;
     }
     if (rhs_idx != @intCast(u32, 0)) {
         var rhs_node = ast_mod.astStoreNodeAt(ctx.store, rhs_idx);
         if (rhs_node.kind == AstKind.null_literal) {
+            aliasForget(lhs_name_id);
             smap_mod.stateMapSet(state, lhs_name_id, @enumToInt(AllocState.untracked));
             return;
         }
+        var rhs_name_id = resolveLValueIdentity(ctx, rhs_idx) orelse 0;
+        if (rhs_name_id != @intCast(u32, 0)) {
+            var rhs_canon = aliasResolveName(rhs_name_id);
+            if (smap_mod.stateMapGet(state, rhs_canon) != null) {
+                aliasRecord(lhs_name_id, rhs_canon);
+                return;
+            }
+        }
     }
+    aliasForget(lhs_name_id);
     smap_mod.stateMapSet(state, lhs_name_id, @enumToInt(AllocState.unknown));
+}
+
+// DF-1: a `var` initializer propagates the allocation state of an identifier
+// (or field/index) RHS by making the new binding an alias of that allocation.
+pub fn handleAllocVarDecl(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
+    var name_id = ast_mod.astStoreNodePayload(ctx.store, node_idx);
+    if (name_id == @intCast(u32, 0)) return;
+    var rhs_idx = node.child_1;
+    if (rhs_idx == @intCast(u32, 0)) return;
+    aliasForget(name_id);
+    if (isAllocCall(ctx, rhs_idx)) {
+        smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.allocated));
+        return;
+    }
+    var rhs_node = ast_mod.astStoreNodeAt(ctx.store, rhs_idx);
+    if (rhs_node.kind == AstKind.null_literal) {
+        smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.untracked));
+        return;
+    }
+    var rhs_name_id = resolveLValueIdentity(ctx, rhs_idx) orelse return;
+    var rhs_canon = aliasResolveName(rhs_name_id);
+    if (smap_mod.stateMapGet(state, rhs_canon) != null) {
+        aliasRecord(name_id, rhs_canon);
+    }
 }
 
 pub fn handleOwnershipReturn(ctx: *AnalyzerContext, state: *StateMap, ret_expr_idx: u32) void {
     if (ret_expr_idx == @intCast(u32, 0)) return;
-    var node = ast_mod.astStoreNodeAt(ctx.store, ret_expr_idx);
-    if (node.kind != AstKind.ident_expr) return;
-    var current = smap_mod.stateMapGet(state, identNameId(ctx.store, ret_expr_idx));
+    var ret_id = resolveLValueIdentity(ctx, ret_expr_idx) orelse return;
+    var name_id = aliasResolveName(ret_id);
+    var current = smap_mod.stateMapGet(state, name_id);
     if (current) |c| {
         if (c == @enumToInt(AllocState.allocated)) {
-            smap_mod.stateMapSet(state, identNameId(ctx.store, ret_expr_idx), @enumToInt(AllocState.returned_val));
+            smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.returned_val));
         }
     }
 }
 
+// DF-3: only a real ownership-taking call transfers. Allocator/free calls are
+// never ownership transfers, and a name known to be an allocator handle (the
+// first argument of a recognized alloc/free call) is skipped.
 pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx: u32) void {
     if (fn_call_idx == @intCast(u32, 0)) return;
     var node = ast_mod.astStoreNodeAt(ctx.store, fn_call_idx);
     if (node.kind != AstKind.fn_call) return;
+    if (isAllocCall(ctx, fn_call_idx)) return;
+    if (isFreeCall(ctx, fn_call_idx) != null) return;
     var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, fn_call_idx);
     var ai: usize = 0;
     while (ai < @intCast(usize, args_n)) : (ai += 1) {
@@ -496,10 +670,12 @@ pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx:
         var arg_node = ast_mod.astStoreNodeAt(ctx.store, args_i);
         if (arg_node.kind != AstKind.ident_expr) continue;
         var arg_name_id = identNameId(ctx.store, args_i);
-        var current = smap_mod.stateMapGet(state, arg_name_id);
+        var name_id = aliasResolveName(arg_name_id);
+        if (handleIs(arg_name_id) or handleIs(name_id)) continue;
+        var current = smap_mod.stateMapGet(state, name_id);
         if (current) |c| {
             if (c == @enumToInt(AllocState.allocated)) {
-                smap_mod.stateMapSet(state, arg_name_id, @enumToInt(AllocState.transferred));
+                smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.transferred));
                 var pn = interner_mod.stringInternerGet(ctx.interner, arg_name_id);
                 var tp1: []const u8 = "ownership of '";
                 var tp2: []const u8 = "' transferred to function";
@@ -511,6 +687,16 @@ pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx:
             }
         }
     }
+}
+
+// DF-3: remember the allocator handle (first argument of a recognized
+// alloc/free call) so a later call cannot mistake it for owned memory.
+pub fn recordAllocatorHandle(ctx: *AnalyzerContext, fn_call_idx: u32) void {
+    var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, fn_call_idx);
+    if (args_n < @intCast(u32, 1)) return;
+    var args0 = ast_mod.astStoreNodeExtraChildAt(ctx.store, fn_call_idx, @intCast(u32, 0));
+    var id = resolveLValueIdentity(ctx, args0) orelse return;
+    handleRecord(id);
 }
 
 pub const NullGuard = struct {
@@ -1029,8 +1215,8 @@ fn captureNameIdOf(store: *AstStore, node_idx: u32) u32 {
 // active state map. Null mode guarantees the unwrapped payload `safe`; lifetime
 // mode inherits the provenance of the captured expression (so
 // `if (opt_ptr) |ptr| { return ptr; }` flags when opt_ptr points at a local);
-// double-free mode inherits the origin's allocation state and marks the origin
-// transferred (the payload is moved out of the optional).
+// double-free mode makes the payload an alias of the captured allocation so
+// freeing either name frees the one allocation (DF-1).
 fn bindCaptureState(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, src_expr: u32) void {
     if (name_id == @intCast(u32, 0)) return;
     if (ctx.null_analysis_mode != @intCast(u8, 0)) {
@@ -1041,16 +1227,12 @@ fn bindCaptureState(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, src_e
         smap_mod.stateMapSet(state, name_id, prov);
     }
     if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-        var orig = resolveOrigin(ctx, src_expr);
+        var orig = resolveLValueIdentity(ctx, src_expr);
+        if (orig == null) orig = resolveOrigin(ctx, src_expr);
         if (orig) |oid| {
-            var cur = smap_mod.stateMapGet(state, oid);
-            if (cur) |c| {
-                if (c == @enumToInt(AllocState.allocated)) {
-                    smap_mod.stateMapSet(state, name_id, @enumToInt(AllocState.allocated));
-                    smap_mod.stateMapSet(state, oid, @enumToInt(AllocState.transferred));
-                } else {
-                    smap_mod.stateMapSet(state, name_id, c);
-                }
+            var ocanon = aliasResolveName(oid);
+            if (smap_mod.stateMapGet(state, ocanon) != null) {
+                aliasRecord(name_id, ocanon);
             }
         }
     }
@@ -1279,14 +1461,20 @@ fn onDoubleFreeStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void
     var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
     checkUseAfterFreeExpr(ctx, state, node_idx);
     if (node.kind == AstKind.var_decl) {
-        handleAllocCall(ctx, state, ast_mod.astStoreNodePayload(ctx.store, node_idx), node.child_1);
+        handleAllocVarDecl(ctx, state, node_idx);
      }
      if (node.kind == AstKind.plain_assign) {
          handleAllocAssign(ctx, state, node_idx);
     }
     if (node.kind == AstKind.fn_call) {
-        handleFreeCall(ctx, state, node_idx);
-        handleOwnershipPass(ctx, state, node_idx);
+        var df_is_free = isFreeCall(ctx, node_idx) != null;
+        var df_is_alloc = isAllocCall(ctx, node_idx);
+        if (df_is_free or df_is_alloc) recordAllocatorHandle(ctx, node_idx);
+        if (df_is_free) {
+            handleFreeCall(ctx, state, node_idx);
+        } else if (!df_is_alloc) {
+            handleOwnershipPass(ctx, state, node_idx);
+        }
     }
 }
 
@@ -1354,6 +1542,8 @@ pub fn runLifetimeAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx:
 
 pub fn runDoubleFreeAnalyzer(ctx: *AnalyzerContext, fn_body_idx: u32) void {
     var state = smap_mod.stateMapInit(ctx.alloc);
+    aliasReset();
+    handleReset();
     ctx.doublefree_analysis_mode = @intCast(u8, 1);
     ctx.on_stmt_cb = onDoubleFreeStmt;
     walkBlock(ctx, &state, fn_body_idx, detectorVisit);
