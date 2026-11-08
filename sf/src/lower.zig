@@ -14353,7 +14353,7 @@ fn lowerStmtLeafReturn(self: *LirLowerer, node_idx: u32) void {
                     }
                     self.hoisted_temps.items[@intCast(usize, val)].type_id = self.func.return_type;
                 }
-                if (self.func.is_extern == @intCast(u8, 0)) {
+                if ((self.func.is_extern & @intCast(u8, 1)) == @intCast(u8, 0)) {
                     var tci = findTailCall(self, val);
                     if (tci) |ci| {
                         if (ci.is_self == @intCast(u8, 1) and ci.args_count == @intCast(u32, self.func.params.len)) {
@@ -15287,7 +15287,14 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     if (rt) |_| { var dr: []const u8 = "HR"; pal.markerWrite(dr); } else { var dr: []const u8 = "MR"; pal.markerWrite(dr); }
     func_ptr.return_type = if (rt) |tid| tid else type_mod.TYPE_VOID;
     lirFunctionInitHeader(self, func_ptr);
-    func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
+    func_ptr.is_extern = @intCast(u8, 0);
+    if ((node.flags & @intCast(u8, 0x04)) != @intCast(u8, 0)) {
+        if (node.child_0 == @intCast(u32, 0)) {
+            func_ptr.is_extern = @intCast(u8, 1);
+        } else {
+            func_ptr.is_extern = @intCast(u8, 2);
+        }
+    }
     func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
     func_ptr.is_export = @intCast(u8, if ((node.flags & @intCast(u8, 0x08)) != 0) 1 else 0);
     func_ptr.is_variadic = @intCast(u8, 0);

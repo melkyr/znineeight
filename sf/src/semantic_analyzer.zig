@@ -5928,6 +5928,33 @@ fn isBShapeMismatch(self: *SemanticAnalyzer, src_ty: u32, tgt_ty: u32, full: boo
     return false;
 }
 
+fn semanticAnalyzerCheckFnConventionAgreement(self: *SemanticAnalyzer, def_node: u32, name_id: u32, def_conv: u8) void {
+    var mods = mr_mod.moduleRegistryGetModules(self.module_reg);
+    var root: u32 = @intCast(u32, 0);
+    var mi: usize = @intCast(usize, 0);
+    while (mi < mods.len) : (mi += @intCast(usize, 1)) {
+        if (mods[mi].id == self.module_id) { root = mods[mi].ast_root; break; }
+    }
+    if (root == @intCast(u32, 0)) return;
+    var decls_n = ast_mod.astStoreNodeExtraChildCount(self.store, root);
+    var di: usize = @intCast(usize, 0);
+    while (di < decls_n) : (di += @intCast(usize, 1)) {
+        var dn_idx = ast_mod.astStoreNodeExtraChildAt(self.store, root, @intCast(u32, di));
+        if (dn_idx == def_node) continue;
+        var dn = ast_mod.astStoreNodeAt(self.store, dn_idx);
+        if (dn.kind != AstKind.fn_decl) continue;
+        var p = self.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, dn_idx))];
+        if (p.name_id != name_id) continue;
+        if (p.call_conv == def_conv) continue;
+        var msg: []const u8 = "prototype and definition calling conventions disagree";
+        var d = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, dn.span_start, dn.span_start + @intCast(u32, dn.span_len), msg);
+        var defn = ast_mod.astStoreNodeAt(self.store, def_node);
+        var note: []const u8 = "definition declared here";
+        diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, d, self.source_file_id, defn.span_start, defn.span_start + @intCast(u32, defn.span_len), note);
+        return;
+    }
+}
+
 pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32) void {
      var fb: []const u8 = "FB"; pal_mod.markerWrite(fb);
      self.local_decl_count = @intCast(usize, 0);
@@ -5937,6 +5964,9 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
     if (decl.kind != AstKind.fn_decl) return;
     var store = self.store;
     var proto = store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, fn_decl_node))];
+    if (decl.child_0 != @intCast(u32, 0) and (decl.flags & @intCast(u8, 0x04)) != @intCast(u8, 0)) {
+        semanticAnalyzerCheckFnConventionAgreement(self, fn_decl_node, proto.name_id, proto.call_conv);
+    }
     var vsc_tt = rtt_mod.resolvedTypeTableGet(self.type_table, fn_decl_node);
     if (vsc_tt) |vsc_tid| {
         if (@intCast(usize, vsc_tid) < self.registry.types_len) {

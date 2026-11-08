@@ -5,7 +5,7 @@ Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
 deleted numbers are not reused. Next free slot: **D15**.
 
-Open: **D4**, **D5**, **D10**, **D13**, **D14**.
+Open: **D4**, **D13**, **D14**.
 
 _(Add new entries at the next free slot as they are found; entries are doc-only
 unless a compiler fix is separately authorized.)_
@@ -35,64 +35,6 @@ unless a compiler fix is separately authorized.)_
 (g) **`Symbol` test-init missing `file_id`.** `sf/src/tests/test_analyzer_bin.zig`'s `Symbol{...}` initializers omit `file_id` (zig1 zero-fills missing struct-init fields so it compiles/runs; zig0 would reject) — pre-existing rot, disclosed in the T5 report.
 
 **Provenance of this list.** `.superpowers/sdd/2026-10-16-compiler-d1-d2-parity-plan/task-5-report.md` (§1 root causes + Concerns) + `docs/tech_debt/static_analyzers.md` §4.1/§4.2/§4.3 (appended at T5) + the T5 review minors. The future plan starts from those documents; this entry is the ledger intake.
-
----
-
-## D5 — `extern fn` with a body is accepted, analyzed, then silently treated as a declaration (body never emitted)
-
-**Status:** OPEN (found 2026-10-18 during the z9play M6 T2 review; operator ruling: "file the issue found and the clarity as a feature gap").
-
-**Defect.** An `extern fn` declaration that carries a body — e.g. `pub extern "stdcall" fn cb(x: u32) i32 { ... }` (also the default-cdecl `extern fn`) — is accepted with rc=0, its body is analyzed/typechecked, and then the declaration is treated as an external declaration: the emitted C contains NO definition and NO prototype for the symbol. A later registration call (`SetConsoleCtrlHandler(cb, 1)`, `atexit(cb)`) compiles to a reference to a symbol the C toolchain has never seen, so the failure surfaces at the C toolchain with no Z98 diagnostic (observed: gcc `'onCtrl' undeclared`; where a header does supply a prototype it becomes an undefined symbol at link). The construction is a Zig error (`extern` functions cannot have a body), not a valid declaration, so this is a diagnostic-correctness defect.
-
-**Feature gap (clarity).** Z98 has no syntax for DEFINING a non-cdecl function. The win9x-calling-convention spec allows `"c"`/`"cdecl"`/`"stdcall"` only on `extern` declarations and fn-pointer types; non-extern definitions are always cdecl; `callconv(...)` is rejected by the parser; `export fn` is cdecl. Therefore a real Win32 `__stdcall` callback (e.g. `PHANDLER_ROUTINE`) cannot be written in Z98 at all — only faked with a cdecl function cast to a stdcall function pointer, which is a real i386 stack-cleanup ABI defect (the cdecl callee does not pop the argument; the stdcall caller assumes it did).
-
-**Minimal fix (compiler).** Clean reject with a dedicated error code/diagnostic when an `extern fn` declaration carries a body (parse/sema): "extern function declarations cannot have a body". Audit the `extern fn ... { }`, `pub extern fn ... { }`, and `extern "stdcall" fn ... { }` forms; all currently rc=0.
-
-**Full fix (compiler).** Support stdcall function DEFINITIONS (e.g. `fn f(...) callconv(.x86_stdcall)`, or `extern "stdcall" fn f(...) { }` emitting `Z98_STDCALL` on the definition), so Win32 callbacks are expressible without a cast. This is the D5 counterpart of the already-landed stdcall declaration/fn-pointer/call-site work.
-
-**Hit by.** z9play M6 Win9x console backend (T2, commit `d86b3441`): Ctrl-C was first implemented with a `SetConsoleCtrlHandler` callback (`onCtrl`) cast from cdecl to `PHANDLER_ROUTINE`; the T2 review flagged the resulting ABI defect. M6 Amendment 1 (operator ruling, Option 3) removed the handler.
-
-**Workaround (example-only).** M6 Amendment 1 Option 3: `enterRaw` also clears `ENABLE_PROCESSED_INPUT`; Ctrl-C is then reported in the input buffer as a `KEY_EVENT` with `uChar == 0x03`, which `readKey` maps to `Key.sigint`. `SetConsoleCtrlHandler` and its cast are gone; the `atexit` mode-restore backstop remains. Commit `example(z9play): M6 T2 fix — Ctrl-C via processed-input off (option 3)`. Known limits: Ctrl-Break still terminates via the default handler; console-close/shutdown restore is moot (the console is gone).
-
-**Evidence.** T2 review of `d86b3441` (`.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/review-323bff07..d86b3441.diff`): objdump of the emitted callback path shows a plain `ret` (cdecl) where a `__stdcall` callback must `ret $4`, so the `@ptrCast(CtrlHandler, onCtrl)` bridge is a real stack-cleanup mismatch. Direct probe: the compiler accepts `pub extern "stdcall" fn onCtrl(t: u32) i32 { ... }` with rc=0, emits only the registration-site reference (`zT_1 = ((...)onCtrl);`) and no definition, and mingw then rejects the emitted C with `error: 'onCtrl' undeclared` (no Z98 diagnostic); see the T2 fix-round report (`.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/task-2-report.md`, "Fix round 1"). Workaround verification: the new `-osw` probe dump has no `SetConsoleCtrlHandler`/`PHANDLER_ROUTINE`/`onCtrl`/cast, `XRUNRC=0`, `--dump-c89` md5 `81c052098c89218b96da2ea908f77310`.
-
-**Reference points.** `sf/src/parser.zig` `parserParseExternDecl`/`parserParseFnDecl` (`is_extern` + body accepted); `docs/superpowers/specs/2026-09-13-win9x-calling-convention-design.md` §1 (conventions only on extern declarations + fn-pointer types; non-extern definitions never carry a convention); the D4 entry above for the intake style.
-
----
-
-
-## D10 — No first-class calling conventions: callbacks need a C trampoline
-
-**Status:** OPEN — worked around in P4-M1 with a C shim; language feature deferred. Found
-2026-10-27 while building the P4 GUI layer (`docs/superpowers/plans/2026-10-24-phase2-gfx-editor-plan.md`),
-Task 1.
-
-**Symptom.** Z98 cannot declare a function or function type with a non-default calling
-convention, so it cannot supply a callback to an ABI that requires one. On Win32 this blocks
-`WNDPROC` (`stdcall`). The same gap blocks audio callbacks, timer/enum callbacks, COM
-callbacks, and callbacks for non-Win32 ABIs — a real wall for a game or any callback-driven
-API written in Z98 alone.
-
-**Root cause.** `fn` types and `extern fn` declarations carry no calling-convention syntax,
-and the emitter has no per-function convention annotation for Z98-defined functions.
-`Z98_STDCALL` exists only for fn-pointer *types* (see `emitFnPtrType`); a Z98-defined
-`stdcall` callback cannot be expressed. This is therefore two things: a compiler defect
-(the callback cannot be written) and a language feature (first-class calling conventions).
-
-**Workaround (P4-M1).** `sf/src/include/zig_gfx_wndproc.c` — a ~30-line C trampoline with the
-`stdcall` WndProc (records `WM_SIZE`/`WM_CLOSE`, forwards to the PAL-supplied
-`DefWindowProcA`). The build harness gained `EXTRA_CSRC` (default empty) to link it. The shim
-imports nothing of its own (`nm -u` empty); Z98 remains the host (`main.zig`), C is a leaf.
-
-**Feature to investigate (not scheduled).** Calling-convention support on `fn` types and
-`extern fn` declarations (at least `cdecl`/`stdcall`/`fastcall`), plus the ability to define
-and pass callbacks across ABIs without C glue. Touches the parser (convention syntax), sema
-(type identity includes convention), and LIR/emitter (extend `Z98_STDCALL` to Z98-defined
-functions), plus a fixture proving a Z98-defined `stdcall` function is callable by Win32.
-
-**Impact.** Cosmetic for the editor (one shim); structural for future game/audio/COM work.
-Left here as the "feature to investigate" so it is not lost when the language is pushed
-beyond console programs.
 
 ---
 

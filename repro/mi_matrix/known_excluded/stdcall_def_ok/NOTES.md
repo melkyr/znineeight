@@ -12,3 +12,4 @@ Sibling probes in this directory:
   function pointer.
 - `sibling_mismatch.zig` — prototype/definition convention mismatch.
 - `sibling_variadic.zig` — variadic `stdcall` declaration.
+- `sibling_callconv.zig` — `callconv(...)` stays rejected with `error[2000]`.

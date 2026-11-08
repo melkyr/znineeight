@@ -2102,7 +2102,7 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
      var fwdm: []const u8 = "FWD:n="; pal.measureMarkerWrite(fwdm); var fwdnb: [10]u8 = undefined; var fwdnl = itoa_mod.itoa(lir_fn.name_id, fwdnb[0..]); var fwdns: usize = @intCast(usize, 9) - @intCast(usize, fwdnl); pal.measureMarkerWrite(fwdnb[fwdns..@intCast(usize, 9)]); var fwdmm: []const u8 = " m="; pal.measureMarkerWrite(fwdmm); var fwdmb: [10]u8 = undefined; var fwdml = itoa_mod.itoa(lir_fn.module_id, fwdmb[0..]); var fwdms: usize = @intCast(usize, 9) - @intCast(usize, fwdml); pal.measureMarkerWrite(fwdmb[fwdms..@intCast(usize, 9)]); var fwdnl2: []const u8 = "\n"; pal.measureMarkerWrite(fwdnl2);
     var fn_mid = nm_mod.nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
-     if (lir_fn.is_extern == @intCast(u8, 1)) { fn_name = orig; }
+     if (lir_fn.is_extern != @intCast(u8, 0)) { fn_name = orig; }
 
     var sc: []const u8 = "/* ";
     bufferedWriterWrite(&emitter.writer, sc);
@@ -2137,7 +2137,7 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     emitCallConv(emitter, lir_fn.call_conv);
     var fn_mid = nm_mod.nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
-    if (lir_fn.is_extern == @intCast(u8, 1)) {
+    if (lir_fn.is_extern != @intCast(u8, 0)) {
         var orig_c = interner_mod.stringInternerGet(emitter.interner, lir_fn.name_id);
         fn_name = orig_c;
     }
@@ -2601,7 +2601,7 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, c_includes: []u32) v
     var i: usize = @intCast(usize, 0);
     while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
         var f = faultIn(emitter, i);
-        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
+        if ((f.is_extern & @intCast(u8, 1)) == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, f);
         }
     }
@@ -3168,7 +3168,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     while (fi < emitter.fn_slots_len) : (fi += @intCast(usize, 1)) {
         var f = faultIn(emitter, fi);
         if (f.module_id != module_id) continue;
-        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
+        if ((f.is_extern & @intCast(u8, 1)) == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, f);
         }
     }
@@ -3197,10 +3197,10 @@ fn emitFunctionSet(emitter: *C89Emitter, module_id: u32, all: u8) void {
         emitter.plan_fn_key = emitter.fn_slots[emitter.fn_slots_start + i].disk_offset;
         if (all == @intCast(u8, 0)) {
             if (func.module_id != module_id) continue;
-            if (func.is_extern != @intCast(u8, 0)) continue;
+            if ((func.is_extern & @intCast(u8, 1)) != @intCast(u8, 0)) continue;
         }
         emitter.switch_cases = &func.switch_cases;
-        if (func.is_extern == @intCast(u8, 0)) {
+        if ((func.is_extern & @intCast(u8, 1)) == @intCast(u8, 0)) {
             debugLoadFnSpans(emitter, emitter.fn_slots[emitter.fn_slots_start + i], func.module_id, &func);
             lir_opt_mod.lirOptRun(emitter.alloc, emitter.registry, &func);
             emitFunctionSignature(emitter, &func);
