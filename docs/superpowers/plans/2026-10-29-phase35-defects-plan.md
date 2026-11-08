@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - Only this plan is authorized. STOP and present on ambiguity; if the plan says A, do A. `edit`/`fastedit` only (no sed/perl/python/awk source transforms); one edit at a time; no subagents inside implementers; explicit-path staging only; no push; `run.err` untouched; sequential `zig1` runs in separate CWDs (`.zig1_*.tmp` collide).
-- **Runtime single source:** any edit to emitted C support files goes through `sf/src/emit_support.zig` → `bash scripts/gen_emit_support.sh <zig1>` → `bash scripts/check_emit_support.sh <zig1>` = 8/8. Never edit `sf/src/include/*` by hand.
+- **Runtime single source:** any edit to emitted C support files goes through `sf/src/emit_support.zig` → `bash scripts/gen_emit_support.sh <zig1>` → `bash scripts/check_emit_support.sh <zig1>` = 9/9. Never edit `sf/src/include/*` by hand.
 - **Single re-baseline:** the 8 pins move exactly once, in Task 12. Tasks 3, 4, and 7 change emission; Task 6 may shift enum emission; verify them functionally and record interim diffs — do NOT touch `gate_lower_depth.sh` pins or the QUICK_REF pin table before Task 12.
 - **Root-cause gate:** Task 0.5's report is the upstream map. Every fixing task (Tasks 1–9) must begin by verifying the report's root cause against its repro. If the symptom is only downstream, or the report's cause does not match, STOP. Do not patch a downstream symptom.
 - Anchors (hold unless Task 12 re-anchors them): frozen-1124 md5 `518eca1a9b5d3e1cc5a48abce214abd8` NEVER moves; **seed baseline is v145** (`abbc017d…`, fixed point `cd8d283b…`); corpus live list re-measured before Task 1 (last 3.1-closeout count 1265; 3.3 added fixture dirs), growth additive only; markers 4281 lines / 49573 B (re-record at Task 12); stdlib 376 + crosscheck 10; examples 28/28; 8 pins = spec §4 list.
@@ -151,19 +151,23 @@
 ### Task 2: D7.3 — nested aggregate write targets a by-value temp
 
 **Files:**
-- Modify: `sf/src/lower.zig` (slice-base lvalue composition and the `slice_expr` assignment arm). Do not patch `c89_emit.zig`.
-- Test: `repro/mi_matrix/known_excluded/nested_agg_write_ok/main.zig` (+ expected), plus the sibling `sibling_slice_of_array.zig` direct-assignment case
+- Modify: `sf/src/lower.zig` (slice-base lvalue composition, `slice_expr` assignment arm, field-array element copy).
+- Modify: `sf/src/semantic_analyzer.zig` (same-type whole-array assignment through an lvalue chain is assignable; remove the false `warning[3000]`; incompatible types still warn/error).
+- Do not patch `c89_emit.zig`.
+- Test: `repro/mi_matrix/known_excluded/nested_agg_write_ok/main.zig` (+ expected), plus the sibling `sibling_slice_of_array.zig` direct-assignment case and `sibling_field_array_assign.zig`
 
 **Interfaces:**
 - Consumes: nothing from Task 1.
 - Produces: `arr[i].field[0..] = ...` / `arr[i].field = ...` writes land in `arr`'s storage, including the direct slice-assignment form. The wireguard demo's explicit-pointer workaround becomes unnecessary (but is left in place).
+- Direct slice assignment is equal-length: static mismatch is a clean `error[3000]`; dynamic mismatch traps as a mode-independent precondition in both `-fsafe` and `-ffast`; array-element slices are a clean reject. Partial copies use an explicit destination slice or `std.mem.copyU8`.
+- `arr[i].field = srcArray` compiles without `warning[3000]` when the source and field types are the same array type.
 
-- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D7.3 report entry; compare its cause/evidence with `nested_agg_write_ok`. If it does not match or is only a downstream symptom, STOP. Do not patch a symptom.
+- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D7.3 report entry; compare both lower causes and the sema warning source with `nested_agg_write_ok`. If either is only a downstream symptom or the warning is not sema assignability, STOP. Do not patch a symptom.
 - [ ] **Step 1: Run the Task 0 fixture.** Use `known_excluded/nested_agg_write_ok` from Task 0; confirm the store is lost pre-fix (output shows pre-write values). Extend it here if the adjacent scan found another nested-store shape in scope; do not recreate the base repro.
 - [ ] **Step 2: Locate the temp** — identify where the nested write materialises a by-value temp (lowering of `field_access`/`index_access` lvalues, emitter `emitBaseIdxAccess` family). Record the mechanism in the report before fixing.
-- [ ] **Step 3: Fix both root causes.** (a) Compose the slice base as an lvalue storage address instead of lowering it as an rvalue (`sf/src/lower.zig:12527`); reuse the existing `lowerLValueAddr` composition. (b) Add the missing `slice_expr` arm to `lowerAssignLValue` (`:6664`) so direct `arr[i].field[0..] = src[0..]` composes the same storage address instead of hitting the unsupported-lvalue ICE.
-- [ ] **Step 4: Verify GREEN** — `nested_agg_write_ok` prints `77 88 77 88`; `sibling_slice_of_array.zig` builds and writes to the aggregate; `sibling_nested_chain` prints the written values; the simple working shapes (`s.f = v`, `a[i] = v`, typed slice writes) re-emit **byte-identical** (Review Focus 5).
-- [ ] **Step 5: Commit** `fix(lower): compose slice lvalues for nested aggregate writes (Phase3.5 D7.3)` + delete D7.3 + report.
+- [ ] **Step 3: Fix the root causes.** (a) Compose the slice base as an lvalue storage address instead of lowering it as an rvalue (`sf/src/lower.zig:12527`); reuse the existing `lowerLValueAddr` composition. (b) Add the missing `slice_expr` arm to `lowerAssignLValue` (`:6664`) so direct `arr[i].field[0..] = src[0..]` composes the same storage address instead of hitting the unsupported-lvalue ICE. (c) In `sf/src/semantic_analyzer.zig`, treat a same-type whole-array assignment through a field/index/deref lvalue chain as assignable, because lowering now performs the element-wise copy; remove the false `warning[3000]` for that shape and keep genuine type mismatches. Do not suppress the warning in lowering or the emitter.
+- [ ] **Step 4: Verify GREEN** — `nested_agg_write_ok` prints `77 88 77 88`; `sibling_slice_of_array.zig` builds and writes to the aggregate; `sibling_nested_chain` prints the written values; `sibling_field_array_assign.zig` prints `21 24` with **no** `warning[3000]`; direct slice assignment enforces equal lengths (static reject; dynamic mode-independent trap); `gate_warn_clean.sh` stays green; the simple working shapes (`s.f = v`, `a[i] = v`, typed slice writes) re-emit **byte-identical** (Review Focus 5).
+- [ ] **Step 5: Commit** `fix(lower,sema): compose slice lvalues and accept same-type array field assignment (Phase3.5 D7.3)` + delete D7.3 + report.
 
 ### Task 3: D8 — stdout builtins through the PAL + runtime-C surface doc
 
@@ -180,8 +184,8 @@
 - [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D8 report entry; compare its cause/evidence with `stdout_order_ok`. If it does not match or is only a downstream symptom, STOP. Do not patch a symptom.
 - [ ] **Step 1: Run the Task 0 fixture.** Use `known_excluded/stdout_order_ok` from Task 0; record the pre-fix CRT and no-CRT baseline. It may pass or pass-by-luck; the ordering test's value is post-fix on BOTH paths. Extend it here only if the adjacent scan found an in-scope stdout shape.
 - [ ] **Step 2: Inventory the current surface** (write-first): which emitted symbols come from `stdio.h`, `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c`, `__bootstrap_*`. Record in the report; this becomes the doc body.
-- [ ] **Step 3: Implement PAL routing** — lower the four builtins to PAL calls; add the missing PAL putchar/getchar in `emit_support.zig`; regen + `check_emit_support.sh` 8/8.
-- [ ] **Step 4: Verify** — ordering fixture byte-exact under gcc CRT AND `scripts/win32_cross/cross_nocrt.sh` (no-CRT); existing stdlib/examples outputs unchanged (they use `std.io.print`, already PAL); `check_emit_support.sh` 8/8; gate `gate_warn_clean.sh` still GREEN (the new PAL calls must stay `-m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long`-clean). Record the emitted-C diff vs base (expected non-empty for std.io users — this is the authorized shift).
+- [ ] **Step 3: Implement PAL routing** — lower the four builtins to PAL calls; add the missing PAL putchar/getchar in `emit_support.zig`; regen + `check_emit_support.sh` 9/9.
+- [ ] **Step 4: Verify** — ordering fixture byte-exact under gcc CRT AND `scripts/win32_cross/cross_nocrt.sh` (no-CRT); existing stdlib/examples outputs unchanged (they use `std.io.print`, already PAL); `check_emit_support.sh` 9/9; gate `gate_warn_clean.sh` still GREEN (the new PAL calls must stay `-m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long`-clean). Record the emitted-C diff vs base (expected non-empty for std.io users — this is the authorized shift).
 - [ ] **Step 5: Runtime-C surface doc** in `10_c_runtime.md`: the inventory + reduction path toward a C-free backend (which PAL calls would become raw syscalls / OS calls in an asm backend; what `__bootstrap_*` would become).
 - [ ] **Step 6: Commit** `fix(emit): route stdout/stderr/getchar builtins through the PAL (Phase3.5 D8)` + delete D8 + report.
 
@@ -269,22 +273,105 @@
 - [ ] **Step 4: Bar + must-work set** — the gap to a real-analyzer bar, and the concrete must-work list Task 9 implements. Fixture-driven test strategy (`tests/analyzers/**`) replaces hand-fed symbols.
 - [ ] **Step 5: Commit** `docs(specs): static-analyzer audit — contracts, inert paths, lie list (Phase3.5 D4-pre)`.
 
-### Task 9: D4-upgrade — make them real analyzers
+### Task 9: D4-upgrade — split into 9a–9f
+
+**Source:** Task 8's audit (`docs/superpowers/specs/2026-10-29-phase35-analyzer-audit.md`) is the binding bar. Task 8 must be reviewed before 9a starts.
+
+**Global constraints:** Only the plan; no unrelated fixes; no push. Full audit bar. No interprocedural/alias-through-deref expansion. No emission change: analyzers are post-sema, so emitted C/H must be byte-identical for corpus/stdlib/examples. Do not suppress a diagnostic to make a count move; fix the state/walk that causes it. Every sub-task has its own commit and scoped review.
+
+#### Task 9a: Shared analyzer infrastructure and harness
 
 **Files:**
-- Modify: `sf/src/analyzer*.zig`, `sf/src/semantic_analyzer.zig` (dead-arm parity plumbing), `sf/src/main.zig`/`sf/src/comptime_eval.zig` (AnalyzerContext fold plumbing if the audit requires it), `sf/src/tests/test_analyzer_bin.zig` (Symbol `file_id`, fixture-driven harness)
-- Test: `tests/analyzers/**` fixtures (the T5 direction), self-source false-positive measurement
+- Modify: `sf/src/analyzer.zig` (AnalyzerContext fold field, mode gating, source spans), `sf/src/main.zig` (pass `ctx.comptime_folds` into `phase_StaticAnalyzers`), `sf/src/comptime_eval.zig` only if the fold accessor needs it, `sf/src/diagnostics.zig` only if source attribution needs it, `sf/src/tests/test_analyzer_bin.zig` (code-aware harness, manifest, `Symbol` file_id)
+- Test: `tests/analyzers/**`; `tests/analyzers/d4_contract_probe.zig` registered
 
 **Interfaces:**
-- Consumes: Task 8's must-work set (binding — the audit is the bar).
-- Produces: analyzers that match their contracts on the must-work set; `WARN_6002` false-positive count on self-source driven to the audit's target (the 44-class must collapse, not move).
+- Consumes: audit §§1.5, 2.5, 3 L2/L11/L12, and must-work `DED-1`, `TEST-1`, `DX-1`.
+- Produces: fold table available to analyzers; DED-2 switch-prong fold gating; null diagnostics emitted only by the null pass; diagnostics carry `source_file_id`/non-zero spans; code-aware fixture harness with exact code/count assertions; D4 probe registered. No analyzer behavior fixes beyond plumbing.
 
-- [ ] **Step 0: Confirm the Task 0.5 upstream cause.** Read the D4 report entries; confirm each must-work item maps to a root cause, not a symptom patch. If not, STOP.
-- [ ] **Step 1: Write-first plan** — map each must-work item to its fix; append to the SDD report before editing.
-- [ ] **Step 2: Fix the lies first** (wrong diagnostics), then **close the inert paths** (return/init walks, param seeding, alias propagation, local provenance), then **extend** to the audit's must-work set.
-- [ ] **Step 3: Test migration** — fixture-driven cases under `tests/analyzers/**`; register `tests/analyzers/d4_contract_probe.zig` (and the Task 0 probes) in `sf/src/tests/test_analyzer_bin.zig` and assert the expected per-analyzer diagnostics from the Task 0.5 report §2 fix contracts; delete/retire the vacuous hand-fed-symbol tests (the (e) pattern); fix `Symbol` test-init `file_id` (the (g) item); docs residue (the (f) item) cleaned in `docs/sf/STATIC_ANALYZERS_p2.md` §5.3 and `docs/tech_debt/static_analyzers.md`. `docs/design/static_analyzers.md` is zig0-era and stays untouched per spec §5.5; its residue is deferred with the zig0 archive.
-- [ ] **Step 4: Verify** — analyzer suites green; self-source `WARN_6002` false positives measured at the audit's target; no NEW false positives on corpus examples; corpus/stdlib/examples unchanged (analyzers are post-sema, no emission change — verify emitted C diff is empty).
-- [ ] **Step 5: Commit** `fix(analyzer): contracts honored, lies removed, fixture-driven tests (Phase3.5 D4)` + rewrite the D4 entry out of the defects doc + report. Record the deferred `docs/design/static_analyzers.md` residue (zig0-era, spec §5.5) in the SDD report so removing D4 does not silently drop it.
+- [ ] **Step 0: Confirm the audit mapping.** Read Task 8 §§2.5/4.3 and confirm the harness/plumbing root is not a downstream symptom. If not, STOP.
+- [ ] **Step 1: RED for duplicate/mode gating.** Use `np_cond.zig` (one `p.*`) and record the current 3 warnings across all passes vs 1 in the null pass alone. Expected post-fix: exactly one `WARN_6002`.
+- [ ] **Step 2: Plumb the fold table and gate switch prongs.** Add `comptime_folds` to `AnalyzerContext`, pass it from `phase_StaticAnalyzers`, and expose the shared accessor used by sema/lowering. Do not add a parallel fold table. Gate `switch` prongs (DED-2), using the selector evaluator when the selector has no fold-table entry; dead prongs must not emit analyzer diagnostics, live prongs must.
+- [ ] **Step 3: Gate `analyzeExpr` by analyzer mode.** Null diagnostics must not be emitted from lifetime/double-free passes; conditions still participate in each pass's own state. Re-measure the self-source 43/86 split.
+- [ ] **Step 4: Code-aware test harness.** Replace aggregate-only `testFixture` assertions with `{code, count}`/`{code, file, line}` expectations; add a fixture manifest; set `Symbol` test `file_id`; register `d4_contract_probe.zig`.
+- [ ] **Step 5: Source attribution (DX-1).** Carry `source_file_id` and a non-zero span for null/lifetime/double-free/leak diagnostics; render file/line/caret when present. Keep signature behavior unchanged.
+- [ ] **Step 6: Verify.** Analyzer suites green; no emission change; self-source raw count equals single-pass count (no cross-mode duplication); report commands/outputs. Commit `refactor(analyzer): plumb folds, gate passes and attribute diagnostics (Phase3.5 D4a)`.
+
+#### Task 9b: NullPointer
+
+**Files:**
+- Modify: `sf/src/analyzer.zig` (NullPointer paths only), `sf/src/tests/test_analyzer_bin.zig` (fixtures/expectations)
+- Test: `tests/analyzers/**` NP fixtures
+
+**Interfaces:**
+- Consumes: Task 9a harness/fold/attribution.
+- Produces: NP-1..NP-5: non-optional pointer params seeded `safe`; optional params conservative; `return`/`var` initializer/assignment RHS walked; exactly one diagnostic per defect; guard/capture refinement and true positives preserved.
+
+- [ ] **Step 0: Confirm the audit NP cause; STOP if downstream-only.**
+- [ ] **Step 1: RED** — `np_param_safe.zig` (0 `WARN_6002`), `np_return_null.zig`/`np_init_null.zig`/`np_assign_null.zig` (`ERR_2004`), `np_single_deref.zig` (exactly one warning); record current results.
+- [ ] **Step 2: Implement** param seeding, return/init/RHS walks, and single-pass emission; preserve guard/capture refinement.
+- [ ] **Step 3: Verify** NP-1..5, no new false positives, no emission change; commit `fix(analyzer): make null-pointer analysis real (Phase3.5 D4b)`.
+
+#### Task 9c: DoubleFree
+
+**Files:**
+- Modify: `sf/src/analyzer.zig` (DoubleFree paths only), `sf/src/tests/test_analyzer_bin.zig`
+- Test: `tests/analyzers/**` DF fixtures
+
+**Interfaces:**
+- Consumes: Task 9a harness/fold/attribution.
+- Produces: DF-1..DF-4: alias state propagation; field/index/member free resolution; ownership transfer only at real ownership sites; no lossy `transferred`/`returned_val`/`unknown` → `freed`; leak/double-free semantics preserved.
+
+- [ ] **Step 0: Confirm the audit DF cause; STOP if downstream-only.**
+- [ ] **Step 1: RED** — `df_alias_chain.zig`, `df_field.zig`, `df_index.zig`, `df_owner_handle.zig`, `df_transferred_free.zig`; record current false/missing diagnostics.
+- [ ] **Step 2: Implement** alias relation/state propagation, field/index resolution, precise ownership pass, and lossless state transitions.
+- [ ] **Step 3: Verify** DF-1..4; before/after self-source and corpus warning/info volume recorded; no emission change; commit `fix(analyzer): make double-free ownership real (Phase3.5 D4c)`.
+
+#### Task 9d: Lifetime / Provenance
+
+**Files:**
+- Modify: `sf/src/analyzer.zig` (Lifetime paths only), `sf/src/tests/test_analyzer_bin.zig`
+- Test: `tests/analyzers/**` LIFE fixtures
+
+**Interfaces:**
+- Consumes: Task 9a harness/fold/attribution.
+- Produces: LIFE-1/LIFE-2. Keep true positives/captures. Per the audit, delete the structurally dead symbol-table provenance arm for locals/params and test the real state-map path; do not build a new front-end scope map in this milestone. Document the no-interprocedural/no-alias-through-deref limits.
+
+- [ ] **Step 0: Confirm the audit LIFE cause; STOP if downstream-only.**
+- [ ] **Step 1: RED** — `lifetime_local.zig`, `lifetime_param.zig`, plus existing `capture_lifetime.zig`; record `ERR_2020`/`ERR_2021`/`WARN_6010` behavior.
+- [ ] **Step 2: Remove the dead symbol-table path** and route local/param provenance through the real state map; keep the true positive `return &x`.
+- [ ] **Step 3: Verify** LIFE-1/2, no new false positives, no emission change; commit `fix(analyzer): make lifetime provenance real (Phase3.5 D4d)`.
+
+#### Task 9e: Signature and residue
+
+**Files:**
+- Modify: `sf/src/tests/test_analyzer_bin.zig`, `docs/sf/STATIC_ANALYZERS_p2.md` §5.3, `docs/tech_debt/static_analyzers.md`
+- Test: `tests/analyzers/**` signature fixtures
+
+**Interfaces:**
+- Consumes: Task 9a harness; Task 8 audit §2.4/§2.5.
+- Produces: SIG-1 regression by code; vacuous hand-fed-symbol tests retired or reduced to pure helper tests; docs residue cleaned. Signature analyzer logic unchanged.
+
+- [ ] **Step 1: Assert the existing Signature surface by code** (`?Aggregate`, `E!Aggregate`, arbitrary-width ints) and the negative codes/counts.
+- [ ] **Step 2: Retire/rewrite the hand-fed `Symbol` behavior tests; set `file_id` on remaining tests.**
+- [ ] **Step 3: Clean `STATIC_ANALYZERS_p2.md` §5.3 and `tech_debt/static_analyzers.md`; leave `docs/design/static_analyzers.md` deferred with the zig0 archive.**
+- [ ] **Step 4: Verify** suite green, no emission change; commit `test(analyzer): assert signature contracts and remove analyzer test residue (Phase3.5 D4e)`.
+
+#### Task 9f: D4 integration and closeout
+
+**Files:**
+- Modify: `examples/torrent_example_defects.md` (delete D4), `docs/tech_debt/static_analyzers.md` if not already done
+- Test: full analyzer suite; self-source measurement; corpus/stdlib/examples no-emission proof
+
+**Interfaces:**
+- Consumes: 9a–9e.
+- Produces: D4 closed on the full audit bar; self-source `WARN_6002` class collapsed, not moved; raw count equals single-pass count; any residual individually justified; emitted C/H byte-identical.
+
+- [ ] **Step 1: Re-run the self-source measurement** (43 null-pass / 86 raw baseline) and the D4 probe; record exact commands/counts. Any residual must be justified per site.
+- [ ] **Step 2: Verify no emission change** on corpus/stdlib/examples; analyzer suites green; no new false positives.
+- [ ] **Step 3: Delete D4 from the defects doc; record the deferred `docs/design/static_analyzers.md` residue in the SDD report; commit `docs(analyzer): close D4 on the full audit bar (Phase3.5 D4f)`.**
+
+
 
 ### Task 10: Doc consolidation
 
@@ -311,7 +398,7 @@
 
 - [ ] **Step 1: Kill the lifting lie** — replace the `:435` "AST Lifting" bullet with the real mechanism (lowerer phase machines emit branches + result temporaries in LIR; no AST transformation pass exists).
 - [ ] **Step 2: Barrel list** — verify against the current `sf/src/std.zig`; it has 17 re-exports today, not the old 12 → 14 claim.
-- [ ] **Step 3: Missing facts** — `error[3077]` (limit 130), `--check` mode, the §5.1 conventions rules, the §5.3 lazy-import semantics, full `enum(u64)` discriminants (D13), and the suspending-wrapper error-union payload rule (D14).
+- [ ] **Step 3: Missing facts** — `error[3077]` (limit 130), `--check` mode, the §5.1 conventions rules, the §5.3 lazy-import semantics, full `enum(u64)` discriminants (D13), the suspending-wrapper error-union payload rule (D14), and the `@getChar` raw-byte contract selected by the operator: returns `0..255`, `-1` at EOF/error, no CRT CRLF→LF or Ctrl-Z→EOF translation; identical on POSIX/Win32 and CRT/no-CRT.
 - [ ] **Step 4: Builtins reconciliation** — §4 list vs the compiler's real registration (sema `BuiltinDesc` + lower + `comptime_eval`); resolve `@addr`/`@name`/`@enumFromInt`/`@typeName`/`@cInclude` claims.
 - [ ] **Step 5: §5/§7 re-verification** — every limitation and "Not Yet Supported" item re-checked against the current compiler and mi/corpus; correct stale claims; verify every fixture path named in the spec exists.
 - [ ] **Step 6: Commit** `docs(spec): language spec truth-up — real lowering, current features (Phase3.5)` + report.
@@ -326,7 +413,7 @@
 - Consumes: every prior task's landed state.
 - Produces: seed v145 → **v146** with a new fixed point (F_new moved by Tasks 3–7), re-anchored corpus counts/class md5, re-recorded markers, all gates green.
 
-- [ ] **Step 1: Full battery on the current tree** (report-only at first): corpus live (record new count/class md5; expect growth from new fixtures; frozen-1124 md5 MUST still be `518eca1a...` with 0 movers), goldens, markers (record new value), examples 28/28, stdlib 376 + any new fixtures (record actual), crosscheck 10/10, all compiler gates (`gate_lower_depth`, `gate_builtin_names`, `gate_mutable_for`, `gate_debug_map`, `gate_crlf`, `gate_warn_clean`, `gate_reserved_names`, `check_emit_support` 8/8), tiers (`tier_dbg`, `tier_dbg_core`, `tier_gfx`, `tier_edit`, `tier_edit_gui`) — GUI tiers only if std_gfx touched (it is not expected to be).
+- [ ] **Step 1: Full battery on the current tree** (report-only at first): corpus live (record new count/class md5; expect growth from new fixtures; frozen-1124 md5 MUST still be `518eca1a...` with 0 movers), goldens, markers (record new value), examples 28/28, stdlib 376 + any new fixtures (record actual), crosscheck 10/10, all compiler gates (`gate_lower_depth`, `gate_builtin_names`, `gate_mutable_for`, `gate_debug_map`, `gate_crlf`, `gate_warn_clean`, `gate_reserved_names`, `check_emit_support` 9/9), tiers (`tier_dbg`, `tier_dbg_core`, `tier_gfx`, `tier_edit`, `tier_edit_gui`) — GUI tiers only if std_gfx touched (it is not expected to be).
 - [ ] **Step 2: STOP-check** — if anything unexpected moved beyond the known emission shifts (D8/D3/D14, and D13 if its representation changes existing enum emission), STOP and present. Expected movers: 8 pins (all), corpus additions, marker counts, any goldens touching stdout ordering or async.
 - [ ] **Step 3: Single re-baseline** — re-record the 8 pins in `gate_lower_depth.sh` + `QUICK_REF.md` (the authorized once-only move); re-anchor corpus counts/class md5 and markers in the docs.
 - [ ] **Step 4: Seed rotation** — `scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/phase35_close` → closure (two-hop: hop1 == hop2 == the new fixed point); full battery values recorded; `scripts/seed/archive_seed.sh <bin> <gen> release/seed/zig1-seed.tgz --update-changelog --win9x-zip release/seed/zig1_seed_w9.zip`; verify every CHANGELOG claim (the v121 false-status class must not repeat); lib/ counts (59 baseline; expected unchanged — no new std file); rebuild from the NEW archive reproduces the fixed point.
