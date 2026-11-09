@@ -473,12 +473,19 @@
 
 **Interfaces:**
 - Consumes: the approved Task 9j report; Task 9i interim fix; the existing `topExpectedType`/if-expression expected-type pattern; `typeRegistryIsAssignable`.
-- Produces: expected-type-known switches coerce each prong to the expected type (optional/error-union/null/noreturn included); no-expected-type switches use peer resolution and reject incompatible prongs; the 12 valid corpus cases accept; unannotated mixed int/bool still rejects; no emitter/lower change.
+- Produces: expected-type-known switches coerce each prong to the expected type (optional/error-union/null/noreturn included); no-expected-type switches use peer resolution and reject incompatible prongs; statement switches use the same peer rule (mixed statement prongs reject, all-void stays accepted); the 12 valid corpus cases accept; unannotated mixed int/bool still rejects; no emitter/lower change.
+
+**Scope contract (binding):**
+- Expected-type-first only before the MIX branch; keep peer resolution for no-expected cases; remove `sw_is_stmt_expr` so mixed statement switches reject.
+- On mismatch, latch `unified = TYPE_NORETURN` and the node type; a later prong must not reset it. One level-0 diagnostic, 0 `.c`.
+- Keep `noreturn`/`undefined` neutral, captures, enum/tagged-union, import idiom, string-slice, f32 FX10, and missing-`else` behavior unchanged.
+- Defer Zig’s comptime-known selector lazy-prong pruning and `anyerror`; do not add a shared if/switch helper or full result-location push.
+- Do not copy the 9j snippet literally; it does not latch the poison.
 
 - [ ] **Step 0: Confirm the approved 9j shape and insertion points. If the report is not approved or the current code differs, STOP.**
 - [ ] **Step 1: RED.** With the current compiler, the 12 valid corpus cases must be rc0 (they are currently rc2); the D15 mixed negatives must be rc2. Record exact commands/diagnostics.
-- [ ] **Step 2: Implement the approved expected-type-first path** before the blanket MIX reject; keep peer-resolution for no-expected cases; do not delete the existing mismatch diagnostic; do not add a second switch typing path. Handle statement switches and missing-else behavior as the 9j matrix requires.
-- [ ] **Step 3: Verify.** The 12 cases accept and build; D15 mixed direct/infer/use/reverse still reject with one level-0 mismatch and 0 `.c`; valid switches/fixtures byte-identical; `test_semantic_bin` green; corpus has no new false rejects; no emission change. Re-run the full analyzer/semantic suite.
+- [ ] **Step 2: Implement the approved expected-type-first path** before the blanket MIX reject; keep peer-resolution for no-expected cases; remove `sw_is_stmt_expr`; latch the poison; do not add a second switch typing path. Handle missing-else behavior as the 9j matrix requires.
+- [ ] **Step 3: Verify.** The 12 cases accept and build; D15 mixed direct/infer/use/reverse still reject with one level-0 mismatch and 0 `.c`; `stmt_mixed_int_bool`/`stmt_mixed_int_void` reject and `stmt_void` accepts; valid switches/fixtures byte-identical; `test_semantic_bin` green; corpus has no new false rejects; no emission change. Re-run the full analyzer/semantic suite.
 - [ ] **Step 4: Commit** `fix(sema): apply expected-type rules to switch prongs (Phase3.5 D15)` + delete D15 from the defects doc + report. Then Task 9g/9f may resume. No seed rotation here.
 
 ### Task 10: Doc consolidation
