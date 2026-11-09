@@ -116,10 +116,10 @@ pub fn main() void {
     var m: []const u8 = "start\n";
     pal.stderr_write(m);
 
-    var p_hello: []const u8 = "examples/hello/main.zig";
+    var p_hello: []const u8 = "examples/z98/hello/main.zig";
     var n_hello: []const u8 = "hello (simple)";
     testFile(p_hello, n_hello);
-    var p_fib: []const u8 = "examples/fibonacci/main.zig";
+    var p_fib: []const u8 = "examples/z98/fibonacci/main.zig";
     var n_fib: []const u8 = "fibonacci (simple)";
     testFile(p_fib, n_fib);
 

@@ -1542,7 +1542,7 @@ fn testUndefinedSymbolDiag() void {
     ok(emsg);
 }
 
-fn testFnCallNotCallable() void {
+fn testFnCallNonCallableSemaDefers() void {
     var arena = alloc_mod.sandInit(perm_buf[0..]);
     var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
     var source_man = sm_mod.sourceManagerInit(&diag_sand);
@@ -1560,8 +1560,8 @@ fn testFnCallNotCallable() void {
     var call_idx = ast_mod.astStoreAddNode(&store, AstKind.fn_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), callee, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, call_idx);
     var ecount = diag_mod.diagnosticCollectorErrorCount(&diag);
-    if (tid != type_mod.TYPE_VOID or ecount == @intCast(u32, 0)) { var fmsg: []const u8 = "testFnCallNotCallable expected VOID+diag"; fail(fmsg); return; }
-    var emsg: []const u8 = "testFnCallNotCallable";
+    if (tid != type_mod.TYPE_VOID or ecount != @intCast(u32, 0)) { var fmsg: []const u8 = "testFnCallNonCallableSemaDefers expected VOID (callability deferred to lowering)"; fail(fmsg); return; }
+    var emsg: []const u8 = "testFnCallNonCallableSemaDefers";
     ok(emsg);
 }
 
@@ -1928,7 +1928,7 @@ fn testForLoopAnalysis() void {
         .current_fn_span_end = @intCast(u32, 0),
     };
     var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var for_idx = ast_mod.astStoreAddNode(&store, AstKind.for_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+    var for_idx = ast_mod.astStoreAddNode(&store, AstKind.for_stmt, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0));
     az_mod.visitStatement(&ac, &st, for_idx, countVisitCb, countVisitCb);
     if (g_visit_count != @intCast(u32, 1)) { var fmsg: []const u8 = "testForLoopAnalysis expected 1 visit"; fail(fmsg); return; }
     var emsg: []const u8 = "testForLoopAnalysis";
@@ -2108,11 +2108,9 @@ fn testErrorSetMemberIndex() void {
     var mi4 = type_mod.typeRegistryErrorSetMemberIndex(&typereg, type_mod.TYPE_VOID, fnf_id);
     if (mi4 != @intCast(u32, 0xFFFFFFFF)) { fail("testESMemberIndex: non-es type not sentinel"); return; }
 
-    var unpop_name_s: []const u8 = "UnpopES";
-    var unpop_name_id = interner_mod.stringInternerIntern(&interner, unpop_name_s);
-    var unpop_es_tid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 9999), unpop_name_id, type_mod.TypeKind.error_set_type);
-    var mi5 = type_mod.typeRegistryErrorSetMemberIndex(&typereg, unpop_es_tid, fnf_id);
-    if (mi5 != @intCast(u32, 0xFFFFFFFF)) { fail("testESMemberIndex: unpopulated es not sentinel"); return; }
+    var empty_es_tid = type_mod.typeRegistryGetOrCreateErrorSet(&typereg, @intCast(u32, 0), @intCast(u16, 0));
+    var mi5 = type_mod.typeRegistryErrorSetMemberIndex(&typereg, empty_es_tid, fnf_id);
+    if (mi5 != @intCast(u32, 0xFFFFFFFF)) { fail("testESMemberIndex: empty es not sentinel"); return; }
 
     var emsg: []const u8 = "testErrorSetMemberIndex";
     ok(emsg);
@@ -2175,7 +2173,7 @@ pub fn main() void {
     testBreakInsideLoop();
     testBreakOutsideLoop();
     testUndefinedSymbolDiag();
-    testFnCallNotCallable();
+    testFnCallNonCallableSemaDefers();
     testReturnTypeBareReturn();
     testStateMapSetGet();
     testStateMapForkIsolation();
