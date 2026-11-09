@@ -2011,9 +2011,13 @@ pub fn main() void {
     testFixture("tests/analyzers/nonnull_ptrcast_ok.zig", "fixture nonnull_ptrcast_ok", fx_no_expect[0..]);
     testFixture("tests/analyzers/nonnull_alloc_result_ok.zig", "fixture nonnull_alloc_result_ok", fx_no_expect[0..]);
     testFixture("tests/analyzers/nonnull_field_element_ok.zig", "fixture nonnull_field_element_ok", fx_no_expect[0..]);
+    testFixture("tests/analyzers/nonnull_type_field_element_ok.zig", "fixture nonnull_type_field_element_ok", fx_no_expect[0..]);
+    testFixture("tests/analyzers/nonnull_call_result_ok.zig", "fixture nonnull_call_result_ok", fx_no_expect[0..]);
     testFixture("tests/analyzers/nonnull_inttoptr_guard_ok.zig", "fixture nonnull_inttoptr_guard_ok", fx_no_expect[0..]);
-    var e_np_optional = [_]DiagExpectation{ expectCode(c_null, 4) };
+    var e_np_optional = [_]DiagExpectation{ expectCode(c_null, 3) };
     testFixture("tests/analyzers/optional_unknown_warn.zig", "fixture optional_unknown_warn", e_np_optional[0..]);
+    var e_np_optional_call = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/optional_call_warn.zig", "fixture optional_call_warn", e_np_optional_call[0..]);
     var e_np_while_exit = [_]DiagExpectation{ expectCode(c_null, 1) };
     testFixture("tests/analyzers/while_guard_exit_null_warn.zig", "fixture while_guard_exit_null_warn", e_np_while_exit[0..]);
     testFixture("tests/analyzers/while_guard_body_ok.zig", "fixture while_guard_body_ok", fx_no_expect[0..]);

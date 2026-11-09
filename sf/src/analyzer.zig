@@ -401,22 +401,27 @@ fn resolveLValueIdentity(ctx: *AnalyzerContext, node_idx: u32) ?u32 {
 // through it is safe; an optional pointer or an unknown call result stays
 // `maybe`.
 const NP_TYPE_CAP: usize = 8192;
-const NP_FIELD_CACHE_CAP: usize = 1024;
 
 const NpTypeDecl = struct { name_id: u32, decl_idx: u32 };
 var np_type_decls: [NP_TYPE_CAP]NpTypeDecl = undefined;
 var np_type_decl_len: usize = 0;
 
-const NpDeclType = struct { name_id: u32, type_idx: u32 };
+// T9h2: module-root function declarations, so call results can be classified
+// from their declared return type without a callee-name whitelist.
+const NpFnDecl = struct { name_id: u32, proto_idx: u32 };
+var np_fn_decls: [NP_TYPE_CAP]NpFnDecl = undefined;
+var np_fn_decl_len: usize = 0;
+
+// T9h2: declared local/param types are scoped by the same `StateMap` chain the
+// null state uses, so a branch fork cannot leak a shadowed binding's type into
+// its sibling or out of its lexical scope.
+const NpDeclType = struct { scope: *StateMap, name_id: u32, type_idx: u32 };
 var np_decl_types: [NP_TYPE_CAP]NpDeclType = undefined;
 var np_decl_type_len: usize = 0;
 
-const NpFieldCacheEntry = struct { name_id: u32, cls: u8 };
-var np_field_cache: [NP_FIELD_CACHE_CAP]NpFieldCacheEntry = undefined;
-var np_field_cache_len: usize = 0;
-
 fn npResetTypeDecls() void {
     np_type_decl_len = @intCast(usize, 0);
+    np_fn_decl_len = @intCast(usize, 0);
 }
 
 fn npTypeDeclAdd(name_id: u32, decl_idx: u32) void {
@@ -435,6 +440,22 @@ fn npTypeDeclLookup(name_id: u32) ?u32 {
     return null;
 }
 
+fn npFnDeclAdd(name_id: u32, proto_idx: u32) void {
+    if (name_id == @intCast(u32, 0)) return;
+    if (np_fn_decl_len >= NP_TYPE_CAP) return;
+    np_fn_decls[np_fn_decl_len] = NpFnDecl{ .name_id = name_id, .proto_idx = proto_idx };
+    np_fn_decl_len += 1;
+}
+
+fn npFnDeclLookup(name_id: u32) ?u32 {
+    if (name_id == @intCast(u32, 0)) return null;
+    var i: usize = 0;
+    while (i < np_fn_decl_len) : (i += 1) {
+        if (np_fn_decls[i].name_id == name_id) return np_fn_decls[i].proto_idx;
+    }
+    return null;
+}
+
 fn npCollectModuleTypeDecls(ctx: *AnalyzerContext, module_root_idx: u32) void {
     npResetTypeDecls();
     var n = ast_mod.astStoreNodeExtraChildCount(ctx.store, module_root_idx);
@@ -442,6 +463,12 @@ fn npCollectModuleTypeDecls(ctx: *AnalyzerContext, module_root_idx: u32) void {
     while (i < @intCast(usize, n)) : (i += 1) {
         var decl_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, module_root_idx, @intCast(u32, i));
         var d = ast_mod.astStoreNodeAt(ctx.store, decl_idx);
+        if (d.kind == AstKind.fn_decl) {
+            var proto_idx = ast_mod.astStoreNodePayload(ctx.store, decl_idx);
+            var proto = ctx.store.fn_protos.items[@intCast(usize, proto_idx)];
+            npFnDeclAdd(proto.name_id, proto_idx);
+            continue;
+        }
         if (d.kind != AstKind.var_decl) continue;
         var init_idx = d.child_1;
         if (init_idx == @intCast(u32, 0)) continue;
@@ -455,39 +482,62 @@ fn npResetDeclTypes() void {
     np_decl_type_len = @intCast(usize, 0);
 }
 
-fn npDeclTypeSet(name_id: u32, type_idx: u32) void {
+fn npDeclTypeSet(scope: *StateMap, name_id: u32, type_idx: u32) void {
     if (name_id == @intCast(u32, 0) or type_idx == @intCast(u32, 0)) return;
     var i: usize = 0;
     while (i < np_decl_type_len) : (i += 1) {
-        if (np_decl_types[i].name_id == name_id) {
+        if (np_decl_types[i].scope == scope and np_decl_types[i].name_id == name_id) {
             np_decl_types[i].type_idx = type_idx;
             return;
         }
     }
     if (np_decl_type_len >= NP_TYPE_CAP) return;
-    np_decl_types[np_decl_type_len] = NpDeclType{ .name_id = name_id, .type_idx = type_idx };
+    np_decl_types[np_decl_type_len] = NpDeclType{ .scope = scope, .name_id = name_id, .type_idx = type_idx };
     np_decl_type_len += 1;
 }
 
-fn npDeclTypeLookup(name_id: u32) ?u32 {
+fn npDeclTypeLookup(scope: *StateMap, name_id: u32) ?u32 {
     if (name_id == @intCast(u32, 0)) return null;
-    var i: usize = 0;
-    while (i < np_decl_type_len) : (i += 1) {
-        if (np_decl_types[i].name_id == name_id) return np_decl_types[i].type_idx;
+    var s: ?*StateMap = scope;
+    while (s) |sp| {
+        var i = np_decl_type_len;
+        while (i > @intCast(usize, 0)) {
+            i -= 1;
+            if (np_decl_types[i].scope == sp and np_decl_types[i].name_id == name_id) {
+                return np_decl_types[i].type_idx;
+            }
+        }
+        s = sp.parent;
     }
     return null;
-}
-
-fn npTypeExprIsNonNullPointer(ctx: *AnalyzerContext, type_idx: u32) bool {
-    if (type_idx == @intCast(u32, 0)) return false;
-    var tnode = ast_mod.astStoreNodeAt(ctx.store, type_idx);
-    return tnode.kind == AstKind.ptr_type or tnode.kind == AstKind.many_ptr_type or tnode.kind == AstKind.fn_type;
 }
 
 fn npTypeExprIsPointer(ctx: *AnalyzerContext, type_idx: u32) bool {
     if (type_idx == @intCast(u32, 0)) return false;
     var tnode = ast_mod.astStoreNodeAt(ctx.store, type_idx);
     return tnode.kind == AstKind.ptr_type or tnode.kind == AstKind.many_ptr_type;
+}
+
+// T9h2: type-driven nullability. A non-optional pointer-like type (`*T`,
+// `[*]T`, `[]T`, fn pointer) cannot be null, an optional type can, and a
+// non-pointer/unknown type is not a pointer value at all.
+const NP_TYPE_NOT_PTR: u8 = 0;
+const NP_TYPE_SAFE: u8 = 1;
+const NP_TYPE_MAYBE: u8 = 2;
+
+fn npTypeExprNullClass(ctx: *AnalyzerContext, type_idx: u32) u8 {
+    if (type_idx == @intCast(u32, 0)) return NP_TYPE_MAYBE;
+    var tnode = ast_mod.astStoreNodeAt(ctx.store, type_idx);
+    var kind = tnode.kind;
+    if (kind == AstKind.ptr_type or kind == AstKind.many_ptr_type or
+        kind == AstKind.slice_type or kind == AstKind.fn_type) return NP_TYPE_SAFE;
+    if (kind == AstKind.optional_type or kind == AstKind.error_union_type) return NP_TYPE_MAYBE;
+    return NP_TYPE_NOT_PTR;
+}
+
+fn npNullClassToState(cls: u8) u8 {
+    if (cls == NP_TYPE_SAFE) return @enumToInt(PtrState.safe);
+    return @enumToInt(PtrState.maybe);
 }
 
 fn npFieldTypeInDecl(ctx: *AnalyzerContext, decl_idx: u32, field_id: u32) ?u32 {
@@ -567,13 +617,95 @@ fn npTypeExprUnwrapErrorUnion(ctx: *AnalyzerContext, type_idx: u32) ?u32 {
     return null;
 }
 
-fn npExprType(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) ?u32 {
-    _ = state;
+fn npFnProtoReturnType(ctx: *AnalyzerContext, proto_idx: u32) ?u32 {
+    if (@intCast(usize, proto_idx) >= ctx.store.fn_protos.len) return null;
+    var proto = ctx.store.fn_protos.items[@intCast(usize, proto_idx)];
+    if (proto.return_type_node == @intCast(u32, 0)) return null;
+    return proto.return_type_node;
+}
+
+fn npSymbolFnProto(ctx: *AnalyzerContext, sym: *sym_mod.Symbol) ?u32 {
+    if (sym.kind != SymbolKind.function) return null;
+    if (sym.decl_node == @intCast(u32, 0)) return null;
+    var d = ast_mod.astStoreNodeAt(ctx.store, sym.decl_node);
+    if (d.kind != AstKind.fn_decl) return null;
+    return ast_mod.astStoreNodePayload(ctx.store, sym.decl_node);
+}
+
+// Resolve the module id named by an import-alias expression (`pal`) or a
+// qualified module path (`std.mem`). Only real module bindings count.
+fn npExprModuleId(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     if (expr_idx == @intCast(u32, 0)) return null;
     var node = ast_mod.astStoreNodeAt(ctx.store, expr_idx);
     var kind = node.kind;
-    if (kind == AstKind.ident_expr) return npDeclTypeLookup(ast_mod.astStoreIdentifier(ctx.store, expr_idx));
+    if (kind == AstKind.paren_expr) return npExprModuleId(ctx, node.child_0);
+    if (kind == AstKind.ident_expr) {
+        var sym = sym_mod.symbolTableLookup(ctx.symbols, ast_mod.astStoreIdentifier(ctx.store, expr_idx)) orelse return null;
+        if (sym.kind == SymbolKind.module) return sym.module_id;
+        return null;
+    }
+    if (kind == AstKind.field_access) {
+        var base_mid = npExprModuleId(ctx, node.child_0) orelse return null;
+        var reg = ctx.symbol_reg orelse return null;
+        var field_id = ast_mod.astStoreNodePayload(ctx.store, expr_idx);
+        var sym = sym_mod.symbolRegistryQualifiedLookup(reg, base_mid, field_id) orelse return null;
+        if (sym.kind == SymbolKind.module) return sym.module_id;
+        return null;
+    }
+    return null;
+}
+
+fn npCalleeFnProto(ctx: *AnalyzerContext, callee_idx: u32) ?u32 {
+    if (callee_idx == @intCast(u32, 0)) return null;
+    var node = ast_mod.astStoreNodeAt(ctx.store, callee_idx);
+    var kind = node.kind;
+    if (kind == AstKind.paren_expr) return npCalleeFnProto(ctx, node.child_0);
+    if (kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(ctx.store, callee_idx);
+        if (npFnDeclLookup(name_id)) |proto_idx| return proto_idx;
+        if (sym_mod.symbolTableLookup(ctx.symbols, name_id)) |sym| {
+            if (npSymbolFnProto(ctx, sym)) |proto_idx| return proto_idx;
+        }
+        return null;
+    }
+    if (kind == AstKind.field_access) {
+        var field_id = ast_mod.astStoreNodePayload(ctx.store, callee_idx);
+        if (npExprModuleId(ctx, node.child_0)) |mod_id| {
+            if (ctx.symbol_reg) |reg| {
+                if (sym_mod.symbolRegistryQualifiedLookup(reg, mod_id, field_id)) |sym| {
+                    if (npSymbolFnProto(ctx, sym)) |proto_idx| return proto_idx;
+                }
+            }
+        }
+        return null;
+    }
+    return null;
+}
+
+// T9h2: a call result's nullability comes from the callee's resolved return
+// type. A directly-declared function or function-typed callee is resolved; an
+// unresolved callee returns null so classification stays conservative.
+fn npFnReturnType(ctx: *AnalyzerContext, state: *StateMap, call_idx: u32) ?u32 {
+    if (call_idx == @intCast(u32, 0)) return null;
+    var node = ast_mod.astStoreNodeAt(ctx.store, call_idx);
+    if (node.kind != AstKind.fn_call) return null;
+    if (npCalleeFnProto(ctx, node.child_0)) |proto_idx| {
+        return npFnProtoReturnType(ctx, proto_idx);
+    }
+    if (npExprType(ctx, state, node.child_0)) |callee_t| {
+        var tnode = ast_mod.astStoreNodeAt(ctx.store, callee_t);
+        if (tnode.kind == AstKind.fn_type and tnode.child_0 != @intCast(u32, 0)) return tnode.child_0;
+    }
+    return null;
+}
+
+fn npExprType(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) ?u32 {
+    if (expr_idx == @intCast(u32, 0)) return null;
+    var node = ast_mod.astStoreNodeAt(ctx.store, expr_idx);
+    var kind = node.kind;
+    if (kind == AstKind.ident_expr) return npDeclTypeLookup(state, ast_mod.astStoreIdentifier(ctx.store, expr_idx));
     if (kind == AstKind.paren_expr) return npExprType(ctx, state, node.child_0);
+    if (kind == AstKind.fn_call) return npFnReturnType(ctx, state, expr_idx);
     if (kind == AstKind.field_access) {
         var base_t = npExprType(ctx, state, node.child_0) orelse return null;
         return npTypeExprFieldType(ctx, base_t, ast_mod.astStoreNodePayload(ctx.store, expr_idx));
@@ -594,6 +726,10 @@ fn npExprType(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) ?u32 {
         var base_t = npExprType(ctx, state, node.child_0) orelse return null;
         var unwrapped = npTypeExprUnwrapErrorUnion(ctx, base_t);
         if (unwrapped) |u| return u;
+        return npTypeExprUnwrapOptional(ctx, base_t);
+    }
+    if (kind == AstKind.orelse_expr) {
+        var base_t = npExprType(ctx, state, node.child_0) orelse return null;
         return npTypeExprUnwrapOptional(ctx, base_t);
     }
     if (kind == AstKind.builtin_call) {
@@ -628,87 +764,7 @@ fn npExprType(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) ?u32 {
     return null;
 }
 
-fn npFieldTypeClass(ctx: *AnalyzerContext, type_id: u32) u8 {
-    if (@intCast(usize, type_id) >= ctx.registry.types_len) return @intCast(u8, 2);
-    var ty = ctx.registry.types_items[@intCast(usize, type_id)];
-    if (ty.kind == type_mod.TypeKind.ptr_type or ty.kind == type_mod.TypeKind.many_ptr_type or ty.kind == type_mod.TypeKind.fn_type) return @intCast(u8, 1);
-    return @intCast(u8, 2);
-}
 
-fn npFieldCacheGet(name_id: u32) ?u8 {
-    var i: usize = 0;
-    while (i < np_field_cache_len) : (i += 1) {
-        if (np_field_cache[i].name_id == name_id) return np_field_cache[i].cls;
-    }
-    return null;
-}
-
-fn npFieldCachePut(name_id: u32, cls: u8) void {
-    if (name_id == @intCast(u32, 0)) return;
-    if (np_field_cache_len >= NP_FIELD_CACHE_CAP) return;
-    np_field_cache[np_field_cache_len] = NpFieldCacheEntry{ .name_id = name_id, .cls = cls };
-    np_field_cache_len += 1;
-}
-
-// Resolved-type fallback: a field name that appears only on non-optional
-// pointer fields is safe. Ambiguous/optional/non-pointer declarations stay
-// `maybe`; a name with no resolved field entry returns null so the caller can
-// preserve the conservative default.
-fn npRegistryFieldClass(ctx: *AnalyzerContext, name_id: u32) ?u8 {
-    if (name_id == @intCast(u32, 0)) return null;
-    if (npFieldCacheGet(name_id)) |cached| return cached;
-    var any: bool = false;
-    var bad: bool = false;
-    var i: usize = 0;
-    while (i < ctx.registry.types_len) : (i += 1) {
-        var ty = ctx.registry.types_items[i];
-        var fields: []type_mod.FieldEntry = undefined;
-        var have_fields: bool = false;
-        if (ty.kind == type_mod.TypeKind.struct_type) {
-            if (@intCast(usize, ty.payload_idx) >= ctx.registry.st_len) continue;
-            var sp = ctx.registry.st_items[@intCast(usize, ty.payload_idx)];
-            var start = @intCast(usize, sp.fields_start);
-            var count = @intCast(usize, sp.fields_count);
-            if (start + count > ctx.registry.fe_len) continue;
-            fields = ctx.registry.fe_items[start .. start + count];
-            have_fields = true;
-        } else if (ty.kind == type_mod.TypeKind.union_type) {
-            if (@intCast(usize, ty.payload_idx) >= ctx.registry.un_len) continue;
-            var up = ctx.registry.un_items[@intCast(usize, ty.payload_idx)];
-            var start = @intCast(usize, up.fields_start);
-            var count = @intCast(usize, up.fields_count);
-            if (start + count > ctx.registry.fe_len) continue;
-            fields = ctx.registry.fe_items[start .. start + count];
-            have_fields = true;
-        } else if (ty.kind == type_mod.TypeKind.tagged_union_type) {
-            if (@intCast(usize, ty.payload_idx) >= ctx.registry.tu_len) continue;
-            var tp = ctx.registry.tu_items[@intCast(usize, ty.payload_idx)];
-            var start = @intCast(usize, tp.fields_start);
-            var count = @intCast(usize, tp.fields_count);
-            if (start + count > ctx.registry.fe_len) continue;
-            fields = ctx.registry.fe_items[start .. start + count];
-            have_fields = true;
-        }
-        if (!have_fields) continue;
-        var fi: usize = 0;
-        while (fi < fields.len) : (fi += 1) {
-            if (fields[fi].name_id != name_id) continue;
-            any = true;
-            if (npFieldTypeClass(ctx, fields[fi].type_id) != @intCast(u8, 1)) bad = true;
-        }
-    }
-    if (!any) return null;
-    if (bad) {
-        npFieldCachePut(name_id, @intCast(u8, 2));
-        return @intCast(u8, 2);
-    }
-    npFieldCachePut(name_id, @intCast(u8, 1));
-    return @intCast(u8, 1);
-}
-
-fn npResetFieldCache() void {
-    np_field_cache_len = @intCast(usize, 0);
-}
 
 pub fn classifyProvenance(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) u8 {
     if (expr_idx == @intCast(u32, 0)) return @intCast(u8, @enumToInt(Provenance.unknown));
@@ -1658,10 +1714,14 @@ pub fn classifyExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) u8 {
     var kind = node.kind;
     if (kind == AstKind.null_literal) return @enumToInt(PtrState.is_null);
     if (kind == AstKind.address_of) return @enumToInt(PtrState.safe);
-    if (kind == AstKind.try_expr) return @enumToInt(PtrState.safe);
-    if (kind == AstKind.fn_call) return @enumToInt(PtrState.maybe);
-    if (kind == AstKind.orelse_expr) return @enumToInt(PtrState.safe);
-    if (kind == AstKind.catch_expr) return @enumToInt(PtrState.safe);
+    if (kind == AstKind.try_expr or kind == AstKind.catch_expr or
+        kind == AstKind.orelse_expr or kind == AstKind.fn_call) {
+        // T9h2: a `try`/`catch`/`orelse` result or a call result is safe only
+        // when its resolved type is a non-optional pointer; an optional
+        // result stays `maybe`, and an unresolved type stays conservative.
+        if (npExprType(ctx, state, expr_idx)) |result_t| return npNullClassToState(npTypeExprNullClass(ctx, result_t));
+        return @enumToInt(PtrState.maybe);
+    }
     if (kind == AstKind.if_expr) {
         // T9h: a capture-free `if` expression has the merged state of both
         // arms. Agreement preserves it (both safe -> safe); any divergence or
@@ -1699,21 +1759,15 @@ pub fn classifyExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) u8 {
         return @enumToInt(PtrState.maybe);
     }
     if (kind == AstKind.field_access) {
-        // T9h: a declared non-optional pointer field is non-null.
-        if (npExprType(ctx, state, expr_idx)) |field_t| {
-            if (npTypeExprIsNonNullPointer(ctx, field_t)) return @enumToInt(PtrState.safe);
-            return @enumToInt(PtrState.maybe);
-        }
-        var field_name = ast_mod.astStoreNodePayload(ctx.store, expr_idx);
-        if (npRegistryFieldClass(ctx, field_name)) |cls| return cls;
+        // T9h2: classify from the resolved field type only. There is no
+        // field-name fallback; an unresolved field stays `maybe`.
+        if (npExprType(ctx, state, expr_idx)) |field_t| return npNullClassToState(npTypeExprNullClass(ctx, field_t));
         return @enumToInt(PtrState.maybe);
     }
     if (kind == AstKind.index_access) {
-        // T9h: an element of `[]*T`/`[*]*T`/`[N]*T` is a non-optional pointer.
-        if (npExprType(ctx, state, expr_idx)) |elem_t| {
-            if (npTypeExprIsNonNullPointer(ctx, elem_t)) return @enumToInt(PtrState.safe);
-            return @enumToInt(PtrState.maybe);
-        }
+        // T9h2: an element of a slice/many-pointer/array of non-optional
+        // pointers is non-null; an optional/unknown element stays `maybe`.
+        if (npExprType(ctx, state, expr_idx)) |elem_t| return npNullClassToState(npTypeExprNullClass(ctx, elem_t));
         return @enumToInt(PtrState.maybe);
     }
     if (kind == AstKind.add or kind == AstKind.sub) {
@@ -1725,6 +1779,10 @@ pub fn classifyExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) u8 {
     if (kind == AstKind.ident_expr) {
         var result = smap_mod.stateMapGet(state, identNameId(ctx.store, expr_idx));
         if (result) |v| return v;
+        // T9h2: an untracked binding still carries its declared type. A
+        // non-optional pointer (e.g. a module-level pointer) is non-null;
+        // optional/unknown types stay conservative.
+        if (npExprType(ctx, state, expr_idx)) |decl_t| return npNullClassToState(npTypeExprNullClass(ctx, decl_t));
     }
     return @enumToInt(PtrState.maybe);
 }
@@ -1794,7 +1852,7 @@ pub fn handleNullVarDecl(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
     var name_id: u32 = ast_mod.astStoreNodePayload(ctx.store, node_idx);
     var init_idx = node.child_1;
     var declared_t = node.child_0;
-    if (declared_t != @intCast(u32, 0)) npDeclTypeSet(name_id, declared_t);
+    if (declared_t != @intCast(u32, 0)) npDeclTypeSet(state, name_id, declared_t);
     if (init_idx != @intCast(u32, 0)) {
         // NP-3: `var` initializers are in scope for null derefs.
         analyzeExpr(ctx, state, init_idx);
@@ -1805,7 +1863,7 @@ pub fn handleNullVarDecl(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32)
         // is annotated non-optional.
         smap_mod.stateMapSet(state, name_id, st);
         if (declared_t == @intCast(u32, 0)) {
-            if (npExprType(ctx, state, init_idx)) |inferred_t| npDeclTypeSet(name_id, inferred_t);
+            if (npExprType(ctx, state, init_idx)) |inferred_t| npDeclTypeSet(state, name_id, inferred_t);
         }
     } else {
         smap_mod.stateMapSet(state, name_id, @enumToInt(PtrState.uninit));
@@ -1905,7 +1963,7 @@ fn bindCaptureState(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, src_e
         // type (`if (p) |q|`, `while (p) |q|`), so record it for field/index
         // base resolution.
         if (npExprType(ctx, state, src_expr)) |src_t| {
-            if (npTypeExprUnwrapOptional(ctx, src_t)) |payload_t| npDeclTypeSet(name_id, payload_t);
+            if (npTypeExprUnwrapOptional(ctx, src_t)) |payload_t| npDeclTypeSet(state, name_id, payload_t);
         }
     }
     if (ctx.lifetime_analysis_mode != @intCast(u8, 0)) {
@@ -2546,7 +2604,7 @@ pub fn runNullAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx: u32
         if (pnode.kind != AstKind.param_decl) continue;
         // T9h: remember the declared type shape so field/index bases can be
         // resolved without a resolved-type table.
-        npDeclTypeSet(ast_mod.astStoreNodePayload(ctx.store, param_idx), pnode.child_0);
+        npDeclTypeSet(&state, ast_mod.astStoreNodePayload(ctx.store, param_idx), pnode.child_0);
         if (paramTypeIsPointerLike(ctx, pnode.child_0)) {
             smap_mod.stateMapSet(&state, ast_mod.astStoreNodePayload(ctx.store, param_idx), @enumToInt(PtrState.safe));
         }
@@ -2602,10 +2660,8 @@ pub const PER_FUNC_BUDGET: usize = 512 * 1024;
 pub fn runAllAnalyzers(ctx: *AnalyzerContext, module_root_idx: u32) void {
     var root = ast_mod.astStoreNodeAt(ctx.store, module_root_idx);
     if (root.kind != AstKind.module_root) return;
-    // T9h: build the per-module declared-type map and reset the resolved-field
-    // cache before the function walk.
+    // T9h: build the per-module declared-type map before the function walk.
     npCollectModuleTypeDecls(ctx, module_root_idx);
-    npResetFieldCache();
     var decls_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, module_root_idx);
     var di: usize = 0;
     while (di < @intCast(usize, decls_n)) : (di += 1) {

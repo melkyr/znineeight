@@ -1,17 +1,9 @@
-// optional_unknown_warn.zig — Task 9h D4h negative fixture.
+// optional_unknown_warn.zig — Task 9h2 D4h2 negative fixture.
 //
-// Optional and unknown-call bases remain conservative (`maybe`), so each of the
-// four dereferences below must still emit exactly one WARN_6002.
+// Optional and unknown bases remain conservative (`maybe`): an optional
+// parameter, an optional pointer field, and an unguarded `@intToPtr` from an
+// unknown integer each emit exactly one WARN_6002.
 const Holder = struct { q: ?*u32 };
-
-fn unknownPtr() *u32 {
-    return @intToPtr(*u32, 8);
-}
-
-fn unknown_call_deref() u32 {
-    var p = unknownPtr();
-    return p.*;
-}
 
 fn optional_param_deref(p: ?*u32) u32 {
     return p.*;
@@ -27,5 +19,6 @@ fn unguarded_inttoptr_deref(addr: usize) u32 {
 }
 
 pub fn main() void {
-    _ = unknownPtr();
+    var x: u32 = 1;
+    _ = x;
 }
