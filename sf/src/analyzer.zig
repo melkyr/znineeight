@@ -1929,15 +1929,31 @@ const NP_CTRL_MAX: usize = 32;
 const NP_CTRL_EXIT_MAX: usize = 64;
 const NP_MERGE_CAP: usize = 160;
 
+// Nested-control accounting for null-state exits. Each frame corresponds to a
+// loop or a labeled block and carries the same label id/loop flag lowering
+// stores in `LoopInfo`, so `break :L` and `continue :L` land on the same frame
+// lowering jumps to. Bounds: when an exit snapshot table is full the extra
+// branch is folded into the last slot through the `maybe` fallback instead of
+// being dropped; nesting beyond `NP_CTRL_MAX` leaves the deeper loop/block
+// without a frame, so its controls contribute no snapshot (documented limit,
+// never a silent "definitely null" narrowing).
 var np_ctrl_depth: usize = 0;
+var np_ctrl_label: [NP_CTRL_MAX]u32 = undefined;
+var np_ctrl_is_loop: [NP_CTRL_MAX]u8 = undefined;
 var np_ctrl_break_count: [NP_CTRL_MAX]usize = undefined;
 var np_ctrl_continue_count: [NP_CTRL_MAX]usize = undefined;
 var np_ctrl_breaks: [NP_CTRL_MAX][NP_CTRL_EXIT_MAX]*StateMap = undefined;
 var np_ctrl_continues: [NP_CTRL_MAX][NP_CTRL_EXIT_MAX]*StateMap = undefined;
+// Pending label for the next loop/labeled block, mirroring lowering's
+// `current_label`: `labeled_stmt` sets it before the child walk and the loop or
+// labeled block consumes (and clears) it when it opens.
+var np_current_label: u32 = 0;
 
-fn npPushCtrl() ?usize {
+fn npPushCtrl(label_id: u32, is_loop: u8) ?usize {
     if (np_ctrl_depth >= NP_CTRL_MAX) return null;
     var idx = np_ctrl_depth;
+    np_ctrl_label[idx] = label_id;
+    np_ctrl_is_loop[idx] = is_loop;
     np_ctrl_break_count[idx] = @intCast(usize, 0);
     np_ctrl_continue_count[idx] = @intCast(usize, 0);
     np_ctrl_depth += 1;
@@ -1966,38 +1982,81 @@ fn npSnapshotState(ctx: *AnalyzerContext, state: *StateMap) *StateMap {
     return snap;
 }
 
-fn npRecordCtrlExit(ctx: *AnalyzerContext, state: *StateMap, is_break: u8) void {
+fn npRecordCtrlExit(ctx: *AnalyzerContext, state: *StateMap, is_break: u8, label_id: u32) void {
+    // Target selection mirrors `lowerStmtLeafJump`: an unlabeled break takes the
+    // nearest frame of any kind; an unlabeled continue skips labeled blocks and
+    // takes the nearest loop; a label match must agree with that kind. A control
+    // with no matching frame is ignored, exactly as lowering ignores it.
+    var frame: ?usize = null;
     var i = np_ctrl_depth;
     while (i > @intCast(usize, 0)) {
         i -= 1;
-        var snap = npSnapshotState(ctx, state);
-        if (is_break != @intCast(u8, 0)) {
-            if (np_ctrl_break_count[i] < NP_CTRL_EXIT_MAX) {
-                np_ctrl_breaks[i][np_ctrl_break_count[i]] = snap;
-                np_ctrl_break_count[i] += 1;
+        if (label_id == @intCast(u32, 0)) {
+            if (is_break != @intCast(u8, 0)) {
+                frame = i;
+                break;
+            }
+            if (np_ctrl_is_loop[i] != @intCast(u8, 0)) {
+                frame = i;
+                break;
+            }
+        } else if (is_break != @intCast(u8, 0)) {
+            if (np_ctrl_label[i] == label_id) {
+                frame = i;
+                break;
             }
         } else {
-            if (np_ctrl_continue_count[i] < NP_CTRL_EXIT_MAX) {
-                np_ctrl_continues[i][np_ctrl_continue_count[i]] = snap;
-                np_ctrl_continue_count[i] += 1;
+            if (np_ctrl_is_loop[i] != @intCast(u8, 0) and np_ctrl_label[i] == label_id) {
+                frame = i;
+                break;
             }
         }
+    }
+    if (frame) |fi| {
+        var snap = npSnapshotState(ctx, state);
+        if (is_break != @intCast(u8, 0)) {
+            if (np_ctrl_break_count[fi] < NP_CTRL_EXIT_MAX) {
+                np_ctrl_breaks[fi][np_ctrl_break_count[fi]] = snap;
+                np_ctrl_break_count[fi] += 1;
+            } else {
+                var last = NP_CTRL_EXIT_MAX - @intCast(usize, 1);
+                smap_mod.stateMapMergeStates(np_ctrl_breaks[fi][last], np_ctrl_breaks[fi][last], snap, @enumToInt(PtrState.maybe));
+            }
+        } else {
+            if (np_ctrl_continue_count[fi] < NP_CTRL_EXIT_MAX) {
+                np_ctrl_continues[fi][np_ctrl_continue_count[fi]] = snap;
+                np_ctrl_continue_count[fi] += 1;
+            } else {
+                var last = NP_CTRL_EXIT_MAX - @intCast(usize, 1);
+                smap_mod.stateMapMergeStates(np_ctrl_continues[fi][last], np_ctrl_continues[fi][last], snap, @enumToInt(PtrState.maybe));
+            }
+        }
+    }
+}
+
+fn npAppendCtrlBranch(branches: []*StateMap, n: *usize, branch: *StateMap) void {
+    if (branches.len == @intCast(usize, 0)) return;
+    if (n.* < branches.len) {
+        branches[n.*] = branch;
+        n.* += 1;
         return;
     }
+    // Merge capacity exhausted: fold into the last slot rather than dropping the
+    // branch. The folded slots are detached snapshots/forks, so mutating one
+    // here cannot corrupt live analysis state, and the `maybe` fallback keeps
+    // the merge conservative.
+    var last = branches.len - @intCast(usize, 1);
+    smap_mod.stateMapMergeStates(branches[last], branches[last], branch, @enumToInt(PtrState.maybe));
 }
 
 fn npAppendCtrlExits(frame_idx: usize, branches: []*StateMap, n: *usize) void {
     var bi: usize = 0;
     while (bi < np_ctrl_break_count[frame_idx]) : (bi += 1) {
-        if (n.* >= branches.len) break;
-        branches[n.*] = np_ctrl_breaks[frame_idx][bi];
-        n.* += 1;
+        npAppendCtrlBranch(branches, n, np_ctrl_breaks[frame_idx][bi]);
     }
     bi = 0;
     while (bi < np_ctrl_continue_count[frame_idx]) : (bi += 1) {
-        if (n.* >= branches.len) break;
-        branches[n.*] = np_ctrl_continues[frame_idx][bi];
-        n.* += 1;
+        npAppendCtrlBranch(branches, n, np_ctrl_continues[frame_idx][bi]);
     }
 }
 
@@ -2154,7 +2213,11 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             applyNullGuardRefinement(ctx.store, node.child_0, body_state, exit_state);
         }
         var np_w_frame: ?usize = null;
-        if (ctx.null_analysis_mode != @intCast(u8, 0)) np_w_frame = npPushCtrl();
+        var np_w_saved_label: u32 = np_current_label;
+        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
+            np_w_frame = npPushCtrl(np_current_label, @intCast(u8, 1));
+            np_current_label = @intCast(u32, 0);
+        }
         var t5_wcap = captureNameIdOf(ctx.store, node_idx);
         bindCaptureState(ctx, body_state, t5_wcap, node.child_0);
         walkBlock(ctx, body_state, node.child_1, visit_fn);
@@ -2168,6 +2231,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             if (np_w_frame) |fi| npAppendCtrlExits(fi, np_w_exits[0..], &np_w_n);
             npMergeNullExits(state, np_w_exits[0..np_w_n], ctx.alloc);
             if (np_w_frame != null) npPopCtrl();
+            np_current_label = np_w_saved_label;
         } else {
             smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
         }
@@ -2197,10 +2261,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             bindCaptureState(ctx, ps, t5_pcap, node.child_0);
             walkBlock(ctx, ps, prong.child_0, visit_fn);
             if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-                if (np_s_n < NP_MERGE_CAP) {
-                    np_s_exits[np_s_n] = ps;
-                    np_s_n += 1;
-                }
+                npAppendCtrlBranch(np_s_exits[0..], &np_s_n, ps);
             } else {
                 smap_mod.stateMapMergeStates(state, state, ps, @intCast(u8, 99));
                 if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
@@ -2215,7 +2276,11 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
     } else if (kind == AstKind.for_stmt) {
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
         var np_f_frame: ?usize = null;
-        if (ctx.null_analysis_mode != @intCast(u8, 0)) np_f_frame = npPushCtrl();
+        var np_f_saved_label: u32 = np_current_label;
+        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
+            np_f_frame = npPushCtrl(np_current_label, @intCast(u8, 1));
+            np_current_label = @intCast(u32, 0);
+        }
         var t5_fcap = captureNameIdOf(ctx.store, node_idx);
         bindCaptureState(ctx, body_state, t5_fcap, node.child_0);
         walkBlock(ctx, body_state, node.child_1, visit_fn);
@@ -2224,9 +2289,16 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             var np_f_n: usize = 0;
             np_f_exits[np_f_n] = body_state;
             np_f_n += 1;
+            // D4h1: a `for` range/iterable may yield no iterations, so the
+            // pre-loop state is a real exit alongside the body fall-through and
+            // the snapshotted break/continue exits. Without it a body assignment
+            // would be reported as definite on the zero-iteration path.
+            np_f_exits[np_f_n] = state;
+            np_f_n += 1;
             if (np_f_frame) |fi| npAppendCtrlExits(fi, np_f_exits[0..], &np_f_n);
             npMergeNullExits(state, np_f_exits[0..np_f_n], ctx.alloc);
             if (np_f_frame != null) npPopCtrl();
+            np_current_label = np_f_saved_label;
         } else {
             smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
         }
@@ -2261,7 +2333,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
     } else if (ctx.null_analysis_mode != @intCast(u8, 0) and (kind == AstKind.break_stmt or kind == AstKind.continue_stmt)) {
         var np_is_break: u8 = @intCast(u8, 0);
         if (kind == AstKind.break_stmt) np_is_break = @intCast(u8, 1);
-        npRecordCtrlExit(ctx, state, np_is_break);
+        // The payload is the label name id (0 = unlabeled), as in lowering.
+        var np_label_id: u32 = ast_mod.astStoreNodePayload(ctx.store, node_idx);
+        npRecordCtrlExit(ctx, state, np_is_break, np_label_id);
         on_stmt(ctx, state, node_idx);
     } else if (kind == AstKind.expr_stmt) {
         if (node.child_0 != @intCast(u32, 0)) {
@@ -2275,7 +2349,37 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
     } else if (kind == AstKind.block) {
         walkBlock(ctx, state, node_idx, visit_fn);
     } else if (kind == AstKind.labeled_stmt) {
-        visitStatement(ctx, state, node.child_0, on_stmt, visit_fn);
+        if (ctx.null_analysis_mode == @intCast(u8, 0)) {
+            visitStatement(ctx, state, node.child_0, on_stmt, visit_fn);
+        } else {
+            // Mirror `lowerStmtLabeledStep`: a block child is its own
+            // breakable control frame (label set, loop flag clear); any other
+            // child (a loop) consumes the pending label when it opens.
+            var np_l_saved_label: u32 = np_current_label;
+            np_current_label = ast_mod.astStoreNodePayload(ctx.store, node_idx);
+            var np_l_is_block: u8 = @intCast(u8, 0);
+            if (node.child_0 != @intCast(u32, 0)) {
+                var np_l_child = ast_mod.astStoreNodeAt(ctx.store, node.child_0);
+                if (np_l_child.kind == AstKind.block) np_l_is_block = @intCast(u8, 1);
+            }
+            if (np_l_is_block != @intCast(u8, 0)) {
+                var np_l_frame = npPushCtrl(np_current_label, @intCast(u8, 0));
+                np_current_label = @intCast(u32, 0);
+                walkBlock(ctx, state, node.child_0, visit_fn);
+                if (np_l_frame) |fi| {
+                    var np_l_exits: [NP_MERGE_CAP]*StateMap = undefined;
+                    var np_l_n: usize = 0;
+                    np_l_exits[np_l_n] = state;
+                    np_l_n += 1;
+                    npAppendCtrlExits(fi, np_l_exits[0..], &np_l_n);
+                    npMergeNullExits(state, np_l_exits[0..np_l_n], ctx.alloc);
+                    npPopCtrl();
+                }
+            } else {
+                visitStatement(ctx, state, node.child_0, on_stmt, visit_fn);
+            }
+            np_current_label = np_l_saved_label;
+        }
     } else {
         on_stmt(ctx, state, node_idx);
     }
@@ -2355,6 +2459,7 @@ fn detectorVisit(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
 pub fn runNullAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx: u32) void {
     var state = smap_mod.stateMapInit(ctx.alloc);
     np_ctrl_depth = @intCast(usize, 0);
+    np_current_label = @intCast(u32, 0);
     npResetDeclTypes();
     // NP-1: a non-optional pointer-like parameter (`*T`, `[*]T`, `[]T`,
     // fn-ptr) is caller-provided and non-null, so seed it `safe`. Optional

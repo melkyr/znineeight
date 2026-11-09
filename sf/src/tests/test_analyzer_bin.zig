@@ -2025,6 +2025,17 @@ pub fn main() void {
     testFixture("tests/analyzers/if_guard_exit_warn.zig", "fixture if_guard_exit_warn", e_np_if_exit[0..]);
     var e_np_switch_break = [_]DiagExpectation{ expectCode(c_null, 1) };
     testFixture("tests/analyzers/switch_break_maybe_warn.zig", "fixture switch_break_maybe_warn", e_np_switch_break[0..]);
+    // D4h1 fix: zero-iteration `for` and label-targeted control exits.
+    var e_np_for_zero_null = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/for_zero_iteration_maybe_warn.zig", "fixture for_zero_iteration_maybe_warn", e_np_for_zero_null[0..]);
+    var e_np_for_zero_nonnull = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/for_zero_nonnull_maybe_warn.zig", "fixture for_zero_nonnull_maybe_warn", e_np_for_zero_nonnull[0..]);
+    var e_np_lbl_outer_break = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/labeled_outer_break_maybe_warn.zig", "fixture labeled_outer_break_maybe_warn", e_np_lbl_outer_break[0..]);
+    var e_np_lbl_outer_cont = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/labeled_outer_continue_maybe_warn.zig", "fixture labeled_outer_continue_maybe_warn", e_np_lbl_outer_cont[0..]);
+    var e_np_lbl_block_break = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/labeled_block_break_maybe_warn.zig", "fixture labeled_block_break_maybe_warn", e_np_lbl_block_break[0..]);
 
     var e_dead_switch = [_]DiagExpectation{ expectCode(c_double, 1) };
     testFixture("tests/analyzers/dead_arm_switch.zig", "fixture dead_arm_switch", e_dead_switch[0..]);
