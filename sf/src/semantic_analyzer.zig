@@ -5036,6 +5036,12 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     // no-type fallback for a rejecting switch.
     var sw_f32_site: u8 = @intCast(u8, 0);
     if (topExpectedType(self) == type_mod.TYPE_F32) { sw_f32_site = @intCast(u8, 1); }
+    // A `switch` in bare expression-statement position has no value consumer:
+    // heterogeneous prong types are irrelevant (Task F4 statement-switch
+    // behavior), so the D15 mismatch reject/poison applies only to value
+    // switches (typed nodes and inferred bindings).
+    var sw_is_stmt_expr: u8 = @intCast(u8, 0);
+    if (self.stmt_expr_node != @intCast(u32, 0) and semaUnwrapParens(self, node_idx) == self.stmt_expr_node) { sw_is_stmt_expr = @intCast(u8, 1); }
 
     while (i < @intCast(usize, prongs_n)) : (i += 1) {
         var prong_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));
@@ -5193,12 +5199,17 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             unified = bt;
             unified_node = prong.child_0;
         }
+        // `undefined` coerces to every prong type, so it is neutral in both
+        // directions: neither a later `undefined` prong nor an `undefined`
+        // first prong may poison the switch or report a mismatch.
+        else if (bt == type_mod.TYPE_UNDEFINED) {}
+        else if (unified == type_mod.TYPE_UNDEFINED) {}
 
         else {
             var unum: u32 = @intCast(u32, 0);
             if (type_mod.typeRegistryIsNumeric(self.registry, bt)) { unum = @intCast(u32, 1); }
             if (unified == type_mod.TYPE_INT_LIT and unum != @intCast(u32, 0)) { unified = bt; }
-            else { var mix_pm: []const u8 = "MIX:P"; pal_mod.markerWriteInt(mix_pm, @intCast(u32, i)); var mix_um: []const u8 = "MIX:U"; pal_mod.markerWriteInt(mix_um, unified); var mix_bm: []const u8 = "MIX:B"; pal_mod.markerWriteInt(mix_bm, bt); var mix_tk_m: []const u8 = "MIX:tk"; var mix_tk_v: u32 = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, bt)].kind)); pal_mod.markerWriteInt(mix_tk_m, mix_tk_v); var mix_uk_m: []const u8 = "MIX:uk"; var mix_uk_v: u32 = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, unified)].kind)); pal_mod.markerWriteInt(mix_uk_m, mix_uk_v); var mix_cd_m: []const u8 = "MIX:cd"; pal_mod.markerWriteInt(mix_cd_m, node.child_0); var mix_b_m: []const u8 = "MIX:b"; pal_mod.markerWriteInt(mix_b_m, prong.child_0); var mix_pf_m: []const u8 = "MIX:pf"; pal_mod.markerWriteInt(mix_pf_m, @intCast(u32, prong.flags)); var mix_pn_m: []const u8 = "MIX:pn"; pal_mod.markerWriteInt(mix_pn_m, @intCast(u32, prongs_n)); var mix_ni_m: []const u8 = "MIX:ni"; pal_mod.markerWriteInt(mix_ni_m, node_idx); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); continue; }
+            else { var mix_pm: []const u8 = "MIX:P"; pal_mod.markerWriteInt(mix_pm, @intCast(u32, i)); var mix_um: []const u8 = "MIX:U"; pal_mod.markerWriteInt(mix_um, unified); var mix_bm: []const u8 = "MIX:B"; pal_mod.markerWriteInt(mix_bm, bt); var mix_tk_m: []const u8 = "MIX:tk"; var mix_tk_v: u32 = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, bt)].kind)); pal_mod.markerWriteInt(mix_tk_m, mix_tk_v); var mix_uk_m: []const u8 = "MIX:uk"; var mix_uk_v: u32 = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, unified)].kind)); pal_mod.markerWriteInt(mix_uk_m, mix_uk_v); var mix_cd_m: []const u8 = "MIX:cd"; pal_mod.markerWriteInt(mix_cd_m, node.child_0); var mix_b_m: []const u8 = "MIX:b"; pal_mod.markerWriteInt(mix_b_m, prong.child_0); var mix_pf_m: []const u8 = "MIX:pf"; pal_mod.markerWriteInt(mix_pf_m, @intCast(u32, prong.flags)); var mix_pn_m: []const u8 = "MIX:pn"; pal_mod.markerWriteInt(mix_pn_m, @intCast(u32, prongs_n)); var mix_ni_m: []const u8 = "MIX:ni"; pal_mod.markerWriteInt(mix_ni_m, node_idx); if (sw_is_stmt_expr != @intCast(u8, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); } else { if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) { var mix_tm_msg: []const u8 = "type mismatch in switch expression -- prong type may not be compatible with the switch expression type"; semanticAnalyzerTypeMismatchReport(self, prong.child_0, bt, unified, mix_tm_msg, false); } unified = type_mod.TYPE_NORETURN; rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_NORETURN); } continue; }
         }
     }
 
