@@ -44,4 +44,4 @@ anyone can compare the bootstrap against `zig1`. They are archived only with
 the future `zig0/` packing.
 
 The living language specification remains
-[`docs/reference/Language_Spec_Z98.md`](../reference/Language_Spec_Z98.md).
+[`docs/reference/Language_Spec_Z98.md`](../../docs/reference/Language_Spec_Z98.md).
