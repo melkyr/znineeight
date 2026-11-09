@@ -192,9 +192,13 @@ Operator option (d) is binding (2026-11-09): keep `sw_is_stmt_expr` and scope
 Task 9k to value-result switches. The Task 9l audit showed global assignment
 `void` is unsafe (compound-assign temp typing and async frame sizing coupled),
 and switch-only normalization still adds a special rule, 19 value-switch
-emission shifts, and a fixture migration. Statement-mixed switches,
+emission shifts, and a fixture migration. Against the pre-Task-9 base, Task 9f
+measured 31 value-switch diffs: 19 newly coerced + 12 D15-recovered cases; all
+are value-result switches, none statement, and their gcc build/run certification
+is D16 study work, not a 9k claim. Statement-mixed switches,
 assignment-expression/void parity, comptime-selector pruning, and `anyerror`
-are deferred to D16; they are documented gaps, not Phase 3.5 work.
+are deferred to D16 as a parity decision, not an ordinary bug; they are
+documented gaps, not Phase 3.5 work.
 
 ## 6. Spec truth-up contents (Task 11)
 

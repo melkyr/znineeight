@@ -480,7 +480,7 @@
 - Keep `sw_is_stmt_expr`; do not change statement-switch behavior. Mixed statement switches remain a D16 parity gap.
 - On value-switch mismatch, latch `unified = TYPE_NORETURN` and the node type; a later prong must not reset it. One level-0 diagnostic, 0 `.c`.
 - Keep `noreturn`/`undefined` neutral, captures, enum/tagged-union, import idiom, string-slice, f32 FX10, and missing-`else` behavior unchanged.
-- Accept the 19 expected value-switch coercion emission shifts; no fixture migration. Defer comptime-selector pruning, `anyerror`, assignment-void, and statement-mixed parity to D16.
+- Accept the 19 expected value-switch coercion emission shifts; the 12 recovered D15 cases add 12 more against the pre-Task-9 base, for 31 total value-switch diffs. No fixture migration. Runtime/gcc certification of those 31 diffs is D16 study work, not a 9k claim. Defer comptime-selector pruning, `anyerror`, assignment-void, and statement-mixed parity to D16.
 - Do not add a shared if/switch helper or full result-location push. Do not copy the 9j snippet literally; it does not latch the poison.
 
 - [ ] **Step 0: Confirm the approved 9j shape and option (d) scope. If the current code or report differs, STOP.**
