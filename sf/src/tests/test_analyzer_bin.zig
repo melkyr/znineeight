@@ -2036,6 +2036,16 @@ pub fn main() void {
     testFixture("tests/analyzers/labeled_outer_continue_maybe_warn.zig", "fixture labeled_outer_continue_maybe_warn", e_np_lbl_outer_cont[0..]);
     var e_np_lbl_block_break = [_]DiagExpectation{ expectCode(c_null, 1) };
     testFixture("tests/analyzers/labeled_block_break_maybe_warn.zig", "fixture labeled_block_break_maybe_warn", e_np_lbl_block_break[0..]);
+    // D4h1 fix round 2: symmetric exit merges in both branch orders, plus the
+    // nested-control cap overflow sentinel.
+    var e_np_if_else_null_safe = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/if_else_null_safe_warn.zig", "fixture if_else_null_safe_warn", e_np_if_else_null_safe[0..]);
+    var e_np_if_else_safe_null = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/if_else_safe_null_warn.zig", "fixture if_else_safe_null_warn", e_np_if_else_safe_null[0..]);
+    var e_np_switch_order = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/switch_order_maybe_warn.zig", "fixture switch_order_maybe_warn", e_np_switch_order[0..]);
+    var e_np_nested_cap = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/nested_loop_cap_maybe_warn.zig", "fixture nested_loop_cap_maybe_warn", e_np_nested_cap[0..]);
 
     var e_dead_switch = [_]DiagExpectation{ expectCode(c_double, 1) };
     testFixture("tests/analyzers/dead_arm_switch.zig", "fixture dead_arm_switch", e_dead_switch[0..]);

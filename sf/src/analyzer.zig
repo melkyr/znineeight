@@ -1934,10 +1934,12 @@ const NP_MERGE_CAP: usize = 160;
 // stores in `LoopInfo`, so `break :L` and `continue :L` land on the same frame
 // lowering jumps to. Bounds: when an exit snapshot table is full the extra
 // branch is folded into the last slot through the `maybe` fallback instead of
-// being dropped; nesting beyond `NP_CTRL_MAX` leaves the deeper loop/block
-// without a frame, so its controls contribute no snapshot (documented limit,
-// never a silent "definitely null" narrowing).
+// being dropped. Nesting beyond `NP_CTRL_MAX` cannot push another frame; the
+// overflow sentinel below prevents those controls from being attributed to an
+// outer frame, and the unpushed construct conservatively forces `maybe` for
+// every tracked name at its own exit.
 var np_ctrl_depth: usize = 0;
+var np_ctrl_unpushed: usize = 0;
 var np_ctrl_label: [NP_CTRL_MAX]u32 = undefined;
 var np_ctrl_is_loop: [NP_CTRL_MAX]u8 = undefined;
 var np_ctrl_break_count: [NP_CTRL_MAX]usize = undefined;
@@ -1950,7 +1952,12 @@ var np_ctrl_continues: [NP_CTRL_MAX][NP_CTRL_EXIT_MAX]*StateMap = undefined;
 var np_current_label: u32 = 0;
 
 fn npPushCtrl(label_id: u32, is_loop: u8) ?usize {
-    if (np_ctrl_depth >= NP_CTRL_MAX) return null;
+    if (np_ctrl_depth >= NP_CTRL_MAX) {
+        // No frame for this construct. Mark the overflow so controls inside it
+        // are ignored (never attributed to an outer frame) until it exits.
+        np_ctrl_unpushed += 1;
+        return null;
+    }
     var idx = np_ctrl_depth;
     np_ctrl_label[idx] = label_id;
     np_ctrl_is_loop[idx] = is_loop;
@@ -1962,6 +1969,24 @@ fn npPushCtrl(label_id: u32, is_loop: u8) ?usize {
 
 fn npPopCtrl() void {
     if (np_ctrl_depth > @intCast(usize, 0)) np_ctrl_depth -= 1;
+}
+
+fn npPopUnpushed() void {
+    if (np_ctrl_unpushed > @intCast(usize, 0)) np_ctrl_unpushed -= 1;
+}
+
+// Overflow sentinel: force every tracked name to `maybe` so an unpushed
+// construct can never narrow the exit state to definite null.
+fn npForceMaybe(state: *StateMap) void {
+    var s: ?*StateMap = state;
+    while (s) |sp| {
+        var entries = smap_mod.stateMapGetEntries(sp);
+        var i: usize = @intCast(usize, 0);
+        while (i < entries.len) : (i += 1) {
+            smap_mod.stateMapSet(state, entries[i].name_id, @enumToInt(PtrState.maybe));
+        }
+        s = sp.parent;
+    }
 }
 
 fn npSnapshotState(ctx: *AnalyzerContext, state: *StateMap) *StateMap {
@@ -1983,6 +2008,10 @@ fn npSnapshotState(ctx: *AnalyzerContext, state: *StateMap) *StateMap {
 }
 
 fn npRecordCtrlExit(ctx: *AnalyzerContext, state: *StateMap, is_break: u8, label_id: u32) void {
+    // Overflow sentinel: a control inside an unpushed construct must not be
+    // attributed to the nearest outer frame. The construct forces `maybe` at
+    // its own exit instead.
+    if (np_ctrl_unpushed > @intCast(usize, 0)) return;
     // Target selection mirrors `lowerStmtLeafJump`: an unlabeled break takes the
     // nearest frame of any kind; an unlabeled continue skips labeled blocks and
     // takes the nearest loop; a label match must agree with that kind. A control
@@ -2020,7 +2049,7 @@ fn npRecordCtrlExit(ctx: *AnalyzerContext, state: *StateMap, is_break: u8, label
                 np_ctrl_break_count[fi] += 1;
             } else {
                 var last = NP_CTRL_EXIT_MAX - @intCast(usize, 1);
-                smap_mod.stateMapMergeStates(np_ctrl_breaks[fi][last], np_ctrl_breaks[fi][last], snap, @enumToInt(PtrState.maybe));
+                npMergeStatesSymmetric(np_ctrl_breaks[fi][last], np_ctrl_breaks[fi][last], snap, @enumToInt(PtrState.maybe));
             }
         } else {
             if (np_ctrl_continue_count[fi] < NP_CTRL_EXIT_MAX) {
@@ -2028,10 +2057,36 @@ fn npRecordCtrlExit(ctx: *AnalyzerContext, state: *StateMap, is_break: u8, label
                 np_ctrl_continue_count[fi] += 1;
             } else {
                 var last = NP_CTRL_EXIT_MAX - @intCast(usize, 1);
-                smap_mod.stateMapMergeStates(np_ctrl_continues[fi][last], np_ctrl_continues[fi][last], snap, @enumToInt(PtrState.maybe));
+                npMergeStatesSymmetric(np_ctrl_continues[fi][last], np_ctrl_continues[fi][last], snap, @enumToInt(PtrState.maybe));
             }
         }
     }
+}
+
+// Merge one side's explicit entries against the other branch's *effective*
+// state (branch entries plus ancestor inheritance). Running both directions
+// makes the merge symmetric: a name explicitly written only in either branch
+// is compared against what the other branch actually resolves to, not against
+// a possibly stale parent slot.
+fn npMergeStatesOneSide(parent: *StateMap, side: *StateMap, other: *StateMap, unknown_state: u8) void {
+    var i: usize = @intCast(usize, 0);
+    while (i < side.entries_len) : (i += 1) {
+        var entry = side.entries_items[i];
+        if (smap_mod.stateMapGet(other, entry.name_id)) |other_state| {
+            if (other_state != entry.state) {
+                smap_mod.stateMapSet(parent, entry.name_id, unknown_state);
+            } else {
+                smap_mod.stateMapSet(parent, entry.name_id, entry.state);
+            }
+        } else if (smap_mod.stateMapGet(parent, entry.name_id)) |ps_val| {
+            if (ps_val != entry.state) smap_mod.stateMapSet(parent, entry.name_id, unknown_state);
+        }
+    }
+}
+
+fn npMergeStatesSymmetric(parent: *StateMap, branch_a: *StateMap, branch_b: *StateMap, unknown_state: u8) void {
+    npMergeStatesOneSide(parent, branch_a, branch_b, unknown_state);
+    npMergeStatesOneSide(parent, branch_b, branch_a, unknown_state);
 }
 
 fn npAppendCtrlBranch(branches: []*StateMap, n: *usize, branch: *StateMap) void {
@@ -2046,7 +2101,7 @@ fn npAppendCtrlBranch(branches: []*StateMap, n: *usize, branch: *StateMap) void 
     // here cannot corrupt live analysis state, and the `maybe` fallback keeps
     // the merge conservative.
     var last = branches.len - @intCast(usize, 1);
-    smap_mod.stateMapMergeStates(branches[last], branches[last], branch, @enumToInt(PtrState.maybe));
+    npMergeStatesSymmetric(branches[last], branches[last], branch, @enumToInt(PtrState.maybe));
 }
 
 fn npAppendCtrlExits(frame_idx: usize, branches: []*StateMap, n: *usize) void {
@@ -2064,16 +2119,16 @@ fn npMergeNullExits(parent: *StateMap, branches: []*StateMap, scratch: *Sand) vo
     if (branches.len == @intCast(usize, 0)) return;
     var fallback: u8 = @enumToInt(PtrState.maybe);
     if (branches.len == @intCast(usize, 1)) {
-        smap_mod.stateMapMergeStates(parent, branches[0], branches[0], fallback);
+        npMergeStatesSymmetric(parent, branches[0], branches[0], fallback);
         return;
     }
     var acc = smap_mod.stateMapFork(parent, scratch);
-    smap_mod.stateMapMergeStates(acc, branches[0], branches[1], fallback);
+    npMergeStatesSymmetric(acc, branches[0], branches[1], fallback);
     var i: usize = 2;
     while (i < branches.len) : (i += 1) {
-        smap_mod.stateMapMergeStates(acc, acc, branches[i], fallback);
+        npMergeStatesSymmetric(acc, acc, branches[i], fallback);
     }
-    smap_mod.stateMapMergeStates(parent, acc, acc, fallback);
+    npMergeStatesSymmetric(parent, acc, acc, fallback);
 }
 
 // T9a (D4a): the single fold accessor for the analyzers. The shared
@@ -2230,7 +2285,12 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             np_w_n += 1;
             if (np_w_frame) |fi| npAppendCtrlExits(fi, np_w_exits[0..], &np_w_n);
             npMergeNullExits(state, np_w_exits[0..np_w_n], ctx.alloc);
-            if (np_w_frame != null) npPopCtrl();
+            if (np_w_frame != null) {
+                npPopCtrl();
+            } else {
+                npForceMaybe(state);
+                npPopUnpushed();
+            }
             np_current_label = np_w_saved_label;
         } else {
             smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
@@ -2297,7 +2357,12 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             np_f_n += 1;
             if (np_f_frame) |fi| npAppendCtrlExits(fi, np_f_exits[0..], &np_f_n);
             npMergeNullExits(state, np_f_exits[0..np_f_n], ctx.alloc);
-            if (np_f_frame != null) npPopCtrl();
+            if (np_f_frame != null) {
+                npPopCtrl();
+            } else {
+                npForceMaybe(state);
+                npPopUnpushed();
+            }
             np_current_label = np_f_saved_label;
         } else {
             smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
@@ -2374,6 +2439,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
                     npAppendCtrlExits(fi, np_l_exits[0..], &np_l_n);
                     npMergeNullExits(state, np_l_exits[0..np_l_n], ctx.alloc);
                     npPopCtrl();
+                } else {
+                    npForceMaybe(state);
+                    npPopUnpushed();
                 }
             } else {
                 visitStatement(ctx, state, node.child_0, on_stmt, visit_fn);
@@ -2459,6 +2527,7 @@ fn detectorVisit(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
 pub fn runNullAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx: u32) void {
     var state = smap_mod.stateMapInit(ctx.alloc);
     np_ctrl_depth = @intCast(usize, 0);
+    np_ctrl_unpushed = @intCast(usize, 0);
     np_current_label = @intCast(u32, 0);
     npResetDeclTypes();
     // NP-1: a non-optional pointer-like parameter (`*T`, `[*]T`, `[]T`,
