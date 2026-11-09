@@ -378,6 +378,26 @@
 
 
 
+#### Task 9f.1: Certify the 31 value-switch emission diffs
+
+**Status:** MANDATORY after Task 9f and before Phase 3.5 closeout. No source changes.
+
+**Files:**
+- Create: `docs/superpowers/specs/2026-10-29-phase35-31-diff-certification.md`
+- Create: per-entry evidence under `repro/mi_matrix/known_excluded/d15_31_diff/` or `/tmp` with the exact commands recorded in the report
+- No `sf/src`, no plan/spec/defects edits.
+
+**Interfaces:**
+- Consumes: Task 9k option (d), Task 9f’s 31-entry diff set (19 Task 9k shifts + 12 D15-recovered cases), the Zig 0.17.1/previous-Z98 evidence.
+- Produces: one per-entry certification table with gcc build/run results; no claim of harmless C without it.
+
+- [ ] **Step 0: Build the two compilers.** Pre-Task-9 base `3bf7602b…` (`d124055d`) and final `cac6716d…` (`ace04574`/current source), using the recorded seed/self-compile recipes. Record md5/sha256 and clean worktree state.
+- [ ] **Step 1: Materialize the 31 entries.** Use the Task 9f comparison list. Separate 19 Task 9k value-switch shifts and 12 D15-recovered `*_err_switch`/`*_null_switch` cases.
+- [ ] **Step 2: Dump and build each entry.** For every entry, dump C from both compilers with the canonical `--lib-dir`, then gcc `-m32 -std=c89` compile/link. Run the resulting binary where the entry has a runnable main; record rc and stdout. For compile-only entries, record gcc-only status.
+- [ ] **Step 3: Compare.** For the 12 recovered cases, require behavior identical to pre-D15 Z98. For the 19 value switches, require the expected-type coercion semantics (and Zig oracle where runnable). Any gcc error, runtime difference, or unexplained output → STOP.
+- [ ] **Step 4: Confirm boundaries.** No statement switch and no non-switch entry in the 31; D16 remains open. If a statement or non-switch entry appears, STOP.
+- [ ] **Step 5: Commit the report/evidence.** No source changes, no plan/spec/defects edits. Report per-entry status and any STOP. Task 9f/Phase 3.5 is not closed until this passes.
+
 #### Task 9g: Restore stale analyzer/semantic test binaries
 
 **Files:**
@@ -578,4 +598,4 @@
 
 ---
 
-**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), 8 (D4-pre audit), 9a–9h2, 9i (interim D15), 9j (D15 parity I), 9k (option (d) value-switch fix), 9g, 9f (final), then docs, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Tasks 8 and 9j are investigation-only. Tasks 9l/9m are deferred under D16. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths.
+**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), 8 (D4-pre audit), 9a–9h2, 9i (interim D15), 9j (D15 parity I), 9k (option (d) value-switch fix), 9g, 9f (final), 9f.1 (31-diff certification), then docs, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Tasks 8 and 9j are investigation-only. Tasks 9l/9m are deferred under D16. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths.
