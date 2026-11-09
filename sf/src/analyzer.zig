@@ -1901,25 +1901,542 @@ pub fn executeDeferQueue(ctx: *AnalyzerContext, state: *StateMap, target_depth: 
     ctx.in_defer_exec = @intCast(u8, 0);
 }
 
-pub fn walkBlock(ctx: *AnalyzerContext, state: *StateMap, block_idx: u32, visit_fn: fn(*AnalyzerContext, *StateMap, u32) void) void {
-    if (block_idx == @intCast(u32, 0)) return;
-    var node = ast_mod.astStoreNodeAt(ctx.store, block_idx);
-    if (node.kind != AstKind.block) {
-        visit_fn(ctx, state, block_idx);
-        return;
-    }
-    var saved_depth = ctx.current_depth;
-    ctx.current_depth += 1;
-    var children_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, block_idx);
+const STMT_W_STMT: u8 = 1;
+const STMT_W_REGION: u8 = 2;
+const STMT_W_BLOCK_END: u8 = 3;
+const STMT_W_BLOCK_FINISH: u8 = 4;
+const STMT_W_DEFER: u8 = 5;
+const STMT_W_IF_AFTER: u8 = 6;
+const STMT_W_WHILE_AFTER: u8 = 7;
+const STMT_W_FOR_AFTER: u8 = 8;
+const STMT_W_LABEL_AFTER: u8 = 9;
+const STMT_W_LABEL_RESTORE: u8 = 10;
+const STMT_W_SWITCH_STEP: u8 = 11;
+const STMT_W_CHILDREN: u8 = 12;
+
+const StmtWork = struct {
+    tag: u8,
+    state: *StateMap,
+    alt: *StateMap,
+    exit_state: *StateMap,
+    node_idx: u32,
+    saved_depth: u32,
+    saved_label: u32,
+    ctrl: ?usize,
+    idx: usize,
+    exits: [*]*StateMap,
+    exits_n: usize,
+    exits_cap: usize,
+    sel_decisive: u8,
+    sel_prong: u32,
+    has_alt: u8,
+    active: u8,
+    is_error: u8,
+};
+
+const StmtWalk = struct {
+    ctx: *AnalyzerContext,
+    on_stmt: fn(*AnalyzerContext, *StateMap, u32) void,
+    visit_fn: fn(*AnalyzerContext, *StateMap, u32) void,
+    internal: u8,
+    items: [*]StmtWork,
+    len: usize,
+    cap: usize,
+};
+
+fn stmtWorkNew(tag: u8) StmtWork {
+    return StmtWork{
+        .tag = tag,
+        .state = undefined,
+        .alt = undefined,
+        .exit_state = undefined,
+        .node_idx = @intCast(u32, 0),
+        .saved_depth = @intCast(u32, 0),
+        .saved_label = @intCast(u32, 0),
+        .ctrl = null,
+        .idx = @intCast(usize, 0),
+        .exits = undefined,
+        .exits_n = @intCast(usize, 0),
+        .exits_cap = @intCast(usize, 0),
+        .sel_decisive = @intCast(u8, 0),
+        .sel_prong = @intCast(u32, 0),
+        .has_alt = @intCast(u8, 0),
+        .active = @intCast(u8, 0),
+        .is_error = @intCast(u8, 0),
+    };
+}
+
+fn stmtWalkEnsure(w: *StmtWalk, need: usize) void {
+    if (need <= w.cap) return;
+    var nc = w.cap;
+    if (nc == @intCast(usize, 0)) nc = @intCast(usize, 512);
+    while (nc < need) nc *= 2;
+    var raw = alloc_mod.sandAlloc(w.ctx.alloc, @sizeOf(StmtWork) * nc, @intCast(usize, 4)) catch unreachable;
+    var ni = @ptrCast([*]StmtWork, raw);
     var i: usize = 0;
-    while (i < @intCast(usize, children_n)) : (i += 1) {
-        visit_fn(ctx, state, ast_mod.astStoreNodeExtraChildAt(ctx.store, block_idx, @intCast(u32, i)));
+    while (i < w.len) : (i += 1) ni[i] = w.items[i];
+    w.items = ni;
+    w.cap = nc;
+}
+
+fn stmtWalkPush(w: *StmtWalk, f: StmtWork) void {
+    stmtWalkEnsure(w, w.len + @intCast(usize, 1));
+    w.items[w.len] = f;
+    w.len += 1;
+}
+
+fn stmtWalkPop(w: *StmtWalk) StmtWork {
+    w.len -= 1;
+    return w.items[w.len];
+}
+
+fn runStmtWalk(ctx: *AnalyzerContext, state: *StateMap, root_idx: u32, root_is_region: u8, on_stmt: fn(*AnalyzerContext, *StateMap, u32) void, visit_fn: fn(*AnalyzerContext, *StateMap, u32) void) void {
+    var w = StmtWalk{
+        .ctx = ctx,
+        .on_stmt = on_stmt,
+        .visit_fn = visit_fn,
+        .internal = @intCast(u8, if (visit_fn == detectorVisit) 1 else 0),
+        .items = undefined,
+        .len = @intCast(usize, 0),
+        .cap = @intCast(usize, 0),
+    };
+    var root = stmtWorkNew(STMT_W_STMT);
+    root.node_idx = root_idx;
+    root.state = state;
+    if (root_is_region != @intCast(u8, 0)) root.tag = STMT_W_REGION;
+    stmtWalkPush(&w, root);
+    var c = w.ctx;
+    while (w.len > @intCast(usize, 0)) {
+        var f = stmtWalkPop(&w);
+        if (f.tag == STMT_W_REGION) {
+            if (f.node_idx == @intCast(u32, 0)) continue;
+            var rnode = ast_mod.astStoreNodeAt(c.store, f.node_idx);
+            if (rnode.kind != AstKind.block) {
+                if (w.internal != @intCast(u8, 0)) {
+                    var sf = stmtWorkNew(STMT_W_STMT);
+                    sf.node_idx = f.node_idx;
+                    sf.state = f.state;
+                    stmtWalkPush(&w, sf);
+                } else {
+                    w.visit_fn(c, f.state, f.node_idx);
+                }
+                continue;
+            }
+            if (w.internal == @intCast(u8, 0)) {
+                var saved_depth0 = c.current_depth;
+                c.current_depth += 1;
+                var children_n0 = ast_mod.astStoreNodeExtraChildCount(c.store, f.node_idx);
+                var ci: usize = 0;
+                while (ci < @intCast(usize, children_n0)) : (ci += 1) {
+                    w.visit_fn(c, f.state, ast_mod.astStoreNodeExtraChildAt(c.store, f.node_idx, @intCast(u32, ci)));
+                }
+                executeDeferQueue(c, f.state, saved_depth0, @intCast(u8, 0), w.visit_fn);
+                if (c.doublefree_analysis_mode != @intCast(u8, 0)) {
+                    checkLeaksOnScopeExit(c, f.state);
+                }
+                c.current_depth = saved_depth0;
+            } else {
+                var saved_depth = c.current_depth;
+                c.current_depth += 1;
+                var bf = stmtWorkNew(STMT_W_BLOCK_END);
+                bf.state = f.state;
+                bf.saved_depth = saved_depth;
+                stmtWalkPush(&w, bf);
+                var chf = stmtWorkNew(STMT_W_CHILDREN);
+                chf.node_idx = f.node_idx;
+                chf.state = f.state;
+                chf.idx = @intCast(usize, 0);
+                stmtWalkPush(&w, chf);
+            }
+            continue;
+        }
+        if (f.tag == STMT_W_CHILDREN) {
+            var children_n = ast_mod.astStoreNodeExtraChildCount(c.store, f.node_idx);
+            if (f.idx >= @intCast(usize, children_n)) continue;
+            var cf = stmtWorkNew(STMT_W_STMT);
+            cf.node_idx = ast_mod.astStoreNodeExtraChildAt(c.store, f.node_idx, @intCast(u32, f.idx));
+            cf.state = f.state;
+            var cont = f;
+            cont.idx = f.idx + @intCast(usize, 1);
+            stmtWalkPush(&w, cont);
+            stmtWalkPush(&w, cf);
+            continue;
+        }
+        if (f.tag == STMT_W_BLOCK_END) {
+            var fin = stmtWorkNew(STMT_W_BLOCK_FINISH);
+            fin.state = f.state;
+            fin.saved_depth = f.saved_depth;
+            stmtWalkPush(&w, fin);
+            var dfr = stmtWorkNew(STMT_W_DEFER);
+            dfr.state = f.state;
+            dfr.saved_depth = f.saved_depth;
+            dfr.is_error = @intCast(u8, 0);
+            dfr.active = @intCast(u8, 0);
+            stmtWalkPush(&w, dfr);
+            continue;
+        }
+        if (f.tag == STMT_W_BLOCK_FINISH) {
+            if (c.doublefree_analysis_mode != @intCast(u8, 0)) {
+                checkLeaksOnScopeExit(c, f.state);
+            }
+            c.current_depth = f.saved_depth;
+            continue;
+        }
+        if (f.tag == STMT_W_DEFER) {
+            if (f.active == @intCast(u8, 0)) {
+                c.in_defer_exec = @intCast(u8, 1);
+            }
+            var scheduled: u8 = @intCast(u8, 0);
+            while (c.defer_queue_len > @intCast(usize, 0)) {
+                var qi = c.defer_queue_len - @intCast(usize, 1);
+                var entry = c.defer_queue_items[qi];
+                if (entry.scope_depth < f.saved_depth) break;
+                c.defer_queue_len = qi;
+                if (entry.kind == @intCast(u8, 0) or (entry.kind == @intCast(u8, 1) and f.is_error != @intCast(u8, 0))) {
+                    var cont = f;
+                    cont.active = @intCast(u8, 1);
+                    stmtWalkPush(&w, cont);
+                    var sf2 = stmtWorkNew(STMT_W_STMT);
+                    sf2.node_idx = entry.stmt_idx;
+                    sf2.state = f.state;
+                    stmtWalkPush(&w, sf2);
+                    scheduled = @intCast(u8, 1);
+                    break;
+                }
+            }
+            if (scheduled != @intCast(u8, 0)) continue;
+            c.in_defer_exec = @intCast(u8, 0);
+            continue;
+        }
+        if (f.tag == STMT_W_IF_AFTER) {
+            if (c.null_analysis_mode != @intCast(u8, 0)) {
+                var np_if_exits: [2]*StateMap = undefined;
+                np_if_exits[0] = f.alt;
+                np_if_exits[1] = f.exit_state;
+                npMergeNullExits(f.state, np_if_exits[0..], c.alloc);
+            } else {
+                smap_mod.stateMapMergeStates(f.state, f.alt, f.exit_state, @intCast(u8, 99));
+            }
+            if (c.doublefree_analysis_mode != @intCast(u8, 0)) {
+                aliasMergeBranches(f.state, f.alt, f.exit_state);
+            }
+            continue;
+        }
+        if (f.tag == STMT_W_WHILE_AFTER or f.tag == STMT_W_FOR_AFTER) {
+            if (c.null_analysis_mode != @intCast(u8, 0)) {
+                var extra: usize = @intCast(usize, 0);
+                if (f.ctrl) |fi| extra = np_ctrl_break_count[fi] + np_ctrl_continue_count[fi];
+                var total = @intCast(usize, 2) + extra;
+                var cap = total;
+                if (cap > NP_MERGE_CAP) cap = NP_MERGE_CAP;
+                var raw = alloc_mod.sandAlloc(c.alloc, @sizeOf(usize) * cap, @intCast(usize, 4)) catch unreachable;
+                var exits = @ptrCast([*]*StateMap, raw);
+                var n: usize = 0;
+                exits[n] = f.alt;
+                n += 1;
+                if (f.tag == STMT_W_WHILE_AFTER) {
+                    exits[n] = f.exit_state;
+                } else {
+                    exits[n] = f.state;
+                }
+                n += 1;
+                if (f.ctrl) |fi| npAppendCtrlExits(fi, exits[0..cap], &n);
+                npMergeNullExits(f.state, exits[0..n], c.alloc);
+                if (f.ctrl != null) {
+                    npPopCtrl();
+                } else {
+                    npForceMaybe(f.state);
+                    npPopUnpushed();
+                }
+                np_current_label = f.saved_label;
+            } else {
+                smap_mod.stateMapMergeStates(f.state, f.state, f.alt, @intCast(u8, 99));
+            }
+            if (c.doublefree_analysis_mode != @intCast(u8, 0)) {
+                aliasMergeBranchInto(f.state, f.alt);
+            }
+            continue;
+        }
+        if (f.tag == STMT_W_LABEL_AFTER) {
+            var extra: usize = @intCast(usize, 0);
+            if (f.ctrl) |fi| extra = np_ctrl_break_count[fi] + np_ctrl_continue_count[fi];
+            var total = @intCast(usize, 1) + extra;
+            var cap = total;
+            if (cap > NP_MERGE_CAP) cap = NP_MERGE_CAP;
+            if (f.ctrl != null) {
+                var raw = alloc_mod.sandAlloc(c.alloc, @sizeOf(usize) * cap, @intCast(usize, 4)) catch unreachable;
+                var exits = @ptrCast([*]*StateMap, raw);
+                var n: usize = 0;
+                exits[n] = f.state;
+                n += 1;
+                if (f.ctrl) |fi| npAppendCtrlExits(fi, exits[0..cap], &n);
+                npMergeNullExits(f.state, exits[0..n], c.alloc);
+                npPopCtrl();
+            } else {
+                npForceMaybe(f.state);
+                npPopUnpushed();
+            }
+            np_current_label = f.saved_label;
+            continue;
+        }
+        if (f.tag == STMT_W_LABEL_RESTORE) {
+            np_current_label = f.saved_label;
+            continue;
+        }
+        if (f.tag == STMT_W_SWITCH_STEP) {
+            if (f.has_alt != @intCast(u8, 0)) {
+                if (c.null_analysis_mode != @intCast(u8, 0)) {
+                    npAppendCtrlBranch(f.exits[0..f.exits_cap], &f.exits_n, f.alt);
+                } else {
+                    smap_mod.stateMapMergeStates(f.state, f.state, f.alt, @intCast(u8, 99));
+                    if (c.doublefree_analysis_mode != @intCast(u8, 0)) {
+                        smap_mod.stateMapMergeInsertMissing(f.state, f.alt, @intCast(u8, @enumToInt(AllocState.unknown)));
+                        aliasMergeBranchInto(f.state, f.alt);
+                    }
+                }
+            }
+            var prongs_n = ast_mod.astStoreNodeExtraChildCount(c.store, f.node_idx);
+            var si = f.idx;
+            var made: u8 = @intCast(u8, 0);
+            while (si < @intCast(usize, prongs_n)) : (si += 1) {
+                var prong_idx = ast_mod.astStoreNodeExtraChildAt(c.store, f.node_idx, @intCast(u32, si));
+                if (f.sel_decisive != @intCast(u8, 0) and prong_idx != f.sel_prong) continue;
+                var prong = ast_mod.astStoreNodeAt(c.store, prong_idx);
+                var ps = smap_mod.stateMapFork(f.state, c.alloc);
+                var t5_pcap = captureNameIdOf(c.store, prong_idx);
+                var sel_node = ast_mod.astStoreNodeAt(c.store, f.node_idx);
+                bindCaptureState(c, ps, t5_pcap, sel_node.child_0);
+                var cont = f;
+                cont.idx = si + @intCast(usize, 1);
+                cont.alt = ps;
+                cont.has_alt = @intCast(u8, 1);
+                stmtWalkPush(&w, cont);
+                var cf2 = stmtWorkNew(STMT_W_REGION);
+                cf2.node_idx = prong.child_0;
+                cf2.state = ps;
+                stmtWalkPush(&w, cf2);
+                made = @intCast(u8, 1);
+                break;
+            }
+            if (made != @intCast(u8, 0)) continue;
+            if (c.null_analysis_mode != @intCast(u8, 0)) {
+                if (f.exits_n > @intCast(usize, 0)) npMergeNullExits(f.state, f.exits[0..f.exits_n], c.alloc);
+            }
+            continue;
+        }
+        if (f.tag == STMT_W_STMT) {
+            if (f.node_idx == @intCast(u32, 0)) continue;
+            var node = ast_mod.astStoreNodeAt(c.store, f.node_idx);
+            var kind = node.kind;
+            if (kind == AstKind.if_stmt or kind == AstKind.if_capture) {
+                if (c.doublefree_analysis_mode != @intCast(u8, 0)) {
+                    checkUseAfterFreeExpr(c, f.state, node.child_0);
+                }
+                var t5_fold = analyzerFoldComptimeBool(c, node.child_0, @intCast(u32, 0));
+                if (t5_fold) |tfv| {
+                    if (ast_mod.astStoreNodePayload(c.store, f.node_idx) == @intCast(u32, 0)) {
+                        if (tfv) {
+                            var rf = stmtWorkNew(STMT_W_REGION);
+                            rf.node_idx = node.child_1;
+                            rf.state = f.state;
+                            stmtWalkPush(&w, rf);
+                        } else if (node.child_2 != @intCast(u32, 0)) {
+                            var rf2 = stmtWorkNew(STMT_W_REGION);
+                            rf2.node_idx = node.child_2;
+                            rf2.state = f.state;
+                            stmtWalkPush(&w, rf2);
+                        }
+                        continue;
+                    }
+                }
+                analyzeExpr(c, f.state, node.child_0);
+                var then_state = smap_mod.stateMapFork(f.state, c.alloc);
+                var else_state = smap_mod.stateMapFork(f.state, c.alloc);
+                if (c.null_analysis_mode != @intCast(u8, 0)) {
+                    applyNullGuardRefinement(c.store, node.child_0, then_state, else_state);
+                }
+                var t5_cap = captureNameIdOf(c.store, f.node_idx);
+                bindCaptureState(c, then_state, t5_cap, node.child_0);
+                var af = stmtWorkNew(STMT_W_IF_AFTER);
+                af.state = f.state;
+                af.alt = then_state;
+                af.exit_state = else_state;
+                stmtWalkPush(&w, af);
+                if (node.child_2 != @intCast(u32, 0)) {
+                    var ef = stmtWorkNew(STMT_W_REGION);
+                    ef.node_idx = node.child_2;
+                    ef.state = else_state;
+                    stmtWalkPush(&w, ef);
+                }
+                var tf = stmtWorkNew(STMT_W_REGION);
+                tf.node_idx = node.child_1;
+                tf.state = then_state;
+                stmtWalkPush(&w, tf);
+            } else if (kind == AstKind.while_stmt or kind == AstKind.while_capture) {
+                if (c.doublefree_analysis_mode != @intCast(u8, 0)) {
+                    checkUseAfterFreeExpr(c, f.state, node.child_0);
+                }
+                analyzeExpr(c, f.state, node.child_0);
+                var body_state = smap_mod.stateMapFork(f.state, c.alloc);
+                var exit_state = smap_mod.stateMapFork(f.state, c.alloc);
+                if (c.null_analysis_mode != @intCast(u8, 0)) {
+                    applyNullGuardRefinement(c.store, node.child_0, body_state, exit_state);
+                }
+                var np_w_frame: ?usize = null;
+                var np_w_saved_label: u32 = np_current_label;
+                if (c.null_analysis_mode != @intCast(u8, 0)) {
+                    np_w_frame = npPushCtrl(np_current_label, @intCast(u8, 1));
+                    np_current_label = @intCast(u32, 0);
+                }
+                var t5_wcap = captureNameIdOf(c.store, f.node_idx);
+                bindCaptureState(c, body_state, t5_wcap, node.child_0);
+                var wf = stmtWorkNew(STMT_W_WHILE_AFTER);
+                wf.state = f.state;
+                wf.alt = body_state;
+                wf.exit_state = exit_state;
+                wf.ctrl = np_w_frame;
+                wf.saved_label = np_w_saved_label;
+                stmtWalkPush(&w, wf);
+                var wb = stmtWorkNew(STMT_W_REGION);
+                wb.node_idx = node.child_1;
+                wb.state = body_state;
+                stmtWalkPush(&w, wb);
+            } else if (kind == AstKind.swt_ex) {
+                if (c.doublefree_analysis_mode != @intCast(u8, 0)) {
+                    checkUseAfterFreeExpr(c, f.state, node.child_0);
+                }
+                analyzeExpr(c, f.state, node.child_0);
+                var sel = analyzerSwitchSelection(c, f.node_idx);
+                var prongs_n = ast_mod.astStoreNodeExtraChildCount(c.store, f.node_idx);
+                var cap: usize = @intCast(usize, prongs_n);
+                if (cap > NP_MERGE_CAP) cap = NP_MERGE_CAP;
+                var exits: [*]*StateMap = undefined;
+                if (cap > @intCast(usize, 0)) {
+                    var raw = alloc_mod.sandAlloc(c.alloc, @sizeOf(usize) * cap, @intCast(usize, 4)) catch unreachable;
+                    exits = @ptrCast([*]*StateMap, raw);
+                }
+                var ssf = stmtWorkNew(STMT_W_SWITCH_STEP);
+                ssf.state = f.state;
+                ssf.node_idx = f.node_idx;
+                ssf.idx = @intCast(usize, 0);
+                ssf.exits = exits;
+                ssf.exits_n = @intCast(usize, 0);
+                ssf.exits_cap = cap;
+                ssf.sel_decisive = @intCast(u8, if (sel.decisive) 1 else 0);
+                ssf.sel_prong = sel.prong;
+                stmtWalkPush(&w, ssf);
+            } else if (kind == AstKind.for_stmt) {
+                var body_state = smap_mod.stateMapFork(f.state, c.alloc);
+                var np_f_frame: ?usize = null;
+                var np_f_saved_label: u32 = np_current_label;
+                if (c.null_analysis_mode != @intCast(u8, 0)) {
+                    np_f_frame = npPushCtrl(np_current_label, @intCast(u8, 1));
+                    np_current_label = @intCast(u32, 0);
+                }
+                var t5_fcap = captureNameIdOf(c.store, f.node_idx);
+                bindCaptureState(c, body_state, t5_fcap, node.child_0);
+                var ff = stmtWorkNew(STMT_W_FOR_AFTER);
+                ff.state = f.state;
+                ff.alt = body_state;
+                ff.ctrl = np_f_frame;
+                ff.saved_label = np_f_saved_label;
+                stmtWalkPush(&w, ff);
+                var fb = stmtWorkNew(STMT_W_REGION);
+                fb.node_idx = node.child_1;
+                fb.state = body_state;
+                stmtWalkPush(&w, fb);
+            } else if (kind == AstKind.return_stmt) {
+                if (node.child_0 != @intCast(u32, 0)) {
+                    analyzeExpr(c, f.state, node.child_0);
+                    if (c.lifetime_analysis_mode != @intCast(u8, 0)) {
+                        checkReturnProvenance(c, f.state, node.child_0, f.node_idx);
+                    }
+                    if (c.doublefree_analysis_mode != @intCast(u8, 0)) {
+                        handleOwnershipReturn(c, f.state, node.child_0);
+                    }
+                }
+                w.on_stmt(c, f.state, f.node_idx);
+            } else if ((kind == AstKind.defer_stmt or kind == AstKind.errdefer_stmt) and c.in_defer_exec == @intCast(u8, 0)) {
+                var dk: u8 = @intCast(u8, 0);
+                if (kind == AstKind.errdefer_stmt) dk = @intCast(u8, 1);
+                deferQueueEnsureCapacity(c, c.defer_queue_len + @intCast(usize, 1));
+                c.defer_queue_items[c.defer_queue_len] = DeferEntry{ .kind = dk, .stmt_idx = f.node_idx, .scope_depth = c.current_depth };
+                c.defer_queue_len += 1;
+            } else if (c.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.var_decl) {
+                handleNullVarDecl(c, f.state, f.node_idx);
+                w.on_stmt(c, f.state, f.node_idx);
+            } else if (c.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.plain_assign) {
+                handleNullAssign(c, f.state, f.node_idx);
+                w.on_stmt(c, f.state, f.node_idx);
+            } else if (c.null_analysis_mode != @intCast(u8, 0) and (kind == AstKind.break_stmt or kind == AstKind.continue_stmt)) {
+                var np_is_break: u8 = @intCast(u8, 0);
+                if (kind == AstKind.break_stmt) np_is_break = @intCast(u8, 1);
+                var np_label_id: u32 = ast_mod.astStoreNodePayload(c.store, f.node_idx);
+                npRecordCtrlExit(c, f.state, np_is_break, np_label_id);
+                w.on_stmt(c, f.state, f.node_idx);
+            } else if (kind == AstKind.expr_stmt) {
+                if (node.child_0 != @intCast(u32, 0)) {
+                    var inner = ast_mod.astStoreNodeAt(c.store, node.child_0);
+                    if (inner.kind == AstKind.swt_ex) {
+                        var es = stmtWorkNew(STMT_W_STMT);
+                        es.node_idx = node.child_0;
+                        es.state = f.state;
+                        stmtWalkPush(&w, es);
+                    } else {
+                        analyzeExpr(c, f.state, node.child_0);
+                    }
+                }
+            } else if (kind == AstKind.block) {
+                var bfr = stmtWorkNew(STMT_W_REGION);
+                bfr.node_idx = f.node_idx;
+                bfr.state = f.state;
+                stmtWalkPush(&w, bfr);
+            } else if (kind == AstKind.labeled_stmt) {
+                if (c.null_analysis_mode == @intCast(u8, 0)) {
+                    var ls = stmtWorkNew(STMT_W_STMT);
+                    ls.node_idx = node.child_0;
+                    ls.state = f.state;
+                    stmtWalkPush(&w, ls);
+                } else {
+                    var np_l_saved_label: u32 = np_current_label;
+                    np_current_label = ast_mod.astStoreNodePayload(c.store, f.node_idx);
+                    var np_l_is_block: u8 = @intCast(u8, 0);
+                    if (node.child_0 != @intCast(u32, 0)) {
+                        var np_l_child = ast_mod.astStoreNodeAt(c.store, node.child_0);
+                        if (np_l_child.kind == AstKind.block) np_l_is_block = @intCast(u8, 1);
+                    }
+                    if (np_l_is_block != @intCast(u8, 0)) {
+                        var np_l_frame = npPushCtrl(np_current_label, @intCast(u8, 0));
+                        np_current_label = @intCast(u32, 0);
+                        var la = stmtWorkNew(STMT_W_LABEL_AFTER);
+                        la.state = f.state;
+                        la.ctrl = np_l_frame;
+                        la.saved_label = np_l_saved_label;
+                        stmtWalkPush(&w, la);
+                        var lb = stmtWorkNew(STMT_W_REGION);
+                        lb.node_idx = node.child_0;
+                        lb.state = f.state;
+                        stmtWalkPush(&w, lb);
+                    } else {
+                        var lr = stmtWorkNew(STMT_W_LABEL_RESTORE);
+                        lr.saved_label = np_l_saved_label;
+                        stmtWalkPush(&w, lr);
+                        var lc = stmtWorkNew(STMT_W_STMT);
+                        lc.node_idx = node.child_0;
+                        lc.state = f.state;
+                        stmtWalkPush(&w, lc);
+                    }
+                }
+            } else {
+                w.on_stmt(c, f.state, f.node_idx);
+            }
+            continue;
+        }
     }
-    executeDeferQueue(ctx, state, saved_depth, @intCast(u8, 0), visit_fn);
-    if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-        checkLeaksOnScopeExit(ctx, state);
-    }
-    ctx.current_depth = saved_depth;
+}
+
+pub fn walkBlock(ctx: *AnalyzerContext, state: *StateMap, block_idx: u32, visit_fn: fn(*AnalyzerContext, *StateMap, u32) void) void {
+    runStmtWalk(ctx, state, block_idx, @intCast(u8, 1), ctx.on_stmt_cb, visit_fn);
 }
 
 // T5: resolve a statement's capture binding to the capture NAME id.
@@ -2270,245 +2787,7 @@ fn paramTypeIsPointerLike(ctx: *AnalyzerContext, type_expr_idx: u32) bool {
 }
 
 pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on_stmt: fn(*AnalyzerContext, *StateMap, u32) void, visit_fn: fn(*AnalyzerContext, *StateMap, u32) void) void {
-    if (node_idx == @intCast(u32, 0)) return;
-    var node = ast_mod.astStoreNodeAt(ctx.store, node_idx);
-    var kind = node.kind;
-    if (kind == AstKind.if_stmt or kind == AstKind.if_capture) {
-        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-            checkUseAfterFreeExpr(ctx, state, node.child_0);
-        }
-        // T5 (T3 rule): a capture-free comptime-known condition takes the live
-        // arm only — the untaken arm does not exist for analysis.
-        var t5_fold = analyzerFoldComptimeBool(ctx, node.child_0, 0);
-        if (t5_fold) |tfv| {
-            if (ast_mod.astStoreNodePayload(ctx.store, node_idx) == @intCast(u32, 0)) {
-                if (tfv) {
-                    walkBlock(ctx, state, node.child_1, visit_fn);
-                } else if (node.child_2 != @intCast(u32, 0)) {
-                    walkBlock(ctx, state, node.child_2, visit_fn);
-                }
-                return;
-            }
-        }
-        analyzeExpr(ctx, state, node.child_0);
-        var then_state = smap_mod.stateMapFork(state, ctx.alloc);
-        var else_state = smap_mod.stateMapFork(state, ctx.alloc);
-        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-            applyNullGuardRefinement(ctx.store, node.child_0, then_state, else_state);
-        }
-        var t5_cap = captureNameIdOf(ctx.store, node_idx);
-        bindCaptureState(ctx, then_state, t5_cap, node.child_0);
-        walkBlock(ctx, then_state, node.child_1, visit_fn);
-        if (node.child_2 != @intCast(u32, 0)) walkBlock(ctx, else_state, node.child_2, visit_fn);
-        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-            var np_if_exits: [2]*StateMap = undefined;
-            np_if_exits[0] = then_state;
-            np_if_exits[1] = else_state;
-            npMergeNullExits(state, np_if_exits[0..], ctx.alloc);
-        } else {
-            smap_mod.stateMapMergeStates(state, then_state, else_state, @intCast(u8, 99));
-        }
-        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-            aliasMergeBranches(state, then_state, else_state);
-        }
-    } else if (kind == AstKind.while_stmt or kind == AstKind.while_capture) {
-        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-            checkUseAfterFreeExpr(ctx, state, node.child_0);
-        }
-        analyzeExpr(ctx, state, node.child_0);
-        var body_state = smap_mod.stateMapFork(state, ctx.alloc);
-        var exit_state = smap_mod.stateMapFork(state, ctx.alloc);
-        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-            // T9h: the loop condition holds on every body iteration, so a
-            // null/non-zero guard refines the body state. The loop may also
-            // exit because the guard failed before the first iteration, which
-            // is exactly the refinement carried by `exit_state`.
-            applyNullGuardRefinement(ctx.store, node.child_0, body_state, exit_state);
-        }
-        var np_w_frame: ?usize = null;
-        var np_w_saved_label: u32 = np_current_label;
-        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-            np_w_frame = npPushCtrl(np_current_label, @intCast(u8, 1));
-            np_current_label = @intCast(u32, 0);
-        }
-        var t5_wcap = captureNameIdOf(ctx.store, node_idx);
-        bindCaptureState(ctx, body_state, t5_wcap, node.child_0);
-        walkBlock(ctx, body_state, node.child_1, visit_fn);
-        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-            var np_w_exits: [NP_MERGE_CAP]*StateMap = undefined;
-            var np_w_n: usize = 0;
-            np_w_exits[np_w_n] = body_state;
-            np_w_n += 1;
-            np_w_exits[np_w_n] = exit_state;
-            np_w_n += 1;
-            if (np_w_frame) |fi| npAppendCtrlExits(fi, np_w_exits[0..], &np_w_n);
-            npMergeNullExits(state, np_w_exits[0..np_w_n], ctx.alloc);
-            if (np_w_frame != null) {
-                npPopCtrl();
-            } else {
-                npForceMaybe(state);
-                npPopUnpushed();
-            }
-            np_current_label = np_w_saved_label;
-        } else {
-            smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
-        }
-        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-            aliasMergeBranchInto(state, body_state);
-        }
-    } else if (kind == AstKind.swt_ex) {
-        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-            checkUseAfterFreeExpr(ctx, state, node.child_0);
-        }
-        analyzeExpr(ctx, state, node.child_0);
-        // T9a (DED-2): a comptime-known selector makes exactly one prong (or
-        // the `else` prong) live; a dead prong does not exist for analysis and
-        // must not emit analyzer diagnostics. An undecidable selector/label
-        // keeps every prong live (conservative).
-        var sel = analyzerSwitchSelection(ctx, node_idx);
-        var prongs_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, node_idx);
-        var np_s_exits: [NP_MERGE_CAP]*StateMap = undefined;
-        var np_s_n: usize = 0;
-        var si: usize = 0;
-        while (si < @intCast(usize, prongs_n)) : (si += 1) {
-            var prong_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, node_idx, @intCast(u32, si));
-            if (sel.decisive and prong_idx != sel.prong) continue;
-            var prong = ast_mod.astStoreNodeAt(ctx.store, prong_idx);
-            var ps = smap_mod.stateMapFork(state, ctx.alloc);
-            var t5_pcap = captureNameIdOf(ctx.store, prong_idx);
-            bindCaptureState(ctx, ps, t5_pcap, node.child_0);
-            walkBlock(ctx, ps, prong.child_0, visit_fn);
-            if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-                npAppendCtrlBranch(np_s_exits[0..], &np_s_n, ps);
-            } else {
-                smap_mod.stateMapMergeStates(state, state, ps, @intCast(u8, 99));
-                if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-                    smap_mod.stateMapMergeInsertMissing(state, ps, @intCast(u8, @enumToInt(AllocState.unknown)));
-                    aliasMergeBranchInto(state, ps);
-                }
-            }
-        }
-        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-            if (np_s_n > @intCast(usize, 0)) npMergeNullExits(state, np_s_exits[0..np_s_n], ctx.alloc);
-        }
-    } else if (kind == AstKind.for_stmt) {
-        var body_state = smap_mod.stateMapFork(state, ctx.alloc);
-        var np_f_frame: ?usize = null;
-        var np_f_saved_label: u32 = np_current_label;
-        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-            np_f_frame = npPushCtrl(np_current_label, @intCast(u8, 1));
-            np_current_label = @intCast(u32, 0);
-        }
-        var t5_fcap = captureNameIdOf(ctx.store, node_idx);
-        bindCaptureState(ctx, body_state, t5_fcap, node.child_0);
-        walkBlock(ctx, body_state, node.child_1, visit_fn);
-        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-            var np_f_exits: [NP_MERGE_CAP]*StateMap = undefined;
-            var np_f_n: usize = 0;
-            np_f_exits[np_f_n] = body_state;
-            np_f_n += 1;
-            // D4h1: a `for` range/iterable may yield no iterations, so the
-            // pre-loop state is a real exit alongside the body fall-through and
-            // the snapshotted break/continue exits. Without it a body assignment
-            // would be reported as definite on the zero-iteration path.
-            np_f_exits[np_f_n] = state;
-            np_f_n += 1;
-            if (np_f_frame) |fi| npAppendCtrlExits(fi, np_f_exits[0..], &np_f_n);
-            npMergeNullExits(state, np_f_exits[0..np_f_n], ctx.alloc);
-            if (np_f_frame != null) {
-                npPopCtrl();
-            } else {
-                npForceMaybe(state);
-                npPopUnpushed();
-            }
-            np_current_label = np_f_saved_label;
-        } else {
-            smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
-        }
-        if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-            aliasMergeBranchInto(state, body_state);
-        }
-    } else if (kind == AstKind.return_stmt) {
-        if (node.child_0 != @intCast(u32, 0)) {
-            // NP-2: return expressions are in scope for null derefs. The walk
-            // is mode-gated inside `analyzeExpr`.
-            analyzeExpr(ctx, state, node.child_0);
-            if (ctx.lifetime_analysis_mode != @intCast(u8, 0)) {
-                checkReturnProvenance(ctx, state, node.child_0, node_idx);
-            }
-            if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-                handleOwnershipReturn(ctx, state, node.child_0);
-            }
-        }
-        on_stmt(ctx, state, node_idx);
-    } else if ((kind == AstKind.defer_stmt or kind == AstKind.errdefer_stmt) and ctx.in_defer_exec == @intCast(u8, 0)) {
-        var dk: u8 = @intCast(u8, 0);
-        if (kind == AstKind.errdefer_stmt) dk = @intCast(u8, 1);
-        deferQueueEnsureCapacity(ctx, ctx.defer_queue_len + @intCast(usize, 1));
-        ctx.defer_queue_items[ctx.defer_queue_len] = DeferEntry{ .kind = dk, .stmt_idx = node_idx, .scope_depth = ctx.current_depth };
-        ctx.defer_queue_len += 1;
-    } else if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.var_decl) {
-        handleNullVarDecl(ctx, state, node_idx);
-        on_stmt(ctx, state, node_idx);
-    } else if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.plain_assign) {
-        handleNullAssign(ctx, state, node_idx);
-        on_stmt(ctx, state, node_idx);
-    } else if (ctx.null_analysis_mode != @intCast(u8, 0) and (kind == AstKind.break_stmt or kind == AstKind.continue_stmt)) {
-        var np_is_break: u8 = @intCast(u8, 0);
-        if (kind == AstKind.break_stmt) np_is_break = @intCast(u8, 1);
-        // The payload is the label name id (0 = unlabeled), as in lowering.
-        var np_label_id: u32 = ast_mod.astStoreNodePayload(ctx.store, node_idx);
-        npRecordCtrlExit(ctx, state, np_is_break, np_label_id);
-        on_stmt(ctx, state, node_idx);
-    } else if (kind == AstKind.expr_stmt) {
-        if (node.child_0 != @intCast(u32, 0)) {
-            var inner = ast_mod.astStoreNodeAt(ctx.store, node.child_0);
-            if (inner.kind == AstKind.swt_ex) {
-                visitStatement(ctx, state, node.child_0, on_stmt, visit_fn);
-            } else {
-                analyzeExpr(ctx, state, node.child_0);
-            }
-        }
-    } else if (kind == AstKind.block) {
-        walkBlock(ctx, state, node_idx, visit_fn);
-    } else if (kind == AstKind.labeled_stmt) {
-        if (ctx.null_analysis_mode == @intCast(u8, 0)) {
-            visitStatement(ctx, state, node.child_0, on_stmt, visit_fn);
-        } else {
-            // Mirror `lowerStmtLabeledStep`: a block child is its own
-            // breakable control frame (label set, loop flag clear); any other
-            // child (a loop) consumes the pending label when it opens.
-            var np_l_saved_label: u32 = np_current_label;
-            np_current_label = ast_mod.astStoreNodePayload(ctx.store, node_idx);
-            var np_l_is_block: u8 = @intCast(u8, 0);
-            if (node.child_0 != @intCast(u32, 0)) {
-                var np_l_child = ast_mod.astStoreNodeAt(ctx.store, node.child_0);
-                if (np_l_child.kind == AstKind.block) np_l_is_block = @intCast(u8, 1);
-            }
-            if (np_l_is_block != @intCast(u8, 0)) {
-                var np_l_frame = npPushCtrl(np_current_label, @intCast(u8, 0));
-                np_current_label = @intCast(u32, 0);
-                walkBlock(ctx, state, node.child_0, visit_fn);
-                if (np_l_frame) |fi| {
-                    var np_l_exits: [NP_MERGE_CAP]*StateMap = undefined;
-                    var np_l_n: usize = 0;
-                    np_l_exits[np_l_n] = state;
-                    np_l_n += 1;
-                    npAppendCtrlExits(fi, np_l_exits[0..], &np_l_n);
-                    npMergeNullExits(state, np_l_exits[0..np_l_n], ctx.alloc);
-                    npPopCtrl();
-                } else {
-                    npForceMaybe(state);
-                    npPopUnpushed();
-                }
-            } else {
-                visitStatement(ctx, state, node.child_0, on_stmt, visit_fn);
-            }
-            np_current_label = np_l_saved_label;
-        }
-    } else {
-        on_stmt(ctx, state, node_idx);
-    }
+    runStmtWalk(ctx, state, node_idx, @intCast(u8, 0), on_stmt, visit_fn);
 }
 
 pub fn onNullStmt(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
