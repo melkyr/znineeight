@@ -5042,6 +5042,12 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     // switches (typed nodes and inferred bindings).
     var sw_is_stmt_expr: u8 = @intCast(u8, 0);
     if (self.stmt_expr_node != @intCast(u32, 0) and semaUnwrapParens(self, node_idx) == self.stmt_expr_node) { sw_is_stmt_expr = @intCast(u8, 1); }
+    // D15 (Task 9k): for a value-result switch with a known non-f32 expected
+    // type, every prong must be assignable to it (expected-type-first,
+    // mirroring the if-expression path). Absent/void expected type falls
+    // through to peer resolution; statement switches keep their behavior.
+    var sw_exp: u32 = topExpectedType(self);
+    if (sw_exp == type_mod.TYPE_VOID) sw_exp = @intCast(u32, 0);
 
     while (i < @intCast(usize, prongs_n)) : (i += 1) {
         var prong_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));
@@ -5172,6 +5178,25 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         var pct_m: []const u8 = "PCT:n"; pal_mod.markerWriteInt(pct_m, prong.child_0); var pct_bm: []const u8 = "PCT:b"; pal_mod.markerWriteInt(pct_bm, bt); var pct_fm: []const u8 = "PCT:f"; pal_mod.markerWriteInt(pct_fm, self.current_fn_return);
         var swpb_im: []const u8 = "SWPB:i"; pal_mod.markerWriteInt(swpb_im, @intCast(u32, i)); var swpb_tm: []const u8 = "SWPB:t"; pal_mod.markerWriteInt(swpb_tm, bt);
         if (bt == type_mod.TYPE_NORETURN) {}
+        else if (sw_exp != @intCast(u32, 0) and sw_f32_site == @intCast(u8, 0) and sw_is_stmt_expr == @intCast(u8, 0)) {
+            var sw_arm_str = isStringLiteralSliceCoercion(coercion_mod.classifyCoercion(self.registry, bt, sw_exp));
+            var sw_arm_ok = bt == sw_exp or bt == type_mod.TYPE_NORETURN or sw_arm_str
+                or type_mod.typeRegistryIsAssignable(self.registry, bt, sw_exp);
+            if (sw_arm_ok) {
+                if (bt != sw_exp) tryRecordCoercion(self, prong.child_0, bt, sw_exp);
+                if (unified != type_mod.TYPE_NORETURN) {
+                    unified = sw_exp;
+                    unified_node = prong.child_0;
+                }
+            } else {
+                if (unified != type_mod.TYPE_NORETURN and diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+                    var sw_mix_tm_msg: []const u8 = "type mismatch in switch expression -- prong type may not be compatible with the switch expression type";
+                    semanticAnalyzerTypeMismatchReport(self, prong.child_0, bt, sw_exp, sw_mix_tm_msg, false);
+                }
+                unified = type_mod.TYPE_NORETURN;
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_NORETURN);
+            }
+        }
         else if (sw_f32_site != @intCast(u8, 0)) {
             if (unified == @intCast(u32, 0) and bt != @intCast(u32, 0)) { unified = bt; unified_node = prong.child_0; }
         }
