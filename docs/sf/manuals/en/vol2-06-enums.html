@@ -164,9 +164,12 @@ prints <tt>0</tt>, <tt>4</tt>, and <tt>9</tt> for the three members with
 <tt>@enumToInt</tt>. The type measures <tt>@sizeOf</tt> 1 and
 <tt>@bitSizeOf</tt> 8 &mdash; one byte, which matters when the value is a field
 in a wire format or an entry in a table. A backing of <tt>u16</tt> or
-<tt>u32</tt> is chosen the same way. Only unsigned backings exist:
-<tt>enum(i32)</tt> is rejected with <tt>error[3000]: enum(iN) signed backings
-are not supported; use an unsigned backing (enum(uN))</tt>.
+<tt>u32</tt> is chosen the same way. Both unsigned (<tt>enum(uN)</tt>) and
+signed (<tt>enum(iN)</tt>) integer backings are accepted: a signed backing may
+carry negative member values, and every member must fit its backing's range.
+<tt>enum(i32)</tt> and <tt>enum(i64)</tt> are valid, and negative discriminants
+emit signed C. A <tt>bool</tt> or other non-integer backing is the level-0
+<tt>error[3000]</tt> reject.
 </p>
 <p>
 Values may be explicit, automatic, or a mix. Automatic numbering starts at zero
