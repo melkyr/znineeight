@@ -544,6 +544,18 @@ are listed because they are members, but they are not raised.
 <td valign="top"><tt>semantic_analyzer.zig:2456</tt></td>
 </tr>
 <tr>
+<td valign="top"><tt>error[3077]</tt></td>
+<td valign="top"><tt>ERR_3077_EXPR_NESTING_LIMIT</tt></td>
+<td valign="top">expression nesting too deep for semantic analysis (limit 130)</td>
+<td valign="top"><tt>semantic_analyzer.zig:5311</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3078]</tt></td>
+<td valign="top"><tt>ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED</tt></td>
+<td valign="top">mutable for-item capture requires an addressable element (a range or a copied array value has none) / mutable for-item capture requires an iterable with a resolvable element type</td>
+<td valign="top"><tt>semantic_analyzer.zig:6492</tt></td>
+</tr>
+<tr>
 <td valign="top"><tt>error[3024]</tt></td>
 <td valign="top"><tt>ERR_4000_INVALID_CONTROL_FLOW</tt></td>
 <td valign="top">topological sort violation: import not resolved</td>
@@ -588,7 +600,7 @@ are listed because they are members, but they are not raised.
 <tr>
 <td valign="top"><tt>error[3043]</tt></td>
 <td valign="top"><tt>ERR_9001_ICE</tt></td>
-<td valign="top">internal compiler error; many sites, including async frame layout</td>
+<td valign="top">internal compiler error at several sites; the historical non-tail async parent-result-slot occurrence is suspicious/unreproduced (D14)</td>
 <td valign="top"><tt>async_state_machine.zig</tt>; <tt>c89_emit.zig</tt></td>
 </tr>
 <tr>
@@ -695,7 +707,7 @@ are listed because they are members, but they are not raised.
 </tr>
 </table>
 <p>
-The table has 96 rows, one per <tt>ErrorCode</tt> member. Every code is listed;
+The table has 99 rows, one per <tt>ErrorCode</tt> member. Every code is listed;
 the 16 rows marked <i>reserved</i> have no emission site at seed v90.
 </p>
 

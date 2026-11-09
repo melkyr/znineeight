@@ -5,7 +5,7 @@
 <title>Z98 Manual: The Standard Library Tour</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual standard library std tour io fmt arena str mem math debug net async bits os time buf fold module re-export std.zig stdio.z98 std_fold">
+<meta name="keywords" content="Z98 manual standard library std tour io fmt arena str mem math debug net async bits os time page gpa pool buf fold module re-export std.zig stdio.z98 std_fold std_tls_io std_hpack std_http2">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -76,11 +76,13 @@ compiler: <tt>std.arena</tt>, <tt>std.io</tt>, and the rest of the
 function in every module; it names every module the <tt>std</tt> namespace
 actually exports, says what each one is for, and gives the smallest call
 that proves it is there. The chapter's program,
-<tt>docs/sf/manuals/src/vol2/stdio.z98</tt>, touches all fourteen modules in
-one run.
+<tt>docs/sf/manuals/src/vol2/stdio.z98</tt>, touches fourteen of the seventeen
+modules in one run; the three L1/L2 allocator re-exports (<tt>std.page</tt>,
+<tt>std.gpa</tt>, <tt>std.pool</tt>) are in the table below but are not called
+by that tour.
 </p>
 <p>
-Fourteen is a small number, and the size is deliberate: this chapter covers
+Seventeen is a small number, and the size is deliberate: this chapter covers
 the whole <tt>std</tt> namespace, not the whole shipped library. The compiler's
 runtime library directory carries more files than the <tt>std</tt> namespace
 re-exports; only the names in this chapter resolve as <tt>std.&lt;name&gt;</tt>.
@@ -94,7 +96,7 @@ function of every module, has shipped.
 <tr>
 <td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
 <td><b>Honest note.</b> You will reach for a standard library; here is how
-small the <tt>std</tt> namespace is. It is fourteen modules, and most of them
+small the <tt>std</tt> namespace is. It is seventeen modules, and most of them
 are short. There is no formatted input, no dynamic array in the compiler sense,
 no map in the <tt>std</tt> namespace (a by-path <tt>std_map</tt> ships
 separately), no string object. Floating-point math is limited to the f64
@@ -102,8 +104,8 @@ separately), no string object. Floating-point math is limited to the f64
 f32 surface. What exists is a set of concrete, hand-written helpers: an arena
 you own, byte slices you slice yourself, a formatting engine behind
 <tt>print</tt>, and thin wrappers over the operating system. The list below is
-the whole <tt>std</tt> namespace; the shipped library also has thirty-two
-public by-path modules beyond it plus five internal <tt>*_pal</tt> files
+the whole <tt>std</tt> namespace; the shipped library also has thirty-five
+public by-path modules beyond it plus six internal <tt>*_pal</tt> files
 (see <a href="#beyond">Beyond <tt>std</tt></a>). What
 you gain is that every function is a plain Z98 function you can read in the
 compiler's source, with no hidden allocation and no dispatch you did not write.
@@ -115,10 +117,10 @@ of it.</td>
 <h2><a name="whatships"></a>What ships in <tt>std</tt></h2>
 <p>
 The module <tt>sf/src/std.zig</tt> is nothing but a list of re-exports. It
-declares exactly fourteen names; each maps to one <tt>std_*.zig</tt> file in
+declares exactly seventeen names; each maps to one <tt>std_*.zig</tt> file in
 the compiler's library directory. Every name is reachable as
 <tt>std.&lt;name&gt;</tt> and nothing else is. The blueprint for this volume
-named eight of them; the other six are part of the same surface and are
+named eight of them; the rest are part of the same surface and are
 covered here so the list is complete.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
@@ -188,6 +190,21 @@ covered here so the list is complete.
 <td>Monotonic and wall-clock time, and sleep.</td>
 </tr>
 <tr>
+<td><tt>std.page</tt></td>
+<td><tt>std_page.zig</tt></td>
+<td>Portable page reserve/commit/decommit/release over OS mappings.</td>
+</tr>
+<tr>
+<td><tt>std.gpa</tt></td>
+<td><tt>std_gpa.zig</tt></td>
+<td>Single-threaded general-purpose allocator: TLSF small blocks, page-run medium chunks, and direct large mappings.</td>
+</tr>
+<tr>
+<td><tt>std.pool</tt></td>
+<td><tt>std_pool.zig</tt></td>
+<td>A fixed-block pool carved from a caller-owned byte buffer; O(1) alloc/free and a bulk reset.</td>
+</tr>
+<tr>
 <td><tt>std.buf</tt></td>
 <td><tt>std_buf.zig</tt></td>
 <td>A growable byte buffer backed by an arena.</td>
@@ -202,10 +219,10 @@ covered here so the list is complete.
 <h2><a name="beyond"></a>Beyond <tt>std</tt></h2>
 <p>
 The namespace above is the whole <tt>std</tt> namespace, but not the whole
-shipped library. Thirty-two public modules ship by path (plus five internal
+shipped library. Thirty-five public modules ship by path (plus six internal
 <tt>*_pal</tt> files): import one as
 <tt>@import("std_&lt;name&gt;")</tt> rather than through <tt>std</tt>. They are
-indexed below; 22 are detailed in the four companion reference pages,
+indexed below; 25 are listed on the four companion reference pages,
 <tt>std_gfx</tt>/<tt>std_gfx_pal</tt> in the DirectX/GUI chapter, and the rest
 in <tt>sf/docs/std_lib/</tt> (except <tt>std_fft</tt>, which is not yet
 documented).
@@ -221,7 +238,7 @@ documented).
 </tr>
 <tr>
 <td><a href="vol4-18-stdlib-codecs.html">Codecs and crypto</a></td>
-<td><tt>std_base64</tt>, <tt>std_hex</tt>, <tt>std_utf8</tt>, <tt>std_crypto</tt>, <tt>std_lz4</tt>, <tt>std_zstd</tt></td>
+<td><tt>std_base64</tt>, <tt>std_hex</tt>, <tt>std_utf8</tt>, <tt>std_crypto</tt>, <tt>std_lz4</tt>, <tt>std_zstd</tt>, <tt>std_hpack</tt></td>
 </tr>
 <tr>
 <td><a href="vol4-18-stdlib.html#deflate">Deflate / zlib</a></td>
@@ -229,7 +246,7 @@ documented).
 </tr>
 <tr>
 <td><a href="vol4-18-stdlib-io.html">I/O and HTTP</a></td>
-<td><tt>std_file</tt>, <tt>std_stdin</tt>, <tt>std_stream</tt>, <tt>std_http</tt></td>
+<td><tt>std_file</tt>, <tt>std_stdin</tt>, <tt>std_stream</tt>, <tt>std_http</tt>, <tt>std_tls_io</tt>, <tt>std_http2</tt></td>
 </tr>
 <tr>
 <td><a href="vol4-18-stdlib-algorithms.html">Algorithms</a></td>
@@ -253,10 +270,11 @@ POST and a streaming response sink (<tt>httpPostOver</tt>,
 convenience call on top of GET.
 </p>
 <p>
-The directory holds thirty-seven more <tt>std_*.zig</tt> files than these
-fourteen: thirty-two public modules that ship by path and five internal
+The directory holds forty-one more <tt>std_*.zig</tt> files than these
+seventeen: thirty-five public modules that ship by path and six internal
 <tt>*_pal</tt> support files (<tt>std_os_pal</tt>, <tt>std_time_pal</tt>,
-<tt>std_file_pal</tt>, <tt>std_stdin_pal</tt>, <tt>std_gfx_pal</tt>). A name
+<tt>std_file_pal</tt>, <tt>std_stdin_pal</tt>, <tt>std_gfx_pal</tt>,
+<tt>std_page_pal</tt>). A name
 that is not in the re-export table above is not part of the <tt>std</tt>
 namespace. The compiler rejects it rather than resolving it, for example:
 </p>
@@ -270,10 +288,11 @@ same file may exist on disk and be used internally; it is simply not part of
 the public surface a program can name through <tt>std</tt>.
 </p>
 <p>
-Seven public by-path modules have no dedicated manual chapter
+Eight public by-path modules have no dedicated manual chapter
 (<tt>std_ecc</tt>, <tt>std_asn1</tt>, <tt>std_x509</tt>, <tt>std_tls</tt>,
-<tt>std_wireguard</tt>, <tt>std_tcpip</tt>, <tt>std_cipher</tt>); their domain
-docs live in <tt>sf/docs/std_lib/</tt>.
+<tt>std_wireguard</tt>, <tt>std_tcpip</tt>, <tt>std_cipher</tt>,
+<tt>std_fft</tt>); their domain
+docs live in <tt>sf/docs/std_lib/</tt> (except <tt>std_fft</tt>).
 </p>
 
 <h2><a name="io"></a>std.io</h2>
@@ -656,8 +675,9 @@ path, and the <tt>slice</tt> view.
 
 <h2>The example</h2>
 <p>
-The whole tour in one program. It calls every one of the fourteen modules and
-prints one line for each result.
+The whole tour in one program. It calls fourteen of the seventeen modules and
+prints one line for each result; the <tt>std.page</tt>/<tt>std.gpa</tt>/
+<tt>std.pool</tt> re-exports are listed above but are not part of this tour.
 It is <tt>docs/sf/manuals/src/vol2/stdio.z98</tt>:
 </p>
 <pre>
@@ -760,7 +780,7 @@ fold sum=10
 -99
 </pre>
 <p>
-Fourteen lines, one per module, and an exit status of 0. Read the numbers
+Fourteen lines, one per module the tour calls, and an exit status of 0. Read the numbers
 back against the sections above. The arena reports eight bytes used for one
 <tt>Point</tt>; the async header is the declared sixteen, leaving 112 of the
 128-byte pool; the network helper turns port <tt>0x1234</tt> around to the
@@ -823,7 +843,7 @@ information in Z98 is in the return type, which is why the arena returns
 </p>
 <p>
 <b>Assuming more modules ship through <tt>std</tt>.</b> The library directory
-holds thirty-two more public <tt>std_*.zig</tt> modules that ship by path (plus five
+holds thirty-five more public <tt>std_*.zig</tt> modules that ship by path (plus six
 internal <tt>*_pal</tt> files), and a name
 that is not in the re-export table is not reachable through <tt>std</tt>. The
 compiler says so at the point of use:
@@ -834,8 +854,8 @@ const S = @sizeOf(std.base64);
 </pre>
 <p>
 Check the re-export list in <tt>sf/src/std.zig</tt> before you reach for a
-name. If it is not one of the fourteen, it is not part of the <tt>std</tt>
-namespace; if it is one of the thirty-two public by-path modules, import it as
+name. If it is not one of the seventeen, it is not part of the <tt>std</tt>
+namespace; if it is one of the thirty-five public by-path modules, import it as
 <tt>@import("std_&lt;name&gt;")</tt> and use the companion page above.
 </p>
 <p>
@@ -873,9 +893,9 @@ practices</b></a> &mdash;
 where the arena, buffer, and init-function patterns are collected.</li>
 </ul>
 <p>
-<a href="vol4-18-stdlib.html">The Reference stdlib page</a> documents every
-function of every module in the table above; the four companion pages linked
-under <a href="#beyond">Beyond <tt>std</tt></a> cover 22 public by-path modules.
+<a href="vol4-18-stdlib.html">The Reference stdlib page</a> documents the re-exported
+surface and indexes the by-path modules; the four companion pages linked
+under <a href="#beyond">Beyond <tt>std</tt></a> cover 25 public by-path modules.
 <tt>std_gfx</tt>/<tt>std_gfx_pal</tt> are covered in
 <a href="vol3-14-directx.html">the DirectX/GUI chapter</a>; <tt>std_deflate</tt> is
 indexed above (full domain doc in <tt>sf/docs/std_lib/deflate.md</tt>); the

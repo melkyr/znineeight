@@ -106,12 +106,13 @@ where one exists.
 <p>
 An enum declaration is an ordinary <tt>const</tt> whose value denotes a type.
 Members are comma-separated identifiers; a trailing comma is optional. The
-backing integer is inferred (a <tt>u32</tt>) unless an explicit unsigned backing
-is written after <tt>enum</tt> in parentheses.
+backing integer is inferred (a <tt>u32</tt>) unless an explicit integer backing
+(<tt>uN</tt> or <tt>iN</tt>) is written after <tt>enum</tt> in parentheses.
 </p>
 <pre>
 const Color = enum { Red, Green, Blue };          // inferred backing: u32
 const Code = enum(u8) { Ok = 0, Warning = 4, Error = 9 };
+const Signed = enum(i32) { Neg = -1, Pos = 2 };   // explicit signed backing
 </pre>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -126,8 +127,8 @@ const Code = enum(u8) { Ok = 0, Warning = 4, Error = 9 };
 </tr>
 <tr>
 <td valign="top">explicit</td>
-<td valign="top"><tt>const E = enum(uN) { Member, ... };</tt></td>
-<td valign="top">An unsigned integer of width <tt>N</tt>; the enum measures as that backing.</td>
+<td valign="top"><tt>const E = enum(uN) { Member, ... };</tt><br><tt>const E = enum(iN) { Member, ... };</tt></td>
+<td valign="top">An unsigned or signed integer of width <tt>N</tt>; the enum measures as that backing.</td>
 </tr>
 </table>
 <p>
@@ -168,7 +169,11 @@ the range each member value must fit. Measured on seed v90:
 </tr>
 </table>
 <p>
-Only unsigned backings are accepted; the reject is level-0 <tt>error[3000]</tt>.
+Both unsigned (<tt>enum(uN)</tt>) and signed (<tt>enum(iN)</tt>) integer
+backings are accepted; <tt>bool</tt> and non-integer backings are level-0
+<tt>error[3000]</tt>. A signed backing accepts negative discriminants and emits
+signed C: the enum typedef uses the signed backing and a negative member is
+emitted as a signed value (e.g. <tt>#define E_A -1</tt>).
 The reused sample <tt>docs/sf/manuals/src/vol2/color.z98</tt> declares the
 inferred <tt>Color</tt> and the <tt>u8</tt>-backed <tt>Code</tt> and prints
 <tt>Color size=4 bits=32</tt> and <tt>Code size=1 bits=8</tt>.
@@ -176,13 +181,13 @@ inferred <tt>Color</tt> and the <tt>u8</tt>-backed <tt>Code</tt> and prints
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
 <th align="left" bgcolor="#e8e0e0"><b>Backing written</b></th>
-<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
-<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Notes (measured)</b></th>
 </tr>
 <tr>
 <td valign="top"><tt>enum(i32)</tt>, <tt>enum(i8)</tt>, any <tt>iN</tt></td>
-<td valign="top"><tt>error[3000]</tt></td>
-<td valign="top"><tt>enum(iN) signed backings are not supported; use an unsigned backing (enum(uN))</tt></td>
+<td valign="top">accepted</td>
+<td valign="top">Signed backing; members fit <tt>-2^(N-1)</tt>..<tt>2^(N-1)-1</tt>. Negative literals, named constants, and switch prongs resolve by the signed value (<tt>repro/mi_matrix/switch_neg_enum_ok_xmod</tt>, <tt>switch_neg_enum_range_ok_xmod</tt>).</td>
 </tr>
 <tr>
 <td valign="top"><tt>enum(bool)</tt></td>
@@ -196,20 +201,26 @@ inferred <tt>Color</tt> and the <tt>u8</tt>-backed <tt>Code</tt> and prints
 </tr>
 </table>
 <p>
-The grammar and the gate accept any unsigned width <tt>u1</tt>&hellip;<tt>u64</tt>,
-including sub-byte widths (<tt>u1</tt>&hellip;<tt>u7</tt>). A sub-byte-backed
+The grammar and the gate accept any integer width: unsigned
+<tt>u1</tt>&hellip;<tt>u64</tt> and signed <tt>i1</tt>&hellip;<tt>i64</tt>,
+including sub-byte widths (<tt>u1</tt>&hellip;<tt>u7</tt>,
+<tt>i1</tt>&hellip;<tt>i7</tt>). A sub-byte-backed
 enum measures as the declared width's carrier, and several such enums may
 coexist in one program; each is a distinct type with its own member set:
 </p>
 <pre>
 const Small = enum(u3) { A, B, C };        // member values 0, 1, 2 fit u3
 const Wide  = enum(u5) { X = 0, Y = 31 };  // explicit top-bit member fits u5
-// both compile; Small measures 1/1, bitSize 3; Wide measures 1/1, bitSize 5
+const Signed = enum(i3) { N = -4, P = 3 }; // signed sub-byte backing
+// all compile; Small measures 1/1, bitSize 3; Wide measures 1/1, bitSize 5
 </pre>
 <p>
-Every member value must still fit its declared width; a value that does not is
-a clean <tt>error[3000]</tt> (<tt>enum tag value does not fit the enum backing
-width (must fit 2^N - 1); no silent truncation</tt>).
+Every member value must still fit its declared width: <tt>0</tt>..<tt>2^N-1</tt>
+for <tt>enum(uN)</tt>, <tt>-2^(N-1)</tt>..<tt>2^(N-1)-1</tt> for
+<tt>enum(iN)</tt>. A value that does not is a clean <tt>error[3000]</tt>
+(<tt>enum tag value does not fit the enum backing width (must fit 2^N - 1); no
+silent truncation</tt>); a negative value on an unsigned backing reports
+<tt>error[3062] type '&lt;uN&gt;' cannot represent integer value '&lt;v&gt;'</tt>.
 </p>
 
 <h2>Member values and auto-increment</h2>
@@ -247,7 +258,7 @@ const Level = enum { Low, Mid = 4, High, Neg = 100, After };
 </tr>
 <tr>
 <td valign="top">Backing range</td>
-<td valign="top">Every member value must fit the backing width: at most <tt>2^N - 1</tt> for <tt>enum(uN)</tt>; there is no silent truncation.</td>
+<td valign="top">Every member value must fit the backing width: <tt>0</tt>..<tt>2^N - 1</tt> for <tt>enum(uN)</tt>, <tt>-2^(N-1)</tt>..<tt>2^(N-1)-1</tt> for <tt>enum(iN)</tt>; there is no silent truncation.</td>
 </tr>
 </table>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
@@ -305,7 +316,7 @@ builtin.
 <tr>
 <td valign="top"><tt>@enumToInt(e)</tt></td>
 <td valign="top">the backing integer</td>
-<td valign="top"><tt>u32</tt> for an inferred enum, <tt>u8</tt>/<tt>u16</tt>/<tt>u64</tt> for an explicit backing.</td>
+<td valign="top"><tt>u32</tt> for an inferred enum; the declared <tt>uN</tt> or <tt>iN</tt> backing for an explicit one.</td>
 </tr>
 <tr>
 <td valign="top"><tt>@intToEnum(E, n)</tt></td>

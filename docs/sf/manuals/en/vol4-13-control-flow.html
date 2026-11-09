@@ -312,10 +312,37 @@ they cost nothing at runtime. Named constants and enum ranges are pinned by
 <tt>repro/mi_matrix/stdlib_switch_enum_range_xmod</tt> (rows include
 <tt>incl 10 10 20</tt>, <tt>gaps 100 100 100</tt>); plain integer and character
 ranges are pinned by <tt>repro/mi_matrix/switch_case_range_xmod</tt>
-(<tt>130 47</tt>). Two boundaries are measured: a negative-valued named
-constant is not resolved, and a function-local <tt>const</tt> is not resolved
-by lowering; in both cases the item matches nothing and the value silently
-takes <tt>else</tt>.
+(<tt>130 47</tt>). Negative-valued named constants do resolve: a signed
+condition accepts a negative case item or range endpoint, pinned by
+<tt>repro/mi_matrix/switch_neg_const_ok_xmod</tt> (stdout <tt>7</tt>) and the
+signed-enum fixtures <tt>switch_neg_enum_ok_xmod</tt> /
+<tt>switch_neg_enum_range_ok_xmod</tt>. One boundary remains measured: a
+function-local <tt>const</tt> is not resolved by lowering, so the item matches
+nothing and the value silently takes <tt>else</tt>.
+</p>
+
+<h3>Value-result prongs (D15) and the D16 boundary</h3>
+<p>
+When a <tt>switch</tt> produces a value and the surrounding site supplies an
+expected type &mdash; a return, a typed <tt>var</tt>/<tt>const</tt>, a call
+argument, a field or element initializer, or another nested result position
+&mdash; every prong must be assignable to that expected type and is coerced to
+it. The existing optional, error-union, <tt>null</tt>, and <tt>noreturn</tt>
+assignability coercions apply, so an annotated
+<tt>error{E}!i32</tt> or <tt>?i32</tt> result accepts the matching prongs. With
+no expected type the prong types are peer-resolved; incompatible prongs are
+rejected once with a level-0 <tt>error[3000]</tt> type mismatch and no
+<tt>.c</tt> is emitted, so unannotated mixed prongs remain invalid. If every
+prong diverges, the result type is <tt>noreturn</tt>. This rule covers
+value-result switches only; statement-switch behavior is unchanged.
+</p>
+<p>
+<b>D16 is an open parity boundary, not full Zig parity.</b> Mixed statement
+switches (for example <tt>switch (x) { 0 =&gt; 1, else =&gt; true }</tt>),
+assignment-expression/<tt>void</tt> typing, comptime-selector pruning of
+mismatching untaken prongs, and <tt>anyerror</tt> remain deferred to D16. The
+current compiler is stable for valid code, but do not read the D15 rule above
+as a promise of those Zig behaviors.
 </p>
 
 <h3>The mandatory <tt>else</tt></h3>
@@ -464,6 +491,8 @@ The <tt>for</tt> index capture, when present, is a separate immutable
 <tr><td valign="top"><tt>error[3059]</tt></td><td valign="top"><tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt>.</td></tr>
 <tr><td valign="top"><tt>error[3068]</tt></td><td valign="top"><tt>switch must have an 'else' prong</tt>.</td></tr>
 <tr><td valign="top"><tt>error[3071]</tt></td><td valign="top"><tt>type mismatch in switch case item -- case item type may not be compatible with the switch condition type</tt>; <tt>no field or member function named '&lt;x&gt;' in union type</tt>/<tt>in enum type</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3077]</tt></td><td valign="top"><tt>expression nesting too deep for semantic analysis (limit 130)</tt> (the semantic-analysis depth limit).</td></tr>
+<tr><td valign="top"><tt>error[3078]</tt></td><td valign="top"><tt>mutable for-item capture requires an addressable element (a range or a copied array value has none)</tt>; <tt>mutable for-item capture requires an iterable with a resolvable element type</tt>.</td></tr>
 </table>
 <p>
 For the full code list see the

@@ -5,7 +5,7 @@
 <title>Z98 Manual: I/O and HTTP</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual reference standard library by path std_file std_stdin std_stream std_http file directory stdin line reader socket message frame HTTP client URL">
+<meta name="keywords" content="Z98 manual reference standard library by path std_file std_stdin std_stream std_http std_tls_io std_http2 file directory stdin line reader socket message frame HTTP client URL TLS HTTP2">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -78,11 +78,13 @@ Espa&ntilde;ol (not yet available) |
 <p>
 The I/O modules are imported by path: <tt>@import("std_file.zig")</tt>,
 <tt>@import("std_stream.zig")</tt>, and their companions. They are not part of
-the thirteen-name <tt>std</tt> re-export list. <a href="#file"><tt>std_file</tt></a>
+the seventeen-name <tt>std</tt> re-export list. <a href="#file"><tt>std_file</tt></a>
 owns an OS handle and is binary-safe; <a href="#stdin"><tt>std_stdin</tt></a>
 reads lines and all input from process stdin; <a href="#stream"><tt>std_stream</tt></a>
-composes line and frame readers over file and socket sources; and
-<a href="#http"><tt>std_http</tt></a> is a small HTTP/1.1 client.
+composes line and frame readers over file and socket sources;
+<a href="#http"><tt>std_http</tt></a> is a small HTTP/1.1 client;
+<tt>std_tls_io</tt> is the non-suspending TLS pump layer over a socket; and
+<tt>std_http2</tt> is the coroutine-driven HTTP/2 client built on it.
 </p>
 <p>
 The file, stdin, and stream layers never allocate behind the caller's back:
@@ -118,6 +120,16 @@ PAL support files, not in the compiler PAL.
 <td valign="top"><tt>std_http</tt></td>
 <td valign="top"><tt>std_http.zig</tt></td>
 <td valign="top">HTTP / minimal HTTP/1.1 client.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_tls_io</tt></td>
+<td valign="top"><tt>std_tls_io.zig</tt></td>
+<td valign="top">L6 / nonblocking TLS record pump over a socket (no suspension).</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_http2</tt></td>
+<td valign="top"><tt>std_http2.zig</tt></td>
+<td valign="top">HTTP / HTTP/2 client: frames, HPACK, streams, and the pump/wait contract.</td>
 </tr>
 </table>
 
@@ -444,12 +456,16 @@ or body returns <tt>null</tt>. For the coroutine setting, see
 <h2><a name="http"></a>std_http</h2>
 <p>
 <tt>std_http</tt> is a minimal HTTP/1.1 client with no TLS. The source supports
-<tt>Content-Length</tt> and close-delimited bodies; chunked transfer encoding
-and keep-alive are not implemented and a chunked response is rejected. The
+<tt>Content-Length</tt> and close-delimited bodies, GET and POST, and a
+caller-owned streaming response sink (<tt>ResponseSink</tt>) plus a streaming
+request body source (<tt>RequestSource</tt>); chunked transfer encoding and
+keep-alive are not implemented and a chunked response is rejected. The
 header block is capped at 8 KB and the body at 1 MB. The pure functions are
 <tt>parseUrl</tt>, <tt>percentEncode</tt>, and <tt>parseResponse</tt>;
-<tt>get</tt> is the network entry point. The module is the tracker client behind
-z9torr.
+<tt>get</tt> and <tt>post</tt> are the convenience network entry points, and
+the <tt>*Over</tt> functions drive a caller-supplied <tt>HttpTransport</tt>
+(the <tt>std_tls</tt>/<tt>std_tls_io</tt> stack plugs in there). The module is
+the tracker client behind z9torr.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -506,16 +522,72 @@ z9torr.
 <td valign="top"><tt>HttpError!Response</tt>; network, timeout, sizing, or arena error</td>
 <td valign="top">Perform a GET request, following one redirect when present.</td>
 </tr>
+<tr>
+<td valign="top"><tt>HttpTransport</tt></td>
+<td valign="top"><tt>pub const HttpTransport = struct { state: *void, read_fn: fn (*void, []u8) !usize, write_fn: fn (*void, []const u8) !usize, close_fn: fn (*void) void };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Caller-supplied transport: the <tt>*Over</tt> functions read, write, and close through it.</td>
+</tr>
+<tr>
+<td valign="top"><tt>ResponseSink</tt></td>
+<td valign="top"><tt>pub const ResponseSink = struct { state: *void, write_fn: fn (*void, []const u8) HttpError!void };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Streaming response-body destination; the module calls <tt>write_fn</tt> with bounded slices.</td>
+</tr>
+<tr>
+<td valign="top"><tt>RequestSource</tt></td>
+<td valign="top"><tt>pub const RequestSource = struct { state: *void, read_fn: fn (*void, []u8) HttpError!usize };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Streaming request-body source for a large POST that should not be materialized in the arena.</td>
+</tr>
+<tr>
+<td valign="top"><tt>httpGetOver</tt></td>
+<td valign="top"><tt>pub fn httpGetOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, out: *Response) !void</tt></td>
+<td valign="top"><tt>!void</tt></td>
+<td valign="top">GET over a caller transport.</td>
+</tr>
+<tr>
+<td valign="top"><tt>httpPostOver</tt></td>
+<td valign="top"><tt>pub fn httpPostOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, out: *Response) !void</tt></td>
+<td valign="top"><tt>!void</tt></td>
+<td valign="top">POST a materialized body over a caller transport.</td>
+</tr>
+<tr>
+<td valign="top"><tt>httpPostStreamOver</tt></td>
+<td valign="top"><tt>pub fn httpPostStreamOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, sink: *ResponseSink, out_head: *Response) !void</tt></td>
+<td valign="top"><tt>!void</tt></td>
+<td valign="top">POST with a materialized request body and a streaming response sink.</td>
+</tr>
+<tr>
+<td valign="top"><tt>httpGetStreamOver</tt></td>
+<td valign="top"><tt>pub fn httpGetStreamOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, extra_headers: []const Header, sink: *ResponseSink, out_head: *Response) !void</tt></td>
+<td valign="top"><tt>!void</tt></td>
+<td valign="top">GET with extra headers and a streaming response sink.</td>
+</tr>
+<tr>
+<td valign="top"><tt>httpPostStreamBodyOver</tt></td>
+<td valign="top"><tt>pub fn httpPostStreamBodyOver(arena: *std.arena.Arena, t: *HttpTransport, url: []const u8, body_len: usize, content_type: []const u8, accept: []const u8, body: *RequestSource, sink: *ResponseSink, out_head: *Response) !void</tt></td>
+<td valign="top"><tt>!void</tt></td>
+<td valign="top">POST with both a streaming <tt>RequestSource</tt> body and a streaming response sink.</td>
+</tr>
+<tr>
+<td valign="top"><tt>post</tt></td>
+<td valign="top"><tt>pub fn post(arena: *std.arena.Arena, url: []const u8, body: []const u8, content_type: []const u8, accept: []const u8, timeout_ms: u32) HttpError!Response</tt></td>
+<td valign="top"><tt>HttpError!Response</tt>; network, timeout, sizing, or arena error</td>
+<td valign="top">Perform a POST request using the built-in socket adapter.</td>
+</tr>
 </table>
 <p>
 <tt>parseUrl</tt> allocates nothing: its four slices point into the caller's
-input. <tt>percentEncode</tt>, <tt>parseResponse</tt>, and <tt>get</tt> allocate
+input. <tt>percentEncode</tt>, <tt>parseResponse</tt>, <tt>get</tt>, and
+<tt>post</tt> allocate
 from the supplied arena. In a parsed response the header name and value slices
 point into the raw response, while the header array and the body are copied into
 the arena. <tt>get</tt> passes <tt>timeout_ms</tt> to the connect and select
 paths and follows a <tt>301</tt>, <tt>302</tt>, <tt>303</tt>, or <tt>307</tt>
 redirect once if a location header is present. The socket layer it uses is
-<a href="vol4-18-stdlib.html#net"><tt>std.net</tt></a>.
+<a href="vol4-18-stdlib.html#net"><tt>std.net</tt></a>; the TLS stack uses the
+same <tt>HttpTransport</tt> through <tt>std_tls_io</tt>.
 </p>
 
 <p class="navbtns">

@@ -5,7 +5,7 @@
 <title>Z98 Manual: The Standard Library</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual reference standard library std re-export io fmt arena str mem math debug net async bits os time buf fold signatures error sets std.zig concrete no generics">
+<meta name="keywords" content="Z98 manual reference standard library std re-export io fmt arena str mem math debug net async bits os time page gpa pool buf fold tls_io hpack http2 signatures error sets std.zig concrete no generics">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -77,14 +77,17 @@ Espa&ntilde;ol (not yet available) |
 <h1>The standard library</h1>
 <p>
 <tt>@import("std")</tt> resolves to <tt>sf/src/std.zig</tt>, which does nothing
-but re-export fourteen modules. This page is the lookup for that surface: one
-section per re-exported module, every public declaration quoted verbatim from
-the <tt>sf/src/std_*.zig</tt> file that defines it, with its return type and
-error set. The language-level calls these modules are built from are on
+but re-export seventeen modules. This page is the lookup for that surface: one
+section per core re-exported module, every public declaration quoted verbatim
+from the <tt>sf/src/std_*.zig</tt> file that defines it, with its return type
+and error set. The three L1/L2 allocator re-exports (<tt>std.page</tt>,
+<tt>std.gpa</tt>, <tt>std.pool</tt>) are summarized in the re-export table
+below and fully declared in their sources. The language-level calls these
+modules are built from are on
 <a href="vol4-15-builtins.html">Builtins</a>; the tutorial treatment is
 <a href="vol2-17-stdlib.html">Volume II, The standard library tour</a>.
-The shipped by-path library is indexed near the end of this page and detailed
-on four companion pages.
+The shipped by-path library is indexed near the end of this page and on four
+companion pages.
 </p>
 <p>
 The surface is <b>concrete only</b>. Z98 has no generics, no <tt>anytype</tt>,
@@ -121,6 +124,9 @@ pub const async = @import("std_async.zig");
 pub const bits = @import("std_bits.zig");
 pub const os = @import("std_os.zig");
 pub const time = @import("std_time.zig");
+pub const page = @import("std_page.zig");
+pub const gpa = @import("std_gpa.zig");
+pub const pool = @import("std_pool.zig");
 pub const buf = @import("std_buf.zig");
 pub const fold = @import("std_fold.zig");
 </pre>
@@ -189,6 +195,21 @@ pub const fold = @import("std_fold.zig");
 <td valign="top"><tt>std.time</tt></td>
 <td valign="top"><tt>std_time.zig</tt></td>
 <td valign="top">Monotonic and wall-clock time, and sleep.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.page</tt></td>
+<td valign="top"><tt>std_page.zig</tt></td>
+<td valign="top">Portable page reserve/commit/decommit/release: <tt>PageConfig</tt>, <tt>PageAllocator</tt>, <tt>pageInit</tt>, and the four range operations.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.gpa</tt></td>
+<td valign="top"><tt>std_gpa.zig</tt></td>
+<td valign="top">Single-threaded general-purpose allocator: <tt>GpaConfig</tt>/<tt>Gpa</tt>, <tt>gpaInit</tt>, <tt>gpaAlloc</tt>/<tt>gpaAllocZeroed</tt>, <tt>gpaFree</tt>, <tt>gpaResize</tt>, and <tt>gpaStats</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.pool</tt></td>
+<td valign="top"><tt>std_pool.zig</tt></td>
+<td valign="top">A fixed-block pool over a caller-owned buffer: <tt>Pool</tt>, <tt>poolInit</tt>, <tt>poolAlloc</tt>, <tt>poolFree</tt>, <tt>poolReset</tt>, and <tt>poolLen</tt>.</td>
 </tr>
 <tr>
 <td valign="top"><tt>std.buf</tt></td>
@@ -1501,14 +1522,15 @@ combiner: <tt>acc = f(acc, x)</tt>. An empty slice returns the initial
 <h2><a name="by-path"></a>Modules imported by path</h2>
 <p>
 The library directory beside the compiler holds more <tt>std_*.zig</tt> files
-than the fourteen re-exports. A name that is not in the table above does not
+than the seventeen re-exports. A name that is not in the table above does not
 resolve as <tt>std.&lt;name&gt;</tt>; the compiler rejects it (the measured
 diagnostic is <tt>error[3074]</tt>, shown on
 <a href="vol2-17-stdlib.html">Volume II, The standard library tour</a>).
-The shipped by-path library is indexed below and detailed on four companion
+The shipped by-path library is indexed below and on four companion
 pages, with a fifth <tt>Deflate / zlib</tt> area in the table carrying its own
 section on this page. The <tt>*_pal</tt> files (<tt>std_file_pal</tt>, <tt>std_os_pal</tt>,
-<tt>std_stdin_pal</tt>, <tt>std_time_pal</tt>, and <tt>std_gfx_pal</tt>) are
+<tt>std_stdin_pal</tt>, <tt>std_time_pal</tt>, <tt>std_gfx_pal</tt>, and
+<tt>std_page_pal</tt>) are
 internal implementation, not public modules.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
@@ -1526,7 +1548,7 @@ internal implementation, not public modules.
 <tr>
 <td valign="top">Codecs and crypto</td>
 <td valign="top"><tt>std_base64</tt>, <tt>std_hex</tt>, <tt>std_utf8</tt>,
-<tt>std_crypto</tt>, <tt>std_lz4</tt>, <tt>std_zstd</tt></td>
+<tt>std_crypto</tt>, <tt>std_lz4</tt>, <tt>std_zstd</tt>, <tt>std_hpack</tt></td>
 <td valign="top"><a href="vol4-18-stdlib-codecs.html">Codecs and crypto</a></td>
 </tr>
 <tr>
@@ -1537,7 +1559,7 @@ internal implementation, not public modules.
 <tr>
 <td valign="top">I/O and HTTP</td>
 <td valign="top"><tt>std_file</tt>, <tt>std_stdin</tt>, <tt>std_stream</tt>,
-<tt>std_http</tt></td>
+<tt>std_http</tt>, <tt>std_tls_io</tt>, <tt>std_http2</tt></td>
 <td valign="top"><a href="vol4-18-stdlib-io.html">I/O and HTTP</a></td>
 </tr>
 <tr>

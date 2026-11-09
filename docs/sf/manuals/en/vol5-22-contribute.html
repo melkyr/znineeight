@@ -154,7 +154,9 @@ recipes).</li>
 <li><tt>docs/sf/manuals</tt> &mdash; the source of this manual.</li>
 <li><tt>repro/</tt> &mdash; reproduction fixtures; <tt>repro/mi_matrix/</tt>
 holds the large pinned corpus of green and reject cases.</li>
-<li><tt>examples/z98</tt> &mdash; the canonical example programs.</li>
+<li><tt>examples/z98</tt> &mdash; the canonical example programs (closeout
+matrix: 28 of 32 directories build; <tt>demo</tt>, <tt>gfx_demo</tt>,
+<tt>z9dbg</tt>, and <tt>z9edit</tt> are outside the matrix).</li>
 <li><tt>scripts/</tt> &mdash; the helpers: <tt>seed/</tt>,
 <tt>corpus/</tt>, <tt>stdlib/</tt>, <tt>win32_cross/</tt>,
 <tt>closeout/</tt>, <tt>memory/</tt>, <tt>self_compile/</tt>.</li>
@@ -204,9 +206,9 @@ index must match a fresh regeneration byte for byte:
 </p>
 <pre>
 $ bash docs/sf/manuals/check.sh
-check.py: OK - 112 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+check.py: OK - 116 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
 $ bash /tmp/z98_build_tmp.sh
-build_tmp: indexed 109 pages, copied 151 files to /tmp/z98_dist_tmp
+build_tmp: indexed 113 pages, copied 155 files to /tmp/z98_dist_tmp
 $ diff /tmp/z98_search-data.regen.js docs/sf/manuals/en/search-data.js
 $
 </pre>
@@ -298,16 +300,16 @@ change owns:
 <pre>
 $ cd /workspace/znineeight
 $ bash docs/sf/manuals/check.sh
-check.py: OK - 112 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+check.py: OK - 116 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
 $ bash /tmp/z98_build_tmp.sh
-build_tmp: indexed 109 pages, copied 151 files to /tmp/z98_dist_tmp
+build_tmp: indexed 113 pages, copied 155 files to /tmp/z98_dist_tmp
 $ diff /tmp/z98_search-data.regen.js docs/sf/manuals/en/search-data.js
 $
 </pre>
 <p>
-The gate walked 112 pages with no broken link, missing <tt>rel</tt>, wrong
+The gate walked 116 pages with no broken link, missing <tt>rel</tt>, wrong
 charset, forbidden tag, orphan figure, or CSS dependency; the generator indexed
-all 109 English pages and copied the tree into <tt>/tmp/z98_dist_tmp</tt>,
+all 113 English pages and copied the tree into <tt>/tmp/z98_dist_tmp</tt>,
 leaving <tt>dist/</tt> untouched; and the silent <tt>diff</tt> confirms the
 index is current. The committed diff should contain only the guide page, the
 sidebar and <tt>toc.html</tt> links, the index entries, the neighbouring

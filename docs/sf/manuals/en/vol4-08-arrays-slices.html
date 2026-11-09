@@ -150,7 +150,13 @@ var x: [_]i32 = .{ 1, 2, 3 };
 // error[3000]: unable to infer array size
 </pre>
 
-<h2>Sentinel and volatile forms are not supported</h2>
+<h2>Unsupported array forms: sentinel arrays and <tt>[]volatile T</tt></h2>
+<p>
+Pointer-qualified volatile forms are supported: <tt>*volatile T</tt>,
+<tt>[*]volatile T</tt>, and <tt>@volatileCast</tt> (see the
+<a href="vol3-05-when-assembly.html">assembly chapter</a> for memory-mapped
+I/O). The two array spellings below remain rejects.
+</p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
 <th align="left" bgcolor="#e8e0e0"><b>Form</b></th>

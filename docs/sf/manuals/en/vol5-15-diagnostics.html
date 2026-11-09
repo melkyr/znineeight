@@ -404,6 +404,18 @@ codes.
 <td valign="top">use <tt>catch</tt>, <tt>switch</tt>, or <tt>orelse</tt></td>
 </tr>
 <tr>
+<td valign="top"><tt>error[3077]</tt></td>
+<td valign="top"><tt>ERR_3077_EXPR_NESTING_LIMIT</tt></td>
+<td valign="top">the expression nests deeper than the semantic-analysis limit (130)</td>
+<td valign="top">split the expression into named intermediate values</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3078]</tt></td>
+<td valign="top"><tt>ERR_3078_MUTABLE_CAPTURE_UNSUPPORTED</tt></td>
+<td valign="top"><tt>|*item|</tt> over a range, a copied array value, or an unresolvable element type</td>
+<td valign="top">iterate an identifier/module-member array, or drop the <tt>*</tt></td>
+</tr>
+<tr>
 <td valign="top"><tt>warning[3038]</tt></td>
 <td valign="top"><tt>WARN_6005_MEMORY_LEAK</tt></td>
 <td valign="top">a tracked pointer is not freed</td>

@@ -538,7 +538,7 @@ expression otherwise (<tt>parser.zig:748-772</tt>).</li>
   for_stmt    ::= 'for' '(' for_pattern ')' [ for_capture ] ( block | stmt_body ) [ ';' ]
   for_pattern ::= expr [ '..' expr ]
                 | expr ',' expr '..' [ expr ]
-  for_capture ::= '|' capture [ ',' IDENT ] '|'
+  for_capture ::= '|' [ '*' ] capture [ ',' IDENT ] '|'
 
   switch_stmt ::= switch_expr
   return_stmt ::= 'return' [ expr ] ';'
@@ -573,7 +573,10 @@ rejects a <tt>;</tt> that immediately precedes <tt>else</tt> with
 omit the semicolon as in <tt>if (a) return 1 else return 0;</tt>.</li>
 <li><b>Loop captures.</b> <tt>while</tt> and <tt>for</tt> accept a capture
 after the <tt>)</tt>; <tt>for</tt> allows a second, comma-separated index
-capture. The capture name may be <tt>_</tt>. The optional
+capture, and a <tt>for</tt> item capture may carry a leading <tt>*</tt>
+(<tt>|*item|</tt>, <tt>|*item, index|</tt>, <tt>|*_|</tt>) for a mutable
+pointer binding. The capture name may be <tt>_</tt>. A <tt>*</tt> is not a
+legal <tt>if</tt>/<tt>while</tt>/switch-prong capture prefix. The optional
 <tt>while ... : (expr)</tt> continue expression is parsed at the lowest
 precedence (<tt>parser.zig:1874-1888,1890-1896,1957-1974</tt>).</li>
 <li><b>For patterns.</b> <tt>for</tt> accepts a plain expression, a

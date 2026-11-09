@@ -363,7 +363,8 @@ fn area(s: Shape) i32 {
 Inside the first prong <tt>r</tt> is the <tt>i32</tt> payload of
 <tt>circle</tt>; inside the second, <tt>b</tt> is the anonymous struct payload
 of <tt>box</tt>, so <tt>b.w</tt> and <tt>b.h</tt> read its fields. The capture
-is immutable, like every loop and switch capture in Z98. A naked tag needs no
+binding is immutable, like every switch capture in Z98 (a <tt>for</tt> item
+capture may instead be the mutable pointer form <tt>|*item|</tt>). A naked tag needs no
 capture; <tt>name</tt> in the example matches <tt>.empty</tt> with no binding.
 A statement switch uses the same shape, prong bodies with a
 <tt>|capture|</tt> and <tt>std.io.print</tt> inside.

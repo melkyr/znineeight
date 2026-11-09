@@ -5,7 +5,7 @@
 <title>Z98 Manual: Codecs and Crypto</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual reference standard library by path std_base64 std_hex std_utf8 std_crypto std_lz4 std_zstd base64 hex UTF-8 SHA-1 SHA-256 MD5 CRC-32 RC4 LZ4 zstd">
+<meta name="keywords" content="Z98 manual reference standard library by path std_base64 std_hex std_utf8 std_crypto std_lz4 std_zstd std_hpack base64 hex UTF-8 SHA-1 SHA-256 MD5 CRC-32 RC4 LZ4 zstd HPACK Huffman">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -78,19 +78,22 @@ Espa&ntilde;ol (not yet available) |
 <p>
 These codec and hash modules are also imported by path:
 <tt>@import("std_base64.zig")</tt>, <tt>@import("std_zstd.zig")</tt>, and so
-on. None is part of the thirteen-name <tt>std</tt> re-export list. The codecs
+on. None is part of the seventeen-name <tt>std</tt> re-export list. The codecs
 split into text encodings (<a href="#base64"><tt>std_base64</tt></a>,
 <a href="#hex"><tt>std_hex</tt></a>, <a href="#utf8"><tt>std_utf8</tt></a>),
-hashing and stream ciphers (<a href="#crypto"><tt>std_crypto</tt></a>), and
+hashing and stream ciphers (<a href="#crypto"><tt>std_crypto</tt></a>),
 block or frame decompressors (<a href="#lz4"><tt>std_lz4</tt></a>,
-<a href="#zstd"><tt>std_zstd</tt></a>).
+<a href="#zstd"><tt>std_zstd</tt></a>), and the HPACK header codec
+(<tt>std_hpack</tt>).
 </p>
 <p>
 The base64 and hex codecs allocate only their output from a caller arena;
 <tt>std_utf8</tt> allocates nothing. The hash functions allocate nothing and
 keep all state in caller-owned values.
 <tt>std_lz4</tt> and <tt>std_zstd</tt> decompress into a caller destination and
-have no allocator parameter at all. The bencode and HTTP consumers live on the
+have no allocator parameter at all. <tt>std_hpack</tt> keeps its dynamic table
+in caller-supplied storage and copies decoded names and values into a caller
+arena. The bencode and HTTP consumers live on the
 <a href="vol4-18-stdlib-data.html#bencode">data page</a> and the
 <a href="vol4-18-stdlib-io.html#http">I/O page</a>.
 </p>
@@ -131,6 +134,11 @@ have no allocator parameter at all. The bencode and HTTP consumers live on the
 <td valign="top"><tt>std_zstd</tt></td>
 <td valign="top"><tt>std_zstd.zig</tt></td>
 <td valign="top">L4 / RFC 8878 zstd frame decoder subset.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std_hpack</tt></td>
+<td valign="top"><tt>std_hpack.zig</tt></td>
+<td valign="top">RFC 7541 HPACK header compression: full decode (static and dynamic tables, Huffman) and a literal-only encoder.</td>
 </tr>
 </table>
 
@@ -461,8 +469,12 @@ allocation occurs.
 <tt>std_zstd</tt> decodes an RFC 8878 zstd stream into a caller destination. It
 supports standard frames with raw, RLE, and compressed blocks; predefined, RLE,
 and FSE-compressed Huffman and FSE tables; repeat modes; and skippable frames.
-Dictionaries are not supported: a nonzero dictionary id is
-<tt>error.Corrupt</tt>. The history is the destination itself
+RFC 8878 dictionaries are decoded through <tt>zstdDecompressDict</tt>, which
+accepts either a dictionary in magic form (the dictionary id is checked against
+the frame) or raw content (dictionary content seeds history and entropy tables
+seed first-block repeat); the no-dictionary <tt>zstdDecompress</tt> entry still
+rejects a frame carrying a nonzero dictionary id with <tt>error.Corrupt</tt>.
+The history is the dictionary tail plus the destination itself
 (<tt>dst[0..written]</tt>), and the decoder has no heap and no buffer beyond
 <tt>dst</tt>; entropy tables are function-local.
 </p>
@@ -485,10 +497,16 @@ Dictionaries are not supported: a nonzero dictionary id is
 <td valign="top"><tt>!u32</tt>; <tt>error.Corrupt</tt>, <tt>error.OutputTooSmall</tt>, or <tt>error.WindowTooBig</tt></td>
 <td valign="top">Decompress a complete zstd stream into <tt>dst</tt> and return the bytes written.</td>
 </tr>
+<tr>
+<td valign="top"><tt>zstdDecompressDict</tt></td>
+<td valign="top"><tt>pub fn zstdDecompressDict(src: []const u8, dst: []u8, dict: []const u8, max_window_log: u8) !u32</tt></td>
+<td valign="top"><tt>!u32</tt>; <tt>error.Corrupt</tt>, <tt>error.OutputTooSmall</tt>, or <tt>error.WindowTooBig</tt></td>
+<td valign="top">Decompress a zstd stream that uses an RFC 8878 dictionary (magic or raw content) and return the bytes written; the dictionary is the <tt>dict</tt> slice.</td>
+</tr>
 </table>
 <p>
 <tt>error.Corrupt</tt> covers malformed, truncated, unsupported, or
-dictionary-backed frame data. <tt>error.OutputTooSmall</tt> means the
+dictionary-id-mismatched frame data. <tt>error.OutputTooSmall</tt> means the
 destination cannot hold the decoded content. <tt>error.WindowTooBig</tt> means
 the frame's window log exceeds <tt>max_window_log</tt>. A sensible default cap
 is <tt>ZSTD_DEFAULT_WINDOW_LOG</tt> (21, or 2 MiB); raise it for large or

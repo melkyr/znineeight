@@ -78,9 +78,11 @@ labels, each with the diagnostic it produces when it is used wrongly.
 Three rules are worth carrying in from the start, because they explain
 almost every difference from the C you already write. First, a
 <tt>switch</tt> must have an <tt>else</tt> prong, always, even when the
-cases cover the whole type. Second, a capture
+cases cover the whole type. Second, an unstarred capture
 (<tt>if&nbsp;(x)&nbsp;|v|</tt>, <tt>for&nbsp;(arr)&nbsp;|v,&nbsp;i|</tt>) is
-an immutable copy of one element, not a reference. Third, the control-flow
+an immutable copy of one element, not a reference; a starred
+<tt>for</tt> capture (<tt>|*item|</tt>) is an immutable binding to a pointer
+into the iterable storage. Third, the control-flow
 statements are also expressions where Zig makes them expressions: an
 <tt>if</tt> or a <tt>switch</tt> can compute a value, and its arms are
 ordinary expressions.
@@ -481,6 +483,19 @@ If control reaches it, the program dies with the trap exit status
 (133) under <tt>-fsafe</tt> and under <tt>-ffast</tt> alike. Write it only
 where the branch is provably dead:
 </p>
+<p>
+A value-result <tt>switch</tt> follows an expected-type-first rule (D15): at a
+typed return, a typed <tt>var</tt>/<tt>const</tt>, a call argument, or a
+field/element initializer, every prong must be assignable to that expected
+type and is coerced to it, so an optional, error-union, <tt>null</tt>, or
+<tt>noreturn</tt> prong is admitted at a matching site. With no expected type,
+the prong types are peer-resolved and incompatible prongs are rejected once
+with a level-0 <tt>error[3000]</tt>; unannotated mixed prongs remain invalid.
+The D16 parity boundary is separate: mixed statement switches,
+assignment-expression/<tt>void</tt> parity, comptime-selector pruning, and
+<tt>anyerror</tt> remain open, so this is not full Zig parity (see
+<a href="vol4-13-control-flow.html">the control-flow reference</a>).
+</p>
 <pre>
 switch (color) {
     .Red => rgb = 1,
@@ -580,9 +595,12 @@ matched. Keep switch constants where the module can see them, and prefer
 a real fallback over an <tt>unreachable</tt> one when a local constant is
 the only thing standing between the <tt>else</tt> and a trap.
 <br><br>
-Captures are immutable copies. The loop variable is a fresh binding per
-iteration; there is no way to write back through it, and assignment
-rejects with <tt>error[3002]</tt>. The capture condition must be an
+Unstarred captures are immutable copies. The loop variable is a fresh binding
+per iteration; there is no way to write back through it, and assignment
+rejects with <tt>error[3002]</tt>. A starred <tt>|*item|</tt> capture is
+different: it is an immutable binding to a pointer, so <tt>item.*</tt>
+writes reach the iterable while assigning the binding still rejects. The
+capture condition must be an
 optional; anything else rejects at the condition with
 <tt>error[3058]</tt>. The error half of the capture,
 <tt>else&nbsp;|err|</tt>, does not parse at all
@@ -887,11 +905,13 @@ the body: any accumulation after the <tt>continue</tt> is skipped, which
 is the actual intent in most cases.
 </p>
 <p>
-<b>Assigning to a capture.</b> The capture is an immutable copy:
+<b>Assigning to a capture.</b> An unstarred capture is an immutable copy:
 <tt>for&nbsp;(arr)&nbsp;|v|&nbsp;{&nbsp;v&nbsp;=&nbsp;9;&nbsp;}</tt> is
 <tt>error[3002]: cannot assign to immutable variable</tt>, and the array
 is untouched. Accumulate into a <tt>var</tt> declared outside the loop,
-or index the array itself when the element has to change.
+or index the array itself when the element has to change. A mutable
+<tt>|*v|</tt> capture is a pointer binding instead: <tt>v.* = 9</tt> writes
+back to the iterable, while assigning the binding itself still rejects.
 </p>
 <p>
 <b>Assuming a capture condition can be any expression.</b> A capture
