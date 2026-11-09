@@ -6,7 +6,7 @@
 ## 1. Intent
 
 Close every open compiler defect tracked in `examples/torrent_example_defects.md`
-(D3, D4, D5, D7.3, D8, D10, D12, D13, D14) and bring the documentation back to truth:
+(D3, D4, D5, D7.3, D8, D10, D12, D13, D14, D15) and bring the documentation back to truth:
 the living language spec must describe the compiler that exists, and the
 self-host documentation must live in one place, split by nature (observed
 implementation vs original design intent).
@@ -22,6 +22,7 @@ layers, not a one-off patch.
 - **D12** — module-scope untyped array literal (`pub var arr: [3]u32 = .{ 1, 2, 3 };`) emits valid C (today it emits an illegal array-to-array assignment).
 - **D13** — support the full `enum(u64)` discriminant range, including values above i64 max, without silently truncating or rejecting valid source.
 - **D14** — a suspending wrapper may return a non-void error-union payload; `Http2Error!u32`-shaped wrappers compile and propagate success/error with a GCC-compatible step ABI.
+- **D15** — switch expressions use expected-type-first coercion when the result type is known (optional/error-union/null/noreturn prongs valid), and peer-type resolution only when it is not; unannotated mixed prongs remain invalid. The interim `280a3b12` fix is over-broad and is replaced by the Task 9j/9k parity work.
 - **D7.3** — nested aggregate writes (`arr[i].field[0..] = ...`) land in real storage, never in a by-value temporary.
 - **D8** — the stdout/stderr/getchar builtins route through the PAL (OS-native), ending the buffered-C-stdio vs unbuffered-PAL split. The remaining C-runtime surface is inventoried and a reduction path recorded.
 - **D3** — true lazy `@import`: a comptime-dead arm never opens its file (full Zig semantics, not a broader parse probe).
@@ -169,6 +170,24 @@ emission. It does not change the `std_http2` public API: keep the existing
 fix requires redefining the step ABI for all suspending functions or breaks the
 `mud_server` async shape, STOP and present before coding.
 
+### 5.8 D15 depth (operator-directed; amended 2026-11-07)
+
+Switch expression typing has two rules, matching Zig:
+
+1. **Expected type known** (return, typed var/const, call argument, field/array
+   initializer, nested result position): each prong must be assignable to the
+   expected type. Optional/error-union/null/noreturn prongs are valid through
+   the existing `typeRegistryIsAssignable` coercions.
+2. **No expected type**: peer-resolve the prong types; incompatible prongs are
+   rejected once with a level-0 type mismatch, 0 `.c`.
+
+The interim Task 9i fix `280a3b12` implemented only the no-expected rule and
+false-rejects 12 valid annotated optional/error-union corpus switches. Task 9j
+must first investigate Zig 0.17.1 parity (including the 12 cases and the invalid
+mixed cases) and propose the exact expected-type-first insertion points; Task 9k
+implements only the approved shape. No blanket MIX reject and no patch-on-patch.
+If the Zig oracle cannot be obtained or the matrix is ambiguous, STOP.
+
 ## 6. Spec truth-up contents (Task 11)
 
 `docs/reference/Language_Spec_Z98.md`:
@@ -184,6 +203,7 @@ fix requires redefining the step ABI for all suspending functions or breaks the
 9. Verify every fixture named in the spec exists, and that the corpus's capability surface is reflected.
 10. Document full `enum(u64)` discriminant support, including values above i64 max and the implicit-successor rejection at `u64` max.
 11. Document the suspending-wrapper error-union payload rule (D14), including that the `std_http2` `id_out` workaround remains valid but is no longer required by the compiler.
+12. Document the D15 switch-expression rule: expected-type-first when known; peer resolution only when no expected type exists; unannotated mixed prongs remain invalid.
 
 ## 7. What is left to the builder
 

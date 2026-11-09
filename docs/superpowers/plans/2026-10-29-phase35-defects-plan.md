@@ -273,9 +273,9 @@
 - [ ] **Step 4: Bar + must-work set** — the gap to a real-analyzer bar, and the concrete must-work list Task 9 implements. Fixture-driven test strategy (`tests/analyzers/**`) replaces hand-fed symbols.
 - [ ] **Step 5: Commit** `docs(specs): static-analyzer audit — contracts, inert paths, lie list (Phase3.5 D4-pre)`.
 
-### Task 9: D4-upgrade — split into 9a–9h
+### Task 9: D4-upgrade — split into 9a–9h, then D15 (9i–9k)
 
-**Execution order:** 9a → 9b → 9c → 9d → 9e → 9h1 → 9h2 → 9i (D15) → 9g → 9f (final). The existing `f2c0e8bc` 9f commit is provisional; D4 is not closed until the final 9f re-run.
+**Execution order:** 9a → 9b → 9c → 9d → 9e → 9h1 → 9h2 → 9i (interim D15) → 9j (D15 parity I) → 9k (D15 fix) → 9g → 9f (final). The existing `f2c0e8bc` 9f commit is provisional; D4 is not closed until the final 9f re-run. Task 9i is retained as the interim fix; Task 9j is a mandatory investigation and Task 9k replaces the over-broad D15 behavior.
 
 **Source:** Task 8's audit (`docs/superpowers/specs/2026-10-29-phase35-analyzer-audit.md`) is the binding bar. Task 8 must be reviewed before 9a starts.
 
@@ -368,7 +368,7 @@
 - Test: full analyzer suite; self-source measurement; corpus/stdlib/examples no-emission proof
 
 **Interfaces:**
-- Consumes: 9a–9e, 9h1, 9h2, 9i, 9g.
+- Consumes: 9a–9e, 9h1, 9h2, 9i, 9j, 9k, 9g.
 - Produces: D4 closed on the full audit bar; self-source `WARN_6002` class collapsed, not moved; raw count equals single-pass count; any residual individually justified; emitted C/H byte-identical.
 
 - [ ] **Step 0: Do not treat D4 as closed yet.** Re-run this task only after 9h and 9g; if 9h finds a real null risk or examples/stdlib residuals remain unjustified, STOP and reopen D4. The provisional `f2c0e8bc` deletion must be revalidated, not assumed.
@@ -423,9 +423,8 @@
 
 #### Task 9i: D15 — mixed value-switch prong type error (I/F)
 
-**Status:** Investigation complete at `3cec507a`; see
+**Status:** Interim fix landed at `280a3b12`. It rejects unannotated mixed prongs but also false-rejects 12 valid annotated optional/error-union switches; D15 is re-opened and final ownership moves to Tasks 9j/9k. See
 `.superpowers/sdd/2026-10-29-phase35-defects-plan/task-d15-investigation-report.md`.
-This task owns the fix; it runs before Task 9g so `test_semantic_bin` can finish.
 
 **Files:**
 - Modify: `sf/src/semantic_analyzer.zig` (switch-expression unification only), `sf/src/tests/test_semantic_bin.zig`
@@ -440,7 +439,47 @@ This task owns the fix; it runs before Task 9g so `test_semantic_bin` can finish
 - [ ] **Step 2: Implement** one level-0 type-mismatch diagnostic at the mismatching prong (or switch node with a prong span), deduped per switch; poison `unified` (chosen sentinel) so the tail cannot return the first-prong type; keep `continue`, valid coercions, mandatory-`else` `error[3068]`, import idiom, captures, enum/tagged-union behavior. Use `ERR_3000_TYPE_MISMATCH`; no new diagnostic code unless STOP.
 - [ ] **Step 3: Strengthen `testSwitchExprMixed`** to assert the poison sentinel **and** exactly one level-0 mismatch diagnostic; add inferred/use/reverse-order source fixtures.
 - [ ] **Step 4: Verify** direct/infer/use/reverse forms rc2 and 0 `.c` under `-ffast`/`-fsafe`; valid switches (same-type, numeric literal coercion, string slice, f32 narrowing, captures, enum/tagged-union, import idiom, no-`else` reject) unchanged; `test_semantic_bin` green; no emission change.
-- [ ] **Step 5: Commit** `fix(sema): reject mixed value-switch prong types (Phase3.5 D15)` + delete D15 + report; Task 9g may then resume.
+- [ ] **Step 5: Commit** `fix(sema): reject mixed value-switch prong types (Phase3.5 D15)` + report. This is the interim fix only; D15 stays open until 9j/9k. Task 9g may then resume, but 9f final waits for 9k.
+
+#### Task 9j: D15 parity investigation — expected-type vs peer-type (I)
+
+**Status:** MANDATORY before Task 9k. No source changes; stop for operator review after the report.
+
+**Files:**
+- Create: `docs/superpowers/specs/2026-10-29-phase35-d15-parity-investigation.md`
+- Create: `repro/mi_matrix/known_excluded/d15_parity/` probe sources + recorded outputs
+- Read-only: `sf/src/semantic_analyzer.zig` (`semanticAnalyzerResolveSwitchExpr`, `semanticAnalyzerResolveIfExpr`, `topExpectedType`), `sf/src/type_registry.zig` (`typeRegistryIsAssignable`), the D15 fixture, the 12 corpus cases
+- No `sf/src` edits, no plan/spec truth-up, no fixes.
+
+**Interfaces:**
+- Consumes: Task 9i interim fix `280a3b12`; the 12 false-rejected corpus cases; the semantic expected-type path already used by if-expressions.
+- Produces: a committed parity report with the accept/reject matrix from **Zig 0.17.1**, Z98 pre-D15 base, and current HEAD; one recommended fix shape with exact sema insertion points; no code change.
+
+- [ ] **Step 0: Obtain the oracle. First locate an existing Zig 0.17.1 binary. If absent, download the official Zig 0.17.1 linux-x86_64 archive into `/tmp/phase35-d15-i/zig-0.17.1`, verify `zig version` is `0.17.1`, and record the archive URL and sha256. Do not install it on PATH and do not substitute another Zig version. If the oracle cannot be obtained, STOP.**
+- [ ] **Step 1: Freeze the matrix.** Cover expected types `i32`, `?i32`, `error{E}!i32`, `error{E}!?i32`, `??i32`, `?*T`, slice, `f32`, `anyerror!i32`; positions return, typed/untyped var/const, call argument, field/array initializer, nested switch; statement vs value switch; comptime-known and runtime selectors; captures; noreturn/undefined; the D15 mixed negatives; and the 12 corpus cases. Commit the probe sources and exact commands under `known_excluded/d15_parity/`.
+- [ ] **Step 2: Run three-way.** Execute every probe under real Zig 0.17.1, the Z98 pre-D15 base (`git rev-parse 280a3b12^`; build in a throwaway worktree or use a matching `/tmp` binary), and current HEAD. Record rc, diagnostics, and emitted C presence. Do not infer a result not observed.
+- [ ] **Step 3: Classify.** For each row: Zig accept/reject, pre-D15 Z98, current Z98, and the correct rule (`expected-type-first` vs `peer-resolution`). Call out every current divergence and every case where Zig and the spec/docs disagree. If a result is ambiguous or the matrix is incomplete, STOP.
+- [ ] **Step 4: Compare fix shapes.** (a) expected-type-first before the MIX branch, mirroring `semanticAnalyzerResolveIfExpr`; (b) full result-location/expected-type push for every switch result position; (c) a shared sema type-resolution helper used by if/switch. State exact insertion points, expected effect on the 12 cases, the invalid-mixed cases, statement switches, and existing valid switches; state the blast radius and why it is not a symptom patch.
+- [ ] **Step 5: Write and commit the report.** Include the three-way matrix, the 12-case evidence, the recommended shape, residual risks, and a STOP for operator review before Task 9k. Commit only the report/probes. Do not change source. Task 9k must not start until the operator approves this report.
+
+#### Task 9k: D15 expected-type-aware fix
+
+**Status:** Blocked on Task 9j report approval. Re-opens D15; final closeout waits for this task.
+
+**Files:**
+- Modify: `sf/src/semantic_analyzer.zig` (switch-expression unification only, following the approved 9j shape), `sf/src/tests/test_semantic_bin.zig`
+- Test: `repro/mi_matrix/known_excluded/d15_parity/`, the 12 corpus cases, `switch_value_mixed_type_repro`, existing valid-switch fixtures
+- Modify: `examples/torrent_example_defects.md` only after the fix is green.
+
+**Interfaces:**
+- Consumes: the approved Task 9j report; Task 9i interim fix; the existing `topExpectedType`/if-expression expected-type pattern; `typeRegistryIsAssignable`.
+- Produces: expected-type-known switches coerce each prong to the expected type (optional/error-union/null/noreturn included); no-expected-type switches use peer resolution and reject incompatible prongs; the 12 valid corpus cases accept; unannotated mixed int/bool still rejects; no emitter/lower change.
+
+- [ ] **Step 0: Confirm the approved 9j shape and insertion points. If the report is not approved or the current code differs, STOP.**
+- [ ] **Step 1: RED.** With the current compiler, the 12 valid corpus cases must be rc0 (they are currently rc2); the D15 mixed negatives must be rc2. Record exact commands/diagnostics.
+- [ ] **Step 2: Implement the approved expected-type-first path** before the blanket MIX reject; keep peer-resolution for no-expected cases; do not delete the existing mismatch diagnostic; do not add a second switch typing path. Handle statement switches and missing-else behavior as the 9j matrix requires.
+- [ ] **Step 3: Verify.** The 12 cases accept and build; D15 mixed direct/infer/use/reverse still reject with one level-0 mismatch and 0 `.c`; valid switches/fixtures byte-identical; `test_semantic_bin` green; corpus has no new false rejects; no emission change. Re-run the full analyzer/semantic suite.
+- [ ] **Step 4: Commit** `fix(sema): apply expected-type rules to switch prongs (Phase3.5 D15)` + delete D15 from the defects doc + report. Then Task 9g/9f may resume. No seed rotation here.
 
 ### Task 10: Doc consolidation
 
@@ -491,4 +530,4 @@ This task owns the fix; it runs before Task 9g so `test_semantic_bin` can finish
 
 ---
 
-**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), 8 (D4-pre audit), 9a–9h2, 9i (D15), 9g, 9f (final), then docs, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Task 8 is investigation-only. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths.
+**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), 8 (D4-pre audit), 9a–9h2, 9i (interim D15), 9j (D15 parity I), 9k (D15 fix), 9g, 9f (final), then docs, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Task 8 and 9j are investigation-only. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths.
