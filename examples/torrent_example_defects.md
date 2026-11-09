@@ -3,7 +3,7 @@
 Tracks only **open** compiler defects found while building the example programs.
 Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
-deleted numbers are not reused. Next free slot: **D16**.
+deleted numbers are not reused. Next free slot: **D17**.
 
 Open: **D16**.
 

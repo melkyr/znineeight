@@ -30,25 +30,25 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-07 — seed v145]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-09 — seed v146]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v145 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v146 CHANGELOG entry.
 
-**Current seed: v145** (rotated 2026-11-07 to repackage the final Phase 3.3
-HTTP/2 closeout fixes; packaging base HEAD `07144129`). Archived binary md5
-(= fixed point) `cd8d283b917749009961f4445043666b`; archive md5
-`abbc017de15ca2eb1ae1edd4a976ecd7`; Win9x zip md5
-`20821b5fdc32e48dfb5e1b3d694de52b`; `gen/` 48 `.c` + 49 `.h` (12,503,400
+**Current seed: v146** (rotated 2026-11-09 for the Phase 3.5 defect-closure
+closeout; packaging base HEAD `23431f34`). Archived binary md5
+(= fixed point) `de5e99b6314835c2adf364980cdc43ab`; archive md5
+`cb93330ec6de65699bae899a5289a3bf`; Win9x zip md5
+`3733353ff8725441114835d37d233ad4`; `gen/` 48 `.c` + 49 `.h` (12,911,926
 bytes); `lib/` **59** std `.zig` (`std.zig` + 58 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
 `6be2fe3690949cd9601d9db1ac71e48b`; includes `std_tls_io.zig`,
 `std_hpack.zig`, `std_http2.zig`).
-A rebuild from the committed v145 archive is two-hop
-**hop1 == hop2 == `cd8d283b…`**. The compiler source is **`-fsafe`-clean**.
+A rebuild from the committed v146 archive is two-hop
+**hop1 == hop2 == `de5e99b6…`**. The compiler source is **`-fsafe`-clean**.
 
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
@@ -91,7 +91,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v145 carries the full 59 std `.zig`** = `std.zig` plus
+tracked seed archive **v146 carries the full 59 std `.zig`** = `std.zig` plus
 58 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -461,17 +461,17 @@ This is the command that reproduces the 8-pin table below (the retired
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-**8-pin table (current).** Measured with the seed-built compiler from the repo
+**8-pin table (current; Phase 3.5 Task 12 re-baseline).** Measured with the seed-built compiler from the repo
 root with relative entry paths:
 `<seed-built zig1_5_clean> <mode> --dump-c89 <ENTRY> | md5sum`. Pin values are
 **compiler-build dependent**; compare only same-build runs.
 
 | Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `3ccd5941c64b76f745d7106894b07740` | `bec9b6ba6d4c05c9bbdd1c99aff55416` |
-| `examples/z98/game_of_life/main.zig` | `3b1f65e5cd3eaeec51db6f353f9cb07e` | `8f4f5c1293e719023b6d4d8855404cd9` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `14256edf3082525b7977742a4c250143` | `9c609ee3007f4112ef67d1d05067a707` |
-| `examples/z98/json_parser/main.zig` | `4428efad03a82a7f09a2b362f0afdf3a` | `31b00de8f3bea1c33d43645f6e4f9492` |
+| `examples/z98/mud_server/main.zig` | `9691c2878564d61fe4272c3d3b5da253` | `fef5196eec58b82323bac3ce78c0e815` |
+| `examples/z98/game_of_life/main.zig` | `0be513f90937621d47a331211bef9d67` | `b1f536d2905ce51d474d4167b2408f29` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `a2169c2c5b019504eaa9da0a851d8658` | `291a159925a7aa2f622bc1a87536a0e3` |
+| `examples/z98/json_parser/main.zig` | `bbcd375f657d168df504d1f4ae06774e` | `219ddfff7095c84ab1dde2e82e3c50f0` |
 
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
@@ -762,6 +762,10 @@ grep -a -c "^PREFIX:" /tmp/markers.bin
 grep -a "^PREFIX:" /tmp/markers.bin | sed 's/PREFIX: *//' | sort -n
 grep -a "^IFST:\|^PBD:\|^EBLK:" /tmp/markers.bin
 ```
+
+Current reference for the `mud_server` capture (seed v146, Phase 3.5 Task 12
+re-anchor): **4441 lines / 51346 B** (md5 `3fb045267ad401b112d5d7cd0f4816a2`).
+
 
 
 ### Common marker labels in sema.zig (all use markerWriteInt)

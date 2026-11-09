@@ -20,13 +20,13 @@ set -euo pipefail
 #      safety net (EXPR_GUARD_MAX) that must not fire on legal input; when it
 #      does not trip this case passes with a note;
 #   5. the four 8-pin entries still emit and their `-fsafe`/`-ffast`
-#      `--dump-c89` md5s match the authoritative 8-pin table (Phase 3.3
-#      Task 2 std_net coroutine-helper re-baseline; both modes moved because
-#      the dump includes the std_net module C plus type-identifier interning):
-#        mud  3ccd5941c64b76f745d7106894b07740 / bec9b6ba6d4c05c9bbdd1c99aff55416
-#        gol  3b1f65e5cd3eaeec51db6f353f9cb07e / 8f4f5c1293e719023b6d4d8855404cd9
-#        lisp 14256edf3082525b7977742a4c250143 / 9c609ee3007f4112ef67d1d05067a707
-#        json 4428efad03a82a7f09a2b362f0afdf3a / 31b00de8f3bea1c33d43645f6e4f9492
+#      `--dump-c89` md5s match the authoritative 8-pin table (Phase 3.5
+#      Task 12 defect-closure re-baseline; both modes moved with the
+#      D3/D8/D14/D15 emission changes):
+#        mud  9691c2878564d61fe4272c3d3b5da253 / fef5196eec58b82323bac3ce78c0e815
+#        gol  0be513f90937621d47a331211bef9d67 / b1f536d2905ce51d474d4167b2408f29
+#        lisp a2169c2c5b019504eaa9da0a851d8658 / 291a159925a7aa2f622bc1a87536a0e3
+#        json bbcd375f657d168df504d1f4ae06774e / 219ddfff7095c84ab1dde2e82e3c50f0
 #      (left = `-fsafe`, right = `-ffast`);
 #   6. a generated 120-term RUNTIME-VALUED (not literal-folded) left-deep `+`
 #      chain compiles rc=0 under `ulimit -s 1024` (Task 2 trampoline) and its
@@ -299,13 +299,13 @@ pin_check() {
 }
 
 pin_check "examples/z98/mud_server/main.zig" \
-    "3ccd5941c64b76f745d7106894b07740" "bec9b6ba6d4c05c9bbdd1c99aff55416" mud_server
+    "9691c2878564d61fe4272c3d3b5da253" "fef5196eec58b82323bac3ce78c0e815" mud_server
 pin_check "examples/z98/game_of_life/main.zig" \
-    "3b1f65e5cd3eaeec51db6f353f9cb07e" "8f4f5c1293e719023b6d4d8855404cd9" game_of_life
+    "0be513f90937621d47a331211bef9d67" "b1f536d2905ce51d474d4167b2408f29" game_of_life
 pin_check "examples/z98/lisp_interpreter_curr/main.zig" \
-    "14256edf3082525b7977742a4c250143" "9c609ee3007f4112ef67d1d05067a707" lisp_interpreter_curr
+    "a2169c2c5b019504eaa9da0a851d8658" "291a159925a7aa2f622bc1a87536a0e3" lisp_interpreter_curr
 pin_check "examples/z98/json_parser/main.zig" \
-    "4428efad03a82a7f09a2b362f0afdf3a" "31b00de8f3bea1c33d43645f6e4f9492" json_parser
+    "bbcd375f657d168df504d1f4ae06774e" "219ddfff7095c84ab1dde2e82e3c50f0" json_parser
 
 # ---- 6. 120-term runtime-valued left-deep `+` chain (Task 2 RED->GREEN) ----
 # Fixture (validated shape): each term is a u32 local seeded through
@@ -343,9 +343,10 @@ fi
 # this fixture at 8 MB (measured: 115 terms OK, 118 SEGV; its pre-Task-2
 # `lowerExpr` costs ~70 KB/level). 64 MB is the script's established
 # baseline-ref stack (16/32 MB measured working too; all three agree byte for
-# byte). C6_REF_MD5 is the recorded reference: re-derived 2026-10-26 from
-# $GATE_BASELINE_ZIG1 at 64 MB, stable across repeated runs.
-C6_REF_MD5="5cd515cddc41e59d8f03554a20cb5420"
+# byte). C6_REF_MD5 is the recorded reference: re-derived 2026-11-09 from
+# $GATE_BASELINE_ZIG1 at 64 MB for the Phase 3.5 Task 12 re-baseline (new and
+# baseline agree; the pre-Phase-3.5 value was 5cd515cd…), stable across runs.
+C6_REF_MD5="cdbb8746c4468252aaf1df1c589fc4d2"
 BASE_ZIG1="${GATE_BASELINE_ZIG1:-/tmp/lowerfix_t2base/zig1_5_clean}"
 if [ ! -x "$BASE_ZIG1" ]; then
     echo "case 6: md5 SKIP (md5 comparisons require GATE_BASELINE_ZIG1=<path to baseline zig1_5_clean>)"
