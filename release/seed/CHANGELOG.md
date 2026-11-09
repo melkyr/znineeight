@@ -15,6 +15,78 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-09 — seed v147 (HEAD 2383dc29)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12932829 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+Final Phase 3.5 closeout rotation. v146 was invalidated by the final
+whole-branch review: the module-scope unannotated value-switch initializer
+regressed to `error[3000] target: type` because the module producer pushed
+`TYPE_UNDEFINED` as if it were a real expected type. Task 12.2-F (`2383dc29`)
+replaces the sentinel with an explicit expected-type contract
+(`none` / `known` / `undetermined`): unannotated module initializers use peer
+resolution again, annotation-present-unresolved value consumers reject cleanly
+with one `error[3000]`, and the D15 known-type/void behavior is unchanged. The
+accepted contract correction also changes a module-scope unannotated `if` with
+string literals from a pointer to a slice (`const X = if (true) "a" else
+"bb";`): v145/v146 emitted `unsigned char*`, v147 emits the slice pair. This
+is intentional (operator-accepted, Task 12.2-F) and is not special-cased back
+to the old pointer representation.
+
+Battery at rotation (values unchanged from v146 except the fixed point):
+live corpus 1278 = 1092 OK / 63 GREEN / 123 FAIL / 0 ICE / 0 CRASH (class md5
+`c0c3fdc5dbf09c294b75eac98523cd73`); frozen-1124
+`17eb6474b9ff6895cd1b3b3615584e3c` (950 OK / 59 GREEN / 115 FAIL) with the
+unchanged operator-accepted D15 FAIL→GREEN waiver for
+`switch_case_qualifier_reject_xmod`; goldens 5/5; 8 pins unchanged; markers
+4441 lines / 51346 B; examples 28/28; stdlib 376/0 + crosscheck 10/10;
+emit-support 9/9. `gate_lower_depth`, `gate_debug_map`, `gate_crlf`,
+`gate_warn_clean`, `gate_builtin_names`, `gate_mutable_for`, and
+`gate_reserved_names` are green; `tier_dbg_core` 26/0 and `tier_edit` 38/0 pass;
+the `tier_dbg` `crashinit` build failure remains the operator-accepted D4
+fixture waiver. A rebuild from this archive is two-hop
+**hop1 == hop2 == `73c75a65…`**.
+
+| field | value |
+|---|---|
+| date | 2026-11-09 |
+| HEAD | `2383dc29` |
+| seed binary md5 | `73c75a65e30dfd212fdf93ae1e57a687` |
+| self-emission C | 48 `.c` + 49 `.h` (12932829 bytes) |
+| fixed point | `73c75a65e30dfd212fdf93ae1e57a687` |
+| lib manifest | `lib/manifest.md5` (59 std files; md5 `6be2fe3690949cd9601d9db1ac71e48b`) |
+| archive md5 | `e7d94d4cc4a4b4e734bc68c8343538e3` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `774a4a6f00376c1484c9ef03ecc7a126` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 59 std `.zig` + `manifest.md5` |
+| HEAD/date | `2383dc29` / 2026-11-09 |
+
+Provenance note: the archived binary (md5 73c75a65e30dfd212fdf93ae1e57a687) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+2383dc29; gcc of the archive's self-emission C reproduces the fixed point
+`73c75a65e30dfd212fdf93ae1e57a687` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-11-09 — seed v146 (HEAD 23431f34)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir

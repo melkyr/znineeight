@@ -30,25 +30,33 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-09 — seed v146]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-09 — seed v147]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v146 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v147 CHANGELOG entry.
 
-**Current seed: v146** (rotated 2026-11-09 for the Phase 3.5 defect-closure
-closeout; packaging base HEAD `23431f34`). Archived binary md5
-(= fixed point) `de5e99b6314835c2adf364980cdc43ab`; archive md5
-`cb93330ec6de65699bae899a5289a3bf`; Win9x zip md5
-`3733353ff8725441114835d37d233ad4`; `gen/` 48 `.c` + 49 `.h` (12,911,926
+**Current seed: v147** (rotated 2026-11-09 for the final Phase 3.5 closeout;
+packaging base HEAD `2383dc29`). Archived binary md5
+(= fixed point) `73c75a65e30dfd212fdf93ae1e57a687`; archive md5
+`e7d94d4cc4a4b4e734bc68c8343538e3`; Win9x zip md5
+`774a4a6f00376c1484c9ef03ecc7a126`; `gen/` 48 `.c` + 49 `.h` (12,932,829
 bytes); `lib/` **59** std `.zig` (`std.zig` + 58 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
 `6be2fe3690949cd9601d9db1ac71e48b`; includes `std_tls_io.zig`,
 `std_hpack.zig`, `std_http2.zig`).
-A rebuild from the committed v146 archive is two-hop
-**hop1 == hop2 == `de5e99b6…`**. The compiler source is **`-fsafe`-clean**.
+A rebuild from the committed v147 archive is two-hop
+**hop1 == hop2 == `73c75a65…`**. The compiler source is **`-fsafe`-clean**.
+v147 supersedes the invalid v146 seed: the module-scope unannotated value
+initializer now uses peer resolution under the explicit expected-type contract
+(`none` / `known` / `undetermined`; Task 12.2-F `2383dc29`), so the v146
+`error[3000] target: type` regression is gone, annotation-present-unresolved
+consumers reject cleanly, and D15 known/void behavior is unchanged. The
+accepted contract correction changes a module-scope unannotated `if` with
+string literals from a pointer to a slice (v145/v146 `unsigned char*`, v147
+slice); this is intentional and is not special-cased back to the pointer form.
 
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
@@ -91,7 +99,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v146 carries the full 59 std `.zig`** = `std.zig` plus
+tracked seed archive **v147 carries the full 59 std `.zig`** = `std.zig` plus
 58 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
@@ -763,8 +771,9 @@ grep -a "^PREFIX:" /tmp/markers.bin | sed 's/PREFIX: *//' | sort -n
 grep -a "^IFST:\|^PBD:\|^EBLK:" /tmp/markers.bin
 ```
 
-Current reference for the `mud_server` capture (seed v146, Phase 3.5 Task 12
-re-anchor): **4441 lines / 51346 B** (md5 `3fb045267ad401b112d5d7cd0f4816a2`).
+Current reference for the `mud_server` capture (seed v147; unchanged from the
+Phase 3.5 Task 12 re-anchor): **4441 lines / 51346 B** (md5
+`3fb045267ad401b112d5d7cd0f4816a2`).
 
 
 

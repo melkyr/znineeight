@@ -114,7 +114,8 @@ Full Zig parity is not claimed.
 
 **Reference points.** `semanticAnalyzerResolveAssign`,
 `semanticAnalyzerResolveSwitchExpr`, `semanticAnalyzerResolveIfExpr`,
-`topExpectedType`, `typeRegistryIsAssignable`; `sf/src/lower.zig:6105`;
+`topExpectedTypeKind`/`topExpectedTypeId`, `typeRegistryIsAssignable`;
+`sf/src/lower.zig:6105`;
 `sf/src/async_analysis.zig:396`; Task 9i `280a3b12`; Task 9j/9l/9k/9f reports;
 `repro/mi_matrix/known_excluded/d15_parity/`,
 `repro/mi_matrix/known_excluded/d15_assignment_void/`.
