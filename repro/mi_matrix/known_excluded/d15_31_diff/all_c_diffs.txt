@@ -1,0 +1,2678 @@
+--- examples_z98_z9play/base/floor_3057FA6C.c	2026-11-09 17:06:10.995530063 +0000
++++ examples_z98_z9play/final/floor_3057FA6C.c	2026-11-09 17:06:11.528542831 +0000
+@@ -35,11 +35,11 @@
+ 
+ /* quantRange */
+ unsigned int zF_709CC731_quantRange(unsigned char mult) {
+-    int zT_1;
++    unsigned int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
+-    int zT_5;
++    int zT_6;
++    int zT_8;
+ switch (mult) {
+ case 1: goto z_bb_1;
+ case 2: goto z_bb_2;
+@@ -48,22 +48,22 @@
+ }
+     z_bb_1: ;
+     zT_2 = 256;
+-    zT_1 = zT_2;
++    zT_1 = (unsigned int)zT_2;
+     goto z_bb_6;
+     z_bb_2: ;
+-    zT_3 = 128;
+-    zT_1 = zT_3;
++    zT_4 = 128;
++    zT_1 = (unsigned int)zT_4;
+     goto z_bb_6;
+     z_bb_3: ;
+-    zT_4 = 86;
+-    zT_1 = zT_4;
++    zT_6 = 86;
++    zT_1 = (unsigned int)zT_6;
+     goto z_bb_6;
+     z_bb_4: ;
+-    zT_5 = 64;
+-    zT_1 = zT_5;
++    zT_8 = 64;
++    zT_1 = (unsigned int)zT_8;
+     goto z_bb_6;
+     z_bb_6: ;
+-    return (unsigned int)((unsigned int)zT_1);
++    return zT_1;
+ }
+ 
+ /* iabs */
+--- repro_mi_matrix_emission_mangler_collision_xmod/base/cmod1_F84B6A15.c	2026-11-09 17:06:13.519590526 +0000
++++ repro_mi_matrix_emission_mangler_collision_xmod/final/cmod1_F84B6A15.c	2026-11-09 17:06:13.617592873 +0000
+@@ -3,8 +3,8 @@
+ int zF_2C4D7976_kind1(void) {
+     int zT_2;
+     int zT_3;
+-    int zT_4;
+     int zT_5;
++    int zT_7;
+ switch ((zT_E5B43CF8_Color)(zT_E5B43CF8_Color_Red)) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -13,20 +13,20 @@
+ }
+     z_bb_1: ;
+     zT_3 = 1;
+-    zT_2 = zT_3;
++    zT_2 = (int)zT_3;
+     goto z_bb_6;
+     z_bb_2: ;
+-    zT_4 = 2;
+-    zT_2 = zT_4;
++    zT_5 = 2;
++    zT_2 = (int)zT_5;
+     goto z_bb_6;
+     z_bb_3: ;
+-    zT_5 = 3;
+-    zT_2 = zT_5;
++    zT_7 = 3;
++    zT_2 = (int)zT_7;
+     goto z_bb_6;
+     z_bb_4: ;
+     pal_trap();
+     z_bb_6: ;
+-    return (int)((int)zT_2);
++    return zT_2;
+ }
+ 
+ /* EOF */
+--- repro_mi_matrix_emission_mangler_collision_xmod/base/cmod2_051C6598.c	2026-11-09 17:06:13.519590526 +0000
++++ repro_mi_matrix_emission_mangler_collision_xmod/final/cmod2_051C6598.c	2026-11-09 17:06:13.617592873 +0000
+@@ -3,8 +3,8 @@
+ int zF_2B4D77E3_kind2(void) {
+     int zT_2;
+     int zT_3;
+-    int zT_4;
+     int zT_5;
++    int zT_7;
+ switch ((zT_E5B43CF8_Color)(zT_E5B43CF8_Color_Blue)) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -13,20 +13,20 @@
+ }
+     z_bb_1: ;
+     zT_3 = 1;
+-    zT_2 = zT_3;
++    zT_2 = (int)zT_3;
+     goto z_bb_6;
+     z_bb_2: ;
+-    zT_4 = 2;
+-    zT_2 = zT_4;
++    zT_5 = 2;
++    zT_2 = (int)zT_5;
+     goto z_bb_6;
+     z_bb_3: ;
+-    zT_5 = 3;
+-    zT_2 = zT_5;
++    zT_7 = 3;
++    zT_2 = (int)zT_7;
+     goto z_bb_6;
+     z_bb_4: ;
+     pal_trap();
+     z_bb_6: ;
+-    return (int)((int)zT_2);
++    return zT_2;
+ }
+ 
+ /* EOF */
+--- repro_mi_matrix_emission_type_storage_extern_threealias_xmod/base/mod_b_FF89D2B5.c	2026-11-09 17:06:13.926600275 +0000
++++ repro_mi_matrix_emission_type_storage_extern_threealias_xmod/final/mod_b_FF89D2B5.c	2026-11-09 17:06:14.025602647 +0000
+@@ -3,8 +3,8 @@
+ int zF_8D39BDE6_name(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
++    int zT_6;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -13,27 +13,27 @@
+ }
+     z_bb_1: ;
+     zT_2 = 0;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_6;
+     z_bb_2: ;
+-    zT_3 = 1;
+-    zT_1 = zT_3;
++    zT_4 = 1;
++    zT_1 = (int)zT_4;
+     goto z_bb_6;
+     z_bb_3: ;
+-    zT_4 = 2;
+-    zT_1 = zT_4;
++    zT_6 = 2;
++    zT_1 = (int)zT_6;
+     goto z_bb_6;
+     z_bb_4: ;
+     pal_trap();
+     z_bb_6: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* sides */
+ int zF_876240D7_sides(zT_4380DDC6_Shape s) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (s) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -41,16 +41,16 @@
+ }
+     z_bb_1: ;
+     zT_2 = 0;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_3 = 4;
+-    zT_1 = zT_3;
++    zT_4 = 4;
++    zT_1 = (int)zT_4;
+     goto z_bb_5;
+     z_bb_3: ;
+     pal_trap();
+     z_bb_5: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* __module_init */
+--- repro_mi_matrix_emission_type_storage_extern_threealias_xmod/base/mod_c_DC75BFB2.c	2026-11-09 17:06:13.926600275 +0000
++++ repro_mi_matrix_emission_type_storage_extern_threealias_xmod/final/mod_c_DC75BFB2.c	2026-11-09 17:06:14.025602647 +0000
+@@ -3,8 +3,8 @@
+ int zF_D913E243_kind(void) {
+     int zT_2;
+     int zT_3;
+-    int zT_4;
+     int zT_5;
++    int zT_7;
+ switch ((zT_E5B43CF8_Color)(zT_E5B43CF8_Color_Green)) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -13,20 +13,20 @@
+ }
+     z_bb_1: ;
+     zT_3 = 1;
+-    zT_2 = zT_3;
++    zT_2 = (int)zT_3;
+     goto z_bb_6;
+     z_bb_2: ;
+-    zT_4 = 2;
+-    zT_2 = zT_4;
++    zT_5 = 2;
++    zT_2 = (int)zT_5;
+     goto z_bb_6;
+     z_bb_3: ;
+-    zT_5 = 3;
+-    zT_2 = zT_5;
++    zT_7 = 3;
++    zT_2 = (int)zT_7;
+     goto z_bb_6;
+     z_bb_4: ;
+     pal_trap();
+     z_bb_6: ;
+-    return (int)((int)zT_2);
++    return zT_2;
+ }
+ 
+ /* __module_init */
+--- repro_mi_matrix_emission_type_storage_extern_threealias_xmod/base/mod_d_2DFA548F.c	2026-11-09 17:06:13.926600275 +0000
++++ repro_mi_matrix_emission_type_storage_extern_threealias_xmod/final/mod_d_2DFA548F.c	2026-11-09 17:06:14.026602671 +0000
+@@ -3,8 +3,8 @@
+ int zF_53181AC1_cval(void) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
++    int zT_6;
+ switch ((zT_E5B43CF8_Color)(zT_E5B43CF8_Color_Blue)) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -13,27 +13,27 @@
+ }
+     z_bb_1: ;
+     zT_2 = 1;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_6;
+     z_bb_2: ;
+-    zT_3 = 2;
+-    zT_1 = zT_3;
++    zT_4 = 2;
++    zT_1 = (int)zT_4;
+     goto z_bb_6;
+     z_bb_3: ;
+-    zT_4 = 3;
+-    zT_1 = zT_4;
++    zT_6 = 3;
++    zT_1 = (int)zT_6;
+     goto z_bb_6;
+     z_bb_4: ;
+     pal_trap();
+     z_bb_6: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* sval */
+ int zF_E6AA5031_sval(void) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch ((zT_4380DDC6_Shape)(zT_4380DDC6_Shape_Square)) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -41,16 +41,16 @@
+ }
+     z_bb_1: ;
+     zT_2 = 1;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_3 = 2;
+-    zT_1 = zT_3;
++    zT_4 = 2;
++    zT_1 = (int)zT_4;
+     goto z_bb_5;
+     z_bb_3: ;
+     pal_trap();
+     z_bb_5: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* EOF */
+--- repro_mi_matrix_emission_type_storage_extern_xmod/base/mod_b_B96661BC.c	2026-11-09 17:06:14.352610480 +0000
++++ repro_mi_matrix_emission_type_storage_extern_xmod/final/mod_b_B96661BC.c	2026-11-09 17:06:14.450612828 +0000
+@@ -3,8 +3,8 @@
+ int zF_8D39BDE6_name(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
++    int zT_6;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -13,20 +13,20 @@
+ }
+     z_bb_1: ;
+     zT_2 = 0;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_6;
+     z_bb_2: ;
+-    zT_3 = 1;
+-    zT_1 = zT_3;
++    zT_4 = 1;
++    zT_1 = (int)zT_4;
+     goto z_bb_6;
+     z_bb_3: ;
+-    zT_4 = 2;
+-    zT_1 = zT_4;
++    zT_6 = 2;
++    zT_1 = (int)zT_6;
+     goto z_bb_6;
+     z_bb_4: ;
+     pal_trap();
+     z_bb_6: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* __module_init */
+--- repro_mi_matrix_emission_type_storage_extern_xmod/base/mod_c_808F6C7F.c	2026-11-09 17:06:14.352610480 +0000
++++ repro_mi_matrix_emission_type_storage_extern_xmod/final/mod_c_808F6C7F.c	2026-11-09 17:06:14.450612828 +0000
+@@ -3,8 +3,8 @@
+ int zF_D913E243_kind(void) {
+     int zT_2;
+     int zT_3;
+-    int zT_4;
+     int zT_5;
++    int zT_7;
+ switch ((zT_E5B43CF8_Color)(zT_E5B43CF8_Color_Red)) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -13,20 +13,20 @@
+ }
+     z_bb_1: ;
+     zT_3 = 1;
+-    zT_2 = zT_3;
++    zT_2 = (int)zT_3;
+     goto z_bb_6;
+     z_bb_2: ;
+-    zT_4 = 2;
+-    zT_2 = zT_4;
++    zT_5 = 2;
++    zT_2 = (int)zT_5;
+     goto z_bb_6;
+     z_bb_3: ;
+-    zT_5 = 3;
+-    zT_2 = zT_5;
++    zT_7 = 3;
++    zT_2 = (int)zT_7;
+     goto z_bb_6;
+     z_bb_4: ;
+     pal_trap();
+     z_bb_6: ;
+-    return (int)((int)zT_2);
++    return zT_2;
+ }
+ 
+ /* EOF */
+--- repro_mi_matrix_emission_void_temp_enum_xmod/base/mod_b_5BDBD10A.c	2026-11-09 17:06:14.758620207 +0000
++++ repro_mi_matrix_emission_void_temp_enum_xmod/final/mod_b_5BDBD10A.c	2026-11-09 17:06:14.856622554 +0000
+@@ -3,9 +3,9 @@
+ int zF_836E9911_kindNum(zT_EAC3E484_TokenKind kind) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
+-    int zT_5;
++    int zT_6;
++    int zT_8;
+ switch (kind) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -15,24 +15,24 @@
+ }
+     z_bb_1: ;
+     zT_2 = 0;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_7;
+     z_bb_2: ;
+-    zT_3 = 1;
+-    zT_1 = zT_3;
++    zT_4 = 1;
++    zT_1 = (int)zT_4;
+     goto z_bb_7;
+     z_bb_3: ;
+-    zT_4 = 2;
+-    zT_1 = zT_4;
++    zT_6 = 2;
++    zT_1 = (int)zT_6;
+     goto z_bb_7;
+     z_bb_4: ;
+-    zT_5 = 3;
+-    zT_1 = zT_5;
++    zT_8 = 3;
++    zT_1 = (int)zT_8;
+     goto z_bb_7;
+     z_bb_5: ;
+     pal_trap();
+     z_bb_7: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* nextToken */
+--- repro_mi_matrix_eu_err_switch/base/main_FBE75381.c	2026-11-09 17:06:15.066034799 +0000
++++ repro_mi_matrix_eu_err_switch/final/main_FBE75381.c	2026-11-09 17:06:15.068977567 +0000
+@@ -3,10 +3,15 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    zT_C00BF080_E zT_4;
+-    int zT_6;
++    zT_0DA61B72_EU_6 zT_4;
++    zT_C00BF080_E zT_5;
++    zT_0DA61B72_EU_6 zT_6;
+     int zT_7;
+-    zT_0DA61B72_EU_6 zT_8;
++    int zT_8;
++    zT_0DA61B72_EU_6 zT_9;
++    int zT_10;
++    int zT_11;
++    zT_0DA61B72_EU_6 zT_12;
+     unsigned int v;
+     zT_0DA61B72_EU_6 r;
+     zT_1 = 0;
+@@ -18,20 +23,27 @@
+ default: goto z_bb_3;
+ }
+     z_bb_1: ;
+-    zT_4 = 1;
++    zT_5 = 1;
++    zT_6.data.err = zT_5;
++    zT_6.is_error = 1;
++    zT_4 = zT_6;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_7 = 0;
++    zT_8 = (int)zT_7;
++    zT_9.data.payload = zT_8;
++    zT_9.is_error = 0;
++    zT_4 = zT_9;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_10 = 0;
++    zT_11 = (int)zT_10;
++    zT_12.data.payload = zT_11;
++    zT_12.is_error = 0;
++    zT_4 = zT_12;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8.data.err = zT_4;
+-    zT_8.is_error = 1;
+-    r = zT_8;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_eu_val_switch/base/main_A6C2E28D.c	2026-11-09 17:06:15.304448156 +0000
++++ repro_mi_matrix_eu_val_switch/final/main_A6C2E28D.c	2026-11-09 17:06:15.307746228 +0000
+@@ -3,12 +3,16 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    int zT_4;
++    zT_0DA61B72_EU_6 zT_4;
+     int zT_5;
+     int zT_6;
+-    int zT_7;
++    zT_0DA61B72_EU_6 zT_7;
+     int zT_8;
+-    zT_0DA61B72_EU_6 zT_9;
++    int zT_9;
++    zT_0DA61B72_EU_6 zT_10;
++    int zT_11;
++    int zT_12;
++    zT_0DA61B72_EU_6 zT_13;
+     unsigned int v;
+     zT_0DA61B72_EU_6 r;
+     zT_1 = 0;
+@@ -21,21 +25,27 @@
+ }
+     z_bb_1: ;
+     zT_5 = 42;
+-    zT_4 = zT_5;
++    zT_6 = (int)zT_5;
++    zT_7.data.payload = zT_6;
++    zT_7.is_error = 0;
++    zT_4 = zT_7;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_8 = 0;
++    zT_9 = (int)zT_8;
++    zT_10.data.payload = zT_9;
++    zT_10.is_error = 0;
++    zT_4 = zT_10;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_11 = 0;
++    zT_12 = (int)zT_11;
++    zT_13.data.payload = zT_12;
++    zT_13.is_error = 0;
++    zT_4 = zT_13;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8 = (int)zT_4;
+-    zT_9.data.payload = zT_8;
+-    zT_9.is_error = 0;
+-    r = zT_9;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_eunum_err_switch/base/main_E41A4169.c	2026-11-09 17:06:15.466342196 +0000
++++ repro_mi_matrix_eunum_err_switch/final/main_E41A4169.c	2026-11-09 17:06:15.469629849 +0000
+@@ -3,10 +3,15 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    zT_C00BF080_E zT_4;
+-    int zT_6;
++    zT_3F70E806_EU_11 zT_4;
++    zT_C00BF080_E zT_5;
++    zT_3F70E806_EU_11 zT_6;
+     int zT_7;
+-    zT_3F70E806_EU_11 zT_8;
++    zT_79FAE712_u64 zT_8;
++    zT_3F70E806_EU_11 zT_9;
++    int zT_10;
++    zT_79FAE712_u64 zT_11;
++    zT_3F70E806_EU_11 zT_12;
+     unsigned int v;
+     zT_3F70E806_EU_11 r;
+     zT_1 = 0;
+@@ -18,20 +23,27 @@
+ default: goto z_bb_3;
+ }
+     z_bb_1: ;
+-    zT_4 = 1;
++    zT_5 = 1;
++    zT_6.data.err = zT_5;
++    zT_6.is_error = 1;
++    zT_4 = zT_6;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_7 = 0;
++    zT_8 = (zT_79FAE712_u64)zT_7;
++    zT_9.data.payload = zT_8;
++    zT_9.is_error = 0;
++    zT_4 = zT_9;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_10 = 0;
++    zT_11 = (zT_79FAE712_u64)zT_10;
++    zT_12.data.payload = zT_11;
++    zT_12.is_error = 0;
++    zT_4 = zT_12;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8.data.err = zT_4;
+-    zT_8.is_error = 1;
+-    r = zT_8;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_eunum_val_switch/base/main_6D349245.c	2026-11-09 17:06:15.711650064 +0000
++++ repro_mi_matrix_eunum_val_switch/final/main_6D349245.c	2026-11-09 17:06:15.714735322 +0000
+@@ -3,12 +3,16 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    int zT_4;
++    zT_3F70E806_EU_11 zT_4;
+     int zT_5;
+-    int zT_6;
+-    int zT_7;
+-    zT_79FAE712_u64 zT_8;
+-    zT_3F70E806_EU_11 zT_9;
++    zT_79FAE712_u64 zT_6;
++    zT_3F70E806_EU_11 zT_7;
++    int zT_8;
++    zT_79FAE712_u64 zT_9;
++    zT_3F70E806_EU_11 zT_10;
++    int zT_11;
++    zT_79FAE712_u64 zT_12;
++    zT_3F70E806_EU_11 zT_13;
+     unsigned int v;
+     zT_3F70E806_EU_11 r;
+     zT_1 = 0;
+@@ -21,21 +25,27 @@
+ }
+     z_bb_1: ;
+     zT_5 = 42;
+-    zT_4 = zT_5;
++    zT_6 = (zT_79FAE712_u64)zT_5;
++    zT_7.data.payload = zT_6;
++    zT_7.is_error = 0;
++    zT_4 = zT_7;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_8 = 0;
++    zT_9 = (zT_79FAE712_u64)zT_8;
++    zT_10.data.payload = zT_9;
++    zT_10.is_error = 0;
++    zT_4 = zT_10;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_11 = 0;
++    zT_12 = (zT_79FAE712_u64)zT_11;
++    zT_13.data.payload = zT_12;
++    zT_13.is_error = 0;
++    zT_4 = zT_13;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8 = (zT_79FAE712_u64)zT_4;
+-    zT_9.data.payload = zT_8;
+-    zT_9.is_error = 0;
+-    r = zT_9;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_euopt_err_switch/base/main_88CD6B78.c	2026-11-09 17:06:15.874557175 +0000
++++ repro_mi_matrix_euopt_err_switch/final/main_88CD6B78.c	2026-11-09 17:06:15.878042932 +0000
+@@ -3,10 +3,17 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    zT_C00BF080_E zT_4;
+-    int zT_6;
++    zT_D4788E5A_EU_42 zT_4;
++    zT_C00BF080_E zT_5;
++    zT_D4788E5A_EU_42 zT_6;
+     int zT_7;
+-    zT_D4788E5A_EU_42 zT_8;
++    int zT_8;
++    zT_45E16F0B_Opt_6 zT_9;
++    zT_D4788E5A_EU_42 zT_10;
++    int zT_11;
++    int zT_12;
++    zT_45E16F0B_Opt_6 zT_13;
++    zT_D4788E5A_EU_42 zT_14;
+     unsigned int v;
+     zT_D4788E5A_EU_42 r;
+     zT_1 = 0;
+@@ -18,20 +25,31 @@
+ default: goto z_bb_3;
+ }
+     z_bb_1: ;
+-    zT_4 = 1;
++    zT_5 = 1;
++    zT_6.data.err = zT_5;
++    zT_6.is_error = 1;
++    zT_4 = zT_6;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_7 = 0;
++    zT_8 = (int)zT_7;
++    zT_9.has_value = 1;
++    zT_9.value = zT_8;
++    zT_10.data.payload = zT_9;
++    zT_10.is_error = 0;
++    zT_4 = zT_10;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_11 = 0;
++    zT_12 = (int)zT_11;
++    zT_13.has_value = 1;
++    zT_13.value = zT_12;
++    zT_14.data.payload = zT_13;
++    zT_14.is_error = 0;
++    zT_4 = zT_14;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8.data.err = zT_4;
+-    zT_8.is_error = 1;
+-    r = zT_8;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_euopt_val_switch/base/main_8FC083F8.c	2026-11-09 17:06:16.109800713 +0000
++++ repro_mi_matrix_euopt_val_switch/final/main_8FC083F8.c	2026-11-09 17:06:16.113291551 +0000
+@@ -3,13 +3,15 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    int zT_4;
++    zT_D4788E5A_EU_42 zT_4;
+     int zT_5;
+     int zT_6;
+-    int zT_7;
+-    int zT_8;
+-    zT_45E16F0B_Opt_6 zT_9;
++    zT_45E16F0B_Opt_6 zT_7;
++    zT_D4788E5A_EU_42 zT_8;
++    zT_45E16F0B_Opt_6 zT_9 = {0};
+     zT_D4788E5A_EU_42 zT_10;
++    zT_45E16F0B_Opt_6 zT_11 = {0};
++    zT_D4788E5A_EU_42 zT_12;
+     unsigned int v;
+     zT_D4788E5A_EU_42 r;
+     zT_1 = 0;
+@@ -22,23 +24,27 @@
+ }
+     z_bb_1: ;
+     zT_5 = 42;
+-    zT_4 = zT_5;
++    zT_6 = (int)zT_5;
++    zT_7.has_value = 1;
++    zT_7.value = zT_6;
++    zT_8.data.payload = zT_7;
++    zT_8.is_error = 0;
++    zT_4 = zT_8;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_9.has_value = 0;
++    zT_10.data.payload = zT_9;
++    zT_10.is_error = 0;
++    zT_4 = zT_10;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_11.has_value = 0;
++    zT_12.data.payload = zT_11;
++    zT_12.is_error = 0;
++    zT_4 = zT_12;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8 = (int)zT_4;
+-    zT_9.has_value = 1;
+-    zT_9.value = zT_8;
+-    zT_10.data.payload = zT_9;
+-    zT_10.is_error = 0;
+-    r = zT_10;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_euoptptr_err_switch/base/main_8BE3DFF4.c	2026-11-09 17:06:16.341627895 +0000
++++ repro_mi_matrix_euoptptr_err_switch/final/main_8BE3DFF4.c	2026-11-09 17:06:16.344793596 +0000
+@@ -3,12 +3,17 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    zT_C00BF080_E zT_4;
+-    int zT_6;
+-    int* zT_7;
+-    int zT_8;
+-    int* zT_9;
++    zT_D67AD017_EU_52 zT_4;
++    zT_C00BF080_E zT_5;
++    zT_D67AD017_EU_52 zT_6;
++    int zT_7;
++    int* zT_8;
++    zT_B0EBCAD9_Opt_24 zT_9;
+     zT_D67AD017_EU_52 zT_10;
++    int zT_11;
++    int* zT_12;
++    zT_B0EBCAD9_Opt_24 zT_13;
++    zT_D67AD017_EU_52 zT_14;
+     unsigned int v;
+     zT_D67AD017_EU_52 r;
+     zT_1 = 0;
+@@ -20,22 +25,31 @@
+ default: goto z_bb_3;
+ }
+     z_bb_1: ;
+-    zT_4 = 1;
++    zT_5 = 1;
++    zT_6.data.err = zT_5;
++    zT_6.is_error = 1;
++    zT_4 = zT_6;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_7 = (int*)(unsigned int)zT_6;
+-    zT_4 = zT_7;
++    zT_7 = 0;
++    zT_8 = (int*)(unsigned int)zT_7;
++    zT_9.has_value = 1;
++    zT_9.value = zT_8;
++    zT_10.data.payload = zT_9;
++    zT_10.is_error = 0;
++    zT_4 = zT_10;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_8 = 0;
+-    zT_9 = (int*)(unsigned int)zT_8;
+-    zT_4 = zT_9;
++    zT_11 = 0;
++    zT_12 = (int*)(unsigned int)zT_11;
++    zT_13.has_value = 1;
++    zT_13.value = zT_12;
++    zT_14.data.payload = zT_13;
++    zT_14.is_error = 0;
++    zT_4 = zT_14;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_10.data.err = zT_4;
+-    zT_10.is_error = 1;
+-    r = zT_10;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_euoptptr_val_switch/base/main_7EB44BFC.c	2026-11-09 17:06:16.568592028 +0000
++++ repro_mi_matrix_euoptptr_val_switch/final/main_7EB44BFC.c	2026-11-09 17:06:16.571810259 +0000
+@@ -6,12 +6,16 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    int* zT_4;
++    zT_BC7CE5C0_EU_62 zT_4;
+     int* zT_5 = 0;
+-    int* zT_6 = 0;
+-    int* zT_7 = 0;
+-    zT_B1EBCC6C_Opt_23 zT_8;
+-    zT_BC7CE5C0_EU_62 zT_9;
++    zT_B1EBCC6C_Opt_23 zT_6;
++    zT_BC7CE5C0_EU_62 zT_7;
++    int* zT_8 = 0;
++    zT_B1EBCC6C_Opt_23 zT_9;
++    zT_BC7CE5C0_EU_62 zT_10;
++    int* zT_11 = 0;
++    zT_B1EBCC6C_Opt_23 zT_12;
++    zT_BC7CE5C0_EU_62 zT_13;
+     unsigned int v;
+     zT_BC7CE5C0_EU_62 r;
+     zT_1 = 0;
+@@ -24,22 +28,30 @@
+ }
+     z_bb_1: ;
+     zT_5 = getp();
+-    zT_4 = zT_5;
++    zT_6.has_value = 1;
++    zT_6.value = zT_5;
++    zT_7.data.payload = zT_6;
++    zT_7.is_error = 0;
++    zT_4 = zT_7;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = getp();
+-    zT_4 = zT_6;
++    zT_8 = getp();
++    zT_9.has_value = 1;
++    zT_9.value = zT_8;
++    zT_10.data.payload = zT_9;
++    zT_10.is_error = 0;
++    zT_4 = zT_10;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = getp();
+-    zT_4 = zT_7;
++    zT_11 = getp();
++    zT_12.has_value = 1;
++    zT_12.value = zT_11;
++    zT_13.data.payload = zT_12;
++    zT_13.is_error = 0;
++    zT_4 = zT_13;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8.has_value = 1;
+-    zT_8.value = zT_4;
+-    zT_9.data.payload = zT_8;
+-    zT_9.is_error = 0;
+-    r = zT_9;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_opt_null_switch/base/main_82A9C634.c	2026-11-09 17:06:16.725396731 +0000
++++ repro_mi_matrix_opt_null_switch/final/main_82A9C634.c	2026-11-09 17:06:16.728708489 +0000
+@@ -3,7 +3,14 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    zT_45E16F0B_Opt_6 zT_8 = {0};
++    zT_45E16F0B_Opt_6 zT_4;
++    zT_45E16F0B_Opt_6 zT_5 = {0};
++    int zT_6;
++    int zT_7;
++    zT_45E16F0B_Opt_6 zT_8;
++    int zT_9;
++    int zT_10;
++    zT_45E16F0B_Opt_6 zT_11;
+     unsigned int v;
+     zT_45E16F0B_Opt_6 r;
+     zT_1 = 0;
+@@ -15,14 +22,25 @@
+ default: goto z_bb_3;
+ }
+     z_bb_1: ;
++    zT_5.has_value = 0;
++    zT_4 = zT_5;
+     goto z_bb_5;
+     z_bb_2: ;
++    zT_6 = 0;
++    zT_7 = (int)zT_6;
++    zT_8.has_value = 1;
++    zT_8.value = zT_7;
++    zT_4 = zT_8;
+     goto z_bb_5;
+     z_bb_3: ;
++    zT_9 = 0;
++    zT_10 = (int)zT_9;
++    zT_11.has_value = 1;
++    zT_11.value = zT_10;
++    zT_4 = zT_11;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8.has_value = 0;
+-    r = zT_8;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_opt_val_switch/base/main_20D9085E.c	2026-11-09 17:06:16.979987646 +0000
++++ repro_mi_matrix_opt_val_switch/final/main_20D9085E.c	2026-11-09 17:06:16.983342906 +0000
+@@ -3,12 +3,16 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    int zT_4;
++    zT_45E16F0B_Opt_6 zT_4;
+     int zT_5;
+     int zT_6;
+-    int zT_7;
++    zT_45E16F0B_Opt_6 zT_7;
+     int zT_8;
+-    zT_45E16F0B_Opt_6 zT_9;
++    int zT_9;
++    zT_45E16F0B_Opt_6 zT_10;
++    int zT_11;
++    int zT_12;
++    zT_45E16F0B_Opt_6 zT_13;
+     unsigned int v;
+     zT_45E16F0B_Opt_6 r;
+     zT_1 = 0;
+@@ -21,21 +25,27 @@
+ }
+     z_bb_1: ;
+     zT_5 = 42;
+-    zT_4 = zT_5;
++    zT_6 = (int)zT_5;
++    zT_7.has_value = 1;
++    zT_7.value = zT_6;
++    zT_4 = zT_7;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_8 = 0;
++    zT_9 = (int)zT_8;
++    zT_10.has_value = 1;
++    zT_10.value = zT_9;
++    zT_4 = zT_10;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_11 = 0;
++    zT_12 = (int)zT_11;
++    zT_13.has_value = 1;
++    zT_13.value = zT_12;
++    zT_4 = zT_13;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8 = (int)zT_4;
+-    zT_9.has_value = 1;
+-    zT_9.value = zT_8;
+-    r = zT_9;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_opteu_err_switch/base/main_595971D4.c	2026-11-09 17:06:17.141469735 +0000
++++ repro_mi_matrix_opteu_err_switch/final/main_595971D4.c	2026-11-09 17:06:17.144448402 +0000
+@@ -3,11 +3,18 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    zT_C00BF080_E zT_4;
+-    int zT_6;
+-    int zT_7;
+-    zT_0DA61B72_EU_6 zT_8;
+-    zT_B0EBCAD9_Opt_24 zT_9;
++    zT_B0EBCAD9_Opt_24 zT_4;
++    zT_C00BF080_E zT_5;
++    zT_0DA61B72_EU_6 zT_6;
++    zT_B0EBCAD9_Opt_24 zT_7;
++    int zT_8;
++    int zT_9;
++    zT_0DA61B72_EU_6 zT_10;
++    zT_B0EBCAD9_Opt_24 zT_11;
++    int zT_12;
++    int zT_13;
++    zT_0DA61B72_EU_6 zT_14;
++    zT_B0EBCAD9_Opt_24 zT_15;
+     unsigned int v;
+     zT_B0EBCAD9_Opt_24 r;
+     zT_1 = 0;
+@@ -19,22 +26,33 @@
+ default: goto z_bb_3;
+ }
+     z_bb_1: ;
+-    zT_4 = 1;
++    zT_5 = 1;
++    zT_6.data.err = zT_5;
++    zT_6.is_error = 1;
++    zT_7.has_value = 1;
++    zT_7.value = zT_6;
++    zT_4 = zT_7;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_8 = 0;
++    zT_9 = (int)zT_8;
++    zT_10.data.payload = zT_9;
++    zT_10.is_error = 0;
++    zT_11.has_value = 1;
++    zT_11.value = zT_10;
++    zT_4 = zT_11;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_12 = 0;
++    zT_13 = (int)zT_12;
++    zT_14.data.payload = zT_13;
++    zT_14.is_error = 0;
++    zT_15.has_value = 1;
++    zT_15.value = zT_14;
++    zT_4 = zT_15;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8.data.payload = zT_4;
+-    zT_8.is_error = 0;
+-    zT_9.has_value = 1;
+-    zT_9.value = zT_8;
+-    r = zT_9;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_opteu_null_switch/base/main_C5FEEACE.c	2026-11-09 17:06:17.372748307 +0000
++++ repro_mi_matrix_opteu_null_switch/final/main_C5FEEACE.c	2026-11-09 17:06:17.376271145 +0000
+@@ -3,7 +3,16 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    zT_B0EBCAD9_Opt_24 zT_8 = {0};
++    zT_B0EBCAD9_Opt_24 zT_4;
++    zT_B0EBCAD9_Opt_24 zT_5 = {0};
++    int zT_6;
++    int zT_7;
++    zT_0DA61B72_EU_6 zT_8;
++    zT_B0EBCAD9_Opt_24 zT_9;
++    int zT_10;
++    int zT_11;
++    zT_0DA61B72_EU_6 zT_12;
++    zT_B0EBCAD9_Opt_24 zT_13;
+     unsigned int v;
+     zT_B0EBCAD9_Opt_24 r;
+     zT_1 = 0;
+@@ -15,14 +24,29 @@
+ default: goto z_bb_3;
+ }
+     z_bb_1: ;
++    zT_5.has_value = 0;
++    zT_4 = zT_5;
+     goto z_bb_5;
+     z_bb_2: ;
++    zT_6 = 0;
++    zT_7 = (int)zT_6;
++    zT_8.data.payload = zT_7;
++    zT_8.is_error = 0;
++    zT_9.has_value = 1;
++    zT_9.value = zT_8;
++    zT_4 = zT_9;
+     goto z_bb_5;
+     z_bb_3: ;
++    zT_10 = 0;
++    zT_11 = (int)zT_10;
++    zT_12.data.payload = zT_11;
++    zT_12.is_error = 0;
++    zT_13.has_value = 1;
++    zT_13.value = zT_12;
++    zT_4 = zT_13;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8.has_value = 0;
+-    r = zT_8;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_opteu_val_switch/base/main_5DF2B35C.c	2026-11-09 17:06:17.602376741 +0000
++++ repro_mi_matrix_opteu_val_switch/final/main_5DF2B35C.c	2026-11-09 17:06:17.605794790 +0000
+@@ -3,13 +3,19 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    int zT_4;
++    zT_B0EBCAD9_Opt_24 zT_4;
+     int zT_5;
+     int zT_6;
+-    int zT_7;
+-    int zT_8;
+-    zT_0DA61B72_EU_6 zT_9;
+-    zT_B0EBCAD9_Opt_24 zT_10;
++    zT_0DA61B72_EU_6 zT_7;
++    zT_B0EBCAD9_Opt_24 zT_8;
++    int zT_9;
++    int zT_10;
++    zT_0DA61B72_EU_6 zT_11;
++    zT_B0EBCAD9_Opt_24 zT_12;
++    int zT_13;
++    int zT_14;
++    zT_0DA61B72_EU_6 zT_15;
++    zT_B0EBCAD9_Opt_24 zT_16;
+     unsigned int v;
+     zT_B0EBCAD9_Opt_24 r;
+     zT_1 = 0;
+@@ -22,23 +28,33 @@
+ }
+     z_bb_1: ;
+     zT_5 = 42;
+-    zT_4 = zT_5;
++    zT_6 = (int)zT_5;
++    zT_7.data.payload = zT_6;
++    zT_7.is_error = 0;
++    zT_8.has_value = 1;
++    zT_8.value = zT_7;
++    zT_4 = zT_8;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_9 = 0;
++    zT_10 = (int)zT_9;
++    zT_11.data.payload = zT_10;
++    zT_11.is_error = 0;
++    zT_12.has_value = 1;
++    zT_12.value = zT_11;
++    zT_4 = zT_12;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_13 = 0;
++    zT_14 = (int)zT_13;
++    zT_15.data.payload = zT_14;
++    zT_15.is_error = 0;
++    zT_16.has_value = 1;
++    zT_16.value = zT_15;
++    zT_4 = zT_16;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8 = (int)zT_4;
+-    zT_9.data.payload = zT_8;
+-    zT_9.is_error = 0;
+-    zT_10.has_value = 1;
+-    zT_10.value = zT_9;
+-    r = zT_10;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_optnum_null_switch/base/main_295EA7C2.c	2026-11-09 17:06:17.757900936 +0000
++++ repro_mi_matrix_optnum_null_switch/final/main_295EA7C2.c	2026-11-09 17:06:17.761374791 +0000
+@@ -3,7 +3,14 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    zT_BBEE1AC1_Opt_11 zT_8 = {0};
++    zT_BBEE1AC1_Opt_11 zT_4;
++    zT_BBEE1AC1_Opt_11 zT_5 = {0};
++    int zT_6;
++    zT_79FAE712_u64 zT_7;
++    zT_BBEE1AC1_Opt_11 zT_8;
++    int zT_9;
++    zT_79FAE712_u64 zT_10;
++    zT_BBEE1AC1_Opt_11 zT_11;
+     unsigned int v;
+     zT_BBEE1AC1_Opt_11 r;
+     zT_1 = 0;
+@@ -15,14 +22,25 @@
+ default: goto z_bb_3;
+ }
+     z_bb_1: ;
++    zT_5.has_value = 0;
++    zT_4 = zT_5;
+     goto z_bb_5;
+     z_bb_2: ;
++    zT_6 = 0;
++    zT_7 = (zT_79FAE712_u64)zT_6;
++    zT_8.has_value = 1;
++    zT_8.value = zT_7;
++    zT_4 = zT_8;
+     goto z_bb_5;
+     z_bb_3: ;
++    zT_9 = 0;
++    zT_10 = (zT_79FAE712_u64)zT_9;
++    zT_11.has_value = 1;
++    zT_11.value = zT_10;
++    zT_4 = zT_11;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8.has_value = 0;
+-    r = zT_8;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_optnum_val_switch/base/main_10F22C68.c	2026-11-09 17:06:17.991101392 +0000
++++ repro_mi_matrix_optnum_val_switch/final/main_10F22C68.c	2026-11-09 17:06:17.994279697 +0000
+@@ -3,12 +3,16 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    int zT_4;
++    zT_BBEE1AC1_Opt_11 zT_4;
+     int zT_5;
+-    int zT_6;
+-    int zT_7;
+-    zT_79FAE712_u64 zT_8;
+-    zT_BBEE1AC1_Opt_11 zT_9;
++    zT_79FAE712_u64 zT_6;
++    zT_BBEE1AC1_Opt_11 zT_7;
++    int zT_8;
++    zT_79FAE712_u64 zT_9;
++    zT_BBEE1AC1_Opt_11 zT_10;
++    int zT_11;
++    zT_79FAE712_u64 zT_12;
++    zT_BBEE1AC1_Opt_11 zT_13;
+     unsigned int v;
+     zT_BBEE1AC1_Opt_11 r;
+     zT_1 = 0;
+@@ -21,21 +25,27 @@
+ }
+     z_bb_1: ;
+     zT_5 = 42;
+-    zT_4 = zT_5;
++    zT_6 = (zT_79FAE712_u64)zT_5;
++    zT_7.has_value = 1;
++    zT_7.value = zT_6;
++    zT_4 = zT_7;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_8 = 0;
++    zT_9 = (zT_79FAE712_u64)zT_8;
++    zT_10.has_value = 1;
++    zT_10.value = zT_9;
++    zT_4 = zT_10;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_11 = 0;
++    zT_12 = (zT_79FAE712_u64)zT_11;
++    zT_13.has_value = 1;
++    zT_13.value = zT_12;
++    zT_4 = zT_13;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8 = (zT_79FAE712_u64)zT_4;
+-    zT_9.has_value = 1;
+-    zT_9.value = zT_8;
+-    r = zT_9;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_optopt_null_switch/base/main_0AFD2FB9.c	2026-11-09 17:06:18.147733647 +0000
++++ repro_mi_matrix_optopt_null_switch/final/main_0AFD2FB9.c	2026-11-09 17:06:18.150847200 +0000
+@@ -3,7 +3,16 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    zT_B1EBCC6C_Opt_23 zT_8 = {0};
++    zT_B1EBCC6C_Opt_23 zT_4;
++    zT_B1EBCC6C_Opt_23 zT_5 = {0};
++    int zT_6;
++    int zT_7;
++    zT_45E16F0B_Opt_6 zT_8;
++    zT_B1EBCC6C_Opt_23 zT_9;
++    int zT_10;
++    int zT_11;
++    zT_45E16F0B_Opt_6 zT_12;
++    zT_B1EBCC6C_Opt_23 zT_13;
+     unsigned int v;
+     zT_B1EBCC6C_Opt_23 r;
+     zT_1 = 0;
+@@ -15,14 +24,29 @@
+ default: goto z_bb_3;
+ }
+     z_bb_1: ;
++    zT_5.has_value = 0;
++    zT_4 = zT_5;
+     goto z_bb_5;
+     z_bb_2: ;
++    zT_6 = 0;
++    zT_7 = (int)zT_6;
++    zT_8.has_value = 1;
++    zT_8.value = zT_7;
++    zT_9.has_value = 1;
++    zT_9.value = zT_8;
++    zT_4 = zT_9;
+     goto z_bb_5;
+     z_bb_3: ;
++    zT_10 = 0;
++    zT_11 = (int)zT_10;
++    zT_12.has_value = 1;
++    zT_12.value = zT_11;
++    zT_13.has_value = 1;
++    zT_13.value = zT_12;
++    zT_4 = zT_13;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8.has_value = 0;
+-    r = zT_8;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_optopt_val_switch/base/main_286E3D35.c	2026-11-09 17:06:18.380545266 +0000
++++ repro_mi_matrix_optopt_val_switch/final/main_286E3D35.c	2026-11-09 17:06:18.383467726 +0000
+@@ -3,13 +3,13 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    int zT_4;
++    zT_B1EBCC6C_Opt_23 zT_4;
+     int zT_5;
+     int zT_6;
+-    int zT_7;
+-    int zT_8;
+-    zT_45E16F0B_Opt_6 zT_9;
+-    zT_B1EBCC6C_Opt_23 zT_10;
++    zT_45E16F0B_Opt_6 zT_7;
++    zT_B1EBCC6C_Opt_23 zT_8;
++    zT_B1EBCC6C_Opt_23 zT_9 = {0};
++    zT_B1EBCC6C_Opt_23 zT_10 = {0};
+     unsigned int v;
+     zT_B1EBCC6C_Opt_23 r;
+     zT_1 = 0;
+@@ -22,23 +22,23 @@
+ }
+     z_bb_1: ;
+     zT_5 = 42;
+-    zT_4 = zT_5;
++    zT_6 = (int)zT_5;
++    zT_7.has_value = 1;
++    zT_7.value = zT_6;
++    zT_8.has_value = 1;
++    zT_8.value = zT_7;
++    zT_4 = zT_8;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 0;
+-    zT_4 = zT_6;
++    zT_9.has_value = 0;
++    zT_4 = zT_9;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_4 = zT_7;
++    zT_10.has_value = 0;
++    zT_4 = zT_10;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8 = (int)zT_4;
+-    zT_9.has_value = 1;
+-    zT_9.value = zT_8;
+-    zT_10.has_value = 1;
+-    zT_10.value = zT_9;
+-    r = zT_10;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_optptr_null_switch/base/main_77CC72C8.c	2026-11-09 17:06:18.622028983 +0000
++++ repro_mi_matrix_optptr_null_switch/final/main_77CC72C8.c	2026-11-09 17:06:18.625203190 +0000
+@@ -3,7 +3,14 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    zT_B1EBCC6C_Opt_23 zT_10 = {0};
++    zT_B1EBCC6C_Opt_23 zT_4;
++    zT_B1EBCC6C_Opt_23 zT_5 = {0};
++    int zT_6;
++    int* zT_7;
++    zT_B1EBCC6C_Opt_23 zT_8;
++    int zT_9;
++    int* zT_10;
++    zT_B1EBCC6C_Opt_23 zT_11;
+     unsigned int v;
+     zT_B1EBCC6C_Opt_23 r;
+     zT_1 = 0;
+@@ -15,14 +22,25 @@
+ default: goto z_bb_3;
+ }
+     z_bb_1: ;
++    zT_5.has_value = 0;
++    zT_4 = zT_5;
+     goto z_bb_5;
+     z_bb_2: ;
++    zT_6 = 0;
++    zT_7 = (int*)(unsigned int)zT_6;
++    zT_8.has_value = 1;
++    zT_8.value = zT_7;
++    zT_4 = zT_8;
+     goto z_bb_5;
+     z_bb_3: ;
++    zT_9 = 0;
++    zT_10 = (int*)(unsigned int)zT_9;
++    zT_11.has_value = 1;
++    zT_11.value = zT_10;
++    zT_4 = zT_11;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_10.has_value = 0;
+-    r = zT_10;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_optptr_val_switch/base/main_B447D61A.c	2026-11-09 17:06:18.861295217 +0000
++++ repro_mi_matrix_optptr_val_switch/final/main_B447D61A.c	2026-11-09 17:06:18.864612686 +0000
+@@ -6,11 +6,13 @@
+ void zF_EA90E208_main(void) {
+     int zT_1;
+     unsigned int zT_2;
+-    int* zT_4;
++    zT_B2EBCDFF_Opt_22 zT_4;
+     int* zT_5 = 0;
+-    int* zT_6 = 0;
++    zT_B2EBCDFF_Opt_22 zT_6;
+     int* zT_7 = 0;
+     zT_B2EBCDFF_Opt_22 zT_8;
++    int* zT_9 = 0;
++    zT_B2EBCDFF_Opt_22 zT_10;
+     unsigned int v;
+     zT_B2EBCDFF_Opt_22 r;
+     zT_1 = 0;
+@@ -23,20 +25,24 @@
+ }
+     z_bb_1: ;
+     zT_5 = getp();
+-    zT_4 = zT_5;
++    zT_6.has_value = 1;
++    zT_6.value = zT_5;
++    zT_4 = zT_6;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = getp();
+-    zT_4 = zT_6;
++    zT_7 = getp();
++    zT_8.has_value = 1;
++    zT_8.value = zT_7;
++    zT_4 = zT_8;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = getp();
+-    zT_4 = zT_7;
++    zT_9 = getp();
++    zT_10.has_value = 1;
++    zT_10.value = zT_9;
++    zT_4 = zT_10;
+     goto z_bb_5;
+     z_bb_5: ;
+-    zT_8.has_value = 1;
+-    zT_8.value = zT_4;
+-    r = zT_8;
++    r = zT_4;
+     (void)r;
+     return;
+ }
+--- repro_mi_matrix_stdlib_errset_capture_qualified_xmod/base/main_B371182F.c	2026-11-09 17:06:19.108724412 +0000
++++ repro_mi_matrix_stdlib_errset_capture_qualified_xmod/final/main_B371182F.c	2026-11-09 17:06:19.218727047 +0000
+@@ -120,8 +120,8 @@
+     unsigned int zT_1;
+     int zT_2;
+     int zT_4;
+-    int zT_6;
+     int zT_7;
++    int zT_9;
+     zT_1 = s.tag;
+ switch (zT_1) {
+ case 0: goto z_bb_1;
+@@ -130,18 +130,18 @@
+ }
+     z_bb_1: ;
+     zT_4 = 5;
+-    zT_2 = zT_4;
++    zT_2 = (int)zT_4;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_6 = 4;
+-    zT_2 = zT_6;
++    zT_7 = 4;
++    zT_2 = (int)zT_7;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_7 = 0;
+-    zT_2 = zT_7;
++    zT_9 = 0;
++    zT_2 = (int)zT_9;
+     goto z_bb_5;
+     z_bb_5: ;
+-    return (int)((int)zT_2);
++    return zT_2;
+ }
+ 
+ /* shapeAlias */
+@@ -177,8 +177,8 @@
+ int zF_D506488F_kindXmod(zT_3FF50C63_Kind k) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
++    int zT_6;
+ switch (k) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -186,18 +186,18 @@
+ }
+     z_bb_1: ;
+     zT_2 = 11;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_3 = 22;
+-    zT_1 = zT_3;
++    zT_4 = 22;
++    zT_1 = (int)zT_4;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_4 = 0;
+-    zT_1 = zT_4;
++    zT_6 = 0;
++    zT_1 = (int)zT_6;
+     goto z_bb_5;
+     z_bb_5: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* useColor */
+@@ -248,8 +248,8 @@
+ int zF_405F7EDA_colorUnused(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_3;
+-    int zT_5;
+     int zT_6;
++    int zT_8;
+ switch (c) {
+ case 2: goto z_bb_1;
+ case 0: goto z_bb_2;
+@@ -257,18 +257,18 @@
+ }
+     z_bb_1: ;
+     zT_3 = 3;
+-    zT_1 = zT_3;
++    zT_1 = (int)zT_3;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_5 = 9;
+-    zT_1 = zT_5;
++    zT_6 = 9;
++    zT_1 = (int)zT_6;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_6 = 0;
+-    zT_1 = zT_6;
++    zT_8 = 0;
++    zT_1 = (int)zT_8;
+     goto z_bb_5;
+     z_bb_5: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* captureLocal */
+--- repro_mi_matrix_stdlib_switch_case_consts_xmod/base/main_C6A06A48.c	2026-11-09 17:06:19.535734641 +0000
++++ repro_mi_matrix_stdlib_switch_case_consts_xmod/final/main_C6A06A48.c	2026-11-09 17:06:19.645737276 +0000
+@@ -18,7 +18,7 @@
+ int zF_045A0DAB_intrange(int x) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (x) {
+ case 1: goto z_bb_1;
+ case 2: goto z_bb_1;
+@@ -29,21 +29,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 10;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 20;
+-    zT_1 = zT_3;
++    zT_4 = 20;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* untyped */
+ int zF_71F15C5A_untyped(int x) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (x) {
+ case 2: goto z_bb_1;
+ case 3: goto z_bb_1;
+@@ -52,42 +52,42 @@
+ }
+     z_bb_1: ;
+     zT_2 = 12;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 22;
+-    zT_1 = zT_3;
++    zT_4 = 22;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* exact */
+ int zF_946895A4_exact(int x) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (x) {
+ case 3: goto z_bb_1;
+ default: goto z_bb_2;
+ }
+     z_bb_1: ;
+     zT_2 = 14;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 24;
+-    zT_1 = zT_3;
++    zT_4 = 24;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* mixed */
+ int zF_E53403F8_mixed(int x) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (x) {
+ case 1: goto z_bb_1;
+ case 2: goto z_bb_1;
+@@ -95,21 +95,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 16;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 26;
+-    zT_1 = zT_3;
++    zT_4 = 26;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* mixedconst */
+ int zF_051D44DB_mixedconst(int x) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (x) {
+ case 3: goto z_bb_1;
+ case 5: goto z_bb_1;
+@@ -117,21 +117,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 15;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 25;
+-    zT_1 = zT_3;
++    zT_4 = 25;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* xmod */
+ int zF_92FC06C5_xmod(int x) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (x) {
+ case 1: goto z_bb_1;
+ case 2: goto z_bb_1;
+@@ -142,182 +142,182 @@
+ }
+     z_bb_1: ;
+     zT_2 = 30;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 40;
+-    zT_1 = zT_3;
++    zT_4 = 40;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* xmodexact */
+ int zF_A6B490A4_xmodexact(int x) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (x) {
+ case 3: goto z_bb_1;
+ default: goto z_bb_2;
+ }
+     z_bb_1: ;
+     zT_2 = 32;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 42;
+-    zT_1 = zT_3;
++    zT_4 = 42;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* enexact */
+ int zF_C8F6C75D_enexact(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ default: goto z_bb_2;
+ }
+     z_bb_1: ;
+     zT_2 = 50;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 60;
+-    zT_1 = zT_3;
++    zT_4 = 60;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* enalias */
+ int zF_6500B5E6_enalias(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ default: goto z_bb_2;
+ }
+     z_bb_1: ;
+     zT_2 = 52;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 62;
+-    zT_1 = zT_3;
++    zT_4 = 62;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* entyped */
+ int zF_AA652E8A_entyped(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ default: goto z_bb_2;
+ }
+     z_bb_1: ;
+     zT_2 = 54;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 64;
+-    zT_1 = zT_3;
++    zT_4 = 64;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* engap */
+ int zF_8BD9E736_engap(zT_795DB914_Code c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 1: goto z_bb_1;
+ default: goto z_bb_2;
+ }
+     z_bb_1: ;
+     zT_2 = 56;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 66;
+-    zT_1 = zT_3;
++    zT_4 = 66;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* xmodenum */
+ int zF_B819A900_xmodenum(zT_E5B43CF8_Color_1 c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ default: goto z_bb_2;
+ }
+     z_bb_1: ;
+     zT_2 = 58;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 68;
+-    zT_1 = zT_3;
++    zT_4 = 68;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* xmodgap */
+ int zF_10F5E4CF_xmodgap(zT_795DB914_Code_1 c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 1: goto z_bb_1;
+ default: goto z_bb_2;
+ }
+     z_bb_1: ;
+     zT_2 = 59;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 69;
+-    zT_1 = zT_3;
++    zT_4 = 69;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* boolp */
+ int zF_0EE70837_boolp(unsigned char b) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (b) {
+ case 1: goto z_bb_1;
+ default: goto z_bb_2;
+ }
+     z_bb_1: ;
+     zT_2 = 90;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 92;
+-    zT_1 = zT_3;
++    zT_4 = 92;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* stmt */
+@@ -358,7 +358,7 @@
+ int zF_BD0A4177_enrange(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -366,21 +366,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 70;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 80;
+-    zT_1 = zT_3;
++    zT_4 = 80;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* enrangemix */
+ int zF_83E3BD47_enrangemix(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -388,21 +388,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 72;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 82;
+-    zT_1 = zT_3;
++    zT_4 = 82;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* enrangeident */
+ int zF_87407D97_enrangeident(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -411,21 +411,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 74;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 84;
+-    zT_1 = zT_3;
++    zT_4 = 84;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* xmodrange */
+ int zF_0D2807D2_xmodrange(zT_E5B43CF8_Color_1 c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -433,22 +433,22 @@
+ }
+     z_bb_1: ;
+     zT_2 = 76;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 86;
+-    zT_1 = zT_3;
++    zT_4 = 86;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* boolfull */
+ int zF_B01FD534_boolfull(unsigned char b) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
++    int zT_6;
+ switch (b) {
+ case 1: goto z_bb_1;
+ case 0: goto z_bb_2;
+@@ -456,18 +456,18 @@
+ }
+     z_bb_1: ;
+     zT_2 = 94;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_3 = 96;
+-    zT_1 = zT_3;
++    zT_4 = 96;
++    zT_1 = (int)zT_4;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_4 = 98;
+-    zT_1 = zT_4;
++    zT_6 = 98;
++    zT_1 = (int)zT_6;
+     goto z_bb_5;
+     z_bb_5: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* main */
+--- repro_mi_matrix_stdlib_switch_enum_range_xmod/base/main_13AC5D2E.c	2026-11-09 17:06:19.991745565 +0000
++++ repro_mi_matrix_stdlib_switch_enum_range_xmod/final/main_13AC5D2E.c	2026-11-09 17:06:20.096748080 +0000
+@@ -7,7 +7,7 @@
+ int zF_12C0D7B1_incl(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -15,21 +15,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 10;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 20;
+-    zT_1 = zT_3;
++    zT_4 = 20;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* excl */
+ int zF_E206D1E7_excl(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -37,22 +37,22 @@
+ }
+     z_bb_1: ;
+     zT_2 = 30;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 40;
+-    zT_1 = zT_3;
++    zT_4 = 40;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* mixed */
+ int zF_E53403F8_mixed(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
++    int zT_6;
+ switch (c) {
+ case 2: goto z_bb_1;
+ case 0: goto z_bb_2;
+@@ -61,25 +61,25 @@
+ }
+     z_bb_1: ;
+     zT_2 = 50;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_3 = 60;
+-    zT_1 = zT_3;
++    zT_4 = 60;
++    zT_1 = (int)zT_4;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_4 = 70;
+-    zT_1 = zT_4;
++    zT_6 = 70;
++    zT_1 = (int)zT_6;
+     goto z_bb_5;
+     z_bb_5: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* shorthand */
+ int zF_99EC0EF0_shorthand(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -88,21 +88,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 80;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 90;
+-    zT_1 = zT_3;
++    zT_4 = 90;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* halfsh */
+ int zF_23A44BA7_halfsh(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -111,21 +111,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 81;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 91;
+-    zT_1 = zT_3;
++    zT_4 = 91;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* gaps */
+ int zF_386A1AF4_gaps(zT_795DB914_Code c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 1: goto z_bb_1;
+ case 2: goto z_bb_1;
+@@ -140,21 +140,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 100;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 110;
+-    zT_1 = zT_3;
++    zT_4 = 110;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* gapsx */
+ int zF_5B07CA64_gapsx(zT_795DB914_Code c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 1: goto z_bb_1;
+ case 2: goto z_bb_1;
+@@ -168,21 +168,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 120;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 130;
+-    zT_1 = zT_3;
++    zT_4 = 130;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* xmod */
+ int zF_92FC06C5_xmod(zT_E5B43CF8_Color_1 c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -190,21 +190,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 140;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 150;
+-    zT_1 = zT_3;
++    zT_4 = 150;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* xmodsh */
+ int zF_DDFE205E_xmodsh(zT_E5B43CF8_Color_1 c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -213,14 +213,14 @@
+ }
+     z_bb_1: ;
+     zT_2 = 160;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 170;
+-    zT_1 = zT_3;
++    zT_4 = 170;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* stmt */
+@@ -258,8 +258,8 @@
+ int zF_2B91A0D7_ints(int x) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
++    int zT_6;
+ switch (x) {
+ case 1: goto z_bb_1;
+ case 2: goto z_bb_1;
+@@ -272,25 +272,25 @@
+ }
+     z_bb_1: ;
+     zT_2 = 200;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_3 = 210;
+-    zT_1 = zT_3;
++    zT_4 = 210;
++    zT_1 = (int)zT_4;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_4 = 220;
+-    zT_1 = zT_4;
++    zT_6 = 220;
++    zT_1 = (int)zT_6;
+     goto z_bb_5;
+     z_bb_5: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* chars */
+ int zF_5DA9662A_chars(unsigned char c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 97: goto z_bb_1;
+ case 98: goto z_bb_1;
+@@ -299,21 +299,21 @@
+ }
+     z_bb_1: ;
+     zT_2 = 230;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 240;
+-    zT_1 = zT_3;
++    zT_4 = 240;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* nomatch */
+ int zF_FFCE832B_nomatch(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_1;
+@@ -321,14 +321,14 @@
+ }
+     z_bb_1: ;
+     zT_2 = 250;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 260;
+-    zT_1 = zT_3;
++    zT_4 = 260;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* main */
+--- repro_mi_matrix_switch_case_range_xmod/base/main_14A2705C.c	2026-11-09 17:06:20.414755698 +0000
++++ repro_mi_matrix_switch_case_range_xmod/final/main_14A2705C.c	2026-11-09 17:06:20.511758022 +0000
+@@ -3,8 +3,8 @@
+ int zF_78D6088B_inRange(int n) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
++    int zT_6;
+ switch (n) {
+ case 1: goto z_bb_1;
+ case 2: goto z_bb_1;
+@@ -19,26 +19,26 @@
+ }
+     z_bb_1: ;
+     zT_2 = 10;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_3 = 20;
+-    zT_1 = zT_3;
++    zT_4 = 20;
++    zT_1 = (int)zT_4;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_4 = 0;
+-    zT_1 = zT_4;
++    zT_6 = 0;
++    zT_1 = (int)zT_6;
+     goto z_bb_5;
+     z_bb_5: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* charClass */
+ int zF_8B8920B7_charClass(unsigned char ch) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
++    int zT_6;
+ switch (ch) {
+ case 97: goto z_bb_1;
+ case 98: goto z_bb_1;
+@@ -70,18 +70,18 @@
+ }
+     z_bb_1: ;
+     zT_2 = 1;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_5;
+     z_bb_2: ;
+-    zT_3 = 2;
+-    zT_1 = zT_3;
++    zT_4 = 2;
++    zT_1 = (int)zT_4;
+     goto z_bb_5;
+     z_bb_3: ;
+-    zT_4 = 0;
+-    zT_1 = zT_4;
++    zT_6 = 0;
++    zT_1 = (int)zT_6;
+     goto z_bb_5;
+     z_bb_5: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* main */
+--- repro_mi_matrix_switch_expr_unreachable_xmod/base/main_03DCC368.c	2026-11-09 17:06:20.780764466 +0000
++++ repro_mi_matrix_switch_expr_unreachable_xmod/final/main_03DCC368.c	2026-11-09 17:06:20.876766765 +0000
+@@ -1,7 +1,6 @@
+ #include "main_03DCC368.h"
+ /* f */
+ int zF_E30C2799_f(unsigned char c) {
+-    int zT_1;
+     int zT_2;
+ switch (c) {
+ case 0: goto z_bb_1;
+@@ -9,12 +8,11 @@
+ }
+     z_bb_1: ;
+     zT_2 = 1;
+-    zT_1 = zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+     pal_trap();
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return (int)((int)zT_2);
+ }
+ 
+ /* main */
+--- repro_mi_matrix_switch_neg_enum_min_ok_xmod/base/main_A9F8D9D4.c	2026-11-09 17:06:21.151773353 +0000
++++ repro_mi_matrix_switch_neg_enum_min_ok_xmod/final/main_A9F8D9D4.c	2026-11-09 17:06:21.248775677 +0000
+@@ -3,40 +3,40 @@
+ int zF_1FF36299_pick32(zT_1B015621_E32 x) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ switch (x) {
+ case (-2147483647 - 1): goto z_bb_1;
+ default: goto z_bb_2;
+ }
+     z_bb_1: ;
+     zT_2 = 7;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 9;
+-    zT_1 = zT_3;
++    zT_4 = 9;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* pick64 */
+ int zF_B3FB075A_pick64(zT_8F08C882_E64 x) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
++    int zT_4;
+ if (x == Z98_I64_MIN) goto z_bb_1;
+ else goto z_bb_2;
+     z_bb_1: ;
+     zT_2 = 7;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_4;
+     z_bb_2: ;
+-    zT_3 = 9;
+-    zT_1 = zT_3;
++    zT_4 = 9;
++    zT_1 = (int)zT_4;
+     goto z_bb_4;
+     z_bb_4: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* main */
+--- repro_mi_matrix_typealias_agg_xmod/base/mod_b_A698EDD9.c	2026-11-09 17:06:21.516782097 +0000
++++ repro_mi_matrix_typealias_agg_xmod/final/mod_b_A698EDD9.c	2026-11-09 17:06:21.614784444 +0000
+@@ -12,8 +12,8 @@
+ int zF_23A7C719_colorInt(zT_E5B43CF8_Color c) {
+     int zT_1;
+     int zT_2;
+-    int zT_3;
+     int zT_4;
++    int zT_6;
+ switch (c) {
+ case 0: goto z_bb_1;
+ case 1: goto z_bb_2;
+@@ -22,20 +22,20 @@
+ }
+     z_bb_1: ;
+     zT_2 = 0;
+-    zT_1 = zT_2;
++    zT_1 = (int)zT_2;
+     goto z_bb_6;
+     z_bb_2: ;
+-    zT_3 = 1;
+-    zT_1 = zT_3;
++    zT_4 = 1;
++    zT_1 = (int)zT_4;
+     goto z_bb_6;
+     z_bb_3: ;
+-    zT_4 = 2;
+-    zT_1 = zT_4;
++    zT_6 = 2;
++    zT_1 = (int)zT_6;
+     goto z_bb_6;
+     z_bb_4: ;
+     pal_trap();
+     z_bb_6: ;
+-    return (int)((int)zT_1);
++    return zT_1;
+ }
+ 
+ /* EOF */

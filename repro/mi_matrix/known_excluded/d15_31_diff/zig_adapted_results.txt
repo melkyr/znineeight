@@ -1,0 +1,15 @@
+# Zig 0.17.1 adapted-corpus acceptance (fresh run 2026-11-09T17:08:00Z)
+# oracle: /tmp/phase35-d15-i/zig-0.17.1/zig (0.17.1), sha256 58959f01285c05a74276f09327b551d42ed6006bf325a78dc661a024e314987b
+
+eu_err_switch zig_rc=0
+eunum_err_switch zig_rc=0
+euopt_err_switch zig_rc=0
+euopt_val_switch zig_rc=0
+euoptptr_err_switch zig_rc=0
+opt_null_switch zig_rc=0
+opteu_err_switch zig_rc=0
+opteu_null_switch zig_rc=0
+optnum_null_switch zig_rc=0
+optopt_null_switch zig_rc=0
+optopt_val_switch zig_rc=0
+optptr_null_switch zig_rc=0
