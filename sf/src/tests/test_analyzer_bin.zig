@@ -2007,6 +2007,14 @@ pub fn main() void {
     var e_np_guard = [_]DiagExpectation{ expectCode(c_defnull, 1) };
     testFixture("tests/analyzers/np_guard_ok.zig", "fixture np_guard_ok", e_np_guard[0..]);
 
+    // T9h: statically non-null bases are clean; optional/unknown bases warn.
+    testFixture("tests/analyzers/nonnull_ptrcast_ok.zig", "fixture nonnull_ptrcast_ok", fx_no_expect[0..]);
+    testFixture("tests/analyzers/nonnull_alloc_result_ok.zig", "fixture nonnull_alloc_result_ok", fx_no_expect[0..]);
+    testFixture("tests/analyzers/nonnull_field_element_ok.zig", "fixture nonnull_field_element_ok", fx_no_expect[0..]);
+    testFixture("tests/analyzers/nonnull_inttoptr_guard_ok.zig", "fixture nonnull_inttoptr_guard_ok", fx_no_expect[0..]);
+    var e_np_optional = [_]DiagExpectation{ expectCode(c_null, 4) };
+    testFixture("tests/analyzers/optional_unknown_warn.zig", "fixture optional_unknown_warn", e_np_optional[0..]);
+
     var e_dead_switch = [_]DiagExpectation{ expectCode(c_double, 1) };
     testFixture("tests/analyzers/dead_arm_switch.zig", "fixture dead_arm_switch", e_dead_switch[0..]);
 
