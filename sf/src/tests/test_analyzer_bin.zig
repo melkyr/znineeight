@@ -2014,6 +2014,8 @@ pub fn main() void {
     testFixture("tests/analyzers/nonnull_inttoptr_guard_ok.zig", "fixture nonnull_inttoptr_guard_ok", fx_no_expect[0..]);
     var e_np_optional = [_]DiagExpectation{ expectCode(c_null, 4) };
     testFixture("tests/analyzers/optional_unknown_warn.zig", "fixture optional_unknown_warn", e_np_optional[0..]);
+    var e_np_while_exit = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/while_guard_exit_null_warn.zig", "fixture while_guard_exit_null_warn", e_np_while_exit[0..]);
 
     var e_dead_switch = [_]DiagExpectation{ expectCode(c_double, 1) };
     testFixture("tests/analyzers/dead_arm_switch.zig", "fixture dead_arm_switch", e_dead_switch[0..]);

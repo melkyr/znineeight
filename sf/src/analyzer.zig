@@ -515,7 +515,11 @@ fn npTypeExprFieldType(ctx: *AnalyzerContext, type_idx: u32, field_id: u32) ?u32
             cur = tnode.child_0;
             continue;
         }
-        if (tnode.kind == AstKind.optional_type) return null;
+        // T9h: an optional base cannot be treated as a resolved non-optional
+        // field owner. Return the optional type itself so classification
+        // stays `maybe` instead of falling through to the safe field-name
+        // fallback.
+        if (tnode.kind == AstKind.optional_type) return cur;
         if (tnode.kind == AstKind.struct_decl or tnode.kind == AstKind.union_decl) {
             return npFieldTypeInDecl(ctx, cur, field_id);
         }
@@ -2042,17 +2046,26 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         }
         analyzeExpr(ctx, state, node.child_0);
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
+        var exit_state = smap_mod.stateMapFork(state, ctx.alloc);
         if (ctx.null_analysis_mode != @intCast(u8, 0)) {
             // T9h: the loop condition holds on every body iteration, so a
-            // null/non-zero guard refines the body state (the exit state is
-            // untouched).
-            var w_else = smap_mod.stateMapFork(state, ctx.alloc);
-            applyNullGuardRefinement(ctx.store, node.child_0, body_state, w_else);
+            // null/non-zero guard refines the body state. The loop may also
+            // exit because the guard failed before the first iteration, which
+            // is exactly the refinement carried by `exit_state`.
+            applyNullGuardRefinement(ctx.store, node.child_0, body_state, exit_state);
         }
         var t5_wcap = captureNameIdOf(ctx.store, node_idx);
         bindCaptureState(ctx, body_state, t5_wcap, node.child_0);
         walkBlock(ctx, body_state, node.child_1, visit_fn);
-        smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
+        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
+            // Merge the body path with the guard-false exit path. When they
+            // disagree the loop variable is only `maybe` non-null after the
+            // loop, so fall back to `maybe` (the 99 sentinel is not a
+            // PtrState and would suppress the warning).
+            smap_mod.stateMapMergeStates(state, body_state, exit_state, @enumToInt(PtrState.maybe));
+        } else {
+            smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
+        }
         if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
             aliasMergeBranchInto(state, body_state);
         }
