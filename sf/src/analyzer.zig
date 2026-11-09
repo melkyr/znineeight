@@ -1925,6 +1925,98 @@ fn bindCaptureState(ctx: *AnalyzerContext, state: *StateMap, name_id: u32, src_e
     }
 }
 
+const NP_CTRL_MAX: usize = 32;
+const NP_CTRL_EXIT_MAX: usize = 64;
+const NP_MERGE_CAP: usize = 160;
+
+var np_ctrl_depth: usize = 0;
+var np_ctrl_break_count: [NP_CTRL_MAX]usize = undefined;
+var np_ctrl_continue_count: [NP_CTRL_MAX]usize = undefined;
+var np_ctrl_breaks: [NP_CTRL_MAX][NP_CTRL_EXIT_MAX]*StateMap = undefined;
+var np_ctrl_continues: [NP_CTRL_MAX][NP_CTRL_EXIT_MAX]*StateMap = undefined;
+
+fn npPushCtrl() ?usize {
+    if (np_ctrl_depth >= NP_CTRL_MAX) return null;
+    var idx = np_ctrl_depth;
+    np_ctrl_break_count[idx] = @intCast(usize, 0);
+    np_ctrl_continue_count[idx] = @intCast(usize, 0);
+    np_ctrl_depth += 1;
+    return idx;
+}
+
+fn npPopCtrl() void {
+    if (np_ctrl_depth > @intCast(usize, 0)) np_ctrl_depth -= 1;
+}
+
+fn npSnapshotState(ctx: *AnalyzerContext, state: *StateMap) *StateMap {
+    var raw = alloc_mod.sandAlloc(ctx.alloc, @intCast(usize, @sizeOf(StateMap)), @intCast(usize, 4)) catch unreachable;
+    var snap = @ptrCast(*StateMap, raw);
+    snap.* = smap_mod.stateMapInit(ctx.alloc);
+    var s: ?*StateMap = state;
+    while (s) |sp| {
+        var entries = smap_mod.stateMapGetEntries(sp);
+        var i = entries.len;
+        while (i > @intCast(usize, 0)) {
+            i -= 1;
+            var e = entries[i];
+            if (smap_mod.stateMapGet(snap, e.name_id) == null) smap_mod.stateMapSet(snap, e.name_id, e.state);
+        }
+        s = sp.parent;
+    }
+    return snap;
+}
+
+fn npRecordCtrlExit(ctx: *AnalyzerContext, state: *StateMap, is_break: u8) void {
+    var i = np_ctrl_depth;
+    while (i > @intCast(usize, 0)) {
+        i -= 1;
+        var snap = npSnapshotState(ctx, state);
+        if (is_break != @intCast(u8, 0)) {
+            if (np_ctrl_break_count[i] < NP_CTRL_EXIT_MAX) {
+                np_ctrl_breaks[i][np_ctrl_break_count[i]] = snap;
+                np_ctrl_break_count[i] += 1;
+            }
+        } else {
+            if (np_ctrl_continue_count[i] < NP_CTRL_EXIT_MAX) {
+                np_ctrl_continues[i][np_ctrl_continue_count[i]] = snap;
+                np_ctrl_continue_count[i] += 1;
+            }
+        }
+        return;
+    }
+}
+
+fn npAppendCtrlExits(frame_idx: usize, branches: []*StateMap, n: *usize) void {
+    var bi: usize = 0;
+    while (bi < np_ctrl_break_count[frame_idx]) : (bi += 1) {
+        if (n.* >= branches.len) break;
+        branches[n.*] = np_ctrl_breaks[frame_idx][bi];
+        n.* += 1;
+    }
+    bi = 0;
+    while (bi < np_ctrl_continue_count[frame_idx]) : (bi += 1) {
+        if (n.* >= branches.len) break;
+        branches[n.*] = np_ctrl_continues[frame_idx][bi];
+        n.* += 1;
+    }
+}
+
+fn npMergeNullExits(parent: *StateMap, branches: []*StateMap, scratch: *Sand) void {
+    if (branches.len == @intCast(usize, 0)) return;
+    var fallback: u8 = @enumToInt(PtrState.maybe);
+    if (branches.len == @intCast(usize, 1)) {
+        smap_mod.stateMapMergeStates(parent, branches[0], branches[0], fallback);
+        return;
+    }
+    var acc = smap_mod.stateMapFork(parent, scratch);
+    smap_mod.stateMapMergeStates(acc, branches[0], branches[1], fallback);
+    var i: usize = 2;
+    while (i < branches.len) : (i += 1) {
+        smap_mod.stateMapMergeStates(acc, acc, branches[i], fallback);
+    }
+    smap_mod.stateMapMergeStates(parent, acc, acc, fallback);
+}
+
 // T9a (D4a): the single fold accessor for the analyzers. The shared
 // `ComptimeFoldTable` is authoritative (it is the same object sema and
 // lowering consume); when a node has no table entry, fall back to the same
@@ -2036,7 +2128,14 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         bindCaptureState(ctx, then_state, t5_cap, node.child_0);
         walkBlock(ctx, then_state, node.child_1, visit_fn);
         if (node.child_2 != @intCast(u32, 0)) walkBlock(ctx, else_state, node.child_2, visit_fn);
-        smap_mod.stateMapMergeStates(state, then_state, else_state, @intCast(u8, 99));
+        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
+            var np_if_exits: [2]*StateMap = undefined;
+            np_if_exits[0] = then_state;
+            np_if_exits[1] = else_state;
+            npMergeNullExits(state, np_if_exits[0..], ctx.alloc);
+        } else {
+            smap_mod.stateMapMergeStates(state, then_state, else_state, @intCast(u8, 99));
+        }
         if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
             aliasMergeBranches(state, then_state, else_state);
         }
@@ -2054,15 +2153,21 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             // is exactly the refinement carried by `exit_state`.
             applyNullGuardRefinement(ctx.store, node.child_0, body_state, exit_state);
         }
+        var np_w_frame: ?usize = null;
+        if (ctx.null_analysis_mode != @intCast(u8, 0)) np_w_frame = npPushCtrl();
         var t5_wcap = captureNameIdOf(ctx.store, node_idx);
         bindCaptureState(ctx, body_state, t5_wcap, node.child_0);
         walkBlock(ctx, body_state, node.child_1, visit_fn);
         if (ctx.null_analysis_mode != @intCast(u8, 0)) {
-            // Merge the body path with the guard-false exit path. When they
-            // disagree the loop variable is only `maybe` non-null after the
-            // loop, so fall back to `maybe` (the 99 sentinel is not a
-            // PtrState and would suppress the warning).
-            smap_mod.stateMapMergeStates(state, body_state, exit_state, @enumToInt(PtrState.maybe));
+            var np_w_exits: [NP_MERGE_CAP]*StateMap = undefined;
+            var np_w_n: usize = 0;
+            np_w_exits[np_w_n] = body_state;
+            np_w_n += 1;
+            np_w_exits[np_w_n] = exit_state;
+            np_w_n += 1;
+            if (np_w_frame) |fi| npAppendCtrlExits(fi, np_w_exits[0..], &np_w_n);
+            npMergeNullExits(state, np_w_exits[0..np_w_n], ctx.alloc);
+            if (np_w_frame != null) npPopCtrl();
         } else {
             smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
         }
@@ -2080,6 +2185,8 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         // keeps every prong live (conservative).
         var sel = analyzerSwitchSelection(ctx, node_idx);
         var prongs_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, node_idx);
+        var np_s_exits: [NP_MERGE_CAP]*StateMap = undefined;
+        var np_s_n: usize = 0;
         var si: usize = 0;
         while (si < @intCast(usize, prongs_n)) : (si += 1) {
             var prong_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, node_idx, @intCast(u32, si));
@@ -2089,18 +2196,40 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             var t5_pcap = captureNameIdOf(ctx.store, prong_idx);
             bindCaptureState(ctx, ps, t5_pcap, node.child_0);
             walkBlock(ctx, ps, prong.child_0, visit_fn);
-            smap_mod.stateMapMergeStates(state, state, ps, @intCast(u8, 99));
-            if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
-                smap_mod.stateMapMergeInsertMissing(state, ps, @intCast(u8, @enumToInt(AllocState.unknown)));
-                aliasMergeBranchInto(state, ps);
+            if (ctx.null_analysis_mode != @intCast(u8, 0)) {
+                if (np_s_n < NP_MERGE_CAP) {
+                    np_s_exits[np_s_n] = ps;
+                    np_s_n += 1;
+                }
+            } else {
+                smap_mod.stateMapMergeStates(state, state, ps, @intCast(u8, 99));
+                if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+                    smap_mod.stateMapMergeInsertMissing(state, ps, @intCast(u8, @enumToInt(AllocState.unknown)));
+                    aliasMergeBranchInto(state, ps);
+                }
             }
+        }
+        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
+            if (np_s_n > @intCast(usize, 0)) npMergeNullExits(state, np_s_exits[0..np_s_n], ctx.alloc);
         }
     } else if (kind == AstKind.for_stmt) {
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);
+        var np_f_frame: ?usize = null;
+        if (ctx.null_analysis_mode != @intCast(u8, 0)) np_f_frame = npPushCtrl();
         var t5_fcap = captureNameIdOf(ctx.store, node_idx);
         bindCaptureState(ctx, body_state, t5_fcap, node.child_0);
         walkBlock(ctx, body_state, node.child_1, visit_fn);
-        smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
+        if (ctx.null_analysis_mode != @intCast(u8, 0)) {
+            var np_f_exits: [NP_MERGE_CAP]*StateMap = undefined;
+            var np_f_n: usize = 0;
+            np_f_exits[np_f_n] = body_state;
+            np_f_n += 1;
+            if (np_f_frame) |fi| npAppendCtrlExits(fi, np_f_exits[0..], &np_f_n);
+            npMergeNullExits(state, np_f_exits[0..np_f_n], ctx.alloc);
+            if (np_f_frame != null) npPopCtrl();
+        } else {
+            smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
+        }
         if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
             aliasMergeBranchInto(state, body_state);
         }
@@ -2128,6 +2257,11 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         on_stmt(ctx, state, node_idx);
     } else if (ctx.null_analysis_mode != @intCast(u8, 0) and kind == AstKind.plain_assign) {
         handleNullAssign(ctx, state, node_idx);
+        on_stmt(ctx, state, node_idx);
+    } else if (ctx.null_analysis_mode != @intCast(u8, 0) and (kind == AstKind.break_stmt or kind == AstKind.continue_stmt)) {
+        var np_is_break: u8 = @intCast(u8, 0);
+        if (kind == AstKind.break_stmt) np_is_break = @intCast(u8, 1);
+        npRecordCtrlExit(ctx, state, np_is_break);
         on_stmt(ctx, state, node_idx);
     } else if (kind == AstKind.expr_stmt) {
         if (node.child_0 != @intCast(u32, 0)) {
@@ -2220,6 +2354,7 @@ fn detectorVisit(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32) void {
 
 pub fn runNullAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx: u32) void {
     var state = smap_mod.stateMapInit(ctx.alloc);
+    np_ctrl_depth = @intCast(usize, 0);
     npResetDeclTypes();
     // NP-1: a non-optional pointer-like parameter (`*T`, `[*]T`, `[]T`,
     // fn-ptr) is caller-provided and non-null, so seed it `safe`. Optional

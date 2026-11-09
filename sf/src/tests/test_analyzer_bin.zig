@@ -2016,6 +2016,15 @@ pub fn main() void {
     testFixture("tests/analyzers/optional_unknown_warn.zig", "fixture optional_unknown_warn", e_np_optional[0..]);
     var e_np_while_exit = [_]DiagExpectation{ expectCode(c_null, 1) };
     testFixture("tests/analyzers/while_guard_exit_null_warn.zig", "fixture while_guard_exit_null_warn", e_np_while_exit[0..]);
+    testFixture("tests/analyzers/while_guard_body_ok.zig", "fixture while_guard_body_ok", fx_no_expect[0..]);
+    var e_np_while_exit_warn = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/while_guard_exit_warn.zig", "fixture while_guard_exit_warn", e_np_while_exit_warn[0..]);
+    var e_np_while_break = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/while_break_maybe_warn.zig", "fixture while_break_maybe_warn", e_np_while_break[0..]);
+    var e_np_if_exit = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/if_guard_exit_warn.zig", "fixture if_guard_exit_warn", e_np_if_exit[0..]);
+    var e_np_switch_break = [_]DiagExpectation{ expectCode(c_null, 1) };
+    testFixture("tests/analyzers/switch_break_maybe_warn.zig", "fixture switch_break_maybe_warn", e_np_switch_break[0..]);
 
     var e_dead_switch = [_]DiagExpectation{ expectCode(c_double, 1) };
     testFixture("tests/analyzers/dead_arm_switch.zig", "fixture dead_arm_switch", e_dead_switch[0..]);
