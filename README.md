@@ -525,9 +525,10 @@ To build a Z98 program on a target machine you need:
 
 ## Documentation
 - [docs/](docs/) — building, language spec, design, and reference docs.
-- [docs/sf/](docs/sf/) — self-hosted compiler documentation (`Design_p2.md`, `TYPE_SYSTEM_p2.md`,
-  `LIR_C89_Emission_p2.md`, and the design corpus), plus the **QUICK_REF** cheat sheet with the
-  authoritative build/compile/gate commands.
+- [sf/docs/initial_design/](sf/docs/initial_design/) — design intent as first thought (`Design_p2.md`,
+  `TYPE_SYSTEM_p2.md`, `LIR_C89_Emission_p2.md`, and the design corpus); [sf/docs/tech_docs/](sf/docs/tech_docs/)
+  records the observed implementation. The **QUICK_REF** cheat sheet with the authoritative
+  build/compile/gate commands stays in [docs/sf/](docs/sf/).
 - [docs/reference/Language_Spec_Z98.md](docs/reference/Language_Spec_Z98.md) — the Z98 language
   specification.
 - [sf/docs/tech_docs/12_async_coroutines.md](sf/docs/tech_docs/12_async_coroutines.md) — the

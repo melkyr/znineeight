@@ -7,7 +7,7 @@ Milestone 0 deliverables:
 - **~88%** of Tasks 1-25 completed
 - **Full compilation pipeline** verified: `zig0 → C89 → gcc → zig1 binary`
 - Binary: **43KB**, runs, prints help, **exits 0**
-- **17 architecture deviations** from original `Design_p2.md` spec (documented below)
+- **17 architecture deviations** from original `sf/docs/initial_design/Design_p2.md` spec (documented below)
 - **10 stub files** with `std.*` deferred to future milestones
 - **Tasks completed since initial draft**: T2, T3, T5 (full alignment with Sand peak tracking), T22 (parseTestSource wired), T24 (build script)
 

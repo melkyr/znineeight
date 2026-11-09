@@ -359,7 +359,7 @@ The live `DepGraph` is **scratch-local and rebuilt per phase**; there is no phas
   `dep_graph`, re-runs the identical `registerModuleSymbols` loop, and consumes it via
   `typeResolverBuild`, which copies the edges into the TypeResolver's own `depend_items` arrays.
 - `ctx.dep_graph` (the module-arena field in `CompilerContext`) is **never populated by the
-  pipeline** — it is a dead field, left in place for the `TYPE_SYSTEM_p2.md §2.4` design.
+  pipeline** — it is a dead field, left in place for the `sf/docs/initial_design/TYPE_SYSTEM_p2.md §2.4` design.
 - **Implication for phase isolation:** no cross-phase heap handoff is relied upon for DepGraph.
 
 ### `--dump-c89` vs no-dump — phase skipping

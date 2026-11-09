@@ -2,6 +2,8 @@
 
 > Source-files: `sf/src/*.zig` | Cross-reference for all 14 tech docs
 
+> **Doc split:** `sf/docs/tech_docs/` documents the **observed** implementation (as built); `sf/docs/initial_design/` holds the **design intent as first thought** (the moved `Design_p2.md` / `*_p2.md` corpus). zig0-era docs in `docs/reference/` and `docs/design/` stay for comparison. See [`sf/docs/INDEX.md`](../INDEX.md).
+
 ## zig0 vs zig1: Oracle Relationship
 
 zig0 is a C++98 bootstrap compiler. It emits valid C89 but:

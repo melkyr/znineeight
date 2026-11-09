@@ -10,7 +10,7 @@
 
 This document defines the roles, responsibilities, methodology, and constraints for AI agents working on the **self‑hosted Z98 compiler** (`zig1`). It supersedes the previous `Agents.md` that governed the C++98 bootstrap (`zig0`) phase. Our working directory will be /sf so we can distinguish ourselves from the zig0 that is under the root so everything is kept normal,
 
-The agent's mission: **implement `zig1` according to the design specifications in `docs/sf/`**, in a folder /sf following a 300+ task plan that culminates in a byte‑identical self‑compilation.
+The agent's mission: **implement `zig1` according to the design intent in `sf/docs/initial_design/` and the as-built docs in `sf/docs/tech_docs/`**, in a folder /sf following a 300+ task plan that culminates in a byte‑identical self‑compilation.
 
 ### 0.1 Project Context
 
@@ -33,8 +33,8 @@ The agent's mission: **implement `zig1` according to the design specifications i
 | `docs/superpowers/specs/` | Approved designs for current work |
 | `docs/superpowers/plans/` | Active tracked implementation plans |
 
-Older `Design_p2.md` / `*_p2.md` material is historical; use the tech-docs index
-for the current code layout.
+The design-intent corpus (`Design_p2.md`, `*_p2.md`, and related docs) lives in
+`sf/docs/initial_design/`; use `sf/docs/tech_docs/INDEX.md` for the current code layout.
 
 
 ---
@@ -45,12 +45,12 @@ The agent acts as a specialized implementer of the `zig1` compiler, translating 
 
 ### 1.1 Core Responsibilities
 
-1. **Task Interpretation**: Read and understand tasks from `docs/sf/AI_tasks_sf.md` (Current Milestone defined in progress, in prompt usually).
-2. **Document Consultation**: Reference the relevant `docs/sf/*.md` documents **before** writing any code.
+1. **Task Interpretation**: Read and understand tasks from `sf/docs/initial_design/AI_TASKS_sf.md` (Current Milestone defined in progress, in prompt usually).
+2. **Document Consultation**: Reference the relevant design-intent (`sf/docs/initial_design/`) and as-built (`sf/docs/tech_docs/`) documents **before** writing any code.
 3. **Constraint Adherence**: Respect all Z98 limitations, memory budget (<16 MB), and C89 emission requirements.
 4. **Implementation**: Produce clean, well‑commented Z98 code that follows the design.
 5. **Test Compliance**: Ensure code passes unit tests, differential tests, and memory gates.
-6. **Documentation Updates**: Update `docs/sf/` if implementation details necessitate changes (e.g., clarifications, edge cases).
+6. **Documentation Updates**: Update the relevant docs (`sf/docs/tech_docs/` for implementation details, `sf/docs/initial_design/` for design intent, or `docs/sf/` for operational guidance) if details necessitate changes (e.g., clarifications, edge cases).
 7. **Clarification Requests**: When encountering ambiguity, ask explicitly rather than assuming.
 8. **No Scope Creep**: Execute only the task requested. Do not batch-implement adjacent tasks without approval. "Plan the next 3 tasks" is plan-only — execution requires explicit user confirmation per task.
 
@@ -613,7 +613,7 @@ Rules and gotchas (learned 2026-06-26, Stage I traversal unify):
 Same gates apply: self-host build 0 errors + man/gol/mud/lisp `--dump-c89`
 byte-identical (or oracle-correct) + per-stage verification STOP.
 
-**End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` corpus before beginning implementation. Memory persistence (Section 8) is mandatory every session.
+**End of Guidelines.** Agents are expected to internalize this document and the entire `docs/sf/` + `sf/docs/` corpus before beginning implementation. Memory persistence (Section 8) is mandatory every session.
 
 
 ## 9. Mnemoria Memory Store
