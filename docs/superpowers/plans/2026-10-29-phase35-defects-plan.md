@@ -273,7 +273,9 @@
 - [ ] **Step 4: Bar + must-work set** — the gap to a real-analyzer bar, and the concrete must-work list Task 9 implements. Fixture-driven test strategy (`tests/analyzers/**`) replaces hand-fed symbols.
 - [ ] **Step 5: Commit** `docs(specs): static-analyzer audit — contracts, inert paths, lie list (Phase3.5 D4-pre)`.
 
-### Task 9: D4-upgrade — split into 9a–9f
+### Task 9: D4-upgrade — split into 9a–9h
+
+**Execution order:** 9a → 9b → 9c → 9d → 9e → 9h → 9g → 9f (final). The existing `f2c0e8bc` 9f commit is provisional; D4 is not closed until the final 9f re-run.
 
 **Source:** Task 8's audit (`docs/superpowers/specs/2026-10-29-phase35-analyzer-audit.md`) is the binding bar. Task 8 must be reviewed before 9a starts.
 
@@ -357,7 +359,9 @@
 - [ ] **Step 3: Clean `STATIC_ANALYZERS_p2.md` §5.3 and `tech_debt/static_analyzers.md`; leave `docs/design/static_analyzers.md` deferred with the zig0 archive.**
 - [ ] **Step 4: Verify** suite green, no emission change; commit `test(analyzer): assert signature contracts and remove analyzer test residue (Phase3.5 D4e)`.
 
-#### Task 9f: D4 integration and closeout
+#### Task 9f: D4 final integration and closeout (after 9h/9g)
+
+**Status:** provisional `f2c0e8bc` deleted D4 early; D4 remains open until this task is re-run after 9h/9g.
 
 **Files:**
 - Modify: `examples/torrent_example_defects.md` (delete D4), `docs/tech_debt/static_analyzers.md` if not already done
@@ -367,6 +371,7 @@
 - Consumes: 9a–9e.
 - Produces: D4 closed on the full audit bar; self-source `WARN_6002` class collapsed, not moved; raw count equals single-pass count; any residual individually justified; emitted C/H byte-identical.
 
+- [ ] **Step 0: Do not treat D4 as closed yet.** Re-run this task only after 9h and 9g; if 9h finds a real null risk or examples/stdlib residuals remain unjustified, STOP and reopen D4. The provisional `f2c0e8bc` deletion must be revalidated, not assumed.
 - [ ] **Step 1: Re-run the self-source measurement** (43 null-pass / 86 raw baseline) and the D4 probe; record exact commands/counts. Any residual must be justified per site.
 - [ ] **Step 2: Verify no emission change** on corpus/stdlib/examples; analyzer suites green; no new false positives.
 - [ ] **Step 3: Delete D4 from the defects doc; record the deferred `docs/design/static_analyzers.md` residue in the SDD report; commit `docs(analyzer): close D4 on the full audit bar (Phase3.5 D4f)`.**
@@ -386,6 +391,21 @@
 - [ ] **Step 1: Confirm the cause is test staleness.** `semanticAnalyzerInit` now takes 16 args (module/source ids, coercion/enum/tuple/error-code tables, interner, call/cp maps, module registry, suspending fns); the test still passes 8. The integration test reads `examples/hello/main.zig`; the file is `examples/z98/hello/main.zig`. If either failure is actually a compiler/analyzer defect, STOP and present.
 - [ ] **Step 2: Repair the harnesses only** — update the init call/setup and the example path; do not change analyzer or compiler behavior to make them pass.
 - [ ] **Step 3: Verify** both binaries compile and run green; record output; commit `test: restore analyzer/semantic test binaries (Phase3.5 D4g)`.
+
+#### Task 9h: Non-null base classification
+
+**Files:**
+- Modify: `sf/src/analyzer.zig` (NullPointer classification only), `sf/src/tests/test_analyzer_bin.zig`, `tests/analyzers/**`
+
+**Interfaces:**
+- Consumes: Task 9a/9b harness, mode gating, and exact expectations.
+- Produces: WARN_6002 no longer fires for statically non-null bases, while genuine optional/unknown pointers still warn. No suppression, no emission change, no lifetime/double-free behavior change.
+
+- [ ] **Step 0: Recheck the residual classes first.** Confirm each of the 7 self-source and example/stdlib residual sites is a non-null base (address-of, `@ptrCast`/`@intToPtr` from non-null/guarded source, `catch unreachable`/non-optional allocator result, known non-null internal call, or declared non-optional pointer field/element). If any site is a real null risk, STOP and present a code fix; do not hide it in the analyzer.
+- [ ] **Step 1: Add exact fixtures** — `nonnull_ptrcast_ok.zig`, `nonnull_alloc_result_ok.zig`, `nonnull_field_element_ok.zig`, `nonnull_inttoptr_guard_ok.zig`, and a negative `optional_unknown_warn.zig` (genuinely maybe-null call/optional still warns). Register with exact code/count.
+- [ ] **Step 2: Implement classification** from resolved types and expression shape: address-of is safe for deref; `@ptrCast`/`@intToPtr` from a proven non-null or guarded-nonzero source is safe; `catch unreachable`/`try` from a non-optional allocator result is safe; declared non-optional pointer fields/elements are safe; optional/unknown call results remain `maybe`. Do not suppress `WARN_6002` globally.
+- [ ] **Step 3: Recheck all sites** — 7 self-source, 16 example, 17 stdlib. Target no net increase over the Task 9a baseline (examples 251, stdlib 7) or an individually justified residual. If a true null risk is found, STOP and fix code.
+- [ ] **Step 4: Verify** D4 probe, analyzer suite, examples/stdlib/corpus; no emission change. Commit `fix(analyzer): classify non-null pointer bases (Phase3.5 D4h)`.
 
 ### Task 10: Doc consolidation
 
