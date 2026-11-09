@@ -389,7 +389,7 @@
 - Produces: the two pre-existing red test binaries green. This is a harness repair, not analyzer behavior and not a compiler fix.
 
 - [ ] **Step 1: Confirm the cause is test staleness.** `semanticAnalyzerInit` now takes 16 args (module/source ids, coercion/enum/tuple/error-code tables, interner, call/cp maps, module registry, suspending fns); the test still passes 8. The integration test reads `examples/hello/main.zig`; the file is `examples/z98/hello/main.zig`. If either failure is actually a compiler/analyzer defect, STOP and present.
-- [ ] **Step 2: Repair the harnesses only** — update the init call/setup and the example path; do not change analyzer or compiler behavior to make them pass.
+- [ ] **Step 2: Repair the harnesses only** — update the init call/setup and the example path. Retarget or remove `testFnCallNotCallable`: callability is enforced at lowering with `error[3056]`, while the synthetic sema test asserts the wrong layer. Use the existing real fixtures `nonfn_local_call_reject_xmod` / `nonfn_member_call_reject_xmod` or a pipeline-level check; do not change `semantic_analyzer.zig` or compiler behavior to make the test pass.
 - [ ] **Step 3: Verify** both binaries compile and run green; record output; commit `test: restore analyzer/semantic test binaries (Phase3.5 D4g)`.
 
 #### Task 9h1: Null-state foundation
