@@ -188,6 +188,12 @@ mixed cases) and propose the exact expected-type-first insertion points; Task 9k
 implements only the approved shape. No blanket MIX reject and no patch-on-patch.
 If the Zig oracle cannot be obtained or the matrix is ambiguous, STOP.
 
+Removing the interim statement exemption depends on the Task 9l audit of
+assignment/expression `void` typing and, if approved, the Task 9m fix. If 9l is
+unsafe or inconclusive, keep `sw_is_stmt_expr` and scope Task 9k to value-result
+switches, or revert `280a3b12` and document the D15 gap; do not remove the
+exemption just to satisfy the statement-mixed rule.
+
 ## 6. Spec truth-up contents (Task 11)
 
 `docs/reference/Language_Spec_Z98.md`:

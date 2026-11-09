@@ -275,7 +275,7 @@
 
 ### Task 9: D4-upgrade — split into 9a–9h, then D15 (9i–9k)
 
-**Execution order:** 9a → 9b → 9c → 9d → 9e → 9h1 → 9h2 → 9i (interim D15) → 9j (D15 parity I) → 9k (D15 fix) → 9g → 9f (final). The existing `f2c0e8bc` 9f commit is provisional; D4 is not closed until the final 9f re-run. Task 9i is retained as the interim fix; Task 9j is a mandatory investigation and Task 9k replaces the over-broad D15 behavior.
+**Execution order:** 9a → 9b → 9c → 9d → 9e → 9h1 → 9h2 → 9i (interim D15) → 9j (D15 parity I) → 9l (assignment/void I) → 9m (conditional assignment/void fix) → 9k (D15 fix) → 9g → 9f (final). The existing `f2c0e8bc` 9f commit is provisional; D4 is not closed until the final 9f re-run. Task 9i is retained as the interim fix; Task 9j is the parity investigation; Task 9l decides whether assignment/expression void typing is safe; Task 9m is conditional; Task 9k then applies the D15 shape. If 9l is unsafe or inconclusive, no 9m: narrow 9k to value switches with `sw_is_stmt_expr` kept, or revert `280a3b12` and document the D15 gap.
 
 **Source:** Task 8's audit (`docs/superpowers/specs/2026-10-29-phase35-analyzer-audit.md`) is the binding bar. Task 8 must be reviewed before 9a starts.
 
@@ -368,7 +368,7 @@
 - Test: full analyzer suite; self-source measurement; corpus/stdlib/examples no-emission proof
 
 **Interfaces:**
-- Consumes: 9a–9e, 9h1, 9h2, 9i, 9j, 9k, 9g.
+- Consumes: 9a–9e, 9h1, 9h2, 9i, 9j, 9l, 9m, 9k, 9g.
 - Produces: D4 closed on the full audit bar; self-source `WARN_6002` class collapsed, not moved; raw count equals single-pass count; any residual individually justified; emitted C/H byte-identical.
 
 - [ ] **Step 0: Do not treat D4 as closed yet.** Re-run this task only after 9h and 9g; if 9h finds a real null risk or examples/stdlib residuals remain unjustified, STOP and reopen D4. The provisional `f2c0e8bc` deletion must be revalidated, not assumed.
@@ -464,7 +464,7 @@
 
 #### Task 9k: D15 expected-type-aware fix
 
-**Status:** Blocked on Task 9j report approval. Re-opens D15; final closeout waits for this task.
+**Status:** Blocked on the Task 9l/9m assignment-void decision. Re-opens D15; final closeout waits for this task. If 9l is unsafe/inconclusive, keep `sw_is_stmt_expr` and scope 9k to value-result switches, or revert the interim D15 fix and document the gap.
 
 **Files:**
 - Modify: `sf/src/semantic_analyzer.zig` (switch-expression unification only, following the approved 9j shape), `sf/src/tests/test_semantic_bin.zig`
@@ -487,6 +487,46 @@
 - [ ] **Step 2: Implement the approved expected-type-first path** before the blanket MIX reject; keep peer-resolution for no-expected cases; remove `sw_is_stmt_expr`; latch the poison; do not add a second switch typing path. Handle missing-else behavior as the 9j matrix requires.
 - [ ] **Step 3: Verify.** The 12 cases accept and build; D15 mixed direct/infer/use/reverse still reject with one level-0 mismatch and 0 `.c`; `stmt_mixed_int_bool`/`stmt_mixed_int_void` reject and `stmt_void` accepts; valid switches/fixtures byte-identical; `test_semantic_bin` green; corpus has no new false rejects; no emission change. Re-run the full analyzer/semantic suite.
 - [ ] **Step 4: Commit** `fix(sema): apply expected-type rules to switch prongs (Phase3.5 D15)` + delete D15 from the defects doc + report. Then Task 9g/9f may resume. No seed rotation here.
+
+#### Task 9l: Assignment/expression `void` audit (I)
+
+**Status:** MANDATORY decision gate between Task 9j and Task 9k. No source changes; stop for operator review.
+
+**Files:**
+- Create: `docs/superpowers/specs/2026-10-29-phase35-assignment-void-investigation.md`
+- Create: `repro/mi_matrix/known_excluded/d15_assignment_void/` probes + outputs
+- Read-only: `sf/src/semantic_analyzer.zig` (`semanticAnalyzerResolveAssign`, `semanticAnalyzerResolveExpr`, `expr_stmt`, block result, `stmt_expr_node`, switch peer/expected paths), `sf/src/lower.zig` (`plain_assign`/`assign_*`, block/expression-statement lowering, if/while joins, switch result), `sf/src/c89_emit.zig` only as needed
+- No `sf/src` edits, no Task 9m yet, no 9k change.
+
+**Interfaces:**
+- Consumes: Task 9j parity matrix; the 38 statement-switch regression set; the uncommitted 9k candidate is **not** a baseline and must not be used or modified.
+- Produces: a committed audit answering whether assignment expressions can type as `void` without breaking lowering or valid code; exact sema/lowering consumers; an impact matrix; one recommended option; STOP for operator review.
+
+- [ ] **Step 0: Use a clean HEAD baseline.** Build/read from HEAD; do not use the uncommitted `sf/src/semantic_analyzer.zig` candidate. Reuse the verified Zig 0.17.1 oracle if present; verify `zig version` and sha256; if absent, use the Task 9j download recipe. If the oracle is unavailable, STOP.
+- [ ] **Step 1: Establish Zig 0.17.1 semantics.** Probe assignment as an expression; assignment-ending block result; `expr_stmt`; chained assignment; `if`/`while` conditions; `switch` statement prongs; `_ =`; `defer`; optional/error-union blocks. Record exact accept/reject and types.
+- [ ] **Step 2: Sema impact inventory.** Map every consumer of assignment/`expr_stmt`/block result types: `ResolveAssign`, `ResolveExpr`, `expr_stmt`, block tail, `stmt_expr_node`, switch peer/expected, return/init/call sites. Identify what changes if assignment returns `void`.
+- [ ] **Step 3: Lowering/temp impact inventory.** Map `plain_assign`/compound assignments, block result temps, expression-statement discard, if/while joins, switch result, `TEMP_NONE`, and resolved-type reads. Determine whether assignment can lower store-only with no value temp; identify any required lowering changes.
+- [ ] **Step 4: Impact matrix.** Run/record the 38 statement-switch entries, the 12 D15 cases, valid switch fixtures, corpus/goldens, and diagnostics under the proposed semantics. Classify each as expected fix, regression, or new failure.
+- [ ] **Step 5: Options and recommendation.** Compare (a) global assignment/block `void`; (b) expression-statement/block-only normalization; (c) switch-only normalization; (d) keep `sw_is_stmt_expr` and scope 9k to value switches; (e) revert `280a3b12` and document the D15 gap. State exact files, blast radius, and test plan.
+- [ ] **Step 6: Write and commit the report.** Commit only the report/probes. Stop for operator review before any 9m code. If the audit is inconclusive, STOP.
+
+#### Task 9m: Conditional assignment/expression `void` fix
+
+**Status:** Blocked on operator approval of Task 9l. Do not start if 9l is unsafe or inconclusive.
+
+**Files:**
+- Modify: the files approved by Task 9l (expected: `sf/src/semantic_analyzer.zig`, possibly `sf/src/lower.zig`), tests/fixtures identified by the audit
+- Test: the 9l probes, 38 statement-switch entries, 12 D15 cases, corpus/goldens
+
+**Interfaces:**
+- Consumes: the approved 9l report.
+- Produces: assignment/expression typing that matches the approved 9l shape; no 38-entry regression; no 12-case regression; then Task 9k may remove `sw_is_stmt_expr`.
+
+- [ ] **Step 0: Confirm the approved 9l shape and files. If the report is not approved or the current code differs, STOP.**
+- [ ] **Step 1: RED.** Record the current assignment/block/statement-switch failures and the 38 entries in the exact contexts the audit identifies.
+- [ ] **Step 2: Implement only the approved 9l shape.** No unrelated sema/lowering cleanup; no emitter change unless 9l proved it required and the operator approved.
+- [ ] **Step 3: Verify.** 38 entries and 12 D15 cases behave as the approved matrix requires; lowering emits correct stores with no missing value temp; corpus/goldens/no-emission checks green; `test_semantic_bin` green.
+- [ ] **Step 4: Commit** `fix(sema): type assignment expressions as void (Phase3.5 D15-9m)` + report. Do not start 9k until reviewed.
 
 ### Task 10: Doc consolidation
 
@@ -537,4 +577,4 @@
 
 ---
 
-**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), 8 (D4-pre audit), 9a–9h2, 9i (interim D15), 9j (D15 parity I), 9k (D15 fix), 9g, 9f (final), then docs, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Task 8 and 9j are investigation-only. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths.
+**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), 8 (D4-pre audit), 9a–9h2, 9i (interim D15), 9j (D15 parity I), 9l (assignment/void I), 9m (conditional assignment/void fix), 9k (D15 fix), 9g, 9f (final), then docs, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Tasks 8, 9j, and 9l are investigation-only. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths.
