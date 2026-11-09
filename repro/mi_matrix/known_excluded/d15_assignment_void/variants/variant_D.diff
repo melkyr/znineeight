@@ -1,0 +1,33 @@
+--- /tmp/phase35-9l-clean/sf/src/semantic_analyzer.zig	2026-11-09 15:43:44.860938898 +0000
++++ expD/sf/src/semantic_analyzer.zig	2026-11-09 15:55:47.116378258 +0000
+@@ -4722,11 +4722,11 @@
+     if (as_assign) {
+         tryRecordCoercion(self, node.child_1, eff_src, lhs);
+         var as1: []const u8 = "AS1"; pal_mod.markerWrite(as1);
+-        return lhs;
++        return type_mod.TYPE_VOID;
+     }
+     if (as_fst == FLOAT_NARROW_ACCEPT) {
+         semanticAnalyzerFloatNarrowRecord(self, node.child_1, lhs);
+-        return lhs;
++        return type_mod.TYPE_VOID;
+     }
+     if (as_fst == FLOAT_NARROW_NONE and lhs == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, eff_src)) {
+         var asn_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
+--- /tmp/phase35-9l-clean/sf/src/lower.zig	2026-11-09 15:43:44.857938839 +0000
++++ expD/sf/src/lower.zig	2026-11-09 15:55:56.610589231 +0000
+@@ -6103,7 +6103,13 @@
+ fn lowerCompoundAssignRest(self: *LirLowerer, node_idx: u32, lhs_val: u32, rhs_val: u32, check_op: u8, bin_op: u8, mode: u8, stmt_add_markers: u8) u32 {
+     var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+     var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+-    if (op_rt) |t| { op_r_box[0] = t; }
++    if (op_rt) |t| {
++        if (t != type_mod.TYPE_VOID) { op_r_box[0] = t; }
++        else {
++            var op_lhs_t = getTempType(self, lhs_val);
++            if (op_lhs_t != type_mod.TYPE_UNDEFINED and op_lhs_t != type_mod.TYPE_VOID) { op_r_box[0] = op_lhs_t; }
++        }
++    }
+     if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
+     var op_r = nextTemp(self, op_r_box[0]);
+     if (mode == @intCast(u8, 0)) {
