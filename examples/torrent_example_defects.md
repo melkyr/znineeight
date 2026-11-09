@@ -82,9 +82,12 @@ root typing is a multi-file semantic change with no demonstrated pipeline gain.
     `*_err_switch`/`*_null_switch` cases.
   - All 31 are value-result switches; no statement switch and no non-switch entry.
   - `rc_mismatch=0`; 12/12 recovered cases emit C; 30/31 diffs are in frozen-1124.
-  - **Not yet certified:** the 31 diffs have not each been gcc `-m32 -std=c89`
-    built/run and behavior-compared. Emission presence + rc0 is not proof of good
-    C. A future study must do that before claiming the shifts are harmless.
+  - **Certified by Task 9f.1 (`e8a300db`):** 31/31 gcc `-m32 -std=c89`
+    compile; 29/31 direct run with identical base/final rc+stdout; 2/2
+    compile-only entries equal under the fixture’s intentional `getp` stub;
+    12/12 recovered cases match pre-D15 Z98; 0 statement-switch C changes.
+    `z9play` is mixed value+statement, but only its value-result `return switch`
+    emission changed; no statement-switch C changed.
   - D4 revalidates 0/0; suites green; D16 remains open.
 
 **Why it was deferred.** Full parity requires either global assignment-void
@@ -102,7 +105,8 @@ valid-code behavior and document the Zig divergence.
 - If switch-only is pursued: whether the special normalization is acceptable,
   the `tls_alpn` migration, and gcc build/run of all 31 shifts.
 - Whether comptime-prong pruning and `anyerror` are worth separate parity work.
-- Runtime/golden evidence for the 31 emission diffs, not just rc/C presence.
+- Runtime/golden evidence for any future parity change; the current 31 diffs
+  are certified by Task 9f.1, not a reason to revisit them.
 
 **Workaround.** Add explicit type annotations; avoid assignment-ended blocks in
 typed optional/error-union positions; do not rely on mixed statement switches.

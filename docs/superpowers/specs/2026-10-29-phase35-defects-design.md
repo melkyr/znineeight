@@ -194,8 +194,10 @@ Task 9k to value-result switches. The Task 9l audit showed global assignment
 and switch-only normalization still adds a special rule, 19 value-switch
 emission shifts, and a fixture migration. Against the pre-Task-9 base, Task 9f
 measured 31 value-switch diffs: 19 newly coerced + 12 D15-recovered cases; all
-are value-result switches, none statement, and their gcc build/run certification
-is D16 study work, not a 9k claim. Statement-mixed switches,
+are value-result switches, none statement. Task 9f.1 certified them: 31/31 gcc
+`-m32 -std=c89` compile; 29/31 direct run identical base/final; 2/2 compile-only
+entries equal under the intentional `getp` stub; 12/12 recovered match pre-D15;
+no statement-switch C changed. Statement-mixed switches,
 assignment-expression/void parity, comptime-selector pruning, and `anyerror`
 are deferred to D16 as a parity decision, not an ordinary bug; they are
 documented gaps, not Phase 3.5 work.
