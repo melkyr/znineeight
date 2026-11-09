@@ -275,7 +275,7 @@
 
 ### Task 9: D4-upgrade — split into 9a–9h
 
-**Execution order:** 9a → 9b → 9c → 9d → 9e → 9h → 9g → 9f (final). The existing `f2c0e8bc` 9f commit is provisional; D4 is not closed until the final 9f re-run.
+**Execution order:** 9a → 9b → 9c → 9d → 9e → 9h1 → 9h2 → 9g → 9f (final). The existing `f2c0e8bc` 9f commit is provisional; D4 is not closed until the final 9f re-run.
 
 **Source:** Task 8's audit (`docs/superpowers/specs/2026-10-29-phase35-analyzer-audit.md`) is the binding bar. Task 8 must be reviewed before 9a starts.
 
@@ -368,7 +368,7 @@
 - Test: full analyzer suite; self-source measurement; corpus/stdlib/examples no-emission proof
 
 **Interfaces:**
-- Consumes: 9a–9e.
+- Consumes: 9a–9e, 9h1, 9h2, 9g.
 - Produces: D4 closed on the full audit bar; self-source `WARN_6002` class collapsed, not moved; raw count equals single-pass count; any residual individually justified; emitted C/H byte-identical.
 
 - [ ] **Step 0: Do not treat D4 as closed yet.** Re-run this task only after 9h and 9g; if 9h finds a real null risk or examples/stdlib residuals remain unjustified, STOP and reopen D4. The provisional `f2c0e8bc` deletion must be revalidated, not assumed.
@@ -392,20 +392,34 @@
 - [ ] **Step 2: Repair the harnesses only** — update the init call/setup and the example path; do not change analyzer or compiler behavior to make them pass.
 - [ ] **Step 3: Verify** both binaries compile and run green; record output; commit `test: restore analyzer/semantic test binaries (Phase3.5 D4g)`.
 
-#### Task 9h: Non-null base classification
+#### Task 9h1: Null-state foundation
+
+**Files:**
+- Modify: `sf/src/analyzer.zig` (null-state walk/merge only), `sf/src/state_map.zig` only if the merge helper belongs there, `sf/src/tests/test_analyzer_bin.zig`, `tests/analyzers/**`
+
+**Interfaces:**
+- Consumes: Task 9a/9b harness, mode gating, exact expectations.
+- Produces: one centralized null-state exit merge. Fall-through, guard-false, `break`, `continue`, and `switch` exits merge with `maybe` on disagreement; `ERR_2004` only when every path is `is_null`. No non-null classification, no suppression, no emission change.
+
+- [ ] **Step 0: Confirm the state/merge root; STOP if it requires a broader analyzer rewrite.**
+- [ ] **Step 1: Add fixtures** — `while_guard_body_ok`, `while_guard_exit_warn`, `while_break_maybe_warn`, `if_guard_exit_warn`, `switch_break_maybe_warn`; exact code/count.
+- [ ] **Step 2: Implement** a single null-exit merge helper; remove the `99` sentinel from null merges; snapshot `break`/`continue` states; post-guard variables become `maybe`, never silent.
+- [ ] **Step 3: Verify** all fixtures, D4 probe, analyzer suite, no emission change; commit `refactor(analyzer): centralize null-state exits (Phase3.5 D4h1)`.
+
+#### Task 9h2: Type-driven nullability
 
 **Files:**
 - Modify: `sf/src/analyzer.zig` (NullPointer classification only), `sf/src/tests/test_analyzer_bin.zig`, `tests/analyzers/**`
 
 **Interfaces:**
-- Consumes: Task 9a/9b harness, mode gating, and exact expectations.
-- Produces: WARN_6002 no longer fires for statically non-null bases, while genuine optional/unknown pointers still warn. No suppression, no emission change, no lifetime/double-free behavior change.
+- Consumes: Task 9h1 exit merge; Task 9a/9b harness.
+- Produces: one type-driven classifier. Non-optional `*T`, pointer field, pointer element, and non-optional call return are `safe`; optional `?*T` is `maybe`; address-of is `safe`; `@intToPtr` is `maybe` unless guarded/known non-zero; `@ptrCast`/`@alignCast` inherit source state; `try`/`catch unreachable` safe only for non-optional results; unknown/unresolved is `maybe`. No callee-name whitelist, no global suppression.
 
-- [ ] **Step 0: Recheck the residual classes first.** Confirm each of the 7 self-source and example/stdlib residual sites is a non-null base (address-of, `@ptrCast`/`@intToPtr` from non-null/guarded source, `catch unreachable`/non-optional allocator result, known non-null internal call, or declared non-optional pointer field/element). If any site is a real null risk, STOP and present a code fix; do not hide it in the analyzer.
-- [ ] **Step 1: Add exact fixtures** — `nonnull_ptrcast_ok.zig`, `nonnull_alloc_result_ok.zig`, `nonnull_field_element_ok.zig`, `nonnull_inttoptr_guard_ok.zig`, and a negative `optional_unknown_warn.zig` (genuinely maybe-null call/optional still warns). Register with exact code/count.
-- [ ] **Step 2: Implement classification** from resolved types and expression shape: address-of is safe for deref; `@ptrCast`/`@intToPtr` from a proven non-null or guarded-nonzero source is safe; `catch unreachable`/`try` from a non-optional allocator result is safe; declared non-optional pointer fields/elements are safe; optional/unknown call results remain `maybe`. Do not suppress `WARN_6002` globally.
-- [ ] **Step 3: Recheck all sites** — 7 self-source, 16 example, 17 stdlib. Target no net increase over the Task 9a baseline (examples 251, stdlib 7) or an individually justified residual. If a true null risk is found, STOP and fix code.
-- [ ] **Step 4: Verify** D4 probe, analyzer suite, examples/stdlib/corpus; no emission change. Commit `fix(analyzer): classify non-null pointer bases (Phase3.5 D4h)`.
+- [ ] **Step 0: Recheck the residual sites.** 7 self-source, 16 example, 17 stdlib. If any is a real null risk, STOP and present a code fix.
+- [ ] **Step 1: Add fixtures** — `nonnull_ptrcast_ok`, `nonnull_type_field_element_ok`, `nonnull_call_result_ok`, `nonnull_inttoptr_guard_ok`, `optional_unknown_warn`, `optional_call_warn`; exact code/count.
+- [ ] **Step 2: Implement** type-driven nullability; remove `npRegistryFieldClass` name fallback; make `np_decl_types` scope-aware or delete it in favor of resolved types. No callee-name whitelist.
+- [ ] **Step 3: Recheck all sites**; target examples <=251 and stdlib <=7, or a per-site justified residual. If reaching that needs more special cases, STOP and present.
+- [ ] **Step 4: Verify** D4 probe, analyzer suite, examples/stdlib/corpus, no emission change; commit `fix(analyzer): classify pointer nullability from types (Phase3.5 D4h2)`.
 
 ### Task 10: Doc consolidation
 
@@ -456,4 +470,4 @@
 
 ---
 
-**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), then the analyzer pair, then docs, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Task 8 is investigation-only. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths.
+**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), 8 (D4-pre audit), 9a–9h2, 9g, 9f (final), then docs, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Task 8 is investigation-only. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths.
