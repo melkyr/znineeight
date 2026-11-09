@@ -57,6 +57,7 @@ pub const SemanticAnalyzer = struct {
     module_id: u32,
     source_file_id: u32,
     expected_type_stack_items: [*]TypeId,
+    expected_type_stack_kinds: [*]u8,
     expected_type_stack_len: usize,
     expected_type_stack_cap: usize,
     expected_type_stack_alloc: *Sand,
@@ -283,6 +284,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .module_id = module_id,
         .source_file_id = source_file_id,
         .expected_type_stack_items = undefined,
+        .expected_type_stack_kinds = undefined,
         .expected_type_stack_len = @intCast(usize, 0),
         .expected_type_stack_cap = @intCast(usize, 0),
         .expected_type_stack_alloc = alloc,
@@ -2616,14 +2618,14 @@ fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_
         var peerk: u32 = 0;
         if (lhs != 0 and lhs != type_mod.TYPE_VOID and lhs != type_mod.TYPE_UNDEFINED) { peerk = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, lhs)].kind)); }
         if ((c1n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c1n.kind == AstKind.enum_literal and (peerk == type_mod.TypeKind.tagged_union_type or peerk == type_mod.TypeKind.enum_type))) {
-            pushExpectedType(self, lhs); rhs = semanticAnalyzerResolveExpr(self, node.child_1); popExpectedType(self);
+            pushExpectedTypeKnown(self, lhs); rhs = semanticAnalyzerResolveExpr(self, node.child_1); popExpectedType(self);
         } else { rhs = semanticAnalyzerResolveExpr(self, node.child_1); }
     } else if (c0_lit != @intCast(u8, 0) and c1_lit == @intCast(u8, 0)) {
         rhs = semanticAnalyzerResolveExpr(self, node.child_1);
         var peerk: u32 = 0;
         if (rhs != 0 and rhs != type_mod.TYPE_VOID and rhs != type_mod.TYPE_UNDEFINED) { peerk = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, rhs)].kind)); }
         if ((c0n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c0n.kind == AstKind.enum_literal and (peerk == type_mod.TypeKind.tagged_union_type or peerk == type_mod.TypeKind.enum_type))) {
-            pushExpectedType(self, rhs); lhs = semanticAnalyzerResolveExpr(self, node.child_0); popExpectedType(self);
+            pushExpectedTypeKnown(self, rhs); lhs = semanticAnalyzerResolveExpr(self, node.child_0); popExpectedType(self);
         } else { lhs = semanticAnalyzerResolveExpr(self, node.child_0); }
     } else {
         lhs = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -3323,7 +3325,7 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
         return;
     }
     if (node.child_0 != @intCast(u32, 0)) {
-        pushExpectedType(self, self.current_fn_return);
+        pushExpectedTypeDeclared(self, self.current_fn_return);
         var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
         popExpectedType(self);
         // A5-F: reject a TYPE VALUE referenced by name in a return
@@ -3585,7 +3587,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 if (hash_mod.u32ToU32MapGet(self.call_param_map, cpp_key)) |cpp_v| { expected = cpp_v; } else { expected = self.registry.xt_items[@intCast(usize, pstart) + ai]; }
                 hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), expected);
             }
-            pushExpectedType(self, expected);
+            pushExpectedTypeMaybe(self, expected);
             var dxc_at = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
             popExpectedType(self);
             if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
@@ -3636,7 +3638,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var fn3_args_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
         var fn3_i: usize = @intCast(usize, 0);
         while (fn3_i < @intCast(usize, fn3_args_n)) : (fn3_i += @intCast(usize, 1)) {
-            pushExpectedType(self, @intCast(u32, 0));
+            pushExpectedTypeNone(self);
             _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, fn3_i)));
             popExpectedType(self);
         }
@@ -3676,7 +3678,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var ptm_tm: []const u8 = "PTM:T"; pal_mod.markerWriteInt(ptm_tm, param_type);
         var ptm_nm: []const u8 = "PTM:N"; pal_mod.markerWriteInt(ptm_nm, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
         var fn4g: []const u8 = "FN4g\n"; pal_mod.markerWrite(fn4g);
-        pushExpectedType(self, param_type);
+        pushExpectedTypeMaybe(self, param_type);
         var arg_type = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
         popExpectedType(self);
         if (param_type == type_mod.TYPE_UNDEFINED) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), arg_type); } }
@@ -3706,7 +3708,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (is_var != @intCast(u8, 0)) {
         var vi: usize = fixed;
         while (vi < args_n) : (vi += 1) {
-            pushExpectedType(self, @intCast(u32, 0));
+            pushExpectedTypeNone(self);
             var varg_type = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, vi)));
             popExpectedType(self);
             if (varg_type != type_mod.TYPE_UNDEFINED) {
@@ -3801,8 +3803,15 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     if (inner == @intCast(u32, 0) or inner == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var ty = self.registry.types_items[@intCast(usize, inner)];
     if (ty.kind == type_mod.TypeKind.null_type and self.expected_type_stack_len > @intCast(u32, 0)) {
-        var expected = self.expected_type_stack_items[@intCast(usize, self.expected_type_stack_len - @intCast(u32, 1))];
-        if (expected != @intCast(u32, 0)) {
+        var oe_kind = topExpectedTypeKind(self);
+        if (oe_kind == EXPECTED_KIND_UNDETERMINED) {
+            var oe_ud_msg: []const u8 = "cannot resolve expected type for orelse expression";
+            semanticAnalyzerReportUnresolvedExpected(self, node_idx, oe_ud_msg);
+            return type_mod.TYPE_VOID;
+        }
+        var expected: u32 = @intCast(u32, 0);
+        if (oe_kind == EXPECTED_KIND_KNOWN) { expected = topExpectedTypeId(self); }
+        if (expected != @intCast(u32, 0) and expected != type_mod.TYPE_UNDEFINED and expected != type_mod.TYPE_VOID) {
             var oe_et = self.registry.types_items[@intCast(usize, expected)];
             var payload_type: u32 = expected;
             if (oe_et.kind == type_mod.TypeKind.optional_type) {
@@ -3826,7 +3835,7 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     var opt = self.registry.opt_items[@intCast(usize, ty.payload_idx)];
     coercion_mod.coercionTableAdd(self.coercion_table, node.child_0, coercion_mod.CoercionKind.unwrap_optional, opt.payload);
     if (node.child_1 != @intCast(u32, 0)) {
-        pushExpectedType(self, opt.payload);
+        pushExpectedTypeMaybe(self, opt.payload);
         var rhs_result = semanticAnalyzerResolveExpr(self, node.child_1);
         popExpectedType(self);
         if (rhs_result != @intCast(u32, 0) and rhs_result != type_mod.TYPE_VOID) {
@@ -4308,7 +4317,18 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else {
         else_type = semanticAnalyzerResolveExpr(self, node.child_2);
     }
-    var ie_exp = topExpectedType(self);
+    var ie_kind = topExpectedTypeKind(self);
+    if (ie_kind == EXPECTED_KIND_UNDETERMINED) {
+        var ie_ud_msg: []const u8 = "type mismatch in if expression -- branch type may not be compatible with the if expression type";
+        semanticAnalyzerReportUnresolvedExpected(self, node_idx, ie_ud_msg);
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_NORETURN);
+        return type_mod.TYPE_NORETURN;
+    }
+    var ie_exp: u32 = @intCast(u32, 0);
+    if (ie_kind == EXPECTED_KIND_KNOWN) {
+        ie_exp = topExpectedTypeId(self);
+        if (ie_exp == type_mod.TYPE_UNDEFINED) ie_exp = @intCast(u32, 0);
+    }
     if (ie_exp == @intCast(u32, 0) or ie_exp == type_mod.TYPE_VOID) {
         var ie_then_lit: bool = then_type != type_mod.TYPE_NORETURN and ast_mod.astStoreNodeAt(self.store, node.child_1).kind == AstKind.string_literal;
         var ie_else_lit: bool = else_type != type_mod.TYPE_NORETURN and ast_mod.astStoreNodeAt(self.store, node.child_2).kind == AstKind.string_literal;
@@ -4426,8 +4446,16 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
         }
     }
     if (self.expected_type_stack_len > 0) {
-        var top: u32 = self.expected_type_stack_items[@intCast(usize, self.expected_type_stack_len - 1)];
-        if (top != @intCast(u32, 0)) {
+        var el_kind = topExpectedTypeKind(self);
+        if (el_kind == EXPECTED_KIND_UNDETERMINED) {
+            var elu_ud_msg: []const u8 = "cannot infer enum literal type from an unresolved annotation";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3010_CANNOT_INFER_ENUM_LITERAL_TYPE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), elu_ud_msg);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
+        }
+        var top: u32 = @intCast(u32, 0);
+        if (el_kind == EXPECTED_KIND_KNOWN) { top = topExpectedTypeId(self); }
+        if (top != @intCast(u32, 0) and top != type_mod.TYPE_UNDEFINED and top != type_mod.TYPE_VOID) {
             var top_ty = self.registry.types_items[@intCast(usize, top)];
             if (top_ty.kind == type_mod.TypeKind.tagged_union_type) {
                 var tp = self.registry.tu_items[@intCast(usize, top_ty.payload_idx)];
@@ -4497,7 +4525,7 @@ fn semanticAnalyzerInitStructFields(self: *SemanticAnalyzer, node_idx: u32, targ
                 if (self.registry.fe_items[fstart + fi].name_id == fname_id) {
                     if (fi_node.child_0 != @intCast(u32, 0)) {
                         var field_type = self.registry.fe_items[fstart + fi].type_id;
-                        pushExpectedType(self, field_type);
+                        pushExpectedTypeMaybe(self, field_type);
                         var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
                         popExpectedType(self);
                         semanticAnalyzerCoerceFieldInit(self, fi_node.child_0, init_type, field_type);
@@ -4538,7 +4566,18 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
     if (node.child_0 != @intCast(u32, 0)) {
         target_type = semanticAnalyzerResolveExpr(self, node.child_0);
     }
-    if (target_type == @intCast(u32, 0)) { target_type = topExpectedType(self); }
+    if (target_type == @intCast(u32, 0)) {
+        var si_kind = topExpectedTypeKind(self);
+        if (si_kind == EXPECTED_KIND_UNDETERMINED) {
+            var si_ud_msg: []const u8 = "cannot resolve expected type for struct initialization";
+            semanticAnalyzerReportUnresolvedExpected(self, node_idx, si_ud_msg);
+            return type_mod.TYPE_VOID;
+        }
+        if (si_kind == EXPECTED_KIND_KNOWN) {
+            target_type = topExpectedTypeId(self);
+            if (target_type == type_mod.TYPE_UNDEFINED or target_type == type_mod.TYPE_VOID) target_type = @intCast(u32, 0);
+        }
+    }
     if (target_type == @intCast(u32, 0)) return type_mod.TYPE_VOID;
     var tgt = self.registry.types_items[@intCast(usize, target_type)];
     if (tgt.kind == type_mod.TypeKind.tagged_union_type) {
@@ -4689,7 +4728,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3002), self.source_file_id, csp, cep, c_msg);
         return type_mod.TYPE_VOID;
     }
-    pushExpectedType(self, lhs);
+    pushExpectedTypeMaybe(self, lhs);
     var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
     popExpectedType(self);
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) { var as0: []const u8 = "AS0"; pal_mod.markerWrite(as0); return type_mod.TYPE_VOID; }
@@ -5035,7 +5074,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     // prong. `unified` then only carries the first value prong's type as the
     // no-type fallback for a rejecting switch.
     var sw_f32_site: u8 = @intCast(u8, 0);
-    if (topExpectedType(self) == type_mod.TYPE_F32) { sw_f32_site = @intCast(u8, 1); }
+    if (topExpectedTypeKind(self) == EXPECTED_KIND_KNOWN and topExpectedTypeId(self) == type_mod.TYPE_F32) { sw_f32_site = @intCast(u8, 1); }
     // A `switch` in bare expression-statement position has no value consumer:
     // heterogeneous prong types are irrelevant (Task F4 statement-switch
     // behavior), so the D15 mismatch reject/poison applies only to value
@@ -5046,8 +5085,15 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     // type, every prong must be assignable to it (expected-type-first,
     // mirroring the if-expression path). Absent/void expected type falls
     // through to peer resolution; statement switches keep their behavior.
-    var sw_exp: u32 = topExpectedType(self);
-    if (sw_exp == type_mod.TYPE_VOID) sw_exp = @intCast(u32, 0);
+    var sw_exp: u32 = @intCast(u32, 0);
+    var sw_undetermined: u8 = @intCast(u8, 0);
+    var sw_exp_kind = topExpectedTypeKind(self);
+    if (sw_exp_kind == EXPECTED_KIND_KNOWN) {
+        sw_exp = topExpectedTypeId(self);
+        if (sw_exp == type_mod.TYPE_VOID or sw_exp == type_mod.TYPE_UNDEFINED) sw_exp = @intCast(u32, 0);
+    } else if (sw_exp_kind == EXPECTED_KIND_UNDETERMINED) {
+        sw_undetermined = @intCast(u8, 1);
+    }
 
     while (i < @intCast(usize, prongs_n)) : (i += 1) {
         var prong_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));
@@ -5152,7 +5198,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                 var es_case_i = ast_mod.astStoreNodeExtraChildAt(self.store, prong_i, @intCast(u32, es_ci));
                 var es_case_node = ast_mod.astStoreNodeAt(self.store, es_case_i);
                 if (es_case_node.kind == AstKind.error_literal) {
-                    pushExpectedType(self, cond_es);
+                    pushExpectedTypeKnown(self, cond_es);
                     _ = semanticAnalyzerResolveExpr(self, es_case_i);
                     popExpectedType(self);
                 }
@@ -5201,7 +5247,11 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             if (unified == @intCast(u32, 0) and bt != @intCast(u32, 0)) { unified = bt; unified_node = prong.child_0; }
         }
         else if (unified == @intCast(u32, 0)) {
-            var sw_exp0 = topExpectedType(self);
+            var sw_exp0: u32 = @intCast(u32, 0);
+            if (topExpectedTypeKind(self) == EXPECTED_KIND_KNOWN) {
+                sw_exp0 = topExpectedTypeId(self);
+                if (sw_exp0 == type_mod.TYPE_VOID or sw_exp0 == type_mod.TYPE_UNDEFINED) sw_exp0 = @intCast(u32, 0);
+            }
             var sw_peer: u32 = sw_exp0;
             if (prong.child_0 != @intCast(u32, 0) and
                 ast_mod.astStoreNodeAt(self.store, prong.child_0).kind == AstKind.string_literal and
@@ -5238,6 +5288,12 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         }
     }
 
+    if (sw_undetermined != @intCast(u8, 0) and sw_is_stmt_expr == @intCast(u8, 0)) {
+        var sw_ud_msg: []const u8 = "type mismatch in switch expression -- prong type may not be compatible with the switch expression type";
+        semanticAnalyzerReportUnresolvedExpected(self, node_idx, sw_ud_msg);
+        unified = type_mod.TYPE_NORETURN;
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_NORETURN);
+    }
     self.current_switch_cond_tu = @intCast(u32, 0);
     self.switch_is_tag = @intCast(u8, 0);
     if (has_else == @intCast(u8, 0)) {
@@ -5379,8 +5435,15 @@ fn semanticAnalyzerResolveExprImpl(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = semanticAnalyzerResolveEnumLiteral(self, node_idx);
     } else if (node.kind == AstKind.error_literal) {
         if (self.expected_type_stack_len > 0) {
-            var top = self.expected_type_stack_items[self.expected_type_stack_len - 1];
-            if (top != 0) {
+            var el_kind2 = topExpectedTypeKind(self);
+            if (el_kind2 == EXPECTED_KIND_UNDETERMINED) {
+                var elt_ud_msg: []const u8 = "cannot resolve expected type for error literal";
+                semanticAnalyzerReportUnresolvedExpected(self, node_idx, elt_ud_msg);
+                result = type_mod.TYPE_VOID;
+            } else {
+            var top: u32 = @intCast(u32, 0);
+            if (el_kind2 == EXPECTED_KIND_KNOWN) { top = topExpectedTypeId(self); }
+            if (top != 0 and top != type_mod.TYPE_UNDEFINED and top != type_mod.TYPE_VOID) {
                 var es: u32 = 0;
                 var tty = self.registry.types_items[@intCast(usize, top)];
                 var eff_top: u32 = top;
@@ -5410,6 +5473,7 @@ fn semanticAnalyzerResolveExprImpl(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     result = eff_top;
                 } else { result = type_mod.TYPE_VOID; }
             } else { result = type_mod.TYPE_VOID; }
+            }
         } else { result = type_mod.TYPE_VOID; }
     } else if (node.kind == AstKind.ident_expr) {
         result = semanticAnalyzerResolveIdent(self, self.module_id, ast_mod.astStoreIdentifier(self.store, node_idx), node_idx);
@@ -5523,11 +5587,14 @@ fn semanticAnalyzerResolveExprImpl(self: *SemanticAnalyzer, node_idx: u32) u32 {
             var pfi_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
             if (ec_n >= @intCast(usize, 1)) {
                 _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
-                var pfi_top = topExpectedType(self);
-                if (pfi_top != @intCast(u32, 0) and pfi_top != type_mod.TYPE_UNDEFINED) {
-                    var pfi_ty = self.registry.types_items[@intCast(usize, pfi_top)];
-                    if (pfi_ty.kind == type_mod.TypeKind.ptr_type or pfi_ty.kind == type_mod.TypeKind.many_ptr_type) {
-                        pfi_res = pfi_top;
+                var pfi_kind = topExpectedTypeKind(self);
+                if (pfi_kind == EXPECTED_KIND_KNOWN) {
+                    var pfi_top = topExpectedTypeId(self);
+                    if (pfi_top != @intCast(u32, 0) and pfi_top != type_mod.TYPE_UNDEFINED and pfi_top != type_mod.TYPE_VOID) {
+                        var pfi_ty = self.registry.types_items[@intCast(usize, pfi_top)];
+                        if (pfi_ty.kind == type_mod.TypeKind.ptr_type or pfi_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                            pfi_res = pfi_top;
+                        }
                     }
                 }
             }
@@ -5698,7 +5765,7 @@ fn semanticAnalyzerResolveExprImpl(self: *SemanticAnalyzer, node_idx: u32) u32 {
             if (catch_es != 0) {
                 var child1 = ast_mod.astStoreNodeAt(self.store, node.child_1);
                 if (child1.kind == AstKind.error_literal) {
-                    pushExpectedType(self, catch_es);
+                    pushExpectedTypeKnown(self, catch_es);
                     _ = semanticAnalyzerResolveExpr(self, node.child_1);
                     popExpectedType(self);
                 }
@@ -6214,14 +6281,66 @@ fn semanticAnalyzerStmtWorkPush(self: *SemanticAnalyzer, node_idx: u32) void {
     self.stmt_work_len += @intCast(usize, 1);
 }
 
-pub fn pushExpectedType(self: *SemanticAnalyzer, ty: u32) void {
+// Operator-approved explicit expected-type contract (Task 12.2-F). A stack
+// entry is one of: no expectation (`none`), a real expected type (`known`), or
+// an annotation that is present but could not be resolved (`undetermined`).
+// Consumers must never use `undetermined` as a TypeId; they reject (or fall
+// back to peer/no expectation) cleanly instead.
+const EXPECTED_KIND_NONE: u8 = 0;
+const EXPECTED_KIND_KNOWN: u8 = 1;
+const EXPECTED_KIND_UNDETERMINED: u8 = 2;
+
+fn pushExpectedTypeRaw(self: *SemanticAnalyzer, kind: u8, ty: u32) void {
     if (self.expected_type_stack_len >= self.expected_type_stack_cap) {
         var new_cap: usize = semanticAnalyzerGrowCapU32(self.expected_type_stack_cap, @intCast(usize, 64));
         self.expected_type_stack_items = semanticAnalyzerAllocCopyU32(self, self.expected_type_stack_items, self.expected_type_stack_len, new_cap);
+        var raw_k = alloc_mod.sandAlloc(self.expected_type_stack_alloc, new_cap, @intCast(usize, 1)) catch unreachable;
+        var kdst = @ptrCast([*]u8, raw_k);
+        var ki: usize = @intCast(usize, 0);
+        while (ki < self.expected_type_stack_len) : (ki += @intCast(usize, 1)) { kdst[ki] = self.expected_type_stack_kinds[ki]; }
+        self.expected_type_stack_kinds = kdst;
         self.expected_type_stack_cap = new_cap;
     }
     self.expected_type_stack_items[self.expected_type_stack_len] = ty;
+    self.expected_type_stack_kinds[self.expected_type_stack_len] = kind;
     self.expected_type_stack_len += @intCast(usize, 1);
+}
+
+fn pushExpectedTypeNone(self: *SemanticAnalyzer) void {
+    pushExpectedTypeRaw(self, EXPECTED_KIND_NONE, @intCast(u32, 0));
+}
+
+fn pushExpectedTypeKnown(self: *SemanticAnalyzer, ty: u32) void {
+    pushExpectedTypeRaw(self, EXPECTED_KIND_KNOWN, ty);
+}
+
+fn pushExpectedTypeUndetermined(self: *SemanticAnalyzer) void {
+    pushExpectedTypeRaw(self, EXPECTED_KIND_UNDETERMINED, @intCast(u32, 0));
+}
+
+// Value/argument positions: an absent or unresolved type carries no usable
+// expectation; peers decide. An unresolved call-argument parameter is
+// therefore `none`, not `undetermined`. A resolved `void` is still a known
+// type; consumers keep the pre-existing "void means no coercion" rule.
+fn pushExpectedTypeMaybe(self: *SemanticAnalyzer, ty: u32) void {
+    if (ty == @intCast(u32, 0) or ty == type_mod.TYPE_UNDEFINED) {
+        pushExpectedTypeNone(self);
+    } else {
+        pushExpectedTypeKnown(self, ty);
+    }
+}
+
+// Annotated declarations: `0` means no annotation; a resolved annotation
+// (including `void`) is `known`; an unresolved annotation stays
+// distinguishable as `undetermined`.
+fn pushExpectedTypeDeclared(self: *SemanticAnalyzer, ty: u32) void {
+    if (ty == @intCast(u32, 0)) {
+        pushExpectedTypeNone(self);
+    } else if (ty == type_mod.TYPE_UNDEFINED) {
+        pushExpectedTypeUndetermined(self);
+    } else {
+        pushExpectedTypeKnown(self, ty);
+    }
 }
 
 pub fn popExpectedType(self: *SemanticAnalyzer) void {
@@ -6230,9 +6349,22 @@ pub fn popExpectedType(self: *SemanticAnalyzer) void {
     }
 }
 
-pub fn topExpectedType(self: *SemanticAnalyzer) u32 {
+fn topExpectedTypeKind(self: *SemanticAnalyzer) u8 {
+    if (self.expected_type_stack_len == @intCast(usize, 0)) return EXPECTED_KIND_NONE;
+    return self.expected_type_stack_kinds[self.expected_type_stack_len - @intCast(usize, 1)];
+}
+
+fn topExpectedTypeId(self: *SemanticAnalyzer) u32 {
     if (self.expected_type_stack_len == @intCast(usize, 0)) return @intCast(u32, 0);
     return self.expected_type_stack_items[self.expected_type_stack_len - @intCast(usize, 1)];
+}
+
+// A value consumer that needed an expected type but found only an unresolved
+// annotation rejects with one clean level-0 diagnostic (never a sentinel id).
+fn semanticAnalyzerReportUnresolvedExpected(self: *SemanticAnalyzer, node_idx: u32, msg: []const u8) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var n = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, n.span_start, n.span_start + @intCast(u32, n.span_len), msg);
 }
 
 // Task 9B (c, m1240 ruling 5): validate an `if`/`while` condition. With no
@@ -6710,8 +6842,11 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             if (node.child_1 != @intCast(u32, 0)) {
                 var init_node = ast_mod.astStoreNodeAt(self.store, node.child_1);
                 var ik_m: []const u8 = "I:K"; pal_mod.markerWriteInt(ik_m, @intCast(u32, @enumToInt(init_node.kind)));
-                var vd_exp = if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) decl_type else @intCast(u32, 0);
-                pushExpectedType(self, vd_exp);
+                if (node.child_0 == @intCast(u32, 0)) {
+                    pushExpectedTypeNone(self);
+                } else {
+                    pushExpectedTypeDeclared(self, decl_type);
+                }
                 var it = semanticAnalyzerResolveExpr(self, node.child_1);
                 popExpectedType(self);
                 if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED) and init_node.kind == AstKind.error_literal) {
@@ -7480,7 +7615,7 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
          if (el.kind == AstKind.char_literal) { el_tid = type_mod.TYPE_U8; }
          else if (el.kind == AstKind.int_literal) { el_tid = type_mod.TYPE_U32; }
          else {
-             if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED)) { pushExpectedType(self, elem_expected); }
+             if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED)) { pushExpectedTypeMaybe(self, elem_expected); }
              el_tid = semanticAnalyzerResolveExpr(self, el_ix);
              if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED)) { popExpectedType(self); }
          }
@@ -7572,8 +7707,23 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
     if (decl.child_0 != @intCast(u32, 0)) {
         var rt = rtt_mod.resolvedTypeTableGet(self.type_table, decl.child_0);
         if (rt) |t| { decl_type = t; }
+        // Mirror the local rule: an annotation the table has not resolved yet
+        // gets one full-resolution attempt (order-independent forward aliases
+        // resolve here); only a still-unresolved annotation is `undetermined`.
+        if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+            var mvd_env = semanticAnalyzerTypeEnvLocals(self, self.module_id);
+            var mvd_full = type_resolver.resolveTypeExprFull(&mvd_env, decl.child_0, @intCast(u32, 0));
+            if (mvd_full != type_mod.TYPE_UNDEFINED) {
+                decl_type = mvd_full;
+                rtt_mod.resolvedTypeTableSet(self.type_table, decl.child_0, mvd_full);
+            }
+        }
     }
-    pushExpectedType(self, decl_type);
+    if (decl.child_0 == @intCast(u32, 0)) {
+        pushExpectedTypeNone(self);
+    } else {
+        pushExpectedTypeDeclared(self, decl_type);
+    }
     // FX12 (Volume II ch12): mark real container scope so a module-level
     // initializer's `try` rejects as "'try' outside function scope".
     self.container_init_depth += @intCast(u32, 1);
