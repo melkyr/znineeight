@@ -54,11 +54,14 @@ pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
         filemod.close(&f);
         return error.Io;
     }
-    const n: usize = @intCast(usize, sz);
-    if (n > ROM_CAP) {
+    // Check the full i64 size before narrowing: on the pinned -m32 target a
+    // file >= 4 GiB would truncate (exactly 4 GiB to n=0) and slip past a
+    // post-narrow cap check.
+    if (sz > @intCast(i64, ROM_CAP)) {
         filemod.close(&f);
         return error.RomTooLarge;
     }
+    const n: usize = @intCast(usize, sz);
     var got: usize = 0;
     while (got < n) {
         const r = filemod.read(&f, e.rom[got..n]) catch {

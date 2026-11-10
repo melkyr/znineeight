@@ -131,6 +131,51 @@ check_word "first pixel" 0 00010000
 check_word "middle pixel" 46400 00014850
 check_word "last pixel" 92156 00018F9F
 
+# ---- fix round 1: 8 MiB ROM cap boundary -------------------------------
+# emuLoadRom must reject anything above 8 MiB after comparing the full i64 file
+# size, before narrowing to the 32-bit usize. The 4 GiB sparse case is the
+# regression guard for the truncating narrow (exactly 4 GiB used to become 0).
+ROM_OK="$OUT/rom_8m.bin"
+ROM_OVER="$OUT/rom_8m_plus1.bin"
+ROM_HUGE="$OUT/rom_4g_sparse.bin"
+dd if=/dev/zero of="$ROM_OK" bs=1048576 count=8 >/dev/null 2>&1
+dd if=/dev/zero of="$ROM_OVER" bs=1048576 count=8 >/dev/null 2>&1
+printf 'x' >>"$ROM_OVER"
+
+if [ -x "$BIN" ] && timeout 60 "$BIN" --headless --frames 1 --rom "$ROM_OK" >/dev/null 2>&1; then
+    pass_case "exactly 8 MiB ROM accepted"
+else
+    fail_case "exactly 8 MiB ROM accepted"
+fi
+
+if [ -x "$BIN" ] && timeout 60 "$BIN" --headless --frames 1 --rom "$ROM_OVER" >"$OUT/rom_over.err" 2>&1; then
+    fail_case "8 MiB + 1 ROM rejected (exited 0)"
+else
+    rc=$?
+    if [ "$rc" -eq 2 ] && grep -q "ROM too large" "$OUT/rom_over.err"; then
+        pass_case "8 MiB + 1 ROM rejected (RomTooLarge)"
+    else
+        fail_case "8 MiB + 1 ROM rejected (rc=$rc)"
+    fi
+fi
+
+if command -v truncate >/dev/null 2>&1; then
+    truncate -s 4294967296 "$ROM_HUGE"
+    if [ -x "$BIN" ] && timeout 60 "$BIN" --headless --frames 1 --rom "$ROM_HUGE" >"$OUT/rom_huge.err" 2>&1; then
+        fail_case "4 GiB sparse ROM rejected (exited 0)"
+    else
+        rc=$?
+        if [ "$rc" -eq 2 ] && grep -q "ROM too large" "$OUT/rom_huge.err"; then
+            pass_case "4 GiB sparse ROM rejected (RomTooLarge)"
+        else
+            fail_case "4 GiB sparse ROM rejected (rc=$rc)"
+        fi
+    fi
+    rm -f "$ROM_HUGE"
+fi
+
+rm -f "$ROM_OK" "$ROM_OVER"
+
 echo
 echo "== tier_smoke summary: $PASSES passed, $FAILS failed =="
 if [ "$FAILS" -ne 0 ]; then
