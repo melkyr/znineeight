@@ -258,6 +258,7 @@ git commit -m "feat(z9gb): add 64 KiB MMU and OAM DMA"
   - `pub fn serialWrite(s: *Serial, addr: u16, value: u8) void;`
   - `pub fn serialTick(s: *Serial, cycles: u32) void;`
   - `pub fn serialTake(s: *Serial, out: []u8) usize;`
+- **Superseded by Task 7:** Timer/Serial no longer store `ifr`; their IRQ-raising entry points take `*Bus` and call `busRaiseIrq`. Task 7 owns the interface change.
 
 - [ ] **Step 1: Write the failing test**
 Tests: DIV increments at 16384 Hz; any DIV write resets the 16-bit divider to zero (and the DIV-write falling edge can spuriously tick TIMA); TAC selects 4096/262144/65536/16384 Hz and TAC-write mux changes can glitch an extra TIMA tick; TIMA overflow holds 0 for 4 M-cycles, then reloads TMA and requests timer interrupt; HALT with IME=0 and pending interrupt triggers the HALT bug (PC double-fetch); `EI` takes effect only after the next instruction while `DI` cancels it; serial write logs `SB` and clears SC bit 7 after 8 cycles. Expected: fails on missing modules.
@@ -288,6 +289,10 @@ git commit -m "feat(z9gb): add timer, interrupts, HALT and serial harness"
 
 **Files:**
 - Create: `examples/z98/z9gb/ppu.zig`
+- Modify: `examples/z98/z9gb/mmu.zig`
+- Modify: `examples/z98/z9gb/cpu.zig`
+- Modify: `examples/z98/z9gb/timer.zig`
+- Modify: `examples/z98/z9gb/serial.zig`
 - Modify: `examples/z98/z9gb/emu.zig`
 - Test: `examples/z98/z9gb/tests/tier_dmg.sh`
 
@@ -297,23 +302,29 @@ git commit -m "feat(z9gb): add timer, interrupts, HALT and serial harness"
   - `pub fn ppuReset(p: *Ppu) void;`
   - `pub fn ppuTick(p: *Ppu, cycles: u32, bus: *Bus) void;`
   - `pub fn ppuRead(p: *Ppu, addr: u16) u8;`
-  - `pub fn ppuWrite(p: *Ppu, addr: u16, value: u8) void;`
+  - `pub fn ppuWrite(p: *Ppu, addr: u16, value: u8, bus: *Bus) void;`
   - `pub fn ppuFramebuffer(p: *Ppu) []const u32;`
+  - `pub fn busRaiseIrq(bus: *Bus, mask: u8) void;` (in `mmu.zig`; ORs into IF `io[0x0F]`)
+  - Task 6 interface amendment folded here: `timerTick(t: *Timer, cycles: u32, bus: *Bus) void;`, `timerWrite(t: *Timer, addr: u16, value: u8, bus: *Bus) void;`, `serialWrite(s: *Serial, addr: u16, value: u8, bus: *Bus) void;`, `serialTick(s: *Serial, cycles: u32, bus: *Bus) void;`. Timer/Serial no longer store `ifr`; every IRQ raise goes through `busRaiseIrq`.
 
 - [ ] **Step 1: Write the failing test**
-Tests: mode sequence 2→3→0 per line; VBlank mode 1 at line 144; `LY=LYC` STAT; BG tile map and tile data; window; 8x8 and 8x16 sprites; sprite priority. Expected: fails on missing PPU.
+Tests: mode sequence 2→3→0 per line; VBlank mode 1 at line 144; `LY=LYC` STAT; BG tile map and tile data; window; 8x8 and 8x16 sprites; sprite priority; window `WX=0`, `WX=1..6`, `WX=7`, `WX=166`, `WX=167` clipping; Pan Docs per-tile mode-3 OBJ penalty incl. same-tile suppression; LYC-write STAT IRQ; LCD re-enable enters mode 2. Expected: fails on missing PPU.
 - [ ] **Step 2: Implement mode timing**
-456 T-cycles per line, 154 lines. Mode 2 for 80 cycles; mode 1 (lines 144-153) for 4560 cycles. Mode 3 uses the **documented penalty model**, not a fixed 172: `172 + (SCX % 8) + window_start_penalty(6 if the window starts on this line) + sum(OBJ penalties)`, where each OBJ costs `6 + max(0, pixels_right_of_obj_left_in_its_tile - 2)` and **an OBJ at `X=0` costs a flat 11 that replaces the general formula for that OBJ** (the general formula would give 12 there; never add both) (Pan Docs). Mode 0 is the remainder. STAT mode bits/interrupts and LYC fire at these boundaries.
+456 T-cycles per line, 154 lines. Mode 2 for 80 cycles; mode 1 (lines 144-153) for 4560 cycles. Mode 3 uses the **Pan Docs per-tile OBJ model**, not a literal per-sprite sum: base `172 + (SCX % 8) + (6 if the window starts on this line)`; group the ≤10 line sprites by the 8-pixel BG/window tile column they overlap; for each distinct tile column with at least one sprite add 6 once, plus the per-sprite right-of-fetcher term `max(0, pixels_right_of_obj_left_in_its_tile - 2)` charged once per tile, with each sprite's contribution capped at 11 (so `X=0` yields 11). Sum the distinct-tile contributions; mode 0 is the remainder. STAT mode bits/interrupts and LYC fire at these boundaries.
 - [ ] **Step 3: Implement scanline rendering**
 Render in **8-pixel tile-row batches** into a `[160]u8` shade buffer: fetch tile id + 2bpp row, expand 8 indices, write the row; window uses its internal line counter; sprites collected during OAM scan (≤10/line), DMG priority by X then OAM index, drawn with per-pixel BG/OBJ priority. Palette mapping uses a **`[4]u32` LUT recomputed only when BGP/OBP0/OBP1 is written** (not per pixel): `0 → 0x009BBC0F`, `1 → 0x008BAC0F`, `2 → 0x00306230`, `3 → 0x000F380F`. No per-pixel function calls.
+
+Window clipping is computed once per line, not per pixel: `wx = WX`; `wx == 0` shifts the window by `SCX % 8`; `1 <= wx <= 6` clips `7 - wx` left pixels; visible start is `max(0, wx - 7)`; `wx >= 167` disables the window. Store `win_start_x`, `win_skip`, `win_visible_len`; render one partial first batch, then full 8-pixel batches.
 - [ ] **Step 4: Implement registers**
 `LCDC=FF40`, `STAT=FF41`, `SCY=FF42`, `SCX=FF43`, `LY=FF44`, `LYC=FF45`, `DMA=FF46`, `BGP=FF47`, `OBP0=FF48`, `OBP1=FF49`, `WY=FF4A`, `WX=FF4B`.
+
+`ppuWrite` takes `*Bus`. On FF45 write: if the LCD is on, `LY == LYC`, and STAT bit 6 is set, call `busRaiseIrq(bus, 0x02)` immediately. On LCDC bit 7 `0→1`, reset line/dot and enter mode 2, mirroring the disable path.
 - [ ] **Step 5: Run the test**
-Expected: PASS for mode/LYC/BG/sprite synthetic cases; `emuFramebuffer` is 160x144 RGB32.
+Expected: PASS for mode/LYC/BG/window/sprite synthetic cases, the per-tile mode-3 penalty, LYC-write IRQ, and LCD re-enable mode 2; `emuFramebuffer` is 160x144 RGB32.
 - [ ] **Step 6: Commit**
 ```bash
-git add examples/z98/z9gb/ppu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/tier_dmg.sh
-git commit -m "feat(z9gb): add DMG scanline PPU"
+git add examples/z98/z9gb/ppu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/cpu.zig examples/z98/z9gb/timer.zig examples/z98/z9gb/serial.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/tier_dmg.sh
+git commit -m "fix(z9gb): correct PPU window, timing and IRQ routing"
 ```
 
 ---
