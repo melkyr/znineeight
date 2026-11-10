@@ -351,17 +351,17 @@ git commit -m "fix(z9gb): correct PPU window, timing and IRQ routing"
   The spec facade signatures stay exactly `emuSaveBattery(e: *Emu) EmuError!void` / `emuLoadBattery(e: *Emu) EmuError!void` (spec §8.2): this task fills in their P1 stubs so they call `saveBattery`/`loadBattery` with `e->save_path` when set by `emuSetSavePath`, otherwise with the path derived from the loaded ROM (spec: "`emuSetSavePath` overrides it"). No facade signature churn.
 
 - [ ] **Step 1: Write the failing test**
-Tests: MBC3 ROM/RAM bank selection, RTC latch/read with the frozen `rtc_fixed` clock (deterministic delta advancement, halt flag, day wrap 511→0, live-write/latched-read), RTC-window mapping (`ram_bank` 8-12 maps `0xA0-0xBF` to `.rtc`; 0-3 keeps direct `.cart_ram`), MBC5 9-bit ROM bank and RAM bank, `.sav` round-trip, `.rtc` round-trip (anchor preserved), short/corrupt `.rtc` rejects `SaveCorrupt`, and a save path with an existing file is not truncated on error.
+Tests: MBC3 ROM/RAM bank selection, RTC latch/read with the frozen `rtc_fixed` clock (deterministic delta advancement, halt flag, day wrap 511→0, live-write/latched-read), RTC access gated by the RAM/RTC enable register (disabled reads `0xFF`, writes ignored), RTC-window mapping (`ram_bank` 8-12 maps `0xA0-0xBF` to `.rtc`; 0-3 keeps direct `.cart_ram`), MBC5 9-bit ROM bank and RAM bank, `.sav` round-trip, `.rtc` round-trip (anchor preserved), `.rtc` bytes 24..31 stay zero, short/corrupt `.rtc` rejects `SaveCorrupt`, and a save path with an existing file is not truncated on error.
 - [ ] **Step 2: Implement MBC3**
 `0x0000-0x1FFF` RAM/RTC enable; `0x2000-0x3FFF` ROM bank (0 maps to 1); `0x4000-0x5FFF` stores `value & 0x0F` in `cart.ram_bank` (0-3 RAM bank, 8-12 RTC register); `0x6000-0x7FFF` latch on `0x00→0x01`. `writeRaw` already calls `rebuildCartPages` after ROM-area writes; extend it to map pages `0xA0-0xBF` to `PageKind.rtc` when `mbc == .mbc3 and ram_bank >= 8`, otherwise to the existing direct `.cart_ram` pages. `readRaw`/`writeRaw` add a `.rtc` case: the selected RTC register is mirrored across `A000-BFFF` (Pan Docs); dispatch to `rtcRead`/`rtcWrite`. Normal cart RAM keeps the direct page-base path. RTC semantics (pinned):
 - **Delta accumulation with an anchor:** RTC advances by adding host-elapsed whole seconds to the five counters whenever time is observed (latch/read/write), and re-anchors the host timestamp at that moment — no per-frame wall-clock reads. Writes go to the **live** counters; reads return the **latched copies**.
 - **Halt flag** (register 0x0C bit 6) freezes accumulation while set. Day counter is 9 bits and **wraps 511→0** (no carry out).
-- **Deterministic headless clock:** `EmuConfig.rtc_fixed` (or `--rtc-fixed <unix>`) freezes the RTC epoch so tests/benchmarks are reproducible; without it, RTC uses real host time and saves record the anchor.
+- **Deterministic headless clock:** the internal `emuSetRtcFixed` seam freezes the RTC epoch so tests/benchmarks are reproducible; Task 9 exposes `--rtc-fixed <unix>` on top of it. Without it, RTC uses real host time and saves record the anchor.
 - The `.rtc` header stores the **timestamp anchor** (last host-observed unix seconds) so load re-anchors correctly across sessions.
 - [ ] **Step 3: Implement MBC5**
 ROM bank 9 bits (`0x2000` low 8, `0x3000` bit 8), RAM bank 4 bits, RAM enable. Bank 0 is valid.
 - [ ] **Step 4: Implement save format**
-Use the spec's 32-byte `Z98RTC1` header (five RTC counters, halt/latch state, **host timestamp anchor**, magic + version + CRC). `.sav` is raw cart RAM. Win9x cannot overwrite via `MoveFileA` (fails if the destination exists) and `CopyFileA` is **not** in the import whitelist (`scripts/win32_cross/check_win9x_imports.sh:26` lists `DeleteFileA`/`MoveFileA`, no `CopyFileA`/`MoveFileExA`). The write sequence is therefore the backup dance, using only whitelisted imports (`std_file_pal.zig:33-34` already declares `DeleteFileA`/`MoveFileA`):
+Use the spec's 32-byte `Z98RTC1` header exactly: magic `0..7`, version `8`, counters `9..13`, flags `14`, reserved `15`, **host timestamp anchor** `16..23`, and bytes `24..31` zero — **no CRC**. `.sav` is raw cart RAM. Win9x cannot overwrite via `MoveFileA` (fails if the destination exists) and `CopyFileA` is **not** in the import whitelist (`scripts/win32_cross/check_win9x_imports.sh:26` lists `DeleteFileA`/`MoveFileA`, no `CopyFileA`/`MoveFileExA`). The write sequence is therefore the backup dance, using only whitelisted imports (`std_file_pal.zig:33-34` already declares `DeleteFileA`/`MoveFileA`):
   1. write `PATH.tmp` fully and close it;
   2. `DeleteFileA(PATH.bak)` (ignore missing);
   3. `MoveFileA(PATH, PATH.bak)`;
@@ -393,12 +393,12 @@ git commit -m "feat(z9gb): add MBC3 RTC, MBC5 and battery saves"
 
 **Interfaces:**
 - Consumes: P2 core.
-- Produces: `--serial`, `--frames`, `--rom`, `--save`, and the external ROM runner.
+- Produces: `--serial`, `--frames`, `--rom`, `--save`, `--rtc-fixed <unix>`, and the external ROM runner.
 
 - [ ] **Step 1: Write the failing gate**
 `tier_dmg.sh --gates` runs the three gate scripts. Each missing ROM prints `SKIP: <path>` and exits 77; a present ROM must pass. Expected: fails because the scripts and CLI flags do not exist.
 - [ ] **Step 2: Add CLI flags**
-`--serial` mirrors serial bytes; `--mooneye` enables the `LD B,B` magic breakpoint: execution stops on opcode `0x40`, and the test passes only when the full mooneye Fibonacci signature matches — `B=3, C=5, D=8, E=13, H=21, L=34` (any other register set is a fail; checking `B=3` alone is not sufficient); `--frames N` runs N frames; `--turbo` runs frames as fast as the host allows (no pacing); `--rom PATH` loads and validates; `--save` writes battery files at exit. No heap.
+`--serial` mirrors serial bytes; `--mooneye` enables the `LD B,B` magic breakpoint: execution stops on opcode `0x40`, and the test passes only when the full mooneye Fibonacci signature matches — `B=3, C=5, D=8, E=13, H=21, L=34` (any other register set is a fail; checking `B=3` alone is not sufficient); `--frames N` runs N frames; `--turbo` runs frames as fast as the host allows (no pacing); `--rom PATH` loads and validates; `--rtc-fixed <unix>` calls `emuSetRtcFixed` before load; `--save` writes battery files at exit. No heap.
 - [ ] **Step 3: Add the ROM manifest**
 `manifest.sha256` lists exact paths and hashes for:
   - `blargg/cpu_instrs/cpu_instrs.gb`
