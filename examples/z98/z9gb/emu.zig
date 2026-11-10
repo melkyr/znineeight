@@ -12,6 +12,7 @@ const cpumod = @import("cpu.zig");
 const serialmod = @import("serial.zig");
 const ppumod = @import("ppu.zig");
 const savemod = @import("save.zig");
+const apumod = @import("apu.zig");
 
 const ROM_CAP: usize = 8 * 1024 * 1024;
 const SAVE_CAP: usize = 260;
@@ -232,6 +233,10 @@ pub fn emuMooneyePass(e: *const Emu) bool {
 
 pub fn emuTakeSerial(e: *Emu, out: []u8) usize {
     return serialmod.serialTake(&e.bus.serial, out);
+}
+
+pub fn emuAudioSamples(e: *Emu, out: []i16) usize {
+    return apumod.apuSamples(&e.bus.apu, out);
 }
 
 pub fn emuSetSavePath(e: *Emu, path: []const u8) void {
