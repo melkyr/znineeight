@@ -1,9 +1,10 @@
-// mmu.zig — z9gb Bus skeleton (Task 2).
+// mmu.zig — z9gb 64 KiB bus, IO routing, and OAM DMA.
 //
 // The 64 KiB address space is covered by a 256-entry page table of 256-byte
 // pages. Every access is one table index plus a kind switch plus a direct
-// `base[addr & 0xFF]`; there is no per-access mapping arithmetic. Task 5 fills
-// the VRAM/OAM/IO/echo windows and adds busTick.
+// `base[addr & 0xFF]`; there is no per-access mapping arithmetic. Echo pages
+// alias WRAM through their bases, and cartridge windows are rebased whenever
+// an MBC register write changes the cached bank offsets.
 
 const cartmod = @import("cart.zig");
 
@@ -11,71 +12,161 @@ pub const PageKind = enum(u8) { rom0, romx, vram, cart_ram, wram, echo, oam, io,
 
 pub const Page = struct { kind: PageKind, base: [*]u8 };
 
+pub const Dma = struct {
+    active: bool,
+    source: u16,
+    index: u16,
+    dots: u32,
+};
+
 pub const Bus = struct {
     pages: [256]Page,
     wram: [8192]u8,
+    vram: [8192]u8,
+    oam: [160]u8,
     hram: [127]u8,
+    io: [128]u8,
+    stub: [256]u8,
     cart: *cartmod.Cart,
     ie: u8,
+    dma: Dma,
 };
+
+fn stubBase(self: *Bus) [*]u8 {
+    return @ptrCast([*]u8, &self.stub[0]);
+}
+
+fn rebuildCartPages(self: *Bus) void {
+    const wram_base: [*]u8 = @ptrCast([*]u8, &self.wram[0]);
+    const ram_base: [*]u8 = @ptrCast([*]u8, &self.cart.ram[0]);
+    const stub_base: [*]u8 = stubBase(self);
+    const have_rom: bool = self.cart.rom.len != 0;
+    const rom_base: [*]u8 = if (have_rom) @ptrCast([*]u8, self.cart.rom.ptr) else wram_base;
+
+    var i: usize = 0;
+    while (i < 0x40) : (i += 1) {
+        const base: [*]u8 = if (have_rom) rom_base + self.cart.rom0_off + i * 256 else wram_base;
+        self.pages[i] = Page{ .kind = .rom0, .base = base };
+    }
+    i = 0;
+    while (i < 0x40) : (i += 1) {
+        const base: [*]u8 = if (have_rom) rom_base + self.cart.romx_off + i * 256 else wram_base;
+        self.pages[0x40 + i] = Page{ .kind = .romx, .base = base };
+    }
+    i = 0;
+    while (i < 0x20) : (i += 1) {
+        const off: usize = self.cart.ram_off + i * 256;
+        var base: [*]u8 = stub_base;
+        if (self.cart.ram_enable and self.cart.ram_size != 0 and off < self.cart.ram_size) {
+            base = ram_base + off;
+        }
+        self.pages[0xA0 + i] = Page{ .kind = .cart_ram, .base = base };
+    }
+}
 
 pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.cart = cart;
     bus.ie = 0;
-
-    const wram_base: [*]u8 = @ptrCast([*]u8, &bus.wram[0]);
-    const hram_base: [*]u8 = @ptrCast([*]u8, &bus.hram[0]);
+    bus.dma.active = false;
+    bus.dma.source = 0;
+    bus.dma.index = 0;
+    bus.dma.dots = 0;
 
     var i: usize = 0;
+    while (i < 8192) : (i += 1) {
+        bus.wram[i] = 0;
+        bus.vram[i] = 0;
+    }
+    i = 0;
+    while (i < 160) : (i += 1) {
+        bus.oam[i] = 0;
+    }
+    i = 0;
+    while (i < 127) : (i += 1) {
+        bus.hram[i] = 0;
+    }
+    i = 0;
+    while (i < 128) : (i += 1) {
+        bus.io[i] = 0;
+    }
+    i = 0;
+    while (i < 256) : (i += 1) {
+        bus.stub[i] = 0xFF;
+    }
+
+    const wram_base: [*]u8 = @ptrCast([*]u8, &bus.wram[0]);
+    const vram_base: [*]u8 = @ptrCast([*]u8, &bus.vram[0]);
+    const oam_base: [*]u8 = @ptrCast([*]u8, &bus.oam[0]);
+    const hram_base: [*]u8 = @ptrCast([*]u8, &bus.hram[0]);
+
+    i = 0;
     while (i < 256) : (i += 1) {
         bus.pages[i] = Page{ .kind = .io, .base = wram_base };
     }
 
-    const have_rom: bool = cart.rom.len != 0;
-    const rom_base: [*]u8 = if (have_rom) @ptrCast([*]u8, cart.rom.ptr) else wram_base;
-    i = 0;
-    while (i < 0x40) : (i += 1) {
-        const base: [*]u8 = if (have_rom) rom_base + cart.rom0_off + i * 256 else wram_base;
-        bus.pages[i] = Page{ .kind = .rom0, .base = base };
-    }
-    i = 0;
-    while (i < 0x40) : (i += 1) {
-        const base: [*]u8 = if (have_rom) rom_base + cart.romx_off + i * 256 else wram_base;
-        bus.pages[0x40 + i] = Page{ .kind = .romx, .base = base };
-    }
-
-    const ram_base: [*]u8 = @ptrCast([*]u8, &cart.ram[0]);
     i = 0;
     while (i < 0x20) : (i += 1) {
-        bus.pages[0xA0 + i] = Page{ .kind = .cart_ram, .base = ram_base + cart.ram_off + i * 256 };
+        bus.pages[0x80 + i] = Page{ .kind = .vram, .base = vram_base + i * 256 };
     }
-
     i = 0;
     while (i < 0x20) : (i += 1) {
         bus.pages[0xC0 + i] = Page{ .kind = .wram, .base = wram_base + i * 256 };
     }
-
+    i = 0;
+    while (i < 0x1E) : (i += 1) {
+        bus.pages[0xE0 + i] = Page{ .kind = .echo, .base = wram_base + i * 256 };
+    }
+    bus.pages[0xFE] = Page{ .kind = .oam, .base = oam_base };
     bus.pages[0xFF] = Page{ .kind = .hram, .base = hram_base - 0x80 };
+
+    rebuildCartPages(bus);
+
+    bus.io[0x00] = 0xCF;
+    bus.io[0x0F] = 0xE1;
+    bus.io[0x40] = 0x91;
+    bus.io[0x47] = 0xFC;
+    bus.io[0x48] = 0xFF;
+    bus.io[0x49] = 0xFF;
+    bus.io[0x4A] = 0x00;
+    bus.io[0x4B] = 0x00;
 }
 
-pub fn read8(self: *Bus, addr: u16) u8 {
+pub fn ioRead(self: *Bus, addr: u16) u8 {
+    return self.io[@intCast(usize, addr & 0x7F)];
+}
+
+pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
+    if (addr == 0xFF46) {
+        self.io[0x46] = value;
+        self.dma.active = true;
+        self.dma.source = @intCast(u16, value) << 8;
+        self.dma.index = 0;
+        self.dma.dots = 0;
+        return;
+    }
+    self.io[@intCast(usize, addr & 0x7F)] = value;
+}
+
+fn readRaw(self: *Bus, addr: u16) u8 {
     if (addr == 0xFFFF) return self.ie;
     const page: Page = self.pages[@intCast(usize, addr >> 8)];
     const off: usize = @intCast(usize, addr & 0xFF);
     switch (page.kind) {
-        .rom0, .romx => return page.base[off],
-        .cart_ram => return cartmod.cartRead(self.cart, addr),
-        .wram, .vram, .echo, .oam => return page.base[off],
-        .hram => {
-            if (addr < 0xFF80) return 0xFF;
+        .rom0, .romx, .cart_ram, .wram, .vram, .echo => return page.base[off],
+        .oam => {
+            if (off >= 0xA0) return 0xFF;
             return page.base[off];
         },
-        .io => return 0xFF,
+        .hram => {
+            if (addr < 0xFF80) return ioRead(self, addr);
+            return page.base[off];
+        },
+        .io => return ioRead(self, addr),
         else => unreachable,
     }
 }
 
-pub fn write8(self: *Bus, addr: u16, value: u8) void {
+fn writeRaw(self: *Bus, addr: u16, value: u8) void {
     if (addr == 0xFFFF) {
         self.ie = value;
         return;
@@ -83,14 +174,61 @@ pub fn write8(self: *Bus, addr: u16, value: u8) void {
     const page: Page = self.pages[@intCast(usize, addr >> 8)];
     const off: usize = @intCast(usize, addr & 0xFF);
     switch (page.kind) {
-        .rom0, .romx => cartmod.cartWrite(self.cart, addr, value),
-        .cart_ram => cartmod.cartWrite(self.cart, addr, value),
-        .wram, .vram, .echo, .oam => page.base[off] = value,
-        .hram => {
-            if (addr >= 0xFF80) page.base[off] = value;
+        .rom0, .romx => {
+            cartmod.cartWrite(self.cart, addr, value);
+            rebuildCartPages(self);
         },
-        .io => {},
+        .cart_ram => {
+            const stub_base: [*]u8 = stubBase(self);
+            if (page.base != stub_base) page.base[off] = value;
+        },
+        .wram, .vram, .echo => page.base[off] = value,
+        .oam => {
+            if (off < 0xA0) page.base[off] = value;
+        },
+        .hram => {
+            if (addr >= 0xFF80) {
+                page.base[off] = value;
+            } else {
+                ioWrite(self, addr, value);
+            }
+        },
+        .io => ioWrite(self, addr, value),
         else => unreachable,
+    }
+}
+
+pub fn read8(self: *Bus, addr: u16) u8 {
+    if (self.dma.active) {
+        if (addr >= 0xFF80 and addr <= 0xFFFE) {
+            return self.pages[0xFF].base[@intCast(usize, addr & 0xFF)];
+        }
+        return 0xFF;
+    }
+    return readRaw(self, addr);
+}
+
+pub fn write8(self: *Bus, addr: u16, value: u8) void {
+    if (self.dma.active) {
+        if (addr >= 0xFF80 and addr <= 0xFFFE) {
+            self.pages[0xFF].base[@intCast(usize, addr & 0xFF)] = value;
+        }
+        return;
+    }
+    writeRaw(self, addr, value);
+}
+
+pub fn busTick(self: *Bus, cycles: u32) void {
+    if (!self.dma.active) return;
+    self.dma.dots +%= cycles;
+    while (self.dma.active and self.dma.dots >= 4) {
+        self.dma.dots -= 4;
+        const idx: usize = @intCast(usize, self.dma.index);
+        const src_addr: u16 = self.dma.source +% @intCast(u16, idx);
+        const value: u8 = readRaw(self, src_addr);
+        self.oam[idx] = value;
+        self.dma.index = @intCast(u16, idx + 1);
+        if (self.dma.index >= 160) self.dma.active = false;
     }
 }
 

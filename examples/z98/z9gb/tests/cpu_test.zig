@@ -14,10 +14,12 @@ const FLAG_H: u8 = 0x20;
 const FLAG_C: u8 = 0x10;
 
 const CODE: u16 = 0xC000;
+const ROM_BYTES: usize = 32768;
 
 var g_cart: cartmod.Cart = undefined;
 var g_bus: mmumod.Bus = undefined;
 var g_cpu: cpumod.Cpu = undefined;
+var g_rom: [ROM_BYTES]u8 = undefined;
 var g_pass: u32 = 0;
 var g_fail: u32 = 0;
 
@@ -30,6 +32,31 @@ fn reset() void {
     cartmod.cartInit(&g_cart);
     mmumod.busInit(&g_bus, &g_cart);
     cpumod.cpuInit(&g_cpu);
+}
+
+fn loadSyntheticRom(ctype: u8, ram_code: u8) void {
+    var i: usize = 0;
+    while (i < ROM_BYTES) : (i += 1) {
+        g_rom[i] = 0;
+    }
+    g_rom[0x0147] = ctype;
+    g_rom[0x0148] = 0x00;
+    g_rom[0x0149] = ram_code;
+    g_rom[0x0000] = 0x11;
+    g_rom[0x0001] = 0x22;
+    g_rom[0x4000] = 0x33;
+    g_rom[0x7FFF] = 0x44;
+    cartmod.cartInit(&g_cart);
+    cartmod.cartLoad(&g_cart, g_rom[0..ROM_BYTES]) catch {
+        g_fail += 1;
+        std.io.write("FAIL rom load\n");
+    };
+    mmumod.busInit(&g_bus, &g_cart);
+    cpumod.cpuInit(&g_cpu);
+}
+
+fn resetRom() void {
+    loadSyntheticRom(0x00, 0x00);
 }
 
 fn checkByte(label: []const u8, got: u8, want: u8) void {
@@ -1184,7 +1211,118 @@ fn testCbBoundaries() void {
     checkWord("cb 0xFF prefix pc", g_cpu.pc, CODE +% 2);
 }
 
+fn testMmuRouting() void {
+    resetRom();
+    checkByte("rom0 0000", mmumod.read8(&g_bus, 0x0000), 0x11);
+    checkByte("rom0 0001", mmumod.read8(&g_bus, 0x0001), 0x22);
+    checkByte("romx 4000", mmumod.read8(&g_bus, 0x4000), 0x33);
+    checkByte("romx 7fff", mmumod.read8(&g_bus, 0x7FFF), 0x44);
+
+    reset();
+    checkByte("io ff00 default", mmumod.read8(&g_bus, 0xFF00), 0xCF);
+    checkByte("io ff0f default", mmumod.read8(&g_bus, 0xFF0F), 0xE1);
+    checkByte("io ff40 default", mmumod.read8(&g_bus, 0xFF40), 0x91);
+    checkByte("io ff47 default", mmumod.read8(&g_bus, 0xFF47), 0xFC);
+    checkByte("io ff48 default", mmumod.read8(&g_bus, 0xFF48), 0xFF);
+    checkByte("io ff49 default", mmumod.read8(&g_bus, 0xFF49), 0xFF);
+    checkByte("io ff4a default", mmumod.read8(&g_bus, 0xFF4A), 0x00);
+    checkByte("io ff4b default", mmumod.read8(&g_bus, 0xFF4B), 0x00);
+    checkByte("ie default", mmumod.read8(&g_bus, 0xFFFF), 0x00);
+
+    mmumod.write8(&g_bus, 0x8000, 0x5A);
+    checkByte("vram 8000", mmumod.read8(&g_bus, 0x8000), 0x5A);
+    mmumod.write8(&g_bus, 0x9FFF, 0xA5);
+    checkByte("vram 9fff", mmumod.read8(&g_bus, 0x9FFF), 0xA5);
+    mmumod.write8(&g_bus, 0xC000, 0x12);
+    checkByte("wram c000", mmumod.read8(&g_bus, 0xC000), 0x12);
+    mmumod.write8(&g_bus, 0xDFFF, 0x34);
+    checkByte("wram dfff", mmumod.read8(&g_bus, 0xDFFF), 0x34);
+
+    mmumod.write8(&g_bus, 0xC123, 0x56);
+    checkByte("echo e123", mmumod.read8(&g_bus, 0xE123), 0x56);
+    mmumod.write8(&g_bus, 0xE456, 0x9A);
+    checkByte("echo alias wram", mmumod.read8(&g_bus, 0xC456), 0x9A);
+    mmumod.write8(&g_bus, 0xFDDF, 0x78);
+    checkByte("echo fddf", mmumod.read8(&g_bus, 0xDDDF), 0x78);
+
+    mmumod.write8(&g_bus, 0xFE00, 0xBC);
+    checkByte("oam fe00", mmumod.read8(&g_bus, 0xFE00), 0xBC);
+    mmumod.write8(&g_bus, 0xFE9F, 0xDE);
+    checkByte("oam fe9f", mmumod.read8(&g_bus, 0xFE9F), 0xDE);
+    mmumod.write8(&g_bus, 0xFEA0, 0x77);
+    checkByte("fea0 reads ff", mmumod.read8(&g_bus, 0xFEA0), 0xFF);
+    checkByte("feff reads ff", mmumod.read8(&g_bus, 0xFEFF), 0xFF);
+
+    mmumod.write8(&g_bus, 0xFF80, 0x11);
+    checkByte("hram ff80", mmumod.read8(&g_bus, 0xFF80), 0x11);
+    mmumod.write8(&g_bus, 0xFFFE, 0x22);
+    checkByte("hram fffe", mmumod.read8(&g_bus, 0xFFFE), 0x22);
+    mmumod.write8(&g_bus, 0xFFFF, 0x1F);
+    checkByte("ie ffff", mmumod.read8(&g_bus, 0xFFFF), 0x1F);
+}
+
+fn testCartRam() void {
+    loadSyntheticRom(0x01, 0x02);
+    checkByte("cart ram disabled read", mmumod.read8(&g_bus, 0xA000), 0xFF);
+    mmumod.write8(&g_bus, 0xA000, 0x12);
+    checkByte("cart ram disabled write", mmumod.read8(&g_bus, 0xA000), 0xFF);
+
+    mmumod.write8(&g_bus, 0x0000, 0x0A);
+    checkByte("cart ram enabled read", mmumod.read8(&g_bus, 0xA000), 0x00);
+    mmumod.write8(&g_bus, 0xA000, 0x5A);
+    checkByte("cart ram readback", mmumod.read8(&g_bus, 0xA000), 0x5A);
+    checkByte("cart ram page base", g_cart.ram[0], 0x5A);
+    mmumod.write8(&g_bus, 0xA123, 0xA5);
+    checkByte("cart ram high", mmumod.read8(&g_bus, 0xA123), 0xA5);
+
+    mmumod.write8(&g_bus, 0x0000, 0x00);
+    checkByte("cart ram disabled again", mmumod.read8(&g_bus, 0xA000), 0xFF);
+}
+
+fn testOamDma() void {
+    reset();
+    var i: usize = 0;
+    while (i < 160) : (i += 1) {
+        const addr: u16 = 0xC000 + @intCast(u16, i);
+        mmumod.write8(&g_bus, addr, @intCast(u8, (i + 0x40) & 0xFF));
+    }
+    mmumod.write8(&g_bus, 0xC0A0, 0xEE);
+    mmumod.write8(&g_bus, 0xFF80, 0x5A);
+    mmumod.write8(&g_bus, 0xFE00, 0x99);
+    mmumod.write8(&g_bus, 0xFFFF, 0x1F);
+
+    mmumod.write8(&g_bus, 0xFF46, 0xC0);
+    checkByte("dma blocks wram read", mmumod.read8(&g_bus, 0xC000), 0xFF);
+    checkByte("dma hram read", mmumod.read8(&g_bus, 0xFF80), 0x5A);
+    mmumod.write8(&g_bus, 0xFF81, 0xA5);
+    checkByte("dma hram write", mmumod.read8(&g_bus, 0xFF81), 0xA5);
+    mmumod.write8(&g_bus, 0xC001, 0x00);
+    checkByte("dma ignores wram write", g_bus.wram[1], 0x41);
+    mmumod.write8(&g_bus, 0xFE01, 0x77);
+    checkByte("dma blocks oam write", g_bus.oam[1], 0x00);
+    checkByte("dma blocks oam read", mmumod.read8(&g_bus, 0xFE00), 0xFF);
+    checkByte("dma blocks ie read", mmumod.read8(&g_bus, 0xFFFF), 0xFF);
+    mmumod.write8(&g_bus, 0xFFFF, 0x00);
+    checkByte("dma no instant copy", g_bus.oam[0], 0x99);
+
+    mmumod.busTick(&g_bus, 4);
+    checkByte("dma one mcycle byte0", g_bus.oam[0], 0x40);
+    checkByte("dma one mcycle byte1 untouched", g_bus.oam[1], 0x00);
+
+    mmumod.busTick(&g_bus, 636);
+    checkByte("dma done byte159", g_bus.oam[159], 0xDF);
+    checkBool("dma inactive", g_bus.dma.active, false);
+    checkByte("dma done oam read", mmumod.read8(&g_bus, 0xFE00), 0x40);
+    checkByte("dma done wram read", mmumod.read8(&g_bus, 0xC000), 0x40);
+    checkByte("dma ignored write stayed", mmumod.read8(&g_bus, 0xC001), 0x41);
+    checkByte("dma ignored ie write", mmumod.read8(&g_bus, 0xFFFF), 0x1F);
+    checkByte("dma source tail not copied", mmumod.read8(&g_bus, 0xC0A0), 0xEE);
+}
+
 pub fn main() void {
+    testMmuRouting();
+    testCartRam();
+    testOamDma();
     testAlu();
     testIncDec();
     testDaa();

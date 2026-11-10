@@ -7,6 +7,7 @@
 const std = @import("std");
 const filemod = @import("std_file");
 const cartmod = @import("cart.zig");
+const mmumod = @import("mmu.zig");
 
 const ROM_CAP: usize = 8 * 1024 * 1024;
 const SERIAL_CAP: usize = 4096;
@@ -29,6 +30,7 @@ pub const Emu = struct {
     save_path: [SAVE_CAP]u8,
     save_len: usize,
     cart: cartmod.Cart,
+    bus: mmumod.Bus,
 };
 
 pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
@@ -41,6 +43,7 @@ pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     e.cfg = cfg;
     e.save_len = 0;
     cartmod.cartInit(&e.cart);
+    mmumod.busInit(&e.bus, &e.cart);
 }
 
 // Loader contract: size-checked copy into the fixed 8 MiB buffer, then validate
@@ -86,6 +89,7 @@ pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
             else => error.Io,
         };
     };
+    mmumod.busInit(&e.bus, &e.cart);
 }
 
 pub fn emuReset(e: *Emu) void {
