@@ -437,6 +437,7 @@ git commit -m "test(z9gb): add DMG hard gates and ROM manifest"
 
 **Files:**
 - Modify: `examples/z98/z9gb/cpu.zig`
+- Modify: `examples/z98/z9gb/main.zig`
 - Modify: `examples/z98/z9gb/mmu.zig`
 - Modify: `examples/z98/z9gb/timer.zig`
 - Modify: `examples/z98/z9gb/tests/cpu_test.zig`
@@ -457,7 +458,7 @@ Pan Docs: TIMA stays `$00` for **one M-cycle = 4 T-cycles** after overflow, then
 - [ ] **Step 4: Correct `BIT` H**
 `BIT` sets `H=1` and leaves `N=0`; `C` is unchanged. Update the `cpu_test.zig` `BIT` flag expectations from `H=false` to `H=true`.
 - [ ] **Step 5: Accept both Blargg terminal verdicts**
-`run_blargg.sh` must accept terminal `Passed` and terminal `Passed all tests.`; any `Failed` line or cap without a verdict is FAIL. Do not weaken the gate or skip a ROM.
+`main.zig` must also treat `Passed` and `Passed all tests.` as terminal PASS lines and exit before the frame cap; `run_blargg.sh` must accept the same two terminal verdicts. Any `Failed` line or cap without a verdict is FAIL. Do not weaken the gate or skip a ROM.
 - [ ] **Step 6: Place bus accesses at M-cycle boundaries**
 Replace instruction-atomic post-tick timing: every external bus access is preceded by the correct 4-T-cycle bus time, and internal cycles tick the bus at their instruction-specific points. Do not tick the whole instruction after the fact and do not double-tick. The timer/DIV/IF paths must observe accesses in the order the CPU performs them.
 - [ ] **Step 7: Fix interrupt dispatch timing**
@@ -466,7 +467,7 @@ Keep the 20-cycle dispatch cost, but place those cycles on the bus at the same p
 Run all four Blargg gates plus `tier_dmg --all` under `-ffast` and `-fsafe`. Expected: `cpu_instrs`, `instr_timing`, `mem_timing`, and `interrupt_time` PASS; existing tier stays green. If `interrupt_time` still emits no serial after the timing fixes, STOP with the exact serial/step evidence; do not silently skip or replace the gate.
 - [ ] **Step 9: Commit**
 ```bash
-git add examples/z98/z9gb/cpu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/timer.zig examples/z98/z9gb/tests/cpu_test.zig examples/z98/z9gb/tests/run_blargg.sh examples/z98/z9gb/tests/tier_dmg.sh
+git add examples/z98/z9gb/main.zig examples/z98/z9gb/cpu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/timer.zig examples/z98/z9gb/tests/cpu_test.zig examples/z98/z9gb/tests/run_blargg.sh examples/z98/z9gb/tests/tier_dmg.sh
 git commit -m "fix(z9gb): correct CPU timing, STOP and timer reload"
 ```
 
