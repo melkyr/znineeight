@@ -156,17 +156,17 @@ git commit -m "feat(z9gb): add SM83 ALU, flags and Bus skeleton"
 
 **Interfaces:**
 - Consumes: `Bus`.
-- Produces: full non-CB load/stack/control opcode coverage.
+- Produces: full non-CB load/stack/control and immediate-ALU opcode coverage, with taken-branch cycle extras.
 
 - [ ] **Step 1: Write the failing tests**
-Tests: `LD r,r'`, `LD r,(HL)`, `LD (HL),r`, `LD (BC/DE/HL),A`, `LDH (a8),A`, `LD (a16),A`, `LD A,(a16)`, `LD SP,d16`, `PUSH/POP`, `JP a16`, `JP cc,a16`, `JR e8`, `JR cc,e8`, `CALL a16`, `CALL cc,a16`, `RET`, `RET cc`, `RETI`, `RST`, `JP (HL)`, `LD (a16),SP`.
+Tests: `LD r,r'`, `LD r,(HL)`, `LD (HL),r`, `LD (BC/DE/HL),A`, `LDH (a8),A`, `LD (a16),A`, `LD A,(a16)`, `LD SP,d16`, `LD SP,HL`, `PUSH/POP`, `JP a16`, `JP cc,a16`, `JR e8`, `JR cc,e8`, `CALL a16`, `CALL cc,a16`, `RET`, `RET cc`, `RETI`, `RST`, `JP (HL)`, `LD (a16),SP`, immediate ALU `ADD/ADC/SUB/SBC/AND/OR/XOR/CP A,d8` (`0xC6/0xCE/0xD6/0xDE/0xE6/0xEE/0xF6/0xFE`), and taken/not-taken cycle checks for `JR cc`, `JP cc`, `CALL cc`, `RET cc`.
 Expected: fails on missing handlers.
 - [ ] **Step 2: Implement 16-bit helpers**
 `read16`/`write16` little-endian; stack push decrements SP by 2; pop increments; `RETI` sets IME.
-- [ ] **Step 3: Implement control flow**
-Conditional flags use Z/C only. `JR` offset is signed `i8`, PC relative to the next instruction. `JP (HL)` reads `HL`.
-- [ ] **Step 4: Verify stack and PC**
-Unit test asserts SP before/after push/pop, return address bytes, and `RETI` IME.
+- [ ] **Step 3: Implement control flow and cycle extras**
+Conditional flags use Z/C only. `JR` offset is signed `i8`, PC relative to the next instruction. `JP (HL)` reads `HL`. The base cycle table stores the not-taken cost; when the condition is taken add the standard extra: `JR cc +4`, `JP cc +4`, `CALL cc +12`, `RET cc +12` T-cycles. `LD SP,HL` is 8 T-cycles. Immediate ALU opcodes are 8 T-cycles.
+- [ ] **Step 4: Verify stack, PC, and cycles**
+Unit test asserts SP before/after push/pop, return address bytes, `RETI` IME, and the taken/not-taken cycle totals above.
 - [ ] **Step 5: Run the test**
 Expected: PASS under `-ffast` and `-fsafe`.
 - [ ] **Step 6: Commit**
