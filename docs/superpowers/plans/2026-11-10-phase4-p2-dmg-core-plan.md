@@ -261,12 +261,12 @@ git commit -m "feat(z9gb): add 64 KiB MMU and OAM DMA"
 - **Superseded by Task 7:** Timer/Serial no longer store `ifr`; their IRQ-raising entry points take `*Bus` and call `busRaiseIrq`. Task 7 owns the interface change.
 
 - [ ] **Step 1: Write the failing test**
-Tests: DIV increments at 16384 Hz; any DIV write resets the 16-bit divider to zero (and the DIV-write falling edge can spuriously tick TIMA); TAC selects 4096/262144/65536/16384 Hz and TAC-write mux changes can glitch an extra TIMA tick; TIMA overflow holds 0 for 4 M-cycles, then reloads TMA and requests timer interrupt; HALT with IME=0 and pending interrupt triggers the HALT bug (PC double-fetch); `EI` takes effect only after the next instruction while `DI` cancels it; serial write logs `SB` and clears SC bit 7 after 8 cycles. Expected: fails on missing modules.
+Tests: DIV increments at 16384 Hz; any DIV write resets the 16-bit divider to zero (and the DIV-write falling edge can spuriously tick TIMA); TAC selects 4096/262144/65536/16384 Hz and TAC-write mux changes can glitch an extra TIMA tick; TIMA overflow holds 0 for one M-cycle (4 T-cycles), then reloads TMA and requests timer interrupt; HALT with IME=0 and pending interrupt triggers the HALT bug (PC double-fetch); `EI` takes effect only after the next instruction while `DI` cancels it; serial write logs `SB` and clears SC bit 7 after 8 cycles. Expected: fails on missing modules.
 - [ ] **Step 2: Implement DIV/TIMA**
 Keep a 16-bit internal divider; DIV is the high byte. Any write to DIV resets the entire 16-bit divider to 0 (the low byte must not survive — mooneye `div_write.gb` gates this). TAC enable bit 2 and clock select bits 0-1. TIMA increments on the selected falling edge; overflow reloads TMA and sets IF bit 2. Model the three hardware glitch edges exactly (TCAGBD/Pan Docs; gated by the Mooneye timer subset):
   1. the DIV-write reset can itself produce a falling edge on the selected bit — implement it as a real divider reset that may spuriously increment TIMA;
   2. a TAC write that changes enable/select can glitch an extra TIMA increment (muxed-signal falling edge): compute the selected-bit state before and after the write and count a falling edge if it changed 1→0;
-  3. on overflow TIMA stays **0 for 4 M-cycles** before the TMA reload + IF raise (not instant) — track a small reload-delay counter; reads during the window return 0.
+  3. on overflow TIMA stays **0 for one M-cycle (4 T-cycles)** before the TMA reload + IF raise (not instant) — track a small reload-delay counter; reads during the window return 0.
 All wrap math follows the `-fsafe` idiom (u16 temp + `& 0xFFFF` / `+%`).
 - [ ] **Step 3: Implement interrupts and the EI delay**
 At instruction boundaries, if IME and `IE & IF & 0x1F`:
@@ -415,7 +415,7 @@ git commit -m "feat(z9gb): add MBC3 RTC, MBC5 and battery saves"
   - `acid2/dmg-acid2.gb`
 `README.md` records the pinned commits from the spec. Task 0 verifies these exact filenames against the pinned Mooneye commit and records any rename in the manifest; a missing filename is a plan STOP, not a silent SKIP. The `mbc1` rows gate the three MBC1 mode-1 edges of Task 1.
 - [ ] **Step 4: Add the gate runners**
-  - `run_blargg.sh`: Blargg verdicts need minutes of emulated time (`cpu_instrs` = ~11 sub-tests × tens of seconds each ≈ 20,000+ frames); a 600-frame run can never reach one. Run each ROM with `--serial --turbo --frames 200000` (≈56 emulated minutes; turbo makes this minutes of wall time). The emulator exits early when the serial stream reaches a terminal Blargg verdict line (`Passed` or `Failed`). PASS requires the exact terminal `Passed` and no `Failed`; reaching the frame cap without a verdict is FAIL (timeout), never PASS.
+  - `run_blargg.sh`: Blargg verdicts need minutes of emulated time (`cpu_instrs` = ~11 sub-tests × tens of seconds each ≈ 20,000+ frames); a 600-frame run can never reach one. Run each ROM with `--serial --turbo --frames 200000` (≈56 emulated minutes; turbo makes this minutes of wall time). The emulator exits early when the serial stream reaches a terminal Blargg verdict line (`Passed`, `Passed all tests.`, or `Failed`). PASS requires the exact terminal `Passed` or `Passed all tests.` and no `Failed`; reaching the frame cap without a verdict is FAIL (timeout), never PASS.
   - `run_mooneye.sh`: run each ROM with `--mooneye --frames 60000`; the `LD B,B` breakpoint fires long before the cap. PASS requires the full Fibonacci register signature `B=3, C=5, D=8, E=13, H=21, L=34`; anything else is FAIL.
   - `run_acid2.sh`: compare `--fb-out` against `testdata/golden/dmg-acid2.fb` via `sha256sum` (plus byte-size `92160`).
 - [ ] **Step 5: Add the golden**
@@ -433,32 +433,41 @@ git commit -m "test(z9gb): add DMG hard gates and ROM manifest"
 
 ---
 
-### Task 9.1: CPU/bus timing and STOP
+### Task 9.1: CPU/bus timing, STOP, BIT, timer reload and gate verdicts
 
 **Files:**
 - Modify: `examples/z98/z9gb/cpu.zig`
 - Modify: `examples/z98/z9gb/mmu.zig`
+- Modify: `examples/z98/z9gb/timer.zig`
+- Modify: `examples/z98/z9gb/tests/cpu_test.zig`
+- Modify: `examples/z98/z9gb/tests/run_blargg.sh`
 - Modify: `examples/z98/z9gb/tests/tier_dmg.sh`
 - Test: `examples/z98/z9gb/tests/tier_dmg.sh`
 
 **Interfaces:**
 - Consumes: `Cpu`, `Bus`, timer; Task 9 gate runners.
-- Produces: STOP as a 2-byte instruction; M-cycle bus timing; interrupt dispatch timing. Gates `cpu_instrs`, `mem_timing`, `interrupt_time`.
+- Produces: STOP as a 2-byte instruction; M-cycle bus timing; interrupt dispatch timing; hardware TIMA reload timing; `BIT` H flag; Blargg terminal-verdict matching. Gates `cpu_instrs`, `instr_timing`, `mem_timing`, `interrupt_time`.
 
 - [ ] **Step 1: Write the failing gate run**
-Run `run_blargg.sh` for `cpu_instrs`, `mem_timing`, `interrupt_time`. Expected: current FAIL/SIGTRAP/no-verdict.
+Run `run_blargg.sh` for all four Blargg ROMs. Expected: current FAIL/SIGTRAP/no-verdict.
 - [ ] **Step 2: Implement STOP**
 `0x10` consumes 2 bytes, advances PC past both, executes in 4 T-cycles, and does not trap. DMG STOP has no speed switch; CGB speed-switch behavior remains P4.
-- [ ] **Step 3: Place bus accesses at M-cycle boundaries**
+- [ ] **Step 3: Correct the TIMA reload delay**
+Pan Docs: TIMA stays `$00` for **one M-cycle = 4 T-cycles** after overflow, then TMA is copied and IF bit 2 is raised. Set the reload delay to `4` T-cycles in `timer.zig`; reads during the window return 0. Update `testOverflow` in `tier_dmg.sh` from `tick(15)`/`tick(1)` to `tick(3)`/`tick(1)` and rename the check to `overflow holds 1 mcycle`.
+- [ ] **Step 4: Correct `BIT` H**
+`BIT` sets `H=1` and leaves `N=0`; `C` is unchanged. Update the `cpu_test.zig` `BIT` flag expectations from `H=false` to `H=true`.
+- [ ] **Step 5: Accept both Blargg terminal verdicts**
+`run_blargg.sh` must accept terminal `Passed` and terminal `Passed all tests.`; any `Failed` line or cap without a verdict is FAIL. Do not weaken the gate or skip a ROM.
+- [ ] **Step 6: Place bus accesses at M-cycle boundaries**
 Replace instruction-atomic post-tick timing: every external bus access is preceded by the correct 4-T-cycle bus time, and internal cycles tick the bus at their instruction-specific points. Do not tick the whole instruction after the fact and do not double-tick. The timer/DIV/IF paths must observe accesses in the order the CPU performs them.
-- [ ] **Step 4: Fix interrupt dispatch timing**
+- [ ] **Step 7: Fix interrupt dispatch timing**
 Keep the 20-cycle dispatch cost, but place those cycles on the bus at the same points as the hardware sequence (push and vector fetch), so `interrupt_time` sees the right latency.
-- [ ] **Step 5: Run**
-Run the three Blargg gates plus `tier_dmg --all` under `-ffast` and `-fsafe`. Expected: all three present gates PASS; existing tier stays green.
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Run**
+Run all four Blargg gates plus `tier_dmg --all` under `-ffast` and `-fsafe`. Expected: `cpu_instrs`, `instr_timing`, `mem_timing`, and `interrupt_time` PASS; existing tier stays green. If `interrupt_time` still emits no serial after the timing fixes, STOP with the exact serial/step evidence; do not silently skip or replace the gate.
+- [ ] **Step 9: Commit**
 ```bash
-git add examples/z98/z9gb/cpu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/tests/tier_dmg.sh
-git commit -m "fix(z9gb): correct CPU timing and STOP"
+git add examples/z98/z9gb/cpu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/timer.zig examples/z98/z9gb/tests/cpu_test.zig examples/z98/z9gb/tests/run_blargg.sh examples/z98/z9gb/tests/tier_dmg.sh
+git commit -m "fix(z9gb): correct CPU timing, STOP and timer reload"
 ```
 
 ---

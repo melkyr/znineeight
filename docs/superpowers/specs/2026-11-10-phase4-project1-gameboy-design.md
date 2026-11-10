@@ -390,7 +390,7 @@ pub fn dsoundClose(d: *Dsound) void;
 - HALT bug (PC double-fetch in the fetch path), EI delay, interrupt dispatch,
   and OAM DMA implemented explicitly. Timer glitch edges are implemented:
   DIV-write reset and TAC-write mux changes can spuriously tick TIMA, and
-  TIMA holds 0 for 4 M-cycles before the TMA reload + IF raise.
+  TIMA holds 0 for one M-cycle (4 T-cycles) before the TMA reload + IF raise.
 - Address map:
   - `0000-3FFF` ROM0, `4000-7FFF` switchable ROM
   - `8000-9FFF` VRAM, `A000-BFFF` cart RAM
@@ -461,7 +461,7 @@ pub fn dsoundClose(d: *Dsound) void;
 - Mixer outputs stereo 16-bit at 44,100 Hz.
 - Audio sample clock is driven by the CPU cycle counter; no host audio thread.
 - P3 hard gate: full Blargg `dmg_sound` via serial output (verdict-harness:
-  turbo until terminal `Passed`, cap-without-verdict = FAIL).
+  turbo until terminal `Passed` or `Passed all tests.`, cap-without-verdict = FAIL).
 - P4 hard gate: `cgb_sound` — the ROM reports via its SRAM memory protocol and
   screen, not serial: the harness polls `$A000` (Blargg convention, exact
   layout pinned by probe) with the same turbo/cap semantics; `0` status = pass.
@@ -480,10 +480,12 @@ pub fn dsoundClose(d: *Dsound) void;
   - clear bit 7
   - request the serial interrupt after 8 T-cycles
 - `emuTakeSerial` drains the log; the CLI can mirror it to stdout.
-- Blargg pass detection: scan the serial log for the terminal `Passed` verdict;
-  `Failed` is a fail. Blargg verdicts need minutes of emulated time, so the
-  harness runs turbo with a generous frame cap and the emulator may exit early
-  once a terminal verdict appears; a capped run without a verdict is FAIL.
+- Blargg pass detection: scan the serial log for the terminal `Passed` or
+  `Passed all tests.` verdict; `Failed` is a fail. Blargg verdicts need minutes
+  of emulated time, so the harness runs turbo with a generous frame cap and the
+  emulator may exit early once a terminal verdict appears; a capped run without
+  a verdict is FAIL.
+
 - `--mooneye` enables the Mooneye magic breakpoint: when the next opcode is
   `0x40` (`LD B,B`), stop and report the full Fibonacci register signature
   `B=3, C=5, D=8, E=13, H=21, L=34` as pass; any other register set is a fail.
