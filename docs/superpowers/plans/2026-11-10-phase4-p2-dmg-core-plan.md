@@ -117,7 +117,7 @@ git commit -m "feat(z9gb): add cartridge header and MBC1"
   - `pub fn cpuInit(cpu: *Cpu) void;`
   - `pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32;`
   - `pub fn cpuSetBus(cpu: *Cpu, bus: *Bus) void;`
-  - `pub const PageKind = enum(u8) { rom0, romx, vram, cart_ram, wram, echo, oam, io, hram };`
+  - `pub const PageKind = enum(u8) { rom0, romx, vram, cart_ram, rtc, wram, echo, oam, io, hram };`
   - `pub const Page = struct { kind: PageKind, base: [*]u8 };`
   - `pub const Bus = struct { pages: [256]Page, wram: [8192]u8, hram: [127]u8, cart: *Cart, /* io stubs */ };`
   - `pub fn busInit(bus: *Bus, cart: *Cart) void;`
@@ -322,6 +322,7 @@ git commit -m "feat(z9gb): add DMG scanline PPU"
 
 **Files:**
 - Modify: `examples/z98/z9gb/cart.zig`
+- Modify: `examples/z98/z9gb/mmu.zig`
 - Create: `examples/z98/z9gb/save.zig`
 - Modify: `examples/z98/z9gb/emu.zig`
 - Test: `examples/z98/z9gb/tests/tier_dmg.sh`
@@ -335,12 +336,13 @@ git commit -m "feat(z9gb): add DMG scanline PPU"
   - `pub fn saveBattery(e: *Emu, rom_path: []const u8) EmuError!void;`
   - `pub fn loadBattery(e: *Emu, rom_path: []const u8) EmuError!void;`
   - `pub fn deriveSavePath(rom: []const u8, ext: []const u8, out: []u8) usize;`
+  - This task extends Task 2's interfaces: `PageKind` gains `.rtc` (the Task 2 enum text is superseded); `Cart` gains `ram_bank: u8` (MBC3 4-bit select: `0x00-0x03` RAM bank, `0x08-0x0C` RTC register).
   The spec facade signatures stay exactly `emuSaveBattery(e: *Emu) EmuError!void` / `emuLoadBattery(e: *Emu) EmuError!void` (spec §8.2): this task fills in their P1 stubs so they call `saveBattery`/`loadBattery` with `e->save_path` when set by `emuSetSavePath`, otherwise with the path derived from the loaded ROM (spec: "`emuSetSavePath` overrides it"). No facade signature churn.
 
 - [ ] **Step 1: Write the failing test**
-Tests: MBC3 ROM/RAM bank selection, RTC latch/read with the frozen `rtc_fixed` clock (deterministic delta advancement, halt flag, day wrap 511→0, live-write/latched-read), MBC5 9-bit ROM bank and RAM bank, `.sav` round-trip, `.rtc` round-trip (anchor preserved), short/corrupt `.rtc` rejects `SaveCorrupt`, and a save path with an existing file is not truncated on error.
+Tests: MBC3 ROM/RAM bank selection, RTC latch/read with the frozen `rtc_fixed` clock (deterministic delta advancement, halt flag, day wrap 511→0, live-write/latched-read), RTC-window mapping (`ram_bank` 8-12 maps `0xA0-0xBF` to `.rtc`; 0-3 keeps direct `.cart_ram`), MBC5 9-bit ROM bank and RAM bank, `.sav` round-trip, `.rtc` round-trip (anchor preserved), short/corrupt `.rtc` rejects `SaveCorrupt`, and a save path with an existing file is not truncated on error.
 - [ ] **Step 2: Implement MBC3**
-`0x0000-0x1FFF` RAM/RTC enable; `0x2000-0x3FFF` ROM bank (0 maps to 1); `0x4000-0x5FFF` RAM bank 0-3 or RTC register 8-12; `0x6000-0x7FFF` latch on `0x00→0x01`. RTC semantics (pinned):
+`0x0000-0x1FFF` RAM/RTC enable; `0x2000-0x3FFF` ROM bank (0 maps to 1); `0x4000-0x5FFF` stores `value & 0x0F` in `cart.ram_bank` (0-3 RAM bank, 8-12 RTC register); `0x6000-0x7FFF` latch on `0x00→0x01`. `writeRaw` already calls `rebuildCartPages` after ROM-area writes; extend it to map pages `0xA0-0xBF` to `PageKind.rtc` when `mbc == .mbc3 and ram_bank >= 8`, otherwise to the existing direct `.cart_ram` pages. `readRaw`/`writeRaw` add a `.rtc` case: the selected RTC register is mirrored across `A000-BFFF` (Pan Docs); dispatch to `rtcRead`/`rtcWrite`. Normal cart RAM keeps the direct page-base path. RTC semantics (pinned):
 - **Delta accumulation with an anchor:** RTC advances by adding host-elapsed whole seconds to the five counters whenever time is observed (latch/read/write), and re-anchors the host timestamp at that moment — no per-frame wall-clock reads. Writes go to the **live** counters; reads return the **latched copies**.
 - **Halt flag** (register 0x0C bit 6) freezes accumulation while set. Day counter is 9 bits and **wraps 511→0** (no carry out).
 - **Deterministic headless clock:** `EmuConfig.rtc_fixed` (or `--rtc-fixed <unix>`) freezes the RTC epoch so tests/benchmarks are reproducible; without it, RTC uses real host time and saves record the anchor.
@@ -359,7 +361,7 @@ On failure at 3/4, restore with `MoveFileA(PATH.bak, PATH)` so the previous file
 Expected: PASS; corruption cases return `SaveCorrupt` and do not modify the original.
 - [ ] **Step 6: Commit**
 ```bash
-git add examples/z98/z9gb/cart.zig examples/z98/z9gb/save.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/tier_dmg.sh
+git add examples/z98/z9gb/cart.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/save.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/tier_dmg.sh
 git commit -m "feat(z9gb): add MBC3 RTC, MBC5 and battery saves"
 ```
 
