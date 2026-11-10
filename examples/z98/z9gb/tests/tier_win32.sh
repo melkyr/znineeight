@@ -81,6 +81,46 @@ else
 fi
 
 echo
+echo "== (b) std_dinput Win32 probe =="
+if OUT="$OUT/dinput" ZIG="$ZIG" sh "$SCRIPT_DIR/run_dinput_probe.sh" "$ZIG" \
+    >"$OUT/dinput_probe.log" 2>&1; then
+    pass_case "run_dinput_probe.sh PASS"
+else
+    fail_case "run_dinput_probe.sh FAILED (see $OUT/dinput_probe.log)"
+fi
+sed 's/^/       /' "$OUT/dinput_probe.log"
+
+DEXE="$OUT/dinput/dinput_probe.exe"
+if [ -f "$DEXE" ]; then
+    if bash "$CHECK" "$DEXE" 9x >"$OUT/dinput_imports.log" 2>&1; then
+        pass_case "check_win9x_imports.sh 9x PASS (dinput)"
+    else
+        fail_case "check_win9x_imports.sh 9x FAILED (see $OUT/dinput_imports.log)"
+    fi
+    DDLLS="$(i686-w64-mingw32-objdump -p "$DEXE" 2>/dev/null \
+        | sed -n 's/.*DLL Name: //p' | tr -d '\r' | tr '[:lower:]' '[:upper:]' | sort -u)"
+    if echo "$DDLLS" | grep -qx 'DINPUT8.DLL'; then
+        fail_case "DINPUT8.DLL imported (must be loaded dynamically)"
+    else
+        pass_case "no DINPUT8.DLL import (loaded dynamically)"
+    fi
+else
+    fail_case "dinput_probe.exe missing"
+fi
+
+if grep -q '^DINPUT_PROBE PASS$' "$OUT/dinput_probe.log" 2>/dev/null; then
+    pass_case "probe marker DINPUT_PROBE PASS"
+else
+    fail_case "probe marker DINPUT_PROBE PASS missing"
+fi
+
+if grep -Eq '^[[:space:]]*dinput=(ok|fallback)$' "$OUT/dinput_probe.log" 2>/dev/null; then
+    pass_case "dinput backend line (ok or fallback)"
+else
+    fail_case "dinput backend line missing"
+fi
+
+echo
 echo "== tier_win32 summary: $PASSES passed, $FAILS failed =="
 if [ "$FAILS" -ne 0 ]; then
     echo "TIER_WIN32 FAIL"
