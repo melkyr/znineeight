@@ -247,7 +247,7 @@ git commit -m "docs(z9gb): register the headless example and matrix count"
 - [ ] **Step 1: Run the P1 tier**
 Run `bash examples/z98/z9gb/tests/tier_smoke.sh "$ZIG1"` and `bash examples/z98/z9gb/tests/measure_rss.sh "$ZIG1" /tmp/z9gb_p1_rss`. Expected: PASS and `rss_kb` below 12000.
 - [ ] **Step 2: Run the corpus dump**
-Run `"$ZIG1" -ffast --dump-c89 -o /tmp/z9gb_p1_dump examples/z98/z9gb/main.zig` and `"$ZIG1" -ffast --dump-c89 -o /tmp/z9gb_p1_emit examples/z98/z9gb/emu.zig`. Expected: rc 0, no `windows.h`/`ddraw.h`.
+Run `"$ZIG1" -ffast --dump-c89 -o /tmp/z9gb_p1_dump examples/z98/z9gb/main.zig` and `"$ZIG1" -ffast --dump-c89 -o /tmp/z9gb_p1_emit examples/z98/z9gb/emu.zig`. Expected: rc 0. The z9gb module C/H (`main_*.c/.h`, `emu_*.c/.h`) contain no `windows.h`/`ddraw.h`; shared runtime/support files (`zig_pal.c`, `c_exit.c`, `zig_nocrt.c`, `std_io_*.c`, `std_os_prelude.h`) may contain guarded Win32 includes.
 - [ ] **Step 3: Record evidence**
 Write the exact command, rc, framebuffer size, rss_kb, and the three-run cmp result into the task report. Record the P1 matrix count.
 - [ ] **Step 4: Commit closeout**
