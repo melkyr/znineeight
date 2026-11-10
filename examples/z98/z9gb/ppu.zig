@@ -43,6 +43,9 @@ pub const Ppu = struct {
     dot: u32,
     line: u8,
     window_line: u8,
+    win_start_x: u8,
+    win_skip: u8,
+    win_visible_len: u8,
     mode3_len: u32,
     bg_lut: [4]u32,
     obj0_lut: [4]u32,
@@ -85,6 +88,9 @@ pub fn ppuReset(p: *Ppu) void {
     p.dot = 0;
     p.line = 0;
     p.window_line = 0;
+    p.win_start_x = 0;
+    p.win_skip = 0;
+    p.win_visible_len = 0;
     p.mode3_len = 0;
     p.sprite_count = 0;
     updatePalette(&p.bg_lut, p.bgp);
@@ -123,17 +129,33 @@ pub fn ppuRead(p: *Ppu, addr: u16) u8 {
     }
 }
 
-pub fn ppuWrite(p: *Ppu, addr: u16, value: u8) void {
+pub fn ppuWrite(p: *Ppu, addr: u16, value: u8, bus: *mmumod.Bus) void {
     switch (addr) {
         0xFF40 => {
+            const was_on: bool = (p.lcdc & 0x80) != 0;
             p.lcdc = value;
-            if ((value & 0x80) == 0) {
+            const now_on: bool = (value & 0x80) != 0;
+            if (was_on and !now_on) {
                 p.mode = 0;
                 p.dot = 0;
                 p.line = 0;
                 p.ly = 0;
                 p.window_line = 0;
+                p.win_start_x = 0;
+                p.win_skip = 0;
+                p.win_visible_len = 0;
                 p.coincidence = (p.ly == p.lyc);
+            } else if (!was_on and now_on) {
+                p.mode = 2;
+                p.dot = 0;
+                p.line = 0;
+                p.ly = 0;
+                p.window_line = 0;
+                p.win_start_x = 0;
+                p.win_skip = 0;
+                p.win_visible_len = 0;
+                p.coincidence = (p.ly == p.lyc);
+                if ((p.stat & 0x20) != 0) mmumod.busRaiseIrq(bus, 0x02);
             }
         },
         0xFF41 => p.stat = value & 0x78,
@@ -143,6 +165,9 @@ pub fn ppuWrite(p: *Ppu, addr: u16, value: u8) void {
         0xFF45 => {
             p.lyc = value;
             p.coincidence = (p.ly == p.lyc);
+            if ((p.lcdc & 0x80) != 0 and p.coincidence and (p.stat & 0x40) != 0) {
+                mmumod.busRaiseIrq(bus, 0x02);
+            }
         },
         0xFF46 => p.dma = value,
         0xFF47 => {
@@ -167,18 +192,26 @@ pub fn ppuFramebuffer(p: *const Ppu) []const u32 {
     return p.fb[0..];
 }
 
-fn windowStart(p: *const Ppu) u32 {
-    if (p.wx >= 7) return @intCast(u32, p.wx - 7);
-    return 0;
-}
-
-fn windowActive(p: *const Ppu) bool {
-    if ((p.lcdc & 0x20) == 0) return false;
-    if ((p.lcdc & 0x01) == 0) return false;
-    if (p.wy > 143) return false;
-    if (p.wx > 166) return false;
-    if (p.line < p.wy) return false;
-    return windowStart(p) < SCREEN_W;
+fn setupWindow(p: *Ppu) void {
+    p.win_start_x = 0;
+    p.win_skip = 0;
+    p.win_visible_len = 0;
+    if ((p.lcdc & 0x20) == 0) return;
+    if ((p.lcdc & 0x01) == 0) return;
+    if (p.wy > 143) return;
+    if (p.line < p.wy) return;
+    if (p.wx >= 167) return;
+    if (p.wx == 0) {
+        p.win_start_x = 0;
+        p.win_skip = @intCast(u8, p.scx & 7);
+    } else if (p.wx < 7) {
+        p.win_start_x = 0;
+        p.win_skip = @intCast(u8, 7 - p.wx);
+    } else {
+        p.win_start_x = @intCast(u8, p.wx - 7);
+        p.win_skip = 0;
+    }
+    p.win_visible_len = @intCast(u8, SCREEN_W - @intCast(usize, p.win_start_x));
 }
 
 fn tileDataAddr(tile_id: u8, lcdc: u8) usize {
@@ -215,29 +248,72 @@ fn scanOam(p: *Ppu, bus: *mmumod.Bus) void {
 fn objWait(p: *const Ppu, ox: u8) u32 {
     const left: u32 = if (ox >= 8) @intCast(u32, ox - 8) else 0;
     var off: u32 = 0;
-    if (windowActive(p) and left >= windowStart(p)) {
-        const wx: u32 = left - windowStart(p);
+    if (p.win_visible_len != 0 and left >= @intCast(u32, p.win_start_x)) {
+        const wx: u32 = (left - @intCast(u32, p.win_start_x)) + @intCast(u32, p.win_skip);
         off = wx & 7;
     } else {
         const sx: u32 = @intCast(u32, p.scx) + left;
         off = sx & 7;
     }
-    const pixels_right: u32 = 8 - off;
+    const pixels_right: u32 = 7 - off;
     if (pixels_right > 2) return pixels_right - 2;
     return 0;
 }
 
+fn spriteTileKey(p: *const Ppu, ox: u8, index: u8) u16 {
+    if (ox == 0) return 0x4000 | @intCast(u16, index);
+    const left: u32 = if (ox >= 8) @intCast(u32, ox - 8) else 0;
+    if (p.win_visible_len != 0 and left >= @intCast(u32, p.win_start_x)) {
+        const wx: u32 = (left - @intCast(u32, p.win_start_x)) + @intCast(u32, p.win_skip);
+        return 0x8000 | @intCast(u16, (wx >> 3) & 31);
+    }
+    const sx: u32 = @intCast(u32, p.scx) + left;
+    return @intCast(u16, (sx >> 3) & 31);
+}
+
 fn computeMode3(p: *const Ppu) u32 {
     var len: u32 = 172 + @intCast(u32, p.scx & 0x07);
-    if (windowActive(p)) len += 6;
+    if (p.win_visible_len != 0) len += 6;
+
+    var keys: [MAX_SPRITES]u16 = undefined;
+    var waits: [MAX_SPRITES]u32 = undefined;
+    var x0_tile: [MAX_SPRITES]u8 = undefined;
+    var tile_count: usize = 0;
+    const count: usize = @intCast(usize, p.sprite_count);
     var i: usize = 0;
-    while (i < @intCast(usize, p.sprite_count)) : (i += 1) {
+    while (i < count) : (i += 1) {
         const ox: u8 = p.sprite_x[i];
-        if (ox == 0) {
-            len += 11;
-        } else {
-            len += 6 + objWait(p, ox);
+        const key: u16 = spriteTileKey(p, ox, p.sprite_index[i]);
+        var slot: usize = tile_count;
+        var found: bool = false;
+        var j: usize = 0;
+        while (j < tile_count) : (j += 1) {
+            if (keys[j] == key) {
+                slot = j;
+                found = true;
+                break;
+            }
         }
+        if (!found) {
+            slot = tile_count;
+            keys[slot] = key;
+            waits[slot] = 0;
+            x0_tile[slot] = 0;
+            tile_count += 1;
+        }
+        if (ox == 0) {
+            x0_tile[slot] = 1;
+        } else {
+            const w: u32 = objWait(p, ox);
+            if (w > waits[slot]) waits[slot] = w;
+        }
+    }
+
+    i = 0;
+    while (i < tile_count) : (i += 1) {
+        var cost: u32 = 6 + waits[i];
+        if (x0_tile[i] != 0 or cost > 11) cost = 11;
+        len += cost;
     }
     return len;
 }
@@ -276,29 +352,45 @@ fn renderBackground(p: *Ppu, bus: *mmumod.Bus) void {
     }
 }
 
-fn renderWindow(p: *Ppu, bus: *mmumod.Bus) void {
-    if (!windowActive(p)) return;
-    const start: usize = @intCast(usize, windowStart(p));
-    const row: u8 = p.window_line;
-    const tile_row: usize = @intCast(usize, row >> 3);
-    const row_in_tile: usize = @intCast(usize, row & 7);
-    const map_base: usize = if ((p.lcdc & 0x40) != 0) 0x1C00 else 0x1800;
-    var cached_tile: u32 = 0xFFFFFFFF;
+fn renderWindowBatch(p: *Ppu, bus: *mmumod.Bus, x0: usize, wpos: u32, count: u32, row: usize, map_base: usize) void {
+    if (count == 0) return;
+    const tx: u32 = (wpos >> 3) & 31;
+    const map_addr: usize = map_base + (row >> 3) * 32 + @intCast(usize, tx);
     var lo: u8 = 0;
     var hi: u8 = 0;
-    var x: usize = start;
-    while (x < SCREEN_W) : (x += 1) {
-        const wx: u32 = @intCast(u32, x) - @intCast(u32, start);
-        const tx: u32 = (wx >> 3) & 31;
-        if (tx != cached_tile) {
-            const map_addr: usize = map_base + tile_row * 32 + @intCast(usize, tx);
-            fetchTileRow(bus, bus.vram[map_addr], row_in_tile, p.lcdc, &lo, &hi);
-            cached_tile = tx;
-        }
-        const bit: u8 = @intCast(u8, 7 - (wx & 7));
+    fetchTileRow(bus, bus.vram[map_addr], row & 7, p.lcdc, &lo, &hi);
+    var i: u32 = 0;
+    while (i < count) : (i += 1) {
+        const src: u32 = wpos + i;
+        const bit: u8 = @intCast(u8, 7 - (src & 7));
         const low: u8 = (lo >> bit) & 0x01;
         const high: u8 = (hi >> bit) & 0x01;
-        p.shades[x] = low | (high << 1);
+        p.shades[x0 + @intCast(usize, i)] = low | (high << 1);
+    }
+}
+
+fn renderWindow(p: *Ppu, bus: *mmumod.Bus) void {
+    if (p.win_visible_len == 0) return;
+    const row: usize = @intCast(usize, p.window_line);
+    const map_base: usize = if ((p.lcdc & 0x40) != 0) 0x1C00 else 0x1800;
+    var wpos: u32 = @intCast(u32, p.win_skip);
+    var x: usize = @intCast(usize, p.win_start_x);
+    var remaining: u32 = @intCast(u32, p.win_visible_len);
+
+    var first: u32 = 8 - (wpos & 7);
+    if (first > remaining) first = remaining;
+    renderWindowBatch(p, bus, x, wpos, first, row, map_base);
+    x += @intCast(usize, first);
+    wpos += first;
+    remaining -= first;
+
+    while (remaining > 0) {
+        var n: u32 = 8;
+        if (n > remaining) n = remaining;
+        renderWindowBatch(p, bus, x, wpos, n, row, map_base);
+        x += @intCast(usize, n);
+        wpos += n;
+        remaining -= n;
     }
     p.window_line +%= 1;
 }
@@ -389,6 +481,7 @@ fn renderLine(p: *Ppu, bus: *mmumod.Bus) void {
 
 fn startMode3(p: *Ppu, bus: *mmumod.Bus) void {
     scanOam(p, bus);
+    setupWindow(p);
     p.mode3_len = computeMode3(p);
     p.mode = 3;
     renderLine(p, bus);
@@ -396,7 +489,7 @@ fn startMode3(p: *Ppu, bus: *mmumod.Bus) void {
 
 fn enterMode0(p: *Ppu, bus: *mmumod.Bus) void {
     p.mode = 0;
-    if ((p.stat & 0x08) != 0) bus.io[0x0F] |= 0x02;
+    if ((p.stat & 0x08) != 0) mmumod.busRaiseIrq(bus, 0x02);
 }
 
 fn enterLine(p: *Ppu, bus: *mmumod.Bus, line: u8) void {
@@ -404,13 +497,13 @@ fn enterLine(p: *Ppu, bus: *mmumod.Bus, line: u8) void {
     p.ly = line;
     p.dot = 0;
     p.coincidence = (p.ly == p.lyc);
-    if (p.coincidence and (p.stat & 0x40) != 0) bus.io[0x0F] |= 0x02;
+    if (p.coincidence and (p.stat & 0x40) != 0) mmumod.busRaiseIrq(bus, 0x02);
     if (line < VISIBLE_LINES) {
         p.mode = 2;
-        if ((p.stat & 0x20) != 0) bus.io[0x0F] |= 0x02;
+        if ((p.stat & 0x20) != 0) mmumod.busRaiseIrq(bus, 0x02);
     } else {
         p.mode = 1;
-        if (line == VISIBLE_LINES and (p.stat & 0x10) != 0) bus.io[0x0F] |= 0x02;
+        if (line == VISIBLE_LINES and (p.stat & 0x10) != 0) mmumod.busRaiseIrq(bus, 0x02);
     }
 }
 
@@ -430,6 +523,9 @@ pub fn ppuTick(p: *Ppu, cycles: u32, bus: *mmumod.Bus) void {
         p.line = 0;
         p.ly = 0;
         p.window_line = 0;
+        p.win_start_x = 0;
+        p.win_skip = 0;
+        p.win_visible_len = 0;
         p.coincidence = (p.ly == p.lyc);
         return;
     }

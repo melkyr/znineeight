@@ -223,11 +223,11 @@ fn reset() void {
 }
 
 fn tick(n: u32) void {
-    timermod.timerTick(&g_bus.timer, n);
+    timermod.timerTick(&g_bus.timer, n, &g_bus);
 }
 
 fn tWrite(addr: u16, value: u8) void {
-    timermod.timerWrite(&g_bus.timer, addr, value);
+    timermod.timerWrite(&g_bus.timer, addr, value, &g_bus);
 }
 
 fn tRead(addr: u16) u8 {
@@ -489,6 +489,33 @@ fn testSerial() void {
     checkByte("serial take drains", @intCast(u8, n2), 0x00);
 }
 
+fn testIrqRouting() void {
+    reset();
+    g_bus.io[0x0F] = 0;
+    mmumod.busRaiseIrq(&g_bus, 0x04);
+    checkByte("busRaiseIrq timer", g_bus.io[0x0F] & 0x04, 0x04);
+    mmumod.busRaiseIrq(&g_bus, 0x08);
+    checkByte("busRaiseIrq or serial", g_bus.io[0x0F] & 0x0C, 0x0C);
+
+    reset();
+    g_bus.io[0x0F] = 0;
+    serialmod.serialWrite(&g_bus.serial, 0xFF01, 0x41, &g_bus);
+    serialmod.serialWrite(&g_bus.serial, 0xFF02, 0x81, &g_bus);
+    serialmod.serialTick(&g_bus.serial, 7, &g_bus);
+    checkByte("serial routing quiet", g_bus.io[0x0F] & 0x08, 0x00);
+    serialmod.serialTick(&g_bus.serial, 1, &g_bus);
+    checkByte("serial routing irq", g_bus.io[0x0F] & 0x08, 0x08);
+
+    reset();
+    g_bus.io[0x0F] = 0;
+    g_bus.timer.tima = 0x00;
+    g_bus.timer.tma = 0x42;
+    g_bus.timer.reload = 1;
+    timermod.timerTick(&g_bus.timer, 1, &g_bus);
+    checkByte("timer routing reload", timermod.timerRead(&g_bus.timer, 0xFF05), 0x42);
+    checkByte("timer routing irq", g_bus.io[0x0F] & 0x04, 0x04);
+}
+
 fn testPostBoot() void {
     emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = false, .dynarec = false });
     emumod.emuReset(&g_emu);
@@ -529,6 +556,7 @@ pub fn main() void {
     testHaltBug();
     testHaltWake();
     testSerial();
+    testIrqRouting();
     testPostBoot();
 
     std.io.write("timer ");
@@ -560,6 +588,13 @@ var g_ppu: ppumod.Ppu = undefined;
 var g_emu: emumod.Emu = undefined;
 var g_pass: u32 = 0;
 var g_fail: u32 = 0;
+
+const TEST_COLORS: [4]u32 = [4]u32{
+    0x009BBC0F,
+    0x008BAC0F,
+    0x00306230,
+    0x000F380F,
+};
 
 fn printU(v: usize) void {
     const x: u32 = @intCast(u32, v & 0xffffffff);
@@ -623,7 +658,7 @@ fn reset() void {
 }
 
 fn writeReg(addr: u16, value: u8) void {
-    ppumod.ppuWrite(&g_ppu, addr, value);
+    ppumod.ppuWrite(&g_ppu, addr, value, &g_bus);
 }
 
 fn tick(n: u32) void {
@@ -637,6 +672,25 @@ fn fillTile(tile: u8, lo: u8, hi: u8) void {
         g_bus.vram[a] = lo;
         g_bus.vram[a + 1] = hi;
     }
+}
+
+fn fillPatternTile(tile: u8) void {
+    fillTile(tile, 0x55, 0x33);
+}
+
+fn windowSetup(wx: u8, scx: u8) void {
+    reset();
+    writeReg(0xFF40, 0xF1);
+    writeReg(0xFF47, 0xE4);
+    writeReg(0xFF42, 0);
+    writeReg(0xFF43, scx);
+    writeReg(0xFF4A, 0);
+    writeReg(0xFF4B, wx);
+    fillPatternTile(0);
+    fillTile(1, 0xFF, 0xFF);
+    var i: usize = 0;
+    while (i < 32) : (i += 1) g_bus.vram[0x1800 + i] = 1;
+    g_bus.vram[0x1C00] = 0;
 }
 
 fn setOam(index: usize, y: u8, x: u8, tile: u8, attr: u8) void {
@@ -839,6 +893,100 @@ fn testPalette() void {
     checkFrame("ppu obp remap", 0, 0, 0x00306230);
 }
 
+fn testWindowClipping() void {
+    windowSetup(0, 3);
+    tick(80);
+    checkByte("ppu window wx0 start", g_ppu.win_start_x, 0);
+    checkByte("ppu window wx0 skip", g_ppu.win_skip, 3);
+    checkByte("ppu window wx0 len", g_ppu.win_visible_len, 160);
+    checkFrame("ppu window wx0 scx shift pixel0", 0, 0, TEST_COLORS[3]);
+    checkFrame("ppu window wx0 scx shift pixel1", 1, 0, TEST_COLORS[0]);
+
+    var wx: u8 = 1;
+    while (wx <= 6) : (wx += 1) {
+        windowSetup(wx, 0);
+        tick(80);
+        checkByte("ppu window wx1..6 skip", g_ppu.win_skip, @intCast(u8, 7 - wx));
+        const idx: u8 = @intCast(u8, g_ppu.win_skip & 3);
+        checkFrame("ppu window wx1..6 first", 0, 0, TEST_COLORS[@intCast(usize, idx)]);
+        const idx2: u8 = @intCast(u8, (g_ppu.win_skip + 1) & 3);
+        checkFrame("ppu window wx1..6 second", 1, 0, TEST_COLORS[@intCast(usize, idx2)]);
+    }
+
+    windowSetup(7, 0);
+    tick(80);
+    checkByte("ppu window wx7 start", g_ppu.win_start_x, 0);
+    checkByte("ppu window wx7 skip", g_ppu.win_skip, 0);
+    checkFrame("ppu window wx7 pixel0", 0, 0, TEST_COLORS[0]);
+
+    windowSetup(166, 0);
+    tick(80);
+    checkByte("ppu window wx166 start", g_ppu.win_start_x, 159);
+    checkByte("ppu window wx166 len", g_ppu.win_visible_len, 1);
+    checkFrame("ppu window wx166 bg", 158, 0, TEST_COLORS[3]);
+    checkFrame("ppu window wx166 win", 159, 0, TEST_COLORS[0]);
+
+    windowSetup(167, 0);
+    tick(80);
+    checkByte("ppu window wx167 disabled", g_ppu.win_visible_len, 0);
+    checkFrame("ppu window wx167 bg", 0, 0, TEST_COLORS[3]);
+    checkByte("ppu window wx167 counter", g_ppu.window_line, 0);
+}
+
+fn testMode3Tiles() void {
+    reset();
+    writeReg(0xFF40, 0x93);
+    setOam(0, 16, 8, 0, 0);
+    setOam(1, 16, 9, 0, 0);
+    tick(80);
+    checkWord("ppu mode3 same tile", @intCast(u16, g_ppu.mode3_len), 183);
+
+    reset();
+    writeReg(0xFF40, 0x93);
+    setOam(0, 16, 8, 0, 0);
+    setOam(1, 16, 16, 0, 0);
+    tick(80);
+    checkWord("ppu mode3 distinct tiles", @intCast(u16, g_ppu.mode3_len), 194);
+
+    reset();
+    writeReg(0xFF40, 0x93);
+    setOam(0, 16, 0, 0, 0);
+    tick(80);
+    checkWord("ppu mode3 x0 capped", @intCast(u16, g_ppu.mode3_len), 183);
+}
+
+fn testLycWriteAndLcd() void {
+    reset();
+    writeReg(0xFF41, 0x40);
+    g_bus.io[0x0F] = 0;
+    writeReg(0xFF45, 0);
+    checkByte("ppu lyc write coincidence", ppumod.ppuRead(&g_ppu, 0xFF41) & 0x04, 0x04);
+    checkByte("ppu lyc write irq", g_bus.io[0x0F] & 0x02, 0x02);
+
+    g_bus.io[0x0F] = 0;
+    writeReg(0xFF45, 7);
+    checkByte("ppu lyc write mismatch quiet", g_bus.io[0x0F] & 0x02, 0x00);
+
+    reset();
+    writeReg(0xFF40, 0x00);
+    checkByte("ppu lcd off mode", g_ppu.mode, 0);
+    checkByte("ppu lcd off ly", g_ppu.ly, 0);
+    g_ppu.dot = 99;
+    g_ppu.line = 42;
+    writeReg(0xFF40, 0x91);
+    checkByte("ppu lcd reenable mode", g_ppu.mode, 2);
+    checkByte("ppu lcd reenable line", g_ppu.line, 0);
+    checkByte("ppu lcd reenable dot", @intCast(u8, g_ppu.dot), 0);
+    checkByte("ppu lcd reenable ly", g_ppu.ly, 0);
+
+    reset();
+    writeReg(0xFF41, 0x20);
+    writeReg(0xFF40, 0x00);
+    g_bus.io[0x0F] = 0;
+    writeReg(0xFF40, 0x91);
+    checkByte("ppu lcd reenable mode2 irq", g_bus.io[0x0F] & 0x02, 0x02);
+}
+
 fn testEmuFramebuffer() void {
     emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = false, .dynarec = false });
     const fb: []const u32 = emumod.emuFramebuffer(&g_emu);
@@ -852,6 +1000,9 @@ pub fn main() void {
     testStatInterrupts();
     testBackground();
     testWindow();
+    testWindowClipping();
+    testMode3Tiles();
+    testLycWriteAndLcd();
     testSprite8x8();
     testSprite8x16();
     testSpritePriority();

@@ -527,13 +527,17 @@ fn pendingInterrupts(bus: *Bus) u8 {
     return bus.ie & bus.io[0x0F] & 0x1F;
 }
 
+fn clearInterrupt(bus: *Bus, mask: u8) void {
+    bus.io[0x0F] = bus.io[0x0F] & @intCast(u8, ~mask);
+}
+
 fn serviceInterrupt(cpu: *Cpu, bus: *Bus) u32 {
     const pending: u8 = pendingInterrupts(bus);
     var i: u8 = 0;
     while (i < 5) : (i += 1) {
         const bit: u8 = @intCast(u8, @as(u16, 1) << @intCast(u4, i));
         if ((pending & bit) != 0) {
-            bus.io[0x0F] = bus.io[0x0F] & @intCast(u8, ~bit);
+            clearInterrupt(bus, bit);
             cpu.ime = false;
             cpu.ei_delay = 0;
             push16(cpu, bus, cpu.pc);

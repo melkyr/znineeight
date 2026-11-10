@@ -1,10 +1,11 @@
+const mmumod = @import("mmu.zig");
+
 pub const Timer = struct {
     divider: u16,
     tima: u8,
     tma: u8,
     tac: u8,
     reload: u8,
-    ifr: *u8,
 };
 
 fn selectedMask(tac: u8) u16 {
@@ -25,7 +26,7 @@ fn bumpTima(t: *Timer) void {
     t.tima = @intCast(u8, (@as(u16, t.tima) + 1) & 0xFF);
 }
 
-pub fn timerTick(t: *Timer, cycles: u32) void {
+pub fn timerTick(t: *Timer, cycles: u32, bus: *mmumod.Bus) void {
     const mask: u16 = selectedMask(t.tac);
     var i: u32 = 0;
     while (i < cycles) : (i += 1) {
@@ -34,7 +35,7 @@ pub fn timerTick(t: *Timer, cycles: u32) void {
             t.reload -= 1;
             if (t.reload == 0) {
                 t.tima = t.tma;
-                t.ifr.* |= 0x04;
+                mmumod.busRaiseIrq(bus, 0x04);
             }
         } else {
             const selected: bool = (t.divider & mask) != 0;
@@ -54,7 +55,8 @@ pub fn timerRead(t: *Timer, addr: u16) u8 {
     return 0xFF;
 }
 
-pub fn timerWrite(t: *Timer, addr: u16, value: u8) void {
+pub fn timerWrite(t: *Timer, addr: u16, value: u8, bus: *mmumod.Bus) void {
+    _ = bus;
     if (addr == 0xFF04) {
         const mask: u16 = selectedMask(t.tac);
         const old: bool = (t.divider & mask) != 0;

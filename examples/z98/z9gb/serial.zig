@@ -1,10 +1,11 @@
+const mmumod = @import("mmu.zig");
+
 pub const SERIAL_CAP: usize = 4096;
 
 pub const Serial = struct {
     sb: u8,
     sc: u8,
     pending: u32,
-    ifr: *u8,
     log: [SERIAL_CAP]u8,
     log_len: usize,
 };
@@ -16,7 +17,8 @@ pub fn serialReset(s: *Serial) void {
     s.log_len = 0;
 }
 
-pub fn serialWrite(s: *Serial, addr: u16, value: u8) void {
+pub fn serialWrite(s: *Serial, addr: u16, value: u8, bus: *mmumod.Bus) void {
+    _ = bus;
     if (addr == 0xFF01) {
         s.sb = value;
         return;
@@ -35,11 +37,11 @@ pub fn serialWrite(s: *Serial, addr: u16, value: u8) void {
     }
 }
 
-pub fn serialTick(s: *Serial, cycles: u32) void {
+pub fn serialTick(s: *Serial, cycles: u32, bus: *mmumod.Bus) void {
     if (s.pending == 0) return;
     if (cycles >= s.pending) {
         s.pending = 0;
-        s.ifr.* |= 0x08;
+        mmumod.busRaiseIrq(bus, 0x08);
         return;
     }
     s.pending -= cycles;

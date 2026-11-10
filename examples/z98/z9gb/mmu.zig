@@ -103,8 +103,6 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.timer.tma = 0;
     bus.timer.tac = 0;
     bus.timer.reload = 0;
-    bus.timer.ifr = &bus.io[0x0F];
-    bus.serial.ifr = &bus.io[0x0F];
     serialmod.serialReset(&bus.serial);
 
     const wram_base: [*]u8 = @ptrCast([*]u8, &bus.wram[0]);
@@ -145,6 +143,10 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.io[0x4B] = 0x00;
 }
 
+pub fn busRaiseIrq(bus: *Bus, mask: u8) void {
+    bus.io[0x0F] |= mask;
+}
+
 pub fn ioRead(self: *Bus, addr: u16) u8 {
     if (addr == 0xFF01) return self.serial.sb;
     if (addr == 0xFF02) return self.serial.sc;
@@ -154,11 +156,11 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
 
 pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
     if (addr == 0xFF01 or addr == 0xFF02) {
-        serialmod.serialWrite(&self.serial, addr, value);
+        serialmod.serialWrite(&self.serial, addr, value, self);
         return;
     }
     if (addr >= 0xFF04 and addr <= 0xFF07) {
-        timermod.timerWrite(&self.timer, addr, value);
+        timermod.timerWrite(&self.timer, addr, value, self);
         return;
     }
     if (addr == 0xFF46) {
@@ -244,8 +246,8 @@ pub fn write8(self: *Bus, addr: u16, value: u8) void {
 }
 
 pub fn busTick(self: *Bus, cycles: u32) void {
-    timermod.timerTick(&self.timer, cycles);
-    serialmod.serialTick(&self.serial, cycles);
+    timermod.timerTick(&self.timer, cycles, self);
+    serialmod.serialTick(&self.serial, cycles, self);
     if (!self.dma.active) return;
     self.dma.dots +%= cycles;
     while (self.dma.active and self.dma.dots >= 4) {
