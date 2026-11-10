@@ -25,6 +25,9 @@
 - New COM vtables copy slot order **verbatim from the MinGW headers** (`dsound.h`, `dinput.h`) at Task 0 probe time: unused slots are kept as correctly-typed `fn` placeholders, exactly like `sf/src/std_gfx_pal.zig` does for DirectDraw. Expected slot counts to verify and pin: `IDirectSound` 11, `IDirectSoundBuffer` 21, `IDirectInput8A` 11, `IDirectInputDevice8A` 32 — STOP on mismatch.
 - The P3 seed rotation is the only seed rotation in Phase 4 unless a later plan changes `sf/src`.
 - No `std.zig` barrel change; the three new modules are path-imported and move no emission pins.
+- The opaque `Ddraw`/`Dinput`/`Dsound` handles are backed by exactly one module-scope static state each. No heap allocation and no stack-backed state; `*Open` returns `error.OpenFailed` if the module is already open.
+- Until seed v148, Tasks 1-6 resolve the new `sf/src/std_ddraw*`, `std_dinput*`, and `std_dsound*` modules with an explicit `-I <repo>/sf/src` on every build/probe command (or an explicit `$ZIG1/lib` refresh). Seed Task 7 is the packaging step.
+- Task 0 must obtain and pin both hard-gate assets: `dmg_sound/dmg_sound.gb` from Blargg and `2048.gb` from Sanqui. If either cannot be obtained, STOP and report.
 
 ## Review Focus
 
@@ -42,8 +45,8 @@
 - Temporary only: `/tmp/phase4_p3_probe/*`
 
 **Interfaces:**
-- Consumes: P2 headless build.
-- Produces: a recorded capability matrix.
+- Consumes: P2 headless build; `/tmp/z9gb_p2_seed/zig1_5_clean`; `/tmp/z9gb_roms`.
+- Produces: recorded capability matrix; pinned asset hashes; exact vtable slot counts; module-resolution decision.
 
 - [ ] **Step 1: Probe MinGW headers**
 Confirm `/usr/i686-w64-mingw32/include/ddraw.h`, `dsound.h`, and `dinput.h` exist. Expected: all present.
@@ -51,10 +54,25 @@ Confirm `/usr/i686-w64-mingw32/include/ddraw.h`, `dsound.h`, and `dinput.h` exis
 Run `WINEDEBUG=-all wine --version`; inspect for `ddraw.dll`, `dsound.dll`, and `dinput8.dll` under the Wine prefix. Expected: record which are present; missing `dinput8.dll` means keyboard fallback is the only Wine evidence.
 - [ ] **Step 3: Probe DirectDraw dynamic loading**
 Compile the existing `gfx_demo` with `-osw` and run its import gate. Expected: `DDRAW.DLL` is not in the static import table; Wine smoke passes.
-- [ ] **Step 4: Probe `VirtualAlloc` executable mapping (for P5, not used here)**
+- [ ] **Step 4: Probe DDraw raw pixel path**
+Build a temporary Z98/C probe under `/tmp/phase4_p3_probe` that dynamically creates `IDirectDraw7`, a 160x144 32-bit system-memory offscreen, calls `Lock`/`Unlock` honoring pitch, and does one hardware stretch `Blt` from `0,0,160,144` to a 2x and 4x primary/client rect. Record success/failure. If Lock/Unlock or stretch `Blt` fails under Wine, STOP and report; do not substitute a different display path.
+- [ ] **Step 5: Probe `VirtualAlloc` executable mapping (for P5, not used here)**
 Call `VirtualAlloc(NULL, 1 MiB, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE)` under Wine, write one byte, and free. Expected: record success/failure; P5 uses this result.
-- [ ] **Step 5: Record**
-Write the matrix and the exact Wine version into the task report. If DDraw import-gate behavior changed, STOP.
+- [ ] **Step 6: Probe DirectSound/DirectInput and timer availability**
+Under Wine, dynamically create `IDirectSound` and `IDirectInput8A`, create a keyboard device, and record which DLLs/devices are actually available. Confirm `waveOut*` fallback symbols and static `timeBeginPeriod`/`timeEndPeriod` are linkable from `winmm`; record. Missing `dinput8.dll` is fallback evidence, not a STOP; missing `timeBeginPeriod`/`timeEndPeriod` is a STOP.
+- [ ] **Step 7: Probe exact vtable slot counts**
+Compile a temporary C probe against the MinGW headers that prints each vtable slot count (`sizeof(Vtbl) / sizeof(void*)`). Expected and pinned: `IDirectSound` 11, `IDirectSoundBuffer` 21, `IDirectInput8A` 11, `IDirectInputDevice8A` 32. Any mismatch is a STOP.
+- [ ] **Step 8: Probe module resolution**
+Compile a temporary program with `-I <repo>/sf/src` that imports `std_time.zig` and `std_page.zig`; expected rc 0. Record this as the pre-v148 include path for the new `std_ddraw`/`std_dinput`/`std_dsound` modules. If `-I` does not resolve, STOP.
+- [ ] **Step 9: Probe hard-gate assets**
+Download and verify:
+  - `dmg_sound/dmg_sound.gb` from Blargg commit `c240dd7d700e5c0b00a7bbba52b53e4ee67b5f15`, sha256 `c34e740664eb14b42c39750434e3e105fc92d774a98fb671594a48e972401630`, 65,536 bytes.
+  - `2048.gb` from `Sanqui/2048-gb` commit `e44f94f898c1e0de7caa1160c82c0da36ff5eb05`, sha256 `3ea2376b15b34bd26b10e6b31d2753bf8b086098dbdb5ee84d9c0f03d66d3d7f`, 32,768 bytes.
+  Place both under `/tmp/z9gb_roms` and record the exact source URL and hash. Any hash/size mismatch is a STOP.
+- [ ] **Step 10: Baseline P1/P2 tiers**
+Run P2 `tier_smoke.sh` and `tier_dmg.sh --all` at P3 base `8a5f7aa7` with `/tmp/z9gb_p2_seed/zig1_5_clean`; expected both PASS. Record output.
+- [ ] **Step 11: Record**
+Write the matrix, exact Wine version, slot counts, asset hashes, include-path result, and baseline results into the task report. If DDraw import-gate behavior changed, STOP.
 
 ---
 
@@ -114,6 +132,8 @@ git commit -m "feat(std): add DirectDraw pixel surface"
   - `pub fn dinputOpen(window: *void) DinputError!*Dinput;`
   - `pub fn dinputPoll(d: *Dinput, out: *Buttons) void;`
   - `pub fn dinputClose(d: *Dinput) void;`
+  - `pub fn dinputMapKeys(keys: []const u8, out: *Buttons) void;` (test seam: maps a synthetic 256-byte key array; no Win32 types)
+  - `pub fn dinputBackendKind(d: *const Dinput) u8;` (1 = DInput8, 2 = `GetAsyncKeyState` fallback)
 
 - [ ] **Step 1: Write the failing probe**
 "Simulated `DIK_LEFT`" is defined as a deterministic unit test, not a synthetic input injection: `run_dinput_probe.sh` builds a tiny test binary that feeds a synthetic 256-byte `GetDeviceState` key array (byte `DIK_LEFT` set) and a zero array through the keymap function and prints `keyboard=0` / `keyboard=1`; the Wine smoke only asserts the `dinput=ok` or `dinput=fallback` backend line. Expected: fails because the modules do not exist.
@@ -238,7 +258,7 @@ git commit -m "feat(z9gb): add DMG APU and audio ring"
 - [ ] **Step 2: Implement the backend**
 Open DDraw 160x144 at the requested scale; open DInput with the DDraw window; open DSound at 44,100 stereo. `present_fn` calls `ddrawPresent`. `poll_fn` maps buttons and quit. `audio_fn` calls `dsoundWrite`. `close_fn` closes all three.
 - [ ] **Step 3: Implement frame pacing**
-Run one frame (70,224 T-cycles); present; drain APU samples to the audio backend; poll input; compute the next QPC deadline. Win9x `Sleep(1)` quantizes to the ~55 ms system tick and will burst frames; call `timeBeginPeriod(1)` at open and `timeEndPeriod(1)` at close (WINMM whitelist grows by exactly these two symbols in this task's commit — `scripts/win32_cross/check_win9x_imports.sh:28` currently lists only `waveOut*`), then `sleepMs` while ahead by more than 2 ms and finish the last ≤2 ms with a bounded QPC spin. If `timeBeginPeriod` fails, the bounded spin tail alone paces. No unbounded busy-spin; no late-frame accumulation (drop the deadline to now). In `--turbo`, skip sleeping.
+Run one frame (70,224 T-cycles); present; drain APU samples to the audio backend; poll input; compute the next QPC deadline. Win9x `Sleep(1)` quantizes to the ~55 ms system tick and will burst frames; call `timeBeginPeriod(1)` at open and `timeEndPeriod(1)` at close (WINMM whitelist grows by exactly these two symbols in this task's commit — `scripts/win32_cross/check_win9x_imports.sh:28` currently lists only `waveOut*`). `timeBeginPeriod`/`timeEndPeriod` are pinned as static WINMM imports; Win9x provides them in `winmm.dll`; no dynamic `GetProcAddress` fallback. If `timeBeginPeriod` returns failure, ignore it and use the bounded spin tail alone. Then `sleepMs` while ahead by more than 2 ms and finish the last ≤2 ms with a bounded QPC spin. No unbounded busy-spin; no late-frame accumulation (drop the deadline to now). In `--turbo`, skip sleeping.
 - [ ] **Step 4: Implement window/audio flags**
 `--scale` accepts 1..4. `--no-audio` skips APU output. `--audio` is default on Win32. Missing DDraw/DInput/DSound is a hard open failure for `--windowed`, except DInput keyboard fallback.
 - [ ] **Step 5: Verify**
@@ -257,7 +277,7 @@ git commit -m "feat(z9gb): add Win32 display/input/audio backend"
 - Modify: `examples/z98/z9gb/tests/tier_audio.sh`
 - Modify: `examples/z98/z9gb/tests/tier_win32.sh`
 - Create: `examples/z98/z9gb/tests/tier_perf.sh`
-- Modify: `examples/z98/z9gb/testdata/roms/manifest.sha256` (add `2048.gb` + pinned `Sanqui/2048-gb` commit + SHA-256)
+- Modify: `examples/z98/z9gb/testdata/roms/manifest.sha256` (add `dmg_sound/dmg_sound.gb` from Blargg `c240dd7d700e5c0b00a7bbba52b53e4ee67b5f15`, sha256 `c34e740664eb14b42c39750434e3e105fc92d774a98fb671594a48e972401630`; add `2048.gb` from `Sanqui/2048-gb` commit `e44f94f898c1e0de7caa1160c82c0da36ff5eb05`, sha256 `3ea2376b15b34bd26b10e6b31d2753bf8b086098dbdb5ee84d9c0f03d66d3d7f`, 32768 bytes)
 - Modify: `examples/z98/z9gb/README.md`
 - Test: `examples/z98/z9gb/tests/tier_audio.sh`, `tier_win32.sh`, `tier_perf.sh`
 
