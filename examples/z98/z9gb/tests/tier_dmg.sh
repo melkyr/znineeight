@@ -1222,6 +1222,16 @@ fn testMbc3() void {
     checkByte("mbc3 ram bank1", cartmod.cartRead(&g_cart, 0xA000), 0x22);
     cartmod.cartWrite(&g_cart, 0x0000, 0x00);
     checkByte("mbc3 ram disabled", cartmod.cartRead(&g_cart, 0xA000), 0xFF);
+
+    cartmod.rtcSetFixed(&g_cart, 2000000);
+    cartmod.cartWrite(&g_cart, 0x4000, 8);
+    checkByte("mbc3 rtc cart disabled read", cartmod.cartRead(&g_cart, 0xA000), 0xFF);
+    cartmod.cartWrite(&g_cart, 0xA000, 9);
+    latchNow(&g_cart);
+    checkByte("mbc3 rtc cart disabled write", cartmod.cartRead(&g_cart, 0xA000), 0xFF);
+    cartmod.cartWrite(&g_cart, 0x0000, 0x0A);
+    latchNow(&g_cart);
+    checkByte("mbc3 rtc cart enable gate", cartmod.cartRead(&g_cart, 0xA000), 0);
 }
 
 fn testMbc5() void {
@@ -1269,11 +1279,17 @@ fn testRtcWindow() void {
     };
     mmumod.busInit(&g_bus, &g_cart);
     cartmod.rtcSetFixed(&g_cart, 1000000);
-    mmumod.write8(&g_bus, 0x0000, 0x0A);
     mmumod.write8(&g_bus, 0x4000, 8);
     checkBool("rtc window a0", g_bus.pages[0xA0].kind == .rtc, true);
     checkBool("rtc window bf", g_bus.pages[0xBF].kind == .rtc, true);
     latchNow(&g_cart);
+    checkByte("rtc disabled read", mmumod.read8(&g_bus, 0xA000), 0xFF);
+    mmumod.write8(&g_bus, 0xA000, 5);
+    latchNow(&g_cart);
+    checkByte("rtc disabled write ignored", mmumod.read8(&g_bus, 0xA000), 0xFF);
+    mmumod.write8(&g_bus, 0x0000, 0x0A);
+    latchNow(&g_cart);
+    checkByte("rtc enabled write still zero", mmumod.read8(&g_bus, 0xA000), 0);
     mmumod.write8(&g_bus, 0xA000, 5);
     latchNow(&g_cart);
     checkByte("rtc mirror read a000", mmumod.read8(&g_bus, 0xA000), 5);
@@ -1377,6 +1393,16 @@ fn expectCorrupt(e: *emumod.Emu, label: []const u8) void {
     checkBool(label, ok, true);
 }
 
+fn setRamSentinels() void {
+    mmumod.write8(&g_emu.bus, 0xA000, 0xA5);
+    mmumod.write8(&g_emu.bus, 0xA001, 0x5A);
+    mmumod.write8(&g_emu.bus, 0xA0FF, 0xC3);
+}
+
+fn checkRamSentinels(label: []const u8) void {
+    checkBool(label, mmumod.read8(&g_emu.bus, 0xA000) == 0xA5 and mmumod.read8(&g_emu.bus, 0xA001) == 0x5A and mmumod.read8(&g_emu.bus, 0xA0FF) == 0xC3, true);
+}
+
 fn testSave(dir: []const u8) void {
     makeRom(g_rom64[0..], 0x10, 0x01, 0x03);
     markBanks(g_rom64[0..], 4);
@@ -1389,6 +1415,7 @@ fn testSave(dir: []const u8) void {
         return;
     };
     emumod.emuSetRtcFixed(&g_emu, 1700000000);
+    checkBool("rtc seam freezes epoch", g_emu.cart.rtc.fixed and g_emu.cart.rtc.anchor == 1700000000, true);
 
     mmumod.write8(&g_emu.bus, 0x0000, 0x0A);
     mmumod.write8(&g_emu.bus, 0x4000, 0);
@@ -1426,10 +1453,16 @@ fn testSave(dir: []const u8) void {
     checkByte("rtc header hours", g_rtc_orig[11], 5);
     checkByte("rtc header day low", g_rtc_orig[12], 0x78);
     checkByte("rtc header day high", g_rtc_orig[13], 1);
+    var tail_zero: bool = true;
+    var ti: usize = 24;
+    while (ti < 32) : (ti += 1) {
+        if (g_rtc_orig[ti] != 0) tail_zero = false;
+    }
+    checkBool("rtc reserved tail zero", tail_zero, true);
     checkBool("rtc anchor captured", g_emu.cart.rtc.anchor == 1700000000, true);
 
-    g_emu.cart.ram[0] = 0xEE;
-    g_emu.cart.ram[255] = 0xEE;
+    mmumod.write8(&g_emu.bus, 0xA000, 0xEE);
+    mmumod.write8(&g_emu.bus, 0xA0FF, 0xEE);
     cartmod.rtcWrite(&g_emu.cart, 0, 1);
     latchNow(&g_emu.cart);
     emumod.emuLoadBattery(&g_emu) catch {
@@ -1446,8 +1479,10 @@ fn testSave(dir: []const u8) void {
     checkByte("rtc restores day high", cartmod.rtcRead(&g_emu.cart, 4) & 0x01, 1);
     checkBool("rtc anchor preserved", g_emu.cart.rtc.anchor == 1700000000, true);
 
+    setRamSentinels();
     checkBool("short rtc write", writeFile(rtc_path, g_rtc_orig[0..31]), true);
     expectCorrupt(&g_emu, "short rtc rejects");
+    checkRamSentinels("short rtc keeps ram");
     checkBool("restore rtc 1", writeFile(rtc_path, g_rtc_orig[0..]), true);
 
     var bad: [32]u8 = undefined;
@@ -1455,16 +1490,44 @@ fn testSave(dir: []const u8) void {
     bad[0] = 'X';
     checkBool("bad magic write", writeFile(rtc_path, bad[0..]), true);
     expectCorrupt(&g_emu, "bad magic rejects");
+    checkRamSentinels("bad magic keeps ram");
     checkBool("restore rtc 2", writeFile(rtc_path, g_rtc_orig[0..]), true);
 
     copy(bad[0..], g_rtc_orig[0..]);
-    bad[9] = bad[9] +% 1;
-    checkBool("bad crc write", writeFile(rtc_path, bad[0..]), true);
-    expectCorrupt(&g_emu, "bad crc rejects");
+    bad[9] = 60;
+    checkBool("bad counter write", writeFile(rtc_path, bad[0..]), true);
+    expectCorrupt(&g_emu, "bad counter rejects");
+    checkRamSentinels("bad counter keeps ram");
     checkBool("restore rtc 3", writeFile(rtc_path, g_rtc_orig[0..]), true);
 
+    copy(bad[0..], g_rtc_orig[0..]);
+    bad[14] = 0x80;
+    checkBool("bad flags write", writeFile(rtc_path, bad[0..]), true);
+    expectCorrupt(&g_emu, "bad flags rejects");
+    checkRamSentinels("bad flags keeps ram");
+    checkBool("restore rtc 4", writeFile(rtc_path, g_rtc_orig[0..]), true);
+
+    copy(bad[0..], g_rtc_orig[0..]);
+    var ai: usize = 16;
+    while (ai < 24) : (ai += 1) {
+        bad[ai] = 0xFF;
+    }
+    checkBool("bad anchor write", writeFile(rtc_path, bad[0..]), true);
+    expectCorrupt(&g_emu, "bad anchor rejects");
+    checkRamSentinels("bad anchor keeps ram");
+    checkBool("restore rtc 5", writeFile(rtc_path, g_rtc_orig[0..]), true);
+
+    copy(bad[0..], g_rtc_orig[0..]);
+    bad[24] = 1;
+    checkBool("bad reserved write", writeFile(rtc_path, bad[0..]), true);
+    expectCorrupt(&g_emu, "bad reserved rejects");
+    checkRamSentinels("bad reserved keeps ram");
+    checkBool("restore rtc 6", writeFile(rtc_path, g_rtc_orig[0..]), true);
+
+    setRamSentinels();
     checkBool("short sav write", writeFile(sav_path, g_sav_orig[0..1]), true);
     expectCorrupt(&g_emu, "short sav rejects");
+    checkRamSentinels("short sav keeps ram");
     checkBool("restore sav", writeFile(sav_path, g_sav_orig[0..]), true);
 }
 

@@ -189,6 +189,7 @@ fn readRaw(self: *Bus, addr: u16) u8 {
     switch (page.kind) {
         .rom0, .romx, .cart_ram, .wram, .vram, .echo => return page.base[off],
         .rtc => {
+            if (!self.cart.ram_enable) return 0xFF;
             const reg: u8 = self.cart.ram_bank - 8;
             return cartmod.rtcRead(self.cart, reg);
         },
@@ -222,6 +223,7 @@ fn writeRaw(self: *Bus, addr: u16, value: u8) void {
             if (page.base != stub_base) page.base[off] = value;
         },
         .rtc => {
+            if (!self.cart.ram_enable) return;
             const reg: u8 = self.cart.ram_bank - 8;
             cartmod.rtcWrite(self.cart, reg, value);
         },

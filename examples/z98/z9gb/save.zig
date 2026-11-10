@@ -11,8 +11,7 @@
 //   14     flags: bit0 halt, bit1 day carry
 //   15     reserved zero
 //   16..23 host timestamp anchor (u64 LE unix seconds)
-//   24..27 CRC32 of bytes 0..23 (LE)
-//   28..31 reserved zero
+//   24..31 reserved zero (no CRC in the v1 header)
 //
 // Writes use the Win9x-safe backup dance (tmp, .bak, MoveFileA) through
 // std_file's whitelisted DeleteFileA/MoveFileA bindings; there is no CopyFileA
@@ -87,38 +86,6 @@ pub fn deriveSavePath(rom: []const u8, ext: []const u8, out: []u8) usize {
     return base_end + ext.len;
 }
 
-fn crc32(data: []const u8) u32 {
-    var crc: u32 = 0xFFFFFFFF;
-    var i: usize = 0;
-    while (i < data.len) : (i += 1) {
-        crc = crc ^ @intCast(u32, data[i]);
-        var bit: u8 = 0;
-        while (bit < 8) : (bit += 1) {
-            if ((crc & 1) != 0) {
-                crc = (crc >> 1) ^ 0xEDB88320;
-            } else {
-                crc = crc >> 1;
-            }
-        }
-    }
-    return ~crc;
-}
-
-fn putLe32(buf: []u8, off: usize, value: u32) void {
-    buf[off] = @intCast(u8, value & 0xFF);
-    buf[off + 1] = @intCast(u8, (value >> 8) & 0xFF);
-    buf[off + 2] = @intCast(u8, (value >> 16) & 0xFF);
-    buf[off + 3] = @intCast(u8, (value >> 24) & 0xFF);
-}
-
-fn getLe32(buf: []const u8, off: usize) u32 {
-    var v: u32 = @intCast(u32, buf[off]);
-    v = v | (@intCast(u32, buf[off + 1]) << 8);
-    v = v | (@intCast(u32, buf[off + 2]) << 16);
-    v = v | (@intCast(u32, buf[off + 3]) << 24);
-    return v;
-}
-
 fn putLe64(buf: []u8, off: usize, value: i64) void {
     var u: u64 = 0;
     if (value > 0) u = @intCast(u64, value);
@@ -161,11 +128,6 @@ fn buildRtcHeader(c: *cartmod.Cart, out: []u8) void {
     out[14] = flags;
     out[15] = 0;
     putLe64(out, 16, c.rtc.anchor);
-    putLe32(out, 24, crc32(out[0..24]));
-    out[28] = 0;
-    out[29] = 0;
-    out[30] = 0;
-    out[31] = 0;
 }
 
 fn parseRtcHeader(buf: []const u8) emumod.EmuError!RtcImage {
@@ -173,8 +135,10 @@ fn parseRtcHeader(buf: []const u8) emumod.EmuError!RtcImage {
     if (!sameSlice(buf[0..8], RTC_MAGIC[0..])) return error.SaveCorrupt;
     if (buf[8] != 1) return error.SaveCorrupt;
     if (buf[15] != 0) return error.SaveCorrupt;
-    if (buf[28] != 0 or buf[29] != 0 or buf[30] != 0 or buf[31] != 0) return error.SaveCorrupt;
-    if (getLe32(buf, 24) != crc32(buf[0..24])) return error.SaveCorrupt;
+    var reserved: usize = 24;
+    while (reserved < 32) : (reserved += 1) {
+        if (buf[reserved] != 0) return error.SaveCorrupt;
+    }
     if (buf[9] >= 60 or buf[10] >= 60 or buf[11] >= 24) return error.SaveCorrupt;
     if ((buf[13] & 0xFE) != 0) return error.SaveCorrupt;
     if ((buf[14] & 0xFC) != 0) return error.SaveCorrupt;
@@ -314,9 +278,10 @@ pub fn loadBattery(e: *emumod.Emu, rom_path: []const u8) emumod.EmuError!void {
             filemod.close(&f);
             return error.SaveCorrupt;
         }
+        const tc: *cartmod.Cart = &e.cart;
         var got: usize = 0;
         while (got < ram_size) {
-            const r = filemod.read(&f, e.cart.ram[got..ram_size]) catch {
+            const r = filemod.read(&f, tc.ram[got..ram_size]) catch {
                 filemod.close(&f);
                 return error.Io;
             };

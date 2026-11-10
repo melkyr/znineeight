@@ -413,7 +413,10 @@ fn mbc3Read(c: *Cart, addr: u16) u8 {
         return 0xff;
     }
     if (addr >= 0xa000 and addr < 0xc000) {
-        if (c.ram_bank >= 8) return rtcRead(c, c.ram_bank - 8);
+        if (c.ram_bank >= 8) {
+            if (!c.ram_enable) return 0xff;
+            return rtcRead(c, c.ram_bank - 8);
+        }
         if (!c.ram_enable or c.ram_size == 0) return 0xff;
         const off: usize = c.ram_off + @intCast(usize, addr - 0xa000);
         if (off < c.ram_size) return c.ram[off];
@@ -435,6 +438,7 @@ fn mbc3Write(c: *Cart, addr: u16, value: u8) void {
         rtcLatch(c, value);
     } else if (addr >= 0xa000 and addr < 0xc000) {
         if (c.ram_bank >= 8) {
+            if (!c.ram_enable) return;
             rtcWrite(c, c.ram_bank - 8, value);
             return;
         }
