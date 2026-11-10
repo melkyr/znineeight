@@ -176,6 +176,25 @@ fi
 
 rm -f "$ROM_OK" "$ROM_OVER"
 
+# ---- Task 3: RSS accounting + repeated-run determinism -----------------
+# measure_rss.sh builds the CLI, runs 60 headless frames under /usr/bin/time,
+# checks rss_kb is positive and below 12000, and checks three framebuffer dumps
+# are byte-identical. Exit 77 means /usr/bin/time is unavailable (skip).
+echo
+echo "== measuring RSS and determinism =="
+if sh "$SCRIPT_DIR/measure_rss.sh" "$ZIG" "$OUT/measure_rss" >"$OUT/measure_rss.log" 2>&1; then
+    sed 's/^/ok   - /' "$OUT/measure_rss.log"
+    PASSES=$((PASSES + 1))
+else
+    rc=$?
+    if [ "$rc" -eq 77 ]; then
+        pass_case "measure_rss skipped (/usr/bin/time unavailable)"
+    else
+        fail_case "measure_rss: rss_kb positive, < 12000, 3 runs identical"
+        tail -30 "$OUT/measure_rss.log" | sed 's/^/       /'
+    fi
+fi
+
 echo
 echo "== tier_smoke summary: $PASSES passed, $FAILS failed =="
 if [ "$FAILS" -ne 0 ]; then
