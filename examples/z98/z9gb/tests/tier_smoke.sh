@@ -62,6 +62,75 @@ cd "$ROOT" || exit 1
 dump_module backend examples/z98/z9gb/platform/backend.zig platformNoop
 dump_module headless examples/z98/z9gb/platform/headless.zig platformHeadless
 
+# ---- Task 2: deterministic headless frame gate -------------------------
+# Build the CLI once it exists (Task 2), run two frames headless, and verify
+# the exact 92,160-byte little-endian framebuffer dump. Until main.zig and
+# emu.zig exist this section fails, as required.
+BIN="$OUT/z9gb"
+FB="/tmp/z9gb_p1.fb"
+rm -f "$FB"
+
+echo
+echo "== building z9gb (headless CLI) =="
+if timeout 120 "$ZIG" -ffast -o "$OUT" examples/z98/z9gb/main.zig >"$OUT/z9gb_zig.log" 2>&1; then
+    pass_case "z9gb emits (rc=0)"
+else
+    fail_case "z9gb emits (rc=0)"
+    [ -f "$OUT/z9gb_zig.log" ] && tail -20 "$OUT/z9gb_zig.log" | sed 's/^/       /'
+fi
+if [ -f "$OUT/build_target.sh" ] && sh "$OUT/build_target.sh" linux "$BIN" >"$OUT/z9gb_build.log" 2>&1; then
+    pass_case "z9gb links (rc=0)"
+else
+    fail_case "z9gb links (rc=0)"
+    [ -f "$OUT/z9gb_build.log" ] && tail -20 "$OUT/z9gb_build.log" | sed 's/^/       /'
+fi
+
+if [ -x "$BIN" ] && timeout 60 "$BIN" --headless --frames 2 --fb-out "$FB" >"$OUT/z9gb_run.out" 2>"$OUT/z9gb_run.err"; then
+    pass_case "z9gb --headless --frames 2 --fb-out exits 0"
+else
+    fail_case "z9gb --headless --frames 2 --fb-out exits 0"
+    [ -f "$OUT/z9gb_run.err" ] && tail -20 "$OUT/z9gb_run.err" | sed 's/^/       /'
+fi
+
+# check_word <label> <byte-offset> <expected little-endian u32>
+check_word() {
+    label="$1"
+    off="$2"
+    want="$3"
+    if [ -f "$FB" ]; then
+        got="$(od -An -tx4 -j "$off" -N4 "$FB" | tr -d ' \n' | tr '[:lower:]' '[:upper:]')"
+        if [ "$got" = "$want" ]; then
+            pass_case "$label ($got)"
+        else
+            fail_case "$label (want $want, got $got)"
+        fi
+    else
+        fail_case "$label (missing $FB)"
+    fi
+}
+
+if [ -f "$FB" ]; then
+    size="$(stat -c %s "$FB")"
+    if [ "$size" = "92160" ]; then
+        pass_case "framebuffer dump is 92160 bytes"
+    else
+        fail_case "framebuffer dump is 92160 bytes (got $size)"
+    fi
+    if echo "54c0af1aa8cee3642b6f1c4a24831e89  $FB" | md5sum -c - >"$OUT/z9gb_md5.log" 2>&1; then
+        pass_case "framebuffer md5 matches golden"
+    else
+        fail_case "framebuffer md5 matches golden"
+        tail -5 "$OUT/z9gb_md5.log" | sed 's/^/       /'
+    fi
+else
+    fail_case "framebuffer dump is 92160 bytes (missing $FB)"
+    fail_case "framebuffer md5 matches golden (missing $FB)"
+fi
+
+check_word "first pixel" 0 00010000
+check_word "middle pixel" 46400 00014850
+check_word "last pixel" 92156 00018F9F
+
 echo
 echo "== tier_smoke summary: $PASSES passed, $FAILS failed =="
 if [ "$FAILS" -ne 0 ]; then
