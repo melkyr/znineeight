@@ -17,7 +17,7 @@
 - No heap allocation in CPU/PPU/MMU/timer hot paths. ROM, VRAM, WRAM, OAM, framebuffer, and save RAM are fixed arrays.
 - 1 MiB stack limit: no large local arrays; all large state is static/global.
 - No third-party ROM bytes are committed. External suites are user-supplied and hash-checked; missing suites are `SKIP`, never `PASS`.
-- `dmg-acid2` compares the exact 160x144 RGB32 framebuffer against the committed golden hash; a missing golden is `SKIP`. The golden is pinned to the plan's exact palette and capture frame (Task 9 Step 5) so the hash is reproducible.
+- `dmg-acid2` compares the exact 160x144 RGB32 framebuffer against the committed golden hash; a missing golden is `SKIP`. The golden is pinned to the plan's exact palette and capture frame (Task 9.3, derived from the official reference image) so the hash is reproducible.
 - Serial harness is the test transport; link cable is out of scope.
 - Every `switch` over opcodes has an `else`; opcode constants are module-scope.
 - `-fsafe` arithmetic idiom (mandatory in `z9gb` sources): shifts and wrapping math run on `u32`/`u16` temps, then mask and narrow. `u8` values are never shifted (`value << 8` on `u8` traps under `-fsafe`); DIV/TIMA wrap uses `& 0xFFFF` or `+%`; every `@intCast` is preceded by an explicit mask. Builds must pass under both `-ffast` and `-fsafe`.
@@ -422,13 +422,99 @@ git commit -m "feat(z9gb): add MBC3 RTC, MBC5 and battery saves"
 The golden must be pinned to exact render settings or no external emulator's output can ever hash-match:
   - DMG palette: the four canonical greens rendered as RGB32 `0x009BBC0F`, `0x008BAC0F`, `0x00306230`, `0x000F380F`, i.e. BGP/OBP0/OBP1 = `0xE4` defaults mapped shade 0..3 light-to-dark.
   - Capture frame: frame 120 (2 emulated seconds after `emuReset` with LCD on), CGB disabled (DMG mode), 160x144 little-endian `u32` dump, 92,160 bytes.
-Commit `testdata/golden/dmg-acid2.fb` (92,160 bytes) plus `dmg-acid2.sha256`. Capture procedure: run `dmg-acid2.gb` in a reference emulator configured to the exact palette/frame above (e.g. BGB or SameBoy under Wine), or capture from the completed emulator and obtain operator visual sign-off against dmg-acid2's documented final screen. If no golden can be committed, the gate is `SKIP` and P2 closeout cannot claim PASS.
+Commit `testdata/golden/dmg-acid2.fb` (92,160 bytes) plus `dmg-acid2.sha256`. The golden source is superseded by Task 9.3: derive it from the test author's official `img/reference-dmg.png` and the `$FF/$AA/$55/$00` mapping, not from our emulator. If no golden can be committed, the gate is `SKIP` and P2 closeout cannot claim PASS.
 - [ ] **Step 6: Run**
 Run `bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG1" --gates`. Expected: all present gates PASS; absent assets SKIP.
 - [ ] **Step 7: Commit**
 ```bash
 git add examples/z98/z9gb/main.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/testdata/roms examples/z98/z9gb/testdata/golden examples/z98/z9gb/tests
 git commit -m "test(z9gb): add DMG hard gates and ROM manifest"
+```
+
+---
+
+### Task 9.1: CPU/bus timing and STOP
+
+**Files:**
+- Modify: `examples/z98/z9gb/cpu.zig`
+- Modify: `examples/z98/z9gb/mmu.zig`
+- Modify: `examples/z98/z9gb/tests/tier_dmg.sh`
+- Test: `examples/z98/z9gb/tests/tier_dmg.sh`
+
+**Interfaces:**
+- Consumes: `Cpu`, `Bus`, timer; Task 9 gate runners.
+- Produces: STOP as a 2-byte instruction; M-cycle bus timing; interrupt dispatch timing. Gates `cpu_instrs`, `mem_timing`, `interrupt_time`.
+
+- [ ] **Step 1: Write the failing gate run**
+Run `run_blargg.sh` for `cpu_instrs`, `mem_timing`, `interrupt_time`. Expected: current FAIL/SIGTRAP/no-verdict.
+- [ ] **Step 2: Implement STOP**
+`0x10` consumes 2 bytes, advances PC past both, executes in 4 T-cycles, and does not trap. DMG STOP has no speed switch; CGB speed-switch behavior remains P4.
+- [ ] **Step 3: Place bus accesses at M-cycle boundaries**
+Replace instruction-atomic post-tick timing: every external bus access is preceded by the correct 4-T-cycle bus time, and internal cycles tick the bus at their instruction-specific points. Do not tick the whole instruction after the fact and do not double-tick. The timer/DIV/IF paths must observe accesses in the order the CPU performs them.
+- [ ] **Step 4: Fix interrupt dispatch timing**
+Keep the 20-cycle dispatch cost, but place those cycles on the bus at the same points as the hardware sequence (push and vector fetch), so `interrupt_time` sees the right latency.
+- [ ] **Step 5: Run**
+Run the three Blargg gates plus `tier_dmg --all` under `-ffast` and `-fsafe`. Expected: all three present gates PASS; existing tier stays green.
+- [ ] **Step 6: Commit**
+```bash
+git add examples/z98/z9gb/cpu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/tests/tier_dmg.sh
+git commit -m "fix(z9gb): correct CPU timing and STOP"
+```
+
+---
+
+### Task 9.2: PPU STAT line and LCD-on timing
+
+**Files:**
+- Modify: `examples/z98/z9gb/ppu.zig`
+- Modify: `examples/z98/z9gb/emu.zig`
+- Modify: `examples/z98/z9gb/tests/tier_dmg.sh`
+- Test: `examples/z98/z9gb/tests/tier_dmg.sh`
+
+**Interfaces:**
+- Consumes: PPU, `busRaiseIrq`, Task 9 runners.
+- Produces: STAT line state; rising-edge STAT IRQ; LCD-on mode-2 timing. Gates `lcdon_timing-GS`, `stat_irq_blocking`.
+
+- [ ] **Step 1: Write the failing gate run**
+Run `run_mooneye.sh` for `lcdon_timing-GS` and `stat_irq_blocking`. Expected: current FAIL/no-breakpoint.
+- [ ] **Step 2: Implement the STAT line**
+Track the combined STAT condition (mode bits + LYC coincidence) as a line. Raise `busRaiseIrq(bus, 0x02)` only on a `0→1` transition; while the line is high, new source conditions do not re-fire. Clear it when the condition goes low.
+- [ ] **Step 3: Correct LCD-on timing**
+On LCDC bit 7 `0→1`, reset the line/dot counters and enter the documented mode-2 start at the correct dot; on `1→0`, enter mode 0/VBlank-off state. LYC writes still use the Task 7 immediate-write rule.
+- [ ] **Step 4: Run**
+Run both Mooneye PPU gates plus `tier_dmg --all` under `-ffast` and `-fsafe`. Expected: both present gates PASS; existing tier stays green.
+- [ ] **Step 5: Commit**
+```bash
+git add examples/z98/z9gb/ppu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/tier_dmg.sh
+git commit -m "fix(z9gb): block STAT interrupts on the line edge"
+```
+
+---
+
+### Task 9.3: dmg-acid2 golden from the official reference
+
+**Files:**
+- Create: `examples/z98/z9gb/testdata/golden/dmg-acid2.fb`
+- Create: `examples/z98/z9gb/testdata/golden/dmg-acid2.sha256`
+- Create: `examples/z98/z9gb/testdata/golden/README.md`
+- Test: `examples/z98/z9gb/tests/run_acid2.sh`
+
+**Interfaces:**
+- Consumes: `dmg-acid2.gb` from `/tmp/z9gb_roms/acid2/dmg-acid2.gb`; Task 9 runner.
+- Produces: committed 92,160-byte DMG golden and provenance. Gate `dmg-acid2`.
+
+- [ ] **Step 1: Fetch the official reference**
+Download `https://github.com/mattcurrie/dmg-acid2/raw/master/img/reference-dmg.png` to `/tmp`, record its SHA-256, and verify it is 160x144. This is the author's canonical output; do not use our emulator as the source.
+- [ ] **Step 2: Map the author's comparison values**
+The README pins greyscale/RGB components `$FF`, `$AA`, `$55`, `$00`. Map `$FF→0x009BBC0F`, `$AA→0x008BAC0F`, `$55→0x00306230`, `$00→0x000F380F` (shades 0..3, light-to-dark). Any other value is an error/STOP; do not guess.
+- [ ] **Step 3: Emit the golden**
+Write 160x144 little-endian `u32` pixels (92,160 bytes) to `testdata/golden/dmg-acid2.fb`; write `dmg-acid2.sha256`; document the source URL, image SHA-256, mapping, and frame-120 settings in `testdata/golden/README.md`. Commit only the derived golden/hash/README, never the PNG or ROM.
+- [ ] **Step 4: Run the gate**
+Run `run_acid2.sh` with `Z9GB_ROM_DIR=/tmp/z9gb_roms`. Expected: PASS, 92,160 bytes, matching SHA-256.
+- [ ] **Step 5: Commit**
+```bash
+git add examples/z98/z9gb/testdata/golden examples/z98/z9gb/tests/run_acid2.sh
+git commit -m "test(z9gb): derive dmg-acid2 golden from official reference"
 ```
 
 ---
@@ -444,14 +530,14 @@ git commit -m "test(z9gb): add DMG hard gates and ROM manifest"
 - Consumes: all P2 tasks.
 - Produces: recorded P2 evidence and truthful docs.
 
-- [ ] **Step 1: Run the full P2 tier**
-Run `bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG1" --all`. Expected: PASS; external suites present and passing.
+- [ ] **Step 1: Run the full P2 tier and hard gates**
+Run `bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG1" --all` and then `bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG1" --gates`. Expected: both PASS; all present hard gates PASS; `dmg-acid2` is not SKIP. A skipped hard gate blocks closeout.
 - [ ] **Step 2: Run the corpus and RSS**
 Run the corpus dump, `measure_rss.sh`, and the three-run framebuffer determinism check. Expected: dump rc 0; RSS recorded; framebuffer identical.
 - [ ] **Step 3: Record evidence**
 Write exact commands, rc, PASS/SKIP counts, `dmg-acid2` hash, and `rss_kb` into the task report. Do not claim synthetic ROMs as external suite passes.
 - [ ] **Step 4: Update docs**
-README: P2 status, supported MBCs, save behavior, gate commands, external ROM setup. Matrix counts remain truthful.
+README: P2 status, supported MBCs, save behavior (including the `.rtc` rename window), gate commands, external ROM setup. Matrix counts remain truthful.
 - [ ] **Step 5: Commit**
 ```bash
 git add examples/z98/z9gb/README.md README.md docs/sf/QUICK_REF.md
