@@ -82,6 +82,7 @@ Write the matrix, exact Wine version, slot counts, asset hashes, include-path re
 - Create: `sf/src/std_ddraw.zig`
 - Create: `sf/src/std_ddraw_pal.zig`
 - Create: `examples/z98/z9gb/tests/run_ddraw_probe.sh`
+- Modify: `scripts/win32_cross/check_win9x_imports.sh` (GDI32 whitelist += `GetPixel` for the readback probe)
 - Test: `examples/z98/z9gb/tests/tier_win32.sh`
 
 **Interfaces:**
@@ -106,10 +107,10 @@ Hand-write the `IDirectDraw7` and `IDirectDrawSurface7` vtables with exact slot 
 - [ ] **Step 4: Implement window and scale**
 Window client is `160*scale x 144*scale`; `ddrawSetScale` resizes the window and rebuilds the clipper; the 160x144 source offscreen is size-independent (the 640x576 staging surface is created only for the software-scale fallback). Scale outside 1..4 returns false.
 - [ ] **Step 5: Add the Win32 tier**
-`tier_win32.sh` builds `-osw`, runs `check_win9x_imports.sh <exe> 9x`, and runs the probe under Wine with `--scale 2 --frames 1`. Expected: import gate PASS; probe exits 0; framebuffer checksum matches the headless source.
+`tier_win32.sh` builds `-osw`, runs `check_win9x_imports.sh <exe> 9x`, and runs the probe under Wine with `--scale 2 --frames 1`. The probe must read back the presented window pixels (GDI `GetDC`/`GetPixel`) and assert the known color at scale 2 and after `ddrawSetScale(4)`; `GetPixel` is added to the GDI32 whitelist in this task's commit. Expected: import gate PASS; probe exits 0; readback assertion passes.
 - [ ] **Step 6: Commit**
 ```bash
-git add sf/src/std_ddraw.zig sf/src/std_ddraw_pal.zig examples/z98/z9gb/tests/run_ddraw_probe.sh examples/z98/z9gb/tests/tier_win32.sh
+git add sf/src/std_ddraw.zig sf/src/std_ddraw_pal.zig scripts/win32_cross/check_win9x_imports.sh examples/z98/z9gb/tests/run_ddraw_probe.sh examples/z98/z9gb/tests/tier_win32.sh
 git commit -m "feat(std): add DirectDraw pixel surface"
 ```
 
