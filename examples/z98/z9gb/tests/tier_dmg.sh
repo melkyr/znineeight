@@ -723,16 +723,17 @@ fn testModeSequence() void {
     reset();
     checkByte("ppu initial mode", g_ppu.mode, 2);
     checkByte("ppu initial ly", g_ppu.ly, 0);
-    tick(79);
-    checkByte("ppu mode2 at 79", g_ppu.mode, 2);
+    tick(83);
+    checkByte("ppu mode2 at 83", g_ppu.mode, 2);
     tick(1);
-    checkByte("ppu mode3 at 80", g_ppu.mode, 3);
+    checkByte("ppu mode3 at 84", g_ppu.mode, 3);
     checkWord("ppu mode3 base length", @intCast(u16, g_ppu.mode3_len), 172);
     tick(g_ppu.mode3_len);
     checkByte("ppu mode0 after mode3", g_ppu.mode, 0);
-    const rest: u32 = 456 - 80 - g_ppu.mode3_len;
+    const rest: u32 = 456 - 84 - g_ppu.mode3_len;
     tick(rest);
     checkByte("ppu next line ly", g_ppu.ly, 1);
+    tick(4);
     checkByte("ppu next line mode2", g_ppu.mode, 2);
     tick(143 * 456);
     checkByte("ppu vblank ly", g_ppu.ly, 144);
@@ -743,20 +744,20 @@ fn testModeSequence() void {
 
     reset();
     writeReg(0xFF43, 5);
-    tick(80);
+    tick(84);
     checkWord("ppu mode3 scx penalty", @intCast(u16, g_ppu.mode3_len), 177);
 
     reset();
     writeReg(0xFF40, 0x93);
     setOam(0, 16, 0, 0, 0);
-    tick(80);
+    tick(84);
     checkWord("ppu mode3 obj x0 penalty", @intCast(u16, g_ppu.mode3_len), 183);
 }
 
 fn testStatInterrupts() void {
     reset();
     writeReg(0xFF41, 0x08);
-    tick(80);
+    tick(84);
     tick(g_ppu.mode3_len);
     checkByte("ppu stat mode0 irq", g_bus.io[0x0F] & 0x02, 0x02);
 
@@ -774,13 +775,14 @@ fn testStatInterrupts() void {
     writeReg(0xFF41, 0x40);
     writeReg(0xFF45, 1);
     tick(456);
+    tick(5);
     checkByte("ppu lyc coincidence", ppumod.ppuRead(&g_ppu, 0xFF41) & 0x04, 0x04);
     checkByte("ppu lyc stat irq", g_bus.io[0x0F] & 0x02, 0x02);
 }
 
 fn testStatLineEdge() void {
     reset();
-    tick(80);
+    tick(84);
     tick(g_ppu.mode3_len);
     checkByte("ppu stat line idle", g_bus.io[0x0F] & 0x02, 0x00);
     writeReg(0xFF41, 0x08);
@@ -790,12 +792,58 @@ fn testStatLineEdge() void {
     tick(10);
     checkByte("ppu stat line no refire", g_bus.io[0x0F] & 0x02, 0x00);
 
-    tick(456 - 80 - g_ppu.mode3_len - 10);
+    tick(456 - 84 - g_ppu.mode3_len - 10);
     checkByte("ppu stat line cleared", g_bus.io[0x0F] & 0x02, 0x00);
 
-    tick(80);
+    tick(84);
     tick(g_ppu.mode3_len);
     checkByte("ppu stat line refire", g_bus.io[0x0F] & 0x02, 0x02);
+}
+
+fn testModeAccessLocking() void {
+    reset();
+    writeReg(0xFF40, 0x00);
+    writeReg(0xFF40, 0x91);
+    g_bus.oam[0] = 0x12;
+    g_bus.vram[0] = 0x34;
+    checkByte("ppu access oam mode0 read", mmumod.read8(&g_bus, 0xFE00), 0x12);
+    checkByte("ppu access vram mode0 read", mmumod.read8(&g_bus, 0x8000), 0x34);
+    mmumod.write8(&g_bus, 0xFE00, 0x56);
+    mmumod.write8(&g_bus, 0x8000, 0x78);
+    checkByte("ppu access oam mode0 write", g_bus.oam[0], 0x56);
+    checkByte("ppu access vram mode0 write", g_bus.vram[0], 0x78);
+
+    tick(84);
+    checkByte("ppu access first line mode3", g_ppu.mode, 3);
+    checkByte("ppu access oam mode3 read", mmumod.read8(&g_bus, 0xFE00), 0xFF);
+    checkByte("ppu access vram mode3 read", mmumod.read8(&g_bus, 0x8000), 0xFF);
+    mmumod.write8(&g_bus, 0xFE00, 0x9A);
+    mmumod.write8(&g_bus, 0x8000, 0xBC);
+    checkByte("ppu access oam mode3 write", g_bus.oam[0], 0x56);
+    checkByte("ppu access vram mode3 write", g_bus.vram[0], 0x78);
+
+    tick(g_ppu.mode3_len);
+    checkByte("ppu access mode0 after mode3", g_ppu.mode, 0);
+    checkByte("ppu access oam mode0 restored", mmumod.read8(&g_bus, 0xFE00), 0x56);
+    checkByte("ppu access vram mode0 restored", mmumod.read8(&g_bus, 0x8000), 0x78);
+
+    tick(456 - 84 - g_ppu.mode3_len);
+    checkByte("ppu access normal line start", g_ppu.ly, 1);
+    checkByte("ppu access normal oam early", mmumod.read8(&g_bus, 0xFE00), 0xFF);
+    checkByte("ppu access normal vram early", mmumod.read8(&g_bus, 0x8000), 0x78);
+    tick(80);
+    checkByte("ppu access normal mode2", g_ppu.mode, 2);
+    checkByte("ppu access oam mode2 read", mmumod.read8(&g_bus, 0xFE00), 0xFF);
+    checkByte("ppu access vram mode2 late read", mmumod.read8(&g_bus, 0x8000), 0xFF);
+    tick(256 - 80);
+    checkByte("ppu access normal mode0", g_ppu.mode, 0);
+    checkByte("ppu access oam normal mode0", mmumod.read8(&g_bus, 0xFE00), 0x56);
+    checkByte("ppu access vram normal mode0", mmumod.read8(&g_bus, 0x8000), 0x78);
+
+    reset();
+    writeReg(0xFF40, 0x00);
+    checkByte("ppu access lcd off oam", mmumod.read8(&g_bus, 0xFE00), 0x00);
+    checkByte("ppu access lcd off vram", mmumod.read8(&g_bus, 0x8000), 0x00);
 }
 
 fn testBackground() void {
@@ -810,7 +858,7 @@ fn testBackground() void {
     g_bus.vram[0x1800] = 1;
     g_bus.vram[0x1801] = 2;
     g_bus.vram[0x1802] = 0x80;
-    tick(80);
+    tick(84);
     checkFrame("ppu bg tile1 color3", 0, 0, 0x000F380F);
     checkFrame("ppu bg tile2 color1", 8, 0, 0x008BAC0F);
     checkFrame("ppu bg signed tile color2", 16, 0, 0x00306230);
@@ -824,7 +872,7 @@ fn testWindow() void {
     writeReg(0xFF4B, 0);
     fillTile(0, 0x00, 0xFF);
     g_bus.vram[0x1C00] = 0;
-    tick(80);
+    tick(84);
     checkWord("ppu window mode3 penalty", @intCast(u16, g_ppu.mode3_len), 178);
     checkFrame("ppu window pixel0", 0, 0, 0x00306230);
     checkFrame("ppu window pixel159", 159, 0, 0x00306230);
@@ -837,7 +885,7 @@ fn testWindow() void {
     writeReg(0xFF4B, 15);
     fillTile(1, 0x00, 0xFF);
     g_bus.vram[0x1C00] = 1;
-    tick(80);
+    tick(84);
     checkFrame("ppu window left edge bg", 7, 0, 0x009BBC0F);
     checkFrame("ppu window left edge win", 8, 0, 0x00306230);
 }
@@ -852,7 +900,7 @@ fn testSprite8x8() void {
     g_bus.vram[0x1800] = 1;
     g_bus.vram[0x1801] = 1;
     setOam(0, 16, 8, 0, 0);
-    tick(80);
+    tick(84);
     checkFrame("ppu sprite 8x8 pixel0", 0, 0, 0x008BAC0F);
     checkFrame("ppu sprite 8x8 bg pixel8", 8, 0, 0x000F380F);
 }
@@ -871,13 +919,13 @@ fn spriteRomSetup(lcdc: u8) void {
 fn testSprite8x16() void {
     spriteRomSetup(0x97);
     setOam(0, 16, 8, 2, 0);
-    tick(80);
+    tick(84);
     checkFrame("ppu sprite 8x16 top tile", 0, 0, 0x00306230);
 
     spriteRomSetup(0x97);
     setOam(0, 16, 8, 2, 0);
     tick(8 * 456);
-    tick(80);
+    tick(84);
     checkByte("ppu sprite 8x16 line8", g_ppu.ly, 8);
     checkFrame("ppu sprite 8x16 bottom tile", 0, 8, 0x008BAC0F);
 }
@@ -887,26 +935,26 @@ fn testSpritePriority() void {
     g_bus.vram[0x1800] = 0;
     setOam(0, 16, 8, 0, 0);
     setOam(1, 16, 8, 2, 0);
-    tick(80);
+    tick(84);
     checkFrame("ppu sprite same x oam index", 0, 0, 0x008BAC0F);
 
     spriteRomSetup(0x93);
     g_bus.vram[0x1800] = 0;
     setOam(0, 16, 9, 2, 0);
     setOam(1, 16, 8, 0, 0);
-    tick(80);
+    tick(84);
     checkFrame("ppu sprite x priority", 1, 0, 0x008BAC0F);
 
     spriteRomSetup(0x93);
     g_bus.vram[0x1800] = 1;
     setOam(0, 16, 8, 0, 0x80);
-    tick(80);
+    tick(84);
     checkFrame("ppu sprite behind bg", 0, 0, 0x00306230);
 
     spriteRomSetup(0x93);
     g_bus.vram[0x1800] = 0;
     setOam(0, 16, 8, 0, 0x80);
-    tick(80);
+    tick(84);
     checkFrame("ppu sprite over bg zero", 0, 0, 0x008BAC0F);
 }
 
@@ -916,24 +964,24 @@ fn testPalette() void {
     writeReg(0xFF47, 0x1B);
     fillTile(1, 0xFF, 0x00);
     g_bus.vram[0x1800] = 1;
-    tick(80);
+    tick(84);
     checkFrame("ppu bgp remap", 0, 0, 0x00306230);
     writeReg(0xFF47, 0xE4);
-    tick(456 - 80);
-    tick(80);
+    tick(456 - 84);
+    tick(84);
     checkFrame("ppu bgp recompute", 0, 1, 0x008BAC0F);
 
     spriteRomSetup(0x93);
     g_bus.vram[0x1800] = 0;
     writeReg(0xFF48, 0x1B);
     setOam(0, 16, 8, 0, 0);
-    tick(80);
+    tick(84);
     checkFrame("ppu obp remap", 0, 0, 0x00306230);
 }
 
 fn testWindowClipping() void {
     windowSetup(0, 3);
-    tick(80);
+    tick(84);
     checkByte("ppu window wx0 start", g_ppu.win_start_x, 0);
     checkByte("ppu window wx0 skip", g_ppu.win_skip, 3);
     checkByte("ppu window wx0 len", g_ppu.win_visible_len, 160);
@@ -943,7 +991,7 @@ fn testWindowClipping() void {
     var wx: u8 = 1;
     while (wx <= 6) : (wx += 1) {
         windowSetup(wx, 0);
-        tick(80);
+        tick(84);
         checkByte("ppu window wx1..6 skip", g_ppu.win_skip, @intCast(u8, 7 - wx));
         const idx: u8 = @intCast(u8, g_ppu.win_skip & 3);
         checkFrame("ppu window wx1..6 first", 0, 0, TEST_COLORS[@intCast(usize, idx)]);
@@ -952,20 +1000,20 @@ fn testWindowClipping() void {
     }
 
     windowSetup(7, 0);
-    tick(80);
+    tick(84);
     checkByte("ppu window wx7 start", g_ppu.win_start_x, 0);
     checkByte("ppu window wx7 skip", g_ppu.win_skip, 0);
     checkFrame("ppu window wx7 pixel0", 0, 0, TEST_COLORS[0]);
 
     windowSetup(166, 0);
-    tick(80);
+    tick(84);
     checkByte("ppu window wx166 start", g_ppu.win_start_x, 159);
     checkByte("ppu window wx166 len", g_ppu.win_visible_len, 1);
     checkFrame("ppu window wx166 bg", 158, 0, TEST_COLORS[3]);
     checkFrame("ppu window wx166 win", 159, 0, TEST_COLORS[0]);
 
     windowSetup(167, 0);
-    tick(80);
+    tick(84);
     checkByte("ppu window wx167 disabled", g_ppu.win_visible_len, 0);
     checkFrame("ppu window wx167 bg", 0, 0, TEST_COLORS[3]);
     checkByte("ppu window wx167 counter", g_ppu.window_line, 0);
@@ -976,20 +1024,20 @@ fn testMode3Tiles() void {
     writeReg(0xFF40, 0x93);
     setOam(0, 16, 8, 0, 0);
     setOam(1, 16, 9, 0, 0);
-    tick(80);
+    tick(84);
     checkWord("ppu mode3 same tile", @intCast(u16, g_ppu.mode3_len), 183);
 
     reset();
     writeReg(0xFF40, 0x93);
     setOam(0, 16, 8, 0, 0);
     setOam(1, 16, 16, 0, 0);
-    tick(80);
+    tick(84);
     checkWord("ppu mode3 distinct tiles", @intCast(u16, g_ppu.mode3_len), 194);
 
     reset();
     writeReg(0xFF40, 0x93);
     setOam(0, 16, 0, 0, 0);
-    tick(80);
+    tick(84);
     checkWord("ppu mode3 x0 capped", @intCast(u16, g_ppu.mode3_len), 183);
 }
 
@@ -1016,7 +1064,7 @@ fn testLycWriteAndLcd() void {
     checkByte("ppu lcd reenable line", g_ppu.line, 0);
     checkByte("ppu lcd reenable dot", @intCast(u8, g_ppu.dot), 0);
     checkByte("ppu lcd reenable ly", g_ppu.ly, 0);
-    tick(80);
+    tick(84);
     checkByte("ppu lcd reenable straight to mode3", g_ppu.mode, 3);
 
     reset();
@@ -1078,6 +1126,7 @@ pub fn main() void {
     testModeSequence();
     testStatInterrupts();
     testStatLineEdge();
+    testModeAccessLocking();
     testBackground();
     testWindow();
     testWindowClipping();

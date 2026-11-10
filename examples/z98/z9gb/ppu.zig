@@ -13,7 +13,9 @@ pub const SCREEN_H: usize = 144;
 pub const FRAME_PIXELS: usize = SCREEN_W * SCREEN_H;
 
 const LINE_DOTS: u32 = 456;
-const MODE2_DOTS: u32 = 80;
+const MODE2_START: u32 = 4;
+const MODE3_START: u32 = 84;
+const VRAM_BLOCK_DOT: u32 = 80;
 const TOTAL_LINES: u8 = 154;
 const VISIBLE_LINES: u8 = 144;
 const MAX_SPRITES: usize = 10;
@@ -40,6 +42,9 @@ pub const Ppu = struct {
     wx: u8,
     coincidence: bool,
     stat_line: bool,
+    first_line: bool,
+    oam_blocked: bool,
+    vram_blocked: bool,
     mode: u8,
     dot: u32,
     line: u8,
@@ -85,6 +90,11 @@ fn updateStatLine(p: *Ppu, bus: *mmumod.Bus) void {
     p.stat_line = high;
 }
 
+fn syncAccess(p: *const Ppu, bus: *mmumod.Bus) void {
+    bus.ppu_oam_blocked = p.oam_blocked;
+    bus.ppu_vram_blocked = p.vram_blocked;
+}
+
 pub fn ppuReset(p: *Ppu) void {
     p.lcdc = 0x91;
     p.stat = 0;
@@ -100,6 +110,9 @@ pub fn ppuReset(p: *Ppu) void {
     p.wx = 0;
     p.coincidence = true;
     p.stat_line = false;
+    p.first_line = false;
+    p.oam_blocked = false;
+    p.vram_blocked = false;
     p.mode = 2;
     p.dot = 0;
     p.line = 0;
@@ -161,7 +174,11 @@ pub fn ppuWrite(p: *Ppu, addr: u16, value: u8, bus: *mmumod.Bus) void {
                 p.win_skip = 0;
                 p.win_visible_len = 0;
                 p.coincidence = (p.ly == p.lyc);
+                p.first_line = false;
+                p.oam_blocked = false;
+                p.vram_blocked = false;
                 updateStatLine(p, bus);
+                syncAccess(p, bus);
             } else if (!was_on and now_on) {
                 p.mode = 0;
                 p.dot = 0;
@@ -172,7 +189,11 @@ pub fn ppuWrite(p: *Ppu, addr: u16, value: u8, bus: *mmumod.Bus) void {
                 p.win_skip = 0;
                 p.win_visible_len = 0;
                 p.coincidence = (p.ly == p.lyc);
+                p.first_line = true;
+                p.oam_blocked = false;
+                p.vram_blocked = false;
                 updateStatLine(p, bus);
+                syncAccess(p, bus);
             }
         },
         0xFF41 => {
@@ -507,13 +528,19 @@ fn startMode3(p: *Ppu, bus: *mmumod.Bus) void {
     setupWindow(p);
     p.mode3_len = computeMode3(p);
     p.mode = 3;
+    p.oam_blocked = true;
+    p.vram_blocked = true;
     renderLine(p, bus);
     updateStatLine(p, bus);
+    syncAccess(p, bus);
 }
 
 fn enterMode0(p: *Ppu, bus: *mmumod.Bus) void {
     p.mode = 0;
+    p.oam_blocked = false;
+    p.vram_blocked = false;
     updateStatLine(p, bus);
+    syncAccess(p, bus);
 }
 
 fn enterLine(p: *Ppu, bus: *mmumod.Bus, line: u8) void {
@@ -521,12 +548,17 @@ fn enterLine(p: *Ppu, bus: *mmumod.Bus, line: u8) void {
     p.ly = line;
     p.dot = 0;
     p.coincidence = (p.ly == p.lyc);
+    p.oam_blocked = false;
+    p.vram_blocked = false;
     if (line < VISIBLE_LINES) {
-        p.mode = 2;
+        p.mode = 0;
+        p.coincidence = false;
+        p.oam_blocked = true;
     } else {
         p.mode = 1;
     }
     updateStatLine(p, bus);
+    syncAccess(p, bus);
 }
 
 fn nextLine(p: *Ppu, bus: *mmumod.Bus) void {
@@ -535,6 +567,7 @@ fn nextLine(p: *Ppu, bus: *mmumod.Bus) void {
         line = 0;
         p.window_line = 0;
     }
+    if (line != 0) p.first_line = false;
     enterLine(p, bus, @intCast(u8, line));
 }
 
@@ -549,7 +582,11 @@ pub fn ppuTick(p: *Ppu, cycles: u32, bus: *mmumod.Bus) void {
         p.win_skip = 0;
         p.win_visible_len = 0;
         p.coincidence = (p.ly == p.lyc);
+        p.first_line = false;
+        p.oam_blocked = false;
+        p.vram_blocked = false;
         updateStatLine(p, bus);
+        syncAccess(p, bus);
         return;
     }
 
@@ -567,21 +604,74 @@ pub fn ppuTick(p: *Ppu, cycles: u32, bus: *mmumod.Bus) void {
             continue;
         }
 
-        if (p.dot < MODE2_DOTS) {
-            const remain: u32 = MODE2_DOTS - p.dot;
+        if (p.first_line and p.line == 0) {
+            if (p.dot < MODE3_START) {
+                const remain: u32 = MODE3_START - p.dot;
+                const step: u32 = if (left < remain) left else remain;
+                p.dot += step;
+                left -= step;
+                if (p.dot >= MODE3_START) startMode3(p, bus);
+                continue;
+            }
+            if (p.dot < MODE3_START + p.mode3_len) {
+                const remain: u32 = MODE3_START + p.mode3_len - p.dot;
+                const step: u32 = if (left < remain) left else remain;
+                p.dot += step;
+                left -= step;
+                if (p.dot >= MODE3_START + p.mode3_len) enterMode0(p, bus);
+                continue;
+            }
+            const remain: u32 = LINE_DOTS - p.dot;
             const step: u32 = if (left < remain) left else remain;
             p.dot += step;
             left -= step;
-            if (p.dot >= MODE2_DOTS) startMode3(p, bus);
+            if (p.dot >= LINE_DOTS) {
+                p.dot = 0;
+                nextLine(p, bus);
+            }
             continue;
         }
 
-        if (p.dot < MODE2_DOTS + p.mode3_len) {
-            const remain: u32 = MODE2_DOTS + p.mode3_len - p.dot;
+        if (p.dot < MODE2_START) {
+            const remain: u32 = MODE2_START - p.dot;
             const step: u32 = if (left < remain) left else remain;
             p.dot += step;
             left -= step;
-            if (p.dot >= MODE2_DOTS + p.mode3_len) enterMode0(p, bus);
+            if (p.dot >= MODE2_START) {
+                p.mode = 2;
+                p.coincidence = (p.ly == p.lyc);
+                updateStatLine(p, bus);
+            }
+            continue;
+        }
+
+        if (p.dot < VRAM_BLOCK_DOT) {
+            const remain: u32 = VRAM_BLOCK_DOT - p.dot;
+            const step: u32 = if (left < remain) left else remain;
+            p.dot += step;
+            left -= step;
+            if (p.dot >= VRAM_BLOCK_DOT) {
+                p.vram_blocked = true;
+                syncAccess(p, bus);
+            }
+            continue;
+        }
+
+        if (p.dot < MODE3_START) {
+            const remain: u32 = MODE3_START - p.dot;
+            const step: u32 = if (left < remain) left else remain;
+            p.dot += step;
+            left -= step;
+            if (p.dot >= MODE3_START) startMode3(p, bus);
+            continue;
+        }
+
+        if (p.dot < MODE3_START + p.mode3_len) {
+            const remain: u32 = MODE3_START + p.mode3_len - p.dot;
+            const step: u32 = if (left < remain) left else remain;
+            p.dot += step;
+            left -= step;
+            if (p.dot >= MODE3_START + p.mode3_len) enterMode0(p, bus);
             continue;
         }
 
@@ -594,4 +684,5 @@ pub fn ppuTick(p: *Ppu, cycles: u32, bus: *mmumod.Bus) void {
             nextLine(p, bus);
         }
     }
+    syncAccess(p, bus);
 }

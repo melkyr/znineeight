@@ -35,6 +35,8 @@ pub const Bus = struct {
     timer: timermod.Timer,
     serial: serialmod.Serial,
     lyc_dirty: bool,
+    ppu_oam_blocked: bool,
+    ppu_vram_blocked: bool,
 };
 
 fn stubBase(self: *Bus) [*]u8 {
@@ -78,6 +80,8 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.cart = cart;
     bus.ie = 0;
     bus.lyc_dirty = false;
+    bus.ppu_oam_blocked = false;
+    bus.ppu_vram_blocked = false;
     bus.dma.active = false;
     bus.dma.source = 0;
     bus.dma.index = 0;
@@ -250,6 +254,8 @@ pub fn read8(self: *Bus, addr: u16) u8 {
         }
         return 0xFF;
     }
+    if (self.ppu_oam_blocked and addr >= 0xFE00 and addr <= 0xFE9F) return 0xFF;
+    if (self.ppu_vram_blocked and addr >= 0x8000 and addr <= 0x9FFF) return 0xFF;
     return readRaw(self, addr);
 }
 
@@ -260,6 +266,8 @@ pub fn write8(self: *Bus, addr: u16, value: u8) void {
         }
         return;
     }
+    if (self.ppu_oam_blocked and addr >= 0xFE00 and addr <= 0xFE9F) return;
+    if (self.ppu_vram_blocked and addr >= 0x8000 and addr <= 0x9FFF) return;
     writeRaw(self, addr, value);
 }
 
