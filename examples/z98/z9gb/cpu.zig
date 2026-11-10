@@ -357,8 +357,7 @@ fn ldRegImm(cpu: *Cpu, bus: *Bus, idx: u8) void {
     aluStore(cpu, bus, idx, value);
 }
 
-fn aluGroup(cpu: *Cpu, bus: *Bus, group: u16, idx: u8) void {
-    const value: u8 = aluOperand(cpu, bus, idx);
+fn aluApply(cpu: *Cpu, group: u16, value: u8) void {
     switch (group) {
         0x00 => cpu.a = add8(cpu, cpu.a, value, 0),
         0x08 => {
@@ -376,6 +375,16 @@ fn aluGroup(cpu: *Cpu, bus: *Bus, group: u16, idx: u8) void {
         0x38 => cp8(cpu, cpu.a, value),
         else => unreachable,
     }
+}
+
+fn aluGroup(cpu: *Cpu, bus: *Bus, group: u16, idx: u8) void {
+    aluApply(cpu, group, aluOperand(cpu, bus, idx));
+}
+
+fn aluImm(cpu: *Cpu, bus: *Bus, group: u16) void {
+    const value: u8 = mmumod.read8(bus, cpu.pc);
+    cpu.pc = cpu.pc +% 1;
+    aluApply(cpu, group, value);
 }
 
 const OP_LEN: [256]u8 = [256]u8{
@@ -419,7 +428,7 @@ const OP_CYCLES: [256]u8 = [256]u8{
 pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
     const op: u8 = mmumod.read8(bus, cpu.pc);
     cpu.pc = cpu.pc +% 1;
-    const cycles: u32 = @intCast(u32, OP_CYCLES[@intCast(usize, op)]);
+    var cycles: u32 = @intCast(u32, OP_CYCLES[@intCast(usize, op)]);
 
     switch (op) {
         0x00 => {},
@@ -460,6 +469,10 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             const group: u16 = @intCast(u16, op) & 0x38;
             const idx: u8 = op & 0x07;
             aluGroup(cpu, bus, group, idx);
+        },
+        0xC6, 0xCE, 0xD6, 0xDE, 0xE6, 0xEE, 0xF6, 0xFE => {
+            const group: u16 = @intCast(u16, op) & 0x38;
+            aluImm(cpu, bus, group);
         },
         0x01, 0x11, 0x21, 0x31 => {
             const rr: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
@@ -510,7 +523,10 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
         0x20, 0x28, 0x30, 0x38 => {
             const e: u8 = mmumod.read8(bus, cpu.pc);
             cpu.pc = cpu.pc +% 1;
-            if (condition(cpu, condCode(op))) cpu.pc = cpu.pc +% signedOffset(e);
+            if (condition(cpu, condCode(op))) {
+                cpu.pc = cpu.pc +% signedOffset(e);
+                cycles += 4;
+            }
         },
         0x40...0x7F => {
             if (op != 0x76) {
@@ -522,7 +538,10 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             }
         },
         0xC0, 0xC8, 0xD0, 0xD8 => {
-            if (condition(cpu, condCode(op))) cpu.pc = pop16(cpu, bus);
+            if (condition(cpu, condCode(op))) {
+                cpu.pc = pop16(cpu, bus);
+                cycles += 12;
+            }
         },
         0xC1, 0xD1, 0xE1, 0xF1 => {
             const rr: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
@@ -538,6 +557,7 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             const dest: u16 = mmumod.read16(bus, cpu.pc);
             if (condition(cpu, condCode(op))) {
                 cpu.pc = dest;
+                cycles += 4;
             } else {
                 cpu.pc = cpu.pc +% 2;
             }
@@ -551,6 +571,7 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             if (condition(cpu, condCode(op))) {
                 push16(cpu, bus, cpu.pc);
                 cpu.pc = dest;
+                cycles += 12;
             }
         },
         0xC5, 0xD5, 0xE5, 0xF5 => {
@@ -611,6 +632,9 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             const addr: u16 = mmumod.read16(bus, cpu.pc);
             cpu.pc = cpu.pc +% 2;
             cpu.a = mmumod.read8(bus, addr);
+        },
+        0xF9 => {
+            cpu.sp = hlValue(cpu);
         },
         0xE8 => {
             const e: u8 = mmumod.read8(bus, cpu.pc);

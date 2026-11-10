@@ -88,6 +88,41 @@ fn runImm16(addr: u16, op: u8, imm: u16) void {
     _ = cpumod.cpuStep(&g_cpu, &g_bus);
 }
 
+fn run1C(addr: u16, op: u8) u32 {
+    mmumod.write8(&g_bus, addr, op);
+    g_cpu.pc = addr;
+    return cpumod.cpuStep(&g_cpu, &g_bus);
+}
+
+fn runImmC(addr: u16, op: u8, imm: u8) u32 {
+    mmumod.write8(&g_bus, addr, op);
+    mmumod.write8(&g_bus, addr +% 1, imm);
+    g_cpu.pc = addr;
+    return cpumod.cpuStep(&g_cpu, &g_bus);
+}
+
+fn runImm16C(addr: u16, op: u8, imm: u16) u32 {
+    mmumod.write8(&g_bus, addr, op);
+    mmumod.write16(&g_bus, addr +% 1, imm);
+    g_cpu.pc = addr;
+    return cpumod.cpuStep(&g_cpu, &g_bus);
+}
+
+fn checkCycles(label: []const u8, got: u32, want: u32) void {
+    if (got == want) {
+        g_pass += 1;
+        return;
+    }
+    g_fail += 1;
+    std.io.write("FAIL ");
+    std.io.write(label);
+    std.io.write(" got=");
+    printU(@intCast(usize, got));
+    std.io.write(" want=");
+    printU(@intCast(usize, want));
+    std.io.write("\n");
+}
+
 fn checkWord(label: []const u8, got: u16, want: u16) void {
     checkByte(label, @intCast(u8, got & 0xFF), @intCast(u8, want & 0xFF));
     checkByte(label, @intCast(u8, got >> 8), @intCast(u8, want >> 8));
@@ -595,6 +630,73 @@ fn testLoads() void {
     run1(CODE, 0x09);
     checkWord("add hl,bc", hl(), 0x1000);
     checkFlags("add hl,bc flags", true, false, true, false);
+
+    reset();
+    g_cpu.h = 0xD0;
+    g_cpu.l = 0x42;
+    const sp_hl_cycles: u32 = run1C(CODE, 0xF9);
+    checkWord("ld sp,hl", g_cpu.sp, 0xD042);
+    checkCycles("ld sp,hl cycles", sp_hl_cycles, 8);
+}
+
+fn testImmediateAlu() void {
+    const ops = [8]u8{ 0xC6, 0xCE, 0xD6, 0xDE, 0xE6, 0xEE, 0xF6, 0xFE };
+    const avals = [3]u8{ 0x00, 0x0F, 0xFF };
+    const bvals = [3]u8{ 0x00, 0x01, 0xF0 };
+
+    var oi: usize = 0;
+    while (oi < 8) : (oi += 1) {
+        const op: u8 = ops[oi];
+        var ci: usize = 0;
+        while (ci < 2) : (ci += 1) {
+            var ai: usize = 0;
+            while (ai < 3) : (ai += 1) {
+                var bi: usize = 0;
+                while (bi < 3) : (bi += 1) {
+                    const a: u8 = avals[ai];
+                    const b: u8 = bvals[bi];
+                    const carry: u8 = if (ci == 1) 1 else 0;
+                    const use_carry: u8 = if (op == 0xCE or op == 0xDE) carry else 0;
+                    reset();
+                    g_cpu.a = a;
+                    g_cpu.f = if (carry == 1) FLAG_C else 0;
+                    const cyc: u32 = runImmC(CODE, op, b);
+                    const ux: u16 = @intCast(u16, a);
+                    const uy: u16 = @intCast(u16, b);
+
+                    if (op == 0xC6 or op == 0xCE) {
+                        const sum: u16 = ux + uy + @intCast(u16, use_carry);
+                        const r: u8 = @intCast(u8, sum & 0xFF);
+                        checkByte("add imm result", g_cpu.a, r);
+                        checkFlags("add imm flags", r == 0, false, ((ux & 0x0F) + (uy & 0x0F) + @intCast(u16, use_carry)) > 0x0F, sum > 0xFF);
+                    } else if (op == 0xD6 or op == 0xDE) {
+                        const diff: u16 = (ux + 0x100) - uy - @intCast(u16, use_carry);
+                        const r: u8 = @intCast(u8, diff & 0xFF);
+                        checkByte("sub imm result", g_cpu.a, r);
+                        checkFlags("sub imm flags", r == 0, true, (ux & 0x0F) < ((uy & 0x0F) + @intCast(u16, use_carry)), ux < (uy + @intCast(u16, use_carry)));
+                    } else if (op == 0xE6) {
+                        const r: u8 = a & b;
+                        checkByte("and imm result", g_cpu.a, r);
+                        checkFlags("and imm flags", r == 0, false, true, false);
+                    } else if (op == 0xEE) {
+                        const r: u8 = a ^ b;
+                        checkByte("xor imm result", g_cpu.a, r);
+                        checkFlags("xor imm flags", r == 0, false, false, false);
+                    } else if (op == 0xF6) {
+                        const r: u8 = a | b;
+                        checkByte("or imm result", g_cpu.a, r);
+                        checkFlags("or imm flags", r == 0, false, false, false);
+                    } else {
+                        const diff: u16 = (ux + 0x100) - uy;
+                        const r: u8 = @intCast(u8, diff & 0xFF);
+                        checkByte("cp imm preserves a", g_cpu.a, a);
+                        checkFlags("cp imm flags", r == 0, true, (ux & 0x0F) < (uy & 0x0F), ux < uy);
+                    }
+                    checkCycles("imm alu cycles", cyc, 8);
+                }
+            }
+        }
+    }
 }
 
 fn testStack() void {
@@ -683,8 +785,9 @@ fn testJumps() void {
         reset();
         if (i == 1) g_cpu.f = FLAG_Z;
         if (i == 3) g_cpu.f = FLAG_C;
-        runImm16(CODE, jp_ops[i], 0xC321);
+        const cyc: u32 = runImm16C(CODE, jp_ops[i], 0xC321);
         checkWord("jp cc taken", g_cpu.pc, 0xC321);
+        checkCycles("jp cc taken cycles", cyc, 16);
     }
     i = 0;
     while (i < 4) : (i += 1) {
@@ -693,8 +796,9 @@ fn testJumps() void {
         if (i == 1) g_cpu.f = 0;
         if (i == 2) g_cpu.f = FLAG_C;
         if (i == 3) g_cpu.f = 0;
-        runImm16(CODE, jp_ops[i], 0xC321);
+        const cyc: u32 = runImm16C(CODE, jp_ops[i], 0xC321);
         checkWord("jp cc not taken", g_cpu.pc, CODE +% 3);
+        checkCycles("jp cc not taken cycles", cyc, 12);
     }
 
     reset();
@@ -711,8 +815,9 @@ fn testJumps() void {
         reset();
         if (i == 1) g_cpu.f = FLAG_Z;
         if (i == 3) g_cpu.f = FLAG_C;
-        runImm(CODE, jr_ops[i], 0x04);
+        const cyc: u32 = runImmC(CODE, jr_ops[i], 0x04);
         checkWord("jr cc taken", g_cpu.pc, CODE +% 6);
+        checkCycles("jr cc taken cycles", cyc, 12);
     }
     i = 0;
     while (i < 4) : (i += 1) {
@@ -721,8 +826,9 @@ fn testJumps() void {
         if (i == 1) g_cpu.f = 0;
         if (i == 2) g_cpu.f = FLAG_C;
         if (i == 3) g_cpu.f = 0;
-        runImm(CODE, jr_ops[i], 0x04);
+        const cyc: u32 = runImmC(CODE, jr_ops[i], 0x04);
         checkWord("jr cc not taken", g_cpu.pc, CODE +% 2);
+        checkCycles("jr cc not taken cycles", cyc, 8);
     }
 }
 
@@ -752,9 +858,10 @@ fn testCalls() void {
         if (i == 1) g_cpu.f = FLAG_Z;
         if (i == 3) g_cpu.f = FLAG_C;
         seedReturn(0xC456);
-        run1(CODE, ret_ops[i]);
+        const cyc: u32 = run1C(CODE, ret_ops[i]);
         checkWord("ret cc taken pc", g_cpu.pc, 0xC456);
         checkWord("ret cc taken sp", g_cpu.sp, 0xD002);
+        checkCycles("ret cc taken cycles", cyc, 20);
     }
     i = 0;
     while (i < 4) : (i += 1) {
@@ -764,9 +871,10 @@ fn testCalls() void {
         if (i == 2) g_cpu.f = FLAG_C;
         if (i == 3) g_cpu.f = 0;
         seedReturn(0xC456);
-        run1(CODE, ret_ops[i]);
+        const cyc: u32 = run1C(CODE, ret_ops[i]);
         checkWord("ret cc not taken pc", g_cpu.pc, CODE +% 1);
         checkWord("ret cc not taken sp", g_cpu.sp, 0xD000);
+        checkCycles("ret cc not taken cycles", cyc, 8);
     }
 
     reset();
@@ -785,10 +893,11 @@ fn testCalls() void {
         g_cpu.sp = 0xD000;
         if (i == 1) g_cpu.f = FLAG_Z;
         if (i == 3) g_cpu.f = FLAG_C;
-        runImm16(CODE, call_ops[i], 0xC300);
+        const cyc: u32 = runImm16C(CODE, call_ops[i], 0xC300);
         checkWord("call cc taken pc", g_cpu.pc, 0xC300);
         checkWord("call cc taken sp", g_cpu.sp, 0xCFFE);
         checkWord("call cc taken ret", mmumod.read16(&g_bus, 0xCFFE), CODE +% 3);
+        checkCycles("call cc taken cycles", cyc, 24);
     }
     i = 0;
     while (i < 4) : (i += 1) {
@@ -798,9 +907,10 @@ fn testCalls() void {
         if (i == 1) g_cpu.f = 0;
         if (i == 2) g_cpu.f = FLAG_C;
         if (i == 3) g_cpu.f = 0;
-        runImm16(CODE, call_ops[i], 0xC300);
+        const cyc: u32 = runImm16C(CODE, call_ops[i], 0xC300);
         checkWord("call cc not taken pc", g_cpu.pc, CODE +% 3);
         checkWord("call cc not taken sp", g_cpu.sp, 0xD000);
+        checkCycles("call cc not taken cycles", cyc, 12);
     }
 
     const rst_ops = [8]u8{ 0xC7, 0xCF, 0xD7, 0xDF, 0xE7, 0xEF, 0xF7, 0xFF };
@@ -824,6 +934,7 @@ pub fn main() void {
     testMisc();
     testSpOffset();
     testLoads();
+    testImmediateAlu();
     testStack();
     testJumps();
     testCalls();
