@@ -45,7 +45,7 @@
 - [ ] **Step 1: Inspect CGB headers**
 Create temporary CGB ROMs with CGB flag `0x80` (DMG-compatible) and `0xC0` (CGB-only). Expected: P3 rejects CGB-only cleanly or runs DMG-compatible in DMG mode; record behavior.
 - [ ] **Step 2: Probe assets**
-Check `cgb-acid2.gbc`, `cgb_sound.gbc`, and SameSuite CGB tests in the manifest. Expected: record present/absent.
+Check `cgb-acid2.gbc`, `cgb_sound.gbc`, `blargg/interrupt_time/interrupt_time.gb`, and SameSuite CGB tests in the manifest. Expected: record present/absent; `interrupt_time` is CGB-only and must be probe-confirmed before Task 5.
 - [ ] **Step 3: Probe double-speed timing references**
 Record the expected `KEY1`/`STOP` sequence from the hardware docs used by the test ROMs. Expected: no guess; if the sequence is unclear, STOP.
 
@@ -190,6 +190,7 @@ git commit -m "feat(z9gb): add CGB HDMA"
 - Modify: `examples/z98/z9gb/tests/tier_cgb.sh`
 - Create: `examples/z98/z9gb/tests/run_cgb_acid2.sh`
 - Create: `examples/z98/z9gb/tests/run_cgb_sound.sh`
+- Create: `examples/z98/z9gb/tests/run_cgb_interrupt_time.sh`
 - Create: `examples/z98/z9gb/testdata/golden/cgb-acid2.fb`
 - Create: `examples/z98/z9gb/testdata/golden/cgb-acid2.sha256`
 - Modify: `examples/z98/z9gb/testdata/roms/manifest.sha256`
@@ -203,16 +204,17 @@ git commit -m "feat(z9gb): add CGB HDMA"
 Run `cgb-acid2.gbc` headless with `--cgb` for 120 frames; compare `--fb-out` to the committed 92,160-byte golden. Capture settings are pinned for reproducibility: CGB mode, frame 120, the ROM's own palette data (BCPD/OCPD), little-endian `u32` RGB32 dump. Capture procedure: reference emulator in CGB mode (e.g. SameBoy/BGB under Wine) at the same frame, or self-captured golden with operator visual sign-off against cgb-acid2's documented final screen. Missing ROM or golden = `SKIP`; closeout cannot claim the visual gate.
 - [ ] **Step 2: Add `cgb_sound` gate**
 Blargg `cgb_sound` reports via its **SRAM memory protocol and screen, not serial** (verified against the test framework). The harness runs `--cgb --turbo --frames 200000` and polls the `$A000` region: Task 0 Step 1 probes the exact protocol in the pinned ROM (expected Blargg convention: magic `DE B0 61` at `$A000-$A002`, status byte at `$A003`, `0` = pass) and pins the layout in `run_cgb_sound.sh`; PASS = status `0`, any nonzero = fail code, cap without the magic = FAIL (timeout). The manifest pins the exact upstream filename and SHA-256 from the pinned Blargg commit (record the real extension; do not assume `.gbc`). Missing ROM = `SKIP`, and closeout cannot claim the audio gate.
-- [ ] **Step 3: Add a benchmark ROM**
+- [ ] **Step 3: Add `interrupt_time` CGB gate**
+`blargg/interrupt_time/interrupt_time.gb` is CGB-only (header `0xC0`) and exercises both DMG-speed and CGB double-speed interrupt latency. `run_cgb_interrupt_time.sh` runs it with `--cgb --serial --turbo --frames 200000`; PASS requires terminal `Passed`/`Passed all tests.`/`Passed all tests` and no `Failed`; cap without a verdict = FAIL. Missing ROM = `SKIP`; P4 closeout cannot claim PASS while this gate is skipped. Do not run it in P2.
+- [ ] **Step 4: Add a benchmark ROM**
 Named benchmark homebrew: **`2048.gb`** (built from `Sanqui/2048-gb`, same pinned commit and zlib license as P3's homebrew gate — user-supplied bytes). Run 600 frames headless and windowed under Wine, in DMG mode and with `--cgb`. Record wall, CPU, RSS, and frames/sec (target clock 59.7275 Hz). No estimate is labeled measured; Wine numbers are labeled Wine, never Win98.
-- [ ] **Step 4: Run**
-Expected: `cgb-acid2` exact hash; `cgb_sound` PASS; benchmark numbers recorded.
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run**
+Expected: `cgb-acid2` exact hash; `cgb_sound` PASS; `interrupt_time` PASS; benchmark numbers recorded.
+- [ ] **Step 6: Commit**
 ```bash
-git add examples/z98/z9gb/tests/tier_cgb.sh examples/z98/z9gb/tests/run_cgb_acid2.sh examples/z98/z9gb/tests/run_cgb_sound.sh examples/z98/z9gb/testdata/golden examples/z98/z9gb/testdata/roms/manifest.sha256
-git commit -m "test(z9gb): add CGB color and sound gates"
+git add examples/z98/z9gb/tests/tier_cgb.sh examples/z98/z9gb/tests/run_cgb_acid2.sh examples/z98/z9gb/tests/run_cgb_sound.sh examples/z98/z9gb/tests/run_cgb_interrupt_time.sh examples/z98/z9gb/testdata/golden examples/z98/z9gb/testdata/roms/manifest.sha256
+git commit -m "test(z9gb): add CGB color, sound and interrupt gates"
 ```
-
 ---
 
 ### Task 6: P4 closeout

@@ -464,7 +464,7 @@ Replace instruction-atomic post-tick timing: every external bus access is preced
 - [ ] **Step 7: Fix interrupt dispatch timing**
 Keep the 20-cycle dispatch cost, but place those cycles on the bus at the same points as the hardware sequence (push and vector fetch), so P2 interrupt latency is correct.
 - [ ] **Step 8: Run**
-Run the three P2 Blargg gates (`cpu_instrs`, `instr_timing`, `mem_timing`) plus `tier_dmg --all` under `-ffast` and `-fsafe`. Expected: all three P2 gates PASS; existing tier stays green. `interrupt_time` is CGB-only and is not run in P2.
+Run the three P2 Blargg gates (`cpu_instrs`, `instr_timing`, `mem_timing`) plus `tier_dmg --all` under `-ffast` and `-fsafe`. Expected: all three P2 gates PASS; existing tier stays green. P2 DMG interrupt-latency coverage remains `testInterruptDispatch`, `testEiDelay`, and `testHaltBug` in `tier_dmg.sh`; keep them green. `interrupt_time` is CGB-only, moved to P4 as a hard CGB gate, and is not run in P2.
 - [ ] **Step 9: Commit**
 ```bash
 git add examples/z98/z9gb/main.zig examples/z98/z9gb/cpu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/timer.zig examples/z98/z9gb/tests/cpu_test.zig examples/z98/z9gb/tests/run_blargg.sh examples/z98/z9gb/tests/tier_dmg.sh

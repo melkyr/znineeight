@@ -141,7 +141,7 @@ The binding limits are separate. Do not confuse them.
   `2048.gb` (`Sanqui/2048-gb`, zlib; user-supplied bytes) sustained ≥ 59.0
   rendered fps at the 59.7275 Hz GB clock on the host, windowed smoke
   under Wine, DirectDraw/Input/Sound import and runtime checks.
-- P4: `cgb-acid2` framebuffer golden, `cgb_sound`, CGB benchmark numbers.
+- P4: `cgb-acid2` framebuffer golden, `cgb_sound`, CGB `interrupt_time`, CGB benchmark numbers.
 - P5: full test-ROM/homebrew parity with the interpreter; no fixed speedup gate.
 
 ## 6. Current state
@@ -467,6 +467,10 @@ pub fn dsoundClose(d: *Dsound) void;
   layout pinned by probe) with the same turbo/cap semantics; `0` status = pass.
   Per Pan Docs, double speed does **not** change any sound timing: the APU
   stays at its normal rate (only CPU/timer/serial/OAM-DMA run 2x).
+- P4 hard gate: Blargg `interrupt_time` in CGB mode — CGB-only ROM (header
+  `0xC0`) exercising DMG-speed and double-speed interrupt latency; run with
+  `--cgb --serial`, terminal `Passed`/`Passed all tests.` required, cap without
+  verdict = FAIL. Missing ROM = SKIP and P4 closeout cannot claim PASS.
 - Frame pacing: QPC deadline; `timeBeginPeriod(1)` (whitelisted WINMM symbol)
   plus a bounded ≤2 ms spin tail, since Win9x `Sleep(1)` quantizes to the
   ~55 ms tick; no unbounded busy-spin.
@@ -569,7 +573,7 @@ Tests run sequentially, never in parallel, because spill files collide.
 | P1 | std-free platform table + headless backend + RSS harness | deterministic headless self-test |
 | P2 | DMG CPU/MMU/PPU/timer/serial/MBC/saves | `cpu_instrs`, Mooneye subset, `dmg-acid2` hash |
 | P3 | DirectDraw/DInput/DirectSound + APU + frame loop | `dmg_sound`, `2048.gb` ≥ 59.0 fps |
-| P4 | CGB palettes, banking, double speed | `cgb-acid2`, `cgb_sound` |
+| P4 | CGB palettes, banking, double speed | `cgb-acid2`, `cgb_sound`, `interrupt_time` |
 | P5 | dynarec with interpreter fallback | full parity, measured |
 
 Plan files:
