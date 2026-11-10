@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const filemod = @import("std_file");
+const cartmod = @import("cart.zig");
 
 const ROM_CAP: usize = 8 * 1024 * 1024;
 const SERIAL_CAP: usize = 4096;
@@ -27,6 +28,7 @@ pub const Emu = struct {
     cfg: EmuConfig,
     save_path: [SAVE_CAP]u8,
     save_len: usize,
+    cart: cartmod.Cart,
 };
 
 pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
@@ -38,10 +40,11 @@ pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     e.buttons = 0;
     e.cfg = cfg;
     e.save_len = 0;
+    cartmod.cartInit(&e.cart);
 }
 
-// P1 loader contract: a size-checked copy into the fixed 8 MiB buffer, no header
-// parsing (that is P2's). Header-side errors remain in the shared error set.
+// Loader contract: size-checked copy into the fixed 8 MiB buffer, then validate
+// and re-point the cartridge windows from that buffer.
 pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
     var arena_buf: [1]u8 = undefined;
     var arena = std.arena.init(arena_buf[0..]);
@@ -74,6 +77,15 @@ pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
     filemod.close(&f);
     if (got != n) return error.Io;
     e.rom_len = got;
+    cartmod.cartLoad(&e.cart, e.rom[0..e.rom_len]) catch |err| {
+        return switch (err) {
+            error.BadHeader => error.BadHeader,
+            error.UnsupportedMbc => error.UnsupportedMbc,
+            error.RomTooLarge => error.RomTooLarge,
+            error.Io => error.Io,
+            else => error.Io,
+        };
+    };
 }
 
 pub fn emuReset(e: *Emu) void {
