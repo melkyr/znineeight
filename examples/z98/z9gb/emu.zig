@@ -35,6 +35,9 @@ pub const Emu = struct {
     cpu: cpumod.Cpu,
     bus: mmumod.Bus,
     ppu: ppumod.Ppu,
+    mooneye: bool,
+    mooneye_stopped: bool,
+    mooneye_sig: [6]u8,
 };
 
 pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
@@ -50,6 +53,10 @@ pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     mmumod.busInit(&e.bus, &e.cart);
     cpumod.cpuInit(&e.cpu);
     ppumod.ppuReset(&e.ppu);
+    e.mooneye = false;
+    e.mooneye_stopped = false;
+    var mi: usize = 0;
+    while (mi < 6) : (mi += 1) e.mooneye_sig[mi] = 0;
 }
 
 // Loader contract: size-checked copy into the fixed 8 MiB buffer, then validate
@@ -164,8 +171,22 @@ pub fn emuRunFrame(e: *Emu) u32 {
         emuSelfTestPattern(e);
         return 70224;
     }
+    if (e.mooneye_stopped) return 0;
     var total: u32 = 0;
     while (total < 70224) {
+        // Mooneye magic breakpoint: stop before executing `LD B,B` (0x40).
+        // The test has already loaded the full Fibonacci signature into
+        // B/C/D/E/H/L; a present 0x40 on the instruction stream is the signal.
+        if (e.mooneye and !e.cpu.halted and mmumod.read8(&e.bus, e.cpu.pc) == 0x40) {
+            e.mooneye_sig[0] = e.cpu.b;
+            e.mooneye_sig[1] = e.cpu.c;
+            e.mooneye_sig[2] = e.cpu.d;
+            e.mooneye_sig[3] = e.cpu.e;
+            e.mooneye_sig[4] = e.cpu.h;
+            e.mooneye_sig[5] = e.cpu.l;
+            e.mooneye_stopped = true;
+            return total;
+        }
         const cycles: u32 = cpumod.cpuStep(&e.cpu, &e.bus);
         total += cycles;
         ppuSyncIn(e);
@@ -181,6 +202,30 @@ pub fn emuFramebuffer(e: *const Emu) []const u32 {
 
 pub fn emuSetButtons(e: *Emu, bits: u8) void {
     e.buttons = bits;
+}
+
+pub fn emuSetMooneye(e: *Emu, enabled: bool) void {
+    e.mooneye = enabled;
+    e.mooneye_stopped = false;
+}
+
+pub fn emuMooneyeStopped(e: *const Emu) bool {
+    return e.mooneye_stopped;
+}
+
+pub fn emuMooneyeSignature(e: *const Emu, out: []u8) void {
+    var i: usize = 0;
+    while (i < 6 and i < out.len) : (i += 1) out[i] = e.mooneye_sig[i];
+}
+
+pub fn emuMooneyePass(e: *const Emu) bool {
+    if (!e.mooneye_stopped) return false;
+    return e.mooneye_sig[0] == 3 and
+        e.mooneye_sig[1] == 5 and
+        e.mooneye_sig[2] == 8 and
+        e.mooneye_sig[3] == 13 and
+        e.mooneye_sig[4] == 21 and
+        e.mooneye_sig[5] == 34;
 }
 
 pub fn emuTakeSerial(e: *Emu, out: []u8) usize {

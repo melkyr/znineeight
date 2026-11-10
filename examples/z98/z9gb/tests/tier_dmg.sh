@@ -17,12 +17,13 @@ OUT="${OUT:-/tmp/z9gb_tier_dmg}"
 
 ONLY=""
 RUN_ALL=0
+RUN_GATES=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --only)
             shift
             if [ "$#" -eq 0 ]; then
-                echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save] [--all]" >&2
+                echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save] [--all] [--gates]" >&2
                 exit 2
             fi
             ONLY="$1"
@@ -33,8 +34,11 @@ while [ "$#" -gt 0 ]; do
         --all)
             RUN_ALL=1
             ;;
+        --gates)
+            RUN_GATES=1
+            ;;
         *)
-            echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save] [--all]" >&2
+            echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save] [--all] [--gates]" >&2
             exit 2
             ;;
     esac
@@ -70,8 +74,17 @@ else
     exit 2
 fi
 
+if [ "$RUN_GATES" -eq 1 ]; then
+    RUN_CART=0
+    RUN_CPU=0
+    RUN_TIMER=0
+    RUN_PPU=0
+    RUN_SAVE=0
+fi
+
 PASSES=0
 FAILS=0
+SKIPS=0
 pass_case() { echo "ok   - $1"; PASSES=$((PASSES + 1)); }
 fail_case() { echo "FAIL - $1"; FAILS=$((FAILS + 1)); }
 
@@ -1793,8 +1806,63 @@ if [ "$RUN_SAVE" -eq 1 ]; then
     run_save_mode safe -fsafe
 fi
 
+if [ "$RUN_GATES" -eq 1 ]; then
+    echo
+    echo "== external ROM hard gates =="
+    GATE_DIR="$OUT/gates"
+    GATE_BUILD="$GATE_DIR/build"
+    mkdir -p "$GATE_BUILD"
+    GATE_READY=1
+    if ! timeout 300 "$ZIG" -ffast -o "$GATE_BUILD" "$Z9DIR/main.zig" >"$GATE_DIR/build.log" 2>&1; then
+        fail_case "gates build CLI"
+        tail -20 "$GATE_DIR/build.log" | sed 's/^/       /'
+        GATE_READY=0
+    else
+        # Optimize the emitted host C in the scratch tree only; the default
+        # -O0 recipe is too slow for 200k-frame turbo verdict runs.
+        if [ -f "$GATE_BUILD/build_target.sh" ]; then
+            sed 's/-O0/-O2/g' "$GATE_BUILD/build_target.sh" >"$GATE_BUILD/build_target.sh.tmp" && mv "$GATE_BUILD/build_target.sh.tmp" "$GATE_BUILD/build_target.sh"
+        fi
+        if [ ! -f "$GATE_BUILD/build_target.sh" ] || ! sh "$GATE_BUILD/build_target.sh" linux "$GATE_BUILD/z9gb" >>"$GATE_DIR/build.log" 2>&1; then
+            fail_case "gates link CLI"
+            tail -20 "$GATE_DIR/build.log" | sed 's/^/       /'
+            GATE_READY=0
+        fi
+    fi
+
+    if [ "$GATE_READY" -eq 1 ]; then
+        export Z9GB_BIN="$GATE_BUILD/z9gb"
+        export ZIG
+
+        run_gate() {
+            gname="$1"
+            gscript="$2"
+            sh "$gscript" >"$GATE_DIR/$gname.out" 2>"$GATE_DIR/$gname.err"
+            grc=$?
+            cat "$GATE_DIR/$gname.out"
+            if [ "$grc" -eq 0 ]; then
+                pass_case "gate $gname"
+            elif [ "$grc" -eq 77 ]; then
+                echo "SKIP - gate $gname"
+                SKIPS=$((SKIPS + 1))
+            else
+                fail_case "gate $gname (rc=$grc)"
+                tail -20 "$GATE_DIR/$gname.err" | sed 's/^/       /'
+            fi
+        }
+
+        run_gate blargg "$SCRIPT_DIR/run_blargg.sh"
+        run_gate mooneye "$SCRIPT_DIR/run_mooneye.sh"
+        run_gate acid2 "$SCRIPT_DIR/run_acid2.sh"
+    fi
+fi
+
 echo
-echo "== tier_dmg summary: $PASSES passed, $FAILS failed =="
+if [ "$RUN_GATES" -eq 1 ]; then
+    echo "== tier_dmg summary: $PASSES passed, $FAILS failed, $SKIPS skipped =="
+else
+    echo "== tier_dmg summary: $PASSES passed, $FAILS failed =="
+fi
 if [ "$FAILS" -ne 0 ]; then
     echo "TIER_DMG FAIL"
     exit 1

@@ -19,8 +19,15 @@ const FRAME_H: u32 = 144;
 const FB_PIXELS: usize = 160 * 144;
 const FB_BYTES: usize = FB_PIXELS * 4;
 
+const VERDICT_NONE: u8 = 0;
+const VERDICT_PASS: u8 = 1;
+const VERDICT_FAIL: u8 = 2;
+
 var g_emu: emu.Emu = undefined;
 var g_fb_bytes: [FB_BYTES]u8;
+var g_line_buf: [96]u8;
+var g_line_len: usize = 0;
+var g_verdict: u8 = VERDICT_NONE;
 
 fn argAt(argv: [*][*]u8, i: usize) []const u8 {
     const p: [*]const u8 = @ptrCast([*]const u8, argv[i]);
@@ -50,6 +57,104 @@ fn parseU32(s: []const u8) ?u32 {
     return @intCast(u32, v);
 }
 
+fn trimEq(buf: []const u8, len: usize, want: []const u8) bool {
+    var s: usize = 0;
+    var e: usize = len;
+    while (s < e and (buf[s] == ' ' or buf[s] == '\t')) s += 1;
+    while (e > s and (buf[e - 1] == ' ' or buf[e - 1] == '\t')) e -= 1;
+    if (e - s != want.len) return false;
+    var i: usize = 0;
+    while (i < want.len) : (i += 1) {
+        if (buf[s + i] != want[i]) return false;
+    }
+    return true;
+}
+
+// Blargg verdicts are whole serial lines. Track the current line and latch the
+// terminal `Passed`/`Failed` so main can exit before the frame cap.
+fn finishSerialLine() void {
+    if (trimEq(g_line_buf[0..], g_line_len, "Passed")) {
+        g_verdict = VERDICT_PASS;
+    } else if (trimEq(g_line_buf[0..], g_line_len, "Failed")) {
+        g_verdict = VERDICT_FAIL;
+    }
+    g_line_len = 0;
+}
+
+fn feedSerial(data: []const u8) void {
+    var i: usize = 0;
+    while (i < data.len) : (i += 1) {
+        const c: u8 = data[i];
+        if (c == '\n' or c == '\r') {
+            finishSerialLine();
+        } else if (g_line_len < g_line_buf.len) {
+            g_line_buf[g_line_len] = c;
+            g_line_len += 1;
+        }
+    }
+}
+
+fn drainSerial() void {
+    var buf: [512]u8 = undefined;
+    while (true) {
+        const got: usize = emu.emuTakeSerial(&g_emu, buf[0..]);
+        if (got == 0) break;
+        std.io.write(buf[0..got]);
+        feedSerial(buf[0..got]);
+    }
+}
+
+fn reportMooneye() void {
+    if (!emu.emuMooneyeStopped(&g_emu)) {
+        var m: []const u8 = "mooneye: TIMEOUT (no breakpoint)\n";
+        std.io.write(m);
+        return;
+    }
+    var sig: [6]u8 = undefined;
+    emu.emuMooneyeSignature(&g_emu, sig[0..]);
+    std.io.write("mooneye: ");
+    if (emu.emuMooneyePass(&g_emu)) {
+        std.io.write("PASS");
+    } else {
+        std.io.write("FAIL");
+    }
+    std.io.write(" B=");
+    std.io.printInt(@intCast(i32, sig[0]));
+    std.io.write(" C=");
+    std.io.printInt(@intCast(i32, sig[1]));
+    std.io.write(" D=");
+    std.io.printInt(@intCast(i32, sig[2]));
+    std.io.write(" E=");
+    std.io.printInt(@intCast(i32, sig[3]));
+    std.io.write(" H=");
+    std.io.printInt(@intCast(i32, sig[4]));
+    std.io.write(" L=");
+    std.io.printInt(@intCast(i32, sig[5]));
+    std.io.write("\n");
+}
+
+// Unix epochs can exceed parseU32's frame-count cap.
+fn parseI64(s: []const u8) ?i64 {
+    if (s.len == 0) return null;
+    var neg: bool = false;
+    var i: usize = 0;
+    if (s[0] == '-') {
+        neg = true;
+        i = 1;
+        if (s.len == 1) return null;
+    }
+    var v: i64 = 0;
+    while (i < s.len) : (i += 1) {
+        const c: u8 = s[i];
+        if (c < '0' or c > '9') return null;
+        const d: i64 = @intCast(i64, c - '0');
+        if (v > 922337203685477580 or (v == 922337203685477580 and d > 7)) return null;
+        v = v * 10 + d;
+    }
+    if (neg) return -v;
+    return v;
+}
+
 // Little-endian writers: the goldens are canonical LE regardless of host.
 fn putLe32(buf: []u8, off: usize, v: u32) void {
     buf[off] = @intCast(u8, v & 0xff);
@@ -73,6 +178,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var frames: u32 = 1;
     var fb_out: []const u8 = "";
     var rom_path: []const u8 = "";
+    var serial: bool = false;
+    var turbo: bool = false;
+    var mooneye: bool = false;
+    var save: bool = false;
+    var rtc_fixed: i64 = 0;
+    var have_rtc_fixed: bool = false;
     var i: usize = 1;
     while (i < n) : (i += 1) {
         var tok: []const u8 = argAt(argv, i);
@@ -94,12 +205,30 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             i += 1;
             if (i >= n) std.os.exit(1);
             rom_path = argAt(argv, i);
+        } else if (eq(tok, "--serial")) {
+            serial = true;
+        } else if (eq(tok, "--turbo")) {
+            turbo = true;
+        } else if (eq(tok, "--mooneye")) {
+            mooneye = true;
+        } else if (eq(tok, "--save")) {
+            save = true;
+        } else if (eq(tok, "--rtc-fixed")) {
+            i += 1;
+            if (i >= n) std.os.exit(1);
+            if (parseI64(argAt(argv, i))) |v| {
+                rtc_fixed = v;
+                have_rtc_fixed = true;
+            } else {
+                std.os.exit(1);
+            }
         } else {
             std.os.exit(1);
         }
     }
 
-    emu.emuInit(&g_emu, emu.EmuConfig{ .cgb = false, .serial_log = false, .turbo = false, .dynarec = false });
+    emu.emuInit(&g_emu, emu.EmuConfig{ .cgb = false, .serial_log = serial, .turbo = turbo, .dynarec = false });
+    if (have_rtc_fixed) emu.emuSetRtcFixed(&g_emu, rtc_fixed);
 
     if (rom_path.len != 0) {
         emu.emuLoadRom(&g_emu, rom_path) catch |e| {
@@ -112,7 +241,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             }
             std.os.exit(2);
         };
+        emu.emuReset(&g_emu);
     }
+    emu.emuSetMooneye(&g_emu, mooneye);
 
     var plat = headless.platformHeadless();
     if (!plat.open_fn(plat.state, FRAME_W, FRAME_H, 1)) {
@@ -124,8 +255,17 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var f: u32 = 0;
     while (f < frames) : (f += 1) {
         _ = emu.emuRunFrame(&g_emu);
+        if (serial) drainSerial();
+        if (mooneye and emu.emuMooneyeStopped(&g_emu)) break;
+        if (serial and g_verdict != VERDICT_NONE) break;
+    }
+    if (serial) {
+        drainSerial();
+        finishSerialLine();
     }
     plat.present_fn(plat.state, emu.emuFramebuffer(&g_emu));
+
+    if (mooneye) reportMooneye();
 
     if (fb_out.len != 0) {
         if (!writeFramebuffer(fb_out)) {
@@ -134,6 +274,15 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             plat.close_fn(plat.state);
             std.os.exit(2);
         }
+    }
+
+    if (save) {
+        emu.emuSaveBattery(&g_emu) catch {
+            var m: []const u8 = "z9gb: cannot write save\n";
+            std.io.write(m);
+            plat.close_fn(plat.state);
+            std.os.exit(2);
+        };
     }
 
     plat.close_fn(plat.state);
