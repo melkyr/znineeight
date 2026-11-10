@@ -473,17 +473,18 @@ git commit -m "fix(z9gb): correct CPU timing, STOP and timer reload"
 
 ---
 
-### Task 9.2: PPU STAT line and LCD-on timing
+### Task 9.2: PPU STAT line, LCD-on and mode access timing
 
 **Files:**
 - Modify: `examples/z98/z9gb/ppu.zig`
 - Modify: `examples/z98/z9gb/emu.zig`
+- Modify: `examples/z98/z9gb/mmu.zig`
 - Modify: `examples/z98/z9gb/tests/tier_dmg.sh`
 - Test: `examples/z98/z9gb/tests/tier_dmg.sh`
 
 **Interfaces:**
-- Consumes: PPU, `busRaiseIrq`, Task 9 runners.
-- Produces: STAT line state; rising-edge STAT IRQ; LCD-on mode-2 timing. Gates `lcdon_timing-GS`, `stat_irq_blocking`.
+- Consumes: PPU, `busRaiseIrq`, `Bus`, Task 9 runners.
+- Produces: STAT line state; rising-edge STAT IRQ; LCD-on mode-2 timing; dot-level LY/mode/coincidence ordering; CPU OAM/VRAM mode locking. Gates `lcdon_timing-GS`, `stat_irq_blocking`.
 
 - [ ] **Step 1: Write the failing gate run**
 Run `run_mooneye.sh` for `lcdon_timing-GS` and `stat_irq_blocking`. Expected: current FAIL/no-breakpoint.
@@ -491,14 +492,21 @@ Run `run_mooneye.sh` for `lcdon_timing-GS` and `stat_irq_blocking`. Expected: cu
 Track the combined STAT condition (mode bits + LYC coincidence) as a line. Raise `busRaiseIrq(bus, 0x02)` only on a `0→1` transition; while the line is high, new source conditions do not re-fire. Clear it when the condition goes low.
 - [ ] **Step 3: Correct LCD-on timing**
 On LCDC bit 7 `0→1`, reset the line/dot counters and enter the documented mode-2 start at the correct dot; on `1→0`, enter mode 0/VBlank-off state. LYC writes still use the Task 7 immediate-write rule.
-- [ ] **Step 4: Run**
+- [ ] **Step 4: Correct dot-level LY/mode/coincidence ordering**
+Use `lcdon_timing-GS` as the oracle for normal-line order: LY advances at its dot edge, mode 2/3/0 transitions and LYC coincidence latch/clear at their hardware dots. The first line after LCD enable is a special case; normal lines must not inherit that shortened sequence. Do not use host timing.
+- [ ] **Step 5: Lock CPU OAM/VRAM access by PPU mode**
+In `mmu.zig` CPU reads/writes (`read8`/`write8`), block `FE00-FE9F` during modes 2 and 3 and block `8000-9FFF` during mode 3; reads return `0xFF`, writes are ignored. LCD-off, modes 0/1 remain accessible. Keep the OAM-DMA raw path and `readRaw`/`writeRaw` unchanged so DMA is not self-blocked.
+- [ ] **Step 6: Add tier coverage**
+Add focused tier checks for STAT edge/no-refire, LCD-on first-line sequence, normal-line mode/LYC ordering, and OAM/VRAM read/write blocking in modes 2/3 vs modes 0/1/off.
+- [ ] **Step 7: Run**
 Run both Mooneye PPU gates plus `tier_dmg --all` under `-ffast` and `-fsafe`. Expected: both present gates PASS; existing tier stays green.
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 ```bash
-git add examples/z98/z9gb/ppu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/tier_dmg.sh
-git commit -m "fix(z9gb): block STAT interrupts on the line edge"
+git add examples/z98/z9gb/ppu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/tests/tier_dmg.sh
+git commit -m "fix(z9gb): block STAT interrupts and PPU mode accesses"
 ```
 
+---
 ---
 
 ### Task 9.3: dmg-acid2 golden from the official reference

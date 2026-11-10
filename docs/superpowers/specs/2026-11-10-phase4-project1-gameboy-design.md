@@ -405,6 +405,9 @@ pub fn dsoundClose(d: *Dsound) void;
 - DMG scanline renderer: 456 T-cycles per line, 154 lines.
 - Modes 0 (HBlank), 1 (VBlank), 2 (OAM), 3 (VRAM); STAT interrupts for mode
   0/1/2 and LYC=LY.
+- CPU OAM access is blocked in modes 2 and 3; CPU VRAM access is blocked in
+  mode 3. Blocked reads return `0xFF`, blocked writes are ignored; modes 0/1
+  and LCD-off remain accessible. OAM DMA uses the raw path and is not blocked.
 - Background, window, 8x8/8x16 sprites, sprite priority, DMG palettes.
 - Framebuffer is RGB32, 160x144, top-left origin.
 - `dmg-acid2` golden is a 160x144 RGB32 hash; gate fails on any byte mismatch.
