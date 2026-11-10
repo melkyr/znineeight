@@ -131,7 +131,8 @@ fn ppuSyncIn(e: *Emu) void {
     ppumod.ppuWrite(&e.ppu, 0xFF41, e.bus.io[0x41], &e.bus);
     ppumod.ppuWrite(&e.ppu, 0xFF42, e.bus.io[0x42], &e.bus);
     ppumod.ppuWrite(&e.ppu, 0xFF43, e.bus.io[0x43], &e.bus);
-    if (e.bus.io[0x45] != e.ppu.lyc) {
+    if (e.bus.lyc_dirty or e.bus.io[0x45] != e.ppu.lyc) {
+        e.bus.lyc_dirty = false;
         ppumod.ppuWrite(&e.ppu, 0xFF45, e.bus.io[0x45], &e.bus);
     }
     ppumod.ppuWrite(&e.ppu, 0xFF46, e.bus.io[0x46], &e.bus);

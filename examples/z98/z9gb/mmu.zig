@@ -34,6 +34,7 @@ pub const Bus = struct {
     dma: Dma,
     timer: timermod.Timer,
     serial: serialmod.Serial,
+    lyc_dirty: bool,
 };
 
 fn stubBase(self: *Bus) [*]u8 {
@@ -71,6 +72,7 @@ fn rebuildCartPages(self: *Bus) void {
 pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.cart = cart;
     bus.ie = 0;
+    bus.lyc_dirty = false;
     bus.dma.active = false;
     bus.dma.source = 0;
     bus.dma.index = 0;
@@ -171,6 +173,7 @@ pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
         self.dma.dots = 0;
         return;
     }
+    if (addr == 0xFF45) self.lyc_dirty = true;
     self.io[@intCast(usize, addr & 0x7F)] = value;
 }
 

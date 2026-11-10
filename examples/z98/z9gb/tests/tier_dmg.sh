@@ -580,6 +580,7 @@ const std = @import("std");
 const cartmod = @import("z9gb/cart.zig");
 const mmumod = @import("z9gb/mmu.zig");
 const ppumod = @import("z9gb/ppu.zig");
+const cpumod = @import("z9gb/cpu.zig");
 const emumod = @import("z9gb/emu.zig");
 
 var g_cart: cartmod.Cart = undefined;
@@ -987,6 +988,45 @@ fn testLycWriteAndLcd() void {
     checkByte("ppu lcd reenable mode2 irq", g_bus.io[0x0F] & 0x02, 0x02);
 }
 
+fn testSameValueLycWrite() void {
+    emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = false, .dynarec = false });
+    emumod.emuReset(&g_emu);
+    const gp: *ppumod.Ppu = &g_emu.ppu;
+    const gb: *mmumod.Bus = &g_emu.bus;
+    const gc: *cpumod.Cpu = &g_emu.cpu;
+    gp.line = 0;
+    gp.ly = 0;
+    gp.dot = 0;
+    gp.mode = 2;
+    gp.lyc = 0;
+    gp.coincidence = true;
+    mmumod.write8(gb, 0xFF40, 0x91);
+    mmumod.write8(gb, 0xFF41, 0x40);
+    mmumod.write8(gb, 0xFF45, 0);
+    mmumod.write8(gb, 0xFF0F, 0);
+    gb.ie = 0;
+    gb.lyc_dirty = false;
+
+    const code: [18]u8 = [18]u8{
+        0x3E, 0x00, 0xE0, 0x45,
+        0x3E, 0x00, 0xE0, 0x0F,
+        0x3E, 0x00, 0xE0, 0x45,
+        0x3E, 0x00, 0xE0, 0x41,
+        0x18, 0xFE,
+    };
+    var i: usize = 0;
+    while (i < code.len) : (i += 1) {
+        mmumod.write8(gb, @intCast(u16, 0xC000 + i), code[i]);
+    }
+    gc.pc = 0xC000;
+    gc.sp = 0xFFFE;
+    gc.ime = false;
+    gc.halted = false;
+    g_emu.rom_len = 1;
+    _ = emumod.emuRunFrame(&g_emu);
+    checkByte("ppu same-value lyc write irq", g_emu.bus.io[0x0F] & 0x02, 0x02);
+}
+
 fn testEmuFramebuffer() void {
     emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = false, .dynarec = false });
     const fb: []const u32 = emumod.emuFramebuffer(&g_emu);
@@ -1007,6 +1047,7 @@ pub fn main() void {
     testSprite8x16();
     testSpritePriority();
     testPalette();
+    testSameValueLycWrite();
     testEmuFramebuffer();
 
     std.io.write("ppu ");
