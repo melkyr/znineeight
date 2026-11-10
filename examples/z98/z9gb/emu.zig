@@ -11,6 +11,7 @@ const mmumod = @import("mmu.zig");
 const cpumod = @import("cpu.zig");
 const serialmod = @import("serial.zig");
 const ppumod = @import("ppu.zig");
+const savemod = @import("save.zig");
 
 const ROM_CAP: usize = 8 * 1024 * 1024;
 const SAVE_CAP: usize = 260;
@@ -28,6 +29,8 @@ pub const Emu = struct {
     cfg: EmuConfig,
     save_path: [SAVE_CAP]u8,
     save_len: usize,
+    rom_path: [SAVE_CAP]u8,
+    rom_path_len: usize,
     cart: cartmod.Cart,
     cpu: cpumod.Cpu,
     bus: mmumod.Bus,
@@ -42,6 +45,7 @@ pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     e.buttons = 0;
     e.cfg = cfg;
     e.save_len = 0;
+    e.rom_path_len = 0;
     cartmod.cartInit(&e.cart);
     mmumod.busInit(&e.bus, &e.cart);
     cpumod.cpuInit(&e.cpu);
@@ -91,6 +95,13 @@ pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
             else => error.Io,
         };
     };
+    var rp: usize = path.len;
+    if (rp > SAVE_CAP) rp = SAVE_CAP;
+    var ri: usize = 0;
+    while (ri < rp) : (ri += 1) {
+        e.rom_path[ri] = path[ri];
+    }
+    e.rom_path_len = rp;
     mmumod.busInit(&e.bus, &e.cart);
 }
 
@@ -186,13 +197,21 @@ pub fn emuSetSavePath(e: *Emu, path: []const u8) void {
     e.save_len = n;
 }
 
-// P1 has no save backend (P2 Task 8 fills these in without API churn).
+// Frozen RTC epoch for deterministic headless tests (`EmuConfig.rtc_fixed`
+// wiring lands with the Task 9 CLI). The first call anchors the counters; later
+// calls advance the frozen clock.
+pub fn emuSetRtcFixed(e: *Emu, unix: i64) void {
+    cartmod.rtcSetFixed(&e.cart, unix);
+}
+
 pub fn emuSaveBattery(e: *Emu) EmuError!void {
-    _ = e;
+    if (e.save_len != 0) return savemod.saveBattery(e, e.save_path[0..e.save_len]);
+    if (e.rom_path_len != 0) return savemod.saveBattery(e, e.rom_path[0..e.rom_path_len]);
     return error.Io;
 }
 
 pub fn emuLoadBattery(e: *Emu) EmuError!void {
-    _ = e;
+    if (e.save_len != 0) return savemod.loadBattery(e, e.save_path[0..e.save_len]);
+    if (e.rom_path_len != 0) return savemod.loadBattery(e, e.rom_path[0..e.rom_path_len]);
     return error.Io;
 }

@@ -22,7 +22,7 @@ while [ "$#" -gt 0 ]; do
         --only)
             shift
             if [ "$#" -eq 0 ]; then
-                echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu] [--all]" >&2
+                echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save] [--all]" >&2
                 exit 2
             fi
             ONLY="$1"
@@ -34,7 +34,7 @@ while [ "$#" -gt 0 ]; do
             RUN_ALL=1
             ;;
         *)
-            echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu] [--all]" >&2
+            echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save] [--all]" >&2
             exit 2
             ;;
     esac
@@ -48,11 +48,13 @@ RUN_CART=0
 RUN_CPU=0
 RUN_TIMER=0
 RUN_PPU=0
+RUN_SAVE=0
 if [ -z "$ONLY" ]; then
     RUN_CART=1
     RUN_CPU=1
     RUN_TIMER=1
     RUN_PPU=1
+    RUN_SAVE=1
 elif [ "$ONLY" = "cart" ]; then
     RUN_CART=1
 elif [ "$ONLY" = "cpu" ]; then
@@ -61,6 +63,8 @@ elif [ "$ONLY" = "timer" ]; then
     RUN_TIMER=1
 elif [ "$ONLY" = "ppu" ]; then
     RUN_PPU=1
+elif [ "$ONLY" = "save" ]; then
+    RUN_SAVE=1
 else
     echo "unknown tier: $ONLY" >&2
     exit 2
@@ -1066,6 +1070,451 @@ pub fn main() void {
 }
 ZIG
 
+cat >"$OUT/save_test.zig" <<'ZIG'
+const std = @import("std");
+const filemod = @import("std_file");
+const cartmod = @import("z9gb/cart.zig");
+const mmumod = @import("z9gb/mmu.zig");
+const emumod = @import("z9gb/emu.zig");
+const savemod = @import("z9gb/save.zig");
+
+const PATH_MAX: usize = 256;
+const RAM_BYTES: usize = 32768;
+
+var g_rom64: [65536]u8 = undefined;
+var g_rom8: [8388608]u8 = undefined;
+var g_cart: cartmod.Cart = undefined;
+var g_bus: mmumod.Bus = undefined;
+var g_emu: emumod.Emu = undefined;
+var g_pass: u32 = 0;
+var g_fail: u32 = 0;
+var g_arena_buf: [1]u8 = undefined;
+var g_sav_orig: [RAM_BYTES]u8 = undefined;
+var g_rtc_orig: [32]u8 = undefined;
+
+fn argAt(argv: [*][*]u8, i: usize) []const u8 {
+    const p: [*]const u8 = @ptrCast([*]const u8, argv[i]);
+    var n: usize = 0;
+    while (p[n] != 0) : (n += 1) {}
+    return p[0..n];
+}
+
+fn printU(v: usize) void {
+    const x: u32 = @intCast(u32, v & 0xffffffff);
+    std.io.printInt(@intCast(i32, x & 0x7fffffff));
+}
+
+fn strEq(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        if (a[i] != b[i]) return false;
+    }
+    return true;
+}
+
+fn checkByte(label: []const u8, got: u8, want: u8) void {
+    if (got == want) {
+        g_pass += 1;
+        return;
+    }
+    g_fail += 1;
+    std.io.write("FAIL ");
+    std.io.write(label);
+    std.io.write(" got=");
+    printU(@intCast(usize, got));
+    std.io.write(" want=");
+    printU(@intCast(usize, want));
+    std.io.write("\n");
+}
+
+fn checkBool(label: []const u8, got: bool, want: bool) void {
+    if (got == want) {
+        g_pass += 1;
+        return;
+    }
+    g_fail += 1;
+    std.io.write("FAIL ");
+    std.io.write(label);
+    std.io.write("\n");
+}
+
+fn checkStr(label: []const u8, got: []const u8, want: []const u8) void {
+    if (strEq(got, want)) {
+        g_pass += 1;
+        return;
+    }
+    g_fail += 1;
+    std.io.write("FAIL ");
+    std.io.write(label);
+    std.io.write("\n");
+}
+
+fn copy(out: []u8, data: []const u8) void {
+    var i: usize = 0;
+    while (i < data.len) : (i += 1) out[i] = data[i];
+}
+
+fn joinPath(dir: []const u8, name: []const u8, out: []u8) []const u8 {
+    const need: usize = dir.len + 1 + name.len;
+    if (need > out.len) return "";
+    copy(out[0..dir.len], dir);
+    out[dir.len] = '/';
+    copy(out[dir.len + 1 .. need], name);
+    return out[0..need];
+}
+
+fn makeRom(rom: []u8, typ: u8, romcode: u8, ramcode: u8) void {
+    var i: usize = 0;
+    while (i < 0x150) : (i += 1) rom[i] = 0;
+    rom[0x0147] = typ;
+    rom[0x0148] = romcode;
+    rom[0x0149] = ramcode;
+}
+
+fn markBanks(rom: []u8, banks: usize) void {
+    var b: usize = 0;
+    while (b < banks) : (b += 1) {
+        const off: usize = b * 0x4000;
+        rom[off] = @intCast(u8, b & 0xFF);
+        rom[off + 1] = @intCast(u8, (b >> 8) & 0xFF);
+    }
+}
+
+fn latchNow(c: *cartmod.Cart) void {
+    cartmod.rtcLatch(c, 0);
+    cartmod.rtcLatch(c, 1);
+}
+
+fn testDerive() void {
+    var b: [64]u8 = undefined;
+    var n: usize = savemod.deriveSavePath("game.gb", ".sav", b[0..]);
+    checkStr("derive simple", b[0..n], "game.sav");
+    n = savemod.deriveSavePath("dir/game.gb", ".rtc", b[0..]);
+    checkStr("derive dir rtc", b[0..n], "dir/game.rtc");
+    n = savemod.deriveSavePath("game", ".sav", b[0..]);
+    checkStr("derive no ext", b[0..n], "game.sav");
+    n = savemod.deriveSavePath("a.b/c", ".sav", b[0..]);
+    checkStr("derive dotted dir", b[0..n], "a.b/c.sav");
+}
+
+fn testMbc3() void {
+    makeRom(g_rom64[0..], 0x10, 0x01, 0x03);
+    markBanks(g_rom64[0..], 4);
+    cartmod.cartInit(&g_cart);
+    cartmod.cartLoad(&g_cart, g_rom64[0..]) catch {
+        checkBool("mbc3 load", false, true);
+        return;
+    };
+    checkByte("mbc3 mbc", @enumToInt(g_cart.mbc), 3);
+    cartmod.cartWrite(&g_cart, 0x2000, 2);
+    checkByte("mbc3 rom bank2", cartmod.cartRead(&g_cart, 0x4000), 2);
+    cartmod.cartWrite(&g_cart, 0x2000, 0);
+    checkByte("mbc3 bank0 maps1", cartmod.cartRead(&g_cart, 0x4000), 1);
+    cartmod.cartWrite(&g_cart, 0x0000, 0x0A);
+    cartmod.cartWrite(&g_cart, 0x4000, 0);
+    cartmod.cartWrite(&g_cart, 0xA000, 0x11);
+    cartmod.cartWrite(&g_cart, 0x4000, 1);
+    cartmod.cartWrite(&g_cart, 0xA000, 0x22);
+    cartmod.cartWrite(&g_cart, 0x4000, 0);
+    checkByte("mbc3 ram bank0", cartmod.cartRead(&g_cart, 0xA000), 0x11);
+    cartmod.cartWrite(&g_cart, 0x4000, 1);
+    checkByte("mbc3 ram bank1", cartmod.cartRead(&g_cart, 0xA000), 0x22);
+    cartmod.cartWrite(&g_cart, 0x0000, 0x00);
+    checkByte("mbc3 ram disabled", cartmod.cartRead(&g_cart, 0xA000), 0xFF);
+}
+
+fn testMbc5() void {
+    makeRom(g_rom8[0..], 0x19, 0x08, 0x04);
+    markBanks(g_rom8[0..], 512);
+    cartmod.cartInit(&g_cart);
+    cartmod.cartLoad(&g_cart, g_rom8[0..]) catch {
+        checkBool("mbc5 load", false, true);
+        return;
+    };
+    checkByte("mbc5 mbc", @enumToInt(g_cart.mbc), 5);
+    cartmod.cartWrite(&g_cart, 0x2000, 0x34);
+    cartmod.cartWrite(&g_cart, 0x3000, 0x00);
+    checkByte("mbc5 bank 0x34 low", cartmod.cartRead(&g_cart, 0x4000), 0x34);
+    checkByte("mbc5 bank 0x34 high", cartmod.cartRead(&g_cart, 0x4001), 0x00);
+    cartmod.cartWrite(&g_cart, 0x2000, 0x00);
+    cartmod.cartWrite(&g_cart, 0x3000, 0x00);
+    checkByte("mbc5 bank0 valid", cartmod.cartRead(&g_cart, 0x4000), 0x00);
+    cartmod.cartWrite(&g_cart, 0x2000, 0x00);
+    cartmod.cartWrite(&g_cart, 0x3000, 0x01);
+    checkByte("mbc5 bit8 low", cartmod.cartRead(&g_cart, 0x4000), 0x00);
+    checkByte("mbc5 bit8 high", cartmod.cartRead(&g_cart, 0x4001), 0x01);
+    cartmod.cartWrite(&g_cart, 0x2000, 0xFF);
+    cartmod.cartWrite(&g_cart, 0x3000, 0x01);
+    checkByte("mbc5 bank511 low", cartmod.cartRead(&g_cart, 0x4000), 0xFF);
+    checkByte("mbc5 bank511 high", cartmod.cartRead(&g_cart, 0x4001), 0x01);
+    cartmod.cartWrite(&g_cart, 0x0000, 0x0A);
+    cartmod.cartWrite(&g_cart, 0x4000, 2);
+    cartmod.cartWrite(&g_cart, 0xA000, 0x2A);
+    cartmod.cartWrite(&g_cart, 0x4000, 5);
+    cartmod.cartWrite(&g_cart, 0xA000, 0x5A);
+    cartmod.cartWrite(&g_cart, 0x4000, 2);
+    checkByte("mbc5 ram bank2", cartmod.cartRead(&g_cart, 0xA000), 0x2A);
+    cartmod.cartWrite(&g_cart, 0x4000, 5);
+    checkByte("mbc5 ram bank5", cartmod.cartRead(&g_cart, 0xA000), 0x5A);
+}
+
+fn testRtcWindow() void {
+    makeRom(g_rom64[0..], 0x10, 0x01, 0x03);
+    markBanks(g_rom64[0..], 4);
+    cartmod.cartInit(&g_cart);
+    cartmod.cartLoad(&g_cart, g_rom64[0..]) catch {
+        checkBool("rtc window load", false, true);
+        return;
+    };
+    mmumod.busInit(&g_bus, &g_cart);
+    cartmod.rtcSetFixed(&g_cart, 1000000);
+    mmumod.write8(&g_bus, 0x0000, 0x0A);
+    mmumod.write8(&g_bus, 0x4000, 8);
+    checkBool("rtc window a0", g_bus.pages[0xA0].kind == .rtc, true);
+    checkBool("rtc window bf", g_bus.pages[0xBF].kind == .rtc, true);
+    latchNow(&g_cart);
+    mmumod.write8(&g_bus, 0xA000, 5);
+    latchNow(&g_cart);
+    checkByte("rtc mirror read a000", mmumod.read8(&g_bus, 0xA000), 5);
+    checkByte("rtc mirror read bfff", mmumod.read8(&g_bus, 0xBFFF), 5);
+    mmumod.write8(&g_bus, 0x4000, 0);
+    checkBool("rtc window clears", g_bus.pages[0xA0].kind == .cart_ram, true);
+    mmumod.write8(&g_bus, 0xA000, 0x33);
+    checkByte("cart ram direct", mmumod.read8(&g_bus, 0xA000), 0x33);
+}
+
+fn testRtcSemantics() void {
+    makeRom(g_rom64[0..], 0x10, 0x01, 0x03);
+    markBanks(g_rom64[0..], 4);
+    cartmod.cartInit(&g_cart);
+    cartmod.cartLoad(&g_cart, g_rom64[0..]) catch {
+        checkBool("rtc load", false, true);
+        return;
+    };
+    cartmod.rtcSetFixed(&g_cart, 1000000);
+    latchNow(&g_cart);
+    checkByte("rtc starts sec", cartmod.rtcRead(&g_cart, 0), 0);
+    cartmod.rtcSetFixed(&g_cart, 1000061);
+    latchNow(&g_cart);
+    checkByte("rtc delta sec", cartmod.rtcRead(&g_cart, 0), 1);
+    checkByte("rtc delta min", cartmod.rtcRead(&g_cart, 1), 1);
+
+    cartmod.rtcWrite(&g_cart, 0, 30);
+    checkByte("rtc latched read stable", cartmod.rtcRead(&g_cart, 0), 1);
+    latchNow(&g_cart);
+    checkByte("rtc latch sees live write", cartmod.rtcRead(&g_cart, 0), 30);
+
+    cartmod.rtcWrite(&g_cart, 4, 0x40);
+    latchNow(&g_cart);
+    checkByte("rtc halt flag", cartmod.rtcRead(&g_cart, 4) & 0x40, 0x40);
+    const held: u8 = cartmod.rtcRead(&g_cart, 0);
+    cartmod.rtcSetFixed(&g_cart, 1000061 + 3600);
+    latchNow(&g_cart);
+    checkByte("rtc halt freezes", cartmod.rtcRead(&g_cart, 0), held);
+
+    cartmod.rtcWrite(&g_cart, 4, 0x00);
+    cartmod.rtcSetFixed(&g_cart, 1000061 + 3600 + 2);
+    latchNow(&g_cart);
+    checkByte("rtc resumes after halt", cartmod.rtcRead(&g_cart, 0), 32);
+
+    cartmod.rtcWrite(&g_cart, 3, 0xFF);
+    cartmod.rtcWrite(&g_cart, 4, 0x01);
+    latchNow(&g_cart);
+    checkByte("rtc day 511 low", cartmod.rtcRead(&g_cart, 3), 0xFF);
+    checkByte("rtc day 511 high", cartmod.rtcRead(&g_cart, 4) & 0x01, 0x01);
+    cartmod.rtcSetFixed(&g_cart, 1000061 + 3600 + 2 + 86400);
+    latchNow(&g_cart);
+    checkByte("rtc day wraps low", cartmod.rtcRead(&g_cart, 3), 0);
+    checkByte("rtc day wraps high", cartmod.rtcRead(&g_cart, 4) & 0x01, 0);
+}
+
+fn writeFile(path: []const u8, data: []const u8) bool {
+    filemod.writeAll(path, data) catch return false;
+    return true;
+}
+
+fn readFileExact(path: []const u8, out: []u8) bool {
+    var arena = std.arena.init(g_arena_buf[0..]);
+    var f = filemod.open(&arena, path, filemod.Mode.Read) catch return false;
+    const sz = filemod.size(&f) catch {
+        filemod.close(&f);
+        return false;
+    };
+    if (sz != @intCast(i64, out.len)) {
+        filemod.close(&f);
+        return false;
+    }
+    var got: usize = 0;
+    while (got < out.len) {
+        const r = filemod.read(&f, out[got..out.len]) catch {
+            filemod.close(&f);
+            return false;
+        };
+        if (r == 0) break;
+        got += r;
+    }
+    filemod.close(&f);
+    return got == out.len;
+}
+
+fn fileSizeIs(path: []const u8, want: i64) bool {
+    var arena = std.arena.init(g_arena_buf[0..]);
+    var f = filemod.open(&arena, path, filemod.Mode.Read) catch return false;
+    const sz = filemod.size(&f) catch {
+        filemod.close(&f);
+        return false;
+    };
+    filemod.close(&f);
+    return sz == want;
+}
+
+fn expectCorrupt(e: *emumod.Emu, label: []const u8) void {
+    var ok: bool = false;
+    emumod.emuLoadBattery(e) catch |err| {
+        if (err == error.SaveCorrupt) ok = true;
+    };
+    checkBool(label, ok, true);
+}
+
+fn testSave(dir: []const u8) void {
+    makeRom(g_rom64[0..], 0x10, 0x01, 0x03);
+    markBanks(g_rom64[0..], 4);
+    var rom_buf: [PATH_MAX]u8 = undefined;
+    const rom_path: []const u8 = joinPath(dir, "rtc_round.gb", rom_buf[0..]);
+    checkBool("save rom written", writeFile(rom_path, g_rom64[0..]), true);
+    emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = false, .dynarec = false });
+    emumod.emuLoadRom(&g_emu, rom_path) catch {
+        checkBool("save rom loads", false, true);
+        return;
+    };
+    emumod.emuSetRtcFixed(&g_emu, 1700000000);
+
+    mmumod.write8(&g_emu.bus, 0x0000, 0x0A);
+    mmumod.write8(&g_emu.bus, 0x4000, 0);
+    var i: usize = 0;
+    while (i < 256) : (i += 1) {
+        mmumod.write8(&g_emu.bus, @intCast(u16, 0xA000 + i), @intCast(u8, i & 0xFF));
+    }
+    cartmod.rtcWrite(&g_emu.cart, 0, 12);
+    cartmod.rtcWrite(&g_emu.cart, 1, 34);
+    cartmod.rtcWrite(&g_emu.cart, 2, 5);
+    cartmod.rtcWrite(&g_emu.cart, 3, 0x78);
+    cartmod.rtcWrite(&g_emu.cart, 4, 0x01);
+    latchNow(&g_emu.cart);
+    emumod.emuSaveBattery(&g_emu) catch {
+        checkBool("save battery writes", false, true);
+        return;
+    };
+    checkBool("save battery writes", true, true);
+
+    var sav_buf: [PATH_MAX]u8 = undefined;
+    var rtc_buf: [PATH_MAX]u8 = undefined;
+    const slen: usize = savemod.deriveSavePath(rom_path, ".sav", sav_buf[0..]);
+    const rlen: usize = savemod.deriveSavePath(rom_path, ".rtc", rtc_buf[0..]);
+    const sav_path: []const u8 = sav_buf[0..slen];
+    const rtc_path: []const u8 = rtc_buf[0..rlen];
+    checkBool("sav size", fileSizeIs(sav_path, RAM_BYTES), true);
+    checkBool("rtc size", fileSizeIs(rtc_path, 32), true);
+    checkBool("sav readable", readFileExact(sav_path, g_sav_orig[0..]), true);
+    checkBool("rtc readable", readFileExact(rtc_path, g_rtc_orig[0..]), true);
+    var magic: [8]u8 = [8]u8{ 'Z', '9', '8', 'R', 'T', 'C', '1', 0 };
+    checkStr("rtc magic", g_rtc_orig[0..8], magic[0..]);
+    checkByte("rtc version", g_rtc_orig[8], 1);
+    checkByte("rtc header seconds", g_rtc_orig[9], 12);
+    checkByte("rtc header minutes", g_rtc_orig[10], 34);
+    checkByte("rtc header hours", g_rtc_orig[11], 5);
+    checkByte("rtc header day low", g_rtc_orig[12], 0x78);
+    checkByte("rtc header day high", g_rtc_orig[13], 1);
+    checkBool("rtc anchor captured", g_emu.cart.rtc.anchor == 1700000000, true);
+
+    g_emu.cart.ram[0] = 0xEE;
+    g_emu.cart.ram[255] = 0xEE;
+    cartmod.rtcWrite(&g_emu.cart, 0, 1);
+    latchNow(&g_emu.cart);
+    emumod.emuLoadBattery(&g_emu) catch {
+        checkBool("load battery reads", false, true);
+        return;
+    };
+    checkBool("load battery reads", true, true);
+    checkByte("sav restores byte0", g_emu.cart.ram[0], 0);
+    checkByte("sav restores byte255", g_emu.cart.ram[255], 0xFF);
+    checkByte("rtc restores seconds", cartmod.rtcRead(&g_emu.cart, 0), 12);
+    checkByte("rtc restores minutes", cartmod.rtcRead(&g_emu.cart, 1), 34);
+    checkByte("rtc restores hours", cartmod.rtcRead(&g_emu.cart, 2), 5);
+    checkByte("rtc restores day low", cartmod.rtcRead(&g_emu.cart, 3), 0x78);
+    checkByte("rtc restores day high", cartmod.rtcRead(&g_emu.cart, 4) & 0x01, 1);
+    checkBool("rtc anchor preserved", g_emu.cart.rtc.anchor == 1700000000, true);
+
+    checkBool("short rtc write", writeFile(rtc_path, g_rtc_orig[0..31]), true);
+    expectCorrupt(&g_emu, "short rtc rejects");
+    checkBool("restore rtc 1", writeFile(rtc_path, g_rtc_orig[0..]), true);
+
+    var bad: [32]u8 = undefined;
+    copy(bad[0..], g_rtc_orig[0..]);
+    bad[0] = 'X';
+    checkBool("bad magic write", writeFile(rtc_path, bad[0..]), true);
+    expectCorrupt(&g_emu, "bad magic rejects");
+    checkBool("restore rtc 2", writeFile(rtc_path, g_rtc_orig[0..]), true);
+
+    copy(bad[0..], g_rtc_orig[0..]);
+    bad[9] = bad[9] +% 1;
+    checkBool("bad crc write", writeFile(rtc_path, bad[0..]), true);
+    expectCorrupt(&g_emu, "bad crc rejects");
+    checkBool("restore rtc 3", writeFile(rtc_path, g_rtc_orig[0..]), true);
+
+    checkBool("short sav write", writeFile(sav_path, g_sav_orig[0..1]), true);
+    expectCorrupt(&g_emu, "short sav rejects");
+    checkBool("restore sav", writeFile(sav_path, g_sav_orig[0..]), true);
+}
+
+fn testSaveNoTruncate(dir: []const u8) void {
+    var path_buf: [PATH_MAX]u8 = undefined;
+    const path: []const u8 = joinPath(dir, "trunc.sav", path_buf[0..]);
+    checkBool("trunc original write", writeFile(path, "ORIGINAL"), true);
+    emumod.emuSetSavePath(&g_emu, path);
+    var got_io: bool = false;
+    emumod.emuSaveBattery(&g_emu) catch |err| {
+        if (err == error.Io) got_io = true;
+    };
+    checkBool("save failure is Io", got_io, true);
+    var buf: [8]u8 = undefined;
+    checkBool("trunc original readable", readFileExact(path, buf[0..]), true);
+    checkStr("trunc original intact", buf[0..], "ORIGINAL");
+}
+
+pub fn main(argc: i32, argv: [*][*]u8) void {
+    const n: usize = @intCast(usize, argc);
+    if (n < 2) {
+        std.io.write("save FAIL no scratch dir\n");
+        std.os.exit(2);
+    }
+    const dir: []const u8 = argAt(argv, 1);
+
+    testDerive();
+    testMbc3();
+    testMbc5();
+    testRtcWindow();
+    testRtcSemantics();
+    testSave(dir);
+    testSaveNoTruncate(dir);
+
+    std.io.write("save ");
+    if (g_fail == 0) {
+        std.io.write("ok ");
+        printU(@intCast(usize, g_pass));
+        std.io.write(" checks\n");
+        std.os.exit(0);
+    }
+    std.io.write("FAIL ");
+    printU(@intCast(usize, g_fail));
+    std.io.write(" failed, ");
+    printU(@intCast(usize, g_pass));
+    std.io.write(" passed\n");
+    std.os.exit(1);
+}
+ZIG
+
 ROM="$Z9DIR/testdata/synth/minimal.gb"
 EXPECT="cart ok mbc=0 rom=32768 ram=0"
 
@@ -1201,6 +1650,40 @@ run_ppu_mode() {
     fi
 }
 
+run_save_mode() {
+    mode="$1"
+    flag="$2"
+    bin="$OUT/$mode/save_test"
+    mkdir -p "$OUT/$mode/save"
+    mkdir -p "$OUT/$mode/save/trunc.sav.tmp"
+    if timeout 120 "$ZIG" "$flag" -o "$OUT/$mode" "$OUT/save_test.zig" >"$OUT/$mode/save_zig.log" 2>&1; then
+        pass_case "save $mode emits"
+    else
+        fail_case "save $mode emits"
+        tail -20 "$OUT/$mode/save_zig.log" | sed 's/^/       /'
+        return
+    fi
+    if sh "$OUT/$mode/build_target.sh" linux "$bin" >"$OUT/$mode/save_build.log" 2>&1; then
+        pass_case "save $mode links"
+    else
+        fail_case "save $mode links"
+        tail -20 "$OUT/$mode/save_build.log" | sed 's/^/       /'
+        return
+    fi
+    if timeout 120 "$bin" "$OUT/$mode/save" >"$OUT/$mode/save_run.out" 2>"$OUT/$mode/save_run.err"; then
+        pass_case "save $mode runs"
+    else
+        fail_case "save $mode runs"
+        tail -20 "$OUT/$mode/save_run.err" | sed 's/^/       /'
+        return
+    fi
+    if grep -q '^save ok ' "$OUT/$mode/save_run.out"; then
+        pass_case "save $mode output ($(cat "$OUT/$mode/save_run.out"))"
+    else
+        fail_case "save $mode output (got $(cat "$OUT/$mode/save_run.out"))"
+    fi
+}
+
 cd "$ROOT" || exit 1
 
 if [ "$RUN_CART" -eq 1 ]; then
@@ -1238,6 +1721,13 @@ if [ "$RUN_PPU" -eq 1 ]; then
     echo "== DMG scanline PPU: modes, STAT/LYC, BG/window, sprites, palettes =="
     run_ppu_mode fast -ffast
     run_ppu_mode safe -fsafe
+fi
+
+if [ "$RUN_SAVE" -eq 1 ]; then
+    echo
+    echo "== MBC3 RTC, MBC5, battery saves, corruption =="
+    run_save_mode fast -ffast
+    run_save_mode safe -fsafe
 fi
 
 echo
