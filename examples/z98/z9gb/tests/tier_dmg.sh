@@ -22,7 +22,7 @@ while [ "$#" -gt 0 ]; do
         --only)
             shift
             if [ "$#" -eq 0 ]; then
-                echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer] [--all]" >&2
+                echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu] [--all]" >&2
                 exit 2
             fi
             ONLY="$1"
@@ -34,7 +34,7 @@ while [ "$#" -gt 0 ]; do
             RUN_ALL=1
             ;;
         *)
-            echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer] [--all]" >&2
+            echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu] [--all]" >&2
             exit 2
             ;;
     esac
@@ -47,16 +47,20 @@ fi
 RUN_CART=0
 RUN_CPU=0
 RUN_TIMER=0
+RUN_PPU=0
 if [ -z "$ONLY" ]; then
     RUN_CART=1
     RUN_CPU=1
     RUN_TIMER=1
+    RUN_PPU=1
 elif [ "$ONLY" = "cart" ]; then
     RUN_CART=1
 elif [ "$ONLY" = "cpu" ]; then
     RUN_CPU=1
 elif [ "$ONLY" = "timer" ]; then
     RUN_TIMER=1
+elif [ "$ONLY" = "ppu" ]; then
+    RUN_PPU=1
 else
     echo "unknown tier: $ONLY" >&2
     exit 2
@@ -543,6 +547,333 @@ pub fn main() void {
 }
 ZIG
 
+cat >"$OUT/ppu_test.zig" <<'ZIG'
+const std = @import("std");
+const cartmod = @import("z9gb/cart.zig");
+const mmumod = @import("z9gb/mmu.zig");
+const ppumod = @import("z9gb/ppu.zig");
+const emumod = @import("z9gb/emu.zig");
+
+var g_cart: cartmod.Cart = undefined;
+var g_bus: mmumod.Bus = undefined;
+var g_ppu: ppumod.Ppu = undefined;
+var g_emu: emumod.Emu = undefined;
+var g_pass: u32 = 0;
+var g_fail: u32 = 0;
+
+fn printU(v: usize) void {
+    const x: u32 = @intCast(u32, v & 0xffffffff);
+    std.io.printInt(@intCast(i32, x & 0x7fffffff));
+}
+
+fn checkByte(label: []const u8, got: u8, want: u8) void {
+    if (got == want) {
+        g_pass += 1;
+        return;
+    }
+    g_fail += 1;
+    std.io.write("FAIL ");
+    std.io.write(label);
+    std.io.write(" got=");
+    printU(@intCast(usize, got));
+    std.io.write(" want=");
+    printU(@intCast(usize, want));
+    std.io.write("\n");
+}
+
+fn checkWord(label: []const u8, got: u16, want: u16) void {
+    if (got == want) {
+        g_pass += 1;
+        return;
+    }
+    g_fail += 1;
+    std.io.write("FAIL ");
+    std.io.write(label);
+    std.io.write(" got=");
+    printU(@intCast(usize, got));
+    std.io.write(" want=");
+    printU(@intCast(usize, want));
+    std.io.write("\n");
+}
+
+fn checkU32(label: []const u8, got: u32, want: u32) void {
+    if (got == want) {
+        g_pass += 1;
+        return;
+    }
+    g_fail += 1;
+    std.io.write("FAIL ");
+    std.io.write(label);
+    std.io.write(" got=");
+    printU(@intCast(usize, got));
+    std.io.write(" want=");
+    printU(@intCast(usize, want));
+    std.io.write("\n");
+}
+
+fn checkFrame(label: []const u8, x: usize, y: usize, want: u32) void {
+    checkU32(label, g_ppu.fb[y * ppumod.SCREEN_W + x], want);
+}
+
+fn reset() void {
+    cartmod.cartInit(&g_cart);
+    mmumod.busInit(&g_bus, &g_cart);
+    ppumod.ppuReset(&g_ppu);
+    g_bus.io[0x0F] = 0;
+}
+
+fn writeReg(addr: u16, value: u8) void {
+    ppumod.ppuWrite(&g_ppu, addr, value);
+}
+
+fn tick(n: u32) void {
+    ppumod.ppuTick(&g_ppu, n, &g_bus);
+}
+
+fn fillTile(tile: u8, lo: u8, hi: u8) void {
+    var row: usize = 0;
+    while (row < 8) : (row += 1) {
+        const a: usize = @intCast(usize, tile) * 16 + row * 2;
+        g_bus.vram[a] = lo;
+        g_bus.vram[a + 1] = hi;
+    }
+}
+
+fn setOam(index: usize, y: u8, x: u8, tile: u8, attr: u8) void {
+    const o: usize = index * 4;
+    g_bus.oam[o] = y;
+    g_bus.oam[o + 1] = x;
+    g_bus.oam[o + 2] = tile;
+    g_bus.oam[o + 3] = attr;
+}
+
+fn testModeSequence() void {
+    reset();
+    checkByte("ppu initial mode", g_ppu.mode, 2);
+    checkByte("ppu initial ly", g_ppu.ly, 0);
+    tick(79);
+    checkByte("ppu mode2 at 79", g_ppu.mode, 2);
+    tick(1);
+    checkByte("ppu mode3 at 80", g_ppu.mode, 3);
+    checkWord("ppu mode3 base length", @intCast(u16, g_ppu.mode3_len), 172);
+    tick(g_ppu.mode3_len);
+    checkByte("ppu mode0 after mode3", g_ppu.mode, 0);
+    const rest: u32 = 456 - 80 - g_ppu.mode3_len;
+    tick(rest);
+    checkByte("ppu next line ly", g_ppu.ly, 1);
+    checkByte("ppu next line mode2", g_ppu.mode, 2);
+    tick(143 * 456);
+    checkByte("ppu vblank ly", g_ppu.ly, 144);
+    checkByte("ppu vblank mode1", g_ppu.mode, 1);
+    tick(10 * 456);
+    checkByte("ppu frame wrap ly", g_ppu.ly, 0);
+    checkByte("ppu frame wrap mode2", g_ppu.mode, 2);
+
+    reset();
+    writeReg(0xFF43, 5);
+    tick(80);
+    checkWord("ppu mode3 scx penalty", @intCast(u16, g_ppu.mode3_len), 177);
+
+    reset();
+    writeReg(0xFF40, 0x93);
+    setOam(0, 16, 0, 0, 0);
+    tick(80);
+    checkWord("ppu mode3 obj x0 penalty", @intCast(u16, g_ppu.mode3_len), 183);
+}
+
+fn testStatInterrupts() void {
+    reset();
+    writeReg(0xFF41, 0x08);
+    tick(80);
+    tick(g_ppu.mode3_len);
+    checkByte("ppu stat mode0 irq", g_bus.io[0x0F] & 0x02, 0x02);
+
+    reset();
+    writeReg(0xFF41, 0x10);
+    g_ppu.line = 143;
+    g_ppu.ly = 143;
+    g_ppu.dot = 450;
+    g_ppu.mode = 0;
+    tick(6);
+    checkByte("ppu stat mode1 ly", g_ppu.ly, 144);
+    checkByte("ppu stat mode1 irq", g_bus.io[0x0F] & 0x02, 0x02);
+
+    reset();
+    writeReg(0xFF41, 0x40);
+    writeReg(0xFF45, 1);
+    tick(456);
+    checkByte("ppu lyc coincidence", ppumod.ppuRead(&g_ppu, 0xFF41) & 0x04, 0x04);
+    checkByte("ppu lyc stat irq", g_bus.io[0x0F] & 0x02, 0x02);
+}
+
+fn testBackground() void {
+    reset();
+    writeReg(0xFF40, 0x91);
+    writeReg(0xFF47, 0xE4);
+    writeReg(0xFF42, 0);
+    writeReg(0xFF43, 0);
+    fillTile(1, 0xFF, 0xFF);
+    fillTile(2, 0xFF, 0x00);
+    fillTile(0x80, 0x00, 0xFF);
+    g_bus.vram[0x1800] = 1;
+    g_bus.vram[0x1801] = 2;
+    g_bus.vram[0x1802] = 0x80;
+    tick(80);
+    checkFrame("ppu bg tile1 color3", 0, 0, 0x000F380F);
+    checkFrame("ppu bg tile2 color1", 8, 0, 0x008BAC0F);
+    checkFrame("ppu bg signed tile color2", 16, 0, 0x00306230);
+}
+
+fn testWindow() void {
+    reset();
+    writeReg(0xFF40, 0xF1);
+    writeReg(0xFF47, 0xE4);
+    writeReg(0xFF4A, 0);
+    writeReg(0xFF4B, 0);
+    fillTile(0, 0x00, 0xFF);
+    g_bus.vram[0x1C00] = 0;
+    tick(80);
+    checkWord("ppu window mode3 penalty", @intCast(u16, g_ppu.mode3_len), 178);
+    checkFrame("ppu window pixel0", 0, 0, 0x00306230);
+    checkFrame("ppu window pixel159", 159, 0, 0x00306230);
+    checkByte("ppu window line counter", g_ppu.window_line, 1);
+
+    reset();
+    writeReg(0xFF40, 0xF1);
+    writeReg(0xFF47, 0xE4);
+    writeReg(0xFF4A, 0);
+    writeReg(0xFF4B, 15);
+    fillTile(1, 0x00, 0xFF);
+    g_bus.vram[0x1C00] = 1;
+    tick(80);
+    checkFrame("ppu window left edge bg", 7, 0, 0x009BBC0F);
+    checkFrame("ppu window left edge win", 8, 0, 0x00306230);
+}
+
+fn testSprite8x8() void {
+    reset();
+    writeReg(0xFF40, 0x93);
+    writeReg(0xFF47, 0xE4);
+    writeReg(0xFF48, 0xE4);
+    fillTile(0, 0xFF, 0x00);
+    fillTile(1, 0xFF, 0xFF);
+    g_bus.vram[0x1800] = 1;
+    g_bus.vram[0x1801] = 1;
+    setOam(0, 16, 8, 0, 0);
+    tick(80);
+    checkFrame("ppu sprite 8x8 pixel0", 0, 0, 0x008BAC0F);
+    checkFrame("ppu sprite 8x8 bg pixel8", 8, 0, 0x000F380F);
+}
+
+fn spriteRomSetup(lcdc: u8) void {
+    reset();
+    writeReg(0xFF40, lcdc);
+    writeReg(0xFF47, 0xE4);
+    writeReg(0xFF48, 0xE4);
+    fillTile(0, 0xFF, 0x00);
+    fillTile(1, 0x00, 0xFF);
+    fillTile(2, 0x00, 0xFF);
+    fillTile(3, 0xFF, 0x00);
+}
+
+fn testSprite8x16() void {
+    spriteRomSetup(0x97);
+    setOam(0, 16, 8, 2, 0);
+    tick(80);
+    checkFrame("ppu sprite 8x16 top tile", 0, 0, 0x00306230);
+
+    spriteRomSetup(0x97);
+    setOam(0, 16, 8, 2, 0);
+    tick(8 * 456);
+    tick(80);
+    checkByte("ppu sprite 8x16 line8", g_ppu.ly, 8);
+    checkFrame("ppu sprite 8x16 bottom tile", 0, 8, 0x008BAC0F);
+}
+
+fn testSpritePriority() void {
+    spriteRomSetup(0x93);
+    g_bus.vram[0x1800] = 0;
+    setOam(0, 16, 8, 0, 0);
+    setOam(1, 16, 8, 2, 0);
+    tick(80);
+    checkFrame("ppu sprite same x oam index", 0, 0, 0x008BAC0F);
+
+    spriteRomSetup(0x93);
+    g_bus.vram[0x1800] = 0;
+    setOam(0, 16, 9, 2, 0);
+    setOam(1, 16, 8, 0, 0);
+    tick(80);
+    checkFrame("ppu sprite x priority", 1, 0, 0x008BAC0F);
+
+    spriteRomSetup(0x93);
+    g_bus.vram[0x1800] = 1;
+    setOam(0, 16, 8, 0, 0x80);
+    tick(80);
+    checkFrame("ppu sprite behind bg", 0, 0, 0x00306230);
+
+    spriteRomSetup(0x93);
+    g_bus.vram[0x1800] = 0;
+    setOam(0, 16, 8, 0, 0x80);
+    tick(80);
+    checkFrame("ppu sprite over bg zero", 0, 0, 0x008BAC0F);
+}
+
+fn testPalette() void {
+    reset();
+    writeReg(0xFF40, 0x91);
+    writeReg(0xFF47, 0x1B);
+    fillTile(1, 0xFF, 0x00);
+    g_bus.vram[0x1800] = 1;
+    tick(80);
+    checkFrame("ppu bgp remap", 0, 0, 0x00306230);
+    writeReg(0xFF47, 0xE4);
+    tick(456 - 80);
+    tick(80);
+    checkFrame("ppu bgp recompute", 0, 1, 0x008BAC0F);
+
+    spriteRomSetup(0x93);
+    g_bus.vram[0x1800] = 0;
+    writeReg(0xFF48, 0x1B);
+    setOam(0, 16, 8, 0, 0);
+    tick(80);
+    checkFrame("ppu obp remap", 0, 0, 0x00306230);
+}
+
+fn testEmuFramebuffer() void {
+    emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = false, .dynarec = false });
+    const fb: []const u32 = emumod.emuFramebuffer(&g_emu);
+    checkWord("ppu emu framebuffer length", @intCast(u16, fb.len), 23040);
+    const pfb: []const u32 = ppumod.ppuFramebuffer(&g_ppu);
+    checkWord("ppu framebuffer length", @intCast(u16, pfb.len), 23040);
+}
+
+pub fn main() void {
+    testModeSequence();
+    testStatInterrupts();
+    testBackground();
+    testWindow();
+    testSprite8x8();
+    testSprite8x16();
+    testSpritePriority();
+    testPalette();
+    testEmuFramebuffer();
+
+    std.io.write("ppu ");
+    if (g_fail == 0) {
+        std.io.write("ok ");
+        printU(@intCast(usize, g_pass));
+        std.io.write(" checks\n");
+        std.os.exit(0);
+    }
+    std.io.write("FAIL ");
+    printU(@intCast(usize, g_fail));
+    std.io.write(" failed, ");
+    printU(@intCast(usize, g_pass));
+    std.io.write(" passed\n");
+    std.os.exit(1);
+}
+ZIG
+
 ROM="$Z9DIR/testdata/synth/minimal.gb"
 EXPECT="cart ok mbc=0 rom=32768 ram=0"
 
@@ -645,6 +976,39 @@ run_timer_mode() {
     fi
 }
 
+run_ppu_mode() {
+    mode="$1"
+    flag="$2"
+    bin="$OUT/$mode/ppu_test"
+    mkdir -p "$OUT/$mode"
+    if timeout 120 "$ZIG" "$flag" -o "$OUT/$mode" "$OUT/ppu_test.zig" >"$OUT/$mode/zig.log" 2>&1; then
+        pass_case "ppu $mode emits"
+    else
+        fail_case "ppu $mode emits"
+        tail -20 "$OUT/$mode/zig.log" | sed 's/^/       /'
+        return
+    fi
+    if sh "$OUT/$mode/build_target.sh" linux "$bin" >"$OUT/$mode/build.log" 2>&1; then
+        pass_case "ppu $mode links"
+    else
+        fail_case "ppu $mode links"
+        tail -20 "$OUT/$mode/build.log" | sed 's/^/       /'
+        return
+    fi
+    if timeout 60 "$bin" >"$OUT/$mode/run.out" 2>"$OUT/$mode/run.err"; then
+        pass_case "ppu $mode runs"
+    else
+        fail_case "ppu $mode runs"
+        tail -20 "$OUT/$mode/run.err" | sed 's/^/       /'
+        return
+    fi
+    if grep -q '^ppu ok ' "$OUT/$mode/run.out"; then
+        pass_case "ppu $mode output ($(cat "$OUT/$mode/run.out"))"
+    else
+        fail_case "ppu $mode output (got $(cat "$OUT/$mode/run.out"))"
+    fi
+}
+
 cd "$ROOT" || exit 1
 
 if [ "$RUN_CART" -eq 1 ]; then
@@ -675,6 +1039,13 @@ if [ "$RUN_TIMER" -eq 1 ]; then
     echo "== timer, interrupts, HALT, serial, post-boot =="
     run_timer_mode fast -ffast
     run_timer_mode safe -fsafe
+fi
+
+if [ "$RUN_PPU" -eq 1 ]; then
+    echo
+    echo "== DMG scanline PPU: modes, STAT/LYC, BG/window, sprites, palettes =="
+    run_ppu_mode fast -ffast
+    run_ppu_mode safe -fsafe
 fi
 
 echo

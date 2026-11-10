@@ -10,6 +10,7 @@ const cartmod = @import("cart.zig");
 const mmumod = @import("mmu.zig");
 const cpumod = @import("cpu.zig");
 const serialmod = @import("serial.zig");
+const ppumod = @import("ppu.zig");
 
 const ROM_CAP: usize = 8 * 1024 * 1024;
 const SAVE_CAP: usize = 260;
@@ -23,7 +24,6 @@ pub const EmuError = error{ RomTooLarge, BadHeader, UnsupportedMbc, CgbRequired,
 pub const Emu = struct {
     rom: [ROM_CAP]u8,
     rom_len: usize,
-    fb: [FRAME_W * FRAME_H]u32,
     buttons: u8,
     cfg: EmuConfig,
     save_path: [SAVE_CAP]u8,
@@ -31,11 +31,12 @@ pub const Emu = struct {
     cart: cartmod.Cart,
     cpu: cpumod.Cpu,
     bus: mmumod.Bus,
+    ppu: ppumod.Ppu,
 };
 
 pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     // Scalar fields only: a whole-`Emu` literal would materialize an ~8.5 MiB
-    // temporary on the 1 MiB stack. `rom`, `fb`, and `save_path` are fixed
+    // temporary on the 1 MiB stack. `rom`, the PPU framebuffer, and `save_path` are fixed
     // storage written by their owners.
     e.rom_len = 0;
     e.buttons = 0;
@@ -44,6 +45,7 @@ pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     cartmod.cartInit(&e.cart);
     mmumod.busInit(&e.bus, &e.cart);
     cpumod.cpuInit(&e.cpu);
+    ppumod.ppuReset(&e.ppu);
 }
 
 // Loader contract: size-checked copy into the fixed 8 MiB buffer, then validate
@@ -96,6 +98,11 @@ pub fn emuReset(e: *Emu) void {
     e.buttons = 0;
     mmumod.busInit(&e.bus, &e.cart);
     cpumod.cpuInit(&e.cpu);
+    ppumod.ppuReset(&e.ppu);
+    e.ppu.ly = 0x91;
+    e.ppu.line = 0x91;
+    e.ppu.dot = 0;
+    e.ppu.mode = 1;
     e.cpu.a = 0x01;
     e.cpu.f = 0xB0;
     e.cpu.b = 0x00;
@@ -109,22 +116,53 @@ pub fn emuReset(e: *Emu) void {
 }
 
 pub fn emuSelfTestPattern(e: *Emu) void {
+    const p: *ppumod.Ppu = &e.ppu;
     var y: usize = 0;
     while (y < FRAME_H) : (y += 1) {
         var x: usize = 0;
         while (x < FRAME_W) : (x += 1) {
-            e.fb[y * FRAME_W + x] = 0x00010000 | @intCast(u32, x & 0xFF) | (@intCast(u32, y & 0xFF) << 8);
+            p.fb[y * FRAME_W + x] = 0x00010000 | @intCast(u32, x & 0xFF) | (@intCast(u32, y & 0xFF) << 8);
         }
     }
 }
 
+fn ppuSyncIn(e: *Emu) void {
+    ppumod.ppuWrite(&e.ppu, 0xFF40, e.bus.io[0x40]);
+    ppumod.ppuWrite(&e.ppu, 0xFF41, e.bus.io[0x41]);
+    ppumod.ppuWrite(&e.ppu, 0xFF42, e.bus.io[0x42]);
+    ppumod.ppuWrite(&e.ppu, 0xFF43, e.bus.io[0x43]);
+    ppumod.ppuWrite(&e.ppu, 0xFF45, e.bus.io[0x45]);
+    ppumod.ppuWrite(&e.ppu, 0xFF46, e.bus.io[0x46]);
+    ppumod.ppuWrite(&e.ppu, 0xFF47, e.bus.io[0x47]);
+    ppumod.ppuWrite(&e.ppu, 0xFF48, e.bus.io[0x48]);
+    ppumod.ppuWrite(&e.ppu, 0xFF49, e.bus.io[0x49]);
+    ppumod.ppuWrite(&e.ppu, 0xFF4A, e.bus.io[0x4A]);
+    ppumod.ppuWrite(&e.ppu, 0xFF4B, e.bus.io[0x4B]);
+}
+
+fn ppuSyncOut(e: *Emu) void {
+    e.bus.io[0x41] = ppumod.ppuRead(&e.ppu, 0xFF41);
+    e.bus.io[0x44] = ppumod.ppuRead(&e.ppu, 0xFF44);
+}
+
 pub fn emuRunFrame(e: *Emu) u32 {
-    emuSelfTestPattern(e);
-    return 70224;
+    if (e.rom_len == 0) {
+        emuSelfTestPattern(e);
+        return 70224;
+    }
+    var total: u32 = 0;
+    while (total < 70224) {
+        const cycles: u32 = cpumod.cpuStep(&e.cpu, &e.bus);
+        total += cycles;
+        ppuSyncIn(e);
+        ppumod.ppuTick(&e.ppu, cycles, &e.bus);
+        ppuSyncOut(e);
+    }
+    return total;
 }
 
 pub fn emuFramebuffer(e: *const Emu) []const u32 {
-    return e.fb[0..];
+    return ppumod.ppuFramebuffer(&e.ppu);
 }
 
 pub fn emuSetButtons(e: *Emu, bits: u8) void {
