@@ -1,9 +1,10 @@
 #!/bin/sh
 # measure_rss.sh — z9gb P1 memory + determinism gate.
 #
-# Builds the headless CLI, runs 60 frames under /usr/bin/time to measure peak
-# RSS (KiB), and runs the same command three times to prove the framebuffer
-# dump at /tmp/z9gb_p1.fb is byte-identical.
+# Builds the headless CLI, creates a deterministic synthetic 8 MiB ROM, runs 60
+# frames with it loaded under /usr/bin/time to measure peak RSS (KiB), and runs
+# the same command three times to prove the framebuffer dump at /tmp/z9gb_p1.fb
+# is byte-identical.
 #
 # POSIX sh + coreutils. Run from anywhere (paths resolved from this script).
 #
@@ -56,12 +57,25 @@ if [ ! -f "$OUT/build_target.sh" ] || ! sh "$OUT/build_target.sh" linux "$BIN" >
     exit 1
 fi
 
+# Deterministic synthetic ROM so emuLoadRom touches the fixed 8 MiB buffer; the
+# RSS bound is only meaningful with the ROM resident.
+ROM="$OUT/synthetic_8m.rom"
+if ! dd if=/dev/zero of="$ROM" bs=1048576 count=8 >/dev/null 2>&1; then
+    echo "FAIL: cannot create synthetic 8 MiB ROM" >&2
+    exit 1
+fi
+rom_size="$(stat -c %s "$ROM")"
+if [ "$rom_size" != "$ROM_BYTES" ]; then
+    echo "FAIL: synthetic ROM size $rom_size (want $ROM_BYTES)" >&2
+    exit 1
+fi
+
 run=1
 rss1=""
 while [ "$run" -le 3 ]; do
     rm -f "$FB"
     if ! timeout 60 /usr/bin/time -f '%M' -o "$OUT/rss.txt" \
-        "$BIN" --headless --frames 60 --fb-out "$FB" \
+        "$BIN" --headless --frames 60 --rom "$ROM" --fb-out "$FB" \
         >"$OUT/run.$run.out" 2>"$OUT/run.$run.err"; then
         echo "FAIL: run $run exited nonzero" >&2
         tail -20 "$OUT/run.$run.err" | sed 's/^/       /' >&2
