@@ -1148,6 +1148,7 @@ fn testCbBoundaries() void {
     checkByte("cb 0x00 result", g_cpu.b, 0x01);
     checkFlags("cb 0x00 flags", false, false, false, true);
     checkCycles("cb 0x00 cycles", c00, 8);
+    checkWord("cb 0x00 prefix pc", g_cpu.pc, CODE +% 2);
 
     reset();
     g_cpu.a = 0x01;
@@ -1180,6 +1181,7 @@ fn testCbBoundaries() void {
     checkByte("cb 0xFF result", g_cpu.a, 0x80);
     checkFlags("cb 0xFF flags", true, true, true, true);
     checkCycles("cb 0xFF cycles", cff, 8);
+    checkWord("cb 0xFF prefix pc", g_cpu.pc, CODE +% 2);
 }
 
 pub fn main() void {

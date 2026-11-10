@@ -459,23 +459,28 @@ fn cbExec(cpu: *Cpu, bus: *Bus) u32 {
     const bit: u8 = @intCast(u8, (@intCast(u16, op2) >> 3) & 0x07);
     const value: u8 = aluOperand(cpu, bus, idx);
 
-    if (op2 < 0x40) {
-        const kind: u8 = @intCast(u8, (@intCast(u16, op2) >> 3) & 0x07);
-        aluStore(cpu, bus, idx, cbShift(cpu, kind, value));
-        return if (idx == 6) 16 else 8;
+    switch (op2) {
+        0x00...0x3F => {
+            const kind: u8 = @intCast(u8, (@intCast(u16, op2) >> 3) & 0x07);
+            aluStore(cpu, bus, idx, cbShift(cpu, kind, value));
+            return if (idx == 6) 16 else 8;
+        },
+        0x40...0x7F => {
+            cbBit(cpu, bit, value);
+            return if (idx == 6) 12 else 8;
+        },
+        0x80...0xBF => {
+            const result: u8 = @intCast(u8, @intCast(u16, value) & ~cbMask(bit));
+            aluStore(cpu, bus, idx, result);
+            return if (idx == 6) 16 else 8;
+        },
+        0xC0...0xFF => {
+            const result: u8 = @intCast(u8, @intCast(u16, value) | cbMask(bit));
+            aluStore(cpu, bus, idx, result);
+            return if (idx == 6) 16 else 8;
+        },
+        else => unreachable,
     }
-    if (op2 < 0x80) {
-        cbBit(cpu, bit, value);
-        return if (idx == 6) 12 else 8;
-    }
-    if (op2 < 0xC0) {
-        const result: u8 = @intCast(u8, @intCast(u16, value) & ~cbMask(bit));
-        aluStore(cpu, bus, idx, result);
-        return if (idx == 6) 16 else 8;
-    }
-    const result: u8 = @intCast(u8, @intCast(u16, value) | cbMask(bit));
-    aluStore(cpu, bus, idx, result);
-    return if (idx == 6) 16 else 8;
 }
 
 const OP_LEN: [256]u8 = [256]u8{
