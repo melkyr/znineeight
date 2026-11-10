@@ -21,7 +21,7 @@
 - DirectSound path is single-threaded: looping secondary buffer, `GetCurrentPosition` refill. No callback thread and no lock-free cross-thread ring.
 - APU output is stereo signed 16-bit PCM at 44,100 Hz.
 - 1 MiB stack limit; audio ring/framebuffer/surfaces are static, not stack.
-- `dmg_sound` is a hard gate, run with the amended P2 verdict harness semantics (`--serial --turbo`, generous frame cap, terminal `Passed` verdict required, cap-without-verdict = FAIL). A missing ROM is `SKIP`, never `PASS`, and cannot close the milestone.
+- `dmg_sound` is a hard gate. The pinned Blargg `dmg_sound.gb` reports through its documented SRAM memory protocol, not serial: magic `0xDE,0xB0,0x61` at `0xA001..0xA003`, status at `0xA000`, text at `0xA004`. Run `--turbo --frames 200000`; PASS requires status 0 and terminal `Passed` with no `Failed`; cap without verdict = FAIL. A missing ROM is `SKIP`, never `PASS`, and cannot close the milestone.
 - New COM vtables copy slot order **verbatim from the MinGW headers** (`dsound.h`, `dinput.h`) at Task 0 probe time: unused slots are kept as correctly-typed `fn` placeholders, exactly like `sf/src/std_gfx_pal.zig` does for DirectDraw. Expected slot counts to verify and pin: `IDirectSound` 11, `IDirectSoundBuffer` 21, `IDirectInput8A` 11, `IDirectInputDevice8A` 32 — STOP on mismatch.
 - The P3 seed rotation is the only seed rotation in Phase 4 unless a later plan changes `sf/src`.
 - No `std.zig` barrel change; the three new modules are path-imported and move no emission pins.
@@ -228,7 +228,7 @@ Generate samples with a **16.16 fixed-point 44,100 Hz accumulator** (`cycles_per
 - [ ] **Step 5: Run the test**
 Expected: PASS under `-ffast` and `-fsafe`; no trap on shift/mix.
 - [ ] **Step 6: Add `dmg_sound` gate**
-`tier_audio.sh --gate` adopts the amended P2 verdict-harness semantics verbatim: `dmg_sound.gb` runs with `--serial --turbo --frames 200000` (Blargg sound verdicts need minutes of emulated time; the emulator exits early on a terminal serial verdict). PASS requires the exact terminal `Passed` and no `Failed`; reaching the frame cap without a verdict is FAIL (timeout). Missing ROM = `SKIP` (exit 77) and cannot close the milestone.
+`tier_audio.sh --gate` uses the pinned Blargg `dmg_sound` memory protocol (the ROM writes no serial bytes). Run `--turbo --frames 200000`; poll `0xA000` status and `0xA004` text after magic `0xDE,0xB0,0x61` at `0xA001..0xA003`. PASS requires status 0, terminal `Passed`, and no `Failed`; reaching the frame cap without a verdict is FAIL (timeout). Missing ROM = `SKIP` (exit 77) and cannot close the milestone.
 - [ ] **Step 7: Commit**
 ```bash
 git add examples/z98/z9gb/apu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/tests/apu_test.zig examples/z98/z9gb/tests/tier_audio.sh
@@ -287,7 +287,7 @@ git commit -m "feat(z9gb): add Win32 display/input/audio backend"
 - Produces: gate and performance evidence.
 
 - [ ] **Step 1: Run `dmg_sound`**
-`tier_audio.sh --gate` requires `dmg_sound.gb` and the terminal `Passed` verdict (verdict-harness semantics from Task 4 Step 6). Expected: PASS; missing ROM = SKIP, and closeout cannot claim the audio gate.
+`tier_audio.sh --gate` requires `dmg_sound.gb` and the memory-protocol verdict from Task 4 Step 6 (magic `0xDE,0xB0,0x61` at `0xA001..0xA003`, status 0 at `0xA000`, terminal `Passed` at `0xA004`, no `Failed`). Expected: PASS; missing ROM = SKIP, and closeout cannot claim the audio gate.
 - [ ] **Step 2: Run homebrew (named ROM: 2048-gb)**
 The homebrew gate ROM is **`2048.gb`** built from `Sanqui/2048-gb` (commit pinned in `testdata/roms/manifest.sha256`; zlib license; the canonical emulator-bring-up homebrew — user-supplied bytes, never committed). Run `--windowed --frames 600` under Wine **and** `--headless --frames 600` on the host. Metric: the GB frame clock is 59.7275 Hz (not 60); the gate is **sustained ≥ 59.0 rendered fps** (frames/wall over the 600-frame window) with audio on, measured by QPC. Record measured fps, CPU, RSS; label host vs Wine numbers separately and never label Wine numbers as Win98. Missing ROM = SKIP; closeout cannot claim the performance gate.
 - [ ] **Step 3: Add `tier_perf.sh`**
