@@ -134,8 +134,8 @@ fn testSquare() void {
     checkByte("ch1 duty decoded", g_apu.ch1.duty, 2);
     checkWord("ch1 frequency", g_apu.ch1.freq, 0x700);
     const before: u8 = g_apu.ch1.duty_pos;
-    apumod.apuTick(&g_apu, 8192);
-    checkBool("ch1 duty advances", g_apu.ch1.duty_pos != before, true);
+    apumod.apuTick(&g_apu, 1024);
+    checkByte("ch1 duty step at 1024 cycles", g_apu.ch1.duty_pos, @intCast(u8, (@as(u16, before) + 1) & 7));
 
     wr(0xFF16, 0x40);
     wr(0xFF17, 0xF0);
@@ -144,6 +144,22 @@ fn testSquare() void {
     checkBool("ch2 enabled", g_apu.ch2.enabled, true);
     checkByte("ch2 duty decoded", g_apu.ch2.duty, 1);
     checkWord("ch2 frequency", g_apu.ch2.freq, 0x611);
+}
+
+fn testEnvelopeHold() void {
+    reset();
+    wr(0xFF11, 0x80);
+    wr(0xFF12, 0x50);
+    wr(0xFF13, 0x00);
+    wr(0xFF14, 0x87);
+    checkByte("envelope trigger volume", g_apu.ch1.vol, 5);
+    var i: usize = 0;
+    while (i < 10) : (i += 1) {
+        g_apu.fs_step = 7;
+        g_apu.fs_cycles = 0;
+        apumod.apuTick(&g_apu, 8192);
+    }
+    checkByte("envelope period 0 holds volume", g_apu.ch1.vol, 5);
 }
 
 fn testLengthClockQuirk() void {
@@ -304,6 +320,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testRegisterMasks();
     testPower();
     testSquare();
+    testEnvelopeHold();
     testLengthClockQuirk();
     testSweepQuirks();
     testWaveRam();

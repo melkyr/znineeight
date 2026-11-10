@@ -295,7 +295,7 @@ fn writeNr52(a: *Apu, value: u8) void {
 }
 
 fn squarePeriod(ch: *const Square) u32 {
-    return (@as(u32, 2048) - (@as(u32, ch.freq) & 0x7FF)) * 32;
+    return (@as(u32, 2048) - (@as(u32, ch.freq) & 0x7FF)) * 4;
 }
 
 fn wavePeriod(freq: u16) u32 {
@@ -395,9 +395,10 @@ fn clockLengthNoise(ch: *Noise) void {
 }
 
 fn clockEnvelopeSquare(ch: *Square) void {
+    if (ch.env_period == 0) return;
     if (ch.env_timer > 0) ch.env_timer -= 1;
     if (ch.env_timer != 0) return;
-    ch.env_timer = if (ch.env_period == 0) 8 else ch.env_period;
+    ch.env_timer = ch.env_period;
     if (ch.env_sub) {
         if (ch.vol > 0) ch.vol -= 1;
     } else {
@@ -406,9 +407,10 @@ fn clockEnvelopeSquare(ch: *Square) void {
 }
 
 fn clockEnvelopeNoise(ch: *Noise) void {
+    if (ch.env_period == 0) return;
     if (ch.env_timer > 0) ch.env_timer -= 1;
     if (ch.env_timer != 0) return;
-    ch.env_timer = if (ch.env_period == 0) 8 else ch.env_period;
+    ch.env_timer = ch.env_period;
     if (ch.env_sub) {
         if (ch.vol > 0) ch.vol -= 1;
     } else {
@@ -514,7 +516,7 @@ fn triggerSquare(a: *Apu, ch: *Square, is_ch1: bool, value: u8) void {
         ch.timer = squarePeriod(ch);
         ch.duty_pos = 0;
         ch.vol = ch.vol_init;
-        ch.env_timer = if (ch.env_period == 0) 8 else ch.env_period;
+        ch.env_timer = ch.env_period;
         if (is_ch1) triggerSweep(a);
     }
     ch.length_en = new_en;
@@ -574,7 +576,7 @@ fn triggerNoise(a: *Apu, value: u8) void {
         a.ch4.timer = noisePeriod(&a.ch4);
         a.ch4.lfsr = 0x7FFF;
         a.ch4.vol = a.ch4.vol_init;
-        a.ch4.env_timer = if (a.ch4.env_period == 0) 8 else a.ch4.env_period;
+        a.ch4.env_timer = a.ch4.env_period;
     }
     a.ch4.length_en = new_en;
 }
