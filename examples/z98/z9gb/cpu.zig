@@ -1,4 +1,5 @@
-// cpu.zig — z9gb SM83 base, ALU, flags, DAA, loads, stack, and control flow.
+// cpu.zig — z9gb SM83 base, ALU, flags, DAA, loads, stack, control flow, and
+// CB-prefixed rotates, shifts, BIT, RES, and SET.
 //
 // Flags live in F bits 7..4: Z=0x80, N=0x40, H=0x20, C=0x10. Bits 3..0 are
 // always zero. Arithmetic widens to u16 before shifting/masking and narrows
@@ -387,6 +388,96 @@ fn aluImm(cpu: *Cpu, bus: *Bus, group: u16) void {
     aluApply(cpu, group, value);
 }
 
+fn cbMask(bit: u8) u16 {
+    return @intCast(u16, 1) << @intCast(u4, bit);
+}
+
+fn cbShift(cpu: *Cpu, kind: u8, value: u8) u8 {
+    const x: u16 = @intCast(u16, value);
+    var result: u16 = x;
+    switch (kind) {
+        0 => {
+            const carry: bool = (x & 0x80) != 0;
+            const bit: u16 = if (carry) 1 else 0;
+            result = ((x << 1) | bit) & 0xFF;
+            setFlags(cpu, result == 0, false, false, carry);
+        },
+        1 => {
+            const carry: bool = (x & 0x01) != 0;
+            const bit: u16 = if (carry) 0x80 else 0;
+            result = ((x >> 1) | bit) & 0xFF;
+            setFlags(cpu, result == 0, false, false, carry);
+        },
+        2 => {
+            const carry: bool = (x & 0x80) != 0;
+            const bit: u16 = if (getFlag(cpu, FLAG_C)) 1 else 0;
+            result = ((x << 1) | bit) & 0xFF;
+            setFlags(cpu, result == 0, false, false, carry);
+        },
+        3 => {
+            const carry: bool = (x & 0x01) != 0;
+            const bit: u16 = if (getFlag(cpu, FLAG_C)) 0x80 else 0;
+            result = ((x >> 1) | bit) & 0xFF;
+            setFlags(cpu, result == 0, false, false, carry);
+        },
+        4 => {
+            const carry: bool = (x & 0x80) != 0;
+            result = (x << 1) & 0xFF;
+            setFlags(cpu, result == 0, false, false, carry);
+        },
+        5 => {
+            const carry: bool = (x & 0x01) != 0;
+            result = (x >> 1) | (x & 0x80);
+            setFlags(cpu, result == 0, false, false, carry);
+        },
+        6 => {
+            result = ((x & 0x0F) << 4) | ((x & 0xF0) >> 4);
+            setFlags(cpu, result == 0, false, false, false);
+        },
+        7 => {
+            const carry: bool = (x & 0x01) != 0;
+            result = (x >> 1) & 0xFF;
+            setFlags(cpu, result == 0, false, false, carry);
+        },
+        else => unreachable,
+    }
+    return @intCast(u8, result & 0xFF);
+}
+
+fn cbBit(cpu: *Cpu, bit: u8, value: u8) void {
+    const x: u16 = @intCast(u16, value);
+    const is_set: bool = (x & cbMask(bit)) != 0;
+    setFlag(cpu, FLAG_Z, !is_set);
+    setFlag(cpu, FLAG_N, false);
+    setFlag(cpu, FLAG_H, false);
+}
+
+fn cbExec(cpu: *Cpu, bus: *Bus) u32 {
+    const op2: u8 = mmumod.read8(bus, cpu.pc);
+    cpu.pc = cpu.pc +% 1;
+    const idx: u8 = op2 & 0x07;
+    const bit: u8 = @intCast(u8, (@intCast(u16, op2) >> 3) & 0x07);
+    const value: u8 = aluOperand(cpu, bus, idx);
+
+    if (op2 < 0x40) {
+        const kind: u8 = @intCast(u8, (@intCast(u16, op2) >> 3) & 0x07);
+        aluStore(cpu, bus, idx, cbShift(cpu, kind, value));
+        return if (idx == 6) 16 else 8;
+    }
+    if (op2 < 0x80) {
+        cbBit(cpu, bit, value);
+        return if (idx == 6) 12 else 8;
+    }
+    if (op2 < 0xC0) {
+        const result: u8 = @intCast(u8, @intCast(u16, value) & ~cbMask(bit));
+        aluStore(cpu, bus, idx, result);
+        return if (idx == 6) 16 else 8;
+    }
+    const result: u8 = @intCast(u8, @intCast(u16, value) | cbMask(bit));
+    aluStore(cpu, bus, idx, result);
+    return if (idx == 6) 16 else 8;
+}
+
 const OP_LEN: [256]u8 = [256]u8{
     1, 3, 1, 1, 1, 1, 2, 1, 3, 1, 1, 1, 1, 1, 2, 1,
     1, 3, 1, 1, 1, 1, 2, 1, 2, 1, 1, 1, 1, 1, 2, 1,
@@ -593,6 +684,9 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
         },
         0xC9 => {
             cpu.pc = pop16(cpu, bus);
+        },
+        0xCB => {
+            cycles = cbExec(cpu, bus);
         },
         0xCD => {
             const dest: u16 = mmumod.read16(bus, cpu.pc);

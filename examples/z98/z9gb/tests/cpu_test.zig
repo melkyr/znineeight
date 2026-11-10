@@ -108,6 +108,21 @@ fn runImm16C(addr: u16, op: u8, imm: u16) u32 {
     return cpumod.cpuStep(&g_cpu, &g_bus);
 }
 
+fn runCbC(addr: u16, op2: u8) u32 {
+    mmumod.write8(&g_bus, addr, 0xCB);
+    mmumod.write8(&g_bus, addr +% 1, op2);
+    g_cpu.pc = addr;
+    return cpumod.cpuStep(&g_cpu, &g_bus);
+}
+
+fn runCb(addr: u16, op2: u8) void {
+    _ = runCbC(addr, op2);
+}
+
+fn cbMask(bit: u8) u16 {
+    return @intCast(u16, 1) << @intCast(u4, bit);
+}
+
 fn checkCycles(label: []const u8, got: u32, want: u32) void {
     if (got == want) {
         g_pass += 1;
@@ -160,6 +175,20 @@ fn regGet(idx: u8) u8 {
         5 => return g_cpu.l,
         6 => return mmumod.read8(&g_bus, hl()),
         7 => return g_cpu.a,
+        else => unreachable,
+    }
+}
+
+fn regSet(idx: u8, value: u8) void {
+    switch (idx) {
+        0 => g_cpu.b = value,
+        1 => g_cpu.c = value,
+        2 => g_cpu.d = value,
+        3 => g_cpu.e = value,
+        4 => g_cpu.h = value,
+        5 => g_cpu.l = value,
+        6 => mmumod.write8(&g_bus, hl(), value),
+        7 => g_cpu.a = value,
         else => unreachable,
     }
 }
@@ -926,11 +955,243 @@ fn testCalls() void {
     }
 }
 
+fn cbExpectShift(kind: u8, value: u8, carry_in: bool, out_result: *u8, out_z: *bool, out_c: *bool) void {
+    const x: u16 = @intCast(u16, value);
+    var result: u16 = x;
+    var carry: bool = false;
+    switch (kind) {
+        0 => {
+            carry = (x & 0x80) != 0;
+            const bit: u16 = if (carry) 1 else 0;
+            result = ((x << 1) | bit) & 0xFF;
+        },
+        1 => {
+            carry = (x & 0x01) != 0;
+            const bit: u16 = if (carry) 0x80 else 0;
+            result = ((x >> 1) | bit) & 0xFF;
+        },
+        2 => {
+            carry = (x & 0x80) != 0;
+            const bit: u16 = if (carry_in) 1 else 0;
+            result = ((x << 1) | bit) & 0xFF;
+        },
+        3 => {
+            carry = (x & 0x01) != 0;
+            const bit: u16 = if (carry_in) 0x80 else 0;
+            result = ((x >> 1) | bit) & 0xFF;
+        },
+        4 => {
+            carry = (x & 0x80) != 0;
+            result = (x << 1) & 0xFF;
+        },
+        5 => {
+            carry = (x & 0x01) != 0;
+            result = (x >> 1) | (x & 0x80);
+        },
+        6 => {
+            carry = false;
+            result = ((x & 0x0F) << 4) | ((x & 0xF0) >> 4);
+        },
+        7 => {
+            carry = (x & 0x01) != 0;
+            result = (x >> 1) & 0xFF;
+        },
+        else => unreachable,
+    }
+    out_result.* = @intCast(u8, result & 0xFF);
+    out_z.* = (result & 0xFF) == 0;
+    out_c.* = carry;
+}
+
+fn testCbRotates() void {
+    const vals = [5]u8{ 0x00, 0x01, 0x80, 0xFF, 0x81 };
+    var kind: u8 = 0;
+    while (kind < 8) : (kind += 1) {
+        var vi: usize = 0;
+        while (vi < vals.len) : (vi += 1) {
+            var ci: usize = 0;
+            while (ci < 2) : (ci += 1) {
+                const carry_in: bool = ci == 1;
+                const in_flags: u8 = if (carry_in) FLAG_C else 0;
+                var want_result: u8 = 0;
+                var want_z: bool = false;
+                var want_c: bool = false;
+                cbExpectShift(kind, vals[vi], carry_in, &want_result, &want_z, &want_c);
+
+                reset();
+                g_cpu.b = vals[vi];
+                g_cpu.f = in_flags;
+                const reg_cycles: u32 = runCbC(CODE, @intCast(u8, (@intCast(u16, kind) << 3) & 0x38));
+                checkByte("cb rot reg result", g_cpu.b, want_result);
+                checkFlags("cb rot reg flags", want_z, false, false, want_c);
+                checkCycles("cb rot reg cycles", reg_cycles, 8);
+
+                reset();
+                g_cpu.h = 0xC1;
+                g_cpu.l = 0x00;
+                mmumod.write8(&g_bus, 0xC100, vals[vi]);
+                g_cpu.f = in_flags;
+                const hl_cycles: u32 = runCbC(CODE, @intCast(u8, ((@intCast(u16, kind) << 3) & 0x38) | 0x06));
+                checkByte("cb rot hl result", mmumod.read8(&g_bus, 0xC100), want_result);
+                checkFlags("cb rot hl flags", want_z, false, false, want_c);
+                checkCycles("cb rot hl cycles", hl_cycles, 16);
+            }
+        }
+    }
+}
+
+fn testCbAllRegs() void {
+    var idx: u8 = 0;
+    while (idx < 8) : (idx += 1) {
+        reset();
+        g_cpu.h = 0xC1;
+        g_cpu.l = 0x00;
+        regSet(idx, 0x81);
+        const cycles: u32 = runCbC(CODE, idx);
+        checkByte("cb rlc all regs", regGet(idx), 0x03);
+        checkFlags("cb rlc all regs flags", false, false, false, true);
+        checkCycles("cb rlc all regs cycles", cycles, if (idx == 6) 16 else 8);
+    }
+}
+
+fn testCbBit() void {
+    var bit: u8 = 0;
+    while (bit < 8) : (bit += 1) {
+        const sh: u8 = @intCast(u8, (@intCast(u16, bit) << 3) & 0x38);
+        const mask: u8 = @intCast(u8, cbMask(bit));
+
+        reset();
+        g_cpu.b = mask;
+        g_cpu.f = FLAG_Z | FLAG_N | FLAG_H | FLAG_C;
+        const reg_cycles: u32 = runCbC(CODE, @intCast(u8, 0x40 | @intCast(u16, sh)));
+        checkByte("cb bit set keeps b", g_cpu.b, mask);
+        checkFlags("cb bit set flags", false, false, false, true);
+        checkCycles("cb bit reg cycles", reg_cycles, 8);
+
+        reset();
+        g_cpu.b = 0;
+        g_cpu.f = FLAG_N | FLAG_H | FLAG_C;
+        _ = runCbC(CODE, @intCast(u8, 0x40 | @intCast(u16, sh)));
+        checkFlags("cb bit clear flags", true, false, false, true);
+
+        reset();
+        g_cpu.h = 0xC1;
+        g_cpu.l = 0x10;
+        mmumod.write8(&g_bus, 0xC110, mask);
+        g_cpu.f = FLAG_N | FLAG_H | FLAG_C;
+        const hl_cycles: u32 = runCbC(CODE, @intCast(u8, 0x40 | @intCast(u16, sh) | 0x06));
+        checkByte("cb bit hl keeps", mmumod.read8(&g_bus, 0xC110), mask);
+        checkFlags("cb bit hl set flags", false, false, false, true);
+        checkCycles("cb bit hl cycles", hl_cycles, 12);
+
+        reset();
+        g_cpu.h = 0xC1;
+        g_cpu.l = 0x10;
+        mmumod.write8(&g_bus, 0xC110, 0);
+        g_cpu.f = FLAG_N | FLAG_H | FLAG_C;
+        _ = runCbC(CODE, @intCast(u8, 0x40 | @intCast(u16, sh) | 0x06));
+        checkFlags("cb bit hl clear flags", true, false, false, true);
+    }
+}
+
+fn testCbResSet() void {
+    var bit: u8 = 0;
+    while (bit < 8) : (bit += 1) {
+        const sh: u8 = @intCast(u8, (@intCast(u16, bit) << 3) & 0x38);
+        const mask: u16 = cbMask(bit);
+        const mask8: u8 = @intCast(u8, mask);
+        const cleared: u8 = @intCast(u8, @intCast(u16, 0xFF) & ~mask);
+
+        reset();
+        g_cpu.b = 0xFF;
+        g_cpu.f = 0xF0;
+        const res_reg_cycles: u32 = runCbC(CODE, @intCast(u8, 0x80 | @intCast(u16, sh)));
+        checkByte("cb res reg", g_cpu.b, cleared);
+        checkFlags("cb res reg flags", true, true, true, true);
+        checkCycles("cb res reg cycles", res_reg_cycles, 8);
+
+        reset();
+        g_cpu.h = 0xC1;
+        g_cpu.l = 0x20;
+        mmumod.write8(&g_bus, 0xC120, 0xFF);
+        g_cpu.f = 0xF0;
+        const res_hl_cycles: u32 = runCbC(CODE, @intCast(u8, 0x80 | @intCast(u16, sh) | 0x06));
+        checkByte("cb res hl", mmumod.read8(&g_bus, 0xC120), cleared);
+        checkFlags("cb res hl flags", true, true, true, true);
+        checkCycles("cb res hl cycles", res_hl_cycles, 16);
+
+        reset();
+        g_cpu.b = 0x00;
+        g_cpu.f = 0xF0;
+        const set_reg_cycles: u32 = runCbC(CODE, @intCast(u8, 0xC0 | @intCast(u16, sh)));
+        checkByte("cb set reg", g_cpu.b, mask8);
+        checkFlags("cb set reg flags", true, true, true, true);
+        checkCycles("cb set reg cycles", set_reg_cycles, 8);
+
+        reset();
+        g_cpu.h = 0xC1;
+        g_cpu.l = 0x20;
+        mmumod.write8(&g_bus, 0xC120, 0x00);
+        g_cpu.f = 0xF0;
+        const set_hl_cycles: u32 = runCbC(CODE, @intCast(u8, 0xC0 | @intCast(u16, sh) | 0x06));
+        checkByte("cb set hl", mmumod.read8(&g_bus, 0xC120), mask8);
+        checkFlags("cb set hl flags", true, true, true, true);
+        checkCycles("cb set hl cycles", set_hl_cycles, 16);
+    }
+}
+
+fn testCbBoundaries() void {
+    reset();
+    g_cpu.b = 0x80;
+    g_cpu.f = 0;
+    const c00: u32 = runCbC(CODE, 0x00);
+    checkByte("cb 0x00 result", g_cpu.b, 0x01);
+    checkFlags("cb 0x00 flags", false, false, false, true);
+    checkCycles("cb 0x00 cycles", c00, 8);
+
+    reset();
+    g_cpu.a = 0x01;
+    g_cpu.f = 0;
+    const c3f: u32 = runCbC(CODE, 0x3F);
+    checkByte("cb 0x3F result", g_cpu.a, 0x00);
+    checkFlags("cb 0x3F flags", true, false, false, true);
+    checkCycles("cb 0x3F cycles", c3f, 8);
+
+    reset();
+    g_cpu.a = 0x80;
+    g_cpu.f = FLAG_C;
+    const c7f: u32 = runCbC(CODE, 0x7F);
+    checkByte("cb 0x7F keeps a", g_cpu.a, 0x80);
+    checkFlags("cb 0x7F flags", false, false, false, true);
+    checkCycles("cb 0x7F cycles", c7f, 8);
+
+    reset();
+    g_cpu.b = 0xFF;
+    g_cpu.f = 0xF0;
+    const c80: u32 = runCbC(CODE, 0x80);
+    checkByte("cb 0x80 result", g_cpu.b, 0xFE);
+    checkFlags("cb 0x80 flags", true, true, true, true);
+    checkCycles("cb 0x80 cycles", c80, 8);
+
+    reset();
+    g_cpu.a = 0x00;
+    g_cpu.f = 0xF0;
+    const cff: u32 = runCbC(CODE, 0xFF);
+    checkByte("cb 0xFF result", g_cpu.a, 0x80);
+    checkFlags("cb 0xFF flags", true, true, true, true);
+    checkCycles("cb 0xFF cycles", cff, 8);
+}
+
 pub fn main() void {
     testAlu();
     testIncDec();
     testDaa();
     testRotates();
+    testCbRotates();
+    testCbAllRegs();
+    testCbBit();
+    testCbResSet();
+    testCbBoundaries();
     testMisc();
     testSpOffset();
     testLoads();
