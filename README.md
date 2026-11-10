@@ -56,10 +56,13 @@ closure moved it to `de5e99b6…`, and the final expected-type fix moved it to
 is byte-identical (see [Determinism](#determinism)), and the maintained example matrix is
 **29/29** dump/gcc/link.
 The mi_matrix corpus at `-s0` is enumerated by the canonical generator
-[`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the v147
-classification (Phase 3.5 Task 12 re-anchor; unchanged by the expected-type fix) is
-1278 dirs = 1092 OK / 63 GREEN /
-123 FAIL / 0 ICE / 0 CRASH, class md5 `c0c3fdc5dbf09c294b75eac98523cd73`, with goldens
+[`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the Phase 4 P2
+measurement with the v147 compiler is
+1279 dirs = 1093 OK / 63 GREEN /
+123 FAIL / 0 ICE / 0 CRASH, class md5 `47cac0ca24240759d0df922e5fd7a976` (the v147
+Phase 3.5 anchor was 1278 = 1092 OK / 63 GREEN / 123 FAIL, class md5
+`c0c3fdc5dbf09c294b75eac98523cd73`; the added OK entry is the now-enumerated
+`examples/z98/z9gb`), with goldens
 5/5 and stdlib 376/0 + crosscheck 10/10. The frozen-1124 subset is
 `17eb6474b9ff6895cd1b3b3615584e3c` (950 OK / 59 GREEN / 115 FAIL; one operator-accepted
 D15 consequence: `switch_case_qualifier_reject_xmod` FAIL→GREEN). The upgraded showcase gate
@@ -198,10 +201,11 @@ at v147. Analyzer
 warnings remain on stderr and do not contaminate the stdout hash; the
 runtime goldens remain byte-identical. Corpus/golden
 summary: the corpus universe is enumerated by
-`scripts/corpus/list_corpus_dirs.sh`; the v147 measurement (Phase 3.5 Task 12 re-anchor;
-unchanged by the expected-type fix) is
-1278 dirs = 1092 OK / 63 GREEN / 123 FAIL / 0 ICE / 0 CRASH (class md5
-`c0c3fdc5dbf09c294b75eac98523cd73`; growth is additive from new Phase 3.5 fixtures).
+`scripts/corpus/list_corpus_dirs.sh`; the Phase 4 P2 measurement with the v147 compiler is
+1279 dirs = 1093 OK / 63 GREEN / 123 FAIL / 0 ICE / 0 CRASH (class md5
+`47cac0ca24240759d0df922e5fd7a976`; the v147 Phase 3.5 anchor was 1278 = 1092 OK / 63 GREEN /
+123 FAIL, class md5 `c0c3fdc5dbf09c294b75eac98523cd73`; the added OK entry is the
+now-enumerated `examples/z98/z9gb`).
 The frozen-1124 subset is `17eb6474b9ff6895cd1b3b3615584e3c` (950 OK / 59 GREEN / 115 FAIL):
 one operator-accepted D15 consequence, `switch_case_qualifier_reject_xmod` FAIL→GREEN (the
 new `error[3000]` prong-type diagnostic makes the classifier's green-guard rule fire).
@@ -614,9 +618,10 @@ complete programs that exercise the language-wins features and the PAL/networkin
   shallow/partial clone, resumable prefix packs, and a bounded external-memory idx writer).
 - **`z9zstddecomp`** — a single-shot zstd frame decompressor CLI (`std_zstd` frames, skippable
   frames, checksums, and RFC 8878 magic/raw dictionaries; bounded output and window caps).
-- **`z9gb`** — a Game Boy emulator shell, currently at **P1 (platform abstraction + deterministic
-  headless backend)**: `--headless`, `--frames`, `--fb-out`, and a size-checked `--rom` load;
-  no header parsing or emulation until P2.
+- **`z9gb`** — a DMG (original Game Boy) emulator, currently at **P2 (DMG core)**: CPU,
+  MMU/timer/serial, scanline PPU, MBC1/MBC3(+RTC)/MBC5, battery `.sav`/`.rtc` saves, and a
+  deterministic headless backend. No CGB, APU, or windowed/DirectX backend. Gates:
+  `tests/tier_dmg.sh` (`--all`, `--gates`) plus `tests/measure_rss.sh`.
 - Plus the classic single/multi-module programs (`hello`, `prime`, `fibonacci`, `days_in_month`,
   `heapsort`, `quicksort`, `sort_strings`, `mandelbrot`, `lzw`, `func_ptr_return`, `tco_*`).
 

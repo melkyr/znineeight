@@ -570,10 +570,11 @@ immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transfor
 - **App entries (matrix 29/29):** `examples/z98/z9git` (local/`file://` +
   smart HTTP(S) clone/log/checkout, shallow/partial/resume; gate
   `tests/tier_git.sh`) and `examples/z98/z9zstddecomp` (`std_zstd` frame/dict
-  CLI; gate `tests/tier_zstddecomp.sh`). `examples/z98/z9gb` is the Phase 4 P1
-  headless platform shell (`--headless`, `--frames`, `--fb-out`, `--rom`; no
-  emulation until P2; gate `tests/tier_smoke.sh`). Example READMEs carry the
-  exact CLI, flags and exit codes.
+  CLI; gate `tests/tier_zstddecomp.sh`). `examples/z98/z9gb` is the Phase 4 P2
+  DMG core (`--headless`, `--frames`, `--fb-out`, `--rom`, `--serial`,
+  `--turbo`, `--mooneye`, `--save`, `--rtc-fixed`; MBC1/MBC3(+RTC)/MBC5, DMG
+  CPU/PPU/timer/serial, battery saves; gates `tests/tier_dmg.sh --all` and
+  `--gates`). Example READMEs carry the exact CLI, flags and exit codes.
 
 ### Compile + run an example with the seed-built compiler
 
@@ -600,20 +601,38 @@ contains its own build scripts and runtime support; prefer
 Use the same `-fsafe -o <out>` + `build_target.sh linux` recipe on
 `examples/z98/mud_server/main.zig`. There is no current zig0 build cycle.
 
-### Build z9gb (P1 headless)
+### Build z9gb (P2 DMG core, headless)
 
 ```bash
 ZIG=${ZIG:-<out_dir>/zig1_5_clean}
-OUT=/tmp/z9gb_p1
+OUT=/tmp/z9gb_p2
 rm -rf "$OUT" && mkdir -p "$OUT"
 "$ZIG" -ffast -o "$OUT" examples/z98/z9gb/main.zig
 sh "$OUT/build_target.sh" linux "$OUT/z9gb"
-"$OUT/z9gb" --headless --frames 1 --fb-out /tmp/z9gb_p1.fb
+"$OUT/z9gb" --headless --frames 1 --fb-out /tmp/z9gb_p2.fb
 ```
 
-P1 is the platform shell only: `--rom` is a size-checked copy into the fixed
-8 MiB buffer, with no header parsing or emulation until P2. The headless
-framebuffer dump is 92,160 bytes (160×144 little-endian RGB32).
+P2 emulates a DMG CPU, MMU/timer/serial, and scanline PPU with
+MBC1/MBC3(+RTC)/MBC5 cartridges and battery `.sav`/`.rtc` saves. It does not
+emulate CGB, APU, or a windowed/direct backend. Headless is the only platform.
+The framebuffer dump is 92,160 bytes (160×144 little-endian RGB32).
+
+```bash
+# Inline tiers (fast + safe) and external hard gates; both must PASS:
+bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --all
+bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --gates
+# Memory + three-run framebuffer determinism:
+bash examples/z98/z9gb/tests/measure_rss.sh "$ZIG" /tmp/z9gb_p2_rss
+```
+
+External ROMs are not committed. Gate runners read `Z9GB_ROM_DIR`, else
+`/tmp/z9gb_roms`, else `examples/z98/z9gb/testdata/roms`; populate the tree from
+the pinned sources in `examples/z98/z9gb/testdata/roms/README.md` and verify
+with `sha256sum -c .../testdata/roms/manifest.sha256`. P2 hard gates are Blargg
+`cpu_instrs`/`instr_timing`/`mem_timing`, the 15-ROM Mooneye timer/MBC1/PPU/OAM
+subset, and `dmg-acid2` (golden SHA-256
+`c831675c9cff3289d505364286cfb5322a6807fa074386851744f28cdeb84083`). Blargg
+`interrupt_time` is CGB-only and is not a P2 gate.
 
 
 ## Run tests
