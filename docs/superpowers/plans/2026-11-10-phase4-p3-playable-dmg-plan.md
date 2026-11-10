@@ -231,7 +231,7 @@ Expected: PASS under `-ffast` and `-fsafe`; no trap on shift/mix.
 `tier_audio.sh --gate` adopts the amended P2 verdict-harness semantics verbatim: `dmg_sound.gb` runs with `--serial --turbo --frames 200000` (Blargg sound verdicts need minutes of emulated time; the emulator exits early on a terminal serial verdict). PASS requires the exact terminal `Passed` and no `Failed`; reaching the frame cap without a verdict is FAIL (timeout). Missing ROM = `SKIP` (exit 77) and cannot close the milestone.
 - [ ] **Step 7: Commit**
 ```bash
-git add examples/z98/z9gb/apu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/apu_test.zig examples/z98/z9gb/tests/tier_audio.sh
+git add examples/z98/z9gb/apu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/tests/apu_test.zig examples/z98/z9gb/tests/tier_audio.sh
 git commit -m "feat(z9gb): add DMG APU and audio ring"
 ```
 
