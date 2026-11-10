@@ -778,6 +778,26 @@ fn testStatInterrupts() void {
     checkByte("ppu lyc stat irq", g_bus.io[0x0F] & 0x02, 0x02);
 }
 
+fn testStatLineEdge() void {
+    reset();
+    tick(80);
+    tick(g_ppu.mode3_len);
+    checkByte("ppu stat line idle", g_bus.io[0x0F] & 0x02, 0x00);
+    writeReg(0xFF41, 0x08);
+    checkByte("ppu stat line rising irq", g_bus.io[0x0F] & 0x02, 0x02);
+
+    g_bus.io[0x0F] = 0;
+    tick(10);
+    checkByte("ppu stat line no refire", g_bus.io[0x0F] & 0x02, 0x00);
+
+    tick(456 - 80 - g_ppu.mode3_len - 10);
+    checkByte("ppu stat line cleared", g_bus.io[0x0F] & 0x02, 0x00);
+
+    tick(80);
+    tick(g_ppu.mode3_len);
+    checkByte("ppu stat line refire", g_bus.io[0x0F] & 0x02, 0x02);
+}
+
 fn testBackground() void {
     reset();
     writeReg(0xFF40, 0x91);
@@ -992,17 +1012,19 @@ fn testLycWriteAndLcd() void {
     g_ppu.dot = 99;
     g_ppu.line = 42;
     writeReg(0xFF40, 0x91);
-    checkByte("ppu lcd reenable mode", g_ppu.mode, 2);
+    checkByte("ppu lcd reenable mode", g_ppu.mode, 0);
     checkByte("ppu lcd reenable line", g_ppu.line, 0);
     checkByte("ppu lcd reenable dot", @intCast(u8, g_ppu.dot), 0);
     checkByte("ppu lcd reenable ly", g_ppu.ly, 0);
+    tick(80);
+    checkByte("ppu lcd reenable straight to mode3", g_ppu.mode, 3);
 
     reset();
     writeReg(0xFF41, 0x20);
     writeReg(0xFF40, 0x00);
     g_bus.io[0x0F] = 0;
     writeReg(0xFF40, 0x91);
-    checkByte("ppu lcd reenable mode2 irq", g_bus.io[0x0F] & 0x02, 0x02);
+    checkByte("ppu lcd reenable mode2 irq quiet", g_bus.io[0x0F] & 0x02, 0x00);
 }
 
 fn testSameValueLycWrite() void {
@@ -1055,6 +1077,7 @@ fn testEmuFramebuffer() void {
 pub fn main() void {
     testModeSequence();
     testStatInterrupts();
+    testStatLineEdge();
     testBackground();
     testWindow();
     testWindowClipping();

@@ -39,6 +39,7 @@ pub const Ppu = struct {
     wy: u8,
     wx: u8,
     coincidence: bool,
+    stat_line: bool,
     mode: u8,
     dot: u32,
     line: u8,
@@ -70,6 +71,20 @@ fn updatePalette(out: *[4]u32, reg: u8) void {
     }
 }
 
+fn statSignal(p: *const Ppu) bool {
+    if ((p.stat & 0x40) != 0 and p.coincidence) return true;
+    if (p.mode == 0) return (p.stat & 0x08) != 0;
+    if (p.mode == 1) return (p.stat & 0x10) != 0;
+    if (p.mode == 2) return (p.stat & 0x20) != 0;
+    return false;
+}
+
+fn updateStatLine(p: *Ppu, bus: *mmumod.Bus) void {
+    const high: bool = statSignal(p);
+    if (high and !p.stat_line) mmumod.busRaiseIrq(bus, 0x02);
+    p.stat_line = high;
+}
+
 pub fn ppuReset(p: *Ppu) void {
     p.lcdc = 0x91;
     p.stat = 0;
@@ -84,6 +99,7 @@ pub fn ppuReset(p: *Ppu) void {
     p.wy = 0;
     p.wx = 0;
     p.coincidence = true;
+    p.stat_line = false;
     p.mode = 2;
     p.dot = 0;
     p.line = 0;
@@ -145,8 +161,9 @@ pub fn ppuWrite(p: *Ppu, addr: u16, value: u8, bus: *mmumod.Bus) void {
                 p.win_skip = 0;
                 p.win_visible_len = 0;
                 p.coincidence = (p.ly == p.lyc);
+                updateStatLine(p, bus);
             } else if (!was_on and now_on) {
-                p.mode = 2;
+                p.mode = 0;
                 p.dot = 0;
                 p.line = 0;
                 p.ly = 0;
@@ -155,10 +172,13 @@ pub fn ppuWrite(p: *Ppu, addr: u16, value: u8, bus: *mmumod.Bus) void {
                 p.win_skip = 0;
                 p.win_visible_len = 0;
                 p.coincidence = (p.ly == p.lyc);
-                if ((p.stat & 0x20) != 0) mmumod.busRaiseIrq(bus, 0x02);
+                updateStatLine(p, bus);
             }
         },
-        0xFF41 => p.stat = value & 0x78,
+        0xFF41 => {
+            p.stat = value & 0x78;
+            updateStatLine(p, bus);
+        },
         0xFF42 => p.scy = value,
         0xFF43 => p.scx = value,
         0xFF44 => {},
@@ -167,6 +187,9 @@ pub fn ppuWrite(p: *Ppu, addr: u16, value: u8, bus: *mmumod.Bus) void {
             p.coincidence = (p.ly == p.lyc);
             if ((p.lcdc & 0x80) != 0 and p.coincidence and (p.stat & 0x40) != 0) {
                 mmumod.busRaiseIrq(bus, 0x02);
+                p.stat_line = true;
+            } else {
+                updateStatLine(p, bus);
             }
         },
         0xFF46 => p.dma = value,
@@ -485,11 +508,12 @@ fn startMode3(p: *Ppu, bus: *mmumod.Bus) void {
     p.mode3_len = computeMode3(p);
     p.mode = 3;
     renderLine(p, bus);
+    updateStatLine(p, bus);
 }
 
 fn enterMode0(p: *Ppu, bus: *mmumod.Bus) void {
     p.mode = 0;
-    if ((p.stat & 0x08) != 0) mmumod.busRaiseIrq(bus, 0x02);
+    updateStatLine(p, bus);
 }
 
 fn enterLine(p: *Ppu, bus: *mmumod.Bus, line: u8) void {
@@ -497,14 +521,12 @@ fn enterLine(p: *Ppu, bus: *mmumod.Bus, line: u8) void {
     p.ly = line;
     p.dot = 0;
     p.coincidence = (p.ly == p.lyc);
-    if (p.coincidence and (p.stat & 0x40) != 0) mmumod.busRaiseIrq(bus, 0x02);
     if (line < VISIBLE_LINES) {
         p.mode = 2;
-        if ((p.stat & 0x20) != 0) mmumod.busRaiseIrq(bus, 0x02);
     } else {
         p.mode = 1;
-        if (line == VISIBLE_LINES and (p.stat & 0x10) != 0) mmumod.busRaiseIrq(bus, 0x02);
     }
+    updateStatLine(p, bus);
 }
 
 fn nextLine(p: *Ppu, bus: *mmumod.Bus) void {
@@ -527,6 +549,7 @@ pub fn ppuTick(p: *Ppu, cycles: u32, bus: *mmumod.Bus) void {
         p.win_skip = 0;
         p.win_visible_len = 0;
         p.coincidence = (p.ly == p.lyc);
+        updateStatLine(p, bus);
         return;
     }
 

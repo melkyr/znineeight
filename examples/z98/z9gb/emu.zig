@@ -145,25 +145,27 @@ pub fn emuSelfTestPattern(e: *Emu) void {
 }
 
 fn ppuSyncIn(e: *Emu) void {
-    ppumod.ppuWrite(&e.ppu, 0xFF40, e.bus.io[0x40], &e.bus);
-    ppumod.ppuWrite(&e.ppu, 0xFF41, e.bus.io[0x41], &e.bus);
-    ppumod.ppuWrite(&e.ppu, 0xFF42, e.bus.io[0x42], &e.bus);
-    ppumod.ppuWrite(&e.ppu, 0xFF43, e.bus.io[0x43], &e.bus);
-    if (e.bus.lyc_dirty or e.bus.io[0x45] != e.ppu.lyc) {
-        e.bus.lyc_dirty = false;
-        ppumod.ppuWrite(&e.ppu, 0xFF45, e.bus.io[0x45], &e.bus);
+    const b: *mmumod.Bus = &e.bus;
+    ppumod.ppuWrite(&e.ppu, 0xFF40, b.io[0x40], b);
+    ppumod.ppuWrite(&e.ppu, 0xFF41, b.io[0x41], b);
+    ppumod.ppuWrite(&e.ppu, 0xFF42, b.io[0x42], b);
+    ppumod.ppuWrite(&e.ppu, 0xFF43, b.io[0x43], b);
+    if (b.lyc_dirty or b.io[0x45] != e.ppu.lyc) {
+        b.lyc_dirty = false;
+        ppumod.ppuWrite(&e.ppu, 0xFF45, b.io[0x45], b);
     }
-    ppumod.ppuWrite(&e.ppu, 0xFF46, e.bus.io[0x46], &e.bus);
-    ppumod.ppuWrite(&e.ppu, 0xFF47, e.bus.io[0x47], &e.bus);
-    ppumod.ppuWrite(&e.ppu, 0xFF48, e.bus.io[0x48], &e.bus);
-    ppumod.ppuWrite(&e.ppu, 0xFF49, e.bus.io[0x49], &e.bus);
-    ppumod.ppuWrite(&e.ppu, 0xFF4A, e.bus.io[0x4A], &e.bus);
-    ppumod.ppuWrite(&e.ppu, 0xFF4B, e.bus.io[0x4B], &e.bus);
+    ppumod.ppuWrite(&e.ppu, 0xFF46, b.io[0x46], b);
+    ppumod.ppuWrite(&e.ppu, 0xFF47, b.io[0x47], b);
+    ppumod.ppuWrite(&e.ppu, 0xFF48, b.io[0x48], b);
+    ppumod.ppuWrite(&e.ppu, 0xFF49, b.io[0x49], b);
+    ppumod.ppuWrite(&e.ppu, 0xFF4A, b.io[0x4A], b);
+    ppumod.ppuWrite(&e.ppu, 0xFF4B, b.io[0x4B], b);
 }
 
 fn ppuSyncOut(e: *Emu) void {
-    e.bus.io[0x41] = ppumod.ppuRead(&e.ppu, 0xFF41);
-    e.bus.io[0x44] = ppumod.ppuRead(&e.ppu, 0xFF44);
+    const b: *mmumod.Bus = &e.bus;
+    b.io[0x41] = ppumod.ppuRead(&e.ppu, 0xFF41);
+    b.io[0x44] = ppumod.ppuRead(&e.ppu, 0xFF44);
 }
 
 pub fn emuRunFrame(e: *Emu) u32 {
