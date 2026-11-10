@@ -71,9 +71,13 @@ fn trimEq(buf: []const u8, len: usize, want: []const u8) bool {
 }
 
 // Blargg verdicts are whole serial lines. Track the current line and latch the
-// terminal `Passed`/`Failed` so main can exit before the frame cap.
+// terminal `Passed`/`Passed all tests`/`Failed` so main can exit before the
+// frame cap. Both the period and no-period spellings are accepted.
 fn finishSerialLine() void {
-    if (trimEq(g_line_buf[0..], g_line_len, "Passed")) {
+    if (trimEq(g_line_buf[0..], g_line_len, "Passed") or
+        trimEq(g_line_buf[0..], g_line_len, "Passed all tests.") or
+        trimEq(g_line_buf[0..], g_line_len, "Passed all tests"))
+    {
         g_verdict = VERDICT_PASS;
     } else if (trimEq(g_line_buf[0..], g_line_len, "Failed")) {
         g_verdict = VERDICT_FAIL;

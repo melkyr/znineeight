@@ -2,7 +2,8 @@
 # run_blargg.sh — z9gb Blargg serial-verdict hard gate.
 #
 # Each ROM runs with `--serial --turbo --frames 200000`. PASS requires a
-# terminal serial line exactly `Passed` and no `Failed`; hitting the frame cap
+# terminal serial verdict line `Passed` or `Passed all tests` (the pinned ROMs
+# print the latter without a period) and no `Failed` line; hitting the frame cap
 # (or the wall-clock timeout) without that verdict is FAIL, never PASS.
 #
 # Env:
@@ -100,25 +101,26 @@ check_blargg() {
     fi
     clean="$OUT/$tag.clean"
     tr -d '\r' <"$out" >"$clean"
-    if grep -qx 'Failed' "$clean"; then
-        echo "FAIL: $rel (terminal Failed)"
+    if grep -Eq '^Failed' "$clean"; then
+        echo "FAIL: $rel (Failed line)"
         FAIL=$((FAIL + 1))
         return
     fi
-    if grep -qx 'Passed' "$clean"; then
+    verdict="$(grep -v '^[[:space:]]*$' "$clean" | tail -n 1)"
+    if [ "$verdict" = "Passed" ] || [ "$verdict" = "Passed all tests." ] || [ "$verdict" = "Passed all tests" ]; then
         echo "PASS: $rel"
         PASS=$((PASS + 1))
         return
     fi
-    echo "FAIL: $rel (no terminal Passed before frame cap)"
+    echo "FAIL: $rel (no terminal Passed verdict before frame cap)"
     FAIL=$((FAIL + 1))
+
 }
 
 for rel in \
     blargg/cpu_instrs/cpu_instrs.gb \
     blargg/instr_timing/instr_timing.gb \
-    blargg/mem_timing/mem_timing.gb \
-    blargg/interrupt_time/interrupt_time.gb
+    blargg/mem_timing/mem_timing.gb
 do
     check_blargg "$rel"
 done

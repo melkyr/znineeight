@@ -20,7 +20,7 @@ fn bumpTima(t: *Timer) void {
     if (t.reload != 0) return;
     if (t.tima == 0xFF) {
         t.tima = 0;
-        t.reload = 16;
+        t.reload = 4;
         return;
     }
     t.tima = @intCast(u8, (@as(u16, t.tima) + 1) & 0xFF);

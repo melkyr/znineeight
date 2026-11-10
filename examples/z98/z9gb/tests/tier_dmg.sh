@@ -346,8 +346,8 @@ fn testOverflow() void {
     tick(1);
     checkByte("overflow holds zero", tRead(0xFF05), 0x00);
     checkByte("overflow if delayed", g_bus.io[0x0F] & 0x04, 0x00);
-    tick(15);
-    checkByte("overflow holds 4 mcycles", tRead(0xFF05), 0x00);
+    tick(3);
+    checkByte("overflow holds 1 mcycle", tRead(0xFF05), 0x00);
     checkByte("overflow if still quiet", g_bus.io[0x0F] & 0x04, 0x00);
     tick(1);
     checkByte("overflow reloads tma", tRead(0xFF05), 0x42);

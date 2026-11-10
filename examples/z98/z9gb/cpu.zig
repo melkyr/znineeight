@@ -76,6 +76,32 @@ fn setFlags(cpu: *Cpu, z: bool, n: bool, h: bool, c: bool) void {
     cpu.f = f;
 }
 
+fn busTick4(cpu: *Cpu, bus: *Bus) void {
+    cpu.cycles +%= 4;
+    mmumod.busTick(bus, 4);
+}
+
+fn busRead8(cpu: *Cpu, bus: *Bus, addr: u16) u8 {
+    busTick4(cpu, bus);
+    return mmumod.read8(bus, addr);
+}
+
+fn busWrite8(cpu: *Cpu, bus: *Bus, addr: u16, value: u8) void {
+    busTick4(cpu, bus);
+    mmumod.write8(bus, addr, value);
+}
+
+fn busRead16(cpu: *Cpu, bus: *Bus, addr: u16) u16 {
+    const lo: u16 = @intCast(u16, busRead8(cpu, bus, addr));
+    const hi: u16 = @intCast(u16, busRead8(cpu, bus, addr +% 1));
+    return lo | (hi << 8);
+}
+
+fn busWrite16(cpu: *Cpu, bus: *Bus, addr: u16, value: u16) void {
+    busWrite8(cpu, bus, addr, @intCast(u8, value & 0xFF));
+    busWrite8(cpu, bus, addr +% 1, @intCast(u8, value >> 8));
+}
+
 fn hlValue(cpu: *const Cpu) u16 {
     const h: u16 = @intCast(u16, cpu.h);
     const l: u16 = @intCast(u16, cpu.l);
@@ -246,14 +272,14 @@ fn spOffsetFlags(cpu: *Cpu, e: u8) void {
     setFlags(cpu, false, false, low > 0x0F, byte > 0xFF);
 }
 
-fn aluOperand(cpu: *const Cpu, bus: *Bus, idx: u8) u8 {
-    if (idx == 6) return mmumod.read8(bus, hlValue(cpu));
+fn aluOperand(cpu: *Cpu, bus: *Bus, idx: u8) u8 {
+    if (idx == 6) return busRead8(cpu, bus, hlValue(cpu));
     return readReg(cpu, idx);
 }
 
 fn aluStore(cpu: *Cpu, bus: *Bus, idx: u8, value: u8) void {
     if (idx == 6) {
-        mmumod.write8(bus, hlValue(cpu), value);
+        busWrite8(cpu, bus, hlValue(cpu), value);
     } else {
         writeReg(cpu, idx, value);
     }
@@ -304,7 +330,7 @@ fn writeReg16(cpu: *Cpu, idx: u8, value: u16) void {
 }
 
 fn ldReg16Imm(cpu: *Cpu, bus: *Bus, idx: u8) void {
-    const value: u16 = mmumod.read16(bus, cpu.pc);
+    const value: u16 = busRead16(cpu, bus, cpu.pc);
     cpu.pc = cpu.pc +% 2;
     writeReg16(cpu, idx, value);
 }
@@ -331,11 +357,11 @@ fn addHl(cpu: *Cpu, value: u16) void {
 
 fn push16(cpu: *Cpu, bus: *Bus, value: u16) void {
     cpu.sp = cpu.sp -% 2;
-    mmumod.write16(bus, cpu.sp, value);
+    busWrite16(cpu, bus, cpu.sp, value);
 }
 
 fn pop16(cpu: *Cpu, bus: *Bus) u16 {
-    const value: u16 = mmumod.read16(bus, cpu.sp);
+    const value: u16 = busRead16(cpu, bus, cpu.sp);
     cpu.sp = cpu.sp +% 2;
     return value;
 }
@@ -355,7 +381,7 @@ fn condCode(op: u8) u8 {
 }
 
 fn ldRegImm(cpu: *Cpu, bus: *Bus, idx: u8) void {
-    const value: u8 = mmumod.read8(bus, cpu.pc);
+    const value: u8 = busRead8(cpu, bus, cpu.pc);
     cpu.pc = cpu.pc +% 1;
     aluStore(cpu, bus, idx, value);
 }
@@ -385,7 +411,7 @@ fn aluGroup(cpu: *Cpu, bus: *Bus, group: u16, idx: u8) void {
 }
 
 fn aluImm(cpu: *Cpu, bus: *Bus, group: u16) void {
-    const value: u8 = mmumod.read8(bus, cpu.pc);
+    const value: u8 = busRead8(cpu, bus, cpu.pc);
     cpu.pc = cpu.pc +% 1;
     aluApply(cpu, group, value);
 }
@@ -451,11 +477,11 @@ fn cbBit(cpu: *Cpu, bit: u8, value: u8) void {
     const is_set: bool = (x & cbMask(bit)) != 0;
     setFlag(cpu, FLAG_Z, !is_set);
     setFlag(cpu, FLAG_N, false);
-    setFlag(cpu, FLAG_H, false);
+    setFlag(cpu, FLAG_H, true);
 }
 
 fn cbExec(cpu: *Cpu, bus: *Bus) u32 {
-    const op2: u8 = mmumod.read8(bus, cpu.pc);
+    const op2: u8 = busRead8(cpu, bus, cpu.pc);
     cpu.pc = cpu.pc +% 1;
     const idx: u8 = op2 & 0x07;
     const bit: u8 = @intCast(u8, (@intCast(u16, op2) >> 3) & 0x07);
@@ -540,10 +566,11 @@ fn serviceInterrupt(cpu: *Cpu, bus: *Bus) u32 {
             clearInterrupt(bus, bit);
             cpu.ime = false;
             cpu.ei_delay = 0;
+            busTick4(cpu, bus);
+            busTick4(cpu, bus);
             push16(cpu, bus, cpu.pc);
             cpu.pc = @intCast(u16, 0x40 + @as(u16, i) * 8);
-            cpu.cycles +%= 20;
-            mmumod.busTick(bus, 20);
+            busTick4(cpu, bus);
             return 20;
         }
     }
@@ -551,20 +578,21 @@ fn serviceInterrupt(cpu: *Cpu, bus: *Bus) u32 {
 }
 
 pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
+    const start_cycles: u64 = cpu.cycles;
     if (cpu.halted) {
         if (pendingInterrupts(bus) != 0) {
             cpu.halted = false;
         } else {
-            cpu.cycles +%= 4;
-            mmumod.busTick(bus, 4);
+            busTick4(cpu, bus);
             return 4;
+
         }
     }
     if (cpu.ime and pendingInterrupts(bus) != 0) {
         return serviceInterrupt(cpu, bus);
     }
 
-    const op: u8 = mmumod.read8(bus, cpu.pc);
+    const op: u8 = busRead8(cpu, bus, cpu.pc);
     if (cpu.halt_bug) {
         cpu.halt_bug = false;
     } else {
@@ -574,6 +602,9 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
 
     switch (op) {
         0x00 => {},
+        0x10 => {
+            cpu.pc = cpu.pc +% 1;
+        },
         0x04, 0x0C, 0x14, 0x1C, 0x24, 0x2C, 0x34, 0x3C => {
             const idx: u8 = @intCast(u8, (@intCast(u16, op) >> 3) & 0x07);
             incReg(cpu, bus, idx);
@@ -626,7 +657,7 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             var addr: u16 = addr_hl;
             if (which == 0) addr = readReg16(cpu, 0);
             if (which == 1) addr = readReg16(cpu, 1);
-            mmumod.write8(bus, addr, cpu.a);
+            busWrite8(cpu, bus, addr, cpu.a);
             if (which == 2) setHl(cpu, addr_hl +% 1);
             if (which == 3) setHl(cpu, addr_hl -% 1);
         },
@@ -636,7 +667,7 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             var addr: u16 = addr_hl;
             if (which == 0) addr = readReg16(cpu, 0);
             if (which == 1) addr = readReg16(cpu, 1);
-            cpu.a = mmumod.read8(bus, addr);
+            cpu.a = busRead8(cpu, bus, addr);
             if (which == 2) setHl(cpu, addr_hl +% 1);
             if (which == 3) setHl(cpu, addr_hl -% 1);
         },
@@ -649,21 +680,21 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             decReg16(cpu, rr);
         },
         0x08 => {
-            const addr: u16 = mmumod.read16(bus, cpu.pc);
+            const addr: u16 = busRead16(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 2;
-            mmumod.write16(bus, addr, cpu.sp);
+            busWrite16(cpu, bus, addr, cpu.sp);
         },
         0x09, 0x19, 0x29, 0x39 => {
             const rr: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
             addHl(cpu, readReg16(cpu, rr));
         },
         0x18 => {
-            const e: u8 = mmumod.read8(bus, cpu.pc);
+            const e: u8 = busRead8(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 1;
             cpu.pc = cpu.pc +% signedOffset(e);
         },
         0x20, 0x28, 0x30, 0x38 => {
-            const e: u8 = mmumod.read8(bus, cpu.pc);
+            const e: u8 = busRead8(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 1;
             if (condition(cpu, condCode(op))) {
                 cpu.pc = cpu.pc +% signedOffset(e);
@@ -698,7 +729,7 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             }
         },
         0xC2, 0xCA, 0xD2, 0xDA => {
-            const dest: u16 = mmumod.read16(bus, cpu.pc);
+            const dest: u16 = busRead16(cpu, bus, cpu.pc);
             if (condition(cpu, condCode(op))) {
                 cpu.pc = dest;
                 cycles += 4;
@@ -707,10 +738,10 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             }
         },
         0xC3 => {
-            cpu.pc = mmumod.read16(bus, cpu.pc);
+            cpu.pc = busRead16(cpu, bus, cpu.pc);
         },
         0xC4, 0xCC, 0xD4, 0xDC => {
-            const dest: u16 = mmumod.read16(bus, cpu.pc);
+            const dest: u16 = busRead16(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 2;
             if (condition(cpu, condCode(op))) {
                 push16(cpu, bus, cpu.pc);
@@ -742,7 +773,7 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             cycles = cbExec(cpu, bus);
         },
         0xCD => {
-            const dest: u16 = mmumod.read16(bus, cpu.pc);
+            const dest: u16 = busRead16(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 2;
             push16(cpu, bus, cpu.pc);
             cpu.pc = dest;
@@ -753,12 +784,12 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             cpu.ei_delay = 0;
         },
         0xE0 => {
-            const a8: u8 = mmumod.read8(bus, cpu.pc);
+            const a8: u8 = busRead8(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 1;
-            mmumod.write8(bus, 0xFF00 +% @intCast(u16, a8), cpu.a);
+            busWrite8(cpu, bus, 0xFF00 +% @intCast(u16, a8), cpu.a);
         },
         0xE2 => {
-            mmumod.write8(bus, 0xFF00 +% @intCast(u16, cpu.c), cpu.a);
+            busWrite8(cpu, bus, 0xFF00 +% @intCast(u16, cpu.c), cpu.a);
         },
         0xF3 => {
             cpu.ime = false;
@@ -771,35 +802,35 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             cpu.pc = hlValue(cpu);
         },
         0xEA => {
-            const addr: u16 = mmumod.read16(bus, cpu.pc);
+            const addr: u16 = busRead16(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 2;
-            mmumod.write8(bus, addr, cpu.a);
+            busWrite8(cpu, bus, addr, cpu.a);
         },
         0xF0 => {
-            const a8: u8 = mmumod.read8(bus, cpu.pc);
+            const a8: u8 = busRead8(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 1;
-            cpu.a = mmumod.read8(bus, 0xFF00 +% @intCast(u16, a8));
+            cpu.a = busRead8(cpu, bus, 0xFF00 +% @intCast(u16, a8));
         },
         0xF2 => {
-            cpu.a = mmumod.read8(bus, 0xFF00 +% @intCast(u16, cpu.c));
+            cpu.a = busRead8(cpu, bus, 0xFF00 +% @intCast(u16, cpu.c));
         },
         0xFA => {
-            const addr: u16 = mmumod.read16(bus, cpu.pc);
+            const addr: u16 = busRead16(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 2;
-            cpu.a = mmumod.read8(bus, addr);
+            cpu.a = busRead8(cpu, bus, addr);
         },
         0xF9 => {
             cpu.sp = hlValue(cpu);
         },
         0xE8 => {
-            const e: u8 = mmumod.read8(bus, cpu.pc);
+            const e: u8 = busRead8(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 1;
             const result: u16 = cpu.sp +% signedOffset(e);
             spOffsetFlags(cpu, e);
             cpu.sp = result;
         },
         0xF8 => {
-            const e: u8 = mmumod.read8(bus, cpu.pc);
+            const e: u8 = busRead8(cpu, bus, cpu.pc);
             cpu.pc = cpu.pc +% 1;
             const result: u16 = cpu.sp +% signedOffset(e);
             spOffsetFlags(cpu, e);
@@ -812,7 +843,13 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
         cpu.ei_delay -= 1;
         if (cpu.ei_delay == 0) cpu.ime = true;
     }
-    cpu.cycles +%= @intCast(u64, cycles);
-    mmumod.busTick(bus, cycles);
+    const used: u64 = cpu.cycles - start_cycles;
+    const total: u64 = @intCast(u64, cycles);
+    if (used < total) {
+        const remaining: u32 = @intCast(u32, total - used);
+        cpu.cycles +%= @intCast(u64, remaining);
+        mmumod.busTick(bus, remaining);
+    }
     return cycles;
+
 }

@@ -1092,14 +1092,14 @@ fn testCbBit() void {
         g_cpu.f = FLAG_Z | FLAG_N | FLAG_H | FLAG_C;
         const reg_cycles: u32 = runCbC(CODE, @intCast(u8, 0x40 | @intCast(u16, sh)));
         checkByte("cb bit set keeps b", g_cpu.b, mask);
-        checkFlags("cb bit set flags", false, false, false, true);
+        checkFlags("cb bit set flags", false, false, true, true);
         checkCycles("cb bit reg cycles", reg_cycles, 8);
 
         reset();
         g_cpu.b = 0;
         g_cpu.f = FLAG_N | FLAG_H | FLAG_C;
         _ = runCbC(CODE, @intCast(u8, 0x40 | @intCast(u16, sh)));
-        checkFlags("cb bit clear flags", true, false, false, true);
+        checkFlags("cb bit clear flags", true, false, true, true);
 
         reset();
         g_cpu.h = 0xC1;
@@ -1108,7 +1108,7 @@ fn testCbBit() void {
         g_cpu.f = FLAG_N | FLAG_H | FLAG_C;
         const hl_cycles: u32 = runCbC(CODE, @intCast(u8, 0x40 | @intCast(u16, sh) | 0x06));
         checkByte("cb bit hl keeps", mmumod.read8(&g_bus, 0xC110), mask);
-        checkFlags("cb bit hl set flags", false, false, false, true);
+        checkFlags("cb bit hl set flags", false, false, true, true);
         checkCycles("cb bit hl cycles", hl_cycles, 12);
 
         reset();
@@ -1117,7 +1117,7 @@ fn testCbBit() void {
         mmumod.write8(&g_bus, 0xC110, 0);
         g_cpu.f = FLAG_N | FLAG_H | FLAG_C;
         _ = runCbC(CODE, @intCast(u8, 0x40 | @intCast(u16, sh) | 0x06));
-        checkFlags("cb bit hl clear flags", true, false, false, true);
+        checkFlags("cb bit hl clear flags", true, false, true, true);
     }
 }
 
@@ -1190,7 +1190,7 @@ fn testCbBoundaries() void {
     g_cpu.f = FLAG_C;
     const c7f: u32 = runCbC(CODE, 0x7F);
     checkByte("cb 0x7F keeps a", g_cpu.a, 0x80);
-    checkFlags("cb 0x7F flags", false, false, false, true);
+    checkFlags("cb 0x7F flags", false, false, true, true);
     checkCycles("cb 0x7F cycles", c7f, 8);
 
     reset();
