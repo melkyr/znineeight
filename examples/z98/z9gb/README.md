@@ -75,3 +75,35 @@ three spot pixels), and exercises the 8 MiB ROM cap. The RSS tier measures peak
 RSS with a synthetic 8 MiB ROM resident and asserts three runs produce a
 byte-identical framebuffer. If `/usr/bin/time` is unavailable, the RSS tier
 prints `SKIP` and exits 77.
+
+### P1 closeout evidence (2026-11-10)
+
+Compiler: `/tmp/z9gb_seed/zig1_5_clean` (v147, md5
+`73c75a65e30dfd212fdf93ae1e57a687`).
+
+```sh
+$ bash examples/z98/z9gb/tests/tier_smoke.sh "$ZIG1"
+...
+== tier_smoke summary: 18 passed, 0 failed ==
+TIER_SMOKE PASS
+# rc=0
+
+$ bash examples/z98/z9gb/tests/measure_rss.sh "$ZIG1" /tmp/z9gb_p1_rss
+rss_kb=9316
+fb_bytes=92160
+rom_bytes=8388608
+determinism=identical (3 runs)
+# rc=0
+```
+
+Per-run peak RSS was 9316 / 9184 / 9332 KiB, all below 12000. The three
+framebuffer dumps are byte-identical (three-run `cmp`): 92,160 bytes each.
+
+```sh
+$ "$ZIG1" -ffast --dump-c89 -o /tmp/z9gb_p1_dump examples/z98/z9gb/main.zig
+$ "$ZIG1" -ffast --dump-c89 -o /tmp/z9gb_p1_emit examples/z98/z9gb/emu.zig
+```
+
+Both dumps return `rc=0`. The scoped z9gb module headers (`main_*.c/.h`,
+`emu_*.c/.h`) in both dumps contain no `windows.h`/`ddraw.h`. P1 matrix count:
+**29/29**.
