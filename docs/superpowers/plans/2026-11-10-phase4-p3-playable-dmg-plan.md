@@ -153,9 +153,9 @@ git commit -m "feat(std): add DirectInput8 keyboard and gamepad"
   - `pub fn dsoundClose(d: *Dsound) void;`
 
 - [ ] **Step 1: Write the failing probe**
-Probe opens 44,100 Hz stereo, writes 4,096 i16 zeros, prints `backend=<1|2> queued=<n>`, and closes. Expected: fails on missing modules.
+Probe opens 44,100 Hz stereo, writes 2,048 stereo frames (4,096 i16 zeros), prints `backend=<1|2> queued=<n>`, and closes. Expected: fails on missing modules.
 - [ ] **Step 2: Implement DirectSound**
-Dynamic `dsound.dll` -> `DirectSoundCreate` -> `SetCooperativeLevel(DSSCL_PRIORITY)` -> create a **4,096-stereo-frame** (≈85 ms) 16-bit buffer, zeroed (silence) at open, with `DSBCAPS_GETCURRENTPOSITION2 | DSBCAPS_GLOBALFOCUS` -> `Play(0,0,DSBPLAY_LOOPING)`. Vtables follow the Global Constraints slot-order rule (`IDirectSound` 11 / `IDirectSoundBuffer` 21 slots copied verbatim from MinGW `dsound.h`, unused slots kept as typed placeholders). Power-of-two size so ring arithmetic uses masks.
+Dynamic `dsound.dll` -> `DirectSoundCreate` -> `SetCooperativeLevel(DSSCL_PRIORITY)` -> create a **2,048-stereo-frame** (4,096 i16 samples, 8,192 B, **46.4 ms** at 44.1 kHz — matches the spec) 16-bit buffer, zeroed (silence) at open, with `DSBCAPS_GETCURRENTPOSITION2 | DSBCAPS_GLOBALFOCUS` -> **prefill one full buffer of silence/samples** -> `Play(0,0,DSBPLAY_LOOPING)` (prefill prevents the initial underrun; `timeBeginPeriod(1)` + the QPC spin tail bound mid-run stalls). Vtables follow the Global Constraints slot-order rule (`IDirectSound` 11 / `IDirectSoundBuffer` 21 slots copied verbatim from MinGW `dsound.h`, unused slots kept as typed placeholders). Power-of-two size so ring arithmetic uses masks.
 - [ ] **Step 3: Implement nonblocking write**
 `GetCurrentPosition` gives play cursor. Maintain masked `write_cursor`; compute free frames from play vs write cursor; `Lock` only the free region as at most **two wrapped spans**, copy, `Unlock`. Never clear or refill the whole buffer per frame; fill only free frames. On underrun, write silence for the gap rather than blocking or rewinding the ring. `dsoundWrite` returns i16 elements consumed; it never sleeps.
 - [ ] **Step 4: Implement waveOut fallback**
@@ -192,9 +192,14 @@ git commit -m "feat(std): add DirectSound with waveOut fallback"
   - static ring capacity `32768` i16 (16,384 stereo frames).
 
 - [ ] **Step 1: Write the failing unit test**
-Tests: channel 1 square duty/frequency; channel 2; wave RAM; noise LFSR; NR52 power; frame sequencer length/envelope/sweep; mixer DC-free output; `apuSamples` drains exactly the produced count. Expected: fails on missing `apu.zig`.
+Tests: channel 1 square duty/frequency; channel 2; wave RAM; noise LFSR (width-7 feedback into bit 6); NR52 power (off read values, length counters); frame sequencer length/envelope/sweep (shadow-register sweep + negate-after-enable disable quirk); wave-RAM read-during-playback garbage; NRxx read masks; length-counter extra clock on NRx4 write; mixer DC-free output; `apuSamples` drains exactly the produced count. Expected: fails on missing `apu.zig`.
 - [ ] **Step 2: Implement channels**
-Two square channels with duty, frequency, length, envelope, sweep; wave channel with 32 4-bit samples; noise channel with 15/7-bit LFSR. **Algorithm:** each channel keeps its own period/frequency divider decremented by elapsed T-cycles (subtract-and-compare, not a per-T-cycle loop); the frame sequencer runs at 512 Hz from a cycle accumulator. Length/envelope/sweep are updated on frame-sequencer steps. Wire `mmu.zig`'s `FF10-FF3F` window to `apuRead`/`apuWrite` (NR10-NR52 + wave RAM `FF30-FF3F`).
+Two square channels with duty, frequency, length, envelope, sweep; wave channel with 32 4-bit samples; noise channel with 15/7-bit LFSR. **Algorithm:** each channel keeps its own period/frequency divider decremented by elapsed T-cycles (subtract-and-compare, not a per-T-cycle loop); the frame sequencer runs at 512 Hz from a cycle accumulator. Length/envelope/sweep are updated on frame-sequencer steps. Wire `mmu.zig`'s `FF10-FF3F` window to `apuRead`/`apuWrite` (NR10-NR52 + wave RAM `FF30-FF3F`). **Hardware quirk checklist (pinned; `dmg_sound` sub-tests gate these):**
+  1. sweep uses a **shadow frequency register**; retriggering with negate-after-enable (sweep enabled + negate then re-enabled) **disables channel 1** on DMG;
+  2. noise LFSR width-7 mode feeds back into **bit 6** (not bit 7);
+  3. **wave-RAM reads during playback return garbage** on DMG (emulate the documented on-chip fetch corruption, not plain wave RAM);
+  4. **NRxx read masks** (unused bits read as 1/0 per register) and **NR52 power-off read values** (length counters readable while APU is off, other regs masked/zero);
+  5. **length-counter extra clock** on NRx4 writes while the frame sequencer edge coincides.
 - [ ] **Step 3: Implement the mixer**
 Generate samples with a **16.16 fixed-point 44,100 Hz accumulator** (`cycles_per_sample ≈ 95.1`): accumulate emulated cycles, emit one stereo sample per crossing. Mix enabled channels through small LUTs — **duty LUT `[4][8]`**, volume/envelope LUT `[16][4]`, wave nibble LUT — and an integer one-pole DC blocker. No floating point, no per-T-cycle sample mixing, no host time.
 - [ ] **Step 4: Implement the ring**

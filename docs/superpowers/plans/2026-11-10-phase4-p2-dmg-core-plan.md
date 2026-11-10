@@ -83,7 +83,11 @@ Add a tier case that builds a 32 KiB `minimal.gb`, loads it, and prints `cart ok
 - [ ] **Step 2: Implement the header parser**
 Read title `0x0134-0x0143`, cartridge type `0x0147`, ROM size `0x0148`, RAM size `0x0149`, CGB flag `0x0143`. Accept 32 KiB to 8 MiB. Map `0x00` to no MBC, `0x01-0x03` to MBC1, `0x0F-0x13` to MBC3, `0x19-0x1E` to MBC5. Unknown types reject `UnsupportedMbc`.
 - [ ] **Step 3: Implement MBC1**
-Registers: RAM enable `0x0000-0x1FFF`, ROM bank `0x2000-0x3FFF`, RAM bank/secondary `0x4000-0x5FFF`, mode `0x6000-0x7FFF`. Bank 0 remaps to 1. Mode 0/1 selects 32 KiB ROM banking or 8 KiB RAM banking. RAM access requires enable `0x0A`.
+Registers: RAM enable `0x0000-0x1FFF`, ROM bank `0x2000-0x3FFF` (5-bit), RAM bank/secondary `0x4000-0x5FFF` (2-bit), mode `0x6000-0x7FFF`. Model the three hardware edges exactly (Mooneye `acceptance/mbc1/*` gates them):
+  1. the 5-bit register value 0 reads as 1 **before** combining: `romx_bank = (upper2 << 5) | (lower5 == 0 ? 1 : lower5)` — so banks `0x20/0x40/0x60` are unreachable (they become `0x21/0x41/0x61`);
+  2. the 2-bit register contributes **ROMX bits 5-6 in both modes**;
+  3. in **mode 1** the 2-bit register additionally banks the **ROM0 window** (`0000-3FFF` → `rom0_ptr = base + (upper2 << 5) * 16K`), and selects 8 KiB RAM banks instead of contributing to ROMX.
+Mode 0: 32 KiB ROM banking, RAM bank 0. RAM access requires enable `0x0A`.
 - [ ] **Step 4: Implement the synthetic ROM**
 `gen_synth_roms.c` writes `minimal.gb` with a valid header and a tiny program at `0x0100`:
 `JP 0x0150`, then at `0x0150`: `LD SP,0xFFFE`, `XOR A`, `LD (0xC000),A`, `JP 0x0150`.
@@ -113,7 +117,7 @@ git commit -m "feat(z9gb): add cartridge header and MBC1"
   - `pub fn cpuInit(cpu: *Cpu) void;`
   - `pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32;`
   - `pub fn cpuSetBus(cpu: *Cpu, bus: *Bus) void;`
-  - `pub const PageKind = enum(u8) { rom0, romx, vram, cart_ram, wram, echo, oam, io, hram, ie };`
+  - `pub const PageKind = enum(u8) { rom0, romx, vram, cart_ram, wram, echo, oam, io, hram };`
   - `pub const Page = struct { kind: PageKind, base: [*]u8 };`
   - `pub const Bus = struct { pages: [256]Page, wram: [8192]u8, hram: [127]u8, cart: *Cart, /* io stubs */ };`
   - `pub fn busInit(bus: *Bus, cart: *Cart) void;`
@@ -121,7 +125,7 @@ git commit -m "feat(z9gb): add cartridge header and MBC1"
   - `pub fn write8(self: *Bus, addr: u16, value: u8) void;`
   - `pub fn read16(self: *Bus, addr: u16) u16;`
   - `pub fn write16(self: *Bus, addr: u16, value: u16) void;`
-- **Bus design (no per-access mapping math):** a 256-entry 4 KiB page table indexed by `addr >> 12`. Each entry is `{kind, base}`; `read8`/`write8` is one index + `kind` switch + direct `base[addr & 0xFFF]`. Bank switches rewrite 2–4 page entries; ordinary ROM/RAM access never compares address ranges or recomputes banks. The Task 2 skeleton initializes `rom0`/`romx`/`cart_ram`/`wram`/`hram` (all other kinds stubbed); Task 5 fills `vram`/`oam`/`io`/`echo`/`ie` and `busTick`.
+- **Bus design (no per-access mapping math):** a **256-entry page table of 256-byte pages** covering the full 64 KiB map (`256 × 256 B = 64 KiB`), indexed by `addr >> 8`. Each entry is `{kind, base}` with `base` pre-rebased so access is one index + `kind` switch + direct `base[addr & 0xFF]`. Bank switches rewrite the window's page entries (e.g. ROMX = pages `0x40`–`0x7F`); ordinary ROM/RAM access never compares address ranges or recomputes banks. Echo pages (`0xE0`–`0xFD`) alias WRAM through `base` (no per-access mirror math). Page `0xFE` is `oam` (offsets ≥ `0xA0` are the unusable region); page `0xFF` is `hram` with `0xFFFF` handled as IE inside the handler. The Task 2 skeleton initializes `rom0`/`romx`/`cart_ram`/`wram`/`hram`; Task 5 fills `vram`/`oam`/`io`/`echo` and `busTick`.
 
 - [ ] **Step 1: Write the failing ALU tests**
 Tests: ADD/ADC/SUB/SBC/AND/OR/XOR/CP for `0x00`, `0x0F`, `0x80`, `0xFF`; INC/DEC half-carry; DAA after add/sub; RLCA/RRCA/RLA/RRA; CPL/SCF/CCF; `ADD SP,e8` and `LD HL,SP+e8` signed offsets. Expected: fails because `cpu.zig` does not exist.
@@ -256,12 +260,16 @@ git commit -m "feat(z9gb): add 64 KiB MMU and OAM DMA"
   - `pub fn serialTake(s: *Serial, out: []u8) usize;`
 
 - [ ] **Step 1: Write the failing test**
-Tests: DIV increments at 16384 Hz; any DIV write resets the 16-bit divider to zero; TAC selects 4096/262144/65536/16384 Hz; TIMA overflow reloads TMA and requests timer interrupt; HALT with IME=0 and pending interrupt triggers the HALT bug; `EI` takes effect only after the next instruction while `DI` cancels it; serial write logs `SB` and clears SC bit 7 after 8 cycles. Expected: fails on missing modules.
+Tests: DIV increments at 16384 Hz; any DIV write resets the 16-bit divider to zero (and the DIV-write falling edge can spuriously tick TIMA); TAC selects 4096/262144/65536/16384 Hz and TAC-write mux changes can glitch an extra TIMA tick; TIMA overflow holds 0 for 4 M-cycles, then reloads TMA and requests timer interrupt; HALT with IME=0 and pending interrupt triggers the HALT bug (PC double-fetch); `EI` takes effect only after the next instruction while `DI` cancels it; serial write logs `SB` and clears SC bit 7 after 8 cycles. Expected: fails on missing modules.
 - [ ] **Step 2: Implement DIV/TIMA**
-Keep a 16-bit internal divider; DIV is the high byte. Any write to DIV resets the entire 16-bit divider to 0 (the low byte must not survive — mooneye `div_write.gb` gates this). TAC enable bit 2 and clock select bits 0-1. TIMA increments on the selected falling edge; overflow reloads TMA and sets IF bit 2. All wrap math follows the `-fsafe` idiom (u16 temp + `& 0xFFFF` / `+%`).
+Keep a 16-bit internal divider; DIV is the high byte. Any write to DIV resets the entire 16-bit divider to 0 (the low byte must not survive — mooneye `div_write.gb` gates this). TAC enable bit 2 and clock select bits 0-1. TIMA increments on the selected falling edge; overflow reloads TMA and sets IF bit 2. Model the three hardware glitch edges exactly (TCAGBD/Pan Docs; gated by the Mooneye timer subset):
+  1. the DIV-write reset can itself produce a falling edge on the selected bit — implement it as a real divider reset that may spuriously increment TIMA;
+  2. a TAC write that changes enable/select can glitch an extra TIMA increment (muxed-signal falling edge): compute the selected-bit state before and after the write and count a falling edge if it changed 1→0;
+  3. on overflow TIMA stays **0 for 4 M-cycles** before the TMA reload + IF raise (not instant) — track a small reload-delay counter; reads during the window return 0.
+All wrap math follows the `-fsafe` idiom (u16 temp + `& 0xFFFF` / `+%`).
 - [ ] **Step 3: Implement interrupts and the EI delay**
 At instruction boundaries, if IME and `IE & IF & 0x1F`:
-push PC, clear IME, clear the IF bit, jump to the vector, add 20 cycles. If halted and IME=0 with a pending interrupt, set `halt_bug` and do not halt. `EI` does not enable IME immediately: it arms a pending flag that takes effect only after the instruction following `EI` (spec §8.5; gated by Blargg `interrupt_time`). `DI` clears IME immediately and cancels a pending EI. `RETI` enables IME immediately.
+push PC, clear IME, clear the IF bit, jump to the vector, add 20 cycles. If halted and IME=0 with a pending interrupt, set `halt_bug` and do not halt; the HALT bug must manifest in the **fetch path as a PC double-fetch** (the next opcode byte is fetched twice — the first fetch does not increment PC), which the CPU fetch implements explicitly; cover with one dedicated test. `EI` does not enable IME immediately: it arms a pending flag that takes effect only after the instruction following `EI` (spec §8.5; gated by Blargg `interrupt_time`). `DI` clears IME immediately and cancels a pending EI. `RETI` enables IME immediately.
 - [ ] **Step 4: Implement post-boot state in `emuReset`**
 `emuReset` (P1 facade) sets the documented DMG post-boot state from spec §8.5: `A=0x01, F=0xB0, B=0x00, C=0x13, D=0x00, E=0xD8, H=0x01, L=0x4D, SP=0xFFFE, PC=0x0100`, I/O registers at the Task 5 Step 4 defaults, `LY=0x91`. Add a test asserting these exact values after `emuReset`.
 - [ ] **Step 5: Implement serial harness**
@@ -295,7 +303,7 @@ git commit -m "feat(z9gb): add timer, interrupts, HALT and serial harness"
 - [ ] **Step 1: Write the failing test**
 Tests: mode sequence 2→3→0 per line; VBlank mode 1 at line 144; `LY=LYC` STAT; BG tile map and tile data; window; 8x8 and 8x16 sprites; sprite priority. Expected: fails on missing PPU.
 - [ ] **Step 2: Implement mode timing**
-456 T-cycles per line, 154 lines. Mode 2 for 80 cycles; mode 1 (lines 144-153) for 4560 cycles. Mode 3 uses the **documented penalty model**, not a fixed 172: `172 + (SCX % 8) + window_start_penalty(6 if the window starts on this line) + sum(OBJ penalties)`, where each OBJ costs `6 + max(0, pixels_right_of_obj_left_in_its_tile - 2)` and an OBJ at `X=0` costs 11 (Pan Docs). Mode 0 is the remainder. STAT mode bits/interrupts and LYC fire at these boundaries.
+456 T-cycles per line, 154 lines. Mode 2 for 80 cycles; mode 1 (lines 144-153) for 4560 cycles. Mode 3 uses the **documented penalty model**, not a fixed 172: `172 + (SCX % 8) + window_start_penalty(6 if the window starts on this line) + sum(OBJ penalties)`, where each OBJ costs `6 + max(0, pixels_right_of_obj_left_in_its_tile - 2)` and **an OBJ at `X=0` costs a flat 11 that replaces the general formula for that OBJ** (the general formula would give 12 there; never add both) (Pan Docs). Mode 0 is the remainder. STAT mode bits/interrupts and LYC fire at these boundaries.
 - [ ] **Step 3: Implement scanline rendering**
 Render in **8-pixel tile-row batches** into a `[160]u8` shade buffer: fetch tile id + 2bpp row, expand 8 indices, write the row; window uses its internal line counter; sprites collected during OAM scan (≤10/line), DMG priority by X then OAM index, drawn with per-pixel BG/OBJ priority. Palette mapping uses a **`[4]u32` LUT recomputed only when BGP/OBP0/OBP1 is written** (not per pixel): `0 → 0x009BBC0F`, `1 → 0x008BAC0F`, `2 → 0x00306230`, `3 → 0x000F380F`. No per-pixel function calls.
 - [ ] **Step 4: Implement registers**
@@ -330,13 +338,17 @@ git commit -m "feat(z9gb): add DMG scanline PPU"
   The spec facade signatures stay exactly `emuSaveBattery(e: *Emu) EmuError!void` / `emuLoadBattery(e: *Emu) EmuError!void` (spec §8.2): this task fills in their P1 stubs so they call `saveBattery`/`loadBattery` with `e->save_path` when set by `emuSetSavePath`, otherwise with the path derived from the loaded ROM (spec: "`emuSetSavePath` overrides it"). No facade signature churn.
 
 - [ ] **Step 1: Write the failing test**
-Tests: MBC3 ROM/RAM bank selection, RTC latch/read after host seconds, MBC5 9-bit ROM bank and RAM bank, `.sav` round-trip, `.rtc` round-trip, short/corrupt `.rtc` rejects `SaveCorrupt`, and a save path with an existing file is not truncated on error.
+Tests: MBC3 ROM/RAM bank selection, RTC latch/read with the frozen `rtc_fixed` clock (deterministic delta advancement, halt flag, day wrap 511→0, live-write/latched-read), MBC5 9-bit ROM bank and RAM bank, `.sav` round-trip, `.rtc` round-trip (anchor preserved), short/corrupt `.rtc` rejects `SaveCorrupt`, and a save path with an existing file is not truncated on error.
 - [ ] **Step 2: Implement MBC3**
-`0x0000-0x1FFF` RAM/RTC enable; `0x2000-0x3FFF` ROM bank (0 maps to 1); `0x4000-0x5FFF` RAM bank 0-3 or RTC register 8-12; `0x6000-0x7FFF` latch on `0x00→0x01`. RTC increments from host wall time when enabled.
+`0x0000-0x1FFF` RAM/RTC enable; `0x2000-0x3FFF` ROM bank (0 maps to 1); `0x4000-0x5FFF` RAM bank 0-3 or RTC register 8-12; `0x6000-0x7FFF` latch on `0x00→0x01`. RTC semantics (pinned):
+- **Delta accumulation with an anchor:** RTC advances by adding host-elapsed whole seconds to the five counters whenever time is observed (latch/read/write), and re-anchors the host timestamp at that moment — no per-frame wall-clock reads. Writes go to the **live** counters; reads return the **latched copies**.
+- **Halt flag** (register 0x0C bit 6) freezes accumulation while set. Day counter is 9 bits and **wraps 511→0** (no carry out).
+- **Deterministic headless clock:** `EmuConfig.rtc_fixed` (or `--rtc-fixed <unix>`) freezes the RTC epoch so tests/benchmarks are reproducible; without it, RTC uses real host time and saves record the anchor.
+- The `.rtc` header stores the **timestamp anchor** (last host-observed unix seconds) so load re-anchors correctly across sessions.
 - [ ] **Step 3: Implement MBC5**
 ROM bank 9 bits (`0x2000` low 8, `0x3000` bit 8), RAM bank 4 bits, RAM enable. Bank 0 is valid.
 - [ ] **Step 4: Implement save format**
-Use the spec's 32-byte `Z98RTC1` header. `.sav` is raw cart RAM. Win9x cannot overwrite via `MoveFileA` (fails if the destination exists) and `CopyFileA` is **not** in the import whitelist (`scripts/win32_cross/check_win9x_imports.sh:26` lists `DeleteFileA`/`MoveFileA`, no `CopyFileA`/`MoveFileExA`). The write sequence is therefore the backup dance, using only whitelisted imports (`std_file_pal.zig:33-34` already declares `DeleteFileA`/`MoveFileA`):
+Use the spec's 32-byte `Z98RTC1` header (five RTC counters, halt/latch state, **host timestamp anchor**, magic + version + CRC). `.sav` is raw cart RAM. Win9x cannot overwrite via `MoveFileA` (fails if the destination exists) and `CopyFileA` is **not** in the import whitelist (`scripts/win32_cross/check_win9x_imports.sh:26` lists `DeleteFileA`/`MoveFileA`, no `CopyFileA`/`MoveFileExA`). The write sequence is therefore the backup dance, using only whitelisted imports (`std_file_pal.zig:33-34` already declares `DeleteFileA`/`MoveFileA`):
   1. write `PATH.tmp` fully and close it;
   2. `DeleteFileA(PATH.bak)` (ignore missing);
   3. `MoveFileA(PATH, PATH.bak)`;
@@ -382,11 +394,13 @@ git commit -m "feat(z9gb): add MBC3 RTC, MBC5 and battery saves"
   - `blargg/interrupt_time/interrupt_time.gb`
   - `mooneye/acceptance/timer/div_write.gb`
   - `mooneye/acceptance/timer/tim00.gb`, `tim01.gb`, `tim10.gb`, `tim11.gb`
+  - `mooneye/acceptance/mbc1/bits_bank1.gb`, `bits_bank2.gb`, `bits_mode.gb`, `bits_ramg.gb`
+  - `mooneye/acceptance/mbc1/rom_2Mb.gb`, `rom_4Mb.gb`, `ram_256Kb.gb` (mode-1 ROM0 banking + 2-bit upper-bank edges)
   - `mooneye/acceptance/ppu/lcdon_timing-GS.gb`
   - `mooneye/acceptance/ppu/stat_irq_blocking.gb`
   - `mooneye/acceptance/oam_dma/basic.gb`
   - `acid2/dmg-acid2.gb`
-`README.md` records the pinned commits from the spec.
+`README.md` records the pinned commits from the spec. Task 0 verifies these exact filenames against the pinned Mooneye commit and records any rename in the manifest; a missing filename is a plan STOP, not a silent SKIP. The `mbc1` rows gate the three MBC1 mode-1 edges of Task 1.
 - [ ] **Step 4: Add the gate runners**
   - `run_blargg.sh`: Blargg verdicts need minutes of emulated time (`cpu_instrs` = ~11 sub-tests × tens of seconds each ≈ 20,000+ frames); a 600-frame run can never reach one. Run each ROM with `--serial --turbo --frames 200000` (≈56 emulated minutes; turbo makes this minutes of wall time). The emulator exits early when the serial stream reaches a terminal Blargg verdict line (`Passed` or `Failed`). PASS requires the exact terminal `Passed` and no `Failed`; reaching the frame cap without a verdict is FAIL (timeout), never PASS.
   - `run_mooneye.sh`: run each ROM with `--mooneye --frames 60000`; the `LD B,B` breakpoint fires long before the cap. PASS requires the full Fibonacci register signature `B=3, C=5, D=8, E=13, H=21, L=34`; anything else is FAIL.

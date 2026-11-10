@@ -370,8 +370,8 @@ pub fn dsoundClose(d: *Dsound) void;
 
 - Format: signed 16-bit PCM, stereo interleaved, 44,100 Hz.
 - DirectSound path: `DirectSoundCreate`, `IDirectSoundBuffer`, 2,048 stereo
-  frames (8,192 bytes), `DSBCAPS_GETCURRENTPOSITION2 | DSBCAPS_GLOBALFOCUS`,
-  looping `Play`, refill from `GetCurrentPosition`.
+  frames (8,192 bytes, 46.4 ms), `DSBCAPS_GETCURRENTPOSITION2 | DSBCAPS_GLOBALFOCUS`,
+  prefill one buffer at `Play`, looping `Play`, refill from `GetCurrentPosition`.
 - `dsoundWrite` never blocks and may consume fewer samples than offered.
 - If DirectSound creation or buffer creation fails, fall back to WinMM
   `waveOut` with the same API. The fallback uses two buffers.
@@ -387,7 +387,10 @@ pub fn dsoundClose(d: *Dsound) void;
 - Post-boot state: `A=0x01, F=0xB0, B=0x00, C=0x13, D=0x00, E=0xD8, H=0x01,
   L=0x4D, SP=0xFFFE, PC=0x0100`; I/O registers at documented DMG defaults;
   `LY=0x91`.
-- HALT bug, EI delay, interrupt dispatch, and OAM DMA implemented explicitly.
+- HALT bug (PC double-fetch in the fetch path), EI delay, interrupt dispatch,
+  and OAM DMA implemented explicitly. Timer glitch edges are implemented:
+  DIV-write reset and TAC-write mux changes can spuriously tick TIMA, and
+  TIMA holds 0 for 4 M-cycles before the TMA reload + IF raise.
 - Address map:
   - `0000-3FFF` ROM0, `4000-7FFF` switchable ROM
   - `8000-9FFF` VRAM, `A000-BFFF` cart RAM
@@ -416,6 +419,15 @@ pub fn dsoundClose(d: *Dsound) void;
   - `0x01-0x03` MBC1
   - `0x0F-0x13` MBC3 with RTC for `0x0F`/`0x10`
   - `0x19-0x1E` MBC5
+- MBC1 hardware edges (gated by Mooneye `acceptance/mbc1/*`): the 5-bit
+  register value 0 reads as 1 before combining (banks `0x20/0x40/0x60` are
+  unreachable), the 2-bit register contributes ROMX bits 5-6 in **both** modes,
+  and in mode 1 it additionally banks the ROM0 window (`0000-3FFF`).
+- RTC advances by **delta accumulation** against a host timestamp anchor
+  (add elapsed whole seconds at observation, re-anchor immediately). Writes
+  target live counters; reads return latched copies; the halt flag freezes
+  accumulation; the day counter wraps 511→0. Headless/test runs freeze the
+  clock (`rtc_fixed`) for determinism.
 - RAM size from header; zero RAM is allowed.
 - `.sav` path: replace the ROM extension with `.sav` unless
   `emuSetSavePath` overrides it.
@@ -430,7 +442,9 @@ pub fn dsoundClose(d: *Dsound) void;
   12     days low
   13     days high
   14     flags: bit0 halt, bit1 day carry
-  15..31 zero
+  15     reserved zero
+  16..23 host timestamp anchor (u64 LE unix seconds)
+  24..31 zero
   ```
 - Save writes use temp file + rename. A corrupt or short `.rtc` is
   `SaveCorrupt`; never overwrite a corrupt file silently.
@@ -439,7 +453,11 @@ pub fn dsoundClose(d: *Dsound) void;
 
 ### 8.8 APU and timing
 
-- Four channels: two square, wave, noise; frame sequencer at 512 Hz.
+- Four channels: two square, wave, noise; frame sequencer at 512 Hz. Hardware
+  quirks pinned: sweep shadow frequency + negate-after-enable disable quirk,
+  noise width-7 LFSR feedback into bit 6, DMG wave-RAM read-during-playback
+  garbage, NRxx read masks / NR52 power-off values, length-counter extra
+  clock on NRx4 writes.
 - Mixer outputs stereo 16-bit at 44,100 Hz.
 - Audio sample clock is driven by the CPU cycle counter; no host audio thread.
 - P3 hard gate: full Blargg `dmg_sound` via serial output (verdict-harness:
@@ -488,10 +506,16 @@ pub fn dsoundClose(d: *Dsound) void;
 - Generated code caches the CPU pairs in callee-saved host registers
   (`BC→ebx`, `DE→esi`, `HL→edi`, `SP→ebp`) across the block, with `A`/`F` in
   `Cpu` (or `A` in a volatile reg). Memory operands use an inline page-table
-  fast path (`bus->pages[addr >> 12]`, direct `base[addr & 0xFFF]` for
-  ROM/WRAM/cart-RAM) and call helpers only for IO/VRAM/OAM/echo edges. Blocks
-  chain directly to already-translated successors behind a bank/PC guard;
-  otherwise they return to the dispatcher.
+  fast path (`bus->pages[addr >> 8]` — 256 entries of 256-byte pages, direct
+  `base[addr & 0xFF]` for ROM/WRAM/cart-RAM/**HRAM/echo**; stack ops never
+  call helpers) and call helpers only for IO/OAM/VRAM edges (VRAM carries the
+  mode-3 lockout check). After every cycle-charging helper, generated code
+  tests the pending-interrupt condition (`ime` + `if & ie & 0x1F`) and jumps
+  to the block epilogue — without this, interrupt dispatch drifts up to a
+  full block and latency gates fail. Blocks chain directly to already-translated
+  successors behind a bank/PC guard; `CALL` links to the translated callee the
+  same way, and `RET` links through a one-entry return-address cache
+  (`ret_target`/`ret_bank`); otherwise blocks return to the dispatcher.
 - ABI: `DynCtx` holds `cpu: *Cpu`, `bus: *Bus`, and `cycles: u32`.
   A generated block is `fn (*DynCtx) u32`, cdecl, returning T-cycles. Compiled
   via `@ptrCast` to a function pointer; no inline asm.
