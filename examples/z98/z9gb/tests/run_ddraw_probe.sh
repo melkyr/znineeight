@@ -65,6 +65,11 @@ const FRAME_H: u32 = 144;
 const FB_PIXELS: usize = 160 * 144;
 const FB_BYTES: usize = FB_PIXELS * 4;
 const SOLID: u32 = 0x00123456;
+const SOLID_COLORREF: u32 = 0x00563412;
+
+pub extern "stdcall" fn GetDC(hwnd: *void) *void;
+pub extern "stdcall" fn ReleaseDC(hwnd: *void, hdc: *void) i32;
+pub extern "stdcall" fn GetPixel(hdc: *void, x: i32, y: i32) u32;
 
 var g_pixels: [FB_PIXELS]u32 = undefined;
 var g_bytes: [FB_BYTES]u8 = undefined;
@@ -126,6 +131,67 @@ fn writeFb(path: []const u8) bool {
     return false;
 }
 
+fn writeHex(v: u32) void {
+    std.io.write("0x");
+    var shifts: [8]u32 = [8]u32{ 28, 24, 20, 16, 12, 8, 4, 0 };
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        const nib: u32 = (v >> shifts[i]) & 15;
+        if (nib < 10) {
+            std.io.writeByte(@intCast(u8, 48 + nib));
+        } else {
+            std.io.writeByte(@intCast(u8, 87 + nib));
+        }
+    }
+}
+
+// Read the presented window client through GDI. GetPixel returns COLORREF
+// (0x00BBGGRR), so SOLID 0x00RRGGBB = 0x00123456 reads back as 0x00563412.
+fn readbackCheck(hwnd: *void, scale: u32) bool {
+    const hdc = GetDC(hwnd);
+    if (@ptrToInt(hdc) == 0) {
+        std.io.write("readback scale=");
+        std.io.printInt(@intCast(i32, scale));
+        std.io.write(" FAIL (GetDC null)\n");
+        return false;
+    }
+    const w: i32 = @intCast(i32, FRAME_W * scale);
+    const h: i32 = @intCast(i32, FRAME_H * scale);
+    var xs: [5]i32 = [5]i32{ 0, w - 1, 0, w - 1, w / 2 };
+    var ys: [5]i32 = [5]i32{ 0, 0, h - 1, h - 1, h / 2 };
+    var ok: bool = true;
+    var first: u32 = 0;
+    var i: usize = 0;
+    while (i < 5) : (i += 1) {
+        const got = GetPixel(hdc, xs[i], ys[i]);
+        if (i == 0) first = got;
+        if (got != SOLID_COLORREF) {
+            ok = false;
+            std.io.write("readback scale=");
+            std.io.printInt(@intCast(i32, scale));
+            std.io.write(" p(");
+            std.io.printInt(xs[i]);
+            std.io.write(",");
+            std.io.printInt(ys[i]);
+            std.io.write(") want ");
+            writeHex(SOLID_COLORREF);
+            std.io.write(" got ");
+            writeHex(got);
+            std.io.write(" FAIL\n");
+        }
+    }
+    _ = ReleaseDC(hwnd, hdc);
+    if (ok) {
+        std.io.write("readback scale=");
+        std.io.printInt(@intCast(i32, scale));
+        std.io.write(" PASS first=");
+        writeHex(first);
+        std.io.write("\n");
+    }
+    return ok;
+
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     const n: usize = @intCast(usize, argc);
     var scale: u32 = 2;
@@ -183,6 +249,28 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             ddraw.ddrawClose(wnd);
             std.io.write("ddraw probe: ddrawWindow null\n");
             std.os.exit(2);
+        }
+        if (!readbackCheck(wh, scale)) {
+            ddraw.ddrawClose(wnd);
+            std.io.write("ddraw probe: readback failed at requested scale\n");
+            std.os.exit(2);
+        }
+        if (scale != 4) {
+            if (!ddraw.ddrawSetScale(wnd, 4)) {
+                ddraw.ddrawClose(wnd);
+                std.io.write("ddraw probe: ddrawSetScale(4) failed\n");
+                std.os.exit(2);
+            }
+            if (!ddraw.ddrawPresent(wnd, g_pixels[0..FB_PIXELS])) {
+                ddraw.ddrawClose(wnd);
+                std.io.write("ddraw probe: ddrawPresent(scale 4) failed\n");
+                std.os.exit(2);
+            }
+            if (!readbackCheck(wh, 4)) {
+                ddraw.ddrawClose(wnd);
+                std.io.write("ddraw probe: readback failed at scale 4\n");
+                std.os.exit(2);
+            }
         }
         ddraw.ddrawClose(wnd);
     }
@@ -260,6 +348,21 @@ else
 fi
 sed 's/^/       /' "$OUT/windowed.log" 2>/dev/null || true
 wineserver -k >/dev/null 2>&1 || true
+
+# Primary evidence: the presented window client must read back the solid
+# colour through GDI GetPixel at scale 2 and at the ddrawSetScale(4) path.
+RB2="$(grep -c '^readback scale=2 PASS' "$OUT/windowed.log" 2>/dev/null || true)"
+if [ "$RB2" = "1" ]; then
+    pass_case "presented surface readback at scale 2 (GDI GetPixel)"
+else
+    fail_case "presented surface readback at scale 2 missing/failed"
+fi
+RB4="$(grep -c '^readback scale=4 PASS' "$OUT/windowed.log" 2>/dev/null || true)"
+if [ "$RB4" = "1" ]; then
+    pass_case "presented surface readback at scale 4 after ddrawSetScale"
+else
+    fail_case "presented surface readback at scale 4 missing/failed"
+fi
 
 if [ -f "$HEAD_FB" ] && [ -f "$WIN_FB" ]; then
     HEAD_MD5="$(md5sum "$HEAD_FB" | cut -d' ' -f1)"

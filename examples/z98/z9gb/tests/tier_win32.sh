@@ -73,6 +73,13 @@ else
     fail_case "probe marker DDRAW_PROBE PASS missing"
 fi
 
+if grep -q '^[[:space:]]*readback scale=2 PASS' "$OUT/ddraw_probe.log" 2>/dev/null \
+    && grep -q '^[[:space:]]*readback scale=4 PASS' "$OUT/ddraw_probe.log" 2>/dev/null; then
+    pass_case "presented surface readback at scale 2 and 4 (GDI GetPixel)"
+else
+    fail_case "presented surface readback at scale 2/4 missing or failed"
+fi
+
 echo
 echo "== tier_win32 summary: $PASSES passed, $FAILS failed =="
 if [ "$FAILS" -ne 0 ]; then
