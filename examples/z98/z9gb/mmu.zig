@@ -7,6 +7,8 @@
 // an MBC register write changes the cached bank offsets.
 
 const cartmod = @import("cart.zig");
+const timermod = @import("timer.zig");
+const serialmod = @import("serial.zig");
 
 pub const PageKind = enum(u8) { rom0, romx, vram, cart_ram, wram, echo, oam, io, hram };
 
@@ -30,6 +32,8 @@ pub const Bus = struct {
     cart: *cartmod.Cart,
     ie: u8,
     dma: Dma,
+    timer: timermod.Timer,
+    serial: serialmod.Serial,
 };
 
 fn stubBase(self: *Bus) [*]u8 {
@@ -94,6 +98,15 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
         bus.stub[i] = 0xFF;
     }
 
+    bus.timer.divider = 0;
+    bus.timer.tima = 0;
+    bus.timer.tma = 0;
+    bus.timer.tac = 0;
+    bus.timer.reload = 0;
+    bus.timer.ifr = &bus.io[0x0F];
+    bus.serial.ifr = &bus.io[0x0F];
+    serialmod.serialReset(&bus.serial);
+
     const wram_base: [*]u8 = @ptrCast([*]u8, &bus.wram[0]);
     const vram_base: [*]u8 = @ptrCast([*]u8, &bus.vram[0]);
     const oam_base: [*]u8 = @ptrCast([*]u8, &bus.oam[0]);
@@ -124,6 +137,7 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.io[0x00] = 0xCF;
     bus.io[0x0F] = 0xE1;
     bus.io[0x40] = 0x91;
+    bus.io[0x44] = 0x91;
     bus.io[0x47] = 0xFC;
     bus.io[0x48] = 0xFF;
     bus.io[0x49] = 0xFF;
@@ -132,10 +146,21 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
 }
 
 pub fn ioRead(self: *Bus, addr: u16) u8 {
+    if (addr == 0xFF01) return self.serial.sb;
+    if (addr == 0xFF02) return self.serial.sc;
+    if (addr >= 0xFF04 and addr <= 0xFF07) return timermod.timerRead(&self.timer, addr);
     return self.io[@intCast(usize, addr & 0x7F)];
 }
 
 pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
+    if (addr == 0xFF01 or addr == 0xFF02) {
+        serialmod.serialWrite(&self.serial, addr, value);
+        return;
+    }
+    if (addr >= 0xFF04 and addr <= 0xFF07) {
+        timermod.timerWrite(&self.timer, addr, value);
+        return;
+    }
     if (addr == 0xFF46) {
         self.io[0x46] = value;
         self.dma.active = true;
@@ -219,6 +244,8 @@ pub fn write8(self: *Bus, addr: u16, value: u8) void {
 }
 
 pub fn busTick(self: *Bus, cycles: u32) void {
+    timermod.timerTick(&self.timer, cycles);
+    serialmod.serialTick(&self.serial, cycles);
     if (!self.dma.active) return;
     self.dma.dots +%= cycles;
     while (self.dma.active and self.dma.dots >= 4) {

@@ -8,9 +8,10 @@ const std = @import("std");
 const filemod = @import("std_file");
 const cartmod = @import("cart.zig");
 const mmumod = @import("mmu.zig");
+const cpumod = @import("cpu.zig");
+const serialmod = @import("serial.zig");
 
 const ROM_CAP: usize = 8 * 1024 * 1024;
-const SERIAL_CAP: usize = 4096;
 const SAVE_CAP: usize = 260;
 const FRAME_W: usize = 160;
 const FRAME_H: usize = 144;
@@ -23,27 +24,26 @@ pub const Emu = struct {
     rom: [ROM_CAP]u8,
     rom_len: usize,
     fb: [FRAME_W * FRAME_H]u32,
-    serial_log: [SERIAL_CAP]u8,
-    serial_len: usize,
     buttons: u8,
     cfg: EmuConfig,
     save_path: [SAVE_CAP]u8,
     save_len: usize,
     cart: cartmod.Cart,
+    cpu: cpumod.Cpu,
     bus: mmumod.Bus,
 };
 
 pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     // Scalar fields only: a whole-`Emu` literal would materialize an ~8.5 MiB
-    // temporary on the 1 MiB stack. `rom`, `fb`, `serial_log`, and `save_path`
-    // are fixed storage written by their owners.
+    // temporary on the 1 MiB stack. `rom`, `fb`, and `save_path` are fixed
+    // storage written by their owners.
     e.rom_len = 0;
-    e.serial_len = 0;
     e.buttons = 0;
     e.cfg = cfg;
     e.save_len = 0;
     cartmod.cartInit(&e.cart);
     mmumod.busInit(&e.bus, &e.cart);
+    cpumod.cpuInit(&e.cpu);
 }
 
 // Loader contract: size-checked copy into the fixed 8 MiB buffer, then validate
@@ -93,8 +93,19 @@ pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
 }
 
 pub fn emuReset(e: *Emu) void {
-    e.serial_len = 0;
     e.buttons = 0;
+    mmumod.busInit(&e.bus, &e.cart);
+    cpumod.cpuInit(&e.cpu);
+    e.cpu.a = 0x01;
+    e.cpu.f = 0xB0;
+    e.cpu.b = 0x00;
+    e.cpu.c = 0x13;
+    e.cpu.d = 0x00;
+    e.cpu.e = 0xD8;
+    e.cpu.h = 0x01;
+    e.cpu.l = 0x4D;
+    e.cpu.sp = 0xFFFE;
+    e.cpu.pc = 0x0100;
 }
 
 pub fn emuSelfTestPattern(e: *Emu) void {
@@ -121,20 +132,7 @@ pub fn emuSetButtons(e: *Emu, bits: u8) void {
 }
 
 pub fn emuTakeSerial(e: *Emu, out: []u8) usize {
-    var n: usize = e.serial_len;
-    if (n > out.len) n = out.len;
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
-        out[i] = e.serial_log[i];
-    }
-    if (n < e.serial_len) {
-        var j: usize = 0;
-        while (j < e.serial_len - n) : (j += 1) {
-            e.serial_log[j] = e.serial_log[n + j];
-        }
-    }
-    e.serial_len -= n;
-    return n;
+    return serialmod.serialTake(&e.bus.serial, out);
 }
 
 pub fn emuSetSavePath(e: *Emu, path: []const u8) void {

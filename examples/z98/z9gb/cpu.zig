@@ -28,6 +28,7 @@ pub const Cpu = struct {
     ime: bool,
     halted: bool,
     halt_bug: bool,
+    ei_delay: u8,
     cycles: u64,
 };
 
@@ -45,6 +46,7 @@ pub fn cpuInit(cpu: *Cpu) void {
     cpu.ime = false;
     cpu.halted = false;
     cpu.halt_bug = false;
+    cpu.ei_delay = 0;
     cpu.cycles = 0;
 }
 
@@ -521,9 +523,49 @@ const OP_CYCLES: [256]u8 = [256]u8{
     12, 12, 8, 4, 4, 16, 8, 16, 12, 8, 16, 4, 4, 4, 8, 16,
 };
 
+fn pendingInterrupts(bus: *Bus) u8 {
+    return bus.ie & bus.io[0x0F] & 0x1F;
+}
+
+fn serviceInterrupt(cpu: *Cpu, bus: *Bus) u32 {
+    const pending: u8 = pendingInterrupts(bus);
+    var i: u8 = 0;
+    while (i < 5) : (i += 1) {
+        const bit: u8 = @intCast(u8, @as(u16, 1) << @intCast(u4, i));
+        if ((pending & bit) != 0) {
+            bus.io[0x0F] = bus.io[0x0F] & @intCast(u8, ~bit);
+            cpu.ime = false;
+            cpu.ei_delay = 0;
+            push16(cpu, bus, cpu.pc);
+            cpu.pc = @intCast(u16, 0x40 + @as(u16, i) * 8);
+            cpu.cycles +%= 20;
+            mmumod.busTick(bus, 20);
+            return 20;
+        }
+    }
+    return 0;
+}
+
 pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
+    if (cpu.halted) {
+        if (pendingInterrupts(bus) != 0) {
+            cpu.halted = false;
+        } else {
+            cpu.cycles +%= 4;
+            mmumod.busTick(bus, 4);
+            return 4;
+        }
+    }
+    if (cpu.ime and pendingInterrupts(bus) != 0) {
+        return serviceInterrupt(cpu, bus);
+    }
+
     const op: u8 = mmumod.read8(bus, cpu.pc);
-    cpu.pc = cpu.pc +% 1;
+    if (cpu.halt_bug) {
+        cpu.halt_bug = false;
+    } else {
+        cpu.pc = cpu.pc +% 1;
+    }
     var cycles: u32 = @intCast(u32, OP_CYCLES[@intCast(usize, op)]);
 
     switch (op) {
@@ -629,8 +671,10 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
                 const dst: u8 = @intCast(u8, (@intCast(u16, op) >> 3) & 0x07);
                 const src: u8 = op & 0x07;
                 aluStore(cpu, bus, dst, aluOperand(cpu, bus, src));
-            } else {
-                unreachable;
+            } else if (pendingInterrupts(bus) == 0) {
+                cpu.halted = true;
+            } else if (!cpu.ime) {
+                cpu.halt_bug = true;
             }
         },
         0xC0, 0xC8, 0xD0, 0xD8 => {
@@ -702,6 +746,7 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
         0xD9 => {
             cpu.pc = pop16(cpu, bus);
             cpu.ime = true;
+            cpu.ei_delay = 0;
         },
         0xE0 => {
             const a8: u8 = mmumod.read8(bus, cpu.pc);
@@ -710,6 +755,13 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
         },
         0xE2 => {
             mmumod.write8(bus, 0xFF00 +% @intCast(u16, cpu.c), cpu.a);
+        },
+        0xF3 => {
+            cpu.ime = false;
+            cpu.ei_delay = 0;
+        },
+        0xFB => {
+            cpu.ei_delay = 2;
         },
         0xE9 => {
             cpu.pc = hlValue(cpu);
@@ -752,6 +804,11 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
         else => unreachable,
     }
 
+    if (cpu.ei_delay > 0) {
+        cpu.ei_delay -= 1;
+        if (cpu.ei_delay == 0) cpu.ime = true;
+    }
     cpu.cycles +%= @intCast(u64, cycles);
+    mmumod.busTick(bus, cycles);
     return cycles;
 }
