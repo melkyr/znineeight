@@ -1,4 +1,4 @@
-// cpu.zig — z9gb SM83 base, ALU, flags, and DAA (Task 2).
+// cpu.zig — z9gb SM83 base, ALU, flags, DAA, loads, stack, and control flow.
 //
 // Flags live in F bits 7..4: Z=0x80, N=0x40, H=0x20, C=0x10. Bits 3..0 are
 // always zero. Arithmetic widens to u16 before shifting/masking and narrows
@@ -266,6 +266,91 @@ fn decReg(cpu: *Cpu, bus: *Bus, idx: u8) void {
     aluStore(cpu, bus, idx, dec8(cpu, value));
 }
 
+fn readReg16(cpu: *const Cpu, idx: u8) u16 {
+    switch (idx) {
+        0 => {
+            const b: u16 = @intCast(u16, cpu.b);
+            const c: u16 = @intCast(u16, cpu.c);
+            return (b << 8) | c;
+        },
+        1 => {
+            const d: u16 = @intCast(u16, cpu.d);
+            const e: u16 = @intCast(u16, cpu.e);
+            return (d << 8) | e;
+        },
+        2 => return hlValue(cpu),
+        3 => return cpu.sp,
+        else => unreachable,
+    }
+}
+
+fn writeReg16(cpu: *Cpu, idx: u8, value: u16) void {
+    switch (idx) {
+        0 => {
+            cpu.b = @intCast(u8, value >> 8);
+            cpu.c = @intCast(u8, value & 0xFF);
+        },
+        1 => {
+            cpu.d = @intCast(u8, value >> 8);
+            cpu.e = @intCast(u8, value & 0xFF);
+        },
+        2 => setHl(cpu, value),
+        3 => cpu.sp = value,
+        else => unreachable,
+    }
+}
+
+fn ldReg16Imm(cpu: *Cpu, bus: *Bus, idx: u8) void {
+    const value: u16 = mmumod.read16(bus, cpu.pc);
+    cpu.pc = cpu.pc +% 2;
+    writeReg16(cpu, idx, value);
+}
+
+fn incReg16(cpu: *Cpu, idx: u8) void {
+    writeReg16(cpu, idx, readReg16(cpu, idx) +% 1);
+}
+
+fn decReg16(cpu: *Cpu, idx: u8) void {
+    writeReg16(cpu, idx, readReg16(cpu, idx) -% 1);
+}
+
+fn addHl(cpu: *Cpu, value: u16) void {
+    const x: u32 = @intCast(u32, hlValue(cpu));
+    const y: u32 = @intCast(u32, value);
+    const sum: u32 = x + y;
+    const h: bool = ((x & 0xFFF) + (y & 0xFFF)) > 0xFFF;
+    const c: bool = sum > 0xFFFF;
+    setFlag(cpu, FLAG_N, false);
+    setFlag(cpu, FLAG_H, h);
+    setFlag(cpu, FLAG_C, c);
+    setHl(cpu, @intCast(u16, sum & 0xFFFF));
+}
+
+fn push16(cpu: *Cpu, bus: *Bus, value: u16) void {
+    cpu.sp = cpu.sp -% 2;
+    mmumod.write16(bus, cpu.sp, value);
+}
+
+fn pop16(cpu: *Cpu, bus: *Bus) u16 {
+    const value: u16 = mmumod.read16(bus, cpu.sp);
+    cpu.sp = cpu.sp +% 2;
+    return value;
+}
+
+fn condition(cpu: *const Cpu, cc: u8) bool {
+    switch (cc) {
+        0 => return !getFlag(cpu, FLAG_Z),
+        1 => return getFlag(cpu, FLAG_Z),
+        2 => return !getFlag(cpu, FLAG_C),
+        3 => return getFlag(cpu, FLAG_C),
+        else => unreachable,
+    }
+}
+
+fn condCode(op: u8) u8 {
+    return @intCast(u8, (@intCast(u16, op) >> 3) & 0x03);
+}
+
 fn ldRegImm(cpu: *Cpu, bus: *Bus, idx: u8) void {
     const value: u8 = mmumod.read8(bus, cpu.pc);
     cpu.pc = cpu.pc +% 1;
@@ -375,6 +460,157 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
             const group: u16 = @intCast(u16, op) & 0x38;
             const idx: u8 = op & 0x07;
             aluGroup(cpu, bus, group, idx);
+        },
+        0x01, 0x11, 0x21, 0x31 => {
+            const rr: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
+            ldReg16Imm(cpu, bus, rr);
+        },
+        0x02, 0x12, 0x22, 0x32 => {
+            const which: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
+            const addr_hl: u16 = hlValue(cpu);
+            var addr: u16 = addr_hl;
+            if (which == 0) addr = readReg16(cpu, 0);
+            if (which == 1) addr = readReg16(cpu, 1);
+            mmumod.write8(bus, addr, cpu.a);
+            if (which == 2) setHl(cpu, addr_hl +% 1);
+            if (which == 3) setHl(cpu, addr_hl -% 1);
+        },
+        0x0A, 0x1A, 0x2A, 0x3A => {
+            const which: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
+            const addr_hl: u16 = hlValue(cpu);
+            var addr: u16 = addr_hl;
+            if (which == 0) addr = readReg16(cpu, 0);
+            if (which == 1) addr = readReg16(cpu, 1);
+            cpu.a = mmumod.read8(bus, addr);
+            if (which == 2) setHl(cpu, addr_hl +% 1);
+            if (which == 3) setHl(cpu, addr_hl -% 1);
+        },
+        0x03, 0x13, 0x23, 0x33 => {
+            const rr: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
+            incReg16(cpu, rr);
+        },
+        0x0B, 0x1B, 0x2B, 0x3B => {
+            const rr: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
+            decReg16(cpu, rr);
+        },
+        0x08 => {
+            const addr: u16 = mmumod.read16(bus, cpu.pc);
+            cpu.pc = cpu.pc +% 2;
+            mmumod.write16(bus, addr, cpu.sp);
+        },
+        0x09, 0x19, 0x29, 0x39 => {
+            const rr: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
+            addHl(cpu, readReg16(cpu, rr));
+        },
+        0x18 => {
+            const e: u8 = mmumod.read8(bus, cpu.pc);
+            cpu.pc = cpu.pc +% 1;
+            cpu.pc = cpu.pc +% signedOffset(e);
+        },
+        0x20, 0x28, 0x30, 0x38 => {
+            const e: u8 = mmumod.read8(bus, cpu.pc);
+            cpu.pc = cpu.pc +% 1;
+            if (condition(cpu, condCode(op))) cpu.pc = cpu.pc +% signedOffset(e);
+        },
+        0x40...0x7F => {
+            if (op != 0x76) {
+                const dst: u8 = @intCast(u8, (@intCast(u16, op) >> 3) & 0x07);
+                const src: u8 = op & 0x07;
+                aluStore(cpu, bus, dst, aluOperand(cpu, bus, src));
+            } else {
+                unreachable;
+            }
+        },
+        0xC0, 0xC8, 0xD0, 0xD8 => {
+            if (condition(cpu, condCode(op))) cpu.pc = pop16(cpu, bus);
+        },
+        0xC1, 0xD1, 0xE1, 0xF1 => {
+            const rr: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
+            const value: u16 = pop16(cpu, bus);
+            if (rr == 3) {
+                cpu.a = @intCast(u8, value >> 8);
+                cpu.f = @intCast(u8, value & 0xF0);
+            } else {
+                writeReg16(cpu, rr, value);
+            }
+        },
+        0xC2, 0xCA, 0xD2, 0xDA => {
+            const dest: u16 = mmumod.read16(bus, cpu.pc);
+            if (condition(cpu, condCode(op))) {
+                cpu.pc = dest;
+            } else {
+                cpu.pc = cpu.pc +% 2;
+            }
+        },
+        0xC3 => {
+            cpu.pc = mmumod.read16(bus, cpu.pc);
+        },
+        0xC4, 0xCC, 0xD4, 0xDC => {
+            const dest: u16 = mmumod.read16(bus, cpu.pc);
+            cpu.pc = cpu.pc +% 2;
+            if (condition(cpu, condCode(op))) {
+                push16(cpu, bus, cpu.pc);
+                cpu.pc = dest;
+            }
+        },
+        0xC5, 0xD5, 0xE5, 0xF5 => {
+            const rr: u8 = @intCast(u8, (@intCast(u16, op) >> 4) & 0x03);
+            var value: u16 = 0;
+            if (rr == 3) {
+                const a: u16 = @intCast(u16, cpu.a);
+                const f: u16 = @intCast(u16, cpu.f & 0xF0);
+                value = (a << 8) | f;
+            } else {
+                value = readReg16(cpu, rr);
+            }
+            push16(cpu, bus, value);
+        },
+        0xC7, 0xCF, 0xD7, 0xDF, 0xE7, 0xEF, 0xF7, 0xFF => {
+            const vec: u16 = @intCast(u16, op) & 0x0038;
+            push16(cpu, bus, cpu.pc);
+            cpu.pc = vec;
+        },
+        0xC9 => {
+            cpu.pc = pop16(cpu, bus);
+        },
+        0xCD => {
+            const dest: u16 = mmumod.read16(bus, cpu.pc);
+            cpu.pc = cpu.pc +% 2;
+            push16(cpu, bus, cpu.pc);
+            cpu.pc = dest;
+        },
+        0xD9 => {
+            cpu.pc = pop16(cpu, bus);
+            cpu.ime = true;
+        },
+        0xE0 => {
+            const a8: u8 = mmumod.read8(bus, cpu.pc);
+            cpu.pc = cpu.pc +% 1;
+            mmumod.write8(bus, 0xFF00 +% @intCast(u16, a8), cpu.a);
+        },
+        0xE2 => {
+            mmumod.write8(bus, 0xFF00 +% @intCast(u16, cpu.c), cpu.a);
+        },
+        0xE9 => {
+            cpu.pc = hlValue(cpu);
+        },
+        0xEA => {
+            const addr: u16 = mmumod.read16(bus, cpu.pc);
+            cpu.pc = cpu.pc +% 2;
+            mmumod.write8(bus, addr, cpu.a);
+        },
+        0xF0 => {
+            const a8: u8 = mmumod.read8(bus, cpu.pc);
+            cpu.pc = cpu.pc +% 1;
+            cpu.a = mmumod.read8(bus, 0xFF00 +% @intCast(u16, a8));
+        },
+        0xF2 => {
+            cpu.a = mmumod.read8(bus, 0xFF00 +% @intCast(u16, cpu.c));
+        },
+        0xFA => {
+            const addr: u16 = mmumod.read16(bus, cpu.pc);
+            cpu.pc = cpu.pc +% 2;
+            cpu.a = mmumod.read8(bus, addr);
         },
         0xE8 => {
             const e: u8 = mmumod.read8(bus, cpu.pc);

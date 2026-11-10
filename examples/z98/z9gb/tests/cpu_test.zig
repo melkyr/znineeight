@@ -1,4 +1,4 @@
-// cpu_test.zig — SM83 ALU, flags, DAA, rotate, and SP-offset tests (Task 2).
+// cpu_test.zig — SM83 ALU, flags, DAA, loads, stack, and control-flow tests.
 //
 // Run as a normal executable under both -ffast and -fsafe. Each check is
 // counted; the process exits 0 only when every check passes.
@@ -81,10 +81,57 @@ fn run2(addr: u16, b0: u8, b1: u8) void {
     _ = cpumod.cpuStep(&g_cpu, &g_bus);
 }
 
+fn runImm16(addr: u16, op: u8, imm: u16) void {
+    mmumod.write8(&g_bus, addr, op);
+    mmumod.write16(&g_bus, addr +% 1, imm);
+    g_cpu.pc = addr;
+    _ = cpumod.cpuStep(&g_cpu, &g_bus);
+}
+
+fn checkWord(label: []const u8, got: u16, want: u16) void {
+    checkByte(label, @intCast(u8, got & 0xFF), @intCast(u8, want & 0xFF));
+    checkByte(label, @intCast(u8, got >> 8), @intCast(u8, want >> 8));
+}
+
+fn checkBool(label: []const u8, got: bool, want: bool) void {
+    checkByte(label, if (got) 1 else 0, if (want) 1 else 0);
+}
+
 fn hl() u16 {
     const h: u16 = @intCast(u16, g_cpu.h);
     const l: u16 = @intCast(u16, g_cpu.l);
     return (h << 8) | l;
+}
+
+fn bc() u16 {
+    const b: u16 = @intCast(u16, g_cpu.b);
+    const c: u16 = @intCast(u16, g_cpu.c);
+    return (b << 8) | c;
+}
+
+fn de() u16 {
+    const d: u16 = @intCast(u16, g_cpu.d);
+    const e: u16 = @intCast(u16, g_cpu.e);
+    return (d << 8) | e;
+}
+
+fn regGet(idx: u8) u8 {
+    switch (idx) {
+        0 => return g_cpu.b,
+        1 => return g_cpu.c,
+        2 => return g_cpu.d,
+        3 => return g_cpu.e,
+        4 => return g_cpu.h,
+        5 => return g_cpu.l,
+        6 => return mmumod.read8(&g_bus, hl()),
+        7 => return g_cpu.a,
+        else => unreachable,
+    }
+}
+
+fn seedReturn(value: u16) void {
+    g_cpu.sp = 0xD000;
+    mmumod.write16(&g_bus, g_cpu.sp, value);
 }
 
 fn testAlu() void {
@@ -380,6 +427,395 @@ fn testSpOffset() void {
     checkFlags("ld hl sp -16 flags", false, false, false, true);
 }
 
+fn testLoadRegReg() void {
+    var op: u16 = 0x40;
+    while (op <= 0x7F) : (op += 1) {
+        if (op != 0x76) {
+            reset();
+            g_cpu.b = 0xB0;
+            g_cpu.c = 0xC1;
+            g_cpu.d = 0xD2;
+            g_cpu.e = 0xE3;
+            g_cpu.h = 0xC5;
+            g_cpu.l = 0x06;
+            g_cpu.a = 0xA4;
+            mmumod.write8(&g_bus, 0xC506, 0x99);
+
+            const dst: u8 = @intCast(u8, (op >> 3) & 0x07);
+            const src: u8 = @intCast(u8, op & 0x07);
+            const want: u8 = regGet(src);
+            run1(CODE, @intCast(u8, op));
+            if (dst == 6) {
+                checkByte("ld (hl),r", mmumod.read8(&g_bus, 0xC506), want);
+            } else {
+                checkByte("ld r,r'", regGet(dst), want);
+            }
+        }
+    }
+}
+
+fn testLoads() void {
+    testLoadRegReg();
+
+    reset();
+    g_cpu.b = 0xC1;
+    g_cpu.c = 0x10;
+    g_cpu.a = 0x5A;
+    run1(CODE, 0x02);
+    checkByte("ld (bc),a", mmumod.read8(&g_bus, 0xC110), 0x5A);
+
+    reset();
+    g_cpu.d = 0xC1;
+    g_cpu.e = 0x20;
+    g_cpu.a = 0x6B;
+    run1(CODE, 0x12);
+    checkByte("ld (de),a", mmumod.read8(&g_bus, 0xC120), 0x6B);
+
+    reset();
+    g_cpu.h = 0xC1;
+    g_cpu.l = 0x30;
+    g_cpu.a = 0x7C;
+    run1(CODE, 0x22);
+    checkByte("ld (hl+),a mem", mmumod.read8(&g_bus, 0xC130), 0x7C);
+    checkByte("ld (hl+),a lo", @intCast(u8, hl() & 0xFF), 0x31);
+    checkByte("ld (hl+),a hi", @intCast(u8, hl() >> 8), 0xC1);
+
+    reset();
+    g_cpu.h = 0xC1;
+    g_cpu.l = 0x40;
+    g_cpu.a = 0x8D;
+    run1(CODE, 0x32);
+    checkByte("ld (hl-),a mem", mmumod.read8(&g_bus, 0xC140), 0x8D);
+    checkByte("ld (hl-),a lo", @intCast(u8, hl() & 0xFF), 0x3F);
+    checkByte("ld (hl-),a hi", @intCast(u8, hl() >> 8), 0xC1);
+
+    reset();
+    g_cpu.b = 0xC1;
+    g_cpu.c = 0x50;
+    mmumod.write8(&g_bus, 0xC150, 0x9E);
+    run1(CODE, 0x0A);
+    checkByte("ld a,(bc)", g_cpu.a, 0x9E);
+
+    reset();
+    g_cpu.d = 0xC1;
+    g_cpu.e = 0x60;
+    mmumod.write8(&g_bus, 0xC160, 0xAF);
+    run1(CODE, 0x1A);
+    checkByte("ld a,(de)", g_cpu.a, 0xAF);
+
+    reset();
+    g_cpu.h = 0xC1;
+    g_cpu.l = 0x70;
+    mmumod.write8(&g_bus, 0xC170, 0xB0);
+    run1(CODE, 0x2A);
+    checkByte("ld a,(hl+) value", g_cpu.a, 0xB0);
+    checkByte("ld a,(hl+) lo", @intCast(u8, hl() & 0xFF), 0x71);
+    checkByte("ld a,(hl+) hi", @intCast(u8, hl() >> 8), 0xC1);
+
+    reset();
+    g_cpu.h = 0xC1;
+    g_cpu.l = 0x70;
+    mmumod.write8(&g_bus, 0xC170, 0xB1);
+    run1(CODE, 0x3A);
+    checkByte("ld a,(hl-) value", g_cpu.a, 0xB1);
+    checkByte("ld a,(hl-) lo", @intCast(u8, hl() & 0xFF), 0x6F);
+    checkByte("ld a,(hl-) hi", @intCast(u8, hl() >> 8), 0xC1);
+
+    reset();
+    g_cpu.a = 0xC1;
+    runImm(CODE, 0xE0, 0x80);
+    checkByte("ldh (a8),a", mmumod.read8(&g_bus, 0xFF80), 0xC1);
+
+    reset();
+    mmumod.write8(&g_bus, 0xFF81, 0xD2);
+    runImm(CODE, 0xF0, 0x81);
+    checkByte("ldh a,(a8)", g_cpu.a, 0xD2);
+
+    reset();
+    g_cpu.c = 0x82;
+    g_cpu.a = 0xE3;
+    run1(CODE, 0xE2);
+    checkByte("ld (c),a", mmumod.read8(&g_bus, 0xFF82), 0xE3);
+
+    reset();
+    g_cpu.c = 0x83;
+    mmumod.write8(&g_bus, 0xFF83, 0xF4);
+    run1(CODE, 0xF2);
+    checkByte("ld a,(c)", g_cpu.a, 0xF4);
+
+    reset();
+    g_cpu.a = 0x55;
+    runImm16(CODE, 0xEA, 0xC200);
+    checkByte("ld (a16),a", mmumod.read8(&g_bus, 0xC200), 0x55);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC201, 0x66);
+    runImm16(CODE, 0xFA, 0xC201);
+    checkByte("ld a,(a16)", g_cpu.a, 0x66);
+
+    reset();
+    g_cpu.sp = 0x1234;
+    runImm16(CODE, 0x08, 0xC202);
+    checkWord("ld (a16),sp", mmumod.read16(&g_bus, 0xC202), 0x1234);
+
+    reset();
+    runImm16(CODE, 0x01, 0xBEEF);
+    checkWord("ld bc,d16", bc(), 0xBEEF);
+
+    reset();
+    runImm16(CODE, 0x11, 0xCAFE);
+    checkWord("ld de,d16", de(), 0xCAFE);
+
+    reset();
+    runImm16(CODE, 0x21, 0xD00F);
+    checkWord("ld hl,d16", hl(), 0xD00F);
+
+    reset();
+    runImm16(CODE, 0x31, 0xFFFE);
+    checkWord("ld sp,d16", g_cpu.sp, 0xFFFE);
+
+    reset();
+    g_cpu.b = 0x10;
+    g_cpu.c = 0xFF;
+    run1(CODE, 0x03);
+    checkWord("inc bc", bc(), 0x1100);
+
+    reset();
+    g_cpu.b = 0x10;
+    g_cpu.c = 0x00;
+    run1(CODE, 0x0B);
+    checkWord("dec bc", bc(), 0x0FFF);
+
+    reset();
+    g_cpu.h = 0x0F;
+    g_cpu.l = 0xFF;
+    g_cpu.b = 0x00;
+    g_cpu.c = 0x01;
+    g_cpu.f = FLAG_Z;
+    run1(CODE, 0x09);
+    checkWord("add hl,bc", hl(), 0x1000);
+    checkFlags("add hl,bc flags", true, false, true, false);
+}
+
+fn testStack() void {
+    reset();
+    g_cpu.sp = 0xD000;
+    g_cpu.b = 0x12;
+    g_cpu.c = 0x34;
+    run1(CODE, 0xC5);
+    checkWord("push bc sp", g_cpu.sp, 0xCFFE);
+    checkByte("push bc low", mmumod.read8(&g_bus, 0xCFFE), 0x34);
+    checkByte("push bc high", mmumod.read8(&g_bus, 0xCFFF), 0x12);
+    g_cpu.b = 0;
+    g_cpu.c = 0;
+    run1(CODE, 0xC1);
+    checkWord("pop bc sp", g_cpu.sp, 0xD000);
+    checkByte("pop bc b", g_cpu.b, 0x12);
+    checkByte("pop bc c", g_cpu.c, 0x34);
+
+    reset();
+    g_cpu.sp = 0xD080;
+    g_cpu.d = 0x56;
+    g_cpu.e = 0x78;
+    run1(CODE, 0xD5);
+    checkWord("push de sp", g_cpu.sp, 0xD07E);
+    checkByte("push de low", mmumod.read8(&g_bus, 0xD07E), 0x78);
+    checkByte("push de high", mmumod.read8(&g_bus, 0xD07F), 0x56);
+    g_cpu.d = 0;
+    g_cpu.e = 0;
+    run1(CODE, 0xD1);
+    checkWord("pop de sp", g_cpu.sp, 0xD080);
+    checkByte("pop de d", g_cpu.d, 0x56);
+    checkByte("pop de e", g_cpu.e, 0x78);
+
+    reset();
+    g_cpu.sp = 0xD090;
+    g_cpu.h = 0x9A;
+    g_cpu.l = 0xBC;
+    run1(CODE, 0xE5);
+    checkWord("push hl sp", g_cpu.sp, 0xD08E);
+    checkByte("push hl low", mmumod.read8(&g_bus, 0xD08E), 0xBC);
+    checkByte("push hl high", mmumod.read8(&g_bus, 0xD08F), 0x9A);
+    g_cpu.h = 0;
+    g_cpu.l = 0;
+    run1(CODE, 0xE1);
+    checkWord("pop hl sp", g_cpu.sp, 0xD090);
+    checkWord("pop hl value", hl(), 0x9ABC);
+
+    reset();
+    g_cpu.sp = 0xD100;
+    g_cpu.a = 0xAB;
+    g_cpu.f = 0xF0;
+    run1(CODE, 0xF5);
+    checkWord("push af sp", g_cpu.sp, 0xD0FE);
+    checkByte("push af low", mmumod.read8(&g_bus, 0xD0FE), 0xF0);
+    checkByte("push af high", mmumod.read8(&g_bus, 0xD0FF), 0xAB);
+    g_cpu.a = 0;
+    g_cpu.f = 0;
+    run1(CODE, 0xF1);
+    checkWord("pop af sp", g_cpu.sp, 0xD100);
+    checkByte("pop af a", g_cpu.a, 0xAB);
+    checkByte("pop af f", g_cpu.f, 0xF0);
+
+    reset();
+    g_cpu.sp = 0xD200;
+    mmumod.write8(&g_bus, 0xD200, 0xEF);
+    mmumod.write8(&g_bus, 0xD201, 0x12);
+    run1(CODE, 0xF1);
+    checkByte("pop af mask a", g_cpu.a, 0x12);
+    checkByte("pop af mask f", g_cpu.f, 0xE0);
+}
+
+fn testJumps() void {
+    reset();
+    runImm16(CODE, 0xC3, 0xC123);
+    checkWord("jp a16", g_cpu.pc, 0xC123);
+
+    reset();
+    g_cpu.h = 0xC4;
+    g_cpu.l = 0x56;
+    run1(CODE, 0xE9);
+    checkWord("jp (hl)", g_cpu.pc, 0xC456);
+
+    const jp_ops = [4]u8{ 0xC2, 0xCA, 0xD2, 0xDA };
+    var i: usize = 0;
+    while (i < 4) : (i += 1) {
+        reset();
+        if (i == 1) g_cpu.f = FLAG_Z;
+        if (i == 3) g_cpu.f = FLAG_C;
+        runImm16(CODE, jp_ops[i], 0xC321);
+        checkWord("jp cc taken", g_cpu.pc, 0xC321);
+    }
+    i = 0;
+    while (i < 4) : (i += 1) {
+        reset();
+        if (i == 0) g_cpu.f = FLAG_Z;
+        if (i == 1) g_cpu.f = 0;
+        if (i == 2) g_cpu.f = FLAG_C;
+        if (i == 3) g_cpu.f = 0;
+        runImm16(CODE, jp_ops[i], 0xC321);
+        checkWord("jp cc not taken", g_cpu.pc, CODE +% 3);
+    }
+
+    reset();
+    runImm(CODE, 0x18, 0x02);
+    checkWord("jr +2", g_cpu.pc, CODE +% 4);
+
+    reset();
+    runImm(CODE, 0x18, 0xFE);
+    checkWord("jr -2", g_cpu.pc, CODE);
+
+    const jr_ops = [4]u8{ 0x20, 0x28, 0x30, 0x38 };
+    i = 0;
+    while (i < 4) : (i += 1) {
+        reset();
+        if (i == 1) g_cpu.f = FLAG_Z;
+        if (i == 3) g_cpu.f = FLAG_C;
+        runImm(CODE, jr_ops[i], 0x04);
+        checkWord("jr cc taken", g_cpu.pc, CODE +% 6);
+    }
+    i = 0;
+    while (i < 4) : (i += 1) {
+        reset();
+        if (i == 0) g_cpu.f = FLAG_Z;
+        if (i == 1) g_cpu.f = 0;
+        if (i == 2) g_cpu.f = FLAG_C;
+        if (i == 3) g_cpu.f = 0;
+        runImm(CODE, jr_ops[i], 0x04);
+        checkWord("jr cc not taken", g_cpu.pc, CODE +% 2);
+    }
+}
+
+fn testCalls() void {
+    reset();
+    g_cpu.sp = 0xD000;
+    runImm16(CODE, 0xCD, 0xC200);
+    checkWord("call a16 pc", g_cpu.pc, 0xC200);
+    checkWord("call a16 sp", g_cpu.sp, 0xCFFE);
+    checkWord("call a16 ret", mmumod.read16(&g_bus, 0xCFFE), CODE +% 3);
+
+    mmumod.write8(&g_bus, 0xC200, 0xC9);
+    _ = cpumod.cpuStep(&g_cpu, &g_bus);
+    checkWord("ret after call pc", g_cpu.pc, CODE +% 3);
+    checkWord("ret after call sp", g_cpu.sp, 0xD000);
+
+    reset();
+    seedReturn(0xC345);
+    run1(CODE, 0xC9);
+    checkWord("ret pc", g_cpu.pc, 0xC345);
+    checkWord("ret sp", g_cpu.sp, 0xD002);
+
+    const ret_ops = [4]u8{ 0xC0, 0xC8, 0xD0, 0xD8 };
+    var i: usize = 0;
+    while (i < 4) : (i += 1) {
+        reset();
+        if (i == 1) g_cpu.f = FLAG_Z;
+        if (i == 3) g_cpu.f = FLAG_C;
+        seedReturn(0xC456);
+        run1(CODE, ret_ops[i]);
+        checkWord("ret cc taken pc", g_cpu.pc, 0xC456);
+        checkWord("ret cc taken sp", g_cpu.sp, 0xD002);
+    }
+    i = 0;
+    while (i < 4) : (i += 1) {
+        reset();
+        if (i == 0) g_cpu.f = FLAG_Z;
+        if (i == 1) g_cpu.f = 0;
+        if (i == 2) g_cpu.f = FLAG_C;
+        if (i == 3) g_cpu.f = 0;
+        seedReturn(0xC456);
+        run1(CODE, ret_ops[i]);
+        checkWord("ret cc not taken pc", g_cpu.pc, CODE +% 1);
+        checkWord("ret cc not taken sp", g_cpu.sp, 0xD000);
+    }
+
+    reset();
+    g_cpu.sp = 0xD020;
+    g_cpu.ime = false;
+    mmumod.write16(&g_bus, 0xD020, 0xC0DE);
+    run1(CODE, 0xD9);
+    checkWord("reti pc", g_cpu.pc, 0xC0DE);
+    checkWord("reti sp", g_cpu.sp, 0xD022);
+    checkBool("reti ime", g_cpu.ime, true);
+
+    const call_ops = [4]u8{ 0xC4, 0xCC, 0xD4, 0xDC };
+    i = 0;
+    while (i < 4) : (i += 1) {
+        reset();
+        g_cpu.sp = 0xD000;
+        if (i == 1) g_cpu.f = FLAG_Z;
+        if (i == 3) g_cpu.f = FLAG_C;
+        runImm16(CODE, call_ops[i], 0xC300);
+        checkWord("call cc taken pc", g_cpu.pc, 0xC300);
+        checkWord("call cc taken sp", g_cpu.sp, 0xCFFE);
+        checkWord("call cc taken ret", mmumod.read16(&g_bus, 0xCFFE), CODE +% 3);
+    }
+    i = 0;
+    while (i < 4) : (i += 1) {
+        reset();
+        g_cpu.sp = 0xD000;
+        if (i == 0) g_cpu.f = FLAG_Z;
+        if (i == 1) g_cpu.f = 0;
+        if (i == 2) g_cpu.f = FLAG_C;
+        if (i == 3) g_cpu.f = 0;
+        runImm16(CODE, call_ops[i], 0xC300);
+        checkWord("call cc not taken pc", g_cpu.pc, CODE +% 3);
+        checkWord("call cc not taken sp", g_cpu.sp, 0xD000);
+    }
+
+    const rst_ops = [8]u8{ 0xC7, 0xCF, 0xD7, 0xDF, 0xE7, 0xEF, 0xF7, 0xFF };
+    i = 0;
+    while (i < 8) : (i += 1) {
+        reset();
+        g_cpu.sp = 0xD000;
+        run1(CODE, rst_ops[i]);
+        const vec: u16 = @intCast(u16, rst_ops[i]) & 0x0038;
+        checkWord("rst pc", g_cpu.pc, vec);
+        checkWord("rst sp", g_cpu.sp, 0xCFFE);
+        checkWord("rst ret", mmumod.read16(&g_bus, 0xCFFE), CODE +% 1);
+    }
+}
+
 pub fn main() void {
     testAlu();
     testIncDec();
@@ -387,6 +823,10 @@ pub fn main() void {
     testRotates();
     testMisc();
     testSpOffset();
+    testLoads();
+    testStack();
+    testJumps();
+    testCalls();
 
     std.io.write("cpu ");
     if (g_fail == 0) {
