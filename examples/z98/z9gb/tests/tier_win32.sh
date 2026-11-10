@@ -121,6 +121,46 @@ else
 fi
 
 echo
+echo "== (c) std_dsound Win32 probe =="
+if OUT="$OUT/dsound" ZIG="$ZIG" sh "$SCRIPT_DIR/run_dsound_probe.sh" "$ZIG" \
+    >"$OUT/dsound_probe.log" 2>&1; then
+    pass_case "run_dsound_probe.sh PASS"
+else
+    fail_case "run_dsound_probe.sh FAILED (see $OUT/dsound_probe.log)"
+fi
+sed 's/^/       /' "$OUT/dsound_probe.log"
+
+SEXE="$OUT/dsound/dsound_probe.exe"
+if [ -f "$SEXE" ]; then
+    if bash "$CHECK" "$SEXE" 9x >"$OUT/dsound_imports.log" 2>&1; then
+        pass_case "check_win9x_imports.sh 9x PASS (dsound)"
+    else
+        fail_case "check_win9x_imports.sh 9x FAILED (see $OUT/dsound_imports.log)"
+    fi
+    SDLLS="$(i686-w64-mingw32-objdump -p "$SEXE" 2>/dev/null \
+        | sed -n 's/.*DLL Name: //p' | tr -d '\r' | tr '[:lower:]' '[:upper:]' | sort -u)"
+    if echo "$SDLLS" | grep -qx 'DSOUND.DLL'; then
+        fail_case "DSOUND.DLL imported (must be loaded dynamically)"
+    else
+        pass_case "no DSOUND.DLL import (loaded dynamically)"
+    fi
+else
+    fail_case "dsound_probe.exe missing"
+fi
+
+if grep -q '^DSOUND_PROBE PASS$' "$OUT/dsound_probe.log" 2>/dev/null; then
+    pass_case "probe marker DSOUND_PROBE PASS"
+else
+    fail_case "probe marker DSOUND_PROBE PASS missing"
+fi
+
+if grep -Eq '^[[:space:]]*backend=(1|2) queued=[0-9]+$' "$OUT/dsound_probe.log" 2>/dev/null; then
+    pass_case "dsound backend line (DirectSound or waveOut fallback)"
+else
+    fail_case "dsound backend line missing"
+fi
+
+echo
 echo "== tier_win32 summary: $PASSES passed, $FAILS failed =="
 if [ "$FAILS" -ne 0 ]; then
     echo "TIER_WIN32 FAIL"
