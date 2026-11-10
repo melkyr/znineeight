@@ -567,11 +567,13 @@ immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transfor
   (`@cInclude` + `extern fn`).
 - `examples/zig0/` is legacy oracle material only; do not use it as the current
   build/example reference.
-- **Phase 3 app entries (matrix 28/28):** `examples/z98/z9git` (local/`file://` +
+- **App entries (matrix 29/29):** `examples/z98/z9git` (local/`file://` +
   smart HTTP(S) clone/log/checkout, shallow/partial/resume; gate
   `tests/tier_git.sh`) and `examples/z98/z9zstddecomp` (`std_zstd` frame/dict
-  CLI; gate `tests/tier_zstddecomp.sh`). Example READMEs carry the exact CLI,
-  flags and exit codes.
+  CLI; gate `tests/tier_zstddecomp.sh`). `examples/z98/z9gb` is the Phase 4 P1
+  headless platform shell (`--headless`, `--frames`, `--fb-out`, `--rom`; no
+  emulation until P2; gate `tests/tier_smoke.sh`). Example READMEs carry the
+  exact CLI, flags and exit codes.
 
 ### Compile + run an example with the seed-built compiler
 
@@ -597,6 +599,21 @@ contains its own build scripts and runtime support; prefer
 
 Use the same `-fsafe -o <out>` + `build_target.sh linux` recipe on
 `examples/z98/mud_server/main.zig`. There is no current zig0 build cycle.
+
+### Build z9gb (P1 headless)
+
+```bash
+ZIG=${ZIG:-<out_dir>/zig1_5_clean}
+OUT=/tmp/z9gb_p1
+rm -rf "$OUT" && mkdir -p "$OUT"
+"$ZIG" -ffast -o "$OUT" examples/z98/z9gb/main.zig
+sh "$OUT/build_target.sh" linux "$OUT/z9gb"
+"$OUT/z9gb" --headless --frames 1 --fb-out /tmp/z9gb_p1.fb
+```
+
+P1 is the platform shell only: `--rom` is a size-checked copy into the fixed
+8 MiB buffer, with no header parsing or emulation until P2. The headless
+framebuffer dump is 92,160 bytes (160×144 little-endian RGB32).
 
 
 ## Run tests

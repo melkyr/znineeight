@@ -54,7 +54,7 @@ Task 1/7 compiler-source changes, v142-v145 retained `cd8d283b…`, the Phase 3.
 closure moved it to `de5e99b6…`, and the final expected-type fix moved it to
 `73c75a65…`), the 4-program emission gate
 is byte-identical (see [Determinism](#determinism)), and the maintained example matrix is
-**28/28** dump/gcc/link.
+**29/29** dump/gcc/link.
 The mi_matrix corpus at `-s0` is enumerated by the canonical generator
 [`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the v147
 classification (Phase 3.5 Task 12 re-anchor; unchanged by the expected-type fix) is
@@ -205,7 +205,7 @@ unchanged by the expected-type fix) is
 The frozen-1124 subset is `17eb6474b9ff6895cd1b3b3615584e3c` (950 OK / 59 GREEN / 115 FAIL):
 one operator-accepted D15 consequence, `switch_case_qualifier_reject_xmod` FAIL→GREEN (the
 new `error[3000]` prong-type diagnostic makes the classifier's green-guard rule fire).
-Goldens 5/5; example matrix 28/28; stdlib 376/0 + crosscheck 10/10.
+Goldens 5/5; example matrix 29/29; stdlib 376/0 + crosscheck 10/10.
 
 ## Build Machine & Toolchain
 > AMD Ryzen 7 7700X 8-core/16-thread up to ~5.58 GHz, 32 GB RAM, Debian; gcc/g++ 12.2.0;
@@ -516,7 +516,7 @@ Runtime safety defaults to `-fsafe`. The compiler self-build passes `-ffast`, so
 - **Corpus gate**: the corpus universe is listed by `scripts/corpus/list_corpus_dirs.sh`
   (manifest `repro/mi_matrix/EXPECTED_FAIL.md`, v130) — run `zig1 --dump-c89` + gcc `-c` per dir,
   classified OK/FAIL/GREEN per the QUICK_REF classifier. No corpus total is asserted.
-- **Example matrix**: 28 `examples/z98` programs, 28/28 dump/gcc/link.
+- **Example matrix**: 29 `examples/z98` programs, 29/29 dump/gcc/link.
 - **Golden fixtures**: 9/9 golden outputs.
 - **Upgraded-showcase gate**: `scripts/closeout/verify_upgraded.sh` (A1–B7) gates
   `lisp_interpreter_upgraded` and `rogue_mud_upgraded` against their committed canonical/demo
@@ -595,7 +595,7 @@ guide for the library's model and an index that links each domain's detailed doc
 - [STD_README.MD](STD_README.MD) — the Z98 standard library guide and index.
 
 ## Example Showcase
-`examples/z98/` carries the maintained example suite (matrix 28/28 dump/gcc/link), including
+`examples/z98/` carries the maintained example suite (matrix 29/29 dump/gcc/link), including
 complete programs that exercise the language-wins features and the PAL/networking runtime:
 - **`game_of_life`** — interactive simulation on the PAL UI layer.
 - **`lisp_interpreter_curr`** and the upgraded **`lisp_interpreter_upgraded`** — a complete Lisp
@@ -614,6 +614,9 @@ complete programs that exercise the language-wins features and the PAL/networkin
   shallow/partial clone, resumable prefix packs, and a bounded external-memory idx writer).
 - **`z9zstddecomp`** — a single-shot zstd frame decompressor CLI (`std_zstd` frames, skippable
   frames, checksums, and RFC 8878 magic/raw dictionaries; bounded output and window caps).
+- **`z9gb`** — a Game Boy emulator shell, currently at **P1 (platform abstraction + deterministic
+  headless backend)**: `--headless`, `--frames`, `--fb-out`, and a size-checked `--rom` load;
+  no header parsing or emulation until P2.
 - Plus the classic single/multi-module programs (`hello`, `prime`, `fibonacci`, `days_in_month`,
   `heapsort`, `quicksort`, `sort_strings`, `mandelbrot`, `lzw`, `func_ptr_return`, `tco_*`).
 
