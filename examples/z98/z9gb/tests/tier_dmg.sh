@@ -22,7 +22,7 @@ while [ "$#" -gt 0 ]; do
         --only)
             shift
             if [ "$#" -eq 0 ]; then
-                echo "usage: tier_dmg.sh <zig> [--only cart] [--all]" >&2
+                echo "usage: tier_dmg.sh <zig> [--only cart|cpu] [--all]" >&2
                 exit 2
             fi
             ONLY="$1"
@@ -34,7 +34,7 @@ while [ "$#" -gt 0 ]; do
             RUN_ALL=1
             ;;
         *)
-            echo "usage: tier_dmg.sh <zig> [--only cart] [--all]" >&2
+            echo "usage: tier_dmg.sh <zig> [--only cart|cpu] [--all]" >&2
             exit 2
             ;;
     esac
@@ -44,10 +44,15 @@ done
 if [ "$RUN_ALL" -eq 1 ]; then
     ONLY=""
 fi
+RUN_CART=0
+RUN_CPU=0
 if [ -z "$ONLY" ]; then
     RUN_CART=1
+    RUN_CPU=1
 elif [ "$ONLY" = "cart" ]; then
     RUN_CART=1
+elif [ "$ONLY" = "cpu" ]; then
+    RUN_CPU=1
 else
     echo "unknown tier: $ONLY" >&2
     exit 2
@@ -175,6 +180,39 @@ run_cart_mode() {
     fi
 }
 
+run_cpu_mode() {
+    mode="$1"
+    flag="$2"
+    bin="$OUT/$mode/cpu_test"
+    mkdir -p "$OUT/$mode"
+    if timeout 120 "$ZIG" "$flag" -o "$OUT/$mode" "$Z9DIR/tests/cpu_test.zig" >"$OUT/$mode/zig.log" 2>&1; then
+        pass_case "cpu $mode emits"
+    else
+        fail_case "cpu $mode emits"
+        tail -20 "$OUT/$mode/zig.log" | sed 's/^/       /'
+        return
+    fi
+    if sh "$OUT/$mode/build_target.sh" linux "$bin" >"$OUT/$mode/build.log" 2>&1; then
+        pass_case "cpu $mode links"
+    else
+        fail_case "cpu $mode links"
+        tail -20 "$OUT/$mode/build.log" | sed 's/^/       /'
+        return
+    fi
+    if timeout 60 "$bin" >"$OUT/$mode/run.out" 2>"$OUT/$mode/run.err"; then
+        pass_case "cpu $mode runs"
+    else
+        fail_case "cpu $mode runs"
+        tail -20 "$OUT/$mode/run.err" | sed 's/^/       /'
+        return
+    fi
+    if grep -q '^cpu ok ' "$OUT/$mode/run.out"; then
+        pass_case "cpu $mode output ($(cat "$OUT/$mode/run.out"))"
+    else
+        fail_case "cpu $mode output (got $(cat "$OUT/$mode/run.out"))"
+    fi
+}
+
 cd "$ROOT" || exit 1
 
 if [ "$RUN_CART" -eq 1 ]; then
@@ -191,6 +229,13 @@ if [ "$RUN_CART" -eq 1 ]; then
     fi
     run_cart_mode fast -ffast
     run_cart_mode safe -fsafe
+fi
+
+if [ "$RUN_CPU" -eq 1 ]; then
+    echo
+    echo "== SM83 ALU, flags, DAA =="
+    run_cpu_mode fast -ffast
+    run_cpu_mode safe -fsafe
 fi
 
 echo
