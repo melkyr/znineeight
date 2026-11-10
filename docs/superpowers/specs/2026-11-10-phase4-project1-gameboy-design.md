@@ -419,7 +419,7 @@ pub fn dsoundClose(d: *Dsound) void;
   - `0x01-0x03` MBC1
   - `0x0F-0x13` MBC3 with RTC for `0x0F`/`0x10`
   - `0x19-0x1E` MBC5
-- MBC1 hardware edges (gated by Mooneye `acceptance/mbc1/*`): the 5-bit
+- MBC1 hardware edges (gated by Mooneye `emulator-only/mbc1/*`): the 5-bit
   register value 0 reads as 1 before combining (banks `0x20/0x40/0x60` are
   unreachable), the 2-bit register contributes ROMX bits 5-6 in **both** modes,
   and in mode 1 it additionally banks the ROM0 window (`0000-3FFF`).

@@ -83,7 +83,7 @@ Add a tier case that builds a 32 KiB `minimal.gb`, loads it, and prints `cart ok
 - [ ] **Step 2: Implement the header parser**
 Read title `0x0134-0x0143`, cartridge type `0x0147`, ROM size `0x0148`, RAM size `0x0149`, CGB flag `0x0143`. Accept 32 KiB to 8 MiB. Map `0x00` to no MBC, `0x01-0x03` to MBC1, `0x0F-0x13` to MBC3, `0x19-0x1E` to MBC5. Unknown types reject `UnsupportedMbc`.
 - [ ] **Step 3: Implement MBC1**
-Registers: RAM enable `0x0000-0x1FFF`, ROM bank `0x2000-0x3FFF` (5-bit), RAM bank/secondary `0x4000-0x5FFF` (2-bit), mode `0x6000-0x7FFF`. Model the three hardware edges exactly (Mooneye `acceptance/mbc1/*` gates them):
+Registers: RAM enable `0x0000-0x1FFF`, ROM bank `0x2000-0x3FFF` (5-bit), RAM bank/secondary `0x4000-0x5FFF` (2-bit), mode `0x6000-0x7FFF`. Model the three hardware edges exactly (Mooneye `emulator-only/mbc1/*` gates them):
   1. the 5-bit register value 0 reads as 1 **before** combining: `romx_bank = (upper2 << 5) | (lower5 == 0 ? 1 : lower5)` — so banks `0x20/0x40/0x60` are unreachable (they become `0x21/0x41/0x61`);
   2. the 2-bit register contributes **ROMX bits 5-6 in both modes**;
   3. in **mode 1** the 2-bit register additionally banks the **ROM0 window** (`0000-3FFF` → `rom0_ptr = base + (upper2 << 5) * 16K`), and selects 8 KiB RAM banks instead of contributing to ROMX.
@@ -394,8 +394,8 @@ git commit -m "feat(z9gb): add MBC3 RTC, MBC5 and battery saves"
   - `blargg/interrupt_time/interrupt_time.gb`
   - `mooneye/acceptance/timer/div_write.gb`
   - `mooneye/acceptance/timer/tim00.gb`, `tim01.gb`, `tim10.gb`, `tim11.gb`
-  - `mooneye/acceptance/mbc1/bits_bank1.gb`, `bits_bank2.gb`, `bits_mode.gb`, `bits_ramg.gb`
-  - `mooneye/acceptance/mbc1/rom_2Mb.gb`, `rom_4Mb.gb`, `ram_256Kb.gb` (mode-1 ROM0 banking + 2-bit upper-bank edges)
+  - `mooneye/emulator-only/mbc1/bits_bank1.gb`, `bits_bank2.gb`, `bits_mode.gb`, `bits_ramg.gb`
+  - `mooneye/emulator-only/mbc1/rom_2Mb.gb`, `rom_4Mb.gb`, `ram_256kb.gb` (mode-1 ROM0 banking + 2-bit upper-bank edges)
   - `mooneye/acceptance/ppu/lcdon_timing-GS.gb`
   - `mooneye/acceptance/ppu/stat_irq_blocking.gb`
   - `mooneye/acceptance/oam_dma/basic.gb`
