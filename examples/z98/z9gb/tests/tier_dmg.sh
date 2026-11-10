@@ -1966,5 +1966,9 @@ if [ "$FAILS" -ne 0 ]; then
     echo "TIER_DMG FAIL"
     exit 1
 fi
+if [ "$RUN_GATES" -eq 1 ] && [ "$SKIPS" -ne 0 ]; then
+    echo "TIER_DMG FAIL: $SKIPS hard gate(s) skipped"
+    exit 1
+fi
 echo "TIER_DMG PASS"
 exit 0
