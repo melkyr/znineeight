@@ -160,6 +160,18 @@ else
     fail_case "dsound backend line missing"
 fi
 
+if grep -q '^[[:space:]]*UNDERRUN_PASS$' "$OUT/dsound_probe.log" 2>/dev/null; then
+    pass_case "DirectSound long-stall underrun regression PASS"
+else
+    fail_case "DirectSound long-stall underrun regression missing"
+fi
+
+if grep -q '^[[:space:]]*STRESS_PASS$' "$OUT/dsound_probe.log" 2>/dev/null; then
+    pass_case "waveOut busy-buffer stress regression PASS"
+else
+    fail_case "waveOut busy-buffer stress regression missing"
+fi
+
 echo
 echo "== tier_win32 summary: $PASSES passed, $FAILS failed =="
 if [ "$FAILS" -ne 0 ]; then

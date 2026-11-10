@@ -5,16 +5,17 @@
 // DSBCAPS_GETCURRENTPOSITION2 | DSBCAPS_GLOBALFOCUS -> silence prefill ->
 // Play(0,0,DSBPLAY_LOOPING). dsoundWrite polls GetCurrentPosition and locks
 // only the free region (DirectSound returns at most two wrapped spans), copies,
-// unlocks, and never sleeps. A detected underrun aligns the write cursor to the
-// play cursor without rewinding the buffer; the zero prefill is the gap
-// cushion.
+// unlocks, and never sleeps. On a detected underrun it silence-fills the whole
+// ring (QPC detects stalls longer than one buffer, so multi-lap stalls are
+// covered) and restarts the write cursor at the play cursor without rewinding.
 //
-// waveOut fallback: waveOutOpen(WAVE_MAPPER) with two 2,048-frame buffers,
-// waveOutPrepareHeader/waveOutWrite and WHDR_DONE polling. The writer is
-// nonblocking: if the next buffer is still playing it accepts fewer samples
-// (drops the tail) instead of waiting. Buffers are zero-padded to their full
-// length before submission, so a buffer that is not filled by the writer is
-// silence-filled rather than blocking.
+// waveOut fallback: waveOutOpen(WAVE_MAPPER) with two 2,048-frame device
+// buffers, waveOutPrepareHeader/waveOutWrite and WHDR_DONE polling. A queued
+// device buffer is never reused and the writer never blocks or discards an
+// accepted sample: when both device buffers are busy, offered bytes go to a
+// bounded static pending area and are flushed into the next freed buffer.
+// Device buffers are fully silence-padded before submission, so a partially
+// filled/unready buffer is padded rather than waited for.
 //
 // The COM vtables are hand-written with the exact MinGW dsound.h slot order
 // (IDirectSound at :575, IDirectSoundBuffer at :686); unused slots stay as
@@ -44,6 +45,7 @@ const WHDR_DONE: u32 = 0x00000001;
 const NBUF: usize = 2;
 const FRAMES: u32 = 2048;
 const BUF_CAP: usize = 8192;
+const PEND_CAP: usize = NBUF * BUF_CAP;
 const FRAME_MASK: u32 = 2047;
 
 fn nullVoid() *void {
@@ -169,6 +171,9 @@ pub extern "stdcall" fn LoadLibraryA(name: [*]const u8) *void;
 pub extern "stdcall" fn GetProcAddress(mod: *void, name: [*]const u8) *void;
 pub extern "stdcall" fn FreeLibrary(mod: *void) i32;
 
+pub extern "stdcall" fn QueryPerformanceCounter(counter: *i64) i32;
+pub extern "stdcall" fn QueryPerformanceFrequency(freq: *i64) i32;
+
 pub extern "stdcall" fn waveOutOpen(phwo: *void, uDeviceID: u32, pwfx: *void, dwCallback: u32, dwInstance: u32, fdwOpen: u32) u32;
 pub extern "stdcall" fn waveOutPrepareHeader(hwo: *void, pwh: *void, cbwh: u32) u32;
 pub extern "stdcall" fn waveOutWrite(hwo: *void, pwh: *void, cbwh: u32) u32;
@@ -191,12 +196,16 @@ pub const State = struct {
     write_cursor: u32,
     last_play: u32,
     queued_frames: u32,
+    qpc_freq: i64,
+    last_qpc: i64,
     hwo: *void,
     wave_bufs: [NBUF * BUF_CAP]u8,
     wave_hdrs: [NBUF]WaveHdr,
     wave_queued: [NBUF]bool,
     fill_idx: u32,
     fill_len: u32,
+    wave_pending: [PEND_CAP]u8,
+    pending_len: u32,
 };
 
 // --- small helpers ---------------------------------------------------------
@@ -350,6 +359,14 @@ fn tryDs(st: *State, hwnd: *void) u8 {
     }
     st.write_cursor = st.last_play & FRAME_MASK;
     st.queued_frames = 0;
+    st.qpc_freq = 0;
+    st.last_qpc = 0;
+    var freq: i64 = 0;
+    if (QueryPerformanceFrequency(&freq) != 0 and freq > 0) {
+        st.qpc_freq = freq;
+        var counter: i64 = 0;
+        if (QueryPerformanceCounter(&counter) != 0) st.last_qpc = counter;
+    }
     st.backend = 1;
     return 0;
 }
@@ -370,6 +387,7 @@ fn releaseWave(st: *State) void {
     st.hwo = nullVoid();
     st.fill_idx = 0;
     st.fill_len = 0;
+    st.pending_len = 0;
     st.backend = 0;
 }
 
@@ -390,6 +408,7 @@ fn initWaveHeaders(st: *State) void {
     }
     st.fill_idx = 0;
     st.fill_len = 0;
+    st.pending_len = 0;
 }
 
 fn submitWave(st: *State) bool {
@@ -415,6 +434,49 @@ fn submitWave(st: *State) bool {
     st.fill_idx = (st.fill_idx + 1) % @intCast(u32, NBUF);
     st.fill_len = 0;
     return true;
+}
+
+// Move bytes from the bounded pending area into the current free device
+// buffer. The caller guarantees fill_idx is not queued. The device buffer is
+// submitted immediately (submitWave silence-pads a short tail); any pending
+// remainder stays at the front for the next freed buffer.
+fn flushPending(st: *State) bool {
+    if (st.pending_len == 0) return true;
+    const idx: usize = @intCast(usize, st.fill_idx);
+    const base: usize = idx * BUF_CAP;
+    const limit: usize = @intCast(usize, st.buf_bytes);
+    var fill: usize = @intCast(usize, st.fill_len);
+    const space: usize = limit - fill;
+    if (space == 0) return submitWave(st);
+    const plen: usize = @intCast(usize, st.pending_len);
+    var take: usize = plen;
+    if (take > space) take = space;
+    var i: usize = 0;
+    while (i < take) : (i += 1) st.wave_bufs[base + fill + i] = st.wave_pending[i];
+    const remain: usize = plen - take;
+    i = 0;
+    while (i < remain) : (i += 1) st.wave_pending[i] = st.wave_pending[take + i];
+    st.pending_len = @intCast(u32, remain);
+    fill += take;
+    st.fill_len = @intCast(u32, fill);
+    // Submit now even when the tail is short: submitWave silence-pads the rest,
+    // so an unready/partial buffer is filled with silence rather than blocking.
+    return submitWave(st);
+}
+
+// Append offered bytes to the bounded pending area when both device buffers are
+// busy. Pending preserves every accepted sample; a sustained overload returns
+// short (the caller keeps the rest) rather than dropping copied samples.
+fn appendPending(st: *State, src: [*]const u8, off: usize, total: usize) usize {
+    const used: usize = @intCast(usize, st.pending_len);
+    var space: usize = PEND_CAP - used;
+    if (space == 0) return 0;
+    var take: usize = total - off;
+    if (take > space) take = space;
+    var i: usize = 0;
+    while (i < take) : (i += 1) st.wave_pending[used + i] = src[off + i];
+    st.pending_len = @intCast(u32, used + take);
+    return take;
 }
 
 fn tryWave(st: *State) bool {
@@ -446,9 +508,12 @@ pub fn open(window: *void, sample_rate: u32, channels: u16, st: *State) u8 {
     st.write_cursor = 0;
     st.last_play = 0;
     st.queued_frames = 0;
+    st.qpc_freq = 0;
+    st.last_qpc = 0;
     st.hwo = nullVoid();
     st.fill_idx = 0;
     st.fill_len = 0;
+    st.pending_len = 0;
 
     if (sample_rate < 8000 or sample_rate > 192000) return 1;
     if (channels != 1 and channels != 2) return 1;
@@ -486,21 +551,35 @@ fn writeDs(st: *State, samples: []const i16) usize {
         return 0;
     }
     const play_frames: u32 = play / st.block_align;
+    // Positions alone only give one modulo lap. Use QPC to detect a stall
+    // longer than the whole buffer: then the queue is definitely drained, even
+    // if the play cursor came back to a similar position after several laps.
+    var long_stall: bool = false;
+    if (st.qpc_freq > 0) {
+        var now: i64 = 0;
+        if (QueryPerformanceCounter(&now) != 0) {
+            var dt: i64 = 0;
+            if (now >= st.last_qpc) dt = now - st.last_qpc;
+            if (dt > 0) {
+                const lhs: i64 = dt * @intCast(i64, st.rate);
+                const rhs: i64 = @intCast(i64, FRAMES) * st.qpc_freq;
+                if (lhs >= rhs) long_stall = true;
+            }
+            st.last_qpc = now;
+        }
+    }
     var delta: u32 = 0;
     if (play_frames >= st.last_play) {
         delta = play_frames - st.last_play;
     } else {
         delta = (FRAMES - st.last_play) + play_frames;
     }
-    if (delta >= st.queued_frames) {
-        // Queue drained (or the play cursor passed it). Silence-fill the missed
-        // gap instead of blocking or rewinding the ring, then restart at the
+    if (long_stall or delta >= st.queued_frames) {
+        // Queue drained (or the play cursor passed it). Silence-fill the whole
+        // ring instead of blocking or rewinding; this covers the actual missed
+        // gap and any number of full laps in a long stall. Then restart at the
         // play cursor.
-        if (delta > st.queued_frames) {
-            const missed: u32 = delta - st.queued_frames;
-            const gap_start: u32 = (st.write_cursor + st.queued_frames) & FRAME_MASK;
-            _ = zeroDsRange(st, gap_start * st.block_align, missed * st.block_align);
-        }
+        _ = zeroDsRange(st, 0, st.buf_bytes);
         st.queued_frames = 0;
         st.write_cursor = play_frames & FRAME_MASK;
     } else {
@@ -553,10 +632,16 @@ fn writeWave(st: *State, samples: []const i16) usize {
         const idx: usize = @intCast(usize, st.fill_idx);
         if (st.wave_queued[idx]) {
             const h: *WaveHdr = &st.wave_hdrs[idx];
+            // The device still owns this buffer: do not reuse it and do not
+            // block. Any new samples are staged in pending below.
             if (!hdrDone(h)) break;
             _ = waveOutUnprepareHeader(st.hwo, @ptrCast(*void, h), @intCast(u32, @sizeOf(WaveHdr)));
             st.wave_queued[idx] = false;
             st.fill_len = 0;
+        }
+        if (st.pending_len > 0) {
+            if (!flushPending(st)) break;
+            continue;
         }
         var fill: usize = @intCast(usize, st.fill_len);
         var space: usize = limit - fill;
@@ -579,6 +664,11 @@ fn writeWave(st: *State, samples: []const i16) usize {
             if (!submitWave(st)) break;
         }
     }
+    if (off < total_bytes) {
+        const take = appendPending(st, src, off, total_bytes);
+        off += take;
+        consumed_bytes += take;
+    }
     return consumed_bytes / 2;
 }
 
@@ -593,7 +683,7 @@ pub fn queued(st: *State) usize {
         return @intCast(usize, st.queued_frames) * @intCast(usize, st.channels);
     }
     if (st.backend == 2) {
-        var bytes: usize = @intCast(usize, st.fill_len);
+        var bytes: usize = @intCast(usize, st.fill_len) + @intCast(usize, st.pending_len);
         var i: usize = 0;
         while (i < NBUF) : (i += 1) {
             if (st.wave_queued[i]) {
