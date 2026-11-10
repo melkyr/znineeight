@@ -270,7 +270,7 @@ Keep a 16-bit internal divider; DIV is the high byte. Any write to DIV resets th
 All wrap math follows the `-fsafe` idiom (u16 temp + `& 0xFFFF` / `+%`).
 - [ ] **Step 3: Implement interrupts and the EI delay**
 At instruction boundaries, if IME and `IE & IF & 0x1F`:
-push PC, clear IME, clear the IF bit, jump to the vector, add 20 cycles. If halted and IME=0 with a pending interrupt, set `halt_bug` and do not halt; the HALT bug must manifest in the **fetch path as a PC double-fetch** (the next opcode byte is fetched twice — the first fetch does not increment PC), which the CPU fetch implements explicitly; cover with one dedicated test. `EI` does not enable IME immediately: it arms a pending flag that takes effect only after the instruction following `EI` (spec §8.5; gated by Blargg `interrupt_time`). `DI` clears IME immediately and cancels a pending EI. `RETI` enables IME immediately.
+push PC, clear IME, clear the IF bit, jump to the vector, add 20 cycles. If halted and IME=0 with a pending interrupt, set `halt_bug` and do not halt; the HALT bug must manifest in the **fetch path as a PC double-fetch** (the next opcode byte is fetched twice — the first fetch does not increment PC), which the CPU fetch implements explicitly; cover with one dedicated test. `EI` does not enable IME immediately: it arms a pending flag that takes effect only after the instruction following `EI` (spec §8.5; covered by the local EI-delay test). `DI` clears IME immediately and cancels a pending EI. `RETI` enables IME immediately. The Blargg `interrupt_time` ROM is CGB-only and deferred to P4.
 - [ ] **Step 4: Implement post-boot state in `emuReset`**
 `emuReset` (P1 facade) sets the documented DMG post-boot state from spec §8.5: `A=0x01, F=0xB0, B=0x00, C=0x13, D=0x00, E=0xD8, H=0x01, L=0x4D, SP=0xFFFE, PC=0x0100`, I/O registers at the Task 5 Step 4 defaults, `LY=0x91`. Add a test asserting these exact values after `emuReset`.
 - [ ] **Step 5: Implement serial harness**
@@ -404,7 +404,7 @@ git commit -m "feat(z9gb): add MBC3 RTC, MBC5 and battery saves"
   - `blargg/cpu_instrs/cpu_instrs.gb`
   - `blargg/instr_timing/instr_timing.gb`
   - `blargg/mem_timing/mem_timing.gb`
-  - `blargg/interrupt_time/interrupt_time.gb`
+  - `blargg/interrupt_time/interrupt_time.gb` (CGB-only header `0xC0`; deferred to P4, not a P2 gate)
   - `mooneye/acceptance/timer/div_write.gb`
   - `mooneye/acceptance/timer/tim00.gb`, `tim01.gb`, `tim10.gb`, `tim11.gb`
   - `mooneye/emulator-only/mbc1/bits_bank1.gb`, `bits_bank2.gb`, `bits_mode.gb`, `bits_ramg.gb`
@@ -447,10 +447,10 @@ git commit -m "test(z9gb): add DMG hard gates and ROM manifest"
 
 **Interfaces:**
 - Consumes: `Cpu`, `Bus`, timer; Task 9 gate runners.
-- Produces: STOP as a 2-byte instruction; M-cycle bus timing; interrupt dispatch timing; hardware TIMA reload timing; `BIT` H flag; Blargg terminal-verdict matching. Gates `cpu_instrs`, `instr_timing`, `mem_timing`, `interrupt_time`.
+- Produces: STOP as a 2-byte instruction; M-cycle bus timing; interrupt dispatch timing; hardware TIMA reload timing; `BIT` H flag; Blargg terminal-verdict matching. P2 gates: `cpu_instrs`, `instr_timing`, `mem_timing`. `interrupt_time` is CGB-only and deferred to P4.
 
 - [ ] **Step 1: Write the failing gate run**
-Run `run_blargg.sh` for all four Blargg ROMs. Expected: current FAIL/SIGTRAP/no-verdict.
+Run `run_blargg.sh` for the three P2 Blargg ROMs (`cpu_instrs`, `instr_timing`, `mem_timing`). Expected: current FAIL/SIGTRAP/no-verdict.
 - [ ] **Step 2: Implement STOP**
 `0x10` consumes 2 bytes, advances PC past both, executes in 4 T-cycles, and does not trap. DMG STOP has no speed switch; CGB speed-switch behavior remains P4.
 - [ ] **Step 3: Correct the TIMA reload delay**
@@ -458,13 +458,13 @@ Pan Docs: TIMA stays `$00` for **one M-cycle = 4 T-cycles** after overflow, then
 - [ ] **Step 4: Correct `BIT` H**
 `BIT` sets `H=1` and leaves `N=0`; `C` is unchanged. Update the `cpu_test.zig` `BIT` flag expectations from `H=false` to `H=true`.
 - [ ] **Step 5: Accept both Blargg terminal verdicts**
-`main.zig` must also treat `Passed` and `Passed all tests.` as terminal PASS lines and exit before the frame cap; `run_blargg.sh` must accept the same two terminal verdicts. Any `Failed` line or cap without a verdict is FAIL. Do not weaken the gate or skip a ROM.
+`main.zig` must also treat `Passed` and `Passed all tests.` as terminal PASS lines and exit before the frame cap; `run_blargg.sh` must accept the same two terminal verdicts. Remove `blargg/interrupt_time` from the P2 Blargg list because that ROM is CGB-only (header `0xC0`) and deferred to P4. Any `Failed` line or cap without a verdict is FAIL. Do not weaken the gate or skip a ROM.
 - [ ] **Step 6: Place bus accesses at M-cycle boundaries**
 Replace instruction-atomic post-tick timing: every external bus access is preceded by the correct 4-T-cycle bus time, and internal cycles tick the bus at their instruction-specific points. Do not tick the whole instruction after the fact and do not double-tick. The timer/DIV/IF paths must observe accesses in the order the CPU performs them.
 - [ ] **Step 7: Fix interrupt dispatch timing**
-Keep the 20-cycle dispatch cost, but place those cycles on the bus at the same points as the hardware sequence (push and vector fetch), so `interrupt_time` sees the right latency.
+Keep the 20-cycle dispatch cost, but place those cycles on the bus at the same points as the hardware sequence (push and vector fetch), so P2 interrupt latency is correct.
 - [ ] **Step 8: Run**
-Run all four Blargg gates plus `tier_dmg --all` under `-ffast` and `-fsafe`. Expected: `cpu_instrs`, `instr_timing`, `mem_timing`, and `interrupt_time` PASS; existing tier stays green. If `interrupt_time` still emits no serial after the timing fixes, STOP with the exact serial/step evidence; do not silently skip or replace the gate.
+Run the three P2 Blargg gates (`cpu_instrs`, `instr_timing`, `mem_timing`) plus `tier_dmg --all` under `-ffast` and `-fsafe`. Expected: all three P2 gates PASS; existing tier stays green. `interrupt_time` is CGB-only and is not run in P2.
 - [ ] **Step 9: Commit**
 ```bash
 git add examples/z98/z9gb/main.zig examples/z98/z9gb/cpu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/timer.zig examples/z98/z9gb/tests/cpu_test.zig examples/z98/z9gb/tests/run_blargg.sh examples/z98/z9gb/tests/tier_dmg.sh
