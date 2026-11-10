@@ -173,11 +173,10 @@ pub fn ppuWrite(p: *Ppu, addr: u16, value: u8, bus: *mmumod.Bus) void {
                 p.win_start_x = 0;
                 p.win_skip = 0;
                 p.win_visible_len = 0;
-                p.coincidence = (p.ly == p.lyc);
                 p.first_line = false;
                 p.oam_blocked = false;
                 p.vram_blocked = false;
-                updateStatLine(p, bus);
+                p.stat_line = false;
                 syncAccess(p, bus);
             } else if (!was_on and now_on) {
                 p.mode = 0;
@@ -198,15 +197,20 @@ pub fn ppuWrite(p: *Ppu, addr: u16, value: u8, bus: *mmumod.Bus) void {
         },
         0xFF41 => {
             p.stat = value & 0x78;
-            updateStatLine(p, bus);
+            if ((p.lcdc & 0x80) != 0) {
+                updateStatLine(p, bus);
+            } else {
+                p.stat_line = false;
+            }
         },
         0xFF42 => p.scy = value,
         0xFF43 => p.scx = value,
         0xFF44 => {},
         0xFF45 => {
             p.lyc = value;
+            if ((p.lcdc & 0x80) == 0) return;
             p.coincidence = (p.ly == p.lyc);
-            if ((p.lcdc & 0x80) != 0 and p.coincidence and (p.stat & 0x40) != 0) {
+            if (p.coincidence and (p.stat & 0x40) != 0) {
                 mmumod.busRaiseIrq(bus, 0x02);
                 p.stat_line = true;
             } else {
@@ -581,11 +585,10 @@ pub fn ppuTick(p: *Ppu, cycles: u32, bus: *mmumod.Bus) void {
         p.win_start_x = 0;
         p.win_skip = 0;
         p.win_visible_len = 0;
-        p.coincidence = (p.ly == p.lyc);
         p.first_line = false;
         p.oam_blocked = false;
         p.vram_blocked = false;
-        updateStatLine(p, bus);
+        p.stat_line = false;
         syncAccess(p, bus);
         return;
     }

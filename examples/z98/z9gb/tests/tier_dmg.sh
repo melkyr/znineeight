@@ -1075,6 +1075,32 @@ fn testLycWriteAndLcd() void {
     checkByte("ppu lcd reenable mode2 irq quiet", g_bus.io[0x0F] & 0x02, 0x00);
 }
 
+fn testLcdOffLycFrozen() void {
+    reset();
+    writeReg(0xFF41, 0x40);
+    writeReg(0xFF45, 1);
+    tick(456);
+    tick(4);
+    checkByte("ppu lcd off setup coincidence", ppumod.ppuRead(&g_ppu, 0xFF41) & 0x04, 0x04);
+
+    g_bus.io[0x0F] = 0;
+    writeReg(0xFF40, 0x00);
+    checkByte("ppu lcd off no spurious irq", g_bus.io[0x0F] & 0x02, 0x00);
+    checkByte("ppu lcd off ly", g_ppu.ly, 0);
+    checkByte("ppu lcd off lyc frozen", ppumod.ppuRead(&g_ppu, 0xFF41) & 0x04, 0x04);
+
+    g_bus.io[0x0F] = 0;
+    writeReg(0xFF45, 0);
+    checkByte("ppu lcd off lyc write quiet", g_bus.io[0x0F] & 0x02, 0x00);
+    tick(456);
+    checkByte("ppu lcd off tick quiet", g_bus.io[0x0F] & 0x02, 0x00);
+    checkByte("ppu lcd off lyc frozen after tick", ppumod.ppuRead(&g_ppu, 0xFF41) & 0x04, 0x04);
+
+    g_bus.io[0x0F] = 0;
+    writeReg(0xFF40, 0x91);
+    checkByte("ppu lcd reenable lyc irq", g_bus.io[0x0F] & 0x02, 0x02);
+}
+
 fn testSameValueLycWrite() void {
     emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = false, .dynarec = false });
     emumod.emuReset(&g_emu);
@@ -1132,6 +1158,7 @@ pub fn main() void {
     testWindowClipping();
     testMode3Tiles();
     testLycWriteAndLcd();
+    testLcdOffLycFrozen();
     testSprite8x8();
     testSprite8x16();
     testSpritePriority();
