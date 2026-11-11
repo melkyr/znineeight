@@ -173,7 +173,7 @@ fn cgbIncrement(index: *u8) void {
 }
 
 pub fn cgbSpeedSwitch(b: *Bus) bool {
-    if (!b.cgb_hw) return false;
+    if (!b.cgb_color) return false;
     if ((b.io[0x4D] & 0x01) == 0) return false;
     b.double_speed = !b.double_speed;
     b.io[0x4D] = 0;
@@ -365,7 +365,7 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
         return self.opri & 0x01;
     }
     if (addr == 0xFF4D) {
-        if (!self.cgb_hw) return 0xFF;
+        if (!self.cgb_color) return 0xFF;
         var v: u8 = 0;
         if (self.double_speed) v |= 0x80;
         if ((self.io[0x4D] & 0x01) != 0) v |= 0x01;
@@ -410,7 +410,7 @@ pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
         return;
     }
     if (addr == 0xFF4D) {
-        if (self.cgb_hw) self.io[0x4D] = value & 0x01;
+        if (self.cgb_color) self.io[0x4D] = value & 0x01;
         return;
     }
     if (addr == 0xFF46) {
@@ -510,11 +510,7 @@ pub fn write8(self: *Bus, addr: u16, value: u8) void {
     writeRaw(self, addr, value);
 }
 
-pub fn busTick(self: *Bus, cycles: u32) void {
-    const real_cycles: u32 = if (self.double_speed) cycles / 2 else cycles;
-    timermod.timerTick(&self.timer, cycles, self);
-    serialmod.serialTick(&self.serial, cycles, self);
-    apumod.apuTick(&self.apu, real_cycles);
+fn busTickDma(self: *Bus, cycles: u32) void {
     if (!self.dma.active) return;
     self.dma.dots +%= cycles;
     while (self.dma.active and self.dma.dots >= 4) {
@@ -526,6 +522,21 @@ pub fn busTick(self: *Bus, cycles: u32) void {
         self.dma.index = @intCast(u16, idx + 1);
         if (self.dma.index >= 160) self.dma.active = false;
     }
+}
+
+pub fn busTick(self: *Bus, cycles: u32) void {
+    const real_cycles: u32 = if (self.double_speed) cycles / 2 else cycles;
+    timermod.timerTick(&self.timer, cycles, self);
+    serialmod.serialTick(&self.serial, cycles, self);
+    apumod.apuTick(&self.apu, real_cycles);
+    busTickDma(self, cycles);
+}
+
+pub fn busTickStall(self: *Bus, cycles: u32) void {
+    const real_cycles: u32 = if (self.double_speed) cycles / 2 else cycles;
+    serialmod.serialTick(&self.serial, cycles, self);
+    apumod.apuTick(&self.apu, real_cycles);
+    busTickDma(self, cycles);
 }
 
 pub fn read16(self: *Bus, addr: u16) u16 {

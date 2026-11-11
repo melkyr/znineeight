@@ -608,7 +608,9 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
                 const stalled: u32 = 8200;
                 const consumed: u64 = cpu.cycles - start_cycles;
                 if (consumed < @as(u64, stalled)) {
-                    cpu.cycles +%= @as(u64, stalled) - consumed;
+                    const stall: u32 = @intCast(u32, @as(u64, stalled) - consumed);
+                    cpu.cycles +%= @as(u64, stall);
+                    mmumod.busTickStall(bus, stall);
                 }
                 cycles = stalled;
             } else {
