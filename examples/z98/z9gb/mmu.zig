@@ -22,6 +22,18 @@ pub const Dma = struct {
     dots: u32,
 };
 
+pub const Hdma = struct {
+    source: u16,
+    dest: u16,
+    blocks: u16,
+    active: bool,
+    hblank: bool,
+    vram_bank: u8,
+    block_busy: bool,
+    dots: u32,
+    cpu_halt_cycles: u32,
+};
+
 pub const Bus = struct {
     pages: [256]Page,
     wram: [32768]u8,
@@ -45,6 +57,8 @@ pub const Bus = struct {
     cart: *cartmod.Cart,
     ie: u8,
     dma: Dma,
+    hdma: Hdma,
+    cpu_halted: bool,
     timer: timermod.Timer,
     serial: serialmod.Serial,
     apu: apumod.Apu,
@@ -239,6 +253,121 @@ pub fn cgbPaletteWrite(b: *Bus, addr: u16, value: u8) void {
     }
 }
 
+const HDMA_BLOCK_DOTS: u32 = 32;
+
+fn hdmaSource(bus: *const Bus) u16 {
+    const hi: u16 = @intCast(u16, bus.io[0x51]);
+    const lo: u16 = @intCast(u16, bus.io[0x52]);
+    return ((hi << 8) | lo) & 0xFFF0;
+}
+
+fn hdmaDest(bus: *const Bus) u16 {
+    const hi: u16 = @intCast(u16, bus.io[0x53]);
+    const lo: u16 = @intCast(u16, bus.io[0x54]);
+    return 0x8000 | (((hi << 8) | lo) & 0x1FF0);
+}
+
+fn hdmaVramWrite(bus: *Bus, addr: u16, value: u8) void {
+    const off: u16 = (addr -% 0x8000) & 0x1FFF;
+    const base: usize = @as(usize, bus.hdma.vram_bank) * 0x2000;
+    bus.vram[base + @intCast(usize, off)] = value;
+}
+
+fn hdmaCopyBlock(bus: *Bus) void {
+    var i: u16 = 0;
+    while (i < 16) : (i += 1) {
+        const src: u16 = bus.hdma.source +% i;
+        const value: u8 = readRaw(bus, src);
+        hdmaVramWrite(bus, bus.hdma.dest +% i, value);
+    }
+    bus.hdma.source +%= 16;
+    bus.hdma.dest +%= 16;
+    if (bus.hdma.blocks > 0) bus.hdma.blocks -= 1;
+}
+
+fn hdmaStart(bus: *Bus, value: u8) void {
+    const blocks: u16 = @intCast(u16, value & 0x7F) + 1;
+    bus.hdma.source = hdmaSource(bus);
+    bus.hdma.dest = hdmaDest(bus);
+    bus.hdma.blocks = blocks;
+    bus.hdma.vram_bank = bus.vram_bank;
+    bus.hdma.block_busy = false;
+    bus.hdma.dots = 0;
+    if ((value & 0x80) == 0) {
+        bus.hdma.active = false;
+        bus.hdma.hblank = false;
+        var n: u16 = 0;
+        while (n < blocks) : (n += 1) hdmaCopyBlock(bus);
+        const per_block: u32 = if (bus.double_speed) 64 else 32;
+        bus.hdma.cpu_halt_cycles +%= @intCast(u32, blocks) * per_block;
+    } else {
+        bus.hdma.active = true;
+        bus.hdma.hblank = true;
+    }
+}
+
+pub fn hdmaWrite(bus: *Bus, addr: u16, value: u8) void {
+    if (!bus.cgb_color) return;
+    if (addr == 0xFF55) {
+        if (bus.hdma.active and (value & 0x80) == 0) {
+            bus.hdma.active = false;
+            bus.hdma.hblank = false;
+            bus.hdma.block_busy = false;
+            bus.hdma.dots = 0;
+            return;
+        }
+        bus.io[0x55] = value;
+        hdmaStart(bus, value);
+        return;
+    }
+    if (addr >= 0xFF51 and addr <= 0xFF54) {
+        bus.io[@intCast(usize, addr & 0x7F)] = value;
+    }
+}
+
+pub fn hdmaRead(bus: *const Bus, addr: u16) u8 {
+    if (!bus.cgb_color) return 0xFF;
+    if (addr == 0xFF55) {
+        if (bus.hdma.active) {
+            return @intCast(u8, (bus.hdma.blocks -% 1) & 0x7F);
+        }
+        if (bus.hdma.blocks == 0) return 0xFF;
+        return @intCast(u8, 0x80 | ((bus.hdma.blocks -% 1) & 0x7F));
+    }
+    if (addr >= 0xFF51 and addr <= 0xFF54) return bus.io[@intCast(usize, addr & 0x7F)];
+    return 0xFF;
+}
+
+pub fn hdmaHBlank(bus: *Bus) void {
+    if (!bus.hdma.active or !bus.hdma.hblank) return;
+    if (bus.cpu_halted) return;
+    if (bus.hdma.block_busy) return;
+    bus.hdma.block_busy = true;
+    bus.hdma.dots = 0;
+}
+
+pub fn hdmaLineEnd(bus: *Bus) void {
+    bus.hdma.block_busy = false;
+    bus.hdma.dots = 0;
+}
+
+pub fn hdmaTick(bus: *Bus, dots: u32) void {
+    if (!bus.hdma.active or !bus.hdma.hblank) return;
+    if (bus.cpu_halted) return;
+    if (!bus.hdma.block_busy) return;
+    bus.hdma.dots +%= dots;
+    if (bus.hdma.dots >= HDMA_BLOCK_DOTS) {
+        bus.hdma.dots -= HDMA_BLOCK_DOTS;
+        hdmaCopyBlock(bus);
+        bus.hdma.block_busy = false;
+        if (bus.hdma.blocks == 0) {
+            bus.hdma.active = false;
+            bus.hdma.hblank = false;
+            bus.hdma.dots = 0;
+        }
+    }
+}
+
 pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.cart = cart;
     bus.ie = 0;
@@ -260,6 +389,16 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.dma.source = 0;
     bus.dma.index = 0;
     bus.dma.dots = 0;
+    bus.hdma.source = 0;
+    bus.hdma.dest = 0;
+    bus.hdma.blocks = 0;
+    bus.hdma.active = false;
+    bus.hdma.hblank = false;
+    bus.hdma.vram_bank = 0;
+    bus.hdma.block_busy = false;
+    bus.hdma.dots = 0;
+    bus.hdma.cpu_halt_cycles = 0;
+    bus.cpu_halted = false;
 
     var i: usize = 0;
     while (i < 32768) : (i += 1) {
@@ -364,6 +503,7 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
         if (self.cgb_compat) return 0x01;
         return self.opri & 0x01;
     }
+    if (addr >= 0xFF51 and addr <= 0xFF55) return hdmaRead(self, addr);
     if (addr == 0xFF4D) {
         if (!self.cgb_color) return 0xFF;
         var v: u8 = 0;
@@ -411,6 +551,10 @@ pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
     }
     if (addr == 0xFF4D) {
         if (self.cgb_color) self.io[0x4D] = value & 0x01;
+        return;
+    }
+    if (addr >= 0xFF51 and addr <= 0xFF55) {
+        hdmaWrite(self, addr, value);
         return;
     }
     if (addr == 0xFF46) {
@@ -530,6 +674,7 @@ pub fn busTick(self: *Bus, cycles: u32) void {
     serialmod.serialTick(&self.serial, cycles, self);
     apumod.apuTick(&self.apu, real_cycles);
     busTickDma(self, cycles);
+    hdmaTick(self, real_cycles);
 }
 
 pub fn busTickStall(self: *Bus, cycles: u32) void {

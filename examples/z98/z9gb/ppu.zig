@@ -600,9 +600,11 @@ fn enterMode0(p: *Ppu, bus: *mmumod.Bus) void {
     p.vram_blocked = false;
     updateStatLine(p, bus);
     syncAccess(p, bus);
+    mmumod.hdmaHBlank(bus);
 }
 
 fn enterLine(p: *Ppu, bus: *mmumod.Bus, line: u8) void {
+    mmumod.hdmaLineEnd(bus);
     p.line = line;
     p.ly = line;
     p.dot = 0;

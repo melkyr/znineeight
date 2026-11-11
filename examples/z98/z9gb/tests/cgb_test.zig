@@ -854,6 +854,241 @@ fn testDoubleSpeedPartialFrame() void {
     checkU32("partial double dot", g_emu.ppu.dot, 18);
 }
 
+fn hdmaSetRegs(source: u16, dest: u16) void {
+    mmumod.write8(&g_bus, 0xFF51, @intCast(u8, source >> 8));
+    mmumod.write8(&g_bus, 0xFF52, @intCast(u8, source & 0xFF));
+    mmumod.write8(&g_bus, 0xFF53, @intCast(u8, dest >> 8));
+    mmumod.write8(&g_bus, 0xFF54, @intCast(u8, dest & 0xFF));
+}
+
+fn hdmaFillWram(count: usize) void {
+    var i: usize = 0;
+    while (i < count) : (i += 1) g_bus.wram[i] = @intCast(u8, i + 1);
+}
+
+fn ppuToMode0() void {
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    ppumod.ppuTick(&g_ppu, g_ppu.mode3_len, &g_bus);
+}
+
+fn ppuNextLine() void {
+    const remain: u32 = 456 - g_ppu.dot;
+    ppumod.ppuTick(&g_ppu, remain, &g_bus);
+}
+
+fn testHdmaGeneral() void {
+    resetCgb();
+    hdmaFillWram(32);
+    hdmaSetRegs(0xC000, 0x8000);
+    mmumod.write8(&g_bus, 0xFF55, 0x01);
+
+    checkU32("hdma gdma halt cycles", g_bus.hdma.cpu_halt_cycles, 64);
+    checkByte("hdma gdma first", g_bus.vram[0], 0x01);
+    checkByte("hdma gdma last", g_bus.vram[31], 0x20);
+    checkByte("hdma gdma read complete", mmumod.read8(&g_bus, 0xFF55), 0xFF);
+    checkBool("hdma gdma inactive", g_bus.hdma.active, false);
+
+    mmumod.write8(&g_bus, 0xC100, 0x00);
+    var cpu: cpumod.Cpu = undefined;
+    cpumod.cpuInit(&cpu);
+    cpu.pc = 0xC100;
+    cpu.sp = 0xFFFE;
+    const cyc: u32 = cpumod.cpuStep(&cpu, &g_bus);
+    checkU32("hdma gdma drain cycles", cyc, 68);
+    checkWord("hdma gdma drain pc", cpu.pc, 0xC101);
+    checkU32("hdma gdma halt cleared", g_bus.hdma.cpu_halt_cycles, 0);
+    checkU32("hdma gdma cpu cycles", @intCast(u32, cpu.cycles), 68);
+}
+
+fn testHdmaMasks() void {
+    resetCgb();
+    hdmaFillWram(16);
+    g_bus.wram[0x0A] = 0xAA;
+    g_bus.vram[0x560] = 0xEE;
+    hdmaSetRegs(0xC00A, 0x855F);
+    mmumod.write8(&g_bus, 0xFF55, 0x00);
+
+    checkByte("hdma src low nibble ignored", g_bus.vram[0x550], 0x01);
+    checkByte("hdma src next byte", g_bus.vram[0x551], 0x02);
+    checkByte("hdma dst low nibble masked", g_bus.vram[0x55F], 0x10);
+    checkByte("hdma dst after block", g_bus.vram[0x560], 0xEE);
+}
+
+fn testHdmaVramBank() void {
+    resetCgb();
+    hdmaFillWram(32);
+    mmumod.mmuSetVramBank(&g_bus, 1);
+    hdmaSetRegs(0xC000, 0x8000);
+    mmumod.write8(&g_bus, 0xFF55, 0x81);
+    ppuToMode0();
+    mmumod.mmuSetVramBank(&g_bus, 0);
+    mmumod.hdmaTick(&g_bus, 32);
+
+    checkByte("hdma bank sampled at start", g_bus.vram[0x2000], 0x01);
+    checkByte("hdma bank0 untouched", g_bus.vram[0], 0x00);
+    checkByte("hdma bank last byte", g_bus.vram[0x200F], 0x10);
+}
+
+fn testHdmaHBlank() void {
+    resetCgb();
+    hdmaFillWram(48);
+    hdmaSetRegs(0xC000, 0x8000);
+    mmumod.write8(&g_bus, 0xFF55, 0x82);
+
+    checkByte("hdma hblank active read", mmumod.read8(&g_bus, 0xFF55), 0x02);
+    checkBool("hdma hblank active", g_bus.hdma.active, true);
+
+    ppuToMode0();
+    checkByte("hdma hblank mode0", g_ppu.mode, 0);
+    checkByte("hdma hblank no instant copy", g_bus.vram[0], 0x00);
+    mmumod.hdmaTick(&g_bus, 31);
+    checkByte("hdma hblank partial no copy", g_bus.vram[0], 0x00);
+    mmumod.hdmaTick(&g_bus, 1);
+    checkByte("hdma hblank block1 first", g_bus.vram[0], 0x01);
+    checkByte("hdma hblank block1 last", g_bus.vram[15], 0x10);
+    checkByte("hdma hblank read after block1", mmumod.read8(&g_bus, 0xFF55), 0x01);
+    mmumod.hdmaTick(&g_bus, 64);
+    checkByte("hdma hblank one block per line", g_bus.vram[16], 0x00);
+
+    ppuNextLine();
+    ppuToMode0();
+    mmumod.hdmaTick(&g_bus, 32);
+    checkByte("hdma hblank block2 first", g_bus.vram[16], 0x11);
+    checkByte("hdma hblank block2 last", g_bus.vram[31], 0x20);
+    checkByte("hdma hblank read after block2", mmumod.read8(&g_bus, 0xFF55), 0x00);
+
+    ppuNextLine();
+    ppumod.ppuTick(&g_ppu, 456 * 142, &g_bus);
+    checkByte("hdma vblank line", g_ppu.line, 144);
+    checkByte("hdma vblank mode1", g_ppu.mode, 1);
+    mmumod.hdmaTick(&g_bus, 32);
+    checkByte("hdma vblank paused", g_bus.vram[32], 0x00);
+    checkByte("hdma vblank read unchanged", mmumod.read8(&g_bus, 0xFF55), 0x00);
+
+    ppumod.ppuTick(&g_ppu, 456 * 10, &g_bus);
+    ppuToMode0();
+    mmumod.hdmaTick(&g_bus, 32);
+    checkByte("hdma resumes after vblank", g_bus.vram[32], 0x21);
+    checkByte("hdma final read", mmumod.read8(&g_bus, 0xFF55), 0xFF);
+    checkBool("hdma final inactive", g_bus.hdma.active, false);
+}
+
+fn testHdmaAbort() void {
+    resetCgb();
+    hdmaFillWram(64);
+    g_bus.vram[16] = 0xEE;
+    hdmaSetRegs(0xC000, 0x8000);
+    mmumod.write8(&g_bus, 0xFF55, 0x83);
+
+    ppuToMode0();
+    mmumod.hdmaTick(&g_bus, 32);
+    checkByte("hdma abort read before", mmumod.read8(&g_bus, 0xFF55), 0x02);
+
+    mmumod.write8(&g_bus, 0xFF55, 0x00);
+    checkByte("hdma abort read after", mmumod.read8(&g_bus, 0xFF55), 0x82);
+    checkBool("hdma abort inactive", g_bus.hdma.active, false);
+    checkByte("hdma abort did not copy", g_bus.vram[16], 0xEE);
+
+    ppuNextLine();
+    ppuToMode0();
+    mmumod.hdmaTick(&g_bus, 32);
+    checkByte("hdma abort no later copy", g_bus.vram[16], 0xEE);
+    checkByte("hdma abort read stable", mmumod.read8(&g_bus, 0xFF55), 0x82);
+}
+
+fn testHdmaStartInMode0() void {
+    resetCgb();
+    hdmaFillWram(16);
+    ppuToMode0();
+    checkByte("hdma start mode0", g_ppu.mode, 0);
+    hdmaSetRegs(0xC000, 0x8000);
+    mmumod.write8(&g_bus, 0xFF55, 0x80);
+    checkByte("hdma mode0 no instant copy", g_bus.vram[0], 0x00);
+    mmumod.hdmaTick(&g_bus, 32);
+    checkByte("hdma mode0 waits", g_bus.vram[0], 0x00);
+
+    ppuNextLine();
+    ppuToMode0();
+    mmumod.hdmaTick(&g_bus, 32);
+    checkByte("hdma mode0 starts next hblank", g_bus.vram[0], 0x01);
+}
+
+fn testHdmaHaltPause() void {
+    resetCgb();
+    hdmaFillWram(32);
+    hdmaSetRegs(0xC000, 0x8000);
+    mmumod.write8(&g_bus, 0xFF55, 0x81);
+
+    mmumod.write8(&g_bus, 0xC100, 0x76);
+    mmumod.write8(&g_bus, 0xC101, 0x00);
+    var cpu: cpumod.Cpu = undefined;
+    cpumod.cpuInit(&cpu);
+    cpu.pc = 0xC100;
+    cpu.sp = 0xFFFE;
+    g_bus.ie = 0;
+    g_bus.io[0x0F] = 0;
+    _ = cpumod.cpuStep(&cpu, &g_bus);
+    checkBool("hdma halt idle", cpu.halted, true);
+
+    ppuToMode0();
+    mmumod.hdmaTick(&g_bus, 32);
+    checkByte("hdma halt pauses", g_bus.vram[0], 0x00);
+    checkByte("hdma halt read unchanged", mmumod.read8(&g_bus, 0xFF55), 0x01);
+
+    g_bus.ie = 0x01;
+    g_bus.io[0x0F] = 0x01;
+    _ = cpumod.cpuStep(&cpu, &g_bus);
+    checkBool("hdma halt wakes", cpu.halted, false);
+
+    ppuNextLine();
+    ppuToMode0();
+    mmumod.hdmaTick(&g_bus, 32);
+    checkByte("hdma resumes after halt", g_bus.vram[0], 0x01);
+    checkByte("hdma after halt read", mmumod.read8(&g_bus, 0xFF55), 0x00);
+}
+
+fn testHdmaDoubleSpeed() void {
+    resetCgb();
+    g_bus.double_speed = true;
+    hdmaFillWram(32);
+    hdmaSetRegs(0xC000, 0x8000);
+    mmumod.write8(&g_bus, 0xFF55, 0x01);
+    checkU32("hdma gdma fast halt", g_bus.hdma.cpu_halt_cycles, 128);
+    checkByte("hdma gdma fast data", g_bus.vram[0], 0x01);
+
+    resetCgb();
+    g_bus.double_speed = true;
+    hdmaFillWram(32);
+    hdmaSetRegs(0xC000, 0x8000);
+    mmumod.write8(&g_bus, 0xFF55, 0x81);
+    ppuToMode0();
+    mmumod.busTick(&g_bus, 32);
+    checkByte("hdma fast half block", g_bus.vram[0], 0x00);
+    mmumod.busTick(&g_bus, 32);
+    checkByte("hdma fast block real time", g_bus.vram[0], 0x01);
+    mmumod.busTick(&g_bus, 32);
+    checkByte("hdma fast one block per line", g_bus.vram[16], 0x00);
+}
+
+fn testHdmaGates() void {
+    resetBus();
+    checkByte("dmg hdma5 reads ff", mmumod.read8(&g_bus, 0xFF55), 0xFF);
+    mmumod.write8(&g_bus, 0xFF51, 0x12);
+    mmumod.write8(&g_bus, 0xFF55, 0x00);
+    checkByte("dmg hdma1 ignored", g_bus.io[0x51], 0x00);
+    checkU32("dmg hdma no halt", g_bus.hdma.cpu_halt_cycles, 0);
+    checkBool("dmg hdma inactive", g_bus.hdma.active, false);
+    checkByte("dmg hdma no copy", g_bus.vram[0], 0x00);
+
+    resetBus();
+    g_bus.cgb_hw = true;
+    g_bus.cgb_color = false;
+    g_bus.cgb_compat = true;
+    checkByte("compat hdma5 reads ff", mmumod.read8(&g_bus, 0xFF55), 0xFF);
+    mmumod.write8(&g_bus, 0xFF51, 0x12);
+    checkByte("compat hdma1 ignored", g_bus.io[0x51], 0x00);
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     if (argc < 2) {
         std.io.write("cgb FAIL no scratch dir\n");
@@ -886,6 +1121,15 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testStopStallBus();
     testDoubleSpeedTiming();
     testDoubleSpeedPartialFrame();
+    testHdmaGeneral();
+    testHdmaMasks();
+    testHdmaVramBank();
+    testHdmaHBlank();
+    testHdmaAbort();
+    testHdmaStartInMode0();
+    testHdmaHaltPause();
+    testHdmaDoubleSpeed();
+    testHdmaGates();
 
     if (g_fail == 0) {
         std.io.write("cgb ok ");

@@ -578,18 +578,28 @@ fn serviceInterrupt(cpu: *Cpu, bus: *Bus) u32 {
 }
 
 pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
+    bus.cpu_halted = cpu.halted;
+    var stall_cycles: u32 = 0;
+    if (bus.hdma.cpu_halt_cycles != 0) {
+        stall_cycles = bus.hdma.cpu_halt_cycles;
+        bus.hdma.cpu_halt_cycles = 0;
+        cpu.cycles +%= @intCast(u64, stall_cycles);
+        mmumod.busTick(bus, stall_cycles);
+    }
     const start_cycles: u64 = cpu.cycles;
     if (cpu.halted) {
         if (pendingInterrupts(bus) != 0) {
             cpu.halted = false;
         } else {
             busTick4(cpu, bus);
-            return 4;
+            bus.cpu_halted = cpu.halted;
+            return stall_cycles + 4;
 
         }
     }
     if (cpu.ime and pendingInterrupts(bus) != 0) {
-        return serviceInterrupt(cpu, bus);
+        bus.cpu_halted = cpu.halted;
+        return stall_cycles + serviceInterrupt(cpu, bus);
     }
 
     const op: u8 = busRead8(cpu, bus, cpu.pc);
@@ -862,6 +872,7 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
         cpu.cycles +%= @intCast(u64, remaining);
         mmumod.busTick(bus, remaining);
     }
-    return cycles;
+    bus.cpu_halted = cpu.halted;
+    return stall_cycles + cycles;
 
 }
