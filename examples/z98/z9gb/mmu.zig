@@ -31,6 +31,12 @@ pub const Bus = struct {
     cgb_hw: bool,
     cgb_color: bool,
     cgb_compat: bool,
+    bcps: u8,
+    bcpd: [64]u8,
+    ocps: u8,
+    ocpd: [64]u8,
+    cram_rgb: [64]u32,
+    opri: u8,
     oam: [160]u8,
     hram: [127]u8,
     io: [128]u8,
@@ -45,6 +51,7 @@ pub const Bus = struct {
     lyc_dirty: bool,
     ppu_oam_blocked: bool,
     ppu_vram_blocked: bool,
+    ppu_palette_blocked: bool,
 };
 
 fn stubBase(self: *Bus) [*]u8 {
@@ -134,6 +141,85 @@ pub fn mmuWramBank(b: *const Bus) u8 {
     return b.wram_bank;
 }
 
+fn cgbRgb(word: u16) u32 {
+    const w: u32 = @intCast(u32, word);
+    const r5: u32 = w & 0x1F;
+    const g5: u32 = (w >> 5) & 0x1F;
+    const b5: u32 = (w >> 10) & 0x1F;
+    const r8: u32 = (r5 << 3) | (r5 >> 2);
+    const g8: u32 = (g5 << 3) | (g5 >> 2);
+    const b8: u32 = (b5 << 3) | (b5 >> 2);
+    return (r8 << 16) | (g8 << 8) | b8;
+}
+
+fn updateBgRgb(b: *Bus, color_idx: u16) void {
+    const ci: usize = @intCast(usize, color_idx);
+    const a: usize = ci * 2;
+    const word: u16 = @as(u16, b.bcpd[a]) | (@as(u16, b.bcpd[a + 1]) << 8);
+    b.cram_rgb[ci] = cgbRgb(word);
+}
+
+fn updateObjRgb(b: *Bus, color_idx: u16) void {
+    const ci: usize = @intCast(usize, color_idx);
+    const a: usize = ci * 2;
+    const word: u16 = @as(u16, b.ocpd[a]) | (@as(u16, b.ocpd[a + 1]) << 8);
+    b.cram_rgb[32 + ci] = cgbRgb(word);
+}
+
+fn cgbIncrement(index: *u8) void {
+    const low: u16 = (@as(u16, index.*) & 0x3F) + 1;
+    index.* = (index.* & 0x80) | @intCast(u8, low & 0x3F);
+}
+
+pub fn cgbPaletteReset(b: *Bus) void {
+    b.bcps = 0;
+    b.ocps = 0;
+    var i: usize = 0;
+    while (i < 64) : (i += 1) {
+        b.bcpd[i] = 0;
+        b.ocpd[i] = 0;
+        b.cram_rgb[i] = 0;
+    }
+}
+
+pub fn cgbPaletteRead(b: *Bus, addr: u16) u8 {
+    switch (addr) {
+        0xFF68 => return b.bcps,
+        0xFF69 => {
+            if (b.ppu_palette_blocked) return 0xFF;
+            return b.bcpd[@intCast(usize, b.bcps & 0x3F)];
+        },
+        0xFF6A => return b.ocps,
+        0xFF6B => {
+            if (b.ppu_palette_blocked) return 0xFF;
+            return b.ocpd[@intCast(usize, b.ocps & 0x3F)];
+        },
+        else => return 0xFF,
+    }
+}
+
+pub fn cgbPaletteWrite(b: *Bus, addr: u16, value: u8) void {
+    switch (addr) {
+        0xFF68 => b.bcps = value,
+        0xFF69 => {
+            if (b.ppu_palette_blocked) return;
+            const idx: u8 = b.bcps & 0x3F;
+            b.bcpd[@intCast(usize, idx)] = value;
+            updateBgRgb(b, @intCast(u16, idx) >> 1);
+            if ((b.bcps & 0x80) != 0) cgbIncrement(&b.bcps);
+        },
+        0xFF6A => b.ocps = value,
+        0xFF6B => {
+            if (b.ppu_palette_blocked) return;
+            const idx: u8 = b.ocps & 0x3F;
+            b.ocpd[@intCast(usize, idx)] = value;
+            updateObjRgb(b, @intCast(u16, idx) >> 1);
+            if ((b.ocps & 0x80) != 0) cgbIncrement(&b.ocps);
+        },
+        else => {},
+    }
+}
+
 pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.cart = cart;
     bus.ie = 0;
@@ -143,9 +229,13 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.cgb_hw = false;
     bus.cgb_color = false;
     bus.cgb_compat = false;
+    bus.bcps = 0;
+    bus.ocps = 0;
+    bus.opri = 0;
     bus.lyc_dirty = false;
     bus.ppu_oam_blocked = false;
     bus.ppu_vram_blocked = false;
+    bus.ppu_palette_blocked = false;
     bus.dma.active = false;
     bus.dma.source = 0;
     bus.dma.index = 0;
@@ -158,6 +248,12 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     i = 0;
     while (i < 16384) : (i += 1) {
         bus.vram[i] = 0;
+    }
+    i = 0;
+    while (i < 64) : (i += 1) {
+        bus.bcpd[i] = 0;
+        bus.ocpd[i] = 0;
+        bus.cram_rgb[i] = 0;
     }
     i = 0;
     while (i < 160) : (i += 1) {
@@ -239,6 +335,15 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
     if (addr >= 0xFF10 and addr <= 0xFF3F) return apumod.apuRead(&self.apu, addr);
     if (addr == 0xFF4F and self.cgb_color) return self.vram_bank;
     if (addr == 0xFF70 and self.cgb_color) return self.wram_bank;
+    if (addr >= 0xFF68 and addr <= 0xFF6B) {
+        if (self.cgb_color) return cgbPaletteRead(self, addr);
+        return 0xFF;
+    }
+    if (addr == 0xFF6C) {
+        if (!self.cgb_hw) return 0xFF;
+        if (self.cgb_compat) return 0x01;
+        return self.opri & 0x01;
+    }
     return self.io[@intCast(usize, addr & 0x7F)];
 }
 
@@ -267,6 +372,14 @@ pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
     if (addr == 0xFF70) {
         if (self.cgb_color) mmuSetWramBank(self, value);
         self.io[0x70] = value & 0x07;
+        return;
+    }
+    if (addr >= 0xFF68 and addr <= 0xFF6B) {
+        if (self.cgb_color) cgbPaletteWrite(self, addr, value);
+        return;
+    }
+    if (addr == 0xFF6C) {
+        if (self.cgb_color) self.opri = value & 0x01;
         return;
     }
     if (addr == 0xFF46) {

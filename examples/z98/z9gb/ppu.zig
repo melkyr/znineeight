@@ -58,6 +58,8 @@ pub const Ppu = struct {
     obj1_lut: [4]u32,
     fb: [FRAME_PIXELS]u32,
     shades: [SCREEN_W]u8,
+    bg_pal: [SCREEN_W]u8,
+    bg_prio: [SCREEN_W]u8,
     obj_drawn: [SCREEN_W]u8,
     sprite_count: u8,
     sprite_x: [MAX_SPRITES]u8,
@@ -93,6 +95,7 @@ fn updateStatLine(p: *Ppu, bus: *mmumod.Bus) void {
 fn syncAccess(p: *const Ppu, bus: *mmumod.Bus) void {
     bus.ppu_oam_blocked = p.oam_blocked;
     bus.ppu_vram_blocked = p.vram_blocked;
+    bus.ppu_palette_blocked = p.mode == 3;
 }
 
 pub fn ppuReset(p: *Ppu) void {
@@ -132,6 +135,8 @@ pub fn ppuReset(p: *Ppu) void {
     i = 0;
     while (i < SCREEN_W) : (i += 1) {
         p.shades[i] = 0;
+        p.bg_pal[i] = 0;
+        p.bg_prio[i] = 0;
         p.obj_drawn[i] = 0;
     }
 }
@@ -240,12 +245,16 @@ pub fn ppuFramebuffer(p: *const Ppu) []const u32 {
     return p.fb[0..];
 }
 
-fn setupWindow(p: *Ppu) void {
+pub fn ppuCgbFramebuffer(p: *const Ppu) []const u32 {
+    return p.fb[0..];
+}
+
+fn setupWindow(p: *Ppu, bus: *mmumod.Bus) void {
     p.win_start_x = 0;
     p.win_skip = 0;
     p.win_visible_len = 0;
     if ((p.lcdc & 0x20) == 0) return;
-    if ((p.lcdc & 0x01) == 0) return;
+    if ((p.lcdc & 0x01) == 0 and !bus.cgb_color) return;
     if (p.wy > 143) return;
     if (p.line < p.wy) return;
     if (p.wx >= 167) return;
@@ -366,16 +375,24 @@ fn computeMode3(p: *const Ppu) u32 {
     return len;
 }
 
-fn fetchTileRow(bus: *mmumod.Bus, tile_id: u8, row: usize, lcdc: u8, lo: *u8, hi: *u8) void {
-    const addr: usize = tileDataAddr(tile_id, lcdc) + row * 2;
-    lo.* = bus.vram[addr];
-    hi.* = bus.vram[addr + 1];
+fn fetchTileRow(bus: *mmumod.Bus, tile_id: u8, row: usize, lcdc: u8, attr: u8, lo: *u8, hi: *u8) void {
+    var src_row: usize = row;
+    if ((attr & 0x40) != 0) src_row = 7 - row;
+    const addr: usize = tileDataAddr(tile_id, lcdc) + src_row * 2;
+    const bank_off: usize = if ((attr & 0x08) != 0) 0x2000 else 0;
+    lo.* = bus.vram[bank_off + addr];
+    hi.* = bus.vram[bank_off + addr + 1];
 }
 
 fn renderBackground(p: *Ppu, bus: *mmumod.Bus) void {
     var x: usize = 0;
-    if ((p.lcdc & 0x01) == 0) {
-        while (x < SCREEN_W) : (x += 1) p.shades[x] = 0;
+    const cgb: bool = bus.cgb_color;
+    if ((p.lcdc & 0x01) == 0 and !cgb) {
+        while (x < SCREEN_W) : (x += 1) {
+            p.shades[x] = 0;
+            p.bg_pal[x] = 0;
+            p.bg_prio[x] = 0;
+        }
         return;
     }
     const row: u8 = @intCast(u8, (@as(u16, p.line) + @as(u16, p.scy)) & 0xFF);
@@ -385,35 +402,48 @@ fn renderBackground(p: *Ppu, bus: *mmumod.Bus) void {
     var cached_tile: u32 = 0xFFFFFFFF;
     var lo: u8 = 0;
     var hi: u8 = 0;
+    var attr: u8 = 0;
     while (x < SCREEN_W) : (x += 1) {
         const sx: u32 = @intCast(u32, p.scx) + @intCast(u32, x);
         const tx: u32 = (sx >> 3) & 31;
         if (tx != cached_tile) {
             const map_addr: usize = map_base + tile_row * 32 + @intCast(usize, tx);
-            fetchTileRow(bus, bus.vram[map_addr], row_in_tile, p.lcdc, &lo, &hi);
+            const tile_id: u8 = bus.vram[map_addr];
+            attr = if (cgb) bus.vram[0x2000 + map_addr] else 0;
+            fetchTileRow(bus, tile_id, row_in_tile, p.lcdc, attr, &lo, &hi);
             cached_tile = tx;
         }
-        const bit: u8 = @intCast(u8, 7 - (sx & 7));
+        const flipped: bool = cgb and (attr & 0x20) != 0;
+        const bit: u8 = if (flipped) @intCast(u8, sx & 7) else @intCast(u8, 7 - (sx & 7));
         const low: u8 = (lo >> bit) & 0x01;
         const high: u8 = (hi >> bit) & 0x01;
         p.shades[x] = low | (high << 1);
+        p.bg_pal[x] = if (cgb) attr & 0x07 else 0;
+        p.bg_prio[x] = if (cgb) attr & 0x80 else 0;
     }
 }
 
 fn renderWindowBatch(p: *Ppu, bus: *mmumod.Bus, x0: usize, wpos: u32, count: u32, row: usize, map_base: usize) void {
     if (count == 0) return;
+    const cgb: bool = bus.cgb_color;
     const tx: u32 = (wpos >> 3) & 31;
     const map_addr: usize = map_base + (row >> 3) * 32 + @intCast(usize, tx);
+    const tile_id: u8 = bus.vram[map_addr];
+    const attr: u8 = if (cgb) bus.vram[0x2000 + map_addr] else 0;
     var lo: u8 = 0;
     var hi: u8 = 0;
-    fetchTileRow(bus, bus.vram[map_addr], row & 7, p.lcdc, &lo, &hi);
+    fetchTileRow(bus, tile_id, row & 7, p.lcdc, attr, &lo, &hi);
+    const flipped: bool = cgb and (attr & 0x20) != 0;
     var i: u32 = 0;
     while (i < count) : (i += 1) {
         const src: u32 = wpos + i;
-        const bit: u8 = @intCast(u8, 7 - (src & 7));
+        const bit: u8 = if (flipped) @intCast(u8, src & 7) else @intCast(u8, 7 - (src & 7));
         const low: u8 = (lo >> bit) & 0x01;
         const high: u8 = (hi >> bit) & 0x01;
-        p.shades[x0 + @intCast(usize, i)] = low | (high << 1);
+        const x: usize = x0 + @intCast(usize, i);
+        p.shades[x] = low | (high << 1);
+        p.bg_pal[x] = if (cgb) attr & 0x07 else 0;
+        p.bg_prio[x] = if (cgb) attr & 0x80 else 0;
     }
 }
 
@@ -453,20 +483,25 @@ fn renderSprites(p: *Ppu, bus: *mmumod.Bus) void {
     var i: usize = 0;
     while (i < SCREEN_W) : (i += 1) p.obj_drawn[i] = 0;
 
+    const cgb: bool = bus.cgb_color;
+    const cgb_order: bool = cgb and (bus.opri & 0x01) == 0;
+
     var order: [MAX_SPRITES]u8 = undefined;
     const count: usize = @intCast(usize, p.sprite_count);
     i = 0;
     while (i < count) : (i += 1) order[i] = @intCast(u8, i);
-    i = 1;
-    while (i < count) : (i += 1) {
-        var j: usize = i;
-        while (j > 0) {
-            const cur: usize = @intCast(usize, order[j]);
-            const prev: usize = @intCast(usize, order[j - 1]);
-            if (!spriteBefore(p, cur, prev)) break;
-            order[j] = order[j - 1];
-            order[j - 1] = @intCast(u8, cur);
-            j -= 1;
+    if (!cgb_order) {
+        i = 1;
+        while (i < count) : (i += 1) {
+            var j: usize = i;
+            while (j > 0) {
+                const cur: usize = @intCast(usize, order[j]);
+                const prev: usize = @intCast(usize, order[j - 1]);
+                if (!spriteBefore(p, cur, prev)) break;
+                order[j] = order[j - 1];
+                order[j - 1] = @intCast(u8, cur);
+                j -= 1;
+            }
         }
     }
 
@@ -493,7 +528,8 @@ fn renderSprites(p: *Ppu, bus: *mmumod.Bus) void {
                 tile_id = base;
             }
         }
-        const addr: usize = @intCast(usize, tile_id) * 16 + row * 2;
+        const bank_off: usize = if (cgb and (attr & 0x08) != 0) 0x2000 else 0;
+        const addr: usize = bank_off + @intCast(usize, tile_id) * 16 + row * 2;
         const lo: u8 = bus.vram[addr];
         const hi: u8 = bus.vram[addr + 1];
         const lut: *const [4]u32 = if ((attr & 0x10) != 0) &p.obj1_lut else &p.obj0_lut;
@@ -510,8 +546,20 @@ fn renderSprites(p: *Ppu, bus: *mmumod.Bus) void {
             const idx: u8 = low | (high << 1);
             if (idx == 0) continue;
             p.obj_drawn[px] = 1;
-            if ((p.lcdc & 0x01) != 0 and (attr & 0x80) != 0 and p.shades[px] != 0) continue;
-            p.fb[@intCast(usize, p.line) * SCREEN_W + px] = lut[@intCast(usize, idx)];
+            if (cgb) {
+                const bg_idx: u8 = p.shades[px];
+                var bg_wins: bool = false;
+                if (bg_idx != 0 and (p.lcdc & 0x01) != 0) {
+                    if ((p.bg_prio[px] & 0x80) != 0 or (attr & 0x80) != 0) bg_wins = true;
+                }
+                if (bg_wins) continue;
+                const pal: usize = @intCast(usize, attr & 0x07);
+                const col: usize = @intCast(usize, idx);
+                p.fb[@intCast(usize, p.line) * SCREEN_W + px] = bus.cram_rgb[32 + pal * 4 + col];
+            } else {
+                if ((p.lcdc & 0x01) != 0 and (attr & 0x80) != 0 and p.shades[px] != 0) continue;
+                p.fb[@intCast(usize, p.line) * SCREEN_W + px] = lut[@intCast(usize, idx)];
+            }
         }
     }
 }
@@ -519,17 +567,24 @@ fn renderSprites(p: *Ppu, bus: *mmumod.Bus) void {
 fn renderLine(p: *Ppu, bus: *mmumod.Bus) void {
     renderBackground(p, bus);
     renderWindow(p, bus);
+    const cgb: bool = bus.cgb_color;
     var x: usize = 0;
     const base: usize = @intCast(usize, p.line) * SCREEN_W;
     while (x < SCREEN_W) : (x += 1) {
-        p.fb[base + x] = p.bg_lut[@intCast(usize, p.shades[x])];
+        if (cgb) {
+            const pal: usize = @intCast(usize, p.bg_pal[x]);
+            const col: usize = @intCast(usize, p.shades[x]);
+            p.fb[base + x] = bus.cram_rgb[pal * 4 + col];
+        } else {
+            p.fb[base + x] = p.bg_lut[@intCast(usize, p.shades[x])];
+        }
     }
     renderSprites(p, bus);
 }
 
 fn startMode3(p: *Ppu, bus: *mmumod.Bus) void {
     scanOam(p, bus);
-    setupWindow(p);
+    setupWindow(p, bus);
     p.mode3_len = computeMode3(p);
     p.mode = 3;
     p.oam_blocked = true;

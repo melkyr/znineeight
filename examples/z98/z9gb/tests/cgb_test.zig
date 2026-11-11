@@ -9,6 +9,7 @@ const filemod = @import("std_file");
 const cartmod = @import("../cart.zig");
 const mmumod = @import("../mmu.zig");
 const emumod = @import("../emu.zig");
+const ppumod = @import("../ppu.zig");
 
 const ROM_BYTES: usize = 32768;
 const PATH_MAX: usize = 256;
@@ -16,6 +17,7 @@ const PATH_MAX: usize = 256;
 var g_cart: cartmod.Cart = undefined;
 var g_bus: mmumod.Bus = undefined;
 var g_emu: emumod.Emu = undefined;
+var g_ppu: ppumod.Ppu = undefined;
 var g_rom: [ROM_BYTES]u8 = undefined;
 var g_pass: u32 = 0;
 var g_fail: u32 = 0;
@@ -40,6 +42,21 @@ fn checkByte(label: []const u8, got: u8, want: u8) void {
     std.io.write("\n");
 }
 
+fn checkWord(label: []const u8, got: u16, want: u16) void {
+    if (got == want) {
+        g_pass += 1;
+        return;
+    }
+    g_fail += 1;
+    std.io.write("FAIL ");
+    std.io.write(label);
+    std.io.write(" got=");
+    printU(@intCast(usize, got));
+    std.io.write(" want=");
+    printU(@intCast(usize, want));
+    std.io.write("\n");
+}
+
 fn checkBool(label: []const u8, got: bool, want: bool) void {
     if (got == want) {
         g_pass += 1;
@@ -48,6 +65,21 @@ fn checkBool(label: []const u8, got: bool, want: bool) void {
     g_fail += 1;
     std.io.write("FAIL ");
     std.io.write(label);
+    std.io.write("\n");
+}
+
+fn checkU32(label: []const u8, got: u32, want: u32) void {
+    if (got == want) {
+        g_pass += 1;
+        return;
+    }
+    g_fail += 1;
+    std.io.write("FAIL ");
+    std.io.write(label);
+    std.io.write(" got=");
+    printU(@intCast(usize, got & 0x00FFFFFF));
+    std.io.write(" want=");
+    printU(@intCast(usize, want & 0x00FFFFFF));
     std.io.write("\n");
 }
 
@@ -329,6 +361,266 @@ fn testRamInference() void {
     checkBool("mbc2 exempt no inference", g_cart.ram_size == 0 and !g_cart.ram_inferred, true);
 }
 
+fn resetCgb() void {
+    resetBus();
+    g_bus.cgb_hw = true;
+    g_bus.cgb_color = true;
+    g_bus.cgb_compat = false;
+    ppumod.ppuReset(&g_ppu);
+    g_bus.io[0x0F] = 0;
+}
+
+fn setBgColor(pal: u8, color: u8, word: u16) void {
+    const idx: u16 = @as(u16, pal) * 8 + @as(u16, color) * 2;
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF68, @intCast(u8, (idx & 0x3F) | 0x80));
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF69, @intCast(u8, word & 0xFF));
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF69, @intCast(u8, (word >> 8) & 0xFF));
+}
+
+fn setObjColor(pal: u8, color: u8, word: u16) void {
+    const idx: u16 = @as(u16, pal) * 8 + @as(u16, color) * 2;
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF6A, @intCast(u8, (idx & 0x3F) | 0x80));
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF6B, @intCast(u8, word & 0xFF));
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF6B, @intCast(u8, (word >> 8) & 0xFF));
+}
+
+fn setTileRowBank(bank: u8, tile: u8, row: usize, lo: u8, hi: u8) void {
+    const base: usize = @as(usize, bank) * 0x2000 + @as(usize, tile) * 16 + row * 2;
+    g_bus.vram[base] = lo;
+    g_bus.vram[base + 1] = hi;
+}
+
+fn setBgAttr(tx: usize, attr: u8) void {
+    g_bus.vram[0x2000 + 0x1800 + tx] = attr;
+}
+
+fn setSprite(index: usize, y: u8, x: u8, tile: u8, attr: u8) void {
+    const o: usize = index * 4;
+    g_bus.oam[o] = y;
+    g_bus.oam[o + 1] = x;
+    g_bus.oam[o + 2] = tile;
+    g_bus.oam[o + 3] = attr;
+}
+
+fn testPaletteRam() void {
+    resetCgb();
+    mmumod.cgbPaletteReset(&g_bus);
+
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF68, 0x85);
+    checkByte("bcps index read", mmumod.cgbPaletteRead(&g_bus, 0xFF68), 0x85);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF69, 0x11);
+    checkByte("bcps auto increment", mmumod.cgbPaletteRead(&g_bus, 0xFF68), 0x86);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF69, 0x22);
+    checkByte("bcps auto increment 2", mmumod.cgbPaletteRead(&g_bus, 0xFF68), 0x87);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF68, 0x05);
+    checkByte("bcpd latched 5", mmumod.cgbPaletteRead(&g_bus, 0xFF69), 0x11);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF68, 0x06);
+    checkByte("bcpd latched 6", mmumod.cgbPaletteRead(&g_bus, 0xFF69), 0x22);
+
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF68, 0x80);
+    checkByte("bcpd read low", mmumod.cgbPaletteRead(&g_bus, 0xFF69), 0x00);
+    checkByte("bcps read no increment", mmumod.cgbPaletteRead(&g_bus, 0xFF68), 0x80);
+
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF68, 0x00);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF69, 0xFF);
+    checkByte("bcpd full byte", mmumod.cgbPaletteRead(&g_bus, 0xFF69), 0xFF);
+
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF6A, 0x80 | 0x03);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF6B, 0x5A);
+    checkByte("ocps auto increment", mmumod.cgbPaletteRead(&g_bus, 0xFF6A), 0x84);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF6A, 0x03);
+    checkByte("ocpd latched", mmumod.cgbPaletteRead(&g_bus, 0xFF6B), 0x5A);
+}
+
+fn testPaletteColor() void {
+    resetCgb();
+    mmumod.cgbPaletteReset(&g_bus);
+
+    setBgColor(0, 0, 0x7FFF);
+    setBgColor(0, 1, 0x001F);
+    setBgColor(0, 2, 0x03E0);
+    setBgColor(0, 3, 0x7C00);
+    setBgColor(0, 4, 0x0000);
+    setObjColor(0, 0, 0x7FFF);
+
+    checkU32("cram white", g_bus.cram_rgb[0], 0x00FFFFFF);
+    checkU32("cram red", g_bus.cram_rgb[1], 0x00FF0000);
+    checkU32("cram green", g_bus.cram_rgb[2], 0x0000FF00);
+    checkU32("cram blue", g_bus.cram_rgb[3], 0x000000FF);
+    checkU32("cram black", g_bus.cram_rgb[4], 0x00000000);
+    checkU32("cram obj white", g_bus.cram_rgb[32], 0x00FFFFFF);
+}
+
+fn testDmgIgnoresCgbPalette() void {
+    resetBus();
+    mmumod.write8(&g_bus, 0xFF68, 0x00);
+    mmumod.write8(&g_bus, 0xFF69, 0xFF);
+    checkByte("dmg bcps reads ff", mmumod.read8(&g_bus, 0xFF68), 0xFF);
+    checkByte("dmg bcpd reads ff", mmumod.read8(&g_bus, 0xFF69), 0xFF);
+    checkByte("dmg bcpd ignored", g_bus.bcpd[0], 0x00);
+    checkByte("dmg ocps reads ff", mmumod.read8(&g_bus, 0xFF6A), 0xFF);
+    checkU32("dmg cram untouched", g_bus.cram_rgb[0], 0x00000000);
+
+    resetBus();
+    ppumod.ppuReset(&g_ppu);
+    g_bus.cram_rgb[3] = 0x00FF0000;
+    ppumod.ppuWrite(&g_ppu, 0xFF40, 0x91, &g_bus);
+    ppumod.ppuWrite(&g_ppu, 0xFF47, 0xE4, &g_bus);
+    setTileRowBank(0, 1, 0, 0xFF, 0xFF);
+    g_bus.vram[0x1800] = 1;
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkU32("dmg render ignores cgb", g_ppu.fb[0], 0x000F380F);
+}
+
+fn testPaletteMode3Block() void {
+    resetCgb();
+    mmumod.cgbPaletteReset(&g_bus);
+    setBgColor(0, 1, 0x001F);
+    checkU32("cram before lock", g_bus.cram_rgb[1], 0x00FF0000);
+    checkBool("palette unlocked reset", g_bus.ppu_palette_blocked, false);
+
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkByte("palette mode3 entered", g_ppu.mode, 3);
+    checkBool("palette blocked mode3", g_bus.ppu_palette_blocked, true);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF68, 0x02);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF69, 0xE0);
+    checkByte("blocked palette read", mmumod.cgbPaletteRead(&g_bus, 0xFF69), 0xFF);
+    checkByte("blocked palette data", g_bus.bcpd[2], 0x1F);
+    checkU32("blocked palette rgb", g_bus.cram_rgb[1], 0x00FF0000);
+
+    ppumod.ppuTick(&g_ppu, g_ppu.mode3_len, &g_bus);
+    checkByte("palette mode0 restored", g_ppu.mode, 0);
+    checkBool("palette unlocked mode0", g_bus.ppu_palette_blocked, false);
+    mmumod.write8(&g_bus, 0xFF68, 0x02);
+    mmumod.write8(&g_bus, 0xFF69, 0xE0);
+    checkByte("mode0 palette write", mmumod.read8(&g_bus, 0xFF69), 0xE0);
+}
+
+fn cgbBgBase(attr: u8) void {
+    resetCgb();
+    mmumod.cgbPaletteReset(&g_bus);
+    setBgColor(0, 0, 0x7C00);
+    setBgColor(1, 0, 0x03E0);
+    setBgColor(1, 1, 0x001F);
+    setBgColor(1, 2, 0x7FFF);
+    ppumod.ppuWrite(&g_ppu, 0xFF40, 0x91, &g_bus);
+    g_bus.vram[0x1800] = 0;
+    setTileRowBank(1, 0, 0, 0x80, 0x00);
+    setBgAttr(0, 0x08 | 0x01 | attr);
+}
+
+fn testBgAttributes() void {
+    cgbBgBase(0x00);
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkU32("cgb bg bank1 palette", g_ppu.fb[0], 0x00FF0000);
+    checkU32("cgb bg bank1 color0", g_ppu.fb[1], 0x0000FF00);
+
+    cgbBgBase(0x20);
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkU32("cgb bg xflip left", g_ppu.fb[0], 0x0000FF00);
+    checkU32("cgb bg xflip right", g_ppu.fb[7], 0x00FF0000);
+
+    cgbBgBase(0x40);
+    setTileRowBank(1, 0, 7, 0x00, 0x80);
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkU32("cgb bg yflip", g_ppu.fb[0], 0x00FFFFFF);
+
+    cgbBgBase(0x10);
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkU32("cgb bg attr bit4 ignored", g_ppu.fb[0], 0x00FF0000);
+}
+
+fn testCgbBgLcdcBit0() void {
+    resetCgb();
+    mmumod.cgbPaletteReset(&g_bus);
+    setBgColor(0, 1, 0x001F);
+    ppumod.ppuWrite(&g_ppu, 0xFF40, 0x90, &g_bus);
+    setTileRowBank(0, 1, 0, 0xFF, 0x00);
+    g_bus.vram[0x1800] = 1;
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkU32("cgb bg shown lcdc0 clear", g_ppu.fb[0], 0x00FF0000);
+}
+
+fn testSpriteAttributes() void {
+    resetCgb();
+    mmumod.cgbPaletteReset(&g_bus);
+    setObjColor(2, 1, 0x001F);
+    ppumod.ppuWrite(&g_ppu, 0xFF40, 0x93, &g_bus);
+    setTileRowBank(1, 0, 0, 0x80, 0x00);
+    setSprite(0, 16, 8, 0, 0x08 | 0x02);
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkU32("cgb sprite bank1 palette", g_ppu.fb[0], 0x00FF0000);
+}
+
+fn setupOamOrder() void {
+    resetCgb();
+    mmumod.cgbPaletteReset(&g_bus);
+    setObjColor(1, 1, 0x001F);
+    setObjColor(2, 1, 0x03E0);
+    ppumod.ppuWrite(&g_ppu, 0xFF40, 0x93, &g_bus);
+    g_bus.vram[0x1800] = 1;
+    setTileRowBank(0, 0, 0, 0xFF, 0x00);
+    setSprite(0, 16, 9, 0, 0x01);
+    setSprite(1, 16, 8, 0, 0x02);
+}
+
+fn testSpriteOamOrder() void {
+    setupOamOrder();
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkU32("cgb sprite oam order", g_ppu.fb[1], 0x00FF0000);
+    checkU32("cgb sprite higher oam only", g_ppu.fb[8], 0x00FF0000);
+
+    setupOamOrder();
+    mmumod.write8(&g_bus, 0xFF6C, 0x01);
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkU32("cgb sprite opri dmg x", g_ppu.fb[1], 0x0000FF00);
+}
+
+fn setupBgObj(bg_idx: u8, bg_prio: bool, lcdc_bg: bool, oam_behind: bool) void {
+    resetCgb();
+    mmumod.cgbPaletteReset(&g_bus);
+    setBgColor(0, 0, 0x7C00);
+    setBgColor(0, 1, 0x001F);
+    setObjColor(0, 1, 0x03E0);
+    const lcdc: u8 = 0x90 | 0x02 | (if (lcdc_bg) @as(u8, 1) else @as(u8, 0));
+    ppumod.ppuWrite(&g_ppu, 0xFF40, lcdc, &g_bus);
+    const bg_lo: u8 = if (bg_idx == 0) 0x00 else 0xFF;
+    setTileRowBank(0, 1, 0, bg_lo, 0x00);
+    setTileRowBank(0, 0, 0, 0xFF, 0x00);
+    g_bus.vram[0x1800] = 1;
+    setBgAttr(0, if (bg_prio) 0x80 else 0x00);
+    setSprite(0, 16, 8, 0, if (oam_behind) 0x80 else 0x00);
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+}
+
+fn testBgObjPriority() void {
+    setupBgObj(0, false, true, false);
+    checkU32("cgb prio bg0 obj", g_ppu.fb[0], 0x0000FF00);
+
+    setupBgObj(1, false, false, false);
+    checkU32("cgb prio lcdc0 obj", g_ppu.fb[0], 0x0000FF00);
+
+    setupBgObj(1, false, true, false);
+    checkU32("cgb prio both clear obj", g_ppu.fb[0], 0x0000FF00);
+
+    setupBgObj(1, true, true, false);
+    checkU32("cgb prio bgattr bg", g_ppu.fb[0], 0x00FF0000);
+
+    setupBgObj(1, false, true, true);
+    checkU32("cgb prio oam behind bg", g_ppu.fb[0], 0x00FF0000);
+
+    setupBgObj(1, true, true, true);
+    checkU32("cgb prio both bg", g_ppu.fb[0], 0x00FF0000);
+}
+
+fn testCgbFramebuffer() void {
+    resetCgb();
+    const fb: []const u32 = ppumod.ppuCgbFramebuffer(&g_ppu);
+    checkWord("cgb framebuffer length", @intCast(u16, fb.len), 23040);
+    g_ppu.fb[0] = 0x00123456;
+    checkU32("cgb framebuffer storage", fb[0], 0x00123456);
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     if (argc < 2) {
         std.io.write("cgb FAIL no scratch dir\n");
@@ -345,6 +637,16 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testCartModes();
     testEmuModes(dir);
     testRamInference();
+    testPaletteRam();
+    testPaletteColor();
+    testDmgIgnoresCgbPalette();
+    testPaletteMode3Block();
+    testBgAttributes();
+    testCgbBgLcdcBit0();
+    testSpriteAttributes();
+    testSpriteOamOrder();
+    testBgObjPriority();
+    testCgbFramebuffer();
 
     if (g_fail == 0) {
         std.io.write("cgb ok ");
