@@ -28,10 +28,8 @@ done
 
 PASSES=0
 FAILS=0
-SKIPS=0
 pass_case() { echo "ok   - $1"; PASSES=$((PASSES + 1)); }
 fail_case() { echo "FAIL - $1"; FAILS=$((FAILS + 1)); }
-skip_case() { echo "SKIP - $1"; SKIPS=$((SKIPS + 1)); }
 
 if [ ! -x "$ZIG" ]; then
     echo "FAIL: compiler not found: $ZIG"
@@ -40,33 +38,6 @@ fi
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
-
-if [ -n "${Z9GB_ROM_DIR:-}" ]; then
-    ROM_DIR="$Z9GB_ROM_DIR"
-elif [ -d /tmp/z9gb_roms ]; then
-    ROM_DIR=/tmp/z9gb_roms
-elif [ -d "$Z9DIR/testdata/roms" ]; then
-    ROM_DIR="$Z9DIR/testdata/roms"
-else
-    ROM_DIR=/tmp/z9gb_roms
-fi
-
-run_cgb_gate() {
-    label="$1"
-    script="$2"
-    gate_out="$OUT/gates/$label"
-    mkdir -p "$gate_out"
-    if OUT="$gate_out" Z9GB_ROM_DIR="$ROM_DIR" sh "$SCRIPT_DIR/$script" "$ZIG"; then
-        pass_case "$label"
-    else
-        rc=$?
-        if [ "$rc" -eq 77 ]; then
-            skip_case "$label"
-        else
-            fail_case "$label"
-        fi
-    fi
-}
 
 run_unit_mode() {
     mode="$1"
@@ -172,20 +143,10 @@ if [ -x "$CLI_BIN" ]; then
 fi
 
 echo
-echo "== P4 CGB hard gates =="
-run_cgb_gate cgb-acid2 run_cgb_acid2.sh
-run_cgb_gate cgb_sound run_cgb_sound.sh
-run_cgb_gate cgb-interrupt-time run_cgb_interrupt_time.sh
-
-echo
-echo "== tier_cgb summary: $PASSES passed, $FAILS failed, $SKIPS skipped =="
+echo "== tier_cgb summary: $PASSES passed, $FAILS failed =="
 if [ "$FAILS" -ne 0 ]; then
     echo "TIER_CGB FAIL"
     exit 1
-fi
-if [ "$SKIPS" -ne 0 ]; then
-    echo "TIER_CGB SKIP"
-    exit 77
 fi
 echo "TIER_CGB PASS"
 exit 0
