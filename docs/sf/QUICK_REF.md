@@ -30,33 +30,31 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-09 — seed v147]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-11 — seed v148]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v147 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v148 CHANGELOG entry.
 
-**Current seed: v147** (rotated 2026-11-09 for the final Phase 3.5 closeout;
-packaging base HEAD `2383dc29`). Archived binary md5
+**Current seed: v148** (rotated 2026-11-11 for the Phase 4 P3 closeout;
+packaging base HEAD `fb896e2b`). Archived binary md5
 (= fixed point) `73c75a65e30dfd212fdf93ae1e57a687`; archive md5
-`e7d94d4cc4a4b4e734bc68c8343538e3`; Win9x zip md5
-`774a4a6f00376c1484c9ef03ecc7a126`; `gen/` 48 `.c` + 49 `.h` (12,932,829
-bytes); `lib/` **59** std `.zig` (`std.zig` + 58 `std_*.zig`) plus
+`2bd90de43b29b070abb70a2448dabbeb`; Win9x zip md5
+`48ba3422e710e18dfb3e065abbc7c8bc`; `gen/` 48 `.c` + 49 `.h` (12,932,829
+bytes); `lib/` **65** std `.zig` (`std.zig` + 64 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`6be2fe3690949cd9601d9db1ac71e48b`; includes `std_tls_io.zig`,
-`std_hpack.zig`, `std_http2.zig`).
-A rebuild from the committed v147 archive is two-hop
+`7fb073e7b153e34d9c216adce7d896f4`; includes `std_ddraw.zig`,
+`std_ddraw_pal.zig`, `std_dinput.zig`, `std_dinput_pal.zig`, `std_dsound.zig`,
+`std_dsound_pal.zig`, `std_tls_io.zig`, `std_hpack.zig`, `std_http2.zig`).
+A rebuild from the committed v148 archive is two-hop
 **hop1 == hop2 == `73c75a65…`**. The compiler source is **`-fsafe`-clean**.
-v147 supersedes the invalid v146 seed: the module-scope unannotated value
-initializer now uses peer resolution under the explicit expected-type contract
-(`none` / `known` / `undetermined`; Task 12.2-F `2383dc29`), so the v146
-`error[3000] target: type` regression is gone, annotation-present-unresolved
-consumers reject cleanly, and D15 known/void behavior is unchanged. The
-accepted contract correction changes a module-scope unannotated `if` with
-string literals from a pointer to a slice (v145/v146 `unsigned char*`, v147
-slice); this is intentional and is not special-cased back to the pointer form.
+v148 is the std-only Phase 4 P3 rotation: it adds `std_ddraw*`, `std_dinput*`,
+and `std_dsound*` to `lib/` (59 -> 65) with no compiler-source or barrel change,
+so the fixed point and the 8 emission pins stay `73c75a65…`. v147 was the final
+Phase 3.5 expected-type-contract rotation; its narrative and fixed-point history
+remain in `release/seed/CHANGELOG.md`.
 
 
 **Win9x companion zip:** `release/seed/zig1_seed_w9.zip` unpacks to
@@ -99,12 +97,12 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v147 carries the full 59 std `.zig`** = `std.zig` plus
-58 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
+tracked seed archive **v148 carries the full 65 std `.zig`** = `std.zig` plus
+64 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
 
-**Std-module inventory:** the `sf/src` std set is **58** `std_*.zig` + `std.zig`
+**Std-module inventory:** the `sf/src` std set is **64** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
 `std_net`, `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`,
 `std_time_pal`, `std_page`, `std_page_pal`, `std_gpa`, `std_pool`, `std_buf`,
@@ -113,12 +111,12 @@ and `SEED_README.txt`.
 `std_parse`, `std_bencode`,
 `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`,
 `std_utf8`, `std_http`, `std_rand`, `std_noise`, `std_lz4`, `std_zstd`,
-`std_deflate`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics`, `std_asn1`, `std_x509`,
+`std_deflate`, `std_ddraw`, `std_ddraw_pal`, `std_dinput`, `std_dinput_pal`, `std_dsound`, `std_dsound_pal`, `std_num`, `std_pathfind`, `std_hpa`, `std_physics`, `std_asn1`, `std_x509`,
 `std_tls`, `std_tls_io`, `std_hpack`, `std_http2`, `std_wireguard`, `std_tcpip`, `std_gfx`, `std_gfx_pal`,
 `std_fold`, `std_fft`). `std.zig` re-exports
 the core **17** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/page/gpa/pool/buf/fold`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
-`scripts/seed/build_from_seed.sh` installs all 59 into the rebuilt compiler's `lib/`.
+`scripts/seed/build_from_seed.sh` installs all 65 into the rebuilt compiler's `lib/`.
 
 **Phase 3.1 allocators (`std.page`/`std.gpa`/`std.pool`) — scope and limits.**
 `std.page` exposes `posix_mode` = `auto`/`remap`/`protect`/`modern` (POSIX

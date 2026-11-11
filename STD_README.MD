@@ -55,20 +55,18 @@ const std_crypto = @import("std_crypto.zig"); // equivalent, explicit
 
 ## Shipped seed
 
-The committed seed is **v145** (`release/seed/zig1-seed.tgz`, archive md5
-`abbc017de15ca2eb1ae1edd4a976ecd7`), with **59** std files (`std.zig` +
-58 `std_*.zig`) and `lib/manifest.md5` md5
-`6be2fe3690949cd9601d9db1ac71e48b`. v145 is a std-only Phase 3.3 closeout
-rotation that repackages the final `std_http2.zig`/`std_tls_io.zig` fixes and
-ships `std_tls_io.zig`, `std_hpack.zig`, and `std_http2.zig`; it retains the
-v142 general-purpose allocator inventory (`std_page.zig`, `std_page_pal.zig`,
-`std_gpa.zig`, `std_pool.zig`, barrel-exported as
-`std.page`/`std.gpa`/`std.pool`) plus the Task 1/7 compiler-source changes
-(`std_page_prelude.h` emission, `error[3079]`, GPA analyzer ownership
-recognition). The compiler fixed point is unchanged from v142-v144:
-`cd8d283b917749009961f4445043666b` (the new modules are not in the compiler
-import graph). The Win9x companion zip is `release/seed/zig1_seed_w9.zip` (md5
-`20821b5fdc32e48dfb5e1b3d694de52b`).
+The committed seed is **v148** (`release/seed/zig1-seed.tgz`, archive md5
+`2bd90de43b29b070abb70a2448dabbeb`), with **65** std files (`std.zig` +
+64 `std_*.zig`) and `lib/manifest.md5` md5
+`7fb073e7b153e34d9c216adce7d896f4`. v148 is the std-only Phase 4 P3 closeout
+rotation: it adds `std_ddraw.zig`, `std_ddraw_pal.zig`, `std_dinput.zig`,
+`std_dinput_pal.zig`, `std_dsound.zig`, and `std_dsound_pal.zig` for the z9gb
+Win32 DirectDraw/DirectInput/DirectSound backend while retaining the full
+TLS/HTTP2 and allocator inventory. There is no compiler-source or barrel
+change, so the fixed point is unchanged from v147:
+`73c75a65e30dfd212fdf93ae1e57a687`. The Win9x companion zip is
+`release/seed/zig1_seed_w9.zip` (md5
+`48ba3422e710e18dfb3e065abbc7c8bc`).
 
 **Phase 3.3 HTTP/2 surface.** `std_tls` gains ALPN (`alpn_h2`,
 `tlsAlpnSelected`) and the opt-in `prefer_chacha20` suite/group ordering;

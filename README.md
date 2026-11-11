@@ -48,7 +48,7 @@ canonical, MSVC 6 `/MT`, MinGW CRT) with the Linux artifacts. It rolls up the v1
 the z9play/z9torr optimizations, example idiom modernization, and the portable switch /
 negative-case / enum emission fixes. The **self-hosted milestone is complete**: `zig1`
 compiles itself, the compilation is **deterministic to a fixed point** (current self-compile
-binary md5 `73c75a65e30dfd212fdf93ae1e57a687`; committed seed **v147**,
+binary md5 `73c75a65e30dfd212fdf93ae1e57a687`; committed seed **v148**,
 `release/seed/zig1-seed.tgz`; the fixed point moved from v141 `cf68f192…` by the Phase 3.1
 Task 1/7 compiler-source changes, v142-v145 retained `cd8d283b…`, the Phase 3.5 defect
 closure moved it to `de5e99b6…`, and the final expected-type fix moved it to
@@ -67,6 +67,19 @@ Phase 3.5 anchor was 1278 = 1092 OK / 63 GREEN / 123 FAIL, class md5
 `17eb6474b9ff6895cd1b3b3615584e3c` (950 OK / 59 GREEN / 115 FAIL; one operator-accepted
 D15 consequence: `switch_case_qualifier_reject_xmod` FAIL→GREEN). The upgraded showcase gate
 (`scripts/closeout/verify_upgraded.sh`) passes its full A1–B7 battery.
+
+**Phase 4 P3 (playable DMG) is complete.** The `z9gb` Win32 backend adds DirectDraw pixel
+presentation (`std_ddraw`), DirectInput8 keyboard/gamepad with a `GetAsyncKeyState` keyboard
+fallback (`std_dinput`), QPC frame pacing, the DMG APU, and DirectSound with a WinMM `waveOut`
+fallback (`std_dsound`); JOYP input (`FF00`) is wired through `emuSetButtons` (Task 5.1).
+Windowed display requires the DirectX 6/8 runtimes: `IDirectDraw7` needs the DX6+ runtime and
+gamepad input needs `dinput8.dll` (DX8); stock Win98 ships DX5, and a missing `dinput8.dll` falls
+back to keyboard-only input. The authoritative performance gate is host headless `2048.gb`
+(`--headless --frames 600 --audio`) at **>= 59.0 fps** (measured 967.742 fps); Wine windowed
+`2048.gb` is evidence only, never Win98, and sandbox Wine is painfully slower (measured 47.658
+fps, `child_rc=0`). Operator-supplied Wine numbers are non-authoritative. Audio falls back to
+WinMM when DirectSound is unavailable. No Win98 real-hardware run was performed: the Wine result
+is not hardware evidence.
 
 **Phase 1 (TLS + WireGuard) is complete.** The std library now carries the
 browser-grade TLS 1.2/1.3 client (`std_tls` over `std_crypto`/`std_cipher`/
@@ -145,13 +158,16 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
 
 - **Current self-compile fixed point:** self-compiled `zig1` binary md5
   `73c75a65e30dfd212fdf93ae1e57a687` (48 module `.c` + 49 module `.h`,
-  12,932,829 bytes, 0 `error[`, 0 PANIC; a rebuild from the committed v147
+  12,932,829 bytes, 0 `error[`, 0 PANIC; a rebuild from the committed v148
   archive is hop1 == hop2 == `73c75a65e30dfd212fdf93ae1e57a687`), committed
-  seed **v147** (`release/seed/zig1-seed.tgz`, archive md5
-  `e7d94d4cc4a4b4e734bc68c8343538e3`; Win9x zip md5
-  `774a4a6f00376c1484c9ef03ecc7a126`; `lib/manifest.md5` md5
-  `6be2fe3690949cd9601d9db1ac71e48b`, 59 std files). v147 is the final
-  Phase 3.5 closeout expected-type contract rotation (Task 12.2-F `2383dc29`);
+  seed **v148** (`release/seed/zig1-seed.tgz`, archive md5
+  `2bd90de43b29b070abb70a2448dabbeb`; Win9x zip md5
+  `48ba3422e710e18dfb3e065abbc7c8bc`; `lib/manifest.md5` md5
+  `7fb073e7b153e34d9c216adce7d896f4`, 65 std files). v148 is the Phase 4 P3
+  std-only rotation: it adds `std_ddraw*`, `std_dinput*`, and `std_dsound*` to
+  `lib/` (59 -> 65) with no compiler-source or barrel change, so the fixed
+  point and the 8 emission pins stay `73c75a65…`. v147 was the final Phase 3.5
+  closeout expected-type contract rotation (Task 12.2-F `2383dc29`);
   it supersedes the invalid v146 seed, restores module-scope unannotated value
   initializers to peer resolution under the explicit
   `none`/`known`/`undetermined` contract, and moves the fixed point from
@@ -408,7 +424,7 @@ over) and pool 18,871K (18.4 MB; +2.4 MB over).
 ## Minimum Requirements
 | Requirement | Linux | Windows 9x |
 |---|---|---|
-| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 59-file `lib/` std set next to it (auto-discovered; current v147 seed); **~20 MB peak RSS at `-s0` at v135** (historical measurement; v144 fixed point `cd8d283b…`; D-safe 20,716 kB / 20.2 MB; D-fast 20,100 kB / 19.6 MB; spill `-s0` pool 18,677K / 18.2 MB); the <16 MB goal is not met | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); **runtime not measured** — Wine is evidence only |
+| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 65-file `lib/` std set next to it (auto-discovered; current v148 seed); **~20 MB peak RSS at `-s0` at v135** (historical measurement; v144 fixed point `cd8d283b…`; D-safe 20,716 kB / 20.2 MB; D-fast 20,100 kB / 19.6 MB; spill `-s0` pool 18,677K / 18.2 MB); the <16 MB goal is not met | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); **runtime not measured** — Wine is evidence only |
 | **BUILDING the compiler from source** | gcc (C89) for the emitted C — gcc backend **~177 MB** peak (Row E, 181,564 kB); rebuild from the committed seed (no zig0) | the three Windows compilers: `zig1_w32.exe` (OpenWatcom static CLIB, canonical), `zig1_w32_msvc.exe` (MSVC 6 `/MT`), and `z98_mingw_crt_w32.exe` (MinGW CRT, requires `msvcrt.dll`); built from the release seed zip (v135 for 0.21.2); cross-compile not measured here |
 
 > **At v135, Linux `zig1` self-compiles at ~20 MB peak RSS / ~18.2 MB pool at `-s0` — the
@@ -452,7 +468,7 @@ Two workflows: run a released binary, or build `zig1` from the source archive.
 **Build `zig1` from source** — download the release source archive **`zig1_src.tgz`** (linux) or
 **`zig1_src.zip`** (win9x-unpackable). It contains the full compiler source tree (`sf/src/*.zig` +
 `sf/src/include/`), a `RELEASE_README.txt` with the exact where/how build commands, and a
-`lib/` std payload. The current repo seed is **v147** with **59** std files; the historical
+`lib/` std payload. The current repo seed is **v148** with **65** std files; the historical
 0.21.2 release source archive carried 51. This source is a Zig-subset program, **not** directly compilable by a C toolchain: the
 seed model is the only rebuild path — rebuild it from the committed seed
 `release/seed/zig1-seed.tgz` with only `gcc` via
@@ -472,14 +488,14 @@ sh out/build_target.sh          # or: ./out/build_target.sh after the first run
 objects, so no repo include path and no hand-listed runtime trio are needed. `--dump-c89` is now a
 **debug alias**: on its own it writes a single C file to stdout; with `-o <dir>` it writes
 per-module `.c`/`.h` files.
-(For the current repo seed, install the **59-file `lib/`** — `std.zig` plus 58 `std_*.zig` —
+(For the current repo seed, install the **65-file `lib/`** — `std.zig` plus 64 `std_*.zig` —
 next to the `zig1` binary in a `lib/` dir for `@import("std")`; the historical 0.21.2 release
 shipped 51 files. Windows users pass `-I <lib>` explicitly.)
 The authoritative, always-verified command set lives in [docs/sf/QUICK_REF.md](docs/sf/QUICK_REF.md);
 the build script is `scripts/seed/build_from_seed.sh`. Release binaries (`zig1_linux32` /
 `zig1_w32.exe`) ship with a sibling `lib/` and `MANIFEST.txt` (md5/sha256/sizes).
 
-**Historical release artifacts (0.21.2, seed v135; separate from the current v147/59-file repo seed — see [Determinism](#determinism))** — `zig1_linux32` (md5 `cf68f192900e7f6618c11e1712b74b3a`, the v135
+**Historical release artifacts (0.21.2, seed v135; separate from the current v148/65-file repo seed — see [Determinism](#determinism))** — `zig1_linux32` (md5 `cf68f192900e7f6618c11e1712b74b3a`, the v135
 fixed point); `zig1_w32.exe` (OpenWatcom static CLIB, md5 `3e944a2c4d4842422ff9108d534a9f42`);
 `zig1_w32_msvc.exe` (MSVC 6 `/MT`, md5 `1141ecbf15e720da955b0434eeb8624d`); `z98_mingw_crt_w32.exe`
 (MinGW CRT, md5 `f08ddae7fc7924e7a372174c437ed380`; requires `msvcrt.dll`);
@@ -531,10 +547,10 @@ Runtime safety defaults to `-fsafe`. The compiler self-build passes `-ffast`, so
 ## Minimal Distribution
 To build a Z98 program on a target machine you need:
 1. **`zig1`** (or `zig1_w32.exe`) — the self-hosted compiler binary.
-2. **The std modules** — the shipped `lib/` set is **59 files**: `std.zig` plus 58
+2. **The std modules** — the shipped `lib/` set is **65 files**: `std.zig` plus 64
    `std_*.zig`. `std.zig` re-exports the 17 core modules (`io`, `fmt`, `arena`, `str`,
    `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `page`, `gpa`,
-   `pool`, `buf`, `fold`); the by-path modules (35 public + 6 `*_pal` companions) are the same inventory documented
+   `pool`, `buf`, `fold`); the by-path modules (38 public + 9 `*_pal` companions) are the same inventory documented
    under [Standard Library](#standard-library) above
    (linux: in a `lib/` dir beside the binary; windows: on the `-I` search path).
 3. **Runtime sources & headers** — emitted into the program's output dir by `zig1 -o <dir>`
@@ -558,18 +574,18 @@ To build a Z98 program on a target machine you need:
 - [README_zig0_bootstrap.md](README_zig0_bootstrap.md) — the preserved bootstrap-era (`zig0`)
   README, kept byte-verbatim.
 
-## Standard Library  [updated: 2026-11-09 — v147]
-The Z98 standard library lives in `sf/src/`. The shipped seed payload is **59**
-files: `std.zig` plus **58** `std_*.zig`. `std.zig` re-exports **17** modules
+## Standard Library  [updated: 2026-11-11 — v148]
+The Z98 standard library lives in `sf/src/`. The shipped seed payload is **65**
+files: `std.zig` plus **64** `std_*.zig`. `std.zig` re-exports **17** modules
 (`io`, `fmt`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`,
-`os`, `time`, `page`, `gpa`, `pool`, `buf`, `fold`); the remaining **41**
-`std_*.zig` files are imported by path — **35** public modules (`std_asn1`, `std_base64`,
-`std_bencode`, `std_cipher`, `std_crypto`, `std_deflate`, `std_ecc`, `std_file`, `std_fft`, `std_gfx`,
+`os`, `time`, `page`, `gpa`, `pool`, `buf`, `fold`); the remaining **47**
+`std_*.zig` files are imported by path — **38** public modules (`std_asn1`, `std_base64`,
+`std_bencode`, `std_cipher`, `std_crypto`, `std_ddraw`, `std_deflate`, `std_dinput`, `std_dsound`, `std_ecc`, `std_file`, `std_fft`, `std_gfx`,
 `std_heap`, `std_hex`, `std_hpa`, `std_hpack`, `std_http`, `std_http2`, `std_lz4`, `std_map`, `std_noise`,
 `std_num`, `std_parse`, `std_pathfind`, `std_physics`, `std_rand`, `std_rle`,
 `std_sort`, `std_stdin`, `std_stream`, `std_tcpip`, `std_tls`, `std_tls_io`, `std_utf8`,
-`std_wireguard`, `std_x509`, `std_zstd`) plus **6** platform companions
-(`std_file_pal`, `std_gfx_pal`, `std_os_pal`, `std_page_pal`, `std_stdin_pal`,
+`std_wireguard`, `std_x509`, `std_zstd`) plus **9** platform companions
+(`std_ddraw_pal`, `std_dinput_pal`, `std_dsound_pal`, `std_file_pal`, `std_gfx_pal`, `std_os_pal`, `std_page_pal`, `std_stdin_pal`,
 `std_time_pal`). `std_page` provides the portable page reservation API
 (`pageInit`/`pageReserve`/`pageCommit`/`pageDecommit`/`pageRelease`), `std_gpa`
 the TLSF/medium/large general-purpose allocator (default `target64`: 64 KiB
@@ -618,10 +634,13 @@ complete programs that exercise the language-wins features and the PAL/networkin
   shallow/partial clone, resumable prefix packs, and a bounded external-memory idx writer).
 - **`z9zstddecomp`** — a single-shot zstd frame decompressor CLI (`std_zstd` frames, skippable
   frames, checksums, and RFC 8878 magic/raw dictionaries; bounded output and window caps).
-- **`z9gb`** — a DMG (original Game Boy) emulator, currently at **P2 (DMG core)**: CPU,
-  MMU/timer/serial, scanline PPU, MBC1/MBC3(+RTC)/MBC5, battery `.sav`/`.rtc` saves, and a
-  deterministic headless backend. No CGB, APU, or windowed/DirectX backend. Gates:
-  `tests/tier_dmg.sh` (`--all`, `--gates`) plus `tests/measure_rss.sh`.
+- **`z9gb`** — a DMG (original Game Boy) emulator, now at **P3 (playable DMG)**: CPU,
+  MMU/timer/serial, scanline PPU, MBC1/MBC3(+RTC)/MBC5, battery `.sav`/`.rtc` saves, the DMG
+  APU, and a deterministic headless backend, plus a Win32 backend with DirectDraw presentation,
+  DirectInput8 keyboard/gamepad (keyboard fallback), QPC pacing, DirectSound (WinMM `waveOut`
+  fallback), and wired JOYP input. No CGB. Gates: `tests/tier_dmg.sh` (`--all`, `--gates`),
+  `tests/tier_smoke.sh`, `tests/tier_audio.sh --gate`, `tests/tier_win32.sh --smoke`,
+  `tests/tier_perf.sh`, plus `tests/measure_rss.sh`.
 - Plus the classic single/multi-module programs (`hello`, `prime`, `fibonacci`, `days_in_month`,
   `heapsort`, `quicksort`, `sort_strings`, `mandelbrot`, `lzw`, `func_ptr_return`, `tco_*`).
 
