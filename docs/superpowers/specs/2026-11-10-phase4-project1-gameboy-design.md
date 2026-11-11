@@ -527,7 +527,9 @@ pub fn dsoundClose(d: *Dsound) void;
 - `--mooneye` enables the Mooneye magic breakpoint: when the next opcode is
   `0x40` (`LD B,B`), stop and report the full Fibonacci register signature
   `B=3, C=5, D=8, E=13, H=21, L=34` as pass; any other register set is a fail.
-  This mode is test-only; normal games run `LD B,B` as a NOP.
+  This mode is test-only; normal games run `LD B,B` as a NOP. It no longer
+  forces the interpreter; `LD B,B` is a dynarec block boundary and the breakpoint
+  check runs at the dispatch boundary.
 - The harness is test-only and has no link-cable peer.
 
 ### 8.10 Dynarec
@@ -536,26 +538,46 @@ pub fn dsoundClose(d: *Dsound) void;
 - Fixed **1 MiB** executable mapping via `VirtualAlloc(NULL, 1 MiB,
   MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)`. This mapping is separate
   from the 1 MiB stack and from static state.
-- Block cache: direct-mapped table keyed by **`(rom_bank, pc)`** (keying by PC
-  alone would flush the whole cache on every MBC switch), 4,096 entries; block
-  max 4 KiB; per-slot replacement; per-bank invalidation on bank switches; full
-  arena/table reset only when the 1 MiB arena is exhausted.
+- Block cache: direct-mapped table keyed by **`(effective_rom_bank, pc)`**
+  (keying by PC alone would flush the whole cache on every MBC switch; the
+  effective bank includes MBC1 mode-1 ROM0 banking), 4,096 entries; block
+  max 4 KiB; per-slot replacement; invalidation by changed address range on
+  bank switches (a ROMX change invalidates the old ROMX entries with
+  `pc >= 0x4000`; an MBC1 mode-1 ROM0 change invalidates all `pc < 0x4000`
+  entries); full arena/table reset only when the 1 MiB arena is exhausted.
 - Translation unit: basic block from PC until branch/call/ret/HALT/STOP, `EI`,
-  `DI`, `RETI`, an IO write, a cart-control write, or 64 instructions (the
-  boundary rules bound interrupt-service drift).
+  `DI`, `RETI`, an IO write, any write to ROM space (`0000-7FFF`, a cart-control
+  write), `LD B,B` (`0x40`), a statically-known PPU-register read
+  (`LDH A,(a8)` with `a8` in `0x40..0x4B`, or `LD A,(a16)` with `a16` in
+  `0xFF40..0xFF4B`), or 64 instructions (the boundary rules bound
+  interrupt-service drift). A block starting at `LD B,B` or at such a PPU read
+  is rejected so the interpreter executes it with full PPU sync. Dynamic PPU
+  reads through `HL` remain a documented limitation.
 - Generated code caches the CPU pairs in callee-saved host registers
   (`BC→ebx`, `DE→esi`, `HL→edi`, `SP→ebp`) across the block, with `A`/`F` in
   `Cpu` (or `A` in a volatile reg). Memory operands use an inline page-table
-  fast path (`bus->pages[addr >> 8]` — 256 entries of 256-byte pages, direct
-  `base[addr & 0xFF]` for ROM/WRAM/cart-RAM/**HRAM/echo**; stack ops never
-  call helpers) and call helpers only for IO/OAM/VRAM edges (VRAM carries the
-  mode-3 lockout check). After every cycle-charging helper, generated code
-  tests the pending-interrupt condition (`ime` + `if & ie & 0x1F`) and jumps
-  to the block epilogue — without this, interrupt dispatch drifts up to a
-  full block and latency gates fail. Blocks chain directly to already-translated
-  successors behind a bank/PC guard; `CALL` links to the translated callee the
-  same way, and `RET` links through a one-entry return-address cache
-  (`ret_target`/`ret_bank`); otherwise blocks return to the dispatcher.
+  fast path (`bus->pages[addr >> 8]` — 256 entries of 256-byte pages) only for
+  the safe set: ROM reads, WRAM, echo, and HRAM at `FF80-FFFE`; stack ops never
+  call helpers. ROM writes, `.rtc`, IO (`FF00-FF7F`), OAM, and VRAM use helpers;
+  cart-RAM direct access is allowed only when the page base is not the
+  disabled-RAM stub. A block is not started while OAM DMA is active (the
+  interpreter handles DMA); an IO write that starts DMA already ends the
+  containing block. After every cycle-charging helper, generated code tests the
+  pending-interrupt condition (`ime` + `if & ie & 0x1F`) and jumps to the block
+  epilogue — without this, interrupt dispatch drifts up to a full block and
+  latency gates fail. The epilogue charges residual `DynCtx.cycles` through
+  `busTick` exactly once, including pure-ALU blocks. Blocks chain directly to
+  already-translated successors behind a bank/PC guard; `CALL` links to the
+  translated callee the same way, and `RET` links through a one-entry
+  return-address cache (`ret_target`/`ret_bank`); otherwise blocks return to the
+  dispatcher.
+- `emuRunFrame` retains the interpreter loop's PPU sync after a block:
+  `ppuSyncIn`, `ppuTick(dot_delta)` (`cycles/2` in double speed), and
+  `ppuSyncOut`. The `LD B,B` breakpoint is enabled by `emuSetMooneye`/`--mooneye`
+  at the dispatch boundary, and `LD B,B` is a block boundary; `--mooneye` no
+  longer forces the interpreter. Normal games without it treat `LD B,B` as a
+  NOP. On non-Win32 hosts `--dynarec` reports a disabled reason; the gate
+  SKIPs/FAILs rather than passing silently.
 - ABI: `DynCtx` holds `cpu: *Cpu`, `bus: *Bus`, and `cycles: u32`.
   A generated block is `fn (*DynCtx) u32`, cdecl, returning T-cycles. Compiled
   via `@ptrCast` to a function pointer; no inline asm.
@@ -569,7 +591,9 @@ pub fn dsoundClose(d: *Dsound) void;
   counters and `dynarec=disabled reason=...` on failure; a `--dynarec` gate run
   where nothing translated (or dynarec silently disabled) **fails**, never
   passes as interpreter-vs-interpreter.
-- P5 parity: all P2–P4 gates pass with dynarec enabled and disabled.
+- P5 parity: all P2–P4 gates pass with dynarec enabled and disabled. Audio
+  sample counts compare with the documented frame-boundary tolerance
+  `16 * frames + 64`; exact equality is not required.
 - No fixed speedup gate. Report measured wall/CPU/RSS and correctness.
 
 ### 8.11 Test tiers and commands
