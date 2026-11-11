@@ -202,7 +202,10 @@ pub fn cgbPaletteWrite(b: *Bus, addr: u16, value: u8) void {
     switch (addr) {
         0xFF68 => b.bcps = value,
         0xFF69 => {
-            if (b.ppu_palette_blocked) return;
+            if (b.ppu_palette_blocked) {
+                if ((b.bcps & 0x80) != 0) cgbIncrement(&b.bcps);
+                return;
+            }
             const idx: u8 = b.bcps & 0x3F;
             b.bcpd[@intCast(usize, idx)] = value;
             updateBgRgb(b, @intCast(u16, idx) >> 1);
@@ -210,7 +213,10 @@ pub fn cgbPaletteWrite(b: *Bus, addr: u16, value: u8) void {
         },
         0xFF6A => b.ocps = value,
         0xFF6B => {
-            if (b.ppu_palette_blocked) return;
+            if (b.ppu_palette_blocked) {
+                if ((b.ocps & 0x80) != 0) cgbIncrement(&b.ocps);
+                return;
+            }
             const idx: u8 = b.ocps & 0x3F;
             b.ocpd[@intCast(usize, idx)] = value;
             updateObjRgb(b, @intCast(u16, idx) >> 1);

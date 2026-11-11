@@ -440,6 +440,7 @@ fn testPaletteColor() void {
     setBgColor(0, 1, 0x001F);
     setBgColor(0, 2, 0x03E0);
     setBgColor(0, 3, 0x7C00);
+    g_bus.cram_rgb[4] = 0x00123456;
     setBgColor(0, 4, 0x0000);
     setObjColor(0, 0, 0x7FFF);
 
@@ -476,17 +477,27 @@ fn testPaletteMode3Block() void {
     resetCgb();
     mmumod.cgbPaletteReset(&g_bus);
     setBgColor(0, 1, 0x001F);
+    setObjColor(0, 1, 0x03E0);
     checkU32("cram before lock", g_bus.cram_rgb[1], 0x00FF0000);
+    checkU32("obj cram before lock", g_bus.cram_rgb[33], 0x0000FF00);
     checkBool("palette unlocked reset", g_bus.ppu_palette_blocked, false);
 
     ppumod.ppuTick(&g_ppu, 84, &g_bus);
     checkByte("palette mode3 entered", g_ppu.mode, 3);
     checkBool("palette blocked mode3", g_bus.ppu_palette_blocked, true);
-    mmumod.cgbPaletteWrite(&g_bus, 0xFF68, 0x02);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF68, 0x82);
     mmumod.cgbPaletteWrite(&g_bus, 0xFF69, 0xE0);
+    checkByte("blocked bcps auto increment", mmumod.cgbPaletteRead(&g_bus, 0xFF68), 0x83);
     checkByte("blocked palette read", mmumod.cgbPaletteRead(&g_bus, 0xFF69), 0xFF);
     checkByte("blocked palette data", g_bus.bcpd[2], 0x1F);
     checkU32("blocked palette rgb", g_bus.cram_rgb[1], 0x00FF0000);
+
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF6A, 0x82);
+    mmumod.cgbPaletteWrite(&g_bus, 0xFF6B, 0x00);
+    checkByte("blocked ocps auto increment", mmumod.cgbPaletteRead(&g_bus, 0xFF6A), 0x83);
+    checkByte("blocked ocpd read", mmumod.cgbPaletteRead(&g_bus, 0xFF6B), 0xFF);
+    checkByte("blocked ocpd data", g_bus.ocpd[2], 0xE0);
+    checkU32("blocked ocpd rgb", g_bus.cram_rgb[33], 0x0000FF00);
 
     ppumod.ppuTick(&g_ppu, g_ppu.mode3_len, &g_bus);
     checkByte("palette mode0 restored", g_ppu.mode, 0);
@@ -550,6 +561,15 @@ fn testSpriteAttributes() void {
     setSprite(0, 16, 8, 0, 0x08 | 0x02);
     ppumod.ppuTick(&g_ppu, 84, &g_bus);
     checkU32("cgb sprite bank1 palette", g_ppu.fb[0], 0x00FF0000);
+
+    resetCgb();
+    mmumod.cgbPaletteReset(&g_bus);
+    setObjColor(2, 1, 0x001F);
+    ppumod.ppuWrite(&g_ppu, 0xFF40, 0x93, &g_bus);
+    setTileRowBank(1, 0, 0, 0x80, 0x00);
+    setSprite(0, 16, 8, 0, 0x08 | 0x02 | 0x10);
+    ppumod.ppuTick(&g_ppu, 84, &g_bus);
+    checkU32("cgb sprite attr bit4 ignored", g_ppu.fb[0], 0x00FF0000);
 }
 
 fn setupOamOrder() void {
@@ -600,6 +620,9 @@ fn testBgObjPriority() void {
     setupBgObj(1, false, false, false);
     checkU32("cgb prio lcdc0 obj", g_ppu.fb[0], 0x0000FF00);
 
+    setupBgObj(1, true, false, true);
+    checkU32("cgb prio lcdc0 overrides attrs", g_ppu.fb[0], 0x0000FF00);
+
     setupBgObj(1, false, true, false);
     checkU32("cgb prio both clear obj", g_ppu.fb[0], 0x0000FF00);
 
@@ -611,6 +634,27 @@ fn testBgObjPriority() void {
 
     setupBgObj(1, true, true, true);
     checkU32("cgb prio both bg", g_ppu.fb[0], 0x00FF0000);
+}
+
+fn testOpriRead() void {
+    resetCgb();
+    mmumod.write8(&g_bus, 0xFF6C, 0x01);
+    checkByte("opri cgb bit0", mmumod.read8(&g_bus, 0xFF6C), 0x01);
+    mmumod.write8(&g_bus, 0xFF6C, 0xFE);
+    checkByte("opri cgb high bits masked", mmumod.read8(&g_bus, 0xFF6C), 0x00);
+
+    resetBus();
+    g_bus.cgb_hw = true;
+    g_bus.cgb_color = false;
+    g_bus.cgb_compat = true;
+    checkByte("opri compat read", mmumod.read8(&g_bus, 0xFF6C), 0x01);
+    mmumod.write8(&g_bus, 0xFF6C, 0x00);
+    checkByte("opri compat write ignored", mmumod.read8(&g_bus, 0xFF6C), 0x01);
+
+    resetBus();
+    checkByte("opri dmg read", mmumod.read8(&g_bus, 0xFF6C), 0xFF);
+    mmumod.write8(&g_bus, 0xFF6C, 0x01);
+    checkByte("opri dmg write ignored", mmumod.read8(&g_bus, 0xFF6C), 0xFF);
 }
 
 fn testCgbFramebuffer() void {
@@ -646,6 +690,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testSpriteAttributes();
     testSpriteOamOrder();
     testBgObjPriority();
+    testOpriRead();
     testCgbFramebuffer();
 
     if (g_fail == 0) {
