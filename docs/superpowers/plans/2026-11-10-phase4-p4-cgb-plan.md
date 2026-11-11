@@ -353,3 +353,63 @@ README: CGB support, CGB-only requirement, double-speed, HDMA, palettes, gate co
 git add examples/z98/z9gb/README.md examples/z98/z9gb/tests/measure_rss.sh examples/z98/z9gb/tests/tier_perf.sh README.md docs/sf/QUICK_REF.md
 git commit -m "docs(z9gb): record P4 CGB evidence"
 ```
+
+### Task 6.5: CGB boot palette defaults to white
+
+**Files:**
+- Modify: `examples/z98/z9gb/mmu.zig`
+- Modify: `examples/z98/z9gb/tests/cgb_test.zig`
+- Test: `examples/z98/z9gb/tests/tier_cgb.sh`
+
+**Interfaces:**
+- Consumes: `cgbPaletteReset`, `busInit`, `cram_rgb`/`bcpd`/`ocpd`.
+- Produces: CGB post-boot CRAM initialized to white (Pan Docs: "All background colors are initialized as white by the boot ROM").
+
+- [ ] **Step 1: Write the failing test**
+In `cgb_test.zig`, after `resetCgb()`, assert every `cram_rgb[i]` equals `0x00FFFFFF` (RGB32 white). Also assert `bcpd`/`ocpd` byte pairs read `0xFF 0x7F` (BGR555 white `0x7FFF`, little-endian). Expected: fails because `cgbPaletteReset`/`busInit` currently zero CRAM.
+
+- [ ] **Step 2: Implement**
+In `cgbPaletteReset` (`mmu.zig:200-210`) and `busInit` CRAM loop (`mmu.zig:411-416`), initialize `bcpd[i*2]=0xFF`, `bcpd[i*2+1]=0x7F`, `ocpd[i*2]=0xFF`, `ocpd[i*2+1]=0x7F`, `cram_rgb[i]=0x00FFFFFF` for all 64 entries. Keep `bcps=0`, `ocps=0`. Do not change palette read/write logic.
+
+- [ ] **Step 3: Run**
+`tier_cgb --all`, `tier_dmg --all`, `run_cgb_acid2.sh` (golden must be unchanged — acid2 writes its own palettes). Expected: all PASS.
+
+- [ ] **Step 4: Commit**
+```bash
+git add examples/z98/z9gb/mmu.zig examples/z98/z9gb/tests/cgb_test.zig
+git commit -m "fix(z9gb): initialize CGB palettes to white at boot"
+```
+
+---
+
+### Task 6.6: HBlank DMA CPU stall
+
+**Files:**
+- Modify: `examples/z98/z9gb/mmu.zig`
+- Modify: `examples/z98/z9gb/tests/cgb_test.zig`
+- Test: `examples/z98/z9gb/tests/tier_cgb.sh`
+
+**Interfaces:**
+- Consumes: `hdmaTick`, `hdmaCopyBlock`, `cpu_halt_cycles`, `cpuStep` GDMA stall pattern.
+- Produces: HBlank DMA stalls the CPU for each 16-byte block (Pan Docs: "execution is halted during each separate HBlank transfer").
+
+- [ ] **Step 1: Write the failing test**
+In `cgb_test.zig`, set up HBlank DMA, trigger one block via `hdmaTick`, and assert `bus.hdma.cpu_halt_cycles` is nonzero after the block copy (equals `per_block` = 32 or 64 depending on `double_speed`). Expected: fails because `hdmaTick` currently copies without setting `cpu_halt_cycles`.
+
+- [ ] **Step 2: Implement**
+In `hdmaTick` (`mmu.zig:354-370`), after `hdmaCopyBlock(bus)` on the HBlank path, add `bus.hdma.cpu_halt_cycles +%= per_block` where `per_block = if (bus.double_speed) 64 else 32` — the same formula already used for GDMA at `mmu.zig:301-302`. The CPU stall is consumed by `cpuStep` at `cpu.zig:583-588` exactly as GDMA is. Do not change `hdmaHBlank`, `hdmaLineEnd`, or the GDMA path.
+
+- [ ] **Step 3: Run**
+`tier_cgb --all`, `tier_dmg --all`, `run_cgb_acid2.sh`, `run_cgb_sound.sh`, `run_cgb_interrupt_time.sh`. Expected: all PASS (HBlank DMA stall is 32–64 T-cycles per block — well within existing gate tolerances; `cgb_sound` and `interrupt_time` do not depend on HBlank DMA timing).
+
+- [ ] **Step 4: Commit**
+```bash
+git add examples/z98/z9gb/mmu.zig examples/z98/z9gb/tests/cgb_test.zig
+git commit -m "fix(z9gb): stall CPU during HBlank DMA block transfer"
+```
+
+---
+
+### Post-amendment closeout
+
+After both commits, run `tier_cgb --all` one final time and record it in the SDD ledger. P5 plan may then start. The remaining deferred minors (HDMA overflow wrap, FF4F/FF70 compat writes, 2048 label, gate-harness nits) are explicitly carried forward into P5's deferred list.
