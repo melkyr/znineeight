@@ -517,13 +517,19 @@ C
         qpc_rc=$?
         qpc_sec="$(sed -n 's/.*QPC_SECONDS=\([0-9][0-9.]*\).*/\1/p' \
             "$PERF_DIR/qpc.log" | tail -1)"
+        qpc_child_rc="$(sed -n 's/.*CHILD_RC=\([0-9][0-9]*\).*/\1/p' \
+            "$PERF_DIR/qpc.log" | tail -1)"
         fps="$(awk -v s="${qpc_sec:-0}" \
             'BEGIN { if (s + 0 > 0) printf "%.3f", 600 / s; else print "0" }')"
         time_line="$(cat "$PERF_DIR/time.txt" 2>/dev/null)"
-        echo "       wine_windowed fps=$fps qpc_seconds=${qpc_sec:-none} $time_line"
+        echo "       wine_windowed fps=$fps qpc_seconds=${qpc_sec:-none} child_rc=${qpc_child_rc:-none} $time_line"
         echo "       (Wine evidence only; not Win98 hardware)"
         if [ "$qpc_rc" -ne 0 ] || [ -z "$qpc_sec" ]; then
             fail_case "2048 perf: QPC window timing missing (rc=$qpc_rc)"
+        elif [ -z "$qpc_child_rc" ]; then
+            fail_case "2048 perf: QPC child exit status missing (rc=$qpc_rc)"
+        elif [ "$qpc_child_rc" -ne 0 ]; then
+            fail_case "2048 perf: QPC child exited $qpc_child_rc"
         else
             pass_case "2048 perf: Wine windowed sustained $fps fps (evidence only; host headless is the gate)"
         fi
