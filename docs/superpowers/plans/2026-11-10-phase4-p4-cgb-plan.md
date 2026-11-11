@@ -20,6 +20,7 @@
 - `cgb-acid2` uses the exact 160x144 RGB32 golden derived from the official `mattcurrie/cgb-acid2` `img/reference.png` (release v1.1). The conversion is `(channel << 3) | (channel >> 2)` for each 5-bit CGB palette component. Missing ROM/golden is `SKIP`; closeout cannot claim the visual gate.
 - `cgb_sound` is a hard gate using the Blargg SRAM memory protocol: status at `$A000`, signature `DE B0 61` at `$A001-$A003`, zero-terminated text at `$A004`. Missing ROM is `SKIP` and cannot close the milestone.
 - `interrupt_time` is a CGB-only hard gate using the same Blargg SRAM memory protocol, not serial. It exercises both DMG-speed and CGB double-speed interrupt latency.
+- Cartridge RAM is type-driven and tolerant of inconsistent headers: if the cartridge type includes RAM and the declared RAM size is zero, infer 8 KiB (`Cart.ram_inferred=true`); types without RAM stay unmapped at `$A000-$BFFF`; MBC2 is exempt when/if supported.
 - Every CGB register has a documented read/write mask; no ignored writes silently.
 - CGB mode state is explicit: `cgb_hw` = hardware selected by `--cgb`; `cgb_color` = CGB color mode for header `0x80`/`0xC0`; `cgb_compat` = header `0x00` with `--cgb` (CGB hardware in DMG compatibility, CGB registers inactive).
 - Double speed (Pan Docs-verified): CPU, timer/divider, serial, and OAM DMA run at 2x; LCD/PPU dots, HDMA, and all sound timings stay at their normal rates. `STOP` stalls the CPU 2050 M-cycles (8200 T-cycles). PPU line timing is 456 dots regardless of speed.
@@ -91,9 +92,15 @@ Record the `KEY1`/`STOP` sequence from the hardware docs used by the test ROMs. 
   - `Bus.cgb_hw`, `Bus.cgb_color`, `Bus.cgb_compat` state.
 
 - [ ] **Step 1: Write the failing test**
-Tests: 16 KiB VRAM bank 0/1 read-back; 32 KiB WRAM bank 0-7 with `C000-CFFF` fixed and `D000-DFFF` switchable; `SVBK=0` maps to 1; CGB flag `0xC0` rejects DMG mode; `0x80` runs in CGB mode; `0x00` + `--cgb` runs CGB hardware in DMG compatibility. Expected: fails on missing banking/mode.
+Tests: 16 KiB VRAM bank 0/1 read-back; 32 KiB WRAM bank 0-7 with `C000-CFFF` fixed and `D000-DFFF` switchable; `SVBK=0` maps to 1; CGB flag `0xC0` rejects DMG mode; `0x80` runs in CGB mode; `0x00` + `--cgb` runs CGB hardware in DMG compatibility; cartridge type includes RAM with declared size 0 infers 8 KiB (`interrupt_time` header); type without RAM with size 0 keeps `$A000-$BFFF` unmapped; MBC2 is exempt. Expected: fails on missing banking/mode/RAM policy.
 - [ ] **Step 2: Expand storage**
 VRAM `[16384]u8`, WRAM `[32768]u8`; DMG mode uses only bank 0. `VBK=FF4F` bit 0; `SVBK=FF70` bits 0-2 (0 -> 1). Set `Bus.vram_bank`/`Bus.wram_bank` and rebuild page bases when they change.
+Add `Cart.ram_inferred`; compute effective cart RAM at load:
+  - type includes RAM and declared size nonzero → declared size;
+  - type includes RAM and declared size zero → 8 KiB inferred;
+  - type excludes RAM → zero (MBC2 exempt when/if supported);
+  - record inferred state for diagnostics/tests.
+
 - [ ] **Step 3: Wire mode and the CLI flag**
 `EmuConfig.cgb` selects CGB hardware. Semantics pinned by header `0x0143`:
   - `0xC0` (CGB-only) + `cfg.cgb=false` → `CgbRequired` (CLI prints `z9gb: CgbRequired`, exit 2).

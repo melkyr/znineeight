@@ -437,7 +437,12 @@ pub fn dsoundClose(d: *Dsound) void;
   target live counters; reads return latched copies; the halt flag freezes
   accumulation; the day counter wraps 511→0. Headless/test runs freeze the
   clock (`rtc_fixed`) for determinism.
-- RAM size from header; zero RAM is allowed.
+- RAM size from header; zero RAM is allowed **unless the cartridge type
+  includes RAM**. In that case the type is authoritative for physical RAM:
+  the declared size is used when nonzero, otherwise an 8 KiB compatibility
+  floor is inferred (`ram_inferred=true`). MBC2's built-in 512x4 RAM is the
+  exception and does not use this floor. Types without RAM remain unmapped
+  at `$A000-$BFFF`.
 - `.sav` path: replace the ROM extension with `.sav` unless
   `emuSetSavePath` overrides it.
 - `.rtc` path: same stem, `.rtc`.
