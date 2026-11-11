@@ -270,7 +270,7 @@ git commit -m "feat(z9gb): add CGB boot state and defaults"
 - [ ] **Step 1: Write the failing test**
 Tests for CGB APU distinctions exercised by `cgb_sound` 08–12:
   - length counters reset on power-up (CGB) while DMG preserves them;
-  - `NR11`/`NR21`/`NR31`/`NR41` length fields are readable in CGB mode (DMG masks them);
+  - `NR11`/`NR21`/`NR31`/`NR41` length fields remain write-only in CGB with reads using the normal masks (`NR11`/`NR21` `0x3F`, `NR31`/`NR41` `0xFF`), matching `cgb_sound` 01-registers; CGB differs by resetting length counters on power-up;
   - wave RAM reads while playing return the current byte on CGB (DMG garbage behavior unchanged);
   - wave trigger while already on works;
   - `NR12`/`NR13`/`NR41` clear after power cycle;

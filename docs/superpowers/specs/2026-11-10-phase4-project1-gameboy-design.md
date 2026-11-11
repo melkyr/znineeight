@@ -480,10 +480,12 @@ pub fn dsoundClose(d: *Dsound) void;
 - APU sample and frame clocks derive from emulator dot-rate time and are
   unchanged by CGB double speed.
 - CGB color mode adds APU behavior differences: length counters reset on
-  power-up; NR11/NR21/NR31/NR41 length fields are readable; wave RAM reads
-  while playing return the current byte; wave trigger while already on works;
-  NR12/NR13/NR41 clear after a power cycle; wave timer/phase/access rules
-  follow CGB hardware. DMG keeps its current behavior byte-identically.
+  power-up; NR11/NR21/NR31/NR41 length fields remain write-only and reads use
+  the normal masks (NR11/NR21 `0x3F`, NR31/NR41 `0xFF`), matching
+  `cgb_sound` 01-registers; wave RAM reads while playing return the current
+  byte; wave trigger while already on works; NR12/NR13/NR41 clear after a
+  power cycle; wave timer/phase/access rules follow CGB hardware. DMG keeps
+  its current behavior byte-identically.
 - P3 hard gate: full Blargg `dmg_sound` via the Blargg SRAM memory protocol:
   status `$A000`, signature `DE B0 61` at `$A001-$A003`, text at `$A004`;
   turbo until terminal `Passed`/`Passed all tests.`, cap-without-verdict = FAIL.

@@ -1142,7 +1142,21 @@ fn apuRd(addr: u16) u8 {
     return mmumod.read8(&g_bus, addr);
 }
 
+fn testCgbApuReadMasks() void {
+    resetCgb();
+    apuWr(0xFF26, 0x80);
+    apuWr(0xFF11, 0x80);
+    checkByte("cgb NR11 read mask", apuRd(0xFF11), 0xBF);
+    apuWr(0xFF16, 0x40);
+    checkByte("cgb NR21 read mask", apuRd(0xFF16), 0x7F);
+    apuWr(0xFF1B, 0x3E);
+    checkByte("cgb NR31 read mask", apuRd(0xFF1B), 0xFF);
+    apuWr(0xFF20, 0x2A);
+    checkByte("cgb NR41 read mask", apuRd(0xFF20), 0xFF);
+}
+
 fn testCgbApu() void {
+    testCgbApuReadMasks();
     resetCgb();
     apuWr(0xFF26, 0x80);
     apuWr(0xFF20, 0x3E);
