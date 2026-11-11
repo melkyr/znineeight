@@ -79,6 +79,7 @@ Record the `KEY1`/`STOP` sequence from the hardware docs used by the test ROMs. 
 - Modify: `examples/z98/z9gb/main.zig` (add `--cgb`)
 - Create: `examples/z98/z9gb/tests/cgb_test.zig`
 - Modify: `examples/z98/z9gb/tests/tier_dmg.sh` (synthetic MBC5 RAM fixture type `0x19` -> `0x1A`)
+- Modify: `examples/z98/z9gb/tests/cpu_test.zig` (synthetic MBC1 RAM fixture type `0x01` -> `0x02`)
 - Test: `examples/z98/z9gb/tests/tier_cgb.sh`
 
 **Interfaces:**
@@ -102,6 +103,7 @@ Add `Cart.ram_inferred`; compute effective cart RAM at load:
   - type excludes RAM → zero even when a stray declared size is nonzero (MBC2 exempt when/if supported);
   - record inferred state for diagnostics/tests.
 The synthetic P2 MBC5 RAM fixture in `tests/tier_dmg.sh` currently uses type `0x19` (MBC5, no RAM) with RAM code `0x04`; change that fixture header to `0x1A` (MBC5+RAM) so it matches the type-authoritative rule.
+The synthetic P2 MBC1 RAM fixture in `tests/cpu_test.zig` currently uses `loadSyntheticRom(0x01, 0x02)` (MBC1, no RAM, with 8 KiB); change it to `loadSyntheticRom(0x02, 0x02)` (MBC1+RAM).
 
 
 - [ ] **Step 3: Wire mode and the CLI flag**
@@ -114,7 +116,7 @@ Set `Bus.cgb_hw`, `Bus.cgb_color`, `Bus.cgb_compat` in `emuLoadRom`/`emuReset`. 
 Run `sh examples/z98/z9gb/tests/tier_cgb.sh "$ZIG" --all` and `sh examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --all`. Expected: PASS; DMG tests unchanged.
 - [ ] **Step 5: Commit**
 ```bash
-git add examples/z98/z9gb/cart.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/main.zig examples/z98/z9gb/tests/cgb_test.zig examples/z98/z9gb/tests/tier_cgb.sh examples/z98/z9gb/tests/tier_dmg.sh
+git add examples/z98/z9gb/cart.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/main.zig examples/z98/z9gb/tests/cgb_test.zig examples/z98/z9gb/tests/tier_cgb.sh examples/z98/z9gb/tests/tier_dmg.sh examples/z98/z9gb/tests/cpu_test.zig
 git commit -m "feat(z9gb): add CGB mode and memory banking"
 ```
 
