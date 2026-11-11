@@ -531,7 +531,7 @@ fn testPaletteColor() void {
 fn testDmgIgnoresCgbPalette() void {
     resetBus();
     mmumod.write8(&g_bus, 0xFF68, 0x00);
-    mmumod.write8(&g_bus, 0xFF69, 0xFF);
+    mmumod.write8(&g_bus, 0xFF69, 0x00);
     checkByte("dmg bcps reads ff", mmumod.read8(&g_bus, 0xFF68), 0xFF);
     checkByte("dmg bcpd reads ff", mmumod.read8(&g_bus, 0xFF69), 0xFF);
     checkByte("dmg bcpd ignored", g_bus.bcpd[0], 0xFF);
