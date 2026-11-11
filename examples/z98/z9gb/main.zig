@@ -9,6 +9,7 @@
 //   --rom <path>          size-checked copy into the fixed 8 MiB ROM buffer
 //   --audio / --no-audio  enable/disable APU output (default on Win32)
 //   --turbo               skip frame pacing (run as fast as possible)
+//   --cgb                 run on CGB hardware (header still selects color/DMG compat)
 //
 // The single `Emu` lives at module scope: its fixed ROM buffer is 8 MiB, so it
 // is never a stack local or a by-value copy (the 1 MiB stack is a hard limit).
@@ -253,6 +254,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var windowed: bool = false;
     var scale: u32 = 1;
     var audio: bool = true;
+    var cgb: bool = false;
     var rtc_fixed: i64 = 0;
     var have_rtc_fixed: bool = false;
     var i: usize = 1;
@@ -290,6 +292,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             i += 1;
             if (i >= n) std.os.exit(1);
             rom_path = argAt(argv, i);
+        } else if (eq(tok, "--cgb")) {
+            cgb = true;
         } else if (eq(tok, "--serial")) {
             serial = true;
         } else if (eq(tok, "--turbo")) {
@@ -317,13 +321,16 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         std.os.exit(1);
     }
 
-    emu.emuInit(&g_emu, emu.EmuConfig{ .cgb = false, .serial_log = serial, .turbo = turbo, .dynarec = false });
+    emu.emuInit(&g_emu, emu.EmuConfig{ .cgb = cgb, .serial_log = serial, .turbo = turbo, .dynarec = false });
     if (have_rtc_fixed) emu.emuSetRtcFixed(&g_emu, rtc_fixed);
 
     if (rom_path.len != 0) {
         emu.emuLoadRom(&g_emu, rom_path) catch |e| {
             if (e == error.RomTooLarge) {
                 var m: []const u8 = "z9gb: ROM too large (max 8 MiB)\n";
+                std.io.write(m);
+            } else if (e == error.CgbRequired) {
+                var m: []const u8 = "z9gb: CgbRequired\n";
                 std.io.write(m);
             } else {
                 var m: []const u8 = "z9gb: cannot read ROM\n";

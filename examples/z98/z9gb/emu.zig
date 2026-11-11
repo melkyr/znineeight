@@ -64,6 +64,13 @@ pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     while (mi < 6) : (mi += 1) e.mooneye_sig[mi] = 0;
 }
 
+fn applyCgbMode(e: *Emu) void {
+    const mode = cartmod.cgbMode(&e.cart);
+    e.bus.cgb_hw = e.cfg.cgb;
+    e.bus.cgb_color = e.cfg.cgb and mode != .dmg;
+    e.bus.cgb_compat = e.cfg.cgb and mode == .dmg;
+}
+
 // Loader contract: size-checked copy into the fixed 8 MiB buffer, then validate
 // and re-point the cartridge windows from that buffer.
 pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
@@ -107,6 +114,7 @@ pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
             else => error.Io,
         };
     };
+    if (cartmod.cgbMode(&e.cart) == .cgb_only and !e.cfg.cgb) return error.CgbRequired;
     var rp: usize = path.len;
     if (rp > SAVE_CAP) rp = SAVE_CAP;
     var ri: usize = 0;
@@ -115,11 +123,13 @@ pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
     }
     e.rom_path_len = rp;
     mmumod.busInit(&e.bus, &e.cart);
+    applyCgbMode(e);
 }
 
 pub fn emuReset(e: *Emu) void {
     e.buttons = 0;
     mmumod.busInit(&e.bus, &e.cart);
+    applyCgbMode(e);
     cpumod.cpuInit(&e.cpu);
     ppumod.ppuReset(&e.ppu);
     e.ppu.ly = 0x91;

@@ -24,8 +24,13 @@ pub const Dma = struct {
 
 pub const Bus = struct {
     pages: [256]Page,
-    wram: [8192]u8,
-    vram: [8192]u8,
+    wram: [32768]u8,
+    vram: [16384]u8,
+    vram_bank: u8,
+    wram_bank: u8,
+    cgb_hw: bool,
+    cgb_color: bool,
+    cgb_compat: bool,
     oam: [160]u8,
     hram: [127]u8,
     io: [128]u8,
@@ -79,10 +84,65 @@ fn rebuildCartPages(self: *Bus) void {
     }
 }
 
+fn rebuildVramPages(self: *Bus) void {
+    const vram_base: [*]u8 = @ptrCast([*]u8, &self.vram[0]);
+    const bank_base: [*]u8 = vram_base + @as(usize, self.vram_bank) * 0x2000;
+    var i: usize = 0;
+    while (i < 0x20) : (i += 1) {
+        self.pages[0x80 + i] = Page{ .kind = .vram, .base = bank_base + i * 256 };
+    }
+}
+
+fn rebuildWramPages(self: *Bus) void {
+    const wram_base: [*]u8 = @ptrCast([*]u8, &self.wram[0]);
+    const bank_base: [*]u8 = wram_base + @as(usize, self.wram_bank) * 0x1000;
+    var i: usize = 0;
+    while (i < 0x10) : (i += 1) {
+        self.pages[0xC0 + i] = Page{ .kind = .wram, .base = wram_base + i * 256 };
+        self.pages[0xE0 + i] = Page{ .kind = .echo, .base = wram_base + i * 256 };
+    }
+    i = 0;
+    while (i < 0x10) : (i += 1) {
+        self.pages[0xD0 + i] = Page{ .kind = .wram, .base = bank_base + i * 256 };
+    }
+    i = 0;
+    while (i < 0x0E) : (i += 1) {
+        self.pages[0xF0 + i] = Page{ .kind = .echo, .base = bank_base + i * 256 };
+    }
+}
+
+pub fn mmuSetVramBank(b: *Bus, bank: u8) void {
+    const value: u8 = bank & 0x01;
+    if (b.vram_bank == value) return;
+    b.vram_bank = value;
+    rebuildVramPages(b);
+}
+
+pub fn mmuSetWramBank(b: *Bus, bank: u8) void {
+    var value: u8 = bank & 0x07;
+    if (value == 0) value = 1;
+    if (b.wram_bank == value) return;
+    b.wram_bank = value;
+    rebuildWramPages(b);
+}
+
+pub fn mmuVramBank(b: *const Bus) u8 {
+    return b.vram_bank;
+}
+
+pub fn mmuWramBank(b: *const Bus) u8 {
+    return b.wram_bank;
+}
+
 pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.cart = cart;
     bus.ie = 0;
     bus.buttons = 0;
+    bus.vram_bank = 0;
+    bus.wram_bank = 1;
+    bus.cgb_hw = false;
+    bus.cgb_color = false;
+    bus.cgb_compat = false;
     bus.lyc_dirty = false;
     bus.ppu_oam_blocked = false;
     bus.ppu_vram_blocked = false;
@@ -92,8 +152,11 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.dma.dots = 0;
 
     var i: usize = 0;
-    while (i < 8192) : (i += 1) {
+    while (i < 32768) : (i += 1) {
         bus.wram[i] = 0;
+    }
+    i = 0;
+    while (i < 16384) : (i += 1) {
         bus.vram[i] = 0;
     }
     i = 0;
@@ -122,7 +185,6 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     apumod.apuReset(&bus.apu, 44100);
 
     const wram_base: [*]u8 = @ptrCast([*]u8, &bus.wram[0]);
-    const vram_base: [*]u8 = @ptrCast([*]u8, &bus.vram[0]);
     const oam_base: [*]u8 = @ptrCast([*]u8, &bus.oam[0]);
     const hram_base: [*]u8 = @ptrCast([*]u8, &bus.hram[0]);
 
@@ -131,18 +193,8 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
         bus.pages[i] = Page{ .kind = .io, .base = wram_base };
     }
 
-    i = 0;
-    while (i < 0x20) : (i += 1) {
-        bus.pages[0x80 + i] = Page{ .kind = .vram, .base = vram_base + i * 256 };
-    }
-    i = 0;
-    while (i < 0x20) : (i += 1) {
-        bus.pages[0xC0 + i] = Page{ .kind = .wram, .base = wram_base + i * 256 };
-    }
-    i = 0;
-    while (i < 0x1E) : (i += 1) {
-        bus.pages[0xE0 + i] = Page{ .kind = .echo, .base = wram_base + i * 256 };
-    }
+    rebuildVramPages(bus);
+    rebuildWramPages(bus);
     bus.pages[0xFE] = Page{ .kind = .oam, .base = oam_base };
     bus.pages[0xFF] = Page{ .kind = .hram, .base = hram_base - 0x80 };
 
@@ -185,6 +237,8 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
     if (addr == 0xFF02) return self.serial.sc;
     if (addr >= 0xFF04 and addr <= 0xFF07) return timermod.timerRead(&self.timer, addr);
     if (addr >= 0xFF10 and addr <= 0xFF3F) return apumod.apuRead(&self.apu, addr);
+    if (addr == 0xFF4F and self.cgb_color) return self.vram_bank;
+    if (addr == 0xFF70 and self.cgb_color) return self.wram_bank;
     return self.io[@intCast(usize, addr & 0x7F)];
 }
 
@@ -203,6 +257,16 @@ pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
     }
     if (addr >= 0xFF10 and addr <= 0xFF3F) {
         apumod.apuWrite(&self.apu, addr, value);
+        return;
+    }
+    if (addr == 0xFF4F) {
+        if (self.cgb_color) mmuSetVramBank(self, value);
+        self.io[0x4F] = value & 0x01;
+        return;
+    }
+    if (addr == 0xFF70) {
+        if (self.cgb_color) mmuSetWramBank(self, value);
+        self.io[0x70] = value & 0x07;
         return;
     }
     if (addr == 0xFF46) {

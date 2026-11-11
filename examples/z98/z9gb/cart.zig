@@ -14,6 +14,8 @@ pub const Mbc = enum(u8) {
     mbc5 = 5,
 };
 
+pub const CgbMode = enum(u8) { dmg, cgb_compatible, cgb_only };
+
 pub const CartError = error{ BadHeader, UnsupportedMbc, RomTooLarge, Io };
 
 // MBC3 real-time clock. Counters are live; reads return `latched` copies.
@@ -44,6 +46,7 @@ pub const Cart = struct {
     mbc: Mbc,
     rom_size: usize,
     ram_size: usize,
+    ram_inferred: bool,
     ram_enable: bool,
     rom_bank_lo: u8,
     bank_hi: u8,
@@ -62,6 +65,7 @@ pub fn cartInit(c: *Cart) void {
     c.mbc = .none;
     c.rom_size = 0;
     c.ram_size = 0;
+    c.ram_inferred = false;
     c.ram_enable = false;
     c.rom_bank_lo = 1;
     c.bank_hi = 0;
@@ -119,6 +123,22 @@ fn ramSizeFromCode(code: u8) CartError!usize {
     if (code == 0x04) return 131072;
     if (code == 0x05) return 65536;
     return error.BadHeader;
+}
+
+pub fn cgbMode(c: *const Cart) CgbMode {
+    if ((c.cgb & 0x80) == 0) return .dmg;
+    if ((c.cgb & 0x40) != 0) return .cgb_only;
+    return .cgb_compatible;
+}
+
+fn typeIncludesRam(typ: u8) bool {
+    if (typ == 0x02 or typ == 0x03) return true;
+    if (typ == 0x08 or typ == 0x09) return true;
+    if (typ == 0x0B or typ == 0x0D) return true;
+    if (typ == 0x10 or typ == 0x12 or typ == 0x13) return true;
+    if (typ == 0x1A or typ == 0x1B or typ == 0x1D or typ == 0x1E) return true;
+    if (typ == 0x22 or typ == 0xFC or typ == 0xFE or typ == 0xFF) return true;
+    return false;
 }
 
 fn mbcKnown(typ: u8) bool {
@@ -190,15 +210,19 @@ pub fn cartLoad(c: *Cart, bytes: []const u8) CartError!void {
 
     const rom_size = try romSizeFromCode(bytes[0x0148]);
     if (bytes.len < rom_size) return error.BadHeader;
-    const ram_size = try ramSizeFromCode(bytes[0x0149]);
+    const declared_ram = try ramSizeFromCode(bytes[0x0149]);
     if (!mbcKnown(bytes[0x0147])) return error.UnsupportedMbc;
     const mbc = mbcFromType(bytes[0x0147]);
+    const type_has_ram = typeIncludesRam(bytes[0x0147]);
+    const ram_inferred = type_has_ram and declared_ram == 0;
+    const ram_size = if (declared_ram != 0) declared_ram else (if (type_has_ram) 8192 else 0);
 
     c.rom = bytes;
     c.cgb = bytes[0x0143];
     c.mbc = mbc;
     c.rom_size = rom_size;
     c.ram_size = ram_size;
+    c.ram_inferred = ram_inferred;
     c.ram_enable = false;
     c.rom_bank_lo = 1;
     c.bank_hi = 0;
