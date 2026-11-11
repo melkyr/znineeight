@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-10
 **Branch:** `zig1_improvements`
-**Baseline:** HEAD `d82235a9`, seed v147, lib 59, corpus 1278
+**Baseline:** HEAD `3bc3d6a9`, seed v149, lib 65, corpus 1279
 **Status:** design for implementation
 **Scope:** original Game Boy (DMG) and Game Boy Color (CGB), not GBA
 
@@ -126,10 +126,13 @@ The binding limits are separate. Do not confuse them.
   - `cgb-acid2` release `v1.1`, file `cgb-acid2.gbc`, 32768 bytes.
 - Reference framebuffer goldens for `dmg-acid2`/`cgb-acid2` are committed as
   160x144 RGB32 hashes. They are expected outputs, not ROM bytes. Goldens are
-  pinned to exact render settings (DMG palette `0x009BBC0F`/`0x008BAC0F`/
-  `0x00306230`/`0x000F380F` from BGP/OBP defaults `0xE4`; capture frame 120 in
-  the plan's harness) so a reference emulator's output can reproduce the hash.
+  pinned to exact render settings and capture frame 120 in the plan's harness.
+  - `dmg-acid2`: DMG palette `0x009BBC0F`/`0x008BAC0F`/`0x00306230`/
+    `0x000F380F` from the reference image.
+  - `cgb-acid2`: official `img/reference.png` from `mattcurrie/cgb-acid2` v1.1,
+    with each 5-bit CGB component expanded as `(c << 3) | (c >> 2)`.
   If a golden is absent, the visual gate is SKIP.
+
 - Real Win98/Pentium II sign-off is the operator's. Wine/cross-build is
   functional evidence only.
 
@@ -148,26 +151,27 @@ The binding limits are separate. Do not confuse them.
 
 ## 6. Current state
 
-- `sf/src/std_gfx_pal.zig` already has a real windowed DirectDraw7 path:
-  `DDSCL_NORMAL`, `IDirectDraw7`, a 640x480 offscreen surface, `Blt`, and a
-  `PeekMessageA` pump. It has no `Lock`/`Unlock`, no `BltFast`, no scaling, no
-  `Flip`, and no fullscreen.
-- `sf/src/std_gfx.zig` is a 200x100 ASCII cell grid. It is not a pixel API.
-- No DirectSound or DirectInput binding exists. `z9play` uses WinMM `waveOut`
-  with two 500 ms buffers.
-- `sf/src/std_time.zig` already exposes `QueryPerformanceCounter` through
-  `highRes()`/`highResFreq()`. `timeBeginPeriod` is absent.
-- `scripts/win32_cross/check_win9x_imports.sh` allows KERNEL32, WINMM
-  (`waveOut*`), WSOCK32, DDRAW (`DirectDrawCreate`), GDI32, and USER32. Static
-  imports of `dsound`/`dinput8` would fail the gate. Dynamic loading avoids it.
-- MinGW provides `ddraw.h`, `dsound.h`, and `dinput.h`; headers are available,
-  but no SDK or Microsoft header redistribution exists in the tree.
-- No Game Boy emulator, ROM loader, test ROM, serial harness, or framebuffer
-  golden exists anywhere in the tree or git history.
-- `project1_phase4.txt` assumes DirectSound, DirectInput, fullscreen/page flip,
-  46 ms lock-free audio, and scalable DirectDraw. Only the windowed 1:1 DDraw
-  path and `waveOut` exist today. This design replaces those assumptions with
-  the implementation above.
+- P1–P3 are complete on `zig1_improvements` at `3bc3d6a9` (P4 not started).
+  Seed is v149, `lib/` has 65 std files, and the live corpus has 1279 dirs.
+- `examples/z98/z9gb/` contains the P1–P3 emulator: platform table, headless
+  backend, DMG CPU/MMU/PPU/timer/serial/MBC1/MBC3/MBC5/saves, APU, Win32
+  DirectDraw/DirectInput8/DirectSound backend, JOYP input, and P2/P3 tiers.
+- `sf/src/std_ddraw.zig` + `std_ddraw_pal.zig` provide the windowed DirectDraw7
+  pixel surface; `std_dinput.zig` + `std_dinput_pal.zig` provide DirectInput8
+  keyboard/gamepad; `std_dsound.zig` + `std_dsound_pal.zig` provide DirectSound
+  with the WinMM `waveOut` fallback. These are path-imported, not barrel
+  exports.
+- `sf/src/std_time.zig` exposes `QueryPerformanceCounter`; the Win32 backend
+  uses `timeBeginPeriod(1)`/`timeEndPeriod(1)` with a bounded spin tail.
+- `scripts/win32_cross/check_win9x_imports.sh` allows KERNEL32, WINMM, WSOCK32,
+  DDRAW, GDI32, and USER32; DirectDraw/DirectSound/DirectInput are loaded
+  dynamically. No static `DDRAW.DLL`/`DSOUND.DLL`/`DINPUT8.DLL` import is used.
+- P2 DMG gates are `cpu_instrs`, `instr_timing`, `mem_timing`, the Mooneye
+  timer/PPU/OAM/MBC1 subset, and the `dmg-acid2` golden. P3 gates are
+  `dmg_sound` (memory protocol) and host-headless `2048.gb` ≥ 59.0 fps.
+- P4 is the remaining CGB work: CGB mode/palettes, VRAM/WRAM banking, double
+  speed, HDMA, `cgb-acid2`, `cgb_sound`, and CGB `interrupt_time`.
+
 
 ## 7. Approaches considered
 
@@ -457,31 +461,35 @@ pub fn dsoundClose(d: *Dsound) void;
   per-frame writes.
 
 ### 8.8 APU and timing
-
 - Four channels: two square, wave, noise; frame sequencer at 512 Hz. Hardware
   quirks pinned: sweep shadow frequency + negate-after-enable disable quirk,
   noise width-7 LFSR feedback into bit 6, DMG wave-RAM read-during-playback
   garbage, NRxx read masks / NR52 power-off values, length-counter extra
   clock on NRx4 writes.
 - Mixer outputs stereo 16-bit at 44,100 Hz.
-- Audio sample clock is driven by the CPU cycle counter; no host audio thread.
-- P3 hard gate: full Blargg `dmg_sound` via serial output (verdict-harness:
-  turbo until terminal `Passed` or `Passed all tests.`, cap-without-verdict = FAIL).
-- P4 hard gate: `cgb_sound` — the ROM reports via its SRAM memory protocol and
-  screen, not serial: the harness polls `$A000` (Blargg convention, exact
-  layout pinned by probe) with the same turbo/cap semantics; `0` status = pass.
-  Per Pan Docs, double speed does **not** change any sound timing: the APU
-  stays at its normal rate (only CPU/timer/serial/OAM-DMA run 2x).
+- APU sample and frame clocks derive from emulator dot-rate time and are
+  unchanged by CGB double speed.
+- P3 hard gate: full Blargg `dmg_sound` via the Blargg SRAM memory protocol:
+  status `$A000`, signature `DE B0 61` at `$A001-$A003`, text at `$A004`;
+  turbo until terminal `Passed`/`Passed all tests.`, cap-without-verdict = FAIL.
+- P4 hard gate: `cgb_sound` uses the same Blargg SRAM memory protocol
+  (`$A000` status, `$A001-$A003` signature, `$A004` text), not serial. The
+  harness runs `--cgb --turbo --frames 200000`; status `0` + terminal
+  `Passed`/`Passed all tests.` + no `Failed` = PASS. Per Pan Docs, double
+  speed does **not** change any sound timing: the APU stays at its normal rate
+  (only CPU/timer/serial/OAM-DMA run 2x).
 - P4 hard gate: Blargg `interrupt_time` in CGB mode — CGB-only ROM (header
   `0xC0`) exercising DMG-speed and double-speed interrupt latency; run with
-  `--cgb --serial`, terminal `Passed`/`Passed all tests.` required, cap without
-  verdict = FAIL. Missing ROM = SKIP and P4 closeout cannot claim PASS.
+  `--cgb --turbo --frames 200000` using the same `$A000` memory protocol as
+  `cgb_sound`/`dmg_sound`, not serial. PASS requires status `0` and terminal
+  `Passed`/`Passed all tests.`; cap without a verdict = FAIL. Missing ROM =
+  SKIP and P4 closeout cannot claim PASS.
 - Frame pacing: QPC deadline; `timeBeginPeriod(1)` (whitelisted WINMM symbol)
   plus a bounded ≤2 ms spin tail, since Win9x `Sleep(1)` quantizes to the
   ~55 ms tick; no unbounded busy-spin.
 - If audio falls behind, drop samples; never block the emulator.
 
-### 8.9 Serial harness
+### 8.9 Serial harness and memory-protocol verdicts
 
 - `--serial` enables the test serial log.
 - On a write to `SC` with bit 7 set:
@@ -489,11 +497,15 @@ pub fn dsoundClose(d: *Dsound) void;
   - clear bit 7
   - request the serial interrupt after 8 T-cycles
 - `emuTakeSerial` drains the log; the CLI can mirror it to stdout.
-- Blargg pass detection: scan the serial log for the terminal `Passed` or
-  `Passed all tests.` verdict; `Failed` is a fail. Blargg verdicts need minutes
-  of emulated time, so the harness runs turbo with a generous frame cap and the
-  emulator may exit early once a terminal verdict appears; a capped run without
-  a verdict is FAIL.
+- Serial Blargg gates detect the terminal `Passed` or `Passed all tests.`
+  verdict; `Failed` is a fail. These runs use turbo with a generous frame cap
+  and may exit early once a terminal verdict appears; a capped run without a
+  verdict is FAIL.
+- CGB `cgb_sound` and `interrupt_time` are **memory-protocol** gates, not
+  serial gates: poll `$A000` status, require the `DE B0 61` signature at
+  `$A001-$A003`, read the zero-terminated text at `$A004`, and require status
+  `0` plus terminal `Passed`/`Passed all tests.` with no `Failed`.
+
 
 - `--mooneye` enables the Mooneye magic breakpoint: when the next opcode is
   `0x40` (`LD B,B`), stop and report the full Fibonacci register signature
