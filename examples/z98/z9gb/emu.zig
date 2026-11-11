@@ -53,6 +53,10 @@ pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     // Scalar fields only: a whole-`Emu` literal would materialize an ~8.5 MiB
     // temporary on the 1 MiB stack. `rom`, the PPU framebuffer, and `save_path` are fixed
     // storage written by their owners.
+    // A zeroed static Emu starts with mapped=false. Re-initializing one that
+    // still owns a code-cache mapping must release it before resetting state,
+    // otherwise the 1 MiB VirtualAlloc/mmap pointer is lost.
+    if (e.dynarec.mapped) dynarecmod.dynarecClose(&e.dynarec);
     e.rom_len = 0;
     e.buttons = 0;
     e.cfg = cfg;
@@ -254,6 +258,7 @@ fn dynarecEligible(e: *const Emu) bool {
     if (cpup.halted or cpup.halt_bug) return false;
     if (cpup.ei_delay != 0) return false;
     if (busp.dma.active) return false;
+    if (busp.hdma.cpu_halt_cycles != 0) return false;
     if (cpup.pc > 0x7FFF) return false;
     if (cpumod.cpuInterruptPending(cpup, busp)) return false;
     return true;

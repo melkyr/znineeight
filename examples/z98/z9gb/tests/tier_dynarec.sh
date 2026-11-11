@@ -61,9 +61,44 @@ run_unit_mode() {
     fi
 }
 
+run_cli_host_gate() {
+    cli="$OUT/cli"
+    bin="$cli/z9gb"
+    mkdir -p "$cli"
+    if timeout 120 "$ZIG" -ffast -I "$ROOT/sf/src" -o "$cli" "$Z9DIR/main.zig" >"$cli/zig.log" 2>&1; then
+        pass_case "dynarec cli emits"
+    else
+        fail_case "dynarec cli emits"
+        tail -20 "$cli/zig.log" | sed 's/^/       /'
+        return
+    fi
+    if sh "$cli/build_target.sh" linux "$bin" >"$cli/build.log" 2>&1; then
+        pass_case "dynarec cli links"
+    else
+        fail_case "dynarec cli links"
+        tail -20 "$cli/build.log" | sed 's/^/       /'
+        return
+    fi
+    if timeout 60 "$bin" --headless --frames 0 --dynarec --dynarec-stats >"$cli/run.out" 2>"$cli/run.err"; then
+        pass_case "dynarec cli runs"
+    else
+        fail_case "dynarec cli runs"
+        tail -20 "$cli/run.err" | sed 's/^/       /'
+        return
+    fi
+    if grep -qx 'dynarec=disabled reason=unsupported-host' "$cli/run.out"; then
+        pass_case "dynarec cli non-Win32 disabled reason"
+    else
+        fail_case "dynarec cli non-Win32 disabled reason (got $(cat "$cli/run.out"))"
+    fi
+}
+
 echo "== dynarec block IR builder vs interpreter oracle =="
 run_unit_mode fast -ffast
 run_unit_mode safe -fsafe
+
+echo "== dynarec CLI host gate =="
+run_cli_host_gate
 
 echo
 echo "== tier_dynarec summary: $PASSES passed, $FAILS failed =="

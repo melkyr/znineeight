@@ -2212,6 +2212,111 @@ fn testDynarecFrameParity() void {
     _ = emumod.emuSetDynarec(&g_emu, false);
 }
 
+fn testDynarecReinitClose() void {
+    if (!setupDynarecEmu(false)) {
+        checkBool("dynarec reinit setup", false, true);
+        return;
+    }
+    const dynp: *cachemod.Dynarec = &g_emu.dynarec;
+    checkBool("dynarec reinit direct open", dynarecmod.dynarecOpen(dynp, &g_emu.bus), true);
+    checkBool("dynarec reinit direct mapped", dynarecmod.dynarecEnabled(dynp), true);
+    emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = true, .dynarec = false });
+    checkBool("dynarec reinit released mapping", dynarecmod.dynarecEnabled(dynp), false);
+    checkBool("dynarec reinit reopen after release", dynarecmod.dynarecOpen(dynp, &g_emu.bus), true);
+    dynarecmod.dynarecClose(dynp);
+    checkBool("dynarec reinit close idempotent", dynarecmod.dynarecEnabled(dynp), false);
+    dynarecmod.dynarecClose(dynp);
+    checkBool("dynarec reinit double close", dynarecmod.dynarecEnabled(dynp), false);
+}
+
+fn testDynarecDispatchFallbacks() void {
+    // These assertions require a real enabled cache (Win32/Wine); the native
+    // Linux hard gate is covered by testDynarecFrameParity.
+    if (!@isWindows()) return;
+    const dynp: *const cachemod.Dynarec = &g_emu.dynarec;
+
+    // WRAM PC: interpreter-only and counted in fallback, no block execution.
+    if (!setupDynarecEmu(true)) {
+        checkBool("dynarec dispatch wram setup", false, true);
+        return;
+    }
+    const busp: *mmumod.Bus = &g_emu.bus;
+    checkBool("dynarec dispatch wram enabled", emumod.emuDynarecEnabled(&g_emu), true);
+    mmumod.write8(busp, 0xC000, 0x18);
+    mmumod.write8(busp, 0xC001, 0xFE);
+    g_emu.cpu.pc = 0xC000;
+    const wram_blocks: u32 = dynp.stats.blocks;
+    const wram_exec: u32 = dynp.stats.executed;
+    _ = emumod.emuRunFrame(&g_emu);
+    checkU32("dynarec dispatch wram blocks unchanged", dynp.stats.blocks, wram_blocks);
+    checkU32("dynarec dispatch wram executed unchanged", dynp.stats.executed, wram_exec);
+    checkBool("dynarec dispatch wram fallback", dynp.stats.fallback > 0, true);
+
+    // HRAM PC: same interpreter-only rule.
+    if (!setupDynarecEmu(true)) {
+        checkBool("dynarec dispatch hram setup", false, true);
+        return;
+    }
+    const busp2: *mmumod.Bus = &g_emu.bus;
+    mmumod.write8(busp2, 0xFF80, 0x18);
+    mmumod.write8(busp2, 0xFF81, 0xFE);
+    g_emu.cpu.pc = 0xFF80;
+    const hram_blocks: u32 = dynp.stats.blocks;
+    const hram_exec: u32 = dynp.stats.executed;
+    _ = emumod.emuRunFrame(&g_emu);
+    checkU32("dynarec dispatch hram blocks unchanged", dynp.stats.blocks, hram_blocks);
+    checkU32("dynarec dispatch hram executed unchanged", dynp.stats.executed, hram_exec);
+    checkBool("dynarec dispatch hram fallback", dynp.stats.fallback > 0, true);
+
+    // Pending HDMA stall cycles must be consumed by cpuStep, not skipped by a
+    // dynarec block. A stall larger than a frame makes this one step decisive.
+    if (!setupDynarecEmu(true)) {
+        checkBool("dynarec dispatch hdma setup", false, true);
+        return;
+    }
+    const busp3: *mmumod.Bus = &g_emu.bus;
+    g_emu.cpu.pc = 0x0100;
+    busp3.hdma.cpu_halt_cycles = 80000;
+    const hdma_blocks: u32 = dynp.stats.blocks;
+    const hdma_exec: u32 = dynp.stats.executed;
+    _ = emumod.emuRunFrame(&g_emu);
+    checkU32("dynarec dispatch hdma blocks unchanged", dynp.stats.blocks, hdma_blocks);
+    checkU32("dynarec dispatch hdma executed unchanged", dynp.stats.executed, hdma_exec);
+    checkU32("dynarec dispatch hdma fallback", dynp.stats.fallback, 1);
+    checkU32("dynarec dispatch hdma consumed", busp3.hdma.cpu_halt_cycles, 0);
+
+    // --mooneye forces interpreter dispatch but must still stop on LD B,B.
+    if (!setupDynarecEmu(true)) {
+        checkBool("dynarec dispatch mooneye setup", false, true);
+        return;
+    }
+    var p: usize = 0x0200;
+    g_emu.rom[p + 0] = 0x06;
+    g_emu.rom[p + 1] = 0x03;
+    g_emu.rom[p + 2] = 0x0E;
+    g_emu.rom[p + 3] = 0x05;
+    g_emu.rom[p + 4] = 0x16;
+    g_emu.rom[p + 5] = 0x08;
+    g_emu.rom[p + 6] = 0x1E;
+    g_emu.rom[p + 7] = 0x0D;
+    g_emu.rom[p + 8] = 0x26;
+    g_emu.rom[p + 9] = 0x15;
+    g_emu.rom[p + 10] = 0x2E;
+    g_emu.rom[p + 11] = 0x22;
+    g_emu.rom[p + 12] = 0x40;
+    g_emu.cpu.pc = 0x0200;
+    emumod.emuSetMooneye(&g_emu, true);
+    const moon_blocks: u32 = dynp.stats.blocks;
+    const moon_exec: u32 = dynp.stats.executed;
+    _ = emumod.emuRunFrame(&g_emu);
+    checkBool("dynarec dispatch mooneye stopped", emumod.emuMooneyeStopped(&g_emu), true);
+    checkBool("dynarec dispatch mooneye pass", emumod.emuMooneyePass(&g_emu), true);
+    checkU32("dynarec dispatch mooneye blocks unchanged", dynp.stats.blocks, moon_blocks);
+    checkU32("dynarec dispatch mooneye executed unchanged", dynp.stats.executed, moon_exec);
+    checkBool("dynarec dispatch mooneye fallback", dynp.stats.fallback > 0, true);
+    _ = emumod.emuSetDynarec(&g_emu, false);
+}
+
 pub fn main() void {
     testStraightNops();
     testJump();
@@ -2259,6 +2364,8 @@ pub fn main() void {
     testCacheCollision();
     testCacheClose();
     testDynarecFrameParity();
+    testDynarecReinitClose();
+    testDynarecDispatchFallbacks();
     releaseCode();
 
     std.io.write("dynarec ");
