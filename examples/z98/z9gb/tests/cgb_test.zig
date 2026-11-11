@@ -416,6 +416,36 @@ fn resetCgb() void {
     g_bus.io[0x0F] = 0;
 }
 
+fn testBootPaletteWhite() void {
+    resetCgb();
+    var i: usize = 0;
+    while (i < 64) : (i += 1) {
+        checkU32("boot cram white", g_bus.cram_rgb[i], 0x00FFFFFF);
+    }
+    i = 0;
+    while (i < 32) : (i += 1) {
+        const pair: usize = i * 2;
+        checkByte("boot bcpd low", g_bus.bcpd[pair], 0xFF);
+        checkByte("boot bcpd high", g_bus.bcpd[pair + 1], 0x7F);
+        checkByte("boot ocpd low", g_bus.ocpd[pair], 0xFF);
+        checkByte("boot ocpd high", g_bus.ocpd[pair + 1], 0x7F);
+    }
+    checkByte("boot bcps zero", g_bus.bcps, 0);
+    checkByte("boot ocps zero", g_bus.ocps, 0);
+
+    g_bus.bcpd[0] = 0;
+    g_bus.bcpd[1] = 0;
+    g_bus.ocpd[0] = 0;
+    g_bus.ocpd[1] = 0;
+    g_bus.cram_rgb[0] = 0;
+    mmumod.cgbPaletteReset(&g_bus);
+    checkByte("reset bcpd low", g_bus.bcpd[0], 0xFF);
+    checkByte("reset bcpd high", g_bus.bcpd[1], 0x7F);
+    checkByte("reset ocpd low", g_bus.ocpd[0], 0xFF);
+    checkByte("reset ocpd high", g_bus.ocpd[1], 0x7F);
+    checkU32("reset cram white", g_bus.cram_rgb[0], 0x00FFFFFF);
+}
+
 fn setBgColor(pal: u8, color: u8, word: u16) void {
     const idx: u16 = @as(u16, pal) * 8 + @as(u16, color) * 2;
     mmumod.cgbPaletteWrite(&g_bus, 0xFF68, @intCast(u8, (idx & 0x3F) | 0x80));
@@ -464,7 +494,7 @@ fn testPaletteRam() void {
     checkByte("bcpd latched 6", mmumod.cgbPaletteRead(&g_bus, 0xFF69), 0x22);
 
     mmumod.cgbPaletteWrite(&g_bus, 0xFF68, 0x80);
-    checkByte("bcpd read low", mmumod.cgbPaletteRead(&g_bus, 0xFF69), 0x00);
+    checkByte("bcpd read low", mmumod.cgbPaletteRead(&g_bus, 0xFF69), 0xFF);
     checkByte("bcps read no increment", mmumod.cgbPaletteRead(&g_bus, 0xFF68), 0x80);
 
     mmumod.cgbPaletteWrite(&g_bus, 0xFF68, 0x00);
@@ -504,9 +534,9 @@ fn testDmgIgnoresCgbPalette() void {
     mmumod.write8(&g_bus, 0xFF69, 0xFF);
     checkByte("dmg bcps reads ff", mmumod.read8(&g_bus, 0xFF68), 0xFF);
     checkByte("dmg bcpd reads ff", mmumod.read8(&g_bus, 0xFF69), 0xFF);
-    checkByte("dmg bcpd ignored", g_bus.bcpd[0], 0x00);
+    checkByte("dmg bcpd ignored", g_bus.bcpd[0], 0xFF);
     checkByte("dmg ocps reads ff", mmumod.read8(&g_bus, 0xFF6A), 0xFF);
-    checkU32("dmg cram untouched", g_bus.cram_rgb[0], 0x00000000);
+    checkU32("dmg cram untouched", g_bus.cram_rgb[0], 0x00FFFFFF);
 
     resetBus();
     ppumod.ppuReset(&g_ppu);
@@ -1239,6 +1269,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testCartModes();
     testEmuModes(dir);
     testBootState(dir);
+    testBootPaletteWhite();
     testRamInference();
     testPaletteRam();
     testPaletteColor();

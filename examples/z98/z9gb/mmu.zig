@@ -203,9 +203,10 @@ pub fn cgbPaletteReset(b: *Bus) void {
     b.ocps = 0;
     var i: usize = 0;
     while (i < 64) : (i += 1) {
-        b.bcpd[i] = 0;
-        b.ocpd[i] = 0;
-        b.cram_rgb[i] = 0;
+        const byte: u8 = if ((i & 1) == 0) 0xFF else 0x7F;
+        b.bcpd[i] = byte;
+        b.ocpd[i] = byte;
+        b.cram_rgb[i] = 0x00FFFFFF;
     }
 }
 
@@ -410,9 +411,10 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     }
     i = 0;
     while (i < 64) : (i += 1) {
-        bus.bcpd[i] = 0;
-        bus.ocpd[i] = 0;
-        bus.cram_rgb[i] = 0;
+        const byte: u8 = if ((i & 1) == 0) 0xFF else 0x7F;
+        bus.bcpd[i] = byte;
+        bus.ocpd[i] = byte;
+        bus.cram_rgb[i] = 0x00FFFFFF;
     }
     i = 0;
     while (i < 160) : (i += 1) {
