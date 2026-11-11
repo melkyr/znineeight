@@ -266,6 +266,8 @@ pub fn blockBuild(cpu: *const Cpu, bus: *Bus, out: *Block) bool {
                 insn.op = .cb;
                 insn.a = op2;
                 cycles = cbCycles(op2);
+                const idx: u8 = op2 & 0x07;
+                if (idx == 6 and (op2 < 0x40 or op2 >= 0x80)) terminal = true;
             },
             0xCD => {
                 insn.op = .call;

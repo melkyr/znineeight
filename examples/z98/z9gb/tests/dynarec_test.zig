@@ -416,6 +416,73 @@ fn testIndirectWriteBoundaries() void {
     checkBool("ld a,hl read continues", blk.ends_block, false);
 }
 
+fn testCbWriteBoundaries() void {
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0xCB);
+    mmumod.write8(&g_bus, 0xC001, 0x06);
+    mmumod.write8(&g_bus, 0xC100, 0x80);
+    g_cpu.pc = 0xC000;
+    g_cpu.h = 0xC1;
+    g_cpu.l = 0x00;
+    var blk: blockmod.Block = undefined;
+    checkBool("cb rlc hl build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("cb rlc hl len", @intCast(u32, blk.len), 1);
+    checkOp("cb rlc hl op", blk.insns[0].op, blockmod.BlockOp.cb);
+    checkU32("cb rlc hl op2", @intCast(u32, blk.insns[0].a), 0x06);
+    checkU32("cb rlc hl cycles", blk.cycles, 16);
+    checkBool("cb rlc hl ends", blk.ends_block, true);
+    var used: u32 = cpumod.cpuStep(&g_cpu, &g_bus);
+    checkU32("cb rlc hl interp cycles", used, blk.cycles);
+    checkU32("cb rlc hl stored", @intCast(u32, mmumod.read8(&g_bus, 0xC100)), 0x01);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0xCB);
+    mmumod.write8(&g_bus, 0xC001, 0x86);
+    mmumod.write8(&g_bus, 0xC200, 0xFF);
+    g_cpu.pc = 0xC000;
+    g_cpu.h = 0xC2;
+    g_cpu.l = 0x00;
+    checkBool("cb res hl build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("cb res hl len", @intCast(u32, blk.len), 1);
+    checkOp("cb res hl op", blk.insns[0].op, blockmod.BlockOp.cb);
+    checkU32("cb res hl op2", @intCast(u32, blk.insns[0].a), 0x86);
+    checkU32("cb res hl cycles", blk.cycles, 16);
+    checkBool("cb res hl ends", blk.ends_block, true);
+    used = cpumod.cpuStep(&g_cpu, &g_bus);
+    checkU32("cb res hl interp cycles", used, blk.cycles);
+    checkU32("cb res hl stored", @intCast(u32, mmumod.read8(&g_bus, 0xC200)), 0xFE);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0xCB);
+    mmumod.write8(&g_bus, 0xC001, 0xC6);
+    mmumod.write8(&g_bus, 0xC300, 0x00);
+    g_cpu.pc = 0xC000;
+    g_cpu.h = 0xC3;
+    g_cpu.l = 0x00;
+    checkBool("cb set hl build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("cb set hl len", @intCast(u32, blk.len), 1);
+    checkOp("cb set hl op", blk.insns[0].op, blockmod.BlockOp.cb);
+    checkU32("cb set hl op2", @intCast(u32, blk.insns[0].a), 0xC6);
+    checkU32("cb set hl cycles", blk.cycles, 16);
+    checkBool("cb set hl ends", blk.ends_block, true);
+    used = cpumod.cpuStep(&g_cpu, &g_bus);
+    checkU32("cb set hl interp cycles", used, blk.cycles);
+    checkU32("cb set hl stored", @intCast(u32, mmumod.read8(&g_bus, 0xC300)), 0x01);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0xCB);
+    mmumod.write8(&g_bus, 0xC001, 0x46);
+    g_cpu.pc = 0xC000;
+    g_cpu.h = 0xC4;
+    g_cpu.l = 0x00;
+    checkBool("cb bit hl build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("cb bit hl len", @intCast(u32, blk.len), 64);
+    checkOp("cb bit hl op", blk.insns[0].op, blockmod.BlockOp.cb);
+    checkU32("cb bit hl op2", @intCast(u32, blk.insns[0].a), 0x46);
+    checkU32("cb bit hl cycles", blk.cycles, 264);
+    checkBool("cb bit hl continues", blk.ends_block, false);
+}
+
 pub fn main() void {
     testStraightNops();
     testJump();
@@ -429,6 +496,7 @@ pub fn main() void {
     testInterruptBoundaries();
     testWriteBoundaries();
     testIndirectWriteBoundaries();
+    testCbWriteBoundaries();
 
     std.io.write("dynarec ");
     if (g_fail == 0) {
