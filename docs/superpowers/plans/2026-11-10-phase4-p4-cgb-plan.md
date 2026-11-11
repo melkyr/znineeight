@@ -219,7 +219,82 @@ git commit -m "feat(z9gb): add CGB HDMA"
 
 ---
 
+### Task 4.5: CGB boot state and register defaults
+
+**Files:**
+- Modify: `examples/z98/z9gb/emu.zig`
+- Modify: `examples/z98/z9gb/mmu.zig`
+- Modify: `examples/z98/z9gb/tests/cgb_test.zig`
+- Test: `examples/z98/z9gb/tests/tier_cgb.sh`
+
+**Interfaces:**
+- Consumes: `Bus.cgb_hw`, `Bus.cgb_color`, `Bus.cgb_compat`.
+- Produces: CGB post-boot CPU/I/O state used by Blargg `interrupt_time` and CGB games.
+
+- [ ] **Step 1: Write the failing test**
+Tests: select CGB mode, then assert after `emuReset`:
+  - `A=0x11, F=0x80, B=0x00, C=0x00, D=0xFF, E=0x56, H=0x00, L=0x0D, SP=0xFFFE, PC=0x0100`.
+  - DMG mode still uses the P2 values (`A=0x01, F=0xB0, B=0x00, C=0x13, D=0x00, E=0xD8, H=0x01, L=0x4D`).
+  - CGB post-boot I/O reads: `KEY1=0x7E`, `VBK=0xFE`, `SVBK=0xF9`, `OPRI=0xFE`, `HDMA5=0xFF`; DMG/CGB-compat behavior remains as Task 1–4 pinned.
+Expected: fails on the current DMG reset values.
+
+- [ ] **Step 2: Implement**
+In `emuReset`, choose the CPU post-boot values from `e.bus.cgb_hw` (CGB values above, otherwise DMG values).
+In `mmu.zig`, initialize the CGB boot I/O state and read masks: `KEY1` normal/not-armed (read `0x7E`), `VBK=0` (read `0xFE`), `SVBK=1` (read `0xF9`), `OPRI=0` (read `0xFE`), `HDMA5` inactive (`0xFF`). Do not change DMG behavior.
+Blargg `interrupt_time` must then see `gb_id` CGB (`A` bit 4) and allow `cpu_fast`/`cpu_norm` to switch speed.
+
+- [ ] **Step 3: Run**
+Run `tier_cgb --all`, `tier_dmg --all`, and `run_cgb_interrupt_time.sh` with `--cgb --turbo --frames 200000`.
+Expected: CGB/DMG tiers PASS; `interrupt_time` status `0` + terminal `Passed`. If the fast-speed measurement still fails after the boot-state fix, STOP and report the exact output; do not patch outside this task.
+
+- [ ] **Step 4: Commit**
+```bash
+git add examples/z98/z9gb/emu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/tests/cgb_test.zig examples/z98/z9gb/tests/tier_cgb.sh
+git commit -m "feat(z9gb): add CGB boot state and defaults"
+```
+
+---
+
+### Task 4.6: CGB APU semantics
+
+**Files:**
+- Modify: `examples/z98/z9gb/apu.zig`
+- Modify: `examples/z98/z9gb/emu.zig`
+- Modify: `examples/z98/z9gb/tests/cgb_test.zig`
+- Test: `examples/z98/z9gb/tests/tier_cgb.sh`
+
+**Interfaces:**
+- Consumes: CGB color mode from `Bus.cgb_color`.
+- Produces: CGB APU behavior and `apuSetCgb(a: *Apu, cgb: bool)` (or an equivalent explicit APU mode field) wired from `applyCgbMode`.
+
+- [ ] **Step 1: Write the failing test**
+Tests for CGB APU distinctions exercised by `cgb_sound` 08–12:
+  - length counters reset on power-up (CGB) while DMG preserves them;
+  - `NR11`/`NR21`/`NR31`/`NR41` length fields are readable in CGB mode (DMG masks them);
+  - wave RAM reads while playing return the current byte on CGB (DMG garbage behavior unchanged);
+  - wave trigger while already on works;
+  - `NR12`/`NR13`/`NR41` clear after power cycle;
+  - wave timer/phase/access behavior (frequency 0 valid, phase reset on trigger, current-byte access, write test).
+Expected: fails on the DMG-only APU.
+
+- [ ] **Step 2: Implement**
+Add an explicit CGB APU mode and gate the CGB-specific behaviors on it; keep DMG behavior byte-identical. Do not change double-speed rates (APU stays normal real-time). Use `apuSetCgb`/mode field from `applyCgbMode`.
+If a required CGB behavior is not covered by the test ROMs but is needed for DMG parity, keep it gated on CGB mode.
+
+- [ ] **Step 3: Run**
+Run `tier_cgb --all`, `tier_dmg --all`, and `run_cgb_sound.sh` with `--cgb --turbo --frames 200000`.
+Expected: CGB/DMG tiers PASS; `cgb_sound` status `0` + terminal `Passed`. If it still fails, STOP with the exact subtest/status; do not patch outside this task.
+
+- [ ] **Step 4: Commit**
+```bash
+git add examples/z98/z9gb/apu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/cgb_test.zig examples/z98/z9gb/tests/tier_cgb.sh
+git commit -m "feat(z9gb): add CGB APU semantics"
+```
+
+---
+
 ### Task 5: CGB gates and benchmark
+
 
 **Files:**
 - Modify: `examples/z98/z9gb/tests/tier_cgb.sh`

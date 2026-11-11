@@ -390,9 +390,13 @@ pub fn dsoundClose(d: *Dsound) void;
 - Module-scope opcode constants and cycle tables; case labels cannot be local
   `const`.
 - 256-entry instruction-length table and 256-entry base-cycle table.
-- Post-boot state: `A=0x01, F=0xB0, B=0x00, C=0x13, D=0x00, E=0xD8, H=0x01,
-  L=0x4D, SP=0xFFFE, PC=0x0100`; I/O registers at documented DMG defaults;
-  `LY=0x91`.
+- DMG post-boot state: `A=0x01, F=0xB0, B=0x00, C=0x13, D=0x00, E=0xD8,
+  H=0x01, L=0x4D, SP=0xFFFE, PC=0x0100`; I/O registers at documented DMG
+  defaults; `LY=0x91`.
+- CGB post-boot state: `A=0x11, F=0x80, B=0x00, C=0x00, D=0xFF, E=0x56,
+  H=0x00, L=0x0D, SP=0xFFFE, PC=0x0100`; CGB boot I/O reads include
+  `KEY1=0x7E`, `VBK=0xFE`, `SVBK=0xF9`, `OPRI=0xFE`, `HDMA5=0xFF`; `LY=0x91`.
+  `A` bit 4 is the CGB identifier consumed by Blargg `gb_id`.
 - HALT bug (PC double-fetch in the fetch path), EI delay, interrupt dispatch,
   and OAM DMA implemented explicitly. Timer glitch edges are implemented:
   DIV-write reset and TAC-write mux changes can spuriously tick TIMA, and
@@ -475,6 +479,11 @@ pub fn dsoundClose(d: *Dsound) void;
 - Mixer outputs stereo 16-bit at 44,100 Hz.
 - APU sample and frame clocks derive from emulator dot-rate time and are
   unchanged by CGB double speed.
+- CGB color mode adds APU behavior differences: length counters reset on
+  power-up; NR11/NR21/NR31/NR41 length fields are readable; wave RAM reads
+  while playing return the current byte; wave trigger while already on works;
+  NR12/NR13/NR41 clear after a power cycle; wave timer/phase/access rules
+  follow CGB hardware. DMG keeps its current behavior byte-identically.
 - P3 hard gate: full Blargg `dmg_sound` via the Blargg SRAM memory protocol:
   status `$A000`, signature `DE B0 61` at `$A001-$A003`, text at `$A004`;
   turbo until terminal `Passed`/`Passed all tests.`, cap-without-verdict = FAIL.
