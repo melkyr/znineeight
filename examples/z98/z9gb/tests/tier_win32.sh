@@ -255,6 +255,11 @@ if [ -f "$Z9GB_EXE" ]; then
     else
         pass_case "z9gb has no DINPUT8.DLL import (loaded dynamically)"
     fi
+    if echo "$ZDLLS" | grep -qx 'DDRAW.DLL'; then
+        fail_case "z9gb imports DDRAW.DLL (must be loaded dynamically)"
+    else
+        pass_case "z9gb has no DDRAW.DLL import (loaded dynamically)"
+    fi
 else
     fail_case "z9gb file checks skipped (build produced no exe)"
 fi
@@ -305,6 +310,33 @@ if [ -x /usr/bin/time ]; then
     else
         fail_case "z9gb startup backend line missing or repeated (count=${INPUT_LINES:-0})"
     fi
+
+    NOAUDIO_LOG="$OUT/z9gb_noaudio.log"
+    NOAUDIO_OK=0
+    ATTEMPT=1
+    while [ "$ATTEMPT" -le 3 ]; do
+        if timeout 120 xvfb-run -a -s "-screen 0 1024x768x24" \
+            wine "$Z9GB_EXE" --windowed --no-audio --scale 1 --frames 1 --rom "$ROM" \
+            >"$NOAUDIO_LOG" 2>&1; then
+            NOAUDIO_OK=1
+            break
+        fi
+        ATTEMPT=$((ATTEMPT + 1))
+        wineserver -k >/dev/null 2>&1 || true
+    done
+    if [ "$NOAUDIO_OK" = "1" ]; then
+        pass_case "z9gb --windowed --no-audio open smoke (attempt $ATTEMPT)"
+    else
+        fail_case "z9gb --windowed --no-audio open failed after $ATTEMPT attempts (see $NOAUDIO_LOG)"
+    fi
+    sed 's/^/       /' "$NOAUDIO_LOG" 2>/dev/null || true
+    NOAUDIO_LINES="$(grep -Ec '^z9gb: input=(dinput8|fallback) audio=off$' "$NOAUDIO_LOG" 2>/dev/null)"
+    if [ "$NOAUDIO_LINES" = "1" ]; then
+        pass_case "z9gb --no-audio reports audio=off"
+    else
+        fail_case "z9gb --no-audio startup line missing or wrong (count=${NOAUDIO_LINES:-0})"
+    fi
+    wineserver -k >/dev/null 2>&1 || true
 
     if [ -f "$WIN_FB" ] && [ "$(stat -c %s "$WIN_FB")" = "92160" ]; then
         pass_case "windowed framebuffer is 92160 bytes"

@@ -195,15 +195,18 @@ fn writeFramebuffer(path: []const u8) bool {
 }
 
 // Sleep while more than the 2 ms spin tail remains, then burn a bounded QPC
-// spin for the last <= 2 ms. Returns as soon as the deadline is reached (or
-// after MAX_SPIN_READS, so a broken counter can never hang the loop).
-fn waitForDeadline(deadline: u64) void {
+// spin for the last <= 2 ms. When timeBeginPeriod(1) failed, skip sleepMs and
+// let the bounded spin tail alone keep the deadline. Returns as soon as the
+// deadline is reached (or after MAX_SPIN_READS, so a broken counter can never
+// hang the loop).
+fn waitForDeadline(deadline: u64, timer_ok: bool) void {
     const freq: u64 = std.time.highResFreq();
     const tail_ticks: u64 = freq * SPIN_TAIL_MS / 1000;
     while (true) {
         const now: u64 = std.time.highRes();
         if (now >= deadline) return;
         const remaining: u64 = deadline - now;
+        if (!timer_ok) break;
         if (remaining <= tail_ticks) break;
         const sleep_ticks: u64 = remaining - tail_ticks;
         var ms: u64 = sleep_ticks * 1000 / freq;
@@ -344,10 +347,22 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     } else {
         plat = headless.platformHeadless();
     }
+    if (windowed) {
+        selected_impl.platformSetAudioEnabled(audio);
+    } else {
+        headless.platformSetAudioEnabled(audio);
+    }
     if (!plat.open_fn(plat.state, FRAME_W, FRAME_H, scale)) {
         var m: []const u8 = "z9gb: cannot open platform\n";
         std.io.write(m);
         std.os.exit(2);
+    }
+
+    var timer_ok: bool = true;
+    if (windowed) {
+        timer_ok = selected_impl.platformTimerOk();
+    } else {
+        timer_ok = headless.platformTimerOk();
     }
 
     const paced: bool = windowed and !turbo;
@@ -373,7 +388,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             plat.present_fn(plat.state, emu.emuFramebuffer(&g_emu));
             if (audio) drainAudio(plat);
             if (paced) {
-                waitForDeadline(deadline);
+                waitForDeadline(deadline, timer_ok);
                 deadline = nextDeadline(deadline, period_ticks);
             }
         }

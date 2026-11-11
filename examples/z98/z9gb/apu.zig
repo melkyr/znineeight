@@ -197,6 +197,39 @@ pub fn apuReset(a: *Apu, sample_rate: u32) void {
     a.fs_step = 0;
     a.fs_cycles = 0;
     clearControl(a);
+    // Exact DMG post-boot defaults as read through the NRxx masks.
+    a.regs[0] = 0x00;  // NR10 reads 0x80
+    a.regs[1] = 0x80;  // NR11 reads 0xBF (duty 2, length 64)
+    a.regs[2] = 0xF3;  // NR12 reads 0xF3
+    a.regs[3] = 0x00;  // NR13 is write-only
+    a.regs[4] = 0x00;  // NR14 reads 0xBF
+    a.regs[6] = 0x00;  // NR21 reads 0x3F
+    a.regs[7] = 0x00;  // NR22 reads 0x00
+    a.regs[8] = 0x00;  // NR23 is write-only
+    a.regs[9] = 0x00;  // NR24 reads 0xBF
+    a.regs[10] = 0x00; // NR30 reads 0x7F
+    a.regs[11] = 0x00; // NR31 is write-only
+    a.regs[12] = 0x00; // NR32 reads 0x9F
+    a.regs[13] = 0x00; // NR33 is write-only
+    a.regs[14] = 0x00; // NR34 reads 0xBF
+    a.regs[16] = 0x00; // NR41 is write-only
+    a.regs[17] = 0x00; // NR42 reads 0x00
+    a.regs[18] = 0x00; // NR43 reads 0x00
+    a.regs[19] = 0x00; // NR44 reads 0xBF
+    a.regs[20] = 0x77; // NR50 reads 0x77
+    a.regs[21] = 0xF3; // NR51 reads 0xF3
+    a.regs[22] = 0x01; // NR52 channel-1 status
+    a.nr50 = 0x77;
+    a.nr51 = 0xF3;
+    a.ch1.enabled = true;
+    a.ch1.duty = 2;
+    a.ch1.length = 64;
+    a.ch1.dac = true;
+    a.ch1.vol_init = 15;
+    a.ch1.vol = 15;
+    a.ch1.env_sub = true;
+    a.ch1.env_period = 3;
+    a.ch1.env_timer = 3;
     var i: usize = 0;
     while (i < 16) : (i += 1) a.wave_ram[i] = 0;
     a.ring_head = 0;
@@ -259,13 +292,39 @@ pub fn apuRead(a: *Apu, addr: u16) u8 {
     }
     if (addr >= 0xFF10 and addr <= 0xFF25) {
         const idx: usize = @intCast(usize, addr - 0xFF10);
-        const base: u8 = if (a.powered) a.regs[idx] else 0;
+        var base: u8 = 0;
+        if (a.powered) {
+            base = a.regs[idx];
+        } else if (idx == 1 or idx == 6 or idx == 11 or idx == 16) {
+            // Raw NRx1/NR21/NR31/NR41 values survive power-off.
+            base = a.regs[idx];
+        }
         return base | maskFor(addr);
     }
     return 0xFF;
 }
 
 fn clearControlKeepLengths(a: *Apu) void {
+    const l1: u16 = a.ch1.length;
+    const l2: u16 = a.ch2.length;
+    const l3: u16 = a.ch3.length;
+    const l4: u16 = a.ch4.length;
+    const r1: u8 = a.regs[1];
+    const r6: u8 = a.regs[6];
+    const r11: u8 = a.regs[11];
+    const r16: u8 = a.regs[16];
+    clearControl(a);
+    a.ch1.length = l1;
+    a.ch2.length = l2;
+    a.ch3.length = l3;
+    a.ch4.length = l4;
+    a.regs[1] = r1;
+    a.regs[6] = r6;
+    a.regs[11] = r11;
+    a.regs[16] = r16;
+}
+
+fn clearControlKeepLengthsOnly(a: *Apu) void {
     const l1: u16 = a.ch1.length;
     const l2: u16 = a.ch2.length;
     const l3: u16 = a.ch3.length;
@@ -288,7 +347,7 @@ fn writeNr52(a: *Apu, value: u8) void {
     }
     if (!a.powered) {
         a.powered = true;
-        clearControlKeepLengths(a);
+        clearControlKeepLengthsOnly(a);
         a.fs_step = 0;
         a.fs_cycles = 0;
     }

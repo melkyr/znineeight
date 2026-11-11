@@ -23,7 +23,7 @@
 @cInclude("<ddraw.h>");
 
 // --- constants (winuser.h / ddraw.h numeric values) ------------------------
-const WS_OVERLAPPEDWINDOW: u32 = 0x00CF0000;
+const WINDOW_STYLE: u32 = 0x00CA0000; // WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
 const CW_USEDEFAULT: i32 = -2147483648;
 const SW_SHOW: i32 = 5;
 const SWP_NOMOVE: u32 = 0x0002;
@@ -524,12 +524,12 @@ pub fn open(title: []const u8, src_w: u32, src_h: u32, scale: u32, st: *State) u
     var rc = Rect{ .left = 0, .top = 0, .right = cw, .bottom = ch };
     var ow: i32 = cw;
     var oh: i32 = ch;
-    if (AdjustWindowRect(@ptrCast(*void, &rc), WS_OVERLAPPEDWINDOW, 0) != 0) {
+    if (AdjustWindowRect(@ptrCast(*void, &rc), WINDOW_STYLE, 0) != 0) {
         ow = rc.right - rc.left;
         oh = rc.bottom - rc.top;
     }
     st.hwnd = CreateWindowExA(0, @ptrCast(*void, &st.class_name[0]),
-        @ptrCast(*void, &st.title[0]), WS_OVERLAPPEDWINDOW,
+        @ptrCast(*void, &st.title[0]), WINDOW_STYLE,
         CW_USEDEFAULT, CW_USEDEFAULT, ow, oh,
         nullVoid(), nullVoid(), hinst, nullVoid());
     if (isNull(st.hwnd)) {
@@ -622,7 +622,7 @@ pub fn setScale(st: *State, scale_in: u32) bool {
     var rc = Rect{ .left = 0, .top = 0, .right = cw, .bottom = ch };
     var ow: i32 = cw;
     var oh: i32 = ch;
-    if (AdjustWindowRect(@ptrCast(*void, &rc), WS_OVERLAPPEDWINDOW, 0) != 0) {
+    if (AdjustWindowRect(@ptrCast(*void, &rc), WINDOW_STYLE, 0) != 0) {
         ow = rc.right - rc.left;
         oh = rc.bottom - rc.top;
     }
@@ -659,7 +659,7 @@ fn copyPixels(st: *State, pixels: []const u32) u32 {
         DDLOCK_WAIT | DDLOCK_WRITEONLY, nullVoid());
     if (hr != S_OK) return hr;
     if (isNull(lockdesc.lpSurface)) {
-        _ = surfaceVtbl(st.src).Unlock(st.src, lockdesc.lpSurface);
+        _ = surfaceVtbl(st.src).Unlock(st.src, nullVoid());
         return E_FAIL;
     }
     const base: [*]u8 = @ptrCast([*]u8, lockdesc.lpSurface);
@@ -674,7 +674,7 @@ fn copyPixels(st: *State, pixels: []const u32) u32 {
         var x: usize = 0;
         while (x < row_px) : (x += 1) dp[x] = srow[x];
     }
-    return surfaceVtbl(st.src).Unlock(st.src, lockdesc.lpSurface);
+    return surfaceVtbl(st.src).Unlock(st.src, nullVoid());
 }
 
 fn bltStretch(st: *State, dest: *Rect, src_rect: *Rect) u32 {
@@ -703,7 +703,7 @@ fn softwareScale(st: *State, pixels: []const u32, scale: u32, dest: *Rect) u32 {
         DDLOCK_WAIT | DDLOCK_WRITEONLY, nullVoid());
     if (hr != S_OK) return hr;
     if (isNull(lockdesc.lpSurface)) {
-        _ = surfaceVtbl(st.staging).Unlock(st.staging, lockdesc.lpSurface);
+        _ = surfaceVtbl(st.staging).Unlock(st.staging, nullVoid());
         return E_FAIL;
     }
     const base: [*]u8 = @ptrCast([*]u8, lockdesc.lpSurface);
@@ -729,7 +729,7 @@ fn softwareScale(st: *State, pixels: []const u32, scale: u32, dest: *Rect) u32 {
             }
         }
     }
-    hr = surfaceVtbl(st.staging).Unlock(st.staging, lockdesc.lpSurface);
+    hr = surfaceVtbl(st.staging).Unlock(st.staging, nullVoid());
     if (hr != S_OK) return hr;
     var src_rect = Rect{
         .left = 0,

@@ -36,7 +36,7 @@ extern "stdcall" fn timeEndPeriod(uPeriod: u32) u32;
 const Win32State = struct {
     ddraw: *ddraw.Ddraw,
     dinput: *dinput.Dinput,
-    dsound: *dsound.Dsound,
+    dsound: ?*dsound.Dsound,
     timer_started: bool,
 };
 
@@ -45,6 +45,8 @@ const Win32State = struct {
 // undefined state storage is never consulted before win32Open fills it.
 var g_state: Win32State = undefined;
 var g_opened: bool = false;
+var g_timer_ok: bool = false;
+var g_audio_enabled: bool = true;
 
 fn win32Open(state: *void, width: u32, height: u32, scale: u32) bool {
     var s = @ptrCast(*Win32State, state);
@@ -52,26 +54,32 @@ fn win32Open(state: *void, width: u32, height: u32, scale: u32) bool {
     if (width != FRAME_W or height != FRAME_H) return false;
     if (scale < 1 or scale > 4) return false;
 
-    const d = ddraw.ddrawOpen("z9gb", width, height, scale) catch return false;
+    const d = ddraw.ddrawOpen("z9gb", width, height, scale) catch {
+        std.io.write("z9gb: DirectDraw7 open failed; install the DirectX 6+ runtime (IDirectDraw7)\n");
+        return false;
+    };
     const window = ddraw.ddrawWindow(d);
     const di = dinput.dinputOpen(window) catch {
         ddraw.ddrawClose(d);
         return false;
     };
-    const ds = dsound.dsoundOpen(window, AUDIO_RATE, AUDIO_CHANNELS) catch {
-        dinput.dinputClose(di);
-        ddraw.ddrawClose(d);
-        return false;
-    };
+    var ds: ?*dsound.Dsound = null;
+    if (g_audio_enabled) {
+        ds = dsound.dsoundOpen(window, AUDIO_RATE, AUDIO_CHANNELS) catch {
+            dinput.dinputClose(di);
+            ddraw.ddrawClose(d);
+            return false;
+        };
+    }
 
     s.ddraw = d;
     s.dinput = di;
     s.dsound = ds;
-    s.timer_started = timeBeginPeriod(TIMER_PERIOD_MS) == 0;
+    g_timer_ok = timeBeginPeriod(TIMER_PERIOD_MS) == 0;
+    s.timer_started = g_timer_ok;
     g_opened = true;
 
     const dkind: u8 = dinput.dinputBackendKind(di);
-    const skind: u8 = dsound.dsoundBackendKind(ds);
     std.io.write("z9gb: input=");
     if (dkind == 1) {
         std.io.write("dinput8");
@@ -79,10 +87,17 @@ fn win32Open(state: *void, width: u32, height: u32, scale: u32) bool {
         std.io.write("fallback");
     }
     std.io.write(" audio=");
-    if (skind == 1) {
-        std.io.write("dsound");
+    if (!g_audio_enabled) {
+        std.io.write("off");
+    } else if (s.dsound) |dsv| {
+        const skind: u8 = dsound.dsoundBackendKind(dsv);
+        if (skind == 1) {
+            std.io.write("dsound");
+        } else {
+            std.io.write("waveout");
+        }
     } else {
-        std.io.write("waveout");
+        std.io.write("off");
     }
     std.io.write("\n");
     return true;
@@ -126,16 +141,18 @@ fn win32Poll(state: *void, input: *backend.InputState) bool {
 fn win32Audio(state: *void, samples: []const i16) void {
     var s = @ptrCast(*Win32State, state);
     if (!g_opened) return;
-    _ = dsound.dsoundWrite(s.dsound, samples);
+    if (s.dsound) |d| _ = dsound.dsoundWrite(d, samples);
 }
 
 fn win32Close(state: *void) void {
     var s = @ptrCast(*Win32State, state);
     if (!g_opened) return;
-    dsound.dsoundClose(s.dsound);
+    if (s.dsound) |d| dsound.dsoundClose(d);
+    s.dsound = null;
     dinput.dinputClose(s.dinput);
     ddraw.ddrawClose(s.ddraw);
     if (s.timer_started) _ = timeEndPeriod(TIMER_PERIOD_MS);
+    g_timer_ok = false;
     g_opened = false;
 }
 
@@ -150,4 +167,12 @@ var g_platform: backend.Platform = backend.Platform{
 
 pub fn platformWin32() *backend.Platform {
     return &g_platform;
+}
+
+pub fn platformTimerOk() bool {
+    return g_timer_ok;
+}
+
+pub fn platformSetAudioEnabled(enabled: bool) void {
+    g_audio_enabled = enabled;
 }

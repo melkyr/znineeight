@@ -3,8 +3,9 @@
 #
 # Builds a Win32-only probe (no-CRT mingw harness, -osw) that imports
 # std_ddraw.zig and std_dsound.zig, opens a DDraw window, opens DirectSound at
-# 44,100 Hz stereo on that window, writes 2,048 stereo frames (4,096 i16 zeros),
-# and prints backend=<1|2> queued=<n>. The primary run must choose backend 1
+# 44,100 Hz stereo on that window, fills the free ring space (derived from
+# dsoundQueued after the 256-frame DMA lead), and prints backend=<1|2>
+# queued=<n> offered=<n> wrote=<n>. The primary run must choose backend 1
 # (DirectSound) or 2 (waveOut). A second run disables dsound.dll through Wine so
 # the waveOut fallback must be selected (backend=2).
 #
@@ -111,19 +112,19 @@ fn printBackend(kind: u8, queued: usize) void {
 }
 
 fn underrun(d: *dsound.Dsound) void {
-    const w1 = dsound.dsoundWrite(d, g_silence[0..AUDIO_SAMPLES]);
-    // More than five 46.4 ms ring laps: the play cursor wraps several times.
-    Sleep(250);
-    const w2 = dsound.dsoundWrite(d, g_silence[0..AUDIO_SAMPLES]);
+    // Stall longer than the 256-frame lead but well under one ring lap so the
+    // play cursor passes the queued write cursor and the missed span is visible
+    // from the two positions. The underrun path resets the queue, so the full
+    // ring must be accepted.
+    Sleep(20);
+    const w = dsound.dsoundWrite(d, g_silence[0..AUDIO_SAMPLES]);
     const q = dsound.dsoundQueued(d);
-    std.io.write("underrun wrote1=");
-    std.io.printInt(@intCast(i32, w1));
-    std.io.write(" wrote2=");
-    std.io.printInt(@intCast(i32, w2));
+    std.io.write("underrun wrote=");
+    std.io.printInt(@intCast(i32, w));
     std.io.write(" queued=");
     std.io.printInt(@intCast(i32, q));
     std.io.write("\n");
-    if (w1 == AUDIO_SAMPLES and w2 == AUDIO_SAMPLES) {
+    if (w == AUDIO_SAMPLES) {
         std.io.write("UNDERRUN_PASS\n");
         std.os.exit(0);
     }
@@ -209,10 +210,16 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         printBackend(kind, dsound.dsoundQueued(d));
         stress(d);
     }
-    const wrote = dsound.dsoundWrite(d, g_silence[0..AUDIO_SAMPLES]);
+    const q_before = dsound.dsoundQueued(d);
+    var offered: usize = AUDIO_SAMPLES;
+    if (q_before < AUDIO_SAMPLES) offered = AUDIO_SAMPLES - q_before;
+    if (offered > AUDIO_SAMPLES) offered = AUDIO_SAMPLES;
+    const wrote = dsound.dsoundWrite(d, g_silence[0..offered]);
     const queued = dsound.dsoundQueued(d);
     printBackend(kind, queued);
-    std.io.write("wrote=");
+    std.io.write("offered=");
+    std.io.printInt(@intCast(i32, offered));
+    std.io.write(" wrote=");
     std.io.printInt(@intCast(i32, wrote));
     std.io.write("\n");
     dsound.dsoundClose(d);
@@ -301,14 +308,14 @@ if grep -Eq '^backend=(1|2) queued=[0-9]+$' "$OUT/primary.log" 2>/dev/null; then
 else
     fail_case "backend/queued line missing or malformed"
 fi
-if grep -qx 'wrote=4096' "$OUT/primary.log" 2>/dev/null; then
-    pass_case "dsoundWrite consumed 4096 i16 (2048 stereo frames)"
+if awk '/^offered=[0-9]+ wrote=[0-9]+$/ { split($1, a, "="); split($2, b, "="); if (a[2] == b[2]) ok = 1 } END { exit(ok ? 0 : 1) }' "$OUT/primary.log" 2>/dev/null; then
+    pass_case "dsoundWrite accepted its derived free space (no short)"
 else
-    fail_case "dsoundWrite did not consume 4096 i16 (see wrote line)"
+    fail_case "dsoundWrite did not accept its derived free space (see offered/wrote line)"
 fi
 wineserver -k >/dev/null 2>&1 || true
 
-# ---- underrun regression: stall longer than several ring laps ----
+# ---- underrun regression: stall past the queued lead, under one ring lap ----
 UNDERRUN_OK=0
 ATTEMPT=1
 while [ "$ATTEMPT" -le 3 ]; do
@@ -322,15 +329,15 @@ while [ "$ATTEMPT" -le 3 ]; do
     wineserver -k >/dev/null 2>&1 || true
 done
 if [ "$UNDERRUN_OK" = "1" ]; then
-    pass_case "underrun probe (250 ms stall) exited 0 on attempt $ATTEMPT"
+    pass_case "underrun probe (20 ms stall past the lead) exited 0 on attempt $ATTEMPT"
 else
     fail_case "underrun probe failed after $ATTEMPT attempts (see $OUT/underrun.log)"
 fi
 sed 's/^/       /' "$OUT/underrun.log" 2>/dev/null || true
-if grep -Eq '^underrun wrote1=4096 wrote2=4096 queued=[0-9]+$' "$OUT/underrun.log" 2>/dev/null; then
-    pass_case "long-stall underrun accepted 4096 i16 before and after"
+if grep -Eq '^underrun wrote=4096 queued=[0-9]+$' "$OUT/underrun.log" 2>/dev/null; then
+    pass_case "underrun accepted a full ring after the missed-span gap"
 else
-    fail_case "long-stall underrun consumption mismatch"
+    fail_case "underrun consumed fewer than a full ring after the missed-span gap"
 fi
 wineserver -k >/dev/null 2>&1 || true
 

@@ -74,3 +74,11 @@ var g_platform: backend.Platform = backend.Platform{
 pub fn platformHeadless() *backend.Platform {
     return &g_platform;
 }
+
+pub fn platformTimerOk() bool {
+    return true;
+}
+
+pub fn platformSetAudioEnabled(enabled: bool) void {
+    _ = enabled;
+}

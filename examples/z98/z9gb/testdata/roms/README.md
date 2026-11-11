@@ -12,6 +12,13 @@ The gate runners look for the ROM tree in `Z9GB_ROM_DIR`, defaulting to
 
 - Blargg `retrio/gb-test-roms`, commit
   `c240dd7d700e5c0b00a7bbba52b53e4ee67b5f15`.
+  `dmg_sound/dmg_sound.gb` is 65,536 bytes with SHA-256
+  `c34e740664eb14b42c39750434e3e105fc92d774a98fb671594a48e972401630`
+  (source <https://github.com/retrio/gb-test-roms>).
+- Sanqui `2048-gb`, commit
+  `e44f94f898c1e0de7caa1160c82c0da36ff5eb05`. `2048.gb` is 32,768 bytes with
+  SHA-256 `3ea2376b15b34bd26b10e6b31d2753bf8b086098dbdb5ee84d9c0f03d66d3d7f`
+  (source <https://github.com/Sanqui/2048-gb>).
 - Mooneye `Gekkio/mooneye-test-suite`, commit
   `31510e12eea6286d36eea060a6adde755e1067aa`.
   The published prebuilt package matching this commit prefix is

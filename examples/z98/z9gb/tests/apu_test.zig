@@ -314,6 +314,71 @@ fn testRingDrain() void {
     checkU32("second drain returns zero", @intCast(u32, apumod.apuSamples(&g_apu, g_out[0..])), 0);
 }
 
+fn testBootDefaults() void {
+    apumod.apuReset(&g_apu, 44100);
+    checkByte("boot NR10", rd(0xFF10), 0x80);
+    checkByte("boot NR11", rd(0xFF11), 0xBF);
+    checkByte("boot NR12", rd(0xFF12), 0xF3);
+    checkByte("boot NR13", rd(0xFF13), 0xFF);
+    checkByte("boot NR14", rd(0xFF14), 0xBF);
+    checkByte("boot NR16", rd(0xFF16), 0x3F);
+    checkByte("boot NR17", rd(0xFF17), 0x00);
+    checkByte("boot NR18", rd(0xFF18), 0xFF);
+    checkByte("boot NR19", rd(0xFF19), 0xBF);
+    checkByte("boot NR1A", rd(0xFF1A), 0x7F);
+    checkByte("boot NR1B", rd(0xFF1B), 0xFF);
+    checkByte("boot NR1C", rd(0xFF1C), 0x9F);
+    checkByte("boot NR1D", rd(0xFF1D), 0xFF);
+    checkByte("boot NR1E", rd(0xFF1E), 0xBF);
+    checkByte("boot NR20", rd(0xFF20), 0xFF);
+    checkByte("boot NR21", rd(0xFF21), 0x00);
+    checkByte("boot NR22", rd(0xFF22), 0x00);
+    checkByte("boot NR23", rd(0xFF23), 0xBF);
+    checkByte("boot NR24", rd(0xFF24), 0x77);
+    checkByte("boot NR25", rd(0xFF25), 0xF3);
+    checkByte("boot NR26", rd(0xFF26), 0xF1);
+    checkBool("boot channel 1 enabled", g_apu.ch1.enabled, true);
+    checkByte("boot channel 1 duty", g_apu.ch1.duty, 2);
+    checkWord("boot channel 1 length", g_apu.ch1.length, 64);
+    checkByte("boot channel 1 volume", g_apu.ch1.vol, 15);
+    checkByte("boot NR50 raw", g_apu.nr50, 0x77);
+    checkByte("boot NR51 raw", g_apu.nr51, 0xF3);
+}
+
+fn testOffStateRaw() void {
+    apumod.apuReset(&g_apu, 44100);
+    wr(0xFF11, 0x05);
+    wr(0xFF16, 0x45);
+    wr(0xFF1B, 0x5A);
+    wr(0xFF20, 0x33);
+    wr(0xFF26, 0x00);
+    checkByte("off NR11 keeps raw", rd(0xFF11), 0x3F);
+    checkByte("off NR21 keeps raw", rd(0xFF16), 0x7F);
+    checkByte("off NR31 mask", rd(0xFF1B), 0xFF);
+    checkByte("off NR41 mask", rd(0xFF20), 0xFF);
+}
+
+fn testNonSilentRing() void {
+    apumod.apuReset(&g_apu, 44100);
+    _ = drainAll();
+    wr(0xFF24, 0x77);
+    wr(0xFF25, 0x11);
+    wr(0xFF11, 0x80);
+    wr(0xFF12, 0xF0);
+    wr(0xFF13, 0x00);
+    wr(0xFF14, 0x87);
+    checkBool("non-silent ch1 enabled", g_apu.ch1.enabled, true);
+    apumod.apuTick(&g_apu, 8192);
+    const got: usize = apumod.apuSamples(&g_apu, g_out[0..]);
+    checkBool("non-silent ring produced", got > 0, true);
+    var nonzero: bool = false;
+    var i: usize = 0;
+    while (i < got) : (i += 1) {
+        if (g_out[i] != 0) nonzero = true;
+    }
+    checkBool("non-silent sample nonzero", nonzero, true);
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     _ = argc;
     _ = argv;
@@ -327,6 +392,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testNoiseLfsr();
     testMixer();
     testRingDrain();
+    testBootDefaults();
+    testOffStateRaw();
+    testNonSilentRing();
 
     if (g_fail == 0) {
         std.io.write("apu ok ");

@@ -46,7 +46,7 @@ with a companion `build_target.sh`.
 
 ```sh
 mkdir -p /tmp/z9gb_p3
-/path/to/zig1_5_clean -ffast -I /workspace/znineeight/sf/src \
+/path/to/zig1_5_clean -ffast -I "$PWD/sf/src" \
     -o /tmp/z9gb_p3 examples/z98/z9gb/main.zig
 sh /tmp/z9gb_p3/build_target.sh linux /tmp/z9gb_p3/z9gb
 /tmp/z9gb_p3/z9gb --headless --frames 1 --fb-out /tmp/z9gb_p3.fb
@@ -56,7 +56,7 @@ sh /tmp/z9gb_p3/build_target.sh linux /tmp/z9gb_p3/z9gb
 
 ```sh
 EXTRA_LIBS="-luser32 -lgdi32 -lwinmm" \
-DUMP_TARGET="-osw -I /workspace/znineeight/sf/src" \
+DUMP_TARGET="-osw -I $PWD/sf/src" \
 bash scripts/win32_cross/cross_nocrt.sh /path/to/zig1_5_clean \
     examples/z98/z9gb/main.zig /tmp/z9gb_p3w /tmp/z9gb_p3w/z9gb.exe
 ```
@@ -111,7 +111,8 @@ z9gb [--headless | --windowed] [--scale <1..4>] [--frames <n>]
 
 On a successful windowed open, z9gb prints one startup line reporting the
 selected backends, for example `z9gb: input=dinput8 audio=dsound`. A DInput
-keyboard fallback prints `input=fallback`, and WinMM audio prints `audio=waveout`.
+keyboard fallback prints `input=fallback`, WinMM audio prints `audio=waveout`,
+and `--no-audio` prints `audio=off`.
 
 Unknown flags and missing operands exit with code 1; a bad ROM, an unopenable
 headless platform, or a failed save exits with code 2.
@@ -297,21 +298,24 @@ remains **29/29** dump/gcc/link.
 ## P3 gate evidence (2026-11-11)
 
 Compiler `/tmp/z9gb_p2_seed/zig1_5_clean`, ROM root `/tmp/z9gb_roms`.
+These are single measured runs from the final fix-wave verification on
+2026-11-11; they are not guarantees and vary with host load.
 `tier_audio.sh --gate` prints `TIER_AUDIO PASS` (`dmg_sound` sha256
 `c34e7406…401630`, `Passed`, `frames=2133 status=0`).
 
 **Authoritative host headless gate.** `tier_perf.sh` measured the host headless
-path at **1052.632 fps** (`wall=0.57 s`, `cpu_user=0.57 s`, `cpu_sys=0.00 s`,
-`rss_kb=1668`, `-O2` emitted-C build) over `--headless --frames 600 --audio`.
+path at **1034.483 fps** (`wall=0.58 s`, `cpu_user=0.58 s`, `cpu_sys=0.00 s`,
+`rss_kb=1904`, `-O2` emitted-C build) over `--headless --frames 600 --audio`.
 That is **PASS** against the 59.0 fps threshold and is the performance gate.
 
 **Wine windowed evidence (non-authoritative).** The Wine path is a separate
 `-O2` no-CRT build, `--windowed --scale 2 --frames 600 --audio`, QPC-timed over
-the 600-frame window. Sandbox Wine measured **47.621 fps**
-(`qpc_seconds=12.599425`, `wall=12.75 s`, `cpu_user=6.29 s`, `cpu_sys=0.06 s`,
-`rss_kb=40528`). Sandbox Wine can start but is painfully slower than
-out-of-sandbox Wine; sandbox QPC is non-authoritative. Operator-supplied
-out-of-sandbox QPC evidence: 600 frames / 10.438735 s = **57.48 fps**;
+the 600-frame window. Sandbox Wine measured **47.651 fps**
+(`qpc_seconds=12.591563`, `child_rc=0`, `wall=12.76 s`, `cpu_user=6.26 s`,
+`cpu_sys=0.07 s`, `rss_kb=40348`). Sandbox Wine can start but is painfully
+slower than out-of-sandbox Wine; sandbox QPC is non-authoritative.
+Operator-supplied out-of-sandbox QPC evidence from earlier measured runs:
+600 frames / 10.438735 s = **57.48 fps**;
 120 / 2.411 s = **49.77 fps**; 1800 / 30.5818 s = **58.86 fps**; no-audio
 600 frames = 10.438735 s; linear fit ≈ **0.40 s fixed startup + 16.77 ms/frame
 = 59.64 fps**. These are Wine evidence, never Win98 or real-hardware evidence;
