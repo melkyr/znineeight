@@ -11,6 +11,9 @@
 # Env: ZIG  compiler (first positional arg, else $ZIG, else seed path)
 #      OUT  scratch dir (second positional arg, else a fresh mktemp -d)
 #
+# Usage: measure_rss.sh [ZIG] [OUT] [--cgb]
+#        --cgb runs the measured 60-frame headless workload in CGB mode.
+#
 # Prints: rss_kb=<n>, fb_bytes=<n>, rom_bytes=<n>
 # Exits 77 with a SKIP line when /usr/bin/time is unavailable.
 
@@ -19,11 +22,34 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 Z9DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$Z9DIR/../../.." && pwd)"
-ZIG="${1:-${ZIG:-/tmp/z9gb_seed/zig1_5_clean}}"
-if [ "${2:-}" != "" ]; then
-    OUT="$2"
+CGB=0
+ZIG_ARG=""
+OUT_ARG=""
+for arg in "$@"; do
+    case "$arg" in
+        --cgb) CGB=1 ;;
+        -*) echo "unknown option: $arg" >&2; exit 2 ;;
+        *)
+            if [ -z "$ZIG_ARG" ]; then
+                ZIG_ARG="$arg"
+            elif [ -z "$OUT_ARG" ]; then
+                OUT_ARG="$arg"
+            else
+                echo "usage: measure_rss.sh [ZIG] [OUT] [--cgb]" >&2
+                exit 2
+            fi
+            ;;
+    esac
+done
+ZIG="${ZIG_ARG:-${ZIG:-/tmp/z9gb_seed/zig1_5_clean}}"
+if [ -n "$OUT_ARG" ]; then
+    OUT="$OUT_ARG"
 else
     OUT="$(mktemp -d)"
+fi
+CGB_FLAG=""
+if [ "$CGB" -eq 1 ]; then
+    CGB_FLAG="--cgb"
 fi
 FB="/tmp/z9gb_p1.fb"
 BIN="$OUT/z9gb"
@@ -75,7 +101,7 @@ rss1=""
 while [ "$run" -le 3 ]; do
     rm -f "$FB"
     if ! timeout 60 /usr/bin/time -f '%M' -o "$OUT/rss.txt" \
-        "$BIN" --headless --frames 60 --rom "$ROM" --fb-out "$FB" \
+        "$BIN" --headless $CGB_FLAG --frames 60 --rom "$ROM" --fb-out "$FB" \
         >"$OUT/run.$run.out" 2>"$OUT/run.$run.err"; then
         echo "FAIL: run $run exited nonzero" >&2
         tail -20 "$OUT/run.$run.err" | sed 's/^/       /' >&2
@@ -123,5 +149,6 @@ fi
 echo "rss_kb=$rss1"
 echo "fb_bytes=$fb_bytes"
 echo "rom_bytes=$ROM_BYTES"
+echo "cgb=$CGB"
 echo "determinism=identical (3 runs)"
 exit 0

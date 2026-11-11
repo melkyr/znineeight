@@ -1,16 +1,22 @@
 # z9gb
 
-A DMG (original Game Boy) emulator shell for Z98. This example is at **P3:
-playable DMG**. It runs a DMG CPU, MMU/timer/serial, a scanline PPU (BG, window,
-sprites, palettes, STAT/LYC and mode-access timing), a 4-channel APU, MBC1,
-MBC3 (+RTC), and MBC5 cartridges, battery saves, and two backends: a pure-Z98
-deterministic headless backend and a Win32 DirectDraw/DirectInput/DirectSound
-windowed backend with QPC frame pacing.
+A DMG (original Game Boy) and CGB (Game Boy Color) emulator shell for Z98.
+This example is at **P4: CGB support**. It runs a DMG/CGB CPU, MMU/timer/serial,
+a scanline PPU (BG, window, sprites, DMG palettes, CGB color palettes/attributes,
+STAT/LYC and mode-access timing), a 4-channel APU with CGB sound semantics,
+CGB double-speed and HDMA, MBC1, MBC3 (+RTC), and MBC5 cartridges, battery
+saves, and two backends: a pure-Z98 deterministic headless backend and a Win32
+DirectDraw/DirectInput/DirectSound windowed backend with QPC frame pacing.
 
-It does **not** emulate CGB, a dynamic recompiler, or ship a CGB path. There is
-no heap allocation; the single emulator, framebuffer, audio ring, and platform
-state are module-scope statics. `--windowed` requires the Win32 target; the
-Linux host has only the headless backend.
+It does **not** emulate a dynamic recompiler. There is no heap allocation; the
+single emulator, framebuffer, audio ring, and platform state are module-scope
+statics. `--windowed` requires the Win32 target; the Linux host has only the
+headless backend.
+
+CGB hardware is opt-in: pass `--cgb`. A CGB-only cartridge (header byte
+`0x0143` bit 7 set and bit 6 set) refuses to load without `--cgb` and exits 2
+with `z9gb: CgbRequired`; a CGB-compatible cartridge loads under either mode
+(DMG compat without `--cgb`, color with it).
 
 ## P3 playable backend
 
@@ -33,6 +39,51 @@ Linux host has only the headless backend.
   hardware. Wine numbers are reported as Wine only. Real Win98/Pentium II
   sign-off remains the operator's, and a DX6+ runtime is mandatory for
   `--windowed`.
+
+## P4 CGB support
+
+- **CGB mode:** `--cgb` selects CGB hardware. The cartridge header still chooses
+  color (`0x80` set, `0xC0` clear) or DMG compatibility (`0xC0` set). A CGB-only
+  cartridge is a hard requirement: without `--cgb` the CLI prints
+  `z9gb: CgbRequired` on stdout and exits 2.
+- **Color:** CGB background/window tile attributes (palette, VRAM bank, flips,
+  priority) and CGB 15-bit BG/OBJ palettes via `BCPS/BCPD` (`0xFF68/0xFF69`)
+  and `OCPS/OCPD` (`0xFF6A/0xFF6B`), including auto-increment and the
+  mode-3 palette-access block. VRAM is two 8 KiB banks (`VBK`, `0xFF4F`); WRAM
+  is eight 4 KiB banks (`SVBK`, `0xFF70`).
+- **Double-speed:** `KEY1` (`0xFF4D`) arms a speed switch and reports the
+  current speed; the CGB CPU/PPU cycle split halves PPU dots while the CPU runs
+  at double speed.
+- **HDMA:** general-purpose and HBlank DMA (`HDMA1..HDMA5`, `0xFF51..0xFF55`),
+  with block progress/termination reporting and double-speed timing.
+- **CGB APU semantics:** CGB wave-RAM access and length-register behavior.
+
+CGB hard gates (all three must be present and passing at P4 closeout):
+
+```sh
+ZIG=/path/to/zig1_5_clean
+bash examples/z98/z9gb/tests/tier_cgb.sh "$ZIG"          # unit/CLI + hard gates
+bash examples/z98/z9gb/tests/run_cgb_acid2.sh "$ZIG"     # cgb-acid2 framebuffer
+bash examples/z98/z9gb/tests/run_cgb_sound.sh "$ZIG"     # Blargg cgb_sound
+bash examples/z98/z9gb/tests/run_cgb_interrupt_time.sh "$ZIG"
+```
+
+`tier_cgb.sh` builds the CGB unit test in fast and safe modes and checks the
+`--cgb`/`CgbRequired` CLI contract, then runs `cgb-acid2`, `cgb_sound`, and
+`interrupt_time`. A missing external ROM, reference PNG, or golden is a truthful
+`SKIP` (exit 77), never a PASS; a skipped CGB hard gate blocks closeout.
+
+The committed `cgb-acid2` golden `testdata/golden/cgb-acid2.fb` is derived from
+the official `mattcurrie/cgb-acid2` v1.1 `img/reference.png` (SHA-256
+`9ea9c262c5383353e77d715d021a0f7c5ccbe438f88082cb225756e50c4fdf01`) using the
+CGB 5-bit expansion `(c << 3) | (c >> 2)` per channel; it is pinned at SHA-256
+`0fba336ce7d7cb4ef76049a4548ff0e7a5147be79fb34bfd266ce7bb71fcf9fd`. It is not
+generated from this emulator.
+
+**Real-hardware caveat:** P4 evidence is host headless plus Wine cross-build
+testing. Wine is functional evidence only, never Win98 hardware. No Win98
+real-hardware CGB run was performed; real-hardware sign-off remains the
+operator's.
 
 ## Building with zig1
 
@@ -67,13 +118,16 @@ pixels, written identically on every run.
 ## Usage
 
 ```sh
-z9gb [--headless | --windowed] [--scale <1..4>] [--frames <n>]
+z9gb [--headless | --windowed] [--cgb] [--scale <1..4>] [--frames <n>]
      [--fb-out <path>] [--rom <path>] [--audio | --no-audio]
      [--serial] [--turbo] [--mooneye] [--save] [--rtc-fixed <unix>]
 ```
 
 - `--headless` selects the headless platform. It never opens a window and
   imports no Win32 or DirectX header.
+- `--cgb` runs on CGB hardware; without it a CGB-only cartridge exits 2 with
+  `z9gb: CgbRequired`. A CGB-compatible cartridge still boots in DMG mode
+  without the flag.
 - `--windowed` selects the Win32 DirectDraw/DirectInput/DirectSound backend.
   It only exists on the Win32 target and needs the DX6+ runtime for
   `IDirectDraw7`; the gamepad additionally needs DX8 `dinput8.dll`.
@@ -322,4 +376,74 @@ Operator-supplied out-of-sandbox QPC evidence from earlier measured runs:
 = 59.64 fps**. These are Wine evidence, never Win98 or real-hardware evidence;
 the operator-supplied numbers are non-authoritative and do not block closeout.
 The separate 120-frame windowed smoke (`tier_win32.sh --smoke`) is unaffected.
+
+## P4 CGB closeout evidence (2026-11-11)
+
+Compiler `/tmp/z9gb_p2_seed/zig1_5_clean`, ROM root `/tmp/z9gb_roms`,
+CGB reference `/tmp/phase4_p4_probe/reference/cgb-acid2-reference.png`. These
+are single measured runs from the P4 closeout; they are not guarantees and vary
+with host load.
+
+```sh
+$ bash examples/z98/z9gb/tests/tier_smoke.sh "$ZIG"
+== tier_smoke summary: 18 passed, 0 failed ==
+TIER_SMOKE PASS
+# rc=0
+
+$ bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG"
+== tier_dmg summary: 49 passed, 0 failed ==
+TIER_DMG PASS
+# rc=0
+
+$ bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --gates
+blargg: 3 passed, 0 failed, 0 skipped
+mooneye: 15 passed, 0 failed, 0 skipped
+acid2: PASS c831675c9cff3289d505364286cfb5322a6807fa074386851744f28cdeb84083
+== tier_dmg summary: 3 passed, 0 failed, 0 skipped ==
+TIER_DMG PASS
+# rc=0
+
+$ bash examples/z98/z9gb/tests/tier_audio.sh "$ZIG"
+== tier_audio summary: 10 passed, 0 failed, 0 skipped ==
+TIER_AUDIO PASS
+# rc=0
+
+$ bash examples/z98/z9gb/tests/tier_win32.sh "$ZIG"
+== tier_win32 summary: 35 passed, 0 failed, 0 skipped ==
+TIER_WIN32 PASS
+# rc=0
+
+$ bash examples/z98/z9gb/tests/tier_cgb.sh "$ZIG"
+== tier_cgb summary: 18 passed, 0 failed, 0 skipped ==
+TIER_CGB PASS
+# rc=0
+```
+
+The CGB hard gates all passed: `cgb-acid2` framebuffer SHA-256
+`0fba336ce7d7cb4ef76049a4548ff0e7a5147be79fb34bfd266ce7bb71fcf9fd`;
+Blargg `cgb_sound` sha256 `de2101eb…82053b`, `Passed`,
+`frames=2183 status=0`; Blargg `interrupt_time` sha256 `1a8f8f3b…3424929`,
+`Passed`, `frames=30 status=0`. The `cgb-acid2` golden comes from the official
+`mattcurrie/cgb-acid2` v1.1 reference PNG (SHA-256
+`9ea9c262c5383353e77d715d021a0f7c5ccbe438f88082cb225756e50c4fdf01`), not from
+this emulator.
+
+```sh
+$ bash examples/z98/z9gb/tests/measure_rss.sh "$ZIG" /tmp/z9gb_p4_rss --cgb
+rss_kb=10288
+fb_bytes=92160
+rom_bytes=8388608
+cgb=1
+determinism=identical (3 runs)
+# rc=0
+```
+
+CGB-measured host performance: `tier_perf.sh "$ZIG" --cgb` measured
+**983.607 fps** (`wall=0.61 s`, `cpu_user=0.61 s`, `cpu_sys=0.00 s`,
+`rss_kb=1896`, `-O2` emitted-C build) over `--headless --cgb --frames 600
+--audio` on `2048.gb`. That is **PASS** against the unchanged 59.0 fps
+threshold. **Wine windowed CGB evidence (non-authoritative):** the same run
+measured **47.620 fps** (`qpc_seconds=12.599755`, `child_rc=0`, `wall=12.88 s`,
+`cpu_user=6.31 s`, `cpu_sys=0.05 s`, `rss_kb=40248`). This is Wine evidence
+only, never Win98 or real-hardware evidence, and never a threshold change.
 

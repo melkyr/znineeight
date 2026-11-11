@@ -17,7 +17,7 @@
 # are Wine evidence only; they are never Win98 hardware evidence.
 #
 # Usage:
-#   sh tier_perf.sh [ZIG]
+#   sh tier_perf.sh [ZIG] [--cgb]
 #
 # Env:
 #   ZIG          compiler (first positional arg, else $ZIG, else seed path)
@@ -25,10 +25,11 @@
 #   Z9GB_ROM_DIR ROM root (default /tmp/z9gb_roms, else testdata/roms)
 #   Z9GB_PERF_MIN_FPS host headless minimum sustained rendered fps (default 59.0)
 #
-# Missing ROM = SKIP (exit 77); ROM size/hash mismatch = FAIL. A skipped hard
-# gate blocks P3 closeout. Estimates are labelled as estimates; measured
-# numbers are reported as measured. The Wine windowed result is evidence only
-# and never changes the host headless gate threshold.
+# --cgb passes --cgb through to the host headless CLI workload. A missing ROM =
+# SKIP (exit 77); ROM size/hash mismatch = FAIL. A skipped hard gate blocks P3
+# closeout. Estimates are labelled as estimates; measured numbers are reported
+# as measured. The Wine windowed result is evidence only and never changes the
+# host headless gate threshold.
 
 set -u
 
@@ -38,13 +39,19 @@ ROOT="$(cd "$Z9DIR/../../.." && pwd)"
 ZIG="${ZIG:-/tmp/z9gb_p2_seed/zig1_5_clean}"
 OUT="${OUT:-/tmp/z9gb_tier_perf}"
 PERF_MIN="${Z9GB_PERF_MIN_FPS:-59.0}"
+CGB=0
 
 for arg in "$@"; do
     case "$arg" in
+        --cgb) CGB=1 ;;
         -*) echo "unknown option: $arg" >&2; exit 2 ;;
         *) ZIG="$arg" ;;
     esac
 done
+CGB_FLAG=""
+if [ "$CGB" -eq 1 ]; then
+    CGB_FLAG="--cgb"
+fi
 
 PASSES=0
 FAILS=0
@@ -144,7 +151,7 @@ fi
 
 timeout 300 /usr/bin/time -f 'wall=%e cpu_user=%U cpu_sys=%S rss_kb=%M' \
     -o "$HOST_DIR/time.txt" "$HOST_DIR/z9gb" \
-    --headless --frames 600 --audio --rom "$ROM" \
+    --headless $CGB_FLAG --frames 600 --audio --rom "$ROM" \
     --fb-out "$HOST_DIR/2048.fb" >"$HOST_DIR/run.log" 2>&1
 host_rc=$?
 wall="$(sed -n 's/.*wall=\([0-9][0-9.]*\).*/\1/p' "$HOST_DIR/time.txt" | tail -1)"
@@ -153,7 +160,7 @@ cpu_sys="$(sed -n 's/.*cpu_sys=\([0-9][0-9.]*\).*/\1/p' "$HOST_DIR/time.txt" | t
 rss_kb="$(sed -n 's/.*rss_kb=\([0-9][0-9.]*\).*/\1/p' "$HOST_DIR/time.txt" | tail -1)"
 host_fps="$(awk -v w="${wall:-0}" \
     'BEGIN { if (w + 0 > 0) printf "%.3f", 600 / w; else print "0" }')"
-echo "       host_headless fps=$host_fps wall=${wall:-none}s cpu_user=${cpu_user:-none}s cpu_sys=${cpu_sys:-none}s rss_kb=${rss_kb:-none}"
+echo "       host_headless cgb=$CGB fps=$host_fps wall=${wall:-none}s cpu_user=${cpu_user:-none}s cpu_sys=${cpu_sys:-none}s rss_kb=${rss_kb:-none}"
 if [ "$host_rc" -ne 0 ]; then
     fail_case "host headless run rc=$host_rc"
     tail -10 "$HOST_DIR/run.log" | sed 's/^/       /'

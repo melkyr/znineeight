@@ -81,6 +81,20 @@ fps, `child_rc=0`). Operator-supplied Wine numbers are non-authoritative. Audio 
 WinMM when DirectSound is unavailable. No Win98 real-hardware run was performed: the Wine result
 is not hardware evidence.
 
+**Phase 4 P4 (CGB support) is complete.** `z9gb` now runs Game Boy Color software with `--cgb`:
+CGB color palettes (`BCPS/BCPD`, `OCPS/OCPD`), tile attributes, two VRAM banks and eight WRAM
+banks, double-speed mode via `KEY1`, general-purpose/HBlank HDMA (`HDMA1..HDMA5`), and CGB APU
+semantics. A CGB-only cartridge is a hard requirement: without `--cgb` it prints
+`z9gb: CgbRequired` and exits 2. The P4 hard gates `cgb-acid2`, `cgb_sound`, and `interrupt_time`
+all pass (`tier_cgb.sh` 18 passed; DMG tiers unchanged: `tier_smoke` 18, `tier_dmg` 49 plus gates
+3, `tier_audio` 10, `tier_win32` 35). The committed `cgb-acid2` golden is derived from the official
+`mattcurrie/cgb-acid2` v1.1 reference PNG (SHA-256
+`9ea9c262…0c4fdf01`), not from this emulator, and is pinned at SHA-256
+`0fba336c…71fcf9fd`. CGB host headless `2048.gb` measured **983.607 fps** (unchanged >= 59.0 fps
+threshold); CGB-mode peak RSS measured **10,288 KiB** for the deterministic 8 MiB ROM workload.
+Wine windowed CGB measured 47.620 fps as evidence only, never Win98 hardware. No Win98
+real-hardware CGB run was performed; real-hardware sign-off remains the operator's.
+
 **Phase 1 (TLS + WireGuard) is complete.** The std library now carries the
 browser-grade TLS 1.2/1.3 client (`std_tls` over `std_crypto`/`std_cipher`/
 `std_ecc`/`std_asn1`/`std_x509`/`std_http`), the WireGuard initiator
@@ -635,13 +649,17 @@ complete programs that exercise the language-wins features and the PAL/networkin
   shallow/partial clone, resumable prefix packs, and a bounded external-memory idx writer).
 - **`z9zstddecomp`** — a single-shot zstd frame decompressor CLI (`std_zstd` frames, skippable
   frames, checksums, and RFC 8878 magic/raw dictionaries; bounded output and window caps).
-- **`z9gb`** — a DMG (original Game Boy) emulator, now at **P3 (playable DMG)**: CPU,
-  MMU/timer/serial, scanline PPU, MBC1/MBC3(+RTC)/MBC5, battery `.sav`/`.rtc` saves, the DMG
-  APU, and a deterministic headless backend, plus a Win32 backend with DirectDraw presentation,
-  DirectInput8 keyboard/gamepad (keyboard fallback), QPC pacing, DirectSound (WinMM `waveOut`
-  fallback), and wired JOYP input. No CGB. Gates: `tests/tier_dmg.sh` (`--all`, `--gates`),
-  `tests/tier_smoke.sh`, `tests/tier_audio.sh --gate`, `tests/tier_win32.sh --smoke`,
-  `tests/tier_perf.sh`, plus `tests/measure_rss.sh`.
+- **`z9gb`** — a DMG (original Game Boy) and CGB (Game Boy Color) emulator, now at **P4
+  (CGB support)**: CPU, MMU/timer/serial, scanline PPU, MBC1/MBC3(+RTC)/MBC5, battery
+  `.sav`/`.rtc` saves, DMG/CGB APU, CGB color palettes/attributes, VRAM/WRAM banking,
+  double-speed, HDMA, and a deterministic headless backend, plus a Win32 backend with
+  DirectDraw presentation, DirectInput8 keyboard/gamepad (keyboard fallback), QPC pacing,
+  DirectSound (WinMM `waveOut` fallback), and wired JOYP input. CGB is opt-in with `--cgb`;
+  a CGB-only cartridge requires it (`CgbRequired`, exit 2). Gates: `tests/tier_dmg.sh`
+  (`--all`, `--gates`), `tests/tier_cgb.sh` (CGB hard gates `cgb-acid2`, `cgb_sound`,
+  `interrupt_time`), `tests/tier_smoke.sh`, `tests/tier_audio.sh --gate`,
+  `tests/tier_win32.sh --smoke`, `tests/tier_perf.sh`, plus `tests/measure_rss.sh`
+  (`--cgb` for CGB measurements).
 - Plus the classic single/multi-module programs (`hello`, `prime`, `fibonacci`, `days_in_month`,
   `heapsort`, `quicksort`, `sort_strings`, `mandelbrot`, `lzw`, `func_ptr_return`, `tco_*`).
 

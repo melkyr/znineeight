@@ -569,15 +569,17 @@ immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transfor
 - **App entries (matrix 29/29):** `examples/z98/z9git` (local/`file://` +
   smart HTTP(S) clone/log/checkout, shallow/partial/resume; gate
   `tests/tier_git.sh`) and `examples/z98/z9zstddecomp` (`std_zstd` frame/dict
-  CLI; gate `tests/tier_zstddecomp.sh`). `examples/z98/z9gb` is the Phase 4 P3
-  playable-DMG emulator (`--headless`, `--windowed`, `--frames`, `--fb-out`,
-  `--rom`, `--serial`, `--turbo`, `--audio`, `--scale`, `--mooneye`, `--save`,
-  `--rtc-fixed`; MBC1/MBC3(+RTC)/MBC5, DMG CPU/PPU/timer/serial/APU, JOYP
-  input, battery saves; DirectDraw presentation, DirectInput8 keyboard/gamepad
-  with keyboard fallback, QPC pacing, DirectSound with WinMM `waveOut` fallback;
-  gates `tests/tier_dmg.sh --all`, `tier_smoke`, `tier_audio --gate`,
-  `tier_win32 --smoke`, `tier_perf`). Example READMEs carry the exact CLI, flags
-  and exit codes.
+  CLI; gate `tests/tier_zstddecomp.sh`). `examples/z98/z9gb` is the Phase 4 P4
+  CGB-capable emulator (`--headless`, `--windowed`, `--cgb`, `--frames`,
+  `--fb-out`, `--rom`, `--serial`, `--turbo`, `--audio`, `--scale`, `--mooneye`,
+  `--save`, `--rtc-fixed`; DMG/CGB CPU/PPU/timer/serial/APU, CGB palettes,
+  VRAM/WRAM banking, double-speed, HDMA, MBC1/MBC3(+RTC)/MBC5, JOYP input,
+  battery saves; DirectDraw presentation, DirectInput8 keyboard/gamepad with
+  keyboard fallback, QPC pacing, DirectSound with WinMM `waveOut` fallback;
+  gates `tests/tier_dmg.sh --all`, `tier_cgb`, `tier_smoke`, `tier_audio --gate`,
+  `tier_win32 --smoke`, `tier_perf`). CGB is opt-in via `--cgb`; a CGB-only
+  cartridge without it prints `z9gb: CgbRequired` and exits 2. Example READMEs
+  carry the exact CLI, flags and exit codes.
 
 ### Compile + run an example with the seed-built compiler
 
@@ -604,53 +606,75 @@ contains its own build scripts and runtime support; prefer
 Use the same `-fsafe -o <out>` + `build_target.sh linux` recipe on
 `examples/z98/mud_server/main.zig`. There is no current zig0 build cycle.
 
-### Build z9gb (P3 playable DMG)
+### Build z9gb (P4 CGB support)
 
 ```bash
 ZIG=${ZIG:-<out_dir>/zig1_5_clean}
-OUT=/tmp/z9gb_p3
+OUT=/tmp/z9gb_p4
 rm -rf "$OUT" && mkdir -p "$OUT"
 "$ZIG" -ffast -o "$OUT" examples/z98/z9gb/main.zig
 sh "$OUT/build_target.sh" linux "$OUT/z9gb"
-"$OUT/z9gb" --headless --frames 1 --fb-out /tmp/z9gb_p3.fb
+"$OUT/z9gb" --headless --frames 1 --fb-out /tmp/z9gb_p4.fb
+"$OUT/z9gb" --headless --cgb --frames 1 --fb-out /tmp/z9gb_p4_cgb.fb
 ```
 
-P3 emulates a DMG CPU, MMU/timer/serial, APU, and scanline PPU with
+P4 emulates a DMG/CGB CPU, MMU/timer/serial, APU, and scanline PPU with
 MBC1/MBC3(+RTC)/MBC5 cartridges, JOYP input, and battery `.sav`/`.rtc` saves.
-It does not emulate CGB. The host headless backend is the default and the
-authoritative performance platform; the Win32 backend adds DirectDraw pixel
-presentation, DirectInput8 keyboard/gamepad with a `GetAsyncKeyState` keyboard
-fallback, QPC pacing, and DirectSound with a WinMM `waveOut` fallback. The
-startup line reports `input=dinput8|fallback` and `audio=dsound|waveout`.
-Windowed display requires the DirectX 6/8 runtimes (`IDirectDraw7` needs DX6+;
-`dinput8.dll` for gamepad needs DX8); without `dinput8.dll` input falls back to
-keyboard-only. The authoritative performance gate is host headless `2048.gb`
-(`--headless --frames 600 --audio`) at >=59.0 fps; Wine windowed `2048.gb` is
-evidence only, never Win98, and sandbox Wine can be painfully slower. The
-framebuffer dump is 92,160 bytes (160×144 little-endian RGB32).
+CGB is opt-in with `--cgb`: color BG/OBJ palettes (`BCPS/BCPD`, `OCPS/OCPD`),
+tile attributes, two VRAM banks, eight WRAM banks, double-speed via `KEY1`, and
+general-purpose/HBlank HDMA. A CGB-only cartridge without `--cgb` prints
+`z9gb: CgbRequired` and exits 2; a CGB-compatible cartridge boots in DMG mode
+without the flag. The host headless backend is the default and the authoritative
+performance platform; the Win32 backend adds DirectDraw pixel presentation,
+DirectInput8 keyboard/gamepad with a `GetAsyncKeyState` keyboard fallback, QPC
+pacing, and DirectSound with a WinMM `waveOut` fallback. The startup line reports
+`input=dinput8|fallback` and `audio=dsound|waveout`. Windowed display requires
+the DirectX 6/8 runtimes (`IDirectDraw7` needs DX6+; `dinput8.dll` for gamepad
+needs DX8); without `dinput8.dll` input falls back to keyboard-only. The
+authoritative performance gate is host headless `2048.gb`
+(`--headless --frames 600 --audio`) at >=59.0 fps; CGB mode measured 983.607 fps
+with `--cgb` and CGB peak RSS measured 10,288 KiB. Wine windowed `2048.gb` is
+evidence only, never Win98, and sandbox Wine can be painfully slower (CGB
+evidence measured 47.620 fps). The framebuffer dump is 92,160 bytes (160×144
+little-endian RGB32).
 
 ```bash
 # Inline tiers (fast + safe) and external hard gates; both must PASS:
 bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --all
 bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --gates
-# P3 playable/native/audio/performance/smoke tiers (PASS/SKIP truthfully):
+# P4 CGB unit/CLI and the three CGB hard gates; all must be present/passing:
+bash examples/z98/z9gb/tests/tier_cgb.sh "$ZIG"
+bash examples/z98/z9gb/tests/run_cgb_acid2.sh "$ZIG"
+bash examples/z98/z9gb/tests/run_cgb_sound.sh "$ZIG"
+bash examples/z98/z9gb/tests/run_cgb_interrupt_time.sh "$ZIG"
+# Playable/native/audio/performance/smoke tiers (PASS/SKIP truthfully):
 bash examples/z98/z9gb/tests/tier_audio.sh --gate "$ZIG"
 bash examples/z98/z9gb/tests/tier_win32.sh --smoke "$ZIG"
 bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG"
+bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG" --cgb
 bash examples/z98/z9gb/tests/tier_smoke.sh "$ZIG"
-# Memory + three-run framebuffer determinism:
-bash examples/z98/z9gb/tests/measure_rss.sh "$ZIG" /tmp/z9gb_p3_rss
+# Memory + three-run framebuffer determinism (CGB pass-through):
+bash examples/z98/z9gb/tests/measure_rss.sh "$ZIG" /tmp/z9gb_p4_rss --cgb
 ```
 
 External ROMs are not committed. Gate runners read `Z9GB_ROM_DIR`, else
 `/tmp/z9gb_roms`, else `examples/z98/z9gb/testdata/roms`; populate the tree from
 the pinned sources in `examples/z98/z9gb/testdata/roms/README.md` and verify
-with `sha256sum -c .../testdata/roms/manifest.sha256`. P3 hard gates are Blargg
-`dmg_sound` (pinned SHA-256) plus `cpu_instrs`/`instr_timing`/`mem_timing`, the
-15-ROM Mooneye timer/MBC1/PPU/OAM subset, and `dmg-acid2` (golden SHA-256
-`c831675c9cff3289d505364286cfb5322a6807fa074386851744f28cdeb84083`). The host
-headless `2048.gb` performance gate requires >=59.0 fps. A missing ROM is SKIP,
-never PASS. Blargg `interrupt_time` is CGB-only and is not a P3 gate.
+with `sha256sum -c .../testdata/roms/manifest.sha256`. DMG hard gates remain
+Blargg `dmg_sound` (pinned SHA-256) plus `cpu_instrs`/`instr_timing`/`mem_timing`,
+the 15-ROM Mooneye timer/MBC1/PPU/OAM subset, and `dmg-acid2` (golden SHA-256
+`c831675c9cff3289d505364286cfb5322a6807fa074386851744f28cdeb84083`). P4 hard gates
+are `cgb-acid2`, `cgb_sound`, and `interrupt_time`; a SKIP is truthful but cannot
+be claimed as PASS, and any skipped CGB hard gate blocks closeout. The committed
+`cgb-acid2` golden is derived from the official `mattcurrie/cgb-acid2` v1.1
+reference PNG (SHA-256
+`9ea9c262c5383353e77d715d021a0f7c5ccbe438f88082cb225756e50c4fdf01`), not from
+this emulator, and is pinned at SHA-256
+`0fba336ce7d7cb4ef76049a4548ff0e7a5147be79fb34bfd266ce7bb71fcf9fd`. The host
+headless `2048.gb` performance gate requires >=59.0 fps and the threshold was not
+lowered. Real-hardware caveat: Wine cross-build runs are functional evidence
+only, never Win98 hardware; no Win98 real-hardware CGB run was performed and
+sign-off remains the operator's.
 
 
 ## Run tests
