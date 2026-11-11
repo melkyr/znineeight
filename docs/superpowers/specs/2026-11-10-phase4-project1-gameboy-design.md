@@ -442,7 +442,8 @@ pub fn dsoundClose(d: *Dsound) void;
   the declared size is used when nonzero, otherwise an 8 KiB compatibility
   floor is inferred (`ram_inferred=true`). MBC2's built-in 512x4 RAM is the
   exception and does not use this floor. Types without RAM remain unmapped
-  at `$A000-$BFFF`.
+  at `$A000-$BFFF`, even when a stray declared RAM size is nonzero. Synthetic
+  fixtures must declare a matching type (MBC5+RAM is `0x1A`, not `0x19`).
 - `.sav` path: replace the ROM extension with `.sav` unless
   `emuSetSavePath` overrides it.
 - `.rtc` path: same stem, `.rtc`.

@@ -78,6 +78,7 @@ Record the `KEY1`/`STOP` sequence from the hardware docs used by the test ROMs. 
 - Modify: `examples/z98/z9gb/emu.zig`
 - Modify: `examples/z98/z9gb/main.zig` (add `--cgb`)
 - Create: `examples/z98/z9gb/tests/cgb_test.zig`
+- Modify: `examples/z98/z9gb/tests/tier_dmg.sh` (synthetic MBC5 RAM fixture type `0x19` -> `0x1A`)
 - Test: `examples/z98/z9gb/tests/tier_cgb.sh`
 
 **Interfaces:**
@@ -92,14 +93,16 @@ Record the `KEY1`/`STOP` sequence from the hardware docs used by the test ROMs. 
   - `Bus.cgb_hw`, `Bus.cgb_color`, `Bus.cgb_compat` state.
 
 - [ ] **Step 1: Write the failing test**
-Tests: 16 KiB VRAM bank 0/1 read-back; 32 KiB WRAM bank 0-7 with `C000-CFFF` fixed and `D000-DFFF` switchable; `SVBK=0` maps to 1; CGB flag `0xC0` rejects DMG mode; `0x80` runs in CGB mode; `0x00` + `--cgb` runs CGB hardware in DMG compatibility; cartridge type includes RAM with declared size 0 infers 8 KiB (`interrupt_time` header); type without RAM with size 0 keeps `$A000-$BFFF` unmapped; MBC2 is exempt. Expected: fails on missing banking/mode/RAM policy.
+Tests: 16 KiB VRAM bank 0/1 read-back; 32 KiB WRAM bank 0-7 with `C000-CFFF` fixed and `D000-DFFF` switchable; `SVBK=0` maps to 1; CGB flag `0xC0` rejects DMG mode; `0x80` runs in CGB mode; `0x00` + `--cgb` runs CGB hardware in DMG compatibility; cartridge type includes RAM with declared size 0 infers 8 KiB (`interrupt_time` header); type without RAM keeps `$A000-$BFFF` unmapped even when declared size is nonzero; MBC2 is exempt. Expected: fails on missing banking/mode/RAM policy.
 - [ ] **Step 2: Expand storage**
 VRAM `[16384]u8`, WRAM `[32768]u8`; DMG mode uses only bank 0. `VBK=FF4F` bit 0; `SVBK=FF70` bits 0-2 (0 -> 1). Set `Bus.vram_bank`/`Bus.wram_bank` and rebuild page bases when they change.
 Add `Cart.ram_inferred`; compute effective cart RAM at load:
   - type includes RAM and declared size nonzero → declared size;
   - type includes RAM and declared size zero → 8 KiB inferred;
-  - type excludes RAM → zero (MBC2 exempt when/if supported);
+  - type excludes RAM → zero even when a stray declared size is nonzero (MBC2 exempt when/if supported);
   - record inferred state for diagnostics/tests.
+The synthetic P2 MBC5 RAM fixture in `tests/tier_dmg.sh` currently uses type `0x19` (MBC5, no RAM) with RAM code `0x04`; change that fixture header to `0x1A` (MBC5+RAM) so it matches the type-authoritative rule.
+
 
 - [ ] **Step 3: Wire mode and the CLI flag**
 `EmuConfig.cgb` selects CGB hardware. Semantics pinned by header `0x0143`:
@@ -111,7 +114,7 @@ Set `Bus.cgb_hw`, `Bus.cgb_color`, `Bus.cgb_compat` in `emuLoadRom`/`emuReset`. 
 Run `sh examples/z98/z9gb/tests/tier_cgb.sh "$ZIG" --all` and `sh examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --all`. Expected: PASS; DMG tests unchanged.
 - [ ] **Step 5: Commit**
 ```bash
-git add examples/z98/z9gb/cart.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/main.zig examples/z98/z9gb/tests/cgb_test.zig examples/z98/z9gb/tests/tier_cgb.sh
+git add examples/z98/z9gb/cart.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/main.zig examples/z98/z9gb/tests/cgb_test.zig examples/z98/z9gb/tests/tier_cgb.sh examples/z98/z9gb/tests/tier_dmg.sh
 git commit -m "feat(z9gb): add CGB mode and memory banking"
 ```
 
