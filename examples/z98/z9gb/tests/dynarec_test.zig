@@ -752,6 +752,19 @@ fn testPpuReadBoundaries() void {
     checkBool("ld b,b boundary not terminal", blk.ends_block, false);
 
     reset();
+    mmumod.write8(&g_bus, 0xC000, 0x1A);
+    g_cpu.pc = 0xC000;
+    checkBool("ld a,de boundary start", blockmod.blockBuild(&g_cpu, &g_bus, &blk), false);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x00);
+    mmumod.write8(&g_bus, 0xC001, 0x1A);
+    g_cpu.pc = 0xC000;
+    checkBool("ld a,de boundary build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ld a,de boundary len", @intCast(u32, blk.len), 1);
+    checkBool("ld a,de boundary not terminal", blk.ends_block, false);
+
+    reset();
     mmumod.write8(&g_bus, 0xC000, 0xF0);
     mmumod.write8(&g_bus, 0xC001, 0x44);
     g_cpu.pc = 0xC000;

@@ -177,6 +177,7 @@ fn writeEnds(op: u8, imm: u16) bool {
 
 fn isBoundaryInsn(bus: *Bus, pc: u16, op: u8) bool {
     if (op == 0x40) return true;
+    if (op == 0x1A) return true;
 
     if (op == 0xF0) {
         const a8: u8 = mmumod.read8(bus, pc +% 1);

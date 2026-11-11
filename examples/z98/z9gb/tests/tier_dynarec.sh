@@ -538,7 +538,7 @@ fn testOp(op: u8, cb2: u8, flags: u8) void {
     }
     const bd: u32 = g_dyn.stats.blocks -% b0;
     const fd: u32 = g_dyn.stats.fallback -% f0;
-    if (op == 0x10 or op == 0x40 or op == 0x76) {
+    if (op == 0x10 or op == 0x1A or op == 0x40 or op == 0x76) {
         if (fd == 0) fail1("op no-fallback") else g_pass += 1;
     } else if (bd == 0) {
         fail1("op not-translated");
