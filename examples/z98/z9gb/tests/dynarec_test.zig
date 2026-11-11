@@ -1263,6 +1263,34 @@ fn testEmitJumps() void {
     checkU16("emit jp z not-taken pc", g_cpu.pc, 0xC003);
 
     beginAt(0xC000);
+    g_cpu.f = 0;
+    blk = makeBlock(.jump, 2, 0, 0x1234, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit jp nc taken cycles", cyc, 16);
+    checkU16("emit jp nc taken pc", g_cpu.pc, 0x1234);
+
+    beginAt(0xC000);
+    g_cpu.f = 0x10;
+    blk = makeBlock(.jump, 3, 0, 0x1234, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit jp c taken cycles", cyc, 16);
+    checkU16("emit jp c taken pc", g_cpu.pc, 0x1234);
+
+    beginAt(0xC000);
+    g_cpu.f = 0x10;
+    blk = makeBlock(.jump, 2, 0, 0x1234, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit jp nc not-taken cycles", cyc, 12);
+    checkU16("emit jp nc not-taken pc", g_cpu.pc, 0xC003);
+
+    beginAt(0xC000);
+    g_cpu.f = 0;
+    blk = makeBlock(.jump, 3, 0, 0x1234, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit jp c not-taken cycles", cyc, 12);
+    checkU16("emit jp c not-taken pc", g_cpu.pc, 0xC003);
+
+    beginAt(0xC000);
     g_cpu.h = 0x12;
     g_cpu.l = 0x34;
     blk = makeBlock(.jump, 5, 2, 0, 4);
@@ -1370,6 +1398,28 @@ fn testEmitPushPop() void {
 
     beginAt(0xC000);
     g_cpu.sp = 0xFFF0;
+    g_cpu.h = 0x12;
+    g_cpu.l = 0x34;
+    blk = makeBlock(.ld_mem, 16, 2, 0, 16);
+    cyc = runEmitted(&blk);
+    checkU32("emit push hl cycles", cyc, 16);
+    checkU16("emit push hl sp", g_cpu.sp, 0xFFEE);
+    checkMem8("emit push hl lo", 5, 0xFFEE, 0x34);
+    checkMem8("emit push hl hi", 6, 0xFFEF, 0x12);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xFFF0;
+    mmumod.write8(&g_bus, 0xFFF0, 0x78);
+    mmumod.write8(&g_bus, 0xFFF1, 0x56);
+    blk = makeBlock(.ld_mem, 17, 2, 0, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit pop hl cycles", cyc, 12);
+    checkU16("emit pop hl sp", g_cpu.sp, 0xFFF2);
+    checkU32("emit pop hl h", @intCast(u32, g_cpu.h), 0x56);
+    checkU32("emit pop hl l", @intCast(u32, g_cpu.l), 0x78);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xFFF0;
     g_cpu.a = 0x12;
     g_cpu.f = 0xAB;
     blk = makeBlock(.ld_mem, 16, 3, 0, 16);
@@ -1456,6 +1506,32 @@ fn testHelpers() void {
     checkU32("helper oam read blocked", @intCast(u32, helpersmod.helperRead8(&ctx, 0xFE00)), 0xFF);
     g_bus.ppu_oam_blocked = false;
 
+    reset();
+    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
+    g_bus.stub[0] = 0x77;
+    g_bus.pages[0xA0] = Page{ .kind = .cart_ram, .base = @ptrCast([*]u8, &g_bus.stub[0]) };
+    helpersmod.helperWrite8(&ctx, 0xA000, 0x5A);
+    checkU32("helper cart stub write", @intCast(u32, helpersmod.helperRead8(&ctx, 0xA000)), 0x77);
+
+    reset();
+    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
+    g_bus.pages[0xA1] = Page{ .kind = .rtc, .base = @ptrCast([*]u8, &g_cart.ram[0]) };
+    g_cart.ram_enable = false;
+    checkU32("helper rtc disabled read", @intCast(u32, helpersmod.helperRead8(&ctx, 0xA100)), 0xFF);
+    helpersmod.helperWrite8(&ctx, 0xA100, 0x12);
+    checkU32("helper rtc disabled write", @intCast(u32, helpersmod.helperRead8(&ctx, 0xA100)), 0xFF);
+
+    reset();
+    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
+    mmumod.write8(&g_bus, 0xC000, 0x42);
+    g_bus.dma.active = true;
+    checkU32("helper dma read blocked", @intCast(u32, helpersmod.helperRead8(&ctx, 0xC000)), 0xFF);
+    helpersmod.helperWrite8(&ctx, 0xC000, 0x99);
+    g_bus.dma.active = false;
+    checkU32("helper dma write blocked", @intCast(u32, mmumod.read8(&g_bus, 0xC000)), 0x42);
+
+    reset();
+    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
     helpersmod.helperIoWrite(&ctx, 0xFF40, 0x91);
     checkU32("helper io write/read", @intCast(u32, helpersmod.helperIoRead(&ctx, 0xFF40)), 0x91);
 
@@ -1493,6 +1569,40 @@ fn testHelpers() void {
     checkU32("no irq cycles", cyc, 24);
     checkU16("no irq pc", g_cpu.pc, 0xC005);
     checkU32("no irq b", @intCast(u32, g_cpu.b), 0x55);
+
+    reset();
+    g_cpu.a = 0x81;
+    g_cpu.b = 0;
+    g_cpu.ime = true;
+    g_bus.ie = 0;
+    g_bus.io[0x0F] = 0x01;
+    blk.insns[0] = BlockInsn{ .op = .ld_mem, .a = 13, .b = 0, .imm = 0xFF02 };
+    blk.insns[1] = BlockInsn{ .op = .ld_rn, .a = 0, .b = 0, .imm = 0x55 };
+    blk.len = 2;
+    blk.start_pc = 0xC000;
+    blk.cycles = 24;
+    blk.ends_block = true;
+    cyc = runEmitted(&blk);
+    checkU32("irq ie0 cycles", cyc, 24);
+    checkU16("irq ie0 pc", g_cpu.pc, 0xC005);
+    checkU32("irq ie0 b", @intCast(u32, g_cpu.b), 0x55);
+
+    reset();
+    g_cpu.a = 0x81;
+    g_cpu.b = 0;
+    g_cpu.ime = true;
+    g_bus.ie = 0x02;
+    g_bus.io[0x0F] = 0x01;
+    blk.insns[0] = BlockInsn{ .op = .ld_mem, .a = 13, .b = 0, .imm = 0xFF02 };
+    blk.insns[1] = BlockInsn{ .op = .ld_rn, .a = 0, .b = 0, .imm = 0x55 };
+    blk.len = 2;
+    blk.start_pc = 0xC000;
+    blk.cycles = 24;
+    blk.ends_block = true;
+    cyc = runEmitted(&blk);
+    checkU32("irq nonoverlap cycles", cyc, 24);
+    checkU16("irq nonoverlap pc", g_cpu.pc, 0xC005);
+    checkU32("irq nonoverlap b", @intCast(u32, g_cpu.b), 0x55);
 }
 
 pub fn main() void {

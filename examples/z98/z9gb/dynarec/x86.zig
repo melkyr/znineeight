@@ -264,11 +264,11 @@ fn emitInterruptCheck(e: *Emit) void {
     emitCmpRegImm8(e, 2, 0);
     emitJcc(e, 4, &l_no);
     emitMovEcxBus(e);
-    emitMovzxR32Mem32(e, 2, 1, IO_OFF + 0x0F);
-    emitMovzxR32Mem32(e, 0, 1, IE_OFF);
-    emitAluRegReg(e, 0x21, 0, 2);
-    emitAndRegImm32(e, 2, 0x1F);
-    emitCmpRegImm8(e, 2, 0);
+    emitMovzxR32Mem32(e, 0, 1, IO_OFF + 0x0F);
+    emitMovzxR32Mem32(e, 2, 1, IE_OFF);
+    emitAluRegReg(e, 0x21, 2, 0);
+    emitAndRegImm32(e, 0, 0x1F);
+    emitCmpRegImm8(e, 0, 0);
     emitJcc(e, 4, &l_no);
     emitJmp(e, &g_epilogue);
     labelPatch(e, &l_no);
