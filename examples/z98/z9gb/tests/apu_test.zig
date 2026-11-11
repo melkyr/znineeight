@@ -347,27 +347,30 @@ fn testBootDefaults() void {
 
 fn testOffStateRaw() void {
     apumod.apuReset(&g_apu, 44100);
-    wr(0xFF11, 0x05);
+    wr(0xFF11, 0xC5);
     wr(0xFF16, 0x45);
-    wr(0xFF1B, 0x5A);
-    wr(0xFF20, 0x33);
     wr(0xFF26, 0x00);
-    checkByte("off NR11 keeps raw", rd(0xFF11), 0x3F);
-    checkByte("off NR21 keeps raw", rd(0xFF16), 0x7F);
-    checkByte("off NR31 mask", rd(0xFF1B), 0xFF);
-    checkByte("off NR41 mask", rd(0xFF20), 0xFF);
+    checkByte("off NR11 keeps raw bits", rd(0xFF11), 0xFF);
+    checkByte("off NR21 keeps raw bits", rd(0xFF16), 0x7F);
+    checkByte("off NR31 reads mask", rd(0xFF1B), 0xFF);
+    checkByte("off NR41 reads mask", rd(0xFF20), 0xFF);
 }
 
 fn testNonSilentRing() void {
     apumod.apuReset(&g_apu, 44100);
     _ = drainAll();
+    // Disable boot channel 1 first so only channel 2 can make the ring nonzero.
+    wr(0xFF12, 0x00);
+    wr(0xFF14, 0x00);
+    checkBool("non-silent boot ch1 disabled", g_apu.ch1.enabled, false);
     wr(0xFF24, 0x77);
-    wr(0xFF25, 0x11);
-    wr(0xFF11, 0x80);
-    wr(0xFF12, 0xF0);
-    wr(0xFF13, 0x00);
-    wr(0xFF14, 0x87);
-    checkBool("non-silent ch1 enabled", g_apu.ch1.enabled, true);
+    wr(0xFF25, 0x22);
+    wr(0xFF16, 0x80);
+    wr(0xFF17, 0xF0);
+    wr(0xFF18, 0x00);
+    wr(0xFF19, 0x87);
+    checkBool("non-silent ch2 enabled", g_apu.ch2.enabled, true);
+    checkBool("non-silent ch1 still disabled", g_apu.ch1.enabled, false);
     apumod.apuTick(&g_apu, 8192);
     const got: usize = apumod.apuSamples(&g_apu, g_out[0..]);
     checkBool("non-silent ring produced", got > 0, true);
@@ -376,7 +379,9 @@ fn testNonSilentRing() void {
     while (i < got) : (i += 1) {
         if (g_out[i] != 0) nonzero = true;
     }
-    checkBool("non-silent sample nonzero", nonzero, true);
+    checkBool("non-silent ch2 sample nonzero", nonzero, true);
+    checkBool("non-silent source ch2 after drain", g_apu.ch2.enabled, true);
+    checkBool("non-silent source ch1 off after drain", g_apu.ch1.enabled, false);
 }
 
 pub fn main(argc: i32, argv: [*][*]u8) void {

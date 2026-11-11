@@ -6,10 +6,11 @@
 // Play(0,0,DSBPLAY_LOOPING). The first DMA lead is 256 frames of silence so
 // playback never starts at the write cursor. dsoundWrite polls
 // GetCurrentPosition and locks only the free region (DirectSound returns at
-// most two wrapped spans), copies, unlocks, and never sleeps. On a detected
+// most two wrapped spans), copies, unlocks, and never sleeps. On a short
 // underrun it silence-fills only the actual missed span from the write cursor
 // (clamped to one ring) and advances the write cursor past it without
-// rewinding.
+// rewinding. A QPC-detected long stall (at least one full ring) zeroes the
+// whole ring and restarts at the play cursor.
 //
 // waveOut fallback: waveOutOpen(WAVE_MAPPER) with two 2,048-frame device
 // buffers, waveOutPrepareHeader/waveOutWrite and WHDR_DONE polling. A queued
@@ -174,6 +175,9 @@ pub extern "stdcall" fn LoadLibraryA(name: [*]const u8) *void;
 pub extern "stdcall" fn GetProcAddress(mod: *void, name: [*]const u8) *void;
 pub extern "stdcall" fn FreeLibrary(mod: *void) i32;
 
+pub extern "stdcall" fn QueryPerformanceCounter(counter: *i64) i32;
+pub extern "stdcall" fn QueryPerformanceFrequency(freq: *i64) i32;
+
 pub extern "stdcall" fn waveOutOpen(phwo: *void, uDeviceID: u32, pwfx: *void, dwCallback: u32, dwInstance: u32, fdwOpen: u32) u32;
 pub extern "stdcall" fn waveOutPrepareHeader(hwo: *void, pwh: *void, cbwh: u32) u32;
 pub extern "stdcall" fn waveOutWrite(hwo: *void, pwh: *void, cbwh: u32) u32;
@@ -196,6 +200,8 @@ pub const State = struct {
     write_cursor: u32,
     last_play: u32,
     queued_frames: u32,
+    qpc_freq: i64,
+    last_qpc: i64,
     hwo: *void,
     wave_bufs: [NBUF * BUF_CAP]u8,
     wave_hdrs: [NBUF]WaveHdr,
@@ -357,6 +363,14 @@ fn tryDs(st: *State, hwnd: *void) u8 {
     }
     st.write_cursor = (st.last_play + LEAD_FRAMES) & FRAME_MASK;
     st.queued_frames = LEAD_FRAMES;
+    st.qpc_freq = 0;
+    st.last_qpc = 0;
+    var freq: i64 = 0;
+    if (QueryPerformanceFrequency(&freq) != 0 and freq > 0) {
+        st.qpc_freq = freq;
+        var counter: i64 = 0;
+        if (QueryPerformanceCounter(&counter) != 0) st.last_qpc = counter;
+    }
     st.backend = 1;
     return 0;
 }
@@ -498,6 +512,8 @@ pub fn open(window: *void, sample_rate: u32, channels: u16, st: *State) u8 {
     st.write_cursor = 0;
     st.last_play = 0;
     st.queued_frames = 0;
+    st.qpc_freq = 0;
+    st.last_qpc = 0;
     st.hwo = nullVoid();
     st.fill_idx = 0;
     st.fill_len = 0;
@@ -539,23 +555,48 @@ fn writeDs(st: *State, samples: []const i16) usize {
         return 0;
     }
     const play_frames: u32 = play / st.block_align;
+    // Positions alone only give one modulo lap. Use QPC to detect a stall
+    // longer than the whole buffer: then the queue is definitely drained, even
+    // if the play cursor came back to a similar position after several laps.
+    var long_stall: bool = false;
+    if (st.qpc_freq > 0) {
+        var now: i64 = 0;
+        if (QueryPerformanceCounter(&now) != 0) {
+            var dt: i64 = 0;
+            if (now >= st.last_qpc) dt = now - st.last_qpc;
+            if (dt > 0) {
+                const lhs: i64 = dt * @intCast(i64, st.rate);
+                const rhs: i64 = @intCast(i64, FRAMES) * st.qpc_freq;
+                if (lhs >= rhs) long_stall = true;
+            }
+            st.last_qpc = now;
+        }
+    }
     var delta: u32 = 0;
     if (play_frames >= st.last_play) {
         delta = play_frames - st.last_play;
     } else {
         delta = (FRAMES - st.last_play) + play_frames;
     }
-    if (delta > st.queued_frames) {
-        // The play cursor passed the queued write cursor: silence-fill only the
-        // actual missed span from the write cursor (clamped to one ring), then
-        // advance past it instead of blocking or rewinding the whole ring.
-        var missed: u32 = delta - st.queued_frames;
-        if (missed > FRAMES) missed = FRAMES;
-        if (missed != 0) {
-            _ = zeroDsRange(st, st.write_cursor * st.block_align, missed * st.block_align);
+    if (long_stall or delta > st.queued_frames) {
+        if (long_stall) {
+            // The missed span is at least one full ring, so zero the whole ring
+            // and restart at the play cursor.
+            _ = zeroDsRange(st, 0, st.buf_bytes);
+            st.queued_frames = 0;
+            st.write_cursor = play_frames & FRAME_MASK;
+        } else {
+            // The play cursor passed the queued write cursor: silence-fill only
+            // the actual missed span from the write cursor (clamped to one
+            // ring), then advance past it instead of blocking or rewinding.
+            var missed: u32 = delta - st.queued_frames;
+            if (missed > FRAMES) missed = FRAMES;
+            if (missed != 0) {
+                _ = zeroDsRange(st, st.write_cursor * st.block_align, missed * st.block_align);
+            }
+            st.queued_frames = 0;
+            st.write_cursor = (st.write_cursor + missed) & FRAME_MASK;
         }
-        st.queued_frames = 0;
-        st.write_cursor = (st.write_cursor + missed) & FRAME_MASK;
     } else {
         st.queued_frames -= delta;
     }

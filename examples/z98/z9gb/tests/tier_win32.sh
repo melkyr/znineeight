@@ -316,6 +316,7 @@ if [ -x /usr/bin/time ]; then
     ATTEMPT=1
     while [ "$ATTEMPT" -le 3 ]; do
         if timeout 120 xvfb-run -a -s "-screen 0 1024x768x24" \
+            env WINEDLLOVERRIDES="dsound=d" \
             wine "$Z9GB_EXE" --windowed --no-audio --scale 1 --frames 1 --rom "$ROM" \
             >"$NOAUDIO_LOG" 2>&1; then
             NOAUDIO_OK=1
@@ -325,7 +326,7 @@ if [ -x /usr/bin/time ]; then
         wineserver -k >/dev/null 2>&1 || true
     done
     if [ "$NOAUDIO_OK" = "1" ]; then
-        pass_case "z9gb --windowed --no-audio open smoke (attempt $ATTEMPT)"
+        pass_case "z9gb --windowed --no-audio open smoke with dsound disabled (attempt $ATTEMPT)"
     else
         fail_case "z9gb --windowed --no-audio open failed after $ATTEMPT attempts (see $NOAUDIO_LOG)"
     fi
