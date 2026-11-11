@@ -1048,6 +1048,27 @@ fn testHdmaHBlank() void {
     checkBool("hdma final inactive", g_bus.hdma.active, false);
 }
 
+fn testHdmaHBlankStall() void {
+    resetCgb();
+    hdmaFillWram(16);
+    hdmaSetRegs(0xC000, 0x8000);
+    mmumod.write8(&g_bus, 0xFF55, 0x80);
+    ppuToMode0();
+    checkU32("hdma hblank stall before", g_bus.hdma.cpu_halt_cycles, 0);
+    mmumod.hdmaTick(&g_bus, 32);
+    checkU32("hdma hblank stall normal", g_bus.hdma.cpu_halt_cycles, 32);
+
+    resetCgb();
+    g_bus.double_speed = true;
+    hdmaFillWram(16);
+    hdmaSetRegs(0xC000, 0x8000);
+    mmumod.write8(&g_bus, 0xFF55, 0x80);
+    ppuToMode0();
+    checkU32("hdma hblank stall fast before", g_bus.hdma.cpu_halt_cycles, 0);
+    mmumod.hdmaTick(&g_bus, 32);
+    checkU32("hdma hblank stall double speed", g_bus.hdma.cpu_halt_cycles, 64);
+}
+
 fn testHdmaAbort() void {
     resetCgb();
     hdmaFillWram(64);
@@ -1291,6 +1312,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testHdmaMasks();
     testHdmaVramBank();
     testHdmaHBlank();
+    testHdmaHBlankStall();
     testHdmaAbort();
     testHdmaStartInMode0();
     testHdmaHaltPause();

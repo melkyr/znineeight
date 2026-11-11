@@ -360,6 +360,8 @@ pub fn hdmaTick(bus: *Bus, dots: u32) void {
     if (bus.hdma.dots >= HDMA_BLOCK_DOTS) {
         bus.hdma.dots -= HDMA_BLOCK_DOTS;
         hdmaCopyBlock(bus);
+        const per_block: u32 = if (bus.double_speed) 64 else 32;
+        bus.hdma.cpu_halt_cycles +%= per_block;
         bus.hdma.block_busy = false;
         if (bus.hdma.blocks == 0) {
             bus.hdma.active = false;
