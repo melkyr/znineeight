@@ -23,7 +23,7 @@ while [ "$#" -gt 0 ]; do
         --only)
             shift
             if [ "$#" -eq 0 ]; then
-                echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save] [--all] [--gates]" >&2
+                echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save|input] [--all] [--gates]" >&2
                 exit 2
             fi
             ONLY="$1"
@@ -38,7 +38,7 @@ while [ "$#" -gt 0 ]; do
             RUN_GATES=1
             ;;
         *)
-            echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save] [--all] [--gates]" >&2
+            echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save|input] [--all] [--gates]" >&2
             exit 2
             ;;
     esac
@@ -53,12 +53,14 @@ RUN_CPU=0
 RUN_TIMER=0
 RUN_PPU=0
 RUN_SAVE=0
+RUN_INPUT=0
 if [ -z "$ONLY" ]; then
     RUN_CART=1
     RUN_CPU=1
     RUN_TIMER=1
     RUN_PPU=1
     RUN_SAVE=1
+    RUN_INPUT=1
 elif [ "$ONLY" = "cart" ]; then
     RUN_CART=1
 elif [ "$ONLY" = "cpu" ]; then
@@ -69,6 +71,8 @@ elif [ "$ONLY" = "ppu" ]; then
     RUN_PPU=1
 elif [ "$ONLY" = "save" ]; then
     RUN_SAVE=1
+elif [ "$ONLY" = "input" ]; then
+    RUN_INPUT=1
 else
     echo "unknown tier: $ONLY" >&2
     exit 2
@@ -80,6 +84,7 @@ if [ "$RUN_GATES" -eq 1 ]; then
     RUN_TIMER=0
     RUN_PPU=0
     RUN_SAVE=0
+    RUN_INPUT=0
 fi
 
 PASSES=0
@@ -1859,6 +1864,39 @@ run_save_mode() {
     fi
 }
 
+run_input_mode() {
+    mode="$1"
+    flag="$2"
+    bin="$OUT/$mode/input_test"
+    mkdir -p "$OUT/$mode"
+    if timeout 120 "$ZIG" "$flag" -I "$ROOT/sf/src" -o "$OUT/$mode" "$Z9DIR/tests/input_test.zig" >"$OUT/$mode/input_zig.log" 2>&1; then
+        pass_case "input $mode emits"
+    else
+        fail_case "input $mode emits"
+        tail -20 "$OUT/$mode/input_zig.log" | sed 's/^/       /'
+        return
+    fi
+    if sh "$OUT/$mode/build_target.sh" linux "$bin" >"$OUT/$mode/input_build.log" 2>&1; then
+        pass_case "input $mode links"
+    else
+        fail_case "input $mode links"
+        tail -20 "$OUT/$mode/input_build.log" | sed 's/^/       /'
+        return
+    fi
+    if timeout 60 "$bin" >"$OUT/$mode/input_run.out" 2>"$OUT/$mode/input_run.err"; then
+        pass_case "input $mode runs"
+    else
+        fail_case "input $mode runs"
+        tail -20 "$OUT/$mode/input_run.err" | sed 's/^/       /'
+        return
+    fi
+    if grep -q '^input ok ' "$OUT/$mode/input_run.out"; then
+        pass_case "input $mode output ($(cat "$OUT/$mode/input_run.out"))"
+    else
+        fail_case "input $mode output (got $(cat "$OUT/$mode/input_run.out"))"
+    fi
+}
+
 cd "$ROOT" || exit 1
 
 if [ "$RUN_CART" -eq 1 ]; then
@@ -1903,6 +1941,13 @@ if [ "$RUN_SAVE" -eq 1 ]; then
     echo "== MBC3 RTC, MBC5, battery saves, corruption =="
     run_save_mode fast -ffast
     run_save_mode safe -fsafe
+fi
+
+if [ "$RUN_INPUT" -eq 1 ]; then
+    echo
+    echo "== JOYP FF00 input wiring =="
+    run_input_mode fast -ffast
+    run_input_mode safe -fsafe
 fi
 
 if [ "$RUN_GATES" -eq 1 ]; then

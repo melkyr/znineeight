@@ -15,6 +15,7 @@
 @cInclude("<windows.h>");
 @cInclude("<mmsystem.h>");
 
+const std = @import("std");
 const backend = @import("backend.zig");
 const ddraw = @import("std_ddraw");
 const dinput = @import("std_dinput");
@@ -68,6 +69,22 @@ fn win32Open(state: *void, width: u32, height: u32, scale: u32) bool {
     s.dsound = ds;
     s.timer_started = timeBeginPeriod(TIMER_PERIOD_MS) == 0;
     g_opened = true;
+
+    const dkind: u8 = dinput.dinputBackendKind(di);
+    const skind: u8 = dsound.dsoundBackendKind(ds);
+    std.io.write("z9gb: input=");
+    if (dkind == 1) {
+        std.io.write("dinput8");
+    } else {
+        std.io.write("fallback");
+    }
+    std.io.write(" audio=");
+    if (skind == 1) {
+        std.io.write("dsound");
+    } else {
+        std.io.write("waveout");
+    }
+    std.io.write("\n");
     return true;
 }
 

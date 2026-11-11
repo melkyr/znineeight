@@ -298,6 +298,12 @@ if [ -x /usr/bin/time ]; then
         fail_case "z9gb --windowed --frames 120 failed after $ATTEMPT attempts (see $OUT/z9gb_windowed.log)"
     fi
     sed 's/^/       /' "$OUT/z9gb_windowed.log" 2>/dev/null || true
+    INPUT_LINES="$(grep -Ec '^z9gb: input=(dinput8|fallback) audio=(dsound|waveout)' "$OUT/z9gb_windowed.log" 2>/dev/null)"
+    if [ "$INPUT_LINES" = "1" ]; then
+        pass_case "z9gb startup backend line (input/audio)"
+    else
+        fail_case "z9gb startup backend line missing or repeated (count=${INPUT_LINES:-0})"
+    fi
 
     if [ -f "$WIN_FB" ] && [ "$(stat -c %s "$WIN_FB")" = "92160" ]; then
         pass_case "windowed framebuffer is 92160 bytes"

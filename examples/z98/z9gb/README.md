@@ -98,6 +98,21 @@ z9gb [--headless | --windowed] [--scale <1..4>] [--frames <n>]
 - `--rtc-fixed <unix>` freezes the MBC3 RTC clock to a Unix epoch for
   deterministic runs; without it the RTC uses the host wall clock.
 
+### Controls (windowed)
+
+| Key | Game Boy |
+|---|---|
+| Arrow keys | D-pad |
+| `Z` | A |
+| `X` | B |
+| `Enter` | Start |
+| `Backspace` | Select |
+| `Esc` | Quit |
+
+On a successful windowed open, z9gb prints one startup line reporting the
+selected backends, for example `z9gb: input=dinput8 audio=dsound`. A DInput
+keyboard fallback prints `input=fallback`, and WinMM audio prints `audio=waveout`.
+
 Unknown flags and missing operands exit with code 1; a bad ROM, an unopenable
 headless platform, or a failed save exits with code 2.
 

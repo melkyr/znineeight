@@ -209,6 +209,7 @@ pub fn emuFramebuffer(e: *const Emu) []const u32 {
 
 pub fn emuSetButtons(e: *Emu, bits: u8) void {
     e.buttons = bits;
+    e.bus.buttons = bits;
 }
 
 pub fn emuSetMooneye(e: *Emu, enabled: bool) void {

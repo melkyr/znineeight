@@ -36,6 +36,7 @@ pub const Bus = struct {
     timer: timermod.Timer,
     serial: serialmod.Serial,
     apu: apumod.Apu,
+    buttons: u8,
     lyc_dirty: bool,
     ppu_oam_blocked: bool,
     ppu_vram_blocked: bool,
@@ -81,6 +82,7 @@ fn rebuildCartPages(self: *Bus) void {
 pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.cart = cart;
     bus.ie = 0;
+    bus.buttons = 0;
     bus.lyc_dirty = false;
     bus.ppu_oam_blocked = false;
     bus.ppu_vram_blocked = false;
@@ -162,6 +164,23 @@ pub fn busRaiseIrq(bus: *Bus, mask: u8) void {
 }
 
 pub fn ioRead(self: *Bus, addr: u16) u8 {
+    if (addr == 0xFF00) {
+        var low: u8 = 0x0F;
+        const sel: u8 = self.io[0];
+        if ((sel & 0x20) == 0) {
+            if ((self.buttons & 0x01) != 0) low &= 0xFE;
+            if ((self.buttons & 0x02) != 0) low &= 0xFD;
+            if ((self.buttons & 0x04) != 0) low &= 0xFB;
+            if ((self.buttons & 0x08) != 0) low &= 0xF7;
+        }
+        if ((sel & 0x10) == 0) {
+            if ((self.buttons & 0x10) != 0) low &= 0xFE;
+            if ((self.buttons & 0x20) != 0) low &= 0xFD;
+            if ((self.buttons & 0x40) != 0) low &= 0xFB;
+            if ((self.buttons & 0x80) != 0) low &= 0xF7;
+        }
+        return 0xC0 | (sel & 0x30) | low;
+    }
     if (addr == 0xFF01) return self.serial.sb;
     if (addr == 0xFF02) return self.serial.sc;
     if (addr >= 0xFF04 and addr <= 0xFF07) return timermod.timerRead(&self.timer, addr);
@@ -170,6 +189,10 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
 }
 
 pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
+    if (addr == 0xFF00) {
+        self.io[0] = (self.io[0] & 0xCF) | (value & 0x30);
+        return;
+    }
     if (addr == 0xFF01 or addr == 0xFF02) {
         serialmod.serialWrite(&self.serial, addr, value, self);
         return;
