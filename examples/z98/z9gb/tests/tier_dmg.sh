@@ -1352,7 +1352,7 @@ fn testMbc3() void {
 }
 
 fn testMbc5() void {
-    makeRom(g_rom8[0..], 0x19, 0x08, 0x04);
+    makeRom(g_rom8[0..], 0x1A, 0x08, 0x04);
     markBanks(g_rom8[0..], 512);
     cartmod.cartInit(&g_cart);
     cartmod.cartLoad(&g_cart, g_rom8[0..]) catch {

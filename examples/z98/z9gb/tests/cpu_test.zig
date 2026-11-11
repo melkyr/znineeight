@@ -1262,7 +1262,7 @@ fn testMmuRouting() void {
 }
 
 fn testCartRam() void {
-    loadSyntheticRom(0x01, 0x02);
+    loadSyntheticRom(0x02, 0x02);
     checkByte("cart ram disabled read", mmumod.read8(&g_bus, 0xA000), 0xFF);
     mmumod.write8(&g_bus, 0xA000, 0x12);
     checkByte("cart ram disabled write", mmumod.read8(&g_bus, 0xA000), 0xFF);

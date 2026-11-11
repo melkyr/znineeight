@@ -287,6 +287,38 @@ fn testRamInference() void {
     checkBool("ram declared size", cartmod.cartRamSize(&g_cart) == 8192, true);
     checkBool("ram declared inferred", g_cart.ram_inferred, false);
 
+    makeRom(0x19, 0x00, 0x04);
+    cartmod.cartInit(&g_cart);
+    cartmod.cartLoad(&g_cart, g_rom[0..]) catch {
+        checkBool("strict mbc5 no ram load", false, true);
+    };
+    checkBool("strict mbc5 no ram size", cartmod.cartRamSize(&g_cart) == 0, true);
+    checkBool("strict mbc5 no ram inferred", g_cart.ram_inferred, false);
+    mmumod.busInit(&g_bus, &g_cart);
+    mmumod.write8(&g_bus, 0x0000, 0x0A);
+    mmumod.write8(&g_bus, 0xA000, 0x77);
+    mmumod.write8(&g_bus, 0xBFFF, 0x88);
+    checkByte("strict mbc5 a000 unmapped", mmumod.read8(&g_bus, 0xA000), 0xFF);
+    checkByte("strict mbc5 bfff unmapped", mmumod.read8(&g_bus, 0xBFFF), 0xFF);
+
+    makeRom(0x1A, 0x00, 0x04);
+    cartmod.cartInit(&g_cart);
+    cartmod.cartLoad(&g_cart, g_rom[0..]) catch {
+        checkBool("mbc5 ram load", false, true);
+    };
+    checkBool("mbc5 ram size", cartmod.cartRamSize(&g_cart) == 131072, true);
+    checkBool("mbc5 ram inferred", g_cart.ram_inferred, false);
+    mmumod.busInit(&g_bus, &g_cart);
+    mmumod.write8(&g_bus, 0x0000, 0x0A);
+    mmumod.write8(&g_bus, 0x4000, 2);
+    mmumod.write8(&g_bus, 0xA000, 0x2A);
+    mmumod.write8(&g_bus, 0x4000, 5);
+    mmumod.write8(&g_bus, 0xA000, 0x5A);
+    mmumod.write8(&g_bus, 0x4000, 2);
+    checkByte("mbc5 ram bank2", mmumod.read8(&g_bus, 0xA000), 0x2A);
+    mmumod.write8(&g_bus, 0x4000, 5);
+    checkByte("mbc5 ram bank5", mmumod.read8(&g_bus, 0xA000), 0x5A);
+
     makeRom(0x05, 0x00, 0x00);
     cartmod.cartInit(&g_cart);
     var mbc2_unsupported: bool = false;

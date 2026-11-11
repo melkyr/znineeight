@@ -215,7 +215,7 @@ pub fn cartLoad(c: *Cart, bytes: []const u8) CartError!void {
     const mbc = mbcFromType(bytes[0x0147]);
     const type_has_ram = typeIncludesRam(bytes[0x0147]);
     const ram_inferred = type_has_ram and declared_ram == 0;
-    const ram_size = if (declared_ram != 0) declared_ram else (if (type_has_ram) 8192 else 0);
+    const ram_size = if (type_has_ram) (if (declared_ram == 0) 8192 else declared_ram) else 0;
 
     c.rom = bytes;
     c.cgb = bytes[0x0143];
