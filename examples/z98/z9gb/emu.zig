@@ -190,7 +190,8 @@ pub fn emuRunFrame(e: *Emu) u32 {
     }
     if (e.mooneye_stopped) return 0;
     var total: u32 = 0;
-    while (total < FRAME_CYCLES) {
+    var dots: u32 = 0;
+    while (dots < FRAME_CYCLES) {
         // Mooneye magic breakpoint: stop before executing `LD B,B` (0x40).
         // The test has already loaded the full Fibonacci signature into
         // B/C/D/E/H/L; a present 0x40 on the instruction stream is the signal.
@@ -206,8 +207,10 @@ pub fn emuRunFrame(e: *Emu) u32 {
         }
         const cycles: u32 = cpumod.cpuStep(&e.cpu, &e.bus);
         total += cycles;
+        const dot_delta: u32 = if (e.bus.double_speed) cycles / 2 else cycles;
+        dots += dot_delta;
         ppuSyncIn(e);
-        ppumod.ppuTick(&e.ppu, cycles, &e.bus);
+        ppumod.ppuTick(&e.ppu, dot_delta, &e.bus);
         ppuSyncOut(e);
     }
     return total;

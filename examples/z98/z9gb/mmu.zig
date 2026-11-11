@@ -31,6 +31,7 @@ pub const Bus = struct {
     cgb_hw: bool,
     cgb_color: bool,
     cgb_compat: bool,
+    double_speed: bool,
     bcps: u8,
     bcpd: [64]u8,
     ocps: u8,
@@ -171,6 +172,18 @@ fn cgbIncrement(index: *u8) void {
     index.* = (index.* & 0x80) | @intCast(u8, low & 0x3F);
 }
 
+pub fn cgbSpeedSwitch(b: *Bus) bool {
+    if (!b.cgb_hw) return false;
+    if ((b.io[0x4D] & 0x01) == 0) return false;
+    b.double_speed = !b.double_speed;
+    b.io[0x4D] = 0;
+    return true;
+}
+
+pub fn cgbIsDoubleSpeed(b: *const Bus) bool {
+    return b.double_speed;
+}
+
 pub fn cgbPaletteReset(b: *Bus) void {
     b.bcps = 0;
     b.ocps = 0;
@@ -235,6 +248,7 @@ pub fn busInit(bus: *Bus, cart: *cartmod.Cart) void {
     bus.cgb_hw = false;
     bus.cgb_color = false;
     bus.cgb_compat = false;
+    bus.double_speed = false;
     bus.bcps = 0;
     bus.ocps = 0;
     bus.opri = 0;
@@ -350,6 +364,13 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
         if (self.cgb_compat) return 0x01;
         return self.opri & 0x01;
     }
+    if (addr == 0xFF4D) {
+        if (!self.cgb_hw) return 0xFF;
+        var v: u8 = 0;
+        if (self.double_speed) v |= 0x80;
+        if ((self.io[0x4D] & 0x01) != 0) v |= 0x01;
+        return v;
+    }
     return self.io[@intCast(usize, addr & 0x7F)];
 }
 
@@ -386,6 +407,10 @@ pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
     }
     if (addr == 0xFF6C) {
         if (self.cgb_color) self.opri = value & 0x01;
+        return;
+    }
+    if (addr == 0xFF4D) {
+        if (self.cgb_hw) self.io[0x4D] = value & 0x01;
         return;
     }
     if (addr == 0xFF46) {
@@ -486,9 +511,10 @@ pub fn write8(self: *Bus, addr: u16, value: u8) void {
 }
 
 pub fn busTick(self: *Bus, cycles: u32) void {
+    const real_cycles: u32 = if (self.double_speed) cycles / 2 else cycles;
     timermod.timerTick(&self.timer, cycles, self);
     serialmod.serialTick(&self.serial, cycles, self);
-    apumod.apuTick(&self.apu, cycles);
+    apumod.apuTick(&self.apu, real_cycles);
     if (!self.dma.active) return;
     self.dma.dots +%= cycles;
     while (self.dma.active and self.dma.dots >= 4) {

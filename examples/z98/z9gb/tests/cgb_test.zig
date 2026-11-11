@@ -10,6 +10,7 @@ const cartmod = @import("../cart.zig");
 const mmumod = @import("../mmu.zig");
 const emumod = @import("../emu.zig");
 const ppumod = @import("../ppu.zig");
+const cpumod = @import("../cpu.zig");
 
 const ROM_BYTES: usize = 32768;
 const PATH_MAX: usize = 256;
@@ -665,6 +666,104 @@ fn testCgbFramebuffer() void {
     checkU32("cgb framebuffer storage", fb[0], 0x00123456);
 }
 
+fn testSpeedSwitchRegisters() void {
+    resetCgb();
+    checkByte("key1 initial", mmumod.read8(&g_bus, 0xFF4D), 0x00);
+    checkBool("speed initial normal", mmumod.cgbIsDoubleSpeed(&g_bus), false);
+    mmumod.write8(&g_bus, 0xFF4D, 0x01);
+    checkByte("key1 armed", mmumod.read8(&g_bus, 0xFF4D), 0x01);
+    mmumod.write8(&g_bus, 0xFF4D, 0x81);
+    checkByte("key1 bit7 write ignored", mmumod.read8(&g_bus, 0xFF4D), 0x01);
+    checkBool("speed switch returns true", mmumod.cgbSpeedSwitch(&g_bus), true);
+    checkBool("double speed set", mmumod.cgbIsDoubleSpeed(&g_bus), true);
+    checkByte("key1 double", mmumod.read8(&g_bus, 0xFF4D), 0x80);
+    checkByte("key1 arm cleared", mmumod.read8(&g_bus, 0xFF4D) & 0x01, 0x00);
+    checkBool("unarmed switch false", mmumod.cgbSpeedSwitch(&g_bus), false);
+    checkBool("still double", mmumod.cgbIsDoubleSpeed(&g_bus), true);
+    mmumod.write8(&g_bus, 0xFF4D, 0x01);
+    checkBool("switch back returns true", mmumod.cgbSpeedSwitch(&g_bus), true);
+    checkByte("key1 normal", mmumod.read8(&g_bus, 0xFF4D), 0x00);
+
+    resetBus();
+    checkByte("dmg key1 reads ff", mmumod.read8(&g_bus, 0xFF4D), 0xFF);
+    mmumod.write8(&g_bus, 0xFF4D, 0x01);
+    checkByte("dmg key1 write ignored", mmumod.read8(&g_bus, 0xFF4D), 0xFF);
+    checkBool("dmg speed switch false", mmumod.cgbSpeedSwitch(&g_bus), false);
+    checkBool("dmg stays normal", mmumod.cgbIsDoubleSpeed(&g_bus), false);
+}
+
+const STOP_CODE: u16 = 0xC000;
+
+fn initStopCpu(cpu: *cpumod.Cpu) void {
+    cpumod.cpuInit(cpu);
+    cpu.pc = STOP_CODE;
+    cpu.sp = 0xFFFE;
+    mmumod.write8(&g_bus, STOP_CODE, 0x10);
+    mmumod.write8(&g_bus, STOP_CODE + 1, 0x00);
+    mmumod.write8(&g_bus, STOP_CODE + 2, 0x00);
+}
+
+fn testStopSpeedSwitch() void {
+    var cpu: cpumod.Cpu = undefined;
+
+    resetCgb();
+    initStopCpu(&cpu);
+    mmumod.write8(&g_bus, 0xFF4D, 0x01);
+    const cyc: u32 = cpumod.cpuStep(&cpu, &g_bus);
+    checkU32("stop switch cycles", cyc, 8200);
+    checkWord("stop switch pc", cpu.pc, STOP_CODE + 2);
+    checkBool("stop switch speed", mmumod.cgbIsDoubleSpeed(&g_bus), true);
+    checkByte("stop switch key1", mmumod.read8(&g_bus, 0xFF4D), 0x80);
+    checkWord("stop switch div frozen", g_bus.timer.divider, 4);
+    checkBool("stop switch not idle", cpu.halted, false);
+    checkU32("stop switch cpu cycles", @intCast(u32, cpu.cycles), 8200);
+
+    cpu.pc = STOP_CODE;
+    mmumod.write8(&g_bus, 0xFF4D, 0x01);
+    const cyc2: u32 = cpumod.cpuStep(&cpu, &g_bus);
+    checkU32("stop back cycles", cyc2, 8200);
+    checkBool("stop back speed", mmumod.cgbIsDoubleSpeed(&g_bus), false);
+    checkByte("stop back key1", mmumod.read8(&g_bus, 0xFF4D), 0x00);
+
+    resetCgb();
+    initStopCpu(&cpu);
+    const cyc3: u32 = cpumod.cpuStep(&cpu, &g_bus);
+    checkU32("plain stop cycles", cyc3, 4);
+    checkBool("plain stop speed", mmumod.cgbIsDoubleSpeed(&g_bus), false);
+    checkBool("plain stop idle", cpu.halted, true);
+}
+
+fn runTightLoop(double: bool) u32 {
+    emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = true, .serial_log = false, .turbo = false, .dynarec = false });
+    g_emu.rom_len = 1;
+    g_emu.bus.cgb_hw = true;
+    g_emu.bus.cgb_color = true;
+    g_emu.bus.double_speed = double;
+    g_emu.bus.ie = 0;
+    g_emu.bus.io[0x0F] = 0;
+    mmumod.write8(&g_emu.bus, 0xC000, 0x18);
+    mmumod.write8(&g_emu.bus, 0xC001, 0xFE);
+    g_emu.cpu.pc = 0xC000;
+    g_emu.cpu.sp = 0xFFFE;
+    return emumod.emuRunFrame(&g_emu);
+}
+
+fn testDoubleSpeedTiming() void {
+    const normal: u32 = runTightLoop(false);
+    checkU32("normal frame cpu cycles", normal, 70224);
+    checkWord("normal frame divider", g_emu.bus.timer.divider, 0x1250);
+    checkU32("normal frame apu fs", g_emu.bus.apu.fs_cycles, 4688);
+    checkByte("normal frame ppu line", g_emu.ppu.line, 0);
+    checkU32("normal frame ppu dot", g_emu.ppu.dot, 0);
+
+    const fast: u32 = runTightLoop(true);
+    checkU32("double frame cpu cycles", fast, 140448);
+    checkWord("double frame divider", g_emu.bus.timer.divider, 0x24A0);
+    checkU32("double frame apu fs", g_emu.bus.apu.fs_cycles, 4688);
+    checkByte("double frame ppu line", g_emu.ppu.line, 0);
+    checkU32("double frame ppu dot", g_emu.ppu.dot, 0);
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     if (argc < 2) {
         std.io.write("cgb FAIL no scratch dir\n");
@@ -692,6 +791,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testBgObjPriority();
     testOpriRead();
     testCgbFramebuffer();
+    testSpeedSwitchRegisters();
+    testStopSpeedSwitch();
+    testDoubleSpeedTiming();
 
     if (g_fail == 0) {
         std.io.write("cgb ok ");

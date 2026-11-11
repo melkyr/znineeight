@@ -604,6 +604,16 @@ pub fn cpuStep(cpu: *Cpu, bus: *Bus) u32 {
         0x00 => {},
         0x10 => {
             cpu.pc = cpu.pc +% 1;
+            if (mmumod.cgbSpeedSwitch(bus)) {
+                const stalled: u32 = 8200;
+                const consumed: u64 = cpu.cycles - start_cycles;
+                if (consumed < @as(u64, stalled)) {
+                    cpu.cycles +%= @as(u64, stalled) - consumed;
+                }
+                cycles = stalled;
+            } else {
+                cpu.halted = true;
+            }
         },
         0x04, 0x0C, 0x14, 0x1C, 0x24, 0x2C, 0x34, 0x3C => {
             const idx: u8 = @intCast(u8, (@intCast(u16, op) >> 3) & 0x07);
