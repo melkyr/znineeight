@@ -1695,6 +1695,13 @@ fn testCacheDistinctAndBank() void {
     dynarecmod.dynarecInvalidateRom0(&g_dyn);
     checkBool("cache rom0 range invalidated", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0200) == null, true);
     checkBool("cache rom0 keeps romx", dynarecmod.dynarecLookup(&g_dyn, 1, 0x4100) != null, true);
+
+    g_cpu.pc = 0x0400;
+    _ = runDyn();
+    checkBool("cache romx invalidate victim", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0400) != null, true);
+    dynarecmod.dynarecInvalidateRomx(&g_dyn);
+    checkBool("cache romx invalidated", dynarecmod.dynarecLookup(&g_dyn, 1, 0x4100) == null, true);
+    checkBool("cache romx keeps rom0", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0400) != null, true);
 }
 
 fn testCacheReset() void {
@@ -1835,6 +1842,176 @@ fn testCacheCallRet() void {
     checkU32("cache call/ret stack hi", @intCast(u32, mmumod.read8(&g_bus, g_cpu.sp +% 1)), @intCast(u32, wantHi));
 }
 
+fn testCachePendingInterruptChain() void {
+    setupLoopRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    var warm: u8 = 0;
+    while (warm < 4) : (warm += 1) _ = runDyn();
+
+    setupLoopRom();
+    g_cpu.ime = true;
+    g_bus.ie = 0x01;
+    g_bus.io[0x0F] = 0x01;
+    const exec0: u32 = g_dyn.stats.executed;
+    const chain0: u32 = g_dyn.stats.chained;
+    const gotCyc: u32 = runDyn();
+    const ran: u32 = g_dyn.stats.executed -% exec0;
+    const linked: u32 = g_dyn.stats.chained -% chain0;
+    checkU32("cache irq chain cycles", gotCyc, 16);
+    checkU32("cache irq chain executed", ran, 1);
+    checkU32("cache irq chain chained", linked, 0);
+    checkU16("cache irq chain pc", g_cpu.pc, 0x0103);
+}
+
+fn testCacheRomBounds() void {
+    resetRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    romClear();
+    g_cpu.pc = 0x7FFE;
+    const blocks0: u32 = g_dyn.stats.blocks;
+    const fall0: u32 = g_dyn.stats.fallback;
+    const endCyc: u32 = runDyn();
+    checkU32("cache rom end fallback cycles", endCyc, 4);
+    checkU16("cache rom end fallback pc", g_cpu.pc, 0x7FFF);
+    checkBool("cache rom end no entry", dynarecmod.dynarecLookup(&g_dyn, 0, 0x7FFE) == null, true);
+    checkU32("cache rom end blocked", g_dyn.stats.blocks -% blocks0, 0);
+    checkU32("cache rom end fallback count", g_dyn.stats.fallback -% fall0, 1);
+
+    resetRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    romClear();
+    romWrite(0x3FFE, 0xC3);
+    romWrite(0x3FFF, 0x34);
+    romWrite(0x4000, 0x12);
+    g_cpu.pc = 0x3FFE;
+    const crossCyc: u32 = runDyn();
+    checkU32("cache romx boundary fallback cycles", crossCyc, 16);
+    checkU16("cache romx boundary fallback pc", g_cpu.pc, 0x1234);
+    checkBool("cache romx boundary blocked", dynarecmod.dynarecLookup(&g_dyn, 0, 0x3FFE) == null, true);
+
+    resetRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    romClear();
+    romWrite(0x3FFD, 0xC3);
+    romWrite(0x3FFE, 0x00);
+    romWrite(0x3FFF, 0x02);
+    g_cpu.pc = 0x3FFD;
+    const fitCyc: u32 = runDyn();
+    checkU32("cache romx boundary fit cycles", fitCyc, 16);
+    checkU16("cache romx boundary fit pc", g_cpu.pc, 0x0200);
+    checkBool("cache romx boundary fit entry", dynarecmod.dynarecLookup(&g_dyn, 0, 0x3FFD) != null, true);
+}
+
+fn setupLoopRomx() void {
+    resetRom();
+    romClear();
+    g_cart.romx_off = 0x4000;
+    romWrite(0x4100, 0xC3);
+    romWrite(0x4101, 0x03);
+    romWrite(0x4102, 0x41);
+    romWrite(0x4103, 0xC3);
+    romWrite(0x4104, 0x00);
+    romWrite(0x4105, 0x41);
+    g_cpu.pc = 0x4100;
+    g_cpu.a = 0x44;
+    g_cpu.f = 0;
+    g_cpu.sp = 0xD000;
+}
+
+fn testCacheRomxChainAndMismatch() void {
+    setupLoopRomx();
+    dynarecmod.dynarecFlush(&g_dyn);
+    var warm: u8 = 0;
+    while (warm < 4) : (warm += 1) _ = runDyn();
+
+    setupLoopRomx();
+    var wantCyc: u32 = 0;
+    var i: u8 = 0;
+    while (i < 64) : (i += 1) wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    const want: Snap = snapTake(&g_cpu, wantCyc);
+
+    setupLoopRomx();
+    const exec0: u32 = g_dyn.stats.executed;
+    const chain0: u32 = g_dyn.stats.chained;
+    const gotCyc: u32 = runDyn();
+    const got: Snap = snapTake(&g_cpu, gotCyc);
+    const ran: u32 = g_dyn.stats.executed -% exec0;
+    const linked: u32 = g_dyn.stats.chained -% chain0;
+    checkSnap("cache romx hot loop", 4, got, want);
+    checkU32("cache romx hot loop cycles", gotCyc, 1024);
+    checkU32("cache romx hot loop executed", ran, 64);
+    checkU32("cache romx hot loop chained", linked, 63);
+
+    resetRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    romClear();
+    g_cart.romx_off = 0x4000;
+    romWrite(0x4200, 0xC3);
+    romWrite(0x4201, 0x00);
+    romWrite(0x4202, 0x02);
+    g_cpu.pc = 0x4200;
+    _ = runDyn();
+    g_cpu.pc = 0x0200;
+    _ = runDyn();
+    checkBool("cache bank mismatch target", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0200) != null, true);
+
+    resetRom();
+    g_cart.romx_off = 0x4000;
+    g_cart.rom0_off = 0x4000;
+    g_cpu.pc = 0x4200;
+    const mismatchChain0: u32 = g_dyn.stats.chained;
+    const mismatchCyc: u32 = runDyn();
+    checkU32("cache bank mismatch cycles", mismatchCyc, 16);
+    checkU32("cache bank mismatch chained", g_dyn.stats.chained -% mismatchChain0, 0);
+    checkU16("cache bank mismatch pc", g_cpu.pc, 0x0200);
+}
+
+fn testCacheSamePcDifferentBank() void {
+    resetRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    romClear();
+    g_cart.romx_off = 0x4000;
+    romWrite(0x4100, 0x3E);
+    romWrite(0x4101, 0x11);
+    g_cpu.pc = 0x4100;
+    g_cpu.a = 0;
+    _ = runDyn();
+    checkU32("cache same pc bank1 value", @intCast(u32, g_cpu.a), 0x11);
+
+    g_cart.romx_off = 0x8000;
+    romWrite(0x4100, 0x3E);
+    romWrite(0x4101, 0x22);
+    g_cpu.pc = 0x4100;
+    g_cpu.a = 0;
+    _ = runDyn();
+    checkU32("cache same pc bank2 value", @intCast(u32, g_cpu.a), 0x22);
+
+    g_cart.romx_off = 0x4000;
+    g_cpu.pc = 0x4100;
+    g_cpu.a = 0;
+    _ = runDyn();
+    checkU32("cache same pc bank1 cached value", @intCast(u32, g_cpu.a), 0x11);
+    checkBool("cache same pc bank1 entry", dynarecmod.dynarecLookup(&g_dyn, 1, 0x4100) != null, true);
+    checkBool("cache same pc bank2 entry", dynarecmod.dynarecLookup(&g_dyn, 2, 0x4100) != null, true);
+}
+
+fn testCacheCollision() void {
+    resetRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    romClear();
+    g_cpu.pc = 0x0100;
+    _ = runDyn();
+    checkBool("cache collision first", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0100) != null, true);
+    const used0: usize = g_dyn.used;
+    const coll0: u32 = g_dyn.stats.collisions;
+    g_cpu.pc = 0x1100;
+    _ = runDyn();
+    checkBool("cache collision old dropped", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0100) == null, true);
+    checkBool("cache collision replaced", dynarecmod.dynarecLookup(&g_dyn, 0, 0x1100) != null, true);
+    checkU32("cache collision counted", g_dyn.stats.collisions -% coll0, 1);
+    checkBool("cache collision keeps bytes", g_dyn.used > used0, true);
+}
+
 fn testCacheClose() void {
     dynarecmod.dynarecClose(&g_dyn);
     checkBool("cache close disabled", dynarecmod.dynarecEnabled(&g_dyn), false);
@@ -1882,6 +2059,11 @@ pub fn main() void {
     testCacheTrampoline();
     testCacheHotLoop();
     testCacheCallRet();
+    testCachePendingInterruptChain();
+    testCacheRomBounds();
+    testCacheRomxChainAndMismatch();
+    testCacheSamePcDifferentBank();
+    testCacheCollision();
     testCacheClose();
     releaseCode();
 

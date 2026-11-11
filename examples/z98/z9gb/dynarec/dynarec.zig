@@ -22,12 +22,15 @@ pub const BLOCK_MAX_BYTES: usize = cachemod.BLOCK_MAX_BYTES;
 pub const ENTRY_COUNT: usize = cachemod.ENTRY_COUNT;
 pub const CHAIN_BUDGET: u32 = 64;
 
-const GLUE_MAX: usize = 160;
+const GLUE_MAX: usize = 224;
 const GLUE_BODY_OFF: usize = 9;
 const ROM_END: u16 = cachemod.ROM_END;
 
 const PC_OFF: u8 = @intCast(u8, @offsetOf(Cpu, "pc"));
+const IME_OFF: u8 = @intCast(u8, @offsetOf(Cpu, "ime"));
 const CART_OFF: u32 = @intCast(u32, @offsetOf(Bus, "cart"));
+const IO_OFF: u32 = @intCast(u32, @offsetOf(Bus, "io"));
+const IE_OFF: u32 = @intCast(u32, @offsetOf(Bus, "ie"));
 const ROM0_OFF: u32 = @intCast(u32, @offsetOf(Cart, "rom0_off"));
 const ROMX_OFF: u32 = @intCast(u32, @offsetOf(Cart, "romx_off"));
 
@@ -181,6 +184,44 @@ fn buildGlue(d: *Dynarec, entry_idx: u32, block_addr: u32, glue: []u8) GlueInfo 
     const jne_bank_at: usize = buf.n;
     put32(&buf, 0);
 
+    put8(&buf, 0x8B);
+    put8(&buf, 0x4C);
+    put8(&buf, 0x24);
+    put8(&buf, 0x0C);
+    put8(&buf, 0x8B);
+    put8(&buf, 0x49);
+    put8(&buf, 0x04);
+    put8(&buf, 0x0F);
+    put8(&buf, 0xB6);
+    put8(&buf, 0x42);
+    put8(&buf, IME_OFF);
+    put8(&buf, 0x85);
+    put8(&buf, 0xC0);
+    put8(&buf, 0x0F);
+    put8(&buf, 0x84);
+    const ime_jz_at: usize = buf.n;
+    put32(&buf, 0);
+
+    put8(&buf, 0x0F);
+    put8(&buf, 0xB6);
+    put8(&buf, 0x81);
+    put32(&buf, IO_OFF +% 0x0F);
+    put8(&buf, 0x0F);
+    put8(&buf, 0xB6);
+    put8(&buf, 0x89);
+    put32(&buf, IE_OFF);
+    put8(&buf, 0x21);
+    put8(&buf, 0xC8);
+    put8(&buf, 0x83);
+    put8(&buf, 0xE0);
+    put8(&buf, 0x1F);
+    put8(&buf, 0x85);
+    put8(&buf, 0xC0);
+    put8(&buf, 0x0F);
+    put8(&buf, 0x85);
+    const ime_jnz_at: usize = buf.n;
+    put32(&buf, 0);
+
     const chain_inc_off: u32 = @intCast(u32, buf.n);
     put8(&buf, 0xFF);
     put8(&buf, 0x05);
@@ -202,6 +243,8 @@ fn buildGlue(d: *Dynarec, entry_idx: u32, block_addr: u32, glue: []u8) GlueInfo 
     patchRelTo(&buf, jae_romx_at, romx_off);
     patchRelTo(&buf, jmp_have_at, have_off);
     patchRelTo(&buf, jne_bank_at, exit_off);
+    patchRelTo(&buf, ime_jz_at, @intCast(usize, chain_inc_off));
+    patchRelTo(&buf, ime_jnz_at, exit_off);
     patchRelTo(&buf, jmp_disp_off, exit_off);
 
     var i: usize = 0;
@@ -339,12 +382,24 @@ fn blockSuccessor(bus: *Bus, blk: *const Block) Succ {
     return succAt(bus, pc);
 }
 
+fn blockSpan(blk: *const Block) u16 {
+    var bytes: u32 = 0;
+    var i: usize = 0;
+    while (i < @intCast(usize, blk.len)) : (i += 1) {
+        bytes +%= @intCast(u32, insnBytes(blk.insns[i]));
+    }
+    return @intCast(u16, bytes);
+}
+
 fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
     var tmp: Cpu = cpu.*;
     tmp.pc = pc;
     var blk: Block = undefined;
     if (!blockmod.blockBuild(&tmp, bus, &blk)) return null;
     if (blk.len == 0) return null;
+    const end: u32 = @as(u32, blk.start_pc) + @as(u32, blockSpan(&blk));
+    if (end > 0x00008000) return null;
+    if (blk.start_pc < 0x4000 and end > 0x00004000) return null;
     const succ: Succ = blockSuccessor(bus, &blk);
 
     var tries: u8 = 0;
