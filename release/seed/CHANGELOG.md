@@ -15,6 +15,60 @@ a provenance entry here. Prior seeds remain recoverable in git history.
 
 
 
+## 2026-11-11 — seed v149 (HEAD 50190ea4)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (48 `.c` + 49 `.h` incl.
+emitted `zig_special_types.h`, 12932829 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+Phase 4 P3 final-review std-only rotation. `std_ddraw_pal.zig` passes NULL to
+the `IDirectDrawSurface7.Unlock` calls, uses one fixed window style
+(`WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX`) and keeps the
+client at `src_w*scale` / `src_h*scale`; `std_dsound_pal.zig` restores the
+multi-lap DirectSound underrun handling (short underruns zero only the missed
+span, long stalls restart at `play_frames`) and keeps the 256-frame lead. No
+compiler-source or barrel change: the self-emission fixed point and the 8
+emission pins are unchanged (`73c75a65…`), emit-support stays 9/9, and `lib/`
+remains 65 at v148's inventory.
+
+| field | value |
+|---|---|
+| date | 2026-11-11 |
+| HEAD | `50190ea4` |
+| seed binary md5 | `73c75a65e30dfd212fdf93ae1e57a687` |
+| self-emission C | 48 `.c` + 49 `.h` (12932829 bytes) |
+| fixed point | `73c75a65e30dfd212fdf93ae1e57a687` |
+| lib manifest | `lib/manifest.md5` (65 std files; md5 `b4089e728b41aff27afbeffd9aa7e862`) |
+| archive md5 | `52984a63a5dcdf41e8c4c142e3bb366f` |
+
+### Win9x companion seed
+
+| field | value |
+|---|---|
+| zip | `release/seed/zig1_seed_w9.zip` |
+| zip md5 | `9b9326db35dc3f3a6adffe9a6b9c8e9b` |
+| win/ C | 52 `.c` + 51 `.h` (full `zig1 -osw` compiler dump; MSVC/OWC no-CRT scripts, aliases, and `build_target.sh` removed; MinGW fallback pair shipped) |
+| compiler build scripts | `build_target_crt.bat`, `build_owc_crt.bat` (static CRT; no msvcrt.dll; single EXE) |
+| compiler source | `-fsafe`-clean (12 intentional wraps + 3 real safe-mode defects fixed) |
+| no-CRT zig1 | deferred to asm_x86; emitted programs still default to no-CRT |
+| status | Windows-hosted `std_async.zig:259` field-resolution failure root-caused to a C89 update-stream fseek elision in `spill_store.zig` and fixed; CRT build app-ready |
+| lib | 65 std `.zig` + `manifest.md5` |
+| HEAD/date | `50190ea4` / 2026-11-11 |
+
+Provenance note: the archived binary (md5 73c75a65e30dfd212fdf93ae1e57a687) was captured by
+scripts/seed/archive_seed.sh from the sf/src tree at packaging base HEAD
+50190ea4; gcc of the archive's self-emission C reproduces the fixed point
+`73c75a65e30dfd212fdf93ae1e57a687` — the binary and the C are the same compiler state. If sf/src
+carried uncommitted changes at capture time, the packaging base HEAD alone
+does not identify that source; the exact source commit is named in that
+rotation's seed commit. The compiler self-build uses `-ffast` (user programs
+default to `-fsafe`), so the recorded fixed point is the `-ffast` binary.
+Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-11-11 — seed v148 (HEAD fb896e2b)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir

@@ -30,29 +30,30 @@ zig0 is retired and the old zig0 cycle (`sf/scripts/build_release.sh`,
 the build path or gate on it. Rebuild from the committed seed with the recipe
 in the next section; that is the only supported path.
 
-### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-11 — seed v148]
+### Seed model — rebuild zig1 from the committed seed (`release/seed/`) [updated: 2026-11-11 — seed v149]
 
 **Seed location + contents:** the committed rotating seeds are
 `release/seed/zig1-seed.tgz` (Linux/gcc canonical fixed point) and
 `release/seed/zig1_seed_w9.zip` (Win9x companion) — both git-tracked;
 provenance + rotation history in `release/seed/CHANGELOG.md`, full recipes +
-current md5s in the archive's `zig1-seed/SEED_README.txt` and the v148 CHANGELOG entry.
+current md5s in the archive's `zig1-seed/SEED_README.txt` and the v149 CHANGELOG entry.
 
-**Current seed: v148** (rotated 2026-11-11 for the Phase 4 P3 closeout;
-packaging base HEAD `fb896e2b`). Archived binary md5
+**Current seed: v149** (rotated 2026-11-11 for the Phase 4 P3 final review;
+packaging base HEAD `50190ea4`). Archived binary md5
 (= fixed point) `73c75a65e30dfd212fdf93ae1e57a687`; archive md5
-`2bd90de43b29b070abb70a2448dabbeb`; Win9x zip md5
-`48ba3422e710e18dfb3e065abbc7c8bc`; `gen/` 48 `.c` + 49 `.h` (12,932,829
+`52984a63a5dcdf41e8c4c142e3bb366f`; Win9x zip md5
+`9b9326db35dc3f3a6adffe9a6b9c8e9b`; `gen/` 48 `.c` + 49 `.h` (12,932,829
 bytes); `lib/` **65** std `.zig` (`std.zig` + 64 `std_*.zig`) plus
 `lib/manifest.md5` (per-file std attribution pin, manifest md5
-`7fb073e7b153e34d9c216adce7d896f4`; includes `std_ddraw.zig`,
+`b4089e728b41aff27afbeffd9aa7e862`; includes `std_ddraw.zig`,
 `std_ddraw_pal.zig`, `std_dinput.zig`, `std_dinput_pal.zig`, `std_dsound.zig`,
 `std_dsound_pal.zig`, `std_tls_io.zig`, `std_hpack.zig`, `std_http2.zig`).
-A rebuild from the committed v148 archive is two-hop
+A rebuild from the committed v149 archive is two-hop
 **hop1 == hop2 == `73c75a65…`**. The compiler source is **`-fsafe`-clean**.
-v148 is the std-only Phase 4 P3 rotation: it adds `std_ddraw*`, `std_dinput*`,
-and `std_dsound*` to `lib/` (59 -> 65) with no compiler-source or barrel change,
-so the fixed point and the 8 emission pins stay `73c75a65…`. v147 was the final
+v149 is the std-only Phase 4 P3 final-review rotation: it updates
+`std_ddraw_pal.zig` and `std_dsound_pal.zig` with no compiler-source or barrel
+change, so the fixed point and the 8 emission pins stay `73c75a65…`; `lib/`
+remains 65 from v148. v147 was the final
 Phase 3.5 expected-type-contract rotation; its narrative and fixed-point history
 remain in `release/seed/CHANGELOG.md`.
 
@@ -97,7 +98,7 @@ module set — 48 `.c` + 49 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 6: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c` — NO `net_prelude.h`), `lib/` (the
-tracked seed archive **v148 carries the full 65 std `.zig`** = `std.zig` plus
+tracked seed archive **v149 carries the full 65 std `.zig`** = `std.zig` plus
 64 `std_*.zig`; `scripts/seed/build_from_seed.sh` and `archive_seed.sh` install
 the current `sf/src` set into the produced compiler's `lib/` and the archive),
 and `SEED_README.txt`.
