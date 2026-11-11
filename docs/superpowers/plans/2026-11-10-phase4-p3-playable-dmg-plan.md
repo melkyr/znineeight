@@ -365,3 +365,53 @@ Run `tier_audio`, `tier_win32`, `tier_perf`, and `tier_smoke`. Expected: PASS/SK
 git add scripts/seed/build_from_seed.sh scripts/seed/archive_seed.sh STD_README.MD docs/sf/QUICK_REF.md README.md release/seed/CHANGELOG.md release/seed/zig1-seed.tgz release/seed/zig1_seed_w9.zip
 git commit -m "chore(seed): rotate v148 (DirectDraw/DirectInput/DirectSound)"
 ```
+
+---
+
+### Task 7.1: P3 final review fix wave (all Important + Minor findings)
+
+**Files:**
+- Modify: `sf/src/std_ddraw_pal.zig`
+- Modify: `sf/src/std_dsound_pal.zig`
+- Modify: `examples/z98/z9gb/apu.zig`
+- Modify: `examples/z98/z9gb/mmu.zig` only if APU reset wiring requires it
+- Modify: `examples/z98/z9gb/platform/win32.zig`
+- Modify: `examples/z98/z9gb/platform/headless.zig`
+- Modify: `examples/z98/z9gb/main.zig`
+- Modify: `examples/z98/z9gb/tests/apu_test.zig`
+- Modify: `examples/z98/z9gb/tests/tier_dmg.sh` only if APU tests need it
+- Modify: `examples/z98/z9gb/tests/tier_win32.sh`
+- Modify: `examples/z98/z9gb/tests/run_dsound_probe.sh` if the DS lead changes probe accounting
+- Modify: `examples/z98/z9gb/README.md`
+- Modify: `examples/z98/z9gb/testdata/roms/README.md`
+- Modify: `README.md`, `STD_README.MD`, `docs/sf/QUICK_REF.md`, `release/seed/CHANGELOG.md`
+- Replace: `release/seed/zig1-seed.tgz`, `release/seed/zig1_seed_w9.zip`
+- Test: P3 tiers, std/compiler gates, seed two-hop
+
+**Interfaces:**
+- Consumes: P3 closeout `72e34881`; seed v148.
+- Produces: one combined fix wave, seed v149, P3-ready for finish.
+
+- [ ] **Step 1: Std display fixes**
+`std_ddraw_pal.zig`: pass NULL to all `IDirectDrawSurface7.Unlock` calls (the v7 signature takes `LPRECT`, not `LPVOID`); use one fixed-size window style (`WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX`, `0x00CA0000`) in both `CreateWindowExA` and `AdjustWindowRect` in `open` and `setScale`; reject resize-driven size drift by keeping the client at `src_w*scale` / `src_h*scale`.
+- [ ] **Step 2: Std audio refill fix**
+`std_dsound_pal.zig`: underrun only when `delta > queued_frames` (not `>=`); zero only the actual missed span `delta - queued_frames` from the write cursor, clamp to one ring, not the whole ring; add a small lead (`LEAD_FRAMES = 256`) by starting `write_cursor = (play_frames + LEAD_FRAMES) & FRAME_MASK` and `queued_frames = LEAD_FRAMES` after the silence prefill; update `run_dsound_probe.sh` to derive free space from `dsoundQueued()` rather than assume an empty ring; keep the no-short/busy-buffer assertions.
+- [ ] **Step 3: APU boot and off-state contract**
+`apu.zig` / `mmu.zig` reset: exact DMG post-boot defaults `FF10 0x80, FF11 0xBF, FF12 0xF3, FF13 0xFF, FF14 0xBF, FF16 0x3F, FF17 0x00, FF18 0xFF, FF19 0xBF, FF1A 0x7F, FF1B 0xFF, FF1C 0x9F, FF1D 0xFF, FF1E 0xBF, FF20 0xFF, FF21 0x00, FF22 0x00, FF23 0xBF, FF24 0x77, FF25 0xF3, FF26 0xF1`; channel 1 enabled. Power-off keeps raw NRx1/NR21/NR31/NR41 values and `apuRead` returns them with the normal masks for off-state reads. Add boot-default and off-state tests.
+- [ ] **Step 4: APU non-silent test**
+Add a synthetic APU test that powers on, programs/triggers a square channel, ticks enough cycles, drains `apuSamples`, and asserts at least one nonzero sample. This proves APU output reaches the ring; do not claim host audio.
+- [ ] **Step 5: Win32 diagnostic, timer and no-audio**
+`win32.zig`: print a clear “install DirectX 6+ runtime” hint when `IDirectDraw7` QI/open fails; record `timeBeginPeriod(1)` success in `g_timer_ok`; add `platformTimerOk()` returning it; add `platformSetAudioEnabled(bool)` and make `Win32State.dsound` optional, opening DSound only when enabled. `headless.zig`: no-op setter and `platformTimerOk() = true`. `main.zig`: call the setter before `open_fn`; make `--no-audio` skip DSound; pass `platformTimerOk()` into `waitForDeadline`, which skips `sleepMs` and uses the bounded spin tail when false. Status line reports `audio=off` when disabled.
+- [ ] **Step 6: Tests/docs**
+`tier_win32.sh`: add `DDRAW.DLL` absence for `z9gb.exe`; add a `--windowed --no-audio` open smoke. `README.md`: replace `-I /workspace/znineeight/sf/src` with checkout-relative `$PWD/sf/src`; refresh/label the fps evidence. `testdata/roms/README.md`: add 2048.gb and dmg_sound.gb source commit/URL/sha256/size.
+- [ ] **Step 7: Std/compiler gates**
+Because `sf/src` changed: `verify_stdlib.sh`, `run_crosscheck.sh`, `scripts/check_emit_support.sh` 9/9, `gate_lower_depth.sh` 8 pins, `gate_win_compat.sh`; P3 tiers `tier_dmg --all`, `tier_audio` unit+gate, `tier_win32 --smoke`, `tier_perf`, `tier_smoke`; DDraw/DSound probes; `git diff --check`. STOP if a pin or fixed point moves unexpectedly.
+- [ ] **Step 8: Commit code fix**
+```bash
+git add sf/src/std_ddraw_pal.zig sf/src/std_dsound_pal.zig examples/z98/z9gb tests...
+git commit -m "fix(z9gb): close P3 final review findings"
+```
+- [ ] **Step 9: Rotate seed v149**
+Run `archive_seed.sh`; expect lib 65, fixed point `73c75a65e30dfd212fdf93ae1e57a687`; run `build_from_seed.sh` two-hop (hop1 == hop2); `gate_debug_map`; update v149 current-seed values in `README.md`, `STD_README.MD`, `docs/sf/QUICK_REF.md`, `release/seed/CHANGELOG.md`; commit `chore(seed): rotate v149 (P3 final review std fixes)`.
+- [ ] **Step 10: Scoped re-review**
+Review `72e34881..HEAD` against every final-review Important+Minor and the new tests; no second fix wave. Any new Critical/Important: STOP and present.
