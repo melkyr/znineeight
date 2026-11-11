@@ -13,6 +13,7 @@ const x86mod = @import("../dynarec/x86.zig");
 const helpersmod = @import("../dynarec/helpers.zig");
 const cachemod = @import("../dynarec/cache.zig");
 const dynarecmod = @import("../dynarec/dynarec.zig");
+const emumod = @import("../emu.zig");
 
 const DynCtx = ctxmod.DynCtx;
 const Block = blockmod.Block;
@@ -22,6 +23,10 @@ const Page = mmumod.Page;
 
 const MAP_BYTES: usize = 65536;
 const MAP_FAILED: usize = 0xFFFFFFFF;
+const DYN_ROM_BYTES: usize = 131072;
+const DYN_SAVE_BYTES: usize = 8192;
+const DYN_FB_PIXELS: usize = 160 * 144;
+const DYN_SERIAL_BYTES: usize = 4096;
 
 extern "c" fn mmap(addr: *void, len: usize, prot: i32, flags: i32, fd: i32, off: i32) *void;
 extern "c" fn munmap(addr: *void, len: usize) i32;
@@ -37,6 +42,20 @@ var g_emit_cache: cachemod.Dynarec = undefined;
 var g_emit_cache_ready: bool = false;
 var g_dyn: cachemod.Dynarec = undefined;
 var g_rom: [0x8000]u8 = undefined;
+var g_emu: emumod.Emu = undefined;
+var g_audio_buf: [4096]i16 = undefined;
+
+const FrameSnap = struct {
+    fb: [DYN_FB_PIXELS]u32,
+    serial: [DYN_SERIAL_BYTES]u8,
+    serial_len: usize,
+    ram: [DYN_SAVE_BYTES]u8,
+    audio: usize,
+    cycles: u32,
+};
+
+var g_snap_off: FrameSnap = undefined;
+var g_snap_on: FrameSnap = undefined;
 
 fn printU(v: usize) void {
     const x: u32 = @intCast(u32, v & 0xffffffff);
@@ -2019,6 +2038,180 @@ fn testCacheClose() void {
     checkBool("cache double close", dynarecmod.dynarecEnabled(&g_dyn), false);
 }
 
+fn makeDynarecRom() void {
+    var i: usize = 0;
+    while (i < DYN_ROM_BYTES) : (i += 1) g_emu.rom[i] = 0;
+
+    // ROM0 entry: jump into the initial switchable bank (bank 1).
+    g_emu.rom[0x0100] = 0xC3;
+    g_emu.rom[0x0101] = 0x00;
+    g_emu.rom[0x0102] = 0x40;
+
+    g_emu.rom[0x0147] = 0x03; // MBC1+RAM+BATTERY
+    g_emu.rom[0x0148] = 0x02; // 128 KiB, four banks
+    g_emu.rom[0x0149] = 0x02; // 8 KiB cart RAM
+
+    // Bank 1 at 0x4000: emit serial 'A', then return to ROM0.
+    var p: usize = 0x4000;
+    g_emu.rom[p + 0] = 0x3E;
+    g_emu.rom[p + 1] = 0x41;
+    g_emu.rom[p + 2] = 0xE0;
+    g_emu.rom[p + 3] = 0x01;
+    g_emu.rom[p + 4] = 0x3E;
+    g_emu.rom[p + 5] = 0x81;
+    g_emu.rom[p + 6] = 0xE0;
+    g_emu.rom[p + 7] = 0x02;
+    g_emu.rom[p + 8] = 0xC3;
+    g_emu.rom[p + 9] = 0x50;
+    g_emu.rom[p + 10] = 0x01;
+
+    // ROM0 at 0x150: enable RAM, write save RAM, switch ROMX to bank 2,
+    // then jump to the remapped 0x4000 window.
+    p = 0x0150;
+    g_emu.rom[p + 0] = 0x31;
+    g_emu.rom[p + 1] = 0xFE;
+    g_emu.rom[p + 2] = 0xFF;
+    g_emu.rom[p + 3] = 0x3E;
+    g_emu.rom[p + 4] = 0x0A;
+    g_emu.rom[p + 5] = 0xEA;
+    g_emu.rom[p + 6] = 0x00;
+    g_emu.rom[p + 7] = 0x00;
+    g_emu.rom[p + 8] = 0x3E;
+    g_emu.rom[p + 9] = 0x5A;
+    g_emu.rom[p + 10] = 0xEA;
+    g_emu.rom[p + 11] = 0x00;
+    g_emu.rom[p + 12] = 0xA0;
+    g_emu.rom[p + 13] = 0x3E;
+    g_emu.rom[p + 14] = 0x02;
+    g_emu.rom[p + 15] = 0xEA;
+    g_emu.rom[p + 16] = 0x00;
+    g_emu.rom[p + 17] = 0x20;
+    g_emu.rom[p + 18] = 0xC3;
+    g_emu.rom[p + 19] = 0x00;
+    g_emu.rom[p + 20] = 0x40;
+
+    // Bank 2 at 0x4000: emit serial 'B', then halt so both paths settle on the
+    // interpreter's 4-cycle halted steps for the rest of the frame.
+    p = 0x8000;
+    g_emu.rom[p + 0] = 0x3E;
+    g_emu.rom[p + 1] = 0x42;
+    g_emu.rom[p + 2] = 0xE0;
+    g_emu.rom[p + 3] = 0x01;
+    g_emu.rom[p + 4] = 0x3E;
+    g_emu.rom[p + 5] = 0x81;
+    g_emu.rom[p + 6] = 0xE0;
+    g_emu.rom[p + 7] = 0x02;
+    g_emu.rom[p + 8] = 0x76;
+}
+
+fn setupDynarecEmu(on: bool) bool {
+    emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = true, .dynarec = false });
+    makeDynarecRom();
+    g_emu.rom_len = DYN_ROM_BYTES;
+    cartmod.cartLoad(&g_emu.cart, g_emu.rom[0..DYN_ROM_BYTES]) catch return false;
+    emumod.emuReset(&g_emu);
+    g_emu.bus.ie = 0;
+    g_emu.bus.io[0x0F] = 0;
+    _ = emumod.emuSetDynarec(&g_emu, on);
+    return true;
+}
+
+fn drainAudioCount() usize {
+    var total: usize = 0;
+    while (true) {
+        const got: usize = emumod.emuAudioSamples(&g_emu, g_audio_buf[0..]);
+        total += got;
+        if (got == 0) break;
+    }
+    return total;
+}
+
+fn captureFrame(out: *FrameSnap) void {
+    out.cycles = emumod.emuRunFrame(&g_emu);
+    const fb: []const u32 = emumod.emuFramebuffer(&g_emu);
+    var i: usize = 0;
+    while (i < DYN_FB_PIXELS) : (i += 1) out.fb[i] = fb[i];
+    out.serial_len = emumod.emuTakeSerial(&g_emu, out.serial[0..]);
+    const cartp: *cartmod.Cart = &g_emu.cart;
+    i = 0;
+    while (i < DYN_SAVE_BYTES) : (i += 1) out.ram[i] = cartp.ram[i];
+    out.audio = drainAudioCount();
+}
+
+fn snapFbEq(a: *const FrameSnap, b: *const FrameSnap) bool {
+    var i: usize = 0;
+    while (i < DYN_FB_PIXELS) : (i += 1) {
+        if (a.fb[i] != b.fb[i]) return false;
+    }
+    return true;
+}
+
+fn snapSerialEq(a: *const FrameSnap, b: *const FrameSnap) bool {
+    if (a.serial_len != b.serial_len) return false;
+    var i: usize = 0;
+    while (i < a.serial_len) : (i += 1) {
+        if (a.serial[i] != b.serial[i]) return false;
+    }
+    return true;
+}
+
+fn snapRamEq(a: *const FrameSnap, b: *const FrameSnap) bool {
+    var i: usize = 0;
+    while (i < DYN_SAVE_BYTES) : (i += 1) {
+        if (a.ram[i] != b.ram[i]) return false;
+    }
+    return true;
+}
+
+fn testDynarecFrameParity() void {
+    if (!setupDynarecEmu(false)) {
+        checkBool("dynarec parity rom off", false, true);
+        return;
+    }
+    checkBool("dynarec parity off disabled", emumod.emuDynarecEnabled(&g_emu), false);
+    captureFrame(&g_snap_off);
+    _ = emumod.emuSetDynarec(&g_emu, false);
+
+    if (!setupDynarecEmu(true)) {
+        checkBool("dynarec parity rom on", false, true);
+        return;
+    }
+    const dynp: *const cachemod.Dynarec = &g_emu.dynarec;
+    const on: bool = emumod.emuDynarecEnabled(&g_emu);
+    if (@isWindows()) {
+        checkBool("dynarec parity host enabled", on, true);
+    } else {
+        // Non-Win32 must not expose the unit-test RWX mapping as enabled.
+        checkBool("dynarec parity host hard gate", on, false);
+    }
+
+    if (!on) {
+        captureFrame(&g_snap_on);
+        checkBool("dynarec disabled framebuffer parity", snapFbEq(&g_snap_off, &g_snap_on), true);
+        checkBool("dynarec disabled serial parity", snapSerialEq(&g_snap_off, &g_snap_on), true);
+        checkBool("dynarec disabled save parity", snapRamEq(&g_snap_off, &g_snap_on), true);
+        checkU32("dynarec disabled audio count", @intCast(u32, g_snap_on.audio), @intCast(u32, g_snap_off.audio));
+        checkU32("dynarec disabled blocks", dynp.stats.blocks, 0);
+        checkU32("dynarec disabled executed", dynp.stats.executed, 0);
+        return;
+    }
+
+    captureFrame(&g_snap_on);
+    const cartp: *cartmod.Cart = &g_emu.cart;
+    checkBool("dynarec parity framebuffer", snapFbEq(&g_snap_off, &g_snap_on), true);
+    checkBool("dynarec parity serial", snapSerialEq(&g_snap_off, &g_snap_on), true);
+    checkBool("dynarec parity save", snapRamEq(&g_snap_off, &g_snap_on), true);
+    checkU32("dynarec parity audio count", @intCast(u32, g_snap_on.audio), @intCast(u32, g_snap_off.audio));
+    checkU32("dynarec parity cycles", g_snap_on.cycles, g_snap_off.cycles);
+    checkBool("dynarec anti-vacuous blocks", dynp.stats.blocks > 0, true);
+    checkBool("dynarec anti-vacuous executed", dynp.stats.executed > 0, true);
+    checkBool("dynarec anti-vacuous fallback", dynp.stats.fallback > 0, true);
+    checkU32("dynarec romx bank", @intCast(u32, cartp.romx_off), 0x8000);
+    checkBool("dynarec romx invalidated", dynarecmod.dynarecLookup(&g_emu.dynarec, 1, 0x4000) == null, true);
+    checkU32("dynarec save byte", @intCast(u32, cartp.ram[0]), 0x5A);
+    _ = emumod.emuSetDynarec(&g_emu, false);
+}
+
 pub fn main() void {
     testStraightNops();
     testJump();
@@ -2065,6 +2258,7 @@ pub fn main() void {
     testCacheSamePcDifferentBank();
     testCacheCollision();
     testCacheClose();
+    testDynarecFrameParity();
     releaseCode();
 
     std.io.write("dynarec ");

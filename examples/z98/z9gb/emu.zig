@@ -13,6 +13,7 @@ const serialmod = @import("serial.zig");
 const ppumod = @import("ppu.zig");
 const savemod = @import("save.zig");
 const apumod = @import("apu.zig");
+const dynarecmod = @import("dynarec/dynarec.zig");
 
 const ROM_CAP: usize = 8 * 1024 * 1024;
 const SAVE_CAP: usize = 260;
@@ -39,6 +40,9 @@ pub const Emu = struct {
     cart: cartmod.Cart,
     cpu: cpumod.Cpu,
     bus: mmumod.Bus,
+    // Stable storage for the generated-code cache: the glue embeds absolute
+    // addresses of Dynarec fields, so this must never be a temporary/copy.
+    dynarec: dynarecmod.Dynarec,
     ppu: ppumod.Ppu,
     mooneye: bool,
     mooneye_stopped: bool,
@@ -58,10 +62,42 @@ pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     mmumod.busInit(&e.bus, &e.cart);
     cpumod.cpuInit(&e.cpu);
     ppumod.ppuReset(&e.ppu);
+    e.dynarec.mapped = false;
+    e.dynarec.stats = dynarecmod.Stats{ .blocks = 0, .executed = 0, .chained = 0, .fallback = 0, .resets = 0, .collisions = 0 };
+    dynarecmod.dynarecFlush(&e.dynarec);
+    _ = emuSetDynarec(e, cfg.dynarec);
     e.mooneye = false;
     e.mooneye_stopped = false;
     var mi: usize = 0;
     while (mi < 6) : (mi += 1) e.mooneye_sig[mi] = 0;
+}
+
+// The dynarec is Win32/x86 only. `--dynarec` on any other host must hard-gate
+// to the interpreter instead of exposing the test-only RWX mmap mapping.
+pub fn emuSetDynarec(e: *Emu, on: bool) bool {
+    e.cfg.dynarec = on;
+    if (!on) {
+        if (dynarecmod.dynarecEnabled(&e.dynarec)) dynarecmod.dynarecClose(&e.dynarec);
+        return false;
+    }
+    if (!@isWindows()) {
+        if (dynarecmod.dynarecEnabled(&e.dynarec)) dynarecmod.dynarecClose(&e.dynarec);
+        return false;
+    }
+    if (dynarecmod.dynarecEnabled(&e.dynarec)) return true;
+    _ = dynarecmod.dynarecOpen(&e.dynarec, &e.bus);
+    return dynarecmod.dynarecEnabled(&e.dynarec);
+}
+
+pub fn emuDynarecEnabled(e: *const Emu) bool {
+    return e.cfg.dynarec and dynarecmod.dynarecEnabled(&e.dynarec);
+}
+
+pub const DynarecStats = struct { blocks: u32, executed: u32, fallback: u32 };
+
+pub fn emuDynarecStats(e: *const Emu) DynarecStats {
+    const dynp: *const dynarecmod.Dynarec = &e.dynarec;
+    return DynarecStats{ .blocks = dynp.stats.blocks, .executed = dynp.stats.executed, .fallback = dynp.stats.fallback };
 }
 
 fn applyCgbMode(e: *Emu) void {
@@ -124,6 +160,7 @@ pub fn emuLoadRom(e: *Emu, path: []const u8) EmuError!void {
     }
     e.rom_path_len = rp;
     mmumod.busInit(&e.bus, &e.cart);
+    if (dynarecmod.dynarecEnabled(&e.dynarec)) dynarecmod.dynarecFlush(&e.dynarec);
     applyCgbMode(e);
 }
 
@@ -195,6 +232,46 @@ fn ppuSyncOut(e: *Emu) void {
     b.io[0x44] = ppumod.ppuRead(&e.ppu, 0xFF44);
 }
 
+// A cart-control write ends the containing block, but a block may still hold
+// the write itself (static or dynamic stores). Compare the effective cart bank
+// offsets around both dispatch paths and drop the affected ROM window.
+fn invalidateChangedBanks(e: *Emu, rom0: usize, romx: usize) void {
+    const cartp: *const cartmod.Cart = &e.cart;
+    const dynp: *dynarecmod.Dynarec = &e.dynarec;
+    if (!dynarecmod.dynarecEnabled(dynp)) return;
+    if (cartp.rom0_off != rom0) dynarecmod.dynarecInvalidateRom0(dynp);
+    if (cartp.romx_off != romx) dynarecmod.dynarecInvalidateRomx(dynp);
+}
+
+fn dynarecEligible(e: *const Emu) bool {
+    const cpup: *const cpumod.Cpu = &e.cpu;
+    const busp: *const mmumod.Bus = &e.bus;
+    const dynp: *const dynarecmod.Dynarec = &e.dynarec;
+    if (!@isWindows()) return false;
+    if (!e.cfg.dynarec) return false;
+    if (!dynarecmod.dynarecEnabled(dynp)) return false;
+    if (e.mooneye) return false;
+    if (cpup.halted or cpup.halt_bug) return false;
+    if (cpup.ei_delay != 0) return false;
+    if (busp.dma.active) return false;
+    if (cpup.pc > 0x7FFF) return false;
+    if (cpumod.cpuInterruptPending(cpup, busp)) return false;
+    return true;
+}
+
+fn interpreterStep(e: *Emu) u32 {
+    const cartp: *const cartmod.Cart = &e.cart;
+    const dynp: *dynarecmod.Dynarec = &e.dynarec;
+    const cpup: *cpumod.Cpu = &e.cpu;
+    const busp: *mmumod.Bus = &e.bus;
+    const rom0: usize = cartp.rom0_off;
+    const romx: usize = cartp.romx_off;
+    const cycles: u32 = cpumod.cpuStep(cpup, busp);
+    if (dynarecmod.dynarecEnabled(dynp)) dynp.stats.fallback +%= 1;
+    invalidateChangedBanks(e, rom0, romx);
+    return cycles;
+}
+
 pub fn emuRunFrame(e: *Emu) u32 {
     if (e.rom_len == 0) {
         emuSelfTestPattern(e);
@@ -217,9 +294,26 @@ pub fn emuRunFrame(e: *Emu) u32 {
             e.mooneye_stopped = true;
             return total;
         }
-        const cycles: u32 = cpumod.cpuStep(&e.cpu, &e.bus);
+        var cycles: u32 = 0;
+        if (dynarecEligible(e)) {
+            const cartp: *const cartmod.Cart = &e.cart;
+            const dynp: *dynarecmod.Dynarec = &e.dynarec;
+            const cpup: *cpumod.Cpu = &e.cpu;
+            const busp: *mmumod.Bus = &e.bus;
+            const rom0: usize = cartp.rom0_off;
+            const romx: usize = cartp.romx_off;
+            cycles = dynarecmod.dynarecRunBlock(dynp, cpup, busp);
+            if (cycles == 0) {
+                cycles = cpumod.cpuStep(cpup, busp);
+                dynp.stats.fallback +%= 1;
+            }
+            invalidateChangedBanks(e, rom0, romx);
+        } else {
+            cycles = interpreterStep(e);
+        }
         total += cycles;
-        const dot_delta: u32 = if (e.bus.double_speed) cycles / 2 else cycles;
+        const busp2: *const mmumod.Bus = &e.bus;
+        const dot_delta: u32 = if (busp2.double_speed) cycles / 2 else cycles;
         dots += dot_delta;
         ppuSyncIn(e);
         ppumod.ppuTick(&e.ppu, dot_delta, &e.bus);

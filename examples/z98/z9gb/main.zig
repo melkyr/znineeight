@@ -155,6 +155,29 @@ fn reportMooneye() void {
     std.io.write("\n");
 }
 
+fn reportDynarecStats() void {
+    if (emu.emuDynarecEnabled(&g_emu)) {
+        const st: emu.DynarecStats = emu.emuDynarecStats(&g_emu);
+        std.io.write("dynarec=on blocks=");
+        std.io.printInt(@intCast(i32, st.blocks));
+        std.io.write(" executed=");
+        std.io.printInt(@intCast(i32, st.executed));
+        std.io.write(" fallback=");
+        std.io.printInt(@intCast(i32, st.fallback));
+        std.io.write("\n");
+        return;
+    }
+    std.io.write("dynarec=disabled reason=");
+    if (!g_emu.cfg.dynarec) {
+        std.io.write("not-requested");
+    } else if (@isWindows()) {
+        std.io.write("cache-alloc-failed");
+    } else {
+        std.io.write("unsupported-host");
+    }
+    std.io.write("\n");
+}
+
 // Unix epochs can exceed parseU32's frame-count cap.
 fn parseI64(s: []const u8) ?i64 {
     if (s.len == 0) return null;
@@ -255,6 +278,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var scale: u32 = 1;
     var audio: bool = true;
     var cgb: bool = false;
+    var dynarec: bool = false;
+    var dynarec_stats: bool = false;
     var rtc_fixed: i64 = 0;
     var have_rtc_fixed: bool = false;
     var i: usize = 1;
@@ -300,6 +325,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             turbo = true;
         } else if (eq(tok, "--mooneye")) {
             mooneye = true;
+        } else if (eq(tok, "--dynarec")) {
+            dynarec = true;
+        } else if (eq(tok, "--no-dynarec")) {
+            dynarec = false;
+        } else if (eq(tok, "--dynarec-stats")) {
+            dynarec_stats = true;
         } else if (eq(tok, "--save")) {
             save = true;
         } else if (eq(tok, "--rtc-fixed")) {
@@ -321,7 +352,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         std.os.exit(1);
     }
 
-    emu.emuInit(&g_emu, emu.EmuConfig{ .cgb = cgb, .serial_log = serial, .turbo = turbo, .dynarec = false });
+    emu.emuInit(&g_emu, emu.EmuConfig{ .cgb = cgb, .serial_log = serial, .turbo = turbo, .dynarec = dynarec });
     if (have_rtc_fixed) emu.emuSetRtcFixed(&g_emu, rtc_fixed);
 
     if (rom_path.len != 0) {
@@ -404,6 +435,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         drainSerial();
         finishSerialLine();
     }
+    if (dynarec or dynarec_stats) reportDynarecStats();
     plat.present_fn(plat.state, emu.emuFramebuffer(&g_emu));
 
     if (mooneye) reportMooneye();

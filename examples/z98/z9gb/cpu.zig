@@ -549,8 +549,14 @@ const OP_CYCLES: [256]u8 = [256]u8{
     12, 12, 8, 4, 4, 16, 8, 16, 12, 8, 16, 4, 4, 4, 8, 16,
 };
 
-fn pendingInterrupts(bus: *Bus) u8 {
+fn pendingInterrupts(bus: *const Bus) u8 {
     return bus.ie & bus.io[0x0F] & 0x1F;
+}
+
+// Interrupt service is interpreter-only; the dynarec dispatch checks this at
+// every instruction boundary so cpuStep performs the push/jump when IME is set.
+pub fn cpuInterruptPending(cpu: *const Cpu, bus: *const Bus) bool {
+    return cpu.ime and pendingInterrupts(bus) != 0;
 }
 
 fn clearInterrupt(bus: *Bus, mask: u8) void {
