@@ -260,6 +260,67 @@ git commit -m "test(z9gb): add dynarec parity gates"
 
 ---
 
+### Task 6.1-I: Investigate dynarec PPU synchronization for dynamic reads
+
+**Files:**
+- Create: `.superpowers/sdd/2026-11-10-phase4-p5-dynarec-plan/task-6.1-i-report.md` (gitignored report)
+- Test: `examples/z98/z9gb/tests/tier_dmg.sh` (read-only invocation; no source edits)
+- Probes: temporary files under `/tmp` only (not committed)
+
+**Interfaces:**
+- Consumes: task-6 amendment commits `bc686123`, `b03d4a7e`; current `dynarec/ctx.zig`, `dynarec/helpers.zig`, `dynarec/x86.zig`, `dynarec/dynarec.zig`, `emu.zig`.
+- Produces: an evidence-backed design for Task 6.2, including the exact remaining dynamic access in `lcdon_timing-GS`, the correct PPU-sync ordering, the DynCtx change, call sites, double-speed dot conversion, and tests. No product source changes.
+
+- [ ] **Step 1: Reproduce the remaining gate failure**
+Run `Z9GB_ROM_DIR=/tmp/z9gb_roms sh examples/z98/z9gb/tests/tier_dmg.sh /tmp/z9gb_p2_seed/zig1_5_clean --gates` and record the `lcdon_timing-GS` verdict, dynarec counters, and the exact command line. Confirm `stat_irq_blocking` passes.
+
+- [ ] **Step 2: Identify the exact dynamic access**
+Use temporary `/tmp` probes only. Determine which dynamic load/store in `lcdon_timing-GS` still observes stale PPU state (candidate opcodes include `0x0A`, `0x1A`, `0x2A`, `0x3A`, `0x7E`, `0xF2`, and CB `(HL)` reads; do not assume). Record the opcode, PC, address, and whether the access is a read or write. Do not modify repository source.
+
+- [ ] **Step 3: Pin the cycle/sync ordering**
+Inspect the current emitter and helpers to establish what `DynCtx.cycles` means at a helper call, when `busTick` is charged, how the block epilogue charges residual cycles, and how `ppuSyncIn`/`ppuTick`/`ppuSyncOut` behave (`acc`/double-speed dots). Identify the exact point that must advance the PPU before a dynamic access, and prove the ordering against the interpreter's per-instruction sync.
+
+- [ ] **Step 4: Produce the Task 6.2 design**
+Specify the minimal implementation: `DynCtx.ppu` ownership/passing, the helper-side sync function, which helpers call it, read/write ordering, double-speed `cycles/2`, interaction with existing `busTick`, block epilogue behavior, whether the current `0x1A` boundary stays, and the covering tests. State any residual limitation and why it is safe.
+
+- [ ] **Step 5: STOP for review**
+Write the report and stop. No product/source commit. Do not implement Task 6.2.
+
+---
+
+### Task 6.2: Sync PPU at dynarec dynamic memory accesses
+
+**Files:**
+- Modify: `examples/z98/z9gb/dynarec/ctx.zig`
+- Modify: `examples/z98/z9gb/dynarec/helpers.zig`
+- Modify: `examples/z98/z9gb/dynarec/x86.zig`
+- Modify: `examples/z98/z9gb/dynarec/dynarec.zig`
+- Modify: `examples/z98/z9gb/emu.zig`
+- Modify: `examples/z98/z9gb/tests/dynarec_test.zig`
+- Modify: `examples/z98/z9gb/tests/tier_dmg.sh` only if the hard-gate assertions need adjustment
+- Test: `examples/z98/z9gb/tests/tier_dynarec.sh`, `tier_dmg.sh --gates`, `tier_dmg.sh --all`, `tier_smoke.sh`
+
+**Interfaces:**
+- Consumes: the Task 6.1-I design; current `DynCtx`, helper ABI, block epilogue.
+- Produces: dynamic accesses that cannot observe stale PPU state; `lcdon_timing-GS` passes with dynarec active and non-vacuous counters.
+
+- [ ] **Step 1: Write the failing regression test**
+Add a discriminator test that fails on the current helper path because a dynamic access in a multi-instruction block sees stale PPU state. Use the exact access/ordering from the 6.1-I report.
+
+- [ ] **Step 2: Implement the helper PPU sync**
+Add `DynCtx.ppu` and the helper-side synchronization exactly as pinned by 6.1-I. Keep the existing `0x40`, `0x1A`, static `0xF0`/`0xFA` boundaries unless the report proves a change is required. Do not change the interpreter path.
+
+- [ ] **Step 3: Verify**
+Run the regression test, `tier_dynarec`, `tier_dmg --gates`, `tier_dmg --all`, and `tier_smoke` under the pinned compiler. `lcdon_timing-GS` must pass with dynarec active; no gate may be lowered or skipped.
+
+- [ ] **Step 4: Commit**
+```bash
+git add examples/z98/z9gb/dynarec/ctx.zig examples/z98/z9gb/dynarec/helpers.zig examples/z98/z9gb/dynarec/x86.zig examples/z98/z9gb/dynarec/dynarec.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/dynarec_test.zig
+git commit -m "fix(z9gb): sync PPU at dynarec dynamic accesses"
+```
+
+---
+
 ### Task 7: Performance measurement and P5 closeout
 
 **Files:**

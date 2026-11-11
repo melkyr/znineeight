@@ -553,8 +553,14 @@ pub fn dsoundClose(d: *Dsound) void;
   or `LD A,(a16)` with `a16` in `0xFF40..0xFF4B`), or 64 instructions (the
   boundary rules bound interrupt-service drift). A block starting at `LD B,B`,
   at `LD A,(DE)`, or at such a PPU read is rejected so the interpreter executes
-  it with full PPU sync. Dynamic PPU reads through `HL` remain a documented
-  limitation.
+  it with full PPU sync.
+- Dynamic memory accesses inside a block that may address PPU registers advance
+  the PPU to the current instruction boundary before the access: charge the
+  accumulated CPU cycles through `busTick`, advance the PPU by the corresponding
+  dots (`cycles/2` in double speed), synchronize registers in/out, then perform
+  the access. `DynCtx` carries the PPU pointer; the block-return sync remains
+  unchanged. This replaces the stale-dynamic-read limitation; `LD A,(DE)` stays
+  a conservative boundary.
 - Generated code caches the CPU pairs in callee-saved host registers
   (`BC→ebx`, `DE→esi`, `HL→edi`, `SP→ebp`) across the block, with `A`/`F` in
   `Cpu` (or `A` in a volatile reg). Memory operands use an inline page-table
