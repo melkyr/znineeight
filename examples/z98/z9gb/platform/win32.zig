@@ -36,15 +36,18 @@ const Win32State = struct {
     ddraw: *ddraw.Ddraw,
     dinput: *dinput.Dinput,
     dsound: *dsound.Dsound,
-    opened: bool,
     timer_started: bool,
 };
 
+// Open flag lives outside the state (same pattern as std_ddraw/std_dinput/
+// std_dsound): it is explicitly false before any callback reads it, so the
+// undefined state storage is never consulted before win32Open fills it.
 var g_state: Win32State = undefined;
+var g_opened: bool = false;
 
 fn win32Open(state: *void, width: u32, height: u32, scale: u32) bool {
     var s = @ptrCast(*Win32State, state);
-    if (s.opened) return false;
+    if (g_opened) return false;
     if (width != FRAME_W or height != FRAME_H) return false;
     if (scale < 1 or scale > 4) return false;
 
@@ -63,14 +66,14 @@ fn win32Open(state: *void, width: u32, height: u32, scale: u32) bool {
     s.ddraw = d;
     s.dinput = di;
     s.dsound = ds;
-    s.opened = true;
     s.timer_started = timeBeginPeriod(TIMER_PERIOD_MS) == 0;
+    g_opened = true;
     return true;
 }
 
 fn win32Present(state: *void, frame: []const u32) void {
     var s = @ptrCast(*Win32State, state);
-    if (!s.opened) return;
+    if (!g_opened) return;
     _ = ddraw.ddrawPresent(s.ddraw, frame);
 }
 
@@ -78,7 +81,7 @@ fn win32Poll(state: *void, input: *backend.InputState) bool {
     var s = @ptrCast(*Win32State, state);
     input.buttons = 0;
     input.quit = false;
-    if (!s.opened) return false;
+    if (!g_opened) return false;
 
     var consumed: bool = false;
     var ev: ddraw.DdrawEvent = undefined;
@@ -105,18 +108,18 @@ fn win32Poll(state: *void, input: *backend.InputState) bool {
 
 fn win32Audio(state: *void, samples: []const i16) void {
     var s = @ptrCast(*Win32State, state);
-    if (!s.opened) return;
+    if (!g_opened) return;
     _ = dsound.dsoundWrite(s.dsound, samples);
 }
 
 fn win32Close(state: *void) void {
     var s = @ptrCast(*Win32State, state);
-    if (!s.opened) return;
+    if (!g_opened) return;
     dsound.dsoundClose(s.dsound);
     dinput.dinputClose(s.dinput);
     ddraw.ddrawClose(s.ddraw);
     if (s.timer_started) _ = timeEndPeriod(TIMER_PERIOD_MS);
-    s.opened = false;
+    g_opened = false;
 }
 
 var g_platform: backend.Platform = backend.Platform{
