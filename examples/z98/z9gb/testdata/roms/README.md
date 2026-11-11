@@ -39,8 +39,9 @@ mapping.
 ## Verifying a local tree
 
 ```sh
+REPO="$PWD"
 cd "${Z9GB_ROM_DIR:-/tmp/z9gb_roms}"
-sha256sum -c /workspace/znineeight/examples/z98/z9gb/testdata/roms/manifest.sha256
+sha256sum -c "$REPO/examples/z98/z9gb/testdata/roms/manifest.sha256"
 ```
 
 ## dmg-acid2 golden

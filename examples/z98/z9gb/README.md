@@ -248,8 +248,9 @@ No third-party ROM bytes are committed. The gate runners read
 in [`testdata/roms/README.md`](testdata/roms/README.md), then verify:
 
 ```sh
+REPO="$PWD"
 cd "${Z9GB_ROM_DIR:-/tmp/z9gb_roms}"
-sha256sum -c /workspace/znineeight/examples/z98/z9gb/testdata/roms/manifest.sha256
+sha256sum -c "$REPO/examples/z98/z9gb/testdata/roms/manifest.sha256"
 ```
 
 The committed `dmg-acid2` framebuffer golden lives at
