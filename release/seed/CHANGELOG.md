@@ -28,9 +28,9 @@ the `IDirectDrawSurface7.Unlock` calls, uses one fixed window style
 client at `src_w*scale` / `src_h*scale`; `std_dsound_pal.zig` restores the
 multi-lap DirectSound underrun handling (short underruns zero only the missed
 span, long stalls restart at `play_frames`) and keeps the 256-frame lead. No
-compiler-source or barrel change: the self-emission fixed point and the 8
-emission pins are unchanged (`73c75a65…`), emit-support stays 9/9, and `lib/`
-remains 65 at v148's inventory.
+compiler-source or barrel change: the self-emission fixed point stays
+`73c75a65…`; the 8 emission pins are unchanged; emit-support stays 9/9, and
+`lib/` remains 65 at v148's inventory.
 
 | field | value |
 |---|---|
@@ -82,8 +82,8 @@ Phase 4 P3 closeout rotation (std-only). `lib/` grows 59 -> 65 with
 modules into the P1 `Platform` table, with JOYP input wired through
 `emuSetButtons` (Task 5.1); DirectSound has the WinMM `waveOut` fallback and
 DirectInput has the `GetAsyncKeyState` keyboard fallback. There is no
-compiler-source change or barrel change: the self-emission fixed point and the
-8 emission pins are unchanged (`73c75a65…`), and emit-support stays 9/9. P3
+compiler-source change or barrel change: the self-emission fixed point stays
+`73c75a65…`; the 8 emission pins are unchanged; emit-support stays 9/9. P3
 tiers at rotation: `tier_audio --gate` PASS (dmg_sound), `tier_win32 --smoke`
 PASS, `tier_perf` PASS (host headless `2048.gb` 967.742 fps; Wine 47.658 fps
 evidence only), `tier_smoke` 18/18 PASS. Missing ROM is SKIP, never PASS.

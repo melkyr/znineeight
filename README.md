@@ -166,7 +166,7 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
   `b4089e728b41aff27afbeffd9aa7e862`, 65 std files). v149 is the Phase 4 P3
   final-review std-only rotation: it updates `std_ddraw_pal.zig` and
   `std_dsound_pal.zig` with no compiler-source or barrel change, so the fixed
-  point and the 8 emission pins stay `73c75a65…`; `lib/` remains 65 from v148.
+  point stays `73c75a65…` and the 8 emission pins are unchanged; `lib/` remains 65 from v148.
   v147 was the final Phase 3.5
   closeout expected-type contract rotation (Task 12.2-F `2383dc29`);
   it supersedes the invalid v146 seed, restores module-scope unannotated value

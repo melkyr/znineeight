@@ -52,8 +52,8 @@ A rebuild from the committed v149 archive is two-hop
 **hop1 == hop2 == `73c75a65…`**. The compiler source is **`-fsafe`-clean**.
 v149 is the std-only Phase 4 P3 final-review rotation: it updates
 `std_ddraw_pal.zig` and `std_dsound_pal.zig` with no compiler-source or barrel
-change, so the fixed point and the 8 emission pins stay `73c75a65…`; `lib/`
-remains 65 from v148. v147 was the final
+change, so the fixed point stays `73c75a65…` and the 8 emission pins are
+unchanged; `lib/` remains 65 from v148. v147 was the final
 Phase 3.5 expected-type-contract rotation; its narrative and fixed-point history
 remain in `release/seed/CHANGELOG.md`.
 
