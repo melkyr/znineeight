@@ -547,12 +547,14 @@ pub fn dsoundClose(d: *Dsound) void;
   entries); full arena/table reset only when the 1 MiB arena is exhausted.
 - Translation unit: basic block from PC until branch/call/ret/HALT/STOP, `EI`,
   `DI`, `RETI`, an IO write, any write to ROM space (`0000-7FFF`, a cart-control
-  write), `LD B,B` (`0x40`), a statically-known PPU-register read
-  (`LDH A,(a8)` with `a8` in `0x40..0x4B`, or `LD A,(a16)` with `a16` in
-  `0xFF40..0xFF4B`), or 64 instructions (the boundary rules bound
-  interrupt-service drift). A block starting at `LD B,B` or at such a PPU read
-  is rejected so the interpreter executes it with full PPU sync. Dynamic PPU
-  reads through `HL` remain a documented limitation.
+  write), `LD B,B` (`0x40`), `LD A,(DE)` (`0x1A`; DE may address a PPU register
+  at runtime, so this dynamic PPU read is always interpreted with full PPU sync),
+  a statically-known PPU-register read (`LDH A,(a8)` with `a8` in `0x40..0x4B`,
+  or `LD A,(a16)` with `a16` in `0xFF40..0xFF4B`), or 64 instructions (the
+  boundary rules bound interrupt-service drift). A block starting at `LD B,B`,
+  at `LD A,(DE)`, or at such a PPU read is rejected so the interpreter executes
+  it with full PPU sync. Dynamic PPU reads through `HL` remain a documented
+  limitation.
 - Generated code caches the CPU pairs in callee-saved host registers
   (`BC→ebx`, `DE→esi`, `HL→edi`, `SP→ebp`) across the block, with `A`/`F` in
   `Cpu` (or `A` in a volatile reg). Memory operands use an inline page-table
