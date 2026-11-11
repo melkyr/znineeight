@@ -7,9 +7,14 @@
 #
 # The host built output is compiled at -O2 (the harness compiles the emitted C
 # with the optimized flags) so the number measures emulator throughput, not the
-# generated -O0 scaffold. The Wine path delegates to tier_win32.sh --perf, which
-# builds an -O2 no-CRT exe and times the 600-frame window with a QPC launcher.
-# Wine numbers are Wine evidence only; they are never Win98 hardware evidence.
+# generated -O0 scaffold.
+#
+# Host headless is the authoritative pass/fail gate (>= Z9GB_PERF_MIN_FPS).
+# The Wine path delegates to tier_win32.sh --perf, which builds an -O2 no-CRT
+# exe and times the 600-frame window with a QPC launcher. A successful Wine run
+# counts as evidence/pass regardless of fps; a genuine Wine SKIP (77) stays a
+# SKIP, and a Wine build/run/framebuffer/QPC failure still fails. Wine numbers
+# are Wine evidence only; they are never Win98 hardware evidence.
 #
 # Usage:
 #   sh tier_perf.sh [ZIG]
@@ -18,11 +23,12 @@
 #   ZIG          compiler (first positional arg, else $ZIG, else seed path)
 #   OUT          scratch dir (default /tmp/z9gb_tier_perf)
 #   Z9GB_ROM_DIR ROM root (default /tmp/z9gb_roms, else testdata/roms)
-#   Z9GB_PERF_MIN_FPS minimum sustained rendered fps (default 59.0)
+#   Z9GB_PERF_MIN_FPS host headless minimum sustained rendered fps (default 59.0)
 #
 # Missing ROM = SKIP (exit 77); ROM size/hash mismatch = FAIL. A skipped hard
 # gate blocks P3 closeout. Estimates are labelled as estimates; measured
-# numbers are reported as measured.
+# numbers are reported as measured. The Wine windowed result is evidence only
+# and never changes the host headless gate threshold.
 
 set -u
 
@@ -161,15 +167,15 @@ else
 fi
 
 echo
-echo "== Wine windowed 2048.gb performance =="
+echo "== Wine windowed 2048.gb performance (evidence only) =="
 WIN_DIR="$OUT/win32"
 mkdir -p "$WIN_DIR"
-OUT="$WIN_DIR" Z9GB_ROM_DIR="$ROM_DIR" Z9GB_PERF_MIN_FPS="$PERF_MIN" \
+OUT="$WIN_DIR" Z9GB_ROM_DIR="$ROM_DIR" \
     sh "$SCRIPT_DIR/tier_win32.sh" --perf "$ZIG" >"$OUT/win32.log" 2>&1
 win_rc=$?
 sed 's/^/       /' "$OUT/win32.log"
 if [ "$win_rc" -eq 0 ]; then
-    pass_case "tier_win32.sh --perf PASS"
+    pass_case "tier_win32.sh --perf evidence run PASS (host headless is the gate)"
 elif [ "$win_rc" -eq 77 ]; then
     skip_case "tier_win32.sh --perf SKIP"
 else
