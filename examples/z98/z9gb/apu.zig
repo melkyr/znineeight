@@ -93,6 +93,7 @@ pub const Noise = struct {
 
 pub const Apu = struct {
     powered: bool,
+    cgb: bool,
     sample_rate: u32,
     sample_inc: u32,
     sample_acc: u64,
@@ -188,6 +189,7 @@ fn clearControl(a: *Apu) void {
 
 pub fn apuReset(a: *Apu, sample_rate: u32) void {
     a.powered = true;
+    a.cgb = false;
     a.sample_rate = sample_rate;
     a.sample_inc = 6233059;
     if (sample_rate != 0) {
@@ -239,6 +241,10 @@ pub fn apuReset(a: *Apu, sample_rate: u32) void {
     a.dc_r = 0;
 }
 
+pub fn apuSetCgb(a: *Apu, cgb: bool) void {
+    a.cgb = cgb;
+}
+
 fn maskFor(addr: u16) u8 {
     const idx: u8 = @intCast(u8, addr - 0xFF10);
     switch (idx) {
@@ -272,8 +278,9 @@ fn maskFor(addr: u16) u8 {
 pub fn apuRead(a: *Apu, addr: u16) u8 {
     if (addr >= 0xFF30 and addr <= 0xFF3F) {
         if (a.powered and a.ch3.enabled and a.ch3.dac) {
-            if (!a.ch3.just_read) return 0xFF;
             const bi: usize = @intCast(usize, (a.ch3.sample_index >> 1) & 0x0F);
+            if (a.cgb) return a.wave_ram[bi];
+            if (!a.ch3.just_read) return 0xFF;
             return a.wave_ram[bi];
         }
         const wi: usize = @intCast(usize, (addr - 0xFF30) & 0x0F);
@@ -347,7 +354,11 @@ fn writeNr52(a: *Apu, value: u8) void {
     }
     if (!a.powered) {
         a.powered = true;
-        clearControlKeepLengthsOnly(a);
+        if (a.cgb) {
+            clearControl(a);
+        } else {
+            clearControlKeepLengthsOnly(a);
+        }
         a.fs_step = 0;
         a.fs_cycles = 0;
     }
@@ -603,13 +614,13 @@ fn triggerWave(a: *Apu, value: u8) void {
     }
     if (trigger) {
         // DMG corrupts wave RAM when a retrigger lands on the sample fetch.
-        if (a.ch3.enabled and a.ch3.dac and a.ch3.timer == 2) corruptWave(a);
+        if (!a.cgb and a.ch3.enabled and a.ch3.dac and a.ch3.timer == 2) corruptWave(a);
         if (a.ch3.length == 0) {
             a.ch3.length = 256;
             if (new_en and quirk) a.ch3.length -= 1;
         }
         a.ch3.sample_index = 0;
-        // The first DMG wave fetch is 6 T-cycles later than the steady period.
+        // The first wave fetch is 6 T-cycles later than the steady period.
         a.ch3.timer = wavePeriod(a.ch3.freq) + 6;
         a.ch3.just_read = false;
         a.ch3.enabled = a.ch3.dac;
@@ -663,8 +674,8 @@ pub fn apuWrite(a: *Apu, addr: u16, value: u8) void {
     }
     if (addr >= 0xFF30 and addr <= 0xFF3F) {
         if (a.powered and a.ch3.enabled and a.ch3.dac) {
-            if (!a.ch3.just_read) return;
             const bi: usize = @intCast(usize, (a.ch3.sample_index >> 1) & 0x0F);
+            if (!a.cgb and !a.ch3.just_read) return;
             a.wave_ram[bi] = value;
             return;
         }
@@ -675,14 +686,16 @@ pub fn apuWrite(a: *Apu, addr: u16, value: u8) void {
     if (addr < 0xFF10 or addr > 0xFF25) return;
     const idx: usize = @intCast(usize, addr - 0xFF10);
     if (!a.powered) {
-        if (addr == 0xFF11) {
-            a.ch1.length = @intCast(u16, 64 - @as(u16, value & 0x3F));
-        } else if (addr == 0xFF16) {
-            a.ch2.length = @intCast(u16, 64 - @as(u16, value & 0x3F));
-        } else if (addr == 0xFF1B) {
-            a.ch3.length = @intCast(u16, 256 - @as(u16, value));
-        } else if (addr == 0xFF20) {
-            a.ch4.length = @intCast(u16, 64 - @as(u16, value & 0x3F));
+        if (!a.cgb) {
+            if (addr == 0xFF11) {
+                a.ch1.length = @intCast(u16, 64 - @as(u16, value & 0x3F));
+            } else if (addr == 0xFF16) {
+                a.ch2.length = @intCast(u16, 64 - @as(u16, value & 0x3F));
+            } else if (addr == 0xFF1B) {
+                a.ch3.length = @intCast(u16, 256 - @as(u16, value));
+            } else if (addr == 0xFF20) {
+                a.ch4.length = @intCast(u16, 64 - @as(u16, value & 0x3F));
+            }
         }
         return;
     }

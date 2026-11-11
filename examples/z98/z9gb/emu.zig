@@ -69,6 +69,7 @@ fn applyCgbMode(e: *Emu) void {
     e.bus.cgb_hw = e.cfg.cgb;
     e.bus.cgb_color = e.cfg.cgb and mode != .dmg;
     e.bus.cgb_compat = e.cfg.cgb and mode == .dmg;
+    apumod.apuSetCgb(&e.bus.apu, e.bus.cgb_color);
 }
 
 // Loader contract: size-checked copy into the fixed 8 MiB buffer, then validate

@@ -11,6 +11,7 @@ const mmumod = @import("../mmu.zig");
 const emumod = @import("../emu.zig");
 const ppumod = @import("../ppu.zig");
 const cpumod = @import("../cpu.zig");
+const apumod = @import("../apu.zig");
 
 const ROM_BYTES: usize = 32768;
 const PATH_MAX: usize = 256;
@@ -410,6 +411,7 @@ fn resetCgb() void {
     g_bus.cgb_hw = true;
     g_bus.cgb_color = true;
     g_bus.cgb_compat = false;
+    apumod.apuSetCgb(&g_bus.apu, true);
     ppumod.ppuReset(&g_ppu);
     g_bus.io[0x0F] = 0;
 }
@@ -1132,6 +1134,81 @@ fn testHdmaGates() void {
     checkByte("compat hdma1 ignored", g_bus.io[0x51], 0x00);
 }
 
+fn apuWr(addr: u16, value: u8) void {
+    mmumod.write8(&g_bus, addr, value);
+}
+
+fn apuRd(addr: u16) u8 {
+    return mmumod.read8(&g_bus, addr);
+}
+
+fn testCgbApu() void {
+    resetCgb();
+    apuWr(0xFF26, 0x80);
+    apuWr(0xFF20, 0x3E);
+    checkWord("cgb length before power", g_bus.apu.ch4.length, 2);
+    apuWr(0xFF26, 0x00);
+    apuWr(0xFF26, 0x80);
+    checkWord("cgb power-up resets length", g_bus.apu.ch4.length, 0);
+
+    resetBus();
+    apumod.apuSetCgb(&g_bus.apu, false);
+    apuWr(0xFF20, 0x3E);
+    checkWord("dmg length before power", g_bus.apu.ch4.length, 2);
+    apuWr(0xFF26, 0x00);
+    apuWr(0xFF26, 0x80);
+    checkWord("dmg length survives power", g_bus.apu.ch4.length, 2);
+
+    resetCgb();
+    apuWr(0xFF12, 0xF0);
+    apuWr(0xFF26, 0x00);
+    apuWr(0xFF12, 0xF0);
+    apuWr(0xFF20, 0x3E);
+    apuWr(0xFF26, 0x80);
+    checkByte("cgb NR12 clear after power", apuRd(0xFF12), 0x00);
+    checkWord("cgb NR41 off write ignored", g_bus.apu.ch4.length, 0);
+
+    resetCgb();
+    var i: usize = 0;
+    while (i < 16) : (i += 1) {
+        apuWr(@intCast(u16, 0xFF30 + i), @intCast(u8, i * 0x11));
+    }
+    apuWr(0xFF30, 0x00);
+    apuWr(0xFF1A, 0x80);
+    apuWr(0xFF1C, 0x00);
+    apuWr(0xFF1D, 0x00);
+    apuWr(0xFF1E, 0x80);
+    checkU32("cgb wave trigger timer", g_bus.apu.ch3.timer, 4102);
+    checkByte("cgb wave current byte start", apuRd(0xFF30), 0x00);
+    apumod.apuTick(&g_bus.apu, 12288);
+    checkByte("cgb wave current byte advanced", apuRd(0xFF30), 0x11);
+
+    var before: [16]u8 = undefined;
+    i = 0;
+    while (i < 16) : (i += 1) before[i] = g_bus.apu.wave_ram[i];
+    g_bus.apu.ch3.timer = 2;
+    apuWr(0xFF1E, 0x80);
+    i = 0;
+    while (i < 16) : (i += 1) {
+        checkByte("cgb wave trigger keeps RAM", g_bus.apu.wave_ram[i], before[i]);
+    }
+
+    resetCgb();
+    i = 0;
+    while (i < 16) : (i += 1) {
+        apuWr(@intCast(u16, 0xFF30 + i), @intCast(u8, i * 0x11));
+    }
+    apuWr(0xFF1A, 0x80);
+    apuWr(0xFF1C, 0x00);
+    apuWr(0xFF1D, 0xF0);
+    apuWr(0xFF1E, 0x87);
+    checkU32("cgb wave fast timer", g_bus.apu.ch3.timer, 38);
+    apumod.apuTick(&g_bus.apu, 280);
+    apuWr(0xFF30, 0xBC);
+    apuWr(0xFF1A, 0x00);
+    checkByte("cgb wave write current byte", apuRd(0xFF34), 0xBC);
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     if (argc < 2) {
         std.io.write("cgb FAIL no scratch dir\n");
@@ -1174,6 +1251,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testHdmaHaltPause();
     testHdmaDoubleSpeed();
     testHdmaGates();
+    testCgbApu();
 
     if (g_fail == 0) {
         std.io.write("cgb ok ");
