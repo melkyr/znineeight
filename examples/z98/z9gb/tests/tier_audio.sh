@@ -59,8 +59,122 @@ elif [ -d "$Z9DIR/testdata/roms" ]; then
 else
     ROM_DIR=/tmp/z9gb_roms
 fi
+skip_case() { echo "SKIP - $1"; SKIPS=$((SKIPS + 1)); }
+audio_close() {
+    off="$1"
+    on="$2"
+    frames="$3"
+    [ -n "$off" ] && [ -n "$on" ] || return 1
+    [ "$on" -gt 0 ] || return 1
+    if [ "$on" -ge "$off" ]; then delta=$((on - off)); else delta=$((off - on)); fi
+    limit=$((frames * 16 + 64))
+    [ "$delta" -le "$limit" ]
+}
+have_win_tools() {
+    for t in i686-w64-mingw32-gcc wine; do
+        command -v "$t" >/dev/null 2>&1 || return 1
+    done
+    return 0
+}
+setup_win_parity() {
+    WIN_DIR="$OUT/win_parity"
+    EXT_EXE="$WIN_DIR/ext.exe"
+    mkdir -p "$WIN_DIR"
+    ln -sfn "$Z9DIR" "$WIN_DIR/z9gb"
+    if ! sh "$SCRIPT_DIR/tier_dynarec.sh" --emit-ext "$WIN_DIR/ext.zig"; then
+        fail_case "audio dynarec ext harness emit"
+        return 1
+    fi
+    cat >"$WIN_DIR/gcc_o2.sh" <<'SH'
+#!/bin/sh
+exec i686-w64-mingw32-gcc -O2 "$@"
+SH
+    chmod +x "$WIN_DIR/gcc_o2.sh"
+    if ! EXTRA_LIBS="-luser32 -lgdi32 -lwinmm" CROSS_GCC="$WIN_DIR/gcc_o2.sh" \
+        DUMP_TARGET="-osw -ffast -I $ROOT/sf/src" \
+        bash "$ROOT/scripts/win32_cross/cross_nocrt.sh" "$ZIG" "$WIN_DIR/ext.zig" \
+        "$WIN_DIR/work" "$EXT_EXE" >"$WIN_DIR/build.log" 2>&1; then
+        fail_case "audio dynarec ext harness builds"
+        tail -10 "$WIN_DIR/build.log" | sed 's/^/       /'
+        return 1
+    fi
+    WIN_HOME="$OUT/winehome"
+    mkdir -p "$WIN_HOME"
+    printf 'pcm.!default { type null }\nctl.!default { type null }\n' >"$WIN_HOME/.asoundrc"
+    HOME="$WIN_HOME"
+    export HOME
+    WINEPREFIX="$OUT/wineprefix"
+    export WINEPREFIX
+    WINEARCH=win32
+    export WINEARCH
+    WINEDEBUG="${WINEDEBUG:--all}"
+    export WINEDEBUG
+    wineserver -k >/dev/null 2>&1 || true
+    wineboot -u >"$OUT/wineboot.log" 2>&1 || true
+    return 0
+}
+check_pair_prefix() {
+    label="$1"
+    offpre="$2"
+    onpre="$3"
+    frames="$4"
+    for suffix in serial fb ram proto; do
+        if cmp -s "$offpre.$suffix" "$onpre.$suffix"; then
+            pass_case "$label $suffix parity"
+        else
+            fail_case "$label $suffix parity"
+        fi
+    done
+    off_audio="$(sed -n 's/.* audio=\([0-9]*\).*/\1/p' "$offpre.log" | head -1)"
+    on_audio="$(sed -n 's/.* audio=\([0-9]*\).*/\1/p' "$onpre.log" | head -1)"
+    if audio_close "$off_audio" "$on_audio" "$frames"; then
+        pass_case "$label audio count parity (off=$off_audio on=$on_audio)"
+    else
+        fail_case "$label audio count parity (off=$off_audio on=$on_audio)"
+    fi
+    if grep -q '^dynarec=on blocks=' "$onpre.log"; then
+        blocks="$(sed -n 's/^dynarec=on blocks=\([0-9]*\) executed=\([0-9]*\).*/\1/p' "$onpre.log")"
+        execd="$(sed -n 's/^dynarec=on blocks=\([0-9]*\) executed=\([0-9]*\).*/\2/p' "$onpre.log")"
+        if [ -n "$blocks" ] && [ "$blocks" -gt 0 ] && [ -n "$execd" ] && [ "$execd" -gt 0 ]; then
+            pass_case "$label anti-vacuous dynarec=on blocks=$blocks executed=$execd"
+        else
+            fail_case "$label anti-vacuous counters"
+        fi
+    else
+        fail_case "$label dynarec=on counter line missing"
+    fi
+}
+run_sound_parity() {
+    label="$1"
+    rom="$2"
+    frames="$3"
+    cgb="$4"
+    if [ ! -f "$rom" ]; then
+        skip_case "$label (missing $rom)"
+        return
+    fi
+    dir="$WIN_DIR/runs/$label"
+    rm -rf "$dir"
+    mkdir -p "$dir"
+    if timeout 900 wine "$EXT_EXE" "$rom" "$frames" "$cgb" 0 0 "$dir/off" >"$dir/off.log" 2>&1 \
+        && timeout 900 wine "$EXT_EXE" "$rom" "$frames" "$cgb" 1 0 "$dir/on" >"$dir/on.log" 2>&1; then
+        check_pair_prefix "$label" "$dir/off" "$dir/on" "$frames"
+        off_status="$(sed -n 's/.* protocol_status=\([-0-9]*\).*/\1/p' "$dir/off.log" | head -1)"
+        on_status="$(sed -n 's/.* protocol_status=\([-0-9]*\).*/\1/p' "$dir/on.log" | head -1)"
+        if [ "$off_status" = "0" ] && [ "$on_status" = "0" ] \
+            && grep -q 'Passed' "$dir/off.proto" && grep -q 'Passed' "$dir/on.proto" \
+            && ! grep -q 'Failed' "$dir/off.proto" && ! grep -q 'Failed' "$dir/on.proto"; then
+            pass_case "$label memory-protocol Passed (off/on status=0)"
+        else
+            fail_case "$label memory-protocol Passed (off=$off_status on=$on_status)"
+        fi
+    else
+        fail_case "$label parity runs"
+    fi
+}
 
 run_unit_mode() {
+
     mode="$1"
     flag="$2"
     bin="$OUT/$mode/apu_test"
@@ -250,6 +364,23 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "unit" ]; then
 fi
 if [ "$MODE" = "all" ] || [ "$MODE" = "gate" ]; then
     run_gate
+    par_rom=""
+    for cand in \
+        "$ROM_DIR/dmg_sound/dmg_sound.gb" \
+        "$ROM_DIR/blargg/dmg_sound/dmg_sound.gb"
+    do
+        if [ -f "$cand" ]; then par_rom="$cand"; break; fi
+    done
+    if [ -n "$par_rom" ]; then
+        if ! have_win_tools; then
+            skip_case "audio dynarec parity host tools"
+        elif setup_win_parity; then
+            run_sound_parity dmg_sound "$par_rom" 200000 0
+        fi
+    fi
+    if command -v wineserver >/dev/null 2>&1; then
+        wineserver -k >/dev/null 2>&1 || true
+    fi
 fi
 
 echo

@@ -15,6 +15,195 @@ ZIG="${1:-${ZIG:-/tmp/z9gb_p2_seed/zig1_5_clean}}"
 if [ "$#" -gt 0 ]; then shift; fi
 OUT="${OUT:-/tmp/z9gb_tier_dmg}"
 
+if [ -n "${Z9GB_ROM_DIR:-}" ]; then
+    ROM_DIR="$Z9GB_ROM_DIR"
+elif [ -d /tmp/z9gb_roms ]; then
+    ROM_DIR=/tmp/z9gb_roms
+elif [ -d "$Z9DIR/testdata/roms" ]; then
+    ROM_DIR="$Z9DIR/testdata/roms"
+else
+    ROM_DIR=/tmp/z9gb_roms
+fi
+
+skip_case() { echo "SKIP - $1"; SKIPS=$((SKIPS + 1)); }
+audio_close() {
+    off="$1"
+    on="$2"
+    frames="$3"
+    [ -n "$off" ] && [ -n "$on" ] || return 1
+    [ "$on" -gt 0 ] || return 1
+    if [ "$on" -ge "$off" ]; then delta=$((on - off)); else delta=$((off - on)); fi
+    limit=$((frames * 16 + 64))
+    [ "$delta" -le "$limit" ]
+}
+have_win_tools() {
+    for t in i686-w64-mingw32-gcc wine; do
+        command -v "$t" >/dev/null 2>&1 || return 1
+    done
+    return 0
+}
+
+setup_win_parity() {
+    WIN_DIR="$OUT/win_parity"
+    EXT_EXE="$WIN_DIR/ext.exe"
+    mkdir -p "$WIN_DIR"
+    ln -sfn "$Z9DIR" "$WIN_DIR/z9gb"
+    if ! sh "$SCRIPT_DIR/tier_dynarec.sh" --emit-ext "$WIN_DIR/ext.zig"; then
+        fail_case "dmg dynarec ext harness emit"
+        return 1
+    fi
+    cat >"$WIN_DIR/gcc_o2.sh" <<'SH'
+#!/bin/sh
+exec i686-w64-mingw32-gcc -O2 "$@"
+SH
+    chmod +x "$WIN_DIR/gcc_o2.sh"
+    if ! EXTRA_LIBS="-luser32 -lgdi32 -lwinmm" CROSS_GCC="$WIN_DIR/gcc_o2.sh" \
+        DUMP_TARGET="-osw -ffast -I $ROOT/sf/src" \
+        bash "$ROOT/scripts/win32_cross/cross_nocrt.sh" "$ZIG" "$WIN_DIR/ext.zig" \
+        "$WIN_DIR/work" "$EXT_EXE" >"$WIN_DIR/build.log" 2>&1; then
+        fail_case "dmg dynarec ext harness builds"
+        tail -10 "$WIN_DIR/build.log" | sed 's/^/       /'
+        return 1
+    fi
+    WIN_HOME="$OUT/winehome"
+    mkdir -p "$WIN_HOME"
+    printf 'pcm.!default { type null }\nctl.!default { type null }\n' >"$WIN_HOME/.asoundrc"
+    HOME="$WIN_HOME"
+    export HOME
+    WINEPREFIX="$OUT/wineprefix"
+    export WINEPREFIX
+    WINEARCH=win32
+    export WINEARCH
+    WINEDEBUG="${WINEDEBUG:--all}"
+    export WINEDEBUG
+    wineserver -k >/dev/null 2>&1 || true
+    wineboot -u >"$OUT/wineboot.log" 2>&1 || true
+    return 0
+}
+
+check_pair_prefix() {
+    label="$1"
+    offpre="$2"
+    onpre="$3"
+    frames="$4"
+    for suffix in serial fb ram proto; do
+        if cmp -s "$offpre.$suffix" "$onpre.$suffix"; then
+            pass_case "$label $suffix parity"
+        else
+            fail_case "$label $suffix parity"
+        fi
+    done
+    off_audio="$(sed -n 's/.* audio=\([0-9]*\).*/\1/p' "$offpre.log" | head -1)"
+    on_audio="$(sed -n 's/.* audio=\([0-9]*\).*/\1/p' "$onpre.log" | head -1)"
+    if audio_close "$off_audio" "$on_audio" "$frames"; then
+        pass_case "$label audio count parity (off=$off_audio on=$on_audio)"
+    else
+        fail_case "$label audio count parity (off=$off_audio on=$on_audio)"
+    fi
+    if grep -q '^dynarec=on blocks=' "$onpre.log"; then
+        blocks="$(sed -n 's/^dynarec=on blocks=\([0-9]*\) executed=\([0-9]*\).*/\1/p' "$onpre.log")"
+        execd="$(sed -n 's/^dynarec=on blocks=\([0-9]*\) executed=\([0-9]*\).*/\2/p' "$onpre.log")"
+        if [ -n "$blocks" ] && [ "$blocks" -gt 0 ] && [ -n "$execd" ] && [ "$execd" -gt 0 ]; then
+            pass_case "$label anti-vacuous dynarec=on blocks=$blocks executed=$execd"
+        else
+            fail_case "$label anti-vacuous counters"
+        fi
+    else
+        fail_case "$label dynarec=on counter line missing"
+    fi
+}
+
+run_ext_pair() {
+    label="$1"
+    rom="$2"
+    frames="$3"
+    cgb="$4"
+    mooneye="$5"
+    if [ ! -f "$rom" ]; then
+        skip_case "$label (missing $rom)"
+        return
+    fi
+    dir="$WIN_DIR/runs/$label"
+    rm -rf "$dir"
+    mkdir -p "$dir"
+    if timeout 900 wine "$EXT_EXE" "$rom" "$frames" "$cgb" 0 "$mooneye" "$dir/off" >"$dir/off.log" 2>&1 \
+        && timeout 900 wine "$EXT_EXE" "$rom" "$frames" "$cgb" 1 "$mooneye" "$dir/on" >"$dir/on.log" 2>&1; then
+        check_pair_prefix "$label" "$dir/off" "$dir/on" "$frames"
+    else
+        fail_case "$label parity runs"
+        tail -10 "$dir/on.log" 2>/dev/null | sed 's/^/       /'
+    fi
+}
+
+serial_ok() {
+    path="$1"
+    tr -d '\r' <"$path" >"$path.clean" 2>/dev/null || return 1
+    if grep -Eq '^Failed' "$path.clean"; then return 1; fi
+    v="$(grep -v '^[[:space:]]*$' "$path.clean" | tail -n 1)"
+    [ "$v" = "Passed" ] || [ "$v" = "Passed all tests." ] || [ "$v" = "Passed all tests" ]
+}
+
+run_blargg_parity() {
+    label="$1"
+    rel="$2"
+    rom="$ROM_DIR/$rel"
+    run_ext_pair "$label" "$rom" 200000 0 0
+    if [ ! -f "$rom" ]; then return; fi
+    if serial_ok "$WIN_DIR/runs/$label/off.serial" && serial_ok "$WIN_DIR/runs/$label/on.serial"; then
+        pass_case "$label serial verdict Passed (off/on)"
+    else
+        fail_case "$label serial verdict Passed (off/on)"
+    fi
+}
+
+run_acid_parity() {
+    label="$1"
+    rel="$2"
+    rom="$ROM_DIR/$rel"
+    golden="$Z9DIR/testdata/golden/dmg-acid2.fb"
+    run_ext_pair "$label" "$rom" 120 0 0
+    if [ ! -f "$rom" ]; then return; fi
+    if [ ! -f "$golden" ]; then
+        skip_case "$label golden missing"
+        return
+    fi
+    dir="$WIN_DIR/runs/$label"
+    if cmp -s "$dir/off.fb" "$golden" && cmp -s "$dir/on.fb" "$golden"; then
+        pass_case "$label framebuffer golden (off/on)"
+    else
+        fail_case "$label framebuffer golden (off/on)"
+    fi
+}
+
+run_mooneye_parity() {
+    label="$1"
+    rel="$2"
+    rom="$ROM_DIR/$rel"
+    if [ ! -f "$rom" ]; then
+        skip_case "mooneye $label (missing $rom)"
+        return
+    fi
+    dir="$WIN_DIR/runs/mooneye_$label"
+    rm -rf "$dir"
+    mkdir -p "$dir"
+    if ! timeout 300 wine "$EXT_EXE" "$rom" 60000 0 0 1 "$dir/verdict" >"$dir/verdict.log" 2>&1; then
+        fail_case "mooneye $label verdict run"
+        return
+    fi
+    if grep -qx 'mooneye: PASS B=3 C=5 D=8 E=13 H=21 L=34' "$dir/verdict.log"; then
+        pass_case "mooneye $label interpreter verdict PASS"
+    else
+        fail_case "mooneye $label interpreter verdict PASS"
+        return
+    fi
+    if timeout 300 wine "$EXT_EXE" "$rom" 60000 0 0 0 "$dir/off" >"$dir/off.log" 2>&1 \
+        && timeout 300 wine "$EXT_EXE" "$rom" 60000 0 1 0 "$dir/on" >"$dir/on.log" 2>&1; then
+        check_pair_prefix "mooneye $label dynarec parity" "$dir/off" "$dir/on" 60000
+    else
+        fail_case "mooneye $label dynarec parity runs"
+    fi
+}
+
 ONLY=""
 RUN_ALL=0
 RUN_GATES=0
@@ -1998,6 +2187,34 @@ if [ "$RUN_GATES" -eq 1 ]; then
         run_gate blargg "$SCRIPT_DIR/run_blargg.sh"
         run_gate mooneye "$SCRIPT_DIR/run_mooneye.sh"
         run_gate acid2 "$SCRIPT_DIR/run_acid2.sh"
+    fi
+    echo
+    echo "== dynarec on/off parity (Win32/Wine) =="
+    if ! have_win_tools; then
+        skip_case "dmg dynarec parity host tools"
+    elif setup_win_parity; then
+        run_blargg_parity blargg_cpu_instrs blargg/cpu_instrs/cpu_instrs.gb
+        run_blargg_parity blargg_instr_timing blargg/instr_timing/instr_timing.gb
+        run_blargg_parity blargg_mem_timing blargg/mem_timing/mem_timing.gb
+        run_acid_parity dmg_acid2 acid2/dmg-acid2.gb
+        run_mooneye_parity div_write mooneye/acceptance/timer/div_write.gb
+        run_mooneye_parity tim00 mooneye/acceptance/timer/tim00.gb
+        run_mooneye_parity tim01 mooneye/acceptance/timer/tim01.gb
+        run_mooneye_parity tim10 mooneye/acceptance/timer/tim10.gb
+        run_mooneye_parity tim11 mooneye/acceptance/timer/tim11.gb
+        run_mooneye_parity mbc1_bits_bank1 mooneye/emulator-only/mbc1/bits_bank1.gb
+        run_mooneye_parity mbc1_bits_bank2 mooneye/emulator-only/mbc1/bits_bank2.gb
+        run_mooneye_parity mbc1_bits_mode mooneye/emulator-only/mbc1/bits_mode.gb
+        run_mooneye_parity mbc1_bits_ramg mooneye/emulator-only/mbc1/bits_ramg.gb
+        run_mooneye_parity mbc1_rom_2Mb mooneye/emulator-only/mbc1/rom_2Mb.gb
+        run_mooneye_parity mbc1_rom_4Mb mooneye/emulator-only/mbc1/rom_4Mb.gb
+        run_mooneye_parity mbc1_ram_256kb mooneye/emulator-only/mbc1/ram_256kb.gb
+        run_mooneye_parity ppu_lcdon_timing mooneye/acceptance/ppu/lcdon_timing-GS.gb
+        run_mooneye_parity ppu_stat_irq_blocking mooneye/acceptance/ppu/stat_irq_blocking.gb
+        run_mooneye_parity oam_dma_basic mooneye/acceptance/oam_dma/basic.gb
+    fi
+    if command -v wineserver >/dev/null 2>&1; then
+        wineserver -k >/dev/null 2>&1 || true
     fi
 fi
 

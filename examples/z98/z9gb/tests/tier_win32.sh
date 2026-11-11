@@ -281,17 +281,21 @@ if [ -x /usr/bin/time ]; then
     wine reg add 'HKCU\Software\Wine\Drivers' /v Audio /t REG_SZ /d alsa /f >/dev/null 2>&1 || true
 
     ROM="$Z9DIR/testdata/synth/minimal.gb"
-    WIN_FB="$Z9GB_DIR/windowed.fb"
+    WIN_FB_OFF="$Z9GB_DIR/windowed_off.fb"
+    WIN_FB_ON="$Z9GB_DIR/windowed_on.fb"
+    WIN_FB="$WIN_FB_OFF"
     HEAD_FB="$Z9GB_DIR/headless.fb"
+    LOG_OFF="$OUT/z9gb_windowed_off.log"
+    LOG_ON="$OUT/z9gb_windowed_on.log"
     Z9GB_OK=0
     ATTEMPT=1
     while [ "$ATTEMPT" -le 3 ]; do
-        rm -f "$WIN_FB"
+        rm -f "$WIN_FB_OFF"
         if timeout 300 /usr/bin/time -f '%M' -o "$OUT/z9gb_rss.txt" \
             xvfb-run -a -s "-screen 0 1024x768x24" \
-            wine "$Z9GB_EXE" --windowed --scale 2 --frames 120 --rom "$ROM" --fb-out "$WIN_FB" \
-            >"$OUT/z9gb_windowed.log" 2>&1 \
-            && [ -s "$WIN_FB" ]; then
+            wine "$Z9GB_EXE" --windowed --no-dynarec --scale 2 --frames 120 --rom "$ROM" --fb-out "$WIN_FB_OFF" \
+            >"$LOG_OFF" 2>&1 \
+            && [ -s "$WIN_FB_OFF" ]; then
             Z9GB_OK=1
             break
         fi
@@ -299,17 +303,56 @@ if [ -x /usr/bin/time ]; then
         wineserver -k >/dev/null 2>&1 || true
     done
     if [ "$Z9GB_OK" = "1" ]; then
-        pass_case "z9gb --windowed --frames 120 exited 0 with non-empty framebuffer (attempt $ATTEMPT)"
+        pass_case "z9gb --windowed --no-dynarec --frames 120 exited 0 (attempt $ATTEMPT)"
     else
-        fail_case "z9gb --windowed --frames 120 failed after $ATTEMPT attempts (see $OUT/z9gb_windowed.log)"
+        fail_case "z9gb --windowed --no-dynarec --frames 120 failed after $ATTEMPT attempts (see $LOG_OFF)"
     fi
-    sed 's/^/       /' "$OUT/z9gb_windowed.log" 2>/dev/null || true
-    INPUT_LINES="$(grep -Ec '^z9gb: input=(dinput8|fallback) audio=(dsound|waveout)' "$OUT/z9gb_windowed.log" 2>/dev/null)"
+    sed 's/^/       /' "$LOG_OFF" 2>/dev/null || true
+    INPUT_LINES="$(grep -Ec '^z9gb: input=(dinput8|fallback) audio=(dsound|waveout)' "$LOG_OFF" 2>/dev/null)"
     if [ "$INPUT_LINES" = "1" ]; then
-        pass_case "z9gb startup backend line (input/audio)"
+        pass_case "z9gb --no-dynarec startup backend line (input/audio)"
     else
-        fail_case "z9gb startup backend line missing or repeated (count=${INPUT_LINES:-0})"
+        fail_case "z9gb --no-dynarec startup backend line missing or repeated (count=${INPUT_LINES:-0})"
     fi
+
+    Z9GB_ON_OK=0
+    ATTEMPT=1
+    while [ "$ATTEMPT" -le 3 ]; do
+        rm -f "$WIN_FB_ON"
+        if timeout 300 xvfb-run -a -s "-screen 0 1024x768x24" \
+            wine "$Z9GB_EXE" --windowed --dynarec --scale 2 --frames 120 --rom "$ROM" --fb-out "$WIN_FB_ON" \
+            >"$LOG_ON" 2>&1 \
+            && [ -s "$WIN_FB_ON" ]; then
+            Z9GB_ON_OK=1
+            break
+        fi
+        ATTEMPT=$((ATTEMPT + 1))
+        wineserver -k >/dev/null 2>&1 || true
+    done
+    if [ "$Z9GB_ON_OK" = "1" ]; then
+        pass_case "z9gb --windowed --dynarec --frames 120 exited 0 (attempt $ATTEMPT)"
+    else
+        fail_case "z9gb --windowed --dynarec --frames 120 failed after $ATTEMPT attempts (see $LOG_ON)"
+    fi
+    sed 's/^/       /' "$LOG_ON" 2>/dev/null || true
+    INPUT_LINES="$(grep -Ec '^z9gb: input=(dinput8|fallback) audio=(dsound|waveout)' "$LOG_ON" 2>/dev/null)"
+    if [ "$INPUT_LINES" = "1" ]; then
+        pass_case "z9gb --dynarec startup backend line (input/audio)"
+    else
+        fail_case "z9gb --dynarec startup backend line missing or repeated (count=${INPUT_LINES:-0})"
+    fi
+    if grep -q '^dynarec=on blocks=' "$LOG_ON"; then
+        ON_BLOCKS="$(sed -n 's/^dynarec=on blocks=\([0-9]*\) executed=\([0-9]*\).*/\1/p' "$LOG_ON")"
+        ON_EXEC="$(sed -n 's/^dynarec=on blocks=\([0-9]*\) executed=\([0-9]*\).*/\2/p' "$LOG_ON")"
+        if [ -n "$ON_BLOCKS" ] && [ "$ON_BLOCKS" -gt 0 ] && [ -n "$ON_EXEC" ] && [ "$ON_EXEC" -gt 0 ]; then
+            pass_case "z9gb windowed dynarec anti-vacuous blocks=$ON_BLOCKS executed=$ON_EXEC"
+        else
+            fail_case "z9gb windowed dynarec anti-vacuous counters"
+        fi
+    else
+        fail_case "z9gb windowed dynarec=on counter line missing"
+    fi
+
 
     NOAUDIO_LOG="$OUT/z9gb_noaudio.log"
     NOAUDIO_OK=0
@@ -339,10 +382,22 @@ if [ -x /usr/bin/time ]; then
     fi
     wineserver -k >/dev/null 2>&1 || true
 
-    if [ -f "$WIN_FB" ] && [ "$(stat -c %s "$WIN_FB")" = "92160" ]; then
-        pass_case "windowed framebuffer is 92160 bytes"
+    if [ -f "$WIN_FB_OFF" ] && [ "$(stat -c %s "$WIN_FB_OFF")" = "92160" ] \
+        && [ -f "$WIN_FB_ON" ] && [ "$(stat -c %s "$WIN_FB_ON")" = "92160" ]; then
+        pass_case "windowed off/on framebuffers are 92160 bytes"
     else
-        fail_case "windowed framebuffer missing or not 92160 bytes"
+        fail_case "windowed off/on framebuffer missing or not 92160 bytes"
+    fi
+    if [ -f "$WIN_FB_OFF" ] && [ -f "$WIN_FB_ON" ]; then
+        WIN_OFF_MD5="$(md5sum "$WIN_FB_OFF" | cut -d' ' -f1)"
+        WIN_ON_MD5="$(md5sum "$WIN_FB_ON" | cut -d' ' -f1)"
+        echo "       windowed --no-dynarec md5 $WIN_OFF_MD5"
+        echo "       windowed --dynarec md5 $WIN_ON_MD5"
+        if [ "$WIN_OFF_MD5" = "$WIN_ON_MD5" ]; then
+            pass_case "windowed framebuffer hash parity (--no-dynarec vs --dynarec)"
+        else
+            fail_case "windowed framebuffer hash parity (--no-dynarec vs --dynarec)"
+        fi
     fi
 
     RSS="$(tr -d '[:space:]' <"$OUT/z9gb_rss.txt" 2>/dev/null)"
