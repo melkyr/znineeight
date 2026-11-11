@@ -25,7 +25,7 @@
 - CGB mode state is explicit: `cgb_hw` = hardware selected by `--cgb`; `cgb_color` = CGB color mode for header `0x80`/`0xC0`; `cgb_compat` = header `0x00` with `--cgb` (CGB hardware in DMG compatibility, CGB registers inactive).
 - Double speed (Pan Docs-verified): CPU, timer/divider, serial, and OAM DMA run at 2x; LCD/PPU dots, HDMA, and all sound timings stay at their normal rates. `STOP` stalls the CPU 2050 M-cycles (8200 T-cycles). PPU line timing is 456 dots regardless of speed.
 - Clock split: `FRAME_CYCLES = 70224` is always **dots**. `cpuStep` returns current-speed CPU T-cycles; `emuRunFrame` accumulates dots and passes dot deltas to `ppuTick`; `busTick` derives APU/HDMA dots from `double_speed` (`cycles / 2` in double speed). Timer, serial, and OAM DMA continue to consume CPU T-cycles.
-- General-purpose HDMA uses a CPU-stall counter drained by `cpuStep`. HBlank DMA is per-HBlank and does not halt the CPU.
+- General-purpose HDMA uses a CPU-stall counter drained by `cpuStep`; HBlank DMA also charges the per-block CPU stall (32 T-cycles normal, 64 in double speed) while remaining per-HBlank.
 - `-fsafe` arithmetic idiom (same binding as P2): shifts and wrapping math on `u32`/`u16` temps, mask-then-narrow, no `u8` shifts, masked `@intCast`; both `-ffast` and `-fsafe` build clean.
 - CLI: `--cgb` sets `EmuConfig.cgb`; a CGB-only ROM (header `0x0143 == 0xC0`) without `--cgb` fails `CgbRequired` (CLI prints `z9gb: CgbRequired`, exit 2); gates run with `--cgb`.
 
