@@ -19,6 +19,10 @@ const SAVE_CAP: usize = 260;
 const FRAME_W: usize = 160;
 const FRAME_H: usize = 144;
 
+// One DMG frame at the 4,194,304 Hz master clock. main.zig uses the same
+// constant for the QPC deadline (70224 * freq / 4194304).
+pub const FRAME_CYCLES: u32 = 70224;
+
 pub const EmuConfig = struct { cgb: bool, serial_log: bool, turbo: bool, dynarec: bool };
 
 pub const EmuError = error{ RomTooLarge, BadHeader, UnsupportedMbc, CgbRequired, SaveCorrupt, Io, OutOfMemory };
@@ -172,11 +176,11 @@ fn ppuSyncOut(e: *Emu) void {
 pub fn emuRunFrame(e: *Emu) u32 {
     if (e.rom_len == 0) {
         emuSelfTestPattern(e);
-        return 70224;
+        return FRAME_CYCLES;
     }
     if (e.mooneye_stopped) return 0;
     var total: u32 = 0;
-    while (total < 70224) {
+    while (total < FRAME_CYCLES) {
         // Mooneye magic breakpoint: stop before executing `LD B,B` (0x40).
         // The test has already loaded the full Fibonacci signature into
         // B/C/D/E/H/L; a present 0x40 on the instruction stream is the signal.

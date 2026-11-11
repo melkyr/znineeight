@@ -1,10 +1,14 @@
 // main.zig — z9gb entry point (P1: deterministic headless framebuffer).
 //
 // Pure Z98 CLI:
-//   --headless            select the headless platform (the only P1 backend)
+//   --headless            select the headless platform
+//   --windowed            select the Win32 DirectDraw/DInput/DSound backend
+//   --scale <1..4>        windowed integer scale (default 1)
 //   --frames <n>          run n frames (default 1)
 //   --fb-out <path>       write 160*144 little-endian u32 pixels
 //   --rom <path>          size-checked copy into the fixed 8 MiB ROM buffer
+//   --audio / --no-audio  enable/disable APU output (default on Win32)
+//   --turbo               skip frame pacing (run as fast as possible)
 //
 // The single `Emu` lives at module scope: its fixed ROM buffer is 8 MiB, so it
 // is never a stack local or a by-value copy (the 1 MiB stack is a hard limit).
@@ -13,11 +17,23 @@ const std = @import("std");
 const filemod = @import("std_file");
 const emu = @import("emu.zig");
 const headless = @import("platform/headless.zig");
+const backend = @import("platform/backend.zig");
+
+// Conditional module identity: only the live arm is resolved, so the Linux
+// dump never sees win32.zig (or its Win32 headers/DirectX imports).
+const selected_impl = if (@isWindows()) @import("platform/win32.zig") else @import("platform/headless.zig");
 
 const FRAME_W: u32 = 160;
 const FRAME_H: u32 = 144;
 const FB_PIXELS: usize = 160 * 144;
 const FB_BYTES: usize = FB_PIXELS * 4;
+
+// QPC deadline formula from the P3 plan: one 70,224 T-cycle GB frame at
+// 4,194,304 Hz. The spin tail is bounded to the final <= 2 ms.
+const GB_CLOCK_HZ: u64 = 4194304;
+const SPIN_TAIL_MS: u64 = 2;
+const MAX_SPIN_READS: u32 = 4000000;
+const AUDIO_BUF_SAMPLES: usize = 4096;
 
 const VERDICT_NONE: u8 = 0;
 const VERDICT_PASS: u8 = 1;
@@ -28,6 +44,7 @@ var g_fb_bytes: [FB_BYTES]u8;
 var g_line_buf: [96]u8;
 var g_line_len: usize = 0;
 var g_verdict: u8 = VERDICT_NONE;
+var g_audio_buf: [AUDIO_BUF_SAMPLES]i16;
 
 fn argAt(argv: [*][*]u8, i: usize) []const u8 {
     const p: [*]const u8 = @ptrCast([*]const u8, argv[i]);
@@ -177,6 +194,50 @@ fn writeFramebuffer(path: []const u8) bool {
     return true;
 }
 
+// Sleep while more than the 2 ms spin tail remains, then burn a bounded QPC
+// spin for the last <= 2 ms. Returns as soon as the deadline is reached (or
+// after MAX_SPIN_READS, so a broken counter can never hang the loop).
+fn waitForDeadline(deadline: u64) void {
+    const freq: u64 = std.time.highResFreq();
+    const tail_ticks: u64 = freq * SPIN_TAIL_MS / 1000;
+    while (true) {
+        const now: u64 = std.time.highRes();
+        if (now >= deadline) return;
+        const remaining: u64 = deadline - now;
+        if (remaining <= tail_ticks) break;
+        const sleep_ticks: u64 = remaining - tail_ticks;
+        var ms: u64 = sleep_ticks * 1000 / freq;
+        if (ms == 0) ms = 1;
+        std.time.sleepMs(@intCast(u32, ms));
+    }
+    var spins: u32 = 0;
+    while (spins < MAX_SPIN_READS) : (spins += 1) {
+        if (std.time.highRes() >= deadline) return;
+    }
+}
+
+// Advance the deadline by one GB frame. If the loop is already late, drop the
+// deadline to now instead of trying to catch up (no late-frame accumulation).
+fn nextDeadline(deadline: u64, period_ticks: u64) u64 {
+    var next: u64 = deadline + period_ticks;
+    const now: u64 = std.time.highRes();
+    if (now > next) next = now;
+    return next;
+}
+
+// Drain the APU ring into the backend in bounded batches. A short write is
+// dropped by the backend (audio never blocks the emulator); a full batch loops
+// so a long host stall does not leave stale samples queued.
+fn drainAudio(plat: *backend.Platform) void {
+    var rounds: u32 = 0;
+    while (rounds < 16) : (rounds += 1) {
+        const got: usize = emu.emuAudioSamples(&g_emu, g_audio_buf[0..]);
+        if (got == 0) return;
+        plat.audio_fn(plat.state, g_audio_buf[0..got]);
+        if (got < g_audio_buf.len) return;
+    }
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     const n: usize = @intCast(usize, argc);
     var frames: u32 = 1;
@@ -186,13 +247,30 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var turbo: bool = false;
     var mooneye: bool = false;
     var save: bool = false;
+    var windowed: bool = false;
+    var scale: u32 = 1;
+    var audio: bool = true;
     var rtc_fixed: i64 = 0;
     var have_rtc_fixed: bool = false;
     var i: usize = 1;
     while (i < n) : (i += 1) {
         var tok: []const u8 = argAt(argv, i);
         if (eq(tok, "--headless")) {
-            // Headless is the only P1 backend; nothing to switch.
+            windowed = false;
+        } else if (eq(tok, "--windowed")) {
+            windowed = true;
+        } else if (eq(tok, "--scale")) {
+            i += 1;
+            if (i >= n) std.os.exit(1);
+            if (parseU32(argAt(argv, i))) |v| {
+                scale = v;
+            } else {
+                std.os.exit(1);
+            }
+        } else if (eq(tok, "--audio")) {
+            audio = true;
+        } else if (eq(tok, "--no-audio")) {
+            audio = false;
         } else if (eq(tok, "--frames")) {
             i += 1;
             if (i >= n) std.os.exit(1);
@@ -230,6 +308,11 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.os.exit(1);
         }
     }
+    if (scale < 1 or scale > 4) {
+        var m: []const u8 = "z9gb: --scale must be 1..4\n";
+        std.io.write(m);
+        std.os.exit(1);
+    }
 
     emu.emuInit(&g_emu, emu.EmuConfig{ .cgb = false, .serial_log = serial, .turbo = turbo, .dynarec = false });
     if (have_rtc_fixed) emu.emuSetRtcFixed(&g_emu, rtc_fixed);
@@ -249,11 +332,30 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     }
     emu.emuSetMooneye(&g_emu, mooneye);
 
-    var plat = headless.platformHeadless();
-    if (!plat.open_fn(plat.state, FRAME_W, FRAME_H, 1)) {
-        var m: []const u8 = "z9gb: cannot open headless platform\n";
+    var plat: *backend.Platform = undefined;
+    if (windowed) {
+        if (@isWindows()) {
+            plat = selected_impl.platformWin32();
+        } else {
+            var m: []const u8 = "z9gb: --windowed requires the Win32 target\n";
+            std.io.write(m);
+            std.os.exit(2);
+        }
+    } else {
+        plat = headless.platformHeadless();
+    }
+    if (!plat.open_fn(plat.state, FRAME_W, FRAME_H, scale)) {
+        var m: []const u8 = "z9gb: cannot open platform\n";
         std.io.write(m);
         std.os.exit(2);
+    }
+
+    const paced: bool = windowed and !turbo;
+    var period_ticks: u64 = 0;
+    var deadline: u64 = 0;
+    if (paced) {
+        period_ticks = std.time.highResFreq() * @intCast(u64, emu.FRAME_CYCLES) / GB_CLOCK_HZ;
+        deadline = std.time.highRes() + period_ticks;
     }
 
     var f: u32 = 0;
@@ -262,6 +364,19 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         if (serial) drainSerial();
         if (mooneye and emu.emuMooneyeStopped(&g_emu)) break;
         if (serial and g_verdict != VERDICT_NONE) break;
+
+        if (windowed) {
+            var input: backend.InputState = backend.InputState{ .buttons = 0, .quit = false };
+            _ = plat.poll_fn(plat.state, &input);
+            emu.emuSetButtons(&g_emu, input.buttons);
+            if (input.quit) break;
+            plat.present_fn(plat.state, emu.emuFramebuffer(&g_emu));
+            if (audio) drainAudio(plat);
+            if (paced) {
+                waitForDeadline(deadline);
+                deadline = nextDeadline(deadline, period_ticks);
+            }
+        }
     }
     if (serial) {
         drainSerial();
