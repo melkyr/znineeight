@@ -735,6 +735,74 @@ fn testCbWriteBoundaries() void {
     checkBool("cb bit hl continues", blk.ends_block, false);
 }
 
+fn testPpuReadBoundaries() void {
+    var blk: blockmod.Block = undefined;
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x40);
+    g_cpu.pc = 0xC000;
+    checkBool("ld b,b boundary start", blockmod.blockBuild(&g_cpu, &g_bus, &blk), false);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x00);
+    mmumod.write8(&g_bus, 0xC001, 0x40);
+    g_cpu.pc = 0xC000;
+    checkBool("ld b,b boundary build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ld b,b boundary len", @intCast(u32, blk.len), 1);
+    checkBool("ld b,b boundary not terminal", blk.ends_block, false);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0xF0);
+    mmumod.write8(&g_bus, 0xC001, 0x44);
+    g_cpu.pc = 0xC000;
+    checkBool("ldh ppu boundary start", blockmod.blockBuild(&g_cpu, &g_bus, &blk), false);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x00);
+    mmumod.write8(&g_bus, 0xC001, 0xF0);
+    mmumod.write8(&g_bus, 0xC002, 0x44);
+    g_cpu.pc = 0xC000;
+    checkBool("ldh ppu boundary build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ldh ppu boundary len", @intCast(u32, blk.len), 1);
+    checkBool("ldh ppu boundary not terminal", blk.ends_block, false);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0xFA);
+    mmumod.write8(&g_bus, 0xC001, 0x41);
+    mmumod.write8(&g_bus, 0xC002, 0xFF);
+    g_cpu.pc = 0xC000;
+    checkBool("ld a,a16 ppu boundary start", blockmod.blockBuild(&g_cpu, &g_bus, &blk), false);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x00);
+    mmumod.write8(&g_bus, 0xC001, 0xFA);
+    mmumod.write8(&g_bus, 0xC002, 0x41);
+    mmumod.write8(&g_bus, 0xC003, 0xFF);
+    g_cpu.pc = 0xC000;
+    checkBool("ld a,a16 ppu boundary build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ld a,a16 ppu boundary len", @intCast(u32, blk.len), 1);
+    checkBool("ld a,a16 ppu boundary not terminal", blk.ends_block, false);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0xF0);
+    mmumod.write8(&g_bus, 0xC001, 0x00);
+    mmumod.write8(&g_bus, 0xC002, 0x76);
+    g_cpu.pc = 0xC000;
+    checkBool("ldh non-ppu build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ldh non-ppu len", @intCast(u32, blk.len), 2);
+    checkOp("ldh non-ppu op", blk.insns[0].op, blockmod.BlockOp.ld_mem);
+    checkBool("ldh non-ppu halts", blk.ends_block, true);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x7E);
+    mmumod.write8(&g_bus, 0xC001, 0x76);
+    g_cpu.pc = 0xC000;
+    checkBool("ld a,hl build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ld a,hl len", @intCast(u32, blk.len), 2);
+    checkOp("ld a,hl op", blk.insns[0].op, blockmod.BlockOp.ld_mem);
+    checkBool("ld a,hl halts", blk.ends_block, true);
+}
+
 fn setupAluR(group: u8, src: u8, carry: u8) void {
     beginAt(0xC000);
     mmumod.write8(&g_bus, 0xC000, opAluR(group, src));
@@ -2285,7 +2353,8 @@ fn testDynarecDispatchFallbacks() void {
     checkU32("dynarec dispatch hdma fallback", dynp.stats.fallback, 1);
     checkU32("dynarec dispatch hdma consumed", busp3.hdma.cpu_halt_cycles, 0);
 
-    // --mooneye forces interpreter dispatch but must still stop on LD B,B.
+    // --mooneye enables the LD B,B breakpoint but still dispatches dynarec for
+    // the pre-breakpoint block.
     if (!setupDynarecEmu(true)) {
         checkBool("dynarec dispatch mooneye setup", false, true);
         return;
@@ -2308,12 +2377,13 @@ fn testDynarecDispatchFallbacks() void {
     emumod.emuSetMooneye(&g_emu, true);
     const moon_blocks: u32 = dynp.stats.blocks;
     const moon_exec: u32 = dynp.stats.executed;
+    const moon_fallback: u32 = dynp.stats.fallback;
     _ = emumod.emuRunFrame(&g_emu);
     checkBool("dynarec dispatch mooneye stopped", emumod.emuMooneyeStopped(&g_emu), true);
     checkBool("dynarec dispatch mooneye pass", emumod.emuMooneyePass(&g_emu), true);
-    checkU32("dynarec dispatch mooneye blocks unchanged", dynp.stats.blocks, moon_blocks);
-    checkU32("dynarec dispatch mooneye executed unchanged", dynp.stats.executed, moon_exec);
-    checkBool("dynarec dispatch mooneye fallback", dynp.stats.fallback > 0, true);
+    checkBool("dynarec dispatch mooneye blocks grew", dynp.stats.blocks > moon_blocks, true);
+    checkBool("dynarec dispatch mooneye executed grew", dynp.stats.executed > moon_exec, true);
+    checkU32("dynarec dispatch mooneye fallback unchanged", dynp.stats.fallback, moon_fallback);
     _ = emumod.emuSetDynarec(&g_emu, false);
 }
 
@@ -2331,6 +2401,7 @@ pub fn main() void {
     testWriteBoundaries();
     testIndirectWriteBoundaries();
     testCbWriteBoundaries();
+    testPpuReadBoundaries();
     testAluRegisterMatrix();
     testAluImmediate();
     testLdRr();

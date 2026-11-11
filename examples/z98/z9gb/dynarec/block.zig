@@ -175,6 +175,20 @@ fn writeEnds(op: u8, imm: u16) bool {
     }
 }
 
+fn isBoundaryInsn(bus: *Bus, pc: u16, op: u8) bool {
+    if (op == 0x40) return true;
+
+    if (op == 0xF0) {
+        const a8: u8 = mmumod.read8(bus, pc +% 1);
+        return a8 >= 0x40 and a8 <= 0x4B;
+    }
+    if (op == 0xFA) {
+        const a16: u16 = readU16(bus, pc +% 1);
+        return a16 >= 0xFF40 and a16 <= 0xFF4B;
+    }
+    return false;
+}
+
 pub fn blockBuild(cpu: *const Cpu, bus: *Bus, out: *Block) bool {
     out.start_pc = cpu.pc;
     out.len = 0;
@@ -187,6 +201,14 @@ pub fn blockBuild(cpu: *const Cpu, bus: *Bus, out: *Block) bool {
         const len: u8 = opLength(op);
         const add: u32 = @intCast(u32, len);
         if (source + add > 4096) break;
+
+        // End before instructions whose correct execution needs full PPU or
+        // breakpoint semantics at this exact instruction boundary. The
+        // boundary instruction is left for the interpreter.
+        if (isBoundaryInsn(bus, pc, op)) {
+            if (out.len == 0) return false;
+            break;
+        }
 
         var insn: BlockInsn = BlockInsn{ .op = .unsupported, .a = op, .b = 0, .imm = 0 };
         var cycles: u32 = @intCast(u32, OP_CYCLES[@intCast(usize, op)]);

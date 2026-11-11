@@ -254,7 +254,7 @@ fn dynarecEligible(e: *const Emu) bool {
     if (!@isWindows()) return false;
     if (!e.cfg.dynarec) return false;
     if (!dynarecmod.dynarecEnabled(dynp)) return false;
-    if (e.mooneye) return false;
+
     if (cpup.halted or cpup.halt_bug) return false;
     if (cpup.ei_delay != 0) return false;
     if (busp.dma.active) return false;

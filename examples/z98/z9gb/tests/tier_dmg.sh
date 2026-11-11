@@ -186,22 +186,45 @@ run_mooneye_parity() {
     dir="$WIN_DIR/runs/mooneye_$label"
     rm -rf "$dir"
     mkdir -p "$dir"
-    if ! timeout 300 wine "$EXT_EXE" "$rom" 60000 0 0 1 "$dir/verdict" >"$dir/verdict.log" 2>&1; then
+    if ! timeout 300 wine "$EXT_EXE" "$rom" 60000 0 1 1 "$dir/verdict" >"$dir/verdict.log" 2>&1; then
         fail_case "mooneye $label verdict run"
         return
     fi
     if grep -qx 'mooneye: PASS B=3 C=5 D=8 E=13 H=21 L=34' "$dir/verdict.log"; then
-        pass_case "mooneye $label interpreter verdict PASS"
+        pass_case "mooneye $label dynarec verdict PASS"
     else
-        fail_case "mooneye $label interpreter verdict PASS"
+        fail_case "mooneye $label dynarec verdict PASS"
         return
     fi
-    if timeout 300 wine "$EXT_EXE" "$rom" 60000 0 0 0 "$dir/off" >"$dir/off.log" 2>&1 \
-        && timeout 300 wine "$EXT_EXE" "$rom" 60000 0 1 0 "$dir/on" >"$dir/on.log" 2>&1; then
+    if grep -q '^dynarec=on blocks=' "$dir/verdict.log"; then
+        v_blocks="$(sed -n 's/^dynarec=on blocks=\([0-9]*\) executed=\([0-9]*\).*/\1/p' "$dir/verdict.log")"
+        v_exec="$(sed -n 's/^dynarec=on blocks=\([0-9]*\) executed=\([0-9]*\).*/\2/p' "$dir/verdict.log")"
+        if [ -n "$v_blocks" ] && [ "$v_blocks" -gt 0 ] && [ -n "$v_exec" ] && [ "$v_exec" -gt 0 ]; then
+            pass_case "mooneye $label verdict anti-vacuous dynarec=on blocks=$v_blocks executed=$v_exec"
+        else
+            fail_case "mooneye $label verdict anti-vacuous counters"
+        fi
+    else
+        fail_case "mooneye $label verdict dynarec=on counter line missing"
+    fi
+    if timeout 300 wine "$EXT_EXE" "$rom" 60000 0 0 1 "$dir/off" >"$dir/off.log" 2>&1 \
+        && timeout 300 wine "$EXT_EXE" "$rom" 60000 0 1 1 "$dir/on" >"$dir/on.log" 2>&1; then
+        if grep -q '^dynarec=on blocks=' "$dir/on.log"; then
+            on_blocks="$(sed -n 's/^dynarec=on blocks=\([0-9]*\) executed=\([0-9]*\).*/\1/p' "$dir/on.log")"
+            on_exec="$(sed -n 's/^dynarec=on blocks=\([0-9]*\) executed=\([0-9]*\).*/\2/p' "$dir/on.log")"
+            if [ -n "$on_blocks" ] && [ "$on_blocks" -gt 0 ] && [ -n "$on_exec" ] && [ "$on_exec" -gt 0 ]; then
+                pass_case "mooneye $label on-run anti-vacuous dynarec=on blocks=$on_blocks executed=$on_exec"
+            else
+                fail_case "mooneye $label on-run anti-vacuous counters"
+            fi
+        else
+            fail_case "mooneye $label on-run dynarec=on counter line missing"
+        fi
         check_pair_prefix "mooneye $label dynarec parity" "$dir/off" "$dir/on" 60000
     else
         fail_case "mooneye $label dynarec parity runs"
     fi
+
 }
 
 ONLY=""
