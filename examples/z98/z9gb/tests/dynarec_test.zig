@@ -11,6 +11,8 @@ const blockmod = @import("../dynarec/block.zig");
 const ctxmod = @import("../dynarec/ctx.zig");
 const x86mod = @import("../dynarec/x86.zig");
 const helpersmod = @import("../dynarec/helpers.zig");
+const cachemod = @import("../dynarec/cache.zig");
+const dynarecmod = @import("../dynarec/dynarec.zig");
 
 const DynCtx = ctxmod.DynCtx;
 const Block = blockmod.Block;
@@ -31,6 +33,10 @@ var g_pass: u32 = 0;
 var g_fail: u32 = 0;
 var g_code: [*]u8 = undefined;
 var g_code_ready: bool = false;
+var g_emit_cache: cachemod.Dynarec = undefined;
+var g_emit_cache_ready: bool = false;
+var g_dyn: cachemod.Dynarec = undefined;
+var g_rom: [0x8000]u8 = undefined;
 
 fn printU(v: usize) void {
     const x: u32 = @intCast(u32, v & 0xffffffff);
@@ -162,6 +168,13 @@ fn checkSnap(label: []const u8, tag: u32, got: Snap, want: Snap) void {
 
 fn ensureCode() bool {
     if (g_code_ready) return true;
+    if (@isWindows()) {
+        if (!cachemod.dynarecOpen(&g_emit_cache, &g_bus)) return false;
+        g_code = g_emit_cache.mem;
+        g_emit_cache_ready = true;
+        g_code_ready = true;
+        return true;
+    }
     const raw = mmap(@intToPtr(*void, 0), MAP_BYTES, 7, 0x22, -1, 0);
     if (@ptrToInt(raw) == MAP_FAILED) return false;
     g_code = @ptrCast([*]u8, raw);
@@ -171,14 +184,21 @@ fn ensureCode() bool {
 
 fn releaseCode() void {
     if (!g_code_ready) return;
-    _ = munmap(@ptrCast(*void, g_code), MAP_BYTES);
+    if (@isWindows()) {
+        if (g_emit_cache_ready) cachemod.dynarecClose(&g_emit_cache);
+        g_emit_cache_ready = false;
+    } else {
+        _ = munmap(@ptrCast(*void, g_code), MAP_BYTES);
+    }
     g_code_ready = false;
 }
 
 fn runEmitted(blk: *const Block) u32 {
     if (!ensureCode()) return 0xFFFFFFFF;
-    var e = x86mod.Emit{ .code = g_code, .len = 0, .cap = MAP_BYTES };
+    const cap: usize = if (@isWindows()) cachemod.CODE_CACHE_BYTES else MAP_BYTES;
+    var e = x86mod.Emit{ .code = g_code, .len = 0, .cap = cap };
     if (!x86mod.emitBlock(&e, blk)) return 0xFFFFFFFE;
+    if (@isWindows()) cachemod.flushRange(&g_emit_cache, 0, e.len);
     var ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
     const f = @ptrCast(fn (*DynCtx) u32, g_code);
     return f(&ctx);
@@ -1605,6 +1625,223 @@ fn testHelpers() void {
     checkU32("irq nonoverlap b", @intCast(u32, g_cpu.b), 0x55);
 }
 
+fn installRom() void {
+    var i: usize = 0;
+    while (i < 0x40) : (i += 1) {
+        g_bus.pages[i] = Page{ .kind = .rom0, .base = @ptrCast([*]u8, &g_rom[i * 256]) };
+        g_bus.pages[0x40 + i] = Page{ .kind = .romx, .base = @ptrCast([*]u8, &g_rom[0x4000 + i * 256]) };
+    }
+    g_cart.rom0_off = 0;
+    g_cart.romx_off = 0;
+}
+
+fn romClear() void {
+    var i: usize = 0;
+    while (i < 0x8000) : (i += 1) g_rom[i] = 0;
+}
+
+fn romWrite(addr: u16, value: u8) void {
+    g_rom[@intCast(usize, addr)] = value;
+}
+
+fn resetRom() void {
+    reset();
+    installRom();
+}
+
+fn runDyn() u32 {
+    return dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus);
+}
+
+fn testCacheMapping() void {
+    resetRom();
+    checkBool("cache open", dynarecmod.dynarecOpen(&g_dyn, &g_bus), true);
+    checkBool("cache enabled", dynarecmod.dynarecEnabled(&g_dyn), true);
+    checkU32("cache bytes", @intCast(u32, dynarecmod.CODE_CACHE_BYTES), 1048576);
+    checkU32("cache block max", @intCast(u32, dynarecmod.BLOCK_MAX_BYTES), 4096);
+    checkU32("cache entry count", @intCast(u32, dynarecmod.ENTRY_COUNT), 4096);
+    checkU32("cache used empty", @intCast(u32, g_dyn.used), 0);
+}
+
+fn testCacheDistinctAndBank() void {
+    resetRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    romClear();
+    g_cpu.pc = 0x0100;
+    _ = runDyn();
+    g_cpu.pc = 0x0101;
+    _ = runDyn();
+    checkBool("cache distinct pc 0100", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0100) != null, true);
+    checkBool("cache distinct pc 0101", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0101) != null, true);
+
+    g_cart.rom0_off = 0x4000;
+    g_cpu.pc = 0x0100;
+    _ = runDyn();
+    checkBool("cache bank0 entry", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0100) != null, true);
+    checkBool("cache bank1 entry", dynarecmod.dynarecLookup(&g_dyn, 1, 0x0100) != null, true);
+
+    dynarecmod.dynarecInvalidateBank(&g_dyn, 0);
+    checkBool("cache bank0 invalidated", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0100) == null, true);
+    checkBool("cache bank1 kept", dynarecmod.dynarecLookup(&g_dyn, 1, 0x0100) != null, true);
+
+    g_cart.rom0_off = 0;
+    g_cart.romx_off = 0x4000;
+    g_cpu.pc = 0x0200;
+    _ = runDyn();
+    g_cpu.pc = 0x4100;
+    _ = runDyn();
+    checkBool("cache rom0 range victim", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0200) != null, true);
+    checkBool("cache romx range victim", dynarecmod.dynarecLookup(&g_dyn, 1, 0x4100) != null, true);
+    dynarecmod.dynarecInvalidateRom0(&g_dyn);
+    checkBool("cache rom0 range invalidated", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0200) == null, true);
+    checkBool("cache rom0 keeps romx", dynarecmod.dynarecLookup(&g_dyn, 1, 0x4100) != null, true);
+}
+
+fn testCacheReset() void {
+    resetRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    romClear();
+    g_cpu.pc = 0x0200;
+    _ = runDyn();
+    checkBool("cache reset old entry", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0200) != null, true);
+    g_dyn.used = cachemod.CODE_CACHE_BYTES - 8;
+    g_cpu.pc = 0x0300;
+    _ = runDyn();
+    checkBool("cache reset dropped old", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0200) == null, true);
+    checkBool("cache reset rewrote", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0300) != null, true);
+    checkBool("cache reset used rewound", g_dyn.used < cachemod.CODE_CACHE_BYTES / 2, true);
+}
+
+fn setupTrampolineRom() void {
+    resetRom();
+    romClear();
+    romWrite(0x0100, 0x3E);
+    romWrite(0x0101, 0x12);
+    romWrite(0x0102, 0x3C);
+    romWrite(0x0103, 0x00);
+    romWrite(0x0104, 0xC3);
+    romWrite(0x0105, 0x00);
+    romWrite(0x0106, 0x02);
+    g_cpu.pc = 0x0100;
+    g_cpu.a = 0;
+    g_cpu.f = 0;
+}
+
+fn testCacheTrampoline() void {
+    setupTrampolineRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    var wantCyc: u32 = 0;
+    wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    const want: Snap = snapTake(&g_cpu, wantCyc);
+
+    setupTrampolineRom();
+    const blocks0: u32 = g_dyn.stats.blocks;
+    const exec0: u32 = g_dyn.stats.executed;
+    const gotCyc: u32 = runDyn();
+    const got: Snap = snapTake(&g_cpu, gotCyc);
+    checkSnap("cache trampoline", 1, got, want);
+    checkU32("cache trampoline cycles", gotCyc, 32);
+    checkBool("cache trampoline translated", g_dyn.stats.blocks > blocks0, true);
+    checkBool("cache trampoline executed", g_dyn.stats.executed > exec0, true);
+}
+
+fn setupLoopRom() void {
+    resetRom();
+    romClear();
+    romWrite(0x0100, 0xC3);
+    romWrite(0x0101, 0x03);
+    romWrite(0x0102, 0x01);
+    romWrite(0x0103, 0xC3);
+    romWrite(0x0104, 0x00);
+    romWrite(0x0105, 0x01);
+    g_cpu.pc = 0x0100;
+    g_cpu.a = 0x11;
+    g_cpu.f = 0;
+    g_cpu.sp = 0xD000;
+}
+
+fn testCacheHotLoop() void {
+    setupLoopRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    var warm: u8 = 0;
+    while (warm < 4) : (warm += 1) _ = runDyn();
+
+    setupLoopRom();
+    var wantCyc: u32 = 0;
+    var i: u8 = 0;
+    while (i < 64) : (i += 1) wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    const want: Snap = snapTake(&g_cpu, wantCyc);
+
+    setupLoopRom();
+    const exec0: u32 = g_dyn.stats.executed;
+    const chain0: u32 = g_dyn.stats.chained;
+    const gotCyc: u32 = runDyn();
+    const got: Snap = snapTake(&g_cpu, gotCyc);
+    const ran: u32 = g_dyn.stats.executed -% exec0;
+    const linked: u32 = g_dyn.stats.chained -% chain0;
+    checkSnap("cache hot loop", 2, got, want);
+    checkU32("cache hot loop cycles", gotCyc, 1024);
+    checkU32("cache hot loop executed", ran, 64);
+    checkU32("cache hot loop chained", linked, 63);
+    checkBool("cache hot loop successor>=chained", ran >= linked, true);
+}
+
+fn setupCallRetRom() void {
+    resetRom();
+    romClear();
+    romWrite(0x0200, 0xCD);
+    romWrite(0x0201, 0x06);
+    romWrite(0x0202, 0x02);
+    romWrite(0x0203, 0xC3);
+    romWrite(0x0204, 0x00);
+    romWrite(0x0205, 0x02);
+    romWrite(0x0206, 0xC9);
+    g_cpu.pc = 0x0200;
+    g_cpu.a = 0x33;
+    g_cpu.f = 0;
+    g_cpu.sp = 0xD000;
+}
+
+fn testCacheCallRet() void {
+    setupCallRetRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    var warm: u8 = 0;
+    while (warm < 8) : (warm += 1) _ = runDyn();
+
+    setupCallRetRom();
+    var wantCyc: u32 = 0;
+    var i: u8 = 0;
+    while (i < 64) : (i += 1) wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    const want: Snap = snapTake(&g_cpu, wantCyc);
+    const wantLo: u8 = mmumod.read8(&g_bus, g_cpu.sp);
+    const wantHi: u8 = mmumod.read8(&g_bus, g_cpu.sp +% 1);
+
+    setupCallRetRom();
+    const exec0: u32 = g_dyn.stats.executed;
+    const chain0: u32 = g_dyn.stats.chained;
+    const gotCyc: u32 = runDyn();
+    const got: Snap = snapTake(&g_cpu, gotCyc);
+    const ran: u32 = g_dyn.stats.executed -% exec0;
+    const linked: u32 = g_dyn.stats.chained -% chain0;
+    checkSnap("cache call/ret", 3, got, want);
+    checkU32("cache call/ret cycles", gotCyc, 1200);
+    checkU32("cache call/ret executed", ran, 64);
+    checkU32("cache call/ret chained", linked, 63);
+    checkBool("cache call/ret successor>=chained", ran >= linked, true);
+    checkU32("cache call/ret stack lo", @intCast(u32, mmumod.read8(&g_bus, g_cpu.sp)), @intCast(u32, wantLo));
+    checkU32("cache call/ret stack hi", @intCast(u32, mmumod.read8(&g_bus, g_cpu.sp +% 1)), @intCast(u32, wantHi));
+}
+
+fn testCacheClose() void {
+    dynarecmod.dynarecClose(&g_dyn);
+    checkBool("cache close disabled", dynarecmod.dynarecEnabled(&g_dyn), false);
+    dynarecmod.dynarecClose(&g_dyn);
+    checkBool("cache double close", dynarecmod.dynarecEnabled(&g_dyn), false);
+}
+
 pub fn main() void {
     testStraightNops();
     testJump();
@@ -1639,6 +1876,13 @@ pub fn main() void {
     testEmitPushPop();
     testEmitCb();
     testHelpers();
+    testCacheMapping();
+    testCacheDistinctAndBank();
+    testCacheReset();
+    testCacheTrampoline();
+    testCacheHotLoop();
+    testCacheCallRet();
+    testCacheClose();
     releaseCode();
 
     std.io.write("dynarec ");
