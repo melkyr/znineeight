@@ -4,9 +4,9 @@
 //   nop        a/b/imm unused.
 //   ld_rr      a=rr (0 BC, 1 DE, 2 HL, 3 SP), b=0 (imm16) or 1 (LD SP,HL).
 //   ld_rn      a=dst r index 0..7, imm=imm8.
-//   ld_mem     a=kind 0..7 (LD r,r'; b=src index), 8..11 (BC/DE/HL+/HL-;
 //              b=0 store A, b=1 load A), 12 LDH(a8), 13 (a16), 14 (a16),SP,
-//              15 (C); imm=address where present.
+//              15 (C), 16 PUSH rr (b=rr, 3=AF), 17 POP rr (b=rr, 3=AF);
+//              imm=address where present.
 //   alu_r      a=group 0..7 (ADD/ADC/SUB/SBC/AND/XOR/OR/CP), b=src index;
 //              a=8 is ADD HL,rr with b=rr.
 //   alu_n      a=group 0..7, imm=imm8.
@@ -97,6 +97,74 @@ fn cbCycles(op2: u8) u32 {
     if (op2 <= 0x3F) return if (idx == 6) 16 else 8;
     if (op2 <= 0x7F) return if (idx == 6) 12 else 8;
     return if (idx == 6) 16 else 8;
+}
+
+pub fn insnCycles(insn: BlockInsn) u32 {
+    switch (insn.op) {
+        .nop => return 4,
+        .ld_rr => {
+            if (insn.b == 1) return 8;
+            return 12;
+        },
+        .ld_rn => {
+            if (insn.a == 6) return 12;
+            return 8;
+        },
+        .ld_mem => {
+            const a: u8 = insn.a;
+            if (a <= 5) {
+                if (insn.b == 6) return 8;
+                return 4;
+            }
+            if (a == 6) return 8;
+            if (a == 7) {
+                if (insn.b == 6) return 8;
+                return 4;
+            }
+            if (a >= 8 and a <= 11) return 8;
+            if (a == 12) return 12;
+            if (a == 13) return 16;
+            if (a == 14) return 20;
+            if (a == 15) return 8;
+            if (a == 16) return 16;
+            if (a == 17) return 12;
+            return 0;
+        },
+        .alu_r => {
+            if (insn.a == 8) return 8;
+            if (insn.b == 6) return 8;
+            return 4;
+        },
+        .alu_n => return 8,
+        .incdec => {
+            if ((insn.b & 0x80) != 0) return 8;
+            if (insn.a == 6) return 12;
+            return 4;
+        },
+        .jump => {
+            if (insn.b == 0) {
+                if (insn.a == 4) return 16;
+                return 12;
+            }
+            if (insn.b == 1) {
+                if (insn.a == 4) return 12;
+                return 8;
+            }
+            if (insn.b == 2) return 4;
+            return 0;
+        },
+        .call => {
+            if (insn.b == 1) return 16;
+            if (insn.a == 4) return 24;
+            return 12;
+        },
+        .ret => {
+            if (insn.a == 4) return 16;
+            return 8;
+        },
+        .cb => return cbCycles(insn.a),
+        else => return 0,
+    }
 }
 
 fn writeEnds(op: u8, imm: u16) bool {
@@ -215,6 +283,16 @@ pub fn blockBuild(cpu: *const Cpu, bus: *Bus, out: *Block) bool {
                 insn.op = .alu_r;
                 insn.a = @intCast(u8, (@intCast(u16, op) >> 3) & 0x07);
                 insn.b = op & 0x07;
+            },
+            0xC1, 0xD1, 0xE1, 0xF1 => {
+                insn.op = .ld_mem;
+                insn.a = 17;
+                insn.b = pairIndex(op);
+            },
+            0xC5, 0xD5, 0xE5, 0xF5 => {
+                insn.op = .ld_mem;
+                insn.a = 16;
+                insn.b = pairIndex(op);
             },
             0xC0, 0xC8, 0xD0, 0xD8 => {
                 insn.op = .ret;

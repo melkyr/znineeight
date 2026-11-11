@@ -10,6 +10,7 @@ const cpumod = @import("../cpu.zig");
 const blockmod = @import("../dynarec/block.zig");
 const ctxmod = @import("../dynarec/ctx.zig");
 const x86mod = @import("../dynarec/x86.zig");
+const helpersmod = @import("../dynarec/helpers.zig");
 
 const DynCtx = ctxmod.DynCtx;
 const Block = blockmod.Block;
@@ -1171,13 +1172,13 @@ fn testEmitterRejects() void {
     }
     var e = x86mod.Emit{ .code = g_code, .len = 0, .cap = MAP_BYTES };
     var blk: Block = makeBlock(.jump, 4, 0, 0x1234, 16);
-    checkBool("reject jump", x86mod.emitBlock(&e, &blk), false);
+    checkBool("accept jump", x86mod.emitBlock(&e, &blk), true);
     blk = makeBlock(.call, 4, 0, 0x1234, 24);
-    checkBool("reject call", x86mod.emitBlock(&e, &blk), false);
+    checkBool("accept call", x86mod.emitBlock(&e, &blk), true);
     blk = makeBlock(.ret, 4, 0, 0, 16);
-    checkBool("reject ret", x86mod.emitBlock(&e, &blk), false);
+    checkBool("accept ret", x86mod.emitBlock(&e, &blk), true);
     blk = makeBlock(.cb, 0x37, 0, 0, 8);
-    checkBool("reject cb", x86mod.emitBlock(&e, &blk), false);
+    checkBool("accept cb", x86mod.emitBlock(&e, &blk), true);
     blk = makeBlock(.unsupported, 0x76, 0, 0, 4);
     checkBool("reject unsupported", x86mod.emitBlock(&e, &blk), false);
     blk = makeBlock(.ld_mem, 6, 6, 0, 8);
@@ -1226,6 +1227,274 @@ fn testEmitMultiInsn() void {
     checkSnap("multi insn", 1, got, want);
 }
 
+fn testEmitJumps() void {
+    beginAt(0xC000);
+    var blk: Block = makeBlock(.jump, 4, 0, 0x1234, 16);
+    var cyc: u32 = runEmitted(&blk);
+    checkU32("emit jp cycles", cyc, 16);
+    checkU16("emit jp pc", g_cpu.pc, 0x1234);
+
+    beginAt(0xC000);
+    g_cpu.f = 0;
+    blk = makeBlock(.jump, 0, 1, 0xC007, 8);
+    cyc = runEmitted(&blk);
+    checkU32("emit jr taken cycles", cyc, 12);
+    checkU16("emit jr taken pc", g_cpu.pc, 0xC007);
+
+    beginAt(0xC000);
+    g_cpu.f = 0x80;
+    blk = makeBlock(.jump, 0, 1, 0xC007, 8);
+    cyc = runEmitted(&blk);
+    checkU32("emit jr not-taken cycles", cyc, 8);
+    checkU16("emit jr not-taken pc", g_cpu.pc, 0xC002);
+
+    beginAt(0xC000);
+    g_cpu.f = 0x80;
+    blk = makeBlock(.jump, 1, 0, 0x1234, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit jp z taken cycles", cyc, 16);
+    checkU16("emit jp z taken pc", g_cpu.pc, 0x1234);
+
+    beginAt(0xC000);
+    g_cpu.f = 0;
+    blk = makeBlock(.jump, 1, 0, 0x1234, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit jp z not-taken cycles", cyc, 12);
+    checkU16("emit jp z not-taken pc", g_cpu.pc, 0xC003);
+
+    beginAt(0xC000);
+    g_cpu.h = 0x12;
+    g_cpu.l = 0x34;
+    blk = makeBlock(.jump, 5, 2, 0, 4);
+    cyc = runEmitted(&blk);
+    checkU32("emit jp hl cycles", cyc, 4);
+    checkU16("emit jp hl pc", g_cpu.pc, 0x1234);
+}
+
+fn testEmitCallRet() void {
+    beginAt(0xC000);
+    g_cpu.sp = 0xD000;
+    var blk: Block = makeBlock(.call, 4, 0, 0x1234, 24);
+    var cyc: u32 = runEmitted(&blk);
+    checkU32("emit call cycles", cyc, 24);
+    checkU16("emit call pc", g_cpu.pc, 0x1234);
+    checkU16("emit call sp", g_cpu.sp, 0xCFFE);
+    checkMem8("emit call ret lo", 1, 0xCFFE, 0x03);
+    checkMem8("emit call ret hi", 1, 0xCFFF, 0xC0);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xD000;
+    g_cpu.f = 0x80;
+    blk = makeBlock(.call, 1, 0, 0x1234, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit call z taken cycles", cyc, 24);
+    checkU16("emit call z taken pc", g_cpu.pc, 0x1234);
+    checkU16("emit call z taken sp", g_cpu.sp, 0xCFFE);
+    checkMem8("emit call z ret lo", 2, 0xCFFE, 0x03);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xD000;
+    g_cpu.f = 0;
+    blk = makeBlock(.call, 1, 0, 0x1234, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit call z not-taken cycles", cyc, 12);
+    checkU16("emit call z not-taken pc", g_cpu.pc, 0xC003);
+    checkU16("emit call z not-taken sp", g_cpu.sp, 0xD000);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xD000;
+    mmumod.write8(&g_bus, 0xD000, 0x34);
+    mmumod.write8(&g_bus, 0xD001, 0x12);
+    blk = makeBlock(.ret, 4, 0, 0, 16);
+    cyc = runEmitted(&blk);
+    checkU32("emit ret cycles", cyc, 16);
+    checkU16("emit ret pc", g_cpu.pc, 0x1234);
+    checkU16("emit ret sp", g_cpu.sp, 0xD002);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xD000;
+    g_cpu.ime = false;
+    g_cpu.ei_delay = 2;
+    mmumod.write8(&g_bus, 0xD000, 0x34);
+    mmumod.write8(&g_bus, 0xD001, 0x12);
+    blk = makeBlock(.ret, 4, 1, 0, 16);
+    cyc = runEmitted(&blk);
+    checkU32("emit reti cycles", cyc, 16);
+    checkU16("emit reti pc", g_cpu.pc, 0x1234);
+    checkBool("emit reti ime", g_cpu.ime, true);
+    checkU32("emit reti ei_delay", @intCast(u32, g_cpu.ei_delay), 0);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xD000;
+    g_cpu.f = 0;
+    mmumod.write8(&g_bus, 0xD000, 0x34);
+    mmumod.write8(&g_bus, 0xD001, 0x12);
+    blk = makeBlock(.ret, 0, 0, 0, 8);
+    cyc = runEmitted(&blk);
+    checkU32("emit ret nz taken cycles", cyc, 20);
+    checkU16("emit ret nz taken pc", g_cpu.pc, 0x1234);
+    checkU16("emit ret nz taken sp", g_cpu.sp, 0xD002);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xD000;
+    g_cpu.f = 0x80;
+    blk = makeBlock(.ret, 0, 0, 0, 8);
+    cyc = runEmitted(&blk);
+    checkU32("emit ret nz not-taken cycles", cyc, 8);
+    checkU16("emit ret nz not-taken pc", g_cpu.pc, 0xC001);
+    checkU16("emit ret nz not-taken sp", g_cpu.sp, 0xD000);
+}
+
+fn testEmitPushPop() void {
+    beginAt(0xC000);
+    g_cpu.sp = 0xFFF0;
+    g_cpu.b = 0x34;
+    g_cpu.c = 0x12;
+    var blk: Block = makeBlock(.ld_mem, 16, 0, 0, 16);
+    var cyc: u32 = runEmitted(&blk);
+    checkU32("emit push bc cycles", cyc, 16);
+    checkU16("emit push bc sp", g_cpu.sp, 0xFFEE);
+    checkMem8("emit push bc lo", 1, 0xFFEE, 0x12);
+    checkMem8("emit push bc hi", 2, 0xFFEF, 0x34);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xFFF0;
+    mmumod.write8(&g_bus, 0xFFF0, 0x78);
+    mmumod.write8(&g_bus, 0xFFF1, 0x56);
+    blk = makeBlock(.ld_mem, 17, 1, 0, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit pop de cycles", cyc, 12);
+    checkU16("emit pop de sp", g_cpu.sp, 0xFFF2);
+    checkU32("emit pop de d", @intCast(u32, g_cpu.d), 0x56);
+    checkU32("emit pop de e", @intCast(u32, g_cpu.e), 0x78);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xFFF0;
+    g_cpu.a = 0x12;
+    g_cpu.f = 0xAB;
+    blk = makeBlock(.ld_mem, 16, 3, 0, 16);
+    cyc = runEmitted(&blk);
+    checkU32("emit push af cycles", cyc, 16);
+    checkU16("emit push af sp", g_cpu.sp, 0xFFEE);
+    checkMem8("emit push af lo", 3, 0xFFEE, 0xA0);
+    checkMem8("emit push af hi", 4, 0xFFEF, 0x12);
+
+    beginAt(0xC000);
+    g_cpu.sp = 0xFFF0;
+    mmumod.write8(&g_bus, 0xFFF0, 0x34);
+    mmumod.write8(&g_bus, 0xFFF1, 0xCF);
+    blk = makeBlock(.ld_mem, 17, 3, 0, 12);
+    cyc = runEmitted(&blk);
+    checkU32("emit pop af cycles", cyc, 12);
+    checkU16("emit pop af sp", g_cpu.sp, 0xFFF2);
+    checkU32("emit pop af a", @intCast(u32, g_cpu.a), 0xCF);
+    checkU32("emit pop af f", @intCast(u32, g_cpu.f), 0x30);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0xF5);
+    mmumod.write8(&g_bus, 0xC001, 0xF1);
+    mmumod.write8(&g_bus, 0xC002, 0x76);
+    g_cpu.pc = 0xC000;
+    var built: Block = undefined;
+    checkBool("push/pop build", blockmod.blockBuild(&g_cpu, &g_bus, &built), true);
+    checkU32("push/pop len", @intCast(u32, built.len), 3);
+    checkOp("push op", built.insns[0].op, blockmod.BlockOp.ld_mem);
+    checkU32("push kind", @intCast(u32, built.insns[0].a), 16);
+    checkU32("push pair", @intCast(u32, built.insns[0].b), 3);
+    checkOp("pop op", built.insns[1].op, blockmod.BlockOp.ld_mem);
+    checkU32("pop kind", @intCast(u32, built.insns[1].a), 17);
+    checkU32("pop pair", @intCast(u32, built.insns[1].b), 3);
+    checkU32("push/pop cycles", built.cycles, 32);
+}
+
+fn setupCb(op2: u8) void {
+    beginAt(0xC000);
+    mmumod.write8(&g_bus, 0xC000, 0xCB);
+    mmumod.write8(&g_bus, 0xC001, op2);
+    g_cpu.a = 0x3C;
+    g_cpu.f = 0x10;
+    g_cpu.b = 0x81;
+    g_cpu.c = 0x42;
+    g_cpu.d = 0xA5;
+    g_cpu.e = 0x18;
+    g_cpu.h = 0xC1;
+    g_cpu.l = 0x00;
+    mmumod.write8(&g_bus, 0xC100, 0x96);
+}
+
+fn testEmitCb() void {
+    var i: u16 = 0;
+    while (i < 256) : (i += 1) {
+        const op2: u8 = @intCast(u8, i);
+        setupCb(op2);
+        const wantCyc: u32 = cpumod.cpuStep(&g_cpu, &g_bus);
+        const want: Snap = snapTake(&g_cpu, wantCyc);
+        const wantMem: u8 = mmumod.read8(&g_bus, 0xC100);
+        setupCb(op2);
+        var blk: Block = makeBlock(.cb, op2, 0, 0, wantCyc);
+        blk.start_pc = 0xC000;
+        const gotCyc: u32 = runEmitted(&blk);
+        const got: Snap = snapTake(&g_cpu, gotCyc);
+        checkSnap("emit cb", @intCast(u32, i), got, want);
+        checkMem8("emit cb mem", @intCast(u32, i), 0xC100, wantMem);
+    }
+}
+
+fn testHelpers() void {
+    reset();
+    var ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 8 };
+    const value: u8 = helpersmod.helperRead8(&ctx, 0xC000);
+    checkU32("helper read cycles", ctx.cycles, 0);
+    checkU32("helper read value", @intCast(u32, value), 0);
+
+    reset();
+    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
+    g_bus.ppu_oam_blocked = true;
+    g_bus.oam[0] = 0x12;
+    helpersmod.helperWrite8(&ctx, 0xFE00, 0x99);
+    checkU32("helper oam write blocked", @intCast(u32, g_bus.oam[0]), 0x12);
+    checkU32("helper oam read blocked", @intCast(u32, helpersmod.helperRead8(&ctx, 0xFE00)), 0xFF);
+    g_bus.ppu_oam_blocked = false;
+
+    helpersmod.helperIoWrite(&ctx, 0xFF40, 0x91);
+    checkU32("helper io write/read", @intCast(u32, helpersmod.helperIoRead(&ctx, 0xFF40)), 0x91);
+
+    reset();
+    g_cpu.a = 0x81;
+    g_cpu.b = 0;
+    g_cpu.ime = true;
+    g_bus.ie = 0x01;
+    g_bus.io[0x0F] = 0x01;
+    var blk: Block = undefined;
+    blk.insns[0] = BlockInsn{ .op = .ld_mem, .a = 13, .b = 0, .imm = 0xFF02 };
+    blk.insns[1] = BlockInsn{ .op = .ld_rn, .a = 0, .b = 0, .imm = 0x55 };
+    blk.len = 2;
+    blk.start_pc = 0xC000;
+    blk.cycles = 24;
+    blk.ends_block = true;
+    var cyc: u32 = runEmitted(&blk);
+    checkU32("irq early cycles", cyc, 16);
+    checkU16("irq early pc", g_cpu.pc, 0xC003);
+    checkU32("irq early b", @intCast(u32, g_cpu.b), 0);
+
+    reset();
+    g_cpu.a = 0x81;
+    g_cpu.b = 0;
+    g_cpu.ime = false;
+    g_bus.ie = 0;
+    g_bus.io[0x0F] = 0;
+    blk.insns[0] = BlockInsn{ .op = .ld_mem, .a = 13, .b = 0, .imm = 0xFF02 };
+    blk.insns[1] = BlockInsn{ .op = .ld_rn, .a = 0, .b = 0, .imm = 0x55 };
+    blk.len = 2;
+    blk.start_pc = 0xC000;
+    blk.cycles = 24;
+    blk.ends_block = true;
+    cyc = runEmitted(&blk);
+    checkU32("no irq cycles", cyc, 24);
+    checkU16("no irq pc", g_cpu.pc, 0xC005);
+    checkU32("no irq b", @intCast(u32, g_cpu.b), 0x55);
+}
+
 pub fn main() void {
     testStraightNops();
     testJump();
@@ -1255,6 +1524,11 @@ pub fn main() void {
     testLdC();
     testEmitterRejects();
     testEmitMultiInsn();
+    testEmitJumps();
+    testEmitCallRet();
+    testEmitPushPop();
+    testEmitCb();
+    testHelpers();
     releaseCode();
 
     std.io.write("dynarec ");
