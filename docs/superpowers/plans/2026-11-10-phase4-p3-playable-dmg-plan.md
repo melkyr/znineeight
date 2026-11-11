@@ -270,7 +270,37 @@ git add examples/z98/z9gb/platform/win32.zig examples/z98/z9gb/main.zig examples
 git commit -m "feat(z9gb): add Win32 display/input/audio backend"
 ```
 
+### Task 5.1: Wire JOYP input and report active backends
+
+**Files:**
+- Modify: `examples/z98/z9gb/emu.zig`
+- Modify: `examples/z98/z9gb/mmu.zig`
+- Modify: `examples/z98/z9gb/platform/win32.zig`
+- Create: `examples/z98/z9gb/tests/input_test.zig`
+- Modify: `examples/z98/z9gb/tests/tier_dmg.sh`
+- Modify: `examples/z98/z9gb/tests/tier_win32.sh`
+- Modify: `examples/z98/z9gb/README.md`
+
+**Interfaces:**
+- Consumes: `InputState.buttons` bit order 0 right, 1 left, 2 up, 3 down, 4 a, 5 b, 6 select, 7 start; `emuSetButtons(e:*Emu, bits:u8) void`.
+- Produces: `Bus` joypad state; `ioRead(0xFF00)` / `ioWrite(0xFF00)`; startup line `z9gb: input=<dinput8|fallback> audio=<dsound|waveout>`.
+
+- [ ] **Step 1: Write the failing JOYP test**
+Create `tests/input_test.zig` using a module-scope `Emu`. For each `emuSetButtons` bit (right/left/up/down/A/B/Select/Start), write `0xFF00` to select the matching group and assert the low nibble is active-low: directions select via bit5=0 (right bit0, left bit1, up bit2, down bit3), buttons select via bit4=0 (A bit0, B bit1, Select bit2, Start bit3). Also assert unselected low bits are 1, both-selected groups combine, and `ioWrite(0xFF00)` preserves bits 7-6. Expected: fails because FF00 is a constant `0xCF`.
+- [ ] **Step 2: Wire the joypad**
+Add a `buttons: u8` field to `Bus`, zero it in `busInit`, and make `emuSetButtons` write it. In `mmu.ioRead(0xFF00)` return `0xC0 | (self.io[0] & 0x30) | low`, where `low` starts `0x0F` and clears the selected pressed bits. In `ioWrite(0xFF00)` update only bits 5-4, leaving bits 7-6 and the low nibble as reset. Keep the post-boot `0xCF` value. Do not add a second input path or change the P1 `Platform` table.
+- [ ] **Step 3: Report the active backends**
+In `win32Open`, after all three opens succeed, print one line to stdout: `z9gb: input=dinput8 audio=dsound` when both `dinputBackendKind`/`dsoundBackendKind` return 1; `fallback` for DInput kind 2; `waveout` for DSound kind 2. No new `Platform` field.
+- [ ] **Step 4: Run the tests**
+Add `--only input` to `tier_dmg.sh` and include it in `--all`; run `input_test.zig` under `-ffast` and `-fsafe`. Add a `tier_win32.sh --smoke` grep for the startup line. Document the keys in `README.md`: arrows = D-pad, `Z` = A, `X` = B, `Enter` = Start, `Backspace` = Select, `Esc` = quit. Run `tier_win32.sh --smoke` and `tier_smoke.sh`.
+- [ ] **Step 5: Commit**
+```bash
+git add examples/z98/z9gb/emu.zig examples/z98/z9gb/mmu.zig examples/z98/z9gb/platform/win32.zig examples/z98/z9gb/tests/input_test.zig examples/z98/z9gb/tests/tier_dmg.sh examples/z98/z9gb/tests/tier_win32.sh examples/z98/z9gb/README.md
+git commit -m "fix(z9gb): wire JOYP input and report backends"
+```
+
 ---
+
 
 ### Task 6: Playable gates and performance evidence
 
@@ -289,9 +319,9 @@ git commit -m "feat(z9gb): add Win32 display/input/audio backend"
 - [ ] **Step 1: Run `dmg_sound`**
 `tier_audio.sh --gate` requires `dmg_sound.gb` and the memory-protocol verdict from Task 4 Step 6 (magic `0xDE,0xB0,0x61` at `0xA001..0xA003`, status 0 at `0xA000`, terminal `Passed` at `0xA004`, no `Failed`). Expected: PASS; missing ROM = SKIP, and closeout cannot claim the audio gate.
 - [ ] **Step 2: Run homebrew (named ROM: 2048-gb)**
-The homebrew gate ROM is **`2048.gb`** built from `Sanqui/2048-gb` (commit pinned in `testdata/roms/manifest.sha256`; zlib license; the canonical emulator-bring-up homebrew — user-supplied bytes, never committed). Run `--windowed --frames 600` under Wine **and** `--headless --frames 600` on the host. Metric: the GB frame clock is 59.7275 Hz (not 60); the gate is **sustained ≥ 59.0 rendered fps** (frames/wall over the 600-frame window) with audio on, measured by QPC. Record measured fps, CPU, RSS; label host vs Wine numbers separately and never label Wine numbers as Win98. Missing ROM = SKIP; closeout cannot claim the performance gate.
+The homebrew gate ROM is **`2048.gb`** built from `Sanqui/2048-gb` (commit pinned in `testdata/roms/manifest.sha256`; zlib license; the canonical emulator-bring-up homebrew — user-supplied bytes, never committed). The authoritative gate is **host headless** `--headless --frames 600 --audio`: sustained ≥ 59.0 rendered fps at the 59.7275 Hz GB clock. Wine windowed `--windowed --frames 600 --audio` is **evidence only, never Win98**: record fps/CPU/RSS, do not fail closeout on the Wine threshold. Sandbox Wine can start but is painfully slower than out-of-sandbox; sandbox QPC is non-authoritative. Operator-supplied Wine numbers are recorded when provided as non-authoritative; their absence does not block closeout. Missing ROM = SKIP; closeout cannot claim the performance gate.
 - [ ] **Step 3: Add `tier_perf.sh`**
-Measure `--headless --frames 600` wall, CPU, and RSS with `/usr/bin/time`; measure `--windowed` frames. Report measured numbers only; label estimates as estimates.
+Measure `--headless --frames 600` wall, CPU, and RSS with `/usr/bin/time`; this host headless result is the authoritative gate. Run `--windowed --frames 600` under Wine on the operator host and record fps/CPU/RSS as non-authoritative evidence; `tier_perf.sh` and `tier_win32.sh --perf` must not fail the milestone on a Wine fps threshold. Report measured numbers only; label estimates as estimates.
 - [ ] **Step 4: Update docs**
 README: P3 status, the **DX6+/DX8 runtime requirement** (`IDirectDraw7` needs the DX6+ runtime; `dinput8.dll` for gamepad needs the DX8 runtime; keyboard fallback works without it), audio fallback, scale flags, gate commands, real-hardware caveat.
 - [ ] **Step 5: Commit**

@@ -138,9 +138,11 @@ The binding limits are separate. Do not confuse them.
 - P2: Blargg `cpu_instrs`, Mooneye timer/PPU subset, `dmg-acid2` framebuffer
   golden, synthetic DMG boot tests.
 - P3: full Blargg `dmg_sound` (verdict-harness semantics), named homebrew
-  `2048.gb` (`Sanqui/2048-gb`, zlib; user-supplied bytes) sustained ≥ 59.0
-  rendered fps at the 59.7275 Hz GB clock on the host, windowed smoke
-  under Wine, DirectDraw/Input/Sound import and runtime checks.
+  `2048.gb` (`Sanqui/2048-gb`, zlib; user-supplied bytes) **host headless**
+  sustained ≥ 59.0 rendered fps at the 59.7275 Hz GB clock; Wine windowed is
+  evidence only and never Win98. Sandbox Wine starts but is painfully slower
+  than out-of-sandbox runs; operator-supplied Wine numbers are recorded as
+  non-authoritative. DirectDraw/Input/Sound import and runtime checks.
 - P4: `cgb-acid2` framebuffer golden, `cgb_sound`, CGB `interrupt_time`, CGB benchmark numbers.
 - P5: full test-ROM/homebrew parity with the interpreter; no fixed speedup gate.
 
@@ -575,7 +577,7 @@ Tests run sequentially, never in parallel, because spill files collide.
 |---|---|---|
 | P1 | std-free platform table + headless backend + RSS harness | deterministic headless self-test |
 | P2 | DMG CPU/MMU/PPU/timer/serial/MBC/saves | `cpu_instrs`, Mooneye subset, `dmg-acid2` hash |
-| P3 | DirectDraw/DInput/DirectSound + APU + frame loop | `dmg_sound`, `2048.gb` ≥ 59.0 fps |
+| P3 | DirectDraw/DInput/DirectSound + APU + frame loop | `dmg_sound`; host headless `2048.gb` ≥ 59.0 fps (Wine evidence only) |
 | P4 | CGB palettes, banking, double speed | `cgb-acid2`, `cgb_sound`, `interrupt_time` |
 | P5 | dynarec with interpreter fallback | full parity, measured |
 
