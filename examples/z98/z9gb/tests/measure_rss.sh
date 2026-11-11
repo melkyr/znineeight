@@ -14,7 +14,7 @@
 # Usage: measure_rss.sh [ZIG] [OUT] [--cgb]
 #        --cgb runs the measured 60-frame headless workload in CGB mode.
 #
-# Prints: rss_kb=<n>, fb_bytes=<n>, rom_bytes=<n>
+# Prints: rss_kb=<n>, fb_bytes=<n>, rom_bytes=<n>, cgb=<0|1>
 # Exits 77 with a SKIP line when /usr/bin/time is unavailable.
 
 set -u

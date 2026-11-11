@@ -1,5 +1,5 @@
 #!/bin/sh
-# tier_perf.sh — z9gb P3 performance evidence.
+# tier_perf.sh — z9gb P4 closeout performance evidence.
 #
 # Measures the named homebrew ROM 2048.gb on two paths:
 #   host_headless: --headless --frames 600 with audio on (Linux host build)
@@ -26,8 +26,8 @@
 #   Z9GB_PERF_MIN_FPS host headless minimum sustained rendered fps (default 59.0)
 #
 # --cgb passes --cgb through to the host headless CLI workload. A missing ROM =
-# SKIP (exit 77); ROM size/hash mismatch = FAIL. A skipped hard gate blocks P3
-# closeout. Estimates are labelled as estimates; measured numbers are reported
+# SKIP (exit 77); ROM size/hash mismatch = FAIL. A skipped P4 hard gate blocks
+# P4 closeout. Estimates are labelled as estimates; measured numbers are reported
 # as measured. The Wine windowed result is evidence only and never changes the
 # host headless gate threshold.
 

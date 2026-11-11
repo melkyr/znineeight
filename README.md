@@ -92,8 +92,9 @@ all pass (`tier_cgb.sh` 18 passed; DMG tiers unchanged: `tier_smoke` 18, `tier_d
 `9ea9c262…0c4fdf01`), not from this emulator, and is pinned at SHA-256
 `0fba336c…71fcf9fd`. CGB host headless `2048.gb` measured **983.607 fps** (unchanged >= 59.0 fps
 threshold); CGB-mode peak RSS measured **10,288 KiB** for the deterministic 8 MiB ROM workload.
-Wine windowed CGB measured 47.620 fps as evidence only, never Win98 hardware. No Win98
-real-hardware CGB run was performed; real-hardware sign-off remains the operator's.
+Wine windowed `2048.gb` measured 47.620 fps as DMG-mode Wine evidence only (the Wine path
+delegates to `tier_win32.sh --perf` and does not receive `--cgb`); it is never Win98 hardware.
+No Win98 real-hardware CGB run was performed; real-hardware sign-off remains the operator's.
 
 **Phase 1 (TLS + WireGuard) is complete.** The std library now carries the
 browser-grade TLS 1.2/1.3 client (`std_tls` over `std_crypto`/`std_cipher`/

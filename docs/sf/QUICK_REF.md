@@ -634,8 +634,9 @@ needs DX8); without `dinput8.dll` input falls back to keyboard-only. The
 authoritative performance gate is host headless `2048.gb`
 (`--headless --frames 600 --audio`) at >=59.0 fps; CGB mode measured 983.607 fps
 with `--cgb` and CGB peak RSS measured 10,288 KiB. Wine windowed `2048.gb` is
-evidence only, never Win98, and sandbox Wine can be painfully slower (CGB
-evidence measured 47.620 fps). The framebuffer dump is 92,160 bytes (160×144
+DMG-mode Wine evidence only (the Wine path delegates to `tier_win32.sh --perf`
+and does not receive `--cgb`), never Win98, and sandbox Wine can be painfully
+slower (measured 47.620 fps). The framebuffer dump is 92,160 bytes (160×144
 little-endian RGB32).
 
 ```bash

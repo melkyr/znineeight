@@ -442,8 +442,10 @@ CGB-measured host performance: `tier_perf.sh "$ZIG" --cgb` measured
 **983.607 fps** (`wall=0.61 s`, `cpu_user=0.61 s`, `cpu_sys=0.00 s`,
 `rss_kb=1896`, `-O2` emitted-C build) over `--headless --cgb --frames 600
 --audio` on `2048.gb`. That is **PASS** against the unchanged 59.0 fps
-threshold. **Wine windowed CGB evidence (non-authoritative):** the same run
-measured **47.620 fps** (`qpc_seconds=12.599755`, `child_rc=0`, `wall=12.88 s`,
-`cpu_user=6.31 s`, `cpu_sys=0.05 s`, `rss_kb=40248`). This is Wine evidence
-only, never Win98 or real-hardware evidence, and never a threshold change.
+threshold. **Wine windowed DMG-mode evidence (non-authoritative):** the Wine path
+delegates to `tier_win32.sh --perf`, does not receive `--cgb`, and runs the
+DMG-compatible workload; it measured **47.620 fps** (`qpc_seconds=12.599755`,
+`child_rc=0`, `wall=12.88 s`, `cpu_user=6.31 s`, `cpu_sys=0.05 s`,
+`rss_kb=40248`). This is Wine evidence only, never Win98 or real-hardware
+evidence, and never a threshold change.
 
