@@ -492,8 +492,8 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
     if (addr == 0xFF02) return self.serial.sc;
     if (addr >= 0xFF04 and addr <= 0xFF07) return timermod.timerRead(&self.timer, addr);
     if (addr >= 0xFF10 and addr <= 0xFF3F) return apumod.apuRead(&self.apu, addr);
-    if (addr == 0xFF4F and self.cgb_color) return self.vram_bank;
-    if (addr == 0xFF70 and self.cgb_color) return self.wram_bank;
+    if (addr == 0xFF4F and self.cgb_color) return 0xFE | (self.vram_bank & 0x01);
+    if (addr == 0xFF70 and self.cgb_color) return 0xF8 | (self.wram_bank & 0x07);
     if (addr >= 0xFF68 and addr <= 0xFF6B) {
         if (self.cgb_color) return cgbPaletteRead(self, addr);
         return 0xFF;
@@ -501,12 +501,12 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
     if (addr == 0xFF6C) {
         if (!self.cgb_hw) return 0xFF;
         if (self.cgb_compat) return 0x01;
-        return self.opri & 0x01;
+        return 0xFE | (self.opri & 0x01);
     }
     if (addr >= 0xFF51 and addr <= 0xFF55) return hdmaRead(self, addr);
     if (addr == 0xFF4D) {
         if (!self.cgb_color) return 0xFF;
-        var v: u8 = 0;
+        var v: u8 = 0x7E;
         if (self.double_speed) v |= 0x80;
         if ((self.io[0x4D] & 0x01) != 0) v |= 0x01;
         return v;

@@ -284,6 +284,49 @@ fn testEmuModes(dir: []const u8) void {
     checkBool("00 dmg compat", g_emu.bus.cgb_compat, false);
 }
 
+fn testBootState(dir: []const u8) void {
+    var path_buf: [PATH_MAX]u8 = undefined;
+
+    const c0: []const u8 = writeFlagRom(dir, "boot_c0.gb", 0xC0, path_buf[0..]);
+    loadEmu(c0, true) catch {
+        checkBool("boot cgb loads", false, true);
+    };
+    emumod.emuReset(&g_emu);
+    checkByte("boot cgb A", g_emu.cpu.a, 0x11);
+    checkByte("boot cgb F", g_emu.cpu.f, 0x80);
+    checkByte("boot cgb B", g_emu.cpu.b, 0x00);
+    checkByte("boot cgb C", g_emu.cpu.c, 0x00);
+    checkByte("boot cgb D", g_emu.cpu.d, 0xFF);
+    checkByte("boot cgb E", g_emu.cpu.e, 0x56);
+    checkByte("boot cgb H", g_emu.cpu.h, 0x00);
+    checkByte("boot cgb L", g_emu.cpu.l, 0x0D);
+    checkWord("boot cgb SP", g_emu.cpu.sp, 0xFFFE);
+    checkWord("boot cgb PC", g_emu.cpu.pc, 0x0100);
+    checkByte("boot cgb KEY1", mmumod.read8(&g_emu.bus, 0xFF4D), 0x7E);
+    checkByte("boot cgb VBK", mmumod.read8(&g_emu.bus, 0xFF4F), 0xFE);
+    checkByte("boot cgb SVBK", mmumod.read8(&g_emu.bus, 0xFF70), 0xF9);
+    checkByte("boot cgb OPRI", mmumod.read8(&g_emu.bus, 0xFF6C), 0xFE);
+    checkByte("boot cgb HDMA5", mmumod.read8(&g_emu.bus, 0xFF55), 0xFF);
+
+    const dmg: []const u8 = writeFlagRom(dir, "boot_dmg.gb", 0x00, path_buf[0..]);
+    loadEmu(dmg, false) catch {
+        checkBool("boot dmg loads", false, true);
+    };
+    emumod.emuReset(&g_emu);
+    checkByte("boot dmg A", g_emu.cpu.a, 0x01);
+    checkByte("boot dmg F", g_emu.cpu.f, 0xB0);
+    checkByte("boot dmg B", g_emu.cpu.b, 0x00);
+    checkByte("boot dmg C", g_emu.cpu.c, 0x13);
+    checkByte("boot dmg D", g_emu.cpu.d, 0x00);
+    checkByte("boot dmg E", g_emu.cpu.e, 0xD8);
+    checkByte("boot dmg H", g_emu.cpu.h, 0x01);
+    checkByte("boot dmg L", g_emu.cpu.l, 0x4D);
+    checkWord("boot dmg SP", g_emu.cpu.sp, 0xFFFE);
+    checkWord("boot dmg PC", g_emu.cpu.pc, 0x0100);
+    checkByte("boot dmg KEY1", mmumod.read8(&g_emu.bus, 0xFF4D), 0xFF);
+    checkByte("boot dmg HDMA5", mmumod.read8(&g_emu.bus, 0xFF55), 0xFF);
+}
+
 fn testRamInference() void {
     makeRom(0x02, 0x00, 0x00);
     cartmod.cartInit(&g_cart);
@@ -640,9 +683,9 @@ fn testBgObjPriority() void {
 fn testOpriRead() void {
     resetCgb();
     mmumod.write8(&g_bus, 0xFF6C, 0x01);
-    checkByte("opri cgb bit0", mmumod.read8(&g_bus, 0xFF6C), 0x01);
+    checkByte("opri cgb bit0", mmumod.read8(&g_bus, 0xFF6C), 0xFF);
     mmumod.write8(&g_bus, 0xFF6C, 0xFE);
-    checkByte("opri cgb high bits masked", mmumod.read8(&g_bus, 0xFF6C), 0x00);
+    checkByte("opri cgb high bits masked", mmumod.read8(&g_bus, 0xFF6C), 0xFE);
 
     resetBus();
     g_bus.cgb_hw = true;
@@ -668,21 +711,21 @@ fn testCgbFramebuffer() void {
 
 fn testSpeedSwitchRegisters() void {
     resetCgb();
-    checkByte("key1 initial", mmumod.read8(&g_bus, 0xFF4D), 0x00);
+    checkByte("key1 initial", mmumod.read8(&g_bus, 0xFF4D), 0x7E);
     checkBool("speed initial normal", mmumod.cgbIsDoubleSpeed(&g_bus), false);
     mmumod.write8(&g_bus, 0xFF4D, 0x01);
-    checkByte("key1 armed", mmumod.read8(&g_bus, 0xFF4D), 0x01);
+    checkByte("key1 armed", mmumod.read8(&g_bus, 0xFF4D), 0x7F);
     mmumod.write8(&g_bus, 0xFF4D, 0x81);
-    checkByte("key1 bit7 write ignored", mmumod.read8(&g_bus, 0xFF4D), 0x01);
+    checkByte("key1 bit7 write ignored", mmumod.read8(&g_bus, 0xFF4D), 0x7F);
     checkBool("speed switch returns true", mmumod.cgbSpeedSwitch(&g_bus), true);
     checkBool("double speed set", mmumod.cgbIsDoubleSpeed(&g_bus), true);
-    checkByte("key1 double", mmumod.read8(&g_bus, 0xFF4D), 0x80);
+    checkByte("key1 double", mmumod.read8(&g_bus, 0xFF4D), 0xFE);
     checkByte("key1 arm cleared", mmumod.read8(&g_bus, 0xFF4D) & 0x01, 0x00);
     checkBool("unarmed switch false", mmumod.cgbSpeedSwitch(&g_bus), false);
     checkBool("still double", mmumod.cgbIsDoubleSpeed(&g_bus), true);
     mmumod.write8(&g_bus, 0xFF4D, 0x01);
     checkBool("switch back returns true", mmumod.cgbSpeedSwitch(&g_bus), true);
-    checkByte("key1 normal", mmumod.read8(&g_bus, 0xFF4D), 0x00);
+    checkByte("key1 normal", mmumod.read8(&g_bus, 0xFF4D), 0x7E);
 
     resetBus();
     checkByte("dmg key1 reads ff", mmumod.read8(&g_bus, 0xFF4D), 0xFF);
@@ -723,7 +766,7 @@ fn testStopSpeedSwitch() void {
     checkU32("stop switch cycles", cyc, 8200);
     checkWord("stop switch pc", cpu.pc, STOP_CODE + 2);
     checkBool("stop switch speed", mmumod.cgbIsDoubleSpeed(&g_bus), true);
-    checkByte("stop switch key1", mmumod.read8(&g_bus, 0xFF4D), 0x80);
+    checkByte("stop switch key1", mmumod.read8(&g_bus, 0xFF4D), 0xFE);
     checkWord("stop switch div frozen", g_bus.timer.divider, 4);
     checkBool("stop switch not idle", cpu.halted, false);
     checkU32("stop switch cpu cycles", @intCast(u32, cpu.cycles), 8200);
@@ -733,7 +776,7 @@ fn testStopSpeedSwitch() void {
     const cyc2: u32 = cpumod.cpuStep(&cpu, &g_bus);
     checkU32("stop back cycles", cyc2, 8200);
     checkBool("stop back speed", mmumod.cgbIsDoubleSpeed(&g_bus), false);
-    checkByte("stop back key1", mmumod.read8(&g_bus, 0xFF4D), 0x00);
+    checkByte("stop back key1", mmumod.read8(&g_bus, 0xFF4D), 0x7E);
 
     resetCgb();
     initStopCpu(&cpu);
@@ -1104,6 +1147,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testBankRegisters();
     testCartModes();
     testEmuModes(dir);
+    testBootState(dir);
     testRamInference();
     testPaletteRam();
     testPaletteColor();

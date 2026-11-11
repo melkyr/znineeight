@@ -136,14 +136,25 @@ pub fn emuReset(e: *Emu) void {
     e.ppu.line = 0x91;
     e.ppu.dot = 0;
     e.ppu.mode = 1;
-    e.cpu.a = 0x01;
-    e.cpu.f = 0xB0;
-    e.cpu.b = 0x00;
-    e.cpu.c = 0x13;
-    e.cpu.d = 0x00;
-    e.cpu.e = 0xD8;
-    e.cpu.h = 0x01;
-    e.cpu.l = 0x4D;
+    if (e.bus.cgb_hw) {
+        e.cpu.a = 0x11;
+        e.cpu.f = 0x80;
+        e.cpu.b = 0x00;
+        e.cpu.c = 0x00;
+        e.cpu.d = 0xFF;
+        e.cpu.e = 0x56;
+        e.cpu.h = 0x00;
+        e.cpu.l = 0x0D;
+    } else {
+        e.cpu.a = 0x01;
+        e.cpu.f = 0xB0;
+        e.cpu.b = 0x00;
+        e.cpu.c = 0x13;
+        e.cpu.d = 0x00;
+        e.cpu.e = 0xD8;
+        e.cpu.h = 0x01;
+        e.cpu.l = 0x4D;
+    }
     e.cpu.sp = 0xFFFE;
     e.cpu.pc = 0x0100;
 }
