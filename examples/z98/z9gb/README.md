@@ -1,13 +1,38 @@
 # z9gb
 
-A DMG (original Game Boy) emulator shell for Z98. This example is at **P2: DMG
-core**. It runs a DMG CPU, MMU/timer/serial, and a scanline PPU (BG, window,
-sprites, palettes, STAT/LYC and mode-access timing), with MBC1, MBC3 (+RTC), and
-MBC5 cartridges, battery saves, and a pure-Z98 deterministic headless backend.
+A DMG (original Game Boy) emulator shell for Z98. This example is at **P3:
+playable DMG**. It runs a DMG CPU, MMU/timer/serial, a scanline PPU (BG, window,
+sprites, palettes, STAT/LYC and mode-access timing), a 4-channel APU, MBC1,
+MBC3 (+RTC), and MBC5 cartridges, battery saves, and two backends: a pure-Z98
+deterministic headless backend and a Win32 DirectDraw/DirectInput/DirectSound
+windowed backend with QPC frame pacing.
 
-It does **not** emulate CGB, audio/APU, a windowed Win32/DirectX backend, or a
-dynamic recompiler. The only platform is headless; frames are rendered into a
-fixed framebuffer and optionally dumped to disk. There is no heap allocation.
+It does **not** emulate CGB, a dynamic recompiler, or ship a CGB path. There is
+no heap allocation; the single emulator, framebuffer, audio ring, and platform
+state are module-scope statics. `--windowed` requires the Win32 target; the
+Linux host has only the headless backend.
+
+## P3 playable backend
+
+- **Display:** `IDirectDraw7`/`IDirectDrawSurface7` with integer `--scale 1..4`
+  (160x144 source; 320x288, 480x432, or 640x576 output). This needs the
+  **DirectX 6+ runtime**; stock Win98 ships DX5 and has no `IDirectDraw7`, so
+  `--windowed` fails closed there. Install a DX6+ (practically DX7/8) runtime.
+- **Input:** DirectInput8 keyboard plus gamepad, with a `GetAsyncKeyState`
+  keyboard fallback when `dinput8.dll`/DInput8 is unavailable. The gamepad path
+  needs the **DirectX 8 runtime** (`dinput8.dll`); the keyboard fallback works
+  without it.
+- **Audio:** DirectSound (DS v1 `DirectSoundCreate`, 44.1 kHz stereo) with a
+  WinMM `waveOut` fallback when DirectSound cannot open. Audio can be disabled
+  with `--no-audio`; a missing host audio device falls back rather than blocks
+  emulation.
+- **Pacing:** QPC deadlines at the GB frame clock (59.7275 Hz), `Sleep` while
+  ahead and a bounded final spin, with `timeBeginPeriod(1)`. `--turbo` skips
+  pacing for throughput runs.
+- **Real-hardware caveat:** Wine/cross-build is functional evidence, not Win98
+  hardware. Wine numbers are reported as Wine only. Real Win98/Pentium II
+  sign-off remains the operator's, and a DX6+ runtime is mandatory for
+  `--windowed`.
 
 ## Building with zig1
 
@@ -20,10 +45,20 @@ with a companion `build_target.sh`.
 ### Linux
 
 ```sh
-mkdir -p /tmp/z9gb_p2
-/path/to/zig1_5_clean -ffast -o /tmp/z9gb_p2 main.zig
-sh /tmp/z9gb_p2/build_target.sh linux /tmp/z9gb_p2/z9gb
-/tmp/z9gb_p2/z9gb --headless --frames 1 --fb-out /tmp/z9gb_p2.fb
+mkdir -p /tmp/z9gb_p3
+/path/to/zig1_5_clean -ffast -I /workspace/znineeight/sf/src \
+    -o /tmp/z9gb_p3 examples/z98/z9gb/main.zig
+sh /tmp/z9gb_p3/build_target.sh linux /tmp/z9gb_p3/z9gb
+/tmp/z9gb_p3/z9gb --headless --frames 1 --fb-out /tmp/z9gb_p3.fb
+```
+
+### Win32 (no-CRT, Win95/98 target)
+
+```sh
+EXTRA_LIBS="-luser32 -lgdi32 -lwinmm" \
+DUMP_TARGET="-osw -I /workspace/znineeight/sf/src" \
+bash scripts/win32_cross/cross_nocrt.sh /path/to/zig1_5_clean \
+    examples/z98/z9gb/main.zig /tmp/z9gb_p3w /tmp/z9gb_p3w/z9gb.exe
 ```
 
 The emitted framebuffer file is 92,160 bytes: 160×144 little-endian RGB32
@@ -32,12 +67,18 @@ pixels, written identically on every run.
 ## Usage
 
 ```sh
-z9gb [--headless] [--frames <n>] [--fb-out <path>] [--rom <path>]
+z9gb [--headless | --windowed] [--scale <1..4>] [--frames <n>]
+     [--fb-out <path>] [--rom <path>] [--audio | --no-audio]
      [--serial] [--turbo] [--mooneye] [--save] [--rtc-fixed <unix>]
 ```
 
-- `--headless` selects the headless platform (the only backend). It never opens
-  a window and imports no Win32 or DirectX header.
+- `--headless` selects the headless platform. It never opens a window and
+  imports no Win32 or DirectX header.
+- `--windowed` selects the Win32 DirectDraw/DirectInput/DirectSound backend.
+  It only exists on the Win32 target and needs the DX6+ runtime for
+  `IDirectDraw7`; the gamepad additionally needs DX8 `dinput8.dll`.
+- `--scale <1..4>` sets the windowed integer scale (default `1`).
+- `--audio` / `--no-audio` enables or disables APU output (default on).
 - `--frames <n>` runs `n` frames before presenting the framebuffer (default
   `1`).
 - `--fb-out <path>` writes the final framebuffer as 160×144 little-endian
@@ -49,7 +90,7 @@ z9gb [--headless] [--frames <n>] [--fb-out <path>] [--rom <path>]
   narrowing, so a file at or above 4 GiB cannot truncate into the cap.
 - `--serial` mirrors emulated serial bytes to stdout and exits early on a
   terminal `Passed`/`Failed` line.
-- `--turbo` skips frame pacing for headless gate runs.
+- `--turbo` skips frame pacing (windowed and headless) for throughput runs.
 - `--mooneye` stops before the `LD B,B` breakpoint and prints the full
   B/C/D/E/H/L register signature.
 - `--save` writes battery RAM (and the `.rtc` file when the cartridge has one)
@@ -152,6 +193,33 @@ headless frames under `/usr/bin/time`, and requires a byte-identical framebuffer
 dump across three runs. It prints `rss_kb`, `fb_bytes`, `rom_bytes`, and
 `determinism`; if `/usr/bin/time` is unavailable it prints `SKIP` and exits 77.
 
+## P3 gates
+
+```sh
+ZIG=/path/to/zig1_5_clean
+
+# Full Blargg dmg_sound, memory protocol ($A000/$A004):
+bash examples/z98/z9gb/tests/tier_audio.sh --gate "$ZIG"
+
+# Win32 probes, z9gb windowed smoke, and the 2048.gb Wine gate:
+bash examples/z98/z9gb/tests/tier_win32.sh "$ZIG"
+bash examples/z98/z9gb/tests/tier_win32.sh --smoke "$ZIG"
+bash examples/z98/z9gb/tests/tier_win32.sh --perf "$ZIG"
+
+# Host headless 2048.gb throughput + Wine windowed performance:
+bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG"
+```
+
+P3 hard gates are `dmg_sound` (status 0, terminal `Passed`, no `Failed` under
+the documented memory protocol) and the named homebrew `2048.gb`
+(`Sanqui/2048-gb`, commit `e44f94f898c1e0de7caa1160c82c0da36ff5eb05`, sha256
+`3ea2376b…d66d3d7f`, 32,768 bytes). The performance metric is sustained
+rendered fps over `--frames 600` with audio on at the 59.7275 Hz GB clock; the
+threshold is 59.0 fps. Missing ROMs are `SKIP` and block closeout; a hash
+mismatch is `FAIL`. `tier_perf.sh` builds the host headless output at `-O2` and
+delegates the Wine windowed measurement to `tier_win32.sh --perf`; Wine numbers
+are Wine evidence only.
+
 ### External ROM setup
 
 No third-party ROM bytes are committed. The gate runners read
@@ -206,4 +274,20 @@ Corpus classification (`scripts/corpus/classify` with the same compiler):
 (class md5 `47cac0ca24240759d0df922e5fd7a976`). This is the v147 1278-dir
 anchor plus the new `examples/z98/z9gb` corpus entry (OK); the example matrix
 remains **29/29** dump/gcc/link.
+
+## P3 gate evidence (2026-11-11)
+
+Compiler `/tmp/z9gb_p2_seed/zig1_5_clean`, ROM root `/tmp/z9gb_roms`.
+`tier_audio.sh --gate` prints `TIER_AUDIO PASS` (`dmg_sound` sha256
+`c34e7406…401630`, `Passed`, `frames=2133 status=0`).
+
+`tier_perf.sh` measured the host headless path at **1052.632 fps**
+(`wall=0.57 s`, `cpu_user=0.57 s`, `cpu_sys=0.00 s`, `rss_kb=1668`, `-O2`
+emitted-C build) — above the 59.0 fps gate. The Wine windowed path (a separate
+`-O2` no-CRT build, `--windowed --scale 2 --frames 600 --audio`, QPC-timed over
+the 600-frame window) measured **47.621 fps** (`qpc_seconds=12.599425`,
+`wall=12.75 s`, `cpu_user=6.29 s`, `cpu_sys=0.06 s`, `rss_kb=40528`). That is
+Wine evidence, not Win98 hardware, and it is **below the 59.0 fps gate**, so the
+P3 performance gate is not met on this host and closeout cannot claim it. The
+separate 120-frame windowed smoke (`tier_win32.sh --smoke`) is unaffected.
 

@@ -196,6 +196,22 @@ run_gate() {
         SKIPS=$((SKIPS + 1))
         return
     fi
+    want="$(awk '$2 == "dmg_sound/dmg_sound.gb" { print $1; exit }' \
+        "$Z9DIR/testdata/roms/manifest.sha256" 2>/dev/null)"
+    if [ -z "$want" ]; then
+        fail_case "dmg_sound manifest row missing"
+        return
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        got="$(sha256sum "$rom" | cut -d' ' -f1)"
+        if [ "$got" != "$want" ]; then
+            fail_case "dmg_sound sha256 mismatch (got $got, want $want)"
+            return
+        fi
+        echo "       sha256 $got"
+    else
+        echo "       sha256sum unavailable; hash not re-checked"
+    fi
     mkdir -p "$OUT/gate-build"
     if timeout 120 "$ZIG" -ffast -I "$ROOT/sf/src" -o "$OUT/gate-build" "$OUT/gate.zig" >"$OUT/gate_zig.log" 2>&1; then
         pass_case "dmg_sound gate emits"

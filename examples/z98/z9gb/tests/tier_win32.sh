@@ -12,8 +12,16 @@
 # under Wine, check rss_kb, and require the windowed framebuffer to match a
 # headless run over the same ROM/frame count. `--smoke` runs only section (d).
 #
+# Task 6 adds section (e): the named homebrew 2048.gb performance gate. It
+# builds an -O2 no-CRT Win32 z9gb, runs --windowed --frames 600 with audio on
+# under Wine, and measures the rendered-frame window with a QPC launcher.
+# `--perf` runs only section (e). Missing/hash-mismatched ROM is SKIP/FAIL;
+# Wine numbers are Wine evidence, never Win98.
+#
 # Env: ZIG       compiler (first positional arg, else $ZIG, else seed path)
 #      OUT       scratch dir (default /tmp/z9gb_tier_win32)
+#      Z9GB_ROM_DIR ROM root (default /tmp/z9gb_roms, else testdata/roms)
+#      Z9GB_PERF_MIN_FPS minimum sustained rendered fps (default 59.0)
 #
 # Exits non-zero on any failure.
 
@@ -24,9 +32,11 @@ Z9DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT="$(cd "$Z9DIR/../../.." && pwd)"
 ZIG="${ZIG:-/tmp/z9gb_p2_seed/zig1_5_clean}"
 SMOKE_ONLY=0
+PERF_ONLY=0
 for arg in "$@"; do
     case "$arg" in
         --smoke) SMOKE_ONLY=1 ;;
+        --perf) PERF_ONLY=1 ;;
         *) ZIG="$arg" ;;
     esac
 done
@@ -36,8 +46,10 @@ CHECK="$ROOT/scripts/win32_cross/check_win9x_imports.sh"
 
 PASSES=0
 FAILS=0
+SKIPS=0
 pass_case() { echo "ok   - $1"; PASSES=$((PASSES + 1)); }
 fail_case() { echo "FAIL - $1"; FAILS=$((FAILS + 1)); }
+skip_case() { echo "SKIP - $1"; SKIPS=$((SKIPS + 1)); }
 
 if [ ! -x "$ZIG" ]; then
     echo "FAIL: compiler not found: $ZIG"
@@ -53,7 +65,17 @@ done
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-if [ "$SMOKE_ONLY" -eq 0 ]; then
+if [ -n "${Z9GB_ROM_DIR:-}" ]; then
+    ROM_DIR="$Z9GB_ROM_DIR"
+elif [ -d /tmp/z9gb_roms ]; then
+    ROM_DIR=/tmp/z9gb_roms
+elif [ -d "$Z9DIR/testdata/roms" ]; then
+    ROM_DIR="$Z9DIR/testdata/roms"
+else
+    ROM_DIR=/tmp/z9gb_roms
+fi
+
+if [ "$SMOKE_ONLY" -eq 0 ] && [ "$PERF_ONLY" -eq 0 ]; then
 
 echo "== (a) std_ddraw Win32 probe =="
 if OUT="$OUT/ddraw" ZIG="$ZIG" sh "$SCRIPT_DIR/run_ddraw_probe.sh" "$ZIG" \
@@ -189,6 +211,8 @@ fi
 
 fi # SMOKE_ONLY == 0
 
+if [ "$PERF_ONLY" -eq 0 ]; then
+
 echo
 echo "== (d) z9gb Win32 windowed smoke =="
 Z9GB_DIR="$OUT/z9gb"
@@ -323,11 +347,197 @@ else
     fail_case "/usr/bin/time unavailable; cannot check rss_kb"
 fi
 
+fi # PERF_ONLY == 0
+
 echo
-echo "== tier_win32 summary: $PASSES passed, $FAILS failed =="
+echo "== (e) homebrew 2048.gb Wine performance gate =="
+if [ "$SMOKE_ONLY" -eq 0 ]; then
+PERF_MIN="${Z9GB_PERF_MIN_FPS:-59.0}"
+ROM=""
+for cand in "$ROM_DIR/2048.gb" "$ROM_DIR/homebrew/2048.gb"; do
+    if [ -f "$cand" ]; then ROM="$cand"; break; fi
+done
+if [ -z "$ROM" ]; then
+    skip_case "2048.gb under $ROM_DIR"
+else
+    rom_ok=1
+    want="$(awk '$2 == "2048.gb" { print $1; exit }' \
+        "$Z9DIR/testdata/roms/manifest.sha256" 2>/dev/null)"
+    rom_bytes="$(stat -c %s "$ROM" 2>/dev/null)"
+    if [ "$rom_bytes" != "32768" ]; then
+        rom_ok=0
+        fail_case "2048.gb is ${rom_bytes:-<none>} bytes, expected 32768"
+    elif command -v sha256sum >/dev/null 2>&1 && [ -n "$want" ]; then
+        got="$(sha256sum "$ROM" | cut -d' ' -f1)"
+        if [ "$got" != "$want" ]; then
+            rom_ok=0
+            fail_case "2048.gb sha256 mismatch (got $got, want $want)"
+        fi
+    fi
+
+    PERF_DIR="$OUT/perf"
+    PERF_EXE="$PERF_DIR/z9gb_o2.exe"
+    mkdir -p "$PERF_DIR"
+    cat >"$PERF_DIR/gcc_o2.sh" <<'SH'
+#!/bin/sh
+exec i686-w64-mingw32-gcc -O2 "$@"
+SH
+    chmod +x "$PERF_DIR/gcc_o2.sh"
+
+    if CROSS_GCC="$PERF_DIR/gcc_o2.sh" \
+        EXTRA_LIBS="-luser32 -lgdi32 -lwinmm" \
+        DUMP_TARGET="-osw -I $ROOT/sf/src" \
+        bash "$CROSS" "$ZIG" examples/z98/z9gb/main.zig \
+        "$PERF_DIR/work" "$PERF_EXE" >"$PERF_DIR/build.log" 2>&1 \
+        && [ -f "$PERF_EXE" ]; then
+        pass_case "2048 perf: z9gb -O2 no-CRT Win32 build"
+    else
+        fail_case "2048 perf: Win32 -O2 build failed (see $PERF_DIR/build.log)"
+        tail -10 "$PERF_DIR/build.log" 2>/dev/null | sed 's/^/       /'
+    fi
+
+    cat >"$PERF_DIR/qpc_launch.c" <<'C'
+#include <windows.h>
+#include <stdio.h>
+#include <string.h>
+
+int main(int argc, char **argv) {
+    char cmd[4096];
+    size_t n = 0;
+    int i;
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    LARGE_INTEGER f, t0, t1;
+    HWND h = NULL;
+    DWORD spins = 0;
+    DWORD rc = 0;
+    double sec;
+    if (argc < 2) return 2;
+    cmd[0] = 0;
+    for (i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        size_t al = strlen(a);
+        size_t j;
+        if (n + al + 4 >= sizeof(cmd)) return 2;
+        if (i > 1) cmd[n++] = ' ';
+        cmd[n++] = '"';
+        for (j = 0; j < al; j++) {
+            if (a[j] == '"') cmd[n++] = '\\';
+            cmd[n++] = a[j];
+        }
+        cmd[n++] = '"';
+        cmd[n] = 0;
+    }
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL,
+                        &si, &pi)) {
+        printf("QPC_FOUND=0 CREATE_FAIL=%lu\n", (unsigned long)GetLastError());
+        return 3;
+    }
+    QueryPerformanceFrequency(&f);
+    while (!h && spins < 60000) {
+        h = FindWindowA("z98ddrawwnd", NULL);
+        if (!h) Sleep(1);
+        spins++;
+    }
+    if (!h) {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, 1000);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        printf("QPC_FOUND=0 QPC_WAIT_MS=%lu\n", (unsigned long)spins);
+        return 4;
+    }
+    QueryPerformanceCounter(&t0);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    QueryPerformanceCounter(&t1);
+    GetExitCodeProcess(pi.hProcess, &rc);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    sec = (double)(t1.QuadPart - t0.QuadPart) / (double)f.QuadPart;
+    printf("QPC_FOUND=1 QPC_WAIT_MS=%lu QPC_SECONDS=%.6f CHILD_RC=%lu\n",
+           (unsigned long)spins, sec, (unsigned long)rc);
+    return 0;
+}
+C
+
+    if i686-w64-mingw32-gcc -O2 -o "$PERF_DIR/qpc_launch.exe" \
+        "$PERF_DIR/qpc_launch.c" >"$PERF_DIR/qpc_build.log" 2>&1; then
+        pass_case "2048 perf: QPC launcher built"
+    else
+        fail_case "2048 perf: QPC launcher build failed"
+        tail -10 "$PERF_DIR/qpc_build.log" | sed 's/^/       /'
+    fi
+
+    if [ -f "$PERF_EXE" ] && [ -f "$PERF_DIR/qpc_launch.exe" ] \
+        && [ "$rom_ok" = "1" ]; then
+        PERF_HOME="$PERF_DIR/home"
+        mkdir -p "$PERF_HOME"
+        printf 'pcm.!default { type null }\nctl.!default { type null }\n' \
+            >"$PERF_HOME/.asoundrc"
+        HOME="$PERF_HOME"
+        export HOME
+        WINEPREFIX="$PERF_DIR/wineprefix"
+        export WINEPREFIX
+        WINEARCH=win32
+        export WINEARCH
+        WINEDEBUG="${WINEDEBUG:--all}"
+        export WINEDEBUG
+        wineserver -k >/dev/null 2>&1 || true
+        xvfb-run -a -s "-screen 0 1024x768x24" wineboot -u \
+            >"$PERF_DIR/wineboot.log" 2>&1 || true
+        wine reg add 'HKCU\Software\Wine\Drivers' /v Audio /t REG_SZ /d alsa /f \
+            >/dev/null 2>&1 || true
+
+        timeout 300 /usr/bin/time -f 'wall=%e cpu_user=%U cpu_sys=%S rss_kb=%M' \
+            -o "$PERF_DIR/time.txt" \
+            xvfb-run -a -s "-screen 0 1024x768x24" \
+            wine "$PERF_EXE" --windowed --scale 2 --frames 600 --audio \
+            --rom "$ROM" --fb-out "$PERF_DIR/2048.fb" \
+            >"$PERF_DIR/windowed.log" 2>&1
+        timed_rc=$?
+        if [ "$timed_rc" -eq 0 ] && [ -s "$PERF_DIR/2048.fb" ]; then
+            pass_case "2048 perf: Wine --windowed --frames 600 exit 0 with framebuffer"
+        else
+            fail_case "2048 perf: Wine --windowed --frames 600 failed (rc=$timed_rc)"
+        fi
+
+        timeout 300 xvfb-run -a -s "-screen 0 1024x768x24" \
+            wine "$PERF_DIR/qpc_launch.exe" "$PERF_EXE" \
+            --windowed --scale 2 --frames 600 --audio \
+            --rom "$ROM" --fb-out "$PERF_DIR/2048_qpc.fb" \
+            >"$PERF_DIR/qpc.log" 2>&1
+        qpc_rc=$?
+        qpc_sec="$(sed -n 's/.*QPC_SECONDS=\([0-9][0-9.]*\).*/\1/p' \
+            "$PERF_DIR/qpc.log" | tail -1)"
+        fps="$(awk -v s="${qpc_sec:-0}" \
+            'BEGIN { if (s + 0 > 0) printf "%.3f", 600 / s; else print "0" }')"
+        time_line="$(cat "$PERF_DIR/time.txt" 2>/dev/null)"
+        echo "       wine_windowed fps=$fps qpc_seconds=${qpc_sec:-none} $time_line"
+        echo "       (Wine evidence only; not Win98 hardware)"
+        if [ "$qpc_rc" -ne 0 ] || [ -z "$qpc_sec" ]; then
+            fail_case "2048 perf: QPC window timing missing (rc=$qpc_rc)"
+        elif awk -v f="$fps" -v m="$PERF_MIN" \
+            'BEGIN { exit !(f + 0 >= m + 0) }'; then
+            pass_case "2048 perf: Wine windowed sustained $fps fps (>= $PERF_MIN)"
+        else
+            fail_case "2048 perf: Wine windowed sustained $fps fps (< $PERF_MIN)"
+        fi
+        wineserver -k >/dev/null 2>&1 || true
+    fi
+fi
+fi # SMOKE_ONLY == 0
+
+echo
+echo "== tier_win32 summary: $PASSES passed, $FAILS failed, $SKIPS skipped =="
 if [ "$FAILS" -ne 0 ]; then
     echo "TIER_WIN32 FAIL"
     exit 1
+fi
+if [ "$SKIPS" -ne 0 ]; then
+    echo "TIER_WIN32 SKIP"
+    exit 77
 fi
 echo "TIER_WIN32 PASS"
 exit 0
