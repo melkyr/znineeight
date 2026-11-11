@@ -337,6 +337,85 @@ fn testWriteBoundaries() void {
     checkU32("rom write interp cycles", used, blk.cycles);
 }
 
+fn testIndirectWriteBoundaries() void {
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x77);
+    g_cpu.pc = 0xC000;
+    g_cpu.a = 0x5A;
+    g_cpu.h = 0xC1;
+    g_cpu.l = 0x00;
+    var blk: blockmod.Block = undefined;
+    checkBool("ld hl,a write build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ld hl,a write len", @intCast(u32, blk.len), 1);
+    checkOp("ld hl,a write op", blk.insns[0].op, blockmod.BlockOp.ld_mem);
+    checkU32("ld hl,a write a", @intCast(u32, blk.insns[0].a), 6);
+    checkU32("ld hl,a write b", @intCast(u32, blk.insns[0].b), 7);
+    checkBool("ld hl,a write ends", blk.ends_block, true);
+    var used: u32 = cpumod.cpuStep(&g_cpu, &g_bus);
+    checkU32("ld hl,a write interp cycles", used, blk.cycles);
+    checkU32("ld hl,a write stored", @intCast(u32, mmumod.read8(&g_bus, 0xC100)), 0x5A);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x02);
+    g_cpu.pc = 0xC000;
+    g_cpu.a = 0xA5;
+    g_cpu.b = 0xC2;
+    g_cpu.c = 0x00;
+    checkBool("ld bc,a write build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ld bc,a write len", @intCast(u32, blk.len), 1);
+    checkOp("ld bc,a write op", blk.insns[0].op, blockmod.BlockOp.ld_mem);
+    checkU32("ld bc,a write a", @intCast(u32, blk.insns[0].a), 8);
+    checkU32("ld bc,a write b", @intCast(u32, blk.insns[0].b), 0);
+    checkBool("ld bc,a write ends", blk.ends_block, true);
+    used = cpumod.cpuStep(&g_cpu, &g_bus);
+    checkU32("ld bc,a write interp cycles", used, blk.cycles);
+    checkU32("ld bc,a write stored", @intCast(u32, mmumod.read8(&g_bus, 0xC200)), 0xA5);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x34);
+    mmumod.write8(&g_bus, 0xC300, 0x05);
+    g_cpu.pc = 0xC000;
+    g_cpu.h = 0xC3;
+    g_cpu.l = 0x00;
+    checkBool("inc hl write build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("inc hl write len", @intCast(u32, blk.len), 1);
+    checkOp("inc hl write op", blk.insns[0].op, blockmod.BlockOp.incdec);
+    checkU32("inc hl write a", @intCast(u32, blk.insns[0].a), 6);
+    checkU32("inc hl write b", @intCast(u32, blk.insns[0].b), 0);
+    checkBool("inc hl write ends", blk.ends_block, true);
+    used = cpumod.cpuStep(&g_cpu, &g_bus);
+    checkU32("inc hl write interp cycles", used, blk.cycles);
+    checkU32("inc hl write stored", @intCast(u32, mmumod.read8(&g_bus, 0xC300)), 0x06);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x36);
+    mmumod.write8(&g_bus, 0xC001, 0x7F);
+    g_cpu.pc = 0xC000;
+    g_cpu.h = 0xC4;
+    g_cpu.l = 0x00;
+    checkBool("ld hl,n write build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ld hl,n write len", @intCast(u32, blk.len), 1);
+    checkOp("ld hl,n write op", blk.insns[0].op, blockmod.BlockOp.ld_rn);
+    checkU32("ld hl,n write a", @intCast(u32, blk.insns[0].a), 6);
+    checkU16("ld hl,n write imm", blk.insns[0].imm, 0x007F);
+    checkBool("ld hl,n write ends", blk.ends_block, true);
+    used = cpumod.cpuStep(&g_cpu, &g_bus);
+    checkU32("ld hl,n write interp cycles", used, blk.cycles);
+    checkU32("ld hl,n write stored", @intCast(u32, mmumod.read8(&g_bus, 0xC400)), 0x7F);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x7E);
+    g_cpu.pc = 0xC000;
+    g_cpu.h = 0xC5;
+    g_cpu.l = 0x00;
+    checkBool("ld a,hl read build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ld a,hl read len", @intCast(u32, blk.len), 64);
+    checkOp("ld a,hl read op", blk.insns[0].op, blockmod.BlockOp.ld_mem);
+    checkU32("ld a,hl read a", @intCast(u32, blk.insns[0].a), 7);
+    checkU32("ld a,hl read b", @intCast(u32, blk.insns[0].b), 6);
+    checkBool("ld a,hl read continues", blk.ends_block, false);
+}
+
 pub fn main() void {
     testStraightNops();
     testJump();
@@ -349,6 +428,7 @@ pub fn main() void {
     testCbBoundary();
     testInterruptBoundaries();
     testWriteBoundaries();
+    testIndirectWriteBoundaries();
 
     std.io.write("dynarec ");
     if (g_fail == 0) {

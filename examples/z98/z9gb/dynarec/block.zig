@@ -138,6 +138,7 @@ pub fn blockBuild(cpu: *const Cpu, bus: *Bus, out: *Block) bool {
                 insn.op = .ld_mem;
                 insn.a = @intCast(u8, 8 + ((@intCast(u16, op) >> 4) & 0x03));
                 insn.b = 0;
+                terminal = true;
             },
             0x03, 0x13, 0x23, 0x33 => {
                 insn.op = .incdec;
@@ -148,16 +149,19 @@ pub fn blockBuild(cpu: *const Cpu, bus: *Bus, out: *Block) bool {
                 insn.op = .incdec;
                 insn.a = regIndex(op);
                 insn.b = 0;
+                if (insn.a == 6) terminal = true;
             },
             0x05, 0x0D, 0x15, 0x1D, 0x25, 0x2D, 0x35, 0x3D => {
                 insn.op = .incdec;
                 insn.a = regIndex(op);
                 insn.b = 1;
+                if (insn.a == 6) terminal = true;
             },
             0x06, 0x0E, 0x16, 0x1E, 0x26, 0x2E, 0x36, 0x3E => {
                 insn.op = .ld_rn;
                 insn.a = regIndex(op);
                 insn.imm = @intCast(u16, mmumod.read8(bus, pc +% 1));
+                if (insn.a == 6) terminal = true;
             },
             0x08 => {
                 insn.op = .ld_mem;
@@ -204,6 +208,7 @@ pub fn blockBuild(cpu: *const Cpu, bus: *Bus, out: *Block) bool {
                     insn.op = .ld_mem;
                     insn.a = regIndex(op);
                     insn.b = op & 0x07;
+                    if (insn.a == 6) terminal = true;
                 }
             },
             0x80...0xBF => {
