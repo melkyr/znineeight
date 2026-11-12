@@ -130,11 +130,13 @@ fn labelReset(l: *Label) void {
     l.n = 0;
 }
 
-fn labelAdd(l: *Label, at: usize) void {
+fn labelAdd(e: *Emit, l: *Label, at: usize) void {
     if (l.n < l.at.len) {
         l.at[l.n] = at;
         l.n += 1;
+        return;
     }
+    e.len = e.cap + 1;
 }
 
 fn writeU32At(e: *Emit, at: usize, v: usize) void {
@@ -147,6 +149,10 @@ fn writeU32At(e: *Emit, at: usize, v: usize) void {
 }
 
 fn labelPatchAt(e: *Emit, l: *Label, target: usize) void {
+    if (e.len > e.cap) {
+        l.n = 0;
+        return;
+    }
     var i: usize = 0;
     while (i < l.n) : (i += 1) {
         const at: usize = l.at[i];
@@ -165,14 +171,14 @@ fn emitJcc(e: *Emit, cc: u8, l: *Label) void {
     _ = emitByte(e, @intCast(u8, 0x80 | (cc & 0x0F)));
     const at: usize = e.len;
     emitImm32(e, 0);
-    labelAdd(l, at);
+    labelAdd(e, l, at);
 }
 
 fn emitJmp(e: *Emit, l: *Label) void {
     _ = emitByte(e, 0xE9);
     const at: usize = e.len;
     emitImm32(e, 0);
-    labelAdd(l, at);
+    labelAdd(e, l, at);
 }
 
 fn modrmDisp32(reg: u8, rm: u8) u8 {

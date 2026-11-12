@@ -1782,6 +1782,122 @@ fn testCacheMapping() void {
     checkU32("cache used empty", @intCast(u32, g_dyn.used), 0);
 }
 
+fn makeHelperReadBlock(count: u8, nops: u8) Block {
+    var blk: Block = undefined;
+    var i: usize = 0;
+    while (i < @intCast(usize, count)) : (i += 1) {
+        blk.insns[i] = BlockInsn{ .op = .ld_mem, .a = 7, .b = 6, .imm = 0 };
+    }
+    var j: usize = 0;
+    while (j < @intCast(usize, nops)) : (j += 1) {
+        blk.insns[i + j] = BlockInsn{ .op = .nop, .a = 0, .b = 0, .imm = 0 };
+    }
+    blk.len = count +% nops;
+    blk.start_pc = 0xC000;
+    var cyc: u32 = 0;
+    var k: usize = 0;
+    while (k < @intCast(usize, blk.len)) : (k += 1) {
+        cyc +%= blockmod.insnCycles(blk.insns[k]);
+    }
+    blk.cycles = cyc;
+    blk.ends_block = false;
+    return blk;
+}
+
+fn setupHelperRom(count: u16) void {
+    resetRom();
+    romClear();
+    var i: u16 = 0;
+    while (i < count) : (i += 1) romWrite(0x0100 +% i, 0x7E);
+    romWrite(0x0100 +% count, 0x76);
+    g_cpu.pc = 0x0100;
+    g_cpu.a = 0;
+    g_cpu.f = 0;
+    g_cpu.h = 0xC1;
+    g_cpu.l = 0x00;
+    g_cpu.sp = 0xD000;
+}
+
+fn testHelperHeavyBlockTranslates() void {
+    if (!ensureCode()) {
+        checkBool("helper heavy mapping", false, true);
+        return;
+    }
+    setupHelperRom(48);
+    var i: u16 = 0;
+    var wantCyc: u32 = 0;
+    while (i < 48) : (i += 1) wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    const want: Snap = snapTake(&g_cpu, wantCyc);
+
+    setupHelperRom(48);
+    var blk: Block = makeHelperReadBlock(48, 0);
+    blk.start_pc = 0x0100;
+    const gotCyc: u32 = runEmitted(&blk);
+    const got: Snap = snapTake(&g_cpu, gotCyc);
+    checkSnap("helper heavy parity", 32, got, want);
+    checkU32("helper heavy cycles", gotCyc, wantCyc);
+    checkU32("helper heavy cycle value", gotCyc, 384);
+}
+
+fn testEmitBufferOverflowRejected() void {
+    if (!ensureCode()) {
+        checkBool("emit buffer overflow mapping", false, true);
+        return;
+    }
+    var blk: Block = makeHelperReadBlock(12, 52);
+    var e = x86mod.Emit{ .code = g_code, .len = 0, .cap = 3500 };
+    checkBool("emit buffer overflow rejected", x86mod.emitBlock(&e, &blk), false);
+
+    setupHelperRom(64);
+    dynarecmod.dynarecFlush(&g_dyn);
+    const wantCyc: u32 = cpumod.cpuStep(&g_cpu, &g_bus);
+    const want: Snap = snapTake(&g_cpu, wantCyc);
+
+    setupHelperRom(64);
+    const blocks0: u32 = g_dyn.stats.blocks;
+    const fall0: u32 = g_dyn.stats.fallback;
+    const gotCyc: u32 = runDyn();
+    const got: Snap = snapTake(&g_cpu, gotCyc);
+    checkSnap("emit buffer overflow parity", 33, got, want);
+    checkU32("emit buffer overflow no blocks", g_dyn.stats.blocks -% blocks0, 0);
+    checkU32("emit buffer overflow fallback", g_dyn.stats.fallback -% fall0, 1);
+    checkBool("emit buffer overflow no entry", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0100) == null, true);
+}
+
+fn setupNormalRom() void {
+    resetRom();
+    romClear();
+    romWrite(0x0100, 0x3E);
+    romWrite(0x0101, 0x12);
+    romWrite(0x0102, 0x3C);
+    romWrite(0x0103, 0xC3);
+    romWrite(0x0104, 0x06);
+    romWrite(0x0105, 0x01);
+    romWrite(0x0106, 0x76);
+    g_cpu.pc = 0x0100;
+    g_cpu.a = 0;
+    g_cpu.f = 0;
+    g_cpu.sp = 0xD000;
+}
+
+fn testNormalBlockTranslates() void {
+    setupNormalRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    var wantCyc: u32 = 0;
+    wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    wantCyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
+    const want: Snap = snapTake(&g_cpu, wantCyc);
+
+    setupNormalRom();
+    const blocks0: u32 = g_dyn.stats.blocks;
+    const gotCyc: u32 = runDyn();
+    const got: Snap = snapTake(&g_cpu, gotCyc);
+    checkSnap("normal block parity", 34, got, want);
+    checkU32("normal block translated", g_dyn.stats.blocks -% blocks0, 1);
+    checkBool("normal block entry", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0100) != null, true);
+}
+
 fn testCacheDistinctAndBank() void {
     resetRom();
     dynarecmod.dynarecFlush(&g_dyn);
@@ -2553,6 +2669,9 @@ pub fn main() void {
     testEmitCb();
     testHelpers();
     testCacheMapping();
+    testHelperHeavyBlockTranslates();
+    testEmitBufferOverflowRejected();
+    testNormalBlockTranslates();
     testDynarecPpuAdvancedDots();
     testDynarecPpuOrdering();
     testCacheDistinctAndBank();
