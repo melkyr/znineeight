@@ -12,6 +12,7 @@ pub const Entry = cachemod.Entry;
 pub const Stats = cachemod.Stats;
 pub const Cpu = ctxmod.Cpu;
 pub const Bus = ctxmod.Bus;
+pub const Ppu = ctxmod.Ppu;
 pub const DynCtx = ctxmod.DynCtx;
 pub const Block = blockmod.Block;
 pub const BlockInsn = blockmod.BlockInsn;
@@ -505,7 +506,14 @@ pub fn dynarecFlushRange(d: *Dynarec, off: usize, len: usize) void {
     cachemod.flushRange(d, off, len);
 }
 
-pub fn dynarecRunBlock(d: *Dynarec, cpu: *Cpu, bus: *Bus) u32 {
+var g_ppu_advanced_dots: u32 = 0;
+
+pub fn dynarecPpuAdvancedDots() u32 {
+    return g_ppu_advanced_dots;
+}
+
+pub fn dynarecRunBlock(d: *Dynarec, cpu: *Cpu, bus: *Bus, ppu: *Ppu) u32 {
+    g_ppu_advanced_dots = 0;
     if (!d.mapped) return interpStep(d, cpu, bus);
     if (cpu.halted) return interpStep(d, cpu, bus);
     if (bus.dma.active) return interpStep(d, cpu, bus);
@@ -522,7 +530,7 @@ pub fn dynarecRunBlock(d: *Dynarec, cpu: *Cpu, bus: *Bus) u32 {
     const chain0: u32 = d.stats.chained;
 
     const f = @ptrCast(fn (*DynCtx) u32, d.mem + @intCast(usize, e.glue_off));
-    var ctx = DynCtx{ .cpu = cpu, .bus = bus, .cycles = 0 };
+    var ctx = DynCtx{ .cpu = cpu, .bus = bus, .ppu = ppu, .cycles = 0, .instr_cycles = 0, .ppu_pending = 0, .ppu_advanced_dots = 0 };
     const cycles: u32 = f(&ctx);
     d.stats.executed +%= 1 +% (d.stats.chained -% chain0);
 
@@ -541,5 +549,6 @@ pub fn dynarecRunBlock(d: *Dynarec, cpu: *Cpu, bus: *Bus) u32 {
             }
         }
     }
+    g_ppu_advanced_dots = ctx.ppu_advanced_dots;
     return cycles;
 }

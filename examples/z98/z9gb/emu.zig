@@ -300,6 +300,7 @@ pub fn emuRunFrame(e: *Emu) u32 {
             return total;
         }
         var cycles: u32 = 0;
+        var ppu_advanced: u32 = 0;
         if (dynarecEligible(e)) {
             const cartp: *const cartmod.Cart = &e.cart;
             const dynp: *dynarecmod.Dynarec = &e.dynarec;
@@ -307,7 +308,8 @@ pub fn emuRunFrame(e: *Emu) u32 {
             const busp: *mmumod.Bus = &e.bus;
             const rom0: usize = cartp.rom0_off;
             const romx: usize = cartp.romx_off;
-            cycles = dynarecmod.dynarecRunBlock(dynp, cpup, busp);
+            cycles = dynarecmod.dynarecRunBlock(dynp, cpup, busp, &e.ppu);
+            ppu_advanced = dynarecmod.dynarecPpuAdvancedDots();
             if (cycles == 0) {
                 cycles = cpumod.cpuStep(cpup, busp);
                 dynp.stats.fallback +%= 1;
@@ -320,9 +322,11 @@ pub fn emuRunFrame(e: *Emu) u32 {
         const busp2: *const mmumod.Bus = &e.bus;
         const dot_delta: u32 = if (busp2.double_speed) cycles / 2 else cycles;
         dots += dot_delta;
+        const ppu_delta: u32 = if (dot_delta > ppu_advanced) dot_delta - ppu_advanced else 0;
         ppuSyncIn(e);
-        ppumod.ppuTick(&e.ppu, dot_delta, &e.bus);
+        ppumod.ppuTick(&e.ppu, ppu_delta, &e.bus);
         ppuSyncOut(e);
+
     }
     return total;
 }

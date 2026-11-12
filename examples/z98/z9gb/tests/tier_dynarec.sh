@@ -353,12 +353,14 @@ const mmumod = @import("z9gb/mmu.zig");
 const cpumod = @import("z9gb/cpu.zig");
 const cachemod = @import("z9gb/dynarec/cache.zig");
 const dynarecmod = @import("z9gb/dynarec/dynarec.zig");
+const ppumod = @import("z9gb/ppu.zig");
 const blockmod = @import("z9gb/dynarec/block.zig");
 
 var g_cart: cartmod.Cart = undefined;
 var g_bus: mmumod.Bus = undefined;
 var g_cpu: cpumod.Cpu = undefined;
 var g_dyn: cachemod.Dynarec = undefined;
+var g_ppu: ppumod.Ppu = undefined;
 var g_rom: [0x8000]u8 = undefined;
 var g_pass: u32 = 0;
 var g_fail: u32 = 0;
@@ -476,7 +478,7 @@ fn runDyn() Snap {
         if (g_cpu.pc > 0x7FFF) {
             cyc +%= cpumod.cpuStep(&g_cpu, &g_bus);
         } else {
-            const c: u32 = dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus);
+            const c: u32 = dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus, &g_ppu);
             if (c == 0) cyc +%= cpumod.cpuStep(&g_cpu, &g_bus) else cyc +%= c;
         }
     }
@@ -591,11 +593,13 @@ const mmumod = @import("z9gb/mmu.zig");
 const cpumod = @import("z9gb/cpu.zig");
 const cachemod = @import("z9gb/dynarec/cache.zig");
 const dynarecmod = @import("z9gb/dynarec/dynarec.zig");
+const ppumod = @import("z9gb/ppu.zig");
 
 var g_cart: cartmod.Cart = undefined;
 var g_bus: mmumod.Bus = undefined;
 var g_cpu: cpumod.Cpu = undefined;
 var g_dyn: cachemod.Dynarec = undefined;
+var g_ppu: ppumod.Ppu = undefined;
 var g_rom: [0x20000]u8 = undefined;
 var g_pass: u32 = 0;
 var g_rom_len: usize = 0;
@@ -632,7 +636,7 @@ fn runOn(max: usize) u32 {
     while (i < max and !g_cpu.halted) : (i += 1) {
         const r0 = g_cart.rom0_off;
         const rx = g_cart.romx_off;
-        var c = dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus);
+        var c = dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus, &g_ppu);
         if (c == 0) c = cpumod.cpuStep(&g_cpu, &g_bus);
         cyc +%= c;
         if (g_cart.rom0_off != r0) dynarecmod.dynarecInvalidateRom0(&g_dyn);
@@ -663,12 +667,12 @@ fn midblock(want_marker: u8) void {
     ck("mid load", load());
     ck("mid cache", dynarecmod.dynarecOpen(&g_dyn, &g_bus));
     g_cpu.pc = 0x4010;
-    _ = dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus);
+    _ = dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus, &g_ppu);
     ck("mid prewarm", dynarecmod.dynarecLookup(&g_dyn, 1, 0x4010) != null);
     g_cpu.pc = 0x0100; g_cpu.a = 0; g_cpu.halted = false; g_cpu.sp = 0xD000;
     const r0 = g_cart.rom0_off;
     const rx = g_cart.romx_off;
-    const c = dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus);
+    const c = dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus, &g_ppu);
     if (g_cart.rom0_off != r0) dynarecmod.dynarecInvalidateRom0(&g_dyn);
     if (g_cart.romx_off != rx) dynarecmod.dynarecInvalidateRomx(&g_dyn);
     ck("mid block ended at write", g_cpu.pc == 0x0105);

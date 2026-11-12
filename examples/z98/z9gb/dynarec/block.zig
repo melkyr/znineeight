@@ -187,6 +187,10 @@ fn isBoundaryInsn(bus: *Bus, pc: u16, op: u8) bool {
         const a16: u16 = readU16(bus, pc +% 1);
         return a16 >= 0xFF40 and a16 <= 0xFF4B;
     }
+    if (op == 0xEA) {
+        const a16: u16 = readU16(bus, pc +% 1);
+        return a16 >= 0xFF40 and a16 <= 0xFF4B;
+    }
     return false;
 }
 

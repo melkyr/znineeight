@@ -64,6 +64,8 @@ const KIND_OFF: u8 = @intCast(u8, @offsetOf(Page, "kind"));
 const BASE_OFF: u8 = @intCast(u8, @offsetOf(Page, "base"));
 const PAGE_SIZE: u32 = @intCast(u32, @sizeOf(Page));
 const CYCLES_OFF: u8 = @intCast(u8, @offsetOf(DynCtx, "cycles"));
+const INSTR_CYCLES_OFF: u8 = @intCast(u8, @offsetOf(DynCtx, "instr_cycles"));
+const PPU_PENDING_OFF: u8 = @intCast(u8, @offsetOf(DynCtx, "ppu_pending"));
 
 const L_NEXT_PC: u8 = 0x20;
 const L_TOTAL: u8 = 0x24;
@@ -250,9 +252,15 @@ fn emitSetNextPc(e: *Emit, pc: u16) void {
     emitMovMemDispImm32(e, 4, L_NEXT_PC, @intCast(u32, pc));
 }
 
+fn emitSetInstrCycles(e: *Emit, n: u32) void {
+    emitMovR32MemDisp(e, 2, 4, 0x08);
+    emitMovMemDispImm32(e, 2, INSTR_CYCLES_OFF, n);
+}
+
 fn emitCycleAdd(e: *Emit, n: u32) void {
     emitMovR32MemDisp(e, 2, 4, 0x08);
     emitAddMemDispImm32(e, 2, CYCLES_OFF, n);
+    emitAddMemDispImm32(e, 2, PPU_PENDING_OFF, n);
     emitAddMemDispImm32(e, 4, L_TOTAL, n);
 }
 
@@ -1569,6 +1577,7 @@ pub fn emitBlock(e: *Emit, block: *const Block) bool {
         g_cur_pc = pc;
         g_helper_called = false;
         emitSetNextPc(e, pc +% @intCast(u16, len));
+        emitSetInstrCycles(e, blockmod.insnCycles(insn));
         emitCycleAdd(e, blockmod.insnCycles(insn));
         emitInsn(e, insn);
         if (g_helper_called) emitInterruptCheck(e);

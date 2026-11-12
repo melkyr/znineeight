@@ -6,6 +6,7 @@
 const std = @import("std");
 const cartmod = @import("../cart.zig");
 const mmumod = @import("../mmu.zig");
+const ppumod = @import("../ppu.zig");
 const cpumod = @import("../cpu.zig");
 const blockmod = @import("../dynarec/block.zig");
 const ctxmod = @import("../dynarec/ctx.zig");
@@ -34,6 +35,7 @@ extern "c" fn munmap(addr: *void, len: usize) i32;
 var g_cart: cartmod.Cart = undefined;
 var g_bus: mmumod.Bus = undefined;
 var g_cpu: cpumod.Cpu = undefined;
+var g_ppu: ppumod.Ppu = undefined;
 var g_pass: u32 = 0;
 var g_fail: u32 = 0;
 var g_code: [*]u8 = undefined;
@@ -66,6 +68,7 @@ fn reset() void {
     cartmod.cartInit(&g_cart);
     mmumod.busInit(&g_bus, &g_cart);
     cpumod.cpuInit(&g_cpu);
+    ppumod.ppuReset(&g_ppu);
 }
 
 fn checkU32(label: []const u8, got: u32, want: u32) void {
@@ -218,7 +221,7 @@ fn runEmitted(blk: *const Block) u32 {
     var e = x86mod.Emit{ .code = g_code, .len = 0, .cap = cap };
     if (!x86mod.emitBlock(&e, blk)) return 0xFFFFFFFE;
     if (@isWindows()) cachemod.flushRange(&g_emit_cache, 0, e.len);
-    var ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
+    var ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .ppu = &g_ppu, .cycles = 0, .instr_cycles = 0, .ppu_pending = 0, .ppu_advanced_dots = 0 };
     const f = @ptrCast(fn (*DynCtx) u32, g_code);
     return f(&ctx);
 }
@@ -550,15 +553,14 @@ fn testInterruptBoundaries() void {
 
 fn testWriteBoundaries() void {
     reset();
-    mmumod.write8(&g_bus, 0xC000, 0xEA);
+    mmumod.write8(&g_bus, 0xC000, 0xE0);
     mmumod.write8(&g_bus, 0xC001, 0x46);
-    mmumod.write8(&g_bus, 0xC002, 0xFF);
     g_cpu.pc = 0xC000;
     var blk: blockmod.Block = undefined;
     checkBool("io write build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
     checkOp("io write op", blk.insns[0].op, blockmod.BlockOp.ld_mem);
-    checkU16("io write addr", blk.insns[0].imm, 0xFF46);
-    checkU32("io write cycles", blk.cycles, 16);
+    checkU16("io write addr", blk.insns[0].imm, 0x0046);
+    checkU32("io write cycles", blk.cycles, 12);
     checkBool("io write ends", blk.ends_block, true);
     var used: u32 = cpumod.cpuStep(&g_cpu, &g_bus);
     checkU32("io write interp cycles", used, blk.cycles);
@@ -795,6 +797,23 @@ fn testPpuReadBoundaries() void {
     checkBool("ld a,a16 ppu boundary build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
     checkU32("ld a,a16 ppu boundary len", @intCast(u32, blk.len), 1);
     checkBool("ld a,a16 ppu boundary not terminal", blk.ends_block, false);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0xEA);
+    mmumod.write8(&g_bus, 0xC001, 0x40);
+    mmumod.write8(&g_bus, 0xC002, 0xFF);
+    g_cpu.pc = 0xC000;
+    checkBool("ld a16,a ppu boundary start", blockmod.blockBuild(&g_cpu, &g_bus, &blk), false);
+
+    reset();
+    mmumod.write8(&g_bus, 0xC000, 0x00);
+    mmumod.write8(&g_bus, 0xC001, 0xEA);
+    mmumod.write8(&g_bus, 0xC002, 0x40);
+    mmumod.write8(&g_bus, 0xC003, 0xFF);
+    g_cpu.pc = 0xC000;
+    checkBool("ld a16,a ppu boundary build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    checkU32("ld a16,a ppu boundary len", @intCast(u32, blk.len), 1);
+    checkBool("ld a16,a ppu boundary not terminal", blk.ends_block, false);
 
     reset();
     mmumod.write8(&g_bus, 0xC000, 0xF0);
@@ -1612,13 +1631,13 @@ fn testEmitCb() void {
 
 fn testHelpers() void {
     reset();
-    var ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 8 };
+    var ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .ppu = &g_ppu, .cycles = 8, .instr_cycles = 0, .ppu_pending = 0, .ppu_advanced_dots = 0 };
     const value: u8 = helpersmod.helperRead8(&ctx, 0xC000);
     checkU32("helper read cycles", ctx.cycles, 0);
     checkU32("helper read value", @intCast(u32, value), 0);
 
     reset();
-    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
+    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .ppu = &g_ppu, .cycles = 0, .instr_cycles = 0, .ppu_pending = 0, .ppu_advanced_dots = 0 };
     g_bus.ppu_oam_blocked = true;
     g_bus.oam[0] = 0x12;
     helpersmod.helperWrite8(&ctx, 0xFE00, 0x99);
@@ -1627,14 +1646,14 @@ fn testHelpers() void {
     g_bus.ppu_oam_blocked = false;
 
     reset();
-    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
+    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .ppu = &g_ppu, .cycles = 0, .instr_cycles = 0, .ppu_pending = 0, .ppu_advanced_dots = 0 };
     g_bus.stub[0] = 0x77;
     g_bus.pages[0xA0] = Page{ .kind = .cart_ram, .base = @ptrCast([*]u8, &g_bus.stub[0]) };
     helpersmod.helperWrite8(&ctx, 0xA000, 0x5A);
     checkU32("helper cart stub write", @intCast(u32, helpersmod.helperRead8(&ctx, 0xA000)), 0x77);
 
     reset();
-    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
+    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .ppu = &g_ppu, .cycles = 0, .instr_cycles = 0, .ppu_pending = 0, .ppu_advanced_dots = 0 };
     g_bus.pages[0xA1] = Page{ .kind = .rtc, .base = @ptrCast([*]u8, &g_cart.ram[0]) };
     g_cart.ram_enable = false;
     checkU32("helper rtc disabled read", @intCast(u32, helpersmod.helperRead8(&ctx, 0xA100)), 0xFF);
@@ -1642,7 +1661,7 @@ fn testHelpers() void {
     checkU32("helper rtc disabled write", @intCast(u32, helpersmod.helperRead8(&ctx, 0xA100)), 0xFF);
 
     reset();
-    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
+    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .ppu = &g_ppu, .cycles = 0, .instr_cycles = 0, .ppu_pending = 0, .ppu_advanced_dots = 0 };
     mmumod.write8(&g_bus, 0xC000, 0x42);
     g_bus.dma.active = true;
     checkU32("helper dma read blocked", @intCast(u32, helpersmod.helperRead8(&ctx, 0xC000)), 0xFF);
@@ -1651,7 +1670,7 @@ fn testHelpers() void {
     checkU32("helper dma write blocked", @intCast(u32, mmumod.read8(&g_bus, 0xC000)), 0x42);
 
     reset();
-    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .cycles = 0 };
+    ctx = DynCtx{ .cpu = &g_cpu, .bus = &g_bus, .ppu = &g_ppu, .cycles = 0, .instr_cycles = 0, .ppu_pending = 0, .ppu_advanced_dots = 0 };
     helpersmod.helperIoWrite(&ctx, 0xFF40, 0x91);
     checkU32("helper io write/read", @intCast(u32, helpersmod.helperIoRead(&ctx, 0xFF40)), 0x91);
 
@@ -1750,7 +1769,7 @@ fn resetRom() void {
 }
 
 fn runDyn() u32 {
-    return dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus);
+    return dynarecmod.dynarecRunBlock(&g_dyn, &g_cpu, &g_bus, &g_ppu);
 }
 
 fn testCacheMapping() void {
@@ -2400,6 +2419,118 @@ fn testDynarecDispatchFallbacks() void {
     _ = emumod.emuSetDynarec(&g_emu, false);
 }
 
+fn setupPpuOrderingEmu(on: bool) bool {
+    emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = true, .dynarec = false });
+    var i: usize = 0;
+    while (i < 0x8000) : (i += 1) g_emu.rom[i] = 0;
+    g_emu.rom[0x0147] = 0x00;
+    g_emu.rom[0x0148] = 0x00;
+    g_emu.rom[0x0149] = 0x00;
+    var prog = [_]u8{
+        0x31, 0xFE, 0xFF,
+        0x21, 0x40, 0xFF,
+        0xCB, 0x7E,
+        0xCB, 0xBE,
+        0x00, 0x00, 0x00, 0x00,
+        0x3E, 0x81,
+        0xE0, 0x40,
+        0xF0, 0x44,
+        0xEA, 0x00, 0xC0,
+        0xF0, 0x41,
+        0xEA, 0x01, 0xC0,
+        0x76,
+    };
+    i = 0;
+    while (i < prog.len) : (i += 1) g_emu.rom[0x0100 + i] = prog[i];
+    g_emu.rom_len = 0x8000;
+    cartmod.cartLoad(&g_emu.cart, g_emu.rom[0..0x8000]) catch return false;
+    emumod.emuReset(&g_emu);
+    g_emu.bus.ie = 0;
+    g_emu.bus.io[0x0F] = 0;
+    g_emu.bus.io[0x40] = 0x91;
+    g_emu.bus.io[0x41] = 0x80;
+    g_emu.ppu.lcdc = 0x91;
+    g_emu.ppu.dot = 100;
+    g_emu.ppu.line = 0;
+    g_emu.ppu.ly = 0;
+    g_emu.ppu.mode = 2;
+    _ = emumod.emuSetDynarec(&g_emu, on);
+    return true;
+}
+
+fn testDynarecPpuOrdering() void {
+    if (!setupPpuOrderingEmu(false)) {
+        checkBool("dynarec ppu ordering off setup", false, true);
+        return;
+    }
+    _ = emumod.emuRunFrame(&g_emu);
+    const off_ly: u8 = g_emu.bus.wram[0];
+    const off_stat: u8 = g_emu.bus.wram[1];
+    const off_lcdc: u8 = g_emu.ppu.lcdc;
+
+    if (!setupPpuOrderingEmu(true)) {
+        checkBool("dynarec ppu ordering on setup", false, true);
+        return;
+    }
+    _ = emumod.emuRunFrame(&g_emu);
+    const on_ly: u8 = g_emu.bus.wram[0];
+    const on_stat: u8 = g_emu.bus.wram[1];
+    const on_lcdc: u8 = g_emu.ppu.lcdc;
+    const st = emumod.emuDynarecStats(&g_emu);
+
+    checkU32("dynarec ppu ordering ly", @intCast(u32, on_ly), @intCast(u32, off_ly));
+    checkU32("dynarec ppu ordering stat", @intCast(u32, on_stat), @intCast(u32, off_stat));
+    checkU32("dynarec ppu ordering lcdc", @intCast(u32, on_lcdc), @intCast(u32, off_lcdc));
+    if (@isWindows()) {
+        checkBool("dynarec ppu ordering blocks", st.blocks > 0, true);
+        checkBool("dynarec ppu ordering executed", st.executed > 0, true);
+    } else {
+        checkBool("dynarec ppu ordering host hard gate", emumod.emuDynarecEnabled(&g_emu), false);
+    }
+    _ = emumod.emuSetDynarec(&g_emu, false);
+}
+
+fn testDynarecPpuAdvancedDots() void {
+    resetRom();
+    romClear();
+    romWrite(0x0100, 0x3E);
+    romWrite(0x0101, 0x12);
+    romWrite(0x0102, 0xE0);
+    romWrite(0x0103, 0x02);
+    g_cpu.pc = 0x0100;
+    g_cpu.a = 0;
+    dynarecmod.dynarecFlush(&g_dyn);
+    const cyc: u32 = runDyn();
+    const adv: u32 = dynarecmod.dynarecPpuAdvancedDots();
+    const dot_delta: u32 = cyc;
+    const remainder: u32 = if (dot_delta > adv) dot_delta - adv else 0;
+    checkU32("dynarec ppu dots cycles", cyc, 20);
+    checkU32("dynarec ppu dots advanced", adv, 8);
+    checkU32("dynarec ppu dots remainder", remainder, 12);
+    checkBool("dynarec ppu dots no overadvance", adv <= dot_delta, true);
+    checkU32("dynarec ppu dots sum", adv + remainder, dot_delta);
+
+    resetRom();
+    romClear();
+    romWrite(0x0100, 0x3E);
+    romWrite(0x0101, 0x12);
+    romWrite(0x0102, 0xE0);
+    romWrite(0x0103, 0x02);
+    g_cpu.pc = 0x0100;
+    g_cpu.a = 0;
+    g_bus.double_speed = true;
+    dynarecmod.dynarecFlush(&g_dyn);
+    const cyc2: u32 = runDyn();
+    const adv2: u32 = dynarecmod.dynarecPpuAdvancedDots();
+    const dot_delta2: u32 = cyc2 / 2;
+    const remainder2: u32 = if (dot_delta2 > adv2) dot_delta2 - adv2 else 0;
+    checkU32("dynarec ppu dots double cycles", cyc2, 20);
+    checkU32("dynarec ppu dots double advanced", adv2, 4);
+    checkU32("dynarec ppu dots double remainder", remainder2, 6);
+    checkBool("dynarec ppu dots double no overadvance", adv2 <= dot_delta2, true);
+    checkU32("dynarec ppu dots double sum", adv2 + remainder2, dot_delta2);
+}
+
 pub fn main() void {
     testStraightNops();
     testJump();
@@ -2436,6 +2567,8 @@ pub fn main() void {
     testEmitCb();
     testHelpers();
     testCacheMapping();
+    testDynarecPpuAdvancedDots();
+    testDynarecPpuOrdering();
     testCacheDistinctAndBank();
     testCacheReset();
     testCacheTrampoline();
