@@ -171,19 +171,26 @@ re-measured after RC1/RC2 fixes, with coverage reported alongside throughput.
 
 ### 6.6 MBC7 (`k_tt`, type `0x22`)
 
-- Cartridge type `0x22` = MBC7 + accelerometer + rumble + RAM/EEPROM + battery.
-- Required surface: MBC5-style 9-bit ROM banking; RAM/EEPROM enable at
-  `0x0000-0x1FFF`; EEPROM (93LC56) bit-banged at `0xA080-0xA08F`
-  (`CS`/`CLK`/`DI`/`DO`); accelerometer X/Y registers in the `0xA000-0xA01F`
-  window; battery-backed EEPROM persistence.
-- The exact register offsets and latch sequence must be pinned from Pan Docs
-  and verified against `k_tt`'s boot code **before** implementation (Task 6
-  Step 1); the published map is not assumed from memory.
-- Accelerometer values are a fixed neutral orientation plus an `emuSetTilt(x, y)`
-  seam used by tests. Real tilt input is Task 9 (operator-gated); until it is
-  chosen, gameplay needing tilt is documented as unsupported and no progress is
-  claimed beyond what is observed.
-- MBC5 rumble types mask the RAM bank with `& 0x07`.
+- Cartridge type `0x22` = MBC7 (ROM banking, 256-byte 93LC56 EEPROM,
+  accelerometer, battery).
+- Required surface: two RAM enables (`0x0000`=0x0A and `0x4000`=0x40, **both**
+  required); 8-bit ROM bank register at `0x2000-0x3FFF` (banks `00-7F`,
+  ROM-size masked like MBC5); register window `0xA000-0xAFFF` selected by
+  address bits 4-7 (`Ax0x` write 0x55 = erase latch to 0x8000, `Ax1x` write
+  0xAA = latch only after erase, `Ax2x`/`Ax3x`/`Ax4x`/`Ax5x` = X/Y low/high,
+  `Ax6x`=0x00, `Ax7x`/`Ax9x`-`AxFx`=0xFF, `Ax8x` = EEPROM pins: bit0 DO,
+  bit1 DI, bit6 CLK, bit7 CS); `0xB000-0xBFFF` reads 0xFF; EEPROM (93LC56)
+  256 bytes in `cart.ram` (blank = erased 0xFF), 10-bit commands + 16-bit data
+  MSB-first, all 7 commands, EWEN-gated writes, instant-ready DO; battery-backed
+  persistence via `.sav`.
+- The map above is pinned from Pan Docs and `k_tt`'s boot code (Task 6 Step 1);
+  it is not assumed from memory.
+- Accelerometer neutral latch is `0x8000` plus an `emuSetTilt(x, y)` seam used by
+  tests. Real tilt input is Task 9 (operator-gated); until it is chosen,
+  gameplay needing tilt is documented as unsupported and no progress is claimed
+  beyond what is observed. No real sensor physics or HALT sampling effect.
+- MBC5 rumble types mask the RAM bank with `& 0x07`; rumble output is not
+  emulated.
 
 ### 6.7 Task 9 options (operator-gated tilt input)
 

@@ -299,20 +299,27 @@ git commit -m "feat(z9gb): run indefinitely unless --frames is given"
 
 **Interfaces:**
 - Consumes: `Cart`, `cartLoad`, `cartRead`, `cartWrite`, `cartRamSize`, `cartSaveRam`, `cartLoadRam`, `PageKind`, `rebuildCartPages`.
-- Produces: `.mbc7` cartridge kind; `typeIncludesRam(0x22) == true`; EEPROM size 256 bytes (93LC56); `PageKind.mbc7` for `0xA000-0xA0FF`; `cartMbc7Read`/`cartMbc7Write` routing; `emuSetTilt(x: i16, y: i16)` test seam; MBC5 rumble RAM bank `& 0x07` for `0x1C..0x1E`.
+- Produces: `.mbc7` cartridge kind; `typeIncludesRam(0x22) == true`; EEPROM size 256 bytes (93LC56); `PageKind.mbc7` for `0xA000-0xAFFF`; `cartMbc7Read`/`cartMbc7Write` routing; `emuSetTilt(x: i16, y: i16)` test seam; MBC5 rumble RAM bank `& 0x07` for `0x1C..0x1E`.
 
 - [ ] **Step 1: Pin the MBC7 register map (no guessing)**
 
-Read the Pan Docs MBC7 section and disassemble `k_tt.gbc`'s boot code (`objdump` on a `/tmp` copy or a byte dump). Record in the task report: ROM bank registers, RAM/EEPROM enable value, EEPROM `0xA080` bit assignments (CS/CLK/DI/DO), accelerometer X/Y window, and the latch mechanism. STOP and present to the operator if the evidence contradicts this plan's sketch.
+The map below is pinned from Pan Docs (MBC7) and `k_tt.gbc` boot bytes (`0xCDF0` `3E 55 / EA 00 A0`, `0xCDF5` `3E AA / EA 10 A0`, `0xCE0D`/`0xCE12` enables, `0xCE17`/`0xCE1B` X reads, `0xCE2B`/`0xCE2F` Y reads, `0x50E` `LD A,$2E; LD ($2100),A`, `0x167E0` EEPROM helper). Re-verify against Pan Docs and a byte dump of the `k_tt.gbc` boot code, record the evidence in the report, then implement it. STOP and present to the operator only if the evidence contradicts this pinned map.
+
+- `0x0000-0x1FFF`: RAM enable 1 (`0x0A`); `0x4000-0x5FFF`: RAM enable 2 (`0x40`); both required, else `0xA000-0xAFFF` reads `0xFF` and writes are ignored.
+- `0x2000-0x3FFF`: 8-bit ROM bank register (banks `0x00-0x7F`), masked by ROM size like MBC5.
+- `0xA000-0xAFFF`: registers selected by address bits 4-7 (bits 0-3 and 8-11 ignored): `Ax0x` write `0x55` = erase latch to `0x8000`; `Ax1x` write `0xAA` = latch (only if erased since the last latch); both read `0xFF`. `Ax2x`/`Ax3x` and `Ax4x`/`Ax5x` = X/Y low/high (16-bit, reset/erase `0x8000`); `Ax6x`=0x00, `Ax7x`=0xFF, `Ax9x`-`AxFx`=0xFF; `Ax8x` = EEPROM pins (bit0 DO, bit1 DI, bit6 CLK, bit7 CS).
+- `0xB000-0xBFFF`: reads `0xFF`.
+- EEPROM: 93LC56, 256 bytes, 16-bit words, 10-bit commands + 16 data bits MSB-first, all 7 commands (READ/EWEN/EWDS/WRITE/ERASE/ERAL/WRAL), programming gated by EWEN, instant-ready DO; blank EEPROM is erased (`0xFF`).
 
 - [ ] **Step 2: Write the failing cart tests**
 
 Add cases to the cart/save tier:
-1. Load a synthetic type-`0x22` ROM: accepted, `cartRamSize == 256`.
-2. MBC5-style ROM banking: write bank registers, assert `cartRead` returns bytes from the selected bank.
-3. EEPROM round-trip: bit-bang a byte in, read it back, save to `.sav`, reload, assert persistence.
-4. Accelerometer: with the test seam `emuSetTilt(0x8000, 0x8000)`, the latch/read path returns the programmed values; no tilt set → neutral.
-5. MBC5 rumble: type `0x1E`, write `0x08` to the RAM-bank register, assert the active RAM bank is 0 (not 8) and a save round-trip keeps bank-0 data.
+1. Load a synthetic type-`0x22` ROM: accepted, `cartRamSize == 256`; with no `.sav`, EEPROM/register reads are erased (`0xFF`), not zero.
+2. ROM banking: write the `0x2000-0x3FFF` register, assert `cartRead` returns bytes from the selected bank; out-of-range bank values mask by ROM size like MBC5.
+3. RAM enables: with enable1 only or enable2 only, `0xA020-0xA05F` reads `0xFF` and writes are ignored; both enabled → registers active.
+4. Accelerometer: erase (`0x55`→`0xA000`) then latch (`0xAA`→`0xA010`) with the seam `emuSetTilt(0x1234, 0x5678)`; read X `0xA020`/`0xA030`, Y `0xA040`/`0xA050`; a second latch without a new erase is a no-op; `Ax0x`/`Ax1x` reads are `0xFF`; `A060`=0x00, `A070`=0xFF, `A090`=0xFF, `0xB000`=0xFF; no seam → neutral `0x8000`.
+5. EEPROM: EWEN + WRITE + READ round-trip; WRITE without EWEN is ignored; ERASE/ERAL/WRAL behave per the 93LC56; save to `.sav`, reload, assert persistence.
+6. MBC5 rumble: type `0x1E`, write `0x08` to the RAM-bank register, assert the active RAM bank is 0 (not 8) and a save round-trip keeps bank-0 data.
 
 - [ ] **Step 3: Run to verify RED**
 
@@ -321,7 +328,7 @@ Expected: FAIL (`UnsupportedMbc`).
 
 - [ ] **Step 4: Implement MBC7 + rumble mask**
 
-`cart.zig`: `mbcKnown` accepts `0x22`; `typeIncludesRam` includes `0x22`; MBC7 EEPROM is a 256-byte view of `cart.ram` (RAM size 256, exempt from the 8 KiB inference); ROM banking per the Step 1 map; `cartMbc7Read/Write` implement the EEPROM bit-bang and accelerometer latch with the test seam. `mmu.zig`: route `0xA000-0xA0FF` to `PageKind.mbc7` when the cart is MBC7 (rebuild on enable/write like the RTC window); disabled → `0xFF`/ignored. `cart.zig`: MBC5 write masks `& 0x07` for types `0x1C..0x1E`.
+`cart.zig`: `mbcKnown` accepts `0x22`; `typeIncludesRam` includes `0x22`; MBC7 EEPROM is a 256-byte view of `cart.ram` (RAM size 256, exempt from the 8 KiB inference; blank EEPROM is erased, i.e. `0xFF`-filled, not zero-filled); ROM banking is an 8-bit register at `0x2000-0x3FFF` (banks `0x00-0x7F`) masked by ROM size like MBC5; `cartMbc7Read/Write` implement: register selection by address bits 4-7 across `0xA000-0xAFFF`; erase/latch at `Ax0x`/`Ax1x` with latch-requires-erase; X/Y low/high at `Ax2x`-`Ax5x` (16-bit, reset/erase value `0x8000`, high bytes masked to `0x0F` on read); `Ax6x`=0x00, `Ax7x`=0xFF, `Ax9x`-`AxFx`=0xFF; EEPROM pins at `Ax8x` (bit0 DO, bit1 DI, bit6 CLK, bit7 CS) driving a 93LC56 state machine (10-bit commands + 16 data bits MSB-first, all 7 commands, EWEN-gated writes, instant-ready DO); `0xB000-0xBFFF` reads `0xFF`; both RAM enables (`0x0000`=0x0A and `0x4000`=0x40) are required. `mmu.zig`: route `0xA000-0xAFFF` to `PageKind.mbc7` when the cart is MBC7 (rebuild on enable/write like the RTC window); disabled → `0xFF`/ignored. `cart.zig`: MBC5 write masks `& 0x07` for types `0x1C..0x1E` (bit 3 is rumble); no rumble output.
 
 - [ ] **Step 5: Clear loader diagnostics**
 
