@@ -298,6 +298,7 @@ Write the report and stop. No product/source commit. Do not implement Task 6.2.
 - Modify: `examples/z98/z9gb/dynarec/dynarec.zig`
 - Modify: `examples/z98/z9gb/emu.zig`
 - Modify: `examples/z98/z9gb/tests/dynarec_test.zig`
+- Modify: `examples/z98/z9gb/tests/tier_dynarec.sh` (generated harness call sites for the new `dynarecRunBlock` signature)
 - Modify: `examples/z98/z9gb/tests/tier_dmg.sh` only if the hard-gate assertions need adjustment
 - Test: `examples/z98/z9gb/tests/tier_dynarec.sh`, `tier_dmg.sh --gates`, `tier_dmg.sh --all`, `tier_smoke.sh`
 
@@ -316,7 +317,7 @@ Run the regression test, `tier_dynarec`, `tier_dmg --gates`, `tier_dmg --all`, a
 
 - [ ] **Step 4: Commit**
 ```bash
-git add examples/z98/z9gb/dynarec/block.zig examples/z98/z9gb/dynarec/ctx.zig examples/z98/z9gb/dynarec/helpers.zig examples/z98/z9gb/dynarec/x86.zig examples/z98/z9gb/dynarec/dynarec.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/dynarec_test.zig
+git add examples/z98/z9gb/dynarec/block.zig examples/z98/z9gb/dynarec/ctx.zig examples/z98/z9gb/dynarec/helpers.zig examples/z98/z9gb/dynarec/x86.zig examples/z98/z9gb/dynarec/dynarec.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/dynarec_test.zig examples/z98/z9gb/tests/tier_dynarec.sh
 git commit -m "fix(z9gb): sync PPU at dynarec dynamic accesses"
 ```
 
