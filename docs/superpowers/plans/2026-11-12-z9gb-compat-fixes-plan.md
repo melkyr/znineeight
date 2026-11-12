@@ -53,8 +53,8 @@ Create `tests/irq_test.zig` following the structure of `tests/cgb_test.zig` (mod
 
 1. `test_vblank_once`: `ppuReset` + `busInit`; tick 154 lines of 456 dots; assert IF bit 0 set; clear IF, tick one more full frame; assert exactly one raise and that it does not re-raise within the same frame (tick 143→144 alone sets it once, further ticks on line 144 do not).
 2. `test_vblank_lcd_off`: clear LCDC bit 7, tick 2000 dots, assert IF bit 0 stays 0.
-3. `test_joypad_irq`: select directions (`io[0x00] = 0x2F`), `busApplyButtons(bus, 0x01)` → IF `0x10` set; clear IF, `busApplyButtons(bus, 0x01)` again (still held) → no new raise; `busApplyButtons(bus, 0x00)` → no raise.
-4. `test_joypad_unselected`: select buttons (`io[0x00] = 0x1F`), press a direction (`0x01`) → no raise; press A (`0x10`) → raise.
+3. `test_joypad_irq`: select directions (`io[0x00] = 0x1F`), `busApplyButtons(bus, 0x01)` → IF `0x10` set; clear IF, `busApplyButtons(bus, 0x01)` again (still held) → no new raise; `busApplyButtons(bus, 0x00)` → no raise.
+4. `test_joypad_unselected`: select buttons (`io[0x00] = 0x2F`), press a direction (`0x01`) → no raise; press A (`0x10`) → raise.
 5. `test_if_read_mask`: `ioRead(0x0F)` returns bits 5–7 as 1 (`value | 0xE0`).
 
 - [ ] **Step 2: Run to verify RED**
