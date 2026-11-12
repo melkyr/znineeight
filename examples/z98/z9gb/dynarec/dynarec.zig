@@ -402,20 +402,20 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
     tmp.pc = pc;
     var blk: Block = undefined;
     if (!blockmod.blockBuild(&tmp, bus, &blk)) {
-        d.stats.rejected += 1;
+        d.stats.rejected +%= 1;
         return null;
     }
     if (blk.len == 0) {
-        d.stats.rejected += 1;
+        d.stats.rejected +%= 1;
         return null;
     }
     const end: u32 = @as(u32, blk.start_pc) + @as(u32, blockSpan(&blk));
     if (end > 0x00008000) {
-        d.stats.rejected += 1;
+        d.stats.rejected +%= 1;
         return null;
     }
     if (blk.start_pc < 0x4000 and end > 0x00004000) {
-        d.stats.rejected += 1;
+        d.stats.rejected +%= 1;
         return null;
     }
     const succ: Succ = blockSuccessor(bus, &blk);
@@ -430,7 +430,7 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
         }
         var e = x86mod.Emit{ .code = d.mem + start, .len = 0, .cap = BLOCK_MAX_BYTES };
         if (!x86mod.emitBlock(&e, &blk)) {
-            d.stats.rejected += 1;
+            d.stats.rejected +%= 1;
             return null;
         }
         const blen: usize = e.len;
@@ -478,13 +478,13 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
         linkPredecessors(d, bank, pc);
         return ent;
     }
-    d.stats.rejected += 1;
+    d.stats.rejected +%= 1;
     return null;
 }
 
 fn interpStep(d: *Dynarec, cpu: *Cpu, bus: *Bus) u32 {
     d.stats.fallback += 1;
-    d.stats.minstr += 1;
+    d.stats.minstr +%= 1;
     return cpumod.cpuStep(cpu, bus);
 }
 

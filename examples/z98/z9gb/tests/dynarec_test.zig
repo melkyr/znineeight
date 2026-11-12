@@ -2273,6 +2273,13 @@ fn testDynarecCoverage() void {
     checkU32("coverage cold rejected", rej1, 0);
     checkU32("coverage cold permille", coveragePermille(tin1, min1), 1000);
 
+    g_cpu.pc = 0x0100;
+    const tin1b: u32 = g_dyn.stats.tinstr;
+    const blocks1: u32 = g_dyn.stats.blocks;
+    _ = runDyn();
+    checkU32("coverage cached tinstr", g_dyn.stats.tinstr -% tin1b, block_insns);
+    checkU32("coverage cached no retranslate", g_dyn.stats.blocks -% blocks1, 0);
+
     resetRom();
     g_cpu.pc = 0xC000;
     const min2: u32 = g_dyn.stats.minstr;
@@ -2287,6 +2294,76 @@ fn testDynarecCoverage() void {
     checkU32("coverage reject rejected", g_dyn.stats.rejected -% rej2, 1);
     checkU32("coverage reject minstr", g_dyn.stats.minstr -% min3, 1);
     checkBool("coverage reject no entry", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0100) == null, true);
+}
+
+fn setupCoverageChainRom() void {
+    resetRom();
+    romClear();
+    romWrite(0x0200, 0x3E);
+    romWrite(0x0201, 0x11);
+    romWrite(0x0202, 0xC3);
+    romWrite(0x0203, 0x06);
+    romWrite(0x0204, 0x02);
+    romWrite(0x0206, 0xE9);
+    g_cpu.pc = 0x0200;
+    g_cpu.a = 0;
+    g_cpu.f = 0;
+    g_cpu.h = 0x12;
+    g_cpu.l = 0x34;
+    g_cpu.sp = 0xD000;
+}
+
+fn testDynarecCoverageChain() void {
+    setupCoverageChainRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    _ = runDyn();
+    _ = runDyn();
+    checkBool("coverage chain A entry", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0200) != null, true);
+    checkBool("coverage chain B entry", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0206) != null, true);
+
+    setupCoverageChainRom();
+    const tin0: u32 = g_dyn.stats.tinstr;
+    const chain0: u32 = g_dyn.stats.chained;
+    const blocks0: u32 = g_dyn.stats.blocks;
+    _ = runDyn();
+    checkU32("coverage chain tinstr", g_dyn.stats.tinstr -% tin0, 3);
+    checkU32("coverage chain chained", g_dyn.stats.chained -% chain0, 1);
+    checkU32("coverage chain no retranslate", g_dyn.stats.blocks -% blocks0, 0);
+    checkU16("coverage chain pc", g_cpu.pc, 0x1234);
+}
+
+fn testDynarecCounterWrapping() void {
+    resetRom();
+    g_cpu.pc = 0xC000;
+    const min_saved: u32 = g_dyn.stats.minstr;
+    g_dyn.stats.minstr = 0xFFFFFFFF;
+    _ = runDyn();
+    checkU32("coverage minstr wraps", g_dyn.stats.minstr, 0);
+    g_dyn.stats.minstr = min_saved;
+
+    setupHelperRom(64);
+    dynarecmod.dynarecFlush(&g_dyn);
+    const rej_saved: u32 = g_dyn.stats.rejected;
+    g_dyn.stats.rejected = 0xFFFFFFFF;
+    _ = runDyn();
+    checkU32("coverage rejected wraps", g_dyn.stats.rejected, 0);
+    g_dyn.stats.rejected = rej_saved;
+}
+
+fn testDynarecEmuMinstr() void {
+    if (!setupDynarecEmu(true)) {
+        checkBool("emu minstr setup", false, true);
+        return;
+    }
+    if (!dynarecmod.dynarecEnabled(&g_emu.dynarec)) {
+        checkBool("emu minstr direct open", dynarecmod.dynarecOpen(&g_emu.dynarec, &g_emu.bus), true);
+    }
+    checkBool("emu minstr enabled", emumod.emuDynarecEnabled(&g_emu), true);
+    g_emu.cpu.pc = 0xC000;
+    const min0: u32 = g_emu.dynarec.stats.minstr;
+    _ = emumod.emuRunFrame(&g_emu);
+    checkBool("emu minstr increments", g_emu.dynarec.stats.minstr > min0, true);
+    _ = emumod.emuSetDynarec(&g_emu, false);
 }
 
 fn testCacheClose() void {
@@ -2727,6 +2804,9 @@ pub fn main() void {
     testCacheSamePcDifferentBank();
     testCacheCollision();
     testDynarecCoverage();
+    testDynarecCoverageChain();
+    testDynarecCounterWrapping();
+    testDynarecEmuMinstr();
     testCacheClose();
     testDynarecFrameParity();
     testDynarecReinitClose();
