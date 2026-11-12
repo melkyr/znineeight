@@ -57,6 +57,9 @@ pub const Stats = struct {
     fallback: u32,
     resets: u32,
     collisions: u32,
+    tinstr: u32,
+    minstr: u32,
+    rejected: u32,
 };
 
 pub const Dynarec = struct {
@@ -106,7 +109,7 @@ pub fn dynarecOpen(d: *Dynarec, bus: *Bus) bool {
     d.mapped = false;
     d.used = 0;
     d.last_entry = 0;
-    d.stats = Stats{ .blocks = 0, .executed = 0, .chained = 0, .fallback = 0, .resets = 0, .collisions = 0 };
+    d.stats = Stats{ .blocks = 0, .executed = 0, .chained = 0, .fallback = 0, .resets = 0, .collisions = 0, .tinstr = 0, .minstr = 0, .rejected = 0 };
     clearEntries(d);
     if (@isWindows()) {
         const raw = VirtualAlloc(nullVoid(), CODE_CACHE_BYTES, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);

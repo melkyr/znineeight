@@ -155,6 +155,12 @@ fn reportMooneye() void {
     std.io.write("\n");
 }
 
+fn coveragePermille(tin: u32, min: u32) u32 {
+    const total: u32 = tin +% min;
+    if (total == 0) return 0;
+    return @intCast(u32, (@as(u64, tin) * 1000) / @as(u64, total));
+}
+
 fn reportDynarecStats() void {
     if (emu.emuDynarecEnabled(&g_emu)) {
         const st: emu.DynarecStats = emu.emuDynarecStats(&g_emu);
@@ -164,7 +170,15 @@ fn reportDynarecStats() void {
         std.io.printInt(@intCast(i32, st.executed));
         std.io.write(" fallback=");
         std.io.printInt(@intCast(i32, st.fallback));
-        std.io.write("\n");
+        std.io.write(" tinstr=");
+        std.io.printInt(@intCast(i32, st.tinstr));
+        std.io.write(" minstr=");
+        std.io.printInt(@intCast(i32, st.minstr));
+        std.io.write(" rejected=");
+        std.io.printInt(@intCast(i32, st.rejected));
+        std.io.write(" coverage=");
+        std.io.printInt(@intCast(i32, coveragePermille(st.tinstr, st.minstr)));
+        std.io.write("\xe2\x80\xb0\n");
         return;
     }
     std.io.write("dynarec=disabled reason=");

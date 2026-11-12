@@ -2247,6 +2247,48 @@ fn testCacheCollision() void {
     checkBool("cache collision keeps bytes", g_dyn.used > used0, true);
 }
 
+fn coveragePermille(tin: u32, min: u32) u32 {
+    const total: u32 = tin +% min;
+    if (total == 0) return 0;
+    return @intCast(u32, (@as(u64, tin) * 1000) / @as(u64, total));
+}
+
+fn testDynarecCoverage() void {
+    setupNormalRom();
+    var blk: Block = undefined;
+    checkBool("coverage build", blockmod.blockBuild(&g_cpu, &g_bus, &blk), true);
+    const block_insns: u32 = @intCast(u32, blk.len);
+
+    setupNormalRom();
+    dynarecmod.dynarecFlush(&g_dyn);
+    const tin0: u32 = g_dyn.stats.tinstr;
+    const min0: u32 = g_dyn.stats.minstr;
+    const rej0: u32 = g_dyn.stats.rejected;
+    _ = runDyn();
+    const tin1: u32 = g_dyn.stats.tinstr -% tin0;
+    const min1: u32 = g_dyn.stats.minstr -% min0;
+    const rej1: u32 = g_dyn.stats.rejected -% rej0;
+    checkU32("coverage cold tinstr", tin1, block_insns);
+    checkU32("coverage cold minstr", min1, 0);
+    checkU32("coverage cold rejected", rej1, 0);
+    checkU32("coverage cold permille", coveragePermille(tin1, min1), 1000);
+
+    resetRom();
+    g_cpu.pc = 0xC000;
+    const min2: u32 = g_dyn.stats.minstr;
+    _ = runDyn();
+    checkU32("coverage non-rom minstr", g_dyn.stats.minstr -% min2, 1);
+
+    setupHelperRom(64);
+    dynarecmod.dynarecFlush(&g_dyn);
+    const rej2: u32 = g_dyn.stats.rejected;
+    const min3: u32 = g_dyn.stats.minstr;
+    _ = runDyn();
+    checkU32("coverage reject rejected", g_dyn.stats.rejected -% rej2, 1);
+    checkU32("coverage reject minstr", g_dyn.stats.minstr -% min3, 1);
+    checkBool("coverage reject no entry", dynarecmod.dynarecLookup(&g_dyn, 0, 0x0100) == null, true);
+}
+
 fn testCacheClose() void {
     dynarecmod.dynarecClose(&g_dyn);
     checkBool("cache close disabled", dynarecmod.dynarecEnabled(&g_dyn), false);
@@ -2684,6 +2726,7 @@ pub fn main() void {
     testCacheRomxChainAndMismatch();
     testCacheSamePcDifferentBank();
     testCacheCollision();
+    testDynarecCoverage();
     testCacheClose();
     testDynarecFrameParity();
     testDynarecReinitClose();

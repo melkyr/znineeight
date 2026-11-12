@@ -85,7 +85,7 @@ fn statAddr(d: *Dynarec, which: u8) u32 {
     return @intCast(u32, @ptrToInt(&d.last_entry));
 }
 
-fn buildGlue(d: *Dynarec, entry_idx: u32, block_addr: u32, glue: []u8) GlueInfo {
+fn buildGlue(d: *Dynarec, entry_idx: u32, block_addr: u32, insn_count: u32, glue: []u8) GlueInfo {
     var buf: Buf = undefined;
     buf.n = 0;
 
@@ -100,6 +100,11 @@ fn buildGlue(d: *Dynarec, entry_idx: u32, block_addr: u32, glue: []u8) GlueInfo 
     put8(&buf, 0x05);
     put32(&buf, statAddr(d, 1));
     put32(&buf, entry_idx);
+
+    put8(&buf, 0x83);
+    put8(&buf, 0x05);
+    put32(&buf, @intCast(u32, @ptrToInt(&d.stats.tinstr)));
+    put8(&buf, @intCast(u8, insn_count));
 
     put8(&buf, 0xFF);
     put8(&buf, 0x74);
@@ -396,11 +401,23 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
     var tmp: Cpu = cpu.*;
     tmp.pc = pc;
     var blk: Block = undefined;
-    if (!blockmod.blockBuild(&tmp, bus, &blk)) return null;
-    if (blk.len == 0) return null;
+    if (!blockmod.blockBuild(&tmp, bus, &blk)) {
+        d.stats.rejected += 1;
+        return null;
+    }
+    if (blk.len == 0) {
+        d.stats.rejected += 1;
+        return null;
+    }
     const end: u32 = @as(u32, blk.start_pc) + @as(u32, blockSpan(&blk));
-    if (end > 0x00008000) return null;
-    if (blk.start_pc < 0x4000 and end > 0x00004000) return null;
+    if (end > 0x00008000) {
+        d.stats.rejected += 1;
+        return null;
+    }
+    if (blk.start_pc < 0x4000 and end > 0x00004000) {
+        d.stats.rejected += 1;
+        return null;
+    }
     const succ: Succ = blockSuccessor(bus, &blk);
 
     var tries: u8 = 0;
@@ -412,7 +429,10 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
             start = 0;
         }
         var e = x86mod.Emit{ .code = d.mem + start, .len = 0, .cap = BLOCK_MAX_BYTES };
-        if (!x86mod.emitBlock(&e, &blk)) return null;
+        if (!x86mod.emitBlock(&e, &blk)) {
+            d.stats.rejected += 1;
+            return null;
+        }
         const blen: usize = e.len;
         const glue_off: usize = cachemod.align4(start + blen);
         if (glue_off + GLUE_MAX > CODE_CACHE_BYTES) {
@@ -424,7 +444,7 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
         const ent: *Entry = &d.entries[idx];
         if (ent.valid) d.stats.collisions += 1;
         var glue_bytes: [GLUE_MAX]u8 = undefined;
-        const gi: GlueInfo = buildGlue(d, @intCast(u32, idx), @intCast(u32, @ptrToInt(d.mem + start)), glue_bytes[0..]);
+        const gi: GlueInfo = buildGlue(d, @intCast(u32, idx), @intCast(u32, @ptrToInt(d.mem + start)), @intCast(u32, blk.len), glue_bytes[0..]);
         var gi2: usize = 0;
         while (gi2 < @intCast(usize, gi.size)) : (gi2 += 1) d.mem[glue_off + gi2] = glue_bytes[gi2];
 
@@ -458,11 +478,13 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
         linkPredecessors(d, bank, pc);
         return ent;
     }
+    d.stats.rejected += 1;
     return null;
 }
 
 fn interpStep(d: *Dynarec, cpu: *Cpu, bus: *Bus) u32 {
     d.stats.fallback += 1;
+    d.stats.minstr += 1;
     return cpumod.cpuStep(cpu, bus);
 }
 

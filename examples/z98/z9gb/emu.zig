@@ -67,7 +67,7 @@ pub fn emuInit(e: *Emu, cfg: EmuConfig) void {
     cpumod.cpuInit(&e.cpu);
     ppumod.ppuReset(&e.ppu);
     e.dynarec.mapped = false;
-    e.dynarec.stats = dynarecmod.Stats{ .blocks = 0, .executed = 0, .chained = 0, .fallback = 0, .resets = 0, .collisions = 0 };
+    e.dynarec.stats = dynarecmod.Stats{ .blocks = 0, .executed = 0, .chained = 0, .fallback = 0, .resets = 0, .collisions = 0, .tinstr = 0, .minstr = 0, .rejected = 0 };
     dynarecmod.dynarecFlush(&e.dynarec);
     _ = emuSetDynarec(e, cfg.dynarec);
     e.mooneye = false;
@@ -97,11 +97,11 @@ pub fn emuDynarecEnabled(e: *const Emu) bool {
     return e.cfg.dynarec and dynarecmod.dynarecEnabled(&e.dynarec);
 }
 
-pub const DynarecStats = struct { blocks: u32, executed: u32, fallback: u32 };
+pub const DynarecStats = struct { blocks: u32, executed: u32, fallback: u32, tinstr: u32, minstr: u32, rejected: u32 };
 
 pub fn emuDynarecStats(e: *const Emu) DynarecStats {
     const dynp: *const dynarecmod.Dynarec = &e.dynarec;
-    return DynarecStats{ .blocks = dynp.stats.blocks, .executed = dynp.stats.executed, .fallback = dynp.stats.fallback };
+    return DynarecStats{ .blocks = dynp.stats.blocks, .executed = dynp.stats.executed, .fallback = dynp.stats.fallback, .tinstr = dynp.stats.tinstr, .minstr = dynp.stats.minstr, .rejected = dynp.stats.rejected };
 }
 
 fn applyCgbMode(e: *Emu) void {
@@ -272,7 +272,10 @@ fn interpreterStep(e: *Emu) u32 {
     const rom0: usize = cartp.rom0_off;
     const romx: usize = cartp.romx_off;
     const cycles: u32 = cpumod.cpuStep(cpup, busp);
-    if (dynarecmod.dynarecEnabled(dynp)) dynp.stats.fallback +%= 1;
+    if (dynarecmod.dynarecEnabled(dynp)) {
+        dynp.stats.fallback +%= 1;
+        dynp.stats.minstr +%= 1;
+    }
     invalidateChangedBanks(e, rom0, romx);
     return cycles;
 }
@@ -313,6 +316,7 @@ pub fn emuRunFrame(e: *Emu) u32 {
             if (cycles == 0) {
                 cycles = cpumod.cpuStep(cpup, busp);
                 dynp.stats.fallback +%= 1;
+                dynp.stats.minstr +%= 1;
             }
             invalidateChangedBanks(e, rom0, romx);
         } else {

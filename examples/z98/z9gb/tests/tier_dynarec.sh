@@ -914,6 +914,16 @@ run_2048() {
     else
         fail_case "2048 dynarec=on counter line missing"
     fi
+    if grep -q '^dynarec=on blocks=[0-9][0-9]* executed=[0-9][0-9]* fallback=[0-9][0-9]* tinstr=[0-9][0-9]* minstr=[0-9][0-9]* rejected=[0-9][0-9]* coverage=[0-9][0-9]*' "$win/2048/on.log"; then
+        on_tinstr="$(sed -n 's/.* tinstr=\([0-9]*\).*/\1/p' "$win/2048/on.log")"
+        if [ -n "$on_tinstr" ] && [ "$on_tinstr" -gt 0 ]; then
+            pass_case "2048 coverage keys tinstr=$on_tinstr"
+        else
+            fail_case "2048 coverage tinstr non-zero"
+        fi
+    else
+        fail_case "2048 coverage keys missing"
+    fi
     if [ -x "$win/ext.exe" ]; then
         if timeout 120 wine "$win/ext.exe" "$ROM" 600 0 0 0 "$win/2048/ext_off" >"$win/2048/ext_off.log" 2>&1 \
             && timeout 120 wine "$win/ext.exe" "$ROM" 600 0 1 0 "$win/2048/ext_on" >"$win/2048/ext_on.log" 2>&1; then
