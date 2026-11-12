@@ -683,7 +683,12 @@ complete programs that exercise the language-wins features and the PAL/networkin
   DirectDraw presentation, DirectInput8 keyboard/gamepad (keyboard fallback), QPC pacing,
   DirectSound (WinMM `waveOut` fallback), and wired JOYP input; the Win32/x86 `--dynarec`
   uses a separate 1 MiB executable cache with interpreter fallback. CGB is opt-in with
-  `--cgb`; a CGB-only cartridge requires it (`CgbRequired`, exit 2). Gates:
+  `--cgb`; a CGB-only cartridge requires it (`CgbRequired`, exit 2). Runs are unlimited
+  by default: windowed stops on quit/`Esc`, while headless needs a finite `--frames N`
+  to exit (`--frames 0` is unlimited and `--fb-out` is written only by a finite run).
+  Bounded headless examples: `z9gb --headless --cgb --frames 600 --rom
+  "Pokemon Crystal.gbc"`, `... --rom "Pokemon Pinball.gbc"`, and
+  `z9gb --headless --frames 600 --rom "k_dl.gb"`. Gates:
   `tests/tier_dmg.sh` (`--all`, `--gates`), `tests/tier_cgb.sh` (CGB hard gates
   `cgb-acid2`, `cgb_sound`, `interrupt_time`), `tests/tier_dynarec.sh`,
   `tests/tier_smoke.sh`, `tests/tier_audio.sh --gate`, `tests/tier_win32.sh --smoke`,

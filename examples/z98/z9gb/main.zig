@@ -4,8 +4,8 @@
 //   --headless            select the headless platform
 //   --windowed            select the Win32 DirectDraw/DInput/DSound backend
 //   --scale <1..4>        windowed integer scale (default 1)
-//   --frames <n>          run n frames (default 1)
-//   --fb-out <path>       write 160*144 little-endian u32 pixels
+//   --frames <n>          stop after n frames (default 0 = unlimited)
+//   --fb-out <path>       write 160*144 little-endian u32 pixels (finite runs only)
 //   --rom <path>          size-checked copy into the fixed 8 MiB ROM buffer
 //   --audio / --no-audio  enable/disable APU output (default on Win32)
 //   --turbo               skip frame pacing (run as fast as possible)
@@ -281,7 +281,7 @@ fn drainAudio(plat: *backend.Platform) void {
 
 pub fn main(argc: i32, argv: [*][*]u8) void {
     const n: usize = @intCast(usize, argc);
-    var frames: u32 = 1;
+    var frames: u32 = 0;
     var fb_out: []const u8 = "";
     var rom_path: []const u8 = "";
     var serial: bool = false;
@@ -426,17 +426,27 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     }
 
     var f: u32 = 0;
-    while (f < frames) : (f += 1) {
+    var completed: bool = true;
+    while (frames == 0 or f < frames) : (f += 1) {
         _ = emu.emuRunFrame(&g_emu);
         if (serial) drainSerial();
-        if (mooneye and emu.emuMooneyeStopped(&g_emu)) break;
-        if (serial and g_verdict != VERDICT_NONE) break;
+        if (mooneye and emu.emuMooneyeStopped(&g_emu)) {
+            completed = false;
+            break;
+        }
+        if (serial and g_verdict != VERDICT_NONE) {
+            completed = false;
+            break;
+        }
 
         if (windowed) {
             var input: backend.InputState = backend.InputState{ .buttons = 0, .quit = false };
             _ = plat.poll_fn(plat.state, &input);
             emu.emuSetButtons(&g_emu, input.buttons);
-            if (input.quit) break;
+            if (input.quit) {
+                completed = false;
+                break;
+            }
             plat.present_fn(plat.state, emu.emuFramebuffer(&g_emu));
             if (audio) drainAudio(plat);
             if (paced) {
@@ -454,7 +464,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
     if (mooneye) reportMooneye();
 
-    if (fb_out.len != 0) {
+    if (fb_out.len != 0 and frames != 0 and completed) {
         if (!writeFramebuffer(fb_out)) {
             var m: []const u8 = "z9gb: cannot write framebuffer\n";
             std.io.write(m);

@@ -131,6 +131,45 @@ check_word "first pixel" 0 00010000
 check_word "middle pixel" 46400 00014850
 check_word "last pixel" 92156 00018F9F
 
+# ---- Task 5: --frames defaults to unlimited ----------------------------
+# Absent --frames (and --frames 0) must keep running until the process is
+# terminated; a finite count still exits 0 after that many frames.
+SYNTH="$Z9DIR/testdata/synth/minimal.gb"
+echo
+echo "== frames default (unlimited) =="
+if [ -x "$BIN" ]; then
+    timeout 3 "$BIN" --headless --rom "$SYNTH" >"$OUT/frames_absent.out" 2>"$OUT/frames_absent.err"
+    rc=$?
+    if [ "$rc" -eq 124 ]; then
+        pass_case "no --frames runs until terminated (timeout 124)"
+    else
+        fail_case "no --frames runs until terminated (rc=$rc)"
+        tail -20 "$OUT/frames_absent.err" | sed 's/^/       /'
+    fi
+
+    timeout 60 "$BIN" --headless --frames 2 --rom "$SYNTH" >"$OUT/frames_two.out" 2>"$OUT/frames_two.err"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        pass_case "--frames 2 exits 0"
+    else
+        fail_case "--frames 2 exits 0 (rc=$rc)"
+        tail -20 "$OUT/frames_two.err" | sed 's/^/       /'
+    fi
+
+    timeout 3 "$BIN" --headless --frames 0 --rom "$SYNTH" >"$OUT/frames_zero.out" 2>"$OUT/frames_zero.err"
+    rc=$?
+    if [ "$rc" -eq 124 ]; then
+        pass_case "--frames 0 runs until terminated (timeout 124)"
+    else
+        fail_case "--frames 0 runs until terminated (rc=$rc)"
+        tail -20 "$OUT/frames_zero.err" | sed 's/^/       /'
+    fi
+else
+    fail_case "no --frames runs until terminated (missing $BIN)"
+    fail_case "--frames 2 exits 0 (missing $BIN)"
+    fail_case "--frames 0 runs until terminated (missing $BIN)"
+fi
+
 # ---- fix round 1: 8 MiB ROM cap boundary -------------------------------
 # emuLoadRom must reject anything above 8 MiB after comparing the full i64 file
 # size, before narrowing to the 32-bit usize. The 4 GiB sparse case is the

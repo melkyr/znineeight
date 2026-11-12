@@ -225,6 +225,9 @@ sh /tmp/z9gb_p3/build_target.sh linux /tmp/z9gb_p3/z9gb
 /tmp/z9gb_p3/z9gb --headless --frames 1 --fb-out /tmp/z9gb_p3.fb
 ```
 
+That is a bounded single-frame run. Omit `--frames` to run until the process
+is terminated; `--fb-out` is only written by a finite run.
+
 ### Win32 (no-CRT, Win95/98 target)
 
 ```sh
@@ -255,10 +258,12 @@ z9gb [--headless | --windowed] [--cgb] [--scale <1..4>] [--frames <n>]
   `IDirectDraw7`; the gamepad additionally needs DX8 `dinput8.dll`.
 - `--scale <1..4>` sets the windowed integer scale (default `1`).
 - `--audio` / `--no-audio` enables or disables APU output (default on).
-- `--frames <n>` runs `n` frames before presenting the framebuffer (default
-  `1`).
+- `--frames <n>` runs exactly `n` frames, then exits (writing `--fb-out` when
+  given). The default is `0`, which means run until the process is terminated;
+  `--frames 0` is explicitly unlimited. Windowed runs also stop on quit/`Esc`.
 - `--fb-out <path>` writes the final framebuffer as 160×144 little-endian
-  `u32` RGB32 pixels (92,160 bytes).
+  `u32` RGB32 pixels (92,160 bytes). It is written only when a finite
+  `--frames` run completes; an unlimited run never writes it.
 - `--rom <path>` size-checks (32 KiB to 8 MiB), copies the ROM into the fixed
   **8 MiB** buffer, validates the header/cartridge type, and installs the
   post-boot CPU/PPU state. Files larger than 8 MiB are rejected with
@@ -295,6 +300,15 @@ z9gb.exe --windowed --cgb --scale 2 --rom "C:\Games\Pokemon Crystal.gbc" --save
   CGB-compatible ROMs; without it a CGB-compatible ROM runs in DMG mode.
 - Cartridge rumble motors are not emulated. Standard CGB video, sound,
   banking, double-speed, HDMA, and MBC3 RTC are supported.
+
+Windowed runs continue until quit (`Esc`); `--frames` is optional there.
+Headless runs need an explicit finite `--frames` to exit on their own:
+
+```bat
+z9gb.exe --headless --cgb --frames 600 --rom "C:\Games\Pokemon Crystal.gbc"
+z9gb.exe --headless --cgb --frames 600 --rom "C:\Games\Pokemon Pinball.gbc"
+z9gb.exe --headless --frames 600 --rom "C:\Games\k_dl.gb"
+```
 
 ### Controls (windowed)
 
