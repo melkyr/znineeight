@@ -42,7 +42,7 @@
 # timeout-guarded.
 #
 # Env overrides: ROOT, ZIG1, CROSS_GCC, TIMEOUT_DUMP, TIMEOUT_CC, EXTRA_LIBS,
-#                EXTRA_CSRC, DUMP_TARGET, EXTRA_LDFLAGS.
+#                EXTRA_CSRC, DUMP_TARGET, EXTRA_LDFLAGS, EXTRA_CFLAGS.
 set -u
 
 ROOT=${ROOT:-/workspace/znineeight}
@@ -51,6 +51,10 @@ TIMEOUT_DUMP=${TIMEOUT_DUMP:-300}
 TIMEOUT_CC=${TIMEOUT_CC:-240}
 EXTRA_LIBS=${EXTRA_LIBS:-}
 EXTRA_CSRC=${EXTRA_CSRC:-}
+# Optional extra compiler flags (word-split), appended to every C compile line,
+# e.g. EXTRA_CFLAGS="-O2" for an optimized shipping build. Empty keeps every
+# existing caller byte-identical.
+EXTRA_CFLAGS=${EXTRA_CFLAGS:-}
 # Optional target flag for the Z98 dump (e.g. -osw). Empty keeps every existing
 # caller byte-identical; GUI programs that import std_time/std_os need -osw so
 # the emitted C takes the win32 branches instead of the POSIX ones.
@@ -111,7 +115,7 @@ for f in "$DUMPDIR"/*.c; do
     N_C=$((N_C + 1))
     if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
         -Wall -Wno-long-long -Wno-pointer-sign -I "$CC_INC" \
-        "${EXTRA_DEFS[@]}" -c "$f" -o "${f%.c}.o" \
+        "${EXTRA_DEFS[@]}" $EXTRA_CFLAGS -c "$f" -o "${f%.c}.o" \
         >>"$DUMPDIR/cc.log" 2>&1; then
         CC_FAIL=$(basename "$f")
         break
@@ -125,7 +129,7 @@ if [ "$SELFCONTAINED" -eq 0 ]; then
     for r in zig_runtime zig_pal zig_nocrt c_exit; do
         if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
             -Wall -Wno-long-long -Wno-pointer-sign -I "$CC_INC" \
-            "${EXTRA_DEFS[@]}" -c "$INCLUDE/$r.c" -o "$WORK/$r.o" \
+            "${EXTRA_DEFS[@]}" $EXTRA_CFLAGS -c "$INCLUDE/$r.c" -o "$WORK/$r.o" \
             >>"$DUMPDIR/cc.log" 2>&1; then
             CC_FAIL="$r.c"
             break
@@ -149,7 +153,7 @@ if [ -n "$EXTRA_CSRC" ]; then
         obj="$WORK/extra_$(basename "$src" .c).o"
         if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -std=c89 -m32 -DZIG_NO_CRT \
             -Wall -Wno-long-long -Wno-pointer-sign -I "$CC_INC" \
-            "${EXTRA_DEFS[@]}" -c "$src" -o "$obj" \
+            "${EXTRA_DEFS[@]}" $EXTRA_CFLAGS -c "$src" -o "$obj" \
             >>"$DUMPDIR/cc.log" 2>&1; then
             echo "extra C compile failed: $src"
             tail -20 "$DUMPDIR/cc.log"

@@ -328,6 +328,9 @@ bash scripts/win32_cross/check_win9x_imports.sh /tmp/z9edit/z9edit.exe 9x
 - No extra C file is needed: DDraw is loaded dynamically from `ddraw.dll` and
   the window is polled (`GetClientRect`/`IsWindow`) instead of using a stdcall
   WndProc shim. `EXTRA_LIBS` adds GDI/User32 only (no `ddraw`).
+- `EXTRA_CFLAGS` (default empty) is appended to every emitted/runtime C compile;
+  pass `EXTRA_CFLAGS="-O2"` for an optimized shipping build (the default keeps
+  existing callers byte-identical).
 - **OWC no-CRT is not a GUI build:** the emitted `build_owc_nocrt.bat` uses
   `option nodefaultlibs` and links only `kernel32,clib3r,winmm`, so `user32`
   and `gdi32` stay unresolved. For GUI programs use `build_owc_crt.bat`
@@ -574,14 +577,18 @@ immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transfor
   `--no-dynarec`, `--dynarec-stats`, `--frames`, `--fb-out`, `--rom`, `--serial`,
   `--turbo`, `--audio`, `--scale`, `--mooneye`, `--save`, `--rtc-fixed`;
   DMG/CGB CPU/PPU/timer/serial/APU, CGB palettes, VRAM/WRAM banking,
-  double-speed, HDMA, MBC1/MBC3(+RTC)/MBC5, JOYP input, battery saves;
-  DirectDraw presentation, DirectInput8 keyboard/gamepad with keyboard fallback,
+  double-speed, HDMA, MBC1/MBC3(+RTC)/MBC5/MBC7, JOYP input, battery saves;
+  MBC7 includes the 93LC56 EEPROM and accelerometer window (tilt latches neutral
+  `0x8000`; no tilt input), and MBC5/MBC7 rumble bits are decoded without motor
+  feedback; DirectDraw presentation, DirectInput8 keyboard/gamepad with keyboard fallback,
   QPC pacing, DirectSound with WinMM `waveOut` fallback; Win32/x86 dynarec from a
   separate 1 MiB executable cache with interpreter fallback; gates
   `tests/tier_dmg.sh --all`, `tier_cgb`, `tier_dynarec`, `tier_smoke`,
   `tier_audio --gate`, `tier_win32 --smoke`, `tier_perf`). CGB is opt-in via
   `--cgb`; a CGB-only cartridge without it prints `z9gb: CgbRequired` and exits
-  2. On *nix `--dynarec` prints `dynarec=disabled reason=unsupported-host` and
+  2. Runs are unlimited by default (windowed stops on quit/`Esc`; headless needs
+  a finite `--frames N`; `--frames 0` is unlimited and `--fb-out` requires a finite,
+  completed run). On *nix `--dynarec` prints `dynarec=disabled reason=unsupported-host` and
   runs the interpreter. Example READMEs carry the exact CLI, flags and exit
   codes.
 
@@ -625,7 +632,12 @@ sh "$OUT/build_target.sh" linux "$OUT/z9gb"
 ```
 
 P5 emulates a DMG/CGB CPU, MMU/timer/serial, APU, and scanline PPU with
-MBC1/MBC3(+RTC)/MBC5 cartridges, JOYP input, and battery `.sav`/`.rtc` saves.
+MBC1/MBC3(+RTC)/MBC5/MBC7 cartridges, JOYP input, and battery `.sav`/`.rtc`
+saves. The 2026-11-12 compatibility pass adds VBlank/joypad IRQs, dynarec
+overflow rejection (interpreter fallback), `tinstr`/`minstr`/`rejected`/`coverage`
+counters, MBC7 (93LC56 EEPROM + accelerometer window; neutral `0x8000` tilt
+only, no tilt input or CLI), and MBC5 rumble bank masking (motor bit decoded,
+no feedback). MBC7 `.sav` is the raw 256-byte erased-`0xFF` EEPROM view.
 CGB is opt-in with `--cgb`: color BG/OBJ palettes (`BCPS/BCPD`, `OCPS/OCPD`),
 tile attributes, two VRAM banks, eight WRAM banks, double-speed via `KEY1`, and
 general-purpose/HBlank HDMA. A CGB-only cartridge without `--cgb` prints
@@ -640,26 +652,32 @@ needs DX8); without `dinput8.dll` input falls back to keyboard-only. The
 Win32/x86 `--dynarec` executes basic blocks from a separate 1 MiB
 `VirtualAlloc` `PAGE_EXECUTE_READWRITE` mapping, not BSS or stack; it falls back
 to the interpreter for non-ROM PCs, interrupts/DMA, cache-allocation failure,
-and all *nix hosts. Measured accounting: `code_cache_bytes=1048576`,
-`stack_limit=1048576`, `static_bytes=9801160`, dynarec state 262,196 bytes. The
-authoritative performance gate is host headless `2048.gb`
-(`--headless --frames 600 --audio`) at >=59.0 fps; `--no-dynarec` measured
-833.333 fps (unpaced interpreter throughput; host `--dynarec` is unavailable on
-*nix, so host runs cannot judge dynarec). CGB peak RSS measured 10,288 KiB. The
-primary dynarec throughput metric is Wine headless turbo
+overflowing translations, and all *nix hosts. Measured accounting:
+`code_cache_bytes=1048576`, `stack_limit=1048576`, `static_bytes=9801224`,
+dynarec state 262,196 bytes. The authoritative performance gate is host headless
+`2048.gb` (`--headless --frames 600 --audio`) at >=59.0 fps; `--no-dynarec`
+measured 833.333 fps (unpaced interpreter throughput; host `--dynarec` is
+unavailable on *nix, so host runs cannot judge dynarec). CGB peak RSS measured
+10,288 KiB. The primary dynarec throughput metric is Wine headless turbo
 `T-cycles/sec = 42,134,400 / wall` (600 frames × 70,224), using medians of three
 alternating runs after a warmup. The verdict is workload-dependent:
-`2048.gb` at 1.2% coverage measured 8,056,291 T-cycles/sec with `--dynarec`
-versus 8,181,437 without (1.5% slower;
+`2048.gb` at 1.2% coverage is interpreter-dominated and effectively neutral
+(8,102,769 T-cycles/sec with `--dynarec` versus 8,087,217 without, within
+run-to-run noise;
 `dynarec=on blocks=192 executed=45382 fallback=10187028 tinstr=129109
 minstr=10187028 rejected=11322 coverage=12‰`); Pokemon Crystal at 31.7%
-coverage measured 7,646,897 versus 9,363,200 (18.3% slower); Pokemon Pinball at
-97.3% coverage measured 12,768,000 versus 10,666,937 (19.7% faster). The
+coverage measured 7,773,875 versus 9,321,770 (16.6% slower); Pokemon Pinball at
+97.3% coverage measured 13,591,742 versus 10,721,221 (26.8% faster). The
 original P5 "no measurable gain" verdict came from the 2048-only,
 ≤6%-coverage workload, not a universal result. No fixed speedup threshold
-applies. Wine windowed `2048.gb` fps (47.168 with `--no-dynarec`, 47.622 with
+applies. Wine windowed `2048.gb` fps (47.661 with `--no-dynarec`, 47.134 with
 `--dynarec`) is display-bound evidence only, never Win98.
-The framebuffer dump is 92,160 bytes (160×144 little-endian RGB32).
+`--frames` is unlimited by default (`--frames 0` is explicitly unlimited);
+headless needs a finite count to exit, and `--fb-out` is written only by a
+finite, completed run. The framebuffer dump is 92,160 bytes (160×144
+little-endian RGB32). Shipping Win32 builds pass `EXTRA_CFLAGS=-O2` (default
+empty) plus `EXTRA_LIBS="-luser32 -lgdi32 -lwinmm"` through
+`scripts/win32_cross/cross_nocrt.sh`.
 
 ```bash
 # Inline tiers (fast + safe) and external hard gates; both must PASS:
@@ -700,7 +718,7 @@ reference PNG (SHA-256
 `9ea9c262c5383353e77d715d021a0f7c5ccbe438f88082cb225756e50c4fdf01`), not from
 this emulator, and is pinned at SHA-256
 `0fba336ce7d7cb4ef76049a4548ff0e7a5147be79fb34bfd266ce7bb71fcf9fd`. P5 adds
-the `tier_dynarec` unit/parity gate (26 checks) plus dynarec on/off parity in the
+the `tier_dynarec` unit/parity gate (27 checks) plus dynarec on/off parity in the
 DMG/CGB/audio/Win32 tiers; every `--dynarec` run must report nonzero
 `dynarec=on blocks=N executed=N`. Dynarec throughput is measured with
 `tier_perf.sh --throughput-only` and the `--compat --user-roms` workload matrix

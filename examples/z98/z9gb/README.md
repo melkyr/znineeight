@@ -4,9 +4,17 @@ A DMG (original Game Boy) and CGB (Game Boy Color) emulator shell for Z98.
 This example is at **P5: SM83 dynarec**. It runs a DMG/CGB CPU, MMU/timer/serial,
 a scanline PPU (BG, window, sprites, DMG palettes, CGB color palettes/attributes,
 STAT/LYC and mode-access timing), a 4-channel APU with CGB sound semantics,
-CGB double-speed and HDMA, MBC1, MBC3 (+RTC), and MBC5 cartridges, battery
+CGB double-speed and HDMA, MBC1, MBC3 (+RTC), MBC5, and MBC7 cartridges, battery
 saves, and two backends: a pure-Z98 deterministic headless backend and a Win32
 DirectDraw/DirectInput/DirectSound windowed backend with QPC frame pacing.
+
+The 2026-11-12 compatibility pass adds VBlank/joypad IRQs, rejects overflowing
+dynarec translations (the block runs on the interpreter), reports dynarec
+`tinstr`/`minstr`/`rejected`/`coverage` counters, supports MBC7 (93LC56 EEPROM
+plus the accelerometer/latch register window), fixes MBC5 rumble bank masking,
+and makes `--frames` unlimited by default. MBC7 tilt input and rumble output are
+**not** implemented: the sensor latches neutral `0x8000`, and the MBC5/MBC7
+motor bit is decoded but produces no feedback.
 
 The **Win32/x86 dynarec** (`--dynarec`) translates SM83 basic blocks and executes
 them from a separate 1 MiB `VirtualAlloc` `PAGE_EXECUTE_READWRITE` mapping; the
@@ -112,9 +120,9 @@ operator's.
   the interpreter runs; that is not a dynarec PASS claim. Wine numbers are Wine
   evidence only, never Win98 hardware evidence.
 
-Measured accounting and the workload matrix from the 2026-11-12 compat
-re-measurement (host load varies). `code_cache_bytes=1048576`,
-`stack_limit=1048576`, `static_bytes=9801160`, `dynarec_state_bytes=262196`;
+Measured accounting and the workload matrix from the 2026-11-12 Task 7
+verification (host load varies). `code_cache_bytes=1048576`,
+`stack_limit=1048576`, `static_bytes=9801224`, `dynarec_state_bytes=262196`;
 the Dynarec state is a pointer plus entries, so the 1 MiB code cache is not in
 BSS and is not a stack allocation.
 
@@ -122,51 +130,55 @@ BSS and is not a stack allocation.
 throttle), reported as emulated T-cycles/sec = 42,134,400 / wall (600 frames ×
 70,224 T-cycles). Each row is the median of three alternating
 interpreter/`--dynarec` runs after an unmeasured warmup. The `coverage` column is
-the `coverage` permille printed by `--dynarec-stats` (percent in parentheses).
+the `coverage` permille printed by `--dynarec`/`--dynarec-stats` (percent in
+parentheses).
 
 | ROM | Flags | Mode | T-cycles/sec | fps | wall | CPU user/sys | RSS | coverage |
 |---|---|---|---:|---:|---:|---:|---:|---:|
-| `2048.gb` | — | `--no-dynarec` | 8,181,437 | 116.505 | 5.15 s | 5.11 / 0.01 s | 15,352 KiB | — |
-| `2048.gb` | — | `--dynarec` | 8,056,291 | 114.723 | 5.23 s | 5.09 / 0.01 s | 15,508 KiB | 12‰ (1.2%) |
-| `p_cry.gbc` (Pokemon Crystal) | `--cgb` | `--no-dynarec` | 9,363,200 | 133.333 | 4.50 s | 4.42 / 0.01 s | 17,268 KiB | — |
-| `p_cry.gbc` | `--cgb` | `--dynarec` | 7,646,897 | 108.893 | 5.51 s | 5.36 / 0.01 s | 18,556 KiB | 317‰ (31.7%) |
-| `p_pin.gbc` (Pokemon Pinball) | `--cgb` | `--no-dynarec` | 10,666,937 | 151.899 | 3.95 s | 3.92 / 0.01 s | 16,384 KiB | — |
-| `p_pin.gbc` | `--cgb` | `--dynarec` | 12,768,000 | 181.818 | 3.30 s | 3.15 / 0.01 s | 17,280 KiB | 973‰ (97.3%) |
+| `2048.gb` | — | `--no-dynarec` | 8,087,217 | 115.163 | 5.21 s | 5.07 / 0.01 s | 15,372 KiB | — |
+| `2048.gb` | — | `--dynarec` | 8,102,769 | 115.385 | 5.20 s | 5.05 / 0.01 s | 15,580 KiB | 12‰ (1.2%) |
+| `p_cry.gbc` (Pokemon Crystal) | `--cgb` | `--no-dynarec` | 9,321,770 | 132.743 | 4.52 s | 4.37 / 0.01 s | 17,544 KiB | — |
+| `p_cry.gbc` | `--cgb` | `--dynarec` | 7,773,875 | 110.701 | 5.42 s | 5.27 / 0.01 s | 18,496 KiB | 317‰ (31.7%) |
+| `p_pin.gbc` (Pokemon Pinball) | `--cgb` | `--no-dynarec` | 10,721,221 | 152.672 | 3.93 s | 3.90 / 0.01 s | 16,284 KiB | — |
+| `p_pin.gbc` | `--cgb` | `--dynarec` | 13,591,742 | 193.548 | 3.10 s | 3.07 / 0.01 s | 17,360 KiB | 973‰ (97.3%) |
 
 The earlier P5 verdict was drawn from `2048.gb` alone, a HALT-heavy workload
 that measured at most 6% dynarec coverage (1.2% here), and concluded "no
 measurable gain". That conclusion is workload-qualified, not universal:
 
-- `2048.gb` at 1.2% coverage: dynarec is 1.5% slower (8,056,291 versus
-  8,181,437 T-cycles/sec); nearly every step falls back to the interpreter.
-- Pokemon Crystal at 31.7% coverage: dynarec is 18.3% slower (7,646,897 versus
-  9,363,200); translation and dispatch overhead still outweigh translated
+- `2048.gb` at 1.2% coverage: the interpreter dominates; dynarec is effectively
+  neutral (8,102,769 versus 8,087,217 T-cycles/sec, +0.2% here and 1.5% slower
+  in the earlier re-measure, i.e. within run-to-run noise). Nearly every step
+  falls back to the interpreter.
+- Pokemon Crystal at 31.7% coverage: dynarec is 16.6% slower (7,773,875 versus
+  9,321,770); translation and dispatch overhead still outweigh translated
   execution.
-- Pokemon Pinball at 97.3% coverage: dynarec is 19.7% faster (12,768,000 versus
-  10,666,937); with almost all instructions translated, the dynarec is a real
+- Pokemon Pinball at 97.3% coverage: dynarec is 26.8% faster (13,591,742 versus
+  10,721,221); with almost all instructions translated, the dynarec is a real
   throughput win.
 
 The corrected conclusion is **workload-dependent**: the dynarec is a gain on
-high-coverage ROMs, roughly neutral-to-negative at low coverage, and no fixed
-speedup threshold applies. These are Wine numbers and Wine evidence only; no
-Win98 hardware claim is made. The corresponding `--dynarec` counters for the
-600-frame runs were: `2048` `blocks=192 executed=45382 fallback=10187028
-tinstr=129109 minstr=10187028 rejected=11322 coverage=12‰`; Crystal
-`blocks=41379 executed=761742 fallback=4681142 tinstr=2174380 minstr=4681142
-rejected=73375 coverage=317‰`; Pinball `blocks=40149 executed=1687938
-fallback=135400 tinstr=4986874 minstr=135400 rejected=85087 coverage=973‰`.
+high-coverage ROMs, interpreter-dominated/near-neutral at low coverage and
+slower at moderate coverage, and no fixed speedup threshold applies. These are
+Wine numbers and Wine evidence only; no Win98 hardware claim is made. The
+corresponding `--dynarec` counters for the 600-frame runs were: `2048`
+`blocks=192 executed=45382 fallback=10187028 tinstr=129109 minstr=10187028
+rejected=11322 coverage=12‰`; Crystal `blocks=41379 executed=761742
+fallback=4681142 tinstr=2174380 minstr=4681142 rejected=73375 coverage=317‰`;
+Pinball `blocks=40149 executed=1687938 fallback=135400 tinstr=4986874
+minstr=135400 rejected=85087 coverage=973‰`.
 
 The following context rows are **not** dynarec throughput judgments: host
 headless is unpaced interpreter throughput, and dynarec is unavailable on *nix;
 Wine windowed is display-bound evidence only. These are single runs from the
-same re-measurement.
+same verification.
 
 | Path | Variant | fps | wall | CPU user/sys | RSS |
 |---|---|---:|---:|---:|---:|
-| host headless (-O2, unpaced interpreter) | `--no-dynarec` | 833.333 | 0.72 s | 0.70 / 0.00 s | 3,088 KiB |
-| host headless (-O2, unpaced interpreter) | `--dynarec` | 857.143 | 0.70 s | 0.70 / 0.00 s | 3,216 KiB |
-| Wine windowed (display-bound) | `--no-dynarec` | 47.168 | 12.85 s | 6.75 / 0.05 s | 41,788 KiB |
-| Wine windowed (display-bound) | `--dynarec` | 47.622 | 12.74 s | 6.70 / 0.06 s | 41,552 KiB |
+| host headless (-O2, unpaced interpreter) | `--no-dynarec` | 833.333 | 0.72 s | 0.72 / 0.00 s | 3,140 KiB |
+| host headless (dynarec disabled: `unsupported-host`) | `--dynarec` | 833.333 | 0.72 s | 0.71 / 0.00 s | 2,964 KiB |
+| Wine windowed (display-bound) | `--no-dynarec` | 47.661 | 12.73 s | 6.39 / 0.05 s | 41,892 KiB |
+| Wine windowed (display-bound) | `--dynarec` | 47.134 | 12.73 s | 6.36 / 0.07 s | 42,132 KiB |
 
 The host `--dynarec` row is the interpreter with dynarec disabled
 (`reason=unsupported-host`), not translated execution; host dynarec cannot be
@@ -205,6 +217,9 @@ with a companion `build_target.sh`.
 **Win9x build and link**
 - A seed-built Z98 compiler, or the emitted `build_target.bat` with
   MinGW/OpenWatcom/MSVC as appropriate.
+- For the shipping Win32 build pass `EXTRA_CFLAGS=-O2` to
+  `cross_nocrt.sh`; the harness default is empty (`-O0`-equivalent). The
+  untracked `lin_bin/z9gb.exe` shipped from this tree is built that way.
 - The emitted Win32 executable is no-CRT: core imports stay
   KERNEL32/WINMM/USER32/GDI32. DDRAW/DINPUT8/DSOUND are loaded dynamically.
 - `--windowed` needs a **DirectX 6+ runtime** (`IDirectDraw7`); stock Win98
@@ -231,11 +246,18 @@ is terminated; `--fb-out` is only written by a finite run.
 ### Win32 (no-CRT, Win95/98 target)
 
 ```sh
+EXTRA_CFLAGS="-O2" \
 EXTRA_LIBS="-luser32 -lgdi32 -lwinmm" \
 DUMP_TARGET="-osw -I $PWD/sf/src" \
 bash scripts/win32_cross/cross_nocrt.sh /path/to/zig1_5_clean \
     examples/z98/z9gb/main.zig /tmp/z9gb_p3w /tmp/z9gb_p3w/z9gb.exe
 ```
+
+`EXTRA_CFLAGS` is appended to every emitted/runtime C compile; it defaults to
+empty so every pre-existing caller stays byte-identical. The shipped exe is
+PE32 i386 and imports only KERNEL32/USER32/WINMM (no static
+DDRAW/DINPUT8/DSOUND); verify with
+`scripts/win32_cross/check_win9x_imports.sh <exe> 9x`.
 
 The emitted framebuffer file is 92,160 bytes: 160×144 little-endian RGB32
 pixels, written identically on every run.
@@ -298,8 +320,11 @@ z9gb.exe --windowed --cgb --scale 2 --rom "C:\Games\Pokemon Crystal.gbc" --save
   next to the ROM as `.sav` and, for MBC3+RTC cartridges, `.rtc`.
 - `--cgb` is required for CGB-only ROMs and selects color mode for
   CGB-compatible ROMs; without it a CGB-compatible ROM runs in DMG mode.
-- Cartridge rumble motors are not emulated. Standard CGB video, sound,
-  banking, double-speed, HDMA, and MBC3 RTC are supported.
+- Cartridge rumble motors are not emulated: MBC5 rumble bank writes mask the
+  motor bit correctly, but no feedback is produced. MBC7 accelerometer reads
+  latch neutral `0x8000` because there is no tilt input. Standard CGB video,
+  sound, banking, double-speed, HDMA, MBC3 RTC, and MBC7 EEPROM saves are
+  supported.
 
 Windowed runs continue until quit (`Esc`); `--frames` is optional there.
 Headless runs need an explicit finite `--frames` to exit on their own:
@@ -338,12 +363,15 @@ Header type byte `0x0147` selects the controller:
 | `0x00` | no MBC | 32 KiB direct ROM |
 | `0x01`–`0x03` | MBC1 | RAM enable, 5-bit bank, secondary bank/mode, RAM banking |
 | `0x0F`–`0x13` | MBC3 | RAM/RTC enable, 7-bit bank, 4-bit RAM bank; `0x0F`/`0x10` carry an RTC |
-| `0x19`–`0x1E` | MBC5 | 9-bit ROM bank (bit 8 at `0x3000`), 4-bit RAM bank, bank 0 valid |
+| `0x19`–`0x1E` | MBC5 | 9-bit ROM bank (bit 8 at `0x3000`), 4-bit RAM bank, bank 0 valid; `0x1C`–`0x1E` are rumble types (motor bit masked off, no feedback) |
+| `0x22` | MBC7 | 8-bit ROM bank (`0x2000`–`0x3FFF`), 93LC56 256-byte EEPROM, accelerometer/latch window at `0xA000`–`0xAFFF`; tilt latches neutral `0x8000` (no tilt input), rumble bit decoded but not emitted |
 
 Unknown types are rejected with `UnsupportedMbc`. ROM size is decoded from
 `0x0148` and RAM size from `0x0149`; the ROM must be at least the declared size.
 The cartridge RAM backing store is a fixed 128 KiB (MBC5 maximum) and `ram_size`
-selects the active prefix.
+selects the active prefix. MBC7 is type-authoritative (256-byte erased-`0xFF`
+EEPROM view, `.sav` is exactly 256 bytes) and is exempt from the 8 KiB RAM-size
+inference.
 
 The MBC3 RTC is a 9-bit day counter with halt and day-carry flags. Writes target
 live counters; reads return latched copies. The day counter wraps `511 → 0`,
@@ -365,6 +393,9 @@ is the 32-byte `Z98RTC1` version-1 header:
 | `15` | reserved zero |
 | `16..23` | host timestamp anchor (u64 little-endian Unix seconds) |
 | `24..31` | reserved zero (no CRC in v1) |
+
+MBC7 `.sav` files are the raw 256-byte EEPROM view; a blank EEPROM reads
+erased (`0xFFFF` words).
 
 Writes use a Win9x-safe backup dance through `std_file`'s whitelisted
 `DeleteFileA`/`MoveFileA` bindings (no `CopyFileA`/`MoveFileExA`): write
@@ -609,15 +640,19 @@ DMG-compatible workload; it measured **47.620 fps** (`qpc_seconds=12.599755`,
 `rss_kb=40248`). This is Wine evidence only, never Win98 or real-hardware
 evidence, and never a threshold change.
 
-## P5 dynarec closeout evidence (2026-11-12)
+## P5 + compat-fixes verification (2026-11-12)
 
 Compiler `/tmp/z9gb_p2_seed/zig1_5_clean`, ROM root `/tmp/z9gb_roms`.
-These are single measured runs from the P5 closeout; they are not guarantees and
-vary with host load. No external hard gate was skipped.
+These are single measured runs from Task 7; they are not guarantees and vary
+with host load. No external hard gate was skipped.
 
 ```sh
+$ bash examples/z98/z9gb/tests/tier_smoke.sh "$ZIG"
+== tier_smoke summary: 21 passed, 0 failed ==
+TIER_SMOKE PASS
+
 $ bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --all
-== tier_dmg summary: 49 passed, 0 failed ==
+== tier_dmg summary: 57 passed, 0 failed ==
 TIER_DMG PASS
 
 $ bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --gates
@@ -627,21 +662,17 @@ acid2: PASS c831675c9cff3289d505364286cfb5322a6807fa074386851744f28cdeb84083
 == tier_dmg summary: 166 passed, 0 failed, 0 skipped ==
 TIER_DMG PASS
 
-$ bash examples/z98/z9gb/tests/tier_cgb.sh "$ZIG"
+$ bash examples/z98/z9gb/tests/tier_cgb.sh "$ZIG" --all
 == tier_cgb summary: 39 passed, 0 failed, 0 skipped ==
 TIER_CGB PASS
 
-$ bash examples/z98/z9gb/tests/tier_smoke.sh "$ZIG"
-== tier_smoke summary: 18 passed, 0 failed ==
-TIER_SMOKE PASS
+$ bash examples/z98/z9gb/tests/tier_audio.sh "$ZIG"
+== tier_audio summary: 17 passed, 0 failed, 0 skipped ==
+TIER_AUDIO PASS
 
 $ bash examples/z98/z9gb/tests/tier_audio.sh --gate "$ZIG"
 == tier_audio summary: 9 passed, 0 failed, 0 skipped ==
 TIER_AUDIO PASS
-
-$ bash examples/z98/z9gb/tests/tier_dynarec.sh "$ZIG"
-== tier_dynarec summary: 26 passed, 0 failed, 0 skipped ==
-TIER_DYNAREC PASS
 
 $ bash examples/z98/z9gb/tests/tier_win32.sh "$ZIG"
 == tier_win32 summary: 39 passed, 0 failed, 0 skipped ==
@@ -650,35 +681,29 @@ TIER_WIN32 PASS
 $ bash examples/z98/z9gb/tests/tier_win32.sh --smoke "$ZIG"
 == tier_win32 summary: 18 passed, 0 failed, 0 skipped ==
 TIER_WIN32 PASS
+
+$ bash examples/z98/z9gb/tests/tier_dynarec.sh "$ZIG"
+== tier_dynarec summary: 27 passed, 0 failed, 0 skipped ==
+TIER_DYNAREC PASS
 ```
 
 `tier_perf.sh` measured the host headless `--no-dynarec` gate at **833.333 fps**
-(`wall=0.72 s`, `cpu_user=0.70 s`, `cpu_sys=0.00 s`, `rss_kb=3088`, `-O2`
+(`wall=0.72 s`, `cpu_user=0.72 s`, `cpu_sys=0.00 s`, `rss_kb=3140`, `-O2`
 emitted-C build); the same host path with `--dynarec` is the interpreter with
-dynarec disabled as `reason=unsupported-host` (857.143 fps in this run). Those
+dynarec disabled as `reason=unsupported-host` (also 833.333 fps here). Those
 host rows are unpaced interpreter throughput; host dynarec is unavailable on
-*nix, so they cannot judge dynarec. The Wine windowed evidence measured 47.168
-fps (`--no-dynarec`) and 47.622 fps (`--dynarec`); those rows are display-bound
-evidence only.
+*nix, so they cannot judge dynarec. The Wine windowed evidence measured 47.661
+fps (`--no-dynarec`) and 47.134 fps (`--dynarec`); those rows are display-bound
+evidence only. The base `tier_perf.sh` run is 10/0/0.
 
 The primary throughput measurement uses `tier_perf.sh --throughput-only`, which
-warms up wineserver/exe, then runs three alternating measurements per mode:
-
-```sh
-$ bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG" --throughput-only
-wine_headless_turbo median mode=no-dynarec runs=3 fps=115.385 tcycles_per_sec=8102769 wall=5.20s cpu_user=5.13s cpu_sys=0.01s rss_kb=15556
-wine_headless_turbo median mode=dynarec runs=3 fps=113.852 tcycles_per_sec=7995142 wall=5.27s cpu_user=5.12s cpu_sys=0.01s rss_kb=15468 dynarec=on blocks=192 executed=45382 fallback=10187028 tinstr=129109 minstr=10187028 rejected=11322 coverage=12‰
-== tier_perf summary: 2 passed, 0 failed, 0 skipped ==
-TIER_PERF PASS
-```
-
-On `2048.gb` these medians are 7,995,142 (`--dynarec`) versus 8,102,769
-(`--no-dynarec`) T-cycles/sec at 1.2% coverage, i.e. the dynarec is 1.3% slower
-on this HALT-heavy workload. The old P5 "no measurable gain" wording came from
-this 2048-only, ≤6%-coverage workload and is superseded by the workload matrix
-above: at high coverage the dynarec is a real gain (Pinball 97.3% coverage,
-19.7% faster), while low/moderate coverage is neutral-to-negative (2048 1.2%,
-1.5% slower; Crystal 31.7%, 18.3% slower). No fixed speedup threshold applies.
+warms up wineserver/exe, then runs three alternating measurements per mode. In
+this verification the compat-matrix medians were 8,087,217 (`--no-dynarec`) and
+8,102,769 (`--dynarec`) T-cycles/sec on `2048.gb` at 1.2% coverage — within
+run-to-run noise (the earlier re-measure had dynarec 1.3-1.5% slower); the
+standalone `--throughput-only` section measured 8,229,375 versus 8,245,479. See
+the workload matrix above for the corrected, coverage-qualified verdict (Pinball
+26.8% faster; Crystal 16.6% slower; 2048 interpreter-dominated).
 
 The full compat matrix is measured with:
 
@@ -690,9 +715,43 @@ TIER_PERF PASS
 ```
 
 User ROMs are never committed; a missing user ROM is a truthful `SKIP`, not a
-PASS. `tier_perf.sh --cgb` passed 8/0/0 as well; the authoritative host headless
-threshold is unchanged at 59.0 fps. All Wine numbers are Wine evidence only,
-never Win98.
+PASS. The authoritative host headless threshold is unchanged at 59.0 fps. All
+Wine numbers are Wine evidence only, never Win98.
+
+The in-repo std-lib gates also passed: `verify_stdlib.sh` 376 PASS / 0 FAIL
+over 376 fixture dirs, `run_crosscheck.sh` 10 PASS / 0 FAIL over 10 modules.
+
+**Shipped exe evidence.** `lin_bin/z9gb.exe` (untracked) was rebuilt through
+`cross_nocrt.sh` with `EXTRA_CFLAGS=-O2` and
+`EXTRA_LIBS="-luser32 -lgdi32 -lwinmm"`. It is PE32 i386 and the 9x import gate
+passes with exactly KERNEL32/USER32/WINMM (no static DDRAW/DINPUT8/DSOUND). A
+Wine headless `--frames 60 --rom 2048.gb --fb-out` self-test exited 0 and wrote
+a 92,160-byte framebuffer.
+
+**User-ROM matrix (headless turbo; Wine evidence, not committed).** Both
+interpreter and `--dynarec` exit 0 and write a 92,160-byte framebuffer at 600
+and 3600 frames:
+
+| ROM | Flags | Mode | 600-frame fb colors | 3600-frame fb colors | 600-frame dynarec counters |
+|---|---|---|---:|---:|---|
+| `p_cry.gbc` (Crystal) | `--cgb` | interpreter / `--dynarec` | 3 | 18 | `blocks=41379 executed=761742 fallback=4681142 tinstr=2174380 minstr=4681142 rejected=73375 coverage=317‰` |
+| `p_pin.gbc` (Pinball) | `--cgb` | interpreter / `--dynarec` | 8 | 8 | `blocks=40149 executed=1687938 fallback=135400 tinstr=4986874 minstr=135400 rejected=85087 coverage=973‰` |
+| `p_pin.gbc` (DMG mode) | — | interpreter / `--dynarec` | 4 | 4 | `blocks=39699 executed=1728338 fallback=68509 tinstr=5127341 minstr=68509 rejected=18712 coverage=986‰` |
+| `k_tt.gbc` (MBC7) | `--cgb` | interpreter / `--dynarec` | 12 | 12 | `blocks=44543 executed=2336294 fallback=2283253 tinstr=6624694 minstr=2283253 rejected=1712717 coverage=743‰` |
+| `k_dl.gb` | — | interpreter / `--dynarec` | 4 | 4 | `blocks=87731 executed=1480099 fallback=153220 tinstr=3881927 minstr=153220 rejected=64230 coverage=962‰` |
+
+Reachable state at 3600 frames (frame content rendered from the framebuffer):
+Crystal reaches the **Pokemon Crystal Version title screen** (the 600-frame dump
+is still the boot logo); Pinball reaches the **Pokemon Pinball title/menu**
+(CGB color and DMG monochrome); `k_dl` (Kirby's Dream Land) reaches its **title
+screen**; `k_tt` reaches the MBC7 **"BALANCE / HOLD YOUR GAME BOY FLAT. THEN
+PRESS A"** calibration prompt with the neutral accelerometer. That is the
+expected MBC7 limit: with no tilt input the game can prompt but cannot be
+played past calibration; no playability claim is made. Windowed smoke
+(`--windowed --scale 2 --no-audio --frames 120`) exited 0 for both Crystal and
+Pinball, printed `input=dinput8 audio=off`, and produced 92,160-byte
+framebuffers in interpreter and dynarec modes.
+
 
 Anti-vacuous dynarec counters from the final `--dynarec` runs:
 `tier_dynarec` 2048 `blocks=192 executed=45382`; `tier_audio` `dmg_sound`
