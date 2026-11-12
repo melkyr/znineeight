@@ -362,7 +362,13 @@ git commit -m "docs(z9gb): verify commercial-ROM fixes and ship -O2"
 
 - [ ] **Step 7: MANDATORY STOP**
 
-Present: battery results, ROM matrix (per-ROM state), dynarec counters/coverage, docs diff summary. Wait for the operator before Task 8.
+Present:
+1. Battery results and the per-ROM matrix (Crystal, Pinball, `k_tt`, `k_dl`; interpreter + dynarec; headless + windowed smoke).
+2. Dynarec counters/coverage and the corrected performance table.
+3. Docs diff summary and the shipped `-O2` exe evidence (PE32, import gate, self-test).
+4. **Task 9 option menu** — tilt input for the MBC7 accelerometer: (1) gamepad analog, (2) keyboard digital tilt, (3) mouse-relative tilt, (4) static `--tilt X,Y`, (5) hybrid gamepad+keyboard, (6) decline — plus the rumble yes/no decision, with a recommendation.
+
+Wait for the operator's choice before Task 8 or Task 9. Task 8 is feasibility-only; Task 9 is operator-gated and must not start without an explicit choice.
 
 ---
 
@@ -391,9 +397,52 @@ State: does coverage improve, does timing parity hold, do the gates pass, and wh
 
 ---
 
+### Task 9 (maybe): Tilt input for the MBC7 accelerometer — operator-gated
+
+Do not start without the operator's explicit choice made at the Task 7 STOP. If
+the choice is "decline", record that in the ledger and close the plan.
+
+**Option menu presented at the Task 7 STOP (choose one, plus rumble yes/no):**
+
+| # | Option | Source | Playable without extra hardware | Trade-off |
+|---|---|---|---|---|
+| 1 | Gamepad analog (recommended) | DInput8 joystick X/Y axes, dead zone + calibration | No (needs a pad) | Authentic analog feel; needs hardware verification |
+| 2 | Keyboard digital tilt | Four configurable keys (default `I/J/K/L`) ramp tilt at a bounded rate | Yes | Digital feel; ramp/centre tuning |
+| 3 | Mouse-relative tilt | Windowed cursor delta maps to tilt | Yes (windowed only) | Needs focus/capture; unusable headless |
+| 4 | Static CLI tilt | `--tilt X,Y` fixed orientation | N/A (debug) | Calibration/tests only; no gameplay |
+| 5 | Hybrid | Gamepad when a device exists, keyboard otherwise | Yes | Most code; two mappings to test |
+| 6 | Decline | Keep the neutral orientation | — | `k_tt` remains loadable-only |
+
+**Rumble sub-decision:** MBC7 rumble -> on-screen/audio feedback *or* ignored.
+Default recommendation: ignored and documented (no generic Win9x motor API;
+an audio-buzz mapping is optional and must not couple to `sf/src`).
+
+**Files (depend on the chosen option):**
+- Modify: `examples/z98/z9gb/platform/backend.zig` (extend `InputState` with `tilt_x: i16`, `tilt_y: i16`; no `Platform` table field change)
+- Modify: `examples/z98/z9gb/platform/win32.zig` (DInput8 axes and/or key/mouse mapping, poll-time, no allocation)
+- Modify: `examples/z98/z9gb/platform/headless.zig` (static tilt for tests)
+- Modify: `examples/z98/z9gb/emu.zig` (apply `InputState` tilt to the cart each frame via the Task 6 `emuSetTilt` seam)
+- Modify: `examples/z98/z9gb/cart.zig` (accelerometer latch returns the current tilt; already the seam)
+- Modify: `examples/z98/z9gb/main.zig` (option flags such as `--tilt-keys` / `--tilt`)
+- Test: `examples/z98/z9gb/tests/input_test.zig` (axis polarity, clamping at +-0x7FFF, dead zone, neutral default)
+
+**Interfaces:**
+- Consumes: Task 6 `emuSetTilt(x, y)`, the MBC7 accelerometer window, `InputState`/`Platform`, the Win32 backend.
+- Produces: the operator-selected tilt source; documented axis polarity/range; manual playtest evidence for `k_tt`.
+
+- [ ] **Step 1: Record the operator choice** (option 1-6, plus rumble yes/no) in the ledger before touching code.
+- [ ] **Step 2: Write the failing mapping tests** (neutral default, polarity, clamp, dead zone if analog) in the Task 1/6 style; run RED.
+- [ ] **Step 3: Implement only the chosen mapping.** Neutral default when no tilt source is active; no heap; no `Platform` field changes beyond `InputState`.
+- [ ] **Step 4: Verify** the new tests, `tier_smoke.sh`, `tier_dmg.sh --all`, `tier_win32.sh --smoke`.
+- [ ] **Step 5: Manual `k_tt` playtest evidence** (operator, or Wine with the chosen device): pass calibration, reach gameplay, and confirm tilt registers. Record exact commands and observed behaviour; no automated playability claim.
+- [ ] **Step 6: Commit** `feat(z9gb): add operator-selected tilt input for MBC7` plus docs.
+- [ ] **Step 7: STOP** — report evidence; no merge/push.
+
+---
+
 ## Self-Review
 
-- **Spec coverage:** RC1 → Task 1; RC2 → Task 2; RC3 → Tasks 3-4; `--frames` → Task 5; joypad IRQ → Task 1; `k_tt` MBC7 + MBC5 rumble → Task 6; gate-hole closure → Task 1 tests + Task 2 regressions; `-O2` ship → Task 7; boundary relaxation feasibility → Task 8 + STOP.
+- **Spec coverage:** RC1 → Task 1; RC2 → Task 2; RC3 → Tasks 3-4; `--frames` → Task 5; joypad IRQ → Task 1; `k_tt` MBC7 + MBC5 rumble → Task 6; gate-hole closure → Task 1 tests + Task 2 regressions; `-O2` ship → Task 7; boundary relaxation feasibility → Task 8 + STOP; `k_tt` tilt enablement → Task 9 (operator-gated; option menu presented at the Task 7 STOP).
 - **Step scan:** every step names a command and expected result; no "handle edge cases" placeholders.
 - **Type consistency:** `busApplyButtons`, `DynarecStats.{tinstr,minstr,rejected}`, `Emit.patch_overflow`, `.mbc7`, `PageKind.mbc7`, `emuSetTilt` are used consistently across tasks.
 - **Review Focus:** each of the five items has a covering test in Tasks 1, 6, 2, and 5.

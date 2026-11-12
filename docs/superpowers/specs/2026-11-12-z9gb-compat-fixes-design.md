@@ -100,9 +100,10 @@ re-measured after RC1/RC2 fixes, with coverage reported alongside throughput.
 ## 4. Non-goals
 
 - Real Win98/Pentium II hardware sign-off; Wine/cross-build evidence only.
-- Accelerometer **gameplay** for `k_tt` (tilt input device). The design provides
-  the register surface and a neutral orientation; a playable tilt control is a
-  separate request.
+- Accelerometer **gameplay** for `k_tt` is deferred: Task 9 is operator-gated,
+  and its tilt-input option menu is presented at the Task 7 STOP. Until an
+  option is chosen, the design provides the register surface, a neutral
+  orientation, and a test seam only.
 - Boundary relaxation implementation (Task 8 is feasibility + report only).
 - `sf/src`, compiler, or seed changes; no seed rotation.
 - Committing ROM bytes or reference images.
@@ -117,8 +118,10 @@ re-measured after RC1/RC2 fixes, with coverage reported alongside throughput.
 - User ROMs stay in `lin_bin/`; never committed, never referenced by tracked
   tests as a hard dependency (they are SKIP-able evidence).
 - One commit per task, explicit staging, no push, no unrelated fixes.
-- Mandatory STOP after Task 7 before Task 8.
+- Mandatory STOP after Task 7 (results plus the Task 9 tilt option menu) before
+  Task 8 or Task 9.
 - Task 8 writes only a feasibility report (no product code).
+- Task 9 starts only after the operator chooses a tilt option at that STOP.
 
 ## 6. Approaches and decisions
 
@@ -176,12 +179,33 @@ re-measured after RC1/RC2 fixes, with coverage reported alongside throughput.
 - The exact register offsets and latch sequence must be pinned from Pan Docs
   and verified against `k_tt`'s boot code **before** implementation (Task 6
   Step 1); the published map is not assumed from memory.
-- Accelerometer values are a fixed neutral orientation plus a test-only
-  `emuSetTilt(x, y)` seam. Gameplay that needs real tilt is documented as
-  unsupported; no progress claims beyond what is observed.
+- Accelerometer values are a fixed neutral orientation plus an `emuSetTilt(x, y)`
+  seam used by tests. Real tilt input is Task 9 (operator-gated); until it is
+  chosen, gameplay needing tilt is documented as unsupported and no progress is
+  claimed beyond what is observed.
 - MBC5 rumble types mask the RAM bank with `& 0x07`.
 
-### 6.7 Test strategy
+### 6.7 Task 9 options (operator-gated tilt input)
+
+Presented at the Task 7 STOP; only one option is implemented, and only after the
+operator picks it:
+
+1. Gamepad analog (recommended) — DInput8 joystick X/Y axes, dead zone +
+   calibration.
+2. Keyboard digital tilt — four configurable keys (default `I/J/K/L`) ramping
+   tilt at a bounded rate.
+3. Mouse-relative tilt — windowed cursor delta maps to tilt.
+4. Static `--tilt X,Y` — fixed orientation for calibration/tests.
+5. Hybrid — gamepad when present, keyboard otherwise.
+6. Decline — keep neutral; `k_tt` stays loadable-only.
+
+A rumble sub-decision (on-screen/audio feedback vs ignore) is made at the same
+time; the default recommendation is ignore-and-document, with no `sf/src`
+coupling. Any chosen option extends `InputState` with `tilt_x`/`tilt_y` (no
+`Platform` table field change), stays allocation-free, and requires manual
+`k_tt` playtest evidence.
+
+### 6.8 Test strategy
 
 - Unit-level: `tests/irq_test.zig` (VBlank once/frame, LCD-off, joypad IRQ,
   IF read masks), MBC7 tests in the save/cart tier, dynarec patch regressions in
