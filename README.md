@@ -107,14 +107,15 @@ dynarec state 262,184 bytes). Final gates: `tier_dmg --gates` 166/0,
 `tier_dynarec` 26/0, `tier_smoke` 18/0, `tier_cgb` 39/0, `tier_audio --gate`
 9/0, `tier_win32` 39/0 and `--smoke` 18/0, `tier_perf` 8/0. On `2048.gb` over
 600 frames, host headless `--no-dynarec` measured **923.077 fps** (the unchanged
->= 59.0 fps hard gate, pacing-bound); host `--dynarec` is disabled as
-unsupported on *nix. The primary throughput metric is Wine headless turbo
-`T-cycles/sec = 42,134,400 / wall`: dynarec measured **8,165,581 T-cycles/sec**
-versus **7,289,689** without it (about 12.0% higher in this run). Wine windowed
-fps (47.618 without dynarec, 47.624 with it) is display/pacing-bound evidence
-only. No fixed speedup threshold applies. Wine is evidence only, never Win98; no
-real Win98 dynarec run was performed and real-hardware sign-off remains the
-operator's.
+>= 59.0 fps hard gate, unpaced interpreter throughput); host `--dynarec` is
+disabled as unsupported on *nix, so host runs cannot judge dynarec. The primary
+throughput metric is Wine headless turbo `T-cycles/sec = 42,134,400 / wall`,
+using medians of three alternating runs after a warmup: dynarec measured
+**8,087,217 T-cycles/sec** versus **8,056,291** without it (about 0.4% higher,
+within run-to-run noise; no measurable gain claimed). Wine windowed fps (47.618
+without dynarec, 47.624 with it) is display-bound evidence only. No fixed
+speedup threshold applies. Wine is evidence only, never Win98; no real Win98
+dynarec run was performed and real-hardware sign-off remains the operator's.
 
 **Phase 1 (TLS + WireGuard) is complete.** The std library now carries the
 browser-grade TLS 1.2/1.3 client (`std_tls` over `std_crypto`/`std_cipher`/

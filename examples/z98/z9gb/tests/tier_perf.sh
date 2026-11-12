@@ -24,8 +24,10 @@
 #
 # P5 throughput is measured on Wine HEADLESS TURBO (no display/pacing throttle).
 # The primary metric is emulated T-cycles/sec = 42,134,400 / wall (600 frames x
-# 70,224 T-cycles). Windowed fps and paced host fps are display/pacing-bound
-# evidence only and must not judge dynarec throughput.
+# 70,224 T-cycles). It warms wineserver/exe, then alternates three runs per mode
+# and reports medians. Host headless is unpaced interpreter throughput; host
+# dynarec is unavailable on *nix. Wine windowed fps is display-bound evidence
+# only and must not judge dynarec throughput.
 #
 # The 1 MiB code cache is a separate VirtualAlloc/mmap mapping, not BSS and not
 # stack. This script prints code_cache_bytes, stack_limit, static_bytes, and the
@@ -41,7 +43,8 @@
 #   Z9GB_PERF_MIN_FPS host headless minimum sustained rendered fps (default 59.0)
 #
 # --cgb passes --cgb through to the host headless CLI workload. --throughput-only
-# runs ONLY the Wine headless turbo measurement; it reuses an existing
+# runs ONLY the Wine headless turbo measurement; it warms wineserver/exe, runs
+# three alternating measurements per mode, reports medians, reuses an existing
 # $OUT/win32/perf/z9gb_o2.exe or builds it, and does not re-run the existing
 # host/windowed measured rows. A missing ROM = SKIP (exit 77); ROM size/hash
 # mismatch = FAIL. A skipped P4 hard gate blocks P4 closeout. Estimates are
@@ -186,10 +189,11 @@ SH
     return 1
 }
 
-wine_throughput() {
+wine_throughput_run() {
     mode="$1"
     flag="$2"
     tag="$3"
+    file="${4:-}"
     timeout 300 /usr/bin/time -f 'wall=%e cpu_user=%U cpu_sys=%S rss_kb=%M' \
         -o "$PERF_DIR/$tag.time.txt" \
         wine "$PERF_EXE" --headless --turbo --frames 600 $flag \
@@ -207,19 +211,69 @@ wine_throughput() {
     w_dyn="$(grep '^dynarec=' "$PERF_DIR/$tag.log" | tail -1)"
     w_blocks="$(echo "$w_dyn" | sed -n 's/.*blocks=\([0-9][0-9]*\).*/\1/p')"
     w_exec="$(echo "$w_dyn" | sed -n 's/.*executed=\([0-9][0-9]*\).*/\1/p')"
-    echo "       wine_headless_turbo mode=$mode fps=$w_fps tcycles_per_sec=$w_tcyc wall=${w_wall:-none}s cpu_user=${w_cpu_user:-none}s cpu_sys=${w_cpu_sys:-none}s rss_kb=${w_rss_kb:-none} ${w_dyn:-dynarec=not-reported} (Wine evidence only; not Win98)"
+    echo "       wine_headless_turbo run mode=$mode tag=$tag fps=$w_fps tcycles_per_sec=$w_tcyc wall=${w_wall:-none}s cpu_user=${w_cpu_user:-none}s cpu_sys=${w_cpu_sys:-none}s rss_kb=${w_rss_kb:-none} ${w_dyn:-dynarec=not-reported} (Wine evidence only; not Win98)"
     if [ "$wrc" -ne 0 ]; then
-        fail_case "Wine headless turbo $mode run rc=$wrc"
+        echo "       FAIL: Wine headless turbo $mode/$tag run rc=$wrc" >&2
+        return 1
     elif [ "$(stat -c %s "$PERF_DIR/$tag.fb" 2>/dev/null)" != "92160" ]; then
-        fail_case "Wine headless turbo $mode framebuffer is not 92160 bytes"
+        echo "       FAIL: Wine headless turbo $mode/$tag framebuffer is not 92160 bytes" >&2
+        return 1
     elif [ "$mode" = "dynarec" ] \
         && { [ -z "$w_blocks" ] || [ "$w_blocks" -eq 0 ] \
             || [ -z "$w_exec" ] || [ "$w_exec" -eq 0 ] \
             || ! echo "$w_dyn" | grep -q '^dynarec=on '; }; then
-        fail_case "Wine headless turbo dynarec anti-vacuous counters failed (${w_dyn:-no stats line})"
-    else
-        pass_case "Wine headless turbo $mode $w_tcyc T-cycles/sec (Wine evidence only; not Win98)"
+        echo "       FAIL: Wine headless turbo $mode/$tag anti-vacuous counters (${w_dyn:-no stats line})" >&2
+        return 1
     fi
+    if [ -n "$file" ]; then
+        echo "$w_wall $w_cpu_user $w_cpu_sys $w_rss_kb $w_tcyc $w_fps" >>"$file"
+    fi
+    if [ "$mode" = "dynarec" ]; then
+        echo "$w_dyn" >>"$PERF_DIR/throughput_dynarec.counters"
+    fi
+    return 0
+}
+
+median_col() {
+    awk -v c="$2" '{ print $c }' "$1" | sort -n | sed -n '2p'
+}
+
+measure_throughput_one() {
+    mmode="$1"
+    mrun="$2"
+    if [ "$mmode" = "no-dynarec" ]; then
+        mflag="--no-dynarec"
+        mtag="throughput_no_dynarec_$mrun"
+        mfile="$PERF_DIR/throughput_no_dynarec.runs"
+    else
+        mflag="--dynarec"
+        mtag="throughput_dynarec_$mrun"
+        mfile="$PERF_DIR/throughput_dynarec.runs"
+    fi
+    wine_throughput_run "$mmode" "$mflag" "$mtag" "$mfile"
+}
+
+summarize_throughput_mode() {
+    smode="$1"
+    sfile="$2"
+    scount="$(wc -l <"$sfile")"
+    if [ "$scount" -ne 3 ]; then
+        fail_case "Wine headless turbo $smode: $scount/3 measurements"
+        return 1
+    fi
+    s_tcyc="$(median_col "$sfile" 5)"
+    s_fps="$(median_col "$sfile" 6)"
+    s_wall="$(median_col "$sfile" 1)"
+    s_cpu_user="$(median_col "$sfile" 2)"
+    s_cpu_sys="$(median_col "$sfile" 3)"
+    s_rss="$(median_col "$sfile" 4)"
+    if [ "$smode" = "dynarec" ]; then
+        s_dyn="$(tail -1 "$PERF_DIR/throughput_dynarec.counters")"
+    else
+        s_dyn="dynarec=not-reported"
+    fi
+    echo "       wine_headless_turbo median mode=$smode runs=3 fps=$s_fps tcycles_per_sec=$s_tcyc wall=${s_wall}s cpu_user=${s_cpu_user}s cpu_sys=${s_cpu_sys}s rss_kb=${s_rss} ${s_dyn} (Wine evidence only; not Win98)"
+    pass_case "Wine headless turbo $smode median $s_tcyc T-cycles/sec (3 alternating runs; Wine evidence only)"
 }
 
 run_throughput_section() {
@@ -250,8 +304,27 @@ run_throughput_section() {
                     >"$PERF_DIR/wineboot_throughput.log" 2>&1 || true
             fi
         fi
-        wine_throughput no-dynarec "--no-dynarec" throughput_no_dynarec
-        wine_throughput dynarec "--dynarec" throughput_dynarec
+        : >"$PERF_DIR/throughput_no_dynarec.runs"
+        : >"$PERF_DIR/throughput_dynarec.runs"
+        : >"$PERF_DIR/throughput_dynarec.counters"
+        echo "       warmup: unmeasured --no-dynarec run (warm wineserver/exe)"
+        if ! wine_throughput_run no-dynarec "--no-dynarec" throughput_warmup ""; then
+            fail_case "Wine headless turbo warmup failed"
+            return 1
+        fi
+        runs_failed=0
+        measure_throughput_one no-dynarec 1 || runs_failed=$((runs_failed + 1))
+        measure_throughput_one dynarec 1 || runs_failed=$((runs_failed + 1))
+        measure_throughput_one dynarec 2 || runs_failed=$((runs_failed + 1))
+        measure_throughput_one no-dynarec 2 || runs_failed=$((runs_failed + 1))
+        measure_throughput_one no-dynarec 3 || runs_failed=$((runs_failed + 1))
+        measure_throughput_one dynarec 3 || runs_failed=$((runs_failed + 1))
+        if [ "$runs_failed" -ne 0 ]; then
+            fail_case "Wine headless turbo: $runs_failed/6 alternating runs failed"
+        else
+            summarize_throughput_mode no-dynarec "$PERF_DIR/throughput_no_dynarec.runs"
+            summarize_throughput_mode dynarec "$PERF_DIR/throughput_dynarec.runs"
+        fi
         if command -v wineserver >/dev/null 2>&1; then
             wineserver -k >/dev/null 2>&1 || true
         fi
@@ -259,6 +332,7 @@ run_throughput_section() {
         fail_case "Wine headless turbo: Win32 -O2 executable unavailable"
     fi
 }
+
 
 if [ "$THROUGHPUT_ONLY" -eq 1 ]; then
     run_throughput_section
@@ -402,6 +476,8 @@ wine_perf() {
     wine_fps="$(awk -v s="${qpc_sec:-0}" \
         'BEGIN { if (s + 0 > 0) printf "%.3f", 600 / s; else print "0" }')"
     wine_dyn="$(grep '^dynarec=' "$PERF_DIR/$tag.direct.log" | tail -1)"
+    wine_blocks="$(echo "$wine_dyn" | sed -n 's/.*blocks=\([0-9][0-9]*\).*/\1/p')"
+    wine_exec="$(echo "$wine_dyn" | sed -n 's/.*executed=\([0-9][0-9]*\).*/\1/p')"
     echo "       wine_windowed mode=$mode fps=$wine_fps qpc_seconds=${qpc_sec:-none} child_rc=${qpc_child_rc:-none} wall=${wine_wall:-none}s cpu_user=${wine_cpu_user:-none}s cpu_sys=${wine_cpu_sys:-none}s rss_kb=${wine_rss_kb:-none} ${wine_dyn:-dynarec=not-reported} (Wine evidence only; not Win98)"
     if [ "$direct_rc" -ne 0 ]; then
         fail_case "Wine $mode: direct run rc=$direct_rc"
@@ -413,8 +489,10 @@ wine_perf() {
         || [ "$(stat -c %s "$PERF_DIR/$tag.qpc.fb" 2>/dev/null)" != "92160" ]; then
         fail_case "Wine $mode: framebuffer is not 92160 bytes"
     elif [ "$mode" = "dynarec" ] \
-        && ! echo "$wine_dyn" | grep -q '^dynarec=on blocks='; then
-        fail_case "Wine $mode: dynarec did not enable (${wine_dyn:-no stats line})"
+        && { [ -z "$wine_blocks" ] || [ "$wine_blocks" -eq 0 ] \
+            || [ -z "$wine_exec" ] || [ "$wine_exec" -eq 0 ] \
+            || ! echo "$wine_dyn" | grep -q '^dynarec=on '; }; then
+        fail_case "Wine $mode: dynarec anti-vacuous counters failed (${wine_dyn:-no stats line})"
     else
         pass_case "Wine windowed $mode sustained $wine_fps fps (evidence only; host headless is the gate)"
     fi

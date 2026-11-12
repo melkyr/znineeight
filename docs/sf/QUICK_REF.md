@@ -644,14 +644,16 @@ and all *nix hosts. Measured accounting: `code_cache_bytes=1048576`,
 `stack_limit=1048576`, `static_bytes=9801128`, dynarec state 262,184 bytes. The
 authoritative performance gate is host headless `2048.gb`
 (`--headless --frames 600 --audio`) at >=59.0 fps; `--no-dynarec` measured
-923.077 fps (pacing-bound; host `--dynarec` is disabled as unsupported on *nix).
-CGB peak RSS measured 10,288 KiB. The primary dynarec throughput metric is Wine
-headless turbo `T-cycles/sec = 42,134,400 / wall` (600 frames × 70,224):
-`--no-dynarec` measured 7,289,689 T-cycles/sec and `--dynarec` measured
-8,165,581 T-cycles/sec (about 12.0% higher in this run;
+923.077 fps (unpaced interpreter throughput; host `--dynarec` is unavailable on
+*nix, so host runs cannot judge dynarec). CGB peak RSS measured 10,288 KiB. The
+primary dynarec throughput metric is Wine headless turbo
+`T-cycles/sec = 42,134,400 / wall` (600 frames × 70,224), using medians of three
+alternating runs after a warmup: `--no-dynarec` measured 8,056,291 T-cycles/sec
+and `--dynarec` measured 8,087,217 T-cycles/sec (about 0.4% higher, within
+run-to-run noise; no measurable gain claimed;
 `dynarec=on blocks=151 executed=22254 fallback=10415335`). No fixed speedup
 threshold applies. Wine windowed `2048.gb` fps (47.618 with `--no-dynarec`,
-47.624 with `--dynarec`) is display/pacing-bound evidence only, never Win98.
+47.624 with `--dynarec`) is display-bound evidence only, never Win98.
 The framebuffer dump is 92,160 bytes (160×144 little-endian RGB32).
 
 ```bash
@@ -693,9 +695,11 @@ this emulator, and is pinned at SHA-256
 the `tier_dynarec` unit/parity gate (26 checks) plus dynarec on/off parity in the
 DMG/CGB/audio/Win32 tiers; every `--dynarec` run must report nonzero
 `dynarec=on blocks=N executed=N`. Dynarec throughput is measured with
-`tier_perf.sh --throughput-only` (Wine headless turbo, T-cycles/sec); windowed
-and paced fps are not throughput results. The host headless `2048.gb` performance gate
-requires >=59.0 fps (`--no-dynarec`, threshold not lowered). Real-hardware
+`tier_perf.sh --throughput-only` (Wine headless turbo, warmup + three alternating
+runs per mode, median T-cycles/sec); windowed fps is display-bound and host
+headless fps is unpaced interpreter throughput, so neither judges dynarec. The
+host headless `2048.gb` performance gate requires >=59.0 fps (`--no-dynarec`,
+threshold not lowered). Real-hardware
 caveat: Wine cross-build runs are functional evidence only, never Win98
 hardware; no Win98 real-hardware CGB or dynarec run was performed and sign-off
 remains the operator's. A failed `VirtualAlloc` disables dynarec and falls back
