@@ -579,8 +579,8 @@ immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transfor
   DMG/CGB CPU/PPU/timer/serial/APU, CGB palettes, VRAM/WRAM banking,
   double-speed, HDMA, MBC1/MBC3(+RTC)/MBC5/MBC7, JOYP input, battery saves;
   MBC7 includes the 93LC56 EEPROM and accelerometer window (tilt latches neutral
-  `0x8000`; no tilt input), and MBC5/MBC7 rumble bits are decoded without motor
-  feedback; DirectDraw presentation, DirectInput8 keyboard/gamepad with keyboard fallback,
+  `0x8000`; no tilt input); MBC5 rumble is decoded/masked with no motor feedback;
+  MBC7 rumble is not implemented; DirectDraw presentation, DirectInput8 keyboard/gamepad with keyboard fallback,
   QPC pacing, DirectSound with WinMM `waveOut` fallback; Win32/x86 dynarec from a
   separate 1 MiB executable cache with interpreter fallback; gates
   `tests/tier_dmg.sh --all`, `tier_cgb`, `tier_dynarec`, `tier_smoke`,

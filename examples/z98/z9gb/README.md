@@ -12,9 +12,9 @@ The 2026-11-12 compatibility pass adds VBlank/joypad IRQs, rejects overflowing
 dynarec translations (the block runs on the interpreter), reports dynarec
 `tinstr`/`minstr`/`rejected`/`coverage` counters, supports MBC7 (93LC56 EEPROM
 plus the accelerometer/latch register window), fixes MBC5 rumble bank masking,
-and makes `--frames` unlimited by default. MBC7 tilt input and rumble output are
-**not** implemented: the sensor latches neutral `0x8000`, and the MBC5/MBC7
-motor bit is decoded but produces no feedback.
+and makes `--frames` unlimited by default. MBC7 tilt input is **not**
+implemented: the sensor latches neutral `0x8000`. MBC5 rumble is decoded/masked
+with no motor feedback; MBC7 rumble is not implemented.
 
 The **Win32/x86 dynarec** (`--dynarec`) translates SM83 basic blocks and executes
 them from a separate 1 MiB `VirtualAlloc` `PAGE_EXECUTE_READWRITE` mapping; the
@@ -364,7 +364,7 @@ Header type byte `0x0147` selects the controller:
 | `0x01`–`0x03` | MBC1 | RAM enable, 5-bit bank, secondary bank/mode, RAM banking |
 | `0x0F`–`0x13` | MBC3 | RAM/RTC enable, 7-bit bank, 4-bit RAM bank; `0x0F`/`0x10` carry an RTC |
 | `0x19`–`0x1E` | MBC5 | 9-bit ROM bank (bit 8 at `0x3000`), 4-bit RAM bank, bank 0 valid; `0x1C`–`0x1E` are rumble types (motor bit masked off, no feedback) |
-| `0x22` | MBC7 | 8-bit ROM bank (`0x2000`–`0x3FFF`), 93LC56 256-byte EEPROM, accelerometer/latch window at `0xA000`–`0xAFFF`; tilt latches neutral `0x8000` (no tilt input), rumble bit decoded but not emitted |
+| `0x22` | MBC7 | 8-bit ROM bank (`0x2000`–`0x3FFF`), 93LC56 256-byte EEPROM, accelerometer/latch window at `0xA000`–`0xAFFF`; tilt latches neutral `0x8000` (no tilt input), MBC7 rumble is not implemented |
 
 Unknown types are rejected with `UnsupportedMbc`. ROM size is decoded from
 `0x0148` and RAM size from `0x0149`; the ROM must be at least the declared size.

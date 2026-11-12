@@ -689,8 +689,9 @@ complete programs that exercise the language-wins features and the PAL/networkin
   DirectDraw presentation, DirectInput8 keyboard/gamepad (keyboard fallback), QPC pacing,
   DirectSound (WinMM `waveOut` fallback), and wired JOYP input; the Win32/x86 `--dynarec`
   uses a separate 1 MiB executable cache with interpreter fallback. MBC7 adds the 93LC56
-  EEPROM and accelerometer window but tilt input is **not** wired (neutral `0x8000`), and
-  MBC5/MBC7 rumble bits are decoded without motor feedback. CGB is opt-in with
+  EEPROM and accelerometer window but tilt input is **not** wired (neutral `0x8000`);
+  MBC5 rumble is decoded/masked with no motor feedback; MBC7 rumble is not implemented.
+  CGB is opt-in with
   `--cgb`; a CGB-only cartridge requires it (`CgbRequired`, exit 2). Runs are unlimited
   by default: windowed stops on quit/`Esc`, while headless needs a finite `--frames N`
   to exit (`--frames 0` is unlimited and `--fb-out` is written only by a finite run).
