@@ -291,6 +291,7 @@ Write the report and stop. No product/source commit. Do not implement Task 6.2.
 ### Task 6.2: Sync PPU at dynarec dynamic memory accesses
 
 **Files:**
+- Modify: `examples/z98/z9gb/dynarec/block.zig`
 - Modify: `examples/z98/z9gb/dynarec/ctx.zig`
 - Modify: `examples/z98/z9gb/dynarec/helpers.zig`
 - Modify: `examples/z98/z9gb/dynarec/x86.zig`
@@ -315,7 +316,7 @@ Run the regression test, `tier_dynarec`, `tier_dmg --gates`, `tier_dmg --all`, a
 
 - [ ] **Step 4: Commit**
 ```bash
-git add examples/z98/z9gb/dynarec/ctx.zig examples/z98/z9gb/dynarec/helpers.zig examples/z98/z9gb/dynarec/x86.zig examples/z98/z9gb/dynarec/dynarec.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/dynarec_test.zig
+git add examples/z98/z9gb/dynarec/block.zig examples/z98/z9gb/dynarec/ctx.zig examples/z98/z9gb/dynarec/helpers.zig examples/z98/z9gb/dynarec/x86.zig examples/z98/z9gb/dynarec/dynarec.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/tests/dynarec_test.zig
 git commit -m "fix(z9gb): sync PPU at dynarec dynamic accesses"
 ```
 
