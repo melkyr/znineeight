@@ -261,7 +261,7 @@ printf '\300' | dd of="$C0_ROM" bs=1 seek=323 conv=notrunc status=none
 printf '\200' | dd of="$C80_ROM" bs=1 seek=323 conv=notrunc status=none
 
 if [ -x "$CLI_BIN" ]; then
-    timeout 60 "$CLI_BIN" --headless --frames 0 --rom "$C0_ROM" >"$CLI_DIR/c0.out" 2>"$CLI_DIR/c0.err"
+    timeout 60 "$CLI_BIN" --headless --frames 1 --rom "$C0_ROM" >"$CLI_DIR/c0.out" 2>"$CLI_DIR/c0.err"
     rc=$?
     if [ "$rc" -eq 2 ] && grep -qxF 'z9gb: CgbRequired' "$CLI_DIR/c0.out"; then
         pass_case "c0 without --cgb prints CgbRequired and exits 2"
@@ -269,28 +269,28 @@ if [ -x "$CLI_BIN" ]; then
         fail_case "c0 without --cgb prints CgbRequired and exits 2 (rc=$rc, out=$(cat "$CLI_DIR/c0.out"))"
     fi
 
-    if timeout 60 "$CLI_BIN" --headless --cgb --frames 0 --rom "$C0_ROM" >"$CLI_DIR/c0_cgb.out" 2>"$CLI_DIR/c0_cgb.err"; then
+    if timeout 60 "$CLI_BIN" --headless --cgb --frames 1 --rom "$C0_ROM" >"$CLI_DIR/c0_cgb.out" 2>"$CLI_DIR/c0_cgb.err"; then
         pass_case "c0 with --cgb loads"
     else
         fail_case "c0 with --cgb loads"
         tail -20 "$CLI_DIR/c0_cgb.err" | sed 's/^/       /'
     fi
 
-    if timeout 60 "$CLI_BIN" --headless --cgb --frames 0 --rom "$C80_ROM" >"$CLI_DIR/c80_cgb.out" 2>"$CLI_DIR/c80_cgb.err"; then
+    if timeout 60 "$CLI_BIN" --headless --cgb --frames 1 --rom "$C80_ROM" >"$CLI_DIR/c80_cgb.out" 2>"$CLI_DIR/c80_cgb.err"; then
         pass_case "c80 with --cgb loads"
     else
         fail_case "c80 with --cgb loads"
         tail -20 "$CLI_DIR/c80_cgb.err" | sed 's/^/       /'
     fi
 
-    if timeout 60 "$CLI_BIN" --headless --frames 0 --rom "$C80_ROM" >"$CLI_DIR/c80.out" 2>"$CLI_DIR/c80.err"; then
+    if timeout 60 "$CLI_BIN" --headless --frames 1 --rom "$C80_ROM" >"$CLI_DIR/c80.out" 2>"$CLI_DIR/c80.err"; then
         pass_case "c80 without --cgb loads DMG"
     else
         fail_case "c80 without --cgb loads DMG"
         tail -20 "$CLI_DIR/c80.err" | sed 's/^/       /'
     fi
 
-    if timeout 60 "$CLI_BIN" --headless --cgb --frames 0 --rom "$C00_ROM" >"$CLI_DIR/c00_cgb.out" 2>"$CLI_DIR/c00_cgb.err"; then
+    if timeout 60 "$CLI_BIN" --headless --cgb --frames 1 --rom "$C00_ROM" >"$CLI_DIR/c00_cgb.out" 2>"$CLI_DIR/c00_cgb.err"; then
         pass_case "c00 with --cgb loads as CGB hardware DMG compat"
     else
         fail_case "c00 with --cgb loads as CGB hardware DMG compat"

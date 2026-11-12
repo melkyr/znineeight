@@ -308,7 +308,7 @@ run_cli_host_gate() {
         tail -20 "$cli/build.log" | sed 's/^/       /'
         return
     fi
-    if timeout 60 "$bin" --headless --frames 0 --dynarec --dynarec-stats >"$cli/run.out" 2>"$cli/run.err"; then
+    if timeout 60 "$bin" --headless --frames 1 --dynarec --dynarec-stats >"$cli/run.out" 2>"$cli/run.err"; then
         pass_case "dynarec cli runs"
     else
         fail_case "dynarec cli runs"
