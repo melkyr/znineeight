@@ -422,6 +422,15 @@ before anything is applied, and the `.rtc` is parsed before `.sav`, so a corrupt
 - No emulator path performs heap allocation; the code cache is the one dynamic
   executable mapping.
 
+## Known gaps
+
+See [`KNOWN_GAPS.md`](KNOWN_GAPS.md) for the verified test surface, the measured
+dynarec behavior (coverage vs speed and why high coverage can still be slower),
+functional debt (MBC7 tilt, rumble feedback, save auto-load, unverified
+hardware paths), test-harness caveats, and the proposed `--capture`/`--replay`
+reproduction format. The tilt and rumble items are recorded debt, not scheduled
+work.
+
 ## P2 gates
 
 Run from the repository root with a seed-built compiler:

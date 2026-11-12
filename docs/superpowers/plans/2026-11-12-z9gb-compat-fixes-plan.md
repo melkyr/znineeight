@@ -466,6 +466,15 @@ Only if the operator's report shows the wizard recorded the intended keys but th
 
 ### Task 8 (study): PPU-boundary relaxation and input residuals — report only
 
+**Status (operator decision 2026-11-12): CLOSED — superseded by Task 8.1.**
+The `/tmp` variant was measured: removing only the block-start-at-PPU-read
+rejection left 2048 at 12‰ and Crystal at 317‰ coverage, moved Pinball
+973‰ → 988‰ (wall 3.21 s → 3.06 s), and kept all hard gates green. Findings,
+the per-dispatch cost analysis, and the unscheduled B1–B4 hypotheses are folded
+into `examples/z98/z9gb/KNOWN_GAPS.md`. Do **not** create
+`docs/superpowers/specs/2026-11-12-z9gb-boundary-feasibility.md` and do not run
+the B1–B4 performance study.
+
 **Files:**
 - Create: `docs/superpowers/specs/2026-11-12-z9gb-boundary-feasibility.md`
 - Report: `.superpowers/sdd/2026-11-12-z9gb-compat-fixes-plan/task-8-report.md`
@@ -489,7 +498,27 @@ Perf: does coverage improve, does timing parity hold, do the gates pass, what is
 
 ---
 
+### Task 8.1: Known-gaps documentation — docs only
+
+**Status (operator decision 2026-11-12): COMPLETE inline.** Replaces the Task 8
+feasibility deliverable with a public, example-scoped document.
+
+**Files:**
+- Create: `examples/z98/z9gb/KNOWN_GAPS.md`
+- Modify: `examples/z98/z9gb/README.md` (link the document)
+- Modify: this plan and `docs/superpowers/specs/2026-11-12-z9gb-compat-fixes-design.md` (status/closure notes)
+
+- [x] **Step 1:** Document the verified test surface (gates, hashes, ROM matrix, input mapping), the measured dynarec behavior (coverage vs speed, per-dispatch/per-helper PPU-sync cost, block fragmentation, 709k KTX rejections), functional debt (MBC7 tilt, MBC5/MBC7 rumble, save auto-load, MBC1/MBC2, CGB compat masks, HDMA/PPU/APU approximations, serial cap, path limits, Win9x hardware unverified), harness caveats, and the proposed `--capture`/`--replay` trace format.
+- [x] **Step 2:** Add the README "Known gaps" section pointing at `KNOWN_GAPS.md`; state tilt/rumble as debt.
+- [x] **Step 3:** Verify claims against the repo and the Task 4/Task 7/Task 8 evidence; no ROM/save/exe bytes in the doc.
+- [x] **Step 4: Commit** `docs(z9gb): document known gaps and dynarec limits` (docs only).
+
 ### Task 9: Tilt input (option 5 hybrid) and opt-in rumble cue
+
+**Status (operator decision 2026-11-12): DEFERRED as debt — do not implement.**
+Documented in `examples/z98/z9gb/KNOWN_GAPS.md`: MBC7 tilt latches neutral
+`0x8000`, MBC5 rumble is decoded/masked with no motor feedback, MBC7 rumble is
+unimplemented. No `--tilt-keys`/`--rumble` flags are added.
 
 Operator decision recorded at the Task 7 STOP follow-up: **option 5 — hybrid gamepad analog + keyboard digital tilt**, and **rumble cue default off** (`--rumble` enables it; games keep their own rumble options).
 
@@ -518,7 +547,7 @@ Operator decision recorded at the Task 7 STOP follow-up: **option 5 — hybrid g
 
 ## Self-Review
 
-- **Spec coverage:** RC1 → Task 1; RC2 → Task 2; RC3 → Tasks 3-4; `--frames` → Task 5; joypad IRQ → Task 1; `k_tt` MBC7 + MBC5 rumble → Task 6; gate-hole closure → Task 1 tests + Task 2 regressions; `-O2` ship → Task 7; configurable keyboard mapping + `--mapkeys` → Task 8A (operator mapping test) with Task 8B conditional on the captured evidence; boundary relaxation feasibility → Task 8 (report only) + STOP; `k_tt` tilt enablement → Task 9 option 5 hybrid, rumble cue default off (operator decision recorded after the Task 7 STOP).
+- **Spec coverage:** RC1 → Task 1; RC2 → Task 2; RC3 → Tasks 3-4; `--frames` → Task 5; joypad IRQ → Task 1; `k_tt` MBC7 + MBC5 rumble → Task 6; gate-hole closure → Task 1 tests + Task 2 regressions; `-O2` ship → Task 7; configurable keyboard mapping + `--mapkeys` → Task 8A (operator mapping test) with Task 8B conditional on the captured evidence; boundary/performance study → Task 8 (closed, superseded); known-gaps documentation → Task 8.1; `k_tt` tilt enablement + rumble cue → Task 9, deferred as debt (operator decision 2026-11-12).
 - **Step scan:** every step names a command and expected result; no "handle edge cases" placeholders.
 - **Type consistency:** `busApplyButtons`, the `e.len == e.cap + 1` overflow sentinel, `cache.Stats.{tinstr,minstr,rejected}`, `.mbc7`, `PageKind.mbc7`, `emuSetTilt` are used consistently across tasks.
 - **Review Focus:** each of the five items has a covering test in Tasks 1, 6, 2, and 5.

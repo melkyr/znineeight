@@ -219,11 +219,23 @@ After the Task 7 STOP the operator chose:
    audio byte-identical; games keep their own rumble options. MBC7 rumble
    remains unimplemented unless the Task 8 study finds evidence.
 
-### 6.8 Task 8 study (report only)
+**Operator decision 2026-11-12 (post-Task-8/8B):** items 2 and 3 are **deferred
+as debt**, not implemented. No tilt source, no rumble cue, no `--tilt-keys` or
+`--rumble` flag. Both are documented in `examples/z98/z9gb/KNOWN_GAPS.md`
+(tilt latches neutral `0x8000`; MBC5 rumble is decoded/masked with no motor
+feedback; MBC7 rumble is not implemented). Tilt/rumble are treated as an
+emulator-specific rabbit hole rather than a Z98-spec testing concern.
 
-Dynarec block-start-at-PPU-read relaxation feasibility for Crystal's low
-coverage and 2048's fallback share, plus input residuals (backend-neutral key
-identity, tilt key naming). No product code without a further ruling.
+### 6.8 Task 8 study (report only) — CLOSED 2026-11-12
+
+**Superseded by the Task 8.1 known-gaps documentation.** The partial `/tmp`
+study ran: removing only the block-start-at-PPU-read rejection left coverage
+unchanged on 2048 (12‰) and Crystal (317‰) and moved Pinball 973‰ → 988‰ (wall
+3.21 s → 3.06 s); all hard gates stayed green. Findings, the per-dispatch cost
+analysis (glue + PPU sync + block fragmentation), and the unscheduled B1–B4
+performance hypotheses now live in `examples/z98/z9gb/KNOWN_GAPS.md`. No
+`docs/superpowers/specs/2026-11-12-z9gb-boundary-feasibility.md` is created and
+the performance study is not extended.
 
 ### 6.9 Test strategy
 
