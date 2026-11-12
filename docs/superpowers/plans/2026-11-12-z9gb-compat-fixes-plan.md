@@ -102,7 +102,7 @@ git commit -m "fix(z9gb): raise VBlank and joypad interrupts"
 
 - [ ] **Step 1: Record the evidence (already gathered; verify, do not re-derive)**
 
-The probe found 40 underflows in `labelPatchAt`, all with `target = e.len = BLOCK_MAX_BYTES + 1` (4097), i.e. the x86 emit buffer already overflowed. `emitByte` signals this by setting `len = cap + 1`; callers ignore the bool, and `emitBlock`'s end check runs only **after** the final `labelPatchAt`, so the trap fires first. This is **not** a backward jump and not an emitter ordering defect. Separately, `labelAdd` silently drops patches past its 12-entry table; `g_epilogue` accumulates one jump per helper-using instruction, so a legal block with 13+ helper instructions currently loses epilogue jumps (silent wrong code).
+The probe found 40 underflows in `labelPatchAt`, all with `target = e.len = BLOCK_MAX_BYTES + 1` (4097), i.e. the x86 emit buffer already overflowed. `emitByte` signals this by setting `len = cap + 1`; callers ignore the bool, and `emitBlock`'s end check runs only **after** the final `labelPatchAt`, so the trap fires first. This is **not** a backward jump and not an emitter ordering defect. Separately, `labelAdd` would silently drop patches past its table; `Label.at` is 256 entries (`x86.zig:83`) and a legal 64-instruction block produces at most one `g_epilogue` jump per helper-using instruction (≤64), so the table cannot fill for legal blocks today. The silent drop is a latent class if the block cap or per-instruction patch count ever grows; keep the sentinel hardening in Step 3 as defence.
 
 If new evidence contradicts either statement, STOP and present it.
 
@@ -110,17 +110,17 @@ If new evidence contradicts either statement, STOP and present it.
 
 In `labelPatchAt` (`dynarec/x86.zig`), at entry: if `e.len > e.cap`, set `l.n = 0` and return (skip every patch; the block will be rejected by the existing end check). Keep the strict `target - (at + 4)` subtraction: a true backward patch is never expected, and if one is ever introduced it must fail loudly rather than silently emit a wrong rel32.
 
-- [ ] **Step 3: Make patch-table overflow use the same sentinel**
+- [ ] **Step 3: Make patch-table overflow use the same sentinel (defensive)**
 
-Change `labelAdd` to `fn labelAdd(e: *Emit, l: *Label, at: usize) void`; when `l.n >= l.at.len`, set `e.len = e.cap + 1` and return instead of silently dropping. Update its two call sites (`emitJcc`, `emitJmp`). Do not add a struct field and do not change `Label.at`.
+Change `labelAdd` to `fn labelAdd(e: *Emit, l: *Label, at: usize) void`; when `l.n >= l.at.len`, set `e.len = e.cap + 1` and return instead of silently dropping. Update its two call sites (`emitJcc`, `emitJmp`). Do not add a struct field and do not change `Label.at`. This branch is unreachable for legal blocks today (256 entries vs ≤64 patches) and is defence against future block/patch growth; it is not unit-tested through the public API (see Step 4).
 
-- [ ] **Step 4: Write the failing regressions, then verify**
+- [ ] **Step 4: Write the regressions, then verify**
 
 Add to `tests/dynarec_test.zig`:
-1. `test_emit_buffer_overflow_rejected` — emit a block into a test `Emit` whose cap is too small for its expansion; assert `emitBlock` returns false and does not trap, no cache entry is installed, and interpreter execution matches.
-2. `test_patch_table_overflow_rejected` — a block with 13+ helper-using instructions (e.g. repeated `LD r,(HL)` reads) so `g_epilogue` would exceed 12 patches; assert the block is rejected (not silently emitted with missing jumps).
-3. A normal block still translates and executes.
-Run RED first: the oversized case currently traps or returns success with an overflowed length; the 13+ case currently drops patches silently.
+1. `test_emit_buffer_overflow_rejected` (RED) — emit a block into a test `Emit` whose cap is too small for its expansion; assert `emitBlock` returns false and does not trap, no cache entry is installed, and interpreter execution matches. Today this traps under `-fsafe` (or reports success with an overflowed length).
+2. `test_helper_heavy_block_translates` (regression guard) — a block of ~48-60 `LD r,(HL)` instructions (~48-60 helper calls) translates, executes, and matches interpreter CPU/cycle behaviour; proves no epilogue-patch loss at the current 256-entry table and guards against future cap regressions.
+3. `test_normal_block_translates` — a normal block still translates and executes.
+Run RED first for item 1; items 2-3 are regression guards (expected to pass before and after).
 
 Run: `sh examples/z98/z9gb/tests/tier_dynarec.sh /tmp/z9gb_p2_seed/zig1_5_clean`
 Expected: PASS, both modes, with the new checks.
