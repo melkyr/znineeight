@@ -235,7 +235,7 @@ while [ "$#" -gt 0 ]; do
         --only)
             shift
             if [ "$#" -eq 0 ]; then
-                echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save|input|irq] [--all] [--gates]" >&2
+                echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save|input|input_map|irq] [--all] [--gates]" >&2
                 exit 2
             fi
             ONLY="$1"
@@ -250,7 +250,7 @@ while [ "$#" -gt 0 ]; do
             RUN_GATES=1
             ;;
         *)
-            echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save|input|irq] [--all] [--gates]" >&2
+            echo "usage: tier_dmg.sh <zig> [--only cart|cpu|timer|ppu|save|input|input_map|irq] [--all] [--gates]" >&2
             exit 2
             ;;
     esac
@@ -266,6 +266,7 @@ RUN_TIMER=0
 RUN_PPU=0
 RUN_SAVE=0
 RUN_INPUT=0
+RUN_INPUT_MAP=0
 RUN_IRQ=0
 if [ -z "$ONLY" ]; then
     RUN_CART=1
@@ -274,6 +275,7 @@ if [ -z "$ONLY" ]; then
     RUN_PPU=1
     RUN_SAVE=1
     RUN_INPUT=1
+    RUN_INPUT_MAP=1
     RUN_IRQ=1
 elif [ "$ONLY" = "cart" ]; then
     RUN_CART=1
@@ -287,6 +289,8 @@ elif [ "$ONLY" = "save" ]; then
     RUN_SAVE=1
 elif [ "$ONLY" = "input" ]; then
     RUN_INPUT=1
+elif [ "$ONLY" = "input_map" ]; then
+    RUN_INPUT_MAP=1
 elif [ "$ONLY" = "irq" ]; then
     RUN_IRQ=1
 else
@@ -301,6 +305,7 @@ if [ "$RUN_GATES" -eq 1 ]; then
     RUN_PPU=0
     RUN_SAVE=0
     RUN_INPUT=0
+    RUN_INPUT_MAP=0
     RUN_IRQ=0
 fi
 
@@ -2352,6 +2357,39 @@ run_input_mode() {
     fi
 }
 
+run_input_map_mode() {
+    mode="$1"
+    flag="$2"
+    bin="$OUT/$mode/input_map_test"
+    mkdir -p "$OUT/$mode"
+    if timeout 120 "$ZIG" "$flag" -I "$ROOT/sf/src" -o "$OUT/$mode" "$Z9DIR/tests/input_map_test.zig" >"$OUT/$mode/input_map_zig.log" 2>&1; then
+        pass_case "input_map $mode emits"
+    else
+        fail_case "input_map $mode emits"
+        tail -20 "$OUT/$mode/input_map_zig.log" | sed 's/^/       /'
+        return
+    fi
+    if sh "$OUT/$mode/build_target.sh" linux "$bin" >"$OUT/$mode/input_map_build.log" 2>&1; then
+        pass_case "input_map $mode links"
+    else
+        fail_case "input_map $mode links"
+        tail -20 "$OUT/$mode/input_map_build.log" | sed 's/^/       /'
+        return
+    fi
+    if timeout 60 "$bin" >"$OUT/$mode/input_map_run.out" 2>"$OUT/$mode/input_map_run.err"; then
+        pass_case "input_map $mode runs"
+    else
+        fail_case "input_map $mode runs"
+        tail -20 "$OUT/$mode/input_map_run.err" | sed 's/^/       /'
+        return
+    fi
+    if grep -q '^input map ok ' "$OUT/$mode/input_map_run.out"; then
+        pass_case "input_map $mode output ($(cat "$OUT/$mode/input_map_run.out"))"
+    else
+        fail_case "input_map $mode output (got $(cat "$OUT/$mode/input_map_run.out"))"
+    fi
+}
+
 run_irq_mode() {
     mode="$1"
     flag="$2"
@@ -2436,6 +2474,13 @@ if [ "$RUN_INPUT" -eq 1 ]; then
     echo "== JOYP FF00 input wiring =="
     run_input_mode fast -ffast
     run_input_mode safe -fsafe
+fi
+
+if [ "$RUN_INPUT_MAP" -eq 1 ]; then
+    echo
+    echo "== configurable keyboard map, ini round-trip, capture =="
+    run_input_map_mode fast -ffast
+    run_input_map_mode safe -fsafe
 fi
 
 if [ "$RUN_IRQ" -eq 1 ]; then

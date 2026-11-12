@@ -502,6 +502,38 @@ pub fn close(st: *State) void {
     st.joy_found = false;
 }
 
+// Additive raw accessor: the same 256-byte keyboard image poll() reads. The
+// DirectInput8 path copies st.kbd_keys after one GetDeviceState; the fallback
+// path builds a VK-indexed view with 0x80 for each down key. Existing poll()
+// behavior is unchanged.
+pub fn pollRaw(st: *State, out: []u8) bool {
+    if (out.len < 256) return false;
+    if (st.backend == BACKEND_FALLBACK) {
+        var vk: i32 = 0;
+        while (vk < 256) : (vk += 1) {
+            const ui: usize = @intCast(usize, vk);
+            if (keyDown(vk)) {
+                out[ui] = 0x80;
+            } else {
+                out[ui] = 0;
+            }
+        }
+        return true;
+    }
+
+    const hr = devVtbl(st.kbd).GetDeviceState(st.kbd, KEYBOARD_STATE_BYTES,
+        @ptrCast(*void, &st.kbd_keys[0]));
+    if (hr == S_OK) {
+        var i: usize = 0;
+        while (i < 256) : (i += 1) out[i] = st.kbd_keys[i];
+        return true;
+    }
+    if (hr == DIERR_INPUTLOST or hr == DIERR_NOTACQUIRED) {
+        _ = devVtbl(st.kbd).Acquire(st.kbd);
+    }
+    return false;
+}
+
 // --- poll ------------------------------------------------------------------
 pub fn poll(st: *State, out: *Buttons) void {
     if (st.backend == BACKEND_FALLBACK) {

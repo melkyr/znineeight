@@ -10,6 +10,9 @@
 //   --audio / --no-audio  enable/disable APU output (default on Win32)
 //   --turbo               skip frame pacing (run as fast as possible)
 //   --cgb                 run on CGB hardware (header still selects color/DMG compat)
+//   --mapkeys             capture nine keys into z9gb.ini (Win32 only)
+//   --printkeys           print the active key table and exit
+//   --input-debug         log raw key changes (windowed)
 //
 // The single `Emu` lives at module scope: its fixed ROM buffer is 8 MiB, so it
 // is never a stack local or a by-value copy (the 1 MiB stack is a hard limit).
@@ -19,6 +22,7 @@ const filemod = @import("std_file");
 const emu = @import("emu.zig");
 const headless = @import("platform/headless.zig");
 const backend = @import("platform/backend.zig");
+const input_config = @import("input_config.zig");
 
 // Conditional module identity: only the live arm is resolved, so the Linux
 // dump never sees win32.zig (or its Win32 headers/DirectX imports).
@@ -46,6 +50,7 @@ var g_line_buf: [96]u8;
 var g_line_len: usize = 0;
 var g_verdict: u8 = VERDICT_NONE;
 var g_audio_buf: [AUDIO_BUF_SAMPLES]i16;
+var g_capture: input_config.CaptureState = undefined;
 
 fn argAt(argv: [*][*]u8, i: usize) []const u8 {
     const p: [*]const u8 = @ptrCast([*]const u8, argv[i]);
@@ -302,6 +307,82 @@ fn drainAudio(plat: *backend.Platform) void {
     }
 }
 
+fn pollRawKeys(plat: *backend.Platform, out: []u8) bool {
+    if (@isWindows()) {
+        return selected_impl.platformPollRawKeys(plat.state, out);
+    }
+    _ = plat;
+    _ = out;
+    return false;
+}
+
+fn runMapkeys(plat: *backend.Platform, cfg: *input_config.InputConfig) bool {
+    input_config.configPrintTable(cfg);
+    var wi: u8 = 0;
+    while (wi < 9) : (wi += 1) {
+        var attempts: u8 = 0;
+        var bound: bool = false;
+        while (attempts < input_config.MAX_CAPTURE_RETRIES) : (attempts += 1) {
+            std.io.write("Map \"");
+            std.io.write(input_config.inputLabel(wi));
+            std.io.write("\" button to.. ");
+
+            var snapshot: [256]u8 = undefined;
+            if (!pollRawKeys(plat, snapshot[0..])) {
+                std.io.write("z9gb: raw keyboard state unavailable\n");
+                return false;
+            }
+            input_config.captureBegin(&g_capture, snapshot[0..]);
+
+            var captured: i32 = -1;
+            var spins: u32 = 0;
+            while (spins < 18000) : (spins += 1) {
+                if (pollRawKeys(plat, snapshot[0..])) {
+                    captured = input_config.captureStep(&g_capture, snapshot[0..]);
+                    if (captured >= 0) break;
+                }
+                std.time.sleepMs(10);
+            }
+            if (captured < 0) {
+                std.io.write("z9gb: no key captured for ");
+                std.io.write(input_config.inputLabel(wi));
+                std.io.write("\n");
+                return false;
+            }
+
+            const raw: u8 = @intCast(u8, captured);
+            if (input_config.isDuplicate(cfg, wi, raw)) {
+                std.io.write("z9gb: key 0x");
+                writeHexByte(raw);
+                std.io.write(" already mapped; try again\n");
+                continue;
+            }
+            var b = input_config.bindingAt(cfg, wi);
+            b.raw = raw;
+            input_config.setBinding(cfg, wi, b);
+            std.io.write("0x");
+            writeHexByte(raw);
+            std.io.write("\n");
+            bound = true;
+            break;
+        }
+        if (!bound) {
+            const d = input_config.bindingAt(cfg, wi);
+            std.io.write("z9gb: keeping default for ");
+            std.io.write(input_config.inputLabel(wi));
+            std.io.write(" raw=0x");
+            writeHexByte(d.raw);
+            std.io.write("\n");
+        }
+    }
+    if (!input_config.configSave(input_config.CONFIG_PATH, cfg)) {
+        std.io.write("z9gb: cannot write z9gb.ini\n");
+        return false;
+    }
+    std.io.write("z9gb: wrote z9gb.ini\n");
+    return true;
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     const n: usize = @intCast(usize, argc);
     var frames: u32 = 0;
@@ -315,6 +396,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var scale: u32 = 1;
     var audio: bool = true;
     var cgb: bool = false;
+    var mapkeys: bool = false;
+    var printkeys: bool = false;
+    var input_debug: bool = false;
     var dynarec: bool = false;
     var dynarec_stats: bool = false;
     var rtc_fixed: i64 = 0;
@@ -370,6 +454,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             dynarec_stats = true;
         } else if (eq(tok, "--save")) {
             save = true;
+        } else if (eq(tok, "--mapkeys")) {
+            mapkeys = true;
+        } else if (eq(tok, "--printkeys")) {
+            printkeys = true;
+        } else if (eq(tok, "--input-debug")) {
+            input_debug = true;
         } else if (eq(tok, "--rtc-fixed")) {
             i += 1;
             if (i >= n) std.os.exit(1);
@@ -383,10 +473,20 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.os.exit(1);
         }
     }
+    if (mapkeys) {
+        windowed = true;
+        scale = 1;
+        audio = false;
+    }
     if (scale < 1 or scale > 4) {
         var m: []const u8 = "z9gb: --scale must be 1..4\n";
         std.io.write(m);
         std.os.exit(1);
+    }
+    if (mapkeys and !@isWindows()) {
+        var m: []const u8 = "z9gb: --mapkeys requires the Win32 target\n";
+        std.io.write(m);
+        std.os.exit(2);
     }
 
     emu.emuInit(&g_emu, emu.EmuConfig{ .cgb = cgb, .serial_log = serial, .turbo = turbo, .dynarec = dynarec });
@@ -443,6 +543,42 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     if (!plat.open_fn(plat.state, FRAME_W, FRAME_H, scale)) {
         var m: []const u8 = "z9gb: cannot open platform\n";
         std.io.write(m);
+        std.os.exit(2);
+    }
+
+    var runtime_kind: u8 = input_config.KIND_FALLBACK;
+    if (@isWindows()) {
+        if (windowed) runtime_kind = selected_impl.platformInputBackendKind();
+    }
+    var key_cfg = input_config.configDefaults(runtime_kind);
+    const key_status = input_config.configLoad(input_config.CONFIG_PATH, runtime_kind, &key_cfg);
+    const key_warn = input_config.loadWarning(key_status);
+    if (key_warn.len != 0) std.io.write(key_warn);
+    if (key_status == input_config.LoadStatus.loaded or input_debug or mapkeys) {
+        if (@isWindows()) {
+            if (windowed) selected_impl.platformSetInputConfig(&key_cfg);
+        }
+    }
+
+    if (printkeys) {
+        input_config.configPrintTable(&key_cfg);
+        plat.close_fn(plat.state);
+        std.os.exit(0);
+    }
+    if (input_debug) {
+        input_config.configPrintTable(&key_cfg);
+        if (@isWindows()) {
+            if (windowed) selected_impl.platformSetInputDebug(true);
+        }
+    }
+    if (mapkeys) {
+        if (@isWindows()) {
+            const ok = runMapkeys(plat, &key_cfg);
+            plat.close_fn(plat.state);
+            if (ok) std.os.exit(0);
+            std.os.exit(2);
+        }
+        plat.close_fn(plat.state);
         std.os.exit(2);
     }
 

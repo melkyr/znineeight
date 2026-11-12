@@ -20,6 +20,7 @@ const backend = @import("backend.zig");
 const ddraw = @import("std_ddraw");
 const dinput = @import("std_dinput");
 const dsound = @import("std_dsound");
+const input_config = @import("../input_config.zig");
 
 const FRAME_W: u32 = 160;
 const FRAME_H: u32 = 144;
@@ -47,6 +48,11 @@ var g_state: Win32State = undefined;
 var g_opened: bool = false;
 var g_timer_ok: bool = false;
 var g_audio_enabled: bool = true;
+var g_have_input_config: bool = false;
+var g_input_config: input_config.InputConfig = undefined;
+var g_input_debug: bool = false;
+var g_debug_prev: backend.InputState = backend.InputState{ .buttons = 0, .quit = false };
+var g_raw_keys: [256]u8 = undefined;
 
 fn win32Open(state: *void, width: u32, height: u32, scale: u32) bool {
     var s = @ptrCast(*Win32State, state);
@@ -122,6 +128,20 @@ fn win32Poll(state: *void, input: *backend.InputState) bool {
         if (ev.close) input.quit = true;
     }
 
+    if (g_have_input_config) {
+        if (dinput.dinputPollRaw(s.dinput, g_raw_keys[0..])) {
+            var mapped = backend.InputState{ .buttons = 0, .quit = false };
+            input_config.configApply(g_raw_keys[0..], &g_input_config, &mapped);
+            input.buttons = mapped.buttons;
+            if (mapped.quit) input.quit = true;
+            if (g_input_debug) {
+                input_config.configPrintChanges(&g_debug_prev, &mapped, &g_input_config);
+                g_debug_prev = mapped;
+            }
+            return consumed;
+        }
+    }
+
     var b: dinput.Buttons = undefined;
     dinput.dinputPoll(s.dinput, &b);
     var bits: u8 = 0;
@@ -175,4 +195,25 @@ pub fn platformTimerOk() bool {
 
 pub fn platformSetAudioEnabled(enabled: bool) void {
     g_audio_enabled = enabled;
+}
+
+pub fn platformInputBackendKind() u8 {
+    if (!g_opened) return 0;
+    return dinput.dinputBackendKind(g_state.dinput);
+}
+
+pub fn platformSetInputConfig(cfg: *const input_config.InputConfig) void {
+    g_input_config = cfg.*;
+    g_have_input_config = true;
+    g_debug_prev = backend.InputState{ .buttons = 0, .quit = false };
+}
+
+pub fn platformSetInputDebug(enabled: bool) void {
+    g_input_debug = enabled;
+}
+
+pub fn platformPollRawKeys(state: *void, out: []u8) bool {
+    _ = state;
+    if (!g_opened) return false;
+    return dinput.dinputPollRaw(g_state.dinput, out);
 }

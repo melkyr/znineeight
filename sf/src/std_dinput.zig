@@ -99,6 +99,12 @@ pub fn dinputMapKeys(keys: []const u8, out: *Buttons) void {
     copyButtons(out, &raw);
 }
 
+pub fn dinputPollRaw(d: *Dinput, out: []u8) bool {
+    if (!g_opened) return false;
+    const s = d.opaque;
+    return pal.pollRaw(&s.st, out);
+}
+
 pub fn dinputBackendKind(d: *const Dinput) u8 {
     if (!g_opened) return 0;
     return d.opaque.st.backend;
