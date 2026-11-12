@@ -393,6 +393,34 @@ pub fn configApply(raw_keys: []const u8, cfg: *const InputConfig, out: *backend.
     out.buttons = bits;
 }
 
+// Legacy keyboard-only bits: exactly the DIK table std_dinput_pal.mapKeys has
+// always used. This is L in the gamepad-preserving merge below.
+fn legacyKeyBits(raw_keys: []const u8) u8 {
+    var bits: u8 = 0;
+    if (keyDown(raw_keys, 0xCD)) bits |= 0x01;
+    if (keyDown(raw_keys, 0xCB)) bits |= 0x02;
+    if (keyDown(raw_keys, 0xC8)) bits |= 0x04;
+    if (keyDown(raw_keys, 0xD0)) bits |= 0x08;
+    if (keyDown(raw_keys, 0x2C)) bits |= 0x10;
+    if (keyDown(raw_keys, 0x2D)) bits |= 0x20;
+    if (keyDown(raw_keys, 0x0E)) bits |= 0x40;
+    if (keyDown(raw_keys, 0x1C)) bits |= 0x80;
+    return bits;
+}
+
+// Active-config path. `legacy_bits` is M from dinputPoll (keyboard + gamepad
+// merged); `raw_keys` is the same raw image used to derive L. Gamepad-only bits
+// are M & ~L, then OR'd with the configured keyboard bits K. Quit follows the
+// config's quit binding (window-close quit is applied by the caller).
+pub fn configApplyWithGamepad(raw_keys: []const u8, legacy_bits: u8, cfg: *const InputConfig, out: *backend.InputState) void {
+    var key = backend.InputState{ .buttons = 0, .quit = false };
+    configApply(raw_keys, cfg, &key);
+    const legacy_kb = legacyKeyBits(raw_keys);
+    const gamepad = legacy_bits & ~legacy_kb;
+    out.buttons = gamepad | key.buttons;
+    out.quit = key.quit;
+}
+
 fn writeHexByte(v: u8) void {
     var buf: [2]u8 = undefined;
     buf[0] = hexChar(v >> 4);

@@ -115,6 +115,19 @@ fn win32Present(state: *void, frame: []const u32) void {
     _ = ddraw.ddrawPresent(s.ddraw, frame);
 }
 
+fn buttonsToBits(b: *const dinput.Buttons) u8 {
+    var bits: u8 = 0;
+    if (b.right) bits |= 0x01;
+    if (b.left) bits |= 0x02;
+    if (b.up) bits |= 0x04;
+    if (b.down) bits |= 0x08;
+    if (b.a) bits |= 0x10;
+    if (b.b) bits |= 0x20;
+    if (b.select) bits |= 0x40;
+    if (b.start) bits |= 0x80;
+    return bits;
+}
+
 fn win32Poll(state: *void, input: *backend.InputState) bool {
     var s = @ptrCast(*Win32State, state);
     input.buttons = 0;
@@ -129,17 +142,25 @@ fn win32Poll(state: *void, input: *backend.InputState) bool {
     }
 
     if (g_have_input_config) {
+        var merged_buttons: dinput.Buttons = undefined;
+        dinput.dinputPoll(s.dinput, &merged_buttons);
+        const legacy_bits = buttonsToBits(&merged_buttons);
         if (dinput.dinputPollRaw(s.dinput, g_raw_keys[0..])) {
             var mapped = backend.InputState{ .buttons = 0, .quit = false };
-            input_config.configApply(g_raw_keys[0..], &g_input_config, &mapped);
+            input_config.configApplyWithGamepad(g_raw_keys[0..], legacy_bits, &g_input_config, &mapped);
             input.buttons = mapped.buttons;
             if (mapped.quit) input.quit = true;
             if (g_input_debug) {
-                input_config.configPrintChanges(&g_debug_prev, &mapped, &g_input_config);
-                g_debug_prev = mapped;
+                var key_only = backend.InputState{ .buttons = 0, .quit = false };
+                input_config.configApply(g_raw_keys[0..], &g_input_config, &key_only);
+                input_config.configPrintChanges(&g_debug_prev, &key_only, &g_input_config);
+                g_debug_prev = key_only;
             }
             return consumed;
         }
+        input.buttons = legacy_bits;
+        if (merged_buttons.quit) input.quit = true;
+        return consumed;
     }
 
     var b: dinput.Buttons = undefined;

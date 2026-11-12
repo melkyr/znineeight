@@ -174,6 +174,39 @@ fn testApply() void {
     checkBool("apply clears idle quit", st2.quit, false);
 }
 
+fn testGamepadMerge() void {
+    var cfg = config.configDefaults(config.KIND_DINPUT8);
+    var raw: [256]u8 = undefined;
+    zeroKeys(raw[0..]);
+    raw[0x2C] = 0x80;
+
+    var st = backend.InputState{ .buttons = 0, .quit = false };
+    config.configApplyWithGamepad(raw[0..], 0x11, &cfg, &st);
+    checkU8("config path keeps gamepad right plus keyboard A", st.buttons, 0x11);
+
+    cfg.a.raw = 0x39;
+    zeroKeys(raw[0..]);
+    raw[0x2C] = 0x80;
+    raw[0x39] = 0x80;
+    var st2 = backend.InputState{ .buttons = 0, .quit = false };
+    config.configApplyWithGamepad(raw[0..], 0x11, &cfg, &st2);
+    checkU8("custom A map keeps gamepad-only right", st2.buttons, 0x11);
+
+    zeroKeys(raw[0..]);
+    var st3 = backend.InputState{ .buttons = 0, .quit = false };
+    config.configApplyWithGamepad(raw[0..], 0x01, &cfg, &st3);
+    checkU8("gamepad-only bit survives with config", st3.buttons, 0x01);
+
+    var quit_cfg = config.configDefaults(config.KIND_DINPUT8);
+    quit_cfg.quit.raw = 0x70;
+    zeroKeys(raw[0..]);
+    raw[0x70] = 0x80;
+    var st4 = backend.InputState{ .buttons = 0, .quit = false };
+    config.configApplyWithGamepad(raw[0..], 0, &quit_cfg, &st4);
+    checkBool("config quit binding wins", st4.quit, true);
+    checkU8("config quit adds no button", st4.buttons, 0);
+}
+
 fn testCapture() void {
     var cap: config.CaptureState = undefined;
     var keys: [256]u8 = undefined;
@@ -206,6 +239,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testDuplicate();
     testBackendMismatch();
     testApply();
+    testGamepadMerge();
     testCapture();
     filemod.remove(P1) catch {};
     filemod.remove(P2) catch {};
