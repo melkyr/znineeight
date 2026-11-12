@@ -1424,6 +1424,7 @@ var g_pass: u32 = 0;
 var g_fail: u32 = 0;
 var g_arena_buf: [1]u8 = undefined;
 var g_sav_orig: [RAM_BYTES]u8 = undefined;
+var g_ram128: [131072]u8 = undefined;
 var g_rtc_orig: [32]u8 = undefined;
 
 fn argAt(argv: [*][*]u8, i: usize) []const u8 {
@@ -1448,6 +1449,21 @@ fn strEq(a: []const u8, b: []const u8) bool {
 }
 
 fn checkByte(label: []const u8, got: u8, want: u8) void {
+    if (got == want) {
+        g_pass += 1;
+        return;
+    }
+    g_fail += 1;
+    std.io.write("FAIL ");
+    std.io.write(label);
+    std.io.write(" got=");
+    printU(@intCast(usize, got));
+    std.io.write(" want=");
+    printU(@intCast(usize, want));
+    std.io.write("\n");
+}
+
+fn checkWord(label: []const u8, got: u16, want: u16) void {
     if (got == want) {
         g_pass += 1;
         return;
@@ -1602,6 +1618,185 @@ fn testMbc5() void {
     cartmod.cartWrite(&g_cart, 0x4000, 5);
     checkByte("mbc5 ram bank5", cartmod.cartRead(&g_cart, 0xA000), 0x5A);
 }
+
+fn setMbc7Enabled(c: *cartmod.Cart) void {
+    cartmod.cartWrite(c, 0x0000, 0x0A);
+    cartmod.cartWrite(c, 0x4000, 0x40);
+}
+
+fn eepromPulse(c: *cartmod.Cart, di: bool) void {
+    const d: u8 = if (di) 2 else 0;
+    cartmod.cartWrite(c, 0xA080, @as(u8, 0x80) | d);
+    cartmod.cartWrite(c, 0xA080, @as(u8, 0xC0) | d);
+}
+
+fn eepromSend12(c: *cartmod.Cart, bits: u16) void {
+    var mask: u16 = 0x0800;
+    var n: u8 = 0;
+    while (n < 12) : (n += 1) {
+        eepromPulse(c, (bits & mask) != 0);
+        mask >>= 1;
+    }
+}
+
+fn eepromSend16(c: *cartmod.Cart, bits: u16) void {
+    var mask: u16 = 0x8000;
+    var n: u8 = 0;
+    while (n < 16) : (n += 1) {
+        eepromPulse(c, (bits & mask) != 0);
+        mask >>= 1;
+    }
+}
+
+fn eepromCmd(c: *cartmod.Cart, bits: u16) void {
+    eepromSend12(c, bits);
+    cartmod.cartWrite(c, 0xA080, 0x00);
+}
+
+fn eepromReadWord(c: *cartmod.Cart, addr: u8) u16 {
+    eepromSend12(c, 0x600 | @intCast(u16, addr));
+    var value: u16 = 0;
+    var n: u8 = 0;
+    while (n < 16) : (n += 1) {
+        eepromPulse(c, false);
+        value = (value *% 2) | @intCast(u16, cartmod.cartRead(c, 0xA080) & 1);
+    }
+    cartmod.cartWrite(c, 0xA080, 0x00);
+    return value;
+}
+
+fn eepromWriteWord(c: *cartmod.Cart, addr: u8, value: u16) void {
+    eepromSend12(c, 0x500 | @intCast(u16, addr));
+    eepromSend16(c, value);
+    cartmod.cartWrite(c, 0xA080, 0x00);
+}
+
+fn testMbc7() void {
+    makeRom(g_rom64[0..], 0x22, 0x01, 0x00);
+    markBanks(g_rom64[0..], 4);
+    cartmod.cartInit(&g_cart);
+    cartmod.cartLoad(&g_cart, g_rom64[0..]) catch {
+        checkBool("mbc7 load", false, true);
+        return;
+    };
+    checkByte("mbc7 mbc", @enumToInt(g_cart.mbc), 7);
+    checkBool("mbc7 ram size", cartmod.cartRamSize(&g_cart) == 256, true);
+    checkBool("mbc7 no inference", g_cart.ram_inferred, false);
+    var blank: bool = true;
+    var bi: usize = 0;
+    while (bi < 256) : (bi += 1) {
+        if (g_cart.ram[bi] != 0xFF) blank = false;
+    }
+    checkBool("mbc7 blank erased", blank, true);
+    checkByte("mbc7 blank latch read", cartmod.cartRead(&g_cart, 0xA000), 0xFF);
+
+    cartmod.cartWrite(&g_cart, 0x2000, 2);
+    checkByte("mbc7 bank2", cartmod.cartRead(&g_cart, 0x4000), 2);
+    cartmod.cartWrite(&g_cart, 0x2000, 0xFF);
+    checkByte("mbc7 bank masked", cartmod.cartRead(&g_cart, 0x4000), 3);
+    cartmod.cartWrite(&g_cart, 0x2000, 1);
+
+    cartmod.cartWrite(&g_cart, 0x0000, 0x0A);
+    checkByte("mbc7 enable1 gate low", cartmod.cartRead(&g_cart, 0xA020), 0xFF);
+    checkByte("mbc7 enable1 gate high", cartmod.cartRead(&g_cart, 0xA05F), 0xFF);
+    cartmod.emuSetTilt(&g_cart, 0x1234, 0x5678);
+    cartmod.cartWrite(&g_cart, 0xA000, 0x55);
+    cartmod.cartWrite(&g_cart, 0xA010, 0xAA);
+    checkBool("mbc7 enable1 write ignored", g_cart.mbc7_x == 0x8000 and g_cart.mbc7_y == 0x8000, true);
+
+    cartmod.cartWrite(&g_cart, 0x0000, 0x00);
+    cartmod.cartWrite(&g_cart, 0x4000, 0x40);
+    checkByte("mbc7 enable2 gate low", cartmod.cartRead(&g_cart, 0xA020), 0xFF);
+    checkByte("mbc7 enable2 gate high", cartmod.cartRead(&g_cart, 0xA05F), 0xFF);
+    cartmod.cartWrite(&g_cart, 0xA000, 0x55);
+    cartmod.cartWrite(&g_cart, 0xA010, 0xAA);
+    checkBool("mbc7 enable2 write ignored", g_cart.mbc7_x == 0x8000 and g_cart.mbc7_y == 0x8000, true);
+
+    cartmod.cartWrite(&g_cart, 0x0000, 0x0A);
+    checkByte("mbc7 both active a060", cartmod.cartRead(&g_cart, 0xA060), 0x00);
+    checkByte("mbc7 both active a070", cartmod.cartRead(&g_cart, 0xA070), 0xFF);
+    checkByte("mbc7 both active a090", cartmod.cartRead(&g_cart, 0xA090), 0xFF);
+    checkByte("mbc7 both active b000", cartmod.cartRead(&g_cart, 0xB000), 0xFF);
+
+    cartmod.cartWrite(&g_cart, 0xA000, 0x55);
+    checkByte("mbc7 erase a000 read", cartmod.cartRead(&g_cart, 0xA000), 0xFF);
+    checkByte("mbc7 erase a010 read", cartmod.cartRead(&g_cart, 0xA010), 0xFF);
+    cartmod.cartWrite(&g_cart, 0xA010, 0xAA);
+    checkByte("mbc7 x low", cartmod.cartRead(&g_cart, 0xA020), 0x34);
+    checkByte("mbc7 x high", cartmod.cartRead(&g_cart, 0xA030), 0x02);
+    checkByte("mbc7 y low", cartmod.cartRead(&g_cart, 0xA040), 0x78);
+    checkByte("mbc7 y high", cartmod.cartRead(&g_cart, 0xA050), 0x06);
+
+    cartmod.emuSetTilt(&g_cart, 0x4321, 0x7654);
+    cartmod.cartWrite(&g_cart, 0xA010, 0xAA);
+    checkByte("mbc7 relatch no-op x", cartmod.cartRead(&g_cart, 0xA020), 0x34);
+    checkByte("mbc7 relatch no-op y", cartmod.cartRead(&g_cart, 0xA040), 0x78);
+
+    mmumod.busInit(&g_bus, &g_cart);
+    checkBool("mbc7 page a0", g_bus.pages[0xA0].kind == .mbc7, true);
+    checkBool("mbc7 page af", g_bus.pages[0xAF].kind == .mbc7, true);
+    checkByte("mbc7 mmu x low", mmumod.read8(&g_bus, 0xA020), 0x34);
+    checkByte("mbc7 mmu a060", mmumod.read8(&g_bus, 0xA060), 0x00);
+    checkByte("mbc7 mmu b000", mmumod.read8(&g_bus, 0xB000), 0xFF);
+
+    checkWord("mbc7 eeprom blank", eepromReadWord(&g_cart, 0), 0xFFFF);
+    eepromWriteWord(&g_cart, 3, 0xBEEF);
+    checkWord("mbc7 eeprom write gated", eepromReadWord(&g_cart, 3), 0xFFFF);
+    eepromCmd(&g_cart, 0x4C0);
+    eepromWriteWord(&g_cart, 3, 0xBEEF);
+    checkWord("mbc7 eeprom write read", eepromReadWord(&g_cart, 3), 0xBEEF);
+    eepromCmd(&g_cart, 0x703);
+    checkWord("mbc7 eeprom erase", eepromReadWord(&g_cart, 3), 0xFFFF);
+    eepromWriteWord(&g_cart, 1, 0x1234);
+    eepromWriteWord(&g_cart, 2, 0x5678);
+    eepromCmd(&g_cart, 0x480);
+    checkWord("mbc7 eeprom eral one", eepromReadWord(&g_cart, 1), 0xFFFF);
+    checkWord("mbc7 eeprom eral two", eepromReadWord(&g_cart, 2), 0xFFFF);
+    eepromSend12(&g_cart, 0x440);
+    eepromSend16(&g_cart, 0xA55A);
+    cartmod.cartWrite(&g_cart, 0xA080, 0x00);
+    checkWord("mbc7 eeprom wral zero", eepromReadWord(&g_cart, 0), 0xA55A);
+    checkWord("mbc7 eeprom wral last", eepromReadWord(&g_cart, 127), 0xA55A);
+    eepromCmd(&g_cart, 0x400);
+    eepromWriteWord(&g_cart, 4, 0x9999);
+    checkWord("mbc7 eeprom ewds gated", eepromReadWord(&g_cart, 4), 0xA55A);
+
+    makeRom(g_rom64[0..], 0x22, 0x01, 0x00);
+    markBanks(g_rom64[0..], 4);
+    cartmod.cartInit(&g_cart);
+    cartmod.cartLoad(&g_cart, g_rom64[0..]) catch {
+        checkBool("mbc7 neutral load", false, true);
+        return;
+    };
+    setMbc7Enabled(&g_cart);
+    cartmod.cartWrite(&g_cart, 0xA010, 0xAA);
+    checkBool("mbc7 neutral 8000", g_cart.mbc7_x == 0x8000 and g_cart.mbc7_y == 0x8000, true);
+    checkByte("mbc7 neutral x low", cartmod.cartRead(&g_cart, 0xA020), 0x00);
+    checkByte("mbc7 neutral x high", cartmod.cartRead(&g_cart, 0xA030), 0x00);
+}
+
+fn testMbc5Rumble() void {
+    makeRom(g_rom8[0..], 0x1E, 0x08, 0x04);
+    markBanks(g_rom8[0..], 512);
+    cartmod.cartInit(&g_cart);
+    cartmod.cartLoad(&g_cart, g_rom8[0..]) catch {
+        checkBool("mbc5 rumble load", false, true);
+        return;
+    };
+    checkByte("mbc5 rumble mbc", @enumToInt(g_cart.mbc), 5);
+    cartmod.cartWrite(&g_cart, 0x0000, 0x0A);
+    cartmod.cartWrite(&g_cart, 0x4000, 0x08);
+    checkByte("mbc5 rumble bank masked", g_cart.ram_bank, 0);
+    cartmod.cartWrite(&g_cart, 0xA000, 0xAB);
+    cartmod.cartWrite(&g_cart, 0x4000, 0x00);
+    checkByte("mbc5 rumble bank0 data", cartmod.cartRead(&g_cart, 0xA000), 0xAB);
+    copy(g_ram128[0..], cartmod.cartSaveRam(&g_cart));
+    g_cart.ram[0] = 0x00;
+    checkBool("mbc5 rumble save load", cartmod.cartLoadRam(&g_cart, g_ram128[0..]), true);
+    cartmod.cartWrite(&g_cart, 0x4000, 0x00);
+    checkByte("mbc5 rumble save bank0", cartmod.cartRead(&g_cart, 0xA000), 0xAB);
+}
+
 
 fn testRtcWindow() void {
     makeRom(g_rom64[0..], 0x10, 0x01, 0x03);
@@ -1865,6 +2060,46 @@ fn testSave(dir: []const u8) void {
     checkBool("restore sav", writeFile(sav_path, g_sav_orig[0..]), true);
 }
 
+fn testMbc7Save(dir: []const u8) void {
+    makeRom(g_rom64[0..], 0x22, 0x01, 0x00);
+    markBanks(g_rom64[0..], 4);
+    var rom_buf: [PATH_MAX]u8 = undefined;
+    const rom_path: []const u8 = joinPath(dir, "mbc7_round.gb", rom_buf[0..]);
+    checkBool("mbc7 save rom written", writeFile(rom_path, g_rom64[0..]), true);
+    emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = false, .dynarec = false });
+    emumod.emuLoadRom(&g_emu, rom_path) catch {
+        checkBool("mbc7 save rom loads", false, true);
+        return;
+    };
+    checkBool("mbc7 save ram size", cartmod.cartRamSize(&g_emu.cart) == 256, true);
+    setMbc7Enabled(&g_emu.cart);
+    eepromCmd(&g_emu.cart, 0x4C0);
+    eepromWriteWord(&g_emu.cart, 7, 0xCAFE);
+    checkWord("mbc7 save write", eepromReadWord(&g_emu.cart, 7), 0xCAFE);
+    emumod.emuSaveBattery(&g_emu) catch {
+        checkBool("mbc7 save writes", false, true);
+        return;
+    };
+    checkBool("mbc7 save writes", true, true);
+
+    var sav_buf: [PATH_MAX]u8 = undefined;
+    const slen: usize = savemod.deriveSavePath(rom_path, ".sav", sav_buf[0..]);
+    const sav_path: []const u8 = sav_buf[0..slen];
+    checkBool("mbc7 sav size", fileSizeIs(sav_path, 256), true);
+    checkBool("mbc7 sav readable", readFileExact(sav_path, g_sav_orig[0..256]), true);
+    checkByte("mbc7 sav word low", g_sav_orig[14], 0xFE);
+    checkByte("mbc7 sav word high", g_sav_orig[15], 0xCA);
+
+    g_emu.cart.ram[14] = 0;
+    g_emu.cart.ram[15] = 0;
+    emumod.emuLoadBattery(&g_emu) catch {
+        checkBool("mbc7 load battery reads", false, true);
+        return;
+    };
+    checkBool("mbc7 load battery reads", true, true);
+    checkWord("mbc7 sav word restored", eepromReadWord(&g_emu.cart, 7), 0xCAFE);
+}
+
 fn testSaveNoTruncate(dir: []const u8) void {
     var path_buf: [PATH_MAX]u8 = undefined;
     const path: []const u8 = joinPath(dir, "trunc.sav", path_buf[0..]);
@@ -1891,9 +2126,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testDerive();
     testMbc3();
     testMbc5();
+    testMbc5Rumble();
+    testMbc7();
     testRtcWindow();
     testRtcSemantics();
     testSave(dir);
+    testMbc7Save(dir);
     testSaveNoTruncate(dir);
 
     std.io.write("save ");

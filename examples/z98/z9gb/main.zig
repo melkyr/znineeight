@@ -214,6 +214,29 @@ fn parseI64(s: []const u8) ?i64 {
     return v;
 }
 
+fn hexDigit(v: u8) u8 {
+    const n: u8 = v & 0x0F;
+    if (n < 10) return '0' + n;
+    return 'A' + (n - 10);
+}
+
+fn writeHexByte(v: u8) void {
+    var buf: [2]u8 = undefined;
+    buf[0] = hexDigit(v >> 4);
+    buf[1] = hexDigit(v);
+    std.io.write(buf[0..]);
+}
+
+fn unsupportedFeature(typ: u8) []const u8 {
+    if (typ == 0x05 or typ == 0x06) return "MBC2";
+    if (typ >= 0x0B and typ <= 0x0D) return "MMM01";
+    if (typ == 0xFC) return "Pocket Camera";
+    if (typ == 0xFD) return "TAMA5";
+    if (typ == 0xFE) return "HuC3";
+    if (typ == 0xFF) return "HuC1";
+    return "";
+}
+
 // Little-endian writers: the goldens are canonical LE regardless of host.
 fn putLe32(buf: []u8, off: usize, v: u32) void {
     buf[off] = @intCast(u8, v & 0xff);
@@ -377,6 +400,19 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             } else if (e == error.CgbRequired) {
                 var m: []const u8 = "z9gb: CgbRequired\n";
                 std.io.write(m);
+            } else if (e == error.UnsupportedMbc) {
+                var m: []const u8 = "z9gb: unsupported cartridge type 0x";
+                std.io.write(m);
+                var typ: u8 = 0;
+                if (g_emu.rom_len > 0x0147) typ = g_emu.rom[0x0147];
+                writeHexByte(typ);
+                const name: []const u8 = unsupportedFeature(typ);
+                if (name.len != 0) {
+                    std.io.write(" (");
+                    std.io.write(name);
+                    std.io.write(")");
+                }
+                std.io.write("\n");
             } else {
                 var m: []const u8 = "z9gb: cannot read ROM\n";
                 std.io.write(m);

@@ -11,7 +11,7 @@ const timermod = @import("timer.zig");
 const serialmod = @import("serial.zig");
 const apumod = @import("apu.zig");
 
-pub const PageKind = enum(u8) { rom0, romx, vram, cart_ram, rtc, wram, echo, oam, io, hram };
+pub const PageKind = enum(u8) { rom0, romx, vram, cart_ram, rtc, mbc7, wram, echo, oam, io, hram };
 
 pub const Page = struct { kind: PageKind, base: [*]u8 };
 
@@ -92,9 +92,18 @@ fn rebuildCartPages(self: *Bus) void {
     }
     i = 0;
     const rtc_window: bool = self.cart.mbc == .mbc3 and self.cart.ram_bank >= 8;
+    const mbc7_window: bool = self.cart.mbc == .mbc7;
     while (i < 0x20) : (i += 1) {
         if (rtc_window) {
             self.pages[0xA0 + i] = Page{ .kind = .rtc, .base = stub_base };
+            continue;
+        }
+        if (mbc7_window) {
+            if (i < 0x10) {
+                self.pages[0xA0 + i] = Page{ .kind = .mbc7, .base = stub_base };
+            } else {
+                self.pages[0xA0 + i] = Page{ .kind = .cart_ram, .base = stub_base };
+            }
             continue;
         }
         const off: usize = self.cart.ram_off + i * 256;
@@ -603,6 +612,7 @@ fn readRaw(self: *Bus, addr: u16) u8 {
             const reg: u8 = self.cart.ram_bank - 8;
             return cartmod.rtcRead(self.cart, reg);
         },
+        .mbc7 => return cartmod.cartMbc7Read(self.cart, addr),
         .oam => {
             if (off >= 0xA0) return 0xFF;
             return page.base[off];
@@ -637,6 +647,7 @@ fn writeRaw(self: *Bus, addr: u16, value: u8) void {
             const reg: u8 = self.cart.ram_bank - 8;
             cartmod.rtcWrite(self.cart, reg, value);
         },
+        .mbc7 => cartmod.cartMbc7Write(self.cart, addr, value),
         .wram, .vram, .echo => page.base[off] = value,
         .oam => {
             if (off < 0xA0) page.base[off] = value;

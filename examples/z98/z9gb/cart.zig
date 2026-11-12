@@ -12,6 +12,7 @@ pub const Mbc = enum(u8) {
     mbc1 = 1,
     mbc3 = 3,
     mbc5 = 5,
+    mbc7 = 7,
 };
 
 pub const CgbMode = enum(u8) { dmg, cgb_compatible, cgb_only };
@@ -54,6 +55,22 @@ pub const Cart = struct {
     ram_bank: u8,
     has_rtc: bool,
     rtc: Rtc,
+    rumble: bool,
+    ram_enable2: bool,
+    mbc7_latch_ready: bool,
+    mbc7_x: u16,
+    mbc7_y: u16,
+    tilt_x: i16,
+    tilt_y: i16,
+    tilt_set: bool,
+    eeprom_cs: bool,
+    eeprom_clk: bool,
+    eeprom_di: bool,
+    eeprom_do: bool,
+    eeprom_cmd: u16,
+    eeprom_bits_left: u8,
+    eeprom_write_enable: bool,
+    eeprom_read_bits: u16,
     rom0_off: usize,
     romx_off: usize,
     ram_off: usize,
@@ -72,7 +89,9 @@ pub fn cartInit(c: *Cart) void {
     c.mode = 0;
     c.ram_bank = 0;
     c.has_rtc = false;
+    c.rumble = false;
     rtcInit(c);
+    mbc7Reset(c);
     c.rom0_off = 0;
     c.romx_off = 0;
     c.ram_off = 0;
@@ -80,6 +99,24 @@ pub fn cartInit(c: *Cart) void {
     while (i < 16) : (i += 1) {
         c.title[i] = 0;
     }
+}
+
+fn mbc7Reset(c: *Cart) void {
+    c.ram_enable2 = false;
+    c.mbc7_latch_ready = true;
+    c.mbc7_x = 0x8000;
+    c.mbc7_y = 0x8000;
+    c.tilt_x = 0;
+    c.tilt_y = 0;
+    c.tilt_set = false;
+    c.eeprom_cs = false;
+    c.eeprom_clk = false;
+    c.eeprom_di = false;
+    c.eeprom_do = true;
+    c.eeprom_cmd = 0;
+    c.eeprom_bits_left = 0;
+    c.eeprom_write_enable = false;
+    c.eeprom_read_bits = 0xFFFF;
 }
 
 fn rtcInit(c: *Cart) void {
@@ -146,6 +183,7 @@ fn mbcKnown(typ: u8) bool {
     if (typ >= 0x01 and typ <= 0x03) return true;
     if (typ >= 0x0F and typ <= 0x13) return true;
     if (typ >= 0x19 and typ <= 0x1E) return true;
+    if (typ == 0x22) return true;
     return false;
 }
 
@@ -154,6 +192,7 @@ fn mbcFromType(typ: u8) Mbc {
     if (typ >= 0x01 and typ <= 0x03) return .mbc1;
     if (typ >= 0x0F and typ <= 0x13) return .mbc3;
     if (typ >= 0x19 and typ <= 0x1E) return .mbc5;
+    if (typ == 0x22) return .mbc7;
     return .none;
 }
 
@@ -203,6 +242,14 @@ fn mbc5Recompute(c: *Cart) void {
     c.ram_off = @intCast(usize, c.ram_bank & 0x0F) * RAM_BANK;
 }
 
+fn mbc7Recompute(c: *Cart) void {
+    const mask: u32 = romBankMask(c);
+    const bank: u32 = @intCast(u32, c.rom_bank_lo & 0x7F);
+    c.rom0_off = 0;
+    c.romx_off = @intCast(usize, bank & mask) * ROM_BANK;
+    c.ram_off = 0;
+}
+
 pub fn cartLoad(c: *Cart, bytes: []const u8) CartError!void {
     if (bytes.len > ROM_CAP) return error.RomTooLarge;
     if (bytes.len < MIN_ROM) return error.BadHeader;
@@ -214,8 +261,9 @@ pub fn cartLoad(c: *Cart, bytes: []const u8) CartError!void {
     if (!mbcKnown(bytes[0x0147])) return error.UnsupportedMbc;
     const mbc = mbcFromType(bytes[0x0147]);
     const type_has_ram = typeIncludesRam(bytes[0x0147]);
-    const ram_inferred = type_has_ram and declared_ram == 0;
-    const ram_size = if (type_has_ram) (if (declared_ram == 0) 8192 else declared_ram) else 0;
+    const is_mbc7 = bytes[0x0147] == 0x22;
+    const ram_inferred = type_has_ram and declared_ram == 0 and !is_mbc7;
+    const ram_size = if (is_mbc7) 256 else if (type_has_ram) (if (declared_ram == 0) 8192 else declared_ram) else 0;
 
     c.rom = bytes;
     c.cgb = bytes[0x0143];
@@ -228,6 +276,7 @@ pub fn cartLoad(c: *Cart, bytes: []const u8) CartError!void {
     c.bank_hi = 0;
     c.mode = 0;
     c.ram_bank = 0;
+    c.rumble = bytes[0x0147] >= 0x1C and bytes[0x0147] <= 0x1E;
     c.has_rtc = bytes[0x0147] == 0x0F or bytes[0x0147] == 0x10;
 
     var i: usize = 0;
@@ -235,15 +284,18 @@ pub fn cartLoad(c: *Cart, bytes: []const u8) CartError!void {
         c.title[i] = bytes[0x0134 + i];
     }
     i = 0;
+    const fill: u8 = if (is_mbc7) 0xFF else 0;
     while (i < RAM_CAP) : (i += 1) {
-        c.ram[i] = 0;
+        c.ram[i] = fill;
     }
     rtcReset(c);
+    mbc7Reset(c);
 
     switch (mbc) {
         .mbc1 => mbc1Recompute(c),
         .mbc3 => mbc3Recompute(c),
         .mbc5 => mbc5Recompute(c),
+        .mbc7 => mbc7Recompute(c),
         else => {
             c.rom0_off = 0;
             c.romx_off = ROM_BANK;
@@ -327,6 +379,12 @@ fn rtcObserve(c: *Cart) void {
 
 pub fn rtcSync(c: *Cart) void {
     rtcObserve(c);
+}
+
+pub fn emuSetTilt(c: *Cart, x: i16, y: i16) void {
+    c.tilt_x = x;
+    c.tilt_y = y;
+    c.tilt_set = true;
 }
 
 pub fn rtcRelatch(c: *Cart) void {
@@ -502,12 +560,168 @@ fn mbc5Write(c: *Cart, addr: u16, value: u8) void {
         c.bank_hi = value & 0x01;
         mbc5Recompute(c);
     } else if (addr < 0x6000) {
-        c.ram_bank = value & 0x0F;
+        c.ram_bank = if (c.rumble) (value & 0x07) else (value & 0x0F);
         mbc5Recompute(c);
     } else if (addr >= 0xa000 and addr < 0xc000) {
         if (!c.ram_enable or c.ram_size == 0) return;
         const off: usize = c.ram_off + @intCast(usize, addr - 0xa000);
         if (off < c.ram_size) c.ram[off] = value;
+    }
+}
+
+fn eepromWordRead(c: *const Cart, index: usize) u16 {
+    const off: usize = index * 2;
+    if (off + 1 >= c.ram_size) return 0xFFFF;
+    const lo: u16 = @intCast(u16, c.ram[off]);
+    const hi: u16 = @intCast(u16, c.ram[off + 1]);
+    return lo | (hi << 8);
+}
+
+fn eepromWordWrite(c: *Cart, index: usize, value: u16) void {
+    const off: usize = index * 2;
+    if (off + 1 >= c.ram_size) return;
+    c.ram[off] = @intCast(u8, value & 0xFF);
+    c.ram[off + 1] = @intCast(u8, (value >> 8) & 0xFF);
+}
+
+fn mbc7EepromEdge(c: *Cart, di: bool) void {
+    c.eeprom_do = (c.eeprom_read_bits & 0x8000) != 0;
+    c.eeprom_read_bits = (c.eeprom_read_bits *% 2) | 1;
+    if (c.eeprom_bits_left == 0) {
+        c.eeprom_cmd = (c.eeprom_cmd *% 2) | (if (di) @as(u16, 1) else @as(u16, 0));
+        if ((c.eeprom_cmd & 0x0400) != 0) {
+            const op: u8 = @intCast(u8, (c.eeprom_cmd >> 6) & 0x0F);
+            const idx: usize = @intCast(usize, c.eeprom_cmd & 0x7F);
+            if (op >= 0x8 and op <= 0x0B) {
+                c.eeprom_read_bits = eepromWordRead(c, idx);
+                c.eeprom_cmd = 0;
+            } else if (op == 0x3) {
+                c.eeprom_write_enable = true;
+                c.eeprom_cmd = 0;
+            } else if (op == 0x0) {
+                c.eeprom_write_enable = false;
+                c.eeprom_cmd = 0;
+            } else if (op >= 0x4 and op <= 0x7) {
+                if (c.eeprom_write_enable) eepromWordWrite(c, idx, 0x0000);
+                c.eeprom_bits_left = 16;
+            } else if (op >= 0xC) {
+                if (c.eeprom_write_enable) {
+                    eepromWordWrite(c, idx, 0xFFFF);
+                    c.eeprom_read_bits = 0x3FFF;
+                }
+                c.eeprom_cmd = 0;
+            } else if (op == 0x2) {
+                if (c.eeprom_write_enable) {
+                    var i: usize = 0;
+                    while (i < 256) : (i += 1) c.ram[i] = 0xFF;
+                    c.eeprom_read_bits = 0x00FF;
+                }
+                c.eeprom_cmd = 0;
+            } else if (op == 0x1) {
+                if (c.eeprom_write_enable) {
+                    var i: usize = 0;
+                    while (i < 256) : (i += 1) c.ram[i] = 0x00;
+                }
+                c.eeprom_bits_left = 16;
+            }
+        }
+    } else {
+        c.eeprom_bits_left -= 1;
+        if (di and c.eeprom_write_enable) {
+            const bit: u16 = @intCast(u16, @as(u16, 1) << @intCast(u4, c.eeprom_bits_left));
+            if ((c.eeprom_cmd & 0x0100) != 0) {
+                const idx: usize = @intCast(usize, c.eeprom_cmd & 0x7F);
+                const cur: u16 = eepromWordRead(c, idx);
+                eepromWordWrite(c, idx, cur | bit);
+            } else {
+                var wi: usize = 0;
+                while (wi < 128) : (wi += 1) {
+                    const cur: u16 = eepromWordRead(c, wi);
+                    eepromWordWrite(c, wi, cur | bit);
+                }
+            }
+        }
+        if (c.eeprom_bits_left == 0) {
+            c.eeprom_cmd = 0;
+            c.eeprom_read_bits = 0x3FFF;
+        }
+    }
+}
+
+fn mbc7EepromPins(c: *Cart, value: u8) void {
+    const cs: bool = (value & 0x80) != 0;
+    const di: bool = (value & 0x02) != 0;
+    const clk: bool = (value & 0x40) != 0;
+    if (cs and !c.eeprom_clk and clk) mbc7EepromEdge(c, di);
+    c.eeprom_cs = cs;
+    c.eeprom_di = di;
+    c.eeprom_clk = clk;
+}
+
+pub fn cartMbc7Read(c: *Cart, addr: u16) u8 {
+    if (addr < 0x4000) {
+        const off: usize = @intCast(usize, addr);
+        if (off < c.rom_size) return c.rom[off];
+        return 0xFF;
+    }
+    if (addr < 0x8000) {
+        const off: usize = c.romx_off + @intCast(usize, addr - 0x4000);
+        if (off < c.rom_size) return c.rom[off];
+        return 0xFF;
+    }
+    if (addr >= 0xA000 and addr < 0xC000) {
+        if (addr >= 0xB000) return 0xFF;
+        if (!c.ram_enable or !c.ram_enable2) return 0xFF;
+        const reg: u8 = @intCast(u8, (addr >> 4) & 0x0F);
+        if (reg == 2) return @intCast(u8, c.mbc7_x & 0xFF);
+        if (reg == 3) return @intCast(u8, (c.mbc7_x >> 8) & 0x0F);
+        if (reg == 4) return @intCast(u8, c.mbc7_y & 0xFF);
+        if (reg == 5) return @intCast(u8, (c.mbc7_y >> 8) & 0x0F);
+        if (reg == 6) return 0x00;
+        if (reg == 8) {
+            var pins: u8 = 0;
+            if (c.eeprom_do) pins |= 0x01;
+            if (c.eeprom_di) pins |= 0x02;
+            if (c.eeprom_clk) pins |= 0x40;
+            if (c.eeprom_cs) pins |= 0x80;
+            return pins;
+        }
+        return 0xFF;
+    }
+    return 0xFF;
+}
+
+pub fn cartMbc7Write(c: *Cart, addr: u16, value: u8) void {
+    if (addr < 0x2000) {
+        c.ram_enable = value == 0x0A;
+    } else if (addr < 0x4000) {
+        c.rom_bank_lo = value & 0x7F;
+        mbc7Recompute(c);
+    } else if (addr < 0x6000) {
+        c.ram_enable2 = value == 0x40;
+    } else if (addr >= 0xA000 and addr < 0xB000) {
+        if (!c.ram_enable or !c.ram_enable2) return;
+        const reg: u8 = @intCast(u8, (addr >> 4) & 0x0F);
+        if (reg == 0) {
+            if (value == 0x55) {
+                c.mbc7_latch_ready = true;
+                c.mbc7_x = 0x8000;
+                c.mbc7_y = 0x8000;
+            }
+        } else if (reg == 1) {
+            if (value == 0xAA and c.mbc7_latch_ready) {
+                c.mbc7_latch_ready = false;
+                if (c.tilt_set) {
+                    c.mbc7_x = @bitCast(u16, c.tilt_x);
+                    c.mbc7_y = @bitCast(u16, c.tilt_y);
+                } else {
+                    c.mbc7_x = 0x8000;
+                    c.mbc7_y = 0x8000;
+                }
+            }
+        } else if (reg == 8) {
+            mbc7EepromPins(c, value);
+        }
     }
 }
 
@@ -524,6 +738,7 @@ pub fn cartRead(c: *Cart, addr: u16) u8 {
         .mbc1 => return mbc1Read(c, addr),
         .mbc3 => return mbc3Read(c, addr),
         .mbc5 => return mbc5Read(c, addr),
+        .mbc7 => return cartMbc7Read(c, addr),
         .none => return plainRead(c, addr),
         else => return 0xff,
     }
@@ -534,6 +749,7 @@ pub fn cartWrite(c: *Cart, addr: u16, value: u8) void {
         .mbc1 => mbc1Write(c, addr, value),
         .mbc3 => mbc3Write(c, addr, value),
         .mbc5 => mbc5Write(c, addr, value),
+        .mbc7 => cartMbc7Write(c, addr, value),
         else => {},
     }
 }
