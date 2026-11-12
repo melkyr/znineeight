@@ -608,7 +608,10 @@ pub fn dsoundClose(d: *Dsound) void;
 - P5 parity: all P2–P4 gates pass with dynarec enabled and disabled. Audio
   sample counts compare with the documented frame-boundary tolerance
   `16 * frames + 64`; exact equality is not required.
-- No fixed speedup gate. Report measured wall/CPU/RSS and correctness.
+- No fixed speedup gate. Dynarec throughput is measured as emulated T-cycles
+  per wall second in Wine headless turbo (600 frames = 42,134,400 T-cycles);
+  windowed fps is display-bound evidence only. Report measured wall/CPU/RSS and
+  correctness.
 
 ### 8.11 Test tiers and commands
 

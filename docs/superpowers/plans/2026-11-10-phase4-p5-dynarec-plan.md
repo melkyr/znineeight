@@ -336,7 +336,7 @@ git commit -m "fix(z9gb): sync PPU at dynarec dynamic accesses"
 - Produces: measured dynarec numbers and truthful docs.
 
 - [ ] **Step 1: Measure**
-Named benchmark ROM: **`2048.gb`** (`Sanqui/2048-gb`, same pinned commit as P3/P4 — user-supplied). Run 600 frames with `--no-dynarec` and `--dynarec` under Wine and headless; record wall, CPU, RSS, frames/sec, cache-hit ratio if instrumented. Label all numbers measured; Wine numbers labeled Wine, never Win98. No predetermined speedup threshold — report what was measured.
+Named benchmark ROM: **`2048.gb`** (`Sanqui/2048-gb`, same pinned commit as P3/P4 — user-supplied). Do not re-run existing measured rows (host headless `923.077 fps`; Wine windowed `47.618`/`47.624 fps`) unless they are invalidated. Add Wine headless turbo throughput runs for the dynarec comparison: `wine z9gb.exe --headless --turbo --frames 600 --no-dynarec` and the same with `--dynarec`, on the pinned ROM. Record wall, CPU, RSS, frames/sec, and **emulated T-cycles/sec = 42,134,400 / wall_seconds** (600 frames × 70,224 T-cycles). The windowed Wine and paced host fps numbers are display/pacing-bound evidence only; they must not be used to judge dynarec speed. Host dynarec is unavailable on *nix by design. Label all numbers measured; Wine numbers are Wine, never Win98. No predetermined speedup threshold — report what was measured.
 - [ ] **Step 2: Verify 1 MiB accounting**
 Print `code_cache_bytes=1048576`, `stack_limit=1048576`, and `static_bytes`; confirm the cache is not in BSS and not on the stack.
 - [ ] **Step 3: Update docs**
