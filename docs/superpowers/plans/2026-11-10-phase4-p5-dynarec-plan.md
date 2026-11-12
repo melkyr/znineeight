@@ -348,3 +348,54 @@ Run all tiers. Per spec §5.3, hard gates must be present and passing for closeo
 git add examples/z98/z9gb/tests/tier_perf.sh examples/z98/z9gb/README.md README.md docs/sf/QUICK_REF.md
 git commit -m "docs(z9gb): record P5 dynarec evidence"
 ```
+
+---
+
+### Task 8 (I): Commercial-ROM compatibility investigation — no product fixes
+
+Investigation-only, run after P5 closeout. No `examples/z98/z9gb/*.zig`, no `sf/src`, no seed, no gate changes. Deliverable is a report and a STOP for operator approval before any fix.
+
+**Files:**
+- Create: `docs/superpowers/specs/2026-11-12-z9gb-compat-investigation.md`
+- Report: `.superpowers/sdd/2026-11-10-phase4-p5-dynarec-plan/task-8-i-report.md`
+
+**Interfaces:**
+- Consumes: P5 build `z9gb_o2.exe` / `z9gb.exe`, user ROMs (below), `/workspace/znineeight/lin_bin/backtrace.txt`.
+- Produces: confirmed root causes + minimal fix proposal; no code changes.
+
+**User ROMs (never commit; hashes recorded here only):**
+
+| Path | Size | CGB | Type | Header | sha256 |
+|---|---|---|---|---|---|
+| `lin_bin/p_cry.gbc` (Pokemon Crystal) | 2097152 | `0xC0` | `0x10` MBC3+RTC+RAM+BATT | rom `0x06`, ram `0x03` | `fdcc3c8c43813cf8731fc037d2a6d191bac75439c34b24ba1c27526e6acdc8a2` |
+| `lin_bin/p_pin.gbc` (Pokemon Pinball) | 1048576 | `0x80` | `0x1E` MBC5+RUMBLE+RAM+BATT | rom `0x05`, ram `0x02` | `7672001d4710272009df6a41e3cbada65decd56e0eb2f185cb3d59c08d33ea0e` |
+| `lin_bin/k_tt.gbc` (Kirby Tilt 'n' Tumble) | 1048576 | `0xC0` | `0x22` (MBC3+accelerometer) | rom `0x05`, ram `0x00` | `6cf412aeb1ec60da1a401019d95dee1e76f0297154a7f06b55fb1657a71ed44f` |
+| `lin_bin/k_dl.gb` (Kirby's Dream Land) | 1048576 | DMG | unknown | — | `0f6dba94fae248d419083001c42c02a78be6bd3dff679c895517559e72c98d58` |
+
+**Evidence already confirmed (do not re-derive from scratch; verify and extend):**
+1. `--frames` default is `1` (`main.zig:7,270`). Runs without `--frames` execute one frame, print dynarec stats, exit `rc=0`. This is not a crash. All earlier "auto-close" reports were this. With `--frames 8200` runs do not close early.
+2. With long runs the screen stays uniform: Crystal white, Pinball white in CGB mode / green in DMG mode, `k_dl` same class. Uniform color = palette-background only (CGB boot white `0x00FFFFFF`; DMG palette green). **VRAM and CRAM never get game data.**
+3. Native interpreter probe (`/tmp` copy, not repo) at 1200 frames: Crystal `LCDC=0xE3 IE=0x0F`, Pinball CGB `LCDC=0xC1 IE=0x01`, `halted=0`, `hdma` inactive, `vram[0]`/`vram[0x1800]` zero, `cram[0]=0xFFFFFF`. PC samples oscillate `0x0553/0x0555` (Crystal), `0x0474` (Pinball). Frame-length sampling lands in the per-frame ISR; the main-thread wait loop is elsewhere.
+4. Crystal ISR decoded from ROM bytes: `0x0552 PUSH AF; 0x0553 LDH A,(FFC6); 0x0555 AND A; 0x0556 JR Z; ... 0x0559 LDH A,(LY); 0x055B LD C,A; 0x055C LD B,0xD1; 0x055E LD A,(BC); ... 0x0567 RETI` — a sound-register updater driven by an HRAM pointer. Audio ISR runs every frame; the machine is alive.
+5. Audio: interpreter produces short irregular sounds; dynarec produces a single "tum" then silence. `--no-audio` produces the same video behavior (rules out the audio path as the screen-hang cause).
+6. `p_pin --cgb` with `--dynarec` traps: `wine: unhandled exception 0x80000003` (`int3`) at `0x0043b376`, inside `_pal_trap` (`0x43b330..0x43b380`). `lin_bin/backtrace.txt` confirms the site but has no caller frames. Operator correction: the trap happens **with `--dynarec` only**; interpreter runs exit `rc=0`.
+7. `k_tt` `0x22` is rejected by `mbcKnown` → generic `z9gb: cannot read ROM` (`main.zig:367`). Operator decision: keep rejecting; propose a clear message.
+8. `lin_bin/z9gb.exe` was built `-O0` (~1 fps under Wine); `lin_bin/z9gb_o2.exe` is the `-O2` build (~100x faster). `-O2` repro must use the o2 exe.
+
+- [ ] **Step 1: Reproduce the baseline matrix**
+Use `lin_bin/z9gb_o2.exe` under Wine (`xvfb-run` for windowed). Record exact commands and results for: `p_cry --cgb`, `p_pin --cgb`, `p_pin` (DMG), `k_dl`, each headless `--frames 120` and `--frames 1200`, interpreter and `--dynarec`. Capture `--fb-out`, exit code, and any console/`int3` output. Confirm uniformity and the presence/absence of the trap. Save artifacts under `/tmp/z9gb_compat/`. Do not modify the repo.
+
+- [ ] **Step 2: Identify the main-thread wait loop**
+Build a **small** instrumentation probe (copy `examples/z98/z9gb` to `/tmp`; do not touch the repo): a 256-entry page histogram (`histpc[pc >> 8]`) plus a ring buffer of the last 64 distinct PCs, sampled every N CPU steps. Avoid the earlier failure: a 64K-entry `u32` array failed to build. Run Crystal and Pinball (CGB and DMG) long enough to reach the wait. Identify the exact main-thread poll instruction(s) and the awaited register/condition (candidates: `FF41` STAT, `FF44` LY, `FF55` HDMA5, `FF56`, `FF00` joypad, MBC bank readback). Compare expected vs our `mmu.zig`/`ppu.zig` behavior and Pan Docs. Report exact expected-vs-actual.
+
+- [ ] **Step 3: Identify the `pal_trap` call site**
+Reproduce `p_pin --cgb --dynarec` (and DMG if it also traps) under Wine with the o2 exe. Obtain the caller stack (winedbg `bt`, or a `/tmp`-only instrumented `pal_trap` recording the return address / nearest symbol via `i686-w64-mingw32-nm`). Map the caller to a source function and the failing runtime check (checked cast/shift/index/overflow or explicit trap). Confirm the trap is `--dynarec`-only. Report the exact check and triggering opcode/state.
+
+- [ ] **Step 4: Explain engine divergence**
+Attribute the interpreter-vs-dynarec audio difference ("irregular series" vs single "tum") to trap timing vs a real semantic divergence. Record any interpreter divergence in the same area.
+
+- [ ] **Step 5: Kirby Tilt + optional save fix assessment**
+Confirm the `0x22` reject path and propose the message string. Separately assess the MBC5 rumble RAM-bank mask (`cart.zig:505`, `& 0x0F` vs `& 0x07` for types `0x1C..0x1E`) for Pinball save safety; propose, do not implement.
+
+- [ ] **Step 6: Report and STOP**
+Write `docs/superpowers/specs/2026-11-12-z9gb-compat-investigation.md` with: reproduction matrix, root causes with `file:line`, expected-vs-actual register behavior, the `pal_trap` call site, the interpreter/dynarec divergence verdict, and a minimal fix proposal ranked by risk. STOP for operator approval. No product code, no `/workspace/znineeight/lin_bin/backtrace.txt` edits, no ROM commits, no push.
