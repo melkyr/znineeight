@@ -1,11 +1,12 @@
 #!/bin/sh
 # tier_perf.sh — z9gb Phase 4 performance evidence (P3/P4/P5).
 #
-# Measures the named homebrew ROM 2048.gb over 600 frames on four paths:
+# Measures the named homebrew ROM 2048.gb over 600 frames on these paths:
 #   host_headless: --headless --no-dynarec --frames 600 --audio (authoritative)
 #   host_headless: --headless --dynarec --frames 600 --audio (evidence)
 #   wine_windowed: --windowed --no-dynarec --frames 600 --audio (evidence)
 #   wine_windowed: --windowed --dynarec --frames 600 --audio (evidence)
+#   wine_headless_turbo: --headless --turbo --frames 600 no/on dynarec
 #
 # The host built output is compiled at -O2 (the harness compiles the emitted C
 # with the optimized flags) so the number measures emulator throughput, not the
@@ -14,19 +15,24 @@
 # Host headless --no-dynarec is the authoritative pass/fail gate
 # (>= Z9GB_PERF_MIN_FPS). The dynarec is Win32/x86 only; on *nix `--dynarec`
 # truthfully reports `dynarec=disabled reason=unsupported-host` and runs the
-# interpreter. The Wine path delegates the build/import/QPC launcher to
-# tier_win32.sh --perf, then times explicit --no-dynarec and --dynarec runs.
+# interpreter. The Wine windowed path delegates the build/import/QPC launcher
+# to tier_win32.sh --perf, then times explicit --no-dynarec and --dynarec runs.
 # A successful Wine run counts as evidence/pass regardless of fps; a genuine
 # Wine SKIP (77) stays a SKIP, and a Wine build/run/framebuffer/QPC failure
 # still fails. Wine numbers are Wine evidence only; they are never Win98
 # hardware evidence.
+#
+# P5 throughput is measured on Wine HEADLESS TURBO (no display/pacing throttle).
+# The primary metric is emulated T-cycles/sec = 42,134,400 / wall (600 frames x
+# 70,224 T-cycles). Windowed fps and paced host fps are display/pacing-bound
+# evidence only and must not judge dynarec throughput.
 #
 # The 1 MiB code cache is a separate VirtualAlloc/mmap mapping, not BSS and not
 # stack. This script prints code_cache_bytes, stack_limit, static_bytes, and the
 # Dynarec static-state size to make that accounting inspectable.
 #
 # Usage:
-#   sh tier_perf.sh [ZIG] [--cgb]
+#   sh tier_perf.sh [ZIG] [--cgb] [--throughput-only]
 #
 # Env:
 #   ZIG          compiler (first positional arg, else $ZIG, else seed path)
@@ -34,12 +40,13 @@
 #   Z9GB_ROM_DIR ROM root (default /tmp/z9gb_roms, else testdata/roms)
 #   Z9GB_PERF_MIN_FPS host headless minimum sustained rendered fps (default 59.0)
 #
-# --cgb passes --cgb through to the host headless CLI workload. A missing ROM =
-# SKIP (exit 77); ROM size/hash mismatch = FAIL. A skipped P4 hard gate blocks
-# P4 closeout. Estimates are labelled as estimates; measured numbers are reported
-# as measured. The Wine windowed result is evidence only and never changes the
-# host headless gate threshold.
-
+# --cgb passes --cgb through to the host headless CLI workload. --throughput-only
+# runs ONLY the Wine headless turbo measurement; it reuses an existing
+# $OUT/win32/perf/z9gb_o2.exe or builds it, and does not re-run the existing
+# host/windowed measured rows. A missing ROM = SKIP (exit 77); ROM size/hash
+# mismatch = FAIL. A skipped P4 hard gate blocks P4 closeout. Estimates are
+# labelled as estimates; measured numbers are reported as measured. The Wine
+# windowed result is evidence only and never changes the host headless gate.
 
 set -u
 
@@ -50,14 +57,17 @@ ZIG="${ZIG:-/tmp/z9gb_p2_seed/zig1_5_clean}"
 OUT="${OUT:-/tmp/z9gb_tier_perf}"
 PERF_MIN="${Z9GB_PERF_MIN_FPS:-59.0}"
 CGB=0
+THROUGHPUT_ONLY=0
 
 for arg in "$@"; do
     case "$arg" in
         --cgb) CGB=1 ;;
+        --throughput-only) THROUGHPUT_ONLY=1 ;;
         -*) echo "unknown option: $arg" >&2; exit 2 ;;
         *) ZIG="$arg" ;;
     esac
 done
+
 CGB_FLAG=""
 if [ "$CGB" -eq 1 ]; then
     CGB_FLAG="--cgb"
@@ -89,15 +99,21 @@ if [ ! -x "$ZIG" ]; then
     echo "FAIL: compiler not found: $ZIG"
     exit 1
 fi
-for tool in /usr/bin/time awk sha256sum stat; do
+for tool in /usr/bin/time awk sha256sum stat size nm; do
+
     if ! command -v "$tool" >/dev/null 2>&1 && [ ! -x "$tool" ]; then
         echo "SKIP: required host tool not found: $tool"
         exit 77
     fi
 done
 
-rm -rf "$OUT"
-mkdir -p "$OUT"
+if [ "$THROUGHPUT_ONLY" -eq 1 ]; then
+    mkdir -p "$OUT"
+else
+    rm -rf "$OUT"
+    mkdir -p "$OUT"
+fi
+
 
 if [ -n "${Z9GB_ROM_DIR:-}" ]; then
     ROM_DIR="$Z9GB_ROM_DIR"
@@ -135,6 +151,120 @@ if [ "$got" != "$want" ]; then
     summary
 fi
 echo "       2048.gb sha256 $got ($rom_bytes bytes)"
+TCYCLES_600=42134400
+
+ensure_win32_perf_exe() {
+    PERF_DIR="$OUT/win32/perf"
+    PERF_EXE="$PERF_DIR/z9gb_o2.exe"
+    if [ -f "$PERF_EXE" ]; then
+        echo "       reuse $PERF_EXE"
+        return 0
+    fi
+    mkdir -p "$PERF_DIR"
+    for tool in i686-w64-mingw32-gcc bash; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            echo "FAIL: required Win32 build tool not found: $tool"
+            return 1
+        fi
+    done
+    cat >"$PERF_DIR/gcc_o2.sh" <<'SH'
+#!/bin/sh
+exec i686-w64-mingw32-gcc -O2 "$@"
+SH
+    chmod +x "$PERF_DIR/gcc_o2.sh"
+    WIN_CROSS="$ROOT/scripts/win32_cross/cross_nocrt.sh"
+    if CROSS_GCC="$PERF_DIR/gcc_o2.sh" \
+        EXTRA_LIBS="-luser32 -lgdi32 -lwinmm" \
+        DUMP_TARGET="-osw -I $ROOT/sf/src" \
+        bash "$WIN_CROSS" "$ZIG" examples/z98/z9gb/main.zig \
+        "$PERF_DIR/work" "$PERF_EXE" >"$PERF_DIR/build.log" 2>&1 \
+        && [ -f "$PERF_EXE" ]; then
+        return 0
+    fi
+    echo "FAIL: Win32 -O2 build failed (see $PERF_DIR/build.log)"
+    tail -10 "$PERF_DIR/build.log" 2>/dev/null | sed 's/^/       /'
+    return 1
+}
+
+wine_throughput() {
+    mode="$1"
+    flag="$2"
+    tag="$3"
+    timeout 300 /usr/bin/time -f 'wall=%e cpu_user=%U cpu_sys=%S rss_kb=%M' \
+        -o "$PERF_DIR/$tag.time.txt" \
+        wine "$PERF_EXE" --headless --turbo --frames 600 $flag \
+        --rom "$ROM" --fb-out "$PERF_DIR/$tag.fb" \
+        >"$PERF_DIR/$tag.log" 2>&1
+    wrc=$?
+    w_wall="$(sed -n 's/.*wall=\([0-9][0-9.]*\).*/\1/p' "$PERF_DIR/$tag.time.txt" | tail -1)"
+    w_cpu_user="$(sed -n 's/.*cpu_user=\([0-9][0-9.]*\).*/\1/p' "$PERF_DIR/$tag.time.txt" | tail -1)"
+    w_cpu_sys="$(sed -n 's/.*cpu_sys=\([0-9][0-9.]*\).*/\1/p' "$PERF_DIR/$tag.time.txt" | tail -1)"
+    w_rss_kb="$(sed -n 's/.*rss_kb=\([0-9][0-9.]*\).*/\1/p' "$PERF_DIR/$tag.time.txt" | tail -1)"
+    w_fps="$(awk -v w="${w_wall:-0}" \
+        'BEGIN { if (w + 0 > 0) printf "%.3f", 600 / w; else print "0" }')"
+    w_tcyc="$(awk -v w="${w_wall:-0}" -v c="$TCYCLES_600" \
+        'BEGIN { if (w + 0 > 0) printf "%.0f", c / w; else print "0" }')"
+    w_dyn="$(grep '^dynarec=' "$PERF_DIR/$tag.log" | tail -1)"
+    w_blocks="$(echo "$w_dyn" | sed -n 's/.*blocks=\([0-9][0-9]*\).*/\1/p')"
+    w_exec="$(echo "$w_dyn" | sed -n 's/.*executed=\([0-9][0-9]*\).*/\1/p')"
+    echo "       wine_headless_turbo mode=$mode fps=$w_fps tcycles_per_sec=$w_tcyc wall=${w_wall:-none}s cpu_user=${w_cpu_user:-none}s cpu_sys=${w_cpu_sys:-none}s rss_kb=${w_rss_kb:-none} ${w_dyn:-dynarec=not-reported} (Wine evidence only; not Win98)"
+    if [ "$wrc" -ne 0 ]; then
+        fail_case "Wine headless turbo $mode run rc=$wrc"
+    elif [ "$(stat -c %s "$PERF_DIR/$tag.fb" 2>/dev/null)" != "92160" ]; then
+        fail_case "Wine headless turbo $mode framebuffer is not 92160 bytes"
+    elif [ "$mode" = "dynarec" ] \
+        && { [ -z "$w_blocks" ] || [ "$w_blocks" -eq 0 ] \
+            || [ -z "$w_exec" ] || [ "$w_exec" -eq 0 ] \
+            || ! echo "$w_dyn" | grep -q '^dynarec=on '; }; then
+        fail_case "Wine headless turbo dynarec anti-vacuous counters failed (${w_dyn:-no stats line})"
+    else
+        pass_case "Wine headless turbo $mode $w_tcyc T-cycles/sec (Wine evidence only; not Win98)"
+    fi
+}
+
+run_throughput_section() {
+    echo
+    echo "== Wine headless turbo 2048.gb throughput (Wine evidence only) =="
+    if ensure_win32_perf_exe; then
+        PERF_HOME="$PERF_DIR/home"
+        mkdir -p "$PERF_HOME"
+        printf 'pcm.!default { type null }\nctl.!default { type null }\n' \
+            >"$PERF_HOME/.asoundrc"
+        HOME="$PERF_HOME"
+        export HOME
+        WINEPREFIX="$PERF_DIR/wineprefix"
+        export WINEPREFIX
+        WINEARCH=win32
+        export WINEARCH
+        WINEDEBUG="${WINEDEBUG:--all}"
+        export WINEDEBUG
+        if command -v wineserver >/dev/null 2>&1; then
+            wineserver -k >/dev/null 2>&1 || true
+        fi
+        if [ ! -d "$WINEPREFIX" ]; then
+            if command -v xvfb-run >/dev/null 2>&1; then
+                xvfb-run -a -s "-screen 0 1024x768x24" wineboot -u \
+                    >"$PERF_DIR/wineboot_throughput.log" 2>&1 || true
+            else
+                timeout 120 wineboot -u \
+                    >"$PERF_DIR/wineboot_throughput.log" 2>&1 || true
+            fi
+        fi
+        wine_throughput no-dynarec "--no-dynarec" throughput_no_dynarec
+        wine_throughput dynarec "--dynarec" throughput_dynarec
+        if command -v wineserver >/dev/null 2>&1; then
+            wineserver -k >/dev/null 2>&1 || true
+        fi
+    else
+        fail_case "Wine headless turbo: Win32 -O2 executable unavailable"
+    fi
+}
+
+if [ "$THROUGHPUT_ONLY" -eq 1 ]; then
+    run_throughput_section
+    summary
+fi
+
 
 echo
 echo "== host build 2048.gb =="
@@ -323,5 +453,7 @@ if [ "$win_rc" -eq 0 ]; then
         fail_case "Wine perf artifacts missing for explicit on/off measurements"
     fi
 fi
+run_throughput_section
+
 
 summary

@@ -118,18 +118,34 @@ host load varies). `code_cache_bytes=1048576`, `stack_limit=1048576`,
 pointer plus entries, so the 1 MiB code cache is not in BSS and is not a stack
 allocation.
 
+**Primary dynarec throughput metric:** Wine headless turbo (no display/pacing
+throttle), reported as emulated T-cycles/sec = 42,134,400 / wall (600 frames ×
+70,224 T-cycles).
+
+| Wine headless turbo | T-cycles/sec | fps | wall | CPU user/sys | RSS |
+|---|---:|---:|---:|---:|---:|
+| `--no-dynarec` | 7,289,689 | 103.806 | 5.78 s | 5.07 / 0.01 s | 14,956 KiB |
+| `--dynarec` | 8,165,581 | 116.279 | 5.16 s | 5.01 / 0.01 s | 15,160 KiB |
+
+The dynarec run reported `dynarec=on blocks=151 executed=22254
+fallback=10415335`; `2048.gb` is HALT-heavy, so most steps fall back to the
+interpreter. In this run dynarec measured about 12.0% more T-cycles/sec than the
+interpreter. There is no fixed speedup threshold; report what was measured.
+
+The following measured rows are **display/pacing-bound evidence only** and must
+not be used to judge dynarec throughput:
+
 | Path | Variant | fps | wall | CPU user/sys | RSS |
 |---|---|---:|---:|---:|---:|
-| host headless (-O2) | `--no-dynarec` | 923.077 | 0.65 s | 0.65 / 0.00 s | 2,976 KiB |
-| host headless (-O2) | `--dynarec` | 923.077 | 0.65 s | 0.64 / 0.00 s | 3,072 KiB |
-| Wine windowed | `--no-dynarec` | 47.618 | 12.73 s | 6.42 / 0.06 s | 41,384 KiB |
-| Wine windowed | `--dynarec` | 47.624 | 12.85 s | 6.52 / 0.07 s | 41,436 KiB |
+| host headless (-O2, paced by the 600-frame run) | `--no-dynarec` | 923.077 | 0.65 s | 0.65 / 0.00 s | 2,976 KiB |
+| host headless (-O2, paced by the 600-frame run) | `--dynarec` | 923.077 | 0.65 s | 0.64 / 0.00 s | 3,072 KiB |
+| Wine windowed (display/pacing-bound) | `--no-dynarec` | 47.618 | 12.73 s | 6.42 / 0.06 s | 41,384 KiB |
+| Wine windowed (display/pacing-bound) | `--dynarec` | 47.624 | 12.85 s | 6.52 / 0.07 s | 41,436 KiB |
 
 The host `--dynarec` row is the interpreter with dynarec disabled
-(`reason=unsupported-host`), not translated execution. The Wine dynarec row
-reported `dynarec=on blocks=151 executed=22254 fallback=10415335`; `2048.gb` is
-HALT-heavy, so most steps fall back to the interpreter. There is no fixed
-speedup threshold: the measured Wine difference is within run-to-run noise.
+(`reason=unsupported-host`), not translated execution. The windowed Wine rows
+include display and pacing overhead, so their near-identical fps is not a
+dynarec throughput result. All Wine numbers are Wine evidence only, never Win98.
 
 ## Building with zig1
 
@@ -576,11 +592,27 @@ TIER_WIN32 PASS
 `tier_perf.sh` measured the host headless `--no-dynarec` gate at **923.077 fps**
 (`wall=0.65 s`, `cpu_user=0.65 s`, `cpu_sys=0.00 s`, `rss_kb=2976`, `-O2`
 emitted-C build) and the same 923.077 fps with `--dynarec` disabled as
-`reason=unsupported-host`. The Wine windowed evidence measured 47.618 fps
-(`--no-dynarec`) and 47.624 fps (`--dynarec`), with the dynarec run reporting
-`dynarec=on blocks=151 executed=22254 fallback=10415335`; the two runs are
-within measurement noise, so no speedup claim is made. `tier_perf.sh --cgb`
-passed 8/0/0 as well; the authoritative threshold is unchanged at 59.0 fps.
+`reason=unsupported-host`. Those host rows are pacing-bound and host dynarec is
+unavailable on *nix. The Wine windowed evidence measured 47.618 fps
+(`--no-dynarec`) and 47.624 fps (`--dynarec`); those rows are display/pacing-bound
+evidence only.
+
+The primary throughput measurement uses `tier_perf.sh --throughput-only`, which
+runs only the Wine headless turbo runs:
+
+```sh
+$ bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG" --throughput-only
+wine_headless_turbo mode=no-dynarec fps=103.806 tcycles_per_sec=7289689 wall=5.78s cpu_user=5.07s cpu_sys=0.01s rss_kb=14956
+wine_headless_turbo mode=dynarec fps=116.279 tcycles_per_sec=8165581 wall=5.16s cpu_user=5.01s cpu_sys=0.01s rss_kb=15160 dynarec=on blocks=151 executed=22254 fallback=10415335
+== tier_perf summary: 2 passed, 0 failed, 0 skipped ==
+TIER_PERF PASS
+```
+
+Wine headless turbo `--dynarec` measured **8,165,581 T-cycles/sec** versus
+**7,289,689** for `--no-dynarec` (about 12.0% higher in this run). No fixed
+speedup threshold applies. `tier_perf.sh --cgb` passed 8/0/0 as well; the
+authoritative host headless threshold is unchanged at 59.0 fps. All Wine numbers
+are Wine evidence only, never Win98.
 
 Anti-vacuous dynarec counters from the final `--dynarec` runs:
 `tier_dynarec` 2048 `blocks=151 executed=22254`; `tier_audio` `dmg_sound`

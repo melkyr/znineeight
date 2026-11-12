@@ -644,12 +644,15 @@ and all *nix hosts. Measured accounting: `code_cache_bytes=1048576`,
 `stack_limit=1048576`, `static_bytes=9801128`, dynarec state 262,184 bytes. The
 authoritative performance gate is host headless `2048.gb`
 (`--headless --frames 600 --audio`) at >=59.0 fps; `--no-dynarec` measured
-923.077 fps (host `--dynarec` is disabled as unsupported on *nix). CGB peak RSS
-measured 10,288 KiB. Wine windowed `2048.gb` is Wine evidence only, never Win98:
-47.618 fps with `--no-dynarec` and 47.624 fps with `--dynarec`
-(`dynarec=on blocks=151 executed=22254 fallback=10415335`), within run-to-run
-noise, so no speedup claim is made. The framebuffer dump is 92,160 bytes (160×144
-little-endian RGB32).
+923.077 fps (pacing-bound; host `--dynarec` is disabled as unsupported on *nix).
+CGB peak RSS measured 10,288 KiB. The primary dynarec throughput metric is Wine
+headless turbo `T-cycles/sec = 42,134,400 / wall` (600 frames × 70,224):
+`--no-dynarec` measured 7,289,689 T-cycles/sec and `--dynarec` measured
+8,165,581 T-cycles/sec (about 12.0% higher in this run;
+`dynarec=on blocks=151 executed=22254 fallback=10415335`). No fixed speedup
+threshold applies. Wine windowed `2048.gb` fps (47.618 with `--no-dynarec`,
+47.624 with `--dynarec`) is display/pacing-bound evidence only, never Win98.
+The framebuffer dump is 92,160 bytes (160×144 little-endian RGB32).
 
 ```bash
 # Inline tiers (fast + safe) and external hard gates; both must PASS:
@@ -666,6 +669,8 @@ bash examples/z98/z9gb/tests/tier_dynarec.sh "$ZIG"
 bash examples/z98/z9gb/tests/tier_win32.sh --smoke "$ZIG"
 bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG"
 bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG" --cgb
+# P5 primary throughput (Wine headless turbo only; reuses the -O2 exe if built):
+bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG" --throughput-only
 bash examples/z98/z9gb/tests/tier_smoke.sh "$ZIG"
 # Memory + three-run framebuffer determinism (CGB pass-through):
 bash examples/z98/z9gb/tests/measure_rss.sh "$ZIG" /tmp/z9gb_p5_rss --cgb
@@ -687,7 +692,9 @@ this emulator, and is pinned at SHA-256
 `0fba336ce7d7cb4ef76049a4548ff0e7a5147be79fb34bfd266ce7bb71fcf9fd`. P5 adds
 the `tier_dynarec` unit/parity gate (26 checks) plus dynarec on/off parity in the
 DMG/CGB/audio/Win32 tiers; every `--dynarec` run must report nonzero
-`dynarec=on blocks=N executed=N`. The host headless `2048.gb` performance gate
+`dynarec=on blocks=N executed=N`. Dynarec throughput is measured with
+`tier_perf.sh --throughput-only` (Wine headless turbo, T-cycles/sec); windowed
+and paced fps are not throughput results. The host headless `2048.gb` performance gate
 requires >=59.0 fps (`--no-dynarec`, threshold not lowered). Real-hardware
 caveat: Wine cross-build runs are functional evidence only, never Win98
 hardware; no Win98 real-hardware CGB or dynarec run was performed and sign-off
