@@ -173,8 +173,24 @@ Extend the `emu.DynarecStats` projection and `main.zig` output: append ` tinstr=
 
 - [ ] **Step 5: Verify GREEN and the CLI**
 
+Rebuild the verification exe from the current sources (untracked scratch; do not commit the exe, do not touch `lin_bin/z9gb.exe`):
+
+```bash
+cat > /tmp/gcc-o2 <<'EOS'
+#!/bin/sh
+exec i686-w64-mingw32-gcc -O2 "$@"
+EOS
+chmod +x /tmp/gcc-o2
+DUMP_TARGET="-osw -I /workspace/znineeight/sf/src" CROSS_GCC=/tmp/gcc-o2 \
+EXTRA_LIBS="-luser32 -lgdi32 -lwinmm" \
+bash scripts/win32_cross/cross_nocrt.sh /tmp/z9gb_p2_seed/zig1_5_clean \
+  examples/z98/z9gb/main.zig /tmp/z9gb_task3_build \
+  /workspace/znineeight/lin_bin/z9gb_o2.exe
+```
+
 Run the dynarec tier and one CLI smoke: `wine lin_bin/z9gb_o2.exe --headless --frames 120 --dynarec --dynarec-stats --rom /tmp/z9gb_roms/2048.gb`.
-Expected: counters non-zero, `coverage` printed, `dynarec=on blocks>0`.
+Expected: counters non-zero, `coverage` printed, `dynarec=on blocks>0`, and the stats line contains `tinstr= minstr= rejected= coverage=`.
+
 
 - [ ] **Step 6: Commit**
 
