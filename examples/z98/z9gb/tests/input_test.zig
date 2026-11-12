@@ -7,8 +7,8 @@ const std = @import("std");
 const emumod = @import("../emu.zig");
 const mmumod = @import("../mmu.zig");
 
-const D_SEL: u8 = 0x10;
-const B_SEL: u8 = 0x20;
+const D_SEL: u8 = 0x20;
+const B_SEL: u8 = 0x10;
 
 var g_emu: emumod.Emu = undefined;
 var g_pass: u32 = 0;

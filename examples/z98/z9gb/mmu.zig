@@ -484,8 +484,8 @@ pub fn busRaiseIrq(bus: *Bus, mask: u8) void {
 }
 
 fn selectedPressed(sel: u8, mask: u8) bool {
-    if ((mask & 0x0F) != 0 and (sel & 0x20) == 0) return true;
-    if ((mask & 0xF0) != 0 and (sel & 0x10) == 0) return true;
+    if ((mask & 0x0F) != 0 and (sel & 0x10) == 0) return true;
+    if ((mask & 0xF0) != 0 and (sel & 0x20) == 0) return true;
     return false;
 }
 
@@ -501,13 +501,13 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
     if (addr == 0xFF00) {
         var low: u8 = 0x0F;
         const sel: u8 = self.io[0];
-        if ((sel & 0x20) == 0) {
+        if ((sel & 0x10) == 0) {
             if ((self.buttons & 0x01) != 0) low &= 0xFE;
             if ((self.buttons & 0x02) != 0) low &= 0xFD;
             if ((self.buttons & 0x04) != 0) low &= 0xFB;
             if ((self.buttons & 0x08) != 0) low &= 0xF7;
         }
-        if ((sel & 0x10) == 0) {
+        if ((sel & 0x20) == 0) {
             if ((self.buttons & 0x10) != 0) low &= 0xFE;
             if ((self.buttons & 0x20) != 0) low &= 0xFD;
             if ((self.buttons & 0x40) != 0) low &= 0xFB;

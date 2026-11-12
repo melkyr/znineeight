@@ -82,7 +82,7 @@ fn testVblankLcdOff() void {
 
 fn testJoypadIrq() void {
     reset();
-    g_bus.io[0x00] = 0x1F;
+    g_bus.io[0x00] = 0x2F;
     mmumod.busApplyButtons(&g_bus, 0x01);
     checkByte("joypad direction raises", g_bus.io[0x0F] & 0x10, 0x10);
 
@@ -96,7 +96,7 @@ fn testJoypadIrq() void {
 
 fn testJoypadUnselected() void {
     reset();
-    g_bus.io[0x00] = 0x2F;
+    g_bus.io[0x00] = 0x1F;
     mmumod.busApplyButtons(&g_bus, 0x01);
     checkByte("joypad unselected direction quiet", g_bus.io[0x0F] & 0x10, 0x00);
 
