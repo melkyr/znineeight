@@ -245,6 +245,8 @@ git commit -m "docs(z9gb): re-measure dynarec with corrected coverage"
 **Files:**
 - Modify: `examples/z98/z9gb/main.zig`
 - Modify: `examples/z98/z9gb/tests/tier_smoke.sh`
+- Modify: `examples/z98/z9gb/tests/tier_cgb.sh`
+- Modify: `examples/z98/z9gb/tests/tier_dynarec.sh`
 - Modify: `examples/z98/z9gb/README.md`
 - Modify: `README.md`
 
@@ -265,14 +267,22 @@ In `tier_smoke.sh`, add: emit the example, run `timeout 3 prog --headless --rom 
 Run the new smoke cases, then `tier_smoke.sh`, `tier_dmg --all`.
 Expected: new cases pass; no tier regressions.
 
-- [ ] **Step 4: Update docs/run commands**
+- [ ] **Step 4: Update bounded tier invocations**
 
-READMEs: windowed = run until quit; headless requires `--frames` for a bounded run; add example commands for Crystal/Pinball/`k_dl`.
+`tier_cgb.sh` (five sites: ~264, 272, 279, 286, 293) and `tier_dynarec.sh` (~311) pass `--frames 0` expecting an immediate exit; with `0` = unlimited they must send an explicit bounded count. Change those invocations to `--frames 1` (the ~264 failure case may also move to `1`; its expect-early-exit assertion is unchanged). Do not change any assertions.
 
-- [ ] **Step 5: Commit**
+Run `tier_cgb.sh --all`, `tier_dynarec.sh`, `tier_smoke.sh`, `tier_dmg.sh --all`.
+Expected: all pass; no timeouts from the changed invocations.
+Commit: `test(z9gb): pass explicit --frames in bounded tier checks` (new commit, no amend).
+
+- [ ] **Step 5: Update docs/run commands**
+
+READMEs: windowed = run until quit; headless runs until `--frames` or Ctrl-C; tests/harnesses that need a bounded run must pass `--frames N`; add example commands for Crystal/Pinball/`k_dl`.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add examples/z98/z9gb/main.zig examples/z98/z9gb/tests/tier_smoke.sh examples/z98/z9gb/README.md README.md
+git add examples/z98/z9gb/main.zig examples/z98/z9gb/tests/tier_smoke.sh examples/z98/z9gb/tests/tier_cgb.sh examples/z98/z9gb/tests/tier_dynarec.sh examples/z98/z9gb/README.md README.md
 git commit -m "feat(z9gb): run indefinitely unless --frames is given"
 ```
 
