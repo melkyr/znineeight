@@ -611,6 +611,9 @@ fn enterLine(p: *Ppu, bus: *mmumod.Bus, line: u8) void {
     p.coincidence = (p.ly == p.lyc);
     p.oam_blocked = false;
     p.vram_blocked = false;
+    if (line == VISIBLE_LINES and (p.lcdc & 0x80) != 0) {
+        mmumod.busRaiseIrq(bus, 0x01);
+    }
     if (line < VISIBLE_LINES) {
         p.mode = 0;
         p.coincidence = false;

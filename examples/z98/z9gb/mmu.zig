@@ -474,6 +474,20 @@ pub fn busRaiseIrq(bus: *Bus, mask: u8) void {
     bus.io[0x0F] |= mask;
 }
 
+fn selectedPressed(sel: u8, mask: u8) bool {
+    if ((mask & 0x0F) != 0 and (sel & 0x20) == 0) return true;
+    if ((mask & 0xF0) != 0 and (sel & 0x10) == 0) return true;
+    return false;
+}
+
+pub fn busApplyButtons(bus: *Bus, mask: u8) void {
+    const pressed: u8 = mask & @intCast(u8, ~bus.buttons);
+    bus.buttons = mask;
+    if (selectedPressed(bus.io[0x00], pressed)) {
+        busRaiseIrq(bus, 0x10);
+    }
+}
+
 pub fn ioRead(self: *Bus, addr: u16) u8 {
     if (addr == 0xFF00) {
         var low: u8 = 0x0F;
@@ -515,12 +529,17 @@ pub fn ioRead(self: *Bus, addr: u16) u8 {
         if ((self.io[0x4D] & 0x01) != 0) v |= 0x01;
         return v;
     }
+    if (addr == 0xFF0F) return self.io[0x0F] | 0xE0;
     return self.io[@intCast(usize, addr & 0x7F)];
 }
 
 pub fn ioWrite(self: *Bus, addr: u16, value: u8) void {
     if (addr == 0xFF00) {
+        const old_sel: u8 = self.io[0];
         self.io[0] = (self.io[0] & 0xCF) | (value & 0x30);
+        if (selectedPressed(self.io[0], self.buttons) and !selectedPressed(old_sel, self.buttons)) {
+            busRaiseIrq(self, 0x10);
+        }
         return;
     }
     if (addr == 0xFF01 or addr == 0xFF02) {
