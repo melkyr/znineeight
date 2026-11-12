@@ -66,8 +66,18 @@ fn testVblankLcdOff() void {
     reset();
     ppumod.ppuWrite(&g_ppu, 0xFF40, 0x11, &g_bus);
     g_bus.io[0x0F] = 0;
-    ppumod.ppuTick(&g_ppu, 2000, &g_bus);
+    ppumod.ppuTick(&g_ppu, 155 * LINE_DOTS, &g_bus);
     checkByte("vblank lcd off quiet", g_bus.io[0x0F] & 0x01, 0x00);
+    checkByte("vblank lcd off line", g_ppu.line, 0);
+    checkByte("vblank lcd off dot", @intCast(u8, g_ppu.dot), 0);
+
+    g_bus.io[0x0F] = 0;
+    ppumod.ppuWrite(&g_ppu, 0xFF40, 0x91, &g_bus);
+    ppumod.ppuTick(&g_ppu, 143 * LINE_DOTS, &g_bus);
+    checkByte("vblank lcd off at 143 line", g_ppu.line, 143);
+    ppumod.ppuWrite(&g_ppu, 0xFF40, 0x11, &g_bus);
+    ppumod.ppuTick(&g_ppu, LINE_DOTS, &g_bus);
+    checkByte("vblank lcd off disable quiet", g_bus.io[0x0F] & 0x01, 0x00);
 }
 
 fn testJoypadIrq() void {
