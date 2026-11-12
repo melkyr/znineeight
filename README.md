@@ -96,6 +96,23 @@ Wine windowed `2048.gb` measured 47.620 fps as DMG-mode Wine evidence only (the 
 delegates to `tier_win32.sh --perf` and does not receive `--cgb`); it is never Win98 hardware.
 No Win98 real-hardware CGB run was performed; real-hardware sign-off remains the operator's.
 
+**Phase 4 P5 (SM83 dynarec) is complete.** `z9gb` adds `--dynarec`, a Win32/x86
+basic-block translator that executes from a separate 1 MiB `VirtualAlloc`
+`PAGE_EXECUTE_READWRITE` mapping; the interpreter remains the oracle and the
+fallback for non-ROM PCs, interrupts/DMA, allocation failure, and *nix hosts
+(where `--dynarec` prints `dynarec=disabled reason=unsupported-host`). The code
+cache is separate from the 1 MiB stack and from static/BSS state
+(`code_cache_bytes=1048576`, `stack_limit=1048576`, `static_bytes=9801128`,
+dynarec state 262,184 bytes). Final gates: `tier_dmg --gates` 166/0,
+`tier_dynarec` 26/0, `tier_smoke` 18/0, `tier_cgb` 39/0, `tier_audio --gate`
+9/0, `tier_win32` 39/0 and `--smoke` 18/0, `tier_perf` 8/0. On `2048.gb` over
+600 frames, host headless `--no-dynarec` measured **923.077 fps** (the unchanged
+>= 59.0 fps hard gate); host `--dynarec` is disabled as unsupported. Wine
+windowed measured **47.618 fps** without dynarec and **47.624 fps** with it
+(`dynarec=on blocks=151 executed=22254 fallback=10415335`) — within run-to-run
+noise, so no speedup claim is made. Wine is evidence only, never Win98; no real
+Win98 dynarec run was performed and real-hardware sign-off remains the operator's.
+
 **Phase 1 (TLS + WireGuard) is complete.** The std library now carries the
 browser-grade TLS 1.2/1.3 client (`std_tls` over `std_crypto`/`std_cipher`/
 `std_ecc`/`std_asn1`/`std_x509`/`std_http`), the WireGuard initiator
@@ -650,17 +667,20 @@ complete programs that exercise the language-wins features and the PAL/networkin
   shallow/partial clone, resumable prefix packs, and a bounded external-memory idx writer).
 - **`z9zstddecomp`** — a single-shot zstd frame decompressor CLI (`std_zstd` frames, skippable
   frames, checksums, and RFC 8878 magic/raw dictionaries; bounded output and window caps).
-- **`z9gb`** — a DMG (original Game Boy) and CGB (Game Boy Color) emulator, now at **P4
-  (CGB support)**: CPU, MMU/timer/serial, scanline PPU, MBC1/MBC3(+RTC)/MBC5, battery
+- **`z9gb`** — a DMG (original Game Boy) and CGB (Game Boy Color) emulator, now at **P5
+  (SM83 dynarec)**: CPU, MMU/timer/serial, scanline PPU, MBC1/MBC3(+RTC)/MBC5, battery
   `.sav`/`.rtc` saves, DMG/CGB APU, CGB color palettes/attributes, VRAM/WRAM banking,
-  double-speed, HDMA, and a deterministic headless backend, plus a Win32 backend with
+  double-speed, HDMA, a deterministic headless backend, plus a Win32 backend with
   DirectDraw presentation, DirectInput8 keyboard/gamepad (keyboard fallback), QPC pacing,
-  DirectSound (WinMM `waveOut` fallback), and wired JOYP input. CGB is opt-in with `--cgb`;
-  a CGB-only cartridge requires it (`CgbRequired`, exit 2). Gates: `tests/tier_dmg.sh`
-  (`--all`, `--gates`), `tests/tier_cgb.sh` (CGB hard gates `cgb-acid2`, `cgb_sound`,
-  `interrupt_time`), `tests/tier_smoke.sh`, `tests/tier_audio.sh --gate`,
-  `tests/tier_win32.sh --smoke`, `tests/tier_perf.sh`, plus `tests/measure_rss.sh`
-  (`--cgb` for CGB measurements).
+  DirectSound (WinMM `waveOut` fallback), and wired JOYP input; the Win32/x86 `--dynarec`
+  uses a separate 1 MiB executable cache with interpreter fallback. CGB is opt-in with
+  `--cgb`; a CGB-only cartridge requires it (`CgbRequired`, exit 2). Gates:
+  `tests/tier_dmg.sh` (`--all`, `--gates`), `tests/tier_cgb.sh` (CGB hard gates
+  `cgb-acid2`, `cgb_sound`, `interrupt_time`), `tests/tier_dynarec.sh`,
+  `tests/tier_smoke.sh`, `tests/tier_audio.sh --gate`, `tests/tier_win32.sh --smoke`,
+  `tests/tier_perf.sh`, plus `tests/measure_rss.sh` (`--cgb` for CGB measurements).
+  Build/link prerequisites for Linux/*nix and Win9x are in
+  [`examples/z98/z9gb/README.md`](examples/z98/z9gb/README.md).
 - Plus the classic single/multi-module programs (`hello`, `prime`, `fibonacci`, `days_in_month`,
   `heapsort`, `quicksort`, `sort_strings`, `mandelbrot`, `lzw`, `func_ptr_return`, `tco_*`).
 

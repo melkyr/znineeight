@@ -1,17 +1,22 @@
 # z9gb
 
 A DMG (original Game Boy) and CGB (Game Boy Color) emulator shell for Z98.
-This example is at **P4: CGB support**. It runs a DMG/CGB CPU, MMU/timer/serial,
+This example is at **P5: SM83 dynarec**. It runs a DMG/CGB CPU, MMU/timer/serial,
 a scanline PPU (BG, window, sprites, DMG palettes, CGB color palettes/attributes,
 STAT/LYC and mode-access timing), a 4-channel APU with CGB sound semantics,
 CGB double-speed and HDMA, MBC1, MBC3 (+RTC), and MBC5 cartridges, battery
 saves, and two backends: a pure-Z98 deterministic headless backend and a Win32
 DirectDraw/DirectInput/DirectSound windowed backend with QPC frame pacing.
 
-It does **not** emulate a dynamic recompiler. There is no heap allocation; the
-single emulator, framebuffer, audio ring, and platform state are module-scope
-statics. `--windowed` requires the Win32 target; the Linux host has only the
-headless backend.
+The **Win32/x86 dynarec** (`--dynarec`) translates SM83 basic blocks and executes
+them from a separate 1 MiB `VirtualAlloc` `PAGE_EXECUTE_READWRITE` mapping; the
+interpreter remains the correctness oracle and the fallback for non-ROM PCs,
+interrupts/DMA, failed cache allocation, and *nix hosts. There is no heap
+allocation; the single emulator, framebuffer, audio ring, and platform state are
+module-scope statics. `--windowed` requires the Win32 target; the Linux host has
+only the headless backend, so `--dynarec` there prints
+`dynarec=disabled reason=unsupported-host` and runs the interpreter.
+
 
 CGB hardware is opt-in: pass `--cgb`. A CGB-only cartridge (header byte
 `0x0143` bit 7 set and bit 6 set) refuses to load without `--cgb` and exits 2
@@ -85,6 +90,47 @@ testing. Wine is functional evidence only, never Win98 hardware. No Win98
 real-hardware CGB run was performed; real-hardware sign-off remains the
 operator's.
 
+## P5 SM83 dynarec
+
+- **Status:** complete. `--dynarec` is Win32/x86 only; the interpreter remains
+  the correctness oracle and the fallback. On *nix the flag is truthfully
+  disabled (`dynarec=disabled reason=unsupported-host`) because only Windows
+  provides the required `VirtualAlloc` executable mapping.
+- **Code cache:** one fixed **1 MiB** mapping from
+  `VirtualAlloc(NULL, 1 MiB, MEM_COMMIT | MEM_RESERVE,
+  PAGE_EXECUTE_READWRITE)` on Win32 (`mmap` in the native test harness). It is
+  **separate from the 1 MiB stack and from static/BSS state**.
+- **Fallback:** non-ROM PCs (WRAM/HRAM), interrupts, DMA/HDMA, an allocation
+  failure, or a full/invalidated cache run on the interpreter. `--dynarec`
+  prints `dynarec=on blocks=N executed=N fallback=N`; `--dynarec-stats` prints
+  the same without enabling translation. A failed allocation prints
+  `dynarec=disabled reason=cache-alloc-failed` and the interpreter continues.
+- **Cache-hit ratio:** not instrumented; the counters above are block
+  translations, block executions, and interpreter fallback steps.
+- **Real-hardware caveat:** executable `PAGE_EXECUTE_READWRITE` memory is
+  unproven on real Win9x. If `VirtualAlloc` fails, dynarec disables itself and
+  the interpreter runs; that is not a dynarec PASS claim. Wine numbers are Wine
+  evidence only, never Win98 hardware evidence.
+
+Measured accounting and `2048.gb` numbers from the P5 closeout (single runs;
+host load varies). `code_cache_bytes=1048576`, `stack_limit=1048576`,
+`static_bytes=9801128`, `dynarec_state_bytes=262184`; the Dynarec state is a
+pointer plus entries, so the 1 MiB code cache is not in BSS and is not a stack
+allocation.
+
+| Path | Variant | fps | wall | CPU user/sys | RSS |
+|---|---|---:|---:|---:|---:|
+| host headless (-O2) | `--no-dynarec` | 923.077 | 0.65 s | 0.65 / 0.00 s | 2,976 KiB |
+| host headless (-O2) | `--dynarec` | 923.077 | 0.65 s | 0.64 / 0.00 s | 3,072 KiB |
+| Wine windowed | `--no-dynarec` | 47.618 | 12.73 s | 6.42 / 0.06 s | 41,384 KiB |
+| Wine windowed | `--dynarec` | 47.624 | 12.85 s | 6.52 / 0.07 s | 41,436 KiB |
+
+The host `--dynarec` row is the interpreter with dynarec disabled
+(`reason=unsupported-host`), not translated execution. The Wine dynarec row
+reported `dynarec=on blocks=151 executed=22254 fallback=10415335`; `2048.gb` is
+HALT-heavy, so most steps fall back to the interpreter. There is no fixed
+speedup threshold: the measured Wine difference is within run-to-run noise.
+
 ## Building with zig1
 
 The compiler is self-hosted. A seed build
@@ -92,6 +138,39 @@ The compiler is self-hosted. A seed build
 the compiler searches `<exe-dir>/lib` automatically. `-o <dir>` selects the
 output directory (create it first) and emits a complete self-contained C89 tree
 with a companion `build_target.sh`.
+
+### Prerequisites
+
+**Common**
+- A seed-built `zig1_5_clean` with its sibling `lib/` directory (current seed
+  is v149, lib 65).
+- `bash`, `timeout`, `sha256sum`, `cmp`, and `/usr/bin/time` for the test tiers.
+- Optional external ROM tree via `Z9GB_ROM_DIR`; omit it and gate runs report
+  truthful `SKIP`, never PASS.
+
+**Linux / *nix host**
+- 32-bit C toolchain: `gcc -m32` plus 32-bit libc/multilib
+  (`gcc-multilib` or the distro equivalent).
+- The Linux build is **headless only**; there is no X11/Wayland windowed
+  backend.
+- The dynarec is **Win32/x86 only** and is unavailable on *nix; use the
+  interpreter.
+- For the Win32 cross-build checks: `i686-w64-mingw32-gcc`,
+  `i686-w64-mingw32-objdump`, MinGW headers (`ddraw.h`, `dsound.h`,
+  `dinput.h`), `wine`, and `xvfb-run` for windowed smoke/perf runs.
+
+**Win9x build and link**
+- A seed-built Z98 compiler, or the emitted `build_target.bat` with
+  MinGW/OpenWatcom/MSVC as appropriate.
+- The emitted Win32 executable is no-CRT: core imports stay
+  KERNEL32/WINMM/USER32/GDI32. DDRAW/DINPUT8/DSOUND are loaded dynamically.
+- `--windowed` needs a **DirectX 6+ runtime** (`IDirectDraw7`); stock Win98
+  ships DX5. The gamepad path needs **DirectX 8** (`dinput8.dll`); the keyboard
+  fallback works without it.
+- The dynarec requires Win32/x86 `VirtualAlloc` memory with
+  `PAGE_EXECUTE_READWRITE`; if allocation fails, `--dynarec` reports
+  `dynarec=disabled reason=...` and the interpreter runs.
+- Wine/cross-build is functional evidence only, never Win98 hardware sign-off.
 
 ### Linux
 
@@ -225,11 +304,13 @@ before anything is applied, and the `.rtc` is parsed before `.sav`, so a corrupt
 ## RAM model
 
 - The **1 MiB stack** is a hard limit and is separate from the **1 MiB code
-  cache** (the code cache is not part of P2).
+  cache**; the dynarec cache is a fixed `VirtualAlloc`/`mmap` mapping, not BSS
+  or stack state.
 - The **8 MiB ROM buffer** is a static module-scope buffer inside the single
   `Emu` instance; it is never a stack local and never copied by value.
 - The 92,160-byte framebuffer and the platform snapshots are static too.
-- P2 performs no heap allocation.
+- No emulator path performs heap allocation; the code cache is the one dynamic
+  executable mapping.
 
 ## P2 gates
 
@@ -448,4 +529,66 @@ DMG-compatible workload; it measured **47.620 fps** (`qpc_seconds=12.599755`,
 `child_rc=0`, `wall=12.88 s`, `cpu_user=6.31 s`, `cpu_sys=0.05 s`,
 `rss_kb=40248`). This is Wine evidence only, never Win98 or real-hardware
 evidence, and never a threshold change.
+
+## P5 dynarec closeout evidence (2026-11-12)
+
+Compiler `/tmp/z9gb_p2_seed/zig1_5_clean`, ROM root `/tmp/z9gb_roms`.
+These are single measured runs from the P5 closeout; they are not guarantees and
+vary with host load. No external hard gate was skipped.
+
+```sh
+$ bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --all
+== tier_dmg summary: 49 passed, 0 failed ==
+TIER_DMG PASS
+
+$ bash examples/z98/z9gb/tests/tier_dmg.sh "$ZIG" --gates
+blargg: 3 passed, 0 failed, 0 skipped
+mooneye: 15 passed, 0 failed, 0 skipped
+acid2: PASS c831675c9cff3289d505364286cfb5322a6807fa074386851744f28cdeb84083
+== tier_dmg summary: 166 passed, 0 failed, 0 skipped ==
+TIER_DMG PASS
+
+$ bash examples/z98/z9gb/tests/tier_cgb.sh "$ZIG"
+== tier_cgb summary: 39 passed, 0 failed, 0 skipped ==
+TIER_CGB PASS
+
+$ bash examples/z98/z9gb/tests/tier_smoke.sh "$ZIG"
+== tier_smoke summary: 18 passed, 0 failed ==
+TIER_SMOKE PASS
+
+$ bash examples/z98/z9gb/tests/tier_audio.sh --gate "$ZIG"
+== tier_audio summary: 9 passed, 0 failed, 0 skipped ==
+TIER_AUDIO PASS
+
+$ bash examples/z98/z9gb/tests/tier_dynarec.sh "$ZIG"
+== tier_dynarec summary: 26 passed, 0 failed, 0 skipped ==
+TIER_DYNAREC PASS
+
+$ bash examples/z98/z9gb/tests/tier_win32.sh "$ZIG"
+== tier_win32 summary: 39 passed, 0 failed, 0 skipped ==
+TIER_WIN32 PASS
+
+$ bash examples/z98/z9gb/tests/tier_win32.sh --smoke "$ZIG"
+== tier_win32 summary: 18 passed, 0 failed, 0 skipped ==
+TIER_WIN32 PASS
+```
+
+`tier_perf.sh` measured the host headless `--no-dynarec` gate at **923.077 fps**
+(`wall=0.65 s`, `cpu_user=0.65 s`, `cpu_sys=0.00 s`, `rss_kb=2976`, `-O2`
+emitted-C build) and the same 923.077 fps with `--dynarec` disabled as
+`reason=unsupported-host`. The Wine windowed evidence measured 47.618 fps
+(`--no-dynarec`) and 47.624 fps (`--dynarec`), with the dynarec run reporting
+`dynarec=on blocks=151 executed=22254 fallback=10415335`; the two runs are
+within measurement noise, so no speedup claim is made. `tier_perf.sh --cgb`
+passed 8/0/0 as well; the authoritative threshold is unchanged at 59.0 fps.
+
+Anti-vacuous dynarec counters from the final `--dynarec` runs:
+`tier_dynarec` 2048 `blocks=151 executed=22254`; `tier_audio` `dmg_sound`
+`blocks=210 executed=1165539916`; `tier_cgb` `cgb_sound` `blocks=226
+executed=1165245746`, `cgb-acid2` `blocks=114 executed=50018`, and
+`interrupt_time` `blocks=8 executed=10265`; `tier_win32` and `--smoke`
+`blocks=2 executed=176641`; `tier_perf` Wine 2048 `blocks=151 executed=22254`.
+The DMG external gates reported nonzero dynarec counters for each of the 166
+checks (for example 15/8227, 57/38370, 62/39639, 65/40589, 112/35003,
+126/101700, 148/39306, 154/39252, 163/234417, 178/882783540, 191/869196630).
 
