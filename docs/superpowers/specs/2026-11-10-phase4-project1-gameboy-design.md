@@ -550,17 +550,23 @@ pub fn dsoundClose(d: *Dsound) void;
   write), `LD B,B` (`0x40`), `LD A,(DE)` (`0x1A`; DE may address a PPU register
   at runtime, so this dynamic PPU read is always interpreted with full PPU sync),
   a statically-known PPU-register read (`LDH A,(a8)` with `a8` in `0x40..0x4B`,
-  or `LD A,(a16)` with `a16` in `0xFF40..0xFF4B`), or 64 instructions (the
-  boundary rules bound interrupt-service drift). A block starting at `LD B,B`,
-  at `LD A,(DE)`, or at such a PPU read is rejected so the interpreter executes
-  it with full PPU sync.
+  or `LD A,(a16)` with `a16` in `0xFF40..0xFF4B`), `LD (a16),A` (`0xEA`) when
+  `a16` is in `0xFF40..0xFF4B`, or 64 instructions (the boundary rules bound
+  interrupt-service drift). A block starting at `LD B,B`, at `LD A,(DE)`, or at
+  such a PPU read/write is rejected so the interpreter executes it with full
+  PPU sync.
 - Dynamic memory accesses inside a block that may address PPU registers advance
-  the PPU to the current instruction boundary before the access: charge the
-  accumulated CPU cycles through `busTick`, advance the PPU by the corresponding
-  dots (`cycles/2` in double speed), synchronize registers in/out, then perform
-  the access. `DynCtx` carries the PPU pointer; the block-return sync remains
-  unchanged. This replaces the stale-dynamic-read limitation; `LD A,(DE)` stays
-  a conservative boundary.
+  the PPU to the current instruction boundary before the access. `DynCtx` carries
+  the PPU pointer, the current instruction cycles, a pending PPU-cycle count, and
+  an advanced-dot count. The pending count persists across chained blocks. Before
+  an access, pre = pending - current-instruction cycles; the PPU advances by
+  `pre` dots in normal speed or `pre/2` in double speed; registers are
+  synchronized in/out; pending becomes the current instruction cycles; advanced
+  dots are tracked. The block epilogue stays bus-only. After a block,
+  `emuRunFrame` keeps the full frame dot count but ticks `dot_delta -
+  advanced_dots`, so helper-advanced dots are never charged twice. This replaces
+  the stale-dynamic-read/write limitation; `LD A,(DE)` and `0xEA` PPU writes stay
+  conservative boundaries.
 - Generated code caches the CPU pairs in callee-saved host registers
   (`BC→ebx`, `DE→esi`, `HL→edi`, `SP→ebp`) across the block, with `A`/`F` in
   `Cpu` (or `A` in a volatile reg). Memory operands use an inline page-table
