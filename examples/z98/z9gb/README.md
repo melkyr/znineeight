@@ -252,6 +252,28 @@ z9gb [--headless | --windowed] [--cgb] [--scale <1..4>] [--frames <n>]
 - `--rtc-fixed <unix>` freezes the MBC3 RTC clock to a Unix epoch for
   deterministic runs; without it the RTC uses the host wall clock.
 
+## Running Game Boy Color ROMs
+
+Use `--cgb` for Game Boy Color software. The `.gbc` extension is not required;
+the cartridge header byte `0x0143` decides. A CGB-only cartridge exits 2 with
+`z9gb: CgbRequired` if `--cgb` is omitted.
+
+Windows example (run from the directory containing `z9gb.exe`):
+
+```bat
+z9gb.exe --windowed --cgb --scale 2 --rom "C:\Games\Pokemon Crystal.gbc" --save
+```
+
+- `--windowed` opens the DirectDraw/DirectInput/DirectSound backend; use
+  `--headless` for no window.
+- `--scale 2` selects integer scaling (1-4).
+- `--rom <path>` loads the ROM (32 KiB-8 MiB); `--save` writes battery RAM
+  next to the ROM as `.sav` and, for MBC3+RTC cartridges, `.rtc`.
+- `--cgb` is required for CGB-only ROMs and selects color mode for
+  CGB-compatible ROMs; without it a CGB-compatible ROM runs in DMG mode.
+- Cartridge rumble motors are not emulated. Standard CGB video, sound,
+  banking, double-speed, HDMA, and MBC3 RTC are supported.
+
 ### Controls (windowed)
 
 | Key | Game Boy |
