@@ -113,6 +113,15 @@ fn testRoundTrip() void {
     checkContains("diag custom fixed=none", text, "; a raw=0x39 fixed=none\n");
     checkContains("diag legacy fixed=left", text, "; left raw=0x4B fixed=none\n");
     checkContains("diag default fixed=right", text, "; right raw=0xCD fixed=right\n");
+
+    var fb = config.configDefaults(config.KIND_FALLBACK);
+    config.setBindingRaw(&fb, 0, 0x27);
+    var fbuf: [2048]u8 = undefined;
+    const fn1 = config.configSerialize(fbuf[0..], &fb);
+    checkContains("fallback diag VK fixed=right", fbuf[0..fn1], "; right raw=0x27 fixed=right\n");
+    config.setBindingRaw(&fb, 0, 0x39);
+    const fn2 = config.configSerialize(fbuf[0..], &fb);
+    checkContains("fallback diag custom fixed=none", fbuf[0..fn2], "; right raw=0x39 fixed=none\n");
 }
 
 fn testDuplicate() void {
@@ -207,6 +216,36 @@ fn testGamepadMerge() void {
     checkU8("config quit adds no button", st4.buttons, 0);
 }
 
+fn testFallbackMerge() void {
+    var cfg = config.configDefaults(config.KIND_FALLBACK);
+    config.setBindingRaw(&cfg, 0, 0x27);
+
+    var raw: [256]u8 = undefined;
+    zeroKeys(raw[0..]);
+    raw[0x27] = 0x80;
+    var st = backend.InputState{ .buttons = 0, .quit = false };
+    config.configApplyWithGamepad(raw[0..], 0x01, &cfg, &st);
+    checkU8("fallback VK right maps to right", st.buttons, 0x01);
+
+    config.setBindingRaw(&cfg, 0, 0x39);
+    zeroKeys(raw[0..]);
+    raw[0x27] = 0x80;
+    var st2 = backend.InputState{ .buttons = 0, .quit = false };
+    config.configApplyWithGamepad(raw[0..], 0x01, &cfg, &st2);
+    checkU8("fallback remap stops old VK key", st2.buttons, 0);
+
+    zeroKeys(raw[0..]);
+    raw[0x39] = 0x80;
+    var st3 = backend.InputState{ .buttons = 0, .quit = false };
+    config.configApplyWithGamepad(raw[0..], 0x01, &cfg, &st3);
+    checkU8("fallback new VK key maps to right", st3.buttons, 0x01);
+
+    zeroKeys(raw[0..]);
+    var st4 = backend.InputState{ .buttons = 0, .quit = false };
+    config.configApplyWithGamepad(raw[0..], 0x01, &cfg, &st4);
+    checkU8("fallback ignores legacy merged bits", st4.buttons, 0);
+}
+
 fn testCapture() void {
     var cap: config.CaptureState = undefined;
     var keys: [256]u8 = undefined;
@@ -240,6 +279,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     testBackendMismatch();
     testApply();
     testGamepadMerge();
+    testFallbackMerge();
     testCapture();
     filemod.remove(P1) catch {};
     filemod.remove(P2) catch {};

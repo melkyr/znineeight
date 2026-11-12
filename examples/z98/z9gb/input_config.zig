@@ -153,6 +153,24 @@ pub fn legacyFixed(raw: u8) []const u8 {
     return "none";
 }
 
+fn legacyFixedVk(raw: u8) []const u8 {
+    if (raw == 0x27) return "right";
+    if (raw == 0x25) return "left";
+    if (raw == 0x26) return "up";
+    if (raw == 0x28) return "down";
+    if (raw == 0x5A) return "a";
+    if (raw == 0x58) return "b";
+    if (raw == 0x08) return "select";
+    if (raw == 0x0D) return "start";
+    if (raw == 0x1B) return "quit";
+    return "none";
+}
+
+fn legacyFixedForKind(raw: u8, kind: u8) []const u8 {
+    if (kind == KIND_FALLBACK) return legacyFixedVk(raw);
+    return legacyFixed(raw);
+}
+
 fn backendName(kind: u8) []const u8 {
     if (kind == KIND_DINPUT8) return "dinput8";
     if (kind == KIND_FALLBACK) return "fallback";
@@ -359,7 +377,7 @@ pub fn configSerialize(buf: []u8, cfg: *const InputConfig) usize {
         append(buf, &pos, " raw=0x");
         appendHexByte(buf, &pos, b.raw);
         append(buf, &pos, " fixed=");
-        append(buf, &pos, legacyFixed(b.raw));
+        append(buf, &pos, legacyFixedForKind(b.raw, b.kind));
         append(buf, &pos, "\n");
     }
     return pos;
@@ -409,12 +427,22 @@ fn legacyKeyBits(raw_keys: []const u8) u8 {
 }
 
 // Active-config path. `legacy_bits` is M from dinputPoll (keyboard + gamepad
-// merged); `raw_keys` is the same raw image used to derive L. Gamepad-only bits
-// are M & ~L, then OR'd with the configured keyboard bits K. Quit follows the
-// config's quit binding (window-close quit is applied by the caller).
+// merged); `raw_keys` is the same raw image used to derive L.
+//
+// DInput8 raw is DIK-indexed, so L is legacyKeyBits() and gamepad-only bits are
+// M & ~L, OR'd with configured keyboard bits K. The GetAsyncKeyState fallback
+// has no gamepad mapping and its raw image is VK-indexed, so applying L=M & ~L
+// there would misclassify the legacy VK keys as gamepad bits and let remapped-
+// away keys keep firing. On fallback use K alone. Quit follows the config's
+// quit binding (window-close quit is applied by the caller).
 pub fn configApplyWithGamepad(raw_keys: []const u8, legacy_bits: u8, cfg: *const InputConfig, out: *backend.InputState) void {
     var key = backend.InputState{ .buttons = 0, .quit = false };
     configApply(raw_keys, cfg, &key);
+    if (cfg.right.kind == KIND_FALLBACK) {
+        out.buttons = key.buttons;
+        out.quit = key.quit;
+        return;
+    }
     const legacy_kb = legacyKeyBits(raw_keys);
     const gamepad = legacy_bits & ~legacy_kb;
     out.buttons = gamepad | key.buttons;

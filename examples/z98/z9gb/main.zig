@@ -307,6 +307,22 @@ fn drainAudio(plat: *backend.Platform) void {
     }
 }
 
+// Debug-only runtime defaults for the VK-indexed GetAsyncKeyState fallback.
+// configDefaults stays the brief-pinned DIK table; this translation is used
+// only when --input-debug runs on the fallback backend with no valid ini, so
+// the debug table and raw logging match the actual VK image.
+fn applyFallbackVkDefaults(cfg: *input_config.InputConfig) void {
+    input_config.setBindingRaw(cfg, 0, 0x27);
+    input_config.setBindingRaw(cfg, 1, 0x25);
+    input_config.setBindingRaw(cfg, 2, 0x26);
+    input_config.setBindingRaw(cfg, 3, 0x28);
+    input_config.setBindingRaw(cfg, 4, 0x5A);
+    input_config.setBindingRaw(cfg, 5, 0x58);
+    input_config.setBindingRaw(cfg, 6, 0x08);
+    input_config.setBindingRaw(cfg, 7, 0x0D);
+    input_config.setBindingRaw(cfg, 8, 0x1B);
+}
+
 fn pollRawKeys(plat: *backend.Platform, out: []u8) bool {
     if (@isWindows()) {
         return selected_impl.platformPollRawKeys(plat.state, out);
@@ -368,7 +384,7 @@ fn runMapkeys(plat: *backend.Platform, cfg: *input_config.InputConfig) bool {
         }
         if (!bound) {
             const d = input_config.bindingAt(cfg, wi);
-            std.io.write("z9gb: keeping default for ");
+            std.io.write("z9gb: keeping current binding for ");
             std.io.write(input_config.inputLabel(wi));
             std.io.write(" raw=0x");
             writeHexByte(d.raw);
@@ -554,6 +570,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     const key_status = input_config.configLoad(input_config.CONFIG_PATH, runtime_kind, &key_cfg);
     const key_warn = input_config.loadWarning(key_status);
     if (key_warn.len != 0) std.io.write(key_warn);
+    if (input_debug and runtime_kind == input_config.KIND_FALLBACK and key_status != input_config.LoadStatus.loaded) {
+        applyFallbackVkDefaults(&key_cfg);
+    }
     if (key_status == input_config.LoadStatus.loaded or input_debug or mapkeys) {
         if (@isWindows()) {
             if (windowed) selected_impl.platformSetInputConfig(&key_cfg);
