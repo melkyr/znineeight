@@ -112,39 +112,61 @@ operator's.
   the interpreter runs; that is not a dynarec PASS claim. Wine numbers are Wine
   evidence only, never Win98 hardware evidence.
 
-Measured accounting and `2048.gb` numbers from the P5 closeout (single runs;
-host load varies). `code_cache_bytes=1048576`, `stack_limit=1048576`,
-`static_bytes=9801128`, `dynarec_state_bytes=262184`; the Dynarec state is a
-pointer plus entries, so the 1 MiB code cache is not in BSS and is not a stack
-allocation.
+Measured accounting and the workload matrix from the 2026-11-12 compat
+re-measurement (host load varies). `code_cache_bytes=1048576`,
+`stack_limit=1048576`, `static_bytes=9801160`, `dynarec_state_bytes=262196`;
+the Dynarec state is a pointer plus entries, so the 1 MiB code cache is not in
+BSS and is not a stack allocation.
 
 **Primary dynarec throughput metric:** Wine headless turbo (no display/pacing
 throttle), reported as emulated T-cycles/sec = 42,134,400 / wall (600 frames ×
-70,224 T-cycles).
+70,224 T-cycles). Each row is the median of three alternating
+interpreter/`--dynarec` runs after an unmeasured warmup. The `coverage` column is
+the `coverage` permille printed by `--dynarec-stats` (percent in parentheses).
 
-| Wine headless turbo | T-cycles/sec | fps | wall | CPU user/sys | RSS |
-|---|---:|---:|---:|---:|---:|
-| `--no-dynarec` | 8,056,291 | 114.723 | 5.23 s | 5.08 / 0.01 s | 14,668 KiB |
-| `--dynarec` | 8,087,217 | 115.163 | 5.21 s | 5.08 / 0.01 s | 14,708 KiB |
+| ROM | Flags | Mode | T-cycles/sec | fps | wall | CPU user/sys | RSS | coverage |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| `2048.gb` | — | `--no-dynarec` | 8,181,437 | 116.505 | 5.15 s | 5.11 / 0.01 s | 15,352 KiB | — |
+| `2048.gb` | — | `--dynarec` | 8,056,291 | 114.723 | 5.23 s | 5.09 / 0.01 s | 15,508 KiB | 12‰ (1.2%) |
+| `p_cry.gbc` (Pokemon Crystal) | `--cgb` | `--no-dynarec` | 9,363,200 | 133.333 | 4.50 s | 4.42 / 0.01 s | 17,268 KiB | — |
+| `p_cry.gbc` | `--cgb` | `--dynarec` | 7,646,897 | 108.893 | 5.51 s | 5.36 / 0.01 s | 18,556 KiB | 317‰ (31.7%) |
+| `p_pin.gbc` (Pokemon Pinball) | `--cgb` | `--no-dynarec` | 10,666,937 | 151.899 | 3.95 s | 3.92 / 0.01 s | 16,384 KiB | — |
+| `p_pin.gbc` | `--cgb` | `--dynarec` | 12,768,000 | 181.818 | 3.30 s | 3.15 / 0.01 s | 17,280 KiB | 973‰ (97.3%) |
 
-These are medians of three alternating no-dynarec/dynarec runs after an
-unmeasured warmup run, so Wine cold-start and run-order effects are not
-attributed to dynarec. The dynarec runs reported `dynarec=on blocks=151
-executed=22254 fallback=10415335`; `2048.gb` is HALT-heavy, so most steps fall
-back to the interpreter. Dynarec measured 8,087,217 versus 8,056,291
-T-cycles/sec (about 0.4% higher), within run-to-run noise: **no measurable
-dynarec throughput gain** is claimed. No fixed speedup threshold applies.
+The earlier P5 verdict was drawn from `2048.gb` alone, a HALT-heavy workload
+that measured at most 6% dynarec coverage (1.2% here), and concluded "no
+measurable gain". That conclusion is workload-qualified, not universal:
+
+- `2048.gb` at 1.2% coverage: dynarec is 1.5% slower (8,056,291 versus
+  8,181,437 T-cycles/sec); nearly every step falls back to the interpreter.
+- Pokemon Crystal at 31.7% coverage: dynarec is 18.3% slower (7,646,897 versus
+  9,363,200); translation and dispatch overhead still outweigh translated
+  execution.
+- Pokemon Pinball at 97.3% coverage: dynarec is 19.7% faster (12,768,000 versus
+  10,666,937); with almost all instructions translated, the dynarec is a real
+  throughput win.
+
+The corrected conclusion is **workload-dependent**: the dynarec is a gain on
+high-coverage ROMs, roughly neutral-to-negative at low coverage, and no fixed
+speedup threshold applies. These are Wine numbers and Wine evidence only; no
+Win98 hardware claim is made. The corresponding `--dynarec` counters for the
+600-frame runs were: `2048` `blocks=192 executed=45382 fallback=10187028
+tinstr=129109 minstr=10187028 rejected=11322 coverage=12‰`; Crystal
+`blocks=41379 executed=761742 fallback=4681142 tinstr=2174380 minstr=4681142
+rejected=73375 coverage=317‰`; Pinball `blocks=40149 executed=1687938
+fallback=135400 tinstr=4986874 minstr=135400 rejected=85087 coverage=973‰`.
 
 The following context rows are **not** dynarec throughput judgments: host
 headless is unpaced interpreter throughput, and dynarec is unavailable on *nix;
-Wine windowed is display-bound evidence only.
+Wine windowed is display-bound evidence only. These are single runs from the
+same re-measurement.
 
 | Path | Variant | fps | wall | CPU user/sys | RSS |
 |---|---|---:|---:|---:|---:|
-| host headless (-O2, unpaced interpreter) | `--no-dynarec` | 923.077 | 0.65 s | 0.65 / 0.00 s | 2,976 KiB |
-| host headless (-O2, unpaced interpreter) | `--dynarec` | 923.077 | 0.65 s | 0.64 / 0.00 s | 3,072 KiB |
-| Wine windowed (display-bound) | `--no-dynarec` | 47.618 | 12.73 s | 6.42 / 0.06 s | 41,384 KiB |
-| Wine windowed (display-bound) | `--dynarec` | 47.624 | 12.85 s | 6.52 / 0.07 s | 41,436 KiB |
+| host headless (-O2, unpaced interpreter) | `--no-dynarec` | 833.333 | 0.72 s | 0.70 / 0.00 s | 3,088 KiB |
+| host headless (-O2, unpaced interpreter) | `--dynarec` | 857.143 | 0.70 s | 0.70 / 0.00 s | 3,216 KiB |
+| Wine windowed (display-bound) | `--no-dynarec` | 47.168 | 12.85 s | 6.75 / 0.05 s | 41,788 KiB |
+| Wine windowed (display-bound) | `--dynarec` | 47.622 | 12.74 s | 6.70 / 0.06 s | 41,552 KiB |
 
 The host `--dynarec` row is the interpreter with dynarec disabled
 (`reason=unsupported-host`), not translated execution; host dynarec cannot be
@@ -616,38 +638,54 @@ $ bash examples/z98/z9gb/tests/tier_win32.sh --smoke "$ZIG"
 TIER_WIN32 PASS
 ```
 
-`tier_perf.sh` measured the host headless `--no-dynarec` gate at **923.077 fps**
-(`wall=0.65 s`, `cpu_user=0.65 s`, `cpu_sys=0.00 s`, `rss_kb=2976`, `-O2`
-emitted-C build) and the same 923.077 fps with `--dynarec` disabled as
-`reason=unsupported-host`. Those host rows are unpaced interpreter throughput;
-host dynarec is unavailable on *nix, so they cannot judge dynarec. The Wine
-windowed evidence measured 47.618 fps (`--no-dynarec`) and 47.624 fps
-(`--dynarec`); those rows are display-bound evidence only.
+`tier_perf.sh` measured the host headless `--no-dynarec` gate at **833.333 fps**
+(`wall=0.72 s`, `cpu_user=0.70 s`, `cpu_sys=0.00 s`, `rss_kb=3088`, `-O2`
+emitted-C build); the same host path with `--dynarec` is the interpreter with
+dynarec disabled as `reason=unsupported-host` (857.143 fps in this run). Those
+host rows are unpaced interpreter throughput; host dynarec is unavailable on
+*nix, so they cannot judge dynarec. The Wine windowed evidence measured 47.168
+fps (`--no-dynarec`) and 47.622 fps (`--dynarec`); those rows are display-bound
+evidence only.
 
 The primary throughput measurement uses `tier_perf.sh --throughput-only`, which
 warms up wineserver/exe, then runs three alternating measurements per mode:
 
 ```sh
 $ bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG" --throughput-only
-wine_headless_turbo median mode=no-dynarec runs=3 fps=114.723 tcycles_per_sec=8056291 wall=5.23s cpu_user=5.08s cpu_sys=0.01s rss_kb=14668
-wine_headless_turbo median mode=dynarec runs=3 fps=115.163 tcycles_per_sec=8087217 wall=5.21s cpu_user=5.08s cpu_sys=0.01s rss_kb=14708 dynarec=on blocks=151 executed=22254 fallback=10415335
+wine_headless_turbo median mode=no-dynarec runs=3 fps=115.385 tcycles_per_sec=8102769 wall=5.20s cpu_user=5.13s cpu_sys=0.01s rss_kb=15556
+wine_headless_turbo median mode=dynarec runs=3 fps=113.852 tcycles_per_sec=7995142 wall=5.27s cpu_user=5.12s cpu_sys=0.01s rss_kb=15468 dynarec=on blocks=192 executed=45382 fallback=10187028 tinstr=129109 minstr=10187028 rejected=11322 coverage=12‰
 == tier_perf summary: 2 passed, 0 failed, 0 skipped ==
 TIER_PERF PASS
 ```
 
-Wine headless turbo medians: `--dynarec` **8,087,217 T-cycles/sec** versus
-**8,056,291** for `--no-dynarec` (about 0.4% higher), within run-to-run noise;
-**no measurable dynarec gain** is claimed. No fixed speedup threshold applies.
-`tier_perf.sh --cgb` passed 8/0/0 as well; the authoritative host headless
+On `2048.gb` these medians are 7,995,142 (`--dynarec`) versus 8,102,769
+(`--no-dynarec`) T-cycles/sec at 1.2% coverage, i.e. the dynarec is 1.3% slower
+on this HALT-heavy workload. The old P5 "no measurable gain" wording came from
+this 2048-only, ≤6%-coverage workload and is superseded by the workload matrix
+above: at high coverage the dynarec is a real gain (Pinball 97.3% coverage,
+19.7% faster), while low/moderate coverage is neutral-to-negative (2048 1.2%,
+1.5% slower; Crystal 31.7%, 18.3% slower). No fixed speedup threshold applies.
+
+The full compat matrix is measured with:
+
+```sh
+$ bash examples/z98/z9gb/tests/tier_perf.sh "$ZIG" --compat \
+    --user-roms /path/to/user/roms
+== tier_perf summary: 16 passed, 0 failed, 0 skipped ==
+TIER_PERF PASS
+```
+
+User ROMs are never committed; a missing user ROM is a truthful `SKIP`, not a
+PASS. `tier_perf.sh --cgb` passed 8/0/0 as well; the authoritative host headless
 threshold is unchanged at 59.0 fps. All Wine numbers are Wine evidence only,
 never Win98.
 
 Anti-vacuous dynarec counters from the final `--dynarec` runs:
-`tier_dynarec` 2048 `blocks=151 executed=22254`; `tier_audio` `dmg_sound`
+`tier_dynarec` 2048 `blocks=192 executed=45382`; `tier_audio` `dmg_sound`
 `blocks=210 executed=1165539916`; `tier_cgb` `cgb_sound` `blocks=226
 executed=1165245746`, `cgb-acid2` `blocks=114 executed=50018`, and
 `interrupt_time` `blocks=8 executed=10265`; `tier_win32` and `--smoke`
-`blocks=2 executed=176641`; `tier_perf` Wine 2048 `blocks=151 executed=22254`.
+`blocks=2 executed=176641`; `tier_perf` Wine 2048 `blocks=192 executed=45382`.
 The DMG external gates reported nonzero dynarec counters for each of the 166
 checks (for example 15/8227, 57/38370, 62/39639, 65/40589, 112/35003,
 126/101700, 148/39306, 154/39252, 163/234417, 178/882783540, 191/869196630).

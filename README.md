@@ -102,20 +102,25 @@ basic-block translator that executes from a separate 1 MiB `VirtualAlloc`
 fallback for non-ROM PCs, interrupts/DMA, allocation failure, and *nix hosts
 (where `--dynarec` prints `dynarec=disabled reason=unsupported-host`). The code
 cache is separate from the 1 MiB stack and from static/BSS state
-(`code_cache_bytes=1048576`, `stack_limit=1048576`, `static_bytes=9801128`,
-dynarec state 262,184 bytes). Final gates: `tier_dmg --gates` 166/0,
+(`code_cache_bytes=1048576`, `stack_limit=1048576`, `static_bytes=9801160`,
+dynarec state 262,196 bytes). Final gates: `tier_dmg --gates` 166/0,
 `tier_dynarec` 26/0, `tier_smoke` 18/0, `tier_cgb` 39/0, `tier_audio --gate`
-9/0, `tier_win32` 39/0 and `--smoke` 18/0, `tier_perf` 8/0. On `2048.gb` over
-600 frames, host headless `--no-dynarec` measured **923.077 fps** (the unchanged
->= 59.0 fps hard gate, unpaced interpreter throughput); host `--dynarec` is
-disabled as unsupported on *nix, so host runs cannot judge dynarec. The primary
-throughput metric is Wine headless turbo `T-cycles/sec = 42,134,400 / wall`,
-using medians of three alternating runs after a warmup: dynarec measured
-**8,087,217 T-cycles/sec** versus **8,056,291** without it (about 0.4% higher,
-within run-to-run noise; no measurable gain claimed). Wine windowed fps (47.618
-without dynarec, 47.624 with it) is display-bound evidence only. No fixed
-speedup threshold applies. Wine is evidence only, never Win98; no real Win98
-dynarec run was performed and real-hardware sign-off remains the operator's.
+9/0, `tier_win32` 39/0 and `--smoke` 18/0, `tier_perf` 8/0 plus the
+`--compat --user-roms` matrix 16/0. On `2048.gb` over 600 frames, host headless
+`--no-dynarec` measured **833.333 fps** (the unchanged >= 59.0 fps hard gate,
+unpaced interpreter throughput); host `--dynarec` is disabled as unsupported on
+*nix, so host runs cannot judge dynarec. The primary throughput metric is Wine
+headless turbo `T-cycles/sec = 42,134,400 / wall`, using medians of three
+alternating runs after a warmup. The verdict is workload-dependent: at 1.2%
+coverage `2048.gb` measured **8,056,291** with dynarec versus **8,181,437**
+without (1.5% slower); at 31.7% coverage Pokemon Crystal measured **7,646,897**
+versus **9,363,200** (18.3% slower); at 97.3% coverage Pokemon Pinball measured
+**12,768,000** versus **10,666,937** (19.7% faster). The original P5 "no
+measurable gain" verdict came from the 2048-only, ≤6%-coverage workload; it is
+not a universal result. Wine windowed fps (47.168 without dynarec, 47.622 with
+it) is display-bound evidence only. No fixed speedup threshold applies. Wine is
+evidence only, never Win98; no real Win98 dynarec run was performed and
+real-hardware sign-off remains the operator's.
 
 **Phase 1 (TLS + WireGuard) is complete.** The std library now carries the
 browser-grade TLS 1.2/1.3 client (`std_tls` over `std_crypto`/`std_cipher`/
@@ -682,7 +687,8 @@ complete programs that exercise the language-wins features and the PAL/networkin
   `tests/tier_dmg.sh` (`--all`, `--gates`), `tests/tier_cgb.sh` (CGB hard gates
   `cgb-acid2`, `cgb_sound`, `interrupt_time`), `tests/tier_dynarec.sh`,
   `tests/tier_smoke.sh`, `tests/tier_audio.sh --gate`, `tests/tier_win32.sh --smoke`,
-  `tests/tier_perf.sh`, plus `tests/measure_rss.sh` (`--cgb` for CGB measurements).
+  `tests/tier_perf.sh` (with `--compat --user-roms` for the dynarec workload matrix),
+  plus `tests/measure_rss.sh` (`--cgb` for CGB measurements).
   Build/link prerequisites for Linux/*nix and Win9x are in
   [`examples/z98/z9gb/README.md`](examples/z98/z9gb/README.md).
 - Plus the classic single/multi-module programs (`hello`, `prime`, `fibonacci`, `days_in_month`,

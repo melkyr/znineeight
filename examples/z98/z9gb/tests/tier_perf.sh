@@ -1,5 +1,5 @@
 #!/bin/sh
-# tier_perf.sh — z9gb Phase 4 performance evidence (P3/P4/P5).
+# tier_perf.sh — z9gb Phase 4 performance and P5 compat-workload evidence.
 #
 # Measures the named homebrew ROM 2048.gb over 600 frames on these paths:
 #   host_headless: --headless --no-dynarec --frames 600 --audio (authoritative)
@@ -29,27 +29,41 @@
 # dynarec is unavailable on *nix. Wine windowed fps is display-bound evidence
 # only and must not judge dynarec throughput.
 #
+# --compat adds the P5 workload matrix: 2048 (from Z9GB_ROM_DIR) plus user ROMs
+# p_cry and p_pin (from --user-roms) on Wine headless turbo, three alternating
+# interpreter/--dynarec runs per ROM after a warmup, reporting wall, CPU,
+# T-cycles/sec, fps, and the --dynarec coverage permille. Missing user ROMs are
+# a truthful SKIP, never a PASS. Exact per-ROM commands:
+#   wine z9gb_o2.exe --headless --turbo --frames 600 --no-dynarec --rom <ROM> --fb-out <fb>
+#   wine z9gb_o2.exe --headless --turbo --frames 600 --dynarec --rom <ROM> --fb-out <fb>
+#   (2048: no --cgb; p_cry and p_pin: --cgb)
+# Coverage is recorded, not thresholded; it qualifies the dynarec result.
+#
 # The 1 MiB code cache is a separate VirtualAlloc/mmap mapping, not BSS and not
 # stack. This script prints code_cache_bytes, stack_limit, static_bytes, and the
 # Dynarec static-state size to make that accounting inspectable.
 #
 # Usage:
-#   sh tier_perf.sh [ZIG] [--cgb] [--throughput-only]
+#   sh tier_perf.sh [ZIG] [--cgb] [--throughput-only] [--compat [--user-roms DIR]]
 #
 # Env:
 #   ZIG          compiler (first positional arg, else $ZIG, else seed path)
 #   OUT          scratch dir (default /tmp/z9gb_tier_perf)
 #   Z9GB_ROM_DIR ROM root (default /tmp/z9gb_roms, else testdata/roms)
+#   Z9GB_USER_ROM_DIR compat user-ROM dir (default empty; --user-roms overrides)
 #   Z9GB_PERF_MIN_FPS host headless minimum sustained rendered fps (default 59.0)
 #
-# --cgb passes --cgb through to the host headless CLI workload. --throughput-only
-# runs ONLY the Wine headless turbo measurement; it warms wineserver/exe, runs
-# three alternating measurements per mode, reports medians, reuses an existing
-# $OUT/win32/perf/z9gb_o2.exe or builds it, and does not re-run the existing
-# host/windowed measured rows. A missing ROM = SKIP (exit 77); ROM size/hash
-# mismatch = FAIL. A skipped P4 hard gate blocks P4 closeout. Estimates are
-# labelled as estimates; measured numbers are reported as measured. The Wine
-# windowed result is evidence only and never changes the host headless gate.
+# --cgb passes --cgb through to the host headless 2048 workload. --throughput-only
+# runs ONLY the Wine headless turbo 2048 measurement; it warms wineserver/exe,
+# runs three alternating measurements per mode, reports medians, reuses an
+# existing $OUT/win32/perf/z9gb_o2.exe or builds it, and does not re-run the
+# existing host/windowed measured rows. --compat adds the 2048/p_cry/p_pin
+# workload matrix on Wine headless turbo and reads --user-roms (or
+# Z9GB_USER_ROM_DIR) for the user ROMs. A missing ROM = SKIP (exit 77); ROM
+# size/hash mismatch = FAIL. A skipped P4 hard gate blocks P4 closeout.
+# Estimates are labelled as estimates; measured numbers are reported as
+# measured. The Wine windowed result is evidence only and never changes the host
+# headless gate.
 
 set -u
 
@@ -61,14 +75,26 @@ OUT="${OUT:-/tmp/z9gb_tier_perf}"
 PERF_MIN="${Z9GB_PERF_MIN_FPS:-59.0}"
 CGB=0
 THROUGHPUT_ONLY=0
+COMPAT=0
+USER_ROM_DIR="${Z9GB_USER_ROM_DIR:-}"
 
-for arg in "$@"; do
-    case "$arg" in
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --cgb) CGB=1 ;;
         --throughput-only) THROUGHPUT_ONLY=1 ;;
-        -*) echo "unknown option: $arg" >&2; exit 2 ;;
-        *) ZIG="$arg" ;;
+        --compat) COMPAT=1 ;;
+        --user-roms)
+            shift
+            if [ "$#" -eq 0 ]; then
+                echo "missing operand: --user-roms <dir>" >&2
+                exit 2
+            fi
+            USER_ROM_DIR="$1"
+            ;;
+        -*) echo "unknown option: $1" >&2; exit 2 ;;
+        *) ZIG="$1" ;;
     esac
+    shift
 done
 
 CGB_FLAG=""
@@ -333,6 +359,185 @@ run_throughput_section() {
     fi
 }
 
+compat_rom_run() {
+    cr_name="$1"
+    cr_rom="$2"
+    cr_cgbflag="$3"
+    cr_mode="$4"
+    cr_tag="$5"
+    cr_file="$6"
+    if [ "$cr_mode" = "no-dynarec" ]; then
+        cr_flag="--no-dynarec"
+    else
+        cr_flag="--dynarec"
+    fi
+    timeout 300 /usr/bin/time -f 'wall=%e cpu_user=%U cpu_sys=%S rss_kb=%M' \
+        -o "$PERF_DIR/$cr_tag.time.txt" \
+        wine "$PERF_EXE" --headless --turbo --frames 600 $cr_cgbflag $cr_flag \
+        --rom "$cr_rom" --fb-out "$PERF_DIR/$cr_tag.fb" \
+        >"$PERF_DIR/$cr_tag.log" 2>&1
+    cr_rc=$?
+    cr_wall="$(sed -n 's/.*wall=\([0-9][0-9.]*\).*/\1/p' "$PERF_DIR/$cr_tag.time.txt" | tail -1)"
+    cr_cpu_user="$(sed -n 's/.*cpu_user=\([0-9][0-9.]*\).*/\1/p' "$PERF_DIR/$cr_tag.time.txt" | tail -1)"
+    cr_cpu_sys="$(sed -n 's/.*cpu_sys=\([0-9][0-9.]*\).*/\1/p' "$PERF_DIR/$cr_tag.time.txt" | tail -1)"
+    cr_rss_kb="$(sed -n 's/.*rss_kb=\([0-9][0-9.]*\).*/\1/p' "$PERF_DIR/$cr_tag.time.txt" | tail -1)"
+    cr_fps="$(awk -v w="${cr_wall:-0}" \
+        'BEGIN { if (w + 0 > 0) printf "%.3f", 600 / w; else print "0" }')"
+    cr_tcyc="$(awk -v w="${cr_wall:-0}" -v c="$TCYCLES_600" \
+        'BEGIN { if (w + 0 > 0) printf "%.0f", c / w; else print "0" }')"
+    cr_dyn="$(grep '^dynarec=' "$PERF_DIR/$cr_tag.log" | tail -1)"
+    cr_blocks="$(echo "$cr_dyn" | sed -n 's/.*blocks=\([0-9][0-9]*\).*/\1/p')"
+    cr_exec="$(echo "$cr_dyn" | sed -n 's/.*executed=\([0-9][0-9]*\).*/\1/p')"
+    cr_cov="$(echo "$cr_dyn" | sed -n 's/.*coverage=\([0-9][0-9]*\).*/\1/p')"
+    if [ "$cr_mode" = "dynarec" ]; then
+        cr_cov_show="${cr_cov:-missing}"
+    else
+        cr_cov_show="n/a"
+        cr_cov="0"
+    fi
+    echo "       compat rom=$cr_name mode=$cr_mode tag=$cr_tag fps=$cr_fps tcycles_per_sec=$cr_tcyc wall=${cr_wall:-none}s cpu_user=${cr_cpu_user:-none}s cpu_sys=${cr_cpu_sys:-none}s rss_kb=${cr_rss_kb:-none} coverage=$cr_cov_show ${cr_dyn:-dynarec=not-reported} (Wine evidence only; not Win98)"
+    if [ "$cr_rc" -ne 0 ]; then
+        echo "       FAIL: compat $cr_name $cr_mode/$cr_tag run rc=$cr_rc" >&2
+        return 1
+    elif [ "$(stat -c %s "$PERF_DIR/$cr_tag.fb" 2>/dev/null)" != "92160" ]; then
+        echo "       FAIL: compat $cr_name $cr_mode/$cr_tag framebuffer is not 92160 bytes" >&2
+        return 1
+    elif [ "$cr_mode" = "dynarec" ] \
+        && { [ -z "$cr_blocks" ] || [ "$cr_blocks" -eq 0 ] \
+            || [ -z "$cr_exec" ] || [ "$cr_exec" -eq 0 ] \
+            || [ -z "$cr_cov" ] \
+            || ! echo "$cr_dyn" | grep -q '^dynarec=on '; }; then
+        echo "       FAIL: compat $cr_name $cr_mode/$cr_tag anti-vacuous counters (${cr_dyn:-no stats line})" >&2
+        return 1
+    fi
+    if [ -n "$cr_file" ]; then
+        echo "$cr_wall $cr_cpu_user $cr_cpu_sys $cr_rss_kb $cr_tcyc $cr_fps $cr_cov" >>"$cr_file"
+    fi
+    return 0
+}
+
+compat_measure_one() {
+    cm_name="$1"
+    cm_rom="$2"
+    cm_cgbflag="$3"
+    cm_mode="$4"
+    cm_run="$5"
+    if [ "$cm_mode" = "no-dynarec" ]; then
+        cm_tag="compat_${cm_name}_no_dynarec_$cm_run"
+        cm_file="$COMPAT_DIR/${cm_name}_no_dynarec.runs"
+    else
+        cm_tag="compat_${cm_name}_dynarec_$cm_run"
+        cm_file="$COMPAT_DIR/${cm_name}_dynarec.runs"
+    fi
+    compat_rom_run "$cm_name" "$cm_rom" "$cm_cgbflag" "$cm_mode" "$cm_tag" "$cm_file"
+}
+
+compat_summarize_mode() {
+    cs_name="$1"
+    cs_mode="$2"
+    cs_file="$3"
+    cs_count="$(wc -l <"$cs_file")"
+    if [ "$cs_count" -ne 3 ]; then
+        fail_case "compat $cs_name $cs_mode: $cs_count/3 measurements"
+        return 1
+    fi
+    cs_tcyc="$(median_col "$cs_file" 5)"
+    cs_fps="$(median_col "$cs_file" 6)"
+    cs_wall="$(median_col "$cs_file" 1)"
+    cs_cpu_user="$(median_col "$cs_file" 2)"
+    cs_cpu_sys="$(median_col "$cs_file" 3)"
+    cs_rss="$(median_col "$cs_file" 4)"
+    if [ "$cs_mode" = "dynarec" ]; then
+        cs_cov="$(median_col "$cs_file" 7)"
+        cs_cov_show="${cs_cov}‰"
+    else
+        cs_cov_show="n/a"
+    fi
+    echo "       compat median rom=$cs_name mode=$cs_mode runs=3 fps=$cs_fps tcycles_per_sec=$cs_tcyc wall=${cs_wall}s cpu_user=${cs_cpu_user}s cpu_sys=${cs_cpu_sys}s rss_kb=${cs_rss} coverage=$cs_cov_show (Wine evidence only; not Win98)"
+    pass_case "compat $cs_name $cs_mode median $cs_tcyc T-cycles/sec (3 alternating runs; Wine evidence only)"
+}
+
+compat_measure_rom() {
+    cx_name="$1"
+    cx_rom="$2"
+    cx_cgbflag="$3"
+    : >"$COMPAT_DIR/${cx_name}_no_dynarec.runs"
+    : >"$COMPAT_DIR/${cx_name}_dynarec.runs"
+    echo "       compat warmup: unmeasured $cx_name --no-dynarec run"
+    if ! compat_rom_run "$cx_name" "$cx_rom" "$cx_cgbflag" no-dynarec \
+        "compat_${cx_name}_warmup" ""; then
+        fail_case "compat $cx_name warmup failed"
+        return 1
+    fi
+    cx_failed=0
+    compat_measure_one "$cx_name" "$cx_rom" "$cx_cgbflag" no-dynarec 1 || cx_failed=$((cx_failed + 1))
+    compat_measure_one "$cx_name" "$cx_rom" "$cx_cgbflag" dynarec 1 || cx_failed=$((cx_failed + 1))
+    compat_measure_one "$cx_name" "$cx_rom" "$cx_cgbflag" dynarec 2 || cx_failed=$((cx_failed + 1))
+    compat_measure_one "$cx_name" "$cx_rom" "$cx_cgbflag" no-dynarec 2 || cx_failed=$((cx_failed + 1))
+    compat_measure_one "$cx_name" "$cx_rom" "$cx_cgbflag" no-dynarec 3 || cx_failed=$((cx_failed + 1))
+    compat_measure_one "$cx_name" "$cx_rom" "$cx_cgbflag" dynarec 3 || cx_failed=$((cx_failed + 1))
+    if [ "$cx_failed" -ne 0 ]; then
+        fail_case "compat $cx_name: $cx_failed/6 alternating runs failed"
+        return 1
+    fi
+    compat_summarize_mode "$cx_name" no-dynarec "$COMPAT_DIR/${cx_name}_no_dynarec.runs"
+    compat_summarize_mode "$cx_name" dynarec "$COMPAT_DIR/${cx_name}_dynarec.runs"
+}
+
+run_compat_section() {
+    echo
+    echo "== P5 compat workload matrix (Wine headless turbo; Wine evidence only) =="
+    if ! ensure_win32_perf_exe; then
+        fail_case "compat: Win32 -O2 executable unavailable"
+        return 1
+    fi
+    COMPAT_DIR="$OUT/compat"
+    mkdir -p "$COMPAT_DIR"
+    PERF_HOME="$PERF_DIR/home"
+    mkdir -p "$PERF_HOME"
+    printf 'pcm.!default { type null }\nctl.!default { type null }\n' \
+        >"$PERF_HOME/.asoundrc"
+    HOME="$PERF_HOME"
+    export HOME
+    WINEPREFIX="$PERF_DIR/wineprefix"
+    export WINEPREFIX
+    WINEARCH=win32
+    export WINEARCH
+    WINEDEBUG="${WINEDEBUG:--all}"
+    export WINEDEBUG
+    if command -v wineserver >/dev/null 2>&1; then
+        wineserver -k >/dev/null 2>&1 || true
+    fi
+    if [ ! -d "$WINEPREFIX" ]; then
+        if command -v xvfb-run >/dev/null 2>&1; then
+            xvfb-run -a -s "-screen 0 1024x768x24" wineboot -u \
+                >"$PERF_DIR/wineboot_compat.log" 2>&1 || true
+        else
+            timeout 120 wineboot -u \
+                >"$PERF_DIR/wineboot_compat.log" 2>&1 || true
+        fi
+    fi
+    compat_measure_rom 2048 "$ROM" ""
+    if [ -z "$USER_ROM_DIR" ]; then
+        skip_case "compat p_cry (no --user-roms/Z9GB_USER_ROM_DIR)"
+        skip_case "compat p_pin (no --user-roms/Z9GB_USER_ROM_DIR)"
+    else
+        if [ -f "$USER_ROM_DIR/p_cry.gbc" ]; then
+            compat_measure_rom p_cry "$USER_ROM_DIR/p_cry.gbc" "--cgb"
+        else
+            skip_case "compat p_cry (missing $USER_ROM_DIR/p_cry.gbc)"
+        fi
+        if [ -f "$USER_ROM_DIR/p_pin.gbc" ]; then
+            compat_measure_rom p_pin "$USER_ROM_DIR/p_pin.gbc" "--cgb"
+        else
+            skip_case "compat p_pin (missing $USER_ROM_DIR/p_pin.gbc)"
+        fi
+    fi
+    if command -v wineserver >/dev/null 2>&1; then
+        wineserver -k >/dev/null 2>&1 || true
+    fi
+}
+
 
 if [ "$THROUGHPUT_ONLY" -eq 1 ]; then
     run_throughput_section
@@ -532,6 +737,9 @@ if [ "$win_rc" -eq 0 ]; then
     fi
 fi
 run_throughput_section
+if [ "$COMPAT" -eq 1 ]; then
+    run_compat_section
+fi
 
 
 summary
