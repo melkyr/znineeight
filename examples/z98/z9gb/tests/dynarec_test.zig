@@ -2419,75 +2419,61 @@ fn testDynarecDispatchFallbacks() void {
     _ = emumod.emuSetDynarec(&g_emu, false);
 }
 
-fn setupPpuOrderingEmu(on: bool) bool {
-    emumod.emuInit(&g_emu, emumod.EmuConfig{ .cgb = false, .serial_log = false, .turbo = true, .dynarec = false });
-    var i: usize = 0;
-    while (i < 0x8000) : (i += 1) g_emu.rom[i] = 0;
-    g_emu.rom[0x0147] = 0x00;
-    g_emu.rom[0x0148] = 0x00;
-    g_emu.rom[0x0149] = 0x00;
-    var prog = [_]u8{
-        0x31, 0xFE, 0xFF,
-        0x21, 0x40, 0xFF,
-        0xCB, 0x7E,
-        0xCB, 0xBE,
-        0x00, 0x00, 0x00, 0x00,
-        0x3E, 0x81,
-        0xE0, 0x40,
-        0xF0, 0x44,
-        0xEA, 0x00, 0xC0,
-        0xF0, 0x41,
-        0xEA, 0x01, 0xC0,
-        0x76,
-    };
-    i = 0;
-    while (i < prog.len) : (i += 1) g_emu.rom[0x0100 + i] = prog[i];
-    g_emu.rom_len = 0x8000;
-    cartmod.cartLoad(&g_emu.cart, g_emu.rom[0..0x8000]) catch return false;
-    emumod.emuReset(&g_emu);
-    g_emu.bus.ie = 0;
-    g_emu.bus.io[0x0F] = 0;
-    g_emu.bus.io[0x40] = 0x91;
-    g_emu.bus.io[0x41] = 0x80;
-    g_emu.ppu.lcdc = 0x91;
-    g_emu.ppu.dot = 100;
-    g_emu.ppu.line = 0;
-    g_emu.ppu.ly = 0;
-    g_emu.ppu.mode = 2;
-    _ = emumod.emuSetDynarec(&g_emu, on);
-    return true;
-}
-
 fn testDynarecPpuOrdering() void {
-    if (!setupPpuOrderingEmu(false)) {
-        checkBool("dynarec ppu ordering off setup", false, true);
-        return;
-    }
-    _ = emumod.emuRunFrame(&g_emu);
-    const off_ly: u8 = g_emu.bus.wram[0];
-    const off_stat: u8 = g_emu.bus.wram[1];
-    const off_lcdc: u8 = g_emu.ppu.lcdc;
+    resetRom();
+    romClear();
+    romWrite(0x0100, 0x31);
+    romWrite(0x0101, 0xFE);
+    romWrite(0x0102, 0xFF);
+    romWrite(0x0103, 0x21);
+    romWrite(0x0104, 0x40);
+    romWrite(0x0105, 0xFF);
+    romWrite(0x0106, 0xCB);
+    romWrite(0x0107, 0x7E);
+    romWrite(0x0108, 0xCB);
+    romWrite(0x0109, 0xBE);
+    romWrite(0x010A, 0x00);
+    romWrite(0x010B, 0x00);
+    romWrite(0x010C, 0x00);
+    romWrite(0x010D, 0x00);
+    romWrite(0x010E, 0x3E);
+    romWrite(0x010F, 0x81);
+    romWrite(0x0110, 0xE0);
+    romWrite(0x0111, 0x40);
+    romWrite(0x0112, 0x76);
+    dynarecmod.dynarecFlush(&g_dyn);
 
-    if (!setupPpuOrderingEmu(true)) {
-        checkBool("dynarec ppu ordering on setup", false, true);
-        return;
-    }
-    _ = emumod.emuRunFrame(&g_emu);
-    const on_ly: u8 = g_emu.bus.wram[0];
-    const on_stat: u8 = g_emu.bus.wram[1];
-    const on_lcdc: u8 = g_emu.ppu.lcdc;
-    const st = emumod.emuDynarecStats(&g_emu);
+    // Pre-translate the enable block so the disable block links to it and the
+    // two execute in one dispatch. Without the link the frame loop would sync
+    // the PPU at the block boundary and hide a missing helper-side sync.
+    g_cpu.pc = 0x010A;
+    g_cpu.h = 0xFF;
+    g_cpu.l = 0x40;
+    g_cpu.a = 0;
+    _ = runDyn();
+    checkBool("dynarec ppu ordering prewarm", dynarecmod.dynarecLookup(&g_dyn, 0, 0x010A) != null, true);
 
-    checkU32("dynarec ppu ordering ly", @intCast(u32, on_ly), @intCast(u32, off_ly));
-    checkU32("dynarec ppu ordering stat", @intCast(u32, on_stat), @intCast(u32, off_stat));
-    checkU32("dynarec ppu ordering lcdc", @intCast(u32, on_lcdc), @intCast(u32, off_lcdc));
-    if (@isWindows()) {
-        checkBool("dynarec ppu ordering blocks", st.blocks > 0, true);
-        checkBool("dynarec ppu ordering executed", st.executed > 0, true);
-    } else {
-        checkBool("dynarec ppu ordering host hard gate", emumod.emuDynarecEnabled(&g_emu), false);
-    }
-    _ = emumod.emuSetDynarec(&g_emu, false);
+    resetRom();
+    g_bus.io[0x40] = 0x81;
+    g_bus.io[0x41] = 0x80;
+    g_bus.io[0x44] = 0;
+    g_bus.lyc_dirty = false;
+    g_ppu.lcdc = 0x81;
+    g_ppu.dot = 100;
+    g_ppu.line = 0;
+    g_ppu.ly = 0;
+    g_ppu.mode = 2;
+    g_cpu.pc = 0x0100;
+    g_cpu.sp = 0xFFFE;
+    g_cpu.h = 0xFF;
+    g_cpu.l = 0x40;
+    g_cpu.a = 0;
+    const chain0: u32 = g_dyn.stats.chained;
+    _ = runDyn();
+    checkBool("dynarec ppu ordering chained", g_dyn.stats.chained > chain0, true);
+    checkU16("dynarec ppu ordering pc", g_cpu.pc, 0x0112);
+    checkU32("dynarec ppu ordering disabled", @intCast(u32, g_ppu.lcdc), 0x01);
+    checkU32("dynarec ppu ordering enable pending", @intCast(u32, g_bus.io[0x40]), 0x81);
 }
 
 fn testDynarecPpuAdvancedDots() void {
