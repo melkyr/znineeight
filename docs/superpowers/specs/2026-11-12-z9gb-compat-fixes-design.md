@@ -21,6 +21,9 @@ The operator additionally requires:
 - Boundary relaxation (allowing dynarec blocks to start at PPU reads) is a
   **Task 8 feasibility investigation only**, taken after a **mandatory STOP**
   following Task 7; it is reported, not implemented, without a further ruling.
+- Configurable keyboard mapping with a `--mapkeys` capture wizard is added as
+  **Task 8A** before the Task 8 study (6.7); a translation fix (Task 8B) follows
+  only if the operator's captured mapping evidence proves it necessary.
 
 ## 2. Confirmed root causes (do not re-litigate)
 
@@ -100,12 +103,12 @@ re-measured after RC1/RC2 fixes, with coverage reported alongside throughput.
 ## 4. Non-goals
 
 - Real Win98/Pentium II hardware sign-off; Wine/cross-build evidence only.
-- Accelerometer **gameplay** for `k_tt` is deferred: Task 9 is operator-gated,
-  and its tilt-input option menu is presented at the Task 7 STOP. Until an
-  option is chosen, the design provides the register surface, a neutral
-  orientation, and a test seam only.
+- Accelerometer **gameplay** for `k_tt` stays deferred until Task 9 lands; the
+  operator chose hybrid gamepad + keyboard tilt (6.7). Until it lands, the design
+  provides the register surface, a neutral orientation, and a test seam only.
 - Boundary relaxation implementation (Task 8 is feasibility + report only).
-- `sf/src`, compiler, or seed changes; no seed rotation.
+- `sf/src`, compiler, or seed changes, except the Task 8A additive
+  `dinputPollRaw` accessor; no seed rotation.
 - Committing ROM bytes or reference images.
 - GBA support.
 
@@ -118,10 +121,11 @@ re-measured after RC1/RC2 fixes, with coverage reported alongside throughput.
 - User ROMs stay in `lin_bin/`; never committed, never referenced by tracked
   tests as a hard dependency (they are SKIP-able evidence).
 - One commit per task, explicit staging, no push, no unrelated fixes.
-- Mandatory STOP after Task 7 (results plus the Task 9 tilt option menu) before
-  Task 8 or Task 9.
+- Mandatory STOP after Task 7 (results plus the Task 9 tilt option menu); the
+  operator then chose the follow-up order recorded in 6.7: Task 8A first, Task 8B
+  conditional, Task 8 study, Task 9 hybrid tilt + opt-in rumble cue.
 - Task 8 writes only a feasibility report (no product code).
-- Task 9 starts only after the operator chooses a tilt option at that STOP.
+- Task 8A/8B/9 require the operator's mapping-test evidence / recorded choices.
 
 ## 6. Approaches and decisions
 
@@ -186,33 +190,42 @@ re-measured after RC1/RC2 fixes, with coverage reported alongside throughput.
 - The map above is pinned from Pan Docs and `k_tt`'s boot code (Task 6 Step 1);
   it is not assumed from memory.
 - Accelerometer neutral latch is `0x8000` plus an `emuSetTilt(x, y)` seam used by
-  tests. Real tilt input is Task 9 (operator-gated); until it is chosen,
-  gameplay needing tilt is documented as unsupported and no progress is claimed
-  beyond what is observed. No real sensor physics or HALT sampling effect.
-- MBC5 rumble types mask the RAM bank with `& 0x07`; rumble output is not
-  emulated.
+  tests. Real tilt input is Task 9 (operator chose hybrid gamepad + keyboard,
+  see 6.7); until it lands, gameplay needing tilt is documented as unsupported
+  and no progress is claimed beyond what is observed. No real sensor physics or
+  HALT sampling effect.
+- MBC5 rumble types mask the RAM bank with `& 0x07`; a rumble cue is opt-in in
+  Task 9 (default off), with no motor API.
 
-### 6.7 Task 9 options (operator-gated tilt input)
+### 6.7 Input tasks (operator decision recorded)
 
-Presented at the Task 7 STOP; only one option is implemented, and only after the
-operator picks it:
+After the Task 7 STOP the operator chose:
 
-1. Gamepad analog (recommended) — DInput8 joystick X/Y axes, dead zone +
-   calibration.
-2. Keyboard digital tilt — four configurable keys (default `I/J/K/L`) ramping
-   tilt at a bounded rate.
-3. Mouse-relative tilt — windowed cursor delta maps to tilt.
-4. Static `--tilt X,Y` — fixed orientation for calibration/tests.
-5. Hybrid — gamepad when present, keyboard otherwise.
-6. Decline — keep neutral; `k_tt` stays loadable-only.
+1. **Task 8A first** — configurable keyboard mapping plus a `--mapkeys` wizard.
+   The wizard captures the **raw code actually read** for each logical GB input
+   and writes `z9gb.ini` (backend tag + `Button=0xNN` lines + `;` capture
+   diagnostics). Startup loads the ini when present, otherwise uses the pinned
+   defaults (arrows=D-pad, Z=A, X=B, Enter=Start, Backspace=Select, Esc=quit);
+   backend mismatch falls back to defaults with a warning. Runtime maps raw code
+   -> `InputState` from the active table, bypassing the legacy fixed table. The
+   operator runs the wizard on the real ROMs and reports; Task 8B (translation
+   fix) runs only if that evidence shows the raw -> JOYP path is still wrong.
+2. **Task 9 — tilt option 5 (hybrid):** gamepad analog when a device exists,
+   keyboard digital ramp otherwise; configurable ramp keys; `InputState` gains
+   `tilt_x`/`tilt_y` (no `Platform` table field change); neutral `0x8000`; no
+   allocation; manual `k_tt` playtest evidence required.
+3. **Rumble cue default off.** `--rumble` opts in to a soft low tone mixed into
+   the audio while the decoded MBC5 rumble bit is active; default off leaves
+   audio byte-identical; games keep their own rumble options. MBC7 rumble
+   remains unimplemented unless the Task 8 study finds evidence.
 
-A rumble sub-decision (on-screen/audio feedback vs ignore) is made at the same
-time; the default recommendation is ignore-and-document, with no `sf/src`
-coupling. Any chosen option extends `InputState` with `tilt_x`/`tilt_y` (no
-`Platform` table field change), stays allocation-free, and requires manual
-`k_tt` playtest evidence.
+### 6.8 Task 8 study (report only)
 
-### 6.8 Test strategy
+Dynarec block-start-at-PPU-read relaxation feasibility for Crystal's low
+coverage and 2048's fallback share, plus input residuals (backend-neutral key
+identity, tilt key naming). No product code without a further ruling.
+
+### 6.9 Test strategy
 
 - Unit-level: `tests/irq_test.zig` (VBlank once/frame, LCD-off, joypad IRQ,
   IF read masks), MBC7 tests in the save/cart tier, dynarec patch regressions in
@@ -237,6 +250,14 @@ coupling. Any chosen option extends `InputState` with `tilt_x`/`tilt_y` (no
   documented per-ROM reachable state.
 - Rebuilt `lin_bin/z9gb.exe` is the `-O2` binary and passes the Win9x import
   gate.
+- Task 8A: absent ini uses the pinned defaults; ini round-trips; duplicate or
+  backend-mismatched config falls back with a warning; synthetic raw-state
+  mapping covers all 9 logical inputs; the wizard captures one raw code per
+  prompt with debounce; `--mapkeys` writes `z9gb.ini` with raw codes and
+  `fixed=` diagnostics; non-Windows exits 2 with a clear message.
+- Task 9: neutral tilt `0x8000` with no source; gamepad-axis and keyboard-ramp
+  polarity/clamp/dead-zone tests pass; rumble cue is byte-identical to today's
+  audio unless `--rumble` is set; manual `k_tt` calibration evidence recorded.
 
 ## 8. Risks
 

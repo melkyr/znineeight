@@ -15,14 +15,14 @@
 
 - Pinned compiler: `/tmp/z9gb_p2_seed/zig1_5_clean`, md5 `73c75a65e30dfd212fdf93ae1e57a687`; seed v149, lib 65. Build Z98 with `-I /workspace/znineeight/sf/src`.
 - Pure Z98 product code: no `@cImport`, asm, intrinsics, C macros, generics, `anytype`, methods, or `@alignCast`. No heap. Large state stays in the static `Emu`; 1 MiB stack limit; the 1 MiB dynarec RWX cache is the only executable allocation.
-- No `sf/src`, compiler, seed, or code-cache changes. No seed rotation.
+- No `sf/src`, compiler, seed, or code-cache changes. No seed rotation. Single exception: Task 8A may add the additive `dinputPollRaw` accessor to `sf/src/std_dinput.zig` / `std_dinput_pal.zig` (no behavior change for existing callers).
 - Never commit ROM bytes, reference PNGs, or user save files. User ROMs live in `lin_bin/` and are SKIP-able evidence only.
 - Wine evidence is Wine, never Win98 hardware.
 - One commit per task, explicit staging, no amend of prior commits, no push.
 - Every `--dynarec` run must show non-vacuous counters (`blocks > 0`, `executed > 0`); `dynarec=disabled reason=...` is a SKIP/FAIL never a PASS.
 - Hard gates must be present and passing; a skipped hard gate blocks closeout.
-- **Mandatory STOP after Task 7** (present results, wait for the operator) before Task 8.
-- Task 8 is feasibility + report only: no product code.
+- **Mandatory STOP after Task 7** (present results, wait for the operator) before Task 8A.
+- Task 8A is implementation (configurable mapping + `--mapkeys`); Task 8B is a conditional translation fix gated on the operator's captured evidence; Task 8 is feasibility + report only: no product code.
 
 ## Review Focus
 
@@ -402,11 +402,69 @@ Present:
 3. Docs diff summary and the shipped `-O2` exe evidence (PE32, import gate, self-test).
 4. **Task 9 option menu** — tilt input for the MBC7 accelerometer: (1) gamepad analog, (2) keyboard digital tilt, (3) mouse-relative tilt, (4) static `--tilt X,Y`, (5) hybrid gamepad+keyboard, (6) decline — plus the rumble yes/no decision, with a recommendation.
 
-Wait for the operator's choice before Task 8 or Task 9. Task 8 is feasibility-only; Task 9 is operator-gated and must not start without an explicit choice.
+Operator decision after this STOP: implement **Task 8A** (configurable keyboard mapping + `--mapkeys`) first and test it on real ROMs; Task 8B is conditional on that evidence; Task 8 is the report-only study; Task 9 is tilt **option 5 hybrid** plus the opt-in rumble cue (default off).
 
 ---
 
-### Task 8 (feasibility): Dynarec block-start-at-PPU-read relaxation — report only
+### Task 8A: Configurable keyboard input and `--mapkeys` — implement first
+
+**Files:**
+- Create: `examples/z98/z9gb/input_config.zig`
+- Create: `examples/z98/z9gb/tests/input_map_test.zig`
+- Modify: `examples/z98/z9gb/main.zig`
+- Modify: `examples/z98/z9gb/platform/win32.zig`
+- Modify: `sf/src/std_dinput.zig`, `sf/src/std_dinput_pal.zig` (additive raw keyboard-state accessor only; no behavior change for existing callers)
+- Modify: `examples/z98/z9gb/tests/tier_dmg.sh` (new `input_map` case)
+- Rebuild (untracked): `lin_bin/z9gb.exe`
+
+**Interfaces:**
+- Consumes: the platform poll path, `InputState` bit order (0 right, 1 left, 2 up, 3 down, 4 a, 5 b, 6 select, 7 start), the `input_test.zig` JOYP semantics.
+- Produces: `InputConfig` (9 logical inputs -> raw key code + backend tag), `z9gb.ini` load/save, `--mapkeys`, `--printkeys`, `--input-debug`, and additive `dinputPollRaw(d, out: []u8) bool`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add `input_map_test.zig` cases (Task 1/6 style):
+1. Defaults: absent ini -> the pinned default map (arrows=D-pad, Z=A, X=B, Enter=Start, Backspace=Select, Esc=quit).
+2. Ini round-trip: save then load reproduces the 9 raw codes and backend tag.
+3. Duplicate raw code in the ini or during capture is rejected (loader falls back to defaults; wizard re-prompts).
+4. Backend mismatch (ini `backend=fallback` under DInput8, or the reverse) -> defaults plus a warning.
+5. Synthetic raw-state mapping: set a raw index in a 256-byte array, assert the mapped `InputState` bit for each of the 9 logical inputs.
+6. Wizard capture state machine: synthetic transitions produce one capture per prompt, debounce ignores held keys, and the recorded `fixed=` diagnostic reflects the legacy table.
+Run: RED.
+
+- [ ] **Step 2: Implement `input_config.zig`**
+
+`KeyBinding{ raw: u8, kind: u8 }`; `InputConfig` with `right,left,up,down,a,b,select,start,quit`; default table = the DIK codes currently in `std_dinput_pal.mapKeys`. `configLoad(path)`, `configSave(path)`, `configApply(raw_keys, *InputState)`. Ini format: `[keys]`, `backend=dinput8|fallback`, `Button=0xNN`, `;` comments; malformed/unknown lines ignored; any parse or duplicate failure -> defaults + warning.
+
+- [ ] **Step 3: Add the additive raw accessor**
+
+`std_dinput.dinputPollRaw(d, out: []u8) bool` (and a pal passthrough) returns the 256-byte keyboard state read by the same `GetDeviceState` call; `fallback` returns the VK-indexed view or false. Existing `dinputPoll` behavior is unchanged.
+
+- [ ] **Step 4: Runtime mapping and CLI modes**
+
+`win32.zig` poll maps raw state -> `InputState` through the active `InputConfig` when one is loaded, otherwise keeps the existing mapped path. `main.zig`: load `z9gb.ini` at startup when present; `--printkeys` prints the active table (logical input, raw code, backend); `--input-debug` prints the raw code and mapped button on each change; `--mapkeys` is Win32-only, opens the platform window (scale 1, audio off), prints the current table, prompts `Map "A" button to.. `, captures the first raw transition with debounce, rejects duplicates, and writes `z9gb.ini` including `raw=0xNN` plus a `; Button raw=0xNN fixed=...` diagnostic line showing what the legacy table would have produced. Non-Windows `--mapkeys` prints a clear unsupported-host message and exits 2.
+
+- [ ] **Step 5: Verify GREEN**
+
+Run `tier_dmg.sh --only input_map`, `tier_dmg.sh --only input`, `tier_smoke.sh`, plus one windowed mapping smoke under Wine. No full battery (operator ruling: gates already done).
+
+- [ ] **Step 6: Rebuild and hand off**
+
+Rebuild `lin_bin/z9gb.exe` with `EXTRA_CFLAGS=-O2`. Report the active default table, the ini path, the exact `--mapkeys` command, and the diagnostic behavior. The operator runs `--mapkeys`, tests the ROMs, and sends the ini + observations.
+
+- [ ] **Step 7: Commit** `feat(z9gb): add configurable keyboard mapping and --mapkeys`.
+
+- [ ] **Step 8: STOP** — wait for the operator's mapping report before Task 8B or 8.
+
+---
+
+### Task 8B (conditional): Translation-layer fix from the capture evidence
+
+Only if the operator's report shows the wizard recorded the intended keys but the games still misread. Diagnose from the saved ini + `--input-debug` output (raw code, mapped button, fixed-table diagnostic); fix only the layer the evidence identifies (legacy DIK table, DInput data-format indexing, or the raw->JOYP mapping). STOP and present before editing if the evidence is ambiguous or points at more than one layer. Light verification only; commit `fix(z9gb): correct key translation`.
+
+---
+
+### Task 8 (study): PPU-boundary relaxation and input residuals — report only
 
 **Files:**
 - Create: `docs/superpowers/specs/2026-11-12-z9gb-boundary-feasibility.md`
@@ -414,8 +472,8 @@ Wait for the operator's choice before Task 8 or Task 9. Task 8 is feasibility-on
 - Scratch only: `/tmp/z9gb_boundary_fx/` (copy of the emulator)
 
 **Interfaces:**
-- Consumes: Tasks 1-7 build; the P5 Task 6.2 helper PPU sync; `tier_dmg --gates`.
-- Produces: feasibility report; no product code.
+- Consumes: Tasks 1-8A build; the P5 Task 6.2 helper PPU sync; `tier_dmg --gates`.
+- Produces: feasibility report (perf + input residuals); no product code.
 
 - [ ] **Step 1: Build the experimental variant**
 
@@ -423,60 +481,44 @@ In the `/tmp` copy only, remove the "reject a block starting at a statically-kno
 
 - [ ] **Step 2: Measure**
 
-Run `2048`, Crystal, Pinball at `--frames 600 --dynarec`, recording `blocks/executed/fallback/tinstr/minstr/coverage` and wall time vs the Task 4 baseline. Run `tier_dynarec`, `tier_dmg --gates` (Mooneye `lcdon_timing-GS`, `stat_irq_blocking`) and interpreter-vs-dynarec framebuffer parity.
+Run `2048`, Crystal, Pinball at `--frames 600 --dynarec`, recording `blocks/executed/fallback/tinstr/minstr/coverage` and wall time vs the Task 4 baseline. Run `tier_dynarec`, `tier_dmg --gates` (Mooneye `lcdon_timing-GS`, `stat_irq_blocking`) and interpreter-vs-dynarec framebuffer parity. Attribute Crystal's low coverage (PPU-poll block boundaries vs HALT/idle paths) and 2048's fallback share.
 
 - [ ] **Step 3: Report**
 
-State: does coverage improve, does timing parity hold, do the gates pass, and what the risk is. Recommend implement/decline. STOP; no product change without a further ruling.
+Perf: does coverage improve, does timing parity hold, do the gates pass, what is the risk; recommend implement/decline. Input residuals: backend-neutral key identity across the ini, tilt key naming, and the legacy-table diagnostic meaning. No product change without a further ruling. STOP.
 
 ---
 
-### Task 9 (maybe): Tilt input for the MBC7 accelerometer — operator-gated
+### Task 9: Tilt input (option 5 hybrid) and opt-in rumble cue
 
-Do not start without the operator's explicit choice made at the Task 7 STOP. If
-the choice is "decline", record that in the ledger and close the plan.
+Operator decision recorded at the Task 7 STOP follow-up: **option 5 — hybrid gamepad analog + keyboard digital tilt**, and **rumble cue default off** (`--rumble` enables it; games keep their own rumble options).
 
-**Option menu presented at the Task 7 STOP (choose one, plus rumble yes/no):**
-
-| # | Option | Source | Playable without extra hardware | Trade-off |
-|---|---|---|---|---|
-| 1 | Gamepad analog (recommended) | DInput8 joystick X/Y axes, dead zone + calibration | No (needs a pad) | Authentic analog feel; needs hardware verification |
-| 2 | Keyboard digital tilt | Four configurable keys (default `I/J/K/L`) ramp tilt at a bounded rate | Yes | Digital feel; ramp/centre tuning |
-| 3 | Mouse-relative tilt | Windowed cursor delta maps to tilt | Yes (windowed only) | Needs focus/capture; unusable headless |
-| 4 | Static CLI tilt | `--tilt X,Y` fixed orientation | N/A (debug) | Calibration/tests only; no gameplay |
-| 5 | Hybrid | Gamepad when a device exists, keyboard otherwise | Yes | Most code; two mappings to test |
-| 6 | Decline | Keep the neutral orientation | — | `k_tt` remains loadable-only |
-
-**Rumble sub-decision:** MBC7 rumble -> on-screen/audio feedback *or* ignored.
-Default recommendation: ignored and documented (no generic Win9x motor API;
-an audio-buzz mapping is optional and must not couple to `sf/src`).
-
-**Files (depend on the chosen option):**
-- Modify: `examples/z98/z9gb/platform/backend.zig` (extend `InputState` with `tilt_x: i16`, `tilt_y: i16`; no `Platform` table field change)
-- Modify: `examples/z98/z9gb/platform/win32.zig` (DInput8 axes and/or key/mouse mapping, poll-time, no allocation)
+**Files:**
+- Modify: `examples/z98/z9gb/platform/backend.zig` (`InputState` gains `tilt_x: i16`, `tilt_y: i16`; no `Platform` table field change)
+- Modify: `examples/z98/z9gb/platform/win32.zig` (DInput8 axes when a pad exists; keyboard ramp keys otherwise; poll-time, no allocation)
 - Modify: `examples/z98/z9gb/platform/headless.zig` (static tilt for tests)
-- Modify: `examples/z98/z9gb/emu.zig` (apply `InputState` tilt to the cart each frame via the Task 6 `emuSetTilt` seam)
-- Modify: `examples/z98/z9gb/cart.zig` (accelerometer latch returns the current tilt; already the seam)
-- Modify: `examples/z98/z9gb/main.zig` (option flags such as `--tilt-keys` / `--tilt`)
-- Test: `examples/z98/z9gb/tests/input_test.zig` (axis polarity, clamping at +-0x7FFF, dead zone, neutral default)
+- Modify: `examples/z98/z9gb/emu.zig` (apply `InputState` tilt each frame through the Task 6 `emuSetTilt` seam)
+- Modify: `examples/z98/z9gb/cart.zig` (only if the seam needs a rumble-bit accessor)
+- Modify: `examples/z98/z9gb/main.zig` (`--tilt-keys`, `--rumble`)
+- Test: `examples/z98/z9gb/tests/input_test.zig` (neutral default, axis polarity, clamp, dead zone, keyboard ramp, rumble-cue gating)
 
 **Interfaces:**
-- Consumes: Task 6 `emuSetTilt(x, y)`, the MBC7 accelerometer window, `InputState`/`Platform`, the Win32 backend.
-- Produces: the operator-selected tilt source; documented axis polarity/range; manual playtest evidence for `k_tt`.
+- Consumes: `emuSetTilt(x, y)`, the MBC7 window, `InputState`/`Platform`, the MBC5 rumble bit (`cart.zig` types `0x1C..0x1E`), the APU/audio path.
+- Produces: hybrid tilt source (gamepad preferred, keyboard fallback) with configurable ramp keys; opt-in rumble cue; documented polarity/range; manual `k_tt` playtest evidence.
 
-- [ ] **Step 1: Record the operator choice** (option 1-6, plus rumble yes/no) in the ledger before touching code.
-- [ ] **Step 2: Write the failing mapping tests** (neutral default, polarity, clamp, dead zone if analog) in the Task 1/6 style; run RED.
-- [ ] **Step 3: Implement only the chosen mapping.** Neutral default when no tilt source is active; no heap; no `Platform` field changes beyond `InputState`.
-- [ ] **Step 4: Verify** the new tests, `tier_smoke.sh`, `tier_dmg.sh --all`, `tier_win32.sh --smoke`.
-- [ ] **Step 5: Manual `k_tt` playtest evidence** (operator, or Wine with the chosen device): pass calibration, reach gameplay, and confirm tilt registers. Record exact commands and observed behaviour; no automated playability claim.
-- [ ] **Step 6: Commit** `feat(z9gb): add operator-selected tilt input for MBC7` plus docs.
+- [ ] **Step 1: Write the failing mapping tests** — neutral default (0x8000), axis/keyboard polarity, clamp to the 12-bit range, dead zone, keyboard ramp and return to center, rumble cue gated off by default and on with `--rumble`. Run RED.
+- [ ] **Step 2: Implement the hybrid tilt source.** Gamepad axes when the device is present; otherwise keyboard ramp at a bounded rate. Neutral when no source is active; no heap; no `Platform` field changes beyond `InputState`.
+- [ ] **Step 3: Implement the rumble cue.** When `--rumble` is set and the decoded MBC5 rumble bit is active, mix a soft low tone into the audio output; default off leaves audio byte-identical. MBC7 rumble remains unimplemented unless Task 8 finds evidence.
+- [ ] **Step 4: Verify** the new tests, `tier_smoke.sh`, `tier_win32.sh --smoke`, and `tier_audio.sh` (default-off byte identity).
+- [ ] **Step 5: Manual `k_tt` playtest evidence** (operator): pass calibration, reach gameplay, confirm tilt registers. Record exact commands and observed behaviour; no automated playability claim.
+- [ ] **Step 6: Commit** `feat(z9gb): add hybrid MBC7 tilt and opt-in rumble cue` plus docs.
 - [ ] **Step 7: STOP** — report evidence; no merge/push.
 
 ---
 
 ## Self-Review
 
-- **Spec coverage:** RC1 → Task 1; RC2 → Task 2; RC3 → Tasks 3-4; `--frames` → Task 5; joypad IRQ → Task 1; `k_tt` MBC7 + MBC5 rumble → Task 6; gate-hole closure → Task 1 tests + Task 2 regressions; `-O2` ship → Task 7; boundary relaxation feasibility → Task 8 + STOP; `k_tt` tilt enablement → Task 9 (operator-gated; option menu presented at the Task 7 STOP).
+- **Spec coverage:** RC1 → Task 1; RC2 → Task 2; RC3 → Tasks 3-4; `--frames` → Task 5; joypad IRQ → Task 1; `k_tt` MBC7 + MBC5 rumble → Task 6; gate-hole closure → Task 1 tests + Task 2 regressions; `-O2` ship → Task 7; configurable keyboard mapping + `--mapkeys` → Task 8A (operator mapping test) with Task 8B conditional on the captured evidence; boundary relaxation feasibility → Task 8 (report only) + STOP; `k_tt` tilt enablement → Task 9 option 5 hybrid, rumble cue default off (operator decision recorded after the Task 7 STOP).
 - **Step scan:** every step names a command and expected result; no "handle edge cases" placeholders.
 - **Type consistency:** `busApplyButtons`, the `e.len == e.cap + 1` overflow sentinel, `cache.Stats.{tinstr,minstr,rejected}`, `.mbc7`, `PageKind.mbc7`, `emuSetTilt` are used consistently across tasks.
 - **Review Focus:** each of the five items has a covering test in Tasks 1, 6, 2, and 5.
