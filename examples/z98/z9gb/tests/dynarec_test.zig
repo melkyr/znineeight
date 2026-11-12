@@ -2335,10 +2335,14 @@ fn testDynarecCoverageChain() void {
 fn testDynarecCounterWrapping() void {
     resetRom();
     g_cpu.pc = 0xC000;
+    const fall_saved: u32 = g_dyn.stats.fallback;
     const min_saved: u32 = g_dyn.stats.minstr;
+    g_dyn.stats.fallback = 0xFFFFFFFF;
     g_dyn.stats.minstr = 0xFFFFFFFF;
     _ = runDyn();
+    checkU32("coverage fallback wraps", g_dyn.stats.fallback, 0);
     checkU32("coverage minstr wraps", g_dyn.stats.minstr, 0);
+    g_dyn.stats.fallback = fall_saved;
     g_dyn.stats.minstr = min_saved;
 
     setupHelperRom(64);

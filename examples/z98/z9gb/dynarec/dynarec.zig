@@ -424,7 +424,7 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
     while (tries < 2) : (tries += 1) {
         var start: usize = cachemod.align16(d.used);
         if (start + BLOCK_MAX_BYTES + GLUE_MAX > CODE_CACHE_BYTES) {
-            d.stats.resets += 1;
+            d.stats.resets +%= 1;
             cachemod.dynarecFlush(d);
             start = 0;
         }
@@ -436,13 +436,13 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
         const blen: usize = e.len;
         const glue_off: usize = cachemod.align4(start + blen);
         if (glue_off + GLUE_MAX > CODE_CACHE_BYTES) {
-            d.stats.resets += 1;
+            d.stats.resets +%= 1;
             cachemod.dynarecFlush(d);
             continue;
         }
         const idx: usize = cachemod.entryIndex(bank, pc);
         const ent: *Entry = &d.entries[idx];
-        if (ent.valid) d.stats.collisions += 1;
+        if (ent.valid) d.stats.collisions +%= 1;
         var glue_bytes: [GLUE_MAX]u8 = undefined;
         const gi: GlueInfo = buildGlue(d, @intCast(u32, idx), @intCast(u32, @ptrToInt(d.mem + start)), @intCast(u32, blk.len), glue_bytes[0..]);
         var gi2: usize = 0;
@@ -473,7 +473,7 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
 
         d.used = glue_off + @intCast(usize, gi.size);
         cachemod.flushRange(d, start, d.used - start);
-        d.stats.blocks += 1;
+        d.stats.blocks +%= 1;
         linkEntry(d, ent);
         linkPredecessors(d, bank, pc);
         return ent;
@@ -483,7 +483,7 @@ fn translate(d: *Dynarec, cpu: *Cpu, bus: *Bus, bank: u16, pc: u16) ?*Entry {
 }
 
 fn interpStep(d: *Dynarec, cpu: *Cpu, bus: *Bus) u32 {
-    d.stats.fallback += 1;
+    d.stats.fallback +%= 1;
     d.stats.minstr +%= 1;
     return cpumod.cpuStep(cpu, bus);
 }
