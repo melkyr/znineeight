@@ -89,7 +89,7 @@ git commit -m "fix(z9gb): raise VBlank and joypad interrupts"
 
 ---
 
-### Task 2: Dynarec backward label patches and overflow hardening
+### Task 2: Dynarec emit-overflow rejection and patch hardening
 
 **Files:**
 - Modify: `examples/z98/z9gb/dynarec/x86.zig`
@@ -97,31 +97,30 @@ git commit -m "fix(z9gb): raise VBlank and joypad interrupts"
 - Modify: `examples/z98/z9gb/tests/dynarec_test.zig`
 
 **Interfaces:**
-- Consumes: `Emit`, `Label`, `labelAdd`, `labelPatchAt`, `emitBlock`, `translate`.
-- Produces: `Emit.patch_overflow: bool`; `emitBlock` returns `error.Unsupported` when a label patch table overflows; `translate` rejects such blocks (interpreter fallback); `DynarecStats.rejected` count.
+- Consumes: `Emit{code,len,cap}`, `Label{at,n}`, `labelAdd`, `labelPatchAt`, `emitBlock`, `translate`.
+- Produces: the overflow sentinel `e.len == e.cap + 1` is the single failure signal (already set by `emitByte`; now also set by `labelAdd` when its patch table is full); `labelPatchAt` skips patching when the buffer is overflowed; the existing end-of-block check in `emitBlock` rejects the block; `translate` returns null so the block runs interpreted. No new `Emit` field and no counters (Task 3 owns `rejected`).
 
-- [ ] **Step 1: Determine the backward-patch semantics (evidence, not guess)**
+- [ ] **Step 1: Record the evidence (already gathered; verify, do not re-derive)**
 
-Copy `examples/z98/z9gb` to `/tmp/z9gb_patch_probe`, add temporary logging in `labelPatchAt` (`label id pointer`, `l.n`, each `at`, `target`, `e.len`), build with the pinned compiler, and run `wine` on a `/tmp` copy of the `p_pin.gbc` block harness (or the full exe if the probe bundle is awkward). Record which label and which emitting function produce `target <= at + 3`.
+The probe found 40 underflows in `labelPatchAt`, all with `target = e.len = BLOCK_MAX_BYTES + 1` (4097), i.e. the x86 emit buffer already overflowed. `emitByte` signals this by setting `len = cap + 1`; callers ignore the bool, and `emitBlock`'s end check runs only **after** the final `labelPatchAt`, so the trap fires first. This is **not** a backward jump and not an emitter ordering defect. Separately, `labelAdd` silently drops patches past its 12-entry table; `g_epilogue` accumulates one jump per helper-using instruction, so a legal block with 13+ helper instructions currently loses epilogue jumps (silent wrong code).
 
-Write the finding into the task report as: intended backward jump (a loop/epilogue re-entry) vs emitter ordering defect. This decides Step 2. STOP and present to the operator if the evidence shows a forward jump was intended but emitted backward (that is a control-flow bug, not a patch-arithmetic bug).
+If new evidence contradicts either statement, STOP and present it.
 
-- [ ] **Step 2: Apply the ruled fix**
+- [ ] **Step 2: Guard the patch arithmetic**
 
-If intended backward: change `const rel: usize = target - (at + 4);` to wrapping `target -% (at + 4)`.
-If ordering defect: reorder the emit/bind sequence so the target always follows the patched site, and keep the strict subtraction.
-Record the ruling in the SDD ledger with cost-if-wrong.
+In `labelPatchAt` (`dynarec/x86.zig`), at entry: if `e.len > e.cap`, set `l.n = 0` and return (skip every patch; the block will be rejected by the existing end check). Keep the strict `target - (at + 4)` subtraction: a true backward patch is never expected, and if one is ever introduced it must fail loudly rather than silently emit a wrong rel32.
 
-- [ ] **Step 3: Hard-fail patch overflow instead of silent drop**
+- [ ] **Step 3: Make patch-table overflow use the same sentinel**
 
-Add `patch_overflow: bool = false` to `Emit`. In `labelAdd`, when `l.n >= l.at.len`, set `e.patch_overflow = true` (change the signature to take `*Emit`). `emitBlock` checks it after each instruction and returns `error.Unsupported`. `translate` maps that to a rejected block (no cache entry) and increments `dynarec.stats.rejected`.
+Change `labelAdd` to `fn labelAdd(e: *Emit, l: *Label, at: usize) void`; when `l.n >= l.at.len`, set `e.len = e.cap + 1` and return instead of silently dropping. Update its two call sites (`emitJcc`, `emitJmp`). Do not add a struct field and do not change `Label.at`.
 
 - [ ] **Step 4: Write the failing regressions, then verify**
 
 Add to `tests/dynarec_test.zig`:
-1. `test_backward_patch_parity` — a synthetic block that exercises the ruled backward-patch path; interpret vs dynarec CPU/framebuffer/cycle parity.
-2. `test_patch_overflow_fallback` — a synthetic block forced past the patch cap; assert `emitBlock` returns `Unsupported`, no cache entry, and interpreter execution matches.
-Run RED first (the overflow test must fail against the current silent-drop behavior), then GREEN.
+1. `test_emit_buffer_overflow_rejected` — emit a block into a test `Emit` whose cap is too small for its expansion; assert `emitBlock` returns false and does not trap, no cache entry is installed, and interpreter execution matches.
+2. `test_patch_table_overflow_rejected` — a block with 13+ helper-using instructions (e.g. repeated `LD r,(HL)` reads) so `g_epilogue` would exceed 12 patches; assert the block is rejected (not silently emitted with missing jumps).
+3. A normal block still translates and executes.
+Run RED first: the oversized case currently traps or returns success with an overflowed length; the 13+ case currently drops patches silently.
 
 Run: `sh examples/z98/z9gb/tests/tier_dynarec.sh /tmp/z9gb_p2_seed/zig1_5_clean`
 Expected: PASS, both modes, with the new checks.
@@ -135,14 +134,16 @@ Expected: 166/0 gates (Mooneye PPU parity included), 49+ pass, smoke 18/18.
 
 ```bash
 git add examples/z98/z9gb/dynarec/x86.zig examples/z98/z9gb/dynarec/dynarec.zig examples/z98/z9gb/tests/dynarec_test.zig
-git commit -m "fix(z9gb): fix dynarec backward label patches"
+git commit -m "fix(z9gb): reject overflowing dynarec translations"
 ```
+
 
 ---
 
 ### Task 3: Coverage accounting in `--dynarec-stats`
 
 **Files:**
+- Modify: `examples/z98/z9gb/dynarec/cache.zig`
 - Modify: `examples/z98/z9gb/dynarec/dynarec.zig`
 - Modify: `examples/z98/z9gb/emu.zig`
 - Modify: `examples/z98/z9gb/main.zig`
@@ -150,12 +151,12 @@ git commit -m "fix(z9gb): fix dynarec backward label patches"
 - Modify: `examples/z98/z9gb/tests/tier_dynarec.sh`
 
 **Interfaces:**
-- Consumes: existing `DynarecStats` (`blocks`, `executed`, `chained`, `fallback`).
-- Produces: `DynarecStats.tinstr` (instructions executed inside translated blocks), `DynarecStats.minstr` (instructions executed by the interpreter), `DynarecStats.rejected` (blocks rejected at translation), and a printed `coverage=<permille>‰` derived from `tinstr / (tinstr + minstr)`. Existing keys keep their names.
+- Consumes: `cache.Stats` (`blocks`, `executed`, `chained`, `fallback`, `resets`, `collisions`), `emu.DynarecStats` projection, `translate` rejection sites.
+- Produces: `cache.Stats.tinstr`, `cache.Stats.minstr`, `cache.Stats.rejected` (with explicit initializer at `cache.zig`'s `Stats{...}` init); `emu.DynarecStats` gains `tinstr`, `minstr`, `rejected`; printed ` tinstr=<n> minstr=<n> rejected=<n> coverage=<permille>‰` derived from `tinstr / (tinstr + minstr)`. Existing keys keep their names.
 
 - [ ] **Step 1: Write the failing counter test**
 
-In `tests/dynarec_test.zig`, add a test that runs one known multi-instruction ROM block with dynarec enabled and asserts: `stats.tinstr == block.len` on a cold run, `stats.minstr` increments for a non-ROM PC step, and `stats.rejected` increments for a deliberately rejected block. Assert the derived coverage is 1000 on an all-translated run.
+In `tests/dynarec_test.zig`, add a test that runs one known multi-instruction ROM block with dynarec enabled and asserts: `stats.tinstr == block.len` on a cold run, `stats.minstr` increments for a non-ROM PC step, and `stats.rejected` increments for a deliberately rejected block (an oversized or patch-overflow block from Task 2). Assert the derived coverage is 1000 on an all-translated run.
 
 - [ ] **Step 2: Run to verify RED**
 
@@ -164,11 +165,11 @@ Expected: FAIL (fields missing).
 
 - [ ] **Step 3: Implement the counters**
 
-Increment `tinstr` by the executed instruction count for each translated block (`blocks` already counts translations; count from the builder's decoded length), `minstr` by one per `cpuStep` fallback/interpreter step (including non-ROM PC and rejected blocks), and `rejected` in `translate` on rejection.
+Add the three fields to `cache.Stats` and its explicit initializer. In `dynarec.zig`: increment `tinstr` by the executed instruction count for each translated block (from the builder's decoded length), `minstr` by one per interpreter/fallback step (`interpStep` and the dispatch-gate paths), and `rejected` at every `translate` rejection return (blockBuild failure, empty block, ROM span bounds, ROM0/ROMX straddle, `emitBlock` false). Do not add a second rejection counter elsewhere.
 
 - [ ] **Step 4: Print coverage**
 
-In `main.zig` `--dynarec-stats` output append ` tinstr=<n> minstr=<n> rejected=<n> coverage=<permille>‰`. Keep the existing `blocks/executed/fallback` keys.
+Extend the `emu.DynarecStats` projection and `main.zig` output: append ` tinstr=<n> minstr=<n> rejected=<n> coverage=<permille>‰`. Keep the existing `blocks/executed/fallback` keys.
 
 - [ ] **Step 5: Verify GREEN and the CLI**
 
@@ -178,7 +179,7 @@ Expected: counters non-zero, `coverage` printed, `dynarec=on blocks>0`.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add examples/z98/z9gb/dynarec/dynarec.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/main.zig examples/z98/z9gb/tests/dynarec_test.zig examples/z98/z9gb/tests/tier_dynarec.sh
+git add examples/z98/z9gb/dynarec/cache.zig examples/z98/z9gb/dynarec/dynarec.zig examples/z98/z9gb/emu.zig examples/z98/z9gb/main.zig examples/z98/z9gb/tests/dynarec_test.zig examples/z98/z9gb/tests/tier_dynarec.sh
 git commit -m "feat(z9gb): report dynarec coverage in stats"
 ```
 
@@ -444,6 +445,6 @@ an audio-buzz mapping is optional and must not couple to `sf/src`).
 
 - **Spec coverage:** RC1 → Task 1; RC2 → Task 2; RC3 → Tasks 3-4; `--frames` → Task 5; joypad IRQ → Task 1; `k_tt` MBC7 + MBC5 rumble → Task 6; gate-hole closure → Task 1 tests + Task 2 regressions; `-O2` ship → Task 7; boundary relaxation feasibility → Task 8 + STOP; `k_tt` tilt enablement → Task 9 (operator-gated; option menu presented at the Task 7 STOP).
 - **Step scan:** every step names a command and expected result; no "handle edge cases" placeholders.
-- **Type consistency:** `busApplyButtons`, `DynarecStats.{tinstr,minstr,rejected}`, `Emit.patch_overflow`, `.mbc7`, `PageKind.mbc7`, `emuSetTilt` are used consistently across tasks.
+- **Type consistency:** `busApplyButtons`, the `e.len == e.cap + 1` overflow sentinel, `cache.Stats.{tinstr,minstr,rejected}`, `.mbc7`, `PageKind.mbc7`, `emuSetTilt` are used consistently across tasks.
 - **Review Focus:** each of the five items has a covering test in Tasks 1, 6, 2, and 5.
 - **Proportion:** plan ≈ spec ×2; code bodies omitted where signatures + tests determine them. The Task 6 register map is deliberately pinned during execution (Step 1) rather than asserted from memory.
