@@ -157,6 +157,19 @@ evidence skip. The summary is `TIER_M1 PASS` / `TIER_M1 FAIL` with
 pass/fail/skip counts. The std set must be synced to the compiler's `lib/`
 first (`cp sf/src/std_*.zig /tmp/zig1-m1/lib/`).
 
+## Post-gate follow-up (Task 0.3)
+
+- Trap backtrace frame cap: `std_debug.backtraceLimited` stops after
+  `max_frames`; `app.zig` calls it with `1024`, so the handler cannot grow past
+  its pre-allocated 4 KiB backtrace budget. `backtrace` remains an unbounded
+  wrapper (behavior unchanged) for the blueprint §3 L1 signature.
+- `pathJoin83` rejects joined paths of 260+ bytes (Win98 `MAX_PATH`) as `null`,
+  in addition to the existing `out.len` bound.
+- Accepted evidence-only items (no code change): the Wine/Xvfb `under.exe` root
+  screenshot is black (captured outside the presented DDraw surface), and
+  missing Wine/Xvfb is counted as an evidence skip via the explicit
+  `operator-hardware:` lines rather than a failure.
+
 ## M2 amendment review: no amendment needed
 
 Checked the M2 plan's consumed surfaces against M1 actuals (code at

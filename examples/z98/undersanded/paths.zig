@@ -15,6 +15,9 @@ pub extern "c" fn mkdir(path: [*]const u8, mode: u32) i32;
 pub const FALLBACK_WIN = "C:\\WINDOWS\\TEMP\\UNDERSAN\\";
 pub const FALLBACK_POSIX = "/tmp/UNDERSAN";
 
+// Win98 MAX_PATH: a joined path of 260+ bytes cannot be opened.
+const MAX_PATH: usize = 260;
+
 fn nullVoid() *void {
     return @ptrCast(*void, @intToPtr(*void, 0));
 }
@@ -61,6 +64,7 @@ pub fn pathJoin83(dir: []const u8, name: []const u8, out: []u8) ?[]u8 {
 
     var need: usize = dir.len + name.len;
     if (sep) need += 1;
+    if (need >= MAX_PATH) return null;
     if (need > out.len) return null;
 
     str.copy(out, dir);

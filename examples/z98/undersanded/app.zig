@@ -70,21 +70,13 @@ fn joinPath(dir: []const u8, name: []const u8, out: []u8) ?[]u8 {
     return out[0..need];
 }
 
-fn putPath(dst: []u8, src: []const u8) usize {
-    var n: usize = src.len;
-    if (n > dst.len) n = dst.len;
-    var i: usize = 0;
-    while (i < n) : (i += 1) dst[i] = src[i];
-    return n;
-}
-
 // Fatal trap handler. Everything it touches is pre-allocated at startup:
 // the arena/Buf for crash.log and the crash.* path strings. No allocation and
 // no path resolution happen here (spec §33).
 fn onTrap(ctx: *debug.TrapContext) void {
     debug.writeCoreDump(ctx, g_crash_dmp[0..g_crash_dmp_len]) catch {};
     buf_mod.clear(&g_bt_buf);
-    debug.backtrace(ctx, &g_bt_buf) catch {};
+    debug.backtraceLimited(ctx, &g_bt_buf, 1024) catch {};
     file_mod.writeAll(g_crash_log[0..g_crash_log_len], buf_mod.slice(&g_bt_buf)) catch {};
 
     var msg: []const u8 = "UNDERSANDED: fatal trap; crash files written\n";

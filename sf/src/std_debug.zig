@@ -121,20 +121,30 @@ pub fn setTrapHandler(h: ?fn(*TrapContext) void) void {
 }
 
 // Walk the x86 `ebp` frame chain starting at `ctx.ebp`, appending each frame
-// pointer to `out` in walk order. The walk stops at a null successor or a
-// non-increasing frame pointer (the stack grows down, so a caller frame is
-// always at a higher address). This is the blueprint §3 L1 signature; it is the
-// single documented L1->L2 import of std_buf (R3 exception, ruling m1243).
-pub fn backtrace(ctx: *const TrapContext, out: *buf_mod.Buf) !void {
+// pointer to `out` in walk order and stopping after at most `max_frames`
+// frames. The walk also stops at a null successor or a non-increasing frame
+// pointer (the stack grows down, so a caller frame is always at a higher
+// address).
+pub fn backtraceLimited(ctx: *const TrapContext, out: *buf_mod.Buf, max_frames: usize) !void {
     var fp: u32 = ctx.ebp;
+    var frames: usize = 0;
     while (fp != 0) {
+        if (frames >= max_frames) break;
         try buf_mod.appendU32LE(out, fp);
+        frames += 1;
         var p: *const u32 = @intToPtr(*const u32, @intCast(usize, fp));
         var next: u32 = p.*;
         if (next == 0) break;
         if (next <= fp) break;
         fp = next;
     }
+}
+
+// The blueprint §3 L1 signature: an unbounded frame walk, kept as a wrapper so
+// its behavior is unchanged. It is the single documented L1->L2 import of
+// std_buf (R3 exception, ruling m1243).
+pub fn backtrace(ctx: *const TrapContext, out: *buf_mod.Buf) !void {
+    return backtraceLimited(ctx, out, ~@as(usize, 0));
 }
 
 // Default handler: write `core.dump` in the CWD, then abort. A failed dump

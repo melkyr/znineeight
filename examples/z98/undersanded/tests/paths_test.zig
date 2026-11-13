@@ -118,6 +118,22 @@ fn tPathJoin() bool {
     return true;
 }
 
+fn tPathJoinMaxPath() bool {
+    var dir: [251]u8 = undefined;
+    var i: usize = 0;
+    while (i < dir.len) : (i += 1) dir[i] = 'a';
+
+    var big: [300]u8 = undefined;
+
+    // 250 + 1 + 8 = 259 bytes: just below Win98 MAX_PATH (260).
+    const p = paths.pathJoin83(dir[0..250], "bg_a.zsp", big[0..]) orelse return false;
+    if (p.len != 259) return false;
+
+    // 251 + 1 + 8 = 260 bytes: rejected.
+    if (paths.pathJoin83(dir[0..251], "bg_a.zsp", big[0..]) != null) return false;
+    return true;
+}
+
 fn cstr(dst: []u8, s: []const u8) bool {
     if (s.len + 1 > dst.len) return false;
     var i: usize = 0;
@@ -292,6 +308,7 @@ pub fn main() void {
     report("crc32_streaming_equal", tCrcStreamingEqual());
     report("is83_name", tIs83());
     report("path_join83", tPathJoin());
+    report("path_join83_max_path", tPathJoinMaxPath());
     report("probe_writable", tProbeWritable());
     report("fallback_constants", tFallbackConstants());
     report("resolve_data_dir_native", tResolveDataDirNative());
