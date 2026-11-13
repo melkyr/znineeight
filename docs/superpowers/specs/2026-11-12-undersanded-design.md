@@ -1001,7 +1001,7 @@ while (running) {
 | G9 | P5b/M12 | `std_audio` — DirectSound **buffers, WAV load, play/stop/volume** (static buffers; distinct from the existing streaming dsound) | ambient + cues |
 | G10 | P0 | path join + 8.3 validation | Win98 MAX_PATH / short names |
 | G11 | P0 | crc32 — **PARTIAL: incremental API already in `std_crypto` (`crc32Init/Update/Final`); add only the one-shot `crc32(data)` there** (no duplicate table) | save integrity |
-| G12 | — | min/max/clamp/abs i32 | **write game-side**, avoid std churn |
+| G12 | — | min/max/clamp/abs i32 | **CLOSED-ALREADY — reuse `std_math`** (`min`:1, `max`:6, `abs`:21, `clamp`:26; no game-side copies) |
 | G13 | P0 | `EventKind.focus_lost` / `focus_gained` + `gfxTestFocus(g,bool)` | pause-on-focus is otherwise unimplementable; also automates the test |
 | G14 | P0 | writability probe + fallback directory (game-side; **extend `std_os` with `modulePath`** via `GetModuleFileNameA`, POSIX null) | CD install |
 | G15 | P1 | console-subsystem link config (`undtool.exe`) | Win98 has no `AttachConsole` |

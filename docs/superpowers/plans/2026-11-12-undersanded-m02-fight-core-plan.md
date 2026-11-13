@@ -56,7 +56,7 @@
 
 **Interfaces:** `pub const Effect = struct { op: i32, a: i32, b: i32 };` and `pub fn ruleFire(r: Rule, prev_hp, now_hp, prev_res, now_res, round, consumed: *u32, bit: i32) ?Effect` returns it — one-shot rules fire when `prev >= threshold && now < threshold` (then set consumed bit); persistent rules report effect every evaluation; ops per §25.6 (`HP_BELOW, RES_BELOW, ROUND_MOD, FIRST_ROUND, ALWAYS` × `REGEN_RES, REGEN_HP, HULL_DMG, SET_ARMOR, SET_FLEE, SET_BLIND, SET_INK, ADD_SPEED, MULT_ATK, MISS_STRIKE`).
 - [ ] Unit tests per op and per timing; one-shot fires exactly once across a crossing + repeated evaluation; `else => {}` fallback on unknown op (R3). Implement. PASS. Commit `example(undersanded): behavior rule VM`.
-- [ ] Implement `min`/`max`/`clamp`/`abs` i32 helpers in `math.zig` (G12) with unit tests (clamp edges, abs of -2147483647). PASS. Commit `example(undersanded): i32 math helpers`.
+- [ ] G12 resolved by **reuse**: `std_math` already provides `min`:1, `max`:6, `abs`:21, `clamp`:26 (plus `minU`/`maxU`/`clampU`) — do not add game-side copies to `math.zig`. Add unit assertions for the reused helpers (clamp edges, `abs(-2147483647)`) in the M2 test driver. PASS. Commit `example(undersanded): i32 math reuse checks`.
 
 ### Task 3: Fight resolution (`fight.zig` + `game.zig`)
 
