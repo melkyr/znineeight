@@ -14,6 +14,7 @@ const io = @import("std_io.zig");
 const os = @import("std_os.zig");
 const parse = @import("std_parse");
 const sim = @import("sim.zig");
+const ruletest = @import("ruletest.zig");
 
 const TokenRow = struct { name: []const u8, index: i32 };
 
@@ -89,6 +90,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var have_sim = false;
     var have_creature = false;
     var have_seed = false;
+    var have_test_rules = false;
     var n_fights: i32 = 0;
     var seed0: u32 = 0;
     var hull: i32 = 100;
@@ -98,7 +100,9 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var i: usize = 0;
     while (i < nargs) : (i += 1) {
         const a = os.argv(i);
-        if (eq(a, "--sim")) {
+        if (eq(a, "--test-rules")) {
+            have_test_rules = true;
+        } else if (eq(a, "--sim")) {
             i += 1;
             if (i >= nargs) {
                 fail("undtool: --sim needs a fight count");
@@ -142,6 +146,11 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             fail("undtool: unknown flag");
             return;
         }
+    }
+
+    if (have_test_rules) {
+        os.exit(ruletest.testRules());
+        return;
     }
 
     if (!have_sim) {
