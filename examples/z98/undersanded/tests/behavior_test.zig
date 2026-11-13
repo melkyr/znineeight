@@ -9,6 +9,7 @@
 
 const io = @import("std_io");
 const os = @import("std_os");
+const std_math = @import("std_math");
 const behavior = @import("../behavior.zig");
 
 var fails: usize = 0;
@@ -258,6 +259,31 @@ fn tEffectVocabulary() bool {
     return true;
 }
 
+fn tStdMathClampEdges() bool {
+    if (std_math.clamp(-1, 0, 10) != 0) return false;
+    if (std_math.clamp(0, 0, 10) != 0) return false;
+    if (std_math.clamp(5, 0, 10) != 5) return false;
+    if (std_math.clamp(10, 0, 10) != 10) return false;
+    if (std_math.clamp(11, 0, 10) != 10) return false;
+    return true;
+}
+
+fn tStdMathAbsNegMax() bool {
+    if (std_math.abs(-2147483647) != 2147483647) return false;
+    if (std_math.abs(2147483647) != 2147483647) return false;
+    if (std_math.abs(0) != 0) return false;
+    if (std_math.abs(-1) != 1) return false;
+    return true;
+}
+
+fn tStdMathMinMax() bool {
+    if (std_math.min(-5, 2) != -5) return false;
+    if (std_math.min(2, 2) != 2) return false;
+    if (std_math.max(-5, 2) != 2) return false;
+    if (std_math.max(2, 2) != 2) return false;
+    return true;
+}
+
 pub fn main() void {
     report("hp_below_persistent", tHpBelowPersistent());
     report("hp_below_oneshot_crossing_once", tHpBelowOneshot());
@@ -275,6 +301,9 @@ pub fn main() void {
     report("consumed_bit_isolation", tConsumedBitIsolation());
     report("set_blind_chance_in_b", tSetBlindChanceInB());
     report("effect_vocabulary", tEffectVocabulary());
+    report("std_math_clamp_edges", tStdMathClampEdges());
+    report("std_math_abs_neg_max", tStdMathAbsNegMax());
+    report("std_math_min_max", tStdMathMinMax());
 
     if (fails != 0) os.exit(1);
     io.write("behavior_test PASS\n");
