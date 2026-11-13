@@ -467,3 +467,45 @@ and headless, and the M2 gate already drives all five creatures through
   M3 tooling; defs carry numeric `id` only. Roadmap note (not verified from M2
   code): display names exist in `render_term.creatureName`; content naming is
   later-milestone work.
+
+## M3 preflight
+
+- Compiler: `/tmp/zig1-m1/zig1_5_clean`, md5
+  `73c75a65e30dfd212fdf93ae1e57a687` (seed v149, unchanged from M1/M2).
+  Harness rule after std edits still applies: sync the std set to the
+  compiler's `lib/` first (`cp sf/src/std_*.zig /tmp/zig1-m1/lib/`).
+- M2 tier baseline from this worktree (the hand-played §41 log the sim must
+  corroborate; see "§41 three questions" above):
+
+  ```
+  ZIG=/tmp/zig1-m1/zig1_5_clean OUT=/tmp/m3_t0/m2_baseline \
+    sh examples/z98/undersanded/tests/tier_m2_fight.sh
+  TIER_M2 PASS 29 passed / 0 failed
+  ```
+
+  Native driver case counts observed: `core_test` 12, `behavior_test` 25,
+  `fight_test` 39, `ui_test` 17; `fight_test` prints 20 `FIGHT` rows. z9edit
+  `tier_edit.sh` green (38 passed / 0 failed) with lexer md5
+  `dcc81009e9a36c86e4d90e104c439871` byte-identical 3x; compile max RSS
+  5888 KiB.
+- M3 gate premises (pinned; Task 2's report header must print
+  `actions=gameStep_steps ascent=hull0 bars=fights_with_switch`):
+  - **Loadout:** base Hull 100, no tools.
+  - **Actions:** player actions = `gameStep` calls/steps (NOT
+    `FightState.actions`, which excludes Attempt/Decline/Flee).
+  - **Ascent:** Emergency Ascent = `FightState.hull` reached 0; M2 clamps at 0
+    and does not terminate, so the sim stops that fight and counts it. Real
+    Hull-0 termination is M4.
+  - **Bar-switch:** fights with `FightState.switches > 0` over total fights.
+  - **Prompt:** a modal-required gate, i.e. `gateOpen` true with
+    `subdue_chance < SUBDUE_PROMPT_BELOW` (commons 95 -> 0, so commons never
+    prompt).
+  - **Freezing Perch flee is reachable:** fights may end `CREATURE_FLED`; the
+    sim must count that outcome rather than treating it as an error.
+  - **Shell policy fixture:** no M2 def sets `F_SHELL`, so the §25.9 Kill/Shell
+    path uses a synthetic `F_SHELL` test fixture in `sim_test`/`ruletest`
+    (never added to `DEFS[5]`).
+  - **Replay `creature` token table** (spec §28 Player Interaction): `eel` = Mystic Eel,
+    `electric_eel` = Mystic Electric Eel, `steel_tuna` = Steel Tuna,
+    `anemoniacus` = Anemoniacus, `freezing_perch` = Freezing Perch
+    (`eel|electric_eel|steel_tuna|anemoniacus|freezing_perch`).
