@@ -267,7 +267,7 @@ fn tRenderModal() bool {
 
     if (!contains(text, "SUBDUE ATTEMPT")) return false;
     if (!contains(text, "Anemoniacus")) return false;
-    if (!contains(text, "60% chance")) return false;
+    if (!contains(text, "65% chance")) return false;
     if (!contains(text, "[A]ttempt")) return false;
     if (!contains(text, "[F] Fight on")) return false;
     if (contains(text, "[F]lee")) return false;
@@ -282,10 +282,10 @@ fn tCreatureTable() bool {
 
     const ids = [5]i32{ 1, 2, 4, 18, 19 };
     const hps = [5]i32{ 70, 80, 120, 95, 105 };
-    const res = [5]i32{ 80, 100, 70, 115, 95 };
+    const res = [5]i32{ 80, 100, 70, 80, 95 };
     const spd = [5]i32{ 10, 16, 6, 7, 13 };
     const atk = [5]i32{ 6, 7, 8, 9, 10 };
-    const sub = [5]i32{ 95, 95, 95, 60, 60 };
+    const sub = [5]i32{ 95, 95, 95, 65, 65 };
     const sale = [5]i32{ 20, 30, 20, 50, 55 };
     const r0 = [5]i32{ 3, 3, 3, 6, 6 };
     const r1 = [5]i32{ 9, 9, 9, 18, 18 };
@@ -425,11 +425,11 @@ fn tSmokeOverkill() bool {
 
 // Rare path smoke: all-Restrain drives Anemoniacus to the modal, then A rolls.
 fn tSmokeRareModalSubdue() bool {
-    const r = runSequence(3, "RRRRRRRRRRRRRRRRRRARRRRRRRARRRRRRRRRA");
+    const r = runSequence(3, "RRRRRRRRRRRRRRA");
     printSmoke("rare_modal_subdue", r);
     if (r.outcome != def.OUT_SUBDUE) return false;
     if (!r.saw_modal) return false;
-    return r.steps == 37;
+    return r.steps == 15;
 }
 
 pub fn main() void {

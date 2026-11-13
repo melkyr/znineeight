@@ -193,7 +193,7 @@ fn tLastSurgeAndCreatureActs() bool {
     if (s.fight.outcome != def.OUT_ONGOING) return false;
     if (s.fight.surge_count != 1) return false;
     if (s.fight.surge_atk_applied != 1) return false;
-    if (s.fight.res != 30) return false;
+    if (s.fight.res != 25) return false;
     if (!hasMsg(&s, def.MSG_LAST_SURGE)) return false;
     if (!hasMsg(&s, fight.MSG_CREATURE_ATTACK)) return false;
     if (msgIndex(&s, def.MSG_LAST_SURGE) > msgIndex(&s, fight.MSG_CREATURE_ATTACK)) return false;
@@ -305,15 +305,23 @@ fn tExactPctHelpers() bool {
     return true;
 }
 
-fn tCouplingExactBoundary115() bool {
+fn tCouplingExactBoundary80() bool {
     var d = creatures.defAt(3);
     var s: def.GameState = undefined;
     begin(&s, &d, creatures.RULES[0..]);
     s.fight.hp = 95;
-    s.fight.res = 57;
+    s.fight.res = 39;
 
     doStepWith(&s, def.ACT_EQUIP, &d, creatures.RULES[0..]);
-    return s.fight.res == 67;
+    if (s.fight.res != 49) return false;
+
+    var at_gate: def.GameState = undefined;
+    begin(&at_gate, &d, creatures.RULES[0..]);
+    at_gate.fight.hp = 95;
+    at_gate.fight.res = 40;
+
+    doStepWith(&at_gate, def.ACT_EQUIP, &d, creatures.RULES[0..]);
+    return at_gate.fight.res == 40;
 }
 
 fn tCouplingExactBoundary95() bool {
@@ -374,7 +382,7 @@ fn tLastSurgeRaisedMaxRes() bool {
     s.fight.res = 10;
 
     fight.lastSurge(&s);
-    return s.fight.res == 39;
+    return s.fight.res == 33;
 }
 
 
@@ -913,13 +921,13 @@ const FIGHTS = [20]FightCase{
     FightCase{ .def_index = 0, .pattern = "RRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 8, .want_hull = 58, .want_declines = 0 },
     FightCase{ .def_index = 2, .pattern = "SSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 12, .want_hull = 12, .want_declines = 0 },
     FightCase{ .def_index = 0, .pattern = "SSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 4, .want_hull = 82, .want_declines = 0 },
-    FightCase{ .def_index = 3, .pattern = "R", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 37, .want_hull = 0, .want_declines = 0 },
+    FightCase{ .def_index = 3, .pattern = "R", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 15, .want_hull = 0, .want_declines = 0 },
     FightCase{ .def_index = 4, .pattern = "SRSR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_CREATURE_FLED, .want_steps = 6, .want_hull = 50, .want_declines = 0 },
     FightCase{ .def_index = 1, .pattern = "RSRSRSRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 8, .want_hull = 36, .want_declines = 0 },
     FightCase{ .def_index = 2, .pattern = "RRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 7, .want_hull = 52, .want_declines = 0 },
     FightCase{ .def_index = 1, .pattern = "RRRRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 13, .want_hull = 1, .want_declines = 0 },
     FightCase{ .def_index = 4, .pattern = "RRRRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 10, .want_hull = 10, .want_declines = 0 },
-    FightCase{ .def_index = 3, .pattern = "SRSRSR", .modal_mode = MODAL_DECLINE, .want_outcome = def.OUT_OVERKILL, .want_steps = 11, .want_hull = 0, .want_declines = 0 },
+    FightCase{ .def_index = 3, .pattern = "SRSRSR", .modal_mode = MODAL_DECLINE, .want_outcome = def.OUT_KILL, .want_steps = 9, .want_hull = 18, .want_declines = 0 },
     FightCase{ .def_index = 2, .pattern = "PSSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 7, .want_hull = 52, .want_declines = 0 },
     FightCase{ .def_index = 0, .pattern = "ESSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 5, .want_hull = 76, .want_declines = 0 },
     FightCase{ .def_index = 0, .pattern = "F", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_PLAYER_FLED, .want_steps = 1, .want_hull = 100, .want_declines = 0 },
@@ -1001,7 +1009,7 @@ const GOLDEN_KILL = "0:2:11:109;0:4:8:92;0:2:14:95;0:4:8:84;0:2:10:85;0:4:8:76;0
 
 const GOLDEN_OVERKILL = "0:2:19:51;0:4:6:94;0:2:24:27;0:4:6:88;0:2:18:9;0:4:6:82;0:9:8:2;0:2:25:-8;1:8:8:7;";
 
-const GOLDEN_RARE_MODAL = "0:3:10:11;0:4:9:0;0:9:10:1;0:3:13:8;0:4:9:0;0:9:10:1;0:3:14:4;0:4:9:0;0:9:10:1;0:3:16:-2;1:6:0:0;0:1:1:35;0:4:11:0;0:9:10:1;0:3:14:31;0:4:11:0;0:9:10:1;0:3:16:25;0:4:11:0;0:9:10:1;0:3:14:21;0:4:11:0;0:9:10:1;0:3:16:15;0:4:11:0;0:9:10:1;0:3:15:10;0:4:11:0;0:9:10:1;0:3:16:4;0:4:11:0;0:9:10:1;0:3:18:-4;1:6:0:0;0:1:2:35;0:4:11:0;0:9:10:1;0:4:11:0;0:3:16:29;0:9:10:1;0:4:11:0;0:3:18:21;0:9:10:1;0:4:11:0;0:3:15:16;0:9:10:1;0:4:11:0;0:3:15:11;0:9:10:1;0:4:11:0;0:3:14:7;0:9:10:1;0:4:11:0;0:3:11:6;0:9:10:1;0:4:11:0;0:3:12:4;0:9:10:1;0:4:11:0;0:3:10:4;0:9:10:1;0:4:11:0;0:3:15:-1;0:5:0:0;";
+const GOLDEN_RARE_MODAL = "0:3:18:62;0:4:9:91;0:3:10:52;0:4:9:82;0:3:13:39;0:4:9:73;0:9:10:1;0:3:16:33;0:4:9:64;0:9:10:1;0:3:10:33;0:4:9:55;0:9:10:1;0:3:12:31;0:4:9:46;0:9:10:1;0:3:18:23;0:4:9:37;0:9:10:1;0:3:14:19;0:4:9:28;0:9:10:1;0:3:10:19;0:4:9:19;0:9:10:1;0:3:10:19;0:4:9:10;0:9:10:1;0:3:17:12;0:4:9:1;0:9:10:1;0:3:15:7;0:4:9:0;0:9:10:1;0:3:16:1;0:4:9:0;0:9:10:1;0:3:15:-4;0:5:0:0;";
 
 fn tGoldenSubdue() bool {
     return goldenMatches(0, "RRRRRRRR", MODAL_ATTEMPT, def.OUT_SUBDUE, 8, GOLDEN_SUBDUE);
@@ -1016,7 +1024,7 @@ fn tGoldenOverkill() bool {
 }
 
 fn tGoldenRareModal() bool {
-    return goldenMatches(3, "R", MODAL_ATTEMPT, def.OUT_SUBDUE, 37, GOLDEN_RARE_MODAL);
+    return goldenMatches(3, "R", MODAL_ATTEMPT, def.OUT_SUBDUE, 15, GOLDEN_RARE_MODAL);
 }
 
 pub fn main() void {
@@ -1031,7 +1039,7 @@ pub fn main() void {
     report("coupling_despair_override_twelve", tCouplingDespairTwelve());
     report("coupling_after_creature_attack", tCouplingAfterCreatureAttack());
     report("exact_pct_boundaries_115_95_105", tExactPctHelpers());
-    report("coupling_exact_boundary_115", tCouplingExactBoundary115());
+    report("coupling_exact_boundary_80", tCouplingExactBoundary80());
     report("coupling_exact_boundary_95", tCouplingExactBoundary95());
     report("persistent_regen_once_per_round", tPersistentRegenOnce());
     report("strike_single_truncation", tStrikeSingleTruncation());
