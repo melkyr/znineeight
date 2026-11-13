@@ -66,3 +66,44 @@ queued input signals it. The symbol is exported by Win98 user32.
 `KERNEL32_NT` inherits the 9x list). `paths.dataDirOrFallback` uses it to create
 the writable-data fallback directory on the win32 branch (POSIX uses `mkdir`).
 The symbol is exported by Win98 kernel32.
+
+## Task 6 link configs + skeleton + trap handler (G15)
+
+Ruling A (user-approved): Z98 has no program-level `-D` build option, so the
+two presentation modes are chosen at **link time** by thin entries over one
+shared implementation, not by a runtime `--headless` flag:
+
+- `app.zig` — shared skeleton: `std_os.initArgs`, trap handler, data-dir
+  resolution/probe, read `sample.txt` from the exe dir, write `probe_out.txt`
+  into the writable dir (`paths.dataDirOrFallback`), draw one line, exit 0.
+- `main.zig` — GUI entry: `gfxOpen(80, 30)` titled `UNDERSANDED`.
+- `main_console.zig` — CUI entry: `gfxOpenMemory(80, 30)` + stdout, no window.
+
+`build.sh` (from repo root; `ZIG`/`OUT` env overrides):
+
+- `under.exe` — GUI, no-CRT: `cross_nocrt.sh` with `DUMP_TARGET="-osw"`,
+  `EXTRA_LIBS="-luser32 -lgdi32"`, `EXTRA_LDFLAGS="-Wl,--subsystem,windows"`,
+  entry `main.zig` (precedent: `z9edit/tests/tier_edit_gui.sh`).
+- `undtool.exe` — CUI, no-CRT: `DUMP_TARGET="-osw"`, entry
+  `main_console.zig`, console subsystem (no `--subsystem` override). The GDI32/
+  USER32 import libs are still linked because the reachable `std_gfx` cell
+  surface is compiled into the image even in memory mode; the *subsystem* is
+  the console default.
+- Both entries get an explicit `-fsafe -W` (warnings-as-errors) dump before the
+  cross build; `cross_nocrt.sh` handles the actual dump + no-CRT link.
+- `tests/fixtures/sample.txt` is copied beside both exes. `probe_out.txt`
+  receives the fixture bytes verbatim (25 bytes:
+  `UNDERSANDED M1 sample OK\n`).
+
+Trap handler wiring (spec §33): `debug.setTrapHandler(onTrap)` is installed
+after the writable dir is resolved. `onTrap` only uses pre-allocated state:
+the `crash.dmp`/`crash.log` path strings are built at startup, the backtrace
+`Buf` is `std_buf.initCapacity`-backed by a fixed 64 KiB arena (4 KiB capacity,
+1024 frames), and the handler does no allocation or path resolution.
+`crash.dmp` uses `std_debug.writeCoreDump`; `crash.log` uses
+`std_debug.backtrace`; the handler then prints one line via `@stderrWrite`.
+`data.z98` is not created: M1 uses `sample.txt` only (Task 6 vs M6 ruling).
+
+Import gate: `under.exe` and `undtool.exe` both pass
+`check_win9x_imports.sh <exe> 9x` with exactly GDI32/KERNEL32/USER32; no
+allow-list change was needed in this task.
