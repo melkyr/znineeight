@@ -24,6 +24,7 @@ pub fn rngNext(s: *u32) u32 {
 }
 
 pub fn rngRange(s: *u32, lo: i32, hi: i32) i32 {
+    if (hi < lo) @panic("rngRange: hi < lo");
     const span: u32 = @intCast(u32, hi - lo + 1);
     const r: u32 = rngNext(s) % span;
     return lo + @intCast(i32, r);

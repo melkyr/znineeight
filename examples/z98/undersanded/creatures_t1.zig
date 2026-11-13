@@ -205,7 +205,7 @@ pub fn defAt(index: i32) def.CreatureDef {
         2 => return DEFS[2],
         3 => return DEFS[3],
         4 => return DEFS[4],
-        else => return DEFS[0],
+        else => @panic("defAt: invalid creature index"),
     }
 }
 

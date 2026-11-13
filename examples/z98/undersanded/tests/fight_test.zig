@@ -905,30 +905,31 @@ const FightCase = struct {
     want_outcome: i32,
     want_steps: i32,
     want_hull: i32,
+    want_declines: i32,
 };
 
 // Pinned expected values from the fixed-seed runs recorded in NOTES.md.
 const FIGHTS = [20]FightCase{
-    FightCase{ .def_index = 0, .pattern = "RRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 8, .want_hull = 58 },
-    FightCase{ .def_index = 2, .pattern = "SSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 12, .want_hull = 12 },
-    FightCase{ .def_index = 0, .pattern = "SSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 4, .want_hull = 82 },
-    FightCase{ .def_index = 3, .pattern = "R", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 37, .want_hull = 0 },
-    FightCase{ .def_index = 4, .pattern = "SRSR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 11, .want_hull = 0 },
-    FightCase{ .def_index = 1, .pattern = "RSRSRSRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 8, .want_hull = 36 },
-    FightCase{ .def_index = 2, .pattern = "RRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 7, .want_hull = 52 },
-    FightCase{ .def_index = 1, .pattern = "RRRRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 13, .want_hull = 1 },
-    FightCase{ .def_index = 4, .pattern = "RRRRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 10, .want_hull = 10 },
-    FightCase{ .def_index = 3, .pattern = "SRSRSR", .modal_mode = MODAL_DECLINE, .want_outcome = def.OUT_OVERKILL, .want_steps = 11, .want_hull = 0 },
-    FightCase{ .def_index = 2, .pattern = "PSSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 7, .want_hull = 52 },
-    FightCase{ .def_index = 0, .pattern = "ESSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 5, .want_hull = 76 },
-    FightCase{ .def_index = 0, .pattern = "F", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_PLAYER_FLED, .want_steps = 1, .want_hull = 100 },
-    FightCase{ .def_index = 4, .pattern = "SSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 6, .want_hull = 40 },
-    FightCase{ .def_index = 3, .pattern = "SSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 5, .want_hull = 54 },
-    FightCase{ .def_index = 1, .pattern = "SSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 4, .want_hull = 72 },
-    FightCase{ .def_index = 2, .pattern = "RRSRRSRRSRRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 11, .want_hull = 20 },
-    FightCase{ .def_index = 0, .pattern = "RRSRRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 10, .want_hull = 46 },
-    FightCase{ .def_index = 4, .pattern = "RRSSRRSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 12, .want_hull = 0 },
-    FightCase{ .def_index = 3, .pattern = "RRRRS", .modal_mode = MODAL_DECLINE, .want_outcome = def.OUT_OVERKILL, .want_steps = 26, .want_hull = 0 },
+    FightCase{ .def_index = 0, .pattern = "RRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 8, .want_hull = 58, .want_declines = 0 },
+    FightCase{ .def_index = 2, .pattern = "SSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 12, .want_hull = 12, .want_declines = 0 },
+    FightCase{ .def_index = 0, .pattern = "SSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 4, .want_hull = 82, .want_declines = 0 },
+    FightCase{ .def_index = 3, .pattern = "R", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 37, .want_hull = 0, .want_declines = 0 },
+    FightCase{ .def_index = 4, .pattern = "SRSR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 11, .want_hull = 0, .want_declines = 0 },
+    FightCase{ .def_index = 1, .pattern = "RSRSRSRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 8, .want_hull = 36, .want_declines = 0 },
+    FightCase{ .def_index = 2, .pattern = "RRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 7, .want_hull = 52, .want_declines = 0 },
+    FightCase{ .def_index = 1, .pattern = "RRRRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 13, .want_hull = 1, .want_declines = 0 },
+    FightCase{ .def_index = 4, .pattern = "RRRRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 10, .want_hull = 10, .want_declines = 0 },
+    FightCase{ .def_index = 3, .pattern = "SRSRSR", .modal_mode = MODAL_DECLINE, .want_outcome = def.OUT_OVERKILL, .want_steps = 11, .want_hull = 0, .want_declines = 0 },
+    FightCase{ .def_index = 2, .pattern = "PSSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 7, .want_hull = 52, .want_declines = 0 },
+    FightCase{ .def_index = 0, .pattern = "ESSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 5, .want_hull = 76, .want_declines = 0 },
+    FightCase{ .def_index = 0, .pattern = "F", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_PLAYER_FLED, .want_steps = 1, .want_hull = 100, .want_declines = 0 },
+    FightCase{ .def_index = 4, .pattern = "SSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 6, .want_hull = 40, .want_declines = 0 },
+    FightCase{ .def_index = 3, .pattern = "SSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 5, .want_hull = 54, .want_declines = 0 },
+    FightCase{ .def_index = 1, .pattern = "SSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 4, .want_hull = 72, .want_declines = 0 },
+    FightCase{ .def_index = 2, .pattern = "RRSRRSRRSRRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 11, .want_hull = 20, .want_declines = 0 },
+    FightCase{ .def_index = 0, .pattern = "RRSRRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 10, .want_hull = 46, .want_declines = 0 },
+    FightCase{ .def_index = 4, .pattern = "RRSSRRSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 12, .want_hull = 0, .want_declines = 0 },
+    FightCase{ .def_index = 3, .pattern = "RRRRS", .modal_mode = MODAL_DECLINE, .want_outcome = def.OUT_OVERKILL, .want_steps = 26, .want_hull = 0, .want_declines = 1 },
 };
 
 fn printFightRow(n: usize, c: FightCase, r: FightRun) void {
@@ -983,6 +984,7 @@ fn tTwentyFights() bool {
         if (r.outcome != c.want_outcome) return false;
         if (r.steps != c.want_steps) return false;
         if (r.hull != c.want_hull) return false;
+        if (r.declines != c.want_declines) return false;
     }
 
     if (!saw_subdue or !saw_kill or !saw_overkill) return false;

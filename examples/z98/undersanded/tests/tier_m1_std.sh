@@ -252,7 +252,7 @@ else
     CUI="$OUT/cui_writable"
     mkdir -p "$CUI"
     cp "$BUILD_OUT/undtool.exe" "$BUILD_OUT/sample.txt" "$CUI/"
-    ( cd "$CUI" && timeout 120 wine ./undtool.exe ) >"$CUI/run.log" 2>&1
+    ( cd "$CUI" && timeout 120 wine ./undtool.exe </dev/null ) >"$CUI/run.log" 2>&1
     CUI_RC=$?
     sed 's/^/       /' "$CUI/run.log"
     if [ "$CUI_RC" -eq 0 ]; then
@@ -274,7 +274,7 @@ else
     RO_BEFORE="$(find "$RO" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d '[:space:]')"
     chmod 0555 "$RO"
     RO_DIRS="$RO"
-    ( cd "$RO" && timeout 120 wine ./undtool.exe ) >"$OUT/cui_readonly.log" 2>&1
+    ( cd "$RO" && timeout 120 wine ./undtool.exe </dev/null ) >"$OUT/cui_readonly.log" 2>&1
     RO_RC=$?
     sed 's/^/       /' "$OUT/cui_readonly.log"
     RO_AFTER="$(find "$RO" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d '[:space:]')"

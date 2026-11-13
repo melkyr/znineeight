@@ -402,6 +402,7 @@ stop-present.
 
 ## M2 known issues / provisional
 
+- **Post-gate hardening:** `defAt` panics on invalid index, `rngRange` panics on `hi < lo`, the 20-fight table pins `declines`, and Wine `undtool.exe` runs get `</dev/null`.
 - **Plate/Brine-Net model is PROVISIONAL.** Spec §10 marks both as Rigged
   (passive, no charge), while M2 honours them only when `tool_active != 0`
   (activated). §41 Q2's answer must be re-validated at M5 with rigged
