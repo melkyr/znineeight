@@ -15,6 +15,9 @@ cd lin_bin && wine undtool.exe
 The folder also works from the repo root (`wine lin_bin/undtool.exe`) because
 installed content is resolved beside the exe, but keep both files together.
 
+A writable run writes `probe_out.txt` beside the exe in `lin_bin/`. This is
+harmless.
+
 ## Creature chooser
 
 Keys `1`–`5` select:
@@ -44,7 +47,7 @@ Rare subdue modal:
 | `F` | Fight on |
 | `Esc` | Cancel / decline |
 
-`Q` or Ctrl-D/EOF quits.
+Quit: Ctrl-D (EOF). There is no Q key.
 
 ## What to observe (spec §41)
 
@@ -56,4 +59,5 @@ Rare subdue modal:
 
 - M2 shows effective Speed in the fight UI. The final game hides it until a
   journal entry reveals it (M8).
-- `E` currently equips the provisional Plate model. Real tools land at M5.
+- `E` readies equipment (currently the bare tool slot, arg 0) — it does not yet
+  equip the Steel Plate; the Plate model is scripted-only until tools land at M5.
