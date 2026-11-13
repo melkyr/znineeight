@@ -66,6 +66,7 @@ fn tRenewalDayOfCycle() bool {
     w.phase = world.PHASE_NIGHT;
     world.markTaken(&w, 0, 0, def.OUT_SUBDUE);
     if (w.ready[0] != 6) return false;
+    if (w.lockout_until[0] != 0) return false;
 
     w.cycle = 6;
     w.phase = world.PHASE_NIGHT;
@@ -86,8 +87,10 @@ fn tRespawnOutcomes() bool {
     // Def 0 (Mystic Eel) respawn triple is 3/9/15.
     world.markTaken(&w, 0, 0, def.OUT_SUBDUE);
     if (w.ready[0] != 6) return false;
+    if (w.lockout_until[0] != 0) return false;
     world.markTaken(&w, 0, 0, def.OUT_KILL);
     if (w.ready[0] != 12) return false;
+    if (w.lockout_until[0] != 0) return false;
 
     // Mystic Eel is family 1 -> bit 1, not bit 0. Assert the mask is unchanged
     // before the overkill call, then set on overkill.
@@ -320,6 +323,38 @@ fn tCreatureFledRenews() bool {
     w.cycle = 3;
     world.markTaken(&w, 0, 0, def.OUT_CREATURE_FLED);
     if (w.ready[0] != 6) return false;
+    if (w.lockout_until[0] != 0) return false;
+    return true;
+}
+
+// Outcome 6 is not a defined OUT_* code: it must not renew, set masks, or lock.
+fn tOtherOutcomeNoop() bool {
+    var w = blankWorld();
+    w.cycle = 3;
+    w.ready[0] = 42;
+    w.lockout_until[0] = 7;
+    w.family_overkill_mask = 0x10;
+    const ready_before = w.ready[0];
+    const lockout_before = w.lockout_until[0];
+    const mask_before = w.family_overkill_mask;
+    world.markTaken(&w, 0, 0, 6);
+    if (w.ready[0] != ready_before) return false;
+    if (w.lockout_until[0] != lockout_before) return false;
+    if (w.family_overkill_mask != mask_before) return false;
+    return true;
+}
+
+// A negative def index must not panic and must leave all state untouched.
+fn tNegativeDefNoop() bool {
+    var w = blankWorld();
+    w.cycle = 3;
+    w.ready[0] = 42;
+    w.lockout_until[0] = 7;
+    w.family_overkill_mask = 0x10;
+    world.markTaken(&w, 0, -1, def.OUT_OVERKILL);
+    if (w.ready[0] != 42) return false;
+    if (w.lockout_until[0] != 7) return false;
+    if (w.family_overkill_mask != 0x10) return false;
     return true;
 }
 
@@ -370,6 +405,8 @@ pub fn main() void {
     report("creature_fled_renews_subdue", tCreatureFledRenews());
     report("player_fled_ongoing_noop", tFleeOngoingNoop());
     report("undefined_def_noop", tUndefinedDefNoop());
+    report("other_outcome_noop", tOtherOutcomeNoop());
+    report("negative_def_noop", tNegativeDefNoop());
 
     if (fails != 0) os.exit(1);
     io.write("world_test PASS\n");
