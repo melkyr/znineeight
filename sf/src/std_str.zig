@@ -124,6 +124,27 @@ fn copyInto(dst: []u8, off: usize, src: []const u8) void {
 
 // ---- blueprint §3 L2 additions --------------------------------------------
 
+// The two halves of a first-separator split. Both are views into the source.
+pub const SplitOnce = struct {
+    first: []const u8,
+    second: []const u8,
+};
+
+// Split `s` on the FIRST occurrence of `sep`. Both halves are slices INTO `s`;
+// nothing is allocated or copied. Returns true and writes `out` when `sep`
+// occurs, false (leaving `out` untouched) when it does not.
+pub fn splitOnce(s: []const u8, sep: u8, out: *SplitOnce) bool {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        if (s[i] == sep) {
+            out.first = s[0..i];
+            out.second = s[i + 1 .. s.len];
+            return true;
+        }
+    }
+    return false;
+}
+
 // Split `s` on the byte `sep`. Returns slices INTO `s`; only the outer array is
 // allocated. A trailing separator yields a trailing empty segment and an empty
 // `s` yields exactly one empty segment.

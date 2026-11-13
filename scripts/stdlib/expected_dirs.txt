@@ -300,6 +300,7 @@ repro/mi_matrix/stdlib_str_replace_xmod
 repro/mi_matrix/stdlib_str_split_alias_xmod
 repro/mi_matrix/stdlib_str_split_xmod
 repro/mi_matrix/stdlib_str_splitlines_xmod
+repro/mi_matrix/stdlib_str_splitonce_xmod
 repro/mi_matrix/stdlib_str_stress_xmod
 repro/mi_matrix/stdlib_str_trim_xmod
 repro/mi_matrix/stdlib_str_trimleft_xmod
