@@ -74,6 +74,7 @@ pub const World = struct {
     lockout_until: [MAX_ZONES]i32,
     family_overkill_mask: u32, wary_mask: [2]u32,
     rng_state: u32,
+    hull: i32,
     boat: [5]i32, money: i32,
     expertise: [MAX_MATERIALS]i32,
     cosmetics_owned: u32, cosmetics_unlocked: u32,

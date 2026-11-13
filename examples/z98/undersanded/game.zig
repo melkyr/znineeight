@@ -12,7 +12,7 @@ const creatures = @import("creatures_t1.zig");
 pub const EXPEDITION_SEED: u32 = 98;
 pub const FIGHT_INDEX: i32 = 0;
 
-fn zeroWorld(w: *def.World) void {
+pub fn zeroWorld(w: *def.World) void {
     w.cycle = 0;
     w.phase = 0;
     var i: usize = 0;
@@ -34,6 +34,7 @@ fn zeroWorld(w: *def.World) void {
     w.wary_mask[0] = 0;
     w.wary_mask[1] = 0;
     w.rng_state = 0;
+    w.hull = 100;
     i = 0;
     while (i < 5) : (i += 1) {
         w.boat[i] = 0;
