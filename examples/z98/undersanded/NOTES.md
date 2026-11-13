@@ -149,3 +149,34 @@ explicit `operator-hardware:` lines (never a silent skip) and is counted as an
 evidence skip. The summary is `TIER_M1 PASS` / `TIER_M1 FAIL` with
 pass/fail/skip counts. The std set must be synced to the compiler's `lib/`
 first (`cp sf/src/std_*.zig /tmp/zig1-m1/lib/`).
+
+## M2 amendment review: no amendment needed
+
+Checked the M2 plan's consumed surfaces against M1 actuals (HEAD `8b65795d`)
+and spec §23/§24/§25:
+
+- **`game.zig` purity:** M2 authors `game.zig` with no I/O; none of the M2
+  game modules (`def`/`math`/`rng`/`behavior`/`fight`/`game`) need
+  `std_file`/`std_io`/`std_gfx`. M1 adds no dependency that forces I/O.
+- **RNG:** xorshift32 is game-owned per spec §25.5 (shifts/XOR only, no
+  multiply); M1 adds no std RNG and no conflicting surface.
+- **Fixed point / i32 math:** `applyPct`, integer ceil, and i32-only combat
+  math are self-contained in M2's `math.zig`. `std_math` also has
+  `min`/`max`/`abs`/`clamp` (`sf/src/std_math.zig:1,6,21,26`); G12 is
+  CLOSED-ALREADY, so there is no platform gap.
+- **Flat structs/capacities:** spec §25.1–§25.3 sizes (`MAX_LOG=64`, etc.) are
+  authored in M2 Task 1 (`def.zig`); M1 fixed no contradicting values and
+  mandates no resize.
+- **`GameState`/`LogEntry`/`Effect`/`FightState`:** authored in M2 Task 1 from
+  spec §25.3; no std/platform surface required.
+- **std APIs M2 calls:** `std_gfx` cell tier is present — `gfxOpen`:107,
+  `gfxOpenMemory`:128, `gfxWaitEvent`:197, `gfxPollEvent`:163,
+  `Event.px/py`:49–50, `focus_lost`/`focus_gained`:39–40, `gfxTestKey`:236,
+  `gfxTestMouse`:244, `gfxBeginFrame`:258, `gfxDrawText`:305,
+  `gfxDumpGrid`:348. `std_io` has `write`:5, `printInt`:19, `readByte`:54.
+  The `gfxWaitEvent` import amendment (`MsgWaitForMultipleObjectsEx`) is in
+  this NOTES and the import gate.
+- **Plumbing:** `under.exe` (GUI) + `undtool.exe` (CUI) no-CRT links, import
+  gate, and the native Linux test-driver convention are green in M1.
+
+Verdict: **no amendment needed** for M2.
