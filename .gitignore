@@ -106,3 +106,4 @@ repro_out/*
 out_*/
 release/staging/
 docs/sf/manuals/dist/
+.worktrees/
