@@ -50,3 +50,11 @@ Other audit facts relevant to M1 tasks: `std_debug` has `setTrapHandler`:119,
 specified). `std_os` lacks an exe/module path helper (Task 5 must add it).
 `std_bits` has no CRC (`popcount`/`clz`/`ctz`/rot/`mask`/`extract`/`insert`/
 `isPow2`/`nextPow2` only).
+
+## Task 4 import gate amendment
+
+`scripts/win32_cross/check_win9x_imports.sh` `USER32_ALL` adds
+`MsgWaitForMultipleObjectsEx` (sorted between `MessageBoxA` and `OpenClipboard`).
+`gfxWaitEvent` uses it to block on the thread input queue (QS_ALLINPUT) instead
+of spinning `PeekMessageA`; the call is `nCount=0`, `pHandles=NULL`, so only
+queued input signals it. The symbol is exported by Win98 user32.

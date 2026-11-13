@@ -36,6 +36,8 @@ pub const EventKind = enum {
     wheel,
     resize,
     close,
+    focus_lost,
+    focus_gained,
 };
 
 pub const Event = struct {
@@ -44,6 +46,8 @@ pub const Event = struct {
     code: u16,
     x: u32,
     y: u32,
+    px: u32,
+    py: u32,
     button: u8,
     wheel: i32,
     cols: u32,
@@ -151,6 +155,8 @@ fn kindFromU8(k: u8) EventKind {
     if (k == 4) return .mouse_up;
     if (k == 5) return .wheel;
     if (k == 6) return .resize;
+    if (k == 8) return .focus_lost;
+    if (k == 9) return .focus_gained;
     return .close;
 }
 
@@ -171,12 +177,28 @@ pub fn gfxPollEvent(g: *Gfx, ev: *Event) bool {
     ev.code = raw.code;
     ev.x = raw.x;
     ev.y = raw.y;
+    ev.px = 0;
+    ev.py = 0;
+    if (ev.kind == .mouse_move or ev.kind == .mouse_down or ev.kind == .mouse_up) {
+        ev.px = raw.px;
+        ev.py = raw.py;
+    }
     ev.button = raw.button;
     ev.wheel = raw.wheel;
     ev.cols = raw.cols;
     ev.rows = raw.rows;
     ev.mods = raw.mods;
     return true;
+}
+
+// Block until input arrives or timeout_ms elapses. An event that wakes the
+// wait is saved and returned by the next gfxPollEvent; this function itself
+// only reports arrival. A memory Gfx has no message queue and returns false.
+pub fn gfxWaitEvent(g: *Gfx, timeout_ms: u32) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    var raw: pal.RawEvent = undefined;
+    return pal.waitEvent(&s.st, timeout_ms, &raw);
 }
 
 // Test affordance: resize the real window (window mode) so Windows SENDs
@@ -215,6 +237,22 @@ pub fn gfxTestKey(g: *Gfx, vk: u16) bool {
     const s = g.opaque;
     if (s.mem_only) return false;
     return pal.testKey(&s.st, vk);
+}
+
+// Test-only mouse driver: posts a WM_MOUSEMOVE at client pixel (px, py), the
+// analogue of gfxTestKey. A memory Gfx has no window and returns false.
+pub fn gfxTestMouse(g: *Gfx, px: u32, py: u32) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    return pal.testMouse(&s.st, px, py);
+}
+
+// Test-only focus driver: posts WM_SETFOCUS/WM_KILLFOCUS so the pump emits
+// focus_gained/focus_lost. A memory Gfx has no window and returns false.
+pub fn gfxTestFocus(g: *Gfx, focused: bool) bool {
+    const s = g.opaque;
+    if (s.mem_only) return false;
+    return pal.testFocus(&s.st, focused);
 }
 
 pub fn gfxBeginFrame(g: *Gfx) bool {

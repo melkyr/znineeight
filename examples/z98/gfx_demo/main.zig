@@ -40,6 +40,8 @@ fn evBase(kind: gfx.EventKind) gfx.Event {
         .code = 0,
         .x = 0,
         .y = 0,
+        .px = 0,
+        .py = 0,
         .button = 0,
         .wheel = 0,
         .cols = 0,

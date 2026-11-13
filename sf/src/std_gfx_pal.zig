@@ -36,6 +36,8 @@ const SWP_NOMOVE: u32 = 0x0002;
 const SWP_NOZORDER: u32 = 0x0004;
 const SWP_NOACTIVATE: u32 = 0x0010;
 const WM_DESTROY: u32 = 0x0002;
+const WM_SETFOCUS: u32 = 0x0007;
+const WM_KILLFOCUS: u32 = 0x0008;
 const WM_CLOSE: u32 = 0x0010;
 const WM_QUIT: u32 = 0x0012;
 const WM_KEYDOWN: u32 = 0x0100;
@@ -46,6 +48,7 @@ const WM_LBUTTONDOWN: u32 = 0x0201;
 const WM_LBUTTONUP: u32 = 0x0202;
 const WM_MOUSEWHEEL: u32 = 0x020A;
 const PM_REMOVE: u32 = 0x0001;
+const QS_ALLINPUT: u32 = 0x04FF;
 const VK_SHIFT: i32 = 0x10;
 const VK_CONTROL: i32 = 0x11;
 const IDC_ARROW: u32 = 32512;
@@ -91,6 +94,8 @@ const EK_MOUSE_UP: u8 = 4;
 const EK_WHEEL: u8 = 5;
 const EK_RESIZE: u8 = 6;
 const EK_CLOSE: u8 = 7;
+const EK_FOCUS_LOST: u8 = 8;
+const EK_FOCUS_GAINED: u8 = 9;
 
 fn nullVoid() *void {
     return @ptrCast(*void, @intToPtr(*void, 0));
@@ -511,6 +516,9 @@ pub extern "stdcall" fn TranslateMessage(msg: *const void) i32;
 pub extern "stdcall" fn DispatchMessageA(msg: *const void) i32;
 pub extern "stdcall" fn PostQuitMessage(code: i32) void;
 pub extern "stdcall" fn PostMessageA(hwnd: *void, msg: u32, wparam: u32, lparam: i32) i32;
+// Win32 MsgWaitForMultipleObjectsEx is (nCount, pHandles, timeout, mask, flags).
+// We wait on the thread's input queue only (nCount = 0, pHandles = null).
+pub extern "stdcall" fn MsgWaitForMultipleObjectsEx(n_count: u32, handles: *void, timeout: u32, mask: u32, flags: u32) u32;
 pub extern "stdcall" fn GetKeyState(vk: i32) i16;
 pub extern "stdcall" fn GetClientRect(hwnd: *void, rc: *void) i32;
 pub extern "stdcall" fn ClientToScreen(hwnd: *void, pt: *void) i32;
@@ -597,6 +605,8 @@ pub const State = struct {
     def_ch: u8,
     def_code: u16,
     def_mods: u8,
+    wait_saved: bool,
+    wait_raw: RawEvent,
     title: [128]u8,
     class_name: [32]u8,
 };
@@ -607,6 +617,8 @@ pub const RawEvent = struct {
     code: u16,
     x: u32,
     y: u32,
+    px: u32,
+    py: u32,
     button: u8,
     wheel: i32,
     cols: u32,
@@ -1103,6 +1115,8 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.def_ch = 0;
     st.def_code = 0;
     st.def_mods = 0;
+    st.wait_saved = false;
+    zeroRaw(&st.wait_raw);
     var bi: usize = 0;
     while (bi < 16) : (bi += 1) st.brushes[bi] = nullVoid();
     copyCstr(title, st.title[0..]);
@@ -1484,6 +1498,8 @@ fn zeroRaw(raw: *RawEvent) void {
     raw.code = 0;
     raw.x = 0;
     raw.y = 0;
+    raw.px = 0;
+    raw.py = 0;
     raw.button = 0;
     raw.wheel = 0;
     raw.cols = 0;
@@ -1500,6 +1516,42 @@ fn fillDeferred(st: *State, raw: *RawEvent) bool {
     raw.mods = st.def_mods;
     st.deferred = false;
     return true;
+}
+
+// waitEvent consumes one event to decide that something arrived; save it so the
+// next pollEvent still delivers it (wait-then-poll must not lose the event).
+fn fillWaitSaved(st: *State, raw: *RawEvent) bool {
+    if (!st.wait_saved) return false;
+    raw.kind = st.wait_raw.kind;
+    raw.ch = st.wait_raw.ch;
+    raw.code = st.wait_raw.code;
+    raw.x = st.wait_raw.x;
+    raw.y = st.wait_raw.y;
+    raw.px = st.wait_raw.px;
+    raw.py = st.wait_raw.py;
+    raw.button = st.wait_raw.button;
+    raw.wheel = st.wait_raw.wheel;
+    raw.cols = st.wait_raw.cols;
+    raw.rows = st.wait_raw.rows;
+    raw.mods = st.wait_raw.mods;
+    st.wait_saved = false;
+    return true;
+}
+
+fn saveWait(st: *State, raw: *const RawEvent) void {
+    st.wait_raw.kind = raw.kind;
+    st.wait_raw.ch = raw.ch;
+    st.wait_raw.code = raw.code;
+    st.wait_raw.x = raw.x;
+    st.wait_raw.y = raw.y;
+    st.wait_raw.px = raw.px;
+    st.wait_raw.py = raw.py;
+    st.wait_raw.button = raw.button;
+    st.wait_raw.wheel = raw.wheel;
+    st.wait_raw.cols = raw.cols;
+    st.wait_raw.rows = raw.rows;
+    st.wait_raw.mods = raw.mods;
+    st.wait_saved = true;
 }
 
 fn deferKeyUp(st: *State, code: u16, ch: u8, mods: u8) void {
@@ -1554,6 +1606,32 @@ pub fn testKey(st: *State, vk: u16) bool {
     return PostMessageA(st.hwnd, WM_KEYDOWN, @intCast(u32, vk), 0) != 0;
 }
 
+pub fn testMouse(st: *State, px: u32, py: u32) bool {
+    if (isNull(st.hwnd)) return false;
+    const lp_u: u32 = (px & 0xFFFF) | ((py & 0xFFFF) << 16);
+    return PostMessageA(st.hwnd, WM_MOUSEMOVE, 0, @bitCast(i32, lp_u)) != 0;
+}
+
+pub fn testFocus(st: *State, focused: bool) bool {
+    if (isNull(st.hwnd)) return false;
+    var m: u32 = WM_KILLFOCUS;
+    if (focused) m = WM_SETFOCUS;
+    return PostMessageA(st.hwnd, m, 0, 0) != 0;
+}
+
+// Block on the thread input queue instead of spinning PeekMessageA. The woke
+// event is saved for the next pollEvent; the return value only says one
+// arrived. No window/queue -> false.
+pub fn waitEvent(st: *State, timeout_ms: u32, raw: *RawEvent) bool {
+    if (isNull(st.hwnd)) return false;
+    if (st.wait_saved) return true;
+    const r = MsgWaitForMultipleObjectsEx(0, nullVoid(), timeout_ms, QS_ALLINPUT, 0);
+    if (r != 0) return false;
+    if (!pollEvent(st, raw)) return false;
+    saveWait(st, raw);
+    return true;
+}
+
 fn modsNow() u8 {
     var m: u8 = 0;
     if (GetKeyState(VK_SHIFT) < 0) m = m | 1;
@@ -1563,6 +1641,7 @@ fn modsNow() u8 {
 
 pub fn pollEvent(st: *State, raw: *RawEvent) bool {
     if (isNull(st.hwnd)) return false;
+    if (fillWaitSaved(st, raw)) return true;
     if (fillDeferred(st, raw)) return true;
     if (IsWindow(st.hwnd) == 0) {
         if (!st.window_gone) {
@@ -1681,6 +1760,16 @@ pub fn pollEvent(st: *State, raw: *RawEvent) bool {
             _ = DispatchMessageA(@ptrCast(*const void, &msg));
             return true;
         }
+        if (m == WM_KILLFOCUS) {
+            raw.kind = EK_FOCUS_LOST;
+            _ = DispatchMessageA(@ptrCast(*const void, &msg));
+            return true;
+        }
+        if (m == WM_SETFOCUS) {
+            raw.kind = EK_FOCUS_GAINED;
+            _ = DispatchMessageA(@ptrCast(*const void, &msg));
+            return true;
+        }
         if (m == WM_MOUSEMOVE or m == WM_LBUTTONDOWN or m == WM_LBUTTONUP) {
             const mx = @intCast(u32, msg.lParam & 0xFFFF);
             const my = @intCast(u32, (msg.lParam >> 16) & 0xFFFF);
@@ -1688,6 +1777,8 @@ pub fn pollEvent(st: *State, raw: *RawEvent) bool {
             if (m == WM_LBUTTONDOWN) raw.kind = EK_MOUSE_DOWN;
             if (m == WM_LBUTTONUP) raw.kind = EK_MOUSE_UP;
             raw.button = 0;
+            raw.px = mx;
+            raw.py = my;
             raw.x = if (st.cw == 0) 0 else mx / st.cw;
             raw.y = if (st.ch == 0) 0 else my / st.ch;
             raw.mods = modsNow();
