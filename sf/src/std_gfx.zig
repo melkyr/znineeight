@@ -247,12 +247,12 @@ pub fn gfxTestMouse(g: *Gfx, px: u32, py: u32) bool {
     return pal.testMouse(&s.st, px, py);
 }
 
-// Test-only focus driver: posts WM_SETFOCUS/WM_KILLFOCUS so the pump emits
-// focus_gained/focus_lost. A memory Gfx has no window and returns false.
-pub fn gfxTestFocus(g: *Gfx, focused: bool) bool {
+// Test-only focus driver: forces a synthetic transition through the same
+// polling logic (no posted window message). A memory Gfx has no window.
+pub fn gfxTestFocus(g: *Gfx, focused: bool) void {
     const s = g.opaque;
-    if (s.mem_only) return false;
-    return pal.testFocus(&s.st, focused);
+    if (s.mem_only) return;
+    pal.testFocus(&s.st, focused);
 }
 
 pub fn gfxBeginFrame(g: *Gfx) bool {

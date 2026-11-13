@@ -36,8 +36,6 @@ const SWP_NOMOVE: u32 = 0x0002;
 const SWP_NOZORDER: u32 = 0x0004;
 const SWP_NOACTIVATE: u32 = 0x0010;
 const WM_DESTROY: u32 = 0x0002;
-const WM_SETFOCUS: u32 = 0x0007;
-const WM_KILLFOCUS: u32 = 0x0008;
 const WM_CLOSE: u32 = 0x0010;
 const WM_QUIT: u32 = 0x0012;
 const WM_KEYDOWN: u32 = 0x0100;
@@ -49,6 +47,8 @@ const WM_LBUTTONUP: u32 = 0x0202;
 const WM_MOUSEWHEEL: u32 = 0x020A;
 const PM_REMOVE: u32 = 0x0001;
 const QS_ALLINPUT: u32 = 0x04FF;
+const WAIT_OBJECT_0: u32 = 0;
+const WAIT_TIMEOUT: u32 = 0x00000102;
 const VK_SHIFT: i32 = 0x10;
 const VK_CONTROL: i32 = 0x11;
 const IDC_ARROW: u32 = 32512;
@@ -507,6 +507,8 @@ pub extern "stdcall" fn DefWindowProcA(hwnd: *void, msg: u32, wparam: u32, lpara
 pub extern "stdcall" fn ShowWindow(hwnd: *void, cmd: i32) i32;
 pub extern "stdcall" fn UpdateWindow(hwnd: *void) i32;
 pub extern "stdcall" fn SetForegroundWindow(hwnd: *void) i32;
+pub extern "stdcall" fn GetForegroundWindow() *void;
+pub extern "stdcall" fn GetTickCount() u32;
 pub extern "stdcall" fn SetWindowTextA(hwnd: *void, s: [*]const u8) i32;
 pub extern "stdcall" fn DestroyWindow(hwnd: *void) i32;
 pub extern "stdcall" fn UnregisterClassA(name: [*]const u8, inst: *void) i32;
@@ -607,6 +609,9 @@ pub const State = struct {
     def_mods: u8,
     wait_saved: bool,
     wait_raw: RawEvent,
+    focus_state: bool,
+    focus_override: bool,
+    focus_override_value: bool,
     title: [128]u8,
     class_name: [32]u8,
 };
@@ -1117,6 +1122,9 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     st.def_mods = 0;
     st.wait_saved = false;
     zeroRaw(&st.wait_raw);
+    st.focus_state = false;
+    st.focus_override = false;
+    st.focus_override_value = false;
     var bi: usize = 0;
     while (bi < 16) : (bi += 1) st.brushes[bi] = nullVoid();
     copyCstr(title, st.title[0..]);
@@ -1163,6 +1171,9 @@ pub fn open(title: []const u8, cols: u32, rows: u32, st: *State) bool {
     _ = ShowWindow(st.hwnd, SW_SHOW);
     _ = UpdateWindow(st.hwnd);
     _ = SetForegroundWindow(st.hwnd);
+    // Seed the tracked focus state from the real foreground window so the first
+    // pollEvent does not emit a spurious focus transition.
+    st.focus_state = (@ptrToInt(GetForegroundWindow()) == @ptrToInt(st.hwnd));
 
     // Glyph metrics from the real fixed font (self-consistent per machine).
     st.font = GetStockObject(SYSTEM_FIXED_FONT);
@@ -1612,24 +1623,65 @@ pub fn testMouse(st: *State, px: u32, py: u32) bool {
     return PostMessageA(st.hwnd, WM_MOUSEMOVE, 0, @bitCast(i32, lp_u)) != 0;
 }
 
-pub fn testFocus(st: *State, focused: bool) bool {
+fn focusedNow(st: *State) bool {
     if (isNull(st.hwnd)) return false;
-    var m: u32 = WM_KILLFOCUS;
-    if (focused) m = WM_SETFOCUS;
-    return PostMessageA(st.hwnd, m, 0, 0) != 0;
+    return @ptrToInt(GetForegroundWindow()) == @ptrToInt(st.hwnd);
 }
 
-// Block on the thread input queue instead of spinning PeekMessageA. The woke
-// event is saved for the next pollEvent; the return value only says one
-// arrived. No window/queue -> false.
+// Focus transitions are polled: WM_SETFOCUS/WM_KILLFOCUS are sent, not queued,
+// so DefWindowProc consumes them without the pump ever seeing a message. A test
+// override forces a synthetic state and is released once it agrees with the
+// real foreground window again, so real focus changes resume afterwards.
+fn pollFocus(st: *State, raw: *RawEvent) bool {
+    const real = focusedNow(st);
+    var focused = real;
+    if (st.focus_override) {
+        focused = st.focus_override_value;
+        if (focused == real) st.focus_override = false;
+    }
+    if (focused == st.focus_state) return false;
+    st.focus_state = focused;
+    zeroRaw(raw);
+    if (focused) {
+        raw.kind = EK_FOCUS_GAINED;
+    } else {
+        raw.kind = EK_FOCUS_LOST;
+    }
+    return true;
+}
+
+pub fn testFocus(st: *State, focused: bool) void {
+    if (isNull(st.hwnd)) return;
+    st.focus_override = true;
+    st.focus_override_value = focused;
+}
+
+// Block until a real event arrives or the full timeout elapses. Pending work is
+// polled first; a non-event wake (paint/system message) is consumed and the wait
+// continues with the remaining time. The woken event is saved for the next
+// pollEvent; the return value only says one arrived. No window/queue -> false.
 pub fn waitEvent(st: *State, timeout_ms: u32, raw: *RawEvent) bool {
     if (isNull(st.hwnd)) return false;
     if (st.wait_saved) return true;
-    const r = MsgWaitForMultipleObjectsEx(0, nullVoid(), timeout_ms, QS_ALLINPUT, 0);
-    if (r != 0) return false;
-    if (!pollEvent(st, raw)) return false;
-    saveWait(st, raw);
-    return true;
+    if (pollEvent(st, raw)) {
+        saveWait(st, raw);
+        return true;
+    }
+    const start = GetTickCount();
+    while (true) {
+        const now = GetTickCount();
+        const elapsed = now - start;
+        if (elapsed >= timeout_ms) return false;
+        const remaining = timeout_ms - elapsed;
+        const r = MsgWaitForMultipleObjectsEx(0, nullVoid(), remaining, QS_ALLINPUT, 0);
+        if (r == WAIT_TIMEOUT) return false;
+        if (r != WAIT_OBJECT_0) return false;
+        if (pollEvent(st, raw)) {
+            saveWait(st, raw);
+            return true;
+        }
+    }
+    return false;
 }
 
 fn modsNow() u8 {
@@ -1652,6 +1704,7 @@ pub fn pollEvent(st: *State, raw: *RawEvent) bool {
         }
         return false;
     }
+    if (pollFocus(st, raw)) return true;
     var crc: Rect = undefined;
     if (GetClientRect(st.hwnd, @ptrCast(*void, &crc)) != 0) {
         const cw_i: i32 = crc.right - crc.left;
@@ -1757,16 +1810,6 @@ pub fn pollEvent(st: *State, raw: *RawEvent) bool {
             raw.code = vk;
             raw.ch = virtualToChar(vk);
             raw.mods = mods;
-            _ = DispatchMessageA(@ptrCast(*const void, &msg));
-            return true;
-        }
-        if (m == WM_KILLFOCUS) {
-            raw.kind = EK_FOCUS_LOST;
-            _ = DispatchMessageA(@ptrCast(*const void, &msg));
-            return true;
-        }
-        if (m == WM_SETFOCUS) {
-            raw.kind = EK_FOCUS_GAINED;
             _ = DispatchMessageA(@ptrCast(*const void, &msg));
             return true;
         }

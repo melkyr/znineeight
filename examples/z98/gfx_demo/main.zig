@@ -16,6 +16,9 @@
 const gfx = @import("std_gfx");
 const io = @import("std_io");
 
+@cInclude("<windows.h>");
+extern "stdcall" fn GetTickCount() u32;
+
 const COLS: u32 = 64;
 const ROWS: u32 = 20;
 const TITLE: []const u8 = "z98 gfx demo | DirectDraw7 + GDI";
@@ -328,15 +331,14 @@ fn runEventSelftest(g: *gfx.Gfx) bool {
         all_ok = false;
     }
 
-    // (2) focus lost then gained
+    // (2) focus lost then gained (synthetic override through pollFocus)
     var ok_lost = false;
-    if (gfx.gfxTestFocus(g, false)) {
-        var guard: u32 = 0;
-        while (guard < 8 and !ok_lost) : (guard += 1) {
-            if (!gfx.gfxWaitEvent(g, 1000)) break;
-            while (gfx.gfxPollEvent(g, &ev)) {
-                if (ev.kind == .focus_lost) ok_lost = true;
-            }
+    gfx.gfxTestFocus(g, false);
+    var guard: u32 = 0;
+    while (guard < 8 and !ok_lost) : (guard += 1) {
+        if (!gfx.gfxWaitEvent(g, 1000)) break;
+        while (gfx.gfxPollEvent(g, &ev)) {
+            if (ev.kind == .focus_lost) ok_lost = true;
         }
     }
     if (ok_lost) {
@@ -347,13 +349,12 @@ fn runEventSelftest(g: *gfx.Gfx) bool {
     }
 
     var ok_gained = false;
-    if (gfx.gfxTestFocus(g, true)) {
-        var guard: u32 = 0;
-        while (guard < 8 and !ok_gained) : (guard += 1) {
-            if (!gfx.gfxWaitEvent(g, 1000)) break;
-            while (gfx.gfxPollEvent(g, &ev)) {
-                if (ev.kind == .focus_gained) ok_gained = true;
-            }
+    gfx.gfxTestFocus(g, true);
+    guard = 0;
+    while (guard < 8 and !ok_gained) : (guard += 1) {
+        if (!gfx.gfxWaitEvent(g, 1000)) break;
+        while (gfx.gfxPollEvent(g, &ev)) {
+            if (ev.kind == .focus_gained) ok_gained = true;
         }
     }
     if (ok_gained) {
@@ -363,10 +364,14 @@ fn runEventSelftest(g: *gfx.Gfx) bool {
         all_ok = false;
     }
 
-    // (3) no events -> the wait must time out and report false
+    // (3) no events -> the wait must time out, report false, and actually
+    // spend the timeout (not return false immediately).
     while (gfx.gfxPollEvent(g, &ev)) {}
-    const timed_out = !gfx.gfxWaitEvent(g, 60);
-    if (timed_out) {
+    const t0 = GetTickCount();
+    const woke = gfx.gfxWaitEvent(g, 60);
+    const t1 = GetTickCount();
+    const elapsed = t1 - t0;
+    if (!woke and elapsed >= 40) {
         io.write("ok - idle_wait_timeout\n");
     } else {
         io.write("FAIL - idle_wait_timeout\n");
