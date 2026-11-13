@@ -24,7 +24,7 @@
 ## File Structure
 
 - `examples/z98/undersanded/def.zig` — capacities (§25.1), `DropLine`, `CreatureDef`, `FightState` (§25.2–25.3), outcome/action/flag consts.
-- `examples/z98/undersanded/math.zig` — `applyPct`, `ceilPct30`.
+- `examples/z98/undersanded/math.zig` — `applyPct`, `ceilPct(max_res, LAST_SURGE_RESTORE_PCT)`.
 - `examples/z98/undersanded/rng.zig` — `rngNext`, `rngRange`.
 - `examples/z98/undersanded/behavior.zig` — `Rule`, rule-VM interpreter, one-shot crossing detection.
 - `examples/z98/undersanded/fight.zig` — action resolution (§9.2), coupling (§8.5), overkill (§8.6), subdue gate + modal/silent + Last Surge (§9.1–9.5), turn order (§8.4).
@@ -50,7 +50,7 @@
 ### Task 1: Definitions + math + rng
 
 **Interfaces:** as in File Structure; `applyPct(v, pct) = (v*pct)/100`; `rngRange(s, lo, hi)` = spec §25.5 version with `@intCast` (u32→i32 both sides). **State/log (spec §25.3):** `GameState` = fight + world + `LogEntry[MAX_LOG=64]` drop-oldest + expedition flat fields; `LogEntry = {class, msg_id, a, b}` rendered via message table (Last Surge flavor line = §40 copy as a msg_id row — authored here). FightState carries the effect state fields: `rule_consumed: u32`, `pending_blind/ink/flee: i32`, `active_armor_pct/active_resist_restrain: i32`; `flags` uses the spec F_* vocabulary. **Coupling regen = REPLACE** (row `+8` replaces the default +5, never adds). **bar-switch counter:** increments when the player's action changes the active bar (Strike↔Restrain); Equipment/Flee/Attempt do not switch. **Rough-sleep hooks:** FightState condition fields (`cond: i32`) with math: Drowsy −20% Strike, Shaky margin ÷2, Exposed incoming +25% — granted by game layer at M4, math hooks land at M2. **danger_hp clamp ≥0** for display/tests.
-- [ ] Unit tests: `applyPct` truncation cases (25→37.5 patterns with pct 150/60); `ceilPct30` == ceil for max_res 50…195; xorshift known sequence for seed 98. Implement `def.zig`/`math.zig`/`rng.zig`. PASS. Also: rng determinism test (same seed + action stream → identical log bytes incl. msg_ids); subdue mapping test (roll 1–60 vs 60% succeeds, 61–100 fails); zero-seed reseed test. Commit `example(undersanded): fight defs, fixed point, xorshift32`.
+- [ ] Unit tests: `applyPct` truncation cases (25→37.5 patterns with pct 150/60); `ceilPct(max_res, LAST_SURGE_RESTORE_PCT)` == ceil for max_res 50…195; xorshift known sequence for seed 98. Implement `def.zig`/`math.zig`/`rng.zig`. PASS. Also: rng determinism test (same seed + action stream → identical log bytes incl. msg_ids); subdue mapping test (roll 1–60 vs 60% succeeds, 61–100 fails); zero-seed reseed test. Commit `example(undersanded): fight defs, fixed point, xorshift32`.
 
 ### Task 2: Rule VM (`behavior.zig`)
 
@@ -61,7 +61,7 @@
 ### Task 3: Fight resolution (`fight.zig` + `game.zig`)
 
 **Interfaces:** `pub fn gameStep(s: *GameState, a: Action) void` (Action = `{kind, arg}` kinds: STRIKE/RESTRAIN/EQUIP/FLEE/ATTEMPT/DECLINE/…); `FightState` per §25.3; `pub fn startFight(s: *GameState, def_index: i32) void` seeds `rng_state = expedition_seed + fight_index * 77` (hardcode `expedition_seed=98`, `fight_index=0` for M2).
-- [ ] Unit tests pinning §9.2 order exactly: (a) lethal Strike with overshoot ≥ margin → OVERKILL, fight ends, creature does not act; (b) Resolve≤0 & HP>0 & chance success → SUBDUE, creature does not act; (c) chance failure → Last Surge (res `(max_res*30+99)/100`, atk +25pp once, speed +2 cap +6) and creature acts that round; (d) Thrash/Despair regen at end of round with row overrides **REPLACING** default +5 (+8/+10/+12); (e) overkill margin `max_hp*margin_pct/100`, Kill when overshoot < margin; (f) danger_hp `25 - margin` display value; (g) turn order tie → player first; Steel Tuna HP<30% → Speed 10 vs 10 tie → player, Speed +4 applies immediately; (h) DECLINE sets `subdue_declined`, consumes no RNG; gate re-fires only when `subdue_declined==false`.
+- [ ] Unit tests pinning §9.2 order exactly: (a) lethal Strike with overshoot ≥ margin → OVERKILL, fight ends, creature does not act; (b) Resolve≤0 & HP>0 & chance success → SUBDUE, creature does not act; (c) chance failure → Last Surge (res `(max_res*25+99)/100`, atk +25pp once, speed +2 cap +6) and creature acts that round; (d) Thrash/Despair regen at end of round with row overrides **REPLACING** default +5 (+8/+10/+12); (e) overkill margin `max_hp*margin_pct/100`, Kill when overshoot < margin; (f) danger_hp `25 - margin` display value; (g) turn order tie → player first; Steel Tuna HP<30% → Speed 10 vs 10 tie → player, Speed +4 applies immediately; (h) DECLINE sets `subdue_declined`, consumes no RNG; gate re-fires only when `subdue_declined==false`.
 - [ ] Implement `fight.zig`/`game.zig` flat, module-level consts only. PASS. Commit `example(undersanded): fight resolution core`.
 
 ### Task 4: 5 creatures + minimal text UI

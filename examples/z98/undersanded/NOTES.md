@@ -518,24 +518,26 @@ evidence skip**: `TIER_M3 PASS 65 passed / 0 failed` (the skip is the SLOW
 Wine `undtool.exe` evidence section: no built exe / wine in the native-only
 worktree; it is non-gating by design).
 
-- **W1 deferred-fix re-pin:** decline now logs the plain copy
-  (`MSG_DECLINE_PLAIN`, "The creature recovers its footing.") unless a coupling
-  regen is active (`MSG_DECLINE` keeps the recovering-will wording); the
-  `--dump-grid` golden was re-pinned for the pinned `DUMP_SEED=98`; rare
-  actions report per-mille (`rare_actions_pm`). No assertion was weakened.
+- **W1 deferred-fix re-pin:** decline logs the plain copy
+  (`MSG_DECLINE_PLAIN`, "The creature recovers its footing.") unless Thrash is
+  live (`MSG_DECLINE` keeps the recovering-will wording; Despair-active declines
+  also use the plain copy); the `--dump-grid` golden was re-pinned for the
+  pinned `DUMP_SEED=98`; rare actions report per-mille (`rare_actions_pm`). No
+  assertion was weakened.
 - **W1 decline copy:** `MSG_DECLINE` ("will begins to recover") is logged only
   when Thrash is live; otherwise `MSG_DECLINE_PLAIN` (spec §9.3).
 
 | Creature | token | rare_actions_pm | ascent % | switches % | prompts |
 | :--- | :--- | ---: | ---: | ---: | ---: |
-| Mystic Eel | `eel` | 8000 | 0.0 | 100 | 0 |
-| Mystic Electric Eel | `electric_eel` | 10000 | 0.0 | 100 | 0 |
-| Steel Tuna | `steel_tuna` | 11000 | 0.0 | 100 | 0 |
+| Mystic Eel | `eel` | 0 | 0.0 | 100 | 0 |
+| Mystic Electric Eel | `electric_eel` | 0 | 0.0 | 100 | 0 |
+| Steel Tuna | `steel_tuna` | 0 | 0.0 | 100 | 0 |
 | Anemoniacus | `anemoniacus` | 11525 | 4.0 | 100 | 292 |
-| Freezing Perch | `freezing_perch` | 5000 | 1.5 | 25 | 73 |
+| Freezing Perch | `freezing_perch` | 5385 | 1.5 | 25 | 73 |
 
-- Gate asserts `rare_actions_pm ≤ 12000` for every creature: PASS.
-- Rare-fight actions `≤12000pm`: PASS (Anemoniacus 11525pm, Freezing Perch 5000pm).
+- Rare pm gate `rare_actions_pm ≤ 12000` applies to the two rares: PASS
+  (Anemoniacus 11525pm, Freezing Perch 5385pm); commons print 0 and are not
+  gate subjects.
 - Ascent rate `≤15%` at Hull 150 (`ascent_pm ≤ 150`): PASS (Anemoniacus 40pm,
   Freezing Perch 15pm; commons 0pm).
 - Bar-switch `>0`: PASS (100% on eel/electric_eel/steel_tuna/anemoniacus, 25%
@@ -579,9 +581,9 @@ M4's World and encounter work is validated by M4's own `world_test`/
 `encounter_test` (M4 plan Tasks 1–2) without a per-zone report shape.
 
 - **Hull-0 is not an outcome.** `fight.zig` clamps `hull` at 0
-  (`fight.zig:482-485`, `:296-297`) and `def.OUT_*` has no ascent value
-  (`def.zig:114-119`); `sim.zig:117-120` stops the loop at `hull == 0` and
-  counts `ascents` (`sim.zig:129-130`). M4 owns termination, the +1 phase and
+  (`fight.zig:314-315`, `:500-502`) and `def.OUT_*` has no ascent value
+  (`def.zig:114-119`); `sim.zig:135-138` stops the loop at `hull == 0` and
+  counts `ascents` (`sim.zig:147-148`). M4 owns termination, the +1 phase and
   dropping current-fight loot (spec §6); do not expect the fight resolver to
   end the fight at Hull 0.
 - **Seed convention.** `fight.startFightDef` seeds each fight from
@@ -589,9 +591,9 @@ M4's World and encounter work is validated by M4's own `world_test`/
   spec:1173,1186). M4 `depart` must draw `exp.seed` from `world.rng_state`
   (M4 plan:56; spec:1186) and set `exp.fight_index` per fight; the sim bypasses
   Depart and sets `exp.seed = seed0`, `exp.fight_index = i` directly
-  (`sim.zig:99-101`).
+  (`sim.zig:117-118`).
 - **`--hull` is sim-only.** `undtool` defaults Hull to 100 and overrides it per
-  sim fight (`undtool.zig:249`, `:315-323`; `sim.zig:102-103`); the gate uses
+  sim fight (`undtool.zig:249`, `:315-323`; `sim.zig:120-121`); the gate uses
   150 (spec:1249). M4's real Hull is persistent fight/boat state (spec §6,
   spec:1249), not the tool flag.
 - **Dense `DEFS` index vs `id`.** `creatures.DEFS` is a 5-element array indexed
@@ -612,13 +614,13 @@ M4's World and encounter work is validated by M4's own `world_test`/
   itself (M4 plan:51 stubs Z4–Z8/D); the real gap is that those Z1–Z3 tables
   name creatures whose `CreatureDef` rows do not exist until M8.
 - **M3 report shape is independent.** `SimReport` aggregates one `CreatureDef`
-  (`sim.zig:28-41`, `:86-144`), the §25.9 policy reads fight state plus
-  `cdef.flags`/`cdef.subdue_chance` (`sim.zig:68-84`) but no World input, and
-  the header/`sim creature=` line are tooling output
+  (`sim.zig:35-48`, `:102-162`), the §25.9 policy reads fight state plus
+  `cdef.flags`/`cdef.subdue_chance` (`sim.zig:81-97`, `:131`) but no World
+  input; the header/`sim creature=` line are tooling output
   (`undtool.zig:64-90`, `:391`). Availability, rare-chance arithmetic,
   renormalization and empty-pool Rest belong to M4 unit tests; per-zone sim
   runs would only re-partition the same fight metrics.
 - **R8 note.** The sim is safe with `var s: GameState = undefined` because
   `fight.startFightDef` reads only the seed fields of `exp` and never touches
-  `world` (`sim.zig:98-103`; `fight.zig:112-158`); M4's World/expedition path
+  `world` (`sim.zig:115-119`; `fight.zig:115-158`); M4's World/expedition path
   must explicitly initialize `GameState.world` (R8, spec §24).

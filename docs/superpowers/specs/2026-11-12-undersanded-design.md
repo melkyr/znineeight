@@ -1786,7 +1786,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P18 | RNG determinism contract (§25.5 draw table, zero-seed guard, warm-up); art goldens = pre-present framebuffer dumps |
 | P19 | **No committed tooling outside Z98 + shell.** Python = transitory, uncommitted (asset translation, golden-seed generation), never a build/test dependency. `.ZSP` + SVG sources + Z98 validator are the artifacts of record. |
 | P20 | Fight length gates ≤12/12/14/15 (T1–T4); damage ranges never creep; **boss feasibility is a gate** (minimalist T4-proper loadout, kill-rate targets §21.3) |
-| P21 | **M3 levers pulled (user-authorized “go 1, yes lets rebalance”):** lever 1 rare subdue 60→65 (Anemoniacus + Freezing Perch); lever 2 Last Surge restore 30%→25%. Anemoniacus content rebalance Resolve 115→80 keeps the ≤12 rare-actions gate met (seed 98: 11 actions). Ascent gate is measured at **Hull 150** (two T1 Hull upgrades): seed 98 Anemoniacus 4.0% ascent, worst cross-seed 8.5% (seed 4); Freezing Perch seed 98 1.5%, worst 4.0%. |
+| P21 | **M3 levers pulled (user-authorized “go 1, yes lets rebalance”):** lever 1 rare subdue 60→65 (Anemoniacus + Freezing Perch); lever 2 Last Surge restore 30%→25%. Anemoniacus content rebalance Resolve 115→80 keeps the ≤12 rare-actions gate met (seed 98: 11 actions). Ascent gate is measured at **Hull 150** (two T1 Hull upgrades): seed 98 Anemoniacus 4.0% ascent, worst cross-seed 8.5% (seed 4); Freezing Perch seed 98 1.5%, worst 5.0% (seed 59). |
 
 ### Game design
 
