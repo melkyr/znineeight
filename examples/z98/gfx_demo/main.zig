@@ -299,12 +299,89 @@ fn runThemeTest() void {
     io.write("THEMETEST OK\n");
 }
 
+// Live-pump event selftest (real window only): scripted mouse/focus injection
+// through the same PAL pump, then an idle wait that must time out.
+fn runEventSelftest(g: *gfx.Gfx) bool {
+    var all_ok = true;
+    var ev: gfx.Event = undefined;
+    // Drop startup events (e.g. an initial focus transition) so each case is
+    // measured against its own injection.
+    while (gfx.gfxPollEvent(g, &ev)) {}
+
+    // (1) injected mouse move -> mouse_move with client-pixel px/py
+    var ok_mouse = false;
+    if (gfx.gfxTestMouse(g, 200, 120)) {
+        var guard: u32 = 0;
+        while (guard < 8 and !ok_mouse) : (guard += 1) {
+            if (!gfx.gfxWaitEvent(g, 1000)) break;
+            while (gfx.gfxPollEvent(g, &ev)) {
+                if (ev.kind == .mouse_move) {
+                    ok_mouse = (ev.px == 200 and ev.py == 120);
+                }
+            }
+        }
+    }
+    if (ok_mouse) {
+        io.write("ok - mouse_move px=200 py=120\n");
+    } else {
+        io.write("FAIL - mouse_move px=200 py=120\n");
+        all_ok = false;
+    }
+
+    // (2) focus lost then gained
+    var ok_lost = false;
+    if (gfx.gfxTestFocus(g, false)) {
+        var guard: u32 = 0;
+        while (guard < 8 and !ok_lost) : (guard += 1) {
+            if (!gfx.gfxWaitEvent(g, 1000)) break;
+            while (gfx.gfxPollEvent(g, &ev)) {
+                if (ev.kind == .focus_lost) ok_lost = true;
+            }
+        }
+    }
+    if (ok_lost) {
+        io.write("ok - focus_lost\n");
+    } else {
+        io.write("FAIL - focus_lost\n");
+        all_ok = false;
+    }
+
+    var ok_gained = false;
+    if (gfx.gfxTestFocus(g, true)) {
+        var guard: u32 = 0;
+        while (guard < 8 and !ok_gained) : (guard += 1) {
+            if (!gfx.gfxWaitEvent(g, 1000)) break;
+            while (gfx.gfxPollEvent(g, &ev)) {
+                if (ev.kind == .focus_gained) ok_gained = true;
+            }
+        }
+    }
+    if (ok_gained) {
+        io.write("ok - focus_gained\n");
+    } else {
+        io.write("FAIL - focus_gained\n");
+        all_ok = false;
+    }
+
+    // (3) no events -> the wait must time out and report false
+    while (gfx.gfxPollEvent(g, &ev)) {}
+    const timed_out = !gfx.gfxWaitEvent(g, 60);
+    if (timed_out) {
+        io.write("ok - idle_wait_timeout\n");
+    } else {
+        io.write("FAIL - idle_wait_timeout\n");
+        all_ok = false;
+    }
+    return all_ok;
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     var smoke: bool = false;
     var dump: bool = false;
     var selftest: bool = false;
     var theme_test: bool = false;
     var live_smoke: bool = false;
+    var event_selftest: bool = false;
     var smoke_n: u32 = 0;
     var i: i32 = 1;
     while (i < argc) : (i += 1) {
@@ -324,6 +401,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             theme_test = true;
         } else if (strEq(a, "--live-smoke")) {
             live_smoke = true;
+        } else if (strEq(a, "--event-selftest")) {
+            event_selftest = true;
         }
     }
 
@@ -380,6 +459,18 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             @exit(@intCast(u8, 1));
             return;
         };
+    }
+
+    if (event_selftest) {
+        const ok = runEventSelftest(g);
+        gfx.gfxClose(g);
+        if (ok) {
+            io.write("EVENT_SELFTEST OK\n");
+            return;
+        }
+        io.write("EVENT_SELFTEST FAIL\n");
+        @exit(@intCast(u8, 1));
+        return;
     }
 
     if (!smoke and !dump) {
