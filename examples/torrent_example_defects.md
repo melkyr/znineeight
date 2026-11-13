@@ -124,7 +124,7 @@ Full Zig parity is not claimed.
 
 **Status:** OPEN (deferred — documented workaround, no compiler fix authorized).
 
-**Symptom.** A function returning `?[2][]const u8` dumps cleanly (`--dump-c89`
+**Symptom.** A function returning `?[2][]const u8` dumps cleanly (`-ffast -o`
 rc=0), but the emitted C does not compile: the optional payload is copied with a
 plain C assignment, and C arrays are not assignable.
 

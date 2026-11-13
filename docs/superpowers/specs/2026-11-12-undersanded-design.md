@@ -991,7 +991,7 @@ while (running) {
 | # | Pri | Item | Why |
 | :-- | :-- | :--- | :--- |
 | G1 | — | ~~file I/O~~ | **already present** (audit note; M1 confirms coverage incl. `readAll`/`writeAll`) |
-| G2 | P0 | `std_str`: **parseInt, splitOnce** (rest present) | the text parser |
+| G2 | P0 | std_str: splitOnce only; int↔text via std_parse (G17 closed by reuse) | the text parser |
 | G3 | P0 | `std.mem`: copy, set, eql (confirm surface) | struct copies, save assembly |
 | G4 | P0 | `gfxWaitEvent(g, timeoutMs) bool` | the pump is polling; a turn-based game must not spin. `MsgWaitForMultipleObjectsEx`. |
 | G5 | P0 | `Event.px`, `Event.py` (u32) | art-mode mouse hit-testing; cell coords are useless at 640×480 |

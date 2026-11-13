@@ -16,7 +16,8 @@
 ## Corrected G-table (M1 Task 1 audit)
 
 Statuses below are the as-found audit snapshot (pre-M1 patches); M1 closed
-G2/G4/G5/G11/G12/G13/G14/G17 — see the M2 amendment review below and the tier.
+G2/G4/G5/G10/G11/G13/G14; G12 was CLOSED-ALREADY (reuse `std_math`, M2
+amendment `bbc4cd27`) — see the M2 amendment review below and the tier.
 
 Audited against `sf/src/` on 2026-11-13. Status legend: **CLOSED-ALREADY** = real
 surface already satisfies the row; **PARTIAL** = some of it exists (missing part
@@ -57,10 +58,13 @@ specified). `std_os` lacks an exe/module path helper (Task 5 must add it).
 ## Task 4 import gate amendment
 
 `scripts/win32_cross/check_win9x_imports.sh` `USER32_ALL` adds
-`MsgWaitForMultipleObjectsEx` (sorted between `MessageBoxA` and `OpenClipboard`).
-`gfxWaitEvent` uses it to block on the thread input queue (QS_ALLINPUT) instead
-of spinning `PeekMessageA`; the call is `nCount=0`, `pHandles=NULL`, so only
-queued input signals it. The symbol is exported by Win98 user32.
+`MsgWaitForMultipleObjectsEx` (sorted between `MessageBoxA` and `OpenClipboard`)
+and `GetForegroundWindow` (USER32 allow-list; sorted between `GetDC` and
+`GetKeyState`), the latter used for real focus polling.
+`gfxWaitEvent` uses `MsgWaitForMultipleObjectsEx` to block on the thread input
+queue (QS_ALLINPUT) instead of spinning `PeekMessageA`; the call is `nCount=0`,
+`pHandles=NULL`, so only queued input signals it. The symbol is exported by
+Win98 user32.
 
 ## Task 5 import gate amendment
 
