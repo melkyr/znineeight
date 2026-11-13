@@ -490,7 +490,7 @@ and headless, and the M2 gate already drives all five creatures through
   5888 KiB.
 - M3 gate premises (pinned; Task 2's report header must print
   `actions=gameStep_steps ascent=hull0 bars=fights_with_switch`):
-  - **Loadout:** base Hull 100, no tools (fight-length/bar-switch metrics); **ascent gate measured at Hull 150** (`--hull 150`, user-authorized; real boat state is M4).
+  - **Loadout:** all gate metrics at **Hull 150** (two T1 Hull upgrades; real boat state is M4). Rare-fight actions reported per-mille (`rare_actions_pm`).
   - **Actions:** player actions = `gameStep` calls/steps (NOT
     `FightState.actions`, which excludes Attempt/Decline/Flee).
   - **Ascent:** Emergency Ascent = `FightState.hull` reached 0; M2 clamps at 0

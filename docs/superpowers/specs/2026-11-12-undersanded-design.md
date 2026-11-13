@@ -1246,7 +1246,7 @@ Index `zone * MAX_CREATURES + def_index`. Available when `cycle > ready` or (`cy
 
 ### 25.9 Auto-sim policy (the §22 validator)
 
-Subdue path unless the creature has Shell: `hp > 50% → Strike, else Restrain`. Kill path: `res > 50% → Restrain, else Strike`. Reports avg actions, bar-switch %, outcome distribution, **avg surges per rare fight**, **Emergency Ascent rate**. **Gate loadout:** fight-length/bar-switch metrics are measured at base Hull 100 (no tools); **ascent rate is measured at Hull 150** (two T1 boat Hull upgrades — user-authorized; real boat state is M4).
+Subdue path unless the creature has Shell: `hp > 50% → Strike, else Restrain`. Kill path: `res > 50% → Restrain, else Strike`. Reports avg actions, bar-switch %, outcome distribution, **avg surges per rare fight**, **Emergency Ascent rate**. **Gate loadout:** all gate metrics are measured at **Hull 150** (two T1 boat Hull upgrades — user-authorized; real boat state is M4). Rare-fight actions are reported per-mille (`rare_actions_pm`) so the action gate is exact: ≤12 actions ⇒ `rare_actions_pm <= 12000`.
 
 ---
 
