@@ -107,3 +107,45 @@ the `crash.dmp`/`crash.log` path strings are built at startup, the backtrace
 Import gate: `under.exe` and `undtool.exe` both pass
 `check_win9x_imports.sh <exe> 9x` with exactly GDI32/KERNEL32/USER32; no
 allow-list change was needed in this task.
+
+## Task 7 acceptance tier
+
+`tests/tier_m1_std.sh` (POSIX sh; `ZIG`/`OUT` env, paths resolved from the
+script) is split into a FAST gate and SLOW Wine/operator evidence.
+
+FAST (the gate):
+
+- `build.sh` builds both no-CRT Win9x exes; both `-fsafe -W` logs must exist
+  and contain no `warning` text.
+- `check_win9x_imports.sh <exe> 9x` on both `under.exe` and `undtool.exe`.
+- Native Linux driver: `tests/paths_test.zig` via `zig1 -osl` +
+  `build_target.sh linux`; it must exit 0 and print `paths_test PASS`, with the
+  crc32/8.3/path-join/writability/fallback cases green. Task 7 added test-only
+  `std_parse.parseInt`/`std_parse.itoa` reuse cases (`std_parse_parseInt_reuse`,
+  `std_parse_itoa_reuse`) — G17 stays closed by reuse; no std twins were added.
+- `scripts/stdlib/run_fixtures.sh` for `stdlib_str_splitonce_xmod` and
+  `stdlib_crypto_crc32_xmod` (2 PASS / 0 FAIL).
+- `z9edit/tests/tier_edit.sh` green (38 cases) with its lexer md5 line
+  byte-identical 3x and unchanged from the M1 baseline
+  `dcc81009e9a36c86e4d90e104c439871`.
+- `git ls-files examples/z98/undersanded` must contain no `.py` tooling.
+
+SLOW evidence (Wine; not a Win98 hardware claim):
+
+- `undtool.exe` in a writable temp workdir exits 0 and writes `probe_out.txt`
+  with exactly the `sample.txt` bytes.
+- `undtool.exe` in a `chmod 0555` copy directory exits 0: the read-only exe dir
+  gains no file, stdout reports `(read-only)` and
+  `writable_dir=C:\WINDOWS\TEMP\UNDERSAN\`, and the fallback output is recorded
+  at `<wineprefix>/drive_c/windows/temp/UNDERSAN/probe_out.txt` (bytes match
+  the sample).
+- `under.exe` runs under Xvfb + Wine: `xwininfo -root -tree` sees a window
+  titled `UNDERSANDED`, the process exits 0, a root screenshot is recorded, and
+  the windowed run also writes a matching `probe_out.txt`.
+
+Each executed slow check prints an `EVIDENCE` line; a failure prints
+`EVIDENCE-FAIL` and makes the tier exit nonzero. Missing wine/Xvfb prints
+explicit `operator-hardware:` lines (never a silent skip) and is counted as an
+evidence skip. The summary is `TIER_M1 PASS` / `TIER_M1 FAIL` with
+pass/fail/skip counts. The std set must be synced to the compiler's `lib/`
+first (`cp sf/src/std_*.zig /tmp/zig1-m1/lib/`).

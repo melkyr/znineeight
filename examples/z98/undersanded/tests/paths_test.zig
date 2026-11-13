@@ -1,6 +1,7 @@
 const io = @import("std_io");
 const os = @import("std_os");
 const crypto = @import("std_crypto.zig");
+const parse = @import("std_parse.zig");
 const file_mod = @import("std_file");
 const paths = @import("../paths.zig");
 
@@ -244,6 +245,46 @@ fn tDataDirFallback() bool {
     return ok;
 }
 
+// G17 is closed by reuse: the game-side driver exercises std_parse.parseInt and
+// std_parse.itoa directly instead of carrying private twins.
+fn tParseIntReuse() bool {
+    if (parse.parseInt("0")) |v| {
+        if (v != 0) return false;
+    } else return false;
+    if (parse.parseInt("42")) |v| {
+        if (v != 42) return false;
+    } else return false;
+    if (parse.parseInt("-42")) |v| {
+        if (v != -42) return false;
+    } else return false;
+    if (parse.parseInt("2147483647")) |v| {
+        if (v != 2147483647) return false;
+    } else return false;
+    if (parse.parseInt("-2147483648")) |v| {
+        if (v != -2147483647 - 1) return false;
+    } else return false;
+
+    if (parse.parseInt("") != null) return false;
+    if (parse.parseInt(" 1") != null) return false;
+    if (parse.parseInt("12x") != null) return false;
+    if (parse.parseInt("2147483648") != null) return false;
+    return true;
+}
+
+fn tItoaReuse() bool {
+    var buf: [32]u8 = undefined;
+    if (!eq(parse.itoa(buf[0..], 0), "0")) return false;
+    if (!eq(parse.itoa(buf[0..], 42), "42")) return false;
+    if (!eq(parse.itoa(buf[0..], -42), "-42")) return false;
+    if (!eq(parse.itoa(buf[0..], 2147483647), "2147483647")) return false;
+    if (!eq(parse.itoa(buf[0..], -2147483647 - 1), "-2147483648")) return false;
+
+    if (parse.parseInt("-12345")) |v| {
+        if (!eq(parse.itoa(buf[0..], v), "-12345")) return false;
+    } else return false;
+    return true;
+}
+
 pub fn main() void {
     _ = makeDir("/tmp/m1_t5", 493);
 
@@ -255,6 +296,8 @@ pub fn main() void {
     report("fallback_constants", tFallbackConstants());
     report("resolve_data_dir_native", tResolveDataDirNative());
     report("data_dir_fallback", tDataDirFallback());
+    report("std_parse_parseInt_reuse", tParseIntReuse());
+    report("std_parse_itoa_reuse", tItoaReuse());
 
     if (fails != 0) os.exit(1);
     io.write("paths_test PASS\n");
