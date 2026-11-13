@@ -166,13 +166,33 @@ pub fn available(w: *const def.World, zone: i32, d: i32) bool {
     return false;
 }
 
+// markTaken records a fight outcome for one zone/creature instance.
+//
+// `outcome` is a `def.OUT_*` fight code, mapped internally to a respawn triple
+// index: OUT_SUBDUE -> subdue (0), OUT_KILL -> kill (1), OUT_OVERKILL ->
+// overkill (2). Creature-flee renews on the subdue index (§5).
+//
+// OUT_ONGOING, OUT_PLAYER_FLED, and any unknown value are deliberate no-ops:
+// player flee/ascent must not renew. Callers must not call here for those; this
+// guard is defensive.
 pub fn markTaken(w: *def.World, zone: i32, d: i32, outcome: i32) void {
-    if (!validZone(zone) or !validDef(d)) return;
-    if (outcome < 0 or outcome > 2) return;
+    if (!validZone(zone)) return;
+    if (d < 0 or d >= creatures.defCount()) return;
+    var respawn_index: i32 = 0;
+    switch (outcome) {
+        def.OUT_SUBDUE, def.OUT_CREATURE_FLED => respawn_index = RESPAWN_SUBDUE,
+        def.OUT_KILL => respawn_index = RESPAWN_KILL,
+        def.OUT_OVERKILL => respawn_index = RESPAWN_OVERKILL,
+        else => return,
+    }
     const cdef = creatures.defAt(d);
-    w.ready[readyIndex(zone, d)] = w.cycle + cdef.respawn[@intCast(usize, outcome)];
-    if (outcome == RESPAWN_OVERKILL) {
+    w.ready[readyIndex(zone, d)] = w.cycle + cdef.respawn[@intCast(usize, respawn_index)];
+    if (outcome == def.OUT_OVERKILL) {
         w.family_overkill_mask = w.family_overkill_mask | familyBit(cdef.family);
+        // §9.8: any overkill zeroes that node's rare chance for 5 cycles. The
+        // take cycle is inclusive (locked at c..c+4) because rareChance tests
+        // `lockout_until > cycle`.
+        w.lockout_until[zone] = w.cycle + 5;
     }
 }
 

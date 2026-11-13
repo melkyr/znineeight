@@ -198,6 +198,10 @@ pub const DEFS = [5]def.CreatureDef{
     freezingPerch(),
 };
 
+pub fn defCount() i32 {
+    return @intCast(i32, DEFS.len);
+}
+
 pub fn defAt(index: i32) def.CreatureDef {
     switch (index) {
         0 => return DEFS[0],

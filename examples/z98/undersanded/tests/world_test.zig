@@ -12,6 +12,7 @@ const os = @import("std_os");
 const def = @import("../def.zig");
 const world = @import("../world.zig");
 const game = @import("../game.zig");
+const creatures = @import("../creatures_t1.zig");
 
 var fails: usize = 0;
 
@@ -63,7 +64,7 @@ fn tRenewalDayOfCycle() bool {
     var w = blankWorld();
     w.cycle = 3;
     w.phase = world.PHASE_NIGHT;
-    world.markTaken(&w, 0, 0, world.RESPAWN_SUBDUE);
+    world.markTaken(&w, 0, 0, def.OUT_SUBDUE);
     if (w.ready[0] != 6) return false;
 
     w.cycle = 6;
@@ -83,18 +84,18 @@ fn tRespawnOutcomes() bool {
     w.cycle = 3;
 
     // Def 0 (Mystic Eel) respawn triple is 3/9/15.
-    world.markTaken(&w, 0, 0, world.RESPAWN_SUBDUE);
+    world.markTaken(&w, 0, 0, def.OUT_SUBDUE);
     if (w.ready[0] != 6) return false;
-    world.markTaken(&w, 0, 0, world.RESPAWN_KILL);
+    world.markTaken(&w, 0, 0, def.OUT_KILL);
     if (w.ready[0] != 12) return false;
-    world.markTaken(&w, 0, 0, world.RESPAWN_OVERKILL);
-    if (w.ready[0] != 18) return false;
 
-    // Overkill sets the family bit (def 4 = Freezing Perch, family 11).
-    world.markTaken(&w, 1, 4, world.RESPAWN_OVERKILL);
-    const fam: u32 = @intCast(u32, 1) << @intCast(u32, 11);
+    // Mystic Eel is family 1 -> bit 1, not bit 0. Assert the mask is unchanged
+    // before the overkill call, then set on overkill.
+    const fam: u32 = @intCast(u32, 1) << @intCast(u32, 1);
+    if ((w.family_overkill_mask & fam) != 0) return false;
+    world.markTaken(&w, 0, 0, def.OUT_OVERKILL);
+    if (w.ready[0] != 18) return false;
     if ((w.family_overkill_mask & fam) == 0) return false;
-    world.markTaken(&w, 1, 0, world.RESPAWN_SUBDUE);
     if ((w.family_overkill_mask & @intCast(u32, 1)) != 0) return false;
     return true;
 }
@@ -103,8 +104,8 @@ fn tPerZoneIsolation() bool {
     var w = blankWorld();
     w.cycle = 1;
 
-    world.markTaken(&w, 0, 0, world.RESPAWN_SUBDUE); // Z1: ready 4
-    world.markTaken(&w, 1, 0, world.RESPAWN_KILL); // Z2: ready 10
+    world.markTaken(&w, 0, 0, def.OUT_SUBDUE); // Z1: ready 4
+    world.markTaken(&w, 1, 0, def.OUT_KILL); // Z2: ready 10
     if (w.ready[0] != 4) return false;
     if (w.ready[def.MAX_CREATURES] != 10) return false;
 
@@ -162,6 +163,20 @@ fn tLockoutFiveCycles() bool {
     // At cycle == lockout_until the node is no longer locked.
     w.cycle = 5;
     if (world.rareChance(&w, 1) != 15) return false;
+    return true;
+}
+
+// An expired lockout (cycle - 1) must not count in the global echo; rareChance
+// must equal the no-lock baseline.
+fn tExpiredLockout() bool {
+    var w = blankWorld();
+    w.cycle = 3;
+    w.phase = world.PHASE_DAY;
+    const baseline = world.rareChance(&w, 1);
+    if (baseline != 15) return false;
+    w.lockout_until[0] = w.cycle - 1;
+    if (world.lockedNodeCount(&w) != 0) return false;
+    if (world.rareChance(&w, 1) != baseline) return false;
     return true;
 }
 
@@ -262,21 +277,78 @@ fn tBoatTables() bool {
     if (world.PRECISION_TABLE[2] != 20) return false;
     if (world.PRECISION_TABLE[3] != 25) return false;
 
+    // Distinct tiers per axis so each helper resolves its own axis.
     var w = blankWorld();
-    var tier: i32 = 0;
-    while (tier < 4) : (tier += 1) {
-        w.boat[world.BOAT_HULL] = tier;
-        w.boat[world.BOAT_SPEED] = tier;
-        w.boat[world.BOAT_CARGO] = tier;
-        w.boat[world.BOAT_OXYGEN] = tier;
-        w.boat[world.BOAT_PRECISION] = tier;
-        if (world.hullMax(&w) != world.HULL_TABLE[@intCast(usize, tier)]) return false;
-        if (world.speedMax(&w) != world.SPEED_TABLE[@intCast(usize, tier)]) return false;
-        if (world.cargoMax(&w) != world.CARGO_TABLE[@intCast(usize, tier)]) return false;
-        if (world.oxygenFights(&w) != world.OXYGEN_FIGHTS[@intCast(usize, tier)]) return false;
-        if (world.precisionMargin(&w) != world.PRECISION_TABLE[@intCast(usize, tier)]) return false;
-        if (world.maxFights(&w) != 3 + tier) return false;
+    w.boat[world.BOAT_HULL] = 3;
+    w.boat[world.BOAT_SPEED] = 1;
+    w.boat[world.BOAT_CARGO] = 2;
+    w.boat[world.BOAT_OXYGEN] = 1;
+    w.boat[world.BOAT_PRECISION] = 0;
+    if (world.hullMax(&w) != world.HULL_TABLE[3]) return false;
+    if (world.speedMax(&w) != world.SPEED_TABLE[1]) return false;
+    if (world.cargoMax(&w) != world.CARGO_TABLE[2]) return false;
+    if (world.oxygenFights(&w) != world.OXYGEN_FIGHTS[1]) return false;
+    if (world.precisionMargin(&w) != world.PRECISION_TABLE[0]) return false;
+    if (world.maxFights(&w) != 3 + w.boat[world.BOAT_OXYGEN]) return false;
+    if (world.maxFights(&w) != 4) return false;
+    return true;
+}
+
+// OUT_OVERKILL sets lockout_until[zone] = cycle + 5 and rare is 0 for the take
+// cycle through cycle+4 (Z2 has a non-zero base: day 15).
+fn tOverkillLockout() bool {
+    var w = blankWorld();
+    w.cycle = 2;
+    w.phase = world.PHASE_DAY;
+    world.markTaken(&w, 1, 0, def.OUT_OVERKILL);
+    if (w.lockout_until[1] != w.cycle + 5) return false;
+
+    var c: i32 = 2;
+    while (c < 7) : (c += 1) {
+        w.cycle = c;
+        if (world.rareChance(&w, 1) != 0) return false;
     }
+    w.cycle = 7;
+    if (world.rareChance(&w, 1) <= 0) return false;
+    if (world.rareChance(&w, 1) != 15) return false;
+    return true;
+}
+
+// Creature-flee renews on the subdue index (def 0 respawn[0] = 3).
+fn tCreatureFledRenews() bool {
+    var w = blankWorld();
+    w.cycle = 3;
+    world.markTaken(&w, 0, 0, def.OUT_CREATURE_FLED);
+    if (w.ready[0] != 6) return false;
+    return true;
+}
+
+// Player flee/ascent (and other non-terminal codes) must not renew or touch
+// masks/lockout.
+fn tFleeOngoingNoop() bool {
+    var w = blankWorld();
+    w.cycle = 3;
+    w.ready[0] = 42;
+    world.markTaken(&w, 0, 0, def.OUT_PLAYER_FLED);
+    if (w.ready[0] != 42) return false;
+    world.markTaken(&w, 0, 0, def.OUT_ONGOING);
+    if (w.ready[0] != 42) return false;
+    if (w.lockout_until[0] != 0) return false;
+    if (w.family_overkill_mask != 0) return false;
+    return true;
+}
+
+// A def row not yet authored (index 5; DEFS has rows 0..4) is a no-op, not a
+// defAt panic.
+fn tUndefinedDefNoop() bool {
+    if (creatures.defCount() != 5) return false;
+    var w = blankWorld();
+    w.cycle = 3;
+    w.ready[5] = 42;
+    world.markTaken(&w, 0, 5, def.OUT_OVERKILL);
+    if (w.ready[5] != 42) return false;
+    if (w.lockout_until[0] != 0) return false;
+    if (w.family_overkill_mask != 0) return false;
     return true;
 }
 
@@ -288,11 +360,16 @@ pub fn main() void {
     report("per_zone_instance_isolation", tPerZoneIsolation());
     report("release_bonus_steps_cap_clear", tReleaseBonus());
     report("lockout_five_cycles", tLockoutFiveCycles());
+    report("expired_lockout_not_echoed", tExpiredLockout());
     report("global_echo_per_locked_node", tGlobalEcho());
     report("wariness_15_then_0", tWariness());
     report("mark_seen_words", tMarkSeen());
     report("base_rare_matches_spec13_sums", tBaseRareSums());
     report("boat_tier_tables_and_max_fights", tBoatTables());
+    report("overkill_sets_five_cycle_lockout", tOverkillLockout());
+    report("creature_fled_renews_subdue", tCreatureFledRenews());
+    report("player_fled_ongoing_noop", tFleeOngoingNoop());
+    report("undefined_def_noop", tUndefinedDefNoop());
 
     if (fails != 0) os.exit(1);
     io.write("world_test PASS\n");
