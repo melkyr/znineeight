@@ -562,3 +562,54 @@ worktree; it is non-gating by design).
   100)**. Recorded, not tuned.
   tuned further.
 
+### M3 -> M4 amendment review (Task 6)
+
+Read `2026-11-12-undersanded-m04-expedition-loop-plan.md` against the
+shipped M3 sim surfaces. Verdict: **no amendment needed** — the M3 report is
+per-creature fight metrics with no World/availability/rare-pipeline input, so
+M4's World and encounter work is validated by M4's own `world_test`/
+`encounter_test` (M4 plan Tasks 1–2) without a per-zone report shape.
+
+- **Hull-0 is not an outcome.** `fight.zig` clamps `hull` at 0
+  (`fight.zig:482-485`, `:296-297`) and `def.OUT_*` has no ascent value
+  (`def.zig:114-119`); `sim.zig:117-120` stops the loop at `hull == 0` and
+  counts `ascents` (`sim.zig:129-130`). M4 owns termination, the +1 phase and
+  dropping current-fight loot (spec §6); do not expect the fight resolver to
+  end the fight at Hull 0.
+- **Seed convention.** `fight.startFightDef` seeds each fight from
+  `exp.seed + fight_index*77` with three warm-up draws (`fight.zig:155-158`;
+  spec:1173,1186). M4 `depart` must draw `exp.seed` from `world.rng_state`
+  (M4 plan:56; spec:1186) and set `exp.fight_index` per fight; the sim bypasses
+  Depart and sets `exp.seed = seed0`, `exp.fight_index = i` directly
+  (`sim.zig:99-101`).
+- **`--hull` is sim-only.** `undtool` defaults Hull to 100 and overrides it per
+  sim fight (`undtool.zig:249`, `:315-323`; `sim.zig:102-103`); the gate uses
+  150 (spec:1249). M4's real Hull is persistent fight/boat state (spec §6,
+  spec:1249), not the tool flag.
+- **Dense `DEFS` index vs `id`.** `creatures.DEFS` is a 5-element array indexed
+  0..4 (`creatures_t1.zig:193-210`; `undtool.zig:32-42`), while
+  `CreatureDef.id` is 1/2/4/18/19 (`creatures_t1.zig:81,101,126,149,174`).
+  `World.ready` is `zone*MAX_CREATURES + def_index` (spec:1229); M4 must pin
+  `def_index` to the dense array index (converting ids in tables), not index
+  `ready[]` by `id`.
+- **Zone/phase masks are not populated.** All five shipped rows leave
+  `zone_mask` and `phase_mask` at 0 (`creatures_t1.zig:24-25`; constructors
+  never write them). M4's `tables_t1.zig` must carry the per-zone/per-phase
+  pools itself (M4 plan:26,51), or M4 must fill the masks; availability cannot
+  be derived from the current `DEFS` as shipped.
+- **Only five creature rows exist.** `DEFS` has Mystic Eel, Mystic Electric
+  Eel, Steel Tuna, Anemoniacus, Freezing Perch (`creatures_t1.zig:193-200`),
+  but spec §13 Z1–Z3 names additional creatures (Rust Tuna, Kelp Crab, Spark
+  Anemone, …; spec:536-578) with no defs yet. M4 must stub/restrict those
+  pools until content arrives (M4 plan:51 stubs Z4–Z8/D).
+- **M3 report shape is independent.** `SimReport` aggregates one `CreatureDef`
+  (`sim.zig:28-41`, `:86-144`), the §25.9 policy reads only fight state
+  (`sim.zig:68-84`), and the header/`sim creature=` line are tooling output
+  (`undtool.zig:64-90`, `:391`). Availability, rare-chance arithmetic,
+  renormalization and empty-pool Rest belong to M4 unit tests; per-zone sim
+  runs would only re-partition the same fight metrics.
+- **R8 note.** The sim is safe with `var s: GameState = undefined` because
+  `fight.startFightDef` reads only the seed fields of `exp` and never touches
+  `world` (`sim.zig:98-103`; `fight.zig:112-158`); M4's World/expedition path
+  must explicitly initialize `GameState.world` (R8, spec §24).
+
