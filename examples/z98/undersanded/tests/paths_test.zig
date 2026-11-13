@@ -218,9 +218,12 @@ fn tDataDirFallback() bool {
     const badir = "/tmp/m1_t5/fallback_bad_dir";
     _ = chmodPath(badir, 493);
     _ = removeDir(badir);
-    _ = removeDir(paths.FALLBACK_POSIX);
     if (!makeDir(badir, 493)) return false;
     if (!chmodPath(badir, 365)) return false;
+
+    // Do not delete a pre-existing shared /tmp/UNDERSAN; only clean up the
+    // directory if this run created it.
+    const had_fb = file_mod.exists(paths.FALLBACK_POSIX);
 
     var cwdbuf: [1024]u8 = undefined;
     const got = getcwd(@ptrCast([*]u8, &cwdbuf[0]), cwdbuf.len);
@@ -237,11 +240,13 @@ fn tDataDirFallback() bool {
 
     _ = chmodPath(badir, 493);
     _ = removeDir(badir);
-    _ = removeDir(paths.FALLBACK_POSIX);
+    if (!had_fb) _ = removeDir(paths.FALLBACK_POSIX);
     return ok;
 }
 
 pub fn main() void {
+    _ = makeDir("/tmp/m1_t5", 493);
+
     report("crc32_known_vectors", tCrcVectors());
     report("crc32_streaming_equal", tCrcStreamingEqual());
     report("is83_name", tIs83());

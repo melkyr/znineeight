@@ -58,3 +58,11 @@ specified). `std_os` lacks an exe/module path helper (Task 5 must add it).
 `gfxWaitEvent` uses it to block on the thread input queue (QS_ALLINPUT) instead
 of spinning `PeekMessageA`; the call is `nCount=0`, `pHandles=NULL`, so only
 queued input signals it. The symbol is exported by Win98 user32.
+
+## Task 5 import gate amendment
+
+`scripts/win32_cross/check_win9x_imports.sh` `KERNEL32_9X` adds
+`CreateDirectoryA` (sorted between `ContinueDebugEvent` and `CreateEventA`;
+`KERNEL32_NT` inherits the 9x list). `paths.dataDirOrFallback` uses it to create
+the writable-data fallback directory on the win32 branch (POSIX uses `mkdir`).
+The symbol is exported by Win98 kernel32.
