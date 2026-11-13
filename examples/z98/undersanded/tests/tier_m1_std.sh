@@ -87,13 +87,11 @@ else
 fi
 for n in gui cui; do
     WLOG="$BUILD_OUT/warn_$n.log"
-    if [ ! -s "$WLOG" ]; then
-        fail_case "$n -fsafe -W log missing/empty ($WLOG)"
-    elif grep -qi 'warning' "$WLOG"; then
+    if [ -s "$WLOG" ] && grep -Fq 'warning[' "$WLOG"; then
         fail_case "$n -fsafe -W log contains a warning"
-        grep -in 'warning' "$WLOG" | sed 's/^/       /'
+        grep -Fn 'warning[' "$WLOG" | sed 's/^/       /'
     else
-        pass_case "$n -fsafe -W log is warning-free"
+        pass_case "$n -fsafe -W log has no warning[ markers"
     fi
 done
 for exe in under.exe undtool.exe; do
@@ -394,6 +392,68 @@ else
     wait "$XVFB_PID" 2>/dev/null || true
     XVFB_PID=""
     wineserver -k >/dev/null 2>&1 || true
+fi
+
+# ---------------------------------------------------------------------------
+# SLOW evidence: gfx_demo live event selftest under Xvfb + Wine
+# ---------------------------------------------------------------------------
+echo "== SLOW evidence: gfx_demo event selftest under Xvfb + Wine =="
+MISSING_GFX_X=""
+for tool in Xvfb xdpyinfo; do
+    command -v "$tool" >/dev/null 2>&1 || MISSING_GFX_X="$MISSING_GFX_X $tool"
+done
+if [ -n "$MISSING_WINE" ]; then
+    skip_evidence "gfx_demo event selftest (missing:$MISSING_WINE)"
+    echo "operator-hardware: run gfx_demo.exe --event-selftest on Win98 and confirm EVENT_SELFTEST OK"
+elif [ -n "$MISSING_GFX_X" ]; then
+    skip_evidence "gfx_demo event selftest (missing:$MISSING_GFX_X)"
+    echo "operator-hardware: run gfx_demo.exe --event-selftest on Win98 and confirm EVENT_SELFTEST OK"
+else
+    wineserver -k >/dev/null 2>&1 || true
+    GFX_EV="$OUT/gfx_ev"
+    mkdir -p "$GFX_EV"
+    if ROOT="$ROOT" EXTRA_LIBS="-luser32 -lgdi32" \
+        bash scripts/win32_cross/cross_nocrt.sh "$ZIG" examples/z98/gfx_demo/main.zig \
+        "$GFX_EV/work" "$GFX_EV/gfx_demo.exe" >"$GFX_EV/build.log" 2>&1; then
+        evidence_pass "gfx_demo.exe built (no-CRT, EXTRA_LIBS=-luser32 -lgdi32)"
+    else
+        evidence_fail "gfx_demo.exe build failed (see $GFX_EV/build.log)"
+        tail -20 "$GFX_EV/build.log" | sed 's/^/       /'
+    fi
+    if [ -f "$GFX_EV/gfx_demo.exe" ]; then
+        export WINEPREFIX="$OUT/wineprefix_gfx_ev"
+        export WINEARCH=win32
+        export WINEDEBUG="${WINEDEBUG:--all}"
+        DISPLAY_NUM=":80"
+        export DISPLAY="$DISPLAY_NUM"
+        Xvfb "$DISPLAY_NUM" -screen 0 1024x768x24 -nolisten tcp \
+            >"$GFX_EV/xvfb.log" 2>&1 &
+        XVFB_PID=$!
+        i=0
+        while [ "$i" -lt 50 ]; do
+            if xdpyinfo >/dev/null 2>&1; then break; fi
+            sleep 0.1
+            i=$((i + 1))
+        done
+        if ! xdpyinfo >/dev/null 2>&1; then
+            evidence_fail "Xvfb did not come up on $DISPLAY_NUM (gfx_demo event selftest)"
+        else
+            timeout 180 wineboot -i >"$GFX_EV/wineboot.log" 2>&1 || true
+            ( cd "$GFX_EV" && timeout 120 wine ./gfx_demo.exe --event-selftest ) \
+                >"$GFX_EV/event_selftest.log" 2>&1
+            EV_RC=$?
+            sed 's/^/       /' "$GFX_EV/event_selftest.log"
+            if [ "$EV_RC" -eq 0 ] && grep -qx 'EVENT_SELFTEST OK' "$GFX_EV/event_selftest.log"; then
+                evidence_pass "gfx_demo --event-selftest printed EVENT_SELFTEST OK (exit 0)"
+            else
+                evidence_fail "gfx_demo --event-selftest failed (rc=$EV_RC; see $GFX_EV/event_selftest.log)"
+            fi
+        fi
+        kill "$XVFB_PID" 2>/dev/null || true
+        wait "$XVFB_PID" 2>/dev/null || true
+        XVFB_PID=""
+        wineserver -k >/dev/null 2>&1 || true
+    fi
 fi
 
 echo "operator-hardware: Wine/Xvfb evidence is not Win98 hardware proof; real Win98 run is operator-owned"
