@@ -399,3 +399,46 @@ path; the table above is the deterministic, machine-checked equivalent.
 
 All three answers are **yes**; the M2 fight is cleared for M3 without a
 stop-present.
+
+## M2 → M3 amendment review
+
+Read `2026-11-12-undersanded-m03-sim-replay-plan.md` against the committed M2
+surface. Verdict: **no amendment needed**. Every M3-consumed surface is public
+and headless, and the M2 gate already drives all five creatures through
+`game.startFight`/`game.gameStep`.
+
+- **Full action stream incl. A/D.** `def.Action{kind,arg}` with
+  `ACT_STRIKE`…`ACT_DECLINE` (`ACT_ATTEMPT=5`, `ACT_DECLINE=6`,
+  `def.zig:105–112`); `game.gameStep` dispatches all six (`game.zig:68–76`), and
+  `fight.step` resolves A/D in the rare modal (`fight.zig:511–537`).
+  `input.mapKey` already sends A → Attempt and F/Esc → Decline
+  (`input.zig:32–37`), so the replay recorder consumes the same Action stream.
+- **Deterministic RNG state visibility.** `FightState.rng_state: u32` is public
+  (`def.zig:59`); per-fight seeding is `exp.seed + fight_index*77` plus three
+  warm-up draws (`fight.zig:155–158`, `rng.zig:32–38`). Decline consumes no
+  draws (`fight.zig:526–537`; test `decline_no_rng_gate_refire`).
+- **Headless driving.** Pure
+  `startFight(s: *GameState, def_index: i32)` and
+  `gameStep(s: *GameState, a: Action)` (`game.zig:53`, `:68`); no I/O in
+  `game`/`fight` (tier purity check).
+- **Log for replay goldens.** Stable `LogEntry{class,msg_id,a,b}` (`def.zig:84`)
+  in `GameState.log[64]` + `log_n` (`def.zig:96–97`), drop-oldest
+  (`fight.zig:80–91`). M2 already pins exact `class:msg_id:a:b;` bytes
+  (`scripted_golden_{subdue,kill,overkill,rare_modal}_bytes`).
+- **Five-creature roster.** `creatures.DEFS[5]` + `defAt(0..4)`
+  (`creatures_t1.zig:193–210`): Mystic Eel, Mystic Electric Eel, Steel Tuna,
+  Anemoniacus (rare), Freezing Perch (rare); `role`/`ROLE_RARE` and `F_SHELL`
+  (`def.zig:134`) are public for the §25.9 policy.
+- **Evidence:** `TIER_M2 PASS 29 passed / 0 failed`; `fight_test` prints 20
+  headless `FIGHT` rows covering all five creatures, modal Attempt (e.g. fight
+  4) and a real modal Decline (fight 20).
+- **M3 implementation notes (not M2 amendments).** `game.startFight` hardcodes
+  the M2 stream at seed 98 / fight 0 (`game.zig:11–13`); M3's
+  `runSim(seed0)` can vary seeds through public state
+  (`rng.rngSeed(&s.fight.rng_state, seed0 + i*77)`, or pre-fill `s.exp` and
+  call public `fight.startFightDef`). M2 has no `OUT_ASCENT` (Hull-0
+  termination is M4), so M3 must report Emergency Ascent rate as the fights
+  where `FightState.hull` reaches 0 — the plan's Review Focus already requires
+  pinning that metric definition. `--creature <id>` strings (e.g. `perch`) map
+  to def indices in M3 tooling; defs carry numeric `id` only (content names
+  arrive M6/M8).
