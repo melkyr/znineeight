@@ -78,3 +78,22 @@
 ### Task 6: Next-milestone amendment review (M3)
 
 - [ ] Read `2026-11-12-undersanded-m03-sim-replay-plan.md`; judge `game.zig`'s Action/log surface against M3's sim/replay needs (needs: full action stream incl. A/D, deterministic RNG state visibility). Amendment or "no amendment needed" recorded in NOTES.md.
+
+---
+
+## Post-gate tasks (user-authorized after the final review)
+
+### Task 6.1: Post-gate hardening
+
+**Files:** `examples/z98/undersanded/creatures_t1.zig` (defAt invalid index), `rng.zig` (hi<lo guard), `tests/fight_test.zig` (20-fight table asserts declines), `tests/tier_m1_std.sh` (stdin redirect `</dev/null` on undtool invocations), `NOTES.md`.
+- [ ] Explicit failure instead of the silent `defAt` fallback (invalid index traps with a clear panic); `rngRange` rejects `hi < lo` explicitly. Pin `declines` in the 20-fight table. Add `</dev/null` so interactive TTY runs cannot hang the M1 tier. No behavior change on valid inputs. PASS; commit `fix(undersanded): post-gate hardening`.
+
+### Task 6.2: Freezing Perch flee reachability (user decision: option a)
+
+**Files:** spec §14.3 row, `m08` plan row, `creatures_t1.zig` (`flee_th`), `NOTES.md`.
+- [ ] Change Freezing Perch's trigger from "single hit >35% max HP (37)" to **">20% max HP (21)"** (105×20% = 21; strict `>` means hits of 22–25 trigger, 21 does not). Update spec §14.3 + m08 plan wording to match. Test both sides of the boundary. PASS; commit `fix(undersanded): make Freezing Perch flee reachable`.
+
+### Task 6.3: lin_bin player artifact (user request)
+
+**Files:** `lin_bin/README.md` (committed); `lin_bin/undtool.exe` + `sample.txt` (built, untracked; copied to the main checkout after merge).
+- [ ] Build via `build.sh`, place `undtool.exe` + `sample.txt` + `README.md` in `lin_bin/`. README: wine invocation, 1–5 creature chooser, key map (S/R/E/F; modal A/F/Esc), and the three §41 questions to observe. Verify `wine lin_bin/undtool.exe` starts. No binary committed. Commit `docs(undersanded): lin_bin player instructions`.
