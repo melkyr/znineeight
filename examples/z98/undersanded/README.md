@@ -33,8 +33,9 @@ no runtime `--headless` flag: the mode is selected at build/link time
    the given surface; console entry (`undtool.exe`) runs the playable fight.
 7. Exit 0.
 
-`undtool.exe` also prints the resolved paths, the surface line, and the sample
-contents to stdout.
+`undtool.exe` first prints the M1 diagnostics (resolved paths,
+writability/fallback, surface line, sample bytes), then runs the playable fight
+UI. EOF on stdin (including a no-input run) terminates cleanly and exits 0.
 
 ## Build
 

@@ -152,11 +152,6 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
         return;
     };
 
-    if (fight_mode) {
-        fight_console.run();
-        return;
-    }
-
     _ = gfx.gfxBeginFrame(g);
     gfx.gfxClear(g, 0);
     gfx.gfxDrawText(g, 0, 0, LINE, 15, 0);
@@ -179,5 +174,9 @@ fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mod
         io.write(LINE);
         io.write("\nsample: ");
         io.write(sample);
+    }
+
+    if (fight_mode) {
+        fight_console.run();
     }
 }
