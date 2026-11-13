@@ -1,4 +1,4 @@
-# UNDERSANDED — M1 platform + M2 console fight
+# UNDERSANDED — M1 platform · M2 console fight · M3 sim/replay/tooling
 
 Two no-CRT Win9x executables built from one source tree (spec §26/§32/§33),
 plus a **native Linux gate runner**. All are Z98 → C89 images; the Win9x pair

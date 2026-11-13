@@ -523,16 +523,19 @@ worktree; it is non-gating by design).
   regen is active (`MSG_DECLINE` keeps the recovering-will wording); the
   `--dump-grid` golden was re-pinned for the pinned `DUMP_SEED=98`; rare
   actions report per-mille (`rare_actions_pm`). No assertion was weakened.
+- **W1 decline copy:** `MSG_DECLINE` ("will begins to recover") is logged only
+  when Thrash is live; otherwise `MSG_DECLINE_PLAIN` (spec §9.3).
 
-| Creature | token | actions | rare actions (pm) | ascent % | switches % | prompts |
-| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
-| Mystic Eel | `eel` | 8 | 0 | 0.0 | 100 | 0 |
-| Mystic Electric Eel | `electric_eel` | 10 | 0 | 0.0 | 100 | 0 |
-| Steel Tuna | `steel_tuna` | 11 | 0 | 0.0 | 100 | 0 |
-| Anemoniacus | `anemoniacus` | 11 | 11525 | 4.0 | 100 | 292 |
-| Freezing Perch | `freezing_perch` | 5 | 5385 | 1.5 | 25 | 73 |
+| Creature | token | rare_actions_pm | ascent % | switches % | prompts |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| Mystic Eel | `eel` | 8000 | 0.0 | 100 | 0 |
+| Mystic Electric Eel | `electric_eel` | 10000 | 0.0 | 100 | 0 |
+| Steel Tuna | `steel_tuna` | 11000 | 0.0 | 100 | 0 |
+| Anemoniacus | `anemoniacus` | 11525 | 4.0 | 100 | 292 |
+| Freezing Perch | `freezing_perch` | 5000 | 1.5 | 25 | 73 |
 
-- Rare-fight actions `≤12000pm`: PASS (Anemoniacus 11525pm, Freezing Perch 5385pm).
+- Gate asserts `rare_actions_pm ≤ 12000` for every creature: PASS.
+- Rare-fight actions `≤12000pm`: PASS (Anemoniacus 11525pm, Freezing Perch 5000pm).
 - Ascent rate `≤15%` at Hull 150 (`ascent_pm ≤ 150`): PASS (Anemoniacus 40pm,
   Freezing Perch 15pm; commons 0pm).
 - Bar-switch `>0`: PASS (100% on eel/electric_eel/steel_tuna/anemoniacus, 25%
@@ -564,9 +567,8 @@ worktree; it is non-gating by design).
   creature or coupling constant was changed; the ascent-gate loadout is Hull 150.
 - **Ascent gate loadout:** measured at **Hull 150** (two T1 Hull upgrades).
   Seed 98: Anemoniacus 4.0%, Freezing Perch 1.5%. Cross-seed worst:
-  Anemoniacus **8.5% (85 pm, seed 4)**, Freezing Perch **4.0% (40 pm, seed
-  100)**. Recorded, not tuned.
-  tuned further.
+  Anemoniacus **8.5% (85 pm, seed 4)**, Freezing Perch **5.0% (50 pm, seed
+  59)**. Recorded, not tuned.
 
 ### M3 -> M4 amendment review (Task 6)
 
@@ -583,7 +585,7 @@ M4's World and encounter work is validated by M4's own `world_test`/
   dropping current-fight loot (spec §6); do not expect the fight resolver to
   end the fight at Hull 0.
 - **Seed convention.** `fight.startFightDef` seeds each fight from
-  `exp.seed + fight_index*77` with three warm-up draws (`fight.zig:155-158`;
+  `exp.seed + fight_index*77` with three warm-up draws (`rng.zig:33-40`;
   spec:1173,1186). M4 `depart` must draw `exp.seed` from `world.rng_state`
   (M4 plan:56; spec:1186) and set `exp.fight_index` per fight; the sim bypasses
   Depart and sets `exp.seed = seed0`, `exp.fight_index = i` directly
@@ -593,7 +595,7 @@ M4's World and encounter work is validated by M4's own `world_test`/
   150 (spec:1249). M4's real Hull is persistent fight/boat state (spec §6,
   spec:1249), not the tool flag.
 - **Dense `DEFS` index vs `id`.** `creatures.DEFS` is a 5-element array indexed
-  0..4 (`creatures_t1.zig:193-210`; `undtool.zig:32-42`), while
+  0..4 (`creatures_t1.zig:193-199`; `undtool.zig:28-34`), while
   `CreatureDef.id` is 1/2/4/18/19 (`creatures_t1.zig:81,101,126,149,174`).
   `World.ready` is `zone*MAX_CREATURES + def_index` (spec:1229); M4 must pin
   `def_index` to the dense array index (converting ids in tables), not index
@@ -604,13 +606,15 @@ M4's World and encounter work is validated by M4's own `world_test`/
   pools itself (M4 plan:26,51), or M4 must fill the masks; availability cannot
   be derived from the current `DEFS` as shipped.
 - **Only five creature rows exist.** `DEFS` has Mystic Eel, Mystic Electric
-  Eel, Steel Tuna, Anemoniacus, Freezing Perch (`creatures_t1.zig:193-200`),
+  Eel, Steel Tuna, Anemoniacus, Freezing Perch (`creatures_t1.zig:193-199`),
   but spec §13 Z1–Z3 names additional creatures (Rust Tuna, Kelp Crab, Spark
-  Anemone, …; spec:536-578) with no defs yet. M4 must stub/restrict those
-  pools until content arrives (M4 plan:51 stubs Z4–Z8/D).
+  Anemone, …; spec:536-578) with no defs yet. M4 implements the Z1–Z3 tables
+  itself (M4 plan:51 stubs Z4–Z8/D); the real gap is that those Z1–Z3 tables
+  name creatures whose `CreatureDef` rows do not exist until M8.
 - **M3 report shape is independent.** `SimReport` aggregates one `CreatureDef`
-  (`sim.zig:28-41`, `:86-144`), the §25.9 policy reads only fight state
-  (`sim.zig:68-84`), and the header/`sim creature=` line are tooling output
+  (`sim.zig:28-41`, `:86-144`), the §25.9 policy reads fight state plus
+  `cdef.flags`/`cdef.subdue_chance` (`sim.zig:68-84`) but no World input, and
+  the header/`sim creature=` line are tooling output
   (`undtool.zig:64-90`, `:391`). Availability, rare-chance arithmetic,
   renormalization and empty-pool Rest belong to M4 unit tests; per-zone sim
   runs would only re-partition the same fight metrics.
@@ -618,4 +622,3 @@ M4's World and encounter work is validated by M4's own `world_test`/
   `fight.startFightDef` reads only the seed fields of `exp` and never touches
   `world` (`sim.zig:98-103`; `fight.zig:112-158`); M4's World/expedition path
   must explicitly initialize `GameState.world` (R8, spec §24).
-

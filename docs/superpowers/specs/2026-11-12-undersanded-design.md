@@ -1676,7 +1676,7 @@ Then: error screen — *"The game has crashed. A crash file has been written. Pl
 | Boss sentinel | loader rejects `subdue_chance != -1` on boss, `-1` on non-boss | CI |
 | Variants bit | set on Phase 2 entry, survives ascent | CI |
 | Field Record | second kill leaves record byte-identical | CI |
-| Restore rounding | `(max*30+99)/100` == ceil for max 50…195 incl. grudge/wariness | CI |
+| Restore rounding | `(max*25+99)/100` == ceil for max 50…195 incl. grudge/wariness | CI |
 | First run | delete save, launch, page 1 appears, fresh save created | CI |
 | Focus pause | `gfxTestFocus(g,false)` → logic halts, audio stops | CI |
 | Win98 fidelity | operator session on real hardware | manual |
