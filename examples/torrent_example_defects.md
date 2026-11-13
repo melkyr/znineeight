@@ -3,9 +3,9 @@
 Tracks only **open** compiler defects found while building the example programs.
 Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
-deleted numbers are not reused. Next free slot: **D17**.
+deleted numbers are not reused. Next free slot: **D18**.
 
-Open: **D16**.
+Open: **D16, D17**.
 
 _(Add new entries at the next free slot as they are found; entries are doc-only
 unless a compiler fix is separately authorized.)_
@@ -119,3 +119,63 @@ Full Zig parity is not claimed.
 `sf/src/async_analysis.zig:396`; Task 9i `280a3b12`; Task 9j/9l/9k/9f reports;
 `repro/mi_matrix/known_excluded/d15_parity/`,
 `repro/mi_matrix/known_excluded/d15_assignment_void/`.
+
+## D17 — Optional array return emits a non-assignable C array assignment (`?[N]T`)
+
+**Status:** OPEN (deferred — documented workaround, no compiler fix authorized).
+
+**Symptom.** A function returning `?[2][]const u8` dumps cleanly (`--dump-c89`
+rc=0), but the emitted C does not compile: the optional payload is copied with a
+plain C assignment, and C arrays are not assignable.
+
+**Minimal repro (Zig source shape).**
+
+```zig
+fn splitOnce(s: []const u8, sep: u8) ?[2][]const u8 {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        if (s[i] == sep) {
+            var parts: [2][]const u8 = undefined;
+            parts[0] = s[0..i];
+            parts[1] = s[i + 1 .. s.len];
+            return parts;
+        }
+    }
+    return null;
+}
+```
+
+Command: `zig1_5_clean -ffast -o /tmp/probe_splitonce/out /tmp/probe_splitonce/main.zig`
+→ dump rc=0, then
+`sh /tmp/probe_splitonce/out/build_target.sh linux /tmp/probe_splitonce/out/prog`
+→ build rc=1:
+
+```text
+main_A67D5914.c:83:17: error: assignment to expression with array type
+   83 |     zT_30.value = parts;
+main_A67D5914.c:125:11: error: assignment to expression with array type
+  125 |     zT_12 = zT_8.value;
+```
+
+**Classification.** Emitted-C assignment of an array-typed optional payload
+(`?[N]T`, where `T` is an array or a slice-array element type). C cannot assign
+arrays, so an optional unwrap/return must be emitted structurally (field copy or
+`memcpy`), not as `lhs = rhs`.
+
+**Scope / impact.** No `?[N]T` returns exist in `sf/src`, so the shipped std
+surface is unaffected. Found while adding `std_str.splitOnce` (commit
+`22cfbfe6`); the brief pre-authorized a shape fallback for exactly this case.
+
+**Workaround.** Return `bool` + a 2-field out-param struct (or an
+optional-of-struct `?S`). Shipped as
+`pub const SplitOnce = struct { first: []const u8, second: []const u8 };` and
+`pub fn splitOnce(s: []const u8, sep: u8, out: *SplitOnce) bool` in
+`sf/src/std_str.zig`.
+
+**Evidence.** Probe: `/tmp/probe_splitonce/main.zig` (repo-external). Task
+report:
+`.superpowers/sdd/2026-11-12-undersanded-m01-std-audit-plan/task-2-report.md`.
+Fix commit: `22cfbfe6 feat(std): str splitOnce`.
+
+**Note.** Doc-only entry. Any compiler fix (structural optional-array
+return/unwrap emission) is separately authorized and out of scope here.
