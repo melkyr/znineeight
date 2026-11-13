@@ -15,6 +15,11 @@ const os = @import("std_os.zig");
 const parse = @import("std_parse");
 const sim = @import("sim.zig");
 const ruletest = @import("ruletest.zig");
+const def = @import("def.zig");
+const fight = @import("fight.zig");
+const creatures = @import("creatures_t1.zig");
+const render = @import("render_term.zig");
+const file_mod = @import("std_file");
 
 const TokenRow = struct { name: []const u8, index: i32 };
 
@@ -84,6 +89,23 @@ fn writeReport(token: []const u8, r: *const sim.SimReport) void {
     io.write("\n");
 }
 
+// --dump-grid payload for `--screen fight`: a scripted, fixed-seed FightState
+// (def index 0, one Strike so the log has a bar/log line) rendered by
+// render_term and returned as the trimmed row-major dump. The caller writes the
+// returned slice; this module never touches std_gfx (gfxDumpGrid covers only
+// the gfx memory surface, which Task 5 owns).
+pub fn dumpFightFrame(def_index: i32, seed0: u32, out: []u8) []const u8 {
+    var s: def.GameState = undefined;
+    s.exp.seed = seed0;
+    s.exp.fight_index = 0;
+    var d = creatures.defAt(def_index);
+    fight.startFightDef(&s, def_index, &d, creatures.RULES[0..]);
+    fight.step(&s, def.Action{ .kind = def.ACT_STRIKE, .arg = 0 }, &d, creatures.RULES[0..]);
+    var sc: render.Screen = undefined;
+    render.renderFrame(&s, &d, &sc);
+    return render.dump(&sc, out);
+}
+
 pub fn run(argc: i32, argv: [*][*]u8) void {
     os.initArgs(argc, argv);
 
@@ -91,10 +113,14 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var have_creature = false;
     var have_seed = false;
     var have_test_rules = false;
+    var have_dump_grid = false;
+    var have_screen = false;
     var n_fights: i32 = 0;
     var seed0: u32 = 0;
     var hull: i32 = 100;
     var token: []const u8 = "";
+    var dump_path: []const u8 = "";
+    var screen_id: []const u8 = "";
 
     const nargs = os.argc();
     var i: usize = 0;
@@ -102,6 +128,22 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         const a = os.argv(i);
         if (eq(a, "--test-rules")) {
             have_test_rules = true;
+        } else if (eq(a, "--dump-grid")) {
+            i += 1;
+            if (i >= nargs) {
+                fail("undtool: --dump-grid needs a file path");
+                return;
+            }
+            dump_path = os.argv(i);
+            have_dump_grid = true;
+        } else if (eq(a, "--screen")) {
+            i += 1;
+            if (i >= nargs) {
+                fail("undtool: --screen needs an id");
+                return;
+            }
+            screen_id = os.argv(i);
+            have_screen = true;
         } else if (eq(a, "--sim")) {
             i += 1;
             if (i >= nargs) {
@@ -150,6 +192,25 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
 
     if (have_test_rules) {
         os.exit(ruletest.testRules());
+        return;
+    }
+
+    if (have_dump_grid) {
+        if (!have_screen) {
+            fail("undtool: --dump-grid requires --screen");
+            return;
+        }
+        if (!eq(screen_id, "fight")) {
+            fail("undtool: unknown --screen id");
+            return;
+        }
+        var buf: [8192]u8 = undefined;
+        const text = dumpFightFrame(0, seed0, buf[0..]);
+        file_mod.writeAll(dump_path, text) catch {
+            fail("undtool: --dump-grid write failed");
+            return;
+        };
+        os.exit(0);
         return;
     }
 

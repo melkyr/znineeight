@@ -9,6 +9,10 @@
 //   (c) Repeated subdue failures fire Last Surge; the attack bonus applies at
 //       most once (+25 pp, never re-applied) and the speed bonus caps at +6.
 //
+// Plus the `--dump-grid` smoke: the `--screen fight` payload (undtool.zig) is
+// non-empty and carries the fight header, creature name, bars, and a strike
+// log line (the exact grid golden is Task 5, not here).
+//
 // Build/run (repo root):
 //   "$ZIG" -fsafe -W -osl --output-dir "$OUT" \
 //       examples/z98/undersanded/tests/safety_test.zig
@@ -24,6 +28,7 @@ const fight = @import("../fight.zig");
 const creatures = @import("../creatures_t1.zig");
 const sim = @import("../sim.zig");
 const input = @import("../input.zig");
+const undtool = @import("../undtool.zig");
 
 var fails: usize = 0;
 
@@ -40,6 +45,33 @@ fn report(name: []const u8, ok: bool) void {
 
 fn noRules() []const behavior.Rule {
     return creatures.RULES[0..0];
+}
+
+fn contains(hay: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return true;
+    if (needle.len > hay.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= hay.len) : (i += 1) {
+        var j: usize = 0;
+        while (j < needle.len and hay[i + j] == needle[j]) : (j += 1) {}
+        if (j == needle.len) return true;
+    }
+    return false;
+}
+
+// --dump-grid `--screen fight` produces non-empty text carrying the fight
+// header, the creature name, the three bars, and a strike log line.
+fn tDumpGridFightText() bool {
+    var buf: [8192]u8 = undefined;
+    const text = undtool.dumpFightFrame(0, 98, buf[0..]);
+    if (text.len == 0) return false;
+    if (!contains(text, "UNDERSANDED")) return false;
+    if (!contains(text, "Mystic Eel")) return false;
+    if (!contains(text, "HP")) return false;
+    if (!contains(text, "RESOLVE")) return false;
+    if (!contains(text, "HULL")) return false;
+    if (!contains(text, "Strike")) return false;
+    return true;
 }
 
 // A rare modal creature (subdue 60 < SUBDUE_PROMPT_BELOW 90), player first
@@ -196,6 +228,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     report("f_esc_decline_no_rng", tFAndEscDeclineNoRng());
     report("common_never_prompts", tCommonNeverPrompts());
     report("surge_caps_via_failures", tSurgeCapsViaFailures());
+    report("dump_grid_fight_text", tDumpGridFightText());
 
     if (fails != 0) {
         io.write("safety_test FAIL\n");
