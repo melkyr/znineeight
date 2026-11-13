@@ -288,3 +288,21 @@ Condition semantics (frozen):
   holds; the consumed bit prevents any later fire.
 - Persistent rows report their effect on every evaluation while the condition
   holds. Unknown condition/effect/timing values are a no-op.
+
+## Percent-threshold convention (M6/M8 data authors)
+
+"Below X%" / "above X%" is the **exact-rational** comparison, never
+floor-then-strict-`<`:
+
+- below: `v * 100 < max * pct`
+- above: `v * 100 > max * pct`
+- single-hit "exceeds X% max HP": `damage * 100 > max_hp * pct` (strict `>`)
+
+Consequences for non-100-divisible maxima: max_res 115 -> 50% boundary is
+57.5, so `res = 57` is still below and `res = 58` is above; max_hp 95 -> 30%
+boundary is 28.5, so `hp = 28` is below and `hp = 29` is not; max_hp 105 ->
+35% is 36.75, so a 37-damage hit triggers the flee check and 36 does not.
+This matches the frozen rule-row integer form (e.g. Anemoniacus
+`HP_BELOW cond_a = 48` for 95 max HP), so `fight.zig`'s coupling gates,
+`speed_below` / `armor_below` / `atk_below`, and `discharge_th` fields must
+use the same form.

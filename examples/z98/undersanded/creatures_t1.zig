@@ -156,7 +156,7 @@ fn anemoniacus() def.CreatureDef {
     d.thrash_regen = 10;
     d.subdue_chance = 60;
     d.discharge_stat = STAT_HP;
-    d.discharge_th = 50;
+    d.discharge_th = 48;
     d.discharge_dmg = 10;
     d.sale = 50;
     d.respawn[0] = 6;
@@ -189,14 +189,23 @@ fn freezingPerch() def.CreatureDef {
     return d;
 }
 
+// Single source of truth for the five M2 rows (plan Task 4 interface).
+pub const DEFS = [5]def.CreatureDef{
+    mysticEel(),
+    mysticElectricEel(),
+    steelTuna(),
+    anemoniacus(),
+    freezingPerch(),
+};
+
 pub fn defAt(index: i32) def.CreatureDef {
     switch (index) {
-        0 => return mysticEel(),
-        1 => return mysticElectricEel(),
-        2 => return steelTuna(),
-        3 => return anemoniacus(),
-        4 => return freezingPerch(),
-        else => return mysticEel(),
+        0 => return DEFS[0],
+        1 => return DEFS[1],
+        2 => return DEFS[2],
+        3 => return DEFS[3],
+        4 => return DEFS[4],
+        else => return DEFS[0],
     }
 }
 

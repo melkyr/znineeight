@@ -24,6 +24,14 @@ pub const RESTRAIN_MIN: i32 = 10;
 pub const RESTRAIN_MAX: i32 = 18;
 pub const DEFAULT_MARGIN_PCT: i32 = 10;
 
+pub const PERCENT_BASE: i32 = 100;
+pub const DANGER_BASE: i32 = 25;
+pub const DROWSY_STRIKE_PCT: i32 = 80;
+pub const EXPOSED_INCOMING_PCT: i32 = 125;
+pub const SUBDUE_ROLL_MIN: i32 = 1;
+pub const SUBDUE_ROLL_MAX: i32 = 100;
+pub const PENDING_ON: i32 = 1;
+
 // ---- Last Surge (§9.5) ----------------------------------------------------
 
 pub const LAST_SURGE_RESTORE_PCT: i32 = 30;
@@ -92,7 +100,7 @@ pub fn margin(s: *const def.GameState) i32 {
 }
 
 pub fn dangerHp(s: *const def.GameState) i32 {
-    const d = 25 - margin(s);
+    const d = DANGER_BASE - margin(s);
     if (d < 0) return 0;
     return d;
 }
@@ -160,8 +168,23 @@ pub fn startFightDef(s: *def.GameState, def_index: i32, cdef: *const def.Creatur
 
 // ---- Derived creature stats ----------------------------------------------
 
+// Exact-rational threshold checks. "below X%" means `v*100 < max*pct`
+// (not floor-then-strict-<), so non-100-divisible maxima keep the spec
+// boundary (e.g. 115 -> 50% is still below at 57).
+pub fn belowPct(v: i32, max: i32, pct: i32) bool {
+    return v * PERCENT_BASE < max * pct;
+}
+
+pub fn abovePct(v: i32, max: i32, pct: i32) bool {
+    return v * PERCENT_BASE > max * pct;
+}
+
+pub fn hitExceedsPct(v: i32, max: i32, pct: i32) bool {
+    return v * PERCENT_BASE > max * pct;
+}
+
 fn statBelowPct(max: i32, now: i32, pct: i32) bool {
-    return now < math.applyPct(max, pct);
+    return belowPct(now, max, pct);
 }
 
 fn surgeSpeedBonus(count: i32) i32 {
@@ -202,7 +225,7 @@ pub fn effectiveSpeed(s: *const def.GameState, cdef: *const def.CreatureDef, rul
 }
 
 pub fn effectiveAttack(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) i32 {
-    var pct: i32 = 100;
+    var pct: i32 = PERCENT_BASE;
 
     if (cdef.atk_below_th > 0) {
         if (statBelowPct(s.fight.max_hp, s.fight.hp, cdef.atk_below_th)) {
@@ -220,9 +243,11 @@ pub fn effectiveAttack(s: *const def.GameState, cdef: *const def.CreatureDef, ru
         if (u >= rules.len) continue;
         const fired = behavior.ruleFire(rules[u], s.fight.hp, s.fight.hp, s.fight.res, s.fight.res, s.fight.round, &dummy, ri);
         if (fired) |e| {
-            if (e.op == behavior.MULT_ATK) pct += e.a - 100;
+            if (e.op == behavior.MULT_ATK) pct += e.a - PERCENT_BASE;
         }
     }
+
+    if (s.fight.cond == def.COND_EXPOSED) pct = math.applyPct(pct, EXPOSED_INCOMING_PCT);
 
     return math.applyPct(cdef.attack, pct);
 }
@@ -233,20 +258,20 @@ pub fn creatureFirst(s: *const def.GameState, cdef: *const def.CreatureDef, rule
 
 fn effectiveArmor(s: *const def.GameState, cdef: *const def.CreatureDef) i32 {
     var a = s.fight.active_armor_pct;
-    if (a <= 0) a = 100;
+    if (a <= 0) a = PERCENT_BASE;
     if (cdef.armor_below_th > 0) {
         if (statBelowPct(s.fight.max_hp, s.fight.hp, cdef.armor_below_th)) {
             if (cdef.armor_below_pct > 0) a = cdef.armor_below_pct;
         }
     }
-    if (s.fight.tool_active != 0 and s.fight.tool == TOOL_PLATE) a = 100;
+    if (s.fight.tool_active != 0 and s.fight.tool == TOOL_PLATE) a = PERCENT_BASE;
     return a;
 }
 
 fn effectiveResist(s: *const def.GameState) i32 {
     var r = s.fight.active_resist_restrain;
-    if (r <= 0) r = 100;
-    if (s.fight.tool_active != 0 and s.fight.tool == TOOL_BRINE_NET) r = 100;
+    if (r <= 0) r = PERCENT_BASE;
+    if (s.fight.tool_active != 0 and s.fight.tool == TOOL_BRINE_NET) r = PERCENT_BASE;
     return r;
 }
 
@@ -280,7 +305,7 @@ fn applyEffect(s: *def.GameState, e: def.Effect) void {
             if (e.a != 0) {
                 s.fight.pending_flee = e.a;
             } else {
-                s.fight.pending_flee = 1;
+                s.fight.pending_flee = PENDING_ON;
             }
         },
         behavior.SET_BLIND => {
@@ -305,6 +330,7 @@ fn applyEffect(s: *def.GameState, e: def.Effect) void {
 }
 
 fn applyRules(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
+    resetActive(s, cdef);
     var ri: i32 = cdef.rule_start;
     const end: i32 = cdef.rule_start + cdef.rule_count;
     while (ri < end) : (ri += 1) {
@@ -338,7 +364,7 @@ pub fn gateOpen(s: *const def.GameState, cdef: *const def.CreatureDef) bool {
 }
 
 fn subdueSuccess(s: *def.GameState, cdef: *const def.CreatureDef) bool {
-    const roll = rng.rngRange(&s.fight.rng_state, 1, 100);
+    const roll = rng.rngRange(&s.fight.rng_state, SUBDUE_ROLL_MIN, SUBDUE_ROLL_MAX);
     return roll <= cdef.subdue_chance;
 }
 
@@ -382,18 +408,25 @@ fn noteBar(s: *def.GameState, bar: i32) void {
     s.fight.last_bar = bar;
 }
 
+// Combined Strike percentage: Drowsy and armor fold into ONE pct so
+// applyPct runs exactly once (§25.4 "never chain applyPct").
+pub fn strikePct(cond: i32, armor_pct: i32) i32 {
+    var pct = PERCENT_BASE;
+    if (cond == def.COND_DROWSY) pct = DROWSY_STRIKE_PCT;
+    return math.applyPct(pct, armor_pct);
+}
+
 fn strike(s: *def.GameState, cdef: *const def.CreatureDef) void {
     var dmg = rng.rngRange(&s.fight.rng_state, STRIKE_MIN, STRIKE_MAX);
-    if (s.fight.cond == def.COND_DROWSY) dmg = math.applyPct(dmg, 80);
-    dmg = math.applyPct(dmg, effectiveArmor(s, cdef));
+    dmg = math.applyPct(dmg, strikePct(s.fight.cond, effectiveArmor(s, cdef)));
     if (dmg < 0) dmg = 0;
 
     s.fight.hp -= dmg;
     log(s, def.LOG_NORMAL, MSG_STRIKE, dmg, s.fight.hp);
 
     if (cdef.flee_kind == FLEE_HIT_PCT and cdef.flee_th > 0) {
-        if (dmg * 100 > s.fight.max_hp * cdef.flee_th) {
-            s.fight.pending_flee = 1;
+        if (hitExceedsPct(dmg, s.fight.max_hp, cdef.flee_th)) {
+            s.fight.pending_flee = PENDING_ON;
         }
     }
 }
@@ -407,23 +440,17 @@ fn restrain(s: *def.GameState) void {
     log(s, def.LOG_NORMAL, MSG_RESTRAIN, dmg, s.fight.res);
 }
 
-fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
+fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef) void {
     switch (a.kind) {
         def.ACT_STRIKE => {
             noteBar(s, def.BAR_STRIKE);
             s.fight.actions += 1;
-            s.fight.prev_hp = s.fight.hp;
-            s.fight.prev_res = s.fight.res;
             strike(s, cdef);
-            applyRules(s, cdef, rules);
         },
         def.ACT_RESTRAIN => {
             noteBar(s, def.BAR_RESTRAIN);
             s.fight.actions += 1;
-            s.fight.prev_hp = s.fight.hp;
-            s.fight.prev_res = s.fight.res;
             restrain(s);
-            applyRules(s, cdef, rules);
         },
         def.ACT_EQUIP => {
             s.fight.actions += 1;
@@ -450,7 +477,6 @@ fn creatureAct(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const b
     }
 
     var dmg = effectiveAttack(s, cdef, rules);
-    if (s.fight.cond == def.COND_EXPOSED) dmg = math.applyPct(dmg, 125);
     if (dmg < 0) dmg = 0;
 
     s.fight.hull -= dmg;
@@ -460,16 +486,12 @@ fn creatureAct(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const b
 }
 
 fn endRound(s: *def.GameState, cdef: *const def.CreatureDef) void {
-    const half_hp = math.applyPct(s.fight.max_hp, THRASH_GATE_PCT);
-    const half_res = math.applyPct(s.fight.max_res, DESPAIR_RES_GATE_PCT);
-    const low_hp = math.applyPct(s.fight.max_hp, DESPAIR_GATE_PCT);
-
-    if (s.fight.res < half_res and s.fight.hp > half_hp) {
+    if (belowPct(s.fight.res, s.fight.max_res, THRASH_GATE_PCT) and abovePct(s.fight.hp, s.fight.max_hp, THRASH_GATE_PCT)) {
         var regen = cdef.thrash_regen;
         if (regen == 0) regen = def.COUPLING_REGEN_DEFAULT;
         s.fight.res = std_math.min(s.fight.max_res, s.fight.res + regen);
         log(s, def.LOG_NORMAL, MSG_COUPLING, regen, 1);
-    } else if (s.fight.hp < low_hp and s.fight.res > half_res) {
+    } else if (belowPct(s.fight.hp, s.fight.max_hp, DESPAIR_GATE_PCT) and abovePct(s.fight.res, s.fight.max_res, DESPAIR_RES_GATE_PCT)) {
         var regen = cdef.despair_regen;
         if (regen == 0) regen = def.COUPLING_REGEN_DEFAULT;
         s.fight.hp = std_math.min(s.fight.max_hp, s.fight.hp + regen);
@@ -529,10 +551,6 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
         else => return,
     }
 
-    resetActive(s, cdef);
-    applyRules(s, cdef, rules);
-    if (s.fight.outcome != def.OUT_ONGOING) return;
-
     const player_first = !creatureFirst(s, cdef, rules);
     var creature_acted: bool = false;
 
@@ -542,8 +560,13 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
         if (s.fight.outcome != def.OUT_ONGOING) return;
     }
 
-    playerAction(s, a, cdef, rules);
+    s.fight.prev_hp = s.fight.hp;
+    s.fight.prev_res = s.fight.res;
+    playerAction(s, a, cdef);
     if (s.fight.outcome != def.OUT_ONGOING) return;
+
+    // Exactly one rule evaluation per action, using the pre-action values.
+    applyRules(s, cdef, rules);
 
     if (checkDeath(s)) return;
 
