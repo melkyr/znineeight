@@ -646,7 +646,7 @@ Role subtotals (rows 1–17): **8 commons, 2 named, 6 rares, 1 boss** = 17. Rows
 | Brine Angler | Round 1: Strike hits decoy (miss) unless Lure. HP<50% → Attack +50%. |
 | Ironclad Wrasse | HP<30% → gains Armor (Strike 50%) + Speed +4. Day-side Glass source. |
 | Anemoniacus | Thrash override **+10**. **Discharge:** one-shot 10 Hull when HP crosses below 50%. |
-| Freezing Perch | Despair override **+8**. **Flees next turn if a single hit deals >35% max HP (37).** |
+| Freezing Perch | Despair override **+8**. **Flees next turn if a single hit deals >20% max HP (21).** |
 | The Derelict | Machine. No Resolve. See §15. |
 
 ### 14.4 Drops (parts)

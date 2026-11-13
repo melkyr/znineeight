@@ -488,10 +488,10 @@ fn tDischargeAnemoniacus() bool {
     return true;
 }
 
-// Freezing Perch: >35% of 105 is 37 (36 does not trigger); flee next turn.
+// Freezing Perch: >20% of 105 is 21 (21 does not trigger); flee next turn.
 fn tFreezingPerchFlee() bool {
-    if (fight.hitExceedsPct(36, 105, 35)) return false;
-    if (!fight.hitExceedsPct(37, 105, 35)) return false;
+    if (fight.hitExceedsPct(21, 105, 20)) return false;
+    if (!fight.hitExceedsPct(22, 105, 20)) return false;
 
     var d = creatures.defAt(4);
     var s: def.GameState = undefined;
@@ -914,7 +914,7 @@ const FIGHTS = [20]FightCase{
     FightCase{ .def_index = 2, .pattern = "SSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 12, .want_hull = 12, .want_declines = 0 },
     FightCase{ .def_index = 0, .pattern = "SSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 4, .want_hull = 82, .want_declines = 0 },
     FightCase{ .def_index = 3, .pattern = "R", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 37, .want_hull = 0, .want_declines = 0 },
-    FightCase{ .def_index = 4, .pattern = "SRSR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 11, .want_hull = 0, .want_declines = 0 },
+    FightCase{ .def_index = 4, .pattern = "SRSR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_CREATURE_FLED, .want_steps = 6, .want_hull = 50, .want_declines = 0 },
     FightCase{ .def_index = 1, .pattern = "RSRSRSRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 8, .want_hull = 36, .want_declines = 0 },
     FightCase{ .def_index = 2, .pattern = "RRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 7, .want_hull = 52, .want_declines = 0 },
     FightCase{ .def_index = 1, .pattern = "RRRRRRRRRRRR", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 13, .want_hull = 1, .want_declines = 0 },
@@ -923,12 +923,12 @@ const FIGHTS = [20]FightCase{
     FightCase{ .def_index = 2, .pattern = "PSSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 7, .want_hull = 52, .want_declines = 0 },
     FightCase{ .def_index = 0, .pattern = "ESSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 5, .want_hull = 76, .want_declines = 0 },
     FightCase{ .def_index = 0, .pattern = "F", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_PLAYER_FLED, .want_steps = 1, .want_hull = 100, .want_declines = 0 },
-    FightCase{ .def_index = 4, .pattern = "SSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 6, .want_hull = 40, .want_declines = 0 },
+    FightCase{ .def_index = 4, .pattern = "SSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_CREATURE_FLED, .want_steps = 3, .want_hull = 80, .want_declines = 0 },
     FightCase{ .def_index = 3, .pattern = "SSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 5, .want_hull = 54, .want_declines = 0 },
     FightCase{ .def_index = 1, .pattern = "SSSSSSSSSSSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_KILL, .want_steps = 4, .want_hull = 72, .want_declines = 0 },
     FightCase{ .def_index = 2, .pattern = "RRSRRSRRSRRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 11, .want_hull = 20, .want_declines = 0 },
     FightCase{ .def_index = 0, .pattern = "RRSRRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 10, .want_hull = 46, .want_declines = 0 },
-    FightCase{ .def_index = 4, .pattern = "RRSSRRSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 12, .want_hull = 0, .want_declines = 0 },
+    FightCase{ .def_index = 4, .pattern = "RRSSRRSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_CREATURE_FLED, .want_steps = 5, .want_hull = 60, .want_declines = 0 },
     FightCase{ .def_index = 3, .pattern = "RRRRS", .modal_mode = MODAL_DECLINE, .want_outcome = def.OUT_OVERKILL, .want_steps = 26, .want_hull = 0, .want_declines = 1 },
 };
 

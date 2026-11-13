@@ -232,7 +232,7 @@ Verdict: **no amendment needed** for M2.
   - Anemoniacus — Thrash override **+10**. **Discharge:** one-shot 10 Hull when
     HP crosses below 50%.
   - Freezing Perch — Despair override **+8**. **Flees next turn if a single hit
-    deals >35% max HP (37).**
+    deals >20% max HP (21).**
 - Ruling (§9.1, D10): commons auto-roll silently; rare/named use the subdue
   modal (`SUBDUE_PROMPT_BELOW = 90`).
 - Baseline tiers observed from this worktree:
@@ -300,8 +300,9 @@ floor-then-strict-`<`:
 
 Consequences for non-100-divisible maxima: max_res 115 -> 50% boundary is
 57.5, so `res = 57` is still below and `res = 58` is above; max_hp 95 -> 30%
-boundary is 28.5, so `hp = 28` is below and `hp = 29` is not; max_hp 105 ->
-35% is 36.75, so a 37-damage hit triggers the flee check and 36 does not.
+boundary is 28.5, so `hp = 28` is below and `hp = 29` is not; the strict `>`
+also excludes an exact boundary: max_hp 105 -> 20% is exactly 21, so a
+21-damage hit does not trigger the Flee and 22 does.
 This matches the frozen rule-row integer form (e.g. Anemoniacus
 `HP_BELOW cond_a = 48` for 95 max HP), so `fight.zig`'s coupling gates,
 `speed_below` / `armor_below` / `atk_below`, and `discharge_th` fields must
@@ -343,7 +344,7 @@ fight ends; `A` is supplied at each rare modal unless "declined" is noted.
 | 2 | Steel Tuna | KILL | `S×12` | 12 | 12 | 60% armor chipped every Strike; Despair coupling regenerated HP 5×; HP<30% Speed 6→10 still only ties the player; overshoot 3 < margin 12 → Kill, not Overkill. |
 | 3 | Mystic Eel | OVERKILL | `S×4` | 4 | 82 | One Despair coupling tick; overshoot 8 ≥ margin 7; creature acted in every live round. |
 | 4 | Anemoniacus | SUBDUE | `R` cycled + `A` at modal | 37 | 0 | Rare modal path: 19 Thrash coupling ticks (+10 Resolve) between attempts; 2 failed Attempts → 2 Last Surges (Res 115→35 each), then success; Hull drained to 0; no discharge. |
-| 5 | Freezing Perch | KILL | `SRSR` cycled | 11 | 0 | 10 bar switches, 1 coupling tick; overshoot 7 < margin 10. Strike max 25 never exceeds the 37 flee threshold, so no flee. |
+| 5 | Freezing Perch | CREATURE_FLED | `SRSR` cycled | 6 | 50 | 4 bar switches; the last Strike (24) exceeded 21, so the Perch fled next turn. |
 | 6 | Mystic Electric Eel | OVERKILL | `RSRSRSRS` cycled | 8 | 36 | Discharge fired once (8 Hull) when Resolve crossed below 50%; 7 switches, 1 coupling tick; overshoot 8 ≥ margin 8. |
 | 7 | Steel Tuna | SUBDUE | `R×10` | 7 | 52 | Restrain-only path; 4 Thrash coupling ticks (+5 Resolve); armor irrelevant to Resolve; silent 95% roll. |
 | 8 | Mystic Electric Eel | SUBDUE | `R×12` | 13 | 1 | Speed 16 acted first each round; 9 Thrash ticks; one discharge tick; subdue at Hull 1. |
@@ -352,12 +353,12 @@ fight ends; `A` is supplied at each rare modal unless "declined" is noted.
 | 11 | Steel Tuna | KILL | `P` then `S×12` | 7 | 52 | Plate spent one action to negate the 60% armor; the same Strike stream killed in 7 actions instead of 12 (fight 2), with only 2 coupling ticks. Overshoot 1 < margin 12. |
 | 12 | Mystic Eel | OVERKILL | `E` then `S×4` | 5 | 76 | Bare Equipment (no tool) only bought a free creature hit; 1 coupling tick; overshoot 8 ≥ margin 7. |
 | 13 | Mystic Eel | PLAYER_FLED | `F` | 1 | 100 | Player flee ends the fight immediately, no creature action. |
-| 14 | Freezing Perch | OVERKILL | `S×10` | 6 | 40 | 2 Despair +8 ticks regenerated HP during the Strike run; overshoot 10 ≥ margin 10. |
+| 14 | Freezing Perch | CREATURE_FLED | `S×10` | 3 | 80 | Second Strike (24) exceeded 21, so the Perch fled next turn. |
 | 15 | Anemoniacus | OVERKILL | `S×10` | 5 | 54 | One discharge tick (10 Hull) on HP<50%; 1 coupling tick; overshoot 10 ≥ margin 9. |
 | 16 | Mystic Electric Eel | KILL | `S×12` | 4 | 72 | Speed 16 hit first each round; 1 coupling tick; overshoot 1 < margin 8; Resolve untouched so no discharge. |
 | 17 | Steel Tuna | SUBDUE | `RRSRRSRRSRRS` cycled | 11 | 20 | 6 bar switches, 7 coupling ticks; Thrash pulled Resolve back up (`msg 9`, +5) before the silent subdue. |
 | 18 | Mystic Eel | SUBDUE | `RRSRRS` cycled | 10 | 46 | 6 bar switches, 2 coupling ticks; mixed stream still closes both gates for a 95% subdue. |
-| 19 | Freezing Perch | OVERKILL | `RRSSRRSS` cycled | 12 | 0 | 5 switches, 2 Despair ticks; overshoot 15 ≥ margin 10; Hull reached 0. |
+| 19 | Freezing Perch | CREATURE_FLED | `RRSSRRSS` cycled | 5 | 60 | 1 bar switch; second Strike (25) exceeded 21, so the Perch fled next turn. |
 | 20 | Anemoniacus | OVERKILL | `RRRRS` cycled, modal declined | 26 | 0 | Rare modal genuinely opened at Resolve 0 and was declined (`modal=yes declines=1`, no RNG); after declining the gate never re-opens; 9 switches, 4 coupling ticks, one discharge; overshoot 9 ≥ margin 9. |
 
 Playable-path evidence (already captured in the Task 4 report from the real
@@ -407,10 +408,6 @@ stop-present.
   (passive, no charge), while M2 honours them only when `tool_active != 0`
   (activated). §41 Q2's answer must be re-validated at M5 with rigged
   semantics.
-- **KNOWN CONTENT ISSUE:** Freezing Perch's flee trigger (single hit >35% of
-  105 = 37) is unreachable with the global Strike maximum 25; the
-  implementation is spec-faithful; the content decision is deferred to
-  M13/M15.
 
 ## M2 → M3 amendment review
 

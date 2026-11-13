@@ -168,7 +168,7 @@ fn anemoniacus() def.CreatureDef {
 }
 
 // Row 19 — Freezing Perch (105/95/13/10, rare subdue 60, Despair +8,
-// flees next turn if a single hit deals >35% max HP (37)).
+// flees next turn if a single hit deals >20% max HP (21)).
 fn freezingPerch() def.CreatureDef {
     var d = blank();
     d.id = 19;
@@ -181,7 +181,7 @@ fn freezingPerch() def.CreatureDef {
     d.despair_regen = 8;
     d.subdue_chance = 60;
     d.flee_kind = 1;
-    d.flee_th = 35;
+    d.flee_th = 20;
     d.sale = 55;
     d.respawn[0] = 6;
     d.respawn[1] = 18;

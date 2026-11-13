@@ -337,7 +337,7 @@ fn tCreatureBehaviors() bool {
     const perch = creatures.DEFS[4];
     if (perch.despair_regen != 8) return false;
     if (perch.flee_kind != fight.FLEE_HIT_PCT) return false;
-    if (perch.flee_th != 35) return false;
+    if (perch.flee_th != 20) return false;
 
     if (creatures.RULES.len != 2) return false;
     const r0 = creatures.RULES[0];
