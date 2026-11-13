@@ -24,6 +24,7 @@ const arena_mod = @import("std_arena.zig");
 const buf_mod = @import("std_buf.zig");
 const file_mod = @import("std_file.zig");
 const paths = @import("paths.zig");
+const fight_console = @import("fight_console.zig");
 
 const PATH_MAX: usize = 512;
 const ARENA_SIZE: usize = 64 * 1024;
@@ -107,6 +108,16 @@ fn fail(console_mode: bool, msg: []const u8) void {
 }
 
 pub fn run(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool) void {
+    runMode(g, argc, argv, console_mode, false);
+}
+
+// Console entry: same init/probe path as `run`, then the playable text fight
+// instead of the M1 skeleton surface. The GUI entry stays on `run`.
+pub fn runConsoleFight(g: *gfx.Gfx, argc: i32, argv: [*][*]u8) void {
+    runMode(g, argc, argv, true, true);
+}
+
+fn runMode(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool, fight_mode: bool) void {
     os.initArgs(argc, argv);
 
     // Exe dir = installed content (sample.txt). Writability is probed on the
@@ -140,6 +151,11 @@ pub fn run(g: *gfx.Gfx, argc: i32, argv: [*][*]u8, console_mode: bool) void {
         fail(console_mode, "UNDERSANDED: probe_out.txt write failed");
         return;
     };
+
+    if (fight_mode) {
+        fight_console.run();
+        return;
+    }
 
     _ = gfx.gfxBeginFrame(g);
     gfx.gfxClear(g, 0);

@@ -5,8 +5,8 @@
 // msg string stored in the log, and never calls into fight.zig beyond reading
 // public constants. Console output is plain ASCII (no ANSI), CRLF-safe.
 //
-// The terminal shell can blit `Screen.rows` through std_gfx.gfxDrawText (one
-// row per call); the native tests inspect `dump()` directly.
+// The terminal/console shell can blit `Screen.cells` row by row (std_gfx
+// gfxDrawText per row, or std_io text output); native tests inspect `dump()`.
 
 const def = @import("def.zig");
 const fight = @import("fight.zig");
@@ -124,7 +124,7 @@ fn putBar(sc: *Screen, y: i32, label: []const u8, value: i32, max: i32) void {
     _ = putInt(sc, x, y, max);
 }
 
-fn creatureName(id: i32) []const u8 {
+pub fn creatureName(id: i32) []const u8 {
     switch (id) {
         1 => return "Mystic Eel",
         2 => return "Mystic Electric Eel",
@@ -135,7 +135,31 @@ fn creatureName(id: i32) []const u8 {
     }
 }
 
-fn roleName(role: i32) []const u8 {
+// Effective Speed for display: base + stat-threshold bonus + Last Surge
+// (+2/surge, capped +6), matching fight.effectiveSpeed for the M2 rows. The
+// journal-based hiding rule (§8.8) arrives with journal entries at M8.
+pub fn effectiveSpeed(s: *const def.GameState, d: *const def.CreatureDef) i32 {
+    var sp = d.speed;
+
+    if (d.speed_below_th > 0) {
+        var below: bool = false;
+        if (d.speed_below_stat == fight.STAT_RES) {
+            below = s.fight.res * 100 < s.fight.max_res * d.speed_below_th;
+        } else {
+            below = s.fight.hp * 100 < s.fight.max_hp * d.speed_below_th;
+        }
+        if (below) sp += d.speed_below_add;
+    }
+
+    if (s.fight.surge_count > 0) {
+        var bonus = s.fight.surge_count * fight.LAST_SURGE_SPEED_ADD;
+        if (bonus > fight.LAST_SURGE_SPEED_CAP) bonus = fight.LAST_SURGE_SPEED_CAP;
+        sp += bonus;
+    }
+    return sp;
+}
+
+pub fn roleName(role: i32) []const u8 {
     switch (role) {
         1 => return "common",
         2 => return "named",
@@ -145,7 +169,7 @@ fn roleName(role: i32) []const u8 {
     }
 }
 
-fn msgLine(e: def.LogEntry, out: []u8) []const u8 {
+fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
     var p: usize = 0;
     switch (e.msg_id) {
         fight.MSG_STRIKE => {
@@ -164,10 +188,18 @@ fn msgLine(e: def.LogEntry, out: []u8) []const u8 {
             p = copyInto(out, p, " Hull.");
         },
         fight.MSG_SUBDUE_OK => {
-            p = copyInto(out, p, "Subdued.");
+            p = copyInto(out, p, "Subdued ");
+            p = copyInto(out, p, creatureName(d.id));
+            p = copyInto(out, p, " (");
+            p = intInto(out, p, d.subdue_chance);
+            p = copyInto(out, p, "%).");
         },
         fight.MSG_SUBDUE_FAIL => {
-            p = copyInto(out, p, "Subdue attempt fails. Last Surge!");
+            p = copyInto(out, p, "Subdue failed - ");
+            p = copyInto(out, p, creatureName(d.id));
+            p = copyInto(out, p, " surges! (");
+            p = intInto(out, p, d.subdue_chance);
+            p = copyInto(out, p, "%).");
         },
         fight.MSG_KILL => {
             p = copyInto(out, p, "Kill. Overshoot ");
@@ -226,7 +258,7 @@ fn msgLine(e: def.LogEntry, out: []u8) []const u8 {
     return out[0..p];
 }
 
-fn renderLog(sc: *Screen, s: *const def.GameState, y0: i32) void {
+fn renderLog(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef, y0: i32) void {
     var first: i32 = 0;
     if (s.log_n > LOG_LINES) first = s.log_n - LOG_LINES;
     var i: i32 = first;
@@ -234,7 +266,7 @@ fn renderLog(sc: *Screen, s: *const def.GameState, y0: i32) void {
     while (i < s.log_n and y < ROWS) : (i += 1) {
         var buf: [96]u8 = undefined;
         const e = s.log[@intCast(usize, i)];
-        const line = msgLine(e, buf[0..]);
+        const line = msgLine(e, d, buf[0..]);
         _ = put(sc, 0, y, line);
         y += 1;
     }
@@ -251,7 +283,7 @@ fn renderModal(sc: *Screen, s: *const def.GameState, d: *const def.CreatureDef) 
     _ = put(sc, 2, 6, "partly returns, it hits harder and moves");
     _ = put(sc, 2, 7, "faster. The fight goes on.");
 
-    _ = put(sc, 2, 9, "[A]ttempt   [F]lee (fight on)   [Esc] Cancel");
+    _ = put(sc, 2, 9, "[A]ttempt   [F] Fight on   [Esc] Cancel");
     _ = s;
 }
 
@@ -269,13 +301,13 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
     x = put(sc, x, 1, "  ");
     x = put(sc, x, 1, roleName(d.role));
     x = put(sc, x, 1, "  SPD ");
-    _ = putInt(sc, x, 1, d.speed);
+    _ = putInt(sc, x, 1, effectiveSpeed(s, d));
 
     putBar(sc, 3, "HP     ", s.fight.hp, s.fight.max_hp);
     putBar(sc, 4, "RESOLVE", s.fight.res, s.fight.max_res);
     putBar(sc, 5, "HULL   ", s.fight.hull, s.fight.max_hull);
 
-    renderLog(sc, s, 7);
+    renderLog(sc, s, d, 7);
 
     _ = put(sc, 0, 15, "[S]trike [R]estrain [E]quipment [F]lee");
 }

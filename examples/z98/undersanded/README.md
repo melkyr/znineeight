@@ -1,18 +1,21 @@
-# UNDERSANDED — M1 platform skeleton
+# UNDERSANDED — M1 platform + M2 console fight
 
-Two no-CRT Win9x executables built from one source tree, proving the link
-configs and platform plumbing before any game code exists (spec §26/§32/§33,
-G15 scaffold). Both are Z98 → C89 → `i686-w64-mingw32-gcc` PE32 images that
-import only GDI32/KERNEL32/USER32 and pass `check_win9x_imports.sh <exe> 9x`.
+Two no-CRT Win9x executables built from one source tree (spec §26/§32/§33).
+Both are Z98 → C89 → `i686-w64-mingw32-gcc` PE32 images that import only
+GDI32/KERNEL32/USER32 and pass `check_win9x_imports.sh <exe> 9x`.
 
 | Binary | Subsystem | Entry | Presentation |
 | :--- | :--- | :--- | :--- |
 | `under.exe` | `WINDOWS_GUI` | `main.zig` | windowed terminal mode: `std_gfx.gfxOpen(80, 30)` titled `UNDERSANDED` |
-| `undtool.exe` | `WINDOWS_CUI` | `main_console.zig` | console/headless: `gfxOpenMemory(80, 30)` + stdout, no window |
+| `undtool.exe` | `WINDOWS_CUI` | `main_console.zig` | **M2 playable console fight**: `std_io` text frame + stdin keys, no window |
 
-`app.zig` is the shared skeleton used by both entries. There is no runtime
-`--headless` flag: the mode is selected at build/link time (Ruling A), because
-Z98 has no program-level `-D` build option.
+`undtool.exe` now runs the playable M2 text fight: on start it prints a 1–5
+creature chooser, then the fight frame after every stdin key (`S`/`R`/`E`/`F`,
+with the rare/named subdue modal on `A`/`F`/`Esc`) until an outcome line.
+`under.exe` keeps the M1 skeleton surface unchanged. `app.zig` owns the shared
+init/probe path and routes the console entry to `fight_console.zig`. There is
+no runtime `--headless` flag: the mode is selected at build/link time
+(Ruling A), because Z98 has no program-level `-D` build option.
 
 ## Skeleton behaviour
 
@@ -26,7 +29,8 @@ Z98 has no program-level `-D` build option.
    (backtrace) beside the writable data and prints one line to stderr.
 4. Read `sample.txt` from the exe dir (installed content, spec §32).
 5. Write `probe_out.txt` into the writable dir with the sample bytes.
-6. Draw one line (`UNDERSANDED M1: skeleton OK`) on the given surface.
+6. GUI entry (`under.exe`) draws one line (`UNDERSANDED M1: skeleton OK`) on
+   the given surface; console entry (`undtool.exe`) runs the playable fight.
 7. Exit 0.
 
 `undtool.exe` also prints the resolved paths, the surface line, and the sample

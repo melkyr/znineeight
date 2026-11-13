@@ -198,6 +198,62 @@ fn tRenderLogLine() bool {
     return contains(text, "You Strike for");
 }
 
+fn tRenderEffectiveSpeed() bool {
+    var s: def.GameState = undefined;
+    game.startFight(&s, 2);
+    const d = creatures.defAt(2);
+
+    var sc: render.Screen = undefined;
+    var buf: [4096]u8 = undefined;
+
+    s.fight.hp = 35;
+    render.renderFrame(&s, &d, &sc);
+    if (!contains(dumpScreen(&sc, buf[0..]), "SPD 10")) return false;
+
+    s.fight.hp = 36;
+    render.renderFrame(&s, &d, &sc);
+    if (!contains(dumpScreen(&sc, buf[0..]), "SPD 6")) return false;
+    return true;
+}
+
+fn tRenderSurgedSpeed() bool {
+    var s: def.GameState = undefined;
+    game.startFight(&s, 0);
+    const d = creatures.defAt(0);
+
+    fight.lastSurge(&s);
+    fight.lastSurge(&s);
+
+    var sc: render.Screen = undefined;
+    render.renderFrame(&s, &d, &sc);
+    var buf: [4096]u8 = undefined;
+    var text = dumpScreen(&sc, buf[0..]);
+    if (!contains(text, "SPD 14")) return false;
+
+    fight.lastSurge(&s);
+    fight.lastSurge(&s);
+    render.renderFrame(&s, &d, &sc);
+    text = dumpScreen(&sc, buf[0..]);
+    return contains(text, "SPD 16");
+}
+
+fn tRenderSubdueLogCopy() bool {
+    var s: def.GameState = undefined;
+    game.startFight(&s, 0);
+    const d = creatures.defAt(0);
+
+    var i: i32 = 0;
+    while (i < 20 and s.fight.outcome == def.OUT_ONGOING) : (i += 1) {
+        game.gameStep(&s, def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 });
+    }
+    if (s.fight.outcome != def.OUT_SUBDUE) return false;
+
+    var sc: render.Screen = undefined;
+    render.renderFrame(&s, &d, &sc);
+    var buf: [4096]u8 = undefined;
+    return contains(dumpScreen(&sc, buf[0..]), "Subdued Mystic Eel (95%).");
+}
+
 fn tRenderModal() bool {
     var s: def.GameState = undefined;
     game.startFight(&s, 3);
@@ -213,7 +269,8 @@ fn tRenderModal() bool {
     if (!contains(text, "Anemoniacus")) return false;
     if (!contains(text, "60% chance")) return false;
     if (!contains(text, "[A]ttempt")) return false;
-    if (!contains(text, "[F]lee")) return false;
+    if (!contains(text, "[F] Fight on")) return false;
+    if (contains(text, "[F]lee")) return false;
     if (!contains(text, "[Esc]")) return false;
     return true;
 }
@@ -233,11 +290,15 @@ fn tCreatureTable() bool {
     const r0 = [5]i32{ 3, 3, 3, 6, 6 };
     const r1 = [5]i32{ 9, 9, 9, 18, 18 };
     const r2 = [5]i32{ 15, 15, 15, 30, 30 };
+    const roles = [5]i32{ 1, 1, 1, 3, 3 };
+    const fams = [5]i32{ 1, 1, 2, 10, 11 };
 
     var i: usize = 0;
     while (i < 5) : (i += 1) {
         const d = creatures.DEFS[i];
         if (d.id != ids[i]) return false;
+        if (d.role != roles[i]) return false;
+        if (d.family != fams[i]) return false;
         if (d.hp != hps[i]) return false;
         if (d.resolve != res[i]) return false;
         if (d.speed != spd[i]) return false;
@@ -344,19 +405,22 @@ fn tSmokeSubdue() bool {
     printSmoke("subdue", r);
     if (r.outcome != def.OUT_SUBDUE) return false;
     if (r.saw_modal) return false;
+    if (r.steps != 8) return false;
     return true;
 }
 
 fn tSmokeKill() bool {
     const r = runSequence(2, "SSSSSSSSSSSS");
     printSmoke("kill", r);
-    return r.outcome == def.OUT_KILL;
+    if (r.outcome != def.OUT_KILL) return false;
+    return r.steps == 12;
 }
 
 fn tSmokeOverkill() bool {
     const r = runSequence(0, "SSSS");
     printSmoke("overkill", r);
-    return r.outcome == def.OUT_OVERKILL;
+    if (r.outcome != def.OUT_OVERKILL) return false;
+    return r.steps == 4;
 }
 
 // Rare path smoke: all-Restrain drives Anemoniacus to the modal, then A rolls.
@@ -365,7 +429,7 @@ fn tSmokeRareModalSubdue() bool {
     printSmoke("rare_modal_subdue", r);
     if (r.outcome != def.OUT_SUBDUE) return false;
     if (!r.saw_modal) return false;
-    return true;
+    return r.steps == 37;
 }
 
 pub fn main() void {
@@ -376,6 +440,9 @@ pub fn main() void {
     report("render_no_game_state_mutation", tRenderNoMutation());
     report("render_zero_and_max_bars_no_panic", tRenderZeroAndMaxBars());
     report("render_log_line_from_msg_table", tRenderLogLine());
+    report("render_effective_speed_steel_tuna", tRenderEffectiveSpeed());
+    report("render_effective_speed_last_surge_cap", tRenderSurgedSpeed());
+    report("render_subdue_log_copy_9_4", tRenderSubdueLogCopy());
     report("render_subdue_modal", tRenderModal());
     report("creatures_table_5_rows_14_2", tCreatureTable());
     report("creatures_behaviors_14_3", tCreatureBehaviors());
