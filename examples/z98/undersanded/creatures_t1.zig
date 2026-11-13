@@ -142,7 +142,7 @@ fn steelTuna() def.CreatureDef {
     return d;
 }
 
-// Row 18 — Anemoniacus (95/115/7/9, rare subdue 60, Thrash +10,
+// Row 18 — Anemoniacus (95/80/7/9, rare subdue 65, Thrash +10,
 // Discharge 10 Hull when HP crosses below 50%).
 fn anemoniacus() def.CreatureDef {
     var d = blank();
@@ -150,11 +150,11 @@ fn anemoniacus() def.CreatureDef {
     d.family = 10;
     d.role = ROLE_RARE;
     d.hp = 95;
-    d.resolve = 115;
+    d.resolve = 80;
     d.speed = 7;
     d.attack = 9;
     d.thrash_regen = 10;
-    d.subdue_chance = 60;
+    d.subdue_chance = 65;
     d.discharge_stat = STAT_HP;
     d.discharge_th = 48;
     d.discharge_dmg = 10;
@@ -167,7 +167,7 @@ fn anemoniacus() def.CreatureDef {
     return d;
 }
 
-// Row 19 — Freezing Perch (105/95/13/10, rare subdue 60, Despair +8,
+// Row 19 — Freezing Perch (105/95/13/10, rare subdue 65, Despair +8,
 // flees next turn if a single hit deals >20% max HP (21)).
 fn freezingPerch() def.CreatureDef {
     var d = blank();
@@ -179,7 +179,7 @@ fn freezingPerch() def.CreatureDef {
     d.speed = 13;
     d.attack = 10;
     d.despair_regen = 8;
-    d.subdue_chance = 60;
+    d.subdue_chance = 65;
     d.flee_kind = 1;
     d.flee_th = 20;
     d.sale = 55;

@@ -34,7 +34,7 @@ pub const PENDING_ON: i32 = 1;
 
 // ---- Last Surge (§9.5) ----------------------------------------------------
 
-pub const LAST_SURGE_RESTORE_PCT: i32 = 30;
+pub const LAST_SURGE_RESTORE_PCT: i32 = 25;
 pub const LAST_SURGE_ATK_PP: i32 = 25;
 pub const LAST_SURGE_SPEED_ADD: i32 = 2;
 pub const LAST_SURGE_SPEED_CAP: i32 = 6;

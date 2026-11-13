@@ -221,8 +221,8 @@ Verdict: **no amendment needed** for M2.
   | 1 | Mystic Eel | Eel | common | Z1,Z2 | both | 70 | 80 | 10 | 6 | 95 | 20 | 3/9/15 |
   | 2 | Mystic Electric Eel | Eel | common | Z1,Z2 | night | 80 | 100 | 16 | 7 | 95 | 30 | 3/9/15 |
   | 4 | Steel Tuna | Tuna | common | Z1,Z2 | both | 120 | 70 | 6 | 8 | 95 | 20 | 3/9/15 |
-  | 18 | Anemoniacus *(flex)* | Anemone | rare | Z2 | both | 95 | 115 | 7 | 9 | 60 | 50 | 6/18/30 |
-  | 19 | Freezing Perch *(flex)* | Perch | rare | Z3 | both | 105 | 95 | 13 | 10 | 60 | 55 | 6/18/30 |
+  | 18 | Anemoniacus *(flex)* | Anemone | rare | Z2 | both | 95 | 80 | 7 | 9 | 65 | 50 | 6/18/30 |
+  | 19 | Freezing Perch *(flex)* | Perch | rare | Z3 | both | 105 | 95 | 13 | 10 | 65 | 55 | 6/18/30 |
 
 - Behaviors verbatim from spec §14.3:
   - Mystic Eel — Despair override **+8**. Tutorial creature, learnable bare.
@@ -343,13 +343,13 @@ fight ends; `A` is supplied at each rare modal unless "declined" is noted.
 | 1 | Mystic Eel | SUBDUE | `R×8` | 8 | 58 | Common silent auto-roll; Thrash coupling (`msg 9`, +5 Resolve) fired 5×, forcing the extra Restrains; no parting hit on success. |
 | 2 | Steel Tuna | KILL | `S×12` | 12 | 12 | 60% armor chipped every Strike; Despair coupling regenerated HP 5×; HP<30% Speed 6→10 still only ties the player; overshoot 3 < margin 12 → Kill, not Overkill. |
 | 3 | Mystic Eel | OVERKILL | `S×4` | 4 | 82 | One Despair coupling tick; overshoot 8 ≥ margin 7; creature acted in every live round. |
-| 4 | Anemoniacus | SUBDUE | `R` cycled + `A` at modal | 37 | 0 | Rare modal path: 19 Thrash coupling ticks (+10 Resolve) between attempts; 2 failed Attempts → 2 Last Surges (Res 115→35 each), then success; Hull drained to 0; no discharge. |
+| 4 | Anemoniacus | SUBDUE | `R` cycled + `A` at modal | 15 | 0 | Rare modal path: 14 Restrains then one successful Attempt; 11 Thrash coupling ticks (+10 Resolve); no failed Attempt/Last Surge; Hull drained to 0; no discharge. |
 | 5 | Freezing Perch | CREATURE_FLED | `SRSR` cycled | 6 | 50 | 4 bar switches; the last Strike (24) exceeded 21, so the Perch fled next turn. |
 | 6 | Mystic Electric Eel | OVERKILL | `RSRSRSRS` cycled | 8 | 36 | Discharge fired once (8 Hull) when Resolve crossed below 50%; 7 switches, 1 coupling tick; overshoot 8 ≥ margin 8. |
 | 7 | Steel Tuna | SUBDUE | `R×10` | 7 | 52 | Restrain-only path; 4 Thrash coupling ticks (+5 Resolve); armor irrelevant to Resolve; silent 95% roll. |
 | 8 | Mystic Electric Eel | SUBDUE | `R×12` | 13 | 1 | Speed 16 acted first each round; 9 Thrash ticks; one discharge tick; subdue at Hull 1. |
 | 9 | Freezing Perch | SUBDUE | `R×12` | 10 | 10 | Rare modal path, first Attempt succeeded; 5 Thrash ticks; no discharge/surge. |
-| 10 | Anemoniacus | OVERKILL | `SRSRSR` cycled | 11 | 0 | No modal opened in this row (killed before Resolve reached 0, `modal=no declines=0`); 10 switches, 3 coupling ticks; one discharge (10 Hull) on the HP<50% crossing; overshoot 10 ≥ margin 9. |
+| 10 | Anemoniacus | KILL | `SRSRSR` cycled | 9 | 18 | No modal opened in this row (killed before Resolve reached 0, `modal=no declines=0`); 8 switches, 1 coupling tick; one discharge (10 Hull) on the HP<50% crossing; overshoot 2 < margin 9 → Kill, not Overkill. |
 | 11 | Steel Tuna | KILL | `P` then `S×12` | 7 | 52 | Plate spent one action to negate the 60% armor; the same Strike stream killed in 7 actions instead of 12 (fight 2), with only 2 coupling ticks. Overshoot 1 < margin 12. |
 | 12 | Mystic Eel | OVERKILL | `E` then `S×4` | 5 | 76 | Bare Equipment (no tool) only bought a free creature hit; 1 coupling tick; overshoot 8 ≥ margin 7. |
 | 13 | Mystic Eel | PLAYER_FLED | `F` | 1 | 100 | Player flee ends the fight immediately, no creature action. |
@@ -359,12 +359,12 @@ fight ends; `A` is supplied at each rare modal unless "declined" is noted.
 | 17 | Steel Tuna | SUBDUE | `RRSRRSRRSRRS` cycled | 11 | 20 | 6 bar switches, 7 coupling ticks; Thrash pulled Resolve back up (`msg 9`, +5) before the silent subdue. |
 | 18 | Mystic Eel | SUBDUE | `RRSRRS` cycled | 10 | 46 | 6 bar switches, 2 coupling ticks; mixed stream still closes both gates for a 95% subdue. |
 | 19 | Freezing Perch | CREATURE_FLED | `RRSSRRSS` cycled | 5 | 60 | 1 bar switch; second Strike (25) exceeded 21, so the Perch fled next turn. |
-| 20 | Anemoniacus | OVERKILL | `RRRRS` cycled, modal declined | 26 | 0 | Rare modal genuinely opened at Resolve 0 and was declined (`modal=yes declines=1`, no RNG); after declining the gate never re-opens; 9 switches, 4 coupling ticks, one discharge; overshoot 9 ≥ margin 9. |
+| 20 | Anemoniacus | OVERKILL | `RRRRS` cycled, modal declined | 26 | 0 | Rare modal genuinely opened at Resolve 0 and was declined (`modal=yes declines=1`, no RNG); after declining the gate never re-opens; 9 switches, 6 coupling ticks, one discharge; overshoot 9 ≥ margin 9. |
 
 Playable-path evidence (already captured in the Task 4 report from the real
 console path under Wine): `undtool.exe` transcripts completed SUBDUE in 8
 actions (fight 1), KILL in 12 (fight 2), OVERKILL in 4 (fight 3), and the rare
-modal SUBDUE in 37 (fight 4). Those interactive transcripts are the playable
+modal SUBDUE in 15 (fight 4). Those interactive transcripts are the playable
 path; the table above is the deterministic, machine-checked equivalent.
 
 ### §41 three questions
@@ -377,7 +377,7 @@ path; the table above is the deterministic, machine-checked equivalent.
    `RRSSRRSS`: 2 each). Restrain pushes
    Resolve down and opens Thrash (Res<50%, HP>50%), which regenerates Resolve,
    so you switch back to Strike (fight 1: 5 Thrash ticks in an all-Restrain
-   run; fight 4: 19 ticks; fights 7/8/9: 4/9/5 ticks). The discharge rows add a
+   run; fight 4: 11 ticks; fights 7/8/9: 4/9/5 ticks). The discharge rows add a
    second forced switch: repeating one bar through a threshold crossing costs
    8–10 Hull (fights 6, 8, 10, 15, 20).
 2. **Does the equipment slot change how I fight, or is it just a damage bonus?**
@@ -458,8 +458,8 @@ and headless, and the M2 gate already drives all five creatures through
   `gameStep` calls/steps or rare-modal fights are undercounted.
 - **M3 lever 2 is wired.** `LAST_SURGE_RESTORE_PCT` (`fight.zig:37`) drives
   `lastSurge` through `math.ceilPct(max_res, LAST_SURGE_RESTORE_PCT)`
-  (`fight.zig:350`); the 30 default is bit-identical to the old `ceilPct30`,
-  and setting it to 25 changes the restore.
+  (`fight.zig:350`); the previous 30% default was bit-identical to the old
+  `ceilPct30`, and the M3 lever sets it to 25.
 - **Replay headers (`tool=`, `zone=`, `phase=`).** M2 exposes `FightState.tool`
   and the tool constants; M3 can set/record these through public state. Sonar
   itself is later content, not an M3 surface requirement.
@@ -509,3 +509,54 @@ and headless, and the M2 gate already drives all five creatures through
     `electric_eel` = Mystic Electric Eel, `steel_tuna` = Steel Tuna,
     `anemoniacus` = Anemoniacus, `freezing_perch` = Freezing Perch
     (`eel|electric_eel|steel_tuna|anemoniacus|freezing_perch`).
+
+## M3 gate (final)
+
+`tests/tier_m3_sim.sh` is the M3 FAST/native gate. Run at the gate loadout
+(`--sim 200 --seed 98 --hull 125`) it reports **61 passed / 0 failed / 1
+evidence skip**: `TIER_M3 PASS 61 passed / 0 failed` (the skip is the SLOW
+Wine `undtool.exe` evidence section: no built exe / wine in the native-only
+worktree; it is non-gating by design).
+
+| Creature | token | actions | rare actions | ascent % | switches % | prompts |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| Mystic Eel | `eel` | 8 | 0 | 0.0 | 100 | 0 |
+| Mystic Electric Eel | `electric_eel` | 10 | 0 | 0.0 | 100 | 0 |
+| Steel Tuna | `steel_tuna` | 11 | 0 | 0.0 | 100 | 0 |
+| Anemoniacus | `anemoniacus` | 11 | 11 | 9.5 | 100 | 269 |
+| Freezing Perch | `freezing_perch` | 5 | 5 | 5.5 | 25 | 65 |
+
+- Rare-fight avg actions `≤12`: PASS (Anemoniacus 11, Freezing Perch 5).
+- Ascent rate `≤15%` at Hull 125 (`ascent_pm ≤ 150`): PASS (Anemoniacus 95pm,
+  Freezing Perch 55pm; commons 0pm).
+- Bar-switch `>0`: PASS (100% on eel/electric_eel/steel_tuna/anemoniacus, 25%
+  on freezing_perch). Commons prompts `=0`: PASS. Exact report header
+  `defs actions=steps ascent=hull0 bars=switches prompt=modal`: PASS.
+  Fixed-seed determinism (identical output run twice): PASS.
+- `--test-rules` exit 0 with `rules_ok=100`: PASS. `--replay <fixture>` exact
+  pinned line: PASS (`replay_eel_98.rep`). `--dump-grid --screen fight`
+  byte-identical to `dump_grid_fight.golden`: PASS. Replay v2 writer artifact
+  byte-identical to `replay_eel_98.rep`: PASS.
+- Unit drivers: `replay_test` 4/4, `sim_test` 7/7, `ruletest_test`
+  (`rules_ok=100`), `safety_test` 5/5 (incl. decline-no-RNG,
+  commons-never-prompt, surge caps), `replay_cli_test` 3/3.
+- Prior gates: `tier_m1_std.sh` `TIER_M1 PASS` (37 passed / 0 failed / 0
+  evidence skips); `tier_m2_fight.sh` `TIER_M2 PASS 29 passed / 0 failed`
+  (core 12, behavior 25, fight 39, ui 17); z9edit `tier_edit.sh` 38/0 with
+  lexer md5 `dcc81009e9a36c86e4d90e104c439871` byte-identical 3x.
+
+### Lever trace + content rebalance (user-authorized)
+
+- **Lever 1:** both flex rares' `subdue_chance` 60→65 (Anemoniacus and
+  Freezing Perch). **Lever 2:** `LAST_SURGE_RESTORE_PCT` 30→25
+  (`res = (max_res*25 + 99)/100`, integer ceil).
+- **Rebalance:** Anemoniacus Resolve 115→80 in `creatures_t1.zig` (HP 95,
+  Thrash +10, Discharge 10 Hull unchanged). This was required to meet the
+  ≤12 rare-actions / ≤15% ascent gates at Hull 125 and is recorded as spec
+  §38 P21 under the user's “go 1, yes lets rebalance” authorization. No other
+  creature, coupling constant, or gate value was changed.
+- **Cross-seed spread:** worst measured Anemoniacus ascent across seeds is
+  **15.5% (155 pm) at seeds 99 and 2024** (11 rare actions, 100% switches,
+  prompts 284/286); seed 98 is the pinned gate seed per plan. Recorded, not
+  tuned further.
+

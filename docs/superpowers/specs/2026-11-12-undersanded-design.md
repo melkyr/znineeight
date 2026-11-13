@@ -371,7 +371,7 @@ No audio cue for failure. The 5% is felt through a loud line, not an interruptio
 
 | Effect | Rule |
 | :--- | :--- |
-| Resolve restore | every surge: `res = (max_res * 30 + 99) / 100` (integer ceil) |
+| Resolve restore | every surge: `res = (max_res * 25 + 99) / 100` (integer ceil) — M3 lever 2 |
 | Attack | **+25 percentage points, once.** Never stacks. |
 | Speed | +2 per surge, **capped at +6** |
 | `subdue_declined` | stays false — the gate can re-fire |
@@ -379,7 +379,7 @@ No audio cue for failure. The 5% is felt through a loud line, not an interruptio
 
 Percentages **accumulate then apply once**: `atk_pct = 100 + 50 (Angler below 50%) + 25 (surged)`. Never chain multipliers.
 
-**`max_res` includes grudge and wariness.** Mileel's +30 and release wariness +15 raise both `res` and `max_res` for that fight, so the 30% restore uses the fight's real maximum.
+**`max_res` includes grudge and wariness.** Mileel's +30 and release wariness +15 raise both `res` and `max_res` for that fight, so the 25% restore uses the fight's real maximum.
 
 At 60%: P(≥2 failures) = 16%, P(≥3) = 6.4%. At 80%: 4%. At 95%: 5% get one surge.
 
@@ -620,8 +620,8 @@ Full-game roster target: **49–55 creatures** (T1 17 + 2 flex + T2–T4 30–36
 | 15 | Brine Angler | Angler | rare | Z3 | night | 110 | 100 | 9 | 10 | 60 | 50 | 6/18/30 |
 | 16 | Ironclad Wrasse | Wrasse | rare | Z3 | day | 150 | 140 | 7 | 11 | 60 | 70 | 6/18/30 |
 | 17 | **The Derelict** | Boss | boss | D | both | 300 | — | 7→12 | 10→15 | −1 | — | 20/40 |
-| 18 | **Anemoniacus** *(flex)* | Anemone | rare | Z2 | both | 95 | 115 | 7 | 9 | 60 | 50 | 6/18/30 |
-| 19 | **Freezing Perch** *(flex)* | Perch | rare | Z3 | both | 105 | 95 | 13 | 10 | 60 | 55 | 6/18/30 |
+| 18 | **Anemoniacus** *(flex)* | Anemone | rare | Z2 | both | 95 | 80 | 7 | 9 | **65** | 50 | 6/18/30 |
+| 19 | **Freezing Perch** *(flex)* | Perch | rare | Z3 | both | 105 | 95 | 13 | 10 | **65** | 55 | 6/18/30 |
 
 Role subtotals (rows 1–17): **8 commons, 2 named, 6 rares, 1 boss** = 17. Rows 18–19 fill the 2 flex slots as unique-band rares (§21.1) and are the M2/M3 sim creatures.
 
@@ -1152,7 +1152,7 @@ pub const Effect = struct { op: i32, a: i32, b: i32 };
 pub fn applyPct(v: i32, pct: i32) i32 { return (v * pct) / 100; }
 ```
 
-**Truncation toward zero, applied once, after all multipliers accumulate.** Never chain `applyPct`. Margin: `(max_hp * margin_pct) / 100`. Surge restore uses integer ceil: `(max_res * 30 + 99) / 100`.
+**Truncation toward zero, applied once, after all multipliers accumulate.** Never chain `applyPct`. Margin: `(max_hp * margin_pct) / 100`. Surge restore uses integer ceil: `(max_res * 25 + 99) / 100` (M3 lever 2).
 
 ### 25.5 RNG — xorshift32
 
@@ -1780,12 +1780,13 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P12 | `data.z98` read from exe dir; fallback dir is for mutable files only; journal entry at first fight end (any outcome); `?` shows embedded manual text; zone milestones = first arrival |
 | P13 | **API generation lock: DirectX 7 only** — no DX8 anywhere; DX7 runtime prerequisite shipped/stated |
 | P14 | Console mode = COMMAND.COM-era plain text, with a **native *nix build as the authoritative CI path**; test model: native gates, Wine evidence-only |
-| P15 | Levers adjudication: subdue base 95/80/60/−1, surge restore 30%, respawn triples are **spec-fixed**; M3's two levers are pre-authorized spec amendments when pulled; M15 tunes only in-band values (encounter weights, sale prices within §21.3 bands) |
+| P15 | Levers adjudication: subdue base 95/80/60/−1, surge restore 30% (now 25% — M3 lever 2 pulled), respawn triples are **spec-fixed**; M3's two levers are pre-authorized spec amendments when pulled (lever 1: Anemoniacus/Freezing Perch subdue 60→65; lever 2: surge restore 30%→25%); M15 tunes only in-band values (encounter weights, sale prices within §21.3 bands) |
 | P16 | Rares unique per tier band (invented species names, e.g. Anemoniacus / Freezing Perch); flex slots filled by the two sim rares |
 | P17 | Win9x save write path: delete stale `.bak` before rename (MoveFileA no-overwrite) + startup recovery |
 | P18 | RNG determinism contract (§25.5 draw table, zero-seed guard, warm-up); art goldens = pre-present framebuffer dumps |
 | P19 | **No committed tooling outside Z98 + shell.** Python = transitory, uncommitted (asset translation, golden-seed generation), never a build/test dependency. `.ZSP` + SVG sources + Z98 validator are the artifacts of record. |
 | P20 | Fight length gates ≤12/12/14/15 (T1–T4); damage ranges never creep; **boss feasibility is a gate** (minimalist T4-proper loadout, kill-rate targets §21.3) |
+| P21 | **M3 levers pulled (user-authorized “go 1, yes lets rebalance”):** lever 1 rare subdue 60→65 (Anemoniacus + Freezing Perch); lever 2 Last Surge restore 30%→25%. Anemoniacus content rebalance Resolve 115→80 was required to meet the ≤12 rare-actions / ≤15% ascent gates at Hull 125 (seed 98: 11 actions, 9.5% ascent); measured cross-seed spread worst 15.5% at seeds 99/2024. Gate is seed-98-pinned per plan. |
 
 ### Game design
 
