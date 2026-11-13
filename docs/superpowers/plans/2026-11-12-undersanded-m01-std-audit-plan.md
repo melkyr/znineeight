@@ -84,3 +84,29 @@
 ### Task 8: Next-milestone amendment review (M2)
 
 - [ ] Read `2026-11-12-undersanded-m02-fight-core-plan.md`. Judge whether the std surfaces M2 consumes (`game.zig` purity, rng, consts) are satisfied by M1's actuals. If an amendment is required, STOP-present it; else record "no amendment needed" in NOTES.md.
+
+---
+
+## Post-gate tasks (final-review follow-ups; run after Task 8, before merge)
+
+### Task 0.1: Doc accuracy
+
+**Files:** `docs/superpowers/specs/2026-11-12-undersanded-design.md` (§23 G2 row), `examples/z98/undersanded/NOTES.md`, `examples/torrent_example_defects.md` (D17 wording).
+
+- [ ] Spec §23 G2 row → `std_str: splitOnce only; int↔text via std_parse (G17 closed by reuse)`. NOTES closure line → "M1 closed G2/G4/G5/G10/G11/G13/G14; G12 was CLOSED-ALREADY (reuse `std_math`, M2 amendment `bbc4cd27`)". Add `GetForegroundWindow` (USER32 allow-list) to the NOTES Task 4 amendment record beside `MsgWaitForMultipleObjectsEx`. Align D17's probe wording with the actual `-ffast -o` command (doc-only). Verify by grep (no stale G2 `parseInt`; G10 in closure list; GetForegroundWindow present). Commit `docs(undersanded): M1 follow-up accuracy fixes`.
+
+### Task 0.2: Tier evidence wiring
+
+**Files:** `examples/z98/undersanded/tests/tier_m1_std.sh`.
+
+- [ ] In the SLOW section: `EXTRA_LIBS="-luser32 -lgdi32" bash scripts/win32_cross/cross_nocrt.sh "$ZIG" examples/z98/gfx_demo/main.zig "$OUT/gfx_ev/work" "$OUT/gfx_ev/gfx_demo.exe"`, then run under Xvfb+Wine with `--event-selftest`; assert `EVENT_SELFTEST OK` via `evidence_pass`/`evidence_fail`; skip loudly when wine/Xvfb are absent. Evidence-only — never part of the FAST gate. Fix the warning-log check: a missing/empty log passes; grep for actual `warning[` markers instead of `[ ! -s ]`.
+- [ ] Verify: `ZIG=/tmp/zig1-m1/zig1_5_clean OUT=/tmp/m1_polish sh examples/z98/undersanded/tests/tier_m1_std.sh` → `TIER_M1 PASS` with the new evidence lines. Commit `test(undersanded): wire live gfx event selftest into M1 tier`.
+
+### Task 0.3: Preflight items
+
+**Files:** `sf/src/std_debug.zig`, `examples/z98/undersanded/app.zig`, `examples/z98/undersanded/paths.zig`, `examples/z98/undersanded/tests/paths_test.zig`, `examples/z98/undersanded/NOTES.md`.
+
+- [ ] Additive `pub fn backtraceLimited(ctx: *const TrapContext, out: *buf_mod.Buf, max_frames: usize) !void` (same `ebp` walk, stops at `max_frames`); keep `backtrace` as a wrapper passing an unbounded max; `app.zig` calls `backtraceLimited(..., 1024)` so the trap handler cannot grow past its pre-allocated budget.
+- [ ] `pathJoin83`: reject joins of 260+ bytes (`Win98 MAX_PATH`) → `null`; add the rejection test.
+- [ ] Remove the dead `putPath()` (`app.zig:73-79`). Record accepted evidence-only items (black screenshot, skip accounting) and the frame cap in NOTES.
+- [ ] Verify: `cp sf/src/std_debug.zig /tmp/zig1-m1/lib/`; native `paths_test` green `-fsafe -W`; `tier_m1_std.sh` → PASS; `tier_edit.sh` → PASS with byte-identical goldens (std_debug is additive). Commit `fix(std): cap backtrace frames; example(undersanded): MAX_PATH guard + cleanup`.
