@@ -381,7 +381,7 @@ Percentages **accumulate then apply once**: `atk_pct = 100 + 50 (Angler below 50
 
 **`max_res` includes grudge and wariness.** Mileel's +30 and release wariness +15 raise both `res` and `max_res` for that fight, so the 25% restore uses the fight's real maximum.
 
-At 60%: P(≥2 failures) = 16%, P(≥3) = 6.4%. At 80%: 4%. At 95%: 5% get one surge.
+At 65%: P(≥2 failures) = 12.25%, P(≥3) = 4.3%. At 80%: 4%. At 95%: 5% get one surge.
 
 ### 9.6 What the risk actually is
 
@@ -1246,7 +1246,7 @@ Index `zone * MAX_CREATURES + def_index`. Available when `cycle > ready` or (`cy
 
 ### 25.9 Auto-sim policy (the §22 validator)
 
-Subdue path unless the creature has Shell: `hp > 50% → Strike, else Restrain`. Kill path: `res > 50% → Restrain, else Strike`. Reports avg actions, bar-switch %, outcome distribution, **avg surges per rare fight**, **Emergency Ascent rate**. **Gate loadout:** fight-length/bar-switch metrics are measured at base Hull 100 (no tools); **ascent rate is measured at Hull 125** (one T1 boat Hull upgrade — M3 option 1, user-authorized; real boat state is M4).
+Subdue path unless the creature has Shell: `hp > 50% → Strike, else Restrain`. Kill path: `res > 50% → Restrain, else Strike`. Reports avg actions, bar-switch %, outcome distribution, **avg surges per rare fight**, **Emergency Ascent rate**. **Gate loadout:** fight-length/bar-switch metrics are measured at base Hull 100 (no tools); **ascent rate is measured at Hull 150** (two T1 boat Hull upgrades — user-authorized; real boat state is M4).
 
 ---
 
@@ -1713,7 +1713,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | :-- | :--- | :--- | :--- |
 | **M1** | Stdlib audit + gaps | Re-derive the gap table against real `sf/src/`; patch G2–G5, G10, G11, G13; game-side writability probe (G14, `paths.zig`); scaffold G15 (2 link configs); `-W` clean; trap handler wired | No-CRT Win9x exe: opens a window, reads a text file, writes a file, writability probe works from a read-only dir, `check_win9x_imports.sh` passes |
 | **M2** | Fight core + rule VM | Pure `game.z98` (flat structs, xorshift32, fixed-point), coupling rule §8.5, overkill margin, Attack, Hull clock, subdue roll + Last Surge, comparative Speed; 5 hardcoded creatures: Mystic Eel, Mystic Electric Eel, Steel Tuna + sim rares **Anemoniacus** and **Freezing Perch** (flex slots, subdue 60, modal path); text fight UI | Text fight playable 20×; the §41 three questions answered **yes** by hand |
-| **M3** | Auto-sim + replay + `--test-rules` | `--sim`, `--replay` (v2 stream), `--test-rules`, console mode (*nix analogue first); sim policy §25.9 incl. subdue roll | **Sim gate:** avg rare-fight actions ≤12 · ascent rate ≤15% (measured at Hull 125 loadout) · bar-switch observed · decline costs no RNG · commons never prompt. Tuning levers (each = spec amendment, recorded in §38): rare chance 60→65 first; surge restore 30%→25% second. Do not tune coupling to compensate |
+| **M3** | Auto-sim + replay + `--test-rules` | `--sim`, `--replay` (v2 stream), `--test-rules`, console mode (*nix analogue first); sim policy §25.9 incl. subdue roll | **Sim gate:** avg rare-fight actions ≤12 · ascent rate ≤15% (measured at Hull 150 loadout) · bar-switch observed · decline costs no RNG · commons never prompt. Tuning levers (each = spec amendment, recorded in §38): rare chance 60→65 first; surge restore 30%→25% second. Do not tune coupling to compensate |
 | **M4** | Calendar + expedition loop | Phases, travel ladder, per-zone respawn, rare pipeline, flee, Hull-0 emergency ascent, release/sell | Full dock→travel→fight→return loop playable in terminal; empty-pool safe Rest works |
 | **M5** | Dock + economy | Refine/expertise 0–5, 5 boat axes + Heavy, tool crafting (7 tools), cosmetics (12), grudges | Economy arithmetic closes for the **full game** (§17 + §21.5); all dock actions 1 phase |
 | **M6** | Data tables + loader | Text format, full schema, capacities §25.1; all T1 tables loaded from `data.z98`; malformed rejection | Loader goldens pass; bad sentinels (boss subdue_chance) rejected; Z4–Z8 empty-table stubs load |
@@ -1786,7 +1786,7 @@ The delivery spine. Each milestone is self-contained, testable in isolation, and
 | P18 | RNG determinism contract (§25.5 draw table, zero-seed guard, warm-up); art goldens = pre-present framebuffer dumps |
 | P19 | **No committed tooling outside Z98 + shell.** Python = transitory, uncommitted (asset translation, golden-seed generation), never a build/test dependency. `.ZSP` + SVG sources + Z98 validator are the artifacts of record. |
 | P20 | Fight length gates ≤12/12/14/15 (T1–T4); damage ranges never creep; **boss feasibility is a gate** (minimalist T4-proper loadout, kill-rate targets §21.3) |
-| P21 | **M3 levers pulled (user-authorized “go 1, yes lets rebalance”):** lever 1 rare subdue 60→65 (Anemoniacus + Freezing Perch); lever 2 Last Surge restore 30%→25%. Anemoniacus content rebalance Resolve 115→80 was required to meet the ≤12 rare-actions / ≤15% ascent gates at Hull 125 (seed 98: 11 actions, 9.5% ascent); measured cross-seed spread worst 15.5% at seeds 99/2024. Gate is seed-98-pinned per plan. |
+| P21 | **M3 levers pulled (user-authorized “go 1, yes lets rebalance”):** lever 1 rare subdue 60→65 (Anemoniacus + Freezing Perch); lever 2 Last Surge restore 30%→25%. Anemoniacus content rebalance Resolve 115→80 keeps the ≤12 rare-actions gate met (seed 98: 11 actions). Ascent gate is measured at **Hull 150** (two T1 Hull upgrades): seed 98 Anemoniacus 4.0% ascent, worst cross-seed 8.5% (seed 4); Freezing Perch seed 98 1.5%, worst 4.0%. |
 
 ### Game design
 

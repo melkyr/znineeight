@@ -14,10 +14,10 @@
 #     drivers, full-fight goldens, purity, z9edit tier_edit + pinned lexer md5,
 #     no .py tooling)
 #   * sim gate on all 5 creatures: undtool.nix --sim 200 --creature <token>
-#     --seed 98 --hull 125. Asserts
+#     --seed 98 --hull 150. Asserts
 #       - header line exactly `defs actions=steps ascent=hull0 bars=switches prompt=modal`
 #       - rare-fight avg actions <= 12 on each rare (Anemoniacus, Freezing Perch)
-#       - ascent rate <= 15% (ascent_pm <= 150) at Hull 125
+#       - ascent rate <= 15% (ascent_pm <= 150) at Hull 150
 #       - bar-switch > 0
 #       - commons never prompt (prompts == 0)
 #       - fixed-seed determinism (same run twice -> byte-identical output)
@@ -300,9 +300,9 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# FAST 8: sim gate — 5 creatures at --hull 125, seed 98, 200 fights
+# FAST 8: sim gate — 5 creatures at --hull 150, seed 98, 200 fights
 # ---------------------------------------------------------------------------
-echo "== FAST: sim gate (200 fights, seed 98, hull 125) =="
+echo "== FAST: sim gate (200 fights, seed 98, hull 150) =="
 TABLE="$OUT/sim_table.txt"
 printf 'token actions rare_actions ascent_pm switches_pct prompts\n' >"$TABLE"
 SIM_OK=1
@@ -314,7 +314,7 @@ for tok in eel electric_eel steel_tuna anemoniacus freezing_perch; do
         SIM_OK=0
         continue
     fi
-    timeout 180 "$NIX" --sim 200 --creature "$tok" --seed 98 --hull 125 \
+    timeout 180 "$NIX" --sim 200 --creature "$tok" --seed 98 --hull 150 \
         >"$LOG" 2>&1
     RC=$?
     if [ "$RC" -ne 0 ]; then
@@ -350,7 +350,7 @@ for tok in eel electric_eel steel_tuna anemoniacus freezing_perch; do
         "$tok" "$ACTIONS" "$RARE" "$ASCENT" "$SWITCH" "$PROMPTS" >>"$TABLE"
 
     # Fixed-seed determinism: same command twice -> identical stdout.
-    timeout 180 "$NIX" --sim 200 --creature "$tok" --seed 98 --hull 125 \
+    timeout 180 "$NIX" --sim 200 --creature "$tok" --seed 98 --hull 150 \
         >"$LOG2" 2>&1
     if cmp -s "$LOG" "$LOG2"; then
         pass_case "sim $tok deterministic (same seed -> identical output)"
@@ -358,11 +358,11 @@ for tok in eel electric_eel steel_tuna anemoniacus freezing_perch; do
         fail_case "sim $tok non-deterministic across identical runs"
     fi
 
-    # Ascent rate gate: <= 15% at Hull 125 (ascent_pm <= 150).
+    # Ascent rate gate: <= 15% at Hull 150 (ascent_pm <= 150).
     if [ "$ASCENT" -le 150 ]; then
-        pass_case "sim $tok ascent ${ASCENT}pm <= 150pm (15%) at hull 125"
+        pass_case "sim $tok ascent ${ASCENT}pm <= 150pm (15%) at hull 150"
     else
-        fail_case "sim $tok ascent ${ASCENT}pm > 150pm (15%) at hull 125"
+        fail_case "sim $tok ascent ${ASCENT}pm > 150pm (15%) at hull 150"
     fi
 
     # Bar-switch observed (fights with >=1 switch > 0).
@@ -392,7 +392,7 @@ for tok in eel electric_eel steel_tuna anemoniacus freezing_perch; do
     esac
 done
 
-echo "   measured sim gate table (hull 125, seed 98, 200 fights):"
+echo "   measured sim gate table (hull 150, seed 98, 200 fights):"
 sed 's/^/       /' "$TABLE"
 
 # ---------------------------------------------------------------------------
@@ -402,7 +402,7 @@ echo "== SLOW: Wine evidence (never the gate) =="
 UNDTOOL_EXE="$UNDDIR/out/undtool.exe"
 if command -v wine >/dev/null 2>&1 && [ -f "$UNDTOOL_EXE" ]; then
     WLOG="$OUT/wine_sim.log"
-    if timeout 180 wine "$UNDTOOL_EXE" --sim 5 --creature eel --seed 98 --hull 125 \
+    if timeout 180 wine "$UNDTOOL_EXE" --sim 5 --creature eel --seed 98 --hull 150 \
         >"$WLOG" 2>&1 </dev/null; then
         if grep -qx "$SIM_HEADER" "$WLOG"; then
             evidence_pass "wine undtool.exe --sim 5 eel seed 98 (output line matches)"

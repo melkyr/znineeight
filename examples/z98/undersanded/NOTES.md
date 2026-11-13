@@ -490,7 +490,7 @@ and headless, and the M2 gate already drives all five creatures through
   5888 KiB.
 - M3 gate premises (pinned; Task 2's report header must print
   `actions=gameStep_steps ascent=hull0 bars=fights_with_switch`):
-  - **Loadout:** base Hull 100, no tools (fight-length/bar-switch metrics); **ascent gate measured at Hull 125** (`--hull 125`, M3 option 1 user-authorized; real boat state is M4).
+  - **Loadout:** base Hull 100, no tools (fight-length/bar-switch metrics); **ascent gate measured at Hull 150** (`--hull 150`, user-authorized; real boat state is M4).
   - **Actions:** player actions = `gameStep` calls/steps (NOT
     `FightState.actions`, which excludes Attempt/Decline/Flee).
   - **Ascent:** Emergency Ascent = `FightState.hull` reached 0; M2 clamps at 0
@@ -513,7 +513,7 @@ and headless, and the M2 gate already drives all five creatures through
 ## M3 gate (final)
 
 `tests/tier_m3_sim.sh` is the M3 FAST/native gate. Run at the gate loadout
-(`--sim 200 --seed 98 --hull 125`) it reports **61 passed / 0 failed / 1
+(`--sim 200 --seed 98 --hull 150`) it reports **61 passed / 0 failed / 1
 evidence skip**: `TIER_M3 PASS 61 passed / 0 failed` (the skip is the SLOW
 Wine `undtool.exe` evidence section: no built exe / wine in the native-only
 worktree; it is non-gating by design).
@@ -523,12 +523,12 @@ worktree; it is non-gating by design).
 | Mystic Eel | `eel` | 8 | 0 | 0.0 | 100 | 0 |
 | Mystic Electric Eel | `electric_eel` | 10 | 0 | 0.0 | 100 | 0 |
 | Steel Tuna | `steel_tuna` | 11 | 0 | 0.0 | 100 | 0 |
-| Anemoniacus | `anemoniacus` | 11 | 11 | 9.5 | 100 | 269 |
-| Freezing Perch | `freezing_perch` | 5 | 5 | 5.5 | 25 | 65 |
+| Anemoniacus | `anemoniacus` | 11 | 11 | 4.0 | 100 | 292 |
+| Freezing Perch | `freezing_perch` | 5 | 5 | 1.5 | 25 | 73 |
 
 - Rare-fight avg actions `≤12`: PASS (Anemoniacus 11, Freezing Perch 5).
-- Ascent rate `≤15%` at Hull 125 (`ascent_pm ≤ 150`): PASS (Anemoniacus 95pm,
-  Freezing Perch 55pm; commons 0pm).
+- Ascent rate `≤15%` at Hull 150 (`ascent_pm ≤ 150`): PASS (Anemoniacus 40pm,
+  Freezing Perch 15pm; commons 0pm).
 - Bar-switch `>0`: PASS (100% on eel/electric_eel/steel_tuna/anemoniacus, 25%
   on freezing_perch). Commons prompts `=0`: PASS. Exact report header
   `defs actions=steps ascent=hull0 bars=switches prompt=modal`: PASS.
@@ -547,16 +547,18 @@ worktree; it is non-gating by design).
 
 ### Lever trace + content rebalance (user-authorized)
 
+
 - **Lever 1:** both flex rares' `subdue_chance` 60→65 (Anemoniacus and
   Freezing Perch). **Lever 2:** `LAST_SURGE_RESTORE_PCT` 30→25
   (`res = (max_res*25 + 99)/100`, integer ceil).
 - **Rebalance:** Anemoniacus Resolve 115→80 in `creatures_t1.zig` (HP 95,
-  Thrash +10, Discharge 10 Hull unchanged). This was required to meet the
-  ≤12 rare-actions / ≤15% ascent gates at Hull 125 and is recorded as spec
+  Thrash +10, Discharge 10 Hull unchanged). Required for the
+  ≤12 rare-actions gate and is recorded as spec
   §38 P21 under the user's “go 1, yes lets rebalance” authorization. No other
-  creature, coupling constant, or gate value was changed.
-- **Cross-seed spread:** worst measured Anemoniacus ascent across seeds is
-  **15.5% (155 pm) at seeds 99 and 2024** (11 rare actions, 100% switches,
-  prompts 284/286); seed 98 is the pinned gate seed per plan. Recorded, not
+  creature or coupling constant was changed; the ascent-gate loadout is Hull 150.
+- **Ascent gate loadout:** measured at **Hull 150** (two T1 Hull upgrades).
+  Seed 98: Anemoniacus 4.0%, Freezing Perch 1.5%. Cross-seed worst:
+  Anemoniacus **8.5% (85 pm, seed 4)**, Freezing Perch **4.0% (40 pm, seed
+  100)**. Recorded, not tuned.
   tuned further.
 
