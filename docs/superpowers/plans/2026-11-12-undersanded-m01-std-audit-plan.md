@@ -17,6 +17,7 @@
 **Test model (spec §26, binding):** tiers run natively — `undtool.nix` (COMMAND.COM-analogue console) + native test drivers are the FAST gate; Wine/DD7/DSound probes are SLOW evidence only, never the gate; operator hardware is M16-only. Logic goldens must be runnable in CI without Wine.
 
 - Spec is binding; all numbers/tables live there. Example code only in `examples/z98/undersanded/`; std changes only when the spec G-table demands them (M1: G2–G5/G10/G11/G13/G17; M9: `std_gfx_px` + typing `std_gfx_pal` placeholders; M12: `std_audio`) — everything else example-only; compiler defects → STOP-present, minimal workaround, record in `examples/torrent_example_defects.md`).
+- **Reuse before adding:** extend existing std implementations (std_crypto CRC, std_parse conversions, std_os bindings, std_ddraw focus pattern) — no duplicated tables or logic.
 - Z98 rules R1–R15 (spec §24). Build `-fsafe`, `-W` clean. Capacities fixed at spec §25.1 (`MAX_CREATURES 56`, `MAX_ZONES 12`, …) — never resize in any later milestone.
 - Two link configs: `under.exe` (`WINDOWS_GUI`) + `undtool.exe` (`WINDOWS_CUI`), both no-CRT, both pass `check_win9x_imports.sh <exe> 9x` (imports limited to GDI32/USER32/KERNEL32).
 - z9edit goldens (`examples/z98/z9edit/tests/tier_edit.sh`, `tier_edit_gui.sh`) must stay byte-identical after any `std_gfx` change — that is the acceptance test for G4/G5/G13.
@@ -51,13 +52,13 @@
 
 ### Task 2: `std_str` gaps (G2)
 
-**Interfaces (consumed by M6 parser):** note: `sf/src/std_parse.zig` already has compiler-internal `parseInt`/`parseUint`/`itoa` — export or game-surface-twin them (G17: M6/M7 need int↔text both ways). `pub fn parseInt(buf: []const u8) ?i32` (decimal, optional leading `-`, `null` on garbage/empty); `pub fn splitOnce(s: []const u8, sep: u8) ?[2][]const u8` (first-separator split, `null` if no separator; if the optional-of-array return shape fails to compile, use a 2-field out-param struct — verify shape first).
-- [ ] Unit tests: `parseInt` ("42"→42, "-7"→-7, ""→null, "4x"→null, overflow→null); `splitOnce` (split, no-sep→null, sep-at-edges). Implement in `sf/src/std_str.zig`. PASS. Commit `feat(std): str parseInt/splitOnce`.
+**Interfaces (consumed by M6 parser):** **G17 is CLOSED-ALREADY by reuse** — `sf/src/std_parse.zig` has `parseInt`/`parseUint`/`itoa`, and applications import std modules by bare name (`@import("std_parse.zig")`, precedent `examples/z98/z9torr/main.zig:8`). Do **not** add twins or duplicates. The only real `std_str` gap is `pub fn splitOnce(s: []const u8, sep: u8) ?[2][]const u8` (first-separator split, `null` if no separator; if the optional-of-array return shape fails to compile, use a 2-field out-param struct — verify shape first).
+- [ ] Unit tests: `splitOnce` (split, no-sep→null, sep-at-edges) in the std fixture convention (`repro/mi_matrix/stdlib_str_splitonce_xmod/`). Implement in `sf/src/std_str.zig`. PASS. Commit `feat(std): str splitOnce`.
 
 ### Task 3: `crc32` (G11) + 8.3 path validation (G10)
 
-**Interfaces:** `pub fn crc32(data: []const u8) u32` in `sf/src/std_bits.zig` (256-entry module table, u32 shifts/XOR only — R7-safe). Game-side `paths.zig`: `pub fn pathJoin83(dir: []const u8, name: []const u8, out: []u8) ?[]u8` and `pub fn is83Name(name: []const u8) bool` (lowercase, no spaces, 1–8 + optional 1–3, spec §30 filename rule).
-- [ ] Unit tests: crc32 known vectors ("123456789" → 0xCBF43926); `is83Name` ("bg_a.zsp" ok, "fig_mermaid.zsp" reject, "BG_A.ZSP" reject, "a b.zsp" reject); `pathJoin83` truncation guard. Implement. PASS. Commit `feat(std): crc32; example(undersanded): 8.3 path helpers`.
+**Interfaces:** **reuse, do not duplicate** — `sf/src/std_crypto.zig` already has the CRC-32 table and incremental API (`crc32Init`/`crc32Update`/`crc32Final`, std_crypto.zig:963/967/1009). Add the one-shot `pub fn crc32(data: []const u8) u32` **to `std_crypto.zig`** implemented as `crc32Final(crc32Update(crc32Init(), data))`; no new table, no `std_bits` change. Tests extend the existing `repro/mi_matrix/stdlib_crypto_crc32_xmod/` fixture convention. Game-side `paths.zig`: `pub fn pathJoin83(dir: []const u8, name: []const u8, out: []u8) ?[]u8` and `pub fn is83Name(name: []const u8) bool` (lowercase, no spaces, 1–8 + optional 1–3, spec §30 filename rule).
+- [ ] Unit tests: one-shot `crc32` known vector ("123456789" → 0xCBF43926, verify the reflected-poly variant) plus a streaming-vs-one-shot equality test; `is83Name` ("bg_a.zsp" ok, "fig_mermaid.zsp" reject, "BG_A.ZSP" reject, "a b.zsp" reject); `pathJoin83` truncation guard. Implement. PASS. Commit `feat(std): crc32; example(undersanded): 8.3 path helpers`.
 
 ### Task 4: std_gfx wait/focus/pixel-coords (G4, G5, G13)
 
@@ -67,7 +68,7 @@
 
 ### Task 5: Writability probe + data directory (G14, game-side)
 
-**Interfaces (consumed by M6/M7/M16):** `pub fn resolveDataDir(out: []u8) []u8` (exe dir via `std_os` module-path helper — add `pub fn modulePath(out: []u8) ?[]u8` to `std_os` if the audit found it missing; strip filename); `pub fn probeWritable(dir: []const u8) bool` (create+delete `probe.tmp`); `pub fn dataDirOrFallback(out: []u8) []u8` (on probe fail: `C:\WINDOWS\TEMP\UNDERSAN\`, create it, return it — mutable files only go there, `data.z98` stays in exe dir per spec §32).
+**Interfaces (consumed by M6/M7/M16):** `pub fn resolveDataDir(out: []u8) []u8` (exe dir via `std_os` module-path helper — audit found `modulePath` missing, so **extend `std_os`**: `pub fn modulePath(out: []u8) ?[]u8` with a `GetModuleFileNameA` extern in `std_os_pal` under `@isWindows` (`std_os_prelude.h` already includes `<windows.h>`); POSIX returns `null`, and `resolveDataDir` then falls back to `.`; strip the filename); `pub fn probeWritable(dir: []const u8) bool` (create+delete `probe.tmp`); `pub fn dataDirOrFallback(out: []u8) []u8` (on probe fail: `C:\WINDOWS\TEMP\UNDERSAN\`, create it, return it — mutable files only go there, `data.z98` stays in exe dir per spec §32).
 - [ ] Unit test: `probeWritable` true on tmp dir, false on `chmod -w` dir; fallback path string exact; probe leaves no residue. Implement `paths.zig`. PASS. Commit `example(undersanded): writability probe + data dir`.
 
 ### Task 6: Two link configs + skeleton main (G15 scaffold) + trap handler

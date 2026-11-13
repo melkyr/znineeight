@@ -1000,13 +1000,13 @@ while (running) {
 | G8 | P1 | `gfxPresentRect(g,x,y,w,h)` | dirty-rect present |
 | G9 | P5b/M12 | `std_audio` — DirectSound **buffers, WAV load, play/stop/volume** (static buffers; distinct from the existing streaming dsound) | ambient + cues |
 | G10 | P0 | path join + 8.3 validation | Win98 MAX_PATH / short names |
-| G11 | P0 | crc32 (std.bits or game-side, 256-entry module table) | save integrity |
+| G11 | P0 | crc32 — **PARTIAL: incremental API already in `std_crypto` (`crc32Init/Update/Final`); add only the one-shot `crc32(data)` there** (no duplicate table) | save integrity |
 | G12 | — | min/max/clamp/abs i32 | **write game-side**, avoid std churn |
 | G13 | P0 | `EventKind.focus_lost` / `focus_gained` + `gfxTestFocus(g,bool)` | pause-on-focus is otherwise unimplementable; also automates the test |
-| G14 | P0 | writability probe + fallback directory | CD install |
+| G14 | P0 | writability probe + fallback directory (game-side; **extend `std_os` with `modulePath`** via `GetModuleFileNameA`, POSIX null) | CD install |
 | G15 | P1 | console-subsystem link config (`undtool.exe`) | Win98 has no `AttachConsole` |
 | G16 | P2 | rename/remove verified + rollback-safe wrapper | save write path |
-| G17 | P0 | int→text (`itoa`): **export `std_parse`'s existing `itoa`/`parseInt` or add game-surface twins** — `std_parse` already has `parseInt`/`parseUint`/`itoa` (compiler-internal, not re-exported) | save serialization + M6 parser need decimal text both ways |
+| G17 | — | int↔text — **CLOSED-ALREADY by reuse**: `std_parse` (`parseInt`/`parseUint`/`itoa`) is imported bare by applications (z9torr precedent); add no twins | save serialization + M6 parser |
 
 ### 23.1 The pixel tier — 16bpp, not 8bpp
 
