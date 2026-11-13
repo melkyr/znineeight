@@ -514,7 +514,15 @@ fn tFreezingPerchFlee() bool {
 }
 
 fn tCreatureDefsAndFields() bool {
-    if (creatures.DEFS.len != 5) return false;
+    if (creatures.DEFS.len != 18) return false;
+
+    // Append-only guard: the original M2/M3 rows at indices 0..4 must keep
+    // their ids and order.
+    if (creatures.DEFS[0].id != 1) return false;
+    if (creatures.DEFS[1].id != 2) return false;
+    if (creatures.DEFS[2].id != 4) return false;
+    if (creatures.DEFS[3].id != 18) return false;
+    if (creatures.DEFS[4].id != 19) return false;
 
     const tuna = creatures.DEFS[2];
     if (tuna.hp != 120) return false;
