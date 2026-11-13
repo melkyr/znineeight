@@ -15,8 +15,10 @@ const os = @import("std_os.zig");
 const parse = @import("std_parse");
 const sim = @import("sim.zig");
 const ruletest = @import("ruletest.zig");
+const replay = @import("replay.zig");
 const def = @import("def.zig");
 const fight = @import("fight.zig");
+const game = @import("game.zig");
 const creatures = @import("creatures_t1.zig");
 const render = @import("render_term.zig");
 const file_mod = @import("std_file");
@@ -106,6 +108,132 @@ pub fn dumpFightFrame(def_index: i32, seed0: u32, out: []u8) []const u8 {
     return render.dump(&sc, out);
 }
 
+// ---- replay --------------------------------------------------------------
+//
+// The v2 stream is a header plus one verb per action (spec §28). This replays
+// it through the same gameStep path the sim/UI use, then serializes the exact
+// fight log as `<class>:<msg_id>:<a>:<b>;` per entry (the fight_test format).
+
+fn appendStr(buf: []u8, pos: *usize, text: []const u8) void {
+    var i: usize = 0;
+    while (i < text.len and pos.* < buf.len) : (i += 1) {
+        buf[pos.*] = text[i];
+        pos.* += 1;
+    }
+}
+
+fn appendInt(buf: []u8, pos: *usize, v: i32) void {
+    if (pos.* >= buf.len) return;
+    if (v == 0) {
+        buf[pos.*] = '0';
+        pos.* += 1;
+        return;
+    }
+    var n: u32 = 0;
+    var neg = false;
+    if (v < 0) {
+        neg = true;
+        n = @intCast(u32, 0 - v);
+    } else {
+        n = @intCast(u32, v);
+    }
+    var tmp: [16]u8 = undefined;
+    var t: usize = 0;
+    while (n > 0) {
+        tmp[t] = @intCast(u8, '0' + @intCast(i32, n % 10));
+        n = n / 10;
+        t += 1;
+    }
+    if (neg and pos.* < buf.len) {
+        buf[pos.*] = '-';
+        pos.* += 1;
+    }
+    while (t > 0 and pos.* < buf.len) {
+        t -= 1;
+        buf[pos.*] = tmp[t];
+        pos.* += 1;
+    }
+}
+
+fn appendUint(buf: []u8, pos: *usize, v: u32) void {
+    if (pos.* >= buf.len) return;
+    if (v == 0) {
+        buf[pos.*] = '0';
+        pos.* += 1;
+        return;
+    }
+    var n: u32 = v;
+    var tmp: [16]u8 = undefined;
+    var t: usize = 0;
+    while (n > 0) {
+        tmp[t] = @intCast(u8, '0' + @intCast(i32, n % 10));
+        n = n / 10;
+        t += 1;
+    }
+    while (t > 0 and pos.* < buf.len) {
+        t -= 1;
+        buf[pos.*] = tmp[t];
+        pos.* += 1;
+    }
+}
+
+fn appendLog(buf: []u8, pos: *usize, s: *const def.GameState) void {
+    var i: i32 = 0;
+    while (i < s.log_n) : (i += 1) {
+        const e = s.log[@intCast(usize, i)];
+        appendInt(buf, pos, e.class);
+        appendStr(buf, pos, ":");
+        appendInt(buf, pos, e.msg_id);
+        appendStr(buf, pos, ":");
+        appendInt(buf, pos, e.a);
+        appendStr(buf, pos, ":");
+        appendInt(buf, pos, e.b);
+        appendStr(buf, pos, ";");
+    }
+}
+
+// Read `path`, replay its action stream deterministically, and write the one
+// report line (without the trailing newline) into `out`. Returns null when the
+// file cannot be read/parsed or its creature token is unknown.
+pub fn replayLine(path: []const u8, out: []u8) ?[]const u8 {
+    var r: replay.Replay = undefined;
+    if (!replay.replayRead(path, &r)) return null;
+
+    const index = tokenIndex(replay.creatureText(&r)) orelse return null;
+
+    var s: def.GameState = undefined;
+    s.exp.active = 0;
+    s.exp.zone = 0;
+    s.exp.fight_index = 0;
+    s.exp.seed = r.seed;
+    var h: usize = 0;
+    while (h < def.MAX_PARTS) : (h += 1) s.exp.hold[h] = 0;
+    s.exp.hold_n = 0;
+
+    var d = creatures.defAt(index);
+    fight.startFightDef(&s, index, &d, creatures.RULES[0..]);
+
+    var applied: i32 = 0;
+    const acts = replay.actionSlice(&r);
+    var i: usize = 0;
+    while (i < acts.len) : (i += 1) {
+        if (s.fight.outcome != def.OUT_ONGOING) break;
+        game.gameStep(&s, acts[i]);
+        applied += 1;
+    }
+
+    var pos: usize = 0;
+    appendStr(out, &pos, "replay outcome=");
+    appendInt(out, &pos, s.fight.outcome);
+    appendStr(out, &pos, " actions=");
+    appendInt(out, &pos, applied);
+    appendStr(out, &pos, " rng=");
+    appendUint(out, &pos, s.fight.rng_state);
+    appendStr(out, &pos, " log=");
+    appendLog(out, &pos, &s);
+    return out[0..pos];
+}
+
 pub fn run(argc: i32, argv: [*][*]u8) void {
     os.initArgs(argc, argv);
 
@@ -113,12 +241,14 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var have_creature = false;
     var have_seed = false;
     var have_test_rules = false;
+    var have_replay = false;
     var have_dump_grid = false;
     var have_screen = false;
     var n_fights: i32 = 0;
     var seed0: u32 = 0;
     var hull: i32 = 100;
     var token: []const u8 = "";
+    var replay_path: []const u8 = "";
     var dump_path: []const u8 = "";
     var screen_id: []const u8 = "";
 
@@ -128,6 +258,14 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         const a = os.argv(i);
         if (eq(a, "--test-rules")) {
             have_test_rules = true;
+        } else if (eq(a, "--replay")) {
+            i += 1;
+            if (i >= nargs) {
+                fail("undtool: --replay needs a file path");
+                return;
+            }
+            replay_path = os.argv(i);
+            have_replay = true;
         } else if (eq(a, "--dump-grid")) {
             i += 1;
             if (i >= nargs) {
@@ -192,6 +330,18 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
 
     if (have_test_rules) {
         os.exit(ruletest.testRules());
+        return;
+    }
+
+    if (have_replay) {
+        var buf: [8192]u8 = undefined;
+        const line = replayLine(replay_path, buf[0..]) orelse {
+            fail("undtool: --replay cannot read or parse replay file");
+            return;
+        };
+        io.write(line);
+        io.write("\n");
+        os.exit(0);
         return;
     }
 
