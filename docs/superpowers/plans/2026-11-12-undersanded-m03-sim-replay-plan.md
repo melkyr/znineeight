@@ -60,7 +60,7 @@ As M1/M2 (example-only, R1–R15, `-fsafe`, capacities fixed, no push, prior gat
 
 - [ ] Tests: (a) **decline costs no RNG** — RNG state byte-identical before/after F and Esc in modal fights; (b) **commons never prompt** — 200 sim fights vs commons, prompt counter == 0; (c) **surge caps** — across forced-failure runs, `surge_atk_applied` ≤ 1 (one +25 pp) and speed bonus ≤ +6. Wire into `tier_m3_sim.sh`. PASS. Commit `example(undersanded): M3 safety-net tests`.
 - [ ] Implement `--dump-grid <file> --screen <id>`: for `--screen fight` render a scripted `FightState` through `render_term.renderFrame` and write `render_term.dump` (the console fight draws to its `Screen` buffer, **not** the gfx memory surface — `gfxDumpGrid` only covers the skeleton surface); add its golden assertion to the tier. PASS. Commit `example(undersanded): --dump-grid console screens`.
-- [ ] Extend `build.sh` to emit the native gate runner `undtool.nix`: `zig1 -fsafe -W -osl --output-dir <out> main_console.zig` + `sh <out>/build_target.sh linux <out>/undtool.nix` (mirrors the M1/M2 native test-driver pattern). Commit `example(undersanded): native undtool.nix build`.
+- [ ] Extend `build.sh` to emit the native gate runner `undtool.nix`: `zig1 -fsafe -W -osl --output-dir <out> undtool_native.zig` + `sh <out>/build_target.sh linux <out>/undtool.nix` (mirrors the M1/M2 native test-driver pattern). `undtool_native.zig` is the gfx-free tool root forwarding to `undtool.run` — `main_console.zig` cannot link natively (it pulls `std_gfx` → `<windows.h>`); user-authorized deviation, output byte-identical to `undtool.exe` for tool flags. Commit `example(undersanded): native undtool.nix build`.
 
 ### Task 5: `tier_m3_sim.sh` + the sim gate
 

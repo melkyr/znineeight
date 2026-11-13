@@ -1,13 +1,15 @@
 # UNDERSANDED — M1 platform + M2 console fight
 
-Two no-CRT Win9x executables built from one source tree (spec §26/§32/§33).
-Both are Z98 → C89 → `i686-w64-mingw32-gcc` PE32 images that import only
-GDI32/KERNEL32/USER32 and pass `check_win9x_imports.sh <exe> 9x`.
+Two no-CRT Win9x executables built from one source tree (spec §26/§32/§33),
+plus a **native Linux gate runner**. All are Z98 → C89 images; the Win9x pair
+links through `i686-w64-mingw32-gcc` as PE32 and imports only
+GDI32/KERNEL32/USER32, passing `check_win9x_imports.sh <exe> 9x`.
 
 | Binary | Subsystem | Entry | Presentation |
 | :--- | :--- | :--- | :--- |
 | `under.exe` | `WINDOWS_GUI` | `main.zig` | windowed terminal mode: `std_gfx.gfxOpen(80, 30)` titled `UNDERSANDED` |
 | `undtool.exe` | `WINDOWS_CUI` | `main_console.zig` | **M2 playable console fight**: `std_io` text frame + stdin keys, no window |
+| `undtool.nix` | Linux ELF | `undtool_native.zig` | tooling only: `--sim`, `--replay`, `--test-rules`, `--dump-grid` |
 
 `undtool.exe` now runs the playable M2 text fight: on start it prints a 1–5
 creature chooser, then the fight frame after every stdin key (`S`/`R`/`E`/`F`,
@@ -37,6 +39,33 @@ no runtime `--headless` flag: the mode is selected at build/link time
 writability/fallback, surface line, sample bytes), then runs the playable fight
 UI. EOF on stdin (including a no-input run) terminates cleanly and exits 0.
 
+## Linux support
+
+The console entry `main_console.zig` is Windows-only: it links `std_gfx` →
+`std_gfx_pal` → `#include <windows.h>`. A Linux-compatible gate runner is
+provided in `undtool_native.zig` — a gfx-free root that forwards to
+`undtool.run`, so `--sim`, `--replay`, `--test-rules` and `--dump-grid` behave
+exactly as in `undtool.exe`. This is the authoritative CI path for the
+logic/sim gates (spec §26 test model); the Windows binaries remain the shipped
+artifacts.
+
+This example therefore has two separate tool roots: `undtool_native.zig` for
+Linux and `main_console.zig` for Windows (they call different console APIs; the
+native root simply skips the playable fight UI).
+
+### Linux
+
+```sh
+mkdir -p out/native
+/path/to/zig1_5_clean -fsafe -W -osl --output-dir out/native \
+  examples/z98/undersanded/undtool_native.zig
+sh out/native/build_target.sh linux out/native/undtool.nix
+./out/native/undtool.nix --test-rules    # rules_ok=100
+```
+
+`build.sh` emits this runner automatically (`out/native/undtool.nix`) next to
+the two cross-built exes.
+
 ## Build
 
 The compiler resolves `lib/` from a sibling directory, so sync the std modules
@@ -59,11 +88,15 @@ links:
 * `undtool.exe` — `DUMP_TARGET=-osw`, console subsystem (no `--subsystem`
   override). The same GDI32/USER32 libs are linked because the cell surface is
   part of the image even in memory mode.
+* `out/native/undtool.nix` — `-osl` emit + `build_target.sh linux` link of
+  `undtool_native.zig` (no Windows headers; native gate runner).
 
 `tests/fixtures/sample.txt` is copied to the output dir next to both exes.
 
 ## Outputs
 
 * `out/under.exe`, `out/undtool.exe`, `out/sample.txt`
+* `out/native/undtool.nix` — native Linux gate runner (not shipped)
 * `out/probe_out.txt` — written at run time (exact bytes of `sample.txt`)
-* `out/build_gui.log`, `out/build_cui.log`, `out/warn_*.log`
+* `out/build_gui.log`, `out/build_cui.log`, `out/build_native.log`,
+  `out/link_native.log`, `out/warn_*.log`
