@@ -928,7 +928,7 @@ const FIGHTS = [20]FightCase{
     FightCase{ .def_index = 2, .pattern = "RRSRRSRRSRRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 11, .want_hull = 20 },
     FightCase{ .def_index = 0, .pattern = "RRSRRS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_SUBDUE, .want_steps = 10, .want_hull = 46 },
     FightCase{ .def_index = 4, .pattern = "RRSSRRSS", .modal_mode = MODAL_ATTEMPT, .want_outcome = def.OUT_OVERKILL, .want_steps = 12, .want_hull = 0 },
-    FightCase{ .def_index = 3, .pattern = "RSRSRSRSRSRS", .modal_mode = MODAL_DECLINE, .want_outcome = def.OUT_OVERKILL, .want_steps = 10, .want_hull = 9 },
+    FightCase{ .def_index = 3, .pattern = "RRRRS", .modal_mode = MODAL_DECLINE, .want_outcome = def.OUT_OVERKILL, .want_steps = 26, .want_hull = 0 },
 };
 
 fn printFightRow(n: usize, c: FightCase, r: FightRun) void {

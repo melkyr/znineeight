@@ -340,15 +340,15 @@ fight ends; `A` is supplied at each rare modal unless "declined" is noted.
 | # | Creature | Outcome | Actions (stream) | Steps | Hull | Notable behavior |
 | --: | :--- | :--- | :--- | --: | --: | :--- |
 | 1 | Mystic Eel | SUBDUE | `R×8` | 8 | 58 | Common silent auto-roll; Thrash coupling (`msg 9`, +5 Resolve) fired 5×, forcing the extra Restrains; no parting hit on success. |
-| 2 | Steel Tuna | KILL | `S×12` | 12 | 12 | 60% armor chipped every Strike; Despair coupling regenerated HP 5×; HP<30% Speed 6→10 still only ties the player; overshoot 1 < margin 12 → Kill, not Overkill. |
+| 2 | Steel Tuna | KILL | `S×12` | 12 | 12 | 60% armor chipped every Strike; Despair coupling regenerated HP 5×; HP<30% Speed 6→10 still only ties the player; overshoot 3 < margin 12 → Kill, not Overkill. |
 | 3 | Mystic Eel | OVERKILL | `S×4` | 4 | 82 | One Despair coupling tick; overshoot 8 ≥ margin 7; creature acted in every live round. |
 | 4 | Anemoniacus | SUBDUE | `R` cycled + `A` at modal | 37 | 0 | Rare modal path: 19 Thrash coupling ticks (+10 Resolve) between attempts; 2 failed Attempts → 2 Last Surges (Res 115→35 each), then success; Hull drained to 0; no discharge. |
-| 5 | Freezing Perch | KILL | `SRSR` cycled | 11 | 0 | 10 bar switches, 1 coupling tick; overshoot 7 < margin 12. Strike max 25 never exceeds the 37 flee threshold, so no flee. |
+| 5 | Freezing Perch | KILL | `SRSR` cycled | 11 | 0 | 10 bar switches, 1 coupling tick; overshoot 7 < margin 10. Strike max 25 never exceeds the 37 flee threshold, so no flee. |
 | 6 | Mystic Electric Eel | OVERKILL | `RSRSRSRS` cycled | 8 | 36 | Discharge fired once (8 Hull) when Resolve crossed below 50%; 7 switches, 1 coupling tick; overshoot 8 ≥ margin 8. |
 | 7 | Steel Tuna | SUBDUE | `R×10` | 7 | 52 | Restrain-only path; 4 Thrash coupling ticks (+5 Resolve); armor irrelevant to Resolve; silent 95% roll. |
 | 8 | Mystic Electric Eel | SUBDUE | `R×12` | 13 | 1 | Speed 16 acted first each round; 9 Thrash ticks; one discharge tick; subdue at Hull 1. |
 | 9 | Freezing Perch | SUBDUE | `R×12` | 10 | 10 | Rare modal path, first Attempt succeeded; 5 Thrash ticks; no discharge/surge. |
-| 10 | Anemoniacus | OVERKILL | `SRSRSR` cycled, modal declined | 11 | 0 | F (Fight-on) declined the modal with no RNG; 10 switches, 3 coupling ticks; one discharge (10 Hull) on the HP<50% crossing; overshoot 10 ≥ margin 9. |
+| 10 | Anemoniacus | OVERKILL | `SRSRSR` cycled | 11 | 0 | No modal opened in this row (killed before Resolve reached 0, `modal=no declines=0`); 10 switches, 3 coupling ticks; one discharge (10 Hull) on the HP<50% crossing; overshoot 10 ≥ margin 9. |
 | 11 | Steel Tuna | KILL | `P` then `S×12` | 7 | 52 | Plate spent one action to negate the 60% armor; the same Strike stream killed in 7 actions instead of 12 (fight 2), with only 2 coupling ticks. Overshoot 1 < margin 12. |
 | 12 | Mystic Eel | OVERKILL | `E` then `S×4` | 5 | 76 | Bare Equipment (no tool) only bought a free creature hit; 1 coupling tick; overshoot 8 ≥ margin 7. |
 | 13 | Mystic Eel | PLAYER_FLED | `F` | 1 | 100 | Player flee ends the fight immediately, no creature action. |
@@ -358,7 +358,7 @@ fight ends; `A` is supplied at each rare modal unless "declined" is noted.
 | 17 | Steel Tuna | SUBDUE | `RRSRRSRRSRRS` cycled | 11 | 20 | 6 bar switches, 7 coupling ticks; Thrash pulled Resolve back up (`msg 9`, +5) before the silent subdue. |
 | 18 | Mystic Eel | SUBDUE | `RRSRRS` cycled | 10 | 46 | 6 bar switches, 2 coupling ticks; mixed stream still closes both gates for a 95% subdue. |
 | 19 | Freezing Perch | OVERKILL | `RRSSRRSS` cycled | 12 | 0 | 5 switches, 2 Despair ticks; overshoot 15 ≥ margin 10; Hull reached 0. |
-| 20 | Anemoniacus | OVERKILL | `RSRSRSRSRSRS` cycled, modal declined | 10 | 9 | 9 switches, 1 coupling tick; one discharge tick; declined modal then killed it; overshoot 17 ≥ margin 9. |
+| 20 | Anemoniacus | OVERKILL | `RRRRS` cycled, modal declined | 26 | 0 | Rare modal genuinely opened at Resolve 0 and was declined (`modal=yes declines=1`, no RNG); after declining the gate never re-opens; 9 switches, 4 coupling ticks, one discharge; overshoot 9 ≥ margin 9. |
 
 Playable-path evidence (already captured in the Task 4 report from the real
 console path under Wine): `undtool.exe` transcripts completed SUBDUE in 8
@@ -372,7 +372,8 @@ path; the table above is the deterministic, machine-checked equivalent.
    **Yes.** The coupling gates invert the bars: Strike pushes HP toward the red
    zone and opens Despair (HP<30%, Res>50%), which regenerates HP, so you switch
    to Restrain to drag Resolve below 50% and close it (fight 2: an all-Strike
-   run got 5 Despair HP ticks; fights 14 and 19: 2 each). Restrain pushes
+   run got 5 Despair HP ticks; fight 14 all-Strike and fight 19 mixed
+   `RRSSRRSS`: 2 each). Restrain pushes
    Resolve down and opens Thrash (Res<50%, HP>50%), which regenerates Resolve,
    so you switch back to Strike (fight 1: 5 Thrash ticks in an all-Restrain
    run; fight 4: 19 ticks; fights 7/8/9: 4/9/5 ticks). The discharge rows add a
