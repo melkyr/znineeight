@@ -593,7 +593,7 @@ M4's World and encounter work is validated by M4's own `world_test`/
   Depart and sets `exp.seed = seed0`, `exp.fight_index = i` directly
   (`sim.zig:117-118`).
 - **`--hull` is sim-only.** `undtool` defaults Hull to 100 and overrides it per
-  sim fight (`undtool.zig:249`, `:315-323`; `sim.zig:120-121`); the gate uses
+  sim fight (`undtool.zig:248`, `:310-323`; `sim.zig:120-121`); the gate uses
   150 (spec:1249). M4's real Hull is persistent fight/boat state (spec §6,
   spec:1249), not the tool flag.
 - **Dense `DEFS` index vs `id`.** `creatures.DEFS` is a 5-element array indexed
@@ -617,7 +617,7 @@ M4's World and encounter work is validated by M4's own `world_test`/
   (`sim.zig:35-48`, `:102-162`), the §25.9 policy reads fight state plus
   `cdef.flags`/`cdef.subdue_chance` (`sim.zig:81-97`, `:131`) but no World
   input; the header/`sim creature=` line are tooling output
-  (`undtool.zig:64-90`, `:391`). Availability, rare-chance arithmetic,
+  (`undtool.zig:67-90`, `:400-401`). Availability, rare-chance arithmetic,
   renormalization and empty-pool Rest belong to M4 unit tests; per-zone sim
   runs would only re-partition the same fight metrics.
 - **R8 note.** The sim is safe with `var s: GameState = undefined` because
