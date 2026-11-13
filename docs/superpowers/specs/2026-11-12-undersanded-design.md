@@ -1394,7 +1394,7 @@ Mouse hit-tests `Event.px/py` against button rects; click emits the same Action 
 
 **Esc menu:** Journal · Map · Save · Quit. Options live at the start menu only.
 
-**Replay:** seed + action stream, version 2. Grammar (pinned): header `seed=` / `zone=` / `phase=` / `tool=` then one `A <verb>` line per action where verb ∈ `strike|restrain|equipment|flee|attempt|decline`. **F and Esc both record as `decline`** (they are identical per §9.3). Ink and encounter draws are not recorded — they derive from the seed (§25.5 draw table).
+**Replay:** seed + action stream, version 2. Grammar (pinned): header `seed=` / `creature=<token>` / `zone=` / `phase=` / `tool=` then one `A <verb>` line per action where verb ∈ `strike|restrain|equipment|flee|attempt|decline`. **F and Esc both record as `decline`** (they are identical per §9.3). Ink and encounter draws are not recorded — they derive from the seed (§25.5 draw table). `creature` is the tooling token (`eel|electric_eel|steel_tuna|anemoniacus|freezing_perch` at M3); `zone`/`phase`/`tool` are recorded verbatim and are semantics-free until M4/M5.
 
 ```
 seed=98
