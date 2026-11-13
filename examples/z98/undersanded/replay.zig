@@ -122,8 +122,8 @@ fn putHeader(buf: []u8, pos: *usize, key: []const u8, value: []const u8) bool {
     return putChar(buf, pos, '\n');
 }
 
-pub fn replayWrite(path: []const u8, seed: u32, creature: []const u8, zone: []const u8, phase: []const u8, tool: []const u8, actions: []const Action) void {
-    if (actions.len > MAX_REPLAY_ACTIONS) return;
+pub fn replayWrite(path: []const u8, seed: u32, creature: []const u8, zone: []const u8, phase: []const u8, tool: []const u8, actions: []const Action) bool {
+    if (actions.len > MAX_REPLAY_ACTIONS) return false;
 
     var buf: [WRITE_BUF]u8 = undefined;
     var pos: usize = 0;
@@ -131,21 +131,22 @@ pub fn replayWrite(path: []const u8, seed: u32, creature: []const u8, zone: []co
     var num_buf: [10]u8 = undefined;
     const seed_text = parse.utoa(num_buf[0..], seed);
 
-    if (!putHeader(buf[0..], &pos, "seed", seed_text)) return;
-    if (!putHeader(buf[0..], &pos, "creature", creature)) return;
-    if (!putHeader(buf[0..], &pos, "zone", zone)) return;
-    if (!putHeader(buf[0..], &pos, "phase", phase)) return;
-    if (!putHeader(buf[0..], &pos, "tool", tool)) return;
+    if (!putHeader(buf[0..], &pos, "seed", seed_text)) return false;
+    if (!putHeader(buf[0..], &pos, "creature", creature)) return false;
+    if (!putHeader(buf[0..], &pos, "zone", zone)) return false;
+    if (!putHeader(buf[0..], &pos, "phase", phase)) return false;
+    if (!putHeader(buf[0..], &pos, "tool", tool)) return false;
 
     var i: usize = 0;
     while (i < actions.len) : (i += 1) {
-        const verb = verbFor(actions[i].kind) orelse return;
-        if (!put(buf[0..], &pos, "A ")) return;
-        if (!put(buf[0..], &pos, verb)) return;
-        if (!putChar(buf[0..], &pos, '\n')) return;
+        const verb = verbFor(actions[i].kind) orelse return false;
+        if (!put(buf[0..], &pos, "A ")) return false;
+        if (!put(buf[0..], &pos, verb)) return false;
+        if (!putChar(buf[0..], &pos, '\n')) return false;
     }
 
-    file_mod.writeAll(path, buf[0..pos]) catch {};
+    file_mod.writeAll(path, buf[0..pos]) catch return false;
+    return true;
 }
 
 // ---- Reader ---------------------------------------------------------------

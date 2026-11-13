@@ -256,14 +256,32 @@ pub fn creatureFirst(s: *const def.GameState, cdef: *const def.CreatureDef, rule
     return effectiveSpeed(s, cdef, rules) > s.fight.player_speed;
 }
 
-fn effectiveArmor(s: *const def.GameState, cdef: *const def.CreatureDef) i32 {
-    var a = s.fight.active_armor_pct;
+// Strike-time armor: compute from the def plus every persistent SET_ARMOR rule
+// whose condition currently holds, instead of trusting the cache that
+// applyRules refreshed on the previous action.
+pub fn effectiveArmorPct(s: *const def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) i32 {
+    var a = cdef.armor_pct;
     if (a <= 0) a = PERCENT_BASE;
     if (cdef.armor_below_th > 0) {
         if (statBelowPct(s.fight.max_hp, s.fight.hp, cdef.armor_below_th)) {
             if (cdef.armor_below_pct > 0) a = cdef.armor_below_pct;
         }
     }
+
+    var dummy = s.fight.rule_consumed;
+    var ri: i32 = cdef.rule_start;
+    const end: i32 = cdef.rule_start + cdef.rule_count;
+    while (ri < end) : (ri += 1) {
+        if (ri < 0) continue;
+        const u: usize = @intCast(usize, ri);
+        if (u >= rules.len) continue;
+        if (rules[u].timing != behavior.TIMING_PERSISTENT) continue;
+        const fired = behavior.ruleFire(rules[u], s.fight.hp, s.fight.hp, s.fight.res, s.fight.res, s.fight.round, &dummy, ri);
+        if (fired) |e| {
+            if (e.op == behavior.SET_ARMOR) a = e.a;
+        }
+    }
+
     if (s.fight.tool_active != 0 and s.fight.tool == TOOL_PLATE) a = PERCENT_BASE;
     return a;
 }
@@ -416,9 +434,9 @@ pub fn strikePct(cond: i32, armor_pct: i32) i32 {
     return math.applyPct(pct, armor_pct);
 }
 
-fn strike(s: *def.GameState, cdef: *const def.CreatureDef) void {
+fn strike(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
     var dmg = rng.rngRange(&s.fight.rng_state, STRIKE_MIN, STRIKE_MAX);
-    dmg = math.applyPct(dmg, strikePct(s.fight.cond, effectiveArmor(s, cdef)));
+    dmg = math.applyPct(dmg, strikePct(s.fight.cond, effectiveArmorPct(s, cdef, rules)));
     if (dmg < 0) dmg = 0;
 
     s.fight.hp -= dmg;
@@ -440,12 +458,12 @@ fn restrain(s: *def.GameState) void {
     log(s, def.LOG_NORMAL, MSG_RESTRAIN, dmg, s.fight.res);
 }
 
-fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef) void {
+fn playerAction(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
     switch (a.kind) {
         def.ACT_STRIKE => {
             noteBar(s, def.BAR_STRIKE);
             s.fight.actions += 1;
-            strike(s, cdef);
+            strike(s, cdef, rules);
         },
         def.ACT_RESTRAIN => {
             noteBar(s, def.BAR_RESTRAIN);
@@ -505,6 +523,14 @@ fn endRound(s: *def.GameState, cdef: *const def.CreatureDef) void {
 
 // ---- Modal resume ---------------------------------------------------------
 
+// The endRound coupling predicate: the decline copy may only promise recovery
+// when one of the two coupling regens would actually fire for this state.
+fn couplingActive(s: *const def.GameState) bool {
+    if (belowPct(s.fight.res, s.fight.max_res, THRASH_GATE_PCT) and abovePct(s.fight.hp, s.fight.max_hp, THRASH_GATE_PCT)) return true;
+    if (belowPct(s.fight.hp, s.fight.max_hp, DESPAIR_GATE_PCT) and abovePct(s.fight.res, s.fight.max_res, DESPAIR_RES_GATE_PCT)) return true;
+    return false;
+}
+
 fn resolveModal(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
     const post = s.screen == SCREEN_SUBDUE_POST;
 
@@ -525,7 +551,11 @@ fn resolveModal(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
 
     if (a.kind == def.ACT_DECLINE) {
         s.fight.subdue_declined = 1;
-        log(s, def.LOG_NORMAL, MSG_DECLINE, 0, 0);
+        if (couplingActive(s)) {
+            log(s, def.LOG_NORMAL, MSG_DECLINE, 0, 0);
+        } else {
+            log(s, def.LOG_NORMAL, def.MSG_DECLINE_PLAIN, 0, 0);
+        }
         s.screen = SCREEN_FIGHT;
         if (!post) {
             creatureAct(s, cdef, rules);
@@ -562,7 +592,7 @@ pub fn step(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rule
 
     s.fight.prev_hp = s.fight.hp;
     s.fight.prev_res = s.fight.res;
-    playerAction(s, a, cdef);
+    playerAction(s, a, cdef, rules);
     if (s.fight.outcome != def.OUT_ONGOING) return;
 
     // Exactly one rule evaluation per action, using the pre-action values.

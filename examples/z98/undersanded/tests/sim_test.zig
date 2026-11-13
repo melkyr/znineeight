@@ -74,7 +74,7 @@ fn traceDef() def.CreatureDef {
 
 fn tTraceMetrics() bool {
     const d = traceDef();
-    const r = sim.runSimDef(&d, noRules(), 5, 68, 100);
+    const r = sim.runSimDef(0, &d, noRules(), 5, 68, 100);
 
     if (r.fights != 5) return false;
     if (r.actions != 20) return false;
@@ -82,6 +82,7 @@ fn tTraceMetrics() bool {
     if (r.rare_fights != 5) return false;
     if (r.rare_actions != 20) return false;
     if (sim.rareActionsAvg(&r) != 4) return false;
+    if (sim.rareActionsPm(&r) != 4000) return false;
     if (r.ascents != 0) return false;
     if (sim.ascentPm(&r) != 0) return false;
     if (r.switch_fights != 5) return false;
@@ -169,7 +170,7 @@ fn tAscentStopsFight() bool {
     d.rule_start = 0;
     d.rule_count = 0;
 
-    const r = sim.runSimDef(&d, noRules(), 1, 98, 100);
+    const r = sim.runSimDef(0, &d, noRules(), 1, 98, 100);
     if (r.fights != 1) return false;
     if (r.ascents != 1) return false;
     if (sim.ascentPm(&r) != 1000) return false;
@@ -212,11 +213,11 @@ fn drainDef() def.CreatureDef {
 
 fn tHullLoadout() bool {
     const d = drainDef();
-    const h100 = sim.runSimDef(&d, noRules(), 1, 98, 100);
+    const h100 = sim.runSimDef(0, &d, noRules(), 1, 98, 100);
     if (h100.ascents != 1) return false;
     if (h100.actions != 1) return false;
 
-    const h125 = sim.runSimDef(&d, noRules(), 1, 98, 125);
+    const h125 = sim.runSimDef(0, &d, noRules(), 1, 98, 125);
     if (h125.ascents != 1) return false;
     if (h125.actions != 2) return false;
 
@@ -248,9 +249,21 @@ fn tIntegerMath() bool {
     };
     if (sim.actionsAvg(&r) != 3) return false;
     if (sim.rareActionsAvg(&r) != 2) return false;
+    if (sim.rareActionsPm(&r) != 2500) return false;
     if (sim.ascentPm(&r) != 333) return false;
     if (sim.barSwitchPct(&r) != 33) return false;
     if (sim.surgeAvgPm(&r) != 500) return false;
+    return true;
+}
+
+// Absurd fight counts are rejected with a zero report so the i32 accumulators
+// cannot trap under -fsafe (documented choice in runSimDef).
+fn tOverflowGuard() bool {
+    const d = traceDef();
+    const r = sim.runSimDef(0, &d, noRules(), 100001, 98, 100);
+    if (r.fights != 0) return false;
+    if (r.actions != 0) return false;
+    if (sim.rareActionsPm(&r) != 0) return false;
     return true;
 }
 
@@ -265,6 +278,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     report("ascent_stops_fight", tAscentStopsFight());
     report("hull_loadout", tHullLoadout());
     report("integer_math", tIntegerMath());
+    report("overflow_guard", tOverflowGuard());
 
     if (fails != 0) {
         io.write("sim_test FAIL\n");

@@ -16,7 +16,8 @@
 #   * sim gate on all 5 creatures: undtool.nix --sim 200 --creature <token>
 #     --seed 98 --hull 150. Asserts
 #       - header line exactly `defs actions=steps ascent=hull0 bars=switches prompt=modal`
-#       - rare-fight avg actions <= 12 on each rare (Anemoniacus, Freezing Perch)
+#       - rare-fight actions <= 12000pm (12.0) on each rare (Anemoniacus,
+#         Freezing Perch)
 #       - ascent rate <= 15% (ascent_pm <= 150) at Hull 150
 #       - bar-switch > 0
 #       - commons never prompt (prompts == 0)
@@ -53,7 +54,7 @@ TESTS="examples/z98/undersanded/tests"
 FIXTURES="$SCRIPT_DIR/fixtures"
 EXPECTED_LEXER_MD5="dcc81009e9a36c86e4d90e104c439871"
 SIM_HEADER="defs actions=steps ascent=hull0 bars=switches prompt=modal"
-REPLAY_ARTIFACT="/tmp/m3_t1_replay.rep"
+REPLAY_ARTIFACT="$OUT/replay_writer.rep"
 REPLAY_LINE="replay outcome=1 actions=8 rng=1107243468 log=0:3:18:62;0:4:6:94;0:3:10:52;0:4:6:88;0:3:13:39;0:4:6:82;0:9:5:1;0:3:16:28;0:4:6:76;0:9:5:1;0:3:10:23;0:4:6:70;0:9:5:1;0:3:12:16;0:4:6:64;0:9:5:1;0:3:18:3;0:4:6:58;0:9:5:1;0:3:14:-6;0:5:0:0;"
 
 PASSES=0
@@ -129,7 +130,8 @@ run_driver() {
         return
     fi
     pass_case "$t built natively (build_target.sh linux)"
-    timeout 180 "$td/$t" >"$td/run.log" 2>&1
+    UNDERSANDED_REPLAY_PATH="$REPLAY_ARTIFACT" \
+        timeout 180 "$td/$t" >"$td/run.log" 2>&1
     rc=$?
     sed 's/^/       /' "$td/run.log"
     if [ "$rc" -eq 0 ] && grep -qx "$t PASS" "$td/run.log" \
@@ -141,7 +143,6 @@ run_driver() {
     fi
 }
 
-rm -f "$REPLAY_ARTIFACT"
 for t in replay_test sim_test ruletest_test safety_test replay_cli_test; do
     run_driver "$t"
 done
@@ -192,6 +193,35 @@ if [ "$NIX_OK" -eq 1 ]; then
     fi
 else
     fail_case "--replay skipped (undtool.nix did not build)"
+fi
+
+# Explicit --replay exit-2 paths: missing file, missing path arg, bad verb,
+# and an unknown creature token must all exit 2.
+expect_replay_exit2() {
+    label="$1"
+    shift
+    timeout 120 "$NIX" "$@" >"$OUT/replay_neg.log" 2>&1
+    rc=$?
+    if [ "$rc" -eq 2 ]; then
+        pass_case "undtool.nix --replay exit 2: $label"
+    else
+        fail_case "undtool.nix --replay exit 2: $label (rc=$rc)"
+        sed 's/^/       /' "$OUT/replay_neg.log"
+    fi
+}
+if [ "$NIX_OK" -eq 1 ]; then
+    REPLAY_MISSING="$OUT/replay_missing.rep"
+    rm -f "$REPLAY_MISSING"
+    REPLAY_BAD_VERB="$OUT/replay_bad_verb.rep"
+    printf 'seed=98\ncreature=eel\nzone=Z3\nphase=night\ntool=sonar\nA punch\n' >"$REPLAY_BAD_VERB"
+    REPLAY_BAD_TOKEN="$OUT/replay_bad_token.rep"
+    printf 'seed=98\ncreature=shark\nzone=Z3\nphase=night\ntool=sonar\nA strike\n' >"$REPLAY_BAD_TOKEN"
+    expect_replay_exit2 "missing file" --replay "$REPLAY_MISSING"
+    expect_replay_exit2 "missing path arg" --replay
+    expect_replay_exit2 "bad verb" --replay "$REPLAY_BAD_VERB"
+    expect_replay_exit2 "unknown creature token" --replay "$REPLAY_BAD_TOKEN"
+else
+    fail_case "--replay exit-2 paths skipped (undtool.nix did not build)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -304,14 +334,12 @@ fi
 # ---------------------------------------------------------------------------
 echo "== FAST: sim gate (200 fights, seed 98, hull 150) =="
 TABLE="$OUT/sim_table.txt"
-printf 'token actions rare_actions ascent_pm switches_pct prompts\n' >"$TABLE"
-SIM_OK=1
+printf 'token actions rare_actions_pm ascent_pm switches_pct prompts\n' >"$TABLE"
 for tok in eel electric_eel steel_tuna anemoniacus freezing_perch; do
     LOG="$OUT/sim_$tok.log"
     LOG2="$OUT/sim_${tok}_rerun.log"
     if [ "$NIX_OK" -ne 1 ]; then
         fail_case "sim $tok skipped (undtool.nix did not build)"
-        SIM_OK=0
         continue
     fi
     timeout 180 "$NIX" --sim 200 --creature "$tok" --seed 98 --hull 150 \
@@ -319,7 +347,6 @@ for tok in eel electric_eel steel_tuna anemoniacus freezing_perch; do
     RC=$?
     if [ "$RC" -ne 0 ]; then
         fail_case "sim $tok exited $RC (see $LOG)"
-        SIM_OK=0
         continue
     fi
 
@@ -333,17 +360,16 @@ for tok in eel electric_eel steel_tuna anemoniacus freezing_perch; do
     REPORT="$(sed -n '2p' "$LOG")"
     case "$REPORT" in
         "sim creature=$tok fights=200 "*) : ;;
-        *) fail_case "sim $tok report line malformed: $REPORT"; SIM_OK=0; continue ;;
+        *) fail_case "sim $tok report line malformed: $REPORT"; continue ;;
     esac
     ACTIONS="$(sim_field "$REPORT" actions_avg)"
-    RARE="$(sim_field "$REPORT" rare_actions_avg)"
+    RARE="$(sim_field "$REPORT" rare_actions_pm)"
     ASCENT="$(sim_field "$REPORT" ascent_pm)"
     SWITCH="$(sim_field "$REPORT" bar_switch_pct)"
     PROMPTS="$(sim_field "$REPORT" prompts)"
     if [ -z "$ACTIONS" ] || [ -z "$RARE" ] || [ -z "$ASCENT" ] \
         || [ -z "$SWITCH" ] || [ -z "$PROMPTS" ]; then
         fail_case "sim $tok report fields missing: $REPORT"
-        SIM_OK=0
         continue
     fi
     printf '%s %s %s %s %s %s\n' \
@@ -374,11 +400,11 @@ for tok in eel electric_eel steel_tuna anemoniacus freezing_perch; do
 
     case "$tok" in
         anemoniacus|freezing_perch)
-            # Rare-fight avg actions gate: <= 12.
-            if [ "$RARE" -le 12 ]; then
-                pass_case "sim $tok rare actions ${RARE} <= 12"
+            # Rare-fight actions gate: <= 12000pm (12.0 actions).
+            if [ "$RARE" -le 12000 ]; then
+                pass_case "sim $tok rare actions ${RARE}pm <= 12000pm (12.0)"
             else
-                fail_case "sim $tok rare actions ${RARE} > 12"
+                fail_case "sim $tok rare actions ${RARE}pm > 12000pm (12.0)"
             fi
             ;;
         *)
@@ -399,8 +425,26 @@ sed 's/^/       /' "$TABLE"
 # SLOW: Wine evidence only (never the gate); never a silent skip.
 # ---------------------------------------------------------------------------
 echo "== SLOW: Wine evidence (never the gate) =="
-UNDTOOL_EXE="$UNDDIR/out/undtool.exe"
-if command -v wine >/dev/null 2>&1 && [ -f "$UNDTOOL_EXE" ]; then
+# Discover the CUI exe from the real build output (build.sh defaults to
+# examples/z98/undersanded/out, but OUT may place it elsewhere). Never hardcode
+# a stale path; an absent exe is an evidence-only loud skip.
+UNDTOOL_EXE="${UNDTOOL_EXE:-}"
+if [ -z "$UNDTOOL_EXE" ]; then
+    for cand in "$UNDDIR/out/undtool.exe" "$UNDDIR/out/native/undtool.exe"; do
+        if [ -f "$cand" ]; then
+            UNDTOOL_EXE="$cand"
+            break
+        fi
+    done
+fi
+if [ -z "$UNDTOOL_EXE" ]; then
+    UNDTOOL_EXE="$(find "$UNDDIR" -maxdepth 4 -type f -name undtool.exe 2>/dev/null | head -n 1)"
+fi
+if ! command -v wine >/dev/null 2>&1; then
+    skip_evidence "wine absent (native tier is the gate)"
+elif [ -z "$UNDTOOL_EXE" ] || [ ! -f "$UNDTOOL_EXE" ]; then
+    skip_evidence "undtool.exe not found under $UNDDIR (build it for Wine evidence)"
+else
     WLOG="$OUT/wine_sim.log"
     if timeout 180 wine "$UNDTOOL_EXE" --sim 5 --creature eel --seed 98 --hull 150 \
         >"$WLOG" 2>&1 </dev/null; then
@@ -412,8 +456,6 @@ if command -v wine >/dev/null 2>&1 && [ -f "$UNDTOOL_EXE" ]; then
     else
         evidence_fail "wine undtool.exe --sim failed (see $WLOG)"
     fi
-else
-    skip_evidence "wine or $UNDTOOL_EXE absent (native tier is the gate)"
 fi
 
 echo

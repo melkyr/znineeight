@@ -323,7 +323,7 @@ ZIG=/tmp/zig1-m1/zig1_5_clean OUT=/tmp/undersanded_m2_tier \
 TIER_M2 PASS 29 passed / 0 failed
 ```
 
-Native driver case counts: `core_test` 12, `behavior_test` 24, `fight_test` 39,
+Native driver case counts: `core_test` 12, `behavior_test` 25, `fight_test` 41,
 `ui_test` 17. `fight_test` pins the exact full log bytes (`class:msg_id:a:b;`
 per entry) for four scripted fights: fight 1 (Subdue), fight 2 (Kill), fight 3
 (Overkill), and fight 4 (rare modal). All use the fixed seed 98.
@@ -513,20 +513,26 @@ and headless, and the M2 gate already drives all five creatures through
 ## M3 gate (final)
 
 `tests/tier_m3_sim.sh` is the M3 FAST/native gate. Run at the gate loadout
-(`--sim 200 --seed 98 --hull 150`) it reports **61 passed / 0 failed / 1
-evidence skip**: `TIER_M3 PASS 61 passed / 0 failed` (the skip is the SLOW
+(`--sim 200 --seed 98 --hull 150`) it reports **65 passed / 0 failed / 1
+evidence skip**: `TIER_M3 PASS 65 passed / 0 failed` (the skip is the SLOW
 Wine `undtool.exe` evidence section: no built exe / wine in the native-only
 worktree; it is non-gating by design).
 
-| Creature | token | actions | rare actions | ascent % | switches % | prompts |
+- **W1 deferred-fix re-pin:** decline now logs the plain copy
+  (`MSG_DECLINE_PLAIN`, "The creature recovers its footing.") unless a coupling
+  regen is active (`MSG_DECLINE` keeps the recovering-will wording); the
+  `--dump-grid` golden was re-pinned for the pinned `DUMP_SEED=98`; rare
+  actions report per-mille (`rare_actions_pm`). No assertion was weakened.
+
+| Creature | token | actions | rare actions (pm) | ascent % | switches % | prompts |
 | :--- | :--- | ---: | ---: | ---: | ---: | ---: |
 | Mystic Eel | `eel` | 8 | 0 | 0.0 | 100 | 0 |
 | Mystic Electric Eel | `electric_eel` | 10 | 0 | 0.0 | 100 | 0 |
 | Steel Tuna | `steel_tuna` | 11 | 0 | 0.0 | 100 | 0 |
-| Anemoniacus | `anemoniacus` | 11 | 11 | 4.0 | 100 | 292 |
-| Freezing Perch | `freezing_perch` | 5 | 5 | 1.5 | 25 | 73 |
+| Anemoniacus | `anemoniacus` | 11 | 11525 | 4.0 | 100 | 292 |
+| Freezing Perch | `freezing_perch` | 5 | 5385 | 1.5 | 25 | 73 |
 
-- Rare-fight avg actions `≤12`: PASS (Anemoniacus 11, Freezing Perch 5).
+- Rare-fight actions `≤12000pm`: PASS (Anemoniacus 11525pm, Freezing Perch 5385pm).
 - Ascent rate `≤15%` at Hull 150 (`ascent_pm ≤ 150`): PASS (Anemoniacus 40pm,
   Freezing Perch 15pm; commons 0pm).
 - Bar-switch `>0`: PASS (100% on eel/electric_eel/steel_tuna/anemoniacus, 25%
@@ -537,12 +543,12 @@ worktree; it is non-gating by design).
   pinned line: PASS (`replay_eel_98.rep`). `--dump-grid --screen fight`
   byte-identical to `dump_grid_fight.golden`: PASS. Replay v2 writer artifact
   byte-identical to `replay_eel_98.rep`: PASS.
-- Unit drivers: `replay_test` 4/4, `sim_test` 7/7, `ruletest_test`
+- Unit drivers: `replay_test` 4/4, `sim_test` 8/8, `ruletest_test`
   (`rules_ok=100`), `safety_test` 5/5 (incl. decline-no-RNG,
   commons-never-prompt, surge caps), `replay_cli_test` 3/3.
 - Prior gates: `tier_m1_std.sh` `TIER_M1 PASS` (37 passed / 0 failed / 0
   evidence skips); `tier_m2_fight.sh` `TIER_M2 PASS 29 passed / 0 failed`
-  (core 12, behavior 25, fight 39, ui 17); z9edit `tier_edit.sh` 38/0 with
+  (core 12, behavior 25, fight 41, ui 17); z9edit `tier_edit.sh` 38/0 with
   lexer md5 `dcc81009e9a36c86e4d90e104c439871` byte-identical 3x.
 
 ### Lever trace + content rebalance (user-authorized)

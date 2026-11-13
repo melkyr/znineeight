@@ -21,9 +21,16 @@ const def = @import("def.zig");
 const fight = @import("fight.zig");
 const behavior = @import("behavior.zig");
 const creatures = @import("creatures_t1.zig");
+const std_mem = @import("std_mem");
 
 // Defensive stop; the policy always terminates on the five M2 rows.
 const MAX_STEPS_PER_FIGHT: i32 = 10000;
+
+// Defensive cap so the i32 report accumulators cannot trap under -fsafe.
+const MAX_FIGHTS: i32 = 100000;
+
+// §25.9 policy threshold: Strike/restrain split at 50% of the relevant bar.
+const POLICY_PCT: i32 = 50;
 
 pub const SimReport = struct {
     fights: i32,
@@ -39,6 +46,12 @@ pub const SimReport = struct {
     fled: i32,
     rare_surges: i32,
 };
+
+// R8 zero-init for a full GameState (the caller sets exp.seed/fight_index and
+// fight.startFightDef fills the fight/log fields).
+pub fn zeroState(s: *def.GameState) void {
+    std_mem.zeroU8(@ptrCast([*]u8, s), @sizeOf(def.GameState));
+}
 
 fn zeroReport() SimReport {
     return SimReport{
@@ -71,13 +84,13 @@ pub fn chooseAction(s: *const def.GameState, cdef: *const def.CreatureDef) def.A
     }
 
     if ((cdef.flags & def.F_SHELL) != 0) {
-        if (fight.abovePct(s.fight.res, s.fight.max_res, 50)) {
+        if (fight.abovePct(s.fight.res, s.fight.max_res, POLICY_PCT)) {
             return def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 };
         }
         return def.Action{ .kind = def.ACT_STRIKE, .arg = 0 };
     }
 
-    if (fight.abovePct(s.fight.hp, s.fight.max_hp, 50)) {
+    if (fight.abovePct(s.fight.hp, s.fight.max_hp, POLICY_PCT)) {
         return def.Action{ .kind = def.ACT_STRIKE, .arg = 0 };
     }
     return def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 };
@@ -85,10 +98,14 @@ pub fn chooseAction(s: *const def.GameState, cdef: *const def.CreatureDef) def.A
 
 // Run `n_fights` fights of one creature definition, fight i seeded from
 // `seed0 + i*77` (fight.startFightDef owns the formula). `hull` is the
-// starting/max Hull for each fight (base 100; ascent gate measured at 125).
-pub fn runSimDef(cdef: *const def.CreatureDef, rules: []const behavior.Rule, n_fights: i32, seed0: u32, hull: i32) SimReport {
+// starting/max Hull for each fight (base 100; ascent gate measured at 150).
+pub fn runSimDef(def_index: i32, cdef: *const def.CreatureDef, rules: []const behavior.Rule, n_fights: i32, seed0: u32, hull: i32) SimReport {
     var r = zeroReport();
     if (n_fights <= 0) return r;
+    // Choice: reject absurd counts with a zero report rather than clamping, so
+    // a caller cannot mistake a truncated run for a full one. Normal paths are
+    // unchanged. See #11 (i32 accumulator overflow guard).
+    if (n_fights > MAX_FIGHTS) return r;
 
     r.fights = n_fights;
     const rare = cdef.role == creatures.ROLE_RARE;
@@ -96,9 +113,10 @@ pub fn runSimDef(cdef: *const def.CreatureDef, rules: []const behavior.Rule, n_f
     var i: i32 = 0;
     while (i < n_fights) : (i += 1) {
         var s: def.GameState = undefined;
+        zeroState(&s);
         s.exp.seed = seed0;
         s.exp.fight_index = i;
-        fight.startFightDef(&s, 0, cdef, rules);
+        fight.startFightDef(&s, def_index, cdef, rules);
         s.fight.hull = hull;
         s.fight.max_hull = hull;
 
@@ -146,7 +164,7 @@ pub fn runSimDef(cdef: *const def.CreatureDef, rules: []const behavior.Rule, n_f
 // DEFS[5] wrapper used by undtool --sim.
 pub fn runSim(def_index: i32, n_fights: i32, seed0: u32, hull: i32) SimReport {
     var d = creatures.defAt(def_index);
-    return runSimDef(&d, creatures.RULES[0..], n_fights, seed0, hull);
+    return runSimDef(def_index, &d, creatures.RULES[0..], n_fights, seed0, hull);
 }
 
 // ---- Integer report arithmetic -------------------------------------------
@@ -159,6 +177,12 @@ pub fn actionsAvg(r: *const SimReport) i32 {
 pub fn rareActionsAvg(r: *const SimReport) i32 {
     if (r.rare_fights <= 0) return 0;
     return r.rare_actions / r.rare_fights;
+}
+
+// Rare-fight actions per-mille (gate metric: <= 12000 = 12.0 actions).
+pub fn rareActionsPm(r: *const SimReport) i32 {
+    if (r.rare_fights <= 0) return 0;
+    return r.rare_actions * 1000 / r.rare_fights;
 }
 
 pub fn ascentPm(r: *const SimReport) i32 {

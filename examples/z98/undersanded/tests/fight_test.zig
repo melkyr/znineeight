@@ -571,6 +571,96 @@ fn tTurnOrderTiePlayerFirst() bool {
     return true;
 }
 
+// Persistent SET_ARMOR must be computed at strike time (not from the cache
+// refreshed on the previous action): HP above the rule threshold uses the base
+// armor, HP below uses the rule armor on that same action, and an action whose
+// crossing is reflected in the current state uses the new value.
+const ARMOR_RULES = [_]behavior.Rule{
+    behavior.Rule{
+        .cond_op = behavior.HP_BELOW,
+        .cond_a = 50,
+        .cond_b = 0,
+        .effect_op = behavior.SET_ARMOR,
+        .effect_a = 50,
+        .effect_b = 0,
+        .timing = behavior.TIMING_PERSISTENT,
+    },
+};
+
+fn tArmorPersistentRuleTiming() bool {
+    var d = neutralDef();
+    d.hp = 100;
+    d.attack = 0;
+    d.armor_pct = 100;
+    d.rule_start = 0;
+    d.rule_count = 1;
+
+    var s: def.GameState = undefined;
+    begin(&s, &d, ARMOR_RULES[0..]);
+
+    s.fight.hp = 80;
+    s.fight.prev_hp = 80;
+    if (fight.effectiveArmorPct(&s, &d, ARMOR_RULES[0..]) != 100) return false;
+    s.log_n = 0;
+    doStepWith(&s, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
+    const above_dmg = msgA(&s, fight.MSG_STRIKE);
+    if (above_dmg < fight.STRIKE_MIN or above_dmg > fight.STRIKE_MAX) return false;
+
+    s.fight.hp = 49;
+    s.fight.prev_hp = 49;
+    s.fight.outcome = def.OUT_ONGOING;
+    if (fight.effectiveArmorPct(&s, &d, ARMOR_RULES[0..]) != 50) return false;
+    s.log_n = 0;
+    doStepWith(&s, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
+    const below_dmg = msgA(&s, fight.MSG_STRIKE);
+    if (below_dmg < 7 or below_dmg > 12) return false;
+
+    // Crossing action: the condition is already false in the previous state and
+    // true now, so the strike must use the rule's armor immediately.
+    s.fight.hp = 49;
+    s.fight.prev_hp = 80;
+    s.fight.outcome = def.OUT_ONGOING;
+    s.log_n = 0;
+    doStepWith(&s, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
+    const crossed_dmg = msgA(&s, fight.MSG_STRIKE);
+    if (crossed_dmg < 7 or crossed_dmg > 12) return false;
+    return true;
+}
+
+// Decline copy: the recovering-will wording is reserved for states where one of
+// the endRound coupling regens is active; otherwise the plain copy is logged.
+fn tDeclineCopyCouplingVsPlain() bool {
+    var d = neutralDef();
+    d.resolve = 5;
+    d.subdue_chance = 60;
+    d.attack = 0;
+
+    var active: def.GameState = undefined;
+    begin(&active, &d, noRules());
+    active.fight.res = 5;
+    doStep(&active, def.ACT_RESTRAIN, &d);
+    if (active.screen != fight.SCREEN_SUBDUE) return false;
+    active.fight.hp = 80;
+    active.fight.res = 0;
+    active.log_n = 0;
+    doStep(&active, def.ACT_DECLINE, &d);
+    if (!hasMsg(&active, fight.MSG_DECLINE)) return false;
+    if (hasMsg(&active, def.MSG_DECLINE_PLAIN)) return false;
+
+    var plain: def.GameState = undefined;
+    begin(&plain, &d, noRules());
+    plain.fight.res = 5;
+    doStep(&plain, def.ACT_RESTRAIN, &d);
+    if (plain.screen != fight.SCREEN_SUBDUE) return false;
+    plain.fight.hp = 40;
+    plain.fight.res = 0;
+    plain.log_n = 0;
+    doStep(&plain, def.ACT_DECLINE, &d);
+    if (!hasMsg(&plain, def.MSG_DECLINE_PLAIN)) return false;
+    if (hasMsg(&plain, fight.MSG_DECLINE)) return false;
+    return true;
+}
+
 fn tSteelTunaSpeedImmediate() bool {
     var d = creatures.defAt(2);
     var s: def.GameState = undefined;
@@ -1056,6 +1146,8 @@ pub fn main() void {
     report("start_fight_world_zeroed", tStartFightWorldZeroed());
     report("turn_order_tie_player_first", tTurnOrderTiePlayerFirst());
     report("steel_tuna_speed_immediate_tie_player", tSteelTunaSpeedImmediate());
+    report("persistent_set_armor_strike_timing", tArmorPersistentRuleTiming());
+    report("decline_copy_coupling_vs_plain", tDeclineCopyCouplingVsPlain());
     report("creature_faster_acts_first", tCreatureFasterActsFirst());
     report("decline_no_rng_gate_refire", tDeclineNoRngAndGate());
     report("creature_attack_reduces_hull", tCreatureAttackHull());

@@ -67,9 +67,15 @@ fn tInvalidStreamRejected() bool {
 }
 
 pub fn main() void {
+    file_mod.remove(REPLAY_PATH) catch {};
+    file_mod.remove(MISSING_PATH) catch {};
+
     report("replay_cli_golden_stable", tGoldenStable());
     report("replay_cli_missing_file_rejected", tMissingRejected());
     report("replay_cli_invalid_stream_rejected", tInvalidStreamRejected());
+
+    file_mod.remove(REPLAY_PATH) catch {};
+    file_mod.remove(MISSING_PATH) catch {};
 
     if (fails != 0) os.exit(1);
     io.write("replay_cli_test PASS\n");

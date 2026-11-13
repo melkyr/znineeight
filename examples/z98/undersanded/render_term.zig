@@ -229,6 +229,9 @@ fn msgLine(e: def.LogEntry, d: *const def.CreatureDef, out: []u8) []const u8 {
         fight.MSG_DECLINE => {
             p = copyInto(out, p, "You hold off. Its will begins to recover.");
         },
+        def.MSG_DECLINE_PLAIN => {
+            p = copyInto(out, p, "The creature recovers its footing.");
+        },
         fight.MSG_PLAYER_FLED => {
             p = copyInto(out, p, "You flee.");
         },

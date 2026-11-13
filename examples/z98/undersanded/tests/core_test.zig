@@ -91,10 +91,10 @@ fn ceilPct30Ref(max: i32) i32 {
 fn tCeilPct30() bool {
     var max: i32 = 50;
     while (max <= 195) : (max += 1) {
-        if (math.ceilPct30(max) != ceilPct30Ref(max)) return false;
+        if (math.ceilPct(max, 30) != ceilPct30Ref(max)) return false;
     }
-    if (math.ceilPct30(50) != 15) return false;
-    if (math.ceilPct30(195) != 59) return false;
+    if (math.ceilPct(50, 30) != 15) return false;
+    if (math.ceilPct(195, 30) != 59) return false;
     return true;
 }
 

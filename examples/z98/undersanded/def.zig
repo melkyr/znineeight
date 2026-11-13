@@ -147,6 +147,9 @@ pub const COUPLING_REGEN_DEFAULT: i32 = 5;
 // The Last Surge flavor line is the one §40-authored row for M2.
 
 pub const MSG_LAST_SURGE: i32 = 1;
+// Decline copy used when no coupling regen is active (fight.MSG_DECLINE keeps
+// the active-regen wording). Next free id after fight.zig's MSG_* table.
+pub const MSG_DECLINE_PLAIN: i32 = 15;
 
 pub const MsgRow = struct { id: i32, text: []const u8 };
 

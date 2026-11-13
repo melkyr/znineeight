@@ -10,7 +10,3 @@ pub fn applyPct(v: i32, pct: i32) i32 {
 pub fn ceilPct(v: i32, pct: i32) i32 {
     return (v * pct + 99) / 100;
 }
-
-pub fn ceilPct30(max: i32) i32 {
-    return ceilPct(max, 30);
-}

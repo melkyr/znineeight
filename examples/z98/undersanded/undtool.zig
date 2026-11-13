@@ -25,6 +25,9 @@ const file_mod = @import("std_file");
 
 const TokenRow = struct { name: []const u8, index: i32 };
 
+// Pinned seed for the deterministic --dump-grid fight frame (never CLI seed0).
+const DUMP_SEED: u32 = 98;
+
 const TOKEN_ROWS = [_]TokenRow{
     TokenRow{ .name = "eel", .index = 0 },
     TokenRow{ .name = "electric_eel", .index = 1 },
@@ -68,8 +71,8 @@ fn writeReport(token: []const u8, r: *const sim.SimReport) void {
     io.printInt(r.fights);
     io.write(" actions_avg=");
     io.printInt(sim.actionsAvg(r));
-    io.write(" rare_actions_avg=");
-    io.printInt(sim.rareActionsAvg(r));
+    io.write(" rare_actions_pm=");
+    io.printInt(sim.rareActionsPm(r));
     io.write(" ascent_pm=");
     io.printInt(sim.ascentPm(r));
     io.write(" bar_switch_pct=");
@@ -96,9 +99,10 @@ fn writeReport(token: []const u8, r: *const sim.SimReport) void {
 // render_term and returned as the trimmed row-major dump. The caller writes the
 // returned slice; this module never touches std_gfx (gfxDumpGrid covers only
 // the gfx memory surface, which Task 5 owns).
-pub fn dumpFightFrame(def_index: i32, seed0: u32, out: []u8) []const u8 {
+pub fn dumpFightFrame(def_index: i32, seed: u32, out: []u8) []const u8 {
     var s: def.GameState = undefined;
-    s.exp.seed = seed0;
+    sim.zeroState(&s);
+    s.exp.seed = seed;
     s.exp.fight_index = 0;
     var d = creatures.defAt(def_index);
     fight.startFightDef(&s, def_index, &d, creatures.RULES[0..]);
@@ -202,13 +206,8 @@ pub fn replayLine(path: []const u8, out: []u8) ?[]const u8 {
     const index = tokenIndex(replay.creatureText(&r)) orelse return null;
 
     var s: def.GameState = undefined;
-    s.exp.active = 0;
-    s.exp.zone = 0;
-    s.exp.fight_index = 0;
+    sim.zeroState(&s);
     s.exp.seed = r.seed;
-    var h: usize = 0;
-    while (h < def.MAX_PARTS) : (h += 1) s.exp.hold[h] = 0;
-    s.exp.hold_n = 0;
 
     var d = creatures.defAt(index);
     fight.startFightDef(&s, index, &d, creatures.RULES[0..]);
@@ -322,6 +321,10 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
                 fail("undtool: --hull needs an integer");
                 return;
             };
+            if (hull <= 0) {
+                fail("undtool: --hull must be greater than 0");
+                return;
+            }
         } else if (startsFlag(a)) {
             fail("undtool: unknown flag");
             return;
@@ -354,8 +357,15 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             fail("undtool: unknown --screen id");
             return;
         }
+        var dump_index: i32 = 0;
+        if (have_creature) {
+            dump_index = tokenIndex(token) orelse {
+                fail("undtool: unknown --creature token");
+                return;
+            };
+        }
         var buf: [8192]u8 = undefined;
-        const text = dumpFightFrame(0, seed0, buf[0..]);
+        const text = dumpFightFrame(dump_index, DUMP_SEED, buf[0..]);
         file_mod.writeAll(dump_path, text) catch {
             fail("undtool: --dump-grid write failed");
             return;

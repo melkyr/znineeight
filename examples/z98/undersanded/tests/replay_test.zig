@@ -17,7 +17,22 @@ const fight = @import("../fight.zig");
 const creatures = @import("../creatures_t1.zig");
 const replay = @import("../replay.zig");
 
-const REPLAY_PATH = "/tmp/m3_t1_replay.rep";
+const REPLAY_DEFAULT = "/tmp/m3_t1_replay_test.rep";
+
+fn replayPath() []const u8 {
+    if (os.env("UNDERSANDED_REPLAY_PATH")) |p| {
+        if (p.len > 0) return p;
+    }
+    return REPLAY_DEFAULT;
+}
+
+fn cleanupDefault() void {
+    if (os.env("UNDERSANDED_REPLAY_PATH")) |p| {
+        _ = p;
+    } else {
+        file_mod.remove(REPLAY_DEFAULT) catch {};
+    }
+}
 
 var fails: usize = 0;
 
@@ -42,6 +57,8 @@ fn eq(a: []const u8, b: []const u8) bool {
 }
 
 fn tRoundTrip() bool {
+    const path = replayPath();
+    file_mod.remove(path) catch {};
     const acts = [6]def.Action{
         def.Action{ .kind = def.ACT_STRIKE, .arg = 0 },
         def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 },
@@ -51,10 +68,10 @@ fn tRoundTrip() bool {
         def.Action{ .kind = def.ACT_DECLINE, .arg = 0 },
     };
 
-    replay.replayWrite(REPLAY_PATH, 98, "eel", "Z3", "night", "sonar", acts[0..]);
+    if (!replay.replayWrite(path, 98, "eel", "Z3", "night", "sonar", acts[0..])) return false;
 
     var r: replay.Replay = undefined;
-    if (!replay.replayRead(REPLAY_PATH, &r)) return false;
+    if (!replay.replayRead(path, &r)) return false;
     if (r.seed != 98) return false;
     if (!eq(replay.creatureText(&r), "eel")) return false;
     if (!eq(replay.zoneText(&r), "Z3")) return false;
@@ -71,25 +88,29 @@ fn tRoundTrip() bool {
 }
 
 fn tExactBytes() bool {
+    const path = replayPath();
+    file_mod.remove(path) catch {};
     const acts = [2]def.Action{
         def.Action{ .kind = def.ACT_STRIKE, .arg = 0 },
         def.Action{ .kind = def.ACT_DECLINE, .arg = 0 },
     };
-    replay.replayWrite(REPLAY_PATH, 98, "eel", "Z3", "night", "sonar", acts[0..]);
+    if (!replay.replayWrite(path, 98, "eel", "Z3", "night", "sonar", acts[0..])) return false;
 
     var storage: [4096]u8 = undefined;
     var arena = arena_mod.init(storage[0..]);
-    const data = file_mod.readAll(&arena, REPLAY_PATH) catch return false;
+    const data = file_mod.readAll(&arena, path) catch return false;
 
     const expected = "seed=98\ncreature=eel\nzone=Z3\nphase=night\ntool=sonar\nA strike\nA decline\n";
     return eq(data, expected);
 }
 
 fn tRejectBadVerb() bool {
-    file_mod.writeAll(REPLAY_PATH, "seed=98\ncreature=eel\nzone=Z3\nphase=night\ntool=sonar\nA punch\n") catch return false;
+    const path = replayPath();
+    file_mod.remove(path) catch {};
+    file_mod.writeAll(path, "seed=98\ncreature=eel\nzone=Z3\nphase=night\ntool=sonar\nA punch\n") catch return false;
 
     var r: replay.Replay = undefined;
-    return !replay.replayRead(REPLAY_PATH, &r);
+    return !replay.replayRead(path, &r);
 }
 
 fn sameState(a: *const def.GameState, b: *const def.GameState) bool {
@@ -123,6 +144,8 @@ fn runStream(s: *def.GameState, acts: []const def.Action) void {
 }
 
 fn tDeterministicReplay() bool {
+    const path = replayPath();
+    file_mod.remove(path) catch {};
     const acts = [16]def.Action{
         def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 },
         def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 },
@@ -142,10 +165,10 @@ fn tDeterministicReplay() bool {
         def.Action{ .kind = def.ACT_RESTRAIN, .arg = 0 },
     };
 
-    replay.replayWrite(REPLAY_PATH, 98, "eel", "Z3", "night", "sonar", acts[0..]);
+    if (!replay.replayWrite(path, 98, "eel", "Z3", "night", "sonar", acts[0..])) return false;
 
     var r: replay.Replay = undefined;
-    if (!replay.replayRead(REPLAY_PATH, &r)) return false;
+    if (!replay.replayRead(path, &r)) return false;
 
     var a: def.GameState = undefined;
     var b: def.GameState = undefined;
@@ -160,6 +183,8 @@ pub fn main() void {
     report("replay_exact_v2_bytes", tExactBytes());
     report("replay_rejects_unknown_verb", tRejectBadVerb());
     report("replay_deterministic_outcome_log_rng", tDeterministicReplay());
+
+    cleanupDefault();
 
     if (fails != 0) os.exit(1);
     io.write("replay_test PASS\n");
