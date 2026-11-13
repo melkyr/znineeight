@@ -1010,6 +1010,12 @@ pub fn crc32Final(state: u32) u32 {
     return state ^ 0xFFFFFFFF;
 }
 
+// One-shot CRC-32 over `data` (IEEE 802.3 reflected polynomial). Thin wrapper:
+// the table/lanes live in crc32Update; no duplicate table or logic.
+pub fn crc32(data: []const u8) u32 {
+    return crc32Final(crc32Update(crc32Init(), data));
+}
+
 // ---------------------------------------------------------------------------
 // RC4 (RFC 6229; used by the MSE/PE encrypted handshake)
 // ---------------------------------------------------------------------------

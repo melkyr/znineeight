@@ -3,7 +3,7 @@
 // std_crypto.zig is a PURE (no imports, no allocation) Z98 module; this
 // fixture imports it by module basename (the compiler's lib search path binds
 // the canonical <exe>/lib std_crypto.zig). It exercises the full CRC-32 API:
-// crc32Init / crc32Update / crc32Final.
+// crc32Init / crc32Update / crc32Final plus the one-shot crc32.
 //
 // Contract (blueprint §3 L5): streaming CRC-32 (IEEE 802.3 reflected
 // polynomial, init 0xFFFFFFFF, final XOR 0xFFFFFFFF), alloc none, errors none.
@@ -11,6 +11,8 @@
 //   - IEEE 802.3 KAT CRC-32("123456789") == 0xCBF43926
 //   - CRC-32("") == 0x00000000 (empty input)
 //   - streaming (1-byte and 3-byte chunks) == one-shot, byte-for-byte
+//   - one-shot crc32(data) == streaming init/update/final for check, empty,
+//     and a 200-byte multi-block input
 //
 // GREEN (contract): deterministic byte-exact stdout `crypto crc32 ok\n`
 // (RUNRC=0). A mismatch increments g_fail and calls @panic; the final line is
@@ -84,6 +86,12 @@ pub fn main() void {
     }
     c6 = crypto.crc32Final(c6);
     ck(c6 == want_mb, "crc32 multiblock streaming");
+
+    // One-shot wrapper must equal the streaming pipeline byte-for-byte.
+    ck(crypto.crc32(check) == want_check, "crc32 one-shot 123456789");
+    ck(crypto.crc32(empty) == want_empty, "crc32 one-shot empty");
+    ck(crypto.crc32(msg[0..]) == want_mb, "crc32 one-shot multiblock");
+    ck(crypto.crc32(msg[0..]) == c6, "crc32 one-shot == streaming multiblock");
 
     if (g_fail == 0) {
         std.io.write("crypto crc32 ok\n");
