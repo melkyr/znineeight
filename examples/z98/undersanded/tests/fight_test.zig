@@ -595,58 +595,76 @@ fn tArmorPersistentRuleTiming() bool {
     d.rule_start = 0;
     d.rule_count = 1;
 
-    var s: def.GameState = undefined;
-    begin(&s, &d, ARMOR_RULES[0..]);
-
-    s.fight.hp = 80;
-    s.fight.prev_hp = 80;
-    if (fight.effectiveArmorPct(&s, &d, ARMOR_RULES[0..]) != 100) return false;
-    s.log_n = 0;
-    doStepWith(&s, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
-    const above_dmg = msgA(&s, fight.MSG_STRIKE);
+    // Above threshold: base armor 100.
+    var above: def.GameState = undefined;
+    begin(&above, &d, ARMOR_RULES[0..]);
+    above.fight.hp = 80;
+    above.fight.prev_hp = 80;
+    if (fight.effectiveArmorPct(&above, &d, ARMOR_RULES[0..]) != 100) return false;
+    doStepWith(&above, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
+    const above_dmg = msgA(&above, fight.MSG_STRIKE);
     if (above_dmg < fight.STRIKE_MIN or above_dmg > fight.STRIKE_MAX) return false;
 
-    s.fight.hp = 49;
-    s.fight.prev_hp = 49;
-    s.fight.outcome = def.OUT_ONGOING;
-    if (fight.effectiveArmorPct(&s, &d, ARMOR_RULES[0..]) != 50) return false;
-    s.log_n = 0;
-    doStepWith(&s, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
-    const below_dmg = msgA(&s, fight.MSG_STRIKE);
+    // Below threshold: rule armor 50 applies on that same action.
+    var below: def.GameState = undefined;
+    begin(&below, &d, ARMOR_RULES[0..]);
+    below.fight.hp = 49;
+    below.fight.prev_hp = 49;
+    if (fight.effectiveArmorPct(&below, &d, ARMOR_RULES[0..]) != 50) return false;
+    doStepWith(&below, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
+    const below_dmg = msgA(&below, fight.MSG_STRIKE);
     if (below_dmg < 7 or below_dmg > 12) return false;
 
-    // Crossing action: the condition is already false in the previous state and
-    // true now, so the strike must use the rule's armor immediately.
-    s.fight.hp = 49;
-    s.fight.prev_hp = 80;
-    s.fight.outcome = def.OUT_ONGOING;
-    s.log_n = 0;
-    doStepWith(&s, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
-    const crossed_dmg = msgA(&s, fight.MSG_STRIKE);
+    // Crossing action in a fresh state: the cached armor still holds the base
+    // 100 while HP is already below the rule threshold, so this action must use
+    // the rule's armor (50) immediately instead of the stale cached value.
+    var crossed: def.GameState = undefined;
+    begin(&crossed, &d, ARMOR_RULES[0..]);
+    crossed.fight.hp = 49;
+    crossed.fight.prev_hp = 80;
+    if (crossed.fight.active_armor_pct != 100) return false;
+    doStepWith(&crossed, def.ACT_STRIKE, &d, ARMOR_RULES[0..]);
+    const crossed_dmg = msgA(&crossed, fight.MSG_STRIKE);
     if (crossed_dmg < 7 or crossed_dmg > 12) return false;
     return true;
 }
 
-// Decline copy: the recovering-will wording is reserved for states where one of
-// the endRound coupling regens is active; otherwise the plain copy is logged.
+// Decline copy: §9.3 reserves the recovering-will wording for Thrash (Resolve
+// regen) only; Despair (HP regen) and no-coupling states log the plain copy.
 fn tDeclineCopyCouplingVsPlain() bool {
     var d = neutralDef();
     d.resolve = 5;
     d.subdue_chance = 60;
     d.attack = 0;
 
-    var active: def.GameState = undefined;
-    begin(&active, &d, noRules());
-    active.fight.res = 5;
-    doStep(&active, def.ACT_RESTRAIN, &d);
-    if (active.screen != fight.SCREEN_SUBDUE) return false;
-    active.fight.hp = 80;
-    active.fight.res = 0;
-    active.log_n = 0;
-    doStep(&active, def.ACT_DECLINE, &d);
-    if (!hasMsg(&active, fight.MSG_DECLINE)) return false;
-    if (hasMsg(&active, def.MSG_DECLINE_PLAIN)) return false;
+    // Thrash live (Resolve below 50%, HP above 50%): recovering-will copy.
+    var thrash: def.GameState = undefined;
+    begin(&thrash, &d, noRules());
+    thrash.fight.res = 5;
+    doStep(&thrash, def.ACT_RESTRAIN, &d);
+    if (thrash.screen != fight.SCREEN_SUBDUE) return false;
+    thrash.fight.hp = 80;
+    thrash.fight.res = 0;
+    thrash.log_n = 0;
+    doStep(&thrash, def.ACT_DECLINE, &d);
+    if (!hasMsg(&thrash, fight.MSG_DECLINE)) return false;
+    if (hasMsg(&thrash, def.MSG_DECLINE_PLAIN)) return false;
 
+    // Despair live (HP below 30%, Resolve above 50%): plain copy, because only
+    // Thrash may promise the will returning.
+    var despair: def.GameState = undefined;
+    begin(&despair, &d, noRules());
+    despair.fight.res = 5;
+    doStep(&despair, def.ACT_RESTRAIN, &d);
+    if (despair.screen != fight.SCREEN_SUBDUE) return false;
+    despair.fight.hp = 20;
+    despair.fight.res = 80;
+    despair.log_n = 0;
+    doStep(&despair, def.ACT_DECLINE, &d);
+    if (!hasMsg(&despair, def.MSG_DECLINE_PLAIN)) return false;
+    if (hasMsg(&despair, fight.MSG_DECLINE)) return false;
+
+    // Neither coupling live: plain copy.
     var plain: def.GameState = undefined;
     begin(&plain, &d, noRules());
     plain.fight.res = 5;

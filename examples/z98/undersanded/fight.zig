@@ -523,14 +523,6 @@ fn endRound(s: *def.GameState, cdef: *const def.CreatureDef) void {
 
 // ---- Modal resume ---------------------------------------------------------
 
-// The endRound coupling predicate: the decline copy may only promise recovery
-// when one of the two coupling regens would actually fire for this state.
-fn couplingActive(s: *const def.GameState) bool {
-    if (belowPct(s.fight.res, s.fight.max_res, THRASH_GATE_PCT) and abovePct(s.fight.hp, s.fight.max_hp, THRASH_GATE_PCT)) return true;
-    if (belowPct(s.fight.hp, s.fight.max_hp, DESPAIR_GATE_PCT) and abovePct(s.fight.res, s.fight.max_res, DESPAIR_RES_GATE_PCT)) return true;
-    return false;
-}
-
 fn resolveModal(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, rules: []const behavior.Rule) void {
     const post = s.screen == SCREEN_SUBDUE_POST;
 
@@ -551,7 +543,9 @@ fn resolveModal(s: *def.GameState, a: def.Action, cdef: *const def.CreatureDef, 
 
     if (a.kind == def.ACT_DECLINE) {
         s.fight.subdue_declined = 1;
-        if (couplingActive(s)) {
+        // §9.3: the recovering-will copy is Thrash-only (Resolve regen); Despair
+        // HP regen does not promise the will returning.
+        if (belowPct(s.fight.res, s.fight.max_res, THRASH_GATE_PCT) and abovePct(s.fight.hp, s.fight.max_hp, THRASH_GATE_PCT)) {
             log(s, def.LOG_NORMAL, MSG_DECLINE, 0, 0);
         } else {
             log(s, def.LOG_NORMAL, def.MSG_DECLINE_PLAIN, 0, 0);
