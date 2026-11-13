@@ -427,8 +427,11 @@ and headless, and the M2 gate already drives all five creatures through
   (`scripted_golden_{subdue,kill,overkill,rare_modal}_bytes`).
 - **Five-creature roster.** `creatures.DEFS[5]` + `defAt(0..4)`
   (`creatures_t1.zig:193–210`): Mystic Eel, Mystic Electric Eel, Steel Tuna,
-  Anemoniacus (rare), Freezing Perch (rare); `role`/`ROLE_RARE` and `F_SHELL`
-  (`def.zig:134`) are public for the §25.9 policy.
+  Anemoniacus (rare), Freezing Perch (rare); `role`/`ROLE_RARE`
+  (`creatures_t1.zig:13`) and `F_SHELL` (`def.zig:135`) are public for the
+  §25.9 policy. Caveat: no M2 creature sets `F_SHELL` (all `flags=0`), so the
+  §25.9 Kill/Shell path cannot be exercised by the five-creature gate — M3
+  needs a synthetic shell fixture.
 - **Evidence:** `TIER_M2 PASS 29 passed / 0 failed`; `fight_test` prints 20
   headless `FIGHT` rows covering all five creatures, modal Attempt (e.g. fight
   4) and a real modal Decline (fight 20).
@@ -439,6 +442,19 @@ and headless, and the M2 gate already drives all five creatures through
   call public `fight.startFightDef`). M2 has no `OUT_ASCENT` (Hull-0
   termination is M4), so M3 must report Emergency Ascent rate as the fights
   where `FightState.hull` reaches 0 — the plan's Review Focus already requires
-  pinning that metric definition. `--creature <id>` strings (e.g. `perch`) map
-  to def indices in M3 tooling; defs carry numeric `id` only (content names
-  arrive M6/M8).
+  pinning that metric definition.
+- **Average actions must count steps, not `FightState.actions`.** That field
+  increments only for Strike/Restrain/Equip (`fight.zig:445–460`); Attempt,
+  Decline and Flee do not count. M3's "avg player actions" must count
+  `gameStep` calls/steps or rare-modal fights are undercounted.
+- **M3 lever 2 is not wired.** `LAST_SURGE_RESTORE_PCT` (`fight.zig:37`) is
+  currently unused; `lastSurge` restores via hardcoded `math.ceilPct30`
+  (`fight.zig:350`). Changing the constant to 25 does nothing — M3 must wire
+  the constant (or use the hardcoded value) for the lever to work.
+- **Replay headers (`tool=`, `zone=`, `phase=`).** M2 exposes `FightState.tool`
+  and the tool constants; M3 can set/record these through public state. Sonar
+  itself is later content, not an M3 surface requirement.
+- **`--creature <id>` mapping.** Strings (e.g. `perch`) map to def indices in
+  M3 tooling; defs carry numeric `id` only. Roadmap note (not verified from M2
+  code): display names exist in `render_term.creatureName`; content naming is
+  later-milestone work.
