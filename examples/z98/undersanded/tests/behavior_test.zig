@@ -259,6 +259,65 @@ fn tEffectVocabulary() bool {
     return true;
 }
 
+fn tConditionOpValuesFrozen() bool {
+    if (behavior.HP_BELOW != 1) return false;
+    if (behavior.RES_BELOW != 2) return false;
+    if (behavior.ROUND_MOD != 3) return false;
+    if (behavior.FIRST_ROUND != 4) return false;
+    if (behavior.ALWAYS != 5) return false;
+    return true;
+}
+
+fn tEffectOpValuesFrozen() bool {
+    if (behavior.REGEN_RES != 1) return false;
+    if (behavior.REGEN_HP != 2) return false;
+    if (behavior.HULL_DMG != 3) return false;
+    if (behavior.SET_ARMOR != 4) return false;
+    if (behavior.SET_FLEE != 5) return false;
+    if (behavior.SET_BLIND != 6) return false;
+    if (behavior.SET_INK != 7) return false;
+    if (behavior.ADD_SPEED != 8) return false;
+    if (behavior.MULT_ATK != 9) return false;
+    if (behavior.MISS_STRIKE != 10) return false;
+    return true;
+}
+
+fn tHpBelowCrossingBoundary() bool {
+    const r = makeRule(behavior.HP_BELOW, 50, 0, behavior.HULL_DMG, 8, 0, behavior.TIMING_ONESHOT);
+
+    var c: u32 = 0;
+    if (behavior.ruleFire(r, 50, 49, 100, 100, 1, &c, 0) == null) return false;
+    if ((c & bitMask(0)) == 0) return false;
+
+    var c2: u32 = 0;
+    if (behavior.ruleFire(r, 50, 50, 100, 100, 1, &c2, 1) != null) return false;
+    if (c2 != 0) return false;
+    return true;
+}
+
+fn tInvalidBitNoop() bool {
+    const r = makeRule(behavior.ALWAYS, 0, 0, behavior.HULL_DMG, 8, 0, behavior.TIMING_ONESHOT);
+    var c: u32 = 0x12345678;
+
+    if (behavior.ruleFire(r, 100, 100, 100, 100, 1, &c, -1) != null) return false;
+    if (c != 0x12345678) return false;
+    if (behavior.ruleFire(r, 100, 100, 100, 100, 1, &c, 32) != null) return false;
+    if (c != 0x12345678) return false;
+    if (behavior.ruleFire(r, 100, 100, 100, 100, 1, &c, 99) != null) return false;
+    if (c != 0x12345678) return false;
+    return true;
+}
+
+fn tRoundModNegativeArg() bool {
+    const r = makeRule(behavior.ROUND_MOD, -3, 0, behavior.ADD_SPEED, 4, 0, behavior.TIMING_PERSISTENT);
+    var c: u32 = 0;
+
+    if (behavior.ruleFire(r, 100, 100, 100, 100, -6, &c, 0) == null) return false;
+    if (behavior.ruleFire(r, 100, 100, 100, 100, 5, &c, 0) != null) return false;
+    if (behavior.ruleFire(r, 100, 100, 100, 100, 0, &c, 0) == null) return false;
+    return true;
+}
+
 fn tStdMathClampEdges() bool {
     if (std_math.clamp(-1, 0, 10) != 0) return false;
     if (std_math.clamp(0, 0, 10) != 0) return false;
@@ -301,6 +360,11 @@ pub fn main() void {
     report("consumed_bit_isolation", tConsumedBitIsolation());
     report("set_blind_chance_in_b", tSetBlindChanceInB());
     report("effect_vocabulary", tEffectVocabulary());
+    report("condition_op_values_frozen", tConditionOpValuesFrozen());
+    report("effect_op_values_frozen", tEffectOpValuesFrozen());
+    report("hp_below_crossing_boundary", tHpBelowCrossingBoundary());
+    report("invalid_bit_noop", tInvalidBitNoop());
+    report("round_mod_negative_arg", tRoundModNegativeArg());
     report("std_math_clamp_edges", tStdMathClampEdges());
     report("std_math_abs_neg_max", tStdMathAbsNegMax());
     report("std_math_min_max", tStdMathMinMax());

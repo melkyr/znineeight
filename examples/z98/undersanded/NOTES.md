@@ -191,8 +191,8 @@ Checked the M2 plan's consumed surfaces against M1 actuals (code at
   authored in M2 Task 1 (`def.zig`); M1 fixed no contradicting values and
   mandates no resize.
 - **`GameState`/`LogEntry`/`FightState`:** authored in M2 Task 1
-  (state/`def.zig`) from spec §25.3. **`Effect`** is authored in M2 Task 2
-  (`behavior.zig`). No std/platform surface required.
+  (state/`def.zig`) from spec §25.3. **`Effect`** is authored in M2 Task 1
+  (`def.zig`). No std/platform surface required.
 - **std APIs M2 calls:** `std_gfx` cell tier is present — `gfxOpen`:107,
   `gfxOpenMemory`:128, `gfxWaitEvent`:197, `gfxPollEvent`:163,
   `Event.px/py`:49–50, `focus_lost`/`focus_gained`:39–40, `gfxTestKey`:236,
@@ -239,3 +239,52 @@ Verdict: **no amendment needed** for M2.
   - `tier_edit.sh` → `TIER_EDIT PASS`, 38 passed / 0 failed; lexer md5
     `dcc81009e9a36c86e4d90e104c439871` (3x); compile max RSS 5916 KiB.
   - `tier_m1_std.sh` → `TIER_M1 PASS`, 37 passed / 0 failed / 0 evidence skips.
+
+## Rule op mapping (frozen for M6/M8 data authoring)
+
+The numeric op values in `behavior.zig` are frozen. M6/M8 `[rules]` rows must
+author exactly these numbers; `behavior_test.zig` pins every literal.
+
+Condition ops (`Rule.cond_op`):
+
+| Name | Value |
+| :--- | --: |
+| `HP_BELOW` | 1 |
+| `RES_BELOW` | 2 |
+| `ROUND_MOD` | 3 |
+| `FIRST_ROUND` | 4 |
+| `ALWAYS` | 5 |
+
+Effect ops (`Rule.effect_op`, also `Effect.op` in `def.zig`):
+
+| Name | Value |
+| :--- | --: |
+| `REGEN_RES` | 1 |
+| `REGEN_HP` | 2 |
+| `HULL_DMG` | 3 |
+| `SET_ARMOR` | 4 |
+| `SET_FLEE` | 5 |
+| `SET_BLIND` | 6 |
+| `SET_INK` | 7 |
+| `ADD_SPEED` | 8 |
+| `MULT_ATK` | 9 |
+| `MISS_STRIKE` | 10 |
+
+Timing (`Rule.timing`): `TIMING_ONESHOT = 0`, `TIMING_PERSISTENT = 1`.
+
+Condition semantics (frozen):
+
+- Round base is **1** (the first round is `round == 1`); `FIRST_ROUND_NUM = 1`.
+- `HP_BELOW` holds when `now_hp < cond_a`.
+- `RES_BELOW` holds when `now_res < cond_a`.
+- `ROUND_MOD` holds when `round % cond_a == cond_b`; `cond_a == 0` → false
+  (never divides, so no `-fsafe` trap).
+- `FIRST_ROUND` holds when `round == FIRST_ROUND_NUM` (i.e. `round == 1`).
+- `ALWAYS` holds unconditionally.
+- Threshold one-shot crossing: fire when `prev >= cond_a && now < cond_a`
+  (exactly at the threshold counts as not-yet-crossed).
+- Non-threshold one-shot (`ROUND_MOD`, `FIRST_ROUND`, `ALWAYS`): `crossed` is
+  the condition itself, so the row fires on the first evaluation where it
+  holds; the consumed bit prevents any later fire.
+- Persistent rows report their effect on every evaluation while the condition
+  holds. Unknown condition/effect/timing values are a no-op.
