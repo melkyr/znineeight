@@ -282,6 +282,12 @@ fn tEffectOpValuesFrozen() bool {
     return true;
 }
 
+fn tTimingValuesFrozen() bool {
+    if (behavior.TIMING_ONESHOT != 0) return false;
+    if (behavior.TIMING_PERSISTENT != 1) return false;
+    return true;
+}
+
 fn tHpBelowCrossingBoundary() bool {
     const r = makeRule(behavior.HP_BELOW, 50, 0, behavior.HULL_DMG, 8, 0, behavior.TIMING_ONESHOT);
 
@@ -362,6 +368,7 @@ pub fn main() void {
     report("effect_vocabulary", tEffectVocabulary());
     report("condition_op_values_frozen", tConditionOpValuesFrozen());
     report("effect_op_values_frozen", tEffectOpValuesFrozen());
+    report("timing_values_frozen", tTimingValuesFrozen());
     report("hp_below_crossing_boundary", tHpBelowCrossingBoundary());
     report("invalid_bit_noop", tInvalidBitNoop());
     report("round_mod_negative_arg", tRoundModNegativeArg());

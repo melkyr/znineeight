@@ -347,7 +347,7 @@ fn applyRules(s: *def.GameState, cdef: *const def.CreatureDef, rules: []const be
 // ---- Last Surge -----------------------------------------------------------
 
 pub fn lastSurge(s: *def.GameState) void {
-    s.fight.res = math.ceilPct30(s.fight.max_res);
+    s.fight.res = math.ceilPct(s.fight.max_res, LAST_SURGE_RESTORE_PCT);
     s.fight.surge_count += 1;
     if (s.fight.surge_atk_applied == 0) s.fight.surge_atk_applied = 1;
     log(s, def.LOG_NORMAL, def.MSG_LAST_SURGE, s.fight.surge_count, s.fight.res);

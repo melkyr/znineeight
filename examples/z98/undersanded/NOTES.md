@@ -400,6 +400,17 @@ path; the table above is the deterministic, machine-checked equivalent.
 All three answers are **yes**; the M2 fight is cleared for M3 without a
 stop-present.
 
+## M2 known issues / provisional
+
+- **Plate/Brine-Net model is PROVISIONAL.** Spec §10 marks both as Rigged
+  (passive, no charge), while M2 honours them only when `tool_active != 0`
+  (activated). §41 Q2's answer must be re-validated at M5 with rigged
+  semantics.
+- **KNOWN CONTENT ISSUE:** Freezing Perch's flee trigger (single hit >35% of
+  105 = 37) is unreachable with the global Strike maximum 25; the
+  implementation is spec-faithful; the content decision is deferred to
+  M13/M15.
+
 ## M2 → M3 amendment review
 
 Read `2026-11-12-undersanded-m03-sim-replay-plan.md` against the committed M2
@@ -447,10 +458,10 @@ and headless, and the M2 gate already drives all five creatures through
   increments only for Strike/Restrain/Equip (`fight.zig:445–460`); Attempt,
   Decline and Flee do not count. M3's "avg player actions" must count
   `gameStep` calls/steps or rare-modal fights are undercounted.
-- **M3 lever 2 is not wired.** `LAST_SURGE_RESTORE_PCT` (`fight.zig:37`) is
-  currently unused; `lastSurge` restores via hardcoded `math.ceilPct30`
-  (`fight.zig:350`). Changing the constant to 25 does nothing — M3 must wire
-  the constant (or use the hardcoded value) for the lever to work.
+- **M3 lever 2 is wired.** `LAST_SURGE_RESTORE_PCT` (`fight.zig:37`) drives
+  `lastSurge` through `math.ceilPct(max_res, LAST_SURGE_RESTORE_PCT)`
+  (`fight.zig:350`); the 30 default is bit-identical to the old `ceilPct30`,
+  and setting it to 25 changes the restore.
 - **Replay headers (`tool=`, `zone=`, `phase=`).** M2 exposes `FightState.tool`
   and the tool constants; M3 can set/record these through public state. Sonar
   itself is later content, not an M3 surface requirement.
