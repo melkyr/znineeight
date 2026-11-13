@@ -237,6 +237,23 @@ pub fn closeHandle(handle: *void) i32 {
     return 0;
 }
 
+// Full path of the running executable (including the file name), copied into
+// the caller's buffer. Win32 uses GetModuleFileNameA (hModule=0). POSIX has no
+// path helper in the pinned std surface yet, so it returns null; callers
+// (e.g. the game's resolveDataDir) fall back to ".". Returns null when the
+// query fails or out is too small.
+pub fn modulePath(out: []u8) ?[]u8 {
+    if (@isWindows()) {
+        if (out.len == 0) return null;
+        const n = pal.GetModuleFileNameA(0, out.ptr, @intCast(u32, out.len));
+        if (n == 0) return null;
+        if (@intCast(usize, n) >= out.len) return null;
+        return out[0..@intCast(usize, n)];
+    } else {
+        return null;
+    }
+}
+
 pub fn cwd(arena: *arena_mod.Arena) OsError![]u8 {
     const buf: [*]u8 = @ptrCast([*]u8, try arena_mod.alloc(arena, CWD_BUF));
     if (@isWindows()) {

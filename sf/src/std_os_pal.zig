@@ -16,6 +16,11 @@
 // the required buffer size if lpBuffer is too small.
 pub extern "stdcall" fn GetCurrentDirectoryA(nBufferLength: u32, lpBuffer: [*]u8) u32;
 
+// win32 (kernel32, since Win95): fill lpFilename with the full module path;
+// hModule=0 names the current executable. Returns the copied length excluding
+// the NUL, or the required size if lpFilename is too small (0 on failure).
+pub extern "stdcall" fn GetModuleFileNameA(hModule: u32, lpFilename: [*]u8, nSize: u32) u32;
+
 // POSIX: fill buf (size bytes) with the current directory; returns buf on
 // success, null on failure.
 pub extern "c" fn getcwd(buf: [*]u8, size: usize) ?[*]u8;
