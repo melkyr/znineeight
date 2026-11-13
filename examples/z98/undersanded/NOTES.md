@@ -15,6 +15,9 @@
 
 ## Corrected G-table (M1 Task 1 audit)
 
+Statuses below are the as-found audit snapshot (pre-M1 patches); M1 closed
+G2/G4/G5/G11/G12/G13/G14/G17 — see the M2 amendment review below and the tier.
+
 Audited against `sf/src/` on 2026-11-13. Status legend: **CLOSED-ALREADY** = real
 surface already satisfies the row; **PARTIAL** = some of it exists (missing part
 named); **REAL GAP** = not present; **GAME-SIDE** = deliberately built in
@@ -152,23 +155,27 @@ first (`cp sf/src/std_*.zig /tmp/zig1-m1/lib/`).
 
 ## M2 amendment review: no amendment needed
 
-Checked the M2 plan's consumed surfaces against M1 actuals (HEAD `8b65795d`)
-and spec §23/§24/§25:
+Checked the M2 plan's consumed surfaces against M1 actuals (code at
+`8b65795d`) and spec §23/§24/§25 (G12 plan/spec amendment `bbc4cd27`):
 
 - **`game.zig` purity:** M2 authors `game.zig` with no I/O; none of the M2
   game modules (`def`/`math`/`rng`/`behavior`/`fight`/`game`) need
   `std_file`/`std_io`/`std_gfx`. M1 adds no dependency that forces I/O.
 - **RNG:** xorshift32 is game-owned per spec §25.5 (shifts/XOR only, no
-  multiply); M1 adds no std RNG and no conflicting surface.
+  multiply). `sf/src/std_rand.zig` exists (PCG32 + xoshiro256**) but is
+  unusable here — spec §25.5/R7 mandates game-owned xorshift32; M1 adds no
+  conflicting surface.
 - **Fixed point / i32 math:** `applyPct`, integer ceil, and i32-only combat
-  math are self-contained in M2's `math.zig`. `std_math` also has
-  `min`/`max`/`abs`/`clamp` (`sf/src/std_math.zig:1,6,21,26`); G12 is
-  CLOSED-ALREADY, so there is no platform gap.
+  math are self-contained in M2's `math.zig`. G12 is CLOSED-ALREADY by reuse:
+  `std_math` provides `min`:1, `max`:6, `abs`:21, `clamp`:26 (plus unsigned
+  variants). M2 Task 2 and spec §23 G12 were amended in `bbc4cd27` to reuse
+  these — no game-side copies.
 - **Flat structs/capacities:** spec §25.1–§25.3 sizes (`MAX_LOG=64`, etc.) are
   authored in M2 Task 1 (`def.zig`); M1 fixed no contradicting values and
   mandates no resize.
-- **`GameState`/`LogEntry`/`Effect`/`FightState`:** authored in M2 Task 1 from
-  spec §25.3; no std/platform surface required.
+- **`GameState`/`LogEntry`/`FightState`:** authored in M2 Task 1
+  (state/`def.zig`) from spec §25.3. **`Effect`** is authored in M2 Task 2
+  (`behavior.zig`). No std/platform surface required.
 - **std APIs M2 calls:** `std_gfx` cell tier is present — `gfxOpen`:107,
   `gfxOpenMemory`:128, `gfxWaitEvent`:197, `gfxPollEvent`:163,
   `Event.px/py`:49–50, `focus_lost`/`focus_gained`:39–40, `gfxTestKey`:236,
