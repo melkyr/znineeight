@@ -306,3 +306,95 @@ This matches the frozen rule-row integer form (e.g. Anemoniacus
 `HP_BELOW cond_a = 48` for 95 max HP), so `fight.zig`'s coupling gates,
 `speed_below` / `armor_below` / `atk_below`, and `discharge_th` fields must
 use the same form.
+
+## M2 gate
+
+`tests/tier_m2_fight.sh` is the M2 FAST/native gate (no Wine/DDraw evidence in
+this tier). It builds and runs `core_test`, `behavior_test`, `fight_test`, and
+`ui_test` with `-fsafe -W -osl` + `build_target.sh linux`, checks the scripted
+full-fight goldens, the 20-fight evidence table, the purity rule
+(`game.zig`/`fight.zig`/`behavior.zig` import no `std_gfx`/`std_io`), and the
+z9edit `tier_edit.sh` regression with unchanged lexer goldens.
+
+```
+ZIG=/tmp/zig1-m1/zig1_5_clean OUT=/tmp/undersanded_m2_tier \
+  sh examples/z98/undersanded/tests/tier_m2_fight.sh
+TIER_M2 PASS 29 passed / 0 failed
+```
+
+Native driver case counts: `core_test` 12, `behavior_test` 24, `fight_test` 39,
+`ui_test` 17. `fight_test` pins the exact full log bytes (`class:msg_id:a:b;`
+per entry) for four scripted fights: fight 1 (Subdue), fight 2 (Kill), fight 3
+(Overkill), and fight 4 (rare modal). All use the fixed seed 98.
+
+### 20 scripted fights (fixed seed 98, varied action streams)
+
+The gate wording "20 manual fights played" is reproduced mechanically as these
+20 deterministic scripted fights (the same runs are asserted in
+`fight_test.zig`'s `scripted_20_fight_table`). Actions: `S` Strike, `R`
+Restrain, `E` Equipment (no tool), `P` Equipment with Plate (tool arg 1), `F`
+Flee, `A` Attempt at a modal. "(cycled)" means the stream repeats until the
+fight ends; `A` is supplied at each rare modal unless "declined" is noted.
+`Hull` is the player Hull left; `notable` is drawn from the same run's log.
+
+| # | Creature | Outcome | Actions (stream) | Steps | Hull | Notable behavior |
+| --: | :--- | :--- | :--- | --: | --: | :--- |
+| 1 | Mystic Eel | SUBDUE | `R×8` | 8 | 58 | Common silent auto-roll; Thrash coupling (`msg 9`, +5 Resolve) fired 5×, forcing the extra Restrains; no parting hit on success. |
+| 2 | Steel Tuna | KILL | `S×12` | 12 | 12 | 60% armor chipped every Strike; Despair coupling regenerated HP 5×; HP<30% Speed 6→10 still only ties the player; overshoot 1 < margin 12 → Kill, not Overkill. |
+| 3 | Mystic Eel | OVERKILL | `S×4` | 4 | 82 | One Despair coupling tick; overshoot 8 ≥ margin 7; creature acted in every live round. |
+| 4 | Anemoniacus | SUBDUE | `R` cycled + `A` at modal | 37 | 0 | Rare modal path: 19 Thrash coupling ticks (+10 Resolve) between attempts; 2 failed Attempts → 2 Last Surges (Res 115→35 each), then success; Hull drained to 0; no discharge. |
+| 5 | Freezing Perch | KILL | `SRSR` cycled | 11 | 0 | 10 bar switches, 1 coupling tick; overshoot 7 < margin 12. Strike max 25 never exceeds the 37 flee threshold, so no flee. |
+| 6 | Mystic Electric Eel | OVERKILL | `RSRSRSRS` cycled | 8 | 36 | Discharge fired once (8 Hull) when Resolve crossed below 50%; 7 switches, 1 coupling tick; overshoot 8 ≥ margin 8. |
+| 7 | Steel Tuna | SUBDUE | `R×10` | 7 | 52 | Restrain-only path; 4 Thrash coupling ticks (+5 Resolve); armor irrelevant to Resolve; silent 95% roll. |
+| 8 | Mystic Electric Eel | SUBDUE | `R×12` | 13 | 1 | Speed 16 acted first each round; 9 Thrash ticks; one discharge tick; subdue at Hull 1. |
+| 9 | Freezing Perch | SUBDUE | `R×12` | 10 | 10 | Rare modal path, first Attempt succeeded; 5 Thrash ticks; no discharge/surge. |
+| 10 | Anemoniacus | OVERKILL | `SRSRSR` cycled, modal declined | 11 | 0 | F (Fight-on) declined the modal with no RNG; 10 switches, 3 coupling ticks; one discharge (10 Hull) on the HP<50% crossing; overshoot 10 ≥ margin 9. |
+| 11 | Steel Tuna | KILL | `P` then `S×12` | 7 | 52 | Plate spent one action to negate the 60% armor; the same Strike stream killed in 7 actions instead of 12 (fight 2), with only 2 coupling ticks. Overshoot 1 < margin 12. |
+| 12 | Mystic Eel | OVERKILL | `E` then `S×4` | 5 | 76 | Bare Equipment (no tool) only bought a free creature hit; 1 coupling tick; overshoot 8 ≥ margin 7. |
+| 13 | Mystic Eel | PLAYER_FLED | `F` | 1 | 100 | Player flee ends the fight immediately, no creature action. |
+| 14 | Freezing Perch | OVERKILL | `S×10` | 6 | 40 | 2 Despair +8 ticks regenerated HP during the Strike run; overshoot 10 ≥ margin 10. |
+| 15 | Anemoniacus | OVERKILL | `S×10` | 5 | 54 | One discharge tick (10 Hull) on HP<50%; 1 coupling tick; overshoot 10 ≥ margin 9. |
+| 16 | Mystic Electric Eel | KILL | `S×12` | 4 | 72 | Speed 16 hit first each round; 1 coupling tick; overshoot 1 < margin 8; Resolve untouched so no discharge. |
+| 17 | Steel Tuna | SUBDUE | `RRSRRSRRSRRS` cycled | 11 | 20 | 6 bar switches, 7 coupling ticks; Thrash pulled Resolve back up (`msg 9`, +5) before the silent subdue. |
+| 18 | Mystic Eel | SUBDUE | `RRSRRS` cycled | 10 | 46 | 6 bar switches, 2 coupling ticks; mixed stream still closes both gates for a 95% subdue. |
+| 19 | Freezing Perch | OVERKILL | `RRSSRRSS` cycled | 12 | 0 | 5 switches, 2 Despair ticks; overshoot 15 ≥ margin 10; Hull reached 0. |
+| 20 | Anemoniacus | OVERKILL | `RSRSRSRSRSRS` cycled, modal declined | 10 | 9 | 9 switches, 1 coupling tick; one discharge tick; declined modal then killed it; overshoot 17 ≥ margin 9. |
+
+Playable-path evidence (already captured in the Task 4 report from the real
+console path under Wine): `undtool.exe` transcripts completed SUBDUE in 8
+actions (fight 1), KILL in 12 (fight 2), OVERKILL in 4 (fight 3), and the rare
+modal SUBDUE in 37 (fight 4). Those interactive transcripts are the playable
+path; the table above is the deterministic, machine-checked equivalent.
+
+### §41 three questions
+
+1. **Does the creature's behavior make me switch which bar I push, mid-fight?**
+   **Yes.** The coupling gates invert the bars: Strike pushes HP toward the red
+   zone and opens Despair (HP<30%, Res>50%), which regenerates HP, so you switch
+   to Restrain to drag Resolve below 50% and close it (fight 2: an all-Strike
+   run got 5 Despair HP ticks; fights 14 and 19: 2 each). Restrain pushes
+   Resolve down and opens Thrash (Res<50%, HP>50%), which regenerates Resolve,
+   so you switch back to Strike (fight 1: 5 Thrash ticks in an all-Restrain
+   run; fight 4: 19 ticks; fights 7/8/9: 4/9/5 ticks). The discharge rows add a
+   second forced switch: repeating one bar through a threshold crossing costs
+   8–10 Hull (fights 6, 8, 10, 15, 20).
+2. **Does the equipment slot change how I fight, or is it just a damage bonus?**
+   **Yes — it changes how I fight.** A Plate action spent a turn to negate
+   Steel Tuna's 60% armor, after which the same Strike stream killed in 7
+   actions instead of 12 (fight 11 vs fight 2): the slot changes the action
+   plan (commit a tempo turn, then full Strikes), not just a passive number.
+   Conversely a bare Equipment action with no tool is only a wasted tempo turn
+   (fight 12: the creature got a free hit), so the slot is a real
+   action-economy decision.
+3. **Does Speed feel like a trade-off, or a dominant stat?**
+   **Yes — a trade-off, not dominant.** Speed only decides who acts first, and
+   ties go to the player: Steel Tuna's HP<30% +4 Speed (6→10) only ties the
+   player, so it never steals the first action (fight 2). Fast creatures
+   (Mystic Electric Eel 16, Freezing Perch 13) hit before your action and tax
+   Hull — MEE subdue ended at Hull 1 (fight 8), and the mixed Perch/MEE runs
+   lost Hull before the finisher (fights 5, 6, 16) — while slow Mystic Eel and
+   Steel Tuna let you finish cleanly (fights 1, 3, 7). No single Speed value
+   dominates: slow creatures still have coupling/armor that forces switches.
+
+All three answers are **yes**; the M2 fight is cleared for M3 without a
+stop-present.
