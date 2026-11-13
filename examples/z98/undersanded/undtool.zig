@@ -91,6 +91,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
     var have_seed = false;
     var n_fights: i32 = 0;
     var seed0: u32 = 0;
+    var hull: i32 = 100;
     var token: []const u8 = "";
 
     const nargs = os.argc();
@@ -127,6 +128,16 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
                 return;
             };
             have_seed = true;
+        } else if (eq(a, "--hull")) {
+            i += 1;
+            if (i >= nargs) {
+                fail("undtool: --hull needs an integer");
+                return;
+            }
+            hull = parse.parseInt(os.argv(i)) orelse {
+                fail("undtool: --hull needs an integer");
+                return;
+            };
         } else if (startsFlag(a)) {
             fail("undtool: unknown flag");
             return;
@@ -155,7 +166,7 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
         return;
     };
 
-    const r = sim.runSim(index, n_fights, seed0);
+    const r = sim.runSim(index, n_fights, seed0, hull);
 
     io.write("defs actions=steps ascent=hull0 bars=switches prompt=modal\n");
     writeReport(token, &r);

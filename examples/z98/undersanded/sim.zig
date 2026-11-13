@@ -84,8 +84,9 @@ pub fn chooseAction(s: *const def.GameState, cdef: *const def.CreatureDef) def.A
 }
 
 // Run `n_fights` fights of one creature definition, fight i seeded from
-// `seed0 + i*77` (fight.startFightDef owns the formula).
-pub fn runSimDef(cdef: *const def.CreatureDef, rules: []const behavior.Rule, n_fights: i32, seed0: u32) SimReport {
+// `seed0 + i*77` (fight.startFightDef owns the formula). `hull` is the
+// starting/max Hull for each fight (base 100; ascent gate measured at 125).
+pub fn runSimDef(cdef: *const def.CreatureDef, rules: []const behavior.Rule, n_fights: i32, seed0: u32, hull: i32) SimReport {
     var r = zeroReport();
     if (n_fights <= 0) return r;
 
@@ -98,6 +99,8 @@ pub fn runSimDef(cdef: *const def.CreatureDef, rules: []const behavior.Rule, n_f
         s.exp.seed = seed0;
         s.exp.fight_index = i;
         fight.startFightDef(&s, 0, cdef, rules);
+        s.fight.hull = hull;
+        s.fight.max_hull = hull;
 
         var steps: i32 = 0;
         var ascended = false;
@@ -141,9 +144,9 @@ pub fn runSimDef(cdef: *const def.CreatureDef, rules: []const behavior.Rule, n_f
 }
 
 // DEFS[5] wrapper used by undtool --sim.
-pub fn runSim(def_index: i32, n_fights: i32, seed0: u32) SimReport {
+pub fn runSim(def_index: i32, n_fights: i32, seed0: u32, hull: i32) SimReport {
     var d = creatures.defAt(def_index);
-    return runSimDef(&d, creatures.RULES[0..], n_fights, seed0);
+    return runSimDef(&d, creatures.RULES[0..], n_fights, seed0, hull);
 }
 
 // ---- Integer report arithmetic -------------------------------------------

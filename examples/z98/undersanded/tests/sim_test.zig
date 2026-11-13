@@ -74,7 +74,7 @@ fn traceDef() def.CreatureDef {
 
 fn tTraceMetrics() bool {
     const d = traceDef();
-    const r = sim.runSimDef(&d, noRules(), 5, 68);
+    const r = sim.runSimDef(&d, noRules(), 5, 68, 100);
 
     if (r.fights != 5) return false;
     if (r.actions != 20) return false;
@@ -140,7 +140,7 @@ fn tModalAttempt() bool {
 // (c) Commons auto-roll silently: 200 fights against Mystic Eel never enter
 // the subdue modal, so the prompt counter stays 0 (§34).
 fn tCommonNeverPrompts() bool {
-    const r = sim.runSim(0, 200, 98);
+    const r = sim.runSim(0, 200, 98, 100);
     if (r.fights != 200) return false;
     if (r.prompts != 0) return false;
     return true;
@@ -169,7 +169,7 @@ fn tAscentStopsFight() bool {
     d.rule_start = 0;
     d.rule_count = 0;
 
-    const r = sim.runSimDef(&d, noRules(), 1, 98);
+    const r = sim.runSimDef(&d, noRules(), 1, 98, 100);
     if (r.fights != 1) return false;
     if (r.ascents != 1) return false;
     if (sim.ascentPm(&r) != 1000) return false;
@@ -179,6 +179,53 @@ fn tAscentStopsFight() bool {
     if (r.kill != 0) return false;
     if (r.overkill != 0) return false;
     if (r.fled != 0) return false;
+    return true;
+}
+
+// The sim's `hull` loadout parameter (base 100, ascent gate 125). A creature
+// that drains exactly 100 Hull on each of its (creature-first) turns reaches
+// Hull 0 after ceil(max_hull/100) steps: 1 step at hull 100, 2 steps at hull
+// 125 — so the single-fight action count proves max_hull was actually set to
+// 125 rather than left at 100.
+fn drainDef() def.CreatureDef {
+    var d = creatures.defAt(0);
+    d.id = 102;
+    d.family = 0;
+    d.role = creatures.ROLE_COMMON;
+    d.hp = 1000;
+    d.resolve = 1000;
+    d.speed = 99;
+    d.attack = 100;
+    d.thrash_regen = 0;
+    d.despair_regen = 0;
+    d.armor_pct = 100;
+    d.flags = 0;
+    d.resist_restrain_pct = 100;
+    d.subdue_chance = 95;
+    d.discharge_stat = 0;
+    d.discharge_th = 0;
+    d.discharge_dmg = 0;
+    d.rule_start = 0;
+    d.rule_count = 0;
+    return d;
+}
+
+fn tHullLoadout() bool {
+    const d = drainDef();
+    const h100 = sim.runSimDef(&d, noRules(), 1, 98, 100);
+    if (h100.ascents != 1) return false;
+    if (h100.actions != 1) return false;
+
+    const h125 = sim.runSimDef(&d, noRules(), 1, 98, 125);
+    if (h125.ascents != 1) return false;
+    if (h125.actions != 2) return false;
+
+    // Anemoniacus (index 3) ascends at base hull; a larger Hull leaves more
+    // fights resolved before Hull 0, so the ascent rate must not rise.
+    const b100 = sim.runSim(3, 200, 0, 100);
+    const b125 = sim.runSim(3, 200, 0, 125);
+    if (sim.ascentPm(&b100) <= 0) return false;
+    if (sim.ascentPm(&b125) > sim.ascentPm(&b100)) return false;
     return true;
 }
 
@@ -216,6 +263,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     report("modal_attempt", tModalAttempt());
     report("common_never_prompts", tCommonNeverPrompts());
     report("ascent_stops_fight", tAscentStopsFight());
+    report("hull_loadout", tHullLoadout());
     report("integer_math", tIntegerMath());
 
     if (fails != 0) {
