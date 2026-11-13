@@ -3,9 +3,9 @@
 Tracks only **open** compiler defects found while building the example programs.
 Fixed defects and closed investigations were removed at Phase 2.5 Task 6
 (2026-10-29); their history lives in git and the SDD reports. IDs are stable —
-deleted numbers are not reused. Next free slot: **D18**.
+deleted numbers are not reused. Next free slot: **D19**.
 
-Open: **D16, D17**.
+Open: **D16, D17, D18**.
 
 _(Add new entries at the next free slot as they are found; entries are doc-only
 unless a compiler fix is separately authorized.)_
@@ -179,3 +179,80 @@ Fix commit: `22cfbfe6 feat(std): str splitOnce`.
 
 **Note.** Doc-only entry. Any compiler fix (structural optional-array
 return/unwrap emission) is separately authorized and out of scope here.
+
+---
+
+## D18 — Indexed write to a nested array field targets a struct temporary
+
+**Status:** OPEN (deferred — documented workaround, no compiler fix authorized).
+
+**Symptom.** A write of the form `outer.inner.arr[i] = v` dumps cleanly
+(`-ffast -o` rc=0), links, and runs — but the store is lost. The emitted C
+copies `outer.inner` by value into a local temporary and writes that
+temporary's array, so the original object is unchanged. There is no gcc
+diagnostic; this is a silent **dump-time** miscompile.
+
+**Minimal repro (Zig source shape).**
+
+```zig
+const Exp = struct { hold: [4]i32, hold_n: i32 };
+const State = struct { exp: Exp };
+
+fn reset(s: *State) void {
+    var i: usize = 0;
+    while (i < 4) : (i += 1) {
+        s.exp.hold[i] = 0;
+    }
+    s.exp.hold_n = 0;
+}
+
+pub fn main() void {
+    var s: State = State{ .exp = Exp{ .hold = [4]i32{ 1, 2, 3, 4 }, .hold_n = 4 } };
+    reset(&s);
+    io.printInt(s.exp.hold[0]); // prints 1, expected 0
+    io.write(" ");
+    io.printInt(s.exp.hold_n);  // prints 0 (this write is emitted correctly)
+    io.write("\n");
+}
+```
+
+Command:
+`/tmp/zig1-m1/zig1_5_clean -ffast -o /tmp/probe_nested/out /tmp/probe_nested/main.zig`
+→ dump rc=0.
+`sh /tmp/probe_nested/out/build_target.sh linux /tmp/probe_nested/out/prog`
+→ build rc=0. Run → `1 0` (expected `0 0`), run rc=0.
+
+**Exact emitted C** (`main_*.c`, the `reset` function):
+
+```text
+    zT_8 = s->exp;
+    zT_9 = (int*)zT_8.hold;
+    zT_9[i] = zT_7;
+```
+
+`zT_8` is a by-value `Exp` temporary; the indexed store lands in the
+temporary. The following `hold_n` write is emitted correctly as
+`zT_15 = &s->exp; zT_15->hold_n = ...`.
+
+**Classification.** Emitted-C nested aggregate lvalue lowering: an indexed
+element store through a nested struct field uses a by-value inner-struct
+temporary instead of addressing the original lvalue. Not a C compile error;
+the failure is wrong behavior from valid Zig at dump time.
+
+**Scope / impact.** Found in `game.startFight` while zeroing
+`s.exp.hold[i]` field-wise; any indexed write into an array nested under a
+struct field has the same shape. No `sf/src` surface is affected.
+
+**Workaround.** Initialize the whole nested struct with a fully initialized
+struct literal (`s.exp = def.Expedition{ ..., .hold = [def.MAX_PARTS]i32{
+... }, ... }`) instead of per-element writes. Shipped in
+`examples/z98/undersanded/game.zig` (`startFight`).
+
+**Evidence.** Probe: `/tmp/probe_nested/main.zig` (repo-external). Dump/build
+both rc=0; runtime output `1 0` vs expected `0 0`; emitted C lines above.
+Task report:
+`.superpowers/sdd/2026-11-12-undersanded-m02-fight-core-plan/task-3-report.md`.
+
+**Note.** Doc-only entry. Any compiler fix (base-lvalue addressing for indexed
+writes into nested arrays) is separately authorized and out of scope here.
+
