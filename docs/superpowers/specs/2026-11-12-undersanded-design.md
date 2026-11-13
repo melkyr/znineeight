@@ -152,7 +152,7 @@ Node Rest is how you cross a phase boundary in the field. It is doable, but it c
 
 ### Renewal
 
-A creature returns on the **Day phase** of its renewal cycle. Subdued Night of cycle 3 with 3-cycle renewal → available Day of cycle 6.
+A creature returns on the **Day phase** of its renewal cycle. Subdued Night of cycle 3 with 3-cycle renewal → available Day of cycle 6. **Formula:** `ready = cycle_at_take + respawn[outcome]` (subdue/kill/overkill index; creature-flee uses subdue index).
 
 The calendar reads as a schedule, not a table: *"The Trench Leviathan renews on cycle 14. It is cycle 9."*
 
@@ -178,7 +178,7 @@ DOCK ── process loot
 | Max fights | 3 + Oxygen tier (3→6). Boss route = 1. |
 | Travel each way | zone ladder: 1–5 phases (see §11) |
 | Heavy penalty | Hull T3 **or** Cargo T3 → +1 phase each way on zones with travel ≥ 3 |
-| Hull | **Persists across fights and across expeditions.** Dock arrival heals nothing free. |
+| Hull | **Persists across fights and across expeditions.** Dock arrival heals nothing free. Current Hull lives in `World.hull` (base 100); `FightState.hull` is a per-fight copy. |
 | Early return | Normal return travel, no extra penalty, secured loot kept |
 
 ### Hull 0 — Emergency Ascent
@@ -396,7 +396,7 @@ Restrain never touches HP, so **it cannot cause overkill**. The real chain:
 
 | Choice | Effect |
 | :--- | :--- |
-| **Release** | node rare chance **+8 pp** per release, bonus cap **+40 pp**, resets when a rare is encountered in that node. Additive to rare entries, commons renormalized. Creature returns **warier: +15 Resolve, next rematch only, no stack**. Parts kept. |
+| **Release** | node rare chance **+8 pp** per release, bonus cap **+40 pp**, resets when a rare is encountered in that node. Additive to rare entries, commons renormalized. Creature returns **warier: +15 Resolve, next rematch only, no stack** — applied at the next fight start (`res` and `max_res` +15), then the wary bit clears. Parts kept. |
 | **Sell** | sale price in coins. Normal renewal. Parts kept. |
 
 Zones with 0 rares (the tutorial zone) have no rare effect from releasing. Intentional.
@@ -459,7 +459,9 @@ Sequential tiers, bought at dock with **materials**, 1 phase each. Maxing all fi
 | Oxygen | 3→4→5→6 fights per expedition (current-tier value) | none |
 | Speed | +2 / +5 / +9 Speed total (player Speed 12 / 15 / 19) | none |
 
-**Heavy:** Hull T3 or Cargo T3 → +1 phase each way on zones with travel cost ≥ 3.
+**Storage:** `World.boat[5]` holds **tier counts 0–3** (0 = base; zero-initialized World is the base boat). The effect values above are derived through const tables: Hull `100/125/150/200` · Speed `10/12/15/19` · Cargo `0/1/2/3` · Oxygen fights per expedition `3/4/5/6` · Precision margin `10/15/20/25`. **Max fights = `3 + boat[OXYGEN]` (3–6).**
+
+**Heavy:** boat[Hull] == 3 **or** boat[Cargo] == 3 → +1 phase each way on zones with travel cost ≥ 3.
 
 **Expertise gates:** purchasing an axis **T2** upgrade requires Expertise ≥ 2 in **every material type spent** on that purchase; **T3** requires Expertise ≥ 4. (T1 purchases have no gate.)
 
@@ -519,7 +521,7 @@ Notes:
 - The T1 band (Z1–Z3 + D) is the **demo slice**, content-complete at M11. Z4–Z8 are present as empty tables from M1 (schemas full-size) and populated at M13.
 - Boss route cost 5 = far reach; the boss sits at the **end of the tier ladder** (after T4). One boss for the whole game.
 - Heavy penalty (+1 phase each way) applies to any zone with travel ≥ 3: Z3–Z8 and D.
-- A travel-5 expedition is a commitment: 5 out + fights + 5 back.
+- A travel-5 expedition is a commitment: 5 out + fights + 5 back. **Departing is the only dock action charged; the return leg is travel phases only — no arrival action.**
 
 **Respawn is per-zone, per-species instance.** Subduing Steel Tuna in Z1 does not touch the Z2 instance. Encounter tables renormalize over available creatures. Empty pool → safe Rest.
 
@@ -1213,6 +1215,7 @@ pub const World = struct {
     journal_mask: [2]u32,                    // journal entries unlocked (bit per def)
     tooltip_shown: u32,                      // once-only tooltips (bit flags)
     field_phases: i32,                       // total phases played (Field Record "time in the field")
+    hull: i32,                               // current Hull — persists across fights and expeditions; base 100
     release_bonus: [MAX_ZONES]i32,
     lockout_until: [MAX_ZONES]i32,
     family_overkill_mask: u32, wary_mask: [2]u32,   // grudge mask cleared on Derelict kill (run boundary); wary/seen as u32 words sized ceil(MAX_CREATURES/32)
