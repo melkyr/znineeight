@@ -204,3 +204,38 @@ Checked the M2 plan's consumed surfaces against M1 actuals (code at
   gate, and the native Linux test-driver convention are green in M1.
 
 Verdict: **no amendment needed** for M2.
+
+## M2 preflight
+
+- Compiler: `/tmp/zig1-m1/zig1_5_clean`, md5 `73c75a65e30dfd212fdf93ae1e57a687`,
+  seed **v149**. Harness rule after std edits: run
+  `cp sf/src/std_*.zig /tmp/zig1-m1/lib/` before the tier.
+- Controller resolution: the brief's "3-creature stat rows" means all **five**
+  rows its sentence lists (3 commons + 2 flex rares). No `creatures_t1.zig`
+  exists yet; it is authored at Task 4. Task 0 only validates/records these
+  five rows and their behaviors — no fight code is implemented here.
+- Stat rows verbatim from spec §14.2:
+
+  | # | Creature | Family | Role | Zones | Phase | HP | Res | Spd | Atk | Subdue | Sale | Respawn |
+  | :-- | :--- | :--- | :--- | :--- | :--- | --: | --: | --: | --: | --: | --: | :--- |
+  | 1 | Mystic Eel | Eel | common | Z1,Z2 | both | 70 | 80 | 10 | 6 | 95 | 20 | 3/9/15 |
+  | 2 | Mystic Electric Eel | Eel | common | Z1,Z2 | night | 80 | 100 | 16 | 7 | 95 | 30 | 3/9/15 |
+  | 4 | Steel Tuna | Tuna | common | Z1,Z2 | both | 120 | 70 | 6 | 8 | 95 | 20 | 3/9/15 |
+  | 18 | Anemoniacus *(flex)* | Anemone | rare | Z2 | both | 95 | 115 | 7 | 9 | 60 | 50 | 6/18/30 |
+  | 19 | Freezing Perch *(flex)* | Perch | rare | Z3 | both | 105 | 95 | 13 | 10 | 60 | 55 | 6/18/30 |
+
+- Behaviors verbatim from spec §14.3:
+  - Mystic Eel — Despair override **+8**. Tutorial creature, learnable bare.
+  - Mystic Electric Eel — Thrash override **+8**. **Discharge:** one-shot 8 Hull
+    when Resolve crosses below 50%.
+  - Steel Tuna — **Armor:** Strike 60% unless Plate. HP<30% → Speed +4.
+  - Anemoniacus — Thrash override **+10**. **Discharge:** one-shot 10 Hull when
+    HP crosses below 50%.
+  - Freezing Perch — Despair override **+8**. **Flees next turn if a single hit
+    deals >35% max HP (37).**
+- Ruling (§9.1, D10): commons auto-roll silently; rare/named use the subdue
+  modal (`SUBDUE_PROMPT_BELOW = 90`).
+- Baseline tiers observed from this worktree:
+  - `tier_edit.sh` → `TIER_EDIT PASS`, 38 passed / 0 failed; lexer md5
+    `dcc81009e9a36c86e4d90e104c439871` (3x); compile max RSS 5916 KiB.
+  - `tier_m1_std.sh` → `TIER_M1 PASS`, 37 passed / 0 failed / 0 evidence skips.
