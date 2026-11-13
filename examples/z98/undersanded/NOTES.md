@@ -624,3 +624,38 @@ M4's World and encounter work is validated by M4's own `world_test`/
   `fight.startFightDef` reads only the seed fields of `exp` and never touches
   `world` (`sim.zig:115-119`; `fight.zig:115-158`); M4's World/expedition path
   must explicitly initialize `GameState.world` (R8, spec §24).
+
+## M4 preflight
+
+M3 gate confirmed green from this worktree before M4 work starts:
+
+```
+ZIG=/tmp/zig1-m1/zig1_5_clean OUT=/tmp/m4_t0/m3_gate \
+  sh examples/z98/undersanded/tests/tier_m3_sim.sh
+TIER_M3 PASS 65 passed / 0 failed / 1 evidence skips
+```
+
+The single skip is the SLOW Wine `undtool.exe` evidence section (no built exe /
+wine in the native-only worktree); non-gating by design.
+
+- **13 missing non-boss T1 defs are authored at M4 (DEFS 5→18):** Rust Tuna,
+  Kelp Crab, Brine Jelly, Chitin Barnacle, Spark Anemone, Mileel, Tunisteel,
+  Coral Crab, Abyssal Lantern-Jelly, Neon Ghost-Ray, Glass Squid, Brine Angler,
+  Ironclad Wrasse. The boss row stays M11; M4 authors no boss def.
+- **Boat tiers:** `boat[5]` stores tier counts 0–3 (0 = base). Derived tables:
+  Hull 100/125/150/200, Speed 10/12/15/19, Cargo 0/1/2/3, Oxygen 3/4/5/6,
+  Precision margin 10/15/20/25. Max fights = 3 + `boat[OXYGEN]`.
+- **`World.hull` added** (base 100, persists across the expedition;
+  `FightState.hull` is the per-fight copy). Dock Rest +40 clamps to the Hull
+  table max.
+- **Return leg = travel phases only** (no arrival action); outbound = 1 Depart
+  phase + travel.
+- **Grudge application = M5.** M4 sets/clears `family_overkill_mask` on
+  overkill and applies wariness at fight start (+15 res/max_res, clear bit) via
+  `consumeWariness`; release sets the wary bit.
+- **Renewal semantics (spec §5/§14.2):** `ready = cycle + respawn[outcome]`
+  used **verbatim** for subdue/kill/overkill — no multiplying. Creature-flee
+  uses the subdue-length value; boss 20/40 is handled at M11.
+- **Dormant M4 fields:** `F_PHASING`/`F_INK`/`F_DECOY`/`blind_chance` will be
+  set at M4 but stay inert until M8 wires the fight logic. `--dump-grid
+  --screen dock|map|node` is extended at M4.
