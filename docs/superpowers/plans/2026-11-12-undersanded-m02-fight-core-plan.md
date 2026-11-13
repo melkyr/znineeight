@@ -18,7 +18,7 @@
 
 - Spec binding + Global Constraints of M1 carry over verbatim (example-only, R1–R15, `-fsafe`, capacities spec §25.1 fixed, no push, keep prior gates green).
 - `game.zig` performs **no I/O and calls no rendering function** — enforced by review; everything testable headless.
-- All tuning constants are module-level (R2); every `switch` has `else` (R3); explicit field init everywhere (R8); no floats — `applyPct` truncation, integer ceil `(max*30+99)/100` (§9.5).
+- All tuning constants are module-level (R2); every `switch` has `else` (R3); explicit field init everywhere (R8); no floats — `applyPct` truncation, integer ceil `(max*LAST_SURGE_RESTORE_PCT+99)/100` (§9.5; 25% after the M3 lever).
 - RNG: xorshift32 only; **full draw-accounting per spec §25.5 contract** (subdue 1 draw `rngRange(1,100)<=chance`; decline 0; ink 1 draw `rngRange(0,2)` Strike/Restrain/Equipment never Flee; rough-sleep 1 draw; damage 1 draw/roll). Zero-seed guard: state 0 → reseed `0x9E3779B9`. Warm-up: 3× `rngNext` before first draw. `rngRange` uses explicit `@intCast` pairs (R13 — the sketch below is not literally compilable).
 
 ## File Structure
