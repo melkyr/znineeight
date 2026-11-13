@@ -51,10 +51,14 @@ fn zeroWorld(w: *def.World) void {
 }
 
 pub fn startFight(s: *def.GameState, def_index: i32) void {
-    s.exp.seed = EXPEDITION_SEED;
-    s.exp.fight_index = FIGHT_INDEX;
-    s.exp.active = 0;
-    s.exp.zone = 0;
+    s.exp = def.Expedition{
+        .active = 0,
+        .zone = 0,
+        .fight_index = FIGHT_INDEX,
+        .seed = EXPEDITION_SEED,
+        .hold = [def.MAX_PARTS]i32{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        .hold_n = 0,
+    };
     zeroWorld(&s.world);
 
     var d = creatures.defAt(def_index);

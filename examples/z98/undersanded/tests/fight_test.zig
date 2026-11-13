@@ -327,7 +327,9 @@ fn tCouplingExactBoundary95() bool {
     return s.fight.hp == 33;
 }
 
-// Persistent rule effects fire exactly once per action/round.
+// Persistent rule effects fire exactly once per STRIKE/RESTRAIN action
+// (the path that previously evaluated both pre- and post-action). Strike does
+// not touch Resolve, so one ALWAYS +5 row must yield exactly +5, never +10.
 fn tPersistentRegenOnce() bool {
     var d = neutralDef();
     d.attack = 0;
@@ -349,7 +351,8 @@ fn tPersistentRegenOnce() bool {
     begin(&s, &d, rules[0..]);
     s.fight.res = 50;
 
-    doStepWith(&s, def.ACT_EQUIP, &d, rules[0..]);
+    doStepWith(&s, def.ACT_STRIKE, &d, rules[0..]);
+    if (s.fight.res == 60) return false;
     return s.fight.res == 55;
 }
 
@@ -515,11 +518,13 @@ fn tCreatureDefsAndFields() bool {
 
     const mee = creatures.DEFS[1];
     const rme = creatures.RULES[@intCast(usize, mee.rule_start)];
+    if (mee.discharge_stat != rme.cond_op) return false;
     if (mee.discharge_th != rme.cond_a) return false;
     if (mee.discharge_dmg != rme.effect_a) return false;
 
     const ane = creatures.DEFS[3];
     const ran = creatures.RULES[@intCast(usize, ane.rule_start)];
+    if (ane.discharge_stat != ran.cond_op) return false;
     if (ane.discharge_th != 48) return false;
     if (ane.discharge_th != ran.cond_a) return false;
     if (ane.discharge_dmg != ran.effect_a) return false;
@@ -540,6 +545,8 @@ fn tStartFightWorldZeroed() bool {
     if (s.world.boss_kills != 0) return false;
     if (s.exp.active != 0) return false;
     if (s.exp.zone != 0) return false;
+    if (s.exp.hold_n != 0) return false;
+    if (s.exp.hold[0] != 0) return false;
     return true;
 }
 
