@@ -112,6 +112,28 @@ pub fn dumpFightFrame(def_index: i32, seed: u32, out: []u8) []const u8 {
     return render.dump(&sc, out);
 }
 
+// --dump-grid payload for the fixed non-fight screens. The pinned state is a
+// zeroed GameState with the canonical zero World overlaid (Hull 100, Coins 0,
+// all boat tiers 0, no creatures seen). Returns null for an unknown id.
+pub fn dumpFixedScreen(screen_id: []const u8, out: []u8) ?[]const u8 {
+    var s: def.GameState = undefined;
+    sim.zeroState(&s);
+    game.zeroWorld(&s.world);
+    s.exp.seed = DUMP_SEED;
+
+    var sc: render.Screen = undefined;
+    if (eq(screen_id, "dock")) {
+        render.renderDock(&s, &sc);
+    } else if (eq(screen_id, "map")) {
+        render.renderMap(&s, &sc);
+    } else if (eq(screen_id, "node")) {
+        render.renderNode(&s, &sc);
+    } else {
+        return null;
+    }
+    return render.dump(&sc, out);
+}
+
 // ---- replay --------------------------------------------------------------
 //
 // The v2 stream is a header plus one verb per action (spec §28). This replays
@@ -353,19 +375,23 @@ pub fn run(argc: i32, argv: [*][*]u8) void {
             fail("undtool: --dump-grid requires --screen");
             return;
         }
-        if (!eq(screen_id, "fight")) {
-            fail("undtool: unknown --screen id");
-            return;
-        }
-        var dump_index: i32 = 0;
-        if (have_creature) {
-            dump_index = tokenIndex(token) orelse {
-                fail("undtool: unknown --creature token");
+        var buf: [8192]u8 = undefined;
+        var text: []const u8 = undefined;
+        if (eq(screen_id, "fight")) {
+            var dump_index: i32 = 0;
+            if (have_creature) {
+                dump_index = tokenIndex(token) orelse {
+                    fail("undtool: unknown --creature token");
+                    return;
+                };
+            }
+            text = dumpFightFrame(dump_index, DUMP_SEED, buf[0..]);
+        } else {
+            text = dumpFixedScreen(screen_id, buf[0..]) orelse {
+                fail("undtool: unknown --screen id");
                 return;
             };
         }
-        var buf: [8192]u8 = undefined;
-        const text = dumpFightFrame(dump_index, DUMP_SEED, buf[0..]);
         file_mod.writeAll(dump_path, text) catch {
             fail("undtool: --dump-grid write failed");
             return;

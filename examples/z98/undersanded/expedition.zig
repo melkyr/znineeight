@@ -215,6 +215,39 @@ fn postFight(g: *def.GameState) bool {
     return false;
 }
 
+// ---- Release / sell -------------------------------------------------------
+//
+// §9.7: both choices keep the parts and renew on the subdue index. Release also
+// adds the node rare-chance bonus (+8 pp, cap +40) and marks the creature wary;
+// Sell adds the creature's sale price in coins.
+//
+// Call this exactly once per Subdue, while `fight.outcome == OUT_SUBDUE` and
+// the fight has not been settled (postFight clears def_index). No idempotency
+// marker is stored: the UI owns the one-call discipline (Task 4 decision).
+
+pub const SUB_RELEASE: i32 = 1;
+pub const SUB_SELL: i32 = 2;
+
+pub fn resolveSubdueChoice(g: *def.GameState, choice: i32) void {
+    if (g.exp.active == 0) return;
+    if (g.fight.outcome != def.OUT_SUBDUE) return;
+    const idx = g.fight.def_index;
+    if (idx < 0 or idx >= creatures.defCount()) return;
+
+    const zone = g.exp.zone;
+    switch (choice) {
+        SUB_RELEASE => {
+            world.markTaken(&g.world, zone, idx, def.OUT_SUBDUE);
+            world.applyRelease(&g.world, zone, idx);
+        },
+        SUB_SELL => {
+            world.markTaken(&g.world, zone, idx, def.OUT_SUBDUE);
+            g.world.money += creatures.defAt(idx).sale;
+        },
+        else => {},
+    }
+}
+
 // ---- Actions --------------------------------------------------------------
 
 pub fn depart(g: *def.GameState, zone: i32) *def.Expedition {

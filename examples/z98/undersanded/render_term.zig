@@ -10,6 +10,9 @@
 
 const def = @import("def.zig");
 const fight = @import("fight.zig");
+const world = @import("world.zig");
+const creatures = @import("creatures_t1.zig");
+const tables = @import("tables_t1.zig");
 
 pub const COLS: usize = 80;
 pub const ROWS: usize = 30;
@@ -313,6 +316,166 @@ pub fn renderFrame(s: *const def.GameState, d: *const def.CreatureDef, sc: *Scre
     renderLog(sc, s, d, 7);
 
     _ = put(sc, 0, 15, "[S]trike [R]estrain [E]quipment [F]lee");
+}
+
+// ---- Dock / map / node screens (§12, §16, §26) ---------------------------
+
+const BOSS_ZONE: i32 = 8;
+const BOSS_SEEN_GATE: i32 = 6;
+const ROLE_BOSS: i32 = 4;
+
+pub fn zoneName(zone: i32) []const u8 {
+    switch (zone) {
+        0 => return "The Shallows",
+        1 => return "The Reef",
+        2 => return "Trench-Edge",
+        3 => return "Kelp Basin",
+        4 => return "The Shelf",
+        5 => return "Wreck Line",
+        6 => return "The Hollow",
+        7 => return "The Trench",
+        8 => return "The Derelict",
+        else => return "Unknown Zone",
+    }
+}
+
+fn zoneTag(zone: i32) []const u8 {
+    switch (zone) {
+        0 => return "Z1",
+        1 => return "Z2",
+        2 => return "Z3",
+        3 => return "Z4",
+        4 => return "Z5",
+        5 => return "Z6",
+        6 => return "Z7",
+        7 => return "Z8",
+        8 => return "D",
+        else => return "--",
+    }
+}
+
+fn seenMaskHas(s: *const def.GameState, d: i32) bool {
+    if (d < 0) return false;
+    const word: usize = @intCast(usize, d / 32);
+    if (word >= 2) return false;
+    const bit: u32 = @intCast(u32, d % 32);
+    const m: u32 = @intCast(u32, 1) << bit;
+    return (s.world.seen_mask[word] & m) != 0;
+}
+
+// Distinct non-boss creatures seen: count set bits in seen_mask over DEFS rows
+// whose role is not boss. Boss rows have no role constant in T1; §9.1 fixes the
+// boss role value at 4 (T1 DEFS only carry roles 1..3).
+pub fn seenNonBossCount(s: *const def.GameState) i32 {
+    var n: i32 = 0;
+    var i: i32 = 0;
+    while (i < creatures.defCount()) : (i += 1) {
+        const d = creatures.defAt(i);
+        if (d.role == ROLE_BOSS) continue;
+        if (seenMaskHas(s, i)) n += 1;
+    }
+    return n;
+}
+
+pub fn bossGateOpen(s: *const def.GameState) bool {
+    return seenNonBossCount(s) >= BOSS_SEEN_GATE;
+}
+
+pub fn fightsLeft(s: *const def.GameState) i32 {
+    var left = world.maxFights(&s.world) - s.exp.fight_index;
+    if (left < 0) left = 0;
+    return left;
+}
+
+fn padTo(sc: *Screen, x: i32, y: i32, target: i32) i32 {
+    var p = x;
+    while (p < target) : (p += 1) {
+        putChar(sc, p, y, ZERO);
+    }
+    return p;
+}
+
+pub fn renderDock(s: *const def.GameState, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  DOCK");
+
+    var x = put(sc, 0, 2, "Hull ");
+    x = putInt(sc, x, 2, s.world.hull);
+    x = put(sc, x, 2, "/");
+    _ = putInt(sc, x, 2, world.hullMax(&s.world));
+
+    x = put(sc, 0, 3, "Coins ");
+    _ = putInt(sc, x, 3, s.world.money);
+
+    x = put(sc, 0, 4, "Boat: Hull T");
+    x = putInt(sc, x, 4, s.world.boat[world.BOAT_HULL]);
+    x = put(sc, x, 4, " Speed T");
+    x = putInt(sc, x, 4, s.world.boat[world.BOAT_SPEED]);
+    x = put(sc, x, 4, " Cargo T");
+    x = putInt(sc, x, 4, s.world.boat[world.BOAT_CARGO]);
+    x = put(sc, x, 4, " Oxygen T");
+    x = putInt(sc, x, 4, s.world.boat[world.BOAT_OXYGEN]);
+    x = put(sc, x, 4, " Precision T");
+    _ = putInt(sc, x, 4, s.world.boat[world.BOAT_PRECISION]);
+
+    _ = put(sc, 0, 6, "[R]efine [U]pgrade [C]raft [B]uy [T] Rest [D]epart [Q]uit");
+    _ = put(sc, 0, 8, "Refine, Upgrade, Craft, Buy: not yet (M5).");
+    _ = put(sc, 0, 10, "Hint: Hull persists between trips; dock Rest is safe.");
+}
+
+fn renderMapRow(s: *const def.GameState, sc: *Screen, zone: i32, y: i32) void {
+    var x = put(sc, 0, y, zoneTag(zone));
+    x = padTo(sc, x, y, 4);
+    x = put(sc, x, y, zoneName(zone));
+    x = padTo(sc, x, y, 24);
+    x = putInt(sc, x, y, tables.ZONE_COST[@intCast(usize, zone)]);
+    x = padTo(sc, x, y, 28);
+
+    var open = true;
+    if (zone == BOSS_ZONE) open = bossGateOpen(s);
+    if (open) {
+        x = put(sc, x, y, "open");
+    } else {
+        x = put(sc, x, y, "locked");
+    }
+    if (zone == BOSS_ZONE) {
+        _ = put(sc, x, y, "  Hull 150+ recommended.");
+    }
+}
+
+pub fn renderMap(s: *const def.GameState, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  MAP");
+    _ = put(sc, 0, 1, "Zone ladder (travel phases each way):");
+
+    var zone: i32 = 0;
+    var y: i32 = 3;
+    while (zone <= BOSS_ZONE) : (zone += 1) {
+        renderMapRow(s, sc, zone, y);
+        y += 1;
+    }
+
+    var x = put(sc, 0, 13, "Seen non-boss: ");
+    x = putInt(sc, x, 13, seenNonBossCount(s));
+    x = put(sc, x, 13, "/");
+    _ = putInt(sc, x, 13, BOSS_SEEN_GATE);
+}
+
+pub fn renderNode(s: *const def.GameState, sc: *Screen) void {
+    clear(sc);
+    _ = put(sc, 0, 0, "UNDERSANDED  NODE");
+    _ = put(sc, 0, 2, zoneName(s.exp.zone));
+
+    var x = put(sc, 0, 4, "Fights left ");
+    _ = putInt(sc, x, 4, fightsLeft(s));
+
+    x = put(sc, 0, 5, "Hull ");
+    x = putInt(sc, x, 5, s.world.hull);
+    x = put(sc, x, 5, "/");
+    _ = putInt(sc, x, 5, world.hullMax(&s.world));
+
+    _ = put(sc, 0, 7, "[H]unt [R]est [S]urface");
+    _ = put(sc, 0, 9, "Hint: Rest at a node risks rough sleep unless the pool is empty.");
 }
 
 // Row-major text dump (trailing spaces trimmed, '\n' after every row) for the
