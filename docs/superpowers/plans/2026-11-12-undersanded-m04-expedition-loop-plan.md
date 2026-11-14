@@ -12,6 +12,8 @@
 
 **Sequence:** PREVIOUS: `2026-11-12-undersanded-m03-sim-replay-plan.md`. NEXT: `2026-11-12-undersanded-m05-dock-economy-plan.md`.
 
+**Target branch:** `zig1_start` (master from M4 onward; `zig1_improvements` was merged into it as PR #791). Finish merges back to `zig1_start` locally; **no push**.
+
 ## Global Constraints
 
 **Test model (spec §26, binding):** tiers run natively — `undtool.nix` (COMMAND.COM-analogue console) + native test drivers are the FAST gate; Wine/DD7/DSound probes are SLOW evidence only, never the gate; operator hardware is M16-only. Logic goldens must be runnable in CI without Wine.
@@ -62,11 +64,20 @@ As prior milestones. `game.zig` stays pure — World/calendar logic lives in `ga
 **Interfaces:** end-of-fight prompt (Subdue only): Release → `applyRelease(w, zone, def)` (+8 release bonus, wary bit) + `markTaken(..., OUT_SUBDUE)`, Sell → money += sale; per-fight line `Secured: …` (§7); dock menu (Refine/Upgrade/Craft/Buy/Rest/Depart — refine/craft/buy stub "not yet" until M5), map screen listing the zone ladder with travel costs + boss gate telegraph, node screen (Hunt/Rest/Surface).
 - [ ] Implement screens + prompts. Extend `--dump-grid --screen <id>` to `dock|map|node` (M3 delivered `fight` only) and add byte-compared goldens for dock + map + node. Commit `example(undersanded): terminal dock/map/node screens + release/sell`.
 
+### Task 4b: `MSG_SECURED` message-table row (user-authorized)
+
+**Interfaces:** `def.zig` MESSAGES gains `MSG_SECURED` (id 16) with its text; `render_term` generic fight-log rendering resolves it (never `Log 16.`); `securedLine` unchanged.
+- [ ] Add the row + render case; unit test asserts a log entry with `msg_id=MSG_SECURED` renders the secured text (never `Log 16.`) and that NODE `securedLine` output is unchanged. PASS. Commit `example(undersanded): MSG_SECURED message row`.
+
+### Task 4c: Playable console navigation (user-authorized; gate literal)
+
+- [ ] Wire the console loop dock → map → node → fight → settlement prompt → return: keys for menu selection, Depart + zone choice, Hunt/Rest/Surface, Release/Sell, the pending-settlement guard, exit via EOF; no gfx dependency (works under native `undtool.nix` and `undtool.exe` CUI). Deterministic navigation test: one full loop (dock → Z2 → subdue → release → surface) and one Hull-0 ascent abort, no hand input. README updated. PASS (native; Wine evidence non-gating). Commit `example(undersanded): playable console expedition loop`.
+
 ### Task 5: `tier_m4_loop.sh`
 
-- [ ] Tier: Task 1–3 unit tests + a scripted full expedition golden (seeded, exact log): depart Z2 → 2 fights (subdue+release, kill) → return → hold totals match; ascent variant keeps only fight-1 loot; empty-pool safe Rest round. Non-vacuous. Run PASS. Commit `example(undersanded): M4 loop tier`.
+- [ ] Tier: Task 1–3 unit tests + a scripted full expedition golden (seeded, exact log): depart Z2 → 2 fights (subdue+release, kill) → return → hold totals match; ascent variant keeps only fight-1 loot; empty-pool safe Rest round; **plus the Task 4c console navigation walk end-to-end and the Task 4b `MSG_SECURED` render assertion**. Non-vacuous. Run PASS. Commit `example(undersanded): M4 loop tier`.
 
-**Gate:** full dock→travel→fight→return terminal loop playable; every §6/§12 rule exercised by a test; screen goldens stable.
+**Gate:** full dock→travel→fight→return terminal loop playable (Task 4c wires the console); every §6/§12 rule exercised by a test; screen goldens stable; secured line renders via its message row (Task 4b).
 
 ### Task 6: Next-milestone amendment review (M5)
 
