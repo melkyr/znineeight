@@ -1,0 +1,143 @@
+const std = @import("std");
+
+pub const Args = struct {
+    torrent_path: []const u8,
+    max_peers: u32,
+    max_up: u32,
+    max_down: u32,
+};
+
+pub const FailureClass = enum(u8) {
+    usage = 1,
+    torrent = 2,
+    tracker = 3,
+    peer = 4,
+    disk = 5,
+};
+
+// Smallest non-zero rate that can fund one request: 16384 = one block payload
+// (`piece.BLOCK_SIZE`), 13 = one request frame (`wire.zig` request message).
+const MIN_MAX_DOWN_BYTES: u32 = 16384;
+const MIN_MAX_UP_BYTES: u32 = 13;
+
+fn eq(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a) |item, i| {
+        if (item != b[i]) return false;
+    }
+    return true;
+}
+
+fn argAt(argv: [*][*]u8, i: usize) []const u8 {
+    const p: [*]const u8 = @ptrCast([*]const u8, argv[i]);
+    var n: usize = 0;
+    while (p[n] != 0) : (n += 1) {}
+    return p[0..n];
+}
+
+fn parseU32(s: []const u8) ?u32 {
+    if (s.len == 0) return null;
+    var v: u64 = 0;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c: u8 = s[i];
+        if (c < '0' or c > '9') return null;
+        v = v * 10 + @intCast(u64, c - '0');
+        if (v > @intCast(u64, 4294967295)) return null;
+    }
+    return @intCast(u32, v);
+}
+
+pub fn usage() void {
+    var l1: []const u8 = "usage: z9torr [--help] [--max-peers N] [--max-up N] [--max-down N] <file.torrent>\n";
+    std.io.write(l1);
+    var l2: []const u8 = "  -h, --help       show this help\n";
+    std.io.write(l2);
+    var l3: []const u8 = "  --max-peers N    concurrent peers (1..16; larger values are clamped to 16)\n";
+    std.io.write(l3);
+    var l4: []const u8 = "  --max-up N       upload limit in bytes/s (0 or >= 13)\n";
+    std.io.write(l4);
+    var l5: []const u8 = "  --max-down N     download limit in bytes/s (0 or 16384..65535)\n";
+    std.io.write(l5);
+    var l6: []const u8 = "  output           saves as <torrent name> in the current directory\n";
+    std.io.write(l6);
+    var l7: []const u8 = "  Z9TORR_LOG=1     write z9torr.log; a path-like value writes that file\n";
+    std.io.write(l7);
+    var l8: []const u8 = "  runs to completion (no interactive keys); -o is the compiler's output-dir flag, not a z9torr flag\n";
+    std.io.write(l8);
+    var l9: []const u8 = "  exit codes: 0 complete, 1 usage, 2 torrent, 3 tracker, 4 peer, 5 disk\n";
+    std.io.write(l9);
+}
+
+fn usageError() void {
+    usage();
+    std.os.exit(1);
+}
+
+pub fn parseArgs(argc: i32, argv: [*][*]u8) Args {
+    var a: Args = Args{
+        .torrent_path = "",
+        .max_peers = 50,
+        .max_up = 0,
+        .max_down = 0,
+    };
+    var have_path: bool = false;
+    const n: usize = @intCast(usize, argc);
+    var i: usize = 1;
+    while (i < n) : (i += 1) {
+        var tok: []const u8 = argAt(argv, i);
+        if (eq(tok, "--help") or eq(tok, "-h")) {
+            usage();
+            std.os.exit(0);
+        } else if (eq(tok, "--max-peers")) {
+            i += 1;
+            if (i >= n) usageError();
+            if (parseU32(argAt(argv, i))) |pv| {
+                if (pv > 100) usageError();
+                a.max_peers = pv;
+            } else {
+                usageError();
+            }
+        } else if (eq(tok, "--max-up")) {
+            i += 1;
+            if (i >= n) usageError();
+            if (parseU32(argAt(argv, i))) |pv2| {
+                a.max_up = pv2;
+            } else {
+                usageError();
+            }
+        } else if (eq(tok, "--max-down")) {
+            i += 1;
+            if (i >= n) usageError();
+            if (parseU32(argAt(argv, i))) |pv3| {
+                if (pv3 > 65535) usageError();
+                a.max_down = pv3;
+            } else {
+                usageError();
+            }
+        } else if (tok.len > 0 and tok[0] == '-') {
+            usageError();
+        } else {
+            if (have_path) usageError();
+            a.torrent_path = tok;
+            have_path = true;
+        }
+    }
+    // A nonzero rate below one request/block quantum can never afford a send, so
+    // it is a usage error; `0` still means unlimited.
+    if (a.max_down != 0 and a.max_down < MIN_MAX_DOWN_BYTES) usageError();
+    if (a.max_up != 0 and a.max_up < MIN_MAX_UP_BYTES) usageError();
+    if (!have_path) usageError();
+    return a;
+}
+
+pub fn exitCodeFor(class: FailureClass) u8 {
+    switch (class) {
+        .usage => return 1,
+        .torrent => return 2,
+        .tracker => return 3,
+        .peer => return 4,
+        .disk => return 5,
+        else => return 0,
+    }
+}

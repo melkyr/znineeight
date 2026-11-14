@@ -1,0 +1,48 @@
+// comptime_compare.z98 — standalone reproduction for Task 3
+// (signedness-free comparisons + logical folds).
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/cmp repro/comptime_compare.z98
+//   sh /tmp/cmp/build_target.sh linux /tmp/cmp/prog
+//   timeout 120 /tmp/cmp/prog
+//
+// DEFECT (pre-Task-3). `comptimeEvalCompare` recovered each operand's
+// signedness syntactically (declared type / literal sign / `0 - X`) and made
+// the whole comparison unfoldable for any arithmetic-derived shape, so the
+// Task 9D bounded divergence rejected `if ((umax - 1) > 0) ...` in a no-`else`
+// value `if` although official Zig 0.15.2 accepts it. The module-scope accepted
+// shapes (`UU > -1`, `UU > (0 - 1)`, the i64-min literal) folded true in sema
+// but lowered to a wrong runtime branch (false) and an uninitialised result
+// temp.
+//
+// FIX (Task 3). `comptimeEvalCompare` compares the exact magnitude+sign of the
+// arbitrary-precision `ComptimeInt` (no sign class, no 64-bit `ciValToOldBits`
+// bridge), so arithmetic-derived comparisons fold exactly like Zig. In
+// addition `phase_ComptimeEvaluation` stores the folded bool condition of every
+// capture-free no-`else` value `if` (Task 1 §7), so lowering's `ie_fold` path
+// elides the untaken branch and the module-scope shapes are runtime-equal to
+// Zig. The arithmetic peer-fit rule (Task 1 §5.4) keeps Zig-rejected shapes
+// (`u - 300` on a `u8`) rejected.
+//
+// Oracle: official Zig 0.15.2 twin, accepts every shape and prints the same
+// values. Expected stdout below, byte-exact 3x, rc 0.
+//
+//   1 2 3 4 5 6 7 8
+const std = @import("std");
+
+const UU: u8 = 200;
+const MUMAX: u64 = 18446744073709551615;
+
+pub fn main() void {
+    const umax: u64 = 18446744073709551615;
+    const a: i32 = 1;
+    var x1: i32 = if ((umax - 1) > 0) 1;
+    var x2: i32 = if (0 < (umax - 1)) 2;
+    var x3: i32 = if ((a + 1) == 2) 3;
+    var x4: i32 = if (UU > -1) 4;
+    var x5: i32 = if (UU > (0 - 1)) 5;
+    var x6: i32 = if (-9223372036854775808 < 0) 6;
+    var x7: i32 = if ((1 << 100) > 0 and (0 - (1 << 100)) < 0) 7;
+    var x8: i32 = if ((MUMAX - 1) > 0) 8;
+    std.io.print("{} {} {} {} {} {} {} {}\n", .{ x1, x2, x3, x4, x5, x6, x7, x8 });
+}

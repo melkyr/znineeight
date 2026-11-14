@@ -1,0 +1,819 @@
+// wire.zig — z9torr: BitTorrent peer wire protocol (handshake + message framing).
+//
+// Blueprint §3/§6, spec 2026-10-08 §3/§6/§8. All multi-byte integers on the
+// wire are big-endian. The handshake is a fixed 68-byte record:
+//
+//   offset 0      : pstrlen = 19 (single byte)
+//   offset 1..20  : pstr    = "BitTorrent protocol" (19 bytes)
+//   offset 20..28 : reserved (8 bytes; feature flags, see BEP 10/BEP 5/BEP 6.
+//                   BEP 3: ignore unknown reserved bits — never reject on them)
+//   offset 28..48 : info_hash (20 bytes)
+//   offset 48..68 : peer_id   (20 bytes)
+//
+// Messages are framed as a 4-byte big-endian length prefix (which excludes
+// itself), an optional 1-byte id, then the payload. A length of 0 is a
+// keep-alive: no id, no payload. The cap is MAX_MESSAGE_SIZE (64 KiB).
+//
+// The reader is `std_stream.MsgReader` (`readMsgSync`/`readMsgAsync`): it
+// decodes the u32-BE prefix and returns the frame body (id + payload) or a
+// zero-length frame for a keep-alive. The caller-owned `MsgReader.buf` MUST be
+// at least MAX_MESSAGE_SIZE (64 KiB): `readMsgSync`/`readMsgAsync` return
+// FrameTooLarge when the declared length exceeds `buf.len`, and even a plain
+// 16 KiB block `piece` body is 9 + 16384 = 16393 bytes, well over 16 KiB.
+//
+// Z98 rules (spec §5): no method syntax (free functions taking self), no
+// generics, strict `@intCast`, `switch` needs `else`, string literals via
+// `var s: []const u8 = "...";`. D2: every slice here is `[]u8`/`[]const u8`
+// (primitive element) or a pointer to a named struct — no `[]synthetic`.
+
+const std = @import("std");
+const std_net = @import("std_net");
+const std_stream = @import("std_stream.zig");
+const logmod = @import("log.zig");
+const std_crypto = @import("std_crypto");
+
+pub const MsgReader = std_stream.MsgReader;
+
+// Message framing cap (blueprint §6): 64 KiB. A length prefix larger than this
+// is a protocol error (`PeerError.BadMessage`).
+pub const MAX_MESSAGE_SIZE: usize = 65536;
+
+// Wire message ids (spec §6). This enum is 0..9 plus the BEP 10 `extended` id
+// (20): 0..8 are the base BitTorrent messages and 9 is the BEP 5 DHT `port`
+// message (a DHT-supporting peer sends it because we advertise the DHT reserved
+// bit; we accept and ignore it). A keep-alive (a length-0 frame with no id) is
+// not an id and is surfaced via `Message.is_keep_alive` instead. An extended
+// message's `payload` starts with a one-byte extended id followed by its
+// bencoded body.
+pub const MsgType = enum(u8) {
+    choke = 0,
+    unchoke = 1,
+    interested = 2,
+    not_interested = 3,
+    have = 4,
+    bitfield = 5,
+    request = 6,
+    piece = 7,
+    cancel = 8,
+    port = 9,
+    extended = 20,
+};
+
+pub const Handshake = struct {
+    pstr: [19]u8,
+    reserved: [8]u8,
+    info_hash: [20]u8,
+    peer_id: [20]u8,
+};
+
+pub const Message = struct {
+    id: MsgType,
+    payload: []const u8,
+    is_keep_alive: bool,
+};
+
+var g_zero_message: Message;
+
+pub fn zeroMessage() Message {
+    return g_zero_message;
+}
+
+// Spec §8 error taxonomy, kept small and concrete. `PeerClosed`/`NetFailed`
+// are the transport members (a peer close, or a socket send/recv error); the
+// rest are protocol members.
+pub const PeerError = error{
+    HandshakeFailed,
+    InfoHashMismatch,
+    BadMessage,
+    Timeout,
+    BadHash,
+    PeerClosed,
+    NetFailed,
+};
+
+pub const HANDSHAKE_LEN: usize = 68;
+// Absolute deadline (ms) for the async handshake exchange: a peer that TCP
+// connects but never sends its 68-byte record fails as `PeerError.Timeout`
+// instead of parking the coroutine until the 60 s stall watchdog. Handshake
+// path only; the shared message framing/blocking read are untouched.
+const HANDSHAKE_DEADLINE_MS: u32 = 3000;
+const PSTR_LEN: usize = 19;
+const RESERVED_LEN: usize = 8;
+const HASH_LEN: usize = 20;
+
+// --- big-endian integer helpers (blueprint §3) ------------------------------
+
+pub fn readU32BE(b: []const u8) u32 {
+    return (@intCast(u32, b[0]) << 24) | (@intCast(u32, b[1]) << 16) |
+        (@intCast(u32, b[2]) << 8) | @intCast(u32, b[3]);
+}
+
+pub fn writeU32BE(b: []u8, v: u32) void {
+    b[0] = @intCast(u8, (v >> 24) & @intCast(u32, 0xFF));
+    b[1] = @intCast(u8, (v >> 16) & @intCast(u32, 0xFF));
+    b[2] = @intCast(u8, (v >> 8) & @intCast(u32, 0xFF));
+    b[3] = @intCast(u8, v & @intCast(u32, 0xFF));
+}
+
+pub fn readU16BE(b: []const u8) u16 {
+    return (@intCast(u16, b[0]) << 8) | @intCast(u16, b[1]);
+}
+
+pub fn writeU16BE(b: []u8, v: u16) void {
+    b[0] = @intCast(u8, (v >> 8) & @intCast(u16, 0xFF));
+    b[1] = @intCast(u8, v & @intCast(u16, 0xFF));
+}
+
+// --- transport helpers ------------------------------------------------------
+
+fn sendAll(sock: std_net.Socket, data: []const u8) PeerError!void {
+    var off: usize = 0;
+    while (off < data.len) {
+        var chunk: []const u8 = data[off..];
+        const n = std_net.send(sock, chunk.ptr, @intCast(i32, chunk.len));
+        if (n <= 0) return error.NetFailed;
+        off += @intCast(usize, n);
+    }
+}
+
+fn recvAll(sock: std_net.Socket, buf: []u8) PeerError!void {
+    var off: usize = 0;
+    while (off < buf.len) {
+        var chunk: []u8 = buf[off..];
+        const n = std_net.recv(sock, chunk.ptr, @intCast(i32, chunk.len));
+        if (n == 0) return error.PeerClosed;
+        if (n < 0) return error.NetFailed;
+        off += @intCast(usize, n);
+    }
+}
+
+// --- env-gated handshake trace (Z9TORR_LOG) ---------------------------------
+
+// Name for a `PeerError` in the handshake trace. `readHandshakeAsync` collapses
+// transport and protocol failures, so the log records which concrete member
+// fired. Strictly a formatter; safe to call when logging is off.
+pub fn peerErrorName(e: PeerError) []const u8 {
+    if (e == error.HandshakeFailed) return "HandshakeFailed";
+    if (e == error.InfoHashMismatch) return "InfoHashMismatch";
+    if (e == error.BadMessage) return "BadMessage";
+    if (e == error.Timeout) return "Timeout";
+    if (e == error.BadHash) return "BadHash";
+    if (e == error.PeerClosed) return "PeerClosed";
+    if (e == error.NetFailed) return "NetFailed";
+    return "Unknown";
+}
+
+// `hs fd=<n> stage=<name> recv=<hex>` — the bytes received for one handshake
+// stage. The fd ties the line back to the owning `peer slot=`/`fd=` line.
+fn hsLogRecv(fd: std_net.Socket, stage: []const u8, data: []const u8) void {
+    logmod.s("hs fd=");
+    logmod.i32v(fd);
+    logmod.s(" stage=");
+    logmod.s(stage);
+    logmod.s(" recv=");
+    logmod.hex(data);
+    logmod.nl();
+}
+
+// `hs fd=<n> stage=<name> err=<PeerError>` — a handshake stage failure.
+fn hsLogFail(fd: std_net.Socket, stage: []const u8, e: PeerError) void {
+    logmod.s("hs fd=");
+    logmod.i32v(fd);
+    logmod.s(" stage=");
+    logmod.s(stage);
+    logmod.s(" err=");
+    logmod.s(peerErrorName(e));
+    logmod.nl();
+}
+
+// --- handshake --------------------------------------------------------------
+
+pub fn writeHandshake(sock: std_net.Socket, hs: *const Handshake) PeerError!void {
+    var h: [HANDSHAKE_LEN]u8 = [HANDSHAKE_LEN]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
+    h[0] = @intCast(u8, PSTR_LEN);
+    var i: usize = 0;
+    while (i < PSTR_LEN) : (i += 1) {
+        h[1 + i] = hs.pstr[i];
+    }
+    i = 0;
+    while (i < RESERVED_LEN) : (i += 1) {
+        h[20 + i] = hs.reserved[i];
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        h[28 + i] = hs.info_hash[i];
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        h[48 + i] = hs.peer_id[i];
+    }
+    logmod.s("hs fd=");
+    logmod.i32v(sock);
+    logmod.s(" sent=");
+    logmod.hex(h[0..]);
+    logmod.nl();
+    try sendAll(sock, h[0..]);
+}
+
+// Reserved bits (BEP 3): a peer's 8-byte reserved field carries optional
+// feature flags — BEP 10 extension protocol (reserved[5], 0x10), BEP 5 DHT
+// (reserved[7], 0x01), BEP 6 Fast Extension (reserved[7], 0x04), and others.
+// Per BEP 3 a client MUST ignore reserved bits it does not understand, so this
+// field never rejects a handshake: it is stored verbatim in
+// `Handshake.reserved` and callers may inspect it for capability detection
+// (e.g. `peer.zig` tests reserved[5] & 0x10 for BEP 10). We advertise our own
+// bits in `peer.zig`; peers that set bits we do not know are still accepted.
+
+// Read and validate a peer handshake. `expected_info_hash` is the caller's
+// 20-byte info_hash (a `[]const u8` of length 20, D2-safe). Rejects a bad
+// pstrlen/pstr (`HandshakeFailed`) and a mismatching info_hash
+// (`InfoHashMismatch`); reserved bits are ignored per BEP 3.
+pub fn readHandshake(sock: std_net.Socket, expected_info_hash: []const u8, out: *Handshake) PeerError!void {
+    if (expected_info_hash.len != HASH_LEN) return error.HandshakeFailed;
+
+    var h: [HANDSHAKE_LEN]u8 = [HANDSHAKE_LEN]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
+    try recvAll(sock, h[0..]);
+
+    if (h[0] != @intCast(u8, PSTR_LEN)) return error.HandshakeFailed;
+
+    var pstr: []const u8 = "BitTorrent protocol";
+    var i: usize = 0;
+    while (i < PSTR_LEN) : (i += 1) {
+        if (h[1 + i] != pstr[i]) return error.HandshakeFailed;
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        if (h[28 + i] != expected_info_hash[i]) return error.InfoHashMismatch;
+    }
+
+    i = 0;
+    while (i < PSTR_LEN) : (i += 1) {
+        out.pstr[i] = h[1 + i];
+    }
+    i = 0;
+    while (i < RESERVED_LEN) : (i += 1) {
+        out.reserved[i] = h[20 + i];
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        out.info_hash[i] = h[28 + i];
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        out.peer_id[i] = h[48 + i];
+    }
+}
+
+// --- async handshake (non-blocking, for the peer coroutine) -----------------
+
+// One non-blocking receive attempt. Returns 1 with the byte count in `out_n`
+// (0 = EOF) on success, 0 when the socket would block (caller yields).
+fn tryRecvAsync(sock: *std_net.Socket, buf: []u8, out_n: *usize) PeerError!u8 {
+    const got = std_net.recvNonBlocking(sock, buf) catch |e| {
+        if (e == error.WouldBlock) return 0;
+        return error.NetFailed;
+    };
+    out_n.* = got;
+    return 1;
+}
+
+// Cooperative-yield exact read: suspend on WouldBlock until `buf` is full.
+// `buf` aliases caller (not local-array) memory so nothing large spans a
+// suspension. `start_ms` is the `ticksMs` value captured at the start of the
+// handshake; the read fails as `PeerError.Timeout` once the absolute
+// `HANDSHAKE_DEADLINE_MS` budget elapses (a silent peer must not park the
+// coroutine until the stall watchdog).
+fn recvExactAsync(sock: std_net.Socket, buf: []u8, start_ms: u32) PeerError!void {
+    var s: std_net.Socket = sock;
+    var off: usize = 0;
+    while (off < buf.len) {
+        if (std.time.ticksMs() - start_ms >= HANDSHAKE_DEADLINE_MS) return error.Timeout;
+        var n: usize = 0;
+        const st = try tryRecvAsync(&s, buf[off..], &n);
+        if (st == 0) {
+            _ = @asyncSuspend(null);
+        } else {
+            if (n == 0) return error.PeerClosed;
+            off += n;
+        }
+    }
+}
+
+// Read and validate a peer handshake WITHOUT blocking: the counterpart of
+// `readHandshake` for `peer.zig`'s non-blocking socket. The 68-byte record is
+// read straight into `out`'s fields (no local array spans a suspend). Same
+// rules as `readHandshake`: pstrlen == 19, pstr match, info_hash match else
+// `PeerError.InfoHashMismatch`; reserved bits are ignored per BEP 3.
+//
+// NOTE: `expected_info_hash` is `[]const u8` (length 20), matching the ratified
+// blocking `readHandshake` (Task-1 ruling A). A by-value `[20]u8` parameter is
+// un-emittable here: this is a suspending (cross-module coroutine) callee, and
+// the emitter copies the array argument into the child frame with a C array
+// assignment, which C89 rejects (`assignment to expression with array type`).
+pub fn readHandshakeAsync(sock: std_net.Socket, expected_info_hash: []const u8, out: *Handshake) PeerError!void {
+    if (expected_info_hash.len != HASH_LEN) return error.HandshakeFailed;
+    var start_ms: u32 = std.time.ticksMs();
+    // The leading pstrlen byte has no `Handshake` field; land it in
+    // `out.info_hash[0]` as scratch (that field is fully overwritten below).
+    recvExactAsync(sock, out.info_hash[0..1], start_ms) catch |e| {
+        hsLogFail(sock, "pstrlen", e);
+        return e;
+    };
+    hsLogRecv(sock, "pstrlen", out.info_hash[0..1]);
+    if (out.info_hash[0] != @intCast(u8, PSTR_LEN)) {
+        hsLogFail(sock, "pstrlen", error.HandshakeFailed);
+        return error.HandshakeFailed;
+    }
+
+    recvExactAsync(sock, out.pstr[0..], start_ms) catch |e| {
+        hsLogFail(sock, "pstr", e);
+        return e;
+    };
+    hsLogRecv(sock, "pstr", out.pstr[0..]);
+
+    recvExactAsync(sock, out.reserved[0..], start_ms) catch |e| {
+        hsLogFail(sock, "reserved", e);
+        return e;
+    };
+    hsLogRecv(sock, "reserved", out.reserved[0..]);
+
+    recvExactAsync(sock, out.info_hash[0..], start_ms) catch |e| {
+        hsLogFail(sock, "info_hash", e);
+        return e;
+    };
+    hsLogRecv(sock, "info_hash", out.info_hash[0..]);
+
+    recvExactAsync(sock, out.peer_id[0..], start_ms) catch |e| {
+        hsLogFail(sock, "peer_id", e);
+        return e;
+    };
+    hsLogRecv(sock, "peer_id", out.peer_id[0..]);
+
+    var pstr: []const u8 = "BitTorrent protocol";
+    for (pstr) |b, i| {
+        if (out.pstr[i] != b) {
+            hsLogFail(sock, "pstr", error.HandshakeFailed);
+            return error.HandshakeFailed;
+        }
+    }
+    for (expected_info_hash) |b, i| {
+        if (out.info_hash[i] != b) {
+            hsLogFail(sock, "info_hash", error.InfoHashMismatch);
+            return error.InfoHashMismatch;
+        }
+    }
+    logmod.s("hs fd=");
+    logmod.i32v(sock);
+    logmod.s(" ok");
+    logmod.nl();
+}
+
+// --- message framing --------------------------------------------------------
+fn decodeMsgType(id: u8, out: *MsgType) bool {
+    switch (id) {
+        0 => {
+            out.* = MsgType.choke;
+            return true;
+        },
+        1 => {
+            out.* = MsgType.unchoke;
+            return true;
+        },
+        2 => {
+            out.* = MsgType.interested;
+            return true;
+        },
+        3 => {
+            out.* = MsgType.not_interested;
+            return true;
+        },
+        4 => {
+            out.* = MsgType.have;
+            return true;
+        },
+        5 => {
+            out.* = MsgType.bitfield;
+            return true;
+        },
+        6 => {
+            out.* = MsgType.request;
+            return true;
+        },
+        7 => {
+            out.* = MsgType.piece;
+            return true;
+        },
+        8 => {
+            out.* = MsgType.cancel;
+            return true;
+        },
+        9 => {
+            out.* = MsgType.port;
+            return true;
+        },
+        20 => {
+            out.* = MsgType.extended;
+            return true;
+        },
+        else => return false,
+    }
+}
+
+// Decode one frame body (id + payload) into `out`. A zero-length frame is a
+// keep-alive: `is_keep_alive = true`, empty payload, unused `id` set to .choke.
+fn decodeFrame(frame: []u8, out: *Message) PeerError!void {
+    if (frame.len == 0) {
+        out.id = MsgType.choke;
+        out.payload = frame[0..0];
+        out.is_keep_alive = true;
+        return;
+    }
+    var t: MsgType = MsgType.choke;
+    if (!decodeMsgType(frame[0], &t)) return error.BadMessage;
+    out.id = t;
+    out.payload = frame[1..];
+    out.is_keep_alive = false;
+}
+
+// Read one framed message into `out` (blocking). A zero-length frame is a
+// keep-alive (`is_keep_alive = true`). An oversize frame (length > 64 KiB) or
+// an unknown id is `PeerError.BadMessage`; EOF is `PeerError.PeerClosed`.
+// `out.payload` aliases the reader buffer and is valid until the next read.
+pub fn readMessage(mr: *MsgReader, out: *Message) PeerError!void {
+    var frame_opt: ?[]u8 = std_stream.readMsgSync(mr) catch |e| {
+        if (e == error.FrameTooLarge) return error.BadMessage;
+        return error.NetFailed;
+    };
+    if (frame_opt) |frame| {
+        try decodeFrame(frame, out);
+        return;
+    }
+    return error.PeerClosed;
+}
+
+// Cooperative-yield counterpart of `readMessage` for a non-blocking socket:
+// `readMsgAsync` suspends on WouldBlock internally (std_stream.zig) and is
+// re-driven on the next tick. Same error/keep-alive semantics.
+pub fn readMessageAsync(mr: *MsgReader, out: *Message) PeerError!void {
+    var frame_opt: ?[]u8 = std_stream.readMsgAsync(mr) catch |e| {
+        if (e == error.FrameTooLarge) return error.BadMessage;
+        return error.NetFailed;
+    };
+    if (frame_opt) |frame| {
+        try decodeFrame(frame, out);
+        return;
+    }
+    return error.PeerClosed;
+}
+
+// --- message writers --------------------------------------------------------
+
+fn checkLen(total: usize) PeerError!void {
+    if (total == 0 or total > MAX_MESSAGE_SIZE) return error.BadMessage;
+}
+
+// A message with an id and no payload (choke/unchoke/interested/...).
+pub fn writeSimple(sock: std_net.Socket, id: MsgType) PeerError!void {
+    var b: [5]u8 = [5]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(b[0..4], @intCast(u32, 1));
+    b[4] = @intCast(u8, @enumToInt(id));
+    try sendAll(sock, b[0..]);
+}
+
+pub fn writeChoke(sock: std_net.Socket) PeerError!void {
+    try writeSimple(sock, MsgType.choke);
+}
+
+pub fn writeUnchoke(sock: std_net.Socket) PeerError!void {
+    try writeSimple(sock, MsgType.unchoke);
+}
+
+pub fn writeInterested(sock: std_net.Socket) PeerError!void {
+    try writeSimple(sock, MsgType.interested);
+}
+
+pub fn writeNotInterested(sock: std_net.Socket) PeerError!void {
+    try writeSimple(sock, MsgType.not_interested);
+}
+
+// Zero-length frame: 4-byte length prefix 0, no id, no payload.
+pub fn writeKeepAlive(sock: std_net.Socket) PeerError!void {
+    var b: [4]u8 = [4]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(b[0..4], @intCast(u32, 0));
+    try sendAll(sock, b[0..]);
+}
+
+// have{index}: payload is a 4-byte BE piece index.
+pub fn writeHave(sock: std_net.Socket, index: u32) PeerError!void {
+    var b: [9]u8 = [9]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(b[0..4], @intCast(u32, 5));
+    b[4] = @intCast(u8, @enumToInt(MsgType.have));
+    writeU32BE(b[5..9], index);
+    try sendAll(sock, b[0..]);
+}
+
+// bitfield{bits}: payload is the raw bitfield bytes.
+pub fn writeBitfield(sock: std_net.Socket, bits: []const u8) PeerError!void {
+    const total: usize = 1 + bits.len;
+    try checkLen(total);
+    var hdr: [5]u8 = [5]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(hdr[0..4], @intCast(u32, total));
+    hdr[4] = @intCast(u8, @enumToInt(MsgType.bitfield));
+    try sendAll(sock, hdr[0..]);
+    try sendAll(sock, bits);
+}
+
+// request{index, begin, length} / cancel{...}: 12-byte payload, all BE u32.
+fn writeBlockReq(sock: std_net.Socket, id: MsgType, index: u32, begin: u32, length: u32) PeerError!void {
+    var b: [17]u8 = [17]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(b[0..4], @intCast(u32, 13));
+    b[4] = @intCast(u8, @enumToInt(id));
+    writeU32BE(b[5..9], index);
+    writeU32BE(b[9..13], begin);
+    writeU32BE(b[13..17], length);
+    try sendAll(sock, b[0..]);
+}
+
+pub fn writeRequest(sock: std_net.Socket, index: u32, begin: u32, length: u32) PeerError!void {
+    try writeBlockReq(sock, MsgType.request, index, begin, length);
+}
+
+pub fn writeCancel(sock: std_net.Socket, index: u32, begin: u32, length: u32) PeerError!void {
+    try writeBlockReq(sock, MsgType.cancel, index, begin, length);
+}
+
+// piece{index, begin, data}: 4+4 BE header then the block bytes.
+pub fn writePiece(sock: std_net.Socket, index: u32, begin: u32, data: []const u8) PeerError!void {
+    const total: usize = 9 + data.len;
+    try checkLen(total);
+    var hdr: [13]u8 = [13]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(hdr[0..4], @intCast(u32, total));
+    hdr[4] = @intCast(u8, @enumToInt(MsgType.piece));
+    writeU32BE(hdr[5..9], index);
+    writeU32BE(hdr[9..13], begin);
+    try sendAll(sock, hdr[0..]);
+    try sendAll(sock, data);
+}
+
+// --- BEP 10 extension messages ----------------------------------------------
+//
+// An extended message is framed like any other (4-byte length, id 20), then a
+// one-byte extended id and the bencoded body. `payload` here is the body only;
+// the caller passes the extended id separately.
+
+pub fn writeExtended(sock: std_net.Socket, ext_id: u8, payload: []const u8) PeerError!void {
+    const total: usize = 2 + payload.len;
+    try checkLen(total);
+    var hdr: [6]u8 = [6]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(hdr[0..4], @intCast(u32, total));
+    hdr[4] = @intCast(u8, @enumToInt(MsgType.extended));
+    hdr[5] = ext_id;
+    try sendAll(sock, hdr[0..]);
+    try sendAll(sock, payload);
+}
+
+// Encrypted counterpart of `writeExtended`: RC4 is a stream cipher, so the
+// header and body are transformed in exact wire order. The body is encrypted in
+// bounded chunks (a copy into scratch, transformed, sent) so no large temporary
+// is needed and the keystream stays continuous.
+pub fn writeExtendedEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, ext_id: u8, payload: []const u8) PeerError!void {
+    const total: usize = 2 + payload.len;
+    try checkLen(total);
+    var hdr: [6]u8 = [6]u8{0};
+    for (hdr) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(hdr[0..4], @intCast(u32, total));
+    hdr[4] = @intCast(u8, @enumToInt(MsgType.extended));
+    hdr[5] = ext_id;
+    std_crypto.rc4Apply(enc, hdr[0..]);
+    try sendAll(sock, hdr[0..]);
+
+    var off: usize = 0;
+    var scratch: [256]u8 = [256]u8{0};
+    for (scratch) |*item| {
+        item.* = 0;
+    }
+    while (off < payload.len) {
+        var n: usize = payload.len - off;
+        if (n > scratch.len) n = scratch.len;
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            scratch[i] = payload[off + i];
+        }
+        std_crypto.rc4Apply(enc, scratch[0..n]);
+        try sendAll(sock, scratch[0..n]);
+        off += n;
+    }
+}
+
+// --- MSE/PE encrypted framing (initiator side) ------------------------------
+//
+// After `mse.mseConnect` negotiates RC4, every wire byte that follows the MSE
+// handshake is RC4-transformed. Outbound frames are encrypted in place before
+// `sendAll`; inbound bytes are decrypted as they arrive (a stream cipher's state
+// must advance in exact wire order, so the reader decrypts each received chunk
+// immediately). The plaintext framing above is untouched; the peer's message
+// state machine only swaps which reader/writer it calls.
+//
+// D3/D4: `dec` always points at the caller-owned per-peer `Peer.enc` contexts,
+// never at module scratch; the readers return `void`/errors and write into
+// caller-owned `out`/`Message`, so no struct-return temporary spans a suspend.
+
+// One non-blocking read attempt, decrypting exactly the bytes received.
+fn recvDecChunk(sock: *std_net.Socket, dec: *std_crypto.Rc4, dst: []u8, out_n: *usize) PeerError!u8 {
+    const got = std_net.recvNonBlocking(sock, dst) catch |e| {
+        if (e == error.WouldBlock) return 0;
+        return error.NetFailed;
+    };
+    std_crypto.rc4Apply(dec, dst[0..got]);
+    out_n.* = got;
+    return 1;
+}
+
+// Suspending exact read of decrypted bytes (counterpart of `recvExactAsync`).
+fn awaitDecRead(sock: *std_net.Socket, dec: *std_crypto.Rc4, dst: []u8, out_n: *usize) PeerError!void {
+    while (true) {
+        const st = try recvDecChunk(sock, dec, dst, out_n);
+        if (st == 1) return;
+        _ = @asyncSuspend(null);
+    }
+}
+
+// Deadline-bounded exact read of decrypted bytes into a caller-owned slice.
+fn recvExactEncAsync(sock: std_net.Socket, dec: *std_crypto.Rc4, buf: []u8, start_ms: u32) PeerError!void {
+    var s: std_net.Socket = sock;
+    var off: usize = 0;
+    while (off < buf.len) {
+        if (std.time.ticksMs() - start_ms >= HANDSHAKE_DEADLINE_MS) return error.Timeout;
+        var n: usize = 0;
+        const st = try recvDecChunk(&s, dec, buf[off..], &n);
+        if (st == 0) {
+            _ = @asyncSuspend(null);
+        } else {
+            if (n == 0) return error.PeerClosed;
+            off += n;
+        }
+    }
+}
+
+// Encrypted counterpart of `readHandshakeAsync`. Same validation; bytes are
+// decrypted in stream order. The leading pstrlen lands in `out.info_hash[0]` as
+// scratch (overwritten by the real info_hash read below), as in the plaintext
+// reader.
+pub fn readHandshakeAsyncEnc(sock: std_net.Socket, dec: *std_crypto.Rc4, expected_info_hash: []const u8, out: *Handshake) PeerError!void {
+    if (expected_info_hash.len != HASH_LEN) return error.HandshakeFailed;
+    var start_ms: u32 = std.time.ticksMs();
+
+    recvExactEncAsync(sock, dec, out.info_hash[0..1], start_ms) catch |e| return e;
+    if (out.info_hash[0] != @intCast(u8, PSTR_LEN)) return error.HandshakeFailed;
+
+    recvExactEncAsync(sock, dec, out.pstr[0..], start_ms) catch |e| return e;
+    recvExactEncAsync(sock, dec, out.reserved[0..], start_ms) catch |e| return e;
+    recvExactEncAsync(sock, dec, out.info_hash[0..], start_ms) catch |e| return e;
+    recvExactEncAsync(sock, dec, out.peer_id[0..], start_ms) catch |e| return e;
+    logmod.s("hsenc reserved=");
+    logmod.hex(out.reserved[0..]);
+    logmod.s(" peer_id=");
+    logmod.hex(out.peer_id[0..]);
+    logmod.nl();
+
+    var pstr: []const u8 = "BitTorrent protocol";
+    for (pstr) |b, i| {
+        if (out.pstr[i] != b) return error.HandshakeFailed;
+    }
+    for (expected_info_hash) |b, i| {
+        if (out.info_hash[i] != b) return error.InfoHashMismatch;
+    }
+}
+
+// Encrypted write of our 68-byte handshake.
+pub fn writeHandshakeEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, hs: *const Handshake) PeerError!void {
+    var h: [HANDSHAKE_LEN]u8 = [HANDSHAKE_LEN]u8{0};
+    for (h) |*item| {
+        item.* = 0;
+    }
+    h[0] = @intCast(u8, PSTR_LEN);
+    var i: usize = 0;
+    while (i < PSTR_LEN) : (i += 1) {
+        h[1 + i] = hs.pstr[i];
+    }
+    i = 0;
+    while (i < RESERVED_LEN) : (i += 1) {
+        h[20 + i] = hs.reserved[i];
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        h[28 + i] = hs.info_hash[i];
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        h[48 + i] = hs.peer_id[i];
+    }
+    std_crypto.rc4Apply(enc, h[0..]);
+    try sendAll(sock, h[0..]);
+}
+
+// Encrypted simple message (choke/unchoke/interested/...).
+pub fn writeSimpleEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, id: MsgType) PeerError!void {
+    var b: [5]u8 = [5]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(b[0..4], @intCast(u32, 1));
+    b[4] = @intCast(u8, @enumToInt(id));
+    std_crypto.rc4Apply(enc, b[0..]);
+    try sendAll(sock, b[0..]);
+}
+
+pub fn writeInterestedEnc(sock: std_net.Socket, enc: *std_crypto.Rc4) PeerError!void {
+    try writeSimpleEnc(sock, enc, MsgType.interested);
+}
+
+pub fn writeKeepAliveEnc(sock: std_net.Socket, enc: *std_crypto.Rc4) PeerError!void {
+    var b: [4]u8 = [4]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(b[0..4], @intCast(u32, 0));
+    std_crypto.rc4Apply(enc, b[0..]);
+    try sendAll(sock, b[0..]);
+}
+
+pub fn writeRequestEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, index: u32, begin: u32, length: u32) PeerError!void {
+    var b: [17]u8 = [17]u8{0};
+    for (b) |*item| {
+        item.* = 0;
+    }
+    writeU32BE(b[0..4], @intCast(u32, 13));
+    b[4] = @intCast(u8, @enumToInt(MsgType.request));
+    writeU32BE(b[5..9], index);
+    writeU32BE(b[9..13], begin);
+    writeU32BE(b[13..17], length);
+    std_crypto.rc4Apply(enc, b[0..]);
+    try sendAll(sock, b[0..]);
+}
+
+// Encrypted counterpart of `readMessageAsync`: decrypt the 4-byte length prefix
+// and body in stream order, then decode. Same keep-alive/error semantics.
+pub fn readMessageAsyncEnc(mr: *MsgReader, dec: *std_crypto.Rc4, out: *Message) PeerError!void {
+    if (mr.buf.len == 0) return error.PeerClosed;
+    var raw: u32 = 0;
+    var rp: [*]u8 = @ptrCast([*]u8, &raw);
+    var got: usize = 0;
+    while (got < 4) {
+        var n: usize = 0;
+        try awaitDecRead(mr.src, dec, mr.buf[0..1], &n);
+        if (n == 0) return error.PeerClosed;
+        rp[got] = mr.buf[0];
+        got += 1;
+    }
+    const len: u32 = std_net.htonl(raw);
+    logmod.s("enc frame len=");
+    logmod.u32v(len);
+    logmod.nl();
+    if (@intCast(usize, len) > mr.buf.len) return error.BadMessage;
+    mr.pending = mr.buf[0..0];
+    while (mr.pending.len < @intCast(usize, len)) {
+        var n2: usize = 0;
+        try awaitDecRead(mr.src, dec, mr.buf[mr.pending.len..@intCast(usize, len)], &n2);
+        if (n2 == 0) return error.PeerClosed;
+        mr.pending = mr.buf[0 .. mr.pending.len + n2];
+    }
+    try decodeFrame(mr.pending, out);
+    if (out.is_keep_alive) {
+        logmod.s("enc frame keepalive");
+        logmod.nl();
+    } else {
+        logmod.s("enc frame id=");
+        logmod.u32v(@intCast(u32, @enumToInt(out.id)));
+        logmod.nl();
+    }
+}

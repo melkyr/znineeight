@@ -1,0 +1,15 @@
+// repro/enum_subbyte_backing.z98 — standalone A2-F D1 control.
+//
+// Two arbitrary-width enum backings in one program. Seed v90 rejects the
+// second-backed enum with a spurious `error[3000]` at Small because the enum
+// payload aliased the first enum's member table (see
+// repro/mi_matrix/enum_subbyte_backing_xmod/main.zig for the full analysis).
+//
+// Seed v90: dump rc 2 (error[3000] at Small).
+// Fixed:    dump rc 0.
+//
+// Compile (seed-built zig1):
+//   <zig1> --dump-c89 repro/enum_subbyte_backing.z98 > /tmp/esb.c ; echo "rc=$?"
+const Small = enum(u3) { A, B, C };
+const Wide = enum(u5) { X = 0, Y = 31 };
+export fn main() void {}

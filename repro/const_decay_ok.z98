@@ -1,0 +1,108 @@
+// repro/const_decay_ok.z98 — standalone FX6 (Volume II) positive control.
+//
+// The const-violation holes closed by FX6 must not over-reject: every legal
+// const-ADDING direction and every mutable-array decay stays accepted and
+// runtime-correct.
+//
+//   * `const arr` -> `[]const i32` / `[*]const i32` / `*const [3]i32`;
+//   * `arr[0..]` on a const array -> `[]const` (Zig: a const binding's slice
+//     is const), on a mutable array -> `[]i32` (writable);
+//   * `&arr` on a const array -> `[]const`/`[*]const`/`*const [3]i32`;
+//   * string literal -> `[]const u8` / `[*]const u8`;
+//   * `[]T` -> `[]const T` / `[*]const T`, `[]const T` -> `[*]const T`;
+//   * explicit `.ptr`, `&mut[0]`, mutable array -> `[]i32`/`[*]i32`.
+//
+// Contract: stdout `ok=... ` line below, rc 0; every observation
+// `@panic`-guarded so a wrong value cannot masquerade as a pass.
+const std = @import("std");
+
+const Holder = struct { m: []const i32 };
+const ManyHolder = struct { mp: [*]const i32 };
+
+const garr = [3]i32{ 1, 2, 3 };
+const gc: []const i32 = garr;
+const gcm: [*]const i32 = garr;
+const gstr: []const u8 = "abc";
+const gstrp: [*]const u8 = "abc";
+
+fn sumConst(s: []const i32) i32 {
+    return s[0] + s[1] + s[2];
+}
+
+fn sumConstMany(p: [*]const i32) i32 {
+    return p[0] + p[1] + p[2];
+}
+
+fn retConstFromArray(a: [3]i32) []const i32 {
+    return a;
+}
+
+fn retConstSlice(s: []const i32) [*]const i32 {
+    return s;
+}
+
+pub fn main() void {
+    const arr = [3]i32{ 1, 2, 3 };
+    const s1: []const i32 = arr;
+    const s2: []const i32 = arr[0..];
+    const m1: [*]const i32 = arr;
+    const m2: [*]const i32 = arr[0..];
+    const s3: []const i32 = &arr;
+    const m3: [*]const i32 = &arr;
+    const a3: *const [3]i32 = &arr;
+
+    const st1: []const u8 = "abc";
+    const st2: [*]const u8 = "abc";
+
+    var mut = [3]i32{ 4, 5, 6 };
+    var ms: []i32 = mut;
+    var mp: [*]i32 = mut;
+    var ms2: []i32 = mut[0..];
+    var mp2: [*]i32 = &mut;
+    const ep: *i32 = &mut[0];
+    ms[0] = 40;
+    mp[1] = 50;
+    ms2[2] = 60;
+    mp2[0] = 44;
+    ep.* = 45;
+    if (mut[0] != 45) {
+        @panic("mutable array write through &mut[0] failed");
+    }
+
+    const up: []const i32 = ms;
+    const upm: [*]const i32 = ms;
+    const pt = ms.ptr;
+    if (pt[0] != 45) {
+        @panic("explicit .ptr control failed");
+    }
+
+    const h: Holder = .{ .m = arr };
+    const mh: ManyHolder = .{ .mp = &arr };
+    const ca: []const i32 = gc;
+    const cma: [*]const i32 = gc;
+    const fromParam = retConstFromArray(arr);
+    const fromSlice = retConstSlice(s1);
+
+    if (s1[0] + s2[1] + m1[2] + m2[0] + s3[1] + m3[2] + a3[0] != 13) {
+        @panic("const-array const-slice reads failed");
+    }
+    if (st1[2] != 99 or st2[0] != 97) {
+        @panic("string-literal const reads failed");
+    }
+    if (up[1] + upm[2] != 110) {
+        @panic("mutable-slice const-adding reads failed");
+    }
+    if (h.m[0] + mh.mp[1] + ca[2] + cma[0] + fromParam[1] + fromSlice[2] != 12) {
+        @panic("field/return const-adding reads failed");
+    }
+    if (sumConst(arr) + sumConstMany(garr) != 12) {
+        @panic("call-argument const-adding failed");
+    }
+
+    const okarr = [2][]const i32{ s1, s2 };
+    if (okarr[0][0] + okarr[1][2] != 4) {
+        @panic("array-literal element const-adding failed");
+    }
+
+    std.io.print("ok={} {} {} {} {} {} {} {} {} {}\n", .{ s1[0], st1[0], st2[1], gstr[1], gstrp[2], mut[0], h.m[2], fromParam[0], okarr[1][1], okarr[0][2] });
+}

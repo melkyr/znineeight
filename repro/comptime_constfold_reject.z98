@@ -1,0 +1,23 @@
+// comptime_constfold_reject.z98 — standalone reproduction for Task 5 (the
+// enum-initializer wrap that the old i64 evaluator folded silently).
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 --output-dir /tmp/cfold_rej repro/comptime_constfold_reject.z98
+//   echo "dump rc=$?"   # expect 2, 0 emitted .c
+//
+// BEFORE Task 5 the enum evaluator computed on 64-bit wrapping patterns:
+//   `enum { A = 18446744073709551615 + 1 }`  stored tag 0 (Zig rejects:
+//                                            `value assigned to enum tag with
+//                                            inferred tag type`);
+//   `enum(u64) { A = 18446744073709551615 * 2 }` stored `2^64 - 2` (Zig rejects).
+// AFTER Task 5 the exact fold declines a value outside `[i64 min, u64 max]`, so
+// the enum walk emits `error[3055]` and the compile stops with rc=2 and 0 `.c`.
+// (The array-size sites are already rejected at HEAD and stay controls; see
+// `repro/mi_matrix/comptime_constfold_reject_xmod` for the gated matrix.)
+const E1 = enum { A = 18446744073709551615 + 1 };
+const E2 = enum(u64) { A = 18446744073709551615 * 2 };
+
+pub fn main() void {
+    _ = E1.A;
+    _ = E2.A;
+}

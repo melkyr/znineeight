@@ -1,0 +1,1696 @@
+# zig1 Pipeline — Master Index [updated: 2026-10-15 — P14 (lookup-index hygiene, Amendment 7): lookup-only rewrites, zero LIR/emitter-spelling change. Class A — `asyncTempIsGlobalAlias` is a set read of the per-fn alias set built ONCE in `asyncLayoutFrame` (one LIR pass) and carried on `AsyncFrameLayout` (`alias_flags`/`alias_len`); the dual `saveAllFields`/`reloadAllFields` generator filters are deleted (proven-redundant — no alias temp is ever a param id). Class B — per-fn `t2pos`/`t2pos_conc` first-match hoisted maps (built at `emitHoistedDecls` / `spellPlanPlanFn` start) replace the `hoisted_temps` linear scans in `getTempTypeByIndex`/`hoistedTypeOf*`/`hoistedTypeId`/`getTempEffType`/`hoistedEffType` (each helper's own filter semantics + first-match which-wins unchanged). Class C — `C89SpellPlan.fn_key_index` map replaces the `fn_keys` scans in `spellPlanUac`/`spellPlanCarrier` (miss semantics unchanged). Pins 0/8 identity proof.] [updated: 2026-10-12 — P9 (structural frame-save rule): new `async_frame_layout.zig` `asyncTempIsGlobalAlias` (the `load_global` alias-class predicate — global aliases are never frame-save members; the save/restore set is decided at async construction and carried on the frame layout; D3/D4 root cause closed — see doc 12 §8)] [updated: 2026-10-12 — P12 (emitter sanitization: typedef ordering planning): Table A — `tstTopologicalSort` now points at `c89_plan.zig` (the sort + P2 popped/append derivation are planned ONCE at the `phase_EmissionClassification` boundary via the new `spellPlanPlanTypeOrder`, carried as `C89SpellPlan.typedef_order`; the emitter walks the carried order and never sorts); new `spellPlanPlanTypeOrder` row.] [updated: 2026-10-05 — A9-F (Volume IV Amendment A9, operator m1740): a non-diverging value-less `orelse { ... }` fallback in a VALUE position (`var`/`const`/`return`/nested) is a clean level-0 reject reusing the existing `ERR_3059_IF_WITHOUT_ELSE` with the orelse-tailored message `orelse block fallback without a value cannot be used as a value` (no new enum member). `semantic_analyzer.zig` (doc 05) `semanticAnalyzerResolveOrelseExpr` rejects when `semaOrelseFallbackIsValueless` (empty/statement-ended/assignment-ended/labeled block, or no-`else` `if`) or `rhs_result == TYPE_VOID` holds and `semaOrelseFallbackDiverges` is false; new `discard_rhs_node`/`stmt_expr_node` markers keep the direct `_ = ...` discard and the bare-statement form accepted (parked tolerance). `lower.zig` (doc 07) renames `lowerCatchBodyIsValueless` to `lowerBodyIsValueless` and reuses it in the `orelse` null branch so the accepted discard keeps a declared-but-uninitialized join temp (no invalid C). Fixture `repro/mi_matrix/orelse_empty_block_reject_xmod` (`3059 5`, rc 2 / 0 `.c`, class FAIL — intentional oracle-matching reject, not a green-guard) + standalone `repro/orelse_empty_block_reject.z98` (`3059 1`); fixed point `ca21a1bab9fa185f43b99eeb4bd7b847` -> `0b8c3e4ac0b1fc49c0bdf8caf9d39945` (hop1 == hop2; seed v90 NOT rotated); 4-MD5 8/8 UNCHANGED; corpus 1097 = 923 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH (join-diff vs base empty; only addition = the new fixture); stdlib 266/0; matrix 24/24; emit 7/7; CLOSEOUT OK; self-emission 48/48; run_all 13/13; build_test 0/9 (pre-existing).] [updated: 2026-10-05 — A8-F (Volume IV Amendment A8, operator option A, reduced scope): the no-else error-union condition capture `if (eu) |v|` / `while (eu) |v|` is clean-rejected. `semanticAnalyzerCaptureType` (`semantic_analyzer.zig:635`, doc 05) detects an `error_union_type` condition and emits the existing level-0 `error[3058]` with `error union capture is not supported; use 'catch', 'switch', or 'orelse'`; the post-sema `hasErrors` gate exits rc 2 / 0 `.c` before lowering (optional capture unchanged; Zig `else |e|` stays a parse reject — no feature, no payload binding, no while-else). Fixture `repro/mi_matrix/error_union_capture_reject_xmod` (`3058 2`, rc 2 / 0 `.c`, class FAIL — intentional oracle-matching reject, not a green-guard) + standalone `repro/error_union_capture_reject.z98` (`3058 1`); fixed point `2719c55740724c2eb06b58c3e4ab970f` -> `ca21a1bab9fa185f43b99eeb4bd7b847` (hop1 == hop2; seed v90 NOT rotated); 4-MD5 8/8 UNCHANGED; corpus 1096 = 923 OK / 58 GREEN / 115 FAIL / 0 ICE / 0 CRASH (join-diff vs base empty; only addition = the new fixture); stdlib 266/0; matrix 24/24; emit 7/7; CLOSEOUT OK; self-emission 48/48; run_all 13/13; build_test 0/9 (pre-existing).] [updated: 2026-10-05 — A7-F (Volume IV Amendment A7, operator m1596): the `if (opt) |v|` capture is scoped to the then arm (Zig parity). `semantic_analyzer.zig` (doc 05) closes it at the end of the then arm in all three callers — `semanticAnalyzerResolveIfExpr` (save before the header, restore after the then branch), the `ResolveExpr` `if_stmt` arm (a capture pop-marker between the else and then work items), and the statement-walker `if_stmt` arm (a second pop marker between the else and then pushes) — so an else-arm use is the existing level-0 `error[20]` (`identifier 'v' is not declared or imported in this module`); analyzer-only, no new code, no parser/lowering/emitter change. The `else if (b) |v|` same-name false `error[3057]` is dropped (Zig accepts; 0 in-tree). Fixture `repro/mi_matrix/if_capture_else_reject_xmod` (`20 2`, rc 2 / 0 `.c`, class FAIL — an intentional oracle-matching reject, the `undef_ident_*` bucket, not a green-guard) + standalone `repro/if_capture_else_reject.z98` (`20 1`); fixed point `17a88daf2402eb8d6ca53d09eb005f8e` -> `2719c55740724c2eb06b58c3e4ab970f` (hop1 == hop2; seed v90 NOT rotated); 4-MD5 8/8 UNCHANGED; corpus 1095 = 923 OK / 58 GREEN / 114 FAIL / 0 ICE / 0 CRASH (join-diff vs base empty over the 1094 common dirs; only addition = the new fixture); stdlib 266/0; matrix 24/24; emit 7/7; CLOSEOUT OK; self-emission 48/48; run_all 13/13; build_test 0/9 (pre-existing).] [updated: 2026-10-05 — A6-F (Volume IV Amendment A6, operator m1570/m1582/m1691): assignment is not an expression. `parser.zig` (doc 00) parses the 21 expression positions (index/slice, call/builtin args, struct/tuple/array literals, value-if branches, switch case items/ranges, array-type size, enum member values, for pattern/bounds, var-init, return) at `Prec.prec_orelse`, so `a = b = 2;` / `var c: i32 = a = 3;` / `return a = 3;` / `f(a = 3)` / `arr[a = 0]` / `for (0..a = 3)` reject `error[2000]`. The 7 legitimate statement-body positions keep one assignment via the new shared `parserParseStmtBodyExpr` helper (LHS + one assignment op + RHS all at `prec_orelse`), so nested `=` still rejects. No sema/lowering/emitter change; `getInfixInfo` unchanged. Fixture `repro/mi_matrix/assignment_expr_reject_xmod` (`2000 18`, FAIL-by-classifier green-guard) + standalone `repro/assignment_expr_reject.z98` (`2000 4`); fixed point `821481e69df63fc0cf69176fdaaf9dd9` -> `17a88daf2402eb8d6ca53d09eb005f8e` (hop1 == hop2; seed v90 NOT rotated); 4-MD5 8/8 UNCHANGED; corpus 1094 = 923 OK / 58 GREEN / 113 FAIL / 0 ICE / 0 CRASH (only mover = the new fixture OK -> FAIL by classifier, declared green-guard; zero pre-existing movers); stdlib 266 PASS; matrix 24/24; emit 7/7; CLOSEOUT OK; self-emission 48/48; run_all 13/13; build_test 0/9 (pre-existing). PARKED: value-switch prong `var y: i32 = switch (x) { 2 => a = 3, else => 0 };` stays rc 0 (switch-arm void-vs-i32 typing defect, not folded).] [updated: 2026-10-04 — A5-F (Volume IV Amendment A5, operator m1538/m1544): a type/alias value in a value position now clean-rejects level-0 `error[3000]`. New paren-transparent predicate `semanticAnalyzerExprIsTypeValue` (`semantic_analyzer.zig`, doc 05) wraps the existing `semanticAnalyzerTupleElemIsTypeValue` (type_alias symbol / builtin primitive name-cache hit / `module.T` field access) and five guards reuse the site's existing message + `semanticAnalyzerTypeMismatchReport` source/target notes: module binding (`var x = A;`/`var x = i32;`/`var x = type;`/`const T = type;`), assignment RHS, return, and both call-arg paths. No new code/error, no `front_resolution.zig`/lowering/emitter change; `const A = i32;`/`const B = A;` stay accepted. Fixtures `repro/mi_matrix/alias_value_reject_xmod` (`3000 6`) + standalone `repro/alias_value_reject.z98` (`3000 1`); fixed point `c1746347cbcdbb39385f325be20b9b6b` -> `821481e69df63fc0cf69176fdaaf9dd9` (hop1 == hop2; seed v90 NOT rotated); 4-MD5 8/8 UNCHANGED; corpus 1093 = 923 OK / 58 GREEN / 112 FAIL / 0 ICE / 0 CRASH (only movers = the two new A5-F fixtures; zero pre-existing movers); stdlib 266 PASS; matrix 24/24; emit 7/7; CLOSEOUT OK; run_all 13/13; build_test 0/9 (pre-existing). PARKED (A5-I §6, do NOT fold): local `var x = i32;`/`var x = A;`; module `var X = struct{...};`/`var X = *i32;`; shadow noise.] [updated: 2026-10-04 — A4-F (Volume IV Amendment A4, operator m1523): `emitValuelessReturn` (`lower.zig`, doc 07) gains an `optional_type` sibling to its `error_union_type` branch, so a valueless `return;`/fall-off in a `?void` function lowers to `wrap_optional` (present) instead of `.ret_void` (absent); Zig 0.15.2 parity. Fix is lowering-only; no new `LirInst`. Fixtures `repro/mi_matrix/optional_void_present_xmod` (golden `present/absent/present/present/absent`; baseline RED) + standalone `repro/optional_void_present.z98`. Fixed point `2794fe04e0828c95dd5c2c6fecdea362` -> `c1746347cbcdbb39385f325be20b9b6b` (hop1 == hop2; seed v90 NOT rotated); 4-MD5 8/8 UNCHANGED; corpus 1092 = 923 OK / 57 GREEN / 112 FAIL / 0 ICE / 0 CRASH (zero common-dir movers); example matrix 24/24; stdlib 266 PASS; emit 7/7; CLOSEOUT OK. Residual: `return <void expr>;` in a `?void` fn still ICEs `error[3043]` (out of scope).] [updated: 2026-10-04 — A3-F (Volume IV Amendment A3, operator m1500): `[_]T` used where a concrete type is required now clean-rejects level-0 `error[3000]` `unable to infer array size` at the `_` span (Zig 0.15.2 oracle text). New shared detector `typeResolverIsInferredLenArray` (`type_resolver.zig`, doc 03); the `array_type` arm stops silently returning `TYPE_UNDEFINED` for `_` and the aggregate-literal child-0 recursion is guarded; the allowed literal/initializer sites are guarded in `front_resolution.zig` (doc 03) and `semantic_analyzer.zig` `semanticAnalyzerResolveArrayInit` (doc 05). Fixtures `repro/mi_matrix/array_inferred_len_decl_reject_xmod` + standalone `repro/array_inferred_len_decl_reject.z98`; fixed point `7fc608358f4f6af5abab43e633d44f83` -> `2794fe04e0828c95dd5c2c6fecdea362` (hop1 == hop2; seed v90 NOT rotated); 4-MD5 8/8 UNCHANGED; corpus 1091 = 922 OK / 57 GREEN / 112 FAIL / 0 ICE / 0 CRASH (only mover = the new reject fixture FAIL -> GREEN); stdlib 266 PASS; matrix 24/24; check_emit 7/7; CLOSEOUT OK.] [updated: 2026-10-04 — A2-F (Volume IV Amendment A2, operator m1470): D1 sub-byte `enum(uN)` backing + D2 empty named-struct layout. `populateTypePayload` (`symbol_registrator.zig`, doc 02) gains a `tid` parameter and back-patches `payload_idx` on `types_items[tid]` (the old `types_len-1` named the `arb_uint_type` appended while resolving a non-power-of-two backing, so every arb-backed enum aliased the first enum's members -> spurious `error[3000]`); container kinds no longer early-return on a missing payload / zero children and the struct branch always `stAppend`s, so `struct {}` gets an empty `StructPayload` and `layoutCompute`'s min-1 clamp yields size 1 / align 1. `emitStructType` (`c89_emit.zig`, doc 08) emits `unsigned char _[1];` for an empty non-packed struct. Fixed point `f78bebc448e267b32419afdb13afb386` -> `7fc608358f4f6af5abab43e633d44f83` (hop1 == hop2; seed v90 NOT rotated); 4-MD5 8/8 UNCHANGED; corpus 1090 = 922 OK / 56 GREEN / 112 FAIL / 0 ICE / 0 CRASH (2 A2-F fixtures GREEN/FAIL -> OK; zero pre-existing movers); stdlib 266 PASS / 0 FAIL; `CLOSEOUT OK`.] [updated: 2026-09-30 — A1-F (Volume III Amendment A1): `anytype` is rejected in every signature/type position. `parserParseType` now emits an `ident_expr` `anytype` sentinel carrying the token span instead of bare node 0 (so the param is appended to `xt_items`, killing the `params_count` desync and the rc-139 call-path segfault); `typeResolverDiagnoseSignatureType` exempts the sentinel beside `noreturn`; `analyzeSignature` runs a new recursive `rejectAnytypeType` (wrappers/`E!T`/`fn(...)`) and the existing `ERR_2012_ANYTYPE_NOT_SUPPORTED` check is deduped and carries the real span + module file id (renders `error[16]: anytype not supported in Z98` with file:line:col + caret). `AnalyzerContext` gains `source_file_id`; `var x: anytype`'s `error[20]`+`error[3000]` and the `noreturn` exemption are unchanged. Fixtures `repro/mi_matrix/anytype_reject_xmod` (4 x error[16]) + `repro/anytype_reject.z98`; the two FX13-F positives dropped the accepted-anytype shape (stay rc 0 / RUNRC 0). Fixed point `f78bebc448e267b32419afdb13afb386` (hop1 == hop2; seed v89 NOT rotated); 4-MD5 UNCHANGED 8/8 both modes; corpus 1087 = 919 OK / 56 GREEN / 112 FAIL / 0 ICE / 0 CRASH (zero common-dir movers).] [updated: 2026-09-29 — FX14-F (Volume II layout-model pin, operator ruling A): the 32-bit layout model (i64/u64/f64 size 8 align 8) is pinned in the emitted C via per-program carrier typedefs (`emitInt64Type`/`emitUint64Type` gain ` Z98_ALIGN8`; new `emitF64Type` carrier replaces bare `double` in `getCTypeName`) plus `Z98_ALIGN8` on the shared `zig_compat.h` `z64`/`zu64`/`f64` typedefs (`__attribute__((aligned(8)))` on gcc/clang/mingw; empty on MSVC `ZP8`/wcc386 `-zp8` defaults). `ctypeGuardWrite` gains `ZIG_F64_`, `computeSharedSet`/`emitPointeeDep`/`emitTypeDefinition` gain the f64 arm; the stale unused `c89_emit.emitZigCompatH` duplicate is deleted. Fixed point (moving point hop1 != hop2 == hop3) `368c34e6cbfceda3091f53d2daac75eb`; 4-MD5 8/8 re-baselined with byte-identical runtime identity. Fixtures `stdlib_layout_align8_xmod` + `repro/layout_align8.z98`; see doc 08 §1.5/§1.7.] [updated: 2026-09-28 — FX13-F (Volume II ch12 signature-type amendment): new `typeResolverDiagnoseSignatureType` (`type_resolver.zig`) emits the variable-declaration path's level-0 `error[20]` (`ERR_3001_UNDEFINED_SYMBOL`) for each unresolved leaf of an unresolvable `resolveFnSignatures` return/param type — wrappers / fn-pointer / error-union / `mod.member` walked, leaf-ident span (whole node for `mod.unknown`), per-node dedup via `diagnosticCollectorMarkNodeOnce`; `noreturn` exempt (keyed on the ident text at the unresolved leaf, never registered; 6 std signatures stay `void`-degraded); enforced in every loaded module. Before FX13-F every bogus signature name compiled rc 0 with zero diagnostics. Fixtures `repro/mi_matrix/sig_unknown_type_reject_xmod` (10 x error[20]) + `sig_known_type_ok_xmod` (positive, gcc+run) + standalone `repro/sig_unknown_type_reject.z98` / `sig_known_type_ok.z98`; fixed point `7cce731f…` -> `aebefa0c9ceca1361c523d944c5e6b0b` (hop1 == hop2; seed v88 NOT rotated); 4-MD5 UNCHANGED 8/8; corpus 1073 = 911 OK / 53 GREEN / 109 FAIL / 0 ICE / 0 CRASH, join-diff vs base EMPTY.] [updated: 2026-09-28 — FX12 (Volume II ch12): `semanticAnalyzerResolveTryExpr` enforces the `try` enclosing-return rules (new level-0 `error[3075]` `ERR_3075_TRY_ENCLOSING_RETURN`; container-level `'try' outside function scope` via the new `container_init_depth` counter, non-error-union operand, unconditional non-error-union-enclosing reject, `errorSetIsSubset`-only set comparison; new shared emitter `semanticAnalyzerTryReject`; `semanticAnalyzerResolveFnBody` clears an unresolved declared return type and records `TYPE_VOID` for a no-annotation fn). Fixtures `repro/mi_matrix/try_return_type_reject_xmod` (9 x 3075) + `stdlib_try_return_type_ok_xmod` (stdlib pin 264 -> 265) + standalone repros; fixed point `5ac51c32…` -> `7cce731f757e8458c25604557ddc3427`; 4-MD5 UNCHANGED 8/8; corpus 1071 = 910/53/108, join-diff vs base EMPTY.] [updated: 2026-09-28 — FX8 (Volume II `labeled_stmt` traversal): `visitStatement` gains a `labeled_stmt` arm that unwraps the statement and routes `child_0` through the statement walk — labeled block -> `walkBlock`, labeled loop/switch -> the matching arm — so labeled blocks/loops get the FX2 treatment (defers enqueue at the walked depth and drain at their own scope exit; leak/null/lifetime/double-free handlers see the body; runtime unchanged because lowering owns defer execution). Measured: labeled-block leak silent -> `warning[3038]` x2, labeled-loop leak -> x1, labeled-block/loop null deref -> `error[3034]` + `warning[3037]` rc 2, labeled-block double free -> `error[3035]` rc 2, free-after-labeled-block no `warning[3039]`; a free split across a labeled loop stays silent (loop-merge `unknown`). Labeled statements are now fully traversed (remaining untraversed: prong case items, deferred statement bodies). Fixtures `repro/mi_matrix/stdlib_analyzer_labeled_xmod` (stdlib pin 262 -> 263) + `analyzer_labeled_reject_xmod` + standalone `repro/labeled_analyzer.z98` / `repro/labeled_analyzer_reject.z98`; fixed point `ff059647…` -> `4e76f5a4268486d6deae080cebf89978`; 4-MD5 8/8 unchanged; corpus zero class movers.] [updated: 2026-09-28 — FX7 (Volume II switch-merge prong-name propagation): new `stateMapMergeInsertMissing` (`state_map.zig`) is called by the `swt_ex` arm after each prong's conservative merge, double-free pass only, inserting prong-only names into the enclosing state as `AllocState.unknown` — the sound join of "maybe allocated here, untracked on the other prongs". A pointer first assigned in a prong and freed after the switch is tracked (no spurious `WARN_6006`; a second free is `error[3035]`). if/while/for merges and the null/lifetime maps unchanged. Fixtures `stdlib_analyzer_switch_merge_xmod` (pin 261 -> 262), `analyzer_switch_merge_reject_xmod`, `repro/switch_merge.z98`, `repro/switch_merge_reject.z98`; fixed point `1a258bd4…` -> `ff059647856e5c223c1622d1b031579b`; 4-MD5 8/8 unchanged; corpus zero class movers.] [updated: 2026-09-28 — FX5 (Volume II pointer/`*[N]T` slice siblings): a `*[N]T` slice casts to the element many-pointer before the offset (one-element scaling) and uses N as the open-end effective end; closed/open ranges get `-fsafe` `start <= end` / `end <= len` guards (`check_trap{kind=5}`, skipped when comptime-decided or already covered by `error[3062]`); `pa.*[i]` lowers the pointer (`(*pa)[i]`); a `[*]T` open end (`mp[s..]`/`mp[0..]`) is ACCEPTED as `[*]T` (Zig parity, operator ruling fix round 1). New helpers `emitSafeBoundLeTrap`/`emitSafeCheckSliceRange`/`emitSafeCheckSliceOpen`/`sliceBoundComptimeI64`/`indexBaseAfterArrayDeref` (lower.zig). Fixture `stdlib_ptr_array_slice_ok_xmod` (stdlib pin 259 -> 260); fixed point moved.] [updated: 2026-09-28 — FX10 (Volume II D6 extras follow-up): `semanticAnalyzerResolveSwitchExpr` retypes a switch VALUE expression at an f32 site value-aware like the FX9 `if` path (`sw_f32_site` skips the value-blind prong unification; every prong classified with `semanticAnalyzerFloatNarrowArmStatus`; all-acceptable => the switch records `TYPE_F32` + per-prong `tryRecordCoercion`, otherwise the switch takes the offending prong's type for the site's FX3 reject with the offending `source:` note). Fixes a typed-int first prong truncating `switch (c) { 1 => C, else => 2.5 }` -> `2` (Zig `2.5`) and a runtime-f32 else -> `3`/`4` (Zig `3.5`/`4.5`). Fixtures: `stdlib_f32_narrow_ok_xmod` `swx=`/`swsites=` rows (11 lines / 196 B -> 13 lines / 250 B, Zig-twin-equal), `f32_narrow_reject_xmod` 33 -> 39 x 3000, standalone `repro/f32_narrow_switch.z98` (accept) / `repro/f32_narrow_switch_reject.z98` (6 x 3000); fixed point `5744b468…` -> `0b3ea32b…` (seed v88 NOT rotated).] [updated: 2026-09-27 — FX9 fix round 1 (Volume II D6 extras follow-up): a `TYPE_UNDEFINED` arm of an `if` VALUE expression at an f32 site is neutral in `semanticAnalyzerFloatNarrowArmStatus` (like `noreturn`; `undefined` coerces to every type), so `if (c) undefined else 2.5` no longer over-rejects at return/declaration/assignment/field/argument (field/arg previously gcc-invalid/ICE `error[3043]`). Fixture `stdlib_f32_narrow_ok_xmod` `und=` row + standalone `repro/f32_undefined_arm_ok.z98`; reject censuses unchanged; fixed point `ee5f3070…` -> `5744b468…`. Documented accepted-wrong residual (FX10 owns the code fix; NOT fixed in FX9): a switch whose FIRST prong is a typed int and a later prong a float truncates (`switch (c) { 1 => C, else => 2.5 }` -> `2`, Zig `2.5`); seed correct, FX3 fix r1 introduced it.] [updated: 2026-09-27 — FX9 (Volume II D6 extras follow-up): a runtime non-float arm of an `if`/`switch` VALUE expression at an f32 site now rejects `error[3000]` with the offending arm's `source:` note. `semanticAnalyzerResolveIfExpr` classifies the reachable arms (`semanticAnalyzerFloatNarrowArmStatus`) — all-acceptable types the `if` f32 and records arm narrowing (mixed float arms fixed: `if (c > 0) x else 2.5` used to return 0), otherwise the `if` takes the offending arm's type so the site reports `source: i32`; a comptime-known condition (new tri-state `semanticAnalyzerConditionComptimeBool`; Table B) skips the untaken arm (`if (false) n else 2.5` accepts). `semanticAnalyzerFloatNarrowStatusDepth` intercepts `if`/`switch` before the numeric guard. Fixtures: `f32_narrow_reject_xmod` 18 -> 33 × `error[3000]`, positive `stdlib_f32_narrow_ok_xmod` `mix=` row (168 B golden), standalone `repro/f32_runtime_arm_reject.z98` (11 × `error[3000]`); fixed point `fd4b79b6…` -> `ee5f30700668059c14c05a317fbae827` (seed v88 NOT rotated).] [updated: 2026-09-27 — FB2 (Volume II inferred tuple-element typing): `semanticAnalyzerResolveTupleLiteral` (`semantic_analyzer.zig`, doc 05) types each inferred tuple element by value — an untyped integer literal takes `comptimeIntUntypedType` (i32/u32/i64/u64; in-i32 keeps `TYPE_INT_LIT`; >64-bit reports `error[3000]` at lowering), the `TYPE_VOID -> TYPE_I32` fallback is removed (a void element stays void and both print paths reject `error[3063]`; a VOID-typed bare ident or MODULE-member forward ref keeps the pass-1 i32 fallback (fix round 1; a value-base void struct field keeps void and rejects)), and a type value referenced by name becomes `TYPE_TYPE` (print rejects `error[3063]` on both paths). `lowerPrintArgExact` is generalised to `lowerExactIntArg` (`lower.zig`, doc 07) and reused by the inferred-tuple construction arm, so a negate element such as `-3000000000` materialises exactly. Table B gains `lowerExactIntArg`, `semanticAnalyzerTupleElemIsTypeValue`, `semanticAnalyzerTupleElemVoidIsUnresolvedRef`. Fixtures: `stdlib_print_tuple_var_ok_xmod` extended to 23 rows / 478 B + reject `tuple_elem_type_reject_xmod` (8 x `error[3063]` + 2 x `error[3000]`) + standalone `repro/print_tuple_var.z98` (big rows) / `repro/print_tuple_elem_type_reject.z98`; `EXPECTED_FAIL.md` v265. 4-MD5 emitted-C UNCHANGED 8/8; all 119 tuple-using corpus/example dirs emit byte-identical `.c`/`.h`; corpus `-s0` 1060 = 904 OK / 51 GREEN / 105 FAIL (join-diff vs FD2 EMPTY; only the new reject fixture); stdlib 259 PASS; fixed point `115c716c…` -> `416f0932e2e164fb4c04013d3fda549d` (hop1 == hop2, explicit gate; seed v88 NOT rotated). **Fix round 1:** the sema transient fallback is narrowed to bare idents and module-member refs (`semanticAnalyzerTupleElemFieldBaseIsModule`), so a value-base void struct-field element (`const t = .{ s.v, 1 }`) keeps void and both print paths reject `error[3063]` (was rc 0 + gcc `'zT_N' undeclared`); reject census 12 x 3063 + 2 x 3000, control `repro/void_field_ok.z98`; fixed point `416f0932…` -> `fd4b79b6b992be1b8dd097c24e7bfa7f` (explicit gate); 4-MD5 UNCHANGED 8/8; corpus join-diff EMPTY; stdlib 259 PASS; self-emission 48/48.] [updated: 2026-09-27 — FD2 (Volume II print tuple variables): `lowerPrintFmt` (`lower.zig`, doc 07) takes a registry `tuple_type` variable container through a variable path — the container expression is lowered once, lazily on the first placeholder (placeholder-free fmts do not evaluate it), each placeholder reads its element via FB's `lowerTupleElemRead` (`typeRegistryTupleElem` + the shared `load_field` tuple arm) and emits `.print_val{ .value = elem, .type_id = elem_tid, ... }` (no `lowerPrintArgExact`); extra placeholders beyond the arity stay silently dropped; `printFmtCheck` runs at the container span with the element type and the resolved-type override suppressed. The literal path is byte-identical and non-tuple containers keep `error[3065]`. Fixtures `repro/mi_matrix/stdlib_print_tuple_var_ok_xmod` (positive, 14 rows, Zig-twin byte-identical; stdlib pin 258 -> 259) + standalone `repro/print_tuple_var.z98`; `S01_print_nontuple_args/red_tuple_var.zig` RED -> GREEN; the FD1 reject fixture keeps its code and the interim tuple-variable row now compiles. 4-MD5 emitted-C UNCHANGED 8/8; fixed point `ce9906b6…` -> `115c716c67db7040c0c765dd15795713` (hop1 == hop2, explicit gate; seed v88 NOT rotated).] [updated: 2026-09-27 — FX4 (Volume II defect fix, D11 extras): enum switch qualifiers are validated. `semanticAnalyzerResolveSwitchCaseMember` (doc 05) resolves the prong qualifier first — a known foreign enum/tagged-union type rejects level-0 `error[3071]` (`ERR_3071_SWITCH_CASE_QUALIFIER`; mismatch wording, qualifier span, mismatch wins over a missing member), a module-namespace qualifier (`helper.LOMEM`) is left to lowering's FX1 const-item path, and an unverifiable identity is conservatively not rejected; a same-type qualifier with an unknown member (`Shape.bogus`) and a shorthand `.bogus` (gated to case-item context by the new `switch_case_item` field so prong BODIES keep the expected-type fall-through) also reject 3071 with the member span. All sites dedupe per case-item node and carry a `union/enum declared here` related span; the unbound-capture `error[20]` cascade stays visible (no suppression; no `error[3060]` co-fires). Table B gains `semanticAnalyzerReportSwitchCaseQualifier`; `semanticAnalyzerResolveSwitchCaseMember` and `semanticAnalyzerResolveEnumLiteral` rows note the validation. Fixtures: reject `repro/mi_matrix/switch_case_qualifier_reject_xmod` (12 x 3071 + 2 x 20) + standalone `repro/switch_case_qualifier_reject.z98` + positive `repro/switch_case_qualified.z98`; the FE positive fixture gains alias/module-qualified-enum rows (golden 222 B / 21 lines, Zig-twin stderr byte-identical). 4-MD5 emitted-C UNCHANGED 8/8; corpus `-s0` 1059 = 904 OK / 50 GREEN / 105 FAIL (join-diff vs FX3 = exactly the new reject fixture + the extended FE fixture, zero class movers); stdlib 258 PASS; fixed point `2012736050feb56f2d699ffb5fae38e1` -> `ce9906b62cb2b9ab7522d8cfafcf3cc9` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT rotated).] [updated: 2026-09-27 — FX3 fix round 1: `if`/`switch` VALUE expressions at f32 sites over-rejected; sema now classifies their ARMS (`semanticAnalyzerFloatNarrowStatusDepth` + `semanticAnalyzerFloatNarrowArmStatus`, doc 05), so `return if (c > 0) 1.5 else 2.5;` / the `switch` form / an `if`-initialized declaration stay accepted and emit one `float_cast` on the joined temp; an inexact int arm (`if (c) 16777217 else 2.5`), an inexact typed-f64 arm or a runtime arm still rejects. Positive fixture gains the `if`/`switch` rows (golden 9 lines / 130 B, Zig-twin byte-identical); reject census unchanged (18 x `error[3000]`); 4-MD5 emitted-C UNCHANGED 8/8; corpus classify join-diff vs FX3 EMPTY; fixed point `8233580f…` -> `2012736050feb56f2d699ffb5fae38e1` (hop1 == hop2, explicit gate; seed v88 NOT rotated).] [updated: 2026-09-27 — FX3 (Volume II defect fix, D6 extras): value-aware float narrowing to f32. New `semanticAnalyzerFloatNarrowStatus`/`...IsNumeric`/`...Record`/`...Report` (semantic_analyzer.zig, doc 05) classify an f32 expectation site: an untyped `comptime_float` (float literal / literal-only `+ - * /`) is accepted and ROUNDED; a typed comptime-known f64 or integer is accepted only when exactly representable; a runtime f64/i32 or an inexact value rejects with the site's level-0 `error[3000]`. `comptimeEvalFloatNarrow`/`floatNarrowProbe`/`floatNarrowDecl`/`comptimeIntF32Exact` (comptime_eval.zig) supply the value+provenance and Zig's int-exactness check; `CoercionKind.float_narrow` (coercion.zig; deliberately NEVER returned by `classifyCoercion`) + its `float_cast` arms in `materializeInto`/`applyCoercion` (lower.zig, doc 07) materialise the recorded narrowing. Sites: parameters, returns, struct/union/tagged-union field inits (incl. payloads), local/module decls, assignments. Fixtures `repro/mi_matrix/stdlib_f32_narrow_ok_xmod` (positive; stdlib pin 257 -> 258) + `f32_narrow_reject_xmod` (18 x `error[3000]`) + standalone `repro/f32_narrow.z98`/`f32_narrow_reject.z98`; D06 gains `green_param.zig` (the former f32-param residual). 4-MD5 emitted-C UNCHANGED 8/8; self-emission has no direct f32-literal site; fixed point `325f741f…` -> `8233580ff281e73c006d04c5c91281e4` (hop1 == hop2; seed v88 NOT ROTATED). Bounded boundary: the naive `parseF64` keeps an extreme typed literal `3.4028234663852886e38` rejected where Zig accepts (pre-existing float-literal precision residual, spec §7.2).] [updated: 2026-09-27 — FX2 (Volume II defect fix, D1 extras): `visitStatement` (`analyzer.zig`, doc 06) traverses switch-prong and bare-block statements — the `swt_ex` arm analyzes the condition first (preserving the old `expr_stmt(swt_ex)` route) then walks each prong body with the shared fork/walkBlock/merge; the `expr_stmt` arm recurses a statement-switch wrapper through `visitStatement`; a bare `block` routes through `walkBlock` (depth, defer enqueue/drain at block exit, leak check). Defers inside prongs/blocks now reach the null/lifetime/double-free passes; runtime is unchanged (analyzer-only). Accepted movement: duplicate bare-block `WARN_6005`; lisp `WARN_6002` counts +58/+73/+85 (`lisp_interpreter_adv/curr/upgraded` only, the sole warning movers over 1055 corpus dirs; zero error movement). FX7 (switch-merge prong names) and FX8 (`labeled_stmt`) stay out; capture-safe marking skipped. Fixture `repro/mi_matrix/stdlib_defer_switch_block_xmod` (positive; stdlib pin 256 -> 257) + standalone `repro/defer_traversal.z98`; D01 gains the `red_switch_block.zig` sibling. 4-MD5 emitted-C UNCHANGED 4/4 (runtime stdout byte-identical); self-emission stderr byte-identical; fixed point `98cd68f4…` -> `325f741f0326ebaf177a0503e000312a` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT ROTATED). FX2-only traversal SIGSEGVs without FG.] [updated: 2026-09-27 — FX1 (Volume II defect fix, D2 extras): the switch case-value resolver resolves named constants and `bool` items. `lowerSwitchCaseItemValue` (doc 07) gains a `bool_literal` arm (1/0) and an `ident_expr` arm (unqualified enum member, then named constant); `field_access` falls through from the D2 member lookup to the constant path. New Table B helpers `lowerSwitchCaseItemConstValue` (exact int evaluator + visibility; enum-member fallthrough), `lowerSwitchCaseItemEnumConstMemberValue` (initializer-chain walk to the member name), `lowerSwitchCaseItemConstDecl` (immutable module `const` lookup, current module first then all tables; `resolveModuleBase` for qualified/direct-import bases) and `lowerSwitchCaseItemIsConstGlobal`. Shapes: typed/untyped int consts, `LO...HI` / `mod.LO...mod.HI` bounds, enum-member consts (`enum(uN)` gaps exact), mixed `LO, 2`, `mod.LO`, `bool` items, unqualified member names; int/char literals, the range caps, FA-a's enum-range fix and the `error[3068]` gate unchanged; negative-valued constants and function-local consts stay unresolved (spec §3.1). Fixture `repro/mi_matrix/stdlib_switch_case_consts_xmod` (positive; stdlib pin 255 -> 256) + standalone `repro/switch_case_consts.z98`; the first 15 golden rows are byte-identical to the Zig-0.15.2 twin. 4-MD5 emitted-C UNCHANGED 4/4; corpus `-s0` 1054 = 901 OK / 49 GREEN / 104 FAIL (join-diff vs FI = only the new fixture); fixed point `b44a8511…` -> `98cd68f4a4f99b520f663d6964673e67` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT ROTATED).] [updated: 2026-09-27 — FI (Volume II defect fix, operator ruling A): `for` iterates a pointer-to-array. `semanticAnalyzerResolveForHeader` (Table B) extracts the item type from a `ptr_type` whose pointee is a fixed-size array, `semanticAnalyzerCheckForIndexRangeComptime` applies the explicit-range length check to the pointee array, and the `for_stmt` lowering arm `ptr_cast`s the `*[N]T` iterable to its element pointer (see docs 05/07). `for (p[0..1]) |v|` — the former FH over-rejection (`error[20]`) — runs again (`sum=42`), `for (p[0..0])`/`for (p[1..1])` iterate zero times, direct/quoted/explicit-range pointer-to-array forms and the row-by-value item match Zig 0.15.2, and non-array pointer pointees keep the pre-FI reject. Fixtures `repro/mi_matrix/stdlib_ptrarray_for_ok_xmod` (positive; stdlib pin 254 -> 255) + standalone `repro/ptrarray_for.z98`; D10 `control_slice_legal.zig` converted. 4-MD5 emitted-C UNCHANGED 4/4; corpus `-s0` 1053 = 900 OK / 49 GREEN / 104 FAIL (join-diff vs FH over the 1052 common dirs EMPTY); fixed point `99ef01ad…` -> `b44a85111b1f89921ab1d46a752c61a5` (hop1 == hop2; seed v88 NOT ROTATED).] [updated: 2026-09-27 — FH (Volume II defect fix, D10): single-item-pointer indexing is a clean reject — `semanticAnalyzerResolveIndexAccess` rejects a `ptr_type` base whose pointee is not an array and a `type` base (`(*p)[i]`) with level-0 `error[3066]`; `semanticAnalyzerResolveSliceExpr`'s `semanticAnalyzerCheckSinglePtrSlice` accepts only `[0..0]`/`[0..1]`/`[1..1]` and returns `*[0]T`/`*[1]T` (const/volatile carried), rejecting every other form with `error[3067]` (no more `error[3043]` on `p[0..]`); the `slice_expr` lowering arm emits `base + start` + `ptr_cast` for the pointer-to-array result (see docs 05/07). Table B gains `semanticAnalyzerCheckSinglePtrSlice`, `semanticAnalyzerReportIllegalPtrIndex`, `semanticAnalyzerReportPtrSliceBounded`/`Illegal`/`Runtime`, `semanticAnalyzerSpellTypeBack`/`SpellBytesBack`. Fixtures `repro/mi_matrix/stdlib_ptrslice_ok_xmod` (positive; stdlib pin 253 -> 254) + `ptr_slice_reject_xmod` (7 x `error[3066]` + 5 x `error[3067]`) + standalone `repro/single_ptr_slice_ok.z98` / `repro/single_ptr_index.z98`; D10 repro converted to the multi-code `fixedreject` census. 4-MD5 emitted-C UNCHANGED 4/4; corpus `-s0` 1052 = 899 OK / 49 GREEN / 104 FAIL (join-diff vs FB EMPTY over the 1050 common dirs); fixed point `d1ae4389…` -> `99ef01ad63ba37f98f327317608f577f` (hop1 == hop2; seed v88 NOT ROTATED).] [updated: 2026-09-26 — FC (Volume II defect fix, D5+D12): `applyCoercion`'s `slice_to_many_ptr` arm (doc 07) lowers a real `.ptr` field extraction (`load_field{SLICE_FIELD_PTR}`) instead of a `ptr_cast` of the slice struct, so `[]T`/`[]const T` -> `[*]T`/`[*]const T` compile/build/run; and new `semanticAnalyzerConstDiscard` + `semanticAnalyzerMaybeDiagConstDiscard` (doc 05, Table B) reject every const-discarding coercion in the frozen family slice->slice / slice->many / ptr->ptr / many->many with level-0 `error[3000]` (`cannot implicitly discard 'const' qualifier`, per-node deduped) at local decl, assignment, module var and inside `tryRecordCoercion` (return/args/field init); legal const-adding directions unchanged. `type_registry.zig` gains the named `CONST_FLAG = 1`. Fixtures `repro/mi_matrix/stdlib_slice_to_many_ptr_xmod` (positive; stdlib pin 251 -> 252) + `const_discard_reject_xmod` (17 x `error[3000]`) + standalone `repro/slice_to_many_ptr.z98` / `repro/const_discard.z98`; D05/D12 repros RED->GREEN/reject. 4-MD5 emitted-C UNCHANGED 8/8 with runtime identity; corpus `-s0` 1046 = 896/46/104 join-diff vs FA-b EMPTY (zero movement); fixed point `cadf3c24…` -> `effa5a6aae9f11266597196561186f1b` (hop1 == hop2, SEED NOT ROTATED).] [updated: 2026-09-26 — FF (Volume II defect fix, D6+D9): the tagged-union init arm narrows an f64 float-LITERAL payload temp to the selected variant's f32 type (`lowerUnionPayloadIsFloatLiteral` + `float_cast` before the `assign_field TU_FIELD_PAYLOAD`), so the emitter picks the real variant instead of emitting gcc-invalid whole-union C or silently writing an f64 sibling; the five introspection builtins now validate in sema (`semanticAnalyzerCheckIntrospectionBuiltin` / `semanticAnalyzerRejectIntrospection` / `semanticAnalyzerIntrospectionTypeLabel`, all Table B) — union/non-struct `@offsetOf`/`@bitOffsetOf` targets reject `error[3072]`, unknown/non-literal field names reject `error[3073]`, unresolved/incomplete types and wrong arity reject `error[3074]`; the packed-union offset folds are deleted (`comptime_eval.zig` / `type_resolver.zig`) and the lowering net is a clean `error[3074]` fallback (no `error[3043]`). Fixtures `repro/mi_matrix/stdlib_union_layout_payload_xmod` (positive; stdlib pin 250 -> 251) + `union_offset_reject_xmod` (6 x 3072 + 3 x 3073 + 4 x 3074) + standalone `repro/union_layout_payload.z98` / `repro/union_offset_reject.z98`; D06/D09 repros RED->GREEN/clean-reject. 4-MD5 UNCHANGED 8/8 with PRE<->POST runtime identity proven by execution; corpus `-s0` 1046 = 863 OK / 46 GREEN / 137 FAIL (join-diff vs FE = exactly the 2 new fixtures); fixed point `536ed494…` -> `cadf3c241abd1baf4d31da52b0ccd649` (hop1 == hop2, SEED NOT ROTATED).] [updated: 2026-09-26 — FE (Volume II defect fix, D8+D11): the `catch |e|` capture temp/decl is retyped from i32 to the sema error-set type (`lower.zig` `catch_expr` arm reads `eu_items[..].error_set`; bare `!T` stays i32), so `print("{}", .{e})` prints `error.Name`; container-qualified switch prongs (`Shape.circle`, `Color.red`, `helper.Box.num`) are resolved by the new `semanticAnalyzerResolveSwitchCaseMember` into `enum_value_table` (Table B), so they bind capture locals exactly like the shorthand; an enum-condition capture registers with the enum type and lowering binds a fresh COPY of the operand value Zig-style, and both switch capture paths index the tagged-union payload table ONLY for `tagged_union_type` conditions — the unguarded enum read SIGSEGV'd on an unused capture (bundled guard). Table B gains `semanticAnalyzerResolveSwitchCaseMember`. Fixture `repro/mi_matrix/stdlib_errset_capture_qualified_xmod` (golden 185 B / 17 lines, rc 0, 3x byte-exact, Zig-0.15.2-twin byte-identical; unused-capture rows need `_ = v;` in the twin) + standalone `repro/errset_capture_qualified_prong.z98`; stdlib pin 249 -> 250; D08/D11 repros RED->GREEN. 4-MD5 lisp `edc55d7f…` -> `ec14d644…` / json `ca303731…` -> `5034a0c8…` re-baselined with PRE<->POST runtime identity; gol/mud UNCHANGED. Corpus `-s0` 1044 = 862 OK / 46 GREEN / 136 FAIL (zero movers over the 1043 FD1 common dirs; the one addition is the new fixture, OK). Fixed point `7bf2da19…` -> `536ed4943ecf8bacbbf93343d732c3e0` (hop1 == hop2, SEED NOT ROTATED).] [updated: 2026-09-26 — FD1 (Volume II defect fix, D7+D13): the print argument container is validated before the argument walk — `lowerPrintFmt` takes only a `tuple_literal` (or the empty anonymous `.{ }`) and `printFmtContainerReject` emits level-0 `error[3065]` at any other container node (deduped per node); the print arm requires exactly two arguments (`lowerPrintArityReject` -> the existing `error[3061]` at the call span); the D13 unbounded `lowerPrintFmt` re-entry SIGSEGV is structurally impossible; tuple variables stay an interim `error[3065]` until FD2. Table B gains `printFmtContainerReject`/`lowerPrintArityReject`; fixtures `repro/mi_matrix/print_nontuple_container_reject_xmod` (13 x `error[3065]` + 1 x `error[3061]`) + standalone `repro/print_nontuple_container.z98`; fixed point `c4f10f9e…` -> `7bf2da194d7385dea638a9126191c173` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT rotated); 4-MD5 UNCHANGED; D07/S01 repros RED->clean-reject.] [updated: 2026-09-26 — FG (Volume II defect fix, D1): new `resetDeferQueue` (`analyzer.zig`; Table B) clears the defer queue's `items/len/cap`, called immediately after each of the four per-phase/per-function `sandReset` sites in `runAllAnalyzers`, so the next `DeferEntry` write can no longer overlay recycled scratch memory holding a live `StateMap` (the D1 compiler SIGSEGV for a plain-`defer` fn plus a nested-block-`defer` fn in one module). Bookkeeping-only (the queue is drained at every block exit). Fixture `repro/mi_matrix/stdlib_defer_queue_reset_xmod` (stdlib pin 248 -> 249) + standalone `repro/defer_queue_reset.z98`; D01 repros RED->GREEN; fixed point `6b68ca72…` -> `c4f10f9e2d33a0833b9882c5dad2539b` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT rotated); 4-MD5 UNCHANGED; corpus 1042 = 861/46/135 (zero movement on the 1041 common dirs + the new fixture).] [updated: 2026-09-26 — FA-a fix round 1 (Volume II defect fix, D3): the mandatory-`else` gate is now shared (`semanticAnalyzerReportSwitchWithoutElse`) and also fires from the two zero-prong early returns, closing the `switch (x) {}` escape (previously rc 0 + poisoned result temp in value position); reject fixture 5 -> 7 x `error[3068]`, new standalone `repro/switch_zero_prong_reject.z98`; fixed point `93b884b5…` -> `6b68ca72bd8919edef0ef7f955a75580`; 4-MD5 UNCHANGED; corpus join-diff vs FA-a zero movement.] [updated: 2026-09-26 — FA-a (Volume II defect fix, D3+D2): strict switch mandatory-`else` (`error[3068]` `ERR_3068_SWITCH_WITHOUT_ELSE`, emitted at the end of `semanticAnalyzerResolveSwitchExpr` for value AND statement position, deduped per node; the dead `constraint_checker.checkSwitchExhaust` + its test callers are deleted) + the D2 enum-range case-label fix (`lowerAppendSwitchCaseItem`'s range endpoints resolve through the new `lowerSwitchCaseItemValue`/`lowerSwitchCaseItemMemberValue`, so `Color.Red...Color.Green` / `.Red... .Blue` / `enum(uN)` gaps emit real `case` labels; int/char ranges and the 16384/hi<lo caps unchanged). Migrations: `sf/src` 3 (`async_state_machine.remapInst`, `dump_ast.astKindToString`, `dump_tokens.tokenKindToString` names `c_include_builtin`/`kw_anytype`/`kw_volatile`) + `examples/z98` 12 sites (4-MD5 gate programs). Fixtures `repro/mi_matrix/stdlib_switch_enum_range_xmod` (13 rows, stdlib pin 247 -> 248) + reject `repro/mi_matrix/switch_without_else_reject_xmod` (5 x `error[3068]`) + standalone `repro/switch_enum_range.z98` / `repro/switch_without_else_reject.z98`. Fixed point MOVED `a3928c11…` -> `93b884b5f3ab2aebf500782dca76c3c3` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed NOT rotated). 4-MD5 emitted-C: lisp `dfa69f32…` -> `edc55d7f521c2092be70043ca84ca741`, json `a4a73461…` -> `ca30373194620ab623a1a91d257049a4`; gol/mud_server UNCHANGED; runtime identity PRE↔POST byte-identical for all four. Corpus PRE 1041 = 896/46/99 -> POST 860/46/135: join-diff moves EXACTLY the 35 census no-else repro dirs (OK->FAIL, FA-b migrates them) + the new reject fixture; zero other movement.] [updated: 2026-09-25 — final-review Critical fix + Minor 5 (z98-print-formatting Amendment 1): `lowerModuleInit` (`lower.zig`) precomputes each module-global initializer's same-module dependency list once into a flat adjacency and orders the globals with an ITERATIVE explicit-stack DFS. The removed recursive `lowerInitOrderVisit` shared one `dep_buf` across nested calls (an inner visit clobbered the outer's remaining edges → a global could be emitted before its dependencies and run with a wrong value: `var g = a + b; const a = c + d; const b: i32 = 5 + 7;` ran `g = 3`, Zig `15`) and had unbounded recursion. Table B's `lowerInitOrderVisit` row is replaced by the inline order-walk row; fixture `stdlib_print_init_order_dep_xmod`; the non-tuple `var g = b; const b = Pair{...}` residual is retired (positive `direct` row in `stdlib_print_tuple_fwd_ok_xmod`, final-review Minor 2).] [updated: 2026-09-25 — Task 10 (z98-print-formatting Amendment 1, B8): std_fmt auto-import precision — `phase_ImportResolution` (`main.zig`) probes `moduleResolverResolve` and skips the auto-import silently when `std_fmt.zig` is absent; `lowerPrintFmt` (`lower.zig`) sets the new `SemanticContext.print_value_lowered` on each `.print_val`, and the end of `phase_LIRLowering` adds the same `error[3048]` only when a print value was lowered and no `std_fmt.zig` module is in the graph. The Task-1 alias auto-import (`const p = io.print; p(...)`) is preserved; with std_fmt absent the deferred 3048 keeps the same code/text and rc 2 / 0 `.c` — NOT byte-identical in count (final-review Minor 1, 2026-09-25): through `@import("std")` the base emitted the 3048 twice (auto-import attempt + `std.zig`'s own `std_fmt.zig` import), the fixed compiler once. Fixture `stdlib_print_unrelated_ident_xmod` (pin 245 -> 246) + standalone `repro/print_autoimport_unrelated.z98`; 4-MD5 UNCHANGED; corpus 1038 = 893/46/99; fixed point `e7f4c67f…` -> `e3f8d737…`.] [updated: 2026-09-25 — Task 9 fix round 4 (z98-print-formatting Amendment 1; re-review 3 Finding 1 + Minor): the `ident_expr` global-literal fold's "no fold" sentinel changed from `0` (a REAL first temp of `__module_init`) to `TEMP_NONE`, so a skipped literal const reached through a same-module alias (`const s2 = s`) as the first lowered value is folded instead of loaded — before, rc 0 + gcc `'zG_..._s' undeclared`; `lowerInitDepScan` now walks its fixed slots through `ast.zig`'s `nodeChildIsNode` (was a `builtin_call`-only special case), also protecting `swt_prong.child_1` / `for_stmt.child_2` name ids. Fixtures `stdlib_print_alias_chain_{fwd,bwd,scalar}_xmod` (stdlib pin 242 -> 245); fixed point hop1 == hop2 == `e7f4c67f…`; 4-MD5 UNCHANGED; corpus `-s0` 1037 = 892/46/99 (only the three new fixtures); `EXPECTED_FAIL.md` v246 -> v247.] [updated: 2026-09-25 — Task 9 fix round 3 (z98-print-formatting Amendment 1, B5; operator ruling Q7): dependency-ordered `__module_init` emission — `lowerModuleInit` (lower.zig) emits a module's globals after their same-module initializer dependencies and records cross-module edges (`lowerInitDepScan`/`lowerInitOrderVisit`; `lowerInitKindHasExtras`); `computeModuleInitOrder` (main.zig, end of phase 9) stable-topologically orders the emitted calls; `emitModuleInitCalls` (c89_emit.zig) iterates it. `semanticAnalyzerResolveTupleLiteral` rebuilds a changed tuple from settled types and `frontResolveModuleInits` updates unannotated decl/symbol types; the fix-round-1/2 `semanticAnalyzerTupleElem*` reject helpers are deleted; `error[3064]` is renamed `ERR_3064_CYCLIC_GLOBAL_INIT` and fires only for initializer cycles. Table B gains `lowerInitDepAppend`/`lowerInitDepScan`/`lowerInitKindHasExtras`/`lowerInitOrderVisit`/`computeModuleInitOrder`. Fixture `stdlib_print_tuple_fwd_ok_xmod` 21 rows, reject `tuple_fwd_global_reject_xmod` 1 cycle; fixed point hop1 == hop2 == `7c70cf47…`; 4-MD5 UNCHANGED; `EXPECTED_FAIL.md` v245 -> v246.] [updated: 2026-09-25 — Task 9 fix round 2 (z98-print-formatting Amendment 1, B5; review Critical 1 + Important 1): `semanticAnalyzerUnwrapParens` + the extended `semanticAnalyzerTupleElemGlobalSym` (aliased module member, `@import(...).C` with `allow_inline = 0`, global aggregate field) accept the previously-working parenthesized/aliased literal forward refs, and `semanticAnalyzerTupleElemSubtreeOrderOk` validates every recorded element regardless of type deltas so the same-type silent-wrong shapes (`const s: i32 = 5 + 7`, `-5`, `@as(i32, 5)`) reject `error[3064]`; earlier-declared globals are order-safe. Positive fixture `stdlib_print_tuple_fwd_ok_xmod` 9 rows + reject `tuple_fwd_global_reject_xmod` 11 x `error[3064]` + standalone `repro/print_tuple_fwd.z98`; fixed point hop1 == hop2 == `b4e15a3f…`; 4-MD5 UNCHANGED; `EXPECTED_FAIL.md` v244 -> v245.] [updated: 2026-09-25 — Task 9 fix round 1 (z98-print-formatting Amendment 1, B5 narrowing; operator ruling): `semanticAnalyzerTupleElemRefreshOk` (semantic_analyzer.zig) narrows the forward-referenced tuple-global reject to the BROKEN shapes — a module `const` with a bare int/char literal init whose value fits `i32` (`const s = 5` in `.{ s, 7 }`) is accepted and prints Zig-identically, while composite/pointer/float/bool elements, out-of-i32 literals, and non-literal scalar inits still reject `error[3064]`. Positive fixture `stdlib_print_tuple_fwd_ok_xmod` (stdlib pin 241 -> 242) + reject fixture `tuple_fwd_global_reject_xmod` (6 x `error[3064]`) + standalone `repro/print_tuple_fwd.z98`; fixed point hop1 == hop2 == `83985e43…`; 4-MD5 UNCHANGED; `EXPECTED_FAIL.md` v243 -> v244.] [updated: 2026-09-25 — Task 9 (z98-print-formatting Amendment 1, B4 + B5): `printFmtCheck`'s pointer-to-array `array_items[pty.payload_idx].elem` read (lower.zig) is now range-guarded like every sibling payload read (defensive; decisions unchanged). `semanticAnalyzerResolveTupleLiteral` re-resolves the recorded tuple's elements and clean-rejects a changed element list (a forward-referenced global frozen at the pass-1 i32 fallback) with the new `error[3064]` `ERR_3064_FORWARD_REF_TUPLE_GLOBAL` (semantic_analyzer.zig; `diagnostics.zig` gains the code), so the shape no longer emits gcc-invalid or silently wrong C. Fixtures `tuple_fwd_global_reject_xmod` + `print_fmt_ptrarray_guard_reject_xmod` + standalone `repro/print_tuple_fwd.z98`; fixed point hop1 == hop2 == `d17828e1…`; 4-MD5 UNCHANGED; `EXPECTED_FAIL.md` v242 -> v243.] [updated: 2026-09-25 — Task 8 (z98-print-formatting Amendment 1, B2 + B3): `printFmtPointeeNameOk` (lower.zig) now mirrors the emitter's 512-byte pointer-name buffer byte-for-byte via the new `printFmtPointeeNameLen` (`printFmtU32DecLen`/`printFmtQualsLen`; `kPrintPointeeNameCap = 512`, name + trailing `@`), so an over-budget name rejects `error[3063]` instead of being silently dropped; `emitPtrValuePrint`'s append failure is now a `@panic` backstop. `emitPointeeDep`'s depth cap moves 8 -> 16, one pointer-chain cap shared with `zigPrintNameAppend` and the validator. Table B gains `printFmtPointeeNameLen`/`printFmtQualsLen`/`printFmtU32DecLen`. Fixtures `stdlib_print_ptr_depth_ok_xmod` + reject `print_ptr_name_cap_reject_xmod` + standalone `repro/print_ptr_depth.z98`; fixed point hop1 == hop2 == `81923309…`; 4-MD5 UNCHANGED; `EXPECTED_FAIL.md` v241 -> v242.] [updated: 2026-09-25 — Task 6 fix round 1 (review Critical 1): `printFmtPtrRouteOk` gains an `is_many` gate (mirrored by `emitPtrValuePrint`), so a many-pointer FIELD to a named aggregate/enum/tuple/packed (`[*]S`/`[*]E`/`[*]TU`/`[*]U`/`[*]PS`) rejects `error[3063]` instead of silently delegating to the pointee printer (Zig's `.many` arm is `printAddress` → container-qualified `main.S@addr`); `[*]i32` keeps `i32@addr`; reject fixture census 5 -> 7; fixed point hop2 == hop3 `a4bb2250…`; 4-MD5 UNCHANGED; `EXPECTED_FAIL.md` v238 -> v239.] [updated: 2026-09-25 — Task 6 (z98-print-formatting): pointer/fn-pointer `{}` prints Zig 0.15.2's `T@<lowercase-hex>` (NO `0x`; R3) or delegates to the pointee printer (`*struct`/`*union`/`*tagged`/`*packed`/`*tuple` → Task 4 printer, `*enum` → Task 5 name printer), emitted inline via `std_print("<name>@")` + the existing std.fmt `printHexU64` (no std_fmt change → 4-MD5 pins hold); the child name comes from `zigPrintNameAppend` for the exact Z98 space and named-aggregate composite children (`*?S`, `**S`, `*?E`) reject `error[3063]` (bounded residual). Float `{x}` prints a hand-rolled C89 hex-float via generated static helpers `z98_printFloatHex32/64` (`0x1.8p0`, denormals, nan/inf). The Task-4 field closure gains pointer/fn-pointer/many fields; `c89NeedsEmitEdge(fn_type)` is a value-embedding edge and `emitTypeDefOnce`/`emitTypeDeps`/`emitPointeeDep`/`emitDepMember` fix pointer-pointee typedef ordering. New validator predicates `printFmtPtrPointeeOk`/`printFmtPtrRouteOk`/`printFmtPointeeNameOk` mirror the emitter. Fixtures `stdlib_print_ptr_hexfloat_xmod` + standalone `repro/print_ptr_hexfloat.z98`; reject fixture census 7 -> 5 (two pointer sites moved positive); fixed point hop2 == hop3 `f8a549c1…`; 4-MD5 emitted-C UNCHANGED; corpus `-s0` 1027 = 886/46/95 (exactly the new fixture, zero other movement); stdlib 239 PASS; seed v84.] [updated: 2026-09-25 — Task 5 (z98-print-formatting): `{}` on an enum prints `.member` and `{}` on an error set prints `error.Name` via compiler-generated static name tables (`z98_etab_<tid>` name blob + `z98_eoff_`/`z98_elen_` byte offset/length arrays + `z98_eval_` member values; error sets add `z98_escode_` global codes) and per-type `static` printers (`z98_printEnum_<tid>` / `z98_printErrorSet_<tid>`), written through the EXISTING std.fmt `printStr` — `std_fmt.zig` is untouched so the four 4-MD5 dumps stay byte-identical. `.print_val` gains an `implicit` bit (bare `{}` = name route; explicit enum `{d}`/`{x}` = numeric); `printFmtAggFieldKindOk`/`emitAggValue`/`emitAggPrinterRec`/`collectPrintRoots` extend the Task-4 closure for non-packed enum/error-set fields. Table B gains `emitFieldPrinterRec`, `emitI64Dec`, `emitNameBlob`, `emitNameOffLen`, `emitNamePrinterDef`, `emitNamePrinterRec`, `emitU64Dec`, `namePrinterName`, `printNameRouteKind`, `stdFmtSourceSymbol`, `typeIdName`. Fixtures `stdlib_print_enum_errset_xmod` + standalone `repro/print_enum_errset.z98`; reject fixture census 8 -> 7; fixed point hop1 `b5a6fcd1…` != hop2 == hop3 `6c3d33b5…`; 4-MD5 emitted-C UNCHANGED + runtime identity; corpus `-s0` 1026 = 885/46/95 zero other movement; seed v84.] [updated: 2026-09-25 — Task 4 fix round 1 (Critical 1 + controller ruling R8): `semanticAnalyzerResolveTupleLiteral` is idempotent per node (returns the recorded resolved type), so module-level inferred tuple `var`/`const` globals, their lowered initializer and the generated printer share one C type; `printFmtAggFieldKindOk` also rejects a packed struct/packed union field nested inside another aggregate with `error[3063]` (pre-existing broken packed-VALUE C model; out of Task 4 scope). Fixture golden re-captured (`stdlib_print_aggregate_xmod` 454 -> 490 B, global-tuple rows added) and reject census 7 -> 8; fixed point hop1 `fd6a4e02…` != hop2 == hop3 `b1680ac7…`; 4-MD5 UNCHANGED; seed v84.] [updated: 2026-09-25 — Task 4 (z98-print-formatting): `{}` on struct/union/tagged-union/packed-union/tuple now emits a compiler-generated per-type static printer (`z98_printStruct_<tid>`, ...) matching Zig 0.15.2's aggregate form with `std.fmt.default_max_depth = 3`; tuple types gain a `Tup_<tid>` C model emitted only for runtime-valued tuples (`needed_tuple_set`), and `semanticAnalyzerResolveTupleLiteral` resolves elements before appending their xt types (nested tuples). Table B gains `aggAccessAppend`/`aggAccessAppendIndex`/`aggIndentStmt`/`aggPackedScratchName`/`aggPrinterName`, `collectNeededTuples`/`collectPrintRoots`, `emitAggPrinterDef`/`emitAggPrinterRec`/`emitAggValue`/`emitGeneratedPrinters`/`emitNeededTupleRec`/`emitNeededTupleTypes`/`emitTupleType`, `printAggKind`, `printFmtAggFieldKindOk`/`printFmtAggFieldsOk`. Fixtures `stdlib_print_aggregate_xmod` + reject `print_aggregate_noprinter_reject_xmod` + standalone `repro/print_aggregate.z98`; fixed point hop1 `86499431…` ≠ hop2 == hop3 `6e2cef8b…`; 4-MD5 emitted-C UNCHANGED; corpus `-s0` 1025 = 884/46/95 zero other movement] [updated: 2026-09-25 — Task 3 (z98-print-formatting): `lowerPrintFmt` validates every `print` argument before `.print_val` — new `printFmtCheck`/`printFmtReject`/`printFmtKindIsIntegerLike`/`printFmtArgIsTypeValue` (Table B) emit level-0 `error[3013]` (spec/type mismatch) / `error[3063]` `ERR_3063_PRINT_TYPE_NOT_SUPPORTED` (no printer, Q3 bounded residual, `undefined`) at the ARGUMENT node's span, deduped per node via `diagnosticCollectorMarkNodeOnce`, with an explicit-vs-`{}` flag and no double-report of an unknown specifier; the argument deref is guarded against `TEMP_NONE`/out-of-range temps (`print("{}", .{f()})` with `f() void` previously SIGSEGV'd). Design spec §6 corrected (`error[3058]` → `error[3063]`). Fixtures `print_fmt_type_reject_xmod` (60 × `error[3013]`) + `print_fmt_noprinter_reject_xmod` (20 × `error[3063]`) + positive `stdlib_print_fmt_valid_xmod` (stdlib pin 235 → 236) + standalone `repro/print_fmt_valid.z98` / `repro/print_fmt_reject.z98`; fixed point hop1 `5843a377…` ≠ hop2 == hop3 `1dd9d76d…`; 4-MD5 emitted-C UNCHANGED; corpus `-s0` 1023 = 883/46/94 zero other movement] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `printFnSourceName` is now a width/signedness dispatcher over integer-like kinds (new `printKindIsIntegerLike`: fixed ints, arbitrary-width ints, `c_char`, `enum`, `integer_literal`; `typeRegistryIntWidthBits`/`IsSigned` → U32/I32 for ≤32 bits, U64/I64 for 33..64; Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback), fixing the `usize`/size-8-arb-int/wide-enum fallthrough to `printI32`; `std_fmt.zig`'s `printHexI32/I64` now print `-` followed by the hex magnitude for negative values (Zig 0.15.2 oracle: `-10` → `-a`, `-549755813888` → `-8000000000`), not two's complement; `pal_f64_to_str` (both lockstep copies) omits the `.`+fraction when the value is integral (`7.0` → `7`), with the non-integral 6-digit truncation/`1e20`/`-0.0` kept as documented operator-ruled Q2 residuals. Table B gains `printKindIsIntegerLike`. Fixture `stdlib_print_dispatch_xmod` (18 oracle-matched rows) + standalone `repro/print_dispatch.z98`; `stdlib_f32_print_xmod` golden re-captured (`f32-calc = 7`).][updated: 2026-09-24 — Task 1 (z98-print-formatting) fix round 1: the auto-import scan is `astStoreHasPrintRef` and matches ANY `ident_expr`/`field_access` payload named `print`, so the aliased-callee shape `const p = io.print; p(...)` also auto-imports std_fmt (the call-only scan emitted an unmangled `printI32(...)` for it — link error; over-approximation is pruned at emission)] [updated: 2026-09-24 — Task 1 (z98-print-formatting): new Z98 std module `sf/src/std_fmt.zig` (`std.fmt`) — the `std_print_i32/u32/i64/u64/f64/bool/char/str/hex_*` formatting bodies moved out of the C runtime; `getPrintFnName` now returns a mangled `std.fmt` C name (new `printFnSourceName`), `phase_ImportResolution` auto-imports std_fmt on a `print` reference (`astStoreHasPrintRef`), and `phase_C89Emission` locates it (`moduleIdForBasename`) + seeds a `.print_val` value-ref edge. Table B adds the new functions and redirects the retired `std_print_*` rows to std_fmt.zig] [updated: 2026-09-24 — Task 18 (F) fix round (review Important 1): the base entry's "only Zig-note-with-location family" claim was corrected — four more families emit related spans (`error[3061]` arity -> `note: function declared here`; `error[3007]` visibility -> `note: declared here` in the decl's own file; `error[3060]` member-not-found -> `note: struct/union/enum declared here`; `error[3000]` call-arg -> `note: parameter type declared here`). New helpers `semanticAnalyzerFindTypeDecl`, `semanticAnalyzerParamDeclNode`, `semanticAnalyzerCalleeDeclSymbol` (Table B); `Symbol` gains `file_id` (`symbol_table.zig`, set in `symbol_registrator.registerDecl` across all 6 registration arms). Fixtures' expected notes updated (`call_arity_reject_xmod`, `pub_visibility_reject_xmod`, `method_syntax_reject_xmod`, `call_arg_type_reject_xmod`, `pub_visibility_fold_reject_xmod` + the standalone repros). Fixed point `13e94581…` -> moving point `b7a7da2673d60852006e9ea87909be1d` (hop2 == hop3); 4-MD5 emitted-C UNCHANGED; corpus `-s0` 1016 = 878/46/92 zero movement] [updated: 2026-09-24 — Task 18 (F): related-span diagnostics + non-ASCII message audit. `semanticAnalyzerCheckLocalShadow` now emits a related span (Zig's `note: previous declaration here` / `note: declared here`) at the earlier declaration, backed by the new parallel `local_decl_spans_start`/`local_decl_spans_end` arrays (`registerLocalDecl` signature gains the name span; every direct registration site writes the arrays; `semanticAnalyzerGrowLocalDecls` grows/copies them), and the container-level path uses the symbol's `decl_node` span; the diagnostics collector reserves related-span slot 0 as the "none" sentinel so the first real span renders. The five non-ASCII em-dash `error[3000]` message strings are now ASCII ` -- `; no diagnostic message string in `sf/src` is non-ASCII. Fixtures `repro/mi_matrix/shadow_related_span_xmod` + `repro/shadow_related_span.z98`; fixed point `ea5d77ea…` -> moving point `13e9458114537ca669f21816762a4f30` (hop2 == hop3); 4-MD5 emitted-C UNCHANGED] [updated: 2026-09-24 — Task 17 (F) fix round (review Important 1): the constant-slice-range start check now compares only against a comptime-known effective end (the length for the open form `a[s..]`, the folded end for a closed comptime end); a closed range with a RUNTIME end (`scores[7..ri]`) is no longer over-rejected and keeps its pre-Task-17 runtime behavior (`-fsafe` rc 133 via the cast guard, `-ffast` `len=-4`; emitted C byte-identical to pristine). Regression `repro/mi_matrix/slice_runtime_end_xmod` + runtime-end control in `stdlib_comptime_index_ok_xmod`; fixed point `44a3ce38…` -> moving point `ea5d77ea5c1f4fddd7cd0ab213476923` (hop2 == hop3); 4-MD5 emitted-C UNCHANGED] [updated: 2026-09-24 — Task 17 (F): compile-time reject of a comptime-known out-of-bounds index (`scores[5]`, `scores[scores.len]`) and of constant slice-range bounds (`scores[1..10]`, `scores[3..1]`, `scores[6..]`, negative) on a fixed-size array — new level-0 `error[3062]` `ERR_3062_INDEX_OUT_OF_BOUNDS` in `semanticAnalyzerResolveIndexAccess` / `semanticAnalyzerResolveSliceExpr` via `semanticAnalyzerCheckComptimeIndexOob` / `semanticAnalyzerCheckComptimeSliceBounds`, matching Zig 0.15.2's ASCII wording; the runtime-index `-fsafe` `check_trap{kind=5}` guard is unchanged. Table B gains `semanticAnalyzerArrayFieldLength`, `semanticAnalyzerCheckComptimeIndexOob`, `semanticAnalyzerCheckComptimeSliceBounds`, `semanticAnalyzerComptimeIntValue`, `semanticAnalyzerReportIndexOob`, `semanticAnalyzerReportSliceEndOob`, `semanticAnalyzerReportSliceStartAfterEnd`, `semanticAnalyzerReportUsizeNegative`, `semanticAnalyzerStaticArrayLen`. Fixtures `index_oob_reject_xmod` (8 × `error[3062]`) + `slice_range_oob_reject_xmod` (7 × `error[3062]`) + positive `stdlib_comptime_index_ok_xmod`; fixed point `c9e5d744…` → moving point `44a3ce38951732d945a9d3d8c6711671` (hop2 == hop3); 4-MD5 emitted-C UNCHANGED] [updated: 2026-09-24 — Task 14 fix round (review Critical 1): both call-arg gates restore the `isBShapeMismatch(..., false)` arm ahead of the pointer-family tolerance, so `*T` -> `[]T` and mismatched `[N]T` -> `[M]T` call args reject again (rc=2 / 0 `.c` / `error[3000]`; regression sites in `call_arg_type_reject_xmod`, valid decays in `stdlib_call_arity_types_ok_xmod`); fixed point `cd1b2fcf…` → moving point `b499fe5f…` (hop2 == hop3)] [updated: 2026-09-24 — Task 14 (S2): call-site arity + cross-family argument-type enforcement in `semanticAnalyzerResolveFnCall` (new level-0 `error[3061]` `ERR_3061_WRONG_ARGUMENT_COUNT`; `error[3000]` for cross-family mismatches; Table B gains `semanticAnalyzerCallArgIntegerKind`, `semanticAnalyzerCallArgTolerated`, `semanticAnalyzerIsPointerFamilyKind`, `semanticAnalyzerReportCallArity`); fixed point `14b78a59…` → moving point `cd1b2fcf…` (hop2 == hop3)] [updated: 2026-09-24 — Task 11 (Part II): parser/sema/lowering for Zig's explicit index-range `for (iterable, start..end)` (new `AstKind.for_index_range`, 113 variants; `parserParseForStmt`; `semanticAnalyzerResolveForIndexRange`/`ForIndexBoundOk`/`ReportForIndexRange`/`CheckForIndexRangeComptime`; for_stmt index capture `start + j` + `-fsafe` span/length traps); fixed point `249b38be…` → moving point `0fdee6ac…` (hop2 == hop3)] [updated: 2026-09-24 — Task 10 fix round: `maybeDisambiguateCapture` now renames only when an earlier same-named declaration has a DIFFERENT type (the previously-unused `variant_type_id` parameter; same-type bindings share the deduped C variable), which removes unnecessary synth names from the lisp/json gate programs — operator-authorized 4-MD5 re-baseline with PRE↔POST runtime identity proven by execution; fixed point `3f31c1c2…` → moving point `249b38be…` (hop2 == hop3)] [updated: 2026-09-24 — Task 10 (capture/lifetime bookkeeping hygiene): `lowerFn` resets the function-scoped capture/local state at entry (`local_decl_count = 0` + `u32ToU32MapClear(&self.capture_shadow)`; the production path already gets a fresh lowerer per function, so user-program emission is unchanged), the eight dead arm-end `capture_shadow.count = 0` stores are deleted, and `u32ToU32MapClear` (util/hash.zig) is added to Table B; `maybeDisambiguateCapture`'s conservative over-rename is kept (semantically neutral; narrowing it would churn gate-program emission); fixed point `e809cf61…` → `3f31c1c2…`] [updated: 2026-09-24 — Task 9 fix round 1 (Critical): `ciSignificantBits` now computes `bitlen(magnitude) − trailing_zeros` (undercounted multi-limb magnitudes / u32-underflowed on powers of two ≥ 2^32); multi-limb fixture rows + `comptime_float_compare_reject_xmod`; fixed point `a059fa89…` → `e809cf61…`] [updated: 2026-09-24 — Task 9 (Part II): Table B gains `comptimeEvalCompareFloat`, `comptimeEvalCompareOperand`, `comptimeEvalF64IsF32Exact`, `comptimeEvalFloat`, `comptimeEvalFloatBits`, `comptimeEvalFloatBuiltin`, `comptimeEvalFloatOperandType`, `ciSignificantBits` (comptime_eval.zig); comptime float comparisons now fold at the established f64 precision] [updated: 2026-09-23 — Task 4 fix round: Table B gains `scalarTargetOf`, `foldNodeIntExact`, `checkIntFitsMode`, `checkArgReturnIntFits` (lower.zig); `semanticAnalyzerResolveModuleVarDecl` now re-types unannotated module consts] [updated: 2026-09-23 — Task 4: Table B gains `ComptimeFoldTable` helpers (`comptimeFoldTableInit`/`comptimeFoldTablePut`/`comptimeFoldTableGet`), `comptimeIntFits64`/`comptimeIntMaterialize`/`comptimeIntUntypedType`, `comptimeEvalDeclFits` (comptime_eval.zig), `checkFoldedIntFits`/`comptimeFoldBool`/`lowerFoldedIntConst`/`reportComptimeIntFits` (lower.zig); the production fold table moved from `U32ToU64Map` to exact `ComptimeVal`s] [updated: 2026-09-23 — Task 3 fix round 2 (Important): `bit_not` exempted from the unary peer fit (valid `~u` shapes accept again); `testComptimeCompareCore` wired into `main()`] [updated: 2026-09-23 — Task 3 fix round 1 (Critical/Important): `ciCmp` is now `pub`; `comptimeEvalOperandType` recurses into an unannotated const's initializer and the unary `-` fold applies the peer fit; the `if_expr` fold sub-path is terminator-aware (doc 07)] [updated: 2026-09-23 — Task 3: Table B gains `ciCmp`, `comptimeEvalOperandType`, `comptimeEvalWiderIntType` (comptime_eval.zig); `ciValToOldBits`, `comptimeEvalOperandDeclaredSigned`, `comptimeEvalOperandCompareSigned` retired] [updated: 2026-09-23 — Task 10D: Table B gains `captureShadowShouldRedirect` (lower.zig)] [updated: 2026-09-21 — Task B2 final fix wave: Table B gains `isCompoundTypeExprKind` and `containerFieldCount` (type_resolver.zig); `registerContainerType` clean-rejects a >32-field local/inline aggregate] [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected] [updated: 2026-09-24 — Task 15 (S3): cross-module `pub` visibility enforcement (`error[3007]` `ERR_3007_VISIBILITY_VIOLATION`, ASCII `'<name>' is not marked 'pub'`) in `semanticAnalyzerResolveFieldAccess`'s three module-member arms (flat `SymbolKind.module`, direct `import_expr`, nested `module_type`) via `semanticAnalyzerCheckMemberVisibility`, and in `resolveTypeExprFull`'s `field_access` type positions via `typeResolverCheckMemberVisibility`; same-module access unchanged. Table B gains both helpers. Operator-authorized migrations: `comptime_eval.zig` `pub fn ciIntVal`, `std_net.zig` `pub const IpAddr`, `rogue_mud_upgraded/lib/persistence.zig` `pub export fn` (×2), `json_parser_workaround/file.zig` `pub extern fn strtod`, `lisp_interpreter/value.zig` `pub const sand_mod`, `extern_fn_opt_return_cross/ext.zig` `pub extern fn getp`. Fixtures `pub_visibility_reject_xmod` (7 × `error[3007]`) + `stdlib_pub_visibility_ok_xmod`; fixed point `b499fe5f…` → moving point `b6bcb1bb…` (hop2 == hop3); 4-MD5 emitted-C UNCHANGED] [updated: 2026-09-24 — Task 15 (S3) fix round 1 (review Important 1, const-fold positions): `evalConstIntFull`'s `field_access` arm now gates the module const with `typeResolverCheckMemberVisibility` before folding (`[mod.hidden_const]u8` and `enum(u8){A = mod.hidden_const}` were accepted rc=0 with no diagnostic; now rc=2 / 0 `.c` with `error[3007]` plus the declined-fold `error[3050]`/`error[3055]` cascade). Fixture `pub_visibility_fold_reject_xmod` + standalone `repro/pub_visibility_fold.z98`; positive fold controls in `stdlib_pub_visibility_ok_xmod`; fixed point `b6bcb1bb…` → moving point `c9e5d744…` (hop2 == hop3); 4-MD5 emitted-C UNCHANGED; corpus `-s0` 1011 = 876/46/89/0/0 (only the new fold fixture)] [updated: 2026-09-26 — FB (Volume II defect fix, D4): the tuple type/access model is implemented end-to-end. Parser (doc 00): a positional `struct { T1, T2 }` is flagged `0x20` (mixed named/positional and `packed struct { T, ... }` reject `error[2000]`), and `.N` canonicalizes the decimal text of the integer (never the name-id space, closing the `.73` silent alias; any other token after `.` rejects `error[2000]`). Registry/coercion: `typeRegistryTupleElem` + `typeRegistryTupleOrdinalFromNameId` (new), a tuple->tuple arm in `typeRegistryIsAssignable` (element-wise, arrays not assignable), and `CoercionKind.tuple_to_tuple` + `applyTupleToTuple` (field-wise copy for named<->literal and shape-identical named tuples). Registration (doc 05): flagged `struct_decl` -> `typeKind.tuple_type` in `symbol_registrator.registerDecl`/`populateTypePayload` (xt placeholders + `tupAppend`) and `type_resolver.registerContainerType`/`resolveDeclAggregateFieldTypes` (element fill; array element -> `tupleElemArrayUnsupported` clean reject). Sema (doc 05): `.N`/`._0` decode textually on a tuple base with `error[3070]` out-of-range / `error[3060]` on a non-tuple; `t[i]` folds the index (`semanticAnalyzerComptimeIntValue`), records node->ordinal in the new `tuple_index_table` (plumbed sema->lower like `enum_value_table`) and rejects `error[3069]` non-comptime / `error[3070]` out-of-range; `isBShapeMismatch` covers tuple tuple. Lower (doc 07): `lowerTupleElemRead` + `.N`/`[N]` read/store/address arms (`load_field`/`store_field`/`addr_of_field` with the ordinal); `lowerArrayElemTupleCoerce` copies tuple-typed array-literal elements. Emitter (doc 08): `load_field`/`store_field`/`addr_of_field` tuple arms render `._N` (value) / `->_N` (pointer); `emitNeededTupleAt` emits a needed tuple typedef at its topological position so a struct embedding a tuple by value compiles (shared dedupe with `emitNeededTupleTypes`). New codes `ERR_3069_TUPLE_INDEX_NOT_COMPTIME` (`tuple field index must be comptime-known`) and `ERR_3070_TUPLE_INDEX_OUT_OF_RANGE` (`index N outside tuple of length L`), level-0; tuple-with-array-element spelling and distinct tuple-to-tuple array-element assignment reject `error[3000]`. Table B gains `typeRegistryTupleElem`, `typeRegistryTupleOrdinalFromNameId`, `tupleElemArrayUnsupported`, `semanticAnalyzerReportTupleIndexOob`, `semanticAnalyzerReportTupleIndexNotComptime`, `lowerTupleElemRead`, `lowerArrayElemTupleCoerce`, `applyTupleToTuple`, `emitNeededTupleAt`, `emitNeededTupleTypes` (signature: shared `seen` map). Fixtures: positive `repro/mi_matrix/stdlib_tuple_model_ok_xmod` (golden `tp=12/20 us0=11 e1=20 ci=20 q=11/20 sw=20/11 m=7/8 lit=9 g=44/5 ep=12 nn=2`, rc 0, 3x byte-exact, byte-identical to the Zig-0.15.2 `[0]`-spelling twin; stdlib pin 252 -> 253) + reject `repro/mi_matrix/tuple_model_reject_xmod` (+ `array_reject.zig` 1 x `error[3000]`, `parse_reject.zig` 4 x `error[2000]`) + standalone `repro/tuple_model.z98`; D04 repros RED->GREEN (main/red_return_type/red_dot0/red_underscore/red_index); spec §1.3/§4 updated (`_0`/`_1` C fields, `._N`/`t[N]`, 3069/3070). 4-MD5 emitted-C UNCHANGED 8/8; fixed point `effa5a6a…` -> `d1ae438960d85b9f1df02ebcd2defe73` (hop1 == hop2, SEED NOT ROTATED).] [updated: 2026-10-12 — P8 (emitter sanitization: builtin arity/descriptor table): new central per-builtin descriptor `semanticAnalyzerBuiltinDesc` (kind bits + expected arity + arity-reject class + mismatch code/message — supersedes `semanticAnalyzerBuiltinFlags`; consulted before the builtin dispatch ladder by the new `semanticAnalyzerCheckBuiltinArity`); new `semanticAnalyzerCheckBuiltinArity`/`semanticAnalyzerRejectIntrospectionArity` rows; D6 root cause closed.]
+
+> Source-files: `sf/src/*.zig` | Cross-reference for all 14 tech docs
+
+> **Doc split:** `sf/docs/tech_docs/` documents the **observed** implementation (as built); `sf/docs/initial_design/` holds the **design intent as first thought** (the moved `Design_p2.md` / `*_p2.md` corpus). zig0-era docs in `docs/reference/` and `docs/design/` stay for comparison. See [`sf/docs/INDEX.md`](../INDEX.md).
+
+## zig0 vs zig1: Oracle Relationship
+
+zig0 is a C++98 bootstrap compiler. It emits valid C89 but:
+- Its architecture is entangled, with patches everywhere
+- It has workarounds and corner-cuts that mask real semantics
+- It has advanced features (AST lifter) to ease C++ writing
+- The "Z98 subset" spec documents what zig0 happens to compile — zig0 only barely matches it
+
+**When to use zig0 as oracle:**
+- C89 output comparison (`--dump-c89`) — valid diff target
+- Runtime behavior of compiled programs — if same output, ok
+
+**When NOT to trust zig0:**
+- Internal representation — zig1 uses flat AstNode (24 bytes), zig0 uses pointer-based tree
+- Type resolution — zig1 uses immutable types + Kahn, zig0 uses mutable placeholders
+- Error recovery — zig0 uses mixed abort(), zig1 uses DiagnosticCollector
+- Compiler flags — may differ between zig0 and zig1
+
+**Semantic authority:** Real Zig language specification is the ultimate reference. If zig0 accepts something real Zig rejects, zig1 should reject it. If zig1 rejects something real Zig accepts, that is a bug. When in doubt about accept/reject: test against real `zig` compiler.
+
+---
+
+## A. Phase Flow Diagram
+
+```
+ source.zig
+     │
+     ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  1. Import Resolution      import_resolver.zig, module_registry.zig  │
+│     markers: I, Z                                      arena: scratch│
+└──────────────────────┬───────────────────────────────────────────────┘
+                       │ runCompiler checkpoints: 2, 3, 3a, 4
+                       ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  2. Symbol Registration    symbol_registrator.zig, symbol_table.zig  │
+│     markers: S, S0, Vi                                 arena: scratch│
+└──────────────────────┬───────────────────────────────────────────────┘
+                       │ suspensionAnalysisRun (populates suspending_fns)
+                       ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  3. Type Resolution        type_resolver.zig, type_registry.zig,     │
+│     const_alias_prepass.zig   markers: T, T0    arena: scratch/perm  │
+└──────────────────────┬───────────────────────────────────────────────┘
+                       │ t1, t2 checkpoints + error check (exit 2)
+                       ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  4. Front Resolution       front_resolution.zig      marker: (none)  │
+│                                                       arena: scratch │
+└──────────────────────┬───────────────────────────────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  5. Comptime Evaluation    comptime_eval.zig          marker: CE     │
+│                                                       arena: module  │
+└──────────────────────┬───────────────────────────────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  6. Semantic Analysis      semantic_analyzer.zig, coercion.zig,      │
+│     resolved_type_table.zig, constraint_checker.zig, assign_helper.zig│
+│     markers: RS, MZ, AD, DSE, DN, SA, sA              arena: scratch  │
+└──────────────────────┬───────────────────────────────────────────────┘
+                       │ error check (exit 2 if errors)
+                       ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  7. Static Analyzers       analyzer.zig, state_map.zig               │
+│     marker: A                                          arena: scratch│
+└──────────────────────┬───────────────────────────────────────────────┘
+                       │ error check (exit 2 if errors)
+                       ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  8. Async Frame Size       async_analysis.zig         marker: AFS    │
+│                                                       arena: module  │
+└──────────────────────┬───────────────────────────────────────────────┘
+                       ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  9. LIR Lowering           lower.zig, lir.zig, lir_opt_pass.zig,     │
+│     lir_stream.zig, spill_store.zig                                  │
+│     markers: L, nodes=, extra=, M, R, F, A0           arena: scratch │
+└──────────────────────┬───────────────────────────────────────────────┘
+                       │ error check + resolvedTypeTableClose + module reset
+                       ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ 10. C89 Emission           c89_emit.zig, name_mangler.zig,           │
+│     cinclude.zig, emit_support.zig                                   │
+│     markers: C, FINAL_FLUSH                  arena: emission/scratch │
+└──────────────────────┬───────────────────────────────────────────────┘
+                       ▼
+                  output.c
+```
+
+| Phase | Function | Files | Key Markers | Arena Tier |
+|-------|----------|-------|-------------|------------|
+| 1 | `phase_ImportResolution` | import_resolver.zig, module_registry.zig | `I`, `Z` | scratch |
+| 2 | `phase_SymbolRegistration` | symbol_registrator.zig, symbol_table.zig | `S`, `S0`, `Vi` | scratch |
+| 3 | `phase_TypeResolution` | type_resolver.zig, type_registry.zig, const_alias_prepass.zig | `T`, `T0` | scratch (prepass: permanent) |
+| 4 | `phase_FrontResolution` | front_resolution.zig | (none) | scratch |
+| 5 | `phase_ComptimeEvaluation` | comptime_eval.zig (P7 2026-10-15: per-node lexical-module attribution — a node's module is the module whose `ast_root` is the smallest parse-chunk root >= the node index) | `CE` | module |
+| 6 | `phase_SemanticAnalysis` | semantic_analyzer.zig, coercion.zig, resolved_type_table.zig, constraint_checker.zig, assign_helper.zig | `RS`, `MZ`, `AD`, `DSE`, `DN`, `SA`, `sA` | scratch |
+| 7 | `phase_StaticAnalyzers` | analyzer.zig, state_map.zig | `A` | scratch |
+| 8 | `phase_AsyncFrameSize` | async_analysis.zig | `AFS` | module |
+| 9 | `phase_LIRLowering` | lower.zig, lir.zig, lir_opt_pass.zig, lir_stream.zig, spill_store.zig | `L`, `nodes=`, `extra=`, `M`, `R`, `F`, `A0` | scratch |
+| 10 | `phase_C89Emission` | c89_emit.zig, name_mangler.zig, cinclude.zig, emit_support.zig | `C`, `FINAL_FLUSH` | emission/scratch |
+
+`suspensionAnalysisRun` (`async_analysis.zig`) runs directly between phases 2 and 3; it is not a
+`phase_*` function but owns `suspending_fns`. `phase_FrontResolution` writes no marker of its own.
+
+---
+
+## B. Function → File Index
+
+Full alphabetical index of documented functions across all phases and modules, extracted from tech docs (00-12). Symbol → file, no line numbers.
+
+| Function | File |
+|----------|------|
+| `__bootstrap_c_char_from_u8` | include/zig_runtime.c |
+| `__bootstrap_f32_from_f64` | include/zig_runtime.c |
+| `__bootstrap_i16_from_i32` | include/zig_runtime.c |
+| `__bootstrap_i32_from_i64` | include/zig_runtime.c |
+| `__bootstrap_i32_from_u32` | include/zig_runtime.c |
+| `__bootstrap_i32_from_u8` | include/zig_runtime.c |
+| `__bootstrap_i32_from_usize` | include/zig_runtime.c |
+| `__bootstrap_i8_from_i32` | include/zig_runtime.c |
+| `__bootstrap_print` | extern_c.zig |
+| `__bootstrap_print_int` | extern_c.zig |
+| `__bootstrap_u16_from_i32` | include/zig_runtime.c |
+| `__bootstrap_u32_from_i32` | include/zig_runtime.c |
+| `__bootstrap_u32_from_i64` | include/zig_runtime.c |
+| `__bootstrap_u32_from_u64` | include/zig_runtime.c |
+| `__bootstrap_u64_from_i64` | include/zig_runtime.c |
+| `__bootstrap_u8_from_bool` | include/zig_runtime.c |
+| `__bootstrap_u8_from_i32` | include/zig_runtime.c |
+| `__bootstrap_u8_from_u32` | include/zig_runtime.c |
+| `__bootstrap_u8_from_usize` | include/zig_runtime.c |
+| `__bootstrap_usize_from_i32` | include/zig_runtime.c |
+| `__bootstrap_usize_from_i64` | include/zig_runtime.c |
+| `__bootstrap_usize_from_u64` | include/zig_runtime.c |
+| `addLocalDecl` | lower.zig |
+| `addTask` | std_async.zig |
+| `addTypeDependencies` | symbol_registrator.zig |
+| `aggAccessAppend` | c89_emit.zig |
+| `aggAccessAppendIndex` | c89_emit.zig |
+| `aggIndentStmt` | c89_emit.zig |
+| `aggPackedScratchName` → `nameManglerMintIndexName` (P1) | name_mangler.zig |
+| `aggPrinterName` | c89_emit.zig |
+| `aggregateKeyword` | c89_emit.zig |
+| `alignUp` | type_registry.zig |
+| `alignUp` | type_resolver.zig |
+| `analyzeExpr` | analyzer.zig |
+| `analyzeSignature` | analyzer.zig |
+| `appendBucket` | string_interner.zig |
+| `appendEntry` | string_interner.zig |
+| `appendZigExt` | module_registry.zig |
+| `applyCoercion` | lower.zig |
+| `applyNoneCoercion` | lower.zig |
+| `applyTupleToTuple` | lower.zig (FB: field-wise copy of a differently-spelled tuple into the target tuple type; arrays are not assignable) |
+| `applyNullGuardRefinement` | analyzer.zig |
+| `arenaGrew` | allocator.zig |
+| `argCount` | pal.zig |
+| `argGet` | pal.zig |
+| `arrayAppend` | type_registry.zig |
+| `arrayGrow` | type_registry.zig |
+| `assertEqBool` | lexer.zig |
+| `assertEqTokenKind` | lexer.zig |
+| `assertEqU32` | lexer.zig |
+| `assertEqU8` | lexer.zig |
+| `astBlockAdvanceHead` | ast.zig |
+| `astBlockFaultIn` | ast.zig |
+| `astBlockSpillHead` | ast.zig |
+| `astKindToString` | dump_ast.zig |
+| `astNodeArrayListAppend` | growable_array.zig |
+| `astNodeArrayListEnsureCapacity` | growable_array.zig |
+| `astNodeArrayListGetSlice` | growable_array.zig |
+| `astNodeArrayListInit` | growable_array.zig |
+| `astSlotAcquire` | ast.zig |
+| `astSlotEnsureNodeCap` | ast.zig |
+| `astSlotEnsurePayloadCap` | ast.zig |
+| `astStoreAddCharLiteral` | ast.zig |
+| `astStoreAddExtraChildren` | ast.zig |
+| `astStoreAddFloatLiteral` | ast.zig |
+| `astStoreAddFnProto` | ast.zig |
+| `astStoreAddIdentifier` | ast.zig |
+| `astStoreAddIntLiteral` | ast.zig |
+| `astStoreAddNode` | ast.zig |
+| `astStoreAddStringLiteral` | ast.zig |
+| `astStoreCloseSpill` | ast.zig |
+| `astStoreComputeMemory` | ast.zig |
+| `astStoreExtraChildAtRaw` | ast.zig |
+| `astStoreExtraRangeAt` | ast.zig |
+| `astStoreGetExtraChildAt` | ast.zig |
+| `astStoreGetExtraChildCount` | ast.zig |
+| `astStoreGetExtraChildrenCopy` | ast.zig |
+| `astStoreHasPrintRef` | main.zig |
+| `astStoreIdentifier` | ast.zig |
+| `astStoreInit` | ast.zig |
+| `astStoreIntValue` | ast.zig |
+| `astStoreNodeAppend` | ast.zig |
+| `astStoreNodeAt` | ast.zig |
+| `astStoreNodeExtraChildAt` | ast.zig |
+| `astStoreNodeExtraChildCount` | ast.zig |
+| `astStoreNodeExtraChildrenCopy` | ast.zig |
+| `astStoreNodePayload` | ast.zig |
+| `astStoreNodePayloadPacked` | ast.zig |
+| `astStoreSetSpillPath` | ast.zig |
+| `astStoreSetValuePoolSpillPath` | ast.zig |
+| `astSubtreeHasBreak` | semantic_analyzer.zig |
+| `astSwitchExhaustive` | semantic_analyzer.zig |
+| `astSwitchTerminates` | semantic_analyzer.zig |
+| `astTerminates` | semantic_analyzer.zig |
+| `astWhileTerminates` | semantic_analyzer.zig |
+| `asyncEmitFrameInit` | async_state_machine.zig |
+| `asyncFrameSizeRun` | async_analysis.zig |
+| `asyncKey` | async_analysis.zig |
+| `asyncLayoutFrame` | async_frame_layout.zig |
+| `asyncLayoutPublish` | async_frame_layout.zig |
+| `asyncStateTypeForCount` | async_analysis.zig |
+| `asyncTempIsGlobalAlias` | async_frame_layout.zig (P9: the `load_global` alias-class predicate — a global alias is never a frame-save member. P14: a pure set read of the per-fn alias set built once in `asyncLayoutFrame` and carried on `AsyncFrameLayout`) |
+| `asyncTransform` | async_state_machine.zig |
+| `awaitTask` | std_async.zig |
+| `bfByteRefWrite` | c89_emit.zig |
+| `binary_search` | util/mem.zig |
+| `bindOptionalCapture` | lower.zig |
+| `bufferedWriterFlush` | c89_emit.zig |
+| `bufferedWriterInit` | c89_emit.zig |
+| `bufferedWriterInitFd` | c89_emit.zig |
+| `bufferedWriterWrite` | c89_emit.zig |
+| `bufferedWriterWriteByte` | c89_emit.zig |
+| `bufferedWriterWriteIndent` | c89_emit.zig |
+| `byteArrayListAppend` | growable_array.zig |
+| `byteArrayListGetSlice` | growable_array.zig |
+| `byteArrayListGrow` | growable_array.zig |
+| `byteArrayListInit` | growable_array.zig |
+| `c89EmitterInit` | c89_emit.zig |
+| `c89NeedsEmitEdge` → `typeNeedsFullDef`/`typeRefs` (P2) | type_registry.zig |
+| `c_exit` | c_exit.c |
+| `c_exit` | pal.zig |
+| `canLiteralFitInType` | type_registry.zig |
+| `cancel` | std_async.zig |
+| `cancelAll` | std_async.zig |
+| `captureShadowShouldRedirect` | lower.zig |
+| `carrierFromFacts` | c89_plan.zig (P6-pre fix round 1: THE facts->carrier map — (32,1)->i32, (32,0)->u32, (64,1)->i64, (64,0)->u64; called by `deriveConstCarrier` only for fact-carryed (`width_bits != 0`) untyped materializations) |
+| `checkArgReturnIntFits` | lower.zig |
+| `checkCombinedPeak` | allocator.zig |
+| `checkFoldedIntFits` | lower.zig |
+| `checkIntFitsMode` | lower.zig |
+| `checkLeaksOnScopeExit` | analyzer.zig |
+| `checkReturnProvenance` | analyzer.zig |
+| `checkReturnType` | constraint_checker.zig |
+| `cincludeUnionAll` | cinclude.zig |
+| `classificationIsSyntheticEmittable` | type_resolver.zig |
+| `classificationNeedsDef` | type_resolver.zig |
+| `classificationSharedClosure` | type_resolver.zig |
+| `classifyCoercion` | coercion.zig |
+| `classifyExpr` | analyzer.zig |
+| `classifyProvenance` | analyzer.zig |
+| `classifyTypeEmissionFinalize` | type_resolver.zig |
+| `classifyTypeEmissionGroups` | type_resolver.zig |
+| `coalesceArgCopies` | lir_opt_pass.zig |
+| `coalesceJoinCopies` | lir_opt_pass.zig |
+| `coercionTableAdd` | coercion.zig |
+| `coercionTableEnsureCapacity` | coercion.zig |
+| `ciAdd` | comptime_eval.zig |
+| `ciBitAnd` | comptime_eval.zig |
+| `ciBitNot` | comptime_eval.zig |
+| `ciBitOr` | comptime_eval.zig |
+| `ciBitXor` | comptime_eval.zig |
+| `ciBoolVal` | comptime_eval.zig |
+| `ciCmp` | comptime_eval.zig |
+| `ciDivMod` | comptime_eval.zig |
+| `ciFromU64` | comptime_eval.zig |
+| `ciIntVal` | comptime_eval.zig |
+| `ciIsZero` | comptime_eval.zig |
+| `ciMagCmp` | comptime_eval.zig |
+| `ciMul` | comptime_eval.zig |
+| `ciNeg` | comptime_eval.zig |
+| `ciNormalize` | comptime_eval.zig |
+| `ciPow2` | comptime_eval.zig |
+| `ciSet` | comptime_eval.zig |
+| `ciShl` | comptime_eval.zig |
+| `ciShr` | comptime_eval.zig |
+| `ciSignificantBits` | comptime_eval.zig |
+| `ciSub` | comptime_eval.zig |
+| `ciToF64` | comptime_eval.zig |
+| `ciToU64` | comptime_eval.zig |
+| `ciZeroInt` | comptime_eval.zig |
+| `coercionTableGet` | coercion.zig |
+| `coercionTableInit` | coercion.zig |
+| `coercionUsualArithPromote` | — (P11: **deleted** from `coercion.zig` — the C usual-arithmetic cast-direction rule is a C-spelling decision, re-owned verbatim as `c89_plan.zig` `uacPromoteSide`; doc 05 tombstone) |
+| `compareDiag` | diagnostics.zig |
+| `compareDiag` | util/diagnostic_sort.zig |
+| `compositeNameId` | analyzer.zig |
+| `comptimeEvalBinOp` | comptime_eval.zig |
+| `comptimeEvalBuiltin` | comptime_eval.zig |
+| `comptimeEvalCompare` | comptime_eval.zig |
+| `comptimeEvalCompareFloat` | comptime_eval.zig |
+| `comptimeEvalCompareOperand` | comptime_eval.zig |
+| `comptimeEvalDeclFits` | comptime_eval.zig |
+| `comptimeEvalEvaluate` | comptime_eval.zig |
+| `comptimeEvalEvaluateDepth` | comptime_eval.zig |
+| `comptimeEvalF64IsF32Exact` | comptime_eval.zig |
+| `comptimeEvalFloat` | comptime_eval.zig |
+| `comptimeEvalFloatBits` | comptime_eval.zig |
+| `comptimeEvalFloatBuiltin` | comptime_eval.zig |
+| `comptimeEvalFloatNarrow` | comptime_eval.zig (FX3: value+provenance probe behind the value-aware f64/int -> f32 narrowing) |
+| `comptimeEvalFloatOperandType` | comptime_eval.zig |
+| `comptimeEvalInit` | comptime_eval.zig (P7 2026-10-15: `ComptimeEval` gains `module_id` — the lexical module for type-arg resolution; init defaults `MODULE_ID_NONE`, callers with a module set it post-init) |
+| `comptimeEvalLogical` | comptime_eval.zig |
+| `comptimeEvalOperandType` | comptime_eval.zig |
+| `comptimeEvalResolveTypeArg` | comptime_eval.zig (P7 2026-10-15: builds the type-arg `TypeResolveEnv` with `self.module_id` instead of `MODULE_ID_NONE`, so `@sizeOf`/cast type-arg names resolve module-scope-first — the D7 fold fix) |
+| `comptimeEvalWiderIntType` | comptime_eval.zig |
+| `comptimeFoldBool` | lower.zig |
+| `comptimeFoldTableGet` | comptime_eval.zig |
+| `comptimeFoldTableInit` | comptime_eval.zig |
+| `comptimeFoldTablePut` | comptime_eval.zig |
+| `comptimeIntF32Exact` | comptime_eval.zig (FX3: Zig's int-exactness check for the f32 narrowing) |
+| `comptimeIntFits64` | comptime_eval.zig |
+| `comptimeIntFitsType` | comptime_eval.zig |
+| `comptimeIntMaterialize` | comptime_eval.zig |
+| `comptimeIntUntypedType` | comptime_eval.zig |
+| `comptimeValStoreU64` | comptime_eval.zig |
+| `computeNestMetadata` | lir_opt_pass.zig |
+| `collectNeededTuples` | type_resolver.zig |
+| `collectPrintRoots` | c89_emit.zig |
+| `constAliasPrepass` | const_alias_prepass.zig |
+| `containerAnonNameId` | type_resolver.zig |
+| `containerFieldCount` | type_resolver.zig |
+| `constraintCheckerCheckBreakContinue` | constraint_checker.zig |
+| `contextAlloc` | std_async.zig |
+| `contextInit` | std_async.zig |
+| `contextMark` | std_async.zig |
+| `contextRelease` | std_async.zig |
+| `copyPropagate` | lir_opt_pass.zig |
+| `copyStr` | util/format.zig |
+| `countUntypedGlobals` | front_resolution.zig |
+| `createBlock` | lower.zig |
+| `cstrToSlice` | main.zig |
+| `cstrToSlice` | main_dump.zig |
+| `ctypeGuardWrite` | c89_emit.zig |
+| `dbgPrintU32` | c89_emit.zig |
+| `dceMarkAllReads` | c89_emit.zig |
+| `dceMarkAllWritten` | c89_emit.zig |
+| `dceReleaseOperands` | c89_emit.zig |
+| `dceResultPos` | c89_emit.zig |
+| `defInfoPure` | lir_opt_pass.zig |
+| `deferQueueEnsureCapacity` | analyzer.zig |
+| `depGraphAddEdge` | symbol_registrator.zig |
+| `depGraphEnsureCapacity` | symbol_registrator.zig |
+| `depGraphFinalize` | symbol_registrator.zig |
+| `depGraphInit` | symbol_registrator.zig |
+| `dependEnsureCapacity` | type_resolver.zig |
+| `deriveConstCarrier` | c89_plan.zig (P6-pre fix round 1: THE carrier derivation — `deriveConstCarrier(reg, semantic_tid, value, width_bits, is_signed)`; hoisted-kind gate: `integer_literal_type` + `width_bits != 0` takes `carrierFromFacts` (the sign disambiguation lives on the LIR facts), bare untyped keeps the historical value rule (I32/U32/U64 — no i64 arm; the `:45-47` text preserved), `undefined_type` -> usize, else identity; filled into `C89SpellPlan` at the `phase_EmissionClassification` boundary) |
+| `detectNullGuard` | analyzer.zig |
+| `detectorVisit` | analyzer.zig |
+| `diagnosticArrayListAppend` | diagnostics.zig |
+| `diagnosticArrayListEnsureCapacity` | diagnostics.zig |
+| `diagnosticArrayListGetSlice` | diagnostics.zig |
+| `diagnosticArrayListInit` | diagnostics.zig |
+| `diagnosticBuilderMakeMsg` | diagnostics.zig |
+| `diagnosticCollectorAdd` | diagnostics.zig |
+| `diagnosticCollectorAddNote` | diagnostics.zig |
+| `diagnosticCollectorAddRelatedSpan` | diagnostics.zig |
+| `diagnosticCollectorErrorCount` | diagnostics.zig |
+| `diagnosticCollectorFindFirstByte` | diagnostics.zig |
+| `diagnosticCollectorFindLastByte` | diagnostics.zig |
+| `diagnosticCollectorFlushAndExit` | diagnostics.zig |
+| `diagnosticCollectorHasErrors` | diagnostics.zig |
+| `diagnosticCollectorInit` | diagnostics.zig |
+| `diagnosticCollectorIntern` | diagnostics.zig |
+| `diagnosticCollectorMarkNodeOnce` | diagnostics.zig |
+| `diagnosticCollectorPrintAll` | diagnostics.zig |
+| `diagnosticCollectorScanIdentSpan` | diagnostics.zig |
+| `diagnosticCollectorWarningCount` | diagnostics.zig |
+| `dirExists` | pal.zig |
+| `dumpAst` | dump_ast.zig |
+| `dumpTokens` | dump_tokens.zig |
+| `emAppend` | type_registry.zig |
+| `emitArith` | lower.zig |
+| `emitArithNeg` | lower.zig |
+| `emitArrayType` | c89_emit.zig |
+| `emitAwait` | async_state_machine.zig |
+| `emitBaseIdxAccess` | c89_emit.zig |
+| `emitBuildOwcBat` | c89_emit.zig |
+| `emitBuildScripts` | c89_emit.zig |
+| `emitBuildTargetBat` | c89_emit.zig |
+| `emitBuildTargetSh` | c89_emit.zig |
+| `emitAggPrinterDef` | c89_emit.zig |
+| `emitAggPrinterRec` | c89_emit.zig |
+| `emitAggValue` | c89_emit.zig |
+| `emitBuiltinIncludes` | c89_emit.zig |
+| `emitCExitCSupport` | emit_support.zig |
+| `emitCStringLiteral` | c89_emit.zig |
+| `emitCallConv` | c89_emit.zig |
+| `emitCalleeExpr` | c89_emit.zig |
+| `emitEnumType` | c89_emit.zig |
+| `emitErrorCodePrologue` | c89_emit.zig |
+| `emitErrorSetType` | c89_emit.zig |
+| `emitErrorUnionType` | c89_emit.zig |
+| `emitFieldAssign` | c89_emit.zig |
+| `emitFieldPrinterRec` | c89_emit.zig |
+| `emitDepMember` | c89_emit.zig (Task 6: pointer/fn-pointer member pointee deps) |
+| `emitPointeeDep` | c89_emit.zig (Task 6: recursive pointee typedef deps through ptr chains/optional/slice/array/eu; Task 8: depth cap 16) |
+| `emitTypeDefOnce` | c89_emit.zig (Task 6: shared gated/bare guarded type-definition writer) |
+| `emitTypeDeps` | c89_emit.zig (Task 6: per-type dependency emission before its C definition) |
+| `emitFloatHexHelper` | c89_emit.zig (Task 6: `z98_printFloatHex32/64` C89 hex-float) |
+| `emitPtrValueExpr` | c89_emit.zig (Task 6: temp-or-access value writer) |
+| `emitPtrValuePrint` | c89_emit.zig (Task 6: pointer `{}` dispatch — delegation / inline `T@hex`; Task 8: name-append failure `@panic`) |
+| `zigNamePut` | c89_emit.zig (Task 6: name-buffer append) |
+| `zigNamePutQuals` | c89_emit.zig (Task 6: `const `/`volatile ` quals) |
+| `zigNamePutU32` | c89_emit.zig (Task 6: decimal append) |
+| `zigPrintNameAppend` | c89_emit.zig (Task 6: Zig `@typeName` renderer for pointer children; Task 8: 512-byte budget mirrored by the validator) |
+| `printFmtPointeeNameOk` | lower.zig (Task 6: mirrored name-space predicate; Task 8: byte-budget mirror of `kZigPrintNameCap`) |
+| `printFmtPointeeNameLen` | lower.zig (Task 8: exact `@typeName` byte accumulator mirrored from `zigPrintNameAppend`) |
+| `printFmtQualsLen` | lower.zig (Task 8: `const `/`volatile ` byte count for the name accumulator) |
+| `printFmtU32DecLen` | lower.zig (Task 8: decimal digit count for `[N]`/`uN` name components) |
+| `printFmtPtrPointeeOk` | lower.zig (Task 6: one-pointer pointee printable) |
+| `printFmtPtrRouteOk` | lower.zig (Task 6: delegation-vs-name route predicate) |
+| `emitF64Type` | c89_emit.zig (FX14: f64 carrier `typedef double <cname> Z98_ALIGN8;`) |
+| `emitFlagOp` | c89_emit.zig |
+| `emitFnPtrType` | c89_emit.zig |
+| `emitFunctionBody` | c89_emit.zig |
+| `emitFunctionForwardDecl` | c89_emit.zig |
+| `emitFunctionSignature` | c89_emit.zig |
+| `emitGeneratedPrinters` | c89_emit.zig |
+| `emitGlobalDecls` | c89_emit.zig |
+| `emitHoistedDecls` | c89_emit.zig |
+| `emitI64Dec` | c89_emit.zig |
+| `emitIncludes` | c89_emit.zig |
+| `emitInst` | c89_emit.zig |
+| `emitInst` | lower.zig |
+| `emitInt64Type` | c89_emit.zig |
+| `emitIntConst` | lower.zig (P6-pre fix round 1: typed-const + bare-untyped `int_const` emit — the facts are the carried temp result type's semantic width/signedness (TYPE_INT_LIT / non-int kinds give (0,0) via `typeWidthBitsForKind`)) |
+| `emitIntConstFacts` | lower.zig (P6-pre fix round 1: the `int_const` construction writing all four fact fields value/result/width_bits/is_signed) |
+| `emitMainDriver` | async_state_machine.zig |
+| `emitMainWrapper` | c89_emit.zig |
+| `emitModule` | c89_emit.zig |
+| `emitModuleFile` | c89_emit.zig |
+| `emitModuleFooter` | c89_emit.zig |
+| `emitModuleHeader` | c89_emit.zig |
+| `emitModuleHeaderFile` | c89_emit.zig |
+
+| `emitModuleInitCalls` | c89_emit.zig |
+| `emitNameBlob` | c89_emit.zig |
+| `emitNameOffLen` | c89_emit.zig |
+| `emitNamePrinterDef` | c89_emit.zig |
+| `emitNamePrinterRec` | c89_emit.zig |
+| `emitNeededTupleAt` | c89_emit.zig (FB: emit a needed tuple typedef at its topological position, so a struct embedding a tuple by value compiles) |
+| `emitNeededTupleRec` | c89_emit.zig |
+| `emitNeededTupleTypes` | c89_emit.zig (FB: takes the shared type-emission `seen` map; the sorted loops call `emitNeededTupleAt` first, this is the trailing fallback) |
+| `emitNetPreludeHSupport` | emit_support.zig |
+| `emitOptionalType` | c89_emit.zig |
+| `emitOverflowTrap` | lower.zig |
+| `emitPackedLoadBitfield` | c89_emit.zig |
+| `emitPackedStoreBitfield` | c89_emit.zig |
+| `emitSafeBoundLeTrap` | lower.zig (FX5: one `lhs <= rhs` `check_trap{kind=5}`; a signed bound wider than usize also requires `>= 0`) |
+| `emitSafeCheckDivMod` | lower.zig |
+| `emitSafeCheckIndex` | lower.zig |
+| `emitSafeCheckShift` | lower.zig |
+| `emitSafeCheckSliceOpen` | lower.zig (FX5: `start <= len` for `base[start..]`; skipped only for a comptime start on a static-length base) |
+| `emitSafeCheckSliceRange` | lower.zig (FX5: `start <= end` + `end <= len` for `base[start..end]`; `len_static` marks the compile-time N of arrays/`*[N]T`/decayed array fields) |
+| `emitSatBinary` | c89_emit.zig (P6: spells ONLY from the carried `result_type`/`width`/`is_signed` — no emit-time type inspection) |
+| `emitVariantFieldPayload` | c89_emit.zig (P6 fix round 1: SPELLS the tagged-union payload designator from the records — `field_name_id` variant name + `temp_variant_sub_field` sub; the emit-time variant pick is gone) |
+| `emitSharedHeader` | c89_emit.zig |
+| `emitSliceType` | c89_emit.zig |
+| `emitSpecialTypes` | c89_emit.zig |
+| `emitStdOsPreludeHSupport` | emit_support.zig |
+| `emitStdTimePreludeHSupport` | emit_support.zig |
+| `emitStdargInclude` | c89_emit.zig |
+| `emitStructType` | c89_emit.zig |
+| `emitSupportFiles` | c89_emit.zig |
+| `emitTaggedUnionInit` | lower.zig |
+| `emitTaggedUnionType` | c89_emit.zig |
+| `emitTupleType` | c89_emit.zig |
+| `emitTypeDefinition` | c89_emit.zig |
+| `emitU64Dec` | c89_emit.zig |
+| `emitUint64Type` | c89_emit.zig |
+| `emitUnionType` | c89_emit.zig |
+| `emitValueExpr` | c89_emit.zig |
+| `emitWrapNeg` | c89_emit.zig |
+| `emitWrapOp` | c89_emit.zig |
+| `emitZigCompatHSupport` | emit_support.zig |
+| `emitZigPalCSupport` | emit_support.zig |
+| `emitZigRuntimeCSupport` | emit_support.zig |
+| `emitZigRuntimeHSupport` | emit_support.zig |
+| `enAppend` | type_registry.zig |
+| `ensureCapacityBuckets` | string_interner.zig |
+| `ensureCapacityEntries` | string_interner.zig |
+| `errLitSrcType` | semantic_analyzer.zig |
+| `errorCodeRegistryFinalize` | main.zig |
+| `errorSetIsSubset` | type_registry.zig |
+| `esAppend` | type_registry.zig |
+| `euAppend` | type_registry.zig |
+| `evalConstI64Full` | type_resolver.zig |
+| `evalConstIntFull` | type_resolver.zig |
+| `evalConstIntToSize` | type_resolver.zig |
+| `evalConstModuleOfExpr` | type_resolver.zig |
+| `evalConstU32Full` | type_resolver.zig |
+| `executeDeferQueue` | analyzer.zig |
+| `exit` | pal.zig |
+| `expandDefers` | lower.zig |
+| `f64ArrayListAppend` | growable_array.zig |
+| `f64ArrayListAppendInner` | ast.zig |
+| `f64ArrayListEnsureCapacity` | growable_array.zig |
+| `f64ArrayListGetSlice` | growable_array.zig |
+| `f64ArrayListInit` | growable_array.zig |
+| `factCarrierOfTemp` | c89_emit.zig (P6-pre fix round 1: bounds-checked `d4_fcar` read — the planned carrier of a fact-carryed materialization; null for Class A bare untyped literals and typed consts) |
+| `faultIn` | c89_emit.zig |
+| `fclose` | pal.zig |
+| `feAppend` | type_registry.zig |
+| `fieldEmbedsByValue` | type_resolver.zig |
+| `fileClose` | pal.zig |
+| `fileExists` | pal.zig |
+| `fileOpen` | pal.zig |
+| `fileRead` | pal.zig |
+| `fileWrite` | pal.zig |
+| `findCalleeFnTypeId` | DELETED (P6: the callee fn type id is a lowering-recorded `CallDirectData`/`TailCallData` fact; see `lowerCalleeFnTypeId` in lower.zig) |
+| `findLocalTemp` | lower.zig |
+| `findTailCall` | lower.zig |
+| `lowerBinSemType` | lower.zig (P6: the operation's semantic type recorded at lowering — the former emit-time `getTempTypeInfo` chain) |
+| `lowerCalleeFnTypeId` | lower.zig (P6: callee fn type id resolution at the owning phase — replaces the deleted emitter `findCalleeFnTypeId`) |
+| `lowerFieldRecord` | lower.zig (P6: recorded field identity `field_name_id`/`field_type_id` for the emitter's designator spelling) |
+| `lowerRecordFacts` | lower.zig (P6: the construction-funnel record fill for `binary`/field-inst semantic facts) |
+| `floatNarrowDecl` | comptime_eval.zig (FX3: const/var reference probe — value + declared-type provenance) |
+| `floatNarrowProbe` | comptime_eval.zig (FX3: recursive value+provenance probe for the f32 narrowing) |
+| `fmtBnMulSmall` | util/format.zig |
+| `fmtCopyOut` | util/format.zig |
+| `fnAppend` | type_registry.zig |
+| `fnProtoArrayListAppend` | growable_array.zig |
+| `fnProtoArrayListAppendInner` | ast.zig |
+| `fnProtoArrayListEnsureCapacity` | growable_array.zig |
+| `fnProtoArrayListGetSlice` | growable_array.zig |
+| `fnProtoArrayListInit` | growable_array.zig |
+| `fnReturnRequiresValue` | semantic_analyzer.zig |
+| `fnv1a` | util/hash.zig |
+| `foldNodeIntExact` | lower.zig |
+| `fopen` | pal.zig |
+| `formatF64` | util/format.zig |
+| `formatU32` | diagnostics.zig |
+| `formatU32` | lexer.zig |
+| `formatU32` | util/format.zig |
+| `formatU64` | util/format.zig |
+| `fread` | pal.zig |
+| `frontResolveModuleInits` | front_resolution.zig |
+| `fseek` | pal.zig |
+| `ftell` | pal.zig |
+| `fwrite` | pal.zig |
+| `getBinOpStr` | c89_emit.zig |
+| `getByte` | main_dump.zig |
+| `getCTypeName` → `typeCName` (P3; pure consumer wrapper) | c89_emit.zig |
+| `getCheckedCastFnName` | c89_emit.zig |
+| `getDefaultLibPath` | pal.zig |
+| `getInfixInfo` | parser.zig |
+| `getLevelName` | diagnostics.zig |
+| `getPrintFnName` | c89_emit.zig |
+| `getTempTypeByIndex` | c89_emit.zig (P6: pure read of the recorded `TempDecl.type_id` — the re-derivation fallbacks are deleted. P14: the search is the per-fn `t2pos` map read — raw first-match) |
+| `getUnOpStr` | c89_emit.zig |
+| `growDep` | const_alias_prepass.zig |
+| `growLocalDecls` | lower.zig |
+| `growWpEdges` | type_resolver.zig |
+| `growableSandGrow` | allocator.zig |
+| `growableSandInit` | allocator.zig |
+| `handleAllocAssign` | analyzer.zig |
+| `handleAllocCall` | analyzer.zig |
+| `handleFreeCall` | analyzer.zig |
+| `handleNullAssign` | analyzer.zig |
+| `handleNullVarDecl` | analyzer.zig |
+| `handleOwnershipPass` | analyzer.zig |
+| `handleOwnershipReturn` | analyzer.zig |
+| `hasOtherConsumers` | lower.zig |
+| `hashSpillReadU32` | module_registry.zig |
+| `hashSpillWriteMap` | module_registry.zig |
+| `hashSpillWriteU32` | module_registry.zig |
+| `hexDigitValue` | lexer.zig |
+| `hoistTemps` | lower.zig |
+| `iceAddrOfLValueUnsupported` | lower.zig |
+| `importEdgesAppend` | module_registry.zig |
+| `importEdgesEnsureCapacity` | module_registry.zig |
+| `importQueueDequeue` | module_registry.zig |
+| `importQueueEnqueue` | module_registry.zig |
+| `importQueueInit` | module_registry.zig |
+| `importQueuePendingAppend` | module_registry.zig |
+| `importQueuePendingEnsureCapacity` | module_registry.zig |
+| `importQueuePendingPop` | module_registry.zig |
+| `inDegreeEnsureCapacity` | type_resolver.zig |
+| `indexBaseAfterArrayDeref` | lower.zig (FX5: `pa.*[i]` — lower the pointer operand of an array deref so the emitter renders `(*pa)[i]` instead of materialising the array value) |
+| `initArgs` | pal.zig |
+| `initArray` | type_registry.zig |
+| `initCompilerAlloc` | allocator.zig |
+| `initKeywordTable` | token.zig |
+| `intFactIsSigned` | async_state_machine.zig (combined fix (P6-pre-f3+P12-f1) H1: uniform facts rule — `int_const.is_signed` byte (1/0) from the result temp type's semantic signedness (P5 `typeRegistryIntIsSigned`; non-int kinds 0); twin in lir_opt_pass.zig) |
+| `intFactIsSigned` | lir_opt_pass.zig (combined fix (P6-pre-f3+P12-f1) H1: see the async_state_machine.zig row) |
+| `intFactWidthBits` | async_state_machine.zig (combined fix (P6-pre-f3+P12-f1) H1: uniform facts rule — `int_const.width_bits` from the result temp type (P5 `typeRegistryIntWidthBits`; non-int kinds 0); twin in lir_opt_pass.zig) |
+| `intFactWidthBits` | lir_opt_pass.zig (combined fix (P6-pre-f3+P12-f1) H1: see the async_state_machine.zig row) |
+| `isAllocCall` | analyzer.zig |
+| `isAlpha` | lexer.zig |
+| `isAlphaNum` | lexer.zig |
+| `isBShapeMismatch` | semantic_analyzer.zig |
+| `isBasePtrToArray` | c89_emit.zig |
+| `isC89Keyword` | name_mangler.zig |
+| `isCompoundTypeExprKind` | type_resolver.zig |
+| `isContainerDeclKind` | type_resolver.zig |
+| `isDeadLocalName` | c89_emit.zig |
+| `isDigit` | lexer.zig |
+| `isDigitInBase` | lexer.zig |
+| `isFreeCall` | analyzer.zig |
+| `isIdentExpr` | analyzer.zig |
+| `isMarkersEnabled` | pal.zig |
+| `isNullExpr` | analyzer.zig |
+| `isTempOrBuiltin` | name_mangler.zig |
+| `isU64MaxLiteral` | lexer.zig |
+| `isValueDependency` → deleted (P2, dead) | type_registry.zig |
+| `itoa` | util/itoa.zig |
+| `itoa64` | util/itoa.zig |
+| `joinPath` | module_registry.zig |
+| `layoutAddFieldEdges` → `typeRefs` (P2) | type_registry.zig |
+| `layoutAddTypeEdge` → `typeRefs` (P2) | type_registry.zig |
+| `layoutFieldNeedsEdge` → `typeNeedsFullDef` (P2) | type_registry.zig |
+| `lexerAdvance` | lexer.zig |
+| `lexerInit` | lexer.zig |
+| `lexerIsAtEnd` | lexer.zig |
+| `lexerMakeErrorToken` | lexer.zig |
+| `lexerMakeToken` | lexer.zig |
+| `lexerMatch` | lexer.zig |
+| `lexerNextToken` | lexer.zig |
+| `lexerParseEscapeSequence` | lexer.zig |
+| `lexerParseHexEscape` | lexer.zig |
+| `lexerPeek` | lexer.zig |
+| `lexerPeekN` | lexer.zig |
+| `lexerRunAllTests` | lexer.zig |
+| `lexerScanBuiltinIdentifier` | lexer.zig |
+| `lexerScanChar` | lexer.zig |
+| `lexerScanIdentifierOrKeyword` | lexer.zig |
+| `lexerScanNumber` | lexer.zig |
+| `lexerScanString` | lexer.zig |
+| `lexerSkipWSC` | lexer.zig |
+| `lexerTestBuiltinIdentifier` | lexer.zig |
+| `lexerTestDiagnostics` | lexer.zig |
+| `lexerTestHelpers` | lexer.zig |
+| `lexerTestIdentifierKeywords` | lexer.zig |
+| `lexerTestOperators` | lexer.zig |
+| `lexerTestSanityCheck` | lexer.zig |
+| `lexerTestScanChar` | lexer.zig |
+| `lexerTestScanNumber` | lexer.zig |
+| `lexerTestScanString` | lexer.zig |
+| `lexerTestSkipWhitespaceAndComments` | lexer.zig |
+| `lirOptNestCandidate` | lir_opt_pass.zig |
+| `lirOptNestConsLoc` | lir_opt_pass.zig |
+| `lirOptNestDefLoc` | lir_opt_pass.zig |
+| `lirOptNestDepthOf` | lir_opt_pass.zig |
+| `lirOptRun` | lir_opt_pass.zig |
+| `lirStreamAppend` | lir_stream.zig |
+| `lirStreamBeginRead` | lir_stream.zig |
+| `lirStreamBeginWrite` | lir_stream.zig |
+| `lirStreamEndRead` | lir_stream.zig |
+| `lirStreamReadFunction` | lir_stream.zig |
+| `localConstScopeInit` | type_resolver.zig |
+| `localConstScopeLookup` | type_resolver.zig |
+| `localConstScopePush` | type_resolver.zig |
+| `localTypeScopeInit` | type_resolver.zig |
+| `localTypeScopeLookup` | type_resolver.zig |
+| `localTypeScopePush` | type_resolver.zig |
+| `lookupKeyword` | token.zig |
+| `lowerAppendSwitchCaseItem` | lower.zig |
+| `lowerArrayElemTupleCoerce` | lower.zig (FB: field-wise-copy a tuple-typed array-literal element to the array's tuple element type) |
+| `lowerAssignLValue` | lower.zig |
+| `lowerCompoundLValueStore` | lower.zig |
+| `lowerDeclCallConvFlag` | lower.zig |
+| `lowerExpr` | lower.zig |
+| `lowerExprImpl` | lower.zig |
+| `lowerFieldStore` | lower.zig |
+| `lowerFn` | lower.zig |
+| `lowerFoldedIntConst` | lower.zig (P6-pre fix round 1: untyped arm records the exact value's semantic width/signedness on the int_const (temp TYPE_INT_LIT, `emitIntConstFacts`); typed arm unchanged (fit check + typed facts via `emitIntConst`); planner derives the C carrier at the boundary) |
+| `lowerExactIntArg` | lower.zig (FB2: exact untyped integer expression -> fact-carrying materialization const; shared by the print-argument literal route and the inferred-tuple construction arm; i32/signed class returns TEMP_NONE, >64-bit reports `error[3000]`. P6-pre fix round 1: FACTS ONLY — records (width_bits, is_signed) via `lowerUntypedIntFacts`; the materialization temp is TYPE_INT_LIT and the C carrier is derived by the planner at the boundary) |
+| `lowerIndexElemAddr` | lower.zig (P10: ONE checked index-addr computation for lvalue chains — FX5 `indexBaseAfterArrayDeref` → slice `.ptr` extract → index → `emitSafeCheckIndex` always-on (self-gated; F6 `safe_check` opt-in removed) → `BIN_ADD`/`load_index{decay=1}` under the unified ptr-to-array rule; FB/D4 tuple `t[ord]` escape returns the folded ordinal) |
+| `lowerLValueAddr` | lower.zig (P10: `index_access` arm routes through `lowerIndexElemAddr`; always `-fsafe`-checked chains) |
+| `lowerModuleInit` | lower.zig |
+| `lowerPackedChainAnalyze` | lower.zig |
+| `lowerPackedWholeCopy` | lower.zig (FX15-F: per-leaf whole-value nested packed move — recursive pk walk emitting one `load_bitfield`+`store_bitfield` per leaf; shared by literal/assignment/packed-union/read paths; recursion bounded at 32 levels, deeper whole moves are a clean site `error[3000]` reject since fix round 1) |
+| `lowerTempIsPackedAggregate` | lower.zig (FX15-F: source-carrier gate for whole-value store sites; `undefined`/`TEMP_NONE`/out-of-range keep the scalar-store path) |
+| `lowerPrintArityReject` | lower.zig (FD1: level-0 `error[3061]` `expected 2 argument(s), found N` at a `print` call with more than two arguments) |
+| `lowerStmt` | lower.zig |
+| `lowerStmtBody` | lower.zig |
+| `lowerSwitchCaseItemConstDecl` | lower.zig (FX1: decl node of the immutable module-level constant a case item names; current module first, then all tables; `resolveModuleBase` for a qualified/direct-import base) |
+| `lowerSwitchCaseItemConstValue` | lower.zig (FX1: named int const / `mod.LO` via the exact evaluator with the visibility check; a non-int initializer falls through to the enum-member walk) |
+| `lowerSwitchCaseItemEnumConstMemberValue` | lower.zig (FX1: walk an enum-member const's initializer chain `Color.Red` / `.Red` / `Red` / aliases to the member name; resolve against the condition enum / TU) |
+| `lowerSwitchCaseItemIsConstGlobal` | lower.zig (FX1: `SymbolKind.global` with flags bit0 (`is_mutable`) clear) |
+| `lowerSwitchCaseItemMemberValue` | lower.zig (D2: member name -> condition enum `member.value` / TU field index) |
+| `lowerSwitchCaseItemValue` | lower.zig (D2/FX1: int/char/`bool` literal, `enum_literal`, `error_literal`, `field_access`, `ident_expr` const/member; `?u64`) |
+| `lowerTupleElemRead` | lower.zig (FB: read tuple element `ord` of a base temp via the shared `load_field`; array elements decay to `*elem`) |
+| `lowerUntypedIntFacts` | lower.zig (P6-pre fix round 1: the sign-collision disambiguator — exact ComptimeInt -> semantic (width_bits, is_signed) via the shared `comptimeIntFitsType` windows (I32/U32/I64/U64 narrowest fit, exactly `comptimeIntUntypedType`'s classes); false outside the 64-bit window -> `error[3000]`) |
+| `lowererInit` | lower.zig |
+| `main` | ast_dump_main.zig |
+| `main` | main.zig |
+| `main` | main_dump.zig |
+| `main` | main_exp.zig |
+| `main` | strip_main.zig |
+| `mainCRTStartup` | include/zig_pal.c |
+| `mangleC89Keyword` | name_mangler.zig |
+| `mangleLocalName` → `nameManglerMintLocal` (P1) | name_mangler.zig |
+| `mangleTempName` → `nameManglerMintTemp` (P1) | name_mangler.zig |
+| `mapCapacityFromHint` | util/hash.zig |
+| `markerWrite` | pal.zig |
+| `markerWriteInt` | pal.zig |
+| `markerWriteInt64` | pal.zig |
+| `markersEnabled` | pal.zig |
+| `matchFlag` | main.zig |
+| `matchFlag` | main_dump.zig |
+| `matchMMFlag` | main.zig |
+| `matchSFlag` | main.zig |
+| `materializeInto` | lower.zig |
+| `materializeShiftLhs` | lower.zig |
+| `max` | util/util.zig |
+| `maxTempOf` | lir_opt_pass.zig |
+| `maybeEmitWidthWrap` | lower.zig |
+| `maybeExtractSlicePtr` | lower.zig |
+| `measureMarkerWrite` | pal.zig |
+| `measureMarkerWriteInt` | pal.zig |
+| `measureMarkerWriteInt64` | pal.zig |
+| `mem_eql` | util/mem.zig |
+| `min` | util/util.zig |
+| `moduleDirPath` | module_registry.zig |
+| `moduleEntryArrayListAppend` | module_registry.zig |
+| `moduleEntryArrayListEnsureCapacity` | module_registry.zig |
+| `moduleEntryArrayListGetSlice` | module_registry.zig |
+| `moduleEntryArrayListInit` | module_registry.zig |
+| `moduleHasConsoleBuiltin` | c89_emit.zig |
+| `moduleHasExitBuiltin` | c89_emit.zig |
+| `moduleHasSleepBuiltin` | c89_emit.zig |
+| `moduleHasStdioBuiltin` | c89_emit.zig |
+| `moduleHasVaInsts` | c89_emit.zig |
+| `moduleIdForBasename` | main.zig |
+| `moduleQualifiedName` | c89_emit.zig |
+| `moduleRegistryAddImport` | module_registry.zig |
+| `moduleRegistryAddModule` | module_registry.zig |
+| `moduleRegistryAssertPathToIdResident` | module_registry.zig |
+| `moduleRegistryCollectIncludes` | module_registry.zig |
+| `moduleRegistryFaultInPathToId` | module_registry.zig |
+| `moduleRegistryGetModules` | module_registry.zig |
+| `moduleRegistryGetOrCreateModule` | module_registry.zig |
+| `moduleRegistryInit` | module_registry.zig |
+| `moduleRegistryParseModule` | import_resolver.zig |
+| `moduleRegistryPathToIdGet` | module_registry.zig |
+| `moduleRegistryResolveImport` | module_registry.zig |
+| `moduleRegistryResolveImports` | import_resolver.zig |
+| `moduleRegistrySetSourceMan` | module_registry.zig |
+| `moduleRegistrySortModules` | module_registry.zig |
+| `moduleRegistrySpillHashMaps` | module_registry.zig |
+| `moduleRegistryVerifyOrder` | module_registry.zig |
+| `moduleResolverAddSearchDir` | module_registry.zig |
+| `moduleResolverInit` | module_registry.zig |
+| `moduleResolverResolve` | module_registry.zig |
+| `moduleResolverTryDir` | module_registry.zig |
+| `nameCacheGet` | type_registry.zig |
+| `nameCachePut` | type_registry.zig |
+| `nameManglerInit` | name_mangler.zig (+ `c89_emit.zig` forwarder) |
+| `nameManglerMangle` | name_mangler.zig (+ `c89_emit.zig` forwarder) |
+| `nameManglerMangleGlobal` | name_mangler.zig (+ `c89_emit.zig` forwarder) |
+| `nameManglerMintField` / `nameManglerMintIndexName` / `nameManglerMintLocal` / `nameManglerMintMember` / `nameManglerMintModuleStem` / `nameManglerMintSyntheticType` / `nameManglerMintTemp` / `nameManglerFnScope` | name_mangler.zig |
+| `namePrinterName` | c89_emit.zig |
+| `nestEmitBinExpr` | c89_emit.zig |
+| `nestEmitDefRvalue` | c89_emit.zig |
+| `nestEmitUnaryExpr` | c89_emit.zig |
+| `nextTemp` | lower.zig |
+| `nodeChildIsNode` | ast.zig |
+| `nodeGetNameId` | dump_ast.zig |
+| `nodeHasExtraChildren` | ast.zig |
+| `nodeHasNodeExtraChildren` | ast.zig |
+| `normalizePath` | util/path.zig |
+| `onDoubleFreeStmt` | analyzer.zig |
+| `onLifetimeStmt` | analyzer.zig |
+| `onNullStmt` | analyzer.zig |
+| `openSupportOutputFile` | c89_emit.zig |
+| `optAppend` | type_registry.zig |
+| `pal_abort` | include/zig_pal.c |
+| `pal_dir_exists` | include/zig_pal.c |
+| `pal_dir_exists` | pal.zig |
+| `pal_f64_to_str` | include/zig_pal.c |
+| `pal_file_close` | include/zig_pal.c |
+| `pal_file_close` | pal.zig |
+| `pal_file_open` | include/zig_pal.c |
+| `pal_file_open` | pal.zig |
+| `pal_file_read` | include/zig_pal.c |
+| `pal_file_read` | pal.zig |
+| `pal_file_write` | include/zig_pal.c |
+| `pal_file_write` | pal.zig |
+| `pal_get_default_lib_path` | include/zig_pal.c |
+| `pal_get_default_lib_path` | pal.zig |
+| `pal_i64_to_str` | include/zig_pal.c |
+| `pal_memcpy` | include/zig_pal.c |
+| `pal_print_stderr` | include/zig_pal.c |
+| `pal_print_stdout` | include/zig_pal.c |
+| `pal_reverse` | include/zig_pal.c |
+| `pal_set_trap_handler` | include/zig_pal.c |
+| `pal_strlen` | include/zig_pal.c |
+| `pal_trap` | include/zig_pal.c |
+| `pal_trap` | pal.zig |
+| `pal_u64_to_str` | include/zig_pal.c |
+| `pal_u64_to_str_buf` | include/zig_pal.c |
+| `panicHandler` | panic.zig |
+| `parseArbIntWidth` | type_registry.zig |
+| `parseArgs` | main.zig |
+| `parseArgs` | main_dump.zig |
+| `parseColorMode` | main.zig |
+| `parseColorMode` | main_dump.zig |
+| `parseErrorFormat` | main.zig |
+| `parseErrorFormat` | main_dump.zig |
+| `parseF64` | lexer.zig |
+| `parseMMBytes` | main.zig |
+| `parseSLevel` | main.zig |
+| `parseSize` | main.zig |
+| `parseSize` | main_dump.zig |
+| `parseTargetIsWindows` | main.zig |
+| `parseU32` | main.zig |
+| `parseU32` | main_dump.zig |
+| `parseU64` | lexer.zig |
+| `parserAddBinary` | parser.zig |
+| `parserAddError` | parser.zig |
+| `parserAddErrorCode` | parser.zig |
+| `parserAdvance` | parser.zig |
+| `parserClassifyCallConv` | parser.zig |
+| `parserConsumeCurrent` | parser.zig |
+| `parserEmitErrorNode` | parser.zig |
+| `parserExpect` | parser.zig |
+| `parserInit` | parser.zig |
+| `parserInitCommon` | parser.zig |
+| `parserInitStreaming` | parser.zig |
+| `parserParseAnonymousLiteral` | parser.zig |
+| `parserParseArrayLiteral` | parser.zig |
+| `parserParseBlock` | parser.zig |
+| `parserParseBoolLiteral` | parser.zig |
+| `parserParseBracketType` | parser.zig |
+| `parserParseBreakExpr` | parser.zig |
+| `parserParseBreakStmt` | parser.zig |
+| `parserParseBuiltinCall` | parser.zig |
+| `parserParseCInclude` | parser.zig |
+| `parserParseCatchRHS` | parser.zig |
+| `parserParseCharLiteral` | parser.zig |
+| `parserParseContainerDecl` | parser.zig |
+| `parserParseContinueExpr` | parser.zig |
+| `parserParseContinueStmt` | parser.zig |
+| `parserParseDeferStmt` | parser.zig |
+| `parserParseDotAccess` | parser.zig |
+| `parserParseEnumLiteral` | parser.zig |
+| `parserParseEnumType` | parser.zig |
+| `parserParseErrdeferStmt` | parser.zig |
+| `parserParseErrorLiteral` | parser.zig |
+| `parserParseErrorSetDecl` | parser.zig |
+| `parserParseErrorSetDeclBody` | parser.zig |
+| `parserParseErrorUnionType` | parser.zig |
+| `parserParseExportDecl` | parser.zig |
+| `parserParseExprPrec` | parser.zig |
+| `parserParseExprStmt` | parser.zig |
+| `parserParseExternDecl` | parser.zig |
+| `parserParseExternFnType` | parser.zig |
+| `parserParseFieldInitListNamed` | parser.zig |
+| `parserParseFloatLiteral` | parser.zig |
+| `parserParseFnCall` | parser.zig |
+| `parserParseFnDecl` | parser.zig |
+| `parserParseFnType` | parser.zig |
+| `parserParseForStmt` | parser.zig |
+| `parserParseGroupedExpr` | parser.zig |
+| `parserParseIdentExpr` | parser.zig |
+| `parserParseIfExpr` | parser.zig |
+| `parserParseIfStmt` | parser.zig |
+| `parserParseImportExpr` | parser.zig |
+| `parserParseIndexOrSlice` | parser.zig |
+| `parserParseIntLiteral` | parser.zig |
+| `parserParseLabeledBlockExpr` | parser.zig |
+| `parserParseLabeledStmt` | parser.zig |
+| `parserParseModuleRoot` | parser.zig |
+| `parserParseOptionalType` | parser.zig |
+| `parserParseOrelseRHS` | parser.zig |
+| `parserParsePostfixChain` | parser.zig |
+| `parserParsePrefixUnary` | parser.zig |
+| `parserParsePrimary` | parser.zig |
+| `parserParsePtrQualifiers` | parser.zig |
+| `parserParsePtrType` | parser.zig |
+| `parserParsePubDecl` | parser.zig |
+| `parserParseReturnExpr` | parser.zig |
+| `parserParseReturnStmt` | parser.zig |
+| `parserParseSingleToken` | parser.zig |
+| `parserParseStatement` | parser.zig |
+| `parserParseStmtBodyExpr` | parser.zig |
+| `parserParseStringLiteral` | parser.zig |
+| `parserParseStructInit` | parser.zig |
+| `parserParseStructType` | parser.zig |
+| `parserParseSwitchExpr` | parser.zig |
+| `parserParseSwitchProng` | parser.zig |
+| `parserParseSwitchStmt` | parser.zig |
+| `parserParseTestDecl` | parser.zig |
+| `parserParseTryExpr` | parser.zig |
+| `parserParseType` | parser.zig |
+| `parserParseTypeName` | parser.zig |
+| `parserParseUnionType` | parser.zig |
+| `parserParseVarDecl` | parser.zig |
+| `parserParseWhileStmt` | parser.zig |
+| `parserPeek` | parser.zig |
+| `parserPeekN` | parser.zig |
+| `parserPullOne` | parser.zig |
+| `parserPushU32` | parser.zig |
+| `parserSetImportScratch` | parser.zig |
+| `parserSetModuleContext` | parser.zig |
+| `parserSynchronize` | parser.zig |
+| `parserTokenText` | parser.zig |
+| `payloadEnsure` | type_registry.zig |
+| `phase_ASTLowering` | main_dump.zig |
+| `phase_AsyncFrameSize` | main.zig |
+| `phase_C89Emission` | main.zig |
+| `phase_C89Emission` | main_dump.zig |
+| `phase_ComptimeEvaluation` | main.zig |
+| `phase_FrontResolution` | main.zig |
+| `phase_ImportResolution` | main.zig |
+| `phase_ImportResolution` | main_dump.zig |
+| `phase_LIRLowering` | main.zig |
+| `phase_SemanticAnalysis` | main.zig |
+| `phase_SemanticAnalysis` | main_dump.zig |
+| `phase_StaticAnalyzers` | main.zig |
+| `phase_SymbolRegistration` | main.zig |
+| `phase_SymbolRegistration` | main_dump.zig |
+| `phase_TypeResolution` | main.zig |
+| `phase_TypeResolution` | main_dump.zig |
+| `pkFieldAppend` | type_registry.zig |
+| `pkSetFields` | type_registry.zig |
+| `pkStructAppend` | type_registry.zig |
+| `pkUnSetFields` | type_registry.zig |
+| `pkUnStructAppend` | type_registry.zig |
+| `planConstCarrierAt` | c89_emit.zig (P6-pre: spell-time carrier READ — `C89SpellPlan` lookup by (fn, const-id); replaces the deleted emit-time deciding helper `intConstTypeForValue`) |
+| `planUacSideAt` | c89_emit.zig (P11: spell-time UAC-direction READ — `C89SpellPlan` lookup by (fn, inst-ordinal) via `spellPlanUac`; miss = 2 = no cast; replaces the deleted emit-time decision `coercionUsualArithPromote`) |
+| `pointerQualifiersMonotone` | type_registry.zig |
+| `poolPeak` | allocator.zig |
+| `poolPtr` | allocator.zig |
+| `popExpectedType` | semantic_analyzer.zig |
+| `popFreeBestFit` | allocator.zig |
+| `populateTypePayload` | symbol_registrator.zig |
+| `precFromInt` | parser.zig |
+| `precToInt` | parser.zig |
+| `printAggKind` | c89_emit.zig |
+| `printBool` | std_fmt.zig |
+| `printChar` | std_fmt.zig |
+| `printDecompParseAndValidate` | print_decomposition.zig |
+| `printDecompScanFormat` | print_decomposition.zig |
+| `printF64` | std_fmt.zig |
+| `printFmtAggFieldKindOk` | lower.zig |
+| `printFmtAggFieldsOk` | lower.zig |
+| `printFmtArgIsTypeValue` | lower.zig |
+| `printFmtCheck` | lower.zig |
+| `printFmtContainerReject` | lower.zig (FD1: level-0 `error[3065]` `print arguments must be a tuple literal` at a non-tuple `print` container node; a registry `tuple_type` variable container takes the FD2 variable path instead) |
+| `printFmtKindIsIntegerLike` | lower.zig |
+| `printFmtReject` | lower.zig |
+| `printFnSourceName` | c89_emit.zig |
+| `printHexI32` | std_fmt.zig |
+| `printHexI64` | std_fmt.zig |
+| `printHexU32` | std_fmt.zig |
+| `printHexU64` | std_fmt.zig |
+| `printI32` | std_fmt.zig |
+| `printI64` | std_fmt.zig |
+| `printKindIsIntegerLike` | c89_emit.zig |
+| `printNameRouteKind` | c89_emit.zig |
+| `printStr` | std_fmt.zig |
+| `printU32` | std_fmt.zig |
+| `printU64` | std_fmt.zig |
+| `printUsage` | main.zig |
+| `printUsage` | main_dump.zig |
+| `printUsize` | allocator.zig |
+| `ptrAppend` | type_registry.zig |
+| `pushDefer` | lower.zig |
+| `pushExpectedType` | semantic_analyzer.zig |
+| `readFile` | pal.zig |
+| `registerContainerType` | type_resolver.zig |
+| `registerDecl` | symbol_registrator.zig |
+| `registerLocalDecl` | semantic_analyzer.zig |
+| `registerModuleSymbols` | symbol_registrator.zig |
+| `registerPrimitive` | type_registry.zig |
+| `registerPrimitiveName` | type_registry.zig |
+| `rejectAnytypeType` | analyzer.zig |
+| `removeTask` | std_async.zig |
+| `reportComptimeIntFits` | lower.zig |
+| `requiresFullDef` | type_resolver.zig |
+| `resetDeferQueue` | analyzer.zig |
+| `resolveAggregateFieldTypesAll` | type_resolver.zig |
+| `resolveAssignedLocalTemp` | assign_helper.zig |
+| `resolveDeclAggregateFieldTypes` | type_resolver.zig |
+| `resolveFnSignatures` | type_resolver.zig |
+| `resolveImportFieldAlias` | type_resolver.zig |
+| `resolveImportFieldAliases` | type_resolver.zig |
+| `resolveNamedTypeExpressions` | type_resolver.zig |
+| `resolveOrigin` | analyzer.zig |
+| `resolveReturnStmt` | semantic_analyzer.zig |
+| `resolveStmtTypes` | front_resolution.zig |
+| `resolveStmtTypesRec` | front_resolution.zig |
+| `resolveTempName` | c89_emit.zig |
+| `resolveTypeExpr` | front_resolution.zig |
+| `resolveTypeExprFull` | type_resolver.zig |
+| `resolveWellKnownTypeName` | const_alias_prepass.zig |
+| `resolvedSourceTableGet` | resolved_type_table.zig |
+| `resolvedSourceTableSet` | resolved_type_table.zig |
+| `resolvedTypeTableClose` | resolved_type_table.zig |
+| `resolvedTypeTableGet` | resolved_type_table.zig |
+| `resolvedTypeTableInit` | resolved_type_table.zig |
+| `resolvedTypeTableReserve` | resolved_type_table.zig |
+| `resolvedTypeTableSet` | resolved_type_table.zig |
+| `resolvedTypeTableSetSpillPath` | resolved_type_table.zig |
+| `rttBlockEnsure` | resolved_type_table.zig |
+| `rttExtend` | resolved_type_table.zig |
+| `rttReadU32` | resolved_type_table.zig |
+| `rttWriteU32` | resolved_type_table.zig |
+| `runAllAnalyzers` | analyzer.zig |
+| `runCompiler` | main.zig |
+| `runCompiler` | main_dump.zig |
+| `runConstFold` | lir_opt_pass.zig |
+| `runDoubleFreeAnalyzer` | analyzer.zig |
+| `runLifetimeAnalyzer` | analyzer.zig |
+| `runNullAnalyzer` | analyzer.zig |
+| `runSignatureAnalyzer` | analyzer.zig |
+| `scalarTargetOf` | lower.zig |
+| `sandAlloc` | allocator.zig |
+| `sandInit` | allocator.zig |
+| `sandReallocInPlace` | allocator.zig |
+| `sandReset` | allocator.zig |
+| `sandResetPeak` | allocator.zig |
+| `sandTryReallocInPlace` | allocator.zig |
+| `schedulerInit` | std_async.zig |
+| `scriptNetEmitted` | c89_emit.zig |
+| `scriptStdOsEmitted` | c89_emit.zig |
+| `scriptStdTimeEmitted` | c89_emit.zig |
+| `searchDirArrayListAppend` | module_registry.zig |
+| `searchDirArrayListEnsureCapacity` | module_registry.zig |
+| `semaTraceStep` | semantic_analyzer.zig |
+| `semanticAnalyzerBuiltinDesc` | semantic_analyzer.zig (P8: the central per-builtin descriptor table — kind bits (type-value cast / supported) + expected arity + arity-reject class + mismatch code/message; single spelling of the builtin name set, supersedes `semanticAnalyzerBuiltinFlags`) |
+| `semanticAnalyzerBuiltinNameEq` | semantic_analyzer.zig |
+| `semanticAnalyzerCallArgIntegerKind` | semantic_analyzer.zig |
+| `semanticAnalyzerCallArgTolerated` | semantic_analyzer.zig |
+| `semanticAnalyzerCalleeDeclSymbol` | semantic_analyzer.zig |
+| `semanticAnalyzerCheckMemberVisibility` | semantic_analyzer.zig |
+| `semanticAnalyzerCaptureType` | semantic_analyzer.zig |
+| `semanticAnalyzerArrayFieldLength` | semantic_analyzer.zig |
+| `semanticAnalyzerCheckBuiltinArity` | semantic_analyzer.zig (P8: the arity decision for every `builtin_call`, consulted BEFORE the dispatch ladder — 0 ok / 1 established reject shape (row code+message, arg0-if-present resolved, `TYPE_UNDEFINED`) / 2 established introspection reject shape (`TYPE_INT_LIT`)) |
+| `semanticAnalyzerCheckComptimeIndexOob` | semantic_analyzer.zig |
+| `semanticAnalyzerCheckComptimeSliceBounds` | semantic_analyzer.zig |
+| `semanticAnalyzerComptimeIntValue` | semantic_analyzer.zig |
+| `semanticAnalyzerReportIndexOob` | semantic_analyzer.zig |
+| `semanticAnalyzerReportIllegalPtrIndex` | semantic_analyzer.zig (FH/D10: level-0 `error[3066]` single-item-pointer index / `type` base) |
+| `semanticAnalyzerReportPtrSliceBounded` | semantic_analyzer.zig (FH/D10: level-0 `error[3067]` `slice of single-item pointer must be bounded`) |
+| `semanticAnalyzerReportPtrSliceIllegal` | semantic_analyzer.zig (FH/D10: level-0 `error[3067]` illegal comptime bound pair) |
+| `semanticAnalyzerReportPtrSliceRuntime` | semantic_analyzer.zig (FH/D10: level-0 `error[3067]` `unable to resolve comptime value` + comptime-bounds note) |
+| `semanticAnalyzerReportTupleIndexNotComptime` | semantic_analyzer.zig (FB: level-0 `error[3069]` `tuple field index must be comptime-known`) |
+| `semanticAnalyzerReportTupleIndexOob` | semantic_analyzer.zig (FB: level-0 `error[3070]` `index N outside tuple of length L`) |
+| `semanticAnalyzerReportSliceEndOob` | semantic_analyzer.zig |
+| `semanticAnalyzerReportSliceStartAfterEnd` | semantic_analyzer.zig |
+| `semanticAnalyzerReportUsizeNegative` | semantic_analyzer.zig |
+| `semanticAnalyzerStaticArrayLen` | semantic_analyzer.zig |
+| `semanticAnalyzerSpellBytesBack` | semantic_analyzer.zig (FH/D10: backward label write into the message buffer) |
+| `semanticAnalyzerSpellTypeBack` | semantic_analyzer.zig (FH/D10: best-effort `*T` spelling for the 3066 message; name/structural/depth-cap fallbacks) |
+| `semanticAnalyzerCheckLocalShadow` | semantic_analyzer.zig |
+| `semanticAnalyzerCheckSinglePtrSlice` | semantic_analyzer.zig (FH/D10: 0 = not a single-item pointer / 1 = legal pair accepted with `out_len` / 2 = 3067 reported; array-field decays return 0) |
+| `semanticAnalyzerCheckConditionType` | semantic_analyzer.zig |
+| `semanticAnalyzerCheckForIndexRangeComptime` | semantic_analyzer.zig (FI: the explicit-range length check also applies to a pointer-to-array iterable's pointee-array length) |
+| `semanticAnalyzerCheckIntrospectionBuiltin` | semantic_analyzer.zig |
+| `semanticAnalyzerConditionComptimeBool` | semantic_analyzer.zig (FX9: tri-state comptime bool fold of an `if` condition; `?false` distinguishes comptime-false from unknown so the untaken arm is skipped) |
+| `semanticAnalyzerConditionIsComptimeTrue` | semantic_analyzer.zig |
+| `semanticAnalyzerConstArrayDecay` | semantic_analyzer.zig (FX6: expression-level const-array-decay predicate — source `array_type`, target mutable `[]T`/`[*]T`, same element, source node a const l-value binding; FX11: a pointer source that is a const aggregate's array-FIELD decay also matches, with the declared array type recovered by `semanticAnalyzerFieldAccessArrayType`) |
+| `semanticAnalyzerConstDiscard` | semantic_analyzer.zig (FC/D12; FX6: const-discard predicate — source const, target not, same effective elem/base across slice->slice / slice->many / ptr->ptr / many->many; FX6 adds ptr->slice and ptr->many for a pointee known-length array — the string-literal family) |
+| `semanticAnalyzerDiagAsyncBuiltinInDefer` | semantic_analyzer.zig |
+| `semanticAnalyzerDiagAsyncOutsideSuspending` | semantic_analyzer.zig |
+| `semanticAnalyzerFieldAccessArrayType` | semantic_analyzer.zig (FX11: recovers the DECLARED array type of a field access that resolved through the array-field element-pointer decay — paren-transparent `field_access`, pointer resolved type, struct/union/packed-union/tagged-union/tuple member declared `array_type`; 0 for non-fields and genuine pointer fields) |
+| `semanticAnalyzerFindTypeDecl` | semantic_analyzer.zig |
+| `semanticAnalyzerFloatNarrowArmStatus` | semantic_analyzer.zig (FX3 fix r1 + FX9 fix r1: one `if` arm / `switch` prong value must accept; `noreturn`/`undefined`/`f32` arms neutral) |
+| `semanticAnalyzerFloatNarrowIsNumeric` | semantic_analyzer.zig (FX3: f64/integer source classifier for the f32 narrowing) |
+| `semanticAnalyzerFloatNarrowRecord` | semantic_analyzer.zig (FX3: records `CoercionKind.float_narrow` on the value node) |
+| `semanticAnalyzerTypeMismatchReport` | semantic_analyzer.zig (FX3 as `semanticAnalyzerFloatNarrowReport`, renamed by FX17-F: level-0 `error[3000]` + source/target notes for a rejected narrowing or function-pointer signature mismatch) |
+| `semanticAnalyzerFloatNarrowStatus` | semantic_analyzer.zig (FX3: value-aware accept/round/reject decision at an f32 expectation site) |
+| `semanticAnalyzerFloatNarrowStatusDepth` | semantic_analyzer.zig (FX3 fix r1 + FX9: the depth-capped status; intercepts paren/`if_expr`/`swt_ex` BEFORE the numeric guard and classifies the reachable arms, so a runtime non-float arm rejects even when the expression is void/bool/pointer-typed; a comptime-known condition skips the untaken arm) |
+| `semanticAnalyzerFnPtrConvMismatch` | semantic_analyzer.zig (FX17-F: delegates to `semanticAnalyzerFnPtrSigMismatch`) |
+| `semanticAnalyzerFnPtrSigMismatch` | semantic_analyzer.zig (FX17-F: return/params/variadic/callconv mismatch of two possibly-`?fn`-wrapped function-pointer values) |
+| `semanticAnalyzerFnValueType` | semantic_analyzer.zig (FX17-F: unwrap a possibly-`?fn`-wrapped function-pointer value to its `fn_type`, else 0) |
+| `semanticAnalyzerForIndexBoundOk` | semantic_analyzer.zig |
+| `semanticAnalyzerGateEnumModuleDecl` | semantic_analyzer.zig |
+| `semanticAnalyzerGateEnumTypeDecl` | semantic_analyzer.zig |
+| `semanticAnalyzerGatePackedFields` | semantic_analyzer.zig |
+| `semanticAnalyzerGatePackedUnionMembers` | semantic_analyzer.zig |
+| `semanticAnalyzerGrowLocalDecls` | semantic_analyzer.zig |
+| `semanticAnalyzerInit` | semantic_analyzer.zig |
+| `semanticAnalyzerIntrospectionTypeLabel` | semantic_analyzer.zig (FF/D9: interned type name or kind word for the `found 'X'` introspection reject) |
+| `semanticAnalyzerIsBuiltinSupported` | semantic_analyzer.zig (P8: thin read of the central descriptor `semanticAnalyzerBuiltinDesc` bit1) |
+| `semanticAnalyzerIsPointerFamilyKind` | semantic_analyzer.zig |
+| `semanticAnalyzerIsTypeValueCast` | semantic_analyzer.zig (P8: thin read of the central descriptor `semanticAnalyzerBuiltinDesc` bit0) |
+| `semanticAnalyzerMaybeDiagConstArrayDecay` | semantic_analyzer.zig (FX6: level-0 `error[3000]` `cannot implicitly discard 'const' qualifier` for the expression-level const-array decay, deduped per node) |
+| `semanticAnalyzerMaybeDiagConstDiscard` | semantic_analyzer.zig (FC/D12: level-0 `error[3000]` `cannot implicitly discard 'const' qualifier`, deduped per node) |
+| `semanticAnalyzerMaybeDiagVolatileDrop` | semantic_analyzer.zig |
+| `semanticAnalyzerMaybeGateAliasDecl` | semantic_analyzer.zig |
+| `semanticAnalyzerNthIdentSpan` | semantic_analyzer.zig |
+| `semanticAnalyzerPopScopeMarker` | semantic_analyzer.zig |
+| `semanticAnalyzerPackedFieldTypeAllowed` | semantic_analyzer.zig |
+| `semanticAnalyzerIsLValueConst` | semantic_analyzer.zig |
+| `semanticAnalyzerPackedStructDeclForType` | semantic_analyzer.zig |
+| `semanticAnalyzerParamDeclNode` | semantic_analyzer.zig |
+| `semanticAnalyzerPtrCastDropsVolatile` | semantic_analyzer.zig |
+| `semanticAnalyzerReportCallArity` | semantic_analyzer.zig |
+| `semanticAnalyzerRejectIntrospection` | semantic_analyzer.zig (FF/D9: shared level-0 emitter for the introspection rejects, deduped per node) |
+| `semanticAnalyzerRejectIntrospectionArity` | semantic_analyzer.zig (P8: the introspection-kind arity reject — the house `expected N argument(s), found M` wording via `diagnosticBuilderMakeMsg`, `ERR_3074`, `MarkNodeOnce`; the emission moved verbatim out of `semanticAnalyzerCheckIntrospectionBuiltin`) |
+| `semanticAnalyzerReportForIndexRange` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveArithmetic` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveArrayInit` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveAssign` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveBitNot` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveBitwise` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveComparison` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveEnumLiteral` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveSwitchCaseMember` | semantic_analyzer.zig (FE/D11 + FX4: resolve a container-qualified `field_access` switch prong — FX4 resolves the qualifier first (known foreign enum/tagged-union type → level-0 `error[3071]` mismatch, qualifier span; module namespace → left to FX1 lowering; unverifiable → conservative no-reject), then matches the member name against `current_switch_cond_tu` (tagged-union field index / enum member value into `enum_value_table`; a miss → `error[3071]` member span) |
+| `semanticAnalyzerReportSwitchCaseQualifier` | semantic_analyzer.zig (FX4/D11 extras: the one `error[3071]` reject reporter — deduped per case-item node, mismatch vs unknown-member message, qualifier/member span, `union/enum declared here` related span; no cascade suppression) |
+| `semanticAnalyzerResolveExpr` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveFieldAccess` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveFnBody` | semantic_analyzer.zig (FX12 hygiene: clears `current_fn_return` when a declared return type does not resolve; records `TYPE_VOID` for a no-annotation fn) |
+| `semanticAnalyzerResolveFnCall` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveForHeader` | semantic_analyzer.zig (FI: a `ptr_type` iterable with a fixed-size-array pointee takes the pointee array's element as the item type — pointer-to-array `for` iteration) |
+| `semanticAnalyzerResolveForIndexRange` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveIdent` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveIfExpr` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveIfHeader` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveIndexAccess` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveLogical` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveNegate` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveOrelseExpr` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveSliceExpr` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveStmt` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveStmtIter` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveStructInit` | semantic_analyzer.zig |
+| `semanticAnalyzerResolveSwitchExpr` | semantic_analyzer.zig (FX10: at an f32 expectation site a `sw_f32_site` guard skips the value-blind prong unification; after the loop every prong is classified with `semanticAnalyzerFloatNarrowArmStatus` — all-acceptable => the switch records `TYPE_F32` and each non-f32 prong records its narrowing, otherwise the switch takes the offending prong's type for the enclosing site's FX3 reject; the switch operand's comptime-ness is deliberately not used, so the documented `switch (0)` over-reject is unchanged) |
+| `semanticAnalyzerResolveTryExpr` | semantic_analyzer.zig (FX12: enforces the `try` enclosing-return rules — container-level, non-error-union operand, unconditional non-error-union enclosing return, `errorSetIsSubset`-only set comparison; returns the payload or the `TYPE_UNDEFINED` reject poison) |
+| `semanticAnalyzerTagAccessUnion` | semantic_analyzer.zig (FX16-F A+: paren-transparent direct `.tag` field access → base tagged-union id; rtt-consulted with on-demand resolve fallback; ptr/many-ptr bases auto-deref; 0 when not a `.tag` on a tagged union) |
+| `semanticAnalyzerTagUnionMemberIndex` | semantic_analyzer.zig (FX16-F A+: member name → tagged-union field index, `0xFFFFFFFF` when absent) |
+| `semanticAnalyzerTryReject` | semantic_analyzer.zig (FX12: shared level-0 `error[3075]` `ERR_3075_TRY_ENCLOSING_RETURN` emitter — span on the `try`, deduped per node via `diagnosticCollectorMarkNodeOnce`, optional note) |
+| `semanticAnalyzerResolveTupleLiteral` | semantic_analyzer.zig (FB2: each element typed by value — untyped int literal -> `comptimeIntUntypedType` carrier; void stays void; named type value -> `TYPE_TYPE`; unresolved forward ref keeps the pass-1 i32 fallback) |
+| `semanticAnalyzerTupleElemIsTypeValue` | semantic_analyzer.zig (FB2: tuple-literal element is a named type value (`i32`/`S`/`mod.T`); mirror of lower's `printFmtArgIsTypeValue`) |
+| `semanticAnalyzerExprIsTypeValue` | semantic_analyzer.zig (A5-F: paren-transparent wrapper over `semanticAnalyzerTupleElemIsTypeValue`; detects a type/alias value referenced by name in a value position so the module-binding / assignment / return / call-arg guards reject it with the site's level-0 `error[3000]`) |
+| `semanticAnalyzerTupleElemVoidIsUnresolvedRef` | semantic_analyzer.zig (FB2/fix round 1: VOID-typed bare/parenthesized ident or module-member reference = unresolved forward global; a value-base field read (`s.v`) is a real void struct field and is NOT transient) |
+| `semanticAnalyzerTupleElemFieldBaseIsModule` | semantic_analyzer.zig (FB2 fix round 1: only a module/`@import` field-access base is transient) |
+| `semanticAnalyzerResolveWhileHeader` | semantic_analyzer.zig |
+| `semanticAnalyzerStmtWorkPush` | semantic_analyzer.zig |
+| `semanticAnalyzerVolatileCastValid` | semantic_analyzer.zig |
+| `semanticAnalyzerVolatileDrop` | semantic_analyzer.zig |
+| `sliceAppend` | type_registry.zig |
+| `sliceBoundComptimeI64` | lower.zig (FX5: comptime integer value of a slice bound via `evalConstI64Full` + `foldPrintArgIntExact`; decides/skips the runtime guard) |
+| `sortDiagnostics` | diagnostics.zig |
+| `sortDiagnostics` | util/diagnostic_sort.zig |
+| `sourceFileArrayListAppend` | source_manager.zig |
+| `sourceFileArrayListEnsureCapacity` | source_manager.zig |
+| `sourceFileArrayListGetSlice` | source_manager.zig |
+| `sourceFileArrayListInit` | source_manager.zig |
+| `sourceManagerAddFile` | source_manager.zig |
+| `sourceManagerAddFileTransient` | source_manager.zig |
+| `sourceManagerCopyToArena` | source_manager.zig |
+| `sourceManagerFaultIn` | source_manager.zig |
+| `sourceManagerGetFileName` | source_manager.zig |
+| `sourceManagerGetLineOffsets` | source_manager.zig |
+| `sourceManagerGetLocation` | source_manager.zig |
+| `sourceManagerGetSourceContent` | source_manager.zig |
+| `sourceManagerInit` | source_manager.zig |
+| `sourceManagerResetFaults` | source_manager.zig |
+| `spellInstOrd` | c89_plan.zig (P6-pre: const-id encoding — flattened (bb,ii) inst ordinal, stable across the emit-time `lirOptRun`) |
+| `spellPlanCarrier` | c89_plan.zig (P6-pre: spell-time side-table read (fn-key, inst-ordinal) -> planned carrier. P14: the `fn_keys` scan is retired — `C89SpellPlan.fn_key_index` map read) |
+| `spellPlanInit` | c89_plan.zig (P6-pre: `C89SpellPlan` init at the `phase_EmissionClassification` boundary. P14: also inits the `fn_key_index` side map) |
+| `spellPlanPlanFn` | c89_plan.zig (P6-pre fix round 1: per-fn boundary fill — `deriveConstCarrier` for every inst kind that is/becomes an `int_const`; the `.int_const` arm passes the record's `width_bits`/`is_signed`, the fold-capable kinds pass 0/0. P11: also fills `uac_maps` — the planned UAC cast direction for every comparison `binary` (ops 10-15) from the operands' carried `hoisted_temps` types via `uacPromoteSide`. P14: builds the per-fn first-match `t2pos` hoisted map + `fn_key_index` at fn start) |
+| `spellPlanPlanTypeOrder` | c89_plan.zig (P12: THE typedef-order boundary fill — `C89SpellPlan.typedef_order = tstTopologicalSort(reg)` + `typedef_order_len = reg.types_len` (the plan-time snapshot; combined fix H2 bounds every emitter `sorted` walker on it), called ONCE from `phase_EmissionClassification`; ordering is planned here, the emitter walks the carried order and never sorts) |
+| `spellPlanUac` | c89_plan.zig (P11: spell-time UAC-direction side-table read (fn-key, inst-ordinal) -> planned side 0/1; null = no cast — the emitter's only promotion source. P14: the `fn_keys` scan is retired — `C89SpellPlan.fn_key_index` map read) |
+| `spillBackendFor` | spill_store.zig |
+| `spillReadAt` | spill_store.zig |
+| `spillSeek` | spill_store.zig |
+| `spillSetLevel` | spill_store.zig |
+| `spillWriteAt` | spill_store.zig |
+| `stAppend` | type_registry.zig |
+| `stateMapFork` | state_map.zig |
+| `stateMapGet` | state_map.zig |
+| `stateMapGetEntries` | state_map.zig |
+| `stateMapInit` | state_map.zig |
+| `stateMapMergeInsertMissing` | state_map.zig |
+| `stateMapMergeStates` | state_map.zig |
+| `stateMapSet` | state_map.zig |
+| `std_checked_cast_i16` | include/zig_runtime.c |
+| `std_checked_cast_i32` | include/zig_runtime.c |
+| `std_checked_cast_i64` | include/zig_runtime.c |
+| `std_checked_cast_i8` | include/zig_runtime.c |
+| `std_checked_cast_u16` | include/zig_runtime.c |
+| `std_checked_cast_u32` | include/zig_runtime.c |
+| `std_checked_cast_u64` | include/zig_runtime.c |
+| `std_checked_cast_u8` | include/zig_runtime.c |
+| `std_panic` | include/zig_runtime.c |
+| `stdFmtSourceSymbol` | c89_emit.zig |
+| `std_print` | include/zig_runtime.c |
+| `std_print_bool` | std_fmt.zig (printBool; C body retired Task 1, 2026-09-24) |
+| `std_print_char` | std_fmt.zig (printChar; C body retired Task 1, 2026-09-24) |
+| `std_print_f64` | std_fmt.zig (printF64; C body retired Task 1, 2026-09-24) |
+| `std_print_hex_i32` | std_fmt.zig (printHexI32; C body retired Task 1, 2026-09-24) |
+| `std_print_hex_i64` | std_fmt.zig (printHexI64; C body retired Task 1, 2026-09-24) |
+| `std_print_hex_u32` | std_fmt.zig (printHexU32; C body retired Task 1, 2026-09-24) |
+| `std_print_hex_u64` | std_fmt.zig (printHexU64; C body retired Task 1, 2026-09-24) |
+| `std_print_i32` | std_fmt.zig (printI32; C body retired Task 1, 2026-09-24) |
+| `std_print_i64` | std_fmt.zig (printI64; C body retired Task 1, 2026-09-24) |
+| `std_print_len` | include/zig_runtime.c |
+| `std_print_str` | std_fmt.zig (printStr; C body retired Task 1, 2026-09-24) |
+| `std_print_u32` | std_fmt.zig (printU32; C body retired Task 1, 2026-09-24) |
+| `std_print_u64` | std_fmt.zig (printU64; C body retired Task 1, 2026-09-24) |
+| `stderr_write` | pal.zig |
+| `stdout_write` | pal.zig |
+| `streamClose` | pal.zig |
+| `streamOpen` | pal.zig |
+| `streamRead` | pal.zig |
+| `streamSeek` | pal.zig |
+| `streamWrite` | pal.zig |
+| `stringInternerCopyToArena` | string_interner.zig |
+| `stringInternerGet` | string_interner.zig |
+| `stringInternerGrowBuckets` | string_interner.zig |
+| `stringInternerInit` | string_interner.zig |
+| `stringInternerIntern` | string_interner.zig |
+| `suspend` | std_async.zig |
+| `suspendUntil` | std_async.zig |
+| `suspensionAnalysisRun` | async_analysis.zig |
+| `symbolIsPublic` | symbol_table.zig |
+| `symbolLookupAllModules` | type_resolver.zig |
+| `symbolRegistryEnsureCapacity` | symbol_table.zig |
+| `symbolRegistryGetTable` | symbol_table.zig |
+| `symbolRegistryInit` | symbol_table.zig |
+| `symbolRegistryQualifiedLookup` | symbol_table.zig |
+| `symbolTableEnsureCapacity` | symbol_table.zig |
+| `symbolTableInit` | symbol_table.zig |
+| `symbolTableInsert` | symbol_table.zig |
+| `symbolTableLookup` | symbol_table.zig |
+| `tempFnTypeId` | c89_emit.zig |
+| `tick` | std_async.zig |
+| `tokenKindLabel` | parser.zig |
+| `tokenKindToString` | dump_tokens.zig |
+| `topExpectedType` | semantic_analyzer.zig |
+| `trackingAlloc` | allocator.zig |
+| `trackingAllocatorInit` | allocator.zig |
+| `trackingAllocatorReport` | allocator.zig |
+| `trackingPeak` | allocator.zig |
+| `trackingReset` | allocator.zig |
+| `tryRecordCoercion` | semantic_analyzer.zig |
+| `tupleElemArrayUnsupported` | type_resolver.zig (FB: a spelled tuple type with an array element is a level-0 `error[3000]` clean reject) |
+| `tstEdgesCount` → `typeRefs` (P2) | type_registry.zig |
+| `tstEdgesFill` → `typeRefs` (P2) | type_registry.zig |
+| `tstIsDep` → `typeRefsContains` (P2) | type_registry.zig |
+| `tstSeenInRange` → deleted (P2; target-dedup inside `typeRefs`) | type_registry.zig |
+| `tstTopologicalSort` | c89_plan.zig (P12: the typedef-order derivation — Kahn over the P2 relation + P2-fix-1 popped/append cycle residue; moved verbatim from `c89_emit.zig`, private; run ONCE at the `phase_EmissionClassification` boundary by `spellPlanPlanTypeOrder`) |
+| `tuAppend` | type_registry.zig |
+| `tupAppend` | type_registry.zig |
+| `typeCName` | type_registry.zig |
+| `typeDbOom` | type_registry.zig |
+| `typeHasForwardDecl` | type_registry.zig |
+| `typeIdName` → `nameManglerMintIndexName` (P1) | name_mangler.zig |
+| `typeKindIntWidthBytes` | type_registry.zig |
+| `typeKindIsSignedIntBase` | type_registry.zig |
+| `typeKindIsUnsignedIntBase` | type_registry.zig |
+| `typeKindSrcStr` | diagnostics.zig |
+| `typeKindTgtStr` | diagnostics.zig |
+| `typeNeedsFullDef` | type_registry.zig |
+| `typeRefEdgeTarget` | type_registry.zig |
+| `typeRefPtrLeaf` | type_registry.zig |
+| `typeRefs` | type_registry.zig |
+| `typeRefsContains` | type_registry.zig |
+| `typeRefsNote` | type_registry.zig |
+| `typeRefsSeenOut` | type_registry.zig |
+| `typeRefsWalk` | type_registry.zig |
+| `typeRegistryAppend` | type_registry.zig |
+| `typeRegistryArrayByteSize` | type_registry.zig |
+| `typeRegistryComputePackedLayout` | type_registry.zig |
+| `typeRegistryComputePackedUnionLayout` | type_registry.zig |
+| `typeRegistryEnsureCapacity` | type_registry.zig |
+| `typeRegistryEnumBackingType` | type_registry.zig |
+| `typeRegistryEnumHasExplicitBacking` | type_registry.zig |
+| `typeRegistryErrorSetMemberIndex` | type_registry.zig |
+| `typeRegistryGetOrCreateArbInt` | type_registry.zig |
+| `typeRegistryGetOrCreateArray` | type_registry.zig |
+| `typeRegistryGetOrCreateErrorSet` | type_registry.zig |
+| `typeRegistryGetOrCreateErrorUnion` | type_registry.zig |
+| `typeRegistryGetOrCreateFn` | type_registry.zig |
+| `typeRegistryGetOrCreateManyPtr` | type_registry.zig |
+| `typeRegistryGetOrCreateManyPtrQ` | type_registry.zig |
+| `typeRegistryGetOrCreateModule` | type_registry.zig |
+| `typeRegistryGetOrCreateOptional` | type_registry.zig |
+| `typeRegistryGetOrCreatePtr` | type_registry.zig |
+| `typeRegistryGetOrCreatePtrQ` | type_registry.zig |
+| `typeRegistryGetOrCreateSlice` | type_registry.zig |
+| `typeRegistryGetOrCreateTuple` | type_registry.zig |
+| `typeRegistryTupleElem` | type_registry.zig (FB: `(tid, ordinal) -> ?TypeId`, the tuple element lookup every access spelling shares) |
+| `typeRegistryTupleOrdinalFromNameId` | type_registry.zig (FB: decode `.N`/`._N` name text to the ordinal, never the name-id space) |
+| `typeRegistryGetPackedBitFields` | type_registry.zig |
+| `typeRegistryGetPackedTotalBits` | type_registry.zig |
+| `typeRegistryGetPackedUnionBitFields` | type_registry.zig |
+| `typeRegistryGetPackedUnionTotalBits` | type_registry.zig |
+| `typeRegistryGetPointeeType` | type_registry.zig |
+| `typeRegistryGetSliceElem` | type_registry.zig |
+| `typeRegistryGetStructFields` | type_registry.zig |
+| `typeRegistryGetTypeState` | type_registry.zig |
+| `typeRegistryGetUnionFields` | type_registry.zig |
+| `typeRegistryIndexedElemType` | type_registry.zig |
+| `typeRegistryInit` | type_registry.zig |
+| `typeRegistryIntByteWidth` | type_registry.zig |
+| `typeRegistryIntIsSigned` | type_registry.zig |
+| `typeRegistryIntNeedsWidthWrap` | type_registry.zig |
+| `typeRegistryIntSignednessClass` | type_registry.zig |
+| `typeRegistryIntWidthBits` | type_registry.zig |
+| `typeRegistryIsAssignable` | type_registry.zig |
+| `typeRegistryIsErrorSet` | type_registry.zig |
+| `typeRegistryIsInteger` | type_registry.zig |
+| `typeRegistryIsIntKind` | type_registry.zig |
+| `typeRegistryIsNumeric` | type_registry.zig |
+| `typeRegistryIsOptional` | type_registry.zig |
+| `typeRegistryIsPacked` | type_registry.zig |
+| `typeRegistryIsPointer` | type_registry.zig |
+| `typeRegistryIsScalarC` | type_registry.zig |
+| `typeRegistryIsSlice` | type_registry.zig |
+| `typeRegistryIsUnsigned` | type_registry.zig |
+| `typeRegistryMarkFnPtrUsed` | type_registry.zig |
+| `typeRegistryRegisterNamedType` | type_registry.zig |
+| `typeRegistryRegisterPrimitives` | type_registry.zig |
+| `typeRegistrySetPacked` | type_registry.zig |
+| `typeResolverAddEdge` | type_resolver.zig |
+| `typeResolverBuild` | type_resolver.zig |
+| `typeResolverBuildDependencyGraph` | type_resolver.zig |
+| `typeResolverCheckMemberVisibility` | type_resolver.zig |
+| `typeResolverDiagnoseSignatureType` | type_resolver.zig |
+| `typeResolverGetSorted` → deleted (P2, dead) | type_resolver.zig |
+| `typeResolverInit` | type_resolver.zig |
+| `typeResolverResolve` | type_resolver.zig |
+| `typeResolverResolveLayout` | type_resolver.zig |
+| `typeResolverResolveNames` | type_resolver.zig |
+| `typeSliceElementName` | type_registry.zig |
+| `typeWidthBitsForKind` | type_registry.zig |
+| `u32ArrayListAppend` | growable_array.zig |
+| `u32ArrayListAppendInner` | ast.zig |
+| `u32ArrayListAppendInner` | parser.zig |
+| `u32ArrayListEnsureCapacity` | growable_array.zig |
+| `u32ArrayListGetSlice` | growable_array.zig |
+| `u32ArrayListInit` | growable_array.zig |
+| `u32ArrayListPopOrNull` | growable_array.zig |
+| `u32ToU32MapClear` | util/hash.zig |
+| `u32ToU32MapGet` | util/hash.zig |
+| `u32ToU32MapGetOrAddDense` | util/hash.zig |
+| `u32ToU32MapGrow` | util/hash.zig |
+| `u32ToU32MapInit` | util/hash.zig |
+| `u32ToU32MapInitCap` | util/hash.zig |
+| `u32ToU32MapPut` | util/hash.zig |
+| `u32ToU64MapGet` | util/hash.zig |
+| `u32ToU64MapGrow` | util/hash.zig |
+| `u32ToU64MapInit` | util/hash.zig |
+| `u32ToU64MapInitCap` | util/hash.zig |
+| `u32ToU64MapPut` | util/hash.zig |
+| `u64ArrayListAppend` | growable_array.zig |
+| `u64ArrayListAppendInner` | ast.zig |
+| `u64ArrayListEnsureCapacity` | growable_array.zig |
+| `u64ArrayListGetSlice` | growable_array.zig |
+| `u64ArrayListInit` | growable_array.zig |
+| `u64ToU32MapGet` | util/hash.zig |
+| `u64ToU32MapGrow` | util/hash.zig |
+| `u64ToU32MapInit` | util/hash.zig |
+| `u64ToU32MapInitCap` | util/hash.zig |
+| `u64ToU32MapPut` | util/hash.zig |
+| `uacPromoteSide` | c89_plan.zig (P11: THE usual-arithmetic cast-direction rule — verbatim re-own of `coercion.zig` `coercionUsualArithPromote` (deleted); classify both operands via `typeRegistryIntSignednessClass` (TypeId 0 → unclassified), cast the signed side to the unsigned side's C type when the unsigned is >= as wide (`typeRegistryIntByteWidth`); 0 = cast LHS to RHS's type, 1 = cast RHS to LHS's, 2 = none; planned into `C89SpellPlan.uac_maps` by `spellPlanPlanFn`) |
+| `unAppend` | type_registry.zig |
+| `unrAppend` | type_registry.zig |
+| `untypedIntCarrier` | c89_plan.zig (P6-pre: the untyped-exact-int carrier derivation entry — **deleted (P6-pre fix round 1)**: replaced by fact recording (`lowerUntypedIntFacts`) + boundary derivation (`deriveConstCarrier`/`carrierFromFacts`)) |
+| `vaListArgTemp` | lower.zig |
+| `validateLocalEnum` | type_resolver.zig |
+| `validateSignatureType` | analyzer.zig |
+| `valuePoolAppend` | ast.zig |
+| `valuePoolCacheSlot` | ast.zig |
+| `valuePoolClose` | ast.zig |
+| `valuePoolGetValue` | ast.zig |
+| `valuePoolInit` | ast.zig |
+| `valuePoolOpen` | ast.zig |
+| `valuePoolResident` | ast.zig |
+| `varDeclInitNeedsNameCache` | type_resolver.zig |
+| `visitPreOrder` | ast.zig |
+| `visitStatement` | analyzer.zig |
+| `waitAll` | std_async.zig |
+| `waitFor` | std_async.zig |
+| `walkBlock` | analyzer.zig |
+| `worklistEnsureCapacity` | type_resolver.zig |
+| `worklistPop` | type_resolver.zig |
+| `worklistPush` | type_resolver.zig |
+| `write` | extern_c.zig |
+| `writeBytes` | std_fmt.zig |
+| `writeHex` | name_mangler.zig |
+| `writeHexDigitsU32` | std_fmt.zig |
+| `writeHexDigitsU64` | std_fmt.zig |
+| `writeLit` | std_fmt.zig |
+| `writeStr` | diagnostics.zig |
+| `writeU32` | main.zig |
+| `writeUsizeExact` | allocator.zig |
+| `xnAppend` | type_registry.zig |
+| `xtAppend` | type_registry.zig |
+| `zeroCallCFG` | lower.zig |
+| `zeroChainInsts` | lower.zig |
+| `zig_poison_fill` | include/zig_runtime.c |
+
+---
+
+## C. Marker → Phase → Meaning
+
+### Phase Entry/Exit Markers
+
+| Marker | Phase | Meaning |
+|--------|-------|---------|
+| `I` | phase_ImportResolution | Start of import resolution |
+| `Z` | phase_ImportResolution | Import queue drained, all modules parsed |
+| `S` | phase_SymbolRegistration | Start of symbol registration |
+| `S0` | phase_SymbolRegistration | Listing root module decl kinds (AstKind enum values) |
+| `Vi` | phase_SymbolRegistration | Variable info dump |
+| `T` | phase_TypeResolution | Start of type resolution |
+| `T0` | phase_TypeResolution | Listing root module decl kinds (AstKind enum values) |
+| (none) | phase_FrontResolution | Phase writes no marker |
+| `CE` | phase_ComptimeEvaluation | Start of comptime evaluation |
+| `RS` | phase_SemanticAnalysis | Start of semantic analysis |
+| `MZ` | phase_SemanticAnalysis | Module with zero ast_root (skip) |
+| `AD` | phase_SemanticAnalysis | Accessing module decls |
+| `DSE` | phase_SemanticAnalysis | After decl scope enumeration |
+| `DN` | phase_SemanticAnalysis | Per-declaration processing |
+| `SA` | phase_SemanticAnalysis | Before semanticAnalyzerResolveFnBody |
+| `sA` | phase_SemanticAnalysis | After semanticAnalyzerResolveFnBody |
+| `A` | phase_StaticAnalyzers | Start of static analysis |
+| `AFS` | phase_AsyncFrameSize | Start of async frame-size pass |
+| `L` | phase_LIRLowering | Start of LIR lowering |
+| `nodes=` / `extra=` | phase_LIRLowering | AST node / extra-children counts |
+| `M` | phase_LIRLowering | Module index marker |
+| `R` | phase_LIRLowering | Root module marker |
+| `F` | phase_LIRLowering | fn_decl found, emitting LirFunction |
+| `A0` | phase_LIRLowering | Listing root module decl AstKind indices |
+| `C` | phase_C89Emission | Start of C89 emission |
+| `FINAL_FLUSH` | phase_C89Emission | Final buffer flush, emission complete |
+
+### runCompiler Checkpoint Markers
+
+| Marker | Location | Meaning |
+|--------|----------|---------|
+| `2` | runCompiler | After ImportResolution + peak check |
+| `3` | runCompiler | Before SymbolRegistration |
+| `3a` | runCompiler | Before SymbolRegistration (cont.) |
+| `4` | runCompiler | Before SymbolRegistration (cont.) |
+| `t1` | runCompiler | After TypeResolution + peak check |
+| `t2` | runCompiler | After t1 + error check |
+
+### Sub-phase / Debug Markers
+
+> Detailed sub-phase markers are documented per-file in the individual tech docs (sections 00-12). These are included here for cross-reference.
+
+| Marker | File | Meaning |
+|--------|------|---------|
+| `CAP:ent` | const_alias_prepass.zig | Enter const alias prepass |
+| `CAP:tlm` | const_alias_prepass.zig | Top-level module count |
+| `CAP:ac` / `CAP:ac0` | const_alias_prepass.zig | Alias count after catalog / none found |
+| `GATE:g0`-`g3` | const_alias_prepass.zig | Gate checks in alias detection |
+| `CAT:ik` / `CAT:dn` | const_alias_prepass.zig | Catalog: init kind / dependency name_id |
+| `KAHN:start` / `KAHN:end` | const_alias_prepass.zig | Kahn layout algorithm start / end |
+| `Ra` | symbol_registrator.zig | Register alias |
+| `Rs` | symbol_registrator.zig | Register symbol |
+| `Rf` | symbol_registrator.zig | Register function |
+| `RCA:p/i/H` | symbol_registrator.zig | Register const alias (payload / ident / hash) |
+| `IMR:n<m>` | symbol_registrator.zig | Import resolution marker |
+| `M5:p<id>` | symbol_registrator.zig | Module import path payload |
+| `FIX1:mid=<target_mtid>t=<target_mtid>n=<mod_id>` | symbol_registrator.zig | Module-import fixup: `mid` and `t` are the target module id (`mtid`); `n` is the declaring module id |
+| `BOP:tk` | parser.zig | Binary op: token kind |
+| `PF:` | parser.zig | Parser function entry |
+| `PSWE:` | parser.zig | Parse switch expression |
+| `PCB:` | parser.zig | Parse case body |
+| `CPT:` | parser.zig | Capture pattern |
+| `PPL:` | parser.zig | Payload list |
+| `PSTK:` | parser.zig | Parse stmt/token kind |
+| `VARC` | parser.zig | Parse const var decl |
+| `VARV` | parser.zig | Parse var var decl |
+| `V` / `v` | parser.zig | Var decl / var decl (ok) |
+| `PDVx` | parser.zig | Parse var decl extra |
+| `Fv` / `Fk` | parser.zig | Fn decl (var) / fn decl (kind) |
+| `PIF:` | parser.zig | Parse if conditional |
+| `PTC2:` | parser.zig | Parse for/while continue expr |
+| `PBX:` | parser.zig | Parse block extent |
+| `PLEN:` | parser.zig | Parse local length |
+| `DP:` | parser.zig | Dump/panic: child buf stale |
+| `CC:nul` | coercion.zig | Coercion: null target |
+| `CLS:p` | coercion.zig | Coercion: ptr-to-slice base |
+
+---
+
+## D. Sentinel TypeId Table
+
+> Defined in `type_registry.zig`. Source of truth — values below verified against source.
+
+| ID | Constant | Zig Type |
+|----|----------|----------|
+| 1 | `TYPE_VOID` | `void` |
+| 2 | `TYPE_BOOL` | `bool` |
+| 3 | `TYPE_NORETURN` | `noreturn` |
+| 4 | `TYPE_I8` | `i8` |
+| 5 | `TYPE_I16` | `i16` |
+| 6 | `TYPE_I32` | `i32` |
+| 7 | `TYPE_I64` | `i64` |
+| 8 | `TYPE_U8` | `u8` |
+| 9 | `TYPE_U16` | `u16` |
+| 10 | `TYPE_U32` | `u32` |
+| 11 | `TYPE_U64` | `u64` |
+| 12 | `TYPE_ISIZE` | `isize` |
+| 13 | `TYPE_USIZE` | `usize` |
+| 14 | `TYPE_C_CHAR` | `c_char` |
+| 15 | `TYPE_F32` | `f32` |
+| 16 | `TYPE_F64` | `f64` |
+| 17 | `TYPE_NULL` | `@TypeOf(null)` |
+| 18 | `TYPE_UNDEFINED` | `@TypeOf(undefined)` |
+| 19 | `TYPE_INT_LIT` | (integer literal type) |
+| 20 | `TYPE_TYPE` | `type` |
+| 21 | `TYPE_VA_LIST` | `va_list` |
+
+### Synthetic Field Indices
+
+| Constant | Value | Used For |
+|----------|-------|----------|
+| `SLICE_FIELD_PTR` | 0 | `slice.ptr` field access |
+| `SLICE_FIELD_LEN` | 1 | `slice.len` field access |
+| `TU_FIELD_TAG` | 0 | Tagged union tag field |
+| `TU_FIELD_PAYLOAD` | 1 | Tagged union payload field |
+| `FIRST_USER_TYPE` | 20 | Stale — see note |
+
+**Note:** `FIRST_USER_TYPE = 20` is stale. `TYPE_VA_LIST = 21` is now a primitive, so user
+types in practice start at TypeId ≥ 22. The constant was already behind (`TYPE_TYPE` was a
+primitive while `FIRST_USER_TYPE` read 20); the source constant is left unchanged (docs-only).
+`TYPE_I64 = 7` and `TYPE_F64 = 16`.
+
+---
+
+## E. Data Structure → File
+
+| Data Structure | File | Notes |
+|----------------|------|-------|
+| `AstNode` | ast.zig | 24-byte flat node (kind, flags, span_len, span_start, child_0-2); payload lives in the store's parallel payload block |
+| `AstKind` | ast.zig | 112 variants (enum u8: 0-111); `mod_assign=74`, `swt_ex=56` |
+| `AstStore` | ast.zig | Disk-backed node + payload blocks; `AstValuePool` for extra_children/extra_ranges/identifiers/int_values; growable arrays for float_values/string_values/fn_protos; block_table, 8 resident slots, spill |
+| `AstValuePool` | ast.zig | Write-once append-only disk-backed pool (4/8-byte elements) with resident tail block + 8-slot fault-in cache |
+| `FnProto` | ast.zig | Function prototype (name_id, params_start, params_count, call_conv, return_type_node) |
+| `Type` | type_registry.zig | 16-byte runtime type descriptor (size, name_id u16, payload_idx u16, kind, module_id u8, flags u8, state u8, iw u8, alignment u8) |
+| `TypeKind` | type_registry.zig | 44 variants (enum u8: 0-43) |
+| `TypeRegistry` | type_registry.zig | Type storage + per-kind payload arrays + ptr/slice/optional/array/eu/es/name caches |
+| `TypeId` | type_registry.zig | Alias for `u32` |
+| `LirInst` | lir.zig | 82-variant untagged union (LIR instruction) |
+| `LirFunction` | lir.zig | Compiled function (name, module, blocks, params, hoisted temps, switch cases, side table, flags) |
+| `LirSlot` / `LirSlotArrayList` | lir.zig | Spill-stream location of one serialized function / dynamic array of slots |
+| `LirSideEntry` / `CallDirectData` / `TailCallData` | lir.zig | Side-table operand storage for `call_direct`/`tail_call` |
+| `BasicBlock` | lir.zig | Control-flow block (id, insts, is_terminated) |
+| `LirParam` | lir.zig | LIR function parameter (name_id, type_id, temp_id) |
+| `TempDecl` | lir.zig | Temporary declaration (temp_id, type_id) |
+| `SwitchCase` | lir.zig | LIR switch case (value, target_bb) |
+| `ModuleGlobalDecl` | lir.zig | Module-scope global (name_id, module_id, type_id, has_runtime_init) |
+| `Symbol` | symbol_table.zig | Symbol entry (name_id, type_id, kind, flags, decl_node, module_id, scope_level) |
+| `SymbolKind` | symbol_table.zig | local/param/global/function/type_alias/module/test_sym |
+| `SymbolTable` / `SymbolRegistry` | symbol_table.zig | Per-module symbol array / array of per-module tables |
+| `ModuleEntry` | module_registry.zig | Module descriptor (id, path_id, source_file_id, state, ast_root, imports, symbol_table, type_offset, c_includes) |
+| `ModuleRegistry` | module_registry.zig | Module graph registry (modules, import_edges, resolver, path/content maps + spill, import_queue) |
+| `ModuleResolver` / `ImportQueue` | module_registry.zig | Import path resolution / LIFO import worklist |
+| `ModuleState` | module_registry.zig | pending/parsing/parsed/resolved/failed |
+| `StateMap` / `StateEntry` | state_map.zig | Delta-linked parent chain for forking state / name_id + state byte |
+| `CompilerContext` | main.zig | Global compiler state (34 fields) |
+| `CompilerCli` | main.zig | CLI argument struct (27 fields) |
+| `WinProfile` | c89_emit.zig | Windows target profile: `.win9x` (default, no define) / `.nt` (`ZIG_WIN_NT` define) `[updated: 2026-10-18 — M6 T5.2]` |
+| `Sand` / `SandSegment` / `GrowableSand` | allocator.zig | Bump allocator / one growable segment / growable tier header |
+| `CompilerAlloc` | allocator.zig | 5-tier arena container (permanent, module, scratch, lir_read, emission) + pool budget |
+| `TrackingAllocator` | allocator.zig | Per-allocation counters — kept but not wired into the pipeline |
+| `StringInterner` / `InternEntry` | string_interner.zig | FNV-1a string interning |
+| `SourceManager` / `SourceFile` | source_manager.zig | File source-text management + lazy fault-in |
+| `DiagnosticCollector` / `Diagnostic` | diagnostics.zig | Error/warning collector |
+| `CoercionTable` | coercion.zig | Type coercion rules |
+| `ResolvedTypeTable` | resolved_type_table.zig | Dense block-addressed node → TypeId spill table + sparse source map |
+| `U32ArrayList` / `U8ArrayList` | growable_array.zig | Generic dynamic u32 / u8 arrays |
+| `PtrPayload`, `ArrayPayload`, `SlicePayload` | type_registry.zig | Type payload structs |
+| `PackedBitField` / `PackedStructInfo` | type_registry.zig | Packed layout side tables |
+| `NameMangler` | name_mangler.zig | C-identifier minting authority (P1; `c89_emit.zig` keeps thin `pub` forwarders) |
+| `BufferedWriter` | c89_emit.zig | 4 KB buffered C89 output writer (fd sink) |
+| `AsyncFrameLayout` | async_frame_layout.zig | Async frame layout (fields, size, state widths) |
+| `AsyncTransformCtx` | async_state_machine.zig | Async step-machine transform context |
+
+---
+
+## F. AstKind → Handling Phases
+
+| AstKind Group | Phases |
+|---------------|--------|
+| Declarations (var_decl, fn_decl, struct_decl, enum_decl, union_decl, field_decl, param_decl, test_decl, error_set_decl) | 1 (parser creates), 2 (symbol registration), 3 (type resolution), 6 (semantic analysis), 9 (LIR lowering) |
+| Expressions (int_literal through builtin_call, operators, unary) | 1 (parser), 5 (comptime eval for builtin_call), 6 (semantic type-checking), 9 (LIR lowering) |
+| Assignments (plain_assign, add_assign..or_assign, mod_assign) | 1 (parser), 6 (semantic), 9 (LIR lowering) |
+| Wrapping / saturating ops (wrap_add..sat_shl_assign, 97-111) | 1 (parser), 6 (semantic), 9 (LIR lowering) |
+| Statements (if_stmt, while_stmt, for_stmt, block, return_stmt, break_stmt, continue_stmt, defer_stmt, errdefer_stmt, labeled_stmt, expr_stmt, swt_ex/swt_prong) | 1 (parser), 6 (semantic), 7 (static analyzers), 9 (LIR lowering) |
+| Types (ptr_type, many_ptr_type, array_type, slice_type, optional_type, error_union_type, fn_type) | 1 (parser), 3 (type resolution), 6 (semantic), 9 (lower: type metadata) |
+| Literals & Constants | 1 (parser), 6 (semantic), 7 (static analyzers), 9 (LIR) |
+| `range_exclusive` / `range_inclusive` | 1 (parser), 6 (semantic: switch ranges), 9 (LIR) |
+| `payload_capture` | 1 (parser), 6 (semantic: if/while/for captures); the `for_stmt` node's `0x10` flag marks a mutable `|*item|` item capture |
+| `import_expr`, `module_root`, `c_include` | 1 (parser + import resolution), 2 (symbol registration) |
+| `builtin_call` | 1 (parser), 5 (comptime eval), 6 (semantic), 9 (LIR) |
+
+---
+
+## G. Arena Tier → Who Uses It
+
+### Pool (256 MiB — `memory_pool_buf[POOL_SIZE]`, `POOL_SIZE = 268435456`)
+
+One static pool backs all five tier arenas. `pool` is a monotonic bump `Sand` over it
+and is never reset; a tier grows by carving a segment from the pool (or reusing a freed
+segment). `checkCombinedPeak` compares `pool.peak / 1024` against the configured budget
+(`max_mem` KB; the full pool when `max_mem == 0`).
+
+### Tier Arenas
+
+Each tier is a `GrowableSand` seeded with a 4 KB first segment. `growableSandGrow`
+doubles the segment size (capped at 1 MiB; exact-fit when a single request is larger),
+reuses a best-fit segment from the cross-arena free list after a reset, or carves a new
+segment + `SandSegment` node from the pool.
+
+| Arena | Contents | Reset Behavior |
+|-------|----------|----------------|
+| Permanent | StringInterner, SourceManager, DiagnosticCollector, interned strings, ModuleRegistry, SymbolRegistry, keyword table, const-alias prepass, type-name resolution | Never reset |
+| Module | AstStore, ResolvedTypeTable, CoercionTable, `ctx.dep_graph` (dead field), enum_value_table, call_arg_types/call_param_map, comptime_folds, async tables (suspending_fns, frame_sizes, state_widths, awaited_fns, async_hidden_fns, driver_targets, parent_result_*, async_layouts) | Reset once at the lowering→emission boundary; earlier phases share it |
+| Scratch | Per-phase temporaries: input source read, parser tokens, per-phase DepGraph, TypeResolver workspace, semantic analyzer state, lowerer BasicBlocks | Reset at phase start; `sandResetPeak` at StaticAnalyzers entry |
+| lir_read | LIR functions reloaded from the spill stream during C89 emission | Never reset |
+| emission | LIR slots, error_code_registry, exported, global_decls, name mangler, module/type-group tables, emitted runtime support | Never reset |
+
+Additional pool-backed growable sands live outside `CompilerAlloc`: the TypeRegistry
+`type_db_arena`, the import resolver's `parser_arena` / `import_scratch_gs` / `src_arena`,
+and the SourceManager diagnostic fault-in arena (`fault`, created lazily on first fault-in).
+
+### CompilerAlloc Init Sequence (main.zig)
+
+```
+initCompilerAlloc():
+  pool       ← sandInit(memory_pool_buf[0..POOL_SIZE])
+  permanent  ← growableSandInit(&pool, 4096, "perm")
+  module     ← growableSandInit(&pool, 4096, "module")
+  scratch    ← growableSandInit(&pool, 4096, "scratch")
+  lir_read   ← growableSandInit(&pool, 4096, "lir_read")
+  emission   ← growableSandInit(&pool, 4096, "emission")
+  max_mem = DEV_MAX_MEM
+```
+
+`main` overrides `max_mem` from the parsed `--max-mem`/`-mm` value and sets the spill
+level (`-s<N>`). Per-tier peaks are read from each tier's `peak` field; the unwired
+`TrackingAllocator` is not used by the pipeline.
+
+### Per-Phase Scratch Users
+
+| Phase | Data in Scratch |
+|-------|-----------------|
+| 1 — Import Resolution | Import queue, parsing temporaries |
+| 2 — Symbol Registration | DepGraph per run, per-module state |
+| 3 — Type Resolution | TypeResolver workspace, DepGraph |
+| 4 — Front Resolution | Module-init resolution workspace |
+| 5 — Comptime Evaluation | (minimal — operates on existing data) |
+| 6 — Semantic Analysis | Analyzer state, expected-type stack |
+| 7 — Static Analyzers | StateMap per function (delta-linked), defer queues |
+| 8 — Async Frame Size | (module arena — publishes frame/state maps) |
+| 9 — LIR Lowering | Lowerer struct, per-function BasicBlocks, insts |
+| 10 — C89 Emission | NameMangler, BufferedWriter, C89Emitter (scratch + emission) |
+
+---
+
+## Tech Doc Index
+
+| File | Covers | Phase |
+|------|--------|-------|
+| `INDEX.md` | All — master cross-reference | — |
+| `00_shared_infra.md` | `allocator.zig`, `string_interner.zig`, `source_manager.zig`, `diagnostics.zig`, `pal.zig`, `growable_array.zig`, `panic.zig`, `config.zig`, `util/` | Infra |
+| `00_lexer_parser.md` | `token.zig`, `lexer.zig`, `parser.zig`, `ast.zig`, `print_decomposition.zig`, `dump_ast.zig`, `dump_tokens.zig`, `ast_dump_main.zig` | Pre-phase |
+| `01_import_resolution.md` | `import_resolver.zig`, `module_registry.zig` | Phase 1 |
+| `02_symbol_registration.md` | `symbol_registrator.zig`, `symbol_table.zig` | Phase 2 |
+| `03_type_resolution.md` | `type_resolver.zig`, `type_registry.zig`, `const_alias_prepass.zig`, `front_resolution.zig` | Phases 3-4 |
+| `04_comptime_eval.md` | `comptime_eval.zig` | Phase 5 |
+| `05_semantic_analysis.md` | `semantic_analyzer.zig`, `coercion.zig`, `resolved_type_table.zig`, `constraint_checker.zig`, `assign_helper.zig` | Phase 6 |
+| `06_static_analyzers.md` | `analyzer.zig`, `state_map.zig` | Phase 7 |
+| `07_lir_lowering.md` | `lower.zig`, `lir.zig`, `lir_opt_pass.zig`, `lir_stream.zig`, `spill_store.zig` | Phase 9 |
+| `08_c89_emission.md` | `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`, `emit_support.zig` | Phase 10 |
+| `09_pipeline_orchestration.md` | `main.zig`, `main_dump.zig`, `main_exp.zig`, `strip_main.zig` | Orchestration |
+| `10_c_runtime.md` | `sf/src/include/*`, `c_exit.c`, `extern_c.zig`, `extern_c_z98.zig` | C runtime |
+| `11_build_system.md` | `sf/scripts/*`, `scripts/seed/*`, `release/seed/*` | Build system |
+| `12_async_coroutines.md` | `async_analysis.zig`, `async_frame_layout.zig`, `async_state_machine.zig`, `std_async.zig` | Phase 8 / async |
+| `13_windows_support.md` | Win9x/NT profiles, no-CRT shim set (`zig_nocrt.c`/`c_exit.c`/`zig_pal.c`/`zig_runtime.c`), 64-bit spelling layer, native `.bat` scripts, import whitelist, redistribution policy | Phase 10 / runtime |
+| `Other_arch_supp.md` | Other-architecture support exploration: C89-as-IR per target (AArch32/RV32, AArch64/RV64/x86-64, 16-bit DOS feasibility), 32-bit semantic-model blockers, width/layout/ABI/PAL work, inline-asm requirements, targeting vs self-hosting, phasing/risks/file list | Cross-target research |
+
+**[updated: 2026-10-17 — compiler D1/D2 parity milestone (T1–T4 mechanisms landed; T6 doc pass)]:** the parity mechanisms are documented in their per-area docs — canonical synthetic composites (T1: unconditional key-cache + in-place completion + structural `fn_type` compare; doc 03 Type Caches / `typeRegistryIsAssignable`), composite typedef ordering (T2: 2a/2b sub-pass + `emitDefDeps`/`emitDepRef` spelling deps; doc 08 §1.1), comptime-if folding incl. else-less Variant B (T3: untaken arm not analyzed/lowered; docs 05 `semanticAnalyzerResolveIfExpr` + 07 Control Flow) with the module-closure edge (reachability-consistent runtime-init root, `prune_active`; docs 08 §6.2 + 09 `phase_C89Emission`), and conditional `@import` + true dead-arm laziness (T4: live-module selection + `dead_import_depth` parse gate; docs 05 + 07 + 00 + 01 + 09 target polarity). Defect ledger `examples/torrent_example_defects.md` now tracks only open defects: D3 stays OPEN/deferred; D4 is the analyzer-issues cluster (OPEN).
+
+### Variant counts
+
+| Enum | Variants | Source |
+|------|----------|--------|
+| `TokenKind` | 108 (0..107) | `token.zig` |
+| `AstKind` | 112 (0..111) | `ast.zig` |
+| `TypeKind` | 44 (0..43) | `type_registry.zig` |
+| `LirInst` | 82 | `lir.zig` |
+| `TypeId` sentinels | 21 (1..21) | `type_registry.zig` |

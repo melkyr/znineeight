@@ -1,0 +1,24 @@
+// repro/try_i32_reject.z98 — FX12 (Volume II ch12) discovery evidence.
+//
+// Converted from the Task 1 Finding-A probe `/tmp/t1/probes/n_try_i32.z98`
+// (task-1-report.md §3, A2): a non-void, non-union function containing `try`.
+// Pre-FX12 Z98 compiled rc 0 with zero diagnostics and emitted C that gcc
+// rejected (`incompatible types when returning type 'zT_..._EU_1' but 'int'
+// was expected`). Zig 0.15.2 rejects with `expected type 'i32', found
+// '<error set>'` + `note: function cannot return an error`.
+//
+// Contract now: dump rc 2, 0 `.c`, exactly 1 level-0 `error[3075]`
+// (`expected type 'i32', found error set` + `function cannot return an
+// error`), no signals.
+fn g() !void {
+    return error.Boom;
+}
+
+fn f() i32 {
+    try g();
+    return 1;
+}
+
+pub fn main() void {
+    const x = f();
+}

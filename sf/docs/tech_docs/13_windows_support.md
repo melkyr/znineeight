@@ -1,0 +1,218 @@
+# 13 — Windows support: Win9x / NT profiles, no-CRT runtime, native build scripts [updated: 2026-10-28 — Phase 2.5 Tasks 7 + 9 (Win9x toolchain conformance + warning-clean at the origin): (1) **D11** — emitted C no longer mixes declarations and statements (OWC `E1058` class closed; declarations hoisted before every statement incl. the `zig_poison_fill` preamble). (2) **CRLF** — emitted `.bat`/`.lnk`/`.rsp` and `README.txt`/`SEED_README.txt` are CRLF (`build_target.sh` stays LF); `scripts/compiler/gate_crlf.sh` enforces it. (3) **Flags** — the four native scripts (`build_target_nocrt/crt`, `build_owc_nocrt/crt`) dropped `/Za`/`/WX` (MSVC) and `/za`/`/we` (OWC); `/W3`/`/MT`/`/Zl`/`/bt=nt`/`/sg`/`/i=.` kept; no gcc-spelling flags on `cl`/`wcc386` lines. (4) **MinGW fallback** — `build_mingw_crt.bat`/`build_mingw_nocrt.bat` emitted with every `-osw` output and shipped in the seed `win/`. (5) **`zig_nocrt.c`** now provides a real external definition (`int zig_nocrt_dummy;`) fixing OWC `E1123`. (6) **Runtime** — the `-fsafe`/`__bootstrap_*` helpers are external definitions in `zig_runtime.c` + prototypes in `zig_runtime.h`; `scripts/compiler/gate_warn_clean.sh` (`-m32 -std=c89 -pedantic -Wall -Werror -Wno-long-long`, sole suppression) compiles the full self-emission + shipped runtime + representative programs. The emitted `zig_compat.h` already maps `_MSC_VER`→`__int64`/`ui64` and `__WATCOMC__`→`long long`/`ULL` (OWC accepted it even under `/za`; operator logs show zero long-long diagnostics). MSVC/OWC validation remains operator-run — no MSVC log exists in `lin_bin/error/`.] [updated: 2026-10-18 — M6 T5.3 fix round 1, Amendment 6: OpenWatcom restored to the bootstrap `long long`/`LL`/`ULL` mapping; MSVC keeps `__int64`/`i64`/`ui64`] [updated: 2026-10-18 — M6 T5.3 (Win9x no-CRT runtime + portable 64-bit C + native scripts)]
+
+> Covers: `sf/src/include/zig_compat.h`, `sf/src/include/zig_nocrt.c`,
+> `sf/src/include/zig_runtime.[ch]`, `sf/src/include/zig_pal.c`,
+> `sf/src/c_exit.c`, `sf/src/emit_support.zig`, `sf/src/c89_emit.zig`
+> (`emitBuildTargetSh`, the four `.bat` emitters, alias emitters), and
+> `scripts/win32_cross/check_win9x_imports.sh`.
+>
+> **Status: design-verified; hardware verification pending (operator, after the
+> z9play milestone).** Wine/mingw probes are recorded; MSVC 6 and OpenWatcom
+> commands, symbols, and import expectations are design-verified from vendor
+> documentation and emitted-C analysis only (M6 Amendment 5 forbids native
+> toolchain probes).
+
+## 1. Profiles
+
+`-osw` selects the Windows target. The default profile is **9x**; `nt` is an
+explicit opt-in.
+
+| Profile | CLI | Emitted C define | Link model |
+|:--|:--|:--|:--|
+| Win9x (default) | `-osw`, `-osw 9x` | `ZIG_NO_CRT` (mingw 9x `.sh`); native `_nocrt` scripts | no-CRT / OS-DLL-only |
+| NT/XP | `-osw nt` | `ZIG_WIN_NT` | normal CRT (mingw) / static CRT alternates (native) |
+
+`ZIG_WIN_NT` is a **profile** define, not a CRT define: in an `nt` dump every
+emitted script carries it, including the `_nocrt` variants. `ZIG_NO_CRT` is
+only added by the mingw 9x no-CRT recipe and by the native `_nocrt` scripts.
+
+## 2. Profile × toolchain × CRT matrix
+
+| Toolchain / script | 9x default | nt opt-in | Runtime imports |
+|:--|:--|:--|:--|
+| mingw `build_target.sh` | `-DZIG_NO_CRT`, `-nostdlib -e,_mainCRTStartup -lgcc -lkernel32 -lwinmm` (+`-lwsock32` when net) | `-DZIG_WIN_NT`, normal CRT, `-lwinmm` (+`-lwsock32`) | 9x: KERNEL32 (+WINMM/WSOCK32), **no msvcrt** |
+| MSVC 6 `build_target_nocrt.bat` | `/DZIG_NO_CRT /Zl`, `/NODEFAULTLIB`, `/entry:_mainCRTStartup@0`, `libcmt.lib` helper members | `/DZIG_WIN_NT /DZIG_NO_CRT /Zl`, same no-CRT link | KERNEL32 (+WINMM/WSOCK32); no msvcrt |
+| MSVC 6 `build_target_crt.bat` | static `/MT` CRT (`LIBCMT`), no `ZIG_NO_CRT` | `/DZIG_WIN_NT /MT` | KERNEL32 (+WINMM/WSOCK32); no msvcrt import; whitelist-pending |
+| OpenWatcom `build_owc_nocrt.bat` | `/dZIG_NO_CRT /zl`, `option nodefaultlibs`, `option start=_mainCRTStartup`, `clib3r` helpers | `/dZIG_WIN_NT /dZIG_NO_CRT /zl`, same | KERNEL32 (+WINMM/WSOCK32); no runtime DLL |
+| OpenWatcom `build_owc_crt.bat` | default static CLIB, no `ZIG_NO_CRT` | `/dZIG_WIN_NT`, default static CLIB | KERNEL32 (+WINMM/WSOCK32); whitelist-pending |
+| any `-osl` | n/a (Linux) | n/a | host libc |
+
+Old names remain as **profile-correct aliases**: `build_target.bat` calls
+`build_target_nocrt.bat` in a 9x dump and `build_target_crt.bat` in an nt dump;
+`build_owc.bat` follows the matching OpenWatcom script. All `.bat` scripts are
+`command.com`-safe (Win98 baseline): no `%~`/`%*`/`%~dp0`, no parenthesized
+`if/else`, no `setlocal`, and no `^` continuations. Each is run from the
+emitted output directory and takes one optional output path (`%1`).
+
+## 3. Redistribution policy
+
+The 9x default produces a **single drag-and-drop EXE** with no redistributable
+runtime DLL. Only OS DLLs are allowed: `KERNEL32.DLL`, plus `WINMM.DLL` /
+`WSOCK32.DLL` when the program reaches audio or Winsock (both ship with
+Win95+). `msvcrt.dll` is a policy failure on the 9x default even though the DLL
+exists on 9x, because the profile is no-CRT.
+
+The static-CRT alternates are also single EXEs (no DLL dependency), but their
+KERNEL32 imports may exceed the 9x whitelist. They are not claimed 9x-safe until
+`check_win9x_imports.sh <exe> 9x` passes on real artifacts.
+
+`check_win9x_imports.sh` is the loadability gate: Windows 9x resolves the whole
+import table at load time, so a closed-world per-DLL/per-import whitelist is
+required. Wine is not a Win98 loader.
+
+## 4. No-CRT shim ownership
+
+| Symbol(s) | Emitted owner | Guard |
+|:--|:--|:--|
+| `exit`, `atexit` registry, `c_exit` | `c_exit.c` | `_WIN32 && ZIG_NO_CRT` for `exit`/`atexit`; `c_exit` always |
+| `mainCRTStartup`, `__main`, `GetCommandLineA` argv parser | `zig_pal.c` | `_WIN32 && ZIG_NO_CRT` |
+| `pal_file_size`, `pal_file_seek64`, `pal_file_mtime`, `pal_getenv`, `pal_wallclock_unix` | `zig_pal.c` | `_WIN32` (file helpers split on `ZIG_WIN_NT`) |
+| `strlen`, `memcpy`, `memset` (overlap-safe), `strncmp` | `zig_runtime.c` | `_WIN32 && ZIG_NO_CRT` |
+| `__acrt_iob_func`, `fwrite`, `getchar`, `putchar`, `getc`, `putc`, `fgetc`, `fputc`, `_filbuf`, `_flsbuf`, `getenv`, `_time32`, `time` | `zig_nocrt.c` | `_WIN32 && ZIG_NO_CRT` |
+
+`exit` runs the LIFO `atexit` registry (capacity 32) and then `ExitProcess`.
+Normal return from `main` goes through `exit(main(argc, argv))`, so the
+registry runs on both explicit `std.os.exit` and a normal return.
+`TerminateProcess` / `pal_trap` / unhandled exceptions bypass the registry;
+`leaveRaw` remains the explicit console restore and `atexit` is only the
+backstop.
+
+The startup parser copies `GetCommandLineA` into static storage and applies the
+MSVCRT quoting/backslash rules into a second static buffer (`argc` capped at
+256). `main` is called with two arguments even when a program emits
+`int main(void)`; the extra arguments are ABI-compatible on cdecl and the
+OpenWatcom register convention.
+
+## 5. `_iob` / std streams per toolchain
+
+| Toolchain | `<stdio.h>` stream expansion | Shim |
+|:--|:--|:--|
+| mingw (pinned) | `__acrt_iob_func(1/2)` | `__acrt_iob_func` + `__imp____acrt_iob_func` import pointer; **no `_iob`** |
+| MSVC 6 | `_iob` / CRT stream macros | `FILE _iob[3]`, plus `fwrite`/`getc`/`putc`/`fgetc`/`fputc`/`_filbuf`/`_flsbuf` |
+| OpenWatcom | `__iob` | `__w_FILE __iob[3]`, same function superset |
+
+The `_iob` omission is **mingw-only**: emitted mingw objects reference only
+`__imp____acrt_iob_func` (verified with `nm -u`); the `_iob` import in CRT
+builds is mingw wrapper state and disappears under `-nostdlib`. Native MSVC/OWC
+headers macro-expand streams onto `_iob`/`__iob`, so `zig_nocrt.c` defines the
+native arrays from the toolchain's own header type. If a future mingw toolchain
+starts referencing `_iob` directly, this decision must be re-probed.
+
+`fwrite` is unbuffered (no `fflush` surface): it writes the complete slice to
+`STD_ERROR_HANDLE` for the stderr stream and `STD_OUTPUT_HANDLE` otherwise,
+trying `WriteConsoleA` then `WriteFile`. `getchar`/`getc`/`_filbuf` read one
+byte from `STD_INPUT_HANDLE` via `ReadFile`.
+
+## 6. Environment lifetime
+
+`std.os.env` on Windows calls `pal_getenv`, which uses one static 32768-byte
+buffer. The returned slice is valid until the **next** `env()` call (or process
+exit), not for the process lifetime as the CRT environment block is. This is the
+Amendment 3 narrowing; committed z9play/z9torr callers use the slice
+immediately, and the Z98 runtime is single-threaded. A not-found variable or a
+value requiring `>= 32768` bytes returns `null`; an existing empty value returns
+an empty slice.
+
+## 7. 64-bit C spelling layer
+
+The emitted C is consumable by mingw GCC, MSVC 6 (`/Za`), and OpenWatcom
+(`/za`) through `zig_compat.h`:
+
+| Emitted token | mingw | MSVC 6 | OpenWatcom |
+|:--|:--|:--|:--|
+| `z64` / `zu64` | `long long` / `unsigned long long` | `__int64` / `unsigned __int64` | `long long` / `unsigned long long` |
+| `Z98_I64_C(n)` / `Z98_U64_C(n)` | `n##LL` / `n##ULL` | `n##i64` / `n##ui64` | `n##LL` / `n##ULL` |
+| `Z98_I64_MAX` / `Z98_I64_MIN` / `Z98_U64_MAX` | macros | macros | macros |
+
+The emitter never writes `long long`, `unsigned long long`, `LL`, or `ULL`
+outside the mapping branches of `zig_compat.h`. OpenWatcom uses the bootstrap
+definition exactly (`long long` / `unsigned long long`; OpenWatcom's documented
+C extension) with `LL`/`ULL` literals; MSVC 6 uses `__int64` /
+`unsigned __int64` with its `i64`/`ui64` literal suffixes. The fixed-width
+`i8`..`i64`/`u8`..`u64`/`usize` typedefs are emitted for OpenWatcom too (the
+old `&& !defined(__WATCOMC__)` guard remains removed): emitted module
+signatures, `zig_pal.c` and the `std_*_prelude.h` helpers spell those Z98 type
+names, so OpenWatcom must receive the typedefs even though it does not need a
+non-bootstrap 64-bit base type.
+
+## 8. Verification status
+
+- mingw 9x no-CRT: emitted hello/z9play/z9torr build as PE32 with only
+  KERNEL32 (+WINMM/WSOCK32), pass the import whitelist, and run under Wine
+  (startup/argv/stdio/time/env/file helpers; see the T5.3 report).
+- NT mingw: emitted hello builds with the CRT link and runs under Wine.
+- MSVC 6 / OpenWatcom: compile/link commands, entry decoration, response-file
+  layout, helper-library choice, and import expectations are **design-verified;
+  hardware verification pending**. No native compiler or `.exe` was run here
+  (M6 Amendment 5).
+- Win98/Me loadability: the import whitelist is the mechanical gate; real
+  hardware confirmation is operator-owned after the z9play milestone.
+- The manual HTML snapshots under `docs/sf/manuals/en/**` quote pre-T5.3 script
+  bodies; the old script names still resolve through the aliases, so the
+  references remain valid but the quoted text is stale.
+
+## 9. Win32 Debug API backend + 9x imports [added: 2026-10-24 — P3-M4]
+
+`examples/z98/z9dbg/backend_win98.zig` drives the debuggee with
+`CreateProcessA(DEBUG_ONLY_THIS_PROCESS)` and a 50 ms `WaitForDebugEvent`
+pump, then `ContinueDebugEvent` (DBG_CONTINUE), `Get/SetThreadContext`
+(CONTEXT_i386, raw 716-byte buffer), `Read/WriteProcessMemory`, and
+`FlushInstructionCache`. Breakpoints are `int3` bytes planted through
+`WriteProcessMemory`; a hit restores the original byte, rewinds EIP to the int3
+address, and leaves the event pending for `continue`. Single-step sets
+EFlags.TF (0x100) and clears it on the single-step exception. The loader's
+initial breakpoint is skipped because it has no planted reach at EIP-1.
+`quit`/`detach` is terminate-on-quit (restore bytes + `TerminateProcess`); the
+9x profile has no detach/reattach API, and `DebugActiveProcessStop` is not
+imported.
+
+The std-side split is unchanged: `sf/src/std_os_pal.zig` declares the
+`extern "stdcall"` bindings and `sf/src/std_os.zig` exposes target-guarded
+wrappers (`@isWindows()`), so a Linux dump references none of them.
+`std_os_prelude.h` already includes `<windows.h>` under `_WIN32`, which supplies
+the real prototypes.
+
+`scripts/win32_cross/check_win9x_imports.sh`'s 9x KERNEL32 whitelist gains
+**exactly** these names (P3-M4 amendment A1): `CreateProcessA`,
+`WaitForDebugEvent`, `ContinueDebugEvent`, `GetThreadContext`,
+`SetThreadContext`, `ReadProcessMemory`, `WriteProcessMemory`,
+`FlushInstructionCache`. No `msvcrt`, no `DebugActiveProcessStop`. The emitted
+`z9dbg.exe` (mingw 9x no-CRT `-osw`) passes the gate and runs under Wine; real
+Win98 hardware verification remains operator-owned.
+
+## 10. Win9x companion seed zip [added: 2026-10-24 — seed v121; updated: 2026-10-25]
+
+Every seed rotation now writes two committed artifacts: the canonical Linux
+fixed-point seed `release/seed/zig1-seed.tgz` and the Win9x companion
+`release/seed/zig1_seed_w9.zip`. The zip is produced by
+`scripts/seed/archive_seed.sh --win9x-zip` from the same seed binary, using
+`zig1 -osw -o <dir> sf/src/main.zig`; its `win/` tree is the compiler's
+Windows-target self-emission, not the Linux `gen/` C. It contains no prebuilt
+`zig1.exe`.
+
+The zip unpacks to `zig1-seed-w9/{README.txt, lib/, win/}`. `win/` carries the
+module `.c`/`.h`, `zig_runtime.c`, `zig_pal.c`, `zig_nocrt.c`, `c_exit.c`, the
+headers, and the compiler's own emitted **static-CRT compiler build scripts
+only**: `build_target_crt.bat` (MSVC `/MT`) and `build_owc_crt.bat`
+(OpenWatcom static CLIB). The no-CRT compiler scripts
+(`build_target_nocrt.bat`, `build_owc_nocrt.bat`), the `build_target.bat` /
+`build_owc.bat` aliases, and `build_target.sh` are removed from the zip's
+`win/`: a no-CRT zig1 build is deferred to the asm_x86 backend. `lib/` is the
+47-file standard library plus `manifest.md5`. Packing uses python3 `zipfile`
+with sorted entries and a fixed `ZipInfo.date_time` because `zip` is not
+installed; the zip is not a fixed-point artifact.
+
+v121 zip: md5 `1f65ea9ccc57bf31d21af190497274ea`; it is a CRT-only compiler
+build. The compiler source is **`-fsafe`-clean** (12 intentional wraps + 3 real
+safe-mode defects fixed in `5dbd2444`). The Windows-hosted compiler still rejects
+std-using programs at `std_async.zig:259` (field resolution) — a Win9x
+layout/ABI failure that remains under investigation, so this compiler build is
+**not app-ready**. The no-CRT compiler build stays deferred to `asm_x86`;
+programs the compiler emits still default to no-CRT.
+
+CRT truth: `_crt` means a static CRT (`/MT` for MSVC 6, OpenWatcom static
+CLIB) with no `msvcrt.dll` and a single EXE; it may import KERNEL32 names beyond
+the strict 9x whitelist, so validate on the era machine. `_nocrt` remains the
+KERNEL32/WSOCK32-only strict profile for programs emitted by the compiler,
+which still default to no-CRT. The zip README, `zig1-seed/SEED_README.txt`, and
+the manuals record the same split.

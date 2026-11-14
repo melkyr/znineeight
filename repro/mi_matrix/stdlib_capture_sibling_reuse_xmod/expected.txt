@@ -1,0 +1,1 @@
+c7=6 g7=2 s1b=6 cap1=9 post1=57 post2=27 post3=15 cap2=4 cap3=4 post4=18 post5=21 ctl1=1 ctl2=18 ctl3=5 ctl4=20 wc=5 ic=2 xa=10 xb=8

@@ -1,0 +1,198 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Volume IV &mdash; Reference</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume IV reference title page entry exit chapters">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="toc.html">
+<link rel="next" href="vol4-01-grammar.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<b>How to use the Reference</b><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<a href="vol4-12-statements.html">Statements</a><br>
+<a href="vol4-13-control-flow.html">Control flow</a><br>
+<a href="vol4-14-error-expressions.html">Error expressions</a><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+<a href="vol4-16-async.html">Async</a><br>
+<a href="vol4-17-memory.html">Memory</a><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-18-stdlib-data.html">Data and containers</a><br>
+<a href="vol4-18-stdlib-codecs.html">Codecs and crypto</a><br>
+<a href="vol4-18-stdlib-io.html">I/O and HTTP</a><br>
+<a href="vol4-18-stdlib-algorithms.html">Algorithms</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+<a href="vol4-23-limits.html">Limits</a><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Volume IV &mdash; Reference</h1>
+<p>
+<b>Enter here if</b> you need to look something up. <b>Leave able to</b> find
+the answer and get back to work.
+</p>
+<p>
+This volume is not read in order. It is the lookup set: the grammar, the type
+system, every builtin, the diagnostics, and the limits. This page is the map
+&mdash; what the volume is, how to search it, and where each topic lives. The
+pages are terse on purpose and cross-reference each other.
+</p>
+
+<h2>What the Reference is</h2>
+<p>
+The Reference is a direct port of
+<tt>docs/reference/Language_Spec_Z98.md</tt>, restructured for lookup rather
+than linear reading. <a href="vol2-00-title.html">Volume&nbsp;II</a> teaches
+the language and <a href="vol3-00-title.html">Volume&nbsp;III</a> frames the
+era; this volume is where a reader lands from a search or a cross-reference and
+needs the exact rule, the exact signature, or the exact diagnostic.
+</p>
+<p>
+The source of record is the compiler under <tt>sf/src/</tt>. The Language
+Specification is the starting text, but it has known stale spots, so every
+claim here was re-verified against the compiler built from the committed seed.
+Where a rule has a boundary, the Reference states the boundary and stops; the
+honesty arguments belong to Volumes&nbsp;II and III.
+</p>
+
+<h2>How to look something up</h2>
+<p>
+Each page opens with a one-line definition and then gives the exact material as
+tables and lists. Signatures, fields, flags, codes, and messages are quoted
+verbatim; a value that could not be reproduced is not shipped. The pages are
+built to be skimmed, not read:
+</p>
+<ul>
+<li><b>You know the topic.</b> Use the sidebar or the
+<a href="toc.html">Contents</a>; the map below lists all 25 pages.</li>
+<li><b>You have a symptom.</b> Start at
+<a href="vol4-21-diagnostics.html">Diagnostics</a>, which lists every code
+alphabetically by name with its printed ordinal and its exact default
+message.</li>
+<li><b>You have a type, a keyword, or an operator.</b> Start at
+<a href="vol4-02-types.html">Types</a>,
+<a href="vol4-01-grammar.html">The full grammar</a>, or
+<a href="vol4-15-builtins.html">Builtins</a>, then follow the page's "See
+also" line.</li>
+<li><b>You need a signature or a flag.</b> The
+<a href="vol4-18-stdlib.html">standard library</a>,
+<a href="vol4-19-pal.html">PAL</a>, and
+<a href="vol4-22-cli.html">command line</a> pages quote them from source.</li>
+</ul>
+<p>
+Pages link only to targets that exist. A shipped page is a link; a page from a
+volume that has not shipped is plain prose marked <i>(planned)</i>.
+</p>
+
+<h2>What is not here</h2>
+<p>
+The Reference ships no runnable chapter samples and no Win9x screenshot
+figures; the programs and screenshots belong to Volumes&nbsp;I&ndash;III. A
+snippet here is a short, verified illustration of one rule, not a program to
+build. A page may close with a short "See also" list of existing pages, and it
+does not carry the honesty or mistake callouts that Volumes&nbsp;II and III
+use.
+</p>
+
+<h2>Chapters</h2>
+<ul>
+<li><b>How to use the Reference</b></li>
+<li><a href="vol4-01-grammar.html">The full grammar</a></li>
+<li><a href="vol4-02-types.html">Types</a></li>
+<li><a href="vol4-03-pointers.html">Pointers</a></li>
+<li><a href="vol4-04-structs.html">Structs</a></li>
+<li><a href="vol4-05-enums.html">Enums</a></li>
+<li><a href="vol4-06-unions.html">Unions</a></li>
+<li><a href="vol4-07-tuples.html">Tuples</a></li>
+<li><a href="vol4-08-arrays-slices.html">Arrays and slices</a></li>
+<li><a href="vol4-09-errors.html">Errors</a></li>
+<li><a href="vol4-10-optionals.html">Optionals</a></li>
+<li><a href="vol4-11-aliases.html">Aliases</a></li>
+<li><a href="vol4-12-statements.html">Statements</a></li>
+<li><a href="vol4-13-control-flow.html">Control flow</a></li>
+<li><a href="vol4-14-error-expressions.html">Error expressions</a></li>
+<li><a href="vol4-15-builtins.html">Builtins</a></li>
+<li><a href="vol4-16-async.html">Async</a></li>
+<li><a href="vol4-17-memory.html">Memory</a></li>
+<li><a href="vol4-18-stdlib.html">The standard library</a></li>
+<li><a href="vol4-18-stdlib-data.html">Data and containers</a></li>
+<li><a href="vol4-18-stdlib-codecs.html">Codecs and crypto</a></li>
+<li><a href="vol4-18-stdlib-io.html">I/O and HTTP</a></li>
+<li><a href="vol4-18-stdlib-algorithms.html">Algorithms</a></li>
+<li><a href="vol4-19-pal.html">The PAL</a></li>
+<li><a href="vol4-20-markers.html">Markers</a></li>
+<li><a href="vol4-21-diagnostics.html">Diagnostics</a></li>
+<li><a href="vol4-22-cli.html">The command line</a></li>
+<li><a href="vol4-23-limits.html">Limits</a></li>
+<li><a href="vol4-24-html-style.html">HTML style</a></li>
+</ul>
+<p>
+For the language proper, see <a href="vol2-00-title.html">Volume&nbsp;II
+&mdash; Learning Z98</a>; for the era toolchain and its limits, see
+<a href="vol3-00-title.html">Volume&nbsp;III &mdash; Working in the Era</a>.
+This volume is the lookup set both of them point at. The
+<a href="vol5-00-index.html">HOWTO</a> has shipped; the Internals volume is
+<i>(planned)</i>.
+</p>
+<p class="navbtns">
+<a href="toc.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-01-grammar.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="toc.html">Contents</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-01-grammar.html">The full grammar</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+// repro/tuple_model.z98 — standalone FB (Volume II D4) reproduction.
+//
+// Compile + run (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/tuple_model_out
+//   <zig1> -o /tmp/tuple_model_out repro/tuple_model.z98
+//   cd /tmp/tuple_model_out && sh build_target.sh linux tuple_model
+//   ./tuple_model
+//
+// EXPECTED (after the fix): the spec §1.3 tuple type `struct { T1, T2 }` and
+// all three member-access spellings read/write the positional C fields:
+//   tp=11/20 u0=11 ix=20 sw=20/11 g=44/5
+// rc=0.
+// DEFECT (before the fix): `struct { T1, T2 }` was a parse error
+// (`error[2000]`), `.0`/`._0` were `error[3060]`, and `t[0]` compiled rc 0 but
+// emitted gcc-invalid `base[idx]` C (`subscripted value is neither array nor
+// pointer nor vector`).
+//
+// See repro/mi_matrix/stdlib_tuple_model_ok_xmod for the pinned cross-module
+// runtime golden (all spellings, tuple return/param/global, coercion) and
+// repro/mi_matrix/tuple_model_reject_xmod for the reject contract
+// (error[3069]/[3070]/[3060]/[3000]/[2000]).
+const std = @import("std");
+
+const Pair = struct { i32, i32 };
+
+var g: Pair = .{ 4, 5 };
+
+fn swap(p: Pair) Pair {
+    return .{ p[1], p[0] };
+}
+
+pub fn main() void {
+    var p: Pair = .{ 1, 2 };
+    p.0 = 10;
+    p._1 = 20;
+    p[0] = p[0] + 1;
+    const us0 = p._0;
+    const ci_idx: usize = 1;
+    const ix = p[ci_idx];
+    const sw = swap(p);
+    g[0] = 44;
+    if (us0 != 11 or ix != 20 or sw[0] != 20 or g[0] != 44) {
+        @panic("tuple model mismatch");
+    }
+    std.io.print("tp={}/{} u0={} ix={} sw={}/{} g={}/{}\n", .{ p[0], p[1], us0, ix, sw[0], sw[1], g[0], g[1] });
+}

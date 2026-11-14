@@ -1,0 +1,150 @@
+// repro/switch_merge.z98 — FX7 standalone accept/warning probe for the
+// switch-merge prong-name propagation (`sf/src/analyzer.zig` `swt_ex` arm,
+// `sf/src/state_map.zig` `stateMapMergeInsertMissing`).
+//
+// DEFECT pinned: `stateMapMergeStates(state, state, ps, 99)` could not ADD a
+// name that existed only in the prong state, so a pointer assigned
+// `arena_alloc` in a switch prong read "untracked" after the switch
+// (`warning[3039]`) and the prong-allocated name was invisible to the
+// enclosing state.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast --dump-c89 repro/switch_merge.z98 >/dev/null
+//
+// EXPECTED (POST `ff059647`): dump rc=0, stderr exactly
+//   warning[3038] x10 (if leak, bare-block leak x2, switch-prong leak, if
+//                      then-block leak, bare-block leak, switch-prong leak,
+//                      both-prongs leak x2, global-prong leak)
+//   warning[3039] x1  (the `if`-control's free of a name first assigned in the
+//                      if body — the if-merge still drops it; unchanged FX7)
+// The switch free-after rows (a6, a8, global) no longer warn: the prong-only
+// name is inserted as `AllocState.unknown`, so the post-switch `arena_free`
+// stays tracked. PRE (`1a258bd4`): the same 3038s and `warning[3039]` x4
+// (a6, a8, global, if).
+//
+// The program is also runnable (local stub allocator): stdout, rc 0:
+//   if-leak
+//   block-leak
+//   prong-leak
+//   if-free
+//   block-free
+//   prong-free
+//   both-free
+//   global-free
+//   done
+const std = @import("std");
+
+var heap: [4096]u8 = undefined;
+var heap_off: usize = 0;
+var ops: i32 = 0;
+var g: *u8 = undefined;
+
+fn arena_alloc(size: usize) *u8 {
+    var p: *u8 = &heap[heap_off];
+    heap_off += size;
+    ops += 1;
+    return p;
+}
+
+fn arena_free(alloc: usize, p: *u8) void {
+    _ = alloc;
+    _ = p;
+    ops += 1;
+}
+
+fn leakInIf(c: bool) void {
+    if (c) {
+        const p = arena_alloc(8);
+        _ = p;
+    }
+}
+
+fn leakInBlock() void {
+    {
+        const p = arena_alloc(8);
+        _ = p;
+    }
+}
+
+fn leakInProng(c: bool) void {
+    switch (c) {
+        true => {
+            const p = arena_alloc(8);
+            _ = p;
+        },
+        else => {},
+    }
+}
+
+fn freeAfterIf(c: bool) void {
+    var p: *u8 = undefined;
+    if (c) {
+        p = arena_alloc(8);
+    }
+    arena_free(0, p);
+}
+
+fn freeAfterBlock(c: bool) void {
+    var p: *u8 = undefined;
+    {
+        p = arena_alloc(8);
+    }
+    arena_free(0, p);
+}
+
+fn freeAfterSwitch(c: bool) void {
+    var p: *u8 = undefined;
+    switch (c) {
+        true => {
+            p = arena_alloc(8);
+        },
+        else => {},
+    }
+    arena_free(0, p);
+}
+
+fn bothProngsFreeAfter(c: bool) void {
+    var p: *u8 = undefined;
+    switch (c) {
+        true => {
+            p = arena_alloc(8);
+        },
+        else => {
+            p = arena_alloc(16);
+        },
+    }
+    arena_free(0, p);
+}
+
+fn globalFreeAfter(c: bool) void {
+    switch (c) {
+        true => {
+            g = arena_alloc(8);
+        },
+        else => {},
+    }
+    arena_free(0, g);
+}
+
+pub fn main() void {
+    leakInIf(true);
+    std.io.print("if-leak\n", .{});
+    leakInBlock();
+    std.io.print("block-leak\n", .{});
+    leakInProng(true);
+    std.io.print("prong-leak\n", .{});
+    freeAfterIf(true);
+    std.io.print("if-free\n", .{});
+    freeAfterBlock(true);
+    std.io.print("block-free\n", .{});
+    freeAfterSwitch(true);
+    std.io.print("prong-free\n", .{});
+    bothProngsFreeAfter(true);
+    std.io.print("both-free\n", .{});
+    globalFreeAfter(true);
+    std.io.print("global-free\n", .{});
+    if (ops != 13) {
+        @panic("alloc/free count after switch merge");
+    }
+    std.io.print("done\n", .{});
+}

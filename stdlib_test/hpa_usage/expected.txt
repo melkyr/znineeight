@@ -1,0 +1,7 @@
+hpa_usage
+clusters: 6
+nodes: 102
+edges: 1766
+cost: 132
+repeat: 1
+hpa ok

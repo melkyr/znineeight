@@ -1,0 +1,25 @@
+// FF standalone repro (D9): `@offsetOf`/`@bitOffsetOf` on a union is a clean
+// Zig-parity reject (`error[3072]` `expected struct type, found 'X'`), an
+// unknown struct field name rejects `error[3073]`, and a wrong argument count
+// / unresolved type rejects `error[3074]`. Before FF these raised the internal
+// `error[3043]` (rc 3, no `.c`).
+//
+// Expected: compile rc 2 / 0 emitted `.c` / these diagnostics, no ICE:
+//   3072 x3 (bare union offset, tagged union bit offset, packed union offset)
+//   3073 x1 (unknown struct field)
+//   3074 x2 (missing argument, unresolved type)
+const std = @import("std");
+
+const Raw = union { i: i32, u: u32 };
+const T = union(enum) { i: i32, u: u32 };
+const PU = packed union { a: u4, b: u4 };
+const S = struct { a: i32, b: u32 };
+
+pub fn main() void {
+    std.io.print("x={}\n", .{@offsetOf(Raw, "i")});
+    std.io.print("x={}\n", .{@bitOffsetOf(T, "i")});
+    std.io.print("x={}\n", .{@offsetOf(PU, "a")});
+    std.io.print("x={}\n", .{@offsetOf(S, "nope")});
+    std.io.print("x={}\n", .{@offsetOf(S)});
+    std.io.print("x={}\n", .{@sizeOf(Nope)});
+}

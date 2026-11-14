@@ -2215,7 +2215,7 @@ The bootstrap compiler supports several Zig built-in functions, implemented eith
 | `@ptrToInt(e)` | Expr `e` (ptr) | `usize` | Emitted as `(usize)e`. |
 | `@intToEnum(T, e)` | Type `T` (enum), Expr `e` | Type `T` | Constant folded or `(T)e`. |
 | `@intToPtr(T, e)` | Type `T`, Expr `e` | Type `T` | Emitted as `(T)e`. |
-| `@intToFloat(T, e)` | Type `T`, Expr `e` | Type `T` | Constant folded or `(T)e`. |
+| `@intToFloat(T, e)` | Type `T`, Expr `e` | Type `T` | Comptime constant folded or `(T)e`. |
 
 ### Recursive Type Resolution in Built-ins
 For built-ins that take a type argument (`@sizeOf`, `@alignOf`, `@offsetOf`), the `TypeChecker` ensures that if the type is a `TYPE_PLACEHOLDER`, it is resolved via `resolvePlaceholder` before accessing its layout properties. This ensures correctness for mutually recursive structures.

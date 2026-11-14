@@ -1,0 +1,2356 @@
+pub const ParserError = error {
+    UnexpectedToken,
+};
+
+const Token = @import("token.zig").Token;
+const TokenKind = @import("token.zig").TokenKind;
+const AstStore = @import("ast.zig").AstStore;
+const Sand = @import("allocator.zig").Sand;
+const alloc_mod = @import("allocator.zig");
+const diag_mod = @import("diagnostics.zig");
+const DiagnosticCollector = diag_mod.DiagnosticCollector;
+const StringInterner = @import("string_interner.zig").StringInterner;
+const U32ArrayList = @import("growable_array.zig").U32ArrayList;
+const u32ArrayListInit = @import("growable_array.zig").u32ArrayListInit;
+const AstKind = @import("ast.zig").AstKind;
+const FnProto = @import("ast.zig").FnProto;
+const ast_mod = @import("ast.zig");
+const string_interner_mod = @import("string_interner.zig");
+const pal = @import("pal.zig");
+const itoa_mod = @import("util/itoa.zig");
+const format_mod = @import("util/format.zig");
+const mr_mod = @import("module_registry.zig");
+const ModuleRegistry = mr_mod.ModuleRegistry;
+const lexer_mod = @import("lexer.zig");
+const Lexer = @import("lexer.zig").Lexer;
+
+pub const ParseToken = struct {
+    kind: TokenKind,
+    span_start: u32,
+    span_len: u16,
+};
+
+const ParseCapture = struct {
+    name_id: u32,
+    tok_start: u32,
+    tok_len: u16,
+};
+
+pub const Parser = struct {
+    use_lex: bool,
+    lex: *Lexer,
+    tokens_ptr: [*]Token,
+    tokens_len: usize,
+    source_ptr: [*]u8,
+    source_len: usize,
+    pos: usize,
+    la: [3]Token,
+    la_len: u32,
+    at_eof: bool,
+    eof_tok: Token,
+    store: *AstStore,
+    interner: *StringInterner,
+    diag: *DiagnosticCollector,
+    allocator: *Sand,
+    child_buf_items: [*]u32,
+    child_buf_len: usize,
+    child_buf_capacity: usize,
+    last_end: u32,
+    last_tok: Token,
+    last_tok_valid: bool,
+    decl_buf_items: [*]u32,
+    decl_buf_len: usize,
+    decl_buf_capacity: usize,
+    builtin_import_id: u32,
+    catch_capture: u32,
+    expr_depth: u32,
+    module_reg: ?*ModuleRegistry,
+    import_scratch: ?*Sand,
+    current_module_id: u32,
+    file_id: u32,
+    dead_import_depth: u32,
+    switch_fold_val: ?bool,
+    switch_fold_matched: bool,
+    t4_const_items: [*]u32,
+    t4_const_len: usize,
+    t4_const_cap: usize,
+};
+
+fn parserInitCommon(source: []const u8, store: *AstStore, interner: *StringInterner, diag: *DiagnosticCollector, alloc: *Sand, builtin_import_id: u32) Parser {
+    var zero_tok = Token{
+        .kind = TokenKind.eof,
+        .span_start = @intCast(u32, 0),
+        .span_len = @intCast(u16, 0),
+        .value = .{ .none = {} },
+    };
+    return Parser{
+        .use_lex = false,
+        .lex = undefined,
+        .tokens_ptr = undefined,
+        .tokens_len = @intCast(usize, 0),
+        .source_ptr = @ptrCast([*]u8, source.ptr),
+        .source_len = source.len,
+        .pos = @intCast(usize, 0),
+        .la = undefined,
+        .la_len = @intCast(u32, 0),
+        .at_eof = false,
+        .eof_tok = zero_tok,
+        .store = store,
+        .interner = interner,
+        .diag = diag,
+        .allocator = alloc,
+        .child_buf_items = undefined,
+        .child_buf_len = @intCast(usize, 0),
+        .child_buf_capacity = @intCast(usize, 0),
+        .last_end = @intCast(u32, 0),
+        .last_tok = zero_tok,
+        .last_tok_valid = false,
+        .decl_buf_items = undefined,
+        .decl_buf_len = @intCast(usize, 0),
+        .decl_buf_capacity = @intCast(usize, 0),
+        .catch_capture = @intCast(u32, 0),
+        .expr_depth = @intCast(u32, 0),
+        .builtin_import_id = builtin_import_id,
+        .module_reg = null,
+        .import_scratch = null,
+        .current_module_id = @intCast(u32, 0),
+        .file_id = @intCast(u32, 0),
+        .dead_import_depth = @intCast(u32, 0),
+        .switch_fold_val = null,
+        .switch_fold_matched = false,
+        .t4_const_items = undefined,
+        .t4_const_len = @intCast(usize, 0),
+        .t4_const_cap = @intCast(usize, 0),
+    };
+}
+
+pub fn parserInit(tokens: []const Token, source: []const u8, store: *AstStore, interner: *StringInterner, diag: *DiagnosticCollector, alloc: *Sand) Parser {
+    var t_ptr = @ptrCast([*]Token, tokens.ptr);
+    var import_s: []const u8 = "@import";
+    var import_id = string_interner_mod.stringInternerIntern(interner, import_s);
+    var p = parserInitCommon(source, store, interner, diag, alloc, import_id);
+    p.use_lex = false;
+    p.tokens_ptr = t_ptr;
+    p.tokens_len = tokens.len;
+    return p;
+}
+
+pub fn parserInitStreaming(lex: *Lexer, source: []const u8, store: *AstStore, interner: *StringInterner, diag: *DiagnosticCollector, alloc: *Sand) Parser {
+    var import_s: []const u8 = "@import";
+    var import_id = string_interner_mod.stringInternerIntern(interner, import_s);
+    var p = parserInitCommon(source, store, interner, diag, alloc, import_id);
+    p.use_lex = true;
+    p.lex = lex;
+    return p;
+}
+
+pub fn parserSetModuleContext(self: *Parser, reg: *ModuleRegistry, mod_id: u32) void {
+    self.module_reg = reg;
+    self.current_module_id = mod_id;
+    self.file_id = reg.modules.items[mod_id].source_file_id;
+}
+
+pub fn parserSetImportScratch(self: *Parser, scratch: *Sand) void {
+    self.import_scratch = scratch;
+}
+
+// C1b (true Zig laziness, Amendment 2): the parse-time comptime-bool probe
+// for untaken-arm import gating. Folds exactly what is knowable BEFORE any
+// module analysis: `true`/`false` literals, `!`/`and`/`or` compounds of
+// foldable bools, zero-arg `@isWindows()` (target-correct via
+// `ModuleRegistry.target_is_windows`), and already-parsed immutable `const`
+// bindings (the parse-time const map). Anything else (runtime values,
+// cross-module consts, arithmetic folds, forward-referenced consts) returns
+// null and the arm keeps eager import loading — conservative: a live import
+// is never under-loaded. Dead-arm imports are the ONLY suppressed loads.
+fn parserFoldComptimeBool(self: *Parser, node_idx: u32, depth: u32) ?bool {
+    if (node_idx == @intCast(u32, 0)) return null;
+    if (depth >= @intCast(u32, 8)) return null;
+    var n = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (n.kind == AstKind.bool_literal) {
+        return (n.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+    }
+    if (n.kind == AstKind.paren_expr) {
+        return parserFoldComptimeBool(self, n.child_0, depth + @intCast(u32, 1));
+    }
+    if (n.kind == AstKind.bool_not) {
+        if (parserFoldComptimeBool(self, n.child_0, depth + @intCast(u32, 1))) |v| {
+            return !v;
+        }
+        return null;
+    }
+    if (n.kind == AstKind.bool_and) {
+        if (parserFoldComptimeBool(self, n.child_0, depth + @intCast(u32, 1))) |l| {
+            if (!l) return false;
+            return parserFoldComptimeBool(self, n.child_1, depth + @intCast(u32, 1));
+        }
+        return null;
+    }
+    if (n.kind == AstKind.bool_or) {
+        if (parserFoldComptimeBool(self, n.child_0, depth + @intCast(u32, 1))) |l| {
+            if (l) return true;
+            return parserFoldComptimeBool(self, n.child_1, depth + @intCast(u32, 1));
+        }
+        return null;
+    }
+    if (n.kind == AstKind.builtin_call) {
+        // `@isWindows` recognized by TEXT, never by a freshly interned id: the
+        // interner assigns ids in insertion order and an extra early intern
+        // shifts every later id (measured: that shift alone flips
+        // `stdlib_crypto_modpow_xmod` OK→GREEN through a latent id-order
+        // dependence — see task-4-report.md §Fix round).
+        var t4_iw_name: []const u8 = "@isWindows";
+        var t4_bn = string_interner_mod.stringInternerGet(self.interner, n.child_0);
+        if (t4_bn.len != t4_iw_name.len) return null;
+        var t4_bi: usize = 0;
+        while (t4_bi < t4_iw_name.len) : (t4_bi += 1) {
+            if (t4_bn[t4_bi] != t4_iw_name[t4_bi]) return null;
+        }
+        if (ast_mod.astStoreNodeExtraChildCount(self.store, node_idx) != @intCast(u32, 0)) return null;
+        var v: bool = false;
+        if (self.module_reg) |reg| {
+            v = reg.target_is_windows;
+        }
+        return v;
+    }
+    if (n.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        var i: usize = self.t4_const_len;
+        while (i >= @intCast(usize, 2)) {
+            i -= @intCast(usize, 2);
+            if (self.t4_const_items[i] == name_id) {
+                return parserFoldComptimeBool(self, self.t4_const_items[i + @intCast(usize, 1)], depth + @intCast(u32, 1));
+            }
+        }
+        return null;
+    }
+    return null;
+}
+
+pub fn parserTokenText(self: *Parser, tok: ParseToken) []const u8 {
+    var start = @intCast(usize, tok.span_start);
+    var end: usize = start + @intCast(usize, tok.span_len);
+    return self.source_ptr[start..end];
+}
+
+fn parserInternParseToken(self: *Parser, pt: ParseToken) u32 {
+    return string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+}
+
+fn parserInternTokenText(self: *Parser, tok: Token) u32 {
+    var pt = ParseToken{ .kind = tok.kind, .span_start = tok.span_start, .span_len = tok.span_len };
+    return string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+}
+
+fn parserPullOne(self: *Parser) void {
+    if (self.at_eof) return;
+    var tok: Token = undefined;
+    if (self.use_lex) {
+        tok = lexer_mod.lexerNextToken(self.lex);
+    } else {
+        if (self.pos < self.tokens_len) {
+            tok = self.tokens_ptr[self.pos];
+            self.pos += 1;
+        } else {
+            tok = self.tokens_ptr[self.tokens_len - 1];
+        }
+    }
+    if (tok.kind == TokenKind.eof) {
+        self.at_eof = true;
+        self.eof_tok = tok;
+    }
+    self.la[self.la_len] = tok;
+    self.la_len += 1;
+}
+
+fn parserConsumeCurrent(self: *Parser) void {
+    if (self.la_len == 0) {
+        if (self.at_eof) {
+            self.last_tok = self.eof_tok;
+            self.last_tok_valid = true;
+        }
+        return;
+    }
+    self.last_tok = self.la[0];
+    self.last_tok_valid = true;
+    var i: u32 = 1;
+    while (i < self.la_len) : (i += 1) {
+        self.la[i - 1] = self.la[i];
+    }
+    self.la_len -= 1;
+    parserPullOne(self);
+}
+
+pub fn parserPeek(self: *Parser) Token {
+    if (self.la_len == 0) {
+        if (self.at_eof) return self.eof_tok;
+        parserPullOne(self);
+    }
+    return self.la[0];
+}
+
+pub fn parserPeekN(self: *Parser, n: usize) Token {
+    while (self.la_len <= @intCast(u32, n)) {
+        if (self.at_eof) break;
+        parserPullOne(self);
+    }
+    if (self.la_len > @intCast(u32, n)) return self.la[n];
+    if (self.la_len > 0) return self.la[self.la_len - 1];
+    return self.eof_tok;
+}
+
+pub fn parserAdvance(self: *Parser) Token {
+    var tok = parserPeek(self);
+    self.last_end = tok.span_start + @intCast(u32, tok.span_len);
+    parserConsumeCurrent(self);
+    return tok;
+}
+
+fn tokenKindLabel(kind: TokenKind) []const u8 {
+    if (kind == TokenKind.semicolon) { var s: []const u8 = "';'"; return s; }
+    if (kind == TokenKind.lparen) { var s: []const u8 = "'('"; return s; }
+    if (kind == TokenKind.rparen) { var s: []const u8 = "')'"; return s; }
+    if (kind == TokenKind.lbrace) { var s: []const u8 = "'{'"; return s; }
+    if (kind == TokenKind.rbrace) { var s: []const u8 = "'}'"; return s; }
+    if (kind == TokenKind.lbracket) { var s: []const u8 = "'['"; return s; }
+    if (kind == TokenKind.rbracket) { var s: []const u8 = "']'"; return s; }
+    if (kind == TokenKind.comma) { var s: []const u8 = "','"; return s; }
+    if (kind == TokenKind.dot) { var s: []const u8 = "'.'"; return s; }
+    if (kind == TokenKind.colon) { var s: []const u8 = "':'"; return s; }
+    if (kind == TokenKind.pipe) { var s: []const u8 = "'|'"; return s; }
+    if (kind == TokenKind.identifier) { var s: []const u8 = "identifier"; return s; }
+    if (kind == TokenKind.string_literal) { var s: []const u8 = "string literal"; return s; }
+    if (kind == TokenKind.integer_literal) { var s: []const u8 = "integer literal"; return s; }
+    if (kind == TokenKind.kw_fn) { var s: []const u8 = "'fn'"; return s; }
+    if (kind == TokenKind.kw_while) { var s: []const u8 = "'while'"; return s; }
+    if (kind == TokenKind.kw_if) { var s: []const u8 = "'if'"; return s; }
+    if (kind == TokenKind.kw_else) { var s: []const u8 = "'else'"; return s; }
+    if (kind == TokenKind.kw_return) { var s: []const u8 = "'return'"; return s; }
+    if (kind == TokenKind.kw_const) { var s: []const u8 = "'const'"; return s; }
+    if (kind == TokenKind.kw_var) { var s: []const u8 = "'var'"; return s; }
+    if (kind == TokenKind.kw_pub) { var s: []const u8 = "'pub'"; return s; }
+    if (kind == TokenKind.kw_extern) { var s: []const u8 = "'extern'"; return s; }
+    var fallback: []const u8 = "token"; return fallback;
+}
+
+pub fn parserExpect(self: *Parser, kind: TokenKind) ParserError!ParseToken {
+    var tok = parserPeek(self);
+    if (tok.kind != kind) {
+        var exp_s: []const u8 = "expected ";
+        var exp_lab = tokenKindLabel(kind);
+        var fnd_s: []const u8 = " but found ";
+        var fnd_lab = tokenKindLabel(tok.kind);
+        var parts: [4][]const u8 = [4][]const u8{exp_s, exp_lab, fnd_s, fnd_lab};
+        var msg = diag_mod.diagnosticBuilderMakeMsg(self.diag.interner, &parts[0], @intCast(u32, 4));
+        parserAddError(self, tok, msg);
+        return error.UnexpectedToken;
+    }
+    // consume via advanceTok and return ParseToken
+    parserConsumeCurrent(self);
+    return ParseToken{ .kind = tok.kind, .span_start = tok.span_start, .span_len = tok.span_len };
+}
+
+pub fn parserAddError(self: *Parser, tok: Token, msg: []const u8) void {
+    diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 2000),
+        self.file_id, tok.span_start, tok.span_start + @intCast(u32, tok.span_len), msg);
+}
+
+pub fn parserSynchronize(self: *Parser) void {
+    while (true) {
+        var k = parserPeek(self).kind;
+        if (k == TokenKind.semicolon or k == TokenKind.rbrace or k == TokenKind.kw_fn or
+            k == TokenKind.kw_const or k == TokenKind.kw_var or k == TokenKind.kw_pub or
+            k == TokenKind.kw_test) {
+            parserConsumeCurrent(self);
+            return;
+        }
+        if (k == TokenKind.eof) return;
+        parserConsumeCurrent(self);
+    }
+}
+
+pub fn parserParseExprPrec(self: *Parser, min_prec: Prec) ParserError!u32 {
+    self.expr_depth += 1;
+    if (self.expr_depth > 12) {
+        var msg: []const u8 = "max expression recursion depth exceeded";
+        @panic(msg);
+    }
+    defer self.expr_depth -= 1;
+    var lhs = try parserParsePrimary(self);
+    lhs = try parserParsePostfixChain(self, lhs);
+
+    while (true) {
+        var tok = parserPeek(self);
+        var has_info: u8 = 0;
+        var info: OpInfo = undefined;
+        if (getInfixInfo(tok.kind)) |val| {
+            info = val;
+            has_info = 1;
+        }
+        if (has_info == 0) break;
+        if (precToInt(info.prec) < precToInt(min_prec)) break;
+
+        _ = parserAdvance(self);
+
+        var next_min: Prec = undefined;
+        if (info.right_assoc) {
+            next_min = info.prec;
+        } else {
+            next_min = precFromInt(precToInt(info.prec) + 1);
+        }
+
+        var rhs: u32 = undefined;
+        var catch_handled: u8 = 0;
+        if (tok.kind == TokenKind.kw_catch) {
+            var cap: u32 = @intCast(u32, 0);
+            rhs = try parserParseCatchRHS(self, next_min, &cap);
+            var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+            lhs = ast_mod.astStoreAddNode(self.store, AstKind.catch_expr, 0, tok.span_start, end, lhs, rhs, cap, 0);
+            catch_handled = 1;
+        } else if (tok.kind == TokenKind.kw_orelse) {
+            rhs = try parserParseOrelseRHS(self, next_min);
+        } else {
+            rhs = try parserParseExprPrec(self, next_min);
+        }
+
+        if (catch_handled == 0) {
+            lhs = try parserAddBinary(self, tok, lhs, rhs);
+        }
+    }
+    return lhs;
+}
+
+fn parserAddBinary(self: *Parser, tok: Token, lhs: u32, rhs: u32) ParserError!u32 {
+    var kind: AstKind = AstKind.err;
+    var found: u8 = 0;
+    if (getInfixInfo(tok.kind)) |op| {
+        kind = op.ast_kind;
+        found = 1;
+    }
+    if (found == 0) {
+        var add_msg: []const u8 = "invalid token in expression";
+        parserAddError(self, tok, add_msg);
+        return error.UnexpectedToken;
+    }
+    var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    if (kind == AstKind.catch_expr) {
+        return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, lhs, rhs, self.catch_capture, 0);
+    }
+    var bok: []const u8 = "BOP:tk"; pal.markerWriteInt(bok, @intCast(u32, @enumToInt(tok.kind)));
+    var bokk: []const u8 = "ak"; pal.markerWriteInt(bokk, @intCast(u32, @enumToInt(kind)));
+    return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, lhs, rhs, 0, 0);
+}
+
+pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
+    var tok = parserPeek(self);
+    if (tok.kind == TokenKind.integer_literal) return parserParseIntLiteral(self);
+    if (tok.kind == TokenKind.float_literal) return parserParseFloatLiteral(self);
+    if (tok.kind == TokenKind.string_literal) return parserParseStringLiteral(self);
+    if (tok.kind == TokenKind.char_literal) return parserParseCharLiteral(self);
+    if (tok.kind == TokenKind.kw_true) return parserParseBoolLiteral(self);
+    if (tok.kind == TokenKind.kw_false) return parserParseBoolLiteral(self);
+    if (tok.kind == TokenKind.kw_null) return parserParseSingleToken(self, AstKind.null_literal);
+    if (tok.kind == TokenKind.kw_undefined) return parserParseSingleToken(self, AstKind.undefined_literal);
+    if (tok.kind == TokenKind.kw_unreachable) return parserParseSingleToken(self, AstKind.unreachable_expr);
+    if (tok.kind == TokenKind.underscore) return parserParseIdentExpr(self);
+    if (tok.kind == TokenKind.identifier) {
+        if (parserPeekN(self, 1).kind == TokenKind.colon and parserPeekN(self, 2).kind == TokenKind.lbrace) {
+            return parserParseLabeledBlockExpr(self);
+        }
+        if (parserPeekN(self, 1).kind == TokenKind.bang) {
+            var eu_base = try parserParseIdentExpr(self);
+            _ = parserAdvance(self);
+            var eu_payload = try parserParseType(self);
+            return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
+                tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+                eu_base, eu_payload, 0, 0);
+        }
+        return parserParseIdentExpr(self);
+    }
+    if (tok.kind == TokenKind.kw_bool) return parserParseIdentExpr(self);
+    if (tok.kind == TokenKind.kw_c_char) return parserParseIdentExpr(self);
+    if (tok.kind == TokenKind.kw_void) return parserParseIdentExpr(self);
+    if (tok.kind == TokenKind.builtin_identifier) return parserParseBuiltinCall(self);
+    if (tok.kind == TokenKind.c_include_builtin) return parserParseCInclude(self);
+    if (tok.kind == TokenKind.kw_error) return parserParseErrorLiteral(self);
+    if (tok.kind == TokenKind.minus) return parserParsePrefixUnary(self, AstKind.negate);
+    if (tok.kind == TokenKind.minus_pct) return parserParsePrefixUnary(self, AstKind.wrap_negate);
+    if (tok.kind == TokenKind.bang) return parserParsePrefixUnary(self, AstKind.bool_not);
+    if (tok.kind == TokenKind.tilde) return parserParsePrefixUnary(self, AstKind.bit_not);
+    if (tok.kind == TokenKind.ampersand) return parserParsePrefixUnary(self, AstKind.address_of);
+    if (tok.kind == TokenKind.kw_try) return parserParseTryExpr(self);
+    if (tok.kind == TokenKind.lparen) return parserParseGroupedExpr(self);
+    if (tok.kind == TokenKind.dot_lbrace) return parserParseAnonymousLiteral(self);
+    if (tok.kind == TokenKind.dot) return parserParseEnumLiteral(self);
+    if (tok.kind == TokenKind.kw_if) return parserParseIfExpr(self);
+    if (tok.kind == TokenKind.kw_switch) return parserParseSwitchExpr(self);
+    if (tok.kind == TokenKind.lbracket) return parserParseArrayLiteral(self);
+    var leading = try parserParseTypeLeading(self);
+    if (leading) |n| return n;
+    if (tok.kind == TokenKind.kw_return) return parserParseReturnExpr(self);
+    if (tok.kind == TokenKind.kw_break) return parserParseBreakExpr(self);
+    if (tok.kind == TokenKind.kw_continue) return parserParseContinueExpr(self);
+    if (tok.kind == TokenKind.lbrace) return parserParseBlock(self);
+    var primary_msg: []const u8 = "expected expression";
+    parserAddError(self, tok, primary_msg);
+    return error.UnexpectedToken;
+}
+
+pub fn parserParsePostfixChain(self: *Parser, base: u32) ParserError!u32 {
+    var node = base;
+    while (true) {
+        var tok = parserPeek(self);
+        if (tok.kind == TokenKind.dot_star) {
+            _ = parserAdvance(self);
+            node = ast_mod.astStoreAddNode(self.store, AstKind.deref, 0,
+                tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+                node, 0, 0, 0);
+        } else if (tok.kind == TokenKind.dot) {
+            node = try parserParseDotAccess(self, node);
+        } else if (tok.kind == TokenKind.lbracket) {
+            node = try parserParseIndexOrSlice(self, node);
+        } else if (tok.kind == TokenKind.lparen) {
+            node = try parserParseFnCall(self, node);
+        } else if (tok.kind == TokenKind.lbrace) {
+            node = try parserParseStructInit(self, node);
+        } else {
+            break;
+        }
+    }
+    return node;
+}
+
+fn parserParseDotAccess(self: *Parser, base: u32) ParserError!u32 {
+    _ = parserAdvance(self);
+    var tok = parserPeek(self);
+    if (@intCast(u32, @enumToInt(tok.kind)) == @intCast(u32, @enumToInt(TokenKind.star))) {
+        _ = parserAdvance(self);
+        return ast_mod.astStoreAddNode(self.store, AstKind.deref, 0,
+            tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+            base, 0, 0, 0);
+    }
+    // FB (D4): a numeric member (`.0`, `.73`) is a tuple ordinal, never a
+    // name id. The old code read `value.string_id` from ANY token kind, so an
+    // `integer_literal` (whose union carries `.int_val`) poured N into the
+    // name-id space and silently aliased whatever name had id N (`.73` read an
+    // interned `len`). Canonicalize the decimal text instead; every downstream
+    // consumer decodes `^[0-9]+$`/`^_[0-9]+$` textually on a tuple base only.
+    var name_id: u32 = @intCast(u32, 0);
+    if (tok.kind == TokenKind.identifier) {
+        name_id = tok.value.string_id;
+    } else if (tok.kind == TokenKind.integer_literal) {
+        var num_buf: [24]u8 = undefined;
+        var num_len = itoa_mod.itoa64(tok.value.int_val, num_buf[0..]);
+        var num_start: usize = num_buf.len - @intCast(usize, num_len) - @intCast(usize, 1);
+        name_id = string_interner_mod.stringInternerIntern(self.interner, num_buf[num_start .. num_buf.len - @intCast(usize, 1)]);
+    } else {
+        var dot_msg: []const u8 = "expected field name or index after '.'";
+        parserAddError(self, tok, dot_msg);
+        return error.UnexpectedToken;
+    }
+    _ = parserAdvance(self);
+    return ast_mod.astStoreAddNode(self.store, AstKind.field_access, 0,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        base, 0, 0, name_id);
+}
+
+fn parserParseIndexOrSlice(self: *Parser, base: u32) ParserError!u32 {
+    _ = parserAdvance(self);
+    var first = try parserParseExprPrec(self, Prec.prec_orelse);
+    var tok = parserPeek(self);
+    if (tok.kind == TokenKind.dot_dot) {
+        _ = parserAdvance(self);
+        var last: u32 = 0;
+        if (parserPeek(self).kind == TokenKind.rbracket) {
+            // open-ended range: grid[0..]
+        } else {
+            last = try parserParseExprPrec(self, Prec.prec_orelse);
+        }
+        _ = try parserExpect(self, TokenKind.rbracket);
+        return ast_mod.astStoreAddNode(self.store, AstKind.slice_expr, 0,
+            tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+            base, first, last, 0);
+    }
+    _ = try parserExpect(self, TokenKind.rbracket);
+    return ast_mod.astStoreAddNode(self.store, AstKind.index_access, 0,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        base, first, 0, 0);
+}
+
+fn parserParseFnCall(self: *Parser, base: u32) ParserError!u32 {
+    var lparen = parserAdvance(self);
+    if (parserPeek(self).kind == TokenKind.rparen) {
+        var rparen = parserAdvance(self);
+    var end: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
+        return ast_mod.astStoreAddNode(self.store, AstKind.fn_call, 0, lparen.span_start, end, base, 0, 0, 0);
+    }
+    var saved_fncall: usize = self.child_buf_len;
+    while (true) {
+        var arg = try parserParseExprPrec(self, Prec.prec_orelse);
+        u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, arg);
+        if (parserPeek(self).kind == TokenKind.rparen) break;
+        _ = try parserExpect(self, TokenKind.comma);
+        if (parserPeek(self).kind == TokenKind.rparen) break;
+    }
+    var rparen = try parserExpect(self, TokenKind.rparen);
+    var end: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
+    var payload = parserListEnd(self, saved_fncall);
+    return ast_mod.astStoreAddNode(self.store, AstKind.fn_call, 0, lparen.span_start, end, base, 0, 0, payload);
+}
+
+fn parserParseCatchRHS(self: *Parser, next_min: Prec, capture_out: *u32) ParserError!u32 {
+    capture_out.* = @intCast(u32, 0);
+    var ptok = parserPeek(self);
+    if (ptok.kind == TokenKind.pipe) {
+        _ = parserAdvance(self);
+        var name_raw2 = parserPeek(self);
+        _ = try parserExpect(self, TokenKind.identifier);
+        _ = try parserExpect(self, TokenKind.pipe);
+        var name_id = name_raw2.value.string_id;
+        capture_out.* = ast_mod.astStoreAddNode(self.store, AstKind.payload_capture, 0,
+            name_raw2.span_start, name_raw2.span_start + @intCast(u32, name_raw2.span_len),
+            0, 0, 0, name_id);
+    }
+    var result: u32 = undefined;
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        result = try parserParseBlock(self);
+    } else {
+        result = try parserParseExprPrec(self, next_min);
+    }
+    return result;
+}
+
+fn parserParseOrelseRHS(self: *Parser, next_min: Prec) ParserError!u32 {
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        return parserParseBlock(self);
+    }
+    return parserParseExprPrec(self, next_min);
+}
+
+fn parserParseFieldInitListNamed(self: *Parser) ParserError!u32 {
+    var saved_child_len = self.child_buf_len;
+    while (parserPeek(self).kind == TokenKind.dot) {
+        _ = parserAdvance(self);
+        var name_raw3 = parserPeek(self);
+        _ = try parserExpect(self, TokenKind.identifier);
+        _ = try parserExpect(self, TokenKind.eq);
+        var val = try parserParseExprPrec(self, Prec.prec_orelse);
+        var name_id = name_raw3.value.string_id;
+        var field = ast_mod.astStoreAddNode(self.store, AstKind.field_init, 0,
+            name_raw3.span_start, name_raw3.span_start + @intCast(u32, name_raw3.span_len),
+            val, 0, 0, name_id);
+        u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len,
+            &self.child_buf_capacity, self.allocator, field);
+        if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);
+    }
+    var rbrace = try parserExpect(self, TokenKind.rbrace);
+    return parserListEnd(self, saved_child_len);
+}
+
+fn parserParseStructInit(self: *Parser, base: u32) ParserError!u32 {
+    var lbrace = parserAdvance(self);
+    var payload = try parserParseFieldInitListNamed(self);
+    var end_pos = self.last_end;
+    return ast_mod.astStoreAddNode(self.store, AstKind.struct_init, 0,
+        lbrace.span_start, end_pos, base, 0, 0, payload);
+}
+
+fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena: *Sand, value: u32) void {
+    if (len.* >= capacity.*) {
+        var new_cap = capacity.*;
+        if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+        if (new_cap < len.* * 2) new_cap = len.* * 2;
+        if (capacity.* > 0) {
+            var grown = alloc_mod.sandTryReallocInPlace(arena,
+                @ptrCast([*]u8, items.*),
+                capacity.* * @intCast(usize, 4),
+                new_cap * @intCast(usize, 4),
+                @intCast(usize, 4));
+            if (grown != null) {
+                capacity.* = new_cap;
+                items.*[len.*] = value;
+                len.* += 1;
+                return;
+            }
+        }
+        var raw = alloc_mod.sandAlloc(arena, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+        var new_items_p = @ptrCast([*]u32, raw);
+        for (items.*[0..len.*]) |item, i| {
+            new_items_p[i] = item;
+        }
+        items.* = new_items_p;
+        capacity.* = new_cap;
+    }
+    items.*[len.*] = value;
+    len.* += 1;
+}
+
+fn parserPushU32(self: *Parser, buf: *[*]u32, len: *usize, cap: *usize, v: u32) void {
+    u32ArrayListAppendInner(buf, len, cap, self.allocator, v);
+}
+
+fn parserListEnd(self: *Parser, saved: usize) u32 {
+    var payload: u32 = 0;
+    if (self.child_buf_len > saved) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved..self.child_buf_len]);
+    }
+    self.child_buf_len = saved;
+    return payload;
+}
+
+fn parserParseCaptureName(self: *Parser) ParserError!ParseCapture {
+    _ = parserAdvance(self);
+    var name_tok: ParseToken = undefined;
+    if (parserPeek(self).kind == TokenKind.underscore) {
+        name_tok = try parserExpect(self, TokenKind.underscore);
+    } else {
+        name_tok = try parserExpect(self, TokenKind.identifier);
+    }
+    return ParseCapture{
+        .name_id = parserInternParseToken(self, name_tok),
+        .tok_start = name_tok.span_start,
+        .tok_len = name_tok.span_len,
+    };
+}
+
+fn parserParseExprListBrace(self: *Parser) ParserError!void {
+    while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
+        var val = try parserParseExprPrec(self, Prec.prec_orelse);
+        u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, val);
+        if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);
+    }
+}
+
+fn parserParseIntLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddIntLiteral(self.store, tok.value.int_val, tok.span_start, end);
+}
+
+fn parserParseFloatLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    var dbg_buf: [64]u8 = undefined;
+    var dbg = format_mod.formatF64(tok.value.float_val, dbg_buf[0..], 64);
+    var ps: []const u8 = "PF:"; pal.markerWrite(ps);
+    pal.markerWrite(dbg);
+    var pn: []const u8 = "\n"; pal.markerWrite(pn);
+    return ast_mod.astStoreAddFloatLiteral(self.store, tok.value.float_val, tok.span_start, end);
+}
+
+fn parserParseStringLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddStringLiteral(self.store, tok.value.string_id, tok.span_start, end);
+}
+
+fn parserParseCharLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddCharLiteral(self.store, tok.value.int_val, tok.span_start, end);
+}
+
+fn parserParseBoolLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var val: u8 = 0;
+    if (tok.kind == TokenKind.kw_true) val = 1;
+    var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddNode(self.store, AstKind.bool_literal, val, tok.span_start, end, 0, 0, 0, 0);
+}
+
+fn parserParseSingleToken(self: *Parser, kind: AstKind) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, 0, 0, 0, 0);
+}
+
+fn parserParseIdentExpr(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var id = parserInternTokenText(self, tok);
+    var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddIdentifier(self.store, AstKind.ident_expr, id, tok.span_start, end);
+}
+
+fn parserParsePrefixUnary(self: *Parser, kind: AstKind) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var operand = try parserParseExprPrec(self, Prec.prefix);
+    var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start,
+        end, operand, 0, 0, 0);
+}
+
+fn parserParseGroupedExpr(self: *Parser) ParserError!u32 {
+    var lparen = parserAdvance(self);
+    // Task 9B (m1240 ruling 5): assignment is a statement, not an expression, so
+    // a parenthesized assignment (`var x = (a = 3);`) is rejected here (the `)`
+    // expect fails), matching official Zig.
+    var inner = try parserParseExprPrec(self, Prec.prec_orelse);
+    var rparen = try parserExpect(self, TokenKind.rparen);
+    return ast_mod.astStoreAddNode(self.store, AstKind.paren_expr, 0,
+        lparen.span_start, rparen.span_start + @intCast(u32, rparen.span_len),
+        inner, 0, 0, 0);
+}
+
+fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    if (tok.value.string_id == self.builtin_import_id) {
+        // C2 (Amendment 2): the old `self.child_buf_len = 0;` here destroyed
+        // any enclosing shared list in progress (call args, tuple/array
+        // literals, switch prongs — measured: `f(1, @import("x").k, 3)` saw 2
+        // args, `.{ 1, @import("x").k, 3 }` built a 2-element tuple,
+        // `[_]i32{ 1, @import("x").k, 3 }` built a length-2 array). The
+        // `@import` arm appends nothing to `child_buf`, so the saved/append/
+        // listEnd protocol every list user follows is already correct without
+        // the reset.
+        return parserParseImportExpr(self, tok);
+    }
+    var id = tok.value.string_id;
+    var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
+    var lparen = parserPeek(self);
+    if (lparen.kind != TokenKind.lparen) {
+        var exp_s: []const u8 = "expected '(' after builtin name";
+        parserAddError(self, lparen, exp_s);
+        return error.UnexpectedToken;
+    }
+    _ = parserAdvance(self);
+     var saved_builtin: usize = self.child_buf_len;
+     while (true) {
+         if (parserPeek(self).kind == TokenKind.rparen) break;
+         var arg_tok = parserPeek(self);
+         var is_type: u8 = @intCast(u8, 0);
+         if (arg_tok.kind == TokenKind.star) { is_type = @intCast(u8, 1); }
+         if (arg_tok.kind == TokenKind.lbracket) { is_type = @intCast(u8, 1); }
+         if (arg_tok.kind == TokenKind.question_mark) { is_type = @intCast(u8, 1); }
+         if (arg_tok.kind == TokenKind.bang) { is_type = @intCast(u8, 1); }
+         if (arg_tok.kind == TokenKind.kw_fn) { is_type = @intCast(u8, 1); }
+         if (arg_tok.kind == TokenKind.kw_struct) { is_type = @intCast(u8, 1); }
+         if (arg_tok.kind == TokenKind.kw_enum) { is_type = @intCast(u8, 1); }
+         if (arg_tok.kind == TokenKind.kw_union) { is_type = @intCast(u8, 1); }
+         if (arg_tok.kind == TokenKind.kw_error) { is_type = @intCast(u8, 1); }
+          if (arg_tok.kind == TokenKind.kw_anytype) { is_type = @intCast(u8, 1); }
+          if (is_type != @intCast(u8, 0)) {
+             var arg = try parserParseType(self);
+             u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, arg);
+         } else {
+             var arg = try parserParseExprPrec(self, Prec.prec_orelse);
+             u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, arg);
+         }
+         if (parserPeek(self).kind == TokenKind.rparen) break;
+         _ = try parserExpect(self, TokenKind.comma);
+     }
+    var rparen = parserAdvance(self);
+    end = rparen.span_start + @intCast(u32, rparen.span_len);
+    var payload = parserListEnd(self, saved_builtin);
+    return ast_mod.astStoreAddNode(self.store, AstKind.builtin_call, 0, tok.span_start, end, id, 0, 0, payload);
+}
+
+fn parserParseImportExpr(self: *Parser, bi_tok: Token) ParserError!u32 {
+    var lparen = parserPeek(self);
+    if (lparen.kind != TokenKind.lparen) {
+        var exp_s: []const u8 = "expected '(' after @import";
+        parserAddError(self, lparen, exp_s);
+        return error.UnexpectedToken;
+    }
+    _ = parserAdvance(self);
+    var path_tok = parserPeek(self);
+    if (path_tok.kind != TokenKind.string_literal) {
+        var exp_s: []const u8 = "expected string literal for @import path";
+        parserAddError(self, path_tok, exp_s);
+        return error.UnexpectedToken;
+    }
+    var path_id = path_tok.value.string_id;
+    _ = parserAdvance(self);
+    var rparen = parserPeek(self);
+    if (rparen.kind != TokenKind.rparen) {
+        var exp_s: []const u8 = "expected ')' after @import path";
+        parserAddError(self, rparen, exp_s);
+        return error.UnexpectedToken;
+    }
+    var end_pos: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
+    _ = parserAdvance(self);
+    // D3 (Phase 3.5): `@import` is NOT resolved here. The parser only records
+    // the path; the import resolver defers resolution until its comptime
+    // evaluator selects the live arm/prong, so a comptime-dead arm never
+    // registers, queues, opens or parses its file. (The old parse-time probe
+    // gated this call; that probe is an approximation, not the language
+    // semantics, and is no longer the file-open gate.)
+    return ast_mod.astStoreAddNode(self.store, AstKind.import_expr, 0,
+        bi_tok.span_start, end_pos, 0, 0, 0, path_id);
+}
+
+fn parserParseCInclude(self: *Parser) ParserError!u32 {
+    var bi_tok = parserAdvance(self);
+    var lparen = parserPeek(self);
+    if (lparen.kind != TokenKind.lparen) {
+        var exp_s: []const u8 = "expected '(' after @cInclude";
+        parserAddError(self, lparen, exp_s);
+        return error.UnexpectedToken;
+    }
+    _ = parserAdvance(self);
+    var name_tok = parserPeek(self);
+    if (name_tok.kind != TokenKind.string_literal) {
+        var exp_s: []const u8 = "expected string literal for @cInclude name";
+        parserAddError(self, name_tok, exp_s);
+        return error.UnexpectedToken;
+    }
+    var name_id = name_tok.value.string_id;
+    _ = parserAdvance(self);
+    var rparen = parserPeek(self);
+    if (rparen.kind != TokenKind.rparen) {
+        var exp_s: []const u8 = "expected ')' after @cInclude name";
+        parserAddError(self, rparen, exp_s);
+        return error.UnexpectedToken;
+    }
+    var end_pos: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
+    _ = parserAdvance(self);
+    return ast_mod.astStoreAddNode(self.store, AstKind.c_include, 0,
+        bi_tok.span_start, end_pos, 0, 0, 0, name_id);
+}
+
+fn parserParseErrorLiteral(self: *Parser) ParserError!u32 {
+    var kw = parserAdvance(self);
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        var es = try parserParseErrorSetDeclBody(self, kw);
+        if (parserPeek(self).kind == TokenKind.bang) {
+            _ = parserAdvance(self);
+            var eu_payload = try parserParseType(self);
+            return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
+                kw.span_start, kw.span_start + @intCast(u32, kw.span_len),
+                es, eu_payload, 0, 0);
+        }
+        return es;
+    }
+    _ = try parserExpect(self, TokenKind.dot);
+    var name_tok = try parserExpect(self, TokenKind.identifier);
+    var name_id = parserInternParseToken(self, name_tok);
+    var end: u32 = name_tok.span_start + @intCast(u32, name_tok.span_len);
+    return ast_mod.astStoreAddNode(self.store, AstKind.error_literal, 0,
+        kw.span_start, end, 0, 0, 0, name_id);
+}
+
+fn parserParseTryExpr(self: *Parser) ParserError!u32 {
+    var kw = parserAdvance(self);
+    var inner = try parserParseExprPrec(self, Prec.prefix);
+    var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
+    return ast_mod.astStoreAddNode(self.store, AstKind.try_expr, 0,
+        kw.span_start, end_pos, inner, 0, 0, 0);
+}
+
+fn parserParseAnonymousLiteral(self: *Parser) ParserError!u32 {
+    var dot = parserAdvance(self);
+    var peek = parserPeek(self);
+    if (peek.kind == TokenKind.dot or peek.kind == TokenKind.rbrace) {
+        var payload = try parserParseFieldInitListNamed(self);
+        return ast_mod.astStoreAddNode(self.store, AstKind.struct_init, 0,
+            dot.span_start, self.last_end, 0, 0, 0, payload);
+    }
+    var saved_child_len = self.child_buf_len;
+    try parserParseExprListBrace(self);
+    var rbrace = try parserExpect(self, TokenKind.rbrace);
+    var payload = parserListEnd(self, saved_child_len);
+    return ast_mod.astStoreAddNode(self.store, AstKind.tuple_literal, 0,
+        dot.span_start, rbrace.span_start + @intCast(u32, rbrace.span_len),
+        0, 0, 0, payload);
+}
+
+fn parserParseEnumLiteral(self: *Parser) ParserError!u32 {
+    var dot = parserAdvance(self);
+    var name_tok = parserPeek(self);
+    _ = try parserExpect(self, TokenKind.identifier);
+    var end_pos: u32 = name_tok.span_start + @intCast(u32, name_tok.span_len);
+    return ast_mod.astStoreAddIdentifier(self.store, AstKind.enum_literal, name_tok.value.string_id, dot.span_start, end_pos);
+}
+
+fn parserParseArrayLiteral(self: *Parser) ParserError!u32 {
+    var tok = parserPeek(self);
+    var type_node = try parserParseBracketType(self);
+    if (parserPeek(self).kind != TokenKind.lbrace) {
+        return type_node;
+    }
+    _ = parserAdvance(self);
+    var saved_child_len = self.child_buf_len;
+    try parserParseExprListBrace(self);
+    var rbrace = try parserExpect(self, TokenKind.rbrace);
+    var gap: []const u8 = "";
+    _ = gap;
+    var payload = parserListEnd(self, saved_child_len);
+    return ast_mod.astStoreAddNode(self.store, AstKind.array_init, 0,
+        tok.span_start, rbrace.span_start + @intCast(u32, rbrace.span_len),
+        type_node, 0, 0, payload);
+}
+
+fn parserParseIfExpr(self: *Parser) ParserError!u32 {
+    var kw = parserAdvance(self);
+    _ = try parserExpect(self, TokenKind.lparen);
+    // Task 9B (a): a condition is not an assignment expression. `prec_orelse`
+    // still admits orelse/catch/comparison/logical/arithmetic but excludes
+    // `Prec.assignment`, so `if (a = 3)` fails at the `)` expect (error[2000]),
+    // matching official Zig's parse error.
+    var cond = try parserParseExprPrec(self, Prec.prec_orelse);
+    _ = try parserExpect(self, TokenKind.rparen);
+    var capture_node: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.pipe) {
+        var cap = try parserParseCaptureName(self);
+        _ = try parserExpect(self, TokenKind.pipe);
+        capture_node = ast_mod.astStoreAddNode(self.store, AstKind.if_capture, 0,
+            cap.tok_start, cap.tok_start + @intCast(u32, cap.tok_len),
+            0, 0, 0, cap.name_id);
+    }
+    var t4_ie_cv: ?bool = parserFoldComptimeBool(self, cond, 0);
+    var t4_ie_saved: u32 = self.dead_import_depth;
+    if (t4_ie_cv) |t4_iev| { if (!t4_iev) { self.dead_import_depth += 1; } }
+    var then_body = try parserParseExprPrec(self, Prec.prec_orelse);
+    self.dead_import_depth = t4_ie_saved;
+    var else_body: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.kw_else) {
+        _ = parserAdvance(self);
+        if (t4_ie_cv) |t4_iev2| { if (t4_iev2) { self.dead_import_depth += 1; } }
+        else_body = try parserParseExprPrec(self, Prec.prec_orelse);
+        self.dead_import_depth = t4_ie_saved;
+    }
+    var end_pos: u32 = kw.span_start;
+    if (self.last_tok_valid) {
+        var last = self.last_tok;
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.if_expr, 0,
+        kw.span_start, end_pos, cond, then_body, else_body, capture_node);
+}
+
+pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
+    var kw_tok = parserAdvance(self);
+    _ = try parserExpect(self, TokenKind.lparen);
+    // Task 9B (a): a switch condition is not an assignment expression.
+    var cond: u32 = try parserParseExprPrec(self, Prec.prec_orelse);
+    _ = try parserExpect(self, TokenKind.rparen);
+    _ = try parserExpect(self, TokenKind.lbrace);
+
+    // C1b: the comptime-known switch value selects the live prong (see
+    // `parserParseSwitchProng`); save/restore around the prong list so a
+    // nested switch starts fresh.
+    var t4_sw_saved: ?bool = self.switch_fold_val;
+    var t4_swm_saved: bool = self.switch_fold_matched;
+    self.switch_fold_val = parserFoldComptimeBool(self, cond, 0);
+    self.switch_fold_matched = false;
+
+    // T4 (spec §4): the conditional-`@import` idiom's `switch` form
+    // (`switch (@isWindows()) { true => @import("a.zig"), else => @import("b.zig") }`).
+    // Prongs are collected in a LOCAL list — exactly like
+    // `parserParseSwitchProng`'s case items — instead of the shared
+    // `child_buf`: `parserParseBuiltinCall`'s `@import` arm resets the shared
+    // buffer (`self.child_buf_len = 0`, parser.zig:712), which destroyed an
+    // in-progress prong list and left only the LAST prong attached to the
+    // `swt_ex` node (measured: a two-prong `@import` switch read back with
+    // `prongs_n == 1`, the else/last prong only).
+    var prong_items: [*]u32 = undefined;
+    var prong_len: usize = 0;
+    var prong_cap: usize = 0;
+    while (true) {
+        var tok = parserPeek(self);
+        if (tok.kind == TokenKind.rbrace) break;
+        if (tok.kind == TokenKind.eof) break;
+        var prong = try parserParseSwitchProng(self);
+        u32ArrayListAppendInner(&prong_items, &prong_len, &prong_cap, self.allocator, prong);
+        if (parserPeek(self).kind == TokenKind.comma) {
+            _ = parserAdvance(self);
+        }
+    }
+    _ = try parserExpect(self, TokenKind.rbrace);
+
+    var payload: u32 = 0;
+    if (prong_len > @intCast(usize, 0)) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, prong_items[0..prong_len]);
+    }
+    var end_pos: u32 = kw_tok.span_start + @intCast(u32, kw_tok.span_len);
+    var pswe_node = ast_mod.astStoreAddNode(self.store, AstKind.swt_ex, 0,
+        kw_tok.span_start, end_pos, cond, 0, 0, payload);
+    var pswe_nm: []const u8 = "PSWE:n"; pal.markerWriteInt(pswe_nm, pswe_node);
+    var pswe_pm: []const u8 = "p"; pal.markerWriteInt(pswe_pm, payload);
+    self.switch_fold_val = t4_sw_saved;
+    self.switch_fold_matched = t4_swm_saved;
+    return pswe_node;
+}
+
+fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
+    var start_tok = parserPeek(self);
+    var case_items: [*]u32 = undefined;
+    var case_len: usize = 0;
+    var case_cap: usize = 0;
+    var is_else: u8 = 0;
+
+    if (parserPeek(self).kind == TokenKind.kw_else) {
+        var pcb_tm: []const u8 = "PCB:T"; pal.markerWriteInt(pcb_tm, @intCast(u32, @enumToInt(parserPeek(self).kind)));
+        _ = parserAdvance(self);
+        is_else = 1;
+    } else {
+        var pcb_em: []const u8 = "PCB:E"; pal.markerWrite(pcb_em);
+        while (true) {
+            var item: u32 = try parserParseExprPrec(self, Prec.prec_orelse);
+            var range_kind: AstKind = AstKind.err;
+            var end_item: u32 = 0;
+            if (parserPeek(self).kind == TokenKind.dot_dot) {
+                _ = parserAdvance(self);
+                end_item = try parserParseExprPrec(self, Prec.prec_orelse);
+                range_kind = AstKind.range_exclusive;
+            } else if (parserPeek(self).kind == TokenKind.dot_dot_dot) {
+                _ = parserAdvance(self);
+                end_item = try parserParseExprPrec(self, Prec.prec_orelse);
+                range_kind = AstKind.range_inclusive;
+            }
+            if (range_kind != AstKind.err) {
+                var range_node = ast_mod.astStoreAddNode(self.store, range_kind, 0,
+                    start_tok.span_start, start_tok.span_start + @intCast(u32, start_tok.span_len),
+                    item, end_item, 0, 0);
+                u32ArrayListAppendInner(&case_items, &case_len, &case_cap, self.allocator, range_node);
+            } else {
+                u32ArrayListAppendInner(&case_items, &case_len, &case_cap, self.allocator, item);
+                var pcb2_m: []const u8 = "PCB:B"; pal.markerWriteInt(pcb2_m, @intCast(u32, case_len));
+            }
+            if (parserPeek(self).kind != TokenKind.comma) break;
+            if (parserPeekN(self, 1).kind == TokenKind.fat_arrow) break;
+            _ = parserAdvance(self);
+        }
+    }
+
+    _ = try parserExpect(self, TokenKind.fat_arrow);
+
+    var flags: u8 = 0;
+    var capture_name: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.pipe) {
+        var cap = try parserParseCaptureName(self);
+        _ = try parserExpect(self, TokenKind.pipe);
+        capture_name = cap.name_id;
+        flags = 16;
+        var cpm: []const u8 = "CPT:n"; pal.markerWriteInt(cpm, capture_name);
+    }
+    if (is_else != 0) {
+        flags = flags | 1;
+    }
+
+    // C1b (true Zig laziness): with a comptime-known switch condition only the
+    // SELECTED prong's body is live — an untaken prong's `@import` must never
+    // load its file (Zig laziness). Bool case items + `else` (the T4/C4 idiom
+    // spelling): a prong is selected when a case item folds to the condition
+    // value (first match wins — a later duplicate is dead), and the `else`
+    // prong when no earlier prong matched. Unknown condition: all prongs live
+    // (runtime-selected imports are out of scope and keep eager loading).
+    var t4_prong_dead: u8 = @intCast(u8, 0);
+    if (self.switch_fold_val) |t4_sv| {
+        var t4_matches: bool = false;
+        if (is_else != 0) {
+            t4_matches = !self.switch_fold_matched;
+        } else {
+            var t4_ci: usize = 0;
+            while (t4_ci < case_len) : (t4_ci += 1) {
+                if (parserFoldComptimeBool(self, case_items[t4_ci], 0)) |t4_cvi| {
+                    if (t4_cvi == t4_sv) { t4_matches = true; break; }
+                }
+            }
+        }
+        if (t4_matches) {
+            if (self.switch_fold_matched) {
+                t4_prong_dead = @intCast(u8, 1);
+            } else {
+                self.switch_fold_matched = true;
+            }
+        } else {
+            t4_prong_dead = @intCast(u8, 1);
+        }
+    }
+    var t4_prong_saved: u32 = self.dead_import_depth;
+    if (t4_prong_dead != @intCast(u8, 0)) { self.dead_import_depth += 1; }
+
+    var body: u32 = undefined;
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        body = try parserParseBlock(self);
+    } else {
+        body = try parserParseStmtBodyExpr(self);
+    }
+    self.dead_import_depth = t4_prong_saved;
+
+    var pcb_m: []const u8 = "PCB:n"; pal.markerWriteInt(pcb_m, @intCast(u32, case_len));
+    var pcb_pm: []const u8 = "p="; pal.markerWriteInt(pcb_pm, @intCast(u32, flags));
+    var pcb_sm: []const u8 = "PCB:S"; pal.markerWriteInt(pcb_sm, @intCast(u32, case_len));
+    var items_payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, case_items[0..case_len]);
+    var ppl_m: []const u8 = "PPL:n"; pal.markerWriteInt(ppl_m, items_payload);
+    var end_pos: u32 = start_tok.span_start + @intCast(u32, start_tok.span_len);
+    return ast_mod.astStoreAddNode(self.store, AstKind.swt_prong, flags,
+        start_tok.span_start, end_pos, body, capture_name, 0, items_payload);
+}
+
+fn parserParseTypeLeading(self: *Parser) ParserError!?u32 {
+    var tok = parserPeek(self);
+    if (tok.kind == TokenKind.star) return try parserParsePtrType(self);
+    if (tok.kind == TokenKind.question_mark) return try parserParseOptionalType(self);
+    if (tok.kind == TokenKind.kw_extern) return try parserParseExternFnType(self);
+    if (tok.kind == TokenKind.kw_fn) return try parserParseFnType(self, CALL_CONV_CDECL);
+    if (tok.kind == TokenKind.kw_struct) return try parserParseStructType(self, 0);
+    if (tok.kind == TokenKind.kw_enum) return try parserParseEnumType(self);
+    if (tok.kind == TokenKind.kw_union) return try parserParseUnionType(self, 0);
+    if (tok.kind == TokenKind.kw_packed) {
+        _ = parserAdvance(self);
+        var ntok = parserPeek(self);
+        if (ntok.kind == TokenKind.kw_struct) return try parserParseStructType(self, 1);
+        if (ntok.kind == TokenKind.kw_union) return try parserParseUnionType(self, 1);
+        var pmsg: []const u8 = "expected 'struct' or 'union' after 'packed'";
+        parserAddError(self, ntok, pmsg);
+        return error.UnexpectedToken;
+    }
+    return null;
+}
+
+pub fn parserParseType(self: *Parser) ParserError!u32 {
+    var tok = parserPeek(self);
+    var leading = try parserParseTypeLeading(self);
+    if (leading) |n| return n;
+    if (tok.kind == TokenKind.lbracket) return parserParseBracketType(self);
+    if (tok.kind == TokenKind.bang) return parserParseErrorUnionType(self);
+    if (tok.kind == TokenKind.kw_error) {
+        var es = try parserParseErrorSetDecl(self);
+        if (parserPeek(self).kind == TokenKind.bang) {
+            _ = parserAdvance(self);
+            var payload = try parserParseType(self);
+            return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
+                tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+                es, payload, 0, 0);
+        }
+        return es;
+    }
+    if (tok.kind == TokenKind.kw_anytype) {
+        var at = parserAdvance(self);
+        var aid = parserInternTokenText(self, at);
+        var aend: u32 = at.span_start + @intCast(u32, at.span_len);
+        return ast_mod.astStoreAddIdentifier(self.store, AstKind.ident_expr, aid, at.span_start, aend);
+    }
+    var base = try parserParseTypeName(self);
+    if (parserPeek(self).kind == TokenKind.bang) {
+        _ = parserAdvance(self);
+        var payload = try parserParseType(self);
+        return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
+            tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+            base, payload, 0, 0);
+    }
+    return base;
+}
+
+fn parserParsePtrQualifiers(self: *Parser) u8 {
+    var flags: u8 = 0;
+    while (true) {
+        if (parserPeek(self).kind == TokenKind.kw_const) {
+            _ = parserAdvance(self);
+            flags |= 1;
+        } else if (parserPeek(self).kind == TokenKind.kw_volatile) {
+            _ = parserAdvance(self);
+            flags |= 2;
+        } else {
+            break;
+        }
+    }
+    return flags;
+}
+
+fn parserParsePtrType(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var flags = parserParsePtrQualifiers(self);
+    var base = try parserParseType(self);
+    var end_pos = base;
+    _ = end_pos;
+    return ast_mod.astStoreAddNode(self.store, AstKind.ptr_type, flags,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        base, 0, 0, 0);
+}
+
+fn parserParseBracketType(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    if (parserPeek(self).kind == TokenKind.star) {
+        _ = parserAdvance(self);
+        _ = try parserExpect(self, TokenKind.rbracket);
+        var flags = parserParsePtrQualifiers(self);
+        var base = try parserParseType(self);
+        return ast_mod.astStoreAddNode(self.store, AstKind.many_ptr_type, flags,
+            tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+            base, 0, 0, 0);
+    }
+    if (parserPeek(self).kind == TokenKind.rbracket) {
+        _ = parserAdvance(self);
+        var flags: u8 = 0;
+        if (parserPeek(self).kind == TokenKind.kw_const) {
+            _ = parserAdvance(self);
+            flags = 1;
+        }
+        var base = try parserParseType(self);
+        return ast_mod.astStoreAddNode(self.store, AstKind.slice_type, flags,
+            tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+            base, 0, 0, 0);
+    }
+    var size_expr = try parserParseExprPrec(self, Prec.prec_orelse);
+    _ = try parserExpect(self, TokenKind.rbracket);
+    var base = try parserParseType(self);
+    return ast_mod.astStoreAddNode(self.store, AstKind.array_type, 0,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        base, size_expr, 0, 0);
+}
+
+fn parserParseOptionalType(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var payload = try parserParseType(self);
+    return ast_mod.astStoreAddNode(self.store, AstKind.optional_type, 0,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        payload, 0, 0, 0);
+}
+
+fn parserParseErrorUnionType(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var payload = try parserParseType(self);
+    return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        0, payload, 0, 0);
+}
+
+fn parserParseExternFnType(self: *Parser) ParserError!u32 {
+    _ = parserAdvance(self); // extern
+    var call_conv: u8 = CALL_CONV_CDECL;
+    if (parserPeek(self).kind == TokenKind.string_literal) {
+        var str_tok = parserAdvance(self);
+        var text = string_interner_mod.stringInternerGet(self.interner, str_tok.value.string_id);
+        call_conv = parserClassifyCallConv(self, text);
+        if (call_conv == CALL_CONV_INVALID) {
+            var ucv: []const u8 = "unknown calling convention in `extern`";
+            parserAddErrorCode(self, str_tok, 3045, ucv);
+            call_conv = CALL_CONV_CDECL;
+        }
+    }
+    var nt = parserPeek(self);
+    if (nt.kind != TokenKind.kw_fn) {
+        var efm: []const u8 = "expected 'fn' after extern calling convention";
+        parserAddError(self, nt, efm);
+        return error.UnexpectedToken;
+    }
+    return parserParseFnType(self, call_conv);
+}
+
+fn parserParseFnType(self: *Parser, call_conv: u8) ParserError!u32 {
+    var tok = parserAdvance(self);
+    _ = try parserExpect(self, TokenKind.lparen);
+    var param_buf: [*]u32 = undefined;
+    var param_count: usize = 0;
+    var param_cap: usize = @intCast(usize, 0);
+    while (parserPeek(self).kind != TokenKind.rparen) {
+        if (parserPeek(self).kind == TokenKind.dot_dot_dot) {
+            var vtok = parserAdvance(self);
+            var v_msg: []const u8 = "varargs not allowed in function pointer types";
+            parserAddError(self, vtok, v_msg);
+            return error.UnexpectedToken;
+        }
+        if (parserPeek(self).kind == TokenKind.identifier and parserPeekN(self, 1).kind == TokenKind.colon) {
+            _ = parserAdvance(self);
+            _ = try parserExpect(self, TokenKind.colon);
+        }
+        var p = try parserParseType(self);
+        parserPushU32(self, &param_buf, &param_count, &param_cap, p);
+        if (parserPeek(self).kind == TokenKind.comma) {
+            _ = parserAdvance(self);
+        }
+    }
+    _ = try parserExpect(self, TokenKind.rparen);
+    var ret_type: u32 = 0;
+    if (parserPeek(self).kind != TokenKind.lbrace and
+        parserPeek(self).kind != TokenKind.semicolon and
+        parserPeek(self).kind != TokenKind.eof and
+        parserPeek(self).kind != TokenKind.rparen and
+        parserPeek(self).kind != TokenKind.rbracket and
+        parserPeek(self).kind != TokenKind.comma)
+    {
+        ret_type = try parserParseType(self);
+    }
+    var payload: u32 = 0;
+    if (param_count > 0) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, param_buf[0..param_count]);
+    }
+    var fn_flags: u8 = 0;
+    if (call_conv == CALL_CONV_STDCALL) { fn_flags = fn_flags | @intCast(u8, 0x01); }
+    return ast_mod.astStoreAddNode(self.store, AstKind.fn_type, fn_flags,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        ret_type, 0, 0, payload);
+}
+
+fn parserParseErrorSetDecl(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    return parserParseErrorSetDeclBody(self, tok);
+}
+
+fn parserParseErrorSetDeclBody(self: *Parser, kw: Token) ParserError!u32 {
+    _ = try parserExpect(self, TokenKind.lbrace);
+    var member_buf: [*]u32 = null;
+    var member_count: usize = 0;
+    var member_cap: usize = @intCast(usize, 0);
+    while (parserPeek(self).kind != TokenKind.rbrace) {
+        var tag_tok = try parserExpect(self, TokenKind.identifier);
+        var tag_id = parserInternParseToken(self, tag_tok);
+        parserPushU32(self, &member_buf, &member_count, &member_cap, tag_id);
+        if (parserPeek(self).kind == TokenKind.comma) {
+            _ = parserAdvance(self);
+        }
+    }
+    _ = try parserExpect(self, TokenKind.rbrace);
+    var payload: u32 = 0;
+    if (member_count > 0) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, member_buf[0..member_count]);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.error_set_decl, 0,
+        kw.span_start, kw.span_start + @intCast(u32, kw.span_len),
+        0, 0, 0, payload);
+}
+
+fn parserParseStructType(self: *Parser, is_packed: u8) ParserError!u32 {
+    var tok = parserAdvance(self);
+    _ = try parserExpect(self, TokenKind.lbrace);
+    var fields_buf: [*]u32 = undefined;
+    var fields_count: usize = 0;
+    var fields_cap: usize = @intCast(usize, 0);
+    var saw_named: u8 = @intCast(u8, 0);
+    var saw_positional: u8 = @intCast(u8, 0);
+    while (parserPeek(self).kind != TokenKind.rbrace) {
+        var field_tok = parserPeek(self);
+        // FB (D4): `struct { T1, T2 }` is a tuple type (positional elements);
+        // `struct { name: T }` is the existing named-struct form. A field is
+        // named iff an identifier is immediately followed by `:`. All elements
+        // must be the same kind (the resolver/emitter have no mixed model).
+        var is_named_field: u8 = @intCast(u8, 0);
+        if (field_tok.kind == TokenKind.identifier and parserPeekN(self, 1).kind == TokenKind.colon) {
+            is_named_field = @intCast(u8, 1);
+        }
+        if (is_named_field != @intCast(u8, 0)) {
+            if (saw_positional != @intCast(u8, 0)) {
+                var mix_msg: []const u8 = "struct fields must be all named or all positional (tuple)";
+                parserAddError(self, field_tok, mix_msg);
+                return error.UnexpectedToken;
+            }
+            saw_named = @intCast(u8, 1);
+            var name_tok = try parserExpect(self, TokenKind.identifier);
+            _ = try parserExpect(self, TokenKind.colon);
+            var name_id = parserInternParseToken(self, name_tok);
+            var field_type = try parserParseType(self);
+            var field_node = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+                name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
+                field_type, 0, 0, name_id);
+            parserPushU32(self, &fields_buf, &fields_count, &fields_cap, field_node);
+        } else {
+            if (saw_named != @intCast(u8, 0)) {
+                var mix_msg2: []const u8 = "struct fields must be all named or all positional (tuple)";
+                parserAddError(self, field_tok, mix_msg2);
+                return error.UnexpectedToken;
+            }
+            if (is_packed != @intCast(u8, 0)) {
+                var pack_msg: []const u8 = "packed structs cannot have positional tuple fields";
+                parserAddError(self, field_tok, pack_msg);
+                return error.UnexpectedToken;
+            }
+            saw_positional = @intCast(u8, 1);
+            var field_type2 = try parserParseType(self);
+            var field_node2 = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+                field_tok.span_start, field_tok.span_start + @intCast(u32, field_tok.span_len),
+                field_type2, 0, 0, 0);
+            parserPushU32(self, &fields_buf, &fields_count, &fields_cap, field_node2);
+        }
+        if (parserPeek(self).kind == TokenKind.comma) {
+            _ = parserAdvance(self);
+        }
+    }
+    _ = try parserExpect(self, TokenKind.rbrace);
+    var payload: u32 = 0;
+    if (fields_count > 0) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, fields_buf[0..fields_count]);
+    }
+    var flags: u8 = 0;
+    if (is_packed != @intCast(u8, 0)) flags = flags | @intCast(u8, 0x10);
+    if (saw_positional != @intCast(u8, 0)) flags = flags | @intCast(u8, 0x20);
+    return ast_mod.astStoreAddNode(self.store, AstKind.struct_decl, flags,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        0, 0, 0, payload);
+}
+
+fn parserParseEnumType(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var backing_type2: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.lparen) {
+        _ = parserAdvance(self);
+        backing_type2 = try parserParseType(self);
+        _ = try parserExpect(self, TokenKind.rparen);
+    }
+    _ = try parserExpect(self, TokenKind.lbrace);
+    var members_buf: [*]u32 = undefined;
+    var members_count: usize = 0;
+    var members_cap: usize = @intCast(usize, 0);
+    while (parserPeek(self).kind != TokenKind.rbrace) {
+        var name_tok = try parserExpect(self, TokenKind.identifier);
+        var name_id = parserInternParseToken(self, name_tok);
+        var value_expr: u32 = 0;
+        if (parserPeek(self).kind == TokenKind.eq) {
+            _ = parserAdvance(self);
+            value_expr = try parserParseExprPrec(self, Prec.prec_orelse);
+        }
+        var mnode = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+            name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
+            0, value_expr, 0, name_id);
+        parserPushU32(self, &members_buf, &members_count, &members_cap, mnode);
+        if (parserPeek(self).kind == TokenKind.comma) {
+            _ = parserAdvance(self);
+        }
+    }
+    _ = try parserExpect(self, TokenKind.rbrace);
+    var payload: u32 = 0;
+    if (members_count > 0) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, members_buf[0..members_count]);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.enum_decl, 0,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        backing_type2, 0, 0, payload);
+}
+
+
+fn parserParseUnionType(self: *Parser, is_packed: u8) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var flags: u8 = 0;
+    var is_tagged: u8 = 0;
+    if (parserPeek(self).kind == TokenKind.lparen) {
+        _ = parserAdvance(self);
+        _ = try parserExpect(self, TokenKind.kw_enum);
+        _ = try parserExpect(self, TokenKind.rparen);
+        is_tagged = 1;
+    }
+    if (is_tagged != @intCast(u8, 0) and is_packed != @intCast(u8, 0)) {
+        var tag_msg: []const u8 = "packed unions cannot be tagged (union(enum)); packed union is an untagged container";
+        parserAddError(self, tok, tag_msg);
+        return error.UnexpectedToken;
+    }
+    if (is_tagged != @intCast(u8, 0)) flags = flags | @intCast(u8, 1);
+    if (is_packed != @intCast(u8, 0)) flags = flags | @intCast(u8, 0x10);
+    _ = try parserExpect(self, TokenKind.lbrace);
+    var fields_buf: [*]u32 = undefined;
+    var fields_count: usize = 0;
+    var fields_cap: usize = @intCast(usize, 0);
+    while (parserPeek(self).kind != TokenKind.rbrace) {
+        var name_tok = try parserExpect(self, TokenKind.identifier);
+        var name_id = parserInternParseToken(self, name_tok);
+        var field_node: u32 = 0;
+        if (parserPeek(self).kind == TokenKind.colon) {
+            _ = parserAdvance(self);
+            var field_type = try parserParseType(self);
+            field_node = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+                name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
+                field_type, 0, 0, name_id);
+        } else {
+            field_node = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+                name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
+                0, 0, 0, name_id);
+        }
+        parserPushU32(self, &fields_buf, &fields_count, &fields_cap, field_node);
+        if (parserPeek(self).kind == TokenKind.comma) {
+            _ = parserAdvance(self);
+        }
+    }
+    _ = try parserExpect(self, TokenKind.rbrace);
+    var payload: u32 = 0;
+    if (fields_count > 0) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, fields_buf[0..fields_count]);
+    }
+    var kind: AstKind = AstKind.union_decl;
+    if (is_tagged != 0) {
+        // tagged_union_type for union(enum) — keep as union_decl with flags
+    }
+    return ast_mod.astStoreAddNode(self.store, kind, flags,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        0, 0, 0, payload);
+}
+
+fn parserParseTypeName(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var name_id = parserInternTokenText(self, tok);
+    var node = ast_mod.astStoreAddIdentifier(self.store, AstKind.ident_expr, name_id, tok.span_start,
+        tok.span_start + @intCast(u32, tok.span_len));
+    while (parserPeek(self).kind == TokenKind.dot) {
+        _ = parserAdvance(self);
+        var field_tok = try parserExpect(self, TokenKind.identifier);
+        var field_id = parserInternParseToken(self, field_tok);
+        node = ast_mod.astStoreAddNode(self.store, AstKind.field_access, 0,
+            tok.span_start, field_tok.span_start + @intCast(u32, field_tok.span_len),
+            node, 0, 0, field_id);
+    }
+    return node;
+}
+
+pub fn parserParseStatement(self: *Parser) ParserError!u32 {
+    var tok = parserPeek(self);
+    var pstk_m: []const u8 = "PSTK:k"; pal.markerWriteInt(pstk_m, @intCast(u32, @enumToInt(tok.kind)));
+    if (tok.kind == TokenKind.kw_const) { var varc_s: []const u8 = "VARC"; pal.markerWrite(varc_s); return parserParseVarDecl(self, false, false, false, false); }
+    if (tok.kind == TokenKind.kw_var) { var varv_s: []const u8 = "VARV"; pal.markerWrite(varv_s); return parserParseVarDecl(self, true, false, false, false); }
+    if (tok.kind == TokenKind.kw_pub) return parserParsePubDecl(self);
+    if (tok.kind == TokenKind.kw_extern) return parserParseExternDecl(self, false);
+    if (tok.kind == TokenKind.kw_export) return parserParseExportDecl(self, false);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, false, false, false, false, CALL_CONV_CDECL);
+    if (tok.kind == TokenKind.kw_if) return parserParseIfStmt(self);
+    if (tok.kind == TokenKind.kw_while) return parserParseWhileStmt(self);
+    if (tok.kind == TokenKind.kw_for) return parserParseForStmt(self);
+    if (tok.kind == TokenKind.kw_switch) return parserParseSwitchStmt(self);
+    if (tok.kind == TokenKind.kw_return) return parserParseReturnStmt(self);
+    if (tok.kind == TokenKind.kw_break) return parserParseBreakStmt(self);
+    if (tok.kind == TokenKind.kw_continue) return parserParseContinueStmt(self);
+    if (tok.kind == TokenKind.kw_defer) return parserParseDeferStmt(self, AstKind.defer_stmt);
+    if (tok.kind == TokenKind.kw_errdefer) return parserParseErrdeferStmt(self);
+    if (tok.kind == TokenKind.kw_test) return parserParseTestDecl(self);
+    if (tok.kind == TokenKind.kw_struct) return parserParseContainerDecl(self, AstKind.struct_decl);
+    if (tok.kind == TokenKind.kw_enum) return parserParseContainerDecl(self, AstKind.enum_decl);
+    if (tok.kind == TokenKind.kw_union) return parserParseContainerDecl(self, AstKind.union_decl);
+    if (tok.kind == TokenKind.lbrace) return parserParseBlock(self);
+    if (tok.kind == TokenKind.semicolon) {
+        _ = parserAdvance(self);
+        return parserParseStatement(self);
+    }
+    if (tok.kind == TokenKind.identifier) {
+        if (parserPeekN(self, 1).kind == TokenKind.colon) return parserParseLabeledStmt(self);
+        return parserParseExprStmt(self);
+    }
+    return parserParseExprStmt(self);
+}
+
+pub fn parserEmitErrorNode(self: *Parser, tok: Token, msg: []const u8) u32 {
+    parserAddError(self, tok, msg);
+    return ast_mod.astStoreAddNode(self.store, AstKind.err, 0,
+        tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+        0, 0, 0, 0);
+}
+
+pub fn parserParseModuleRoot(self: *Parser) ParserError!u32 {
+    self.decl_buf_len = @intCast(usize, 0);
+
+    while (parserPeek(self).kind != TokenKind.eof) {
+        var decl = parserParseStatement(self) catch {
+            var tok = parserPeek(self);
+            var err_msg: []const u8 = "unexpected token";
+            var err = parserEmitErrorNode(self, tok, err_msg);
+            parserSynchronize(self);
+            u32ArrayListAppendInner(&self.decl_buf_items, &self.decl_buf_len, &self.decl_buf_capacity, self.allocator, err);
+            while (parserPeek(self).kind == TokenKind.semicolon) _ = parserAdvance(self);
+            continue;
+        };
+        u32ArrayListAppendInner(&self.decl_buf_items, &self.decl_buf_len, &self.decl_buf_capacity, self.allocator, decl);
+    }
+
+    var payload: u32 = 0;
+    if (self.decl_buf_len > @intCast(usize, 0)) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, self.decl_buf_items[0..self.decl_buf_len]);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.module_root, 0, 0, 0, 0, 0, 0, payload);
+}
+
+fn parserParseStmtBodyExpr(self: *Parser) ParserError!u32 {
+    var result = try parserParseExprPrec(self, Prec.prec_orelse);
+    var atok = parserPeek(self);
+    if (getInfixInfo(atok.kind)) |info| {
+        if (info.prec == Prec.assignment) {
+            _ = parserAdvance(self);
+            var rhs = try parserParseExprPrec(self, Prec.prec_orelse);
+            result = try parserAddBinary(self, atok, result, rhs);
+        }
+    }
+    return result;
+}
+
+fn parserParseExprStmt(self: *Parser) ParserError!u32 {
+    var result = try parserParseStmtBodyExpr(self);
+    if (parserPeek(self).kind != TokenKind.rbrace) {
+        _ = try parserExpect(self, TokenKind.semicolon);
+    }
+    return result;
+}
+
+fn parserParseLabeledStmt(self: *Parser) ParserError!u32 {
+    var label_tok = parserAdvance(self);
+    _ = try parserExpect(self, TokenKind.colon);
+    var inner = try parserParseStatement(self);
+    var end = inner; _ = end;
+    return ast_mod.astStoreAddNode(self.store, AstKind.labeled_stmt, 0,
+        label_tok.span_start, label_tok.span_start + @intCast(u32, label_tok.span_len),
+        inner, 0, 0, label_tok.value.string_id);
+}
+
+fn parserParseLabeledBlockExpr(self: *Parser) ParserError!u32 {
+    var label_tok = parserAdvance(self);
+    _ = try parserExpect(self, TokenKind.colon);
+    var body = try parserParseBlock(self);
+    var end_pos: u32 = label_tok.span_start;
+    if (self.last_tok_valid) {
+        var last = self.last_tok;
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.labeled_stmt, 0,
+        label_tok.span_start, end_pos, body, 0, 0, label_tok.value.string_id);
+}
+
+fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: bool, is_export: bool) ParserError!u32 {
+    var vmsg: []const u8 = "V"; pal.markerWrite(vmsg);
+    var kw = parserAdvance(self);
+    var name_raw = parserPeek(self);
+    if (name_raw.kind == TokenKind.underscore) {
+        _ = parserAdvance(self);
+    } else {
+        _ = try parserExpect(self, TokenKind.identifier);
+    }
+    var name_id = name_raw.value.string_id;
+    var flags: u8 = 0;
+    if (is_mutable) flags = flags | @intCast(u8, 0x01);
+    if (is_pub) flags = flags | @intCast(u8, 0x02);
+    if (is_extern) flags = flags | @intCast(u8, 0x04);
+    if (is_export) flags = flags | @intCast(u8, 0x08);
+    var type_node: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.colon) {
+        _ = parserAdvance(self);
+        type_node = try parserParseType(self);
+    }
+    var init_node: u32 = 0;
+      if (parserPeek(self).kind == TokenKind.eq) {
+          _ = parserAdvance(self);
+          init_node = try parserParseExprPrec(self, Prec.prec_orelse);
+     }
+    var semi = try parserExpect(self, TokenKind.semicolon);
+    var end_pos: u32 = semi.span_start + @intCast(u32, semi.span_len);
+    var vok: []const u8 = "v"; pal.markerWrite(vok);
+    var pdv_s: []const u8 = "PDVx"; pal.markerWrite(pdv_s);
+    if (init_node != @intCast(u32, 0)) {
+        var init_check = ast_mod.astStoreNodeAt(self.store, init_node);
+        if (init_check.kind == AstKind.c_include) {
+            return init_node;
+        }
+    }
+    // C1b (true Zig laziness): record immutable bindings in the parse-time
+    // const map so the untaken-arm probe can fold `if (use_a)` conditions
+    // whose `const` is already parsed (T3 trigger-set parity at parse time;
+    // block-scoped via `parserParseBlock`'s watermark).
+    if ((flags & @intCast(u8, 0x01)) == @intCast(u8, 0) and init_node != @intCast(u32, 0)) {
+        u32ArrayListAppendInner(&self.t4_const_items, &self.t4_const_len, &self.t4_const_cap, self.allocator, name_id);
+        u32ArrayListAppendInner(&self.t4_const_items, &self.t4_const_len, &self.t4_const_cap, self.allocator, init_node);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.var_decl, flags,
+        kw.span_start, end_pos, type_node, init_node, 0, name_id);
+}
+fn parserParsePubDecl(self: *Parser) ParserError!u32 {
+    _ = parserAdvance(self);
+    var tok = parserPeek(self);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, true, false, false, false, CALL_CONV_CDECL);
+    if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, true, false, false);
+    if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, true, false, false);
+    if (tok.kind == TokenKind.kw_test) return parserParseTestDecl(self);
+    if (tok.kind == TokenKind.kw_extern) return parserParseExternDecl(self, true);
+    if (tok.kind == TokenKind.kw_export) return parserParseExportDecl(self, true);
+    var p_msg: []const u8 = "expected fn/const/var after pub";
+    parserAddError(self, tok, p_msg);
+    return error.UnexpectedToken;
+}
+const CALL_CONV_CDECL: u8 = 0;
+const CALL_CONV_STDCALL: u8 = 1;
+const CALL_CONV_INVALID: u8 = 2;
+
+fn parserClassifyCallConv(self: *Parser, text: []const u8) u8 {
+    if (text.len == 1 and text[0] == 'c') return CALL_CONV_CDECL;
+    if (text.len == 5 and text[0] == 'c' and text[1] == 'd' and text[2] == 'e'
+        and text[3] == 'c' and text[4] == 'l') return CALL_CONV_CDECL;
+    if (text.len == 7 and text[0] == 's' and text[1] == 't' and text[2] == 'd'
+        and text[3] == 'c' and text[4] == 'a' and text[5] == 'l'
+        and text[6] == 'l') return CALL_CONV_STDCALL;
+    return CALL_CONV_INVALID;
+}
+
+pub fn parserAddErrorCode(self: *Parser, tok: Token, code: u16, msg: []const u8) void {
+    diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), code,
+        self.file_id, tok.span_start, tok.span_start + @intCast(u32, tok.span_len), msg);
+}
+fn parserParseExternDecl(self: *Parser, is_pub: bool) ParserError!u32 {
+    _ = parserAdvance(self);
+    var call_conv: u8 = CALL_CONV_CDECL;
+    if (parserPeek(self).kind == TokenKind.string_literal) {
+        var str_tok = parserAdvance(self);
+        var text = string_interner_mod.stringInternerGet(self.interner, str_tok.value.string_id);
+        call_conv = parserClassifyCallConv(self, text);
+        if (call_conv == CALL_CONV_INVALID) {
+            var ucv: []const u8 = "unknown calling convention in `extern`";
+            parserAddErrorCode(self, str_tok, 3045, ucv);
+            call_conv = CALL_CONV_CDECL;
+        }
+    }
+    var tok = parserPeek(self);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, is_pub, true, false, false, call_conv);
+    if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, is_pub, true, false);
+    if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, is_pub, true, false);
+    var e_msg: []const u8 = "expected fn/const/var after extern";
+    parserAddError(self, tok, e_msg);
+    return error.UnexpectedToken;
+}
+fn parserParseExportDecl(self: *Parser, is_pub: bool) ParserError!u32 {
+    _ = parserAdvance(self);
+    var tok = parserPeek(self);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, is_pub, false, false, true, CALL_CONV_CDECL);
+    if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, is_pub, false, true);
+    if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, is_pub, false, true);
+    var x_msg: []const u8 = "expected fn/const/var after export";
+    parserAddError(self, tok, x_msg);
+    return error.UnexpectedToken;
+}
+fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool, is_export: bool, call_conv: u8) ParserError!u32 {
+    var fmsg: []const u8 = "Fv"; pal.markerWrite(fmsg);
+    var kw = parserAdvance(self);
+    var flags: u8 = 0;
+    if (is_pub) flags = flags | @intCast(u8, 0x02);
+    if (is_extern) flags = flags | @intCast(u8, 0x04);
+    if (is_test) flags = flags | @intCast(u8, 0x20);
+    if (is_export) flags = flags | @intCast(u8, 0x08);
+
+    var name_tok = try parserExpect(self, TokenKind.identifier);
+    _ = try parserExpect(self, TokenKind.lparen);
+
+    // T4.1 F4 (C2 twin): the old `self.child_buf_len = 0;` here destroyed any
+    // enclosing shared list in progress (measured: a nested `fn` decl in a
+    // block whose stmt list had overflowed into `child_buf` — ≥65 stmts —
+    // zeroed the flushed stmts and the block payload read back as garbage).
+    // The param list now follows the standard saved/append/listEnd protocol
+    // every `child_buf` list user follows (cf. the C2 delete in
+    // `parserParseBuiltinCall`): params append after any enclosing items and
+    // the enclosing length is restored, never reset.
+    var saved_params: usize = self.child_buf_len;
+    while (parserPeek(self).kind != TokenKind.rparen and parserPeek(self).kind != TokenKind.eof) {
+        if (parserPeek(self).kind == TokenKind.dot_dot_dot) {
+            _ = parserAdvance(self);
+            flags = flags | @intCast(u8, 0x01);
+            break;
+        }
+        var param_tok = try parserExpect(self, TokenKind.identifier);
+        _ = try parserExpect(self, TokenKind.colon);
+        var param_type = try parserParseType(self);
+        var param_name_id = parserInternParseToken(self, param_tok);
+        var param_node = ast_mod.astStoreAddNode(self.store, AstKind.param_decl, 0,
+            param_tok.span_start, self.last_end, param_type, 0, 0, param_name_id);
+        u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, param_node);
+        if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);
+    }
+    _ = try parserExpect(self, TokenKind.rparen);
+
+    var param_start: u32 = 0;
+    var param_count: u16 = @intCast(u16, 0);
+    if (self.child_buf_len > saved_params) {
+        var pp = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_params..self.child_buf_len]);
+        param_start = @intCast(u32, ast_mod.astStoreExtraRangeAt(self.store, pp) >> @intCast(u64, 32));
+        param_count = @intCast(u16, self.child_buf_len - saved_params);
+        self.child_buf_len = saved_params;
+    }
+
+    var ret_type_node: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.colon) {
+        _ = parserAdvance(self);
+        ret_type_node = try parserParseType(self);
+    } else if (parserPeek(self).kind != TokenKind.semicolon and parserPeek(self).kind != TokenKind.lbrace) {
+        ret_type_node = try parserParseType(self);
+    }
+
+    var body_node: u32 = 0;
+    var end_pos: u32 = undefined;
+    if (parserPeek(self).kind == TokenKind.semicolon) {
+        var semi = parserAdvance(self);
+        end_pos = semi.span_start + @intCast(u32, semi.span_len);
+    } else {
+        body_node = try parserParseBlock(self);
+        end_pos = self.last_end;
+    }
+
+    if (self.child_buf_len > saved_params) {
+        var dmsg: []const u8 = "DP:child_buf_stale\n"; pal.markerWrite(dmsg);
+    }
+
+    var name_id = parserInternParseToken(self, name_tok);
+    var pmsg: []const u8 = "P:";
+    pal.markerWriteInt(pmsg, @intCast(u32, param_count));
+    var proto: FnProto = FnProto{ .name_id = name_id, .params_start = param_start, .params_count = param_count, .call_conv = call_conv, .return_type_node = ret_type_node };
+    var proto_idx: u32 = ast_mod.astStoreAddFnProto(self.store, proto);
+    // T4.1 F4: restore, never reset — the param list must not clobber an
+    // enclosing `child_buf` list (the C2 twin class).
+    self.child_buf_len = saved_params;
+    var fok: []const u8 = "Fk"; pal.markerWrite(fok);
+    return ast_mod.astStoreAddNode(self.store, AstKind.fn_decl, flags, kw.span_start, end_pos, body_node, 0, 0, proto_idx);
+}
+
+fn parserParseIfStmt(self: *Parser) ParserError!u32 {
+    var kw = parserAdvance(self);
+    _ = try parserExpect(self, TokenKind.lparen);
+    // Task 9B (a): exclude assignment from the condition (see parserParseIfExpr).
+    var cond = try parserParseExprPrec(self, Prec.prec_orelse);
+    _ = try parserExpect(self, TokenKind.rparen);
+
+    var capture_node: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.pipe) {
+        var cap = try parserParseCaptureName(self);
+        _ = try parserExpect(self, TokenKind.pipe);
+        capture_node = ast_mod.astStoreAddNode(self.store, AstKind.if_capture, 0,
+            cap.tok_start, cap.tok_start + @intCast(u32, cap.tok_len),
+            0, 0, 0, cap.name_id);
+    }
+
+    var then_body: u32 = undefined;
+    var t4_stmt_cv: ?bool = parserFoldComptimeBool(self, cond, 0);
+    var t4_stmt_saved: u32 = self.dead_import_depth;
+    if (t4_stmt_cv) |t4_scv| { if (!t4_scv) { self.dead_import_depth += 1; } }
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        then_body = try parserParseBlock(self);
+    } else {
+        then_body = try parserParseStmtBodyExpr(self);
+    }
+    self.dead_import_depth = t4_stmt_saved;
+
+    var pif_m: []const u8 = "PIF:b"; pal.markerWriteInt(pif_m, then_body);
+    var pif_km: []const u8 = "k"; pal.markerWriteInt(pif_km, @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.store, then_body).kind)));
+
+    var else_node: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.kw_else) {
+        _ = parserAdvance(self);
+        if (t4_stmt_cv) |t4_scv2| { if (t4_scv2) { self.dead_import_depth += 1; } }
+        if (parserPeek(self).kind == TokenKind.kw_if) {
+            else_node = try parserParseIfStmt(self);
+        } else if (parserPeek(self).kind == TokenKind.lbrace) {
+            else_node = try parserParseBlock(self);
+        } else {
+            else_node = try parserParseStmtBodyExpr(self);
+        }
+        self.dead_import_depth = t4_stmt_saved;
+    }
+    if (parserPeek(self).kind == TokenKind.semicolon) {
+        _ = parserAdvance(self);
+        if (parserPeek(self).kind == TokenKind.kw_else) {
+            var else_tok = parserPeek(self);
+            var else_msg: []const u8 = "';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }";
+            parserAddError(self, else_tok, else_msg);
+            return error.UnexpectedToken;
+        }
+    }
+    var end_pos: u32 = kw.span_start;
+    if (self.last_tok_valid) {
+        var last = self.last_tok;
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.if_stmt, 0,
+        kw.span_start, end_pos, cond, then_body, else_node, capture_node);
+}
+
+fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
+    var kw = parserAdvance(self);
+    _ = try parserExpect(self, TokenKind.lparen);
+    // Task 9B (a): exclude assignment from the condition (see parserParseIfExpr).
+    var cond = try parserParseExprPrec(self, Prec.prec_orelse);
+    _ = try parserExpect(self, TokenKind.rparen);
+
+    var capture_name: u32 = 0;
+    var cap_node: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.pipe) {
+        var cap = try parserParseCaptureName(self);
+        capture_name = cap.name_id;
+        cap_node = ast_mod.astStoreAddNode(self.store, AstKind.while_capture, 0,
+            cap.tok_start, cap.tok_start + @intCast(u32, cap.tok_len), 0, 0, 0, capture_name);
+        _ = try parserExpect(self, TokenKind.pipe);
+    }
+
+    var continue_expr: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.colon) {
+        _ = parserAdvance(self);
+        _ = try parserExpect(self, TokenKind.lparen);
+        continue_expr = try parserParseStmtBodyExpr(self);
+        _ = try parserExpect(self, TokenKind.rparen);
+    }
+
+    var body: u32 = undefined;
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        body = try parserParseBlock(self);
+    } else {
+        body = try parserParseStmtBodyExpr(self);
+    }
+    if (parserPeek(self).kind == TokenKind.semicolon) {
+        _ = parserAdvance(self);
+    }
+    var end_pos: u32 = undefined;
+    if (self.last_tok_valid) {
+        var last = self.last_tok;
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    } else end_pos = kw.span_start;
+    var zzz_c2e_m: []const u8 = "PTC2:e"; pal.markerWriteInt(zzz_c2e_m, continue_expr);
+    var zzz_c2 = continue_expr;
+    return ast_mod.astStoreAddNode(self.store, AstKind.while_stmt, 0,
+        kw.span_start, end_pos, cond, body, zzz_c2, cap_node);
+}
+
+fn parserParseForStmt(self: *Parser) ParserError!u32 {
+    var kw = parserAdvance(self);
+    _ = try parserExpect(self, TokenKind.lparen);
+    var pattern = try parserParseExprPrec(self, Prec.prec_orelse);
+    if (parserPeek(self).kind == TokenKind.dot_dot) {
+        _ = parserAdvance(self);
+        var end_node = try parserParseExprPrec(self, Prec.prec_orelse);
+        pattern = ast_mod.astStoreAddNode(self.store, AstKind.range_exclusive, 0,
+            0, 0, pattern, end_node, 0, 0);
+    } else if (parserPeek(self).kind == TokenKind.comma) {
+        // Task 11 (Part II): Zig's explicit index-range form
+        //   for (iterable, start..) |item, index| ...
+        //   for (iterable, start..end) |item, index| ...
+        // The `for_index_range` pattern node carries child_0 = iterable,
+        // child_1 = start, child_2 = end (0 = open `start..`). A second
+        // iterable without `..` (Zig's multi-object `for (a, b)`) is out of
+        // scope and falls through to the missing-')' parse error.
+        _ = parserAdvance(self);
+        var idx_tok = parserPeek(self);
+        var idx_start = try parserParseExprPrec(self, Prec.prec_orelse);
+        if (parserPeek(self).kind != TokenKind.dot_dot) {
+            _ = try parserExpect(self, TokenKind.dot_dot);
+        }
+        _ = parserAdvance(self);
+        var idx_end: u32 = 0;
+        if (parserPeek(self).kind != TokenKind.rparen) {
+            idx_end = try parserParseExprPrec(self, Prec.prec_orelse);
+        }
+        var idx_span_end: u32 = idx_tok.span_start + @intCast(u32, idx_tok.span_len);
+        if (self.last_tok_valid) {
+            var idx_last = self.last_tok;
+            idx_span_end = idx_last.span_start + @intCast(u32, idx_last.span_len);
+        }
+        pattern = ast_mod.astStoreAddNode(self.store, AstKind.for_index_range, 0,
+            idx_tok.span_start, idx_span_end, pattern, idx_start, idx_end, 0);
+    }
+    _ = try parserExpect(self, TokenKind.rparen);
+
+    var capture_name: u32 = 0;
+    var index_name: u32 = 0;
+    var for_flags: u8 = 0;
+    if (parserPeek(self).kind == TokenKind.pipe) {
+        // Task 3 (Phase 2.5): `|*item|` / `|*item, index|` / `|*_|` mutable
+        // item capture. The `*` is accepted at the for site only; the shared
+        // `parserParseCaptureName` keeps the other capture callers unchanged.
+        _ = parserAdvance(self);
+        if (parserPeek(self).kind == TokenKind.star) {
+            _ = parserAdvance(self);
+            for_flags = for_flags | @intCast(u8, 0x10);
+        }
+        var name_tok: ParseToken = undefined;
+        if (parserPeek(self).kind == TokenKind.underscore) {
+            name_tok = try parserExpect(self, TokenKind.underscore);
+        } else {
+            name_tok = try parserExpect(self, TokenKind.identifier);
+        }
+        capture_name = parserInternParseToken(self, name_tok);
+        if (parserPeek(self).kind == TokenKind.comma) {
+            _ = parserAdvance(self);
+            var idx_tok = try parserExpect(self, TokenKind.identifier);
+            index_name = parserInternParseToken(self, idx_tok);
+        }
+        _ = try parserExpect(self, TokenKind.pipe);
+    }
+
+    var body: u32 = undefined;
+    if (parserPeek(self).kind == TokenKind.lbrace) {
+        body = try parserParseBlock(self);
+    } else {
+        body = try parserParseStmtBodyExpr(self);
+    }
+    if (parserPeek(self).kind == TokenKind.semicolon) {
+        _ = parserAdvance(self);
+    }
+    var end_pos: u32 = undefined;
+    if (self.last_tok_valid) {
+        var last = self.last_tok;
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    } else end_pos = kw.span_start;
+    return ast_mod.astStoreAddNode(self.store, AstKind.for_stmt, for_flags,
+        kw.span_start, end_pos, pattern, body, index_name, capture_name);
+}
+fn parserParseSwitchStmt(self: *Parser) ParserError!u32 {
+    var inner = try parserParseSwitchExpr(self);
+    return ast_mod.astStoreAddNode(self.store, AstKind.expr_stmt, 0, 0, 0, inner, 0, 0, 0);
+}
+fn parserParseReturnExpr(self: *Parser) ParserError!u32 {
+    var kw = parserAdvance(self);
+    var expr: u32 = 0;
+    var nt = parserPeek(self).kind;
+    if (nt != TokenKind.semicolon and nt != TokenKind.comma and nt != TokenKind.rbrace and nt != TokenKind.eof) {
+        expr = try parserParseExprPrec(self, Prec.prec_orelse);
+    }
+    var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
+    if (self.last_tok_valid) {
+        var last = self.last_tok;
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.return_stmt, 0,
+        kw.span_start, end_pos, expr, 0, 0, 0);
+}
+fn parserParseBreakExpr(self: *Parser) ParserError!u32 {
+    var kw = parserAdvance(self);
+    var label_id: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.colon) {
+        _ = parserAdvance(self);
+        var label_tok = try parserExpect(self, TokenKind.identifier);
+        label_id = parserInternParseToken(self, label_tok);
+    }
+    var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
+    if (self.last_tok_valid) {
+        var last = self.last_tok;
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.break_stmt, 0,
+        kw.span_start, end_pos, 0, 0, 0, label_id);
+}
+fn parserParseContinueExpr(self: *Parser) ParserError!u32 {
+    var kw = parserAdvance(self);
+    var label_id: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.colon) {
+        _ = parserAdvance(self);
+        var label_tok = try parserExpect(self, TokenKind.identifier);
+        label_id = parserInternParseToken(self, label_tok);
+    }
+    var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
+    if (self.last_tok_valid) {
+        var last = self.last_tok;
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
+    return ast_mod.astStoreAddNode(self.store, AstKind.continue_stmt, 0,
+        kw.span_start, end_pos, 0, 0, 0, label_id);
+}
+fn parserParseReturnStmt(self: *Parser) ParserError!u32 {
+    var node = try parserParseReturnExpr(self);
+    _ = try parserExpect(self, TokenKind.semicolon);
+    return node;
+}
+fn parserParseBreakStmt(self: *Parser) ParserError!u32 {
+    var node = try parserParseBreakExpr(self);
+    _ = try parserExpect(self, TokenKind.semicolon);
+    return node;
+}
+fn parserParseContinueStmt(self: *Parser) ParserError!u32 {
+    var node = try parserParseContinueExpr(self);
+    _ = try parserExpect(self, TokenKind.semicolon);
+    return node;
+}
+fn parserParseDeferStmt(self: *Parser, kind: AstKind) ParserError!u32 {
+    var kw = parserAdvance(self);
+    var body = try parserParseStatement(self);
+    var end_pos: u32 = kw.span_start;
+    if (self.last_tok_valid) {
+        var last = self.last_tok;
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    }
+    return ast_mod.astStoreAddNode(self.store, kind, 0,
+        kw.span_start, end_pos, body, 0, 0, 0);
+}
+fn parserParseErrdeferStmt(self: *Parser) ParserError!u32 {
+    return parserParseDeferStmt(self, AstKind.errdefer_stmt);
+}
+fn parserParseTestDecl(self: *Parser) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var name_id: u32 = 0;
+    if (parserPeek(self).kind == TokenKind.string_literal) {
+        var name_tok = parserAdvance(self);
+        name_id = parserInternTokenText(self, name_tok);
+    }
+    var body = try parserParseBlock(self);
+    var end_pos: u32 = undefined;
+    if (self.last_tok_valid) {
+        var last = self.last_tok;
+        end_pos = last.span_start + @intCast(u32, last.span_len);
+    } else end_pos = tok.span_start;
+    return ast_mod.astStoreAddNode(self.store, AstKind.test_decl, 0,
+        tok.span_start, end_pos, body, 0, 0, name_id);
+}
+fn parserParseContainerDecl(self: *Parser, kind: AstKind) ParserError!u32 {
+    var tok = parserAdvance(self);
+    var name_id: u32 = 0;
+    var is_tagged: u8 = 0;
+    var backing_type: u32 = 0;
+    if (kind == AstKind.union_decl and parserPeek(self).kind == TokenKind.lparen) {
+        _ = parserAdvance(self);
+        _ = try parserExpect(self, TokenKind.kw_enum);
+        _ = try parserExpect(self, TokenKind.rparen);
+        is_tagged = 1;
+    }
+    if (kind == AstKind.enum_decl and parserPeek(self).kind == TokenKind.lparen) {
+        _ = parserAdvance(self);
+        backing_type = try parserParseType(self);
+        _ = try parserExpect(self, TokenKind.rparen);
+    }
+    if (parserPeek(self).kind == TokenKind.identifier) {
+        var name_tok = parserAdvance(self);
+        name_id = parserInternTokenText(self, name_tok);
+    }
+    _ = try parserExpect(self, TokenKind.lbrace);
+    var fields_buf: [*]u32 = undefined;
+    var fields_count: usize = 0;
+    var fields_cap: usize = @intCast(usize, 0);
+    while (parserPeek(self).kind != TokenKind.rbrace) {
+        var ftok = try parserExpect(self, TokenKind.identifier);
+        var fid = parserInternParseToken(self, ftok);
+        if (kind == AstKind.enum_decl) {
+            var ev: u32 = 0;
+            if (parserPeek(self).kind == TokenKind.eq) {
+                _ = parserAdvance(self);
+                ev = try parserParseExprPrec(self, Prec.prec_orelse);
+            }
+            var enode = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+                ftok.span_start, ftok.span_start + @intCast(u32, ftok.span_len),
+                0, ev, 0, fid);
+            parserPushU32(self, &fields_buf, &fields_count, &fields_cap, enode);
+        } else {
+            _ = try parserExpect(self, TokenKind.colon);
+            var ftype = try parserParseType(self);
+            var fnode = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+                ftok.span_start, ftok.span_start + @intCast(u32, ftok.span_len),
+                ftype, 0, 0, fid);
+            parserPushU32(self, &fields_buf, &fields_count, &fields_cap, fnode);
+        }
+        if (parserPeek(self).kind == TokenKind.comma) {
+            _ = parserAdvance(self);
+        }
+    }
+    var rbrace = try parserExpect(self, TokenKind.rbrace);
+    var payload: u32 = 0;
+    if (fields_count > 0) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, fields_buf[0..fields_count]);
+    }
+    var end_pos: u32 = rbrace.span_start + @intCast(u32, rbrace.span_len);
+    return ast_mod.astStoreAddNode(self.store, kind, is_tagged,
+        tok.span_start, end_pos, name_id, backing_type, 0, payload);
+}
+fn parserParseBlock(self: *Parser) ParserError!u32 {
+    var lbrace = try parserExpect(self, TokenKind.lbrace);
+    var saved_len: usize = self.child_buf_len;
+    // C1b: the parse-time comptime-bool const map is block-scoped (a binding
+    // recorded inside must not fold a later, outer use of the same name).
+    var t4_cm_saved: usize = self.t4_const_len;
+    var local_buf: [64]u32 = undefined;
+     var local_len: usize = @intCast(usize, 0);
+     while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
+         var stmt = try parserParseStatement(self);
+         if (local_len < @intCast(usize, 64)) {
+             local_buf[@intCast(usize, local_len)] = stmt;
+         } else {
+             if (local_len == @intCast(usize, 64)) {
+                 var fi: usize = @intCast(usize, 0);
+                 while (fi < @intCast(usize, 64)) : (fi += @intCast(usize, 1)) {
+                     u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, local_buf[fi]);
+                 }
+             }
+             u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, stmt);
+         }
+          local_len += @intCast(usize, 1);
+          var pk = parserPeek(self);
+          var pbx_sm: []const u8 = "PBX:S"; pal.markerWriteInt(pbx_sm, @intCast(u32, local_len));
+          var pbx_tm: []const u8 = "PBX:T"; pal.markerWriteInt(pbx_tm, @intCast(u32, @enumToInt(pk.kind)));
+          var pbx_km: []const u8 = "PBX:K"; pal.markerWriteInt(pbx_km, @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.store, stmt).kind)));
+          if (pk.kind == TokenKind.rbrace or pk.kind == TokenKind.eof) {
+              var pbx_lm: []const u8 = "PBX:L"; pal.markerWriteInt(pbx_lm, @intCast(u32, local_len));
+              var pbx_bm: []const u8 = "PBX:B"; pal.markerWriteInt(pbx_bm, @intCast(u32, saved_len));
+              var pbx_pm: []const u8 = "PBX:P"; pal.markerWriteInt(pbx_pm, lbrace.span_start);
+          }
+    }
+    var rbrace = try parserExpect(self, TokenKind.rbrace);
+    var payload: u32 = 0;
+    if (local_len > @intCast(usize, 0)) {
+        var slice: []u32 = undefined;
+        if (local_len <= @intCast(usize, 64)) {
+            slice = local_buf[0..local_len];
+        } else {
+            slice = self.child_buf_items[saved_len..saved_len + local_len];
+        }
+        payload = ast_mod.astStoreAddExtraChildren(self.store, slice);
+    }
+    self.child_buf_len = saved_len;
+    self.t4_const_len = t4_cm_saved;
+    var plen_m: []const u8 = "PLEN:l"; pal.markerWriteInt(plen_m, @intCast(u32, local_len));
+    var plen_pm: []const u8 = "p"; pal.markerWriteInt(plen_pm, payload);
+    return ast_mod.astStoreAddNode(self.store, AstKind.block, 0, lbrace.span_start, rbrace.span_start + @intCast(u32, rbrace.span_len), 0, 0, 0, payload);
+}
+
+pub const Prec = enum(u8) {
+    none = 0,
+    assignment = 1,
+    prec_orelse = 2,
+    prec_catch = 3,
+    bool_or = 4,
+    bool_and = 5,
+    comparison = 6,
+    bit_or = 7,
+    bit_xor = 8,
+    bit_and = 9,
+    shift = 10,
+    additive = 11,
+    multiply = 12,
+    prefix = 13,
+    postfix = 14,
+};
+
+pub fn precToInt(p: Prec) u8 {
+    return @intCast(u8, @enumToInt(p));
+}
+
+pub fn precFromInt(v: u8) Prec {
+    return @intToEnum(Prec, v);
+}
+
+pub const OpInfo = struct {
+    ast_kind: AstKind,
+    prec: Prec,
+    right_assoc: bool,
+};
+
+pub fn getInfixInfo(kind: TokenKind) ?OpInfo {
+    if (kind == TokenKind.eq) return OpInfo{ .ast_kind = AstKind.plain_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.plus_eq) return OpInfo{ .ast_kind = AstKind.add_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.minus_eq) return OpInfo{ .ast_kind = AstKind.sub_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.star_eq) return OpInfo{ .ast_kind = AstKind.mul_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.slash_eq) return OpInfo{ .ast_kind = AstKind.div_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.percent_eq) return OpInfo{ .ast_kind = AstKind.mod_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.shl_eq) return OpInfo{ .ast_kind = AstKind.shl_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.shr_eq) return OpInfo{ .ast_kind = AstKind.shr_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.ampersand_eq) return OpInfo{ .ast_kind = AstKind.and_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.pipe_eq) return OpInfo{ .ast_kind = AstKind.or_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.caret_eq) return OpInfo{ .ast_kind = AstKind.xor_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.plus_pct_eq) return OpInfo{ .ast_kind = AstKind.wrap_add_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.minus_pct_eq) return OpInfo{ .ast_kind = AstKind.wrap_sub_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.star_pct_eq) return OpInfo{ .ast_kind = AstKind.wrap_mul_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.plus_pipe_eq) return OpInfo{ .ast_kind = AstKind.sat_add_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.minus_pipe_eq) return OpInfo{ .ast_kind = AstKind.sat_sub_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.star_pipe_eq) return OpInfo{ .ast_kind = AstKind.sat_mul_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.shl_pipe_eq) return OpInfo{ .ast_kind = AstKind.sat_shl_assign, .prec = Prec.assignment, .right_assoc = true };
+
+    if (kind == TokenKind.kw_orelse) return OpInfo{ .ast_kind = AstKind.orelse_expr, .prec = Prec.prec_orelse, .right_assoc = true };
+    if (kind == TokenKind.kw_catch) return OpInfo{ .ast_kind = AstKind.catch_expr, .prec = Prec.prec_catch, .right_assoc = true };
+
+    if (kind == TokenKind.kw_or) return OpInfo{ .ast_kind = AstKind.bool_or, .prec = Prec.bool_or, .right_assoc = false };
+    if (kind == TokenKind.kw_and) return OpInfo{ .ast_kind = AstKind.bool_and, .prec = Prec.bool_and, .right_assoc = false };
+
+    if (kind == TokenKind.eq_eq) return OpInfo{ .ast_kind = AstKind.cmp_eq, .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.bang_eq) return OpInfo{ .ast_kind = AstKind.cmp_ne, .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.less) return OpInfo{ .ast_kind = AstKind.cmp_lt, .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.less_eq) return OpInfo{ .ast_kind = AstKind.cmp_le, .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.greater) return OpInfo{ .ast_kind = AstKind.cmp_gt, .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.greater_eq) return OpInfo{ .ast_kind = AstKind.cmp_ge, .prec = Prec.comparison, .right_assoc = false };
+
+    if (kind == TokenKind.pipe) return OpInfo{ .ast_kind = AstKind.bit_or, .prec = Prec.bit_or, .right_assoc = false };
+    if (kind == TokenKind.caret) return OpInfo{ .ast_kind = AstKind.bit_xor, .prec = Prec.bit_xor, .right_assoc = false };
+    if (kind == TokenKind.ampersand) return OpInfo{ .ast_kind = AstKind.bit_and, .prec = Prec.bit_and, .right_assoc = false };
+    if (kind == TokenKind.shl) return OpInfo{ .ast_kind = AstKind.shl, .prec = Prec.shift, .right_assoc = false };
+    if (kind == TokenKind.shr) return OpInfo{ .ast_kind = AstKind.shr, .prec = Prec.shift, .right_assoc = false };
+    if (kind == TokenKind.shl_pipe) return OpInfo{ .ast_kind = AstKind.sat_shl, .prec = Prec.shift, .right_assoc = false };
+    if (kind == TokenKind.plus) return OpInfo{ .ast_kind = AstKind.add, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.minus) return OpInfo{ .ast_kind = AstKind.sub, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.plus_pct) return OpInfo{ .ast_kind = AstKind.wrap_add, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.minus_pct) return OpInfo{ .ast_kind = AstKind.wrap_sub, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.plus_pipe) return OpInfo{ .ast_kind = AstKind.sat_add, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.minus_pipe) return OpInfo{ .ast_kind = AstKind.sat_sub, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.star) return OpInfo{ .ast_kind = AstKind.mul, .prec = Prec.multiply, .right_assoc = false };
+    if (kind == TokenKind.slash) return OpInfo{ .ast_kind = AstKind.div, .prec = Prec.multiply, .right_assoc = false };
+    if (kind == TokenKind.percent) return OpInfo{ .ast_kind = AstKind.mod_op, .prec = Prec.multiply, .right_assoc = false };
+    if (kind == TokenKind.star_pct) return OpInfo{ .ast_kind = AstKind.wrap_mul, .prec = Prec.multiply, .right_assoc = false };
+    if (kind == TokenKind.star_pipe) return OpInfo{ .ast_kind = AstKind.sat_mul, .prec = Prec.multiply, .right_assoc = false };
+
+    return null;
+}

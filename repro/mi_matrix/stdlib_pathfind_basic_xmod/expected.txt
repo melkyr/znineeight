@@ -1,0 +1,8 @@
+straight ok
+gap ok
+enclosed ok
+corner ok
+same ok
+invalid ok
+trunc ok
+pathfind basic ok

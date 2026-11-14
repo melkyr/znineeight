@@ -37,13 +37,14 @@ public:
      * @brief Constructs a new Parser instance.
      * @param tokens A pointer to the array of tokens from the lexer.
      * @param count The total number of tokens in the stream.
-     * @param arena A pointer to the ArenaAllocator for memory management.
+     * @param ast_arena A pointer to the ArenaAllocator for AST nodes.
+     * @param perm_arena A pointer to the ArenaAllocator for permanent objects (types, symbols).
      * @param symbol_table A pointer to the SymbolTable for managing scopes.
      * @param catalogue A pointer to the ErrorSetCatalogue for tracking error sets.
      * @param generic_catalogue A pointer to the GenericCatalogue for tracking generic functions.
      * @param module_name The name of the module being parsed.
      */
-    Parser(const Token* tokens, size_t count, ArenaAllocator* arena, SymbolTable* symbol_table, ErrorHandler* error_handler, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, StringInterner* interner = NULL, const char* module_name = "main");
+    Parser(const Token* tokens, size_t count, ArenaAllocator* ast_arena, ArenaAllocator* perm_arena, SymbolTable* symbol_table, ErrorHandler* error_handler, ErrorSetCatalogue* catalogue, GenericCatalogue* generic_catalogue, TypeInterner* type_interner, StringInterner* interner = NULL, const char* module_name = "main");
 
     /**
      * @brief Parses a type expression from the token stream (e.g., `i32`, `*u8`, `[]bool`).
@@ -374,6 +375,12 @@ private:
     /** @brief Parses a @ptrCast expression. */
     ASTNode* parsePtrCastExpr();
 
+    /** @brief Parses an @as expression. */
+    ASTNode* parseAsExpr();
+
+    /** @brief Parses a @panic expression. */
+    ASTNode* parsePanicExpr();
+
     /** @brief Parses an @offsetOf expression. */
     ASTNode* parseOffsetOfExpr();
 
@@ -401,7 +408,8 @@ private:
     const Token* tokens_;
     size_t token_count_;
     size_t current_index_;
-    ArenaAllocator* arena_;
+    ArenaAllocator* ast_arena_;
+    ArenaAllocator* perm_arena_;
     SymbolTable* symbol_table_;
     ErrorHandler* error_handler_;
     ErrorSetCatalogue* catalogue_;

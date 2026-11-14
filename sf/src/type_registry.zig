@@ -1,0 +1,2203 @@
+const Sand = @import("allocator.zig").Sand;
+const alloc_mod = @import("allocator.zig");
+const StringInterner = @import("string_interner.zig").StringInterner;
+const interner_mod = @import("string_interner.zig");
+const hash_mod = @import("util/hash.zig");
+const pal_mod = @import("pal.zig");
+const itoa_mod = @import("util/itoa.zig");
+const nm_mod = @import("name_mangler.zig");
+const NameMangler = nm_mod.NameMangler;
+
+pub const TypeId = u32;
+
+pub const TYPE_VOID:      TypeId = 1;
+pub const TYPE_BOOL:      TypeId = 2;
+pub const TYPE_NORETURN:  TypeId = 3;
+pub const TYPE_I8:        TypeId = 4;
+pub const TYPE_I16:       TypeId = 5;
+pub const TYPE_I32:       TypeId = 6;
+pub const TYPE_I64:       TypeId = 7;
+pub const TYPE_U8:        TypeId = 8;
+pub const TYPE_U16:       TypeId = 9;
+pub const TYPE_U32:       TypeId = 10;
+pub const TYPE_U64:       TypeId = 11;
+pub const TYPE_ISIZE:     TypeId = 12;
+pub const TYPE_USIZE:     TypeId = 13;
+pub const TYPE_C_CHAR:    TypeId = 14;
+pub const TYPE_F32:       TypeId = 15;
+pub const TYPE_F64:       TypeId = 16;
+pub const TYPE_NULL:      TypeId = 17;
+pub const TYPE_UNDEFINED: TypeId = 18;
+pub const TYPE_INT_LIT:   TypeId = 19;
+pub const TYPE_TYPE:      TypeId = 20;
+pub const TYPE_VA_LIST:   TypeId = 21;
+
+// Synthetic (compiler-defined) field indices — slice & tagged-union layout.
+// Consumed by load_field / store_field in lower.zig and c89_emit.zig.
+pub const SLICE_FIELD_PTR:  u32 = 0;
+pub const SLICE_FIELD_LEN:  u32 = 1;
+pub const TU_FIELD_TAG:     u32 = 0;
+pub const TU_FIELD_PAYLOAD: u32 = 1;
+pub const FIRST_USER_TYPE: TypeId = 20;
+
+pub const TypeKind = enum(u8) {
+    none_sentinel,
+    void_type, bool_type, noreturn_type,
+    i8_type, i16_type, i32_type, i64_type,
+    u8_type, u16_type, u32_type, u64_type,
+    isize_type, usize_type, c_char_type,
+    f32_type, f64_type,
+    ptr_type, many_ptr_type, array_type, slice_type,
+    optional_type, error_union_type, error_set_type,
+    fn_type,
+    struct_type, enum_type, union_type, tagged_union_type,
+    tuple_type, unresolved_name,
+    type_type, module_type,
+    null_type, undefined_type,
+    integer_literal_type,
+    anon_struct_init, anon_array, anon_tuple, anon_union,
+    va_list_type,
+    arb_uint_type, arb_int_type,
+    packed_union_type,
+};
+
+// Type-limit widening: `Type` is 20 B. `is_signed` was write-only (signedness
+// is derived from `kind` by `typeRegistryIntIsSigned`); `c_name_id` was a
+// sparse memo (6 live entries at self-compile) and now lives in the
+// registry-private `c_name_map`. The former ceiling columns are widened:
+// `name_id`/`payload_idx` are u32 (u32->u32 writers), `alignment`/`module_id`
+// are u16 (u32->u16 `@intCast` writers); reads widen implicitly. `iw` keeps the
+// arb-int width (0..64). Layout is declaration order, with the two u16 columns
+// placed after the u8 columns so they occupy the old tail padding: size u32
+// (0), name_id u32 (4), payload_idx u32 (8), kind u8 (12), flags u8 (13),
+// state u8 (14), iw u8 (15), module_id u16 (16), alignment u16 (18) = 20 B.
+pub const Type = struct {
+    size: u32,
+    name_id: u32,
+    payload_idx: u32,
+    kind: TypeKind,
+    flags: u8,
+    state: u8,
+    iw: u8,
+    module_id: u16,
+    alignment: u16,
+};
+
+pub const VOLATILE_FLAG: u8 = 2;
+pub const CONST_FLAG: u8 = 1;
+
+pub const FN_FLAG_VARIADIC: u8 = 1;
+pub const FN_FLAG_STDCALL: u8 = 2;
+
+pub const PtrPayload = struct { base: TypeId };
+pub const ArrayPayload = struct { elem: TypeId, length: u32 };
+pub const SlicePayload = struct { elem: TypeId };
+pub const OptionalPayload = struct { payload: TypeId };
+pub const EUPayload = struct { payload: TypeId, error_set: TypeId };
+pub const ErrorSetPayload = struct { tags_start: u32, tags_count: u16 };
+pub const FnPayload = struct { name_id: u32, module_id: u32, params_start: u32, params_count: u16, return_type: TypeId, is_extern: u8, flags_packed: u8 };
+pub const StructPayload = struct { fields_start: u32, fields_count: u16 };
+pub const EnumPayload = struct { members_start: u32, members_count: u16, backing_type: TypeId, explicit_backing: u8 };
+pub const UnionPayload = struct { fields_start: u32, fields_count: u16, tag_type: TypeId };
+pub const TaggedUnionPayload = struct { tag_type: TypeId, fields_start: u32, fields_count: u16 };
+pub const TuplePayload = struct { elems_start: u32, elems_count: u16 };
+pub const UnresolvedPayload = struct { name_id: u32, module_id: u32 };
+pub const FieldEntry = struct { name_id: u32, type_id: TypeId, offset: u32 };
+pub const PackedBitField = struct { bit_offset: u32, bit_width: u16 };
+pub const PackedStructInfo = struct { pk_start: u32, pk_count: u16, total_bits: u32 };
+pub const EnumMember = struct { name_id: u32, value: u64 };
+pub const FnParam = struct { name_id: u32, type_id: TypeId };
+
+pub const TypeRegistry = struct {
+    types_items: [*]Type,
+    types_len: usize,
+    types_cap: usize,
+    types_alloc: *Sand,
+    interner: *StringInterner,
+
+    ptr_items: [*]PtrPayload, ptr_len: usize, ptr_cap: usize,
+    array_items: [*]ArrayPayload, array_len: usize, array_cap: usize,
+    slice_items: [*]SlicePayload, slice_len: usize, slice_cap: usize,
+    opt_items: [*]OptionalPayload, opt_len: usize, opt_cap: usize,
+    eu_items: [*]EUPayload, eu_len: usize, eu_cap: usize,
+    es_items: [*]ErrorSetPayload, es_len: usize, es_cap: usize,
+    fn_items: [*]FnPayload, fn_len: usize, fn_cap: usize,
+    st_items: [*]StructPayload, st_len: usize, st_cap: usize,
+    en_items: [*]EnumPayload, en_len: usize, en_cap: usize,
+    un_items: [*]UnionPayload, un_len: usize, un_cap: usize,
+    tu_items: [*]TaggedUnionPayload, tu_len: usize, tu_cap: usize,
+    tup_items: [*]TuplePayload, tup_len: usize, tup_cap: usize,
+    unr_items: [*]UnresolvedPayload, unr_len: usize, unr_cap: usize,
+
+    fe_items: [*]FieldEntry, fe_len: usize, fe_cap: usize,
+    em_items: [*]EnumMember, em_len: usize, em_cap: usize,
+    xt_items: [*]TypeId, xt_len: usize, xt_cap: usize,
+    xn_items: [*]u32, xn_len: usize, xn_cap: usize,
+
+    pk_items: [*]PackedBitField, pk_len: usize, pk_cap: usize,
+    pk_struct_items: [*]PackedStructInfo, pk_struct_len: usize, pk_struct_cap: usize,
+    pk_un_items: [*]PackedStructInfo, pk_un_len: usize, pk_un_cap: usize,
+
+    ptr_cache: hash_mod.U64ToU32Map,
+    many_ptr_cache: hash_mod.U64ToU32Map,
+    slice_cache: hash_mod.U64ToU32Map,
+    optional_cache: hash_mod.U32ToU32Map,
+    array_cache: hash_mod.U64ToU32Map,
+    eu_cache: hash_mod.U64ToU32Map,
+    es_cache: hash_mod.U64ToU32Map,
+
+    name_cache: hash_mod.U64ToU32Map,
+    // Task 4 R2: sparse `Type.c_name_id` side memo (error-union mangled C name).
+    c_name_map: hash_mod.U32ToU32Map,
+};
+
+fn typeDbOom(used: usize, new_bytes: usize) void {
+    var p0: []const u8 = "OOM: type_db ";
+    pal_mod.stderr_write(p0);
+    var ubuf: [16]u8 = undefined;
+    var ulen = itoa_mod.itoa(@intCast(u32, used), ubuf[0..]);
+    var ustart: usize = @intCast(usize, 15) - @intCast(usize, ulen);
+    pal_mod.stderr_write(ubuf[ustart..@intCast(usize, 15)]);
+    var p1: []const u8 = " -> ";
+    pal_mod.stderr_write(p1);
+    var nbuf: [16]u8 = undefined;
+    var nlen = itoa_mod.itoa(@intCast(u32, new_bytes), nbuf[0..]);
+    var nstart: usize = @intCast(usize, 15) - @intCast(usize, nlen);
+    pal_mod.stderr_write(nbuf[nstart..@intCast(usize, 15)]);
+    var p2: []const u8 = "\n";
+    pal_mod.stderr_write(p2);
+    pal_mod.exit(@intCast(u8, 1));
+}
+
+
+fn arrayGrow(items_out: *[*]u8, len_ptr: *usize, cap_ptr: *usize, alloc: *Sand, elem_size: usize) void {
+    var nc: usize = if (cap_ptr.* < @intCast(usize, 8)) @intCast(usize, 8) else cap_ptr.* * @intCast(usize, 2);
+    var raw = alloc_mod.sandAlloc(alloc, elem_size * nc, @intCast(usize, 4)) catch {
+        typeDbOom(len_ptr.* * elem_size, elem_size * nc);
+        return;
+    };
+    var src = @ptrCast([*]u8, items_out.*);
+    var dst = @ptrCast([*]u8, raw);
+    var i: usize = 0;
+    while (i < len_ptr.* * elem_size) { dst[i] = src[i]; i += 1; }
+    items_out.* = raw;
+    cap_ptr.* = nc;
+}
+
+fn payloadEnsure(items_out: *[*]u8, len_ptr: *usize, cap_ptr: *usize, alloc: *Sand, elem_size: usize, new_cap: usize) void {
+    if (new_cap <= cap_ptr.*) return;
+    arrayGrow(items_out, len_ptr, cap_ptr, alloc, elem_size);
+}
+
+// Task 4 R1: allocate a payload array once at `cap` slots with no copy. This
+// is a soft floor/pre-size seed only — normal `arrayGrow` doubling resumes if
+// the engine later exceeds it. `sandAlloc` does not zero, so the unwritten
+// tail is carved but not resident.
+fn arrayReserve(items_out: *[*]u8, cap_ptr: *usize, alloc: *Sand, elem_size: usize, cap: usize) void {
+    if (cap == @intCast(usize, 0)) return;
+    var raw = alloc_mod.sandAlloc(alloc, elem_size * cap, @intCast(usize, 4)) catch {
+        typeDbOom(@intCast(usize, 0), elem_size * cap);
+        return;
+    };
+    items_out.* = raw;
+    cap_ptr.* = cap;
+}
+
+fn typeRegistryEnsureCapacity(self: *TypeRegistry, new_cap: usize) void {
+    if (new_cap <= self.types_cap) return;
+    var nc = new_cap;
+    if (nc < self.types_cap * 2) nc = self.types_cap * 2;
+    if (nc < 32) nc = 32;
+    var raw = alloc_mod.sandAlloc(self.types_alloc, @sizeOf(Type) * nc, @intCast(usize, 4)) catch {
+        typeDbOom(self.types_len * @sizeOf(Type), @sizeOf(Type) * nc);
+        return;
+    };
+    var new_items = @ptrCast([*]Type, raw);
+    for (self.types_items[0..self.types_len]) |item, i| { new_items[i] = item; }
+    self.types_items = new_items;
+    self.types_cap = nc;
+}
+
+fn typeRegistryAppend(self: *TypeRegistry, t: Type) u32 {
+    typeRegistryEnsureCapacity(self, self.types_len + 1);
+    var id = @intCast(u32, self.types_len);
+    self.types_items[self.types_len] = t;
+    self.types_len += 1;
+    var dc_k: [20]u8 = undefined;
+    var dc_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(t.kind)), dc_k[0..]);
+    var dc_ks: usize = @intCast(usize, 19) - @intCast(usize, dc_kl);
+    var dcm: []const u8 = "DC:k"; pal_mod.measureMarkerWrite(dcm); pal_mod.measureMarkerWrite(dc_k[dc_ks..@intCast(usize, 19)]);
+    var dc_n: [20]u8 = undefined;
+    var dc_nl = itoa_mod.itoa(t.name_id, dc_n[0..]);
+    var dc_ns: usize = @intCast(usize, 19) - @intCast(usize, dc_nl);
+    var dcn: []const u8 = "n"; pal_mod.measureMarkerWrite(dcn); pal_mod.measureMarkerWrite(dc_n[dc_ns..@intCast(usize, 19)]);
+    var dc_i: [20]u8 = undefined;
+    var dc_il = itoa_mod.itoa(id, dc_i[0..]);
+    var dc_is: usize = @intCast(usize, 19) - @intCast(usize, dc_il);
+    var dci: []const u8 = "t"; pal_mod.measureMarkerWrite(dci); pal_mod.measureMarkerWrite(dc_i[dc_is..@intCast(usize, 19)]);
+    var dcnl: []const u8 = "\n"; pal_mod.measureMarkerWrite(dcnl);
+    if (t.kind == TypeKind.struct_type) {
+        var xs: []const u8 = "X:"; pal_mod.measureMarkerWriteInt(xs, id);
+    }
+    return id;
+}
+
+fn ptrAppend(self: *TypeRegistry, v: PtrPayload) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.ptr_items), &self.ptr_len, &self.ptr_cap, self.types_alloc, @sizeOf(PtrPayload), self.ptr_len + 1);
+    self.ptr_items[self.ptr_len] = v; self.ptr_len += 1;
+}
+fn arrayAppend(self: *TypeRegistry, v: ArrayPayload) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.array_items), &self.array_len, &self.array_cap, self.types_alloc, @sizeOf(ArrayPayload), self.array_len + 1);
+    self.array_items[self.array_len] = v; self.array_len += 1;
+}
+fn sliceAppend(self: *TypeRegistry, v: SlicePayload) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.slice_items), &self.slice_len, &self.slice_cap, self.types_alloc, @sizeOf(SlicePayload), self.slice_len + 1);
+    self.slice_items[self.slice_len] = v; self.slice_len += 1;
+}
+fn optAppend(self: *TypeRegistry, v: OptionalPayload) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.opt_items), &self.opt_len, &self.opt_cap, self.types_alloc, @sizeOf(OptionalPayload), self.opt_len + 1);
+    self.opt_items[self.opt_len] = v; self.opt_len += 1;
+}
+fn euAppend(self: *TypeRegistry, v: EUPayload) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.eu_items), &self.eu_len, &self.eu_cap, self.types_alloc, @sizeOf(EUPayload), self.eu_len + 1);
+    self.eu_items[self.eu_len] = v; self.eu_len += 1;
+}
+pub fn esAppend(self: *TypeRegistry, v: ErrorSetPayload) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.es_items), &self.es_len, &self.es_cap, self.types_alloc, @sizeOf(ErrorSetPayload), self.es_len + 1);
+    self.es_items[self.es_len] = v; self.es_len += 1;
+}
+fn fnAppend(self: *TypeRegistry, v: FnPayload) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.fn_items), &self.fn_len, &self.fn_cap, self.types_alloc, @sizeOf(FnPayload), self.fn_len + 1);
+    self.fn_items[self.fn_len] = v; self.fn_len += 1;
+}
+pub fn stAppend(self: *TypeRegistry, v: StructPayload) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.st_items), &self.st_len, &self.st_cap, self.types_alloc, @sizeOf(StructPayload), self.st_len + 1);
+    self.st_items[self.st_len] = v; self.st_len += 1;
+    pkStructAppend(self, PackedStructInfo{ .pk_start = @intCast(u32, 0), .pk_count = @intCast(u16, 0), .total_bits = @intCast(u32, 0) });
+}
+fn pkStructAppend(self: *TypeRegistry, v: PackedStructInfo) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.pk_struct_items), &self.pk_struct_len, &self.pk_struct_cap, self.types_alloc, @sizeOf(PackedStructInfo), self.pk_struct_len + 1);
+    self.pk_struct_items[self.pk_struct_len] = v; self.pk_struct_len += 1;
+}
+pub fn pkFieldAppend(self: *TypeRegistry, v: PackedBitField) void {
+    payloadEnsure(@ptrCast(*[*]u8, &self.pk_items), &self.pk_len, &self.pk_cap, self.types_alloc, @sizeOf(PackedBitField), self.pk_len + 1);
+    self.pk_items[self.pk_len] = v; self.pk_len += 1;
+}
+pub fn pkSetFields(self: *TypeRegistry, pk_idx: u32, v: PackedStructInfo) void {
+    self.pk_struct_items[@intCast(usize, pk_idx)] = v;
+}
+pub fn enAppend(self: *TypeRegistry, v: EnumPayload) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.en_items), &self.en_len, &self.en_cap, self.types_alloc, @sizeOf(EnumPayload), self.en_len + 1);
+     self.en_items[self.en_len] = v; self.en_len += 1;
+ }
+ pub fn unAppend(self: *TypeRegistry, v: UnionPayload) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.un_items), &self.un_len, &self.un_cap, self.types_alloc, @sizeOf(UnionPayload), self.un_len + 1);
+     self.un_items[self.un_len] = v; self.un_len += 1;
+     pkUnStructAppend(self, PackedStructInfo{ .pk_start = @intCast(u32, 0), .pk_count = @intCast(u16, 0), .total_bits = @intCast(u32, 0) });
+ }
+ fn pkUnStructAppend(self: *TypeRegistry, v: PackedStructInfo) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.pk_un_items), &self.pk_un_len, &self.pk_un_cap, self.types_alloc, @sizeOf(PackedStructInfo), self.pk_un_len + 1);
+     self.pk_un_items[self.pk_un_len] = v; self.pk_un_len += 1;
+ }
+ pub fn pkUnSetFields(self: *TypeRegistry, pk_idx: u32, v: PackedStructInfo) void {
+     self.pk_un_items[@intCast(usize, pk_idx)] = v;
+ }
+ pub fn tuAppend(self: *TypeRegistry, v: TaggedUnionPayload) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.tu_items), &self.tu_len, &self.tu_cap, self.types_alloc, @sizeOf(TaggedUnionPayload), self.tu_len + 1);
+     self.tu_items[self.tu_len] = v; self.tu_len += 1;
+ }
+ pub fn tupAppend(self: *TypeRegistry, v: TuplePayload) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.tup_items), &self.tup_len, &self.tup_cap, self.types_alloc, @sizeOf(TuplePayload), self.tup_len + 1);
+     self.tup_items[self.tup_len] = v; self.tup_len += 1;
+ }
+ fn unrAppend(self: *TypeRegistry, v: UnresolvedPayload) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.unr_items), &self.unr_len, &self.unr_cap, self.types_alloc, @sizeOf(UnresolvedPayload), self.unr_len + 1);
+     self.unr_items[self.unr_len] = v; self.unr_len += 1;
+ }
+ pub fn feAppend(self: *TypeRegistry, v: FieldEntry) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.fe_items), &self.fe_len, &self.fe_cap, self.types_alloc, @sizeOf(FieldEntry), self.fe_len + 1);
+     self.fe_items[self.fe_len] = v; self.fe_len += 1;
+ }
+ pub fn emAppend(self: *TypeRegistry, v: EnumMember) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.em_items), &self.em_len, &self.em_cap, self.types_alloc, @sizeOf(EnumMember), self.em_len + 1);
+     self.em_items[self.em_len] = v; self.em_len += 1;
+ }
+ pub fn xtAppend(self: *TypeRegistry, v: TypeId) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.xt_items), &self.xt_len, &self.xt_cap, self.types_alloc, @intCast(usize, 4), self.xt_len + 1);
+     self.xt_items[self.xt_len] = v; self.xt_len += 1;
+ }
+ pub fn xnAppend(self: *TypeRegistry, v: u32) void {
+     payloadEnsure(@ptrCast(*[*]u8, &self.xn_items), &self.xn_len, &self.xn_cap, self.types_alloc, @intCast(usize, 4), self.xn_len + 1);
+     self.xn_items[self.xn_len] = v; self.xn_len += 1;
+ }
+
+fn typeWidthBitsForKind(kind: TypeKind) u8 {
+    if (kind == TypeKind.i8_type or kind == TypeKind.u8_type or kind == TypeKind.c_char_type) return @intCast(u8, 8);
+    if (kind == TypeKind.i16_type or kind == TypeKind.u16_type) return @intCast(u8, 16);
+    if (kind == TypeKind.i32_type or kind == TypeKind.u32_type or kind == TypeKind.isize_type or kind == TypeKind.usize_type) return @intCast(u8, 32);
+    if (kind == TypeKind.i64_type or kind == TypeKind.u64_type) return @intCast(u8, 64);
+    return @intCast(u8, 0);
+}
+
+fn registerPrimitive(self: *TypeRegistry, kind: TypeKind, size: u32, alignment: u32) u32 {
+    var p_wb: u8 = typeWidthBitsForKind(kind);
+    return typeRegistryAppend(self, Type{
+        .kind = kind,
+        .state = @intCast(u8, 2),
+        .flags = @intCast(u8, 0),
+        .iw = p_wb,
+        .size = size,
+        .alignment = @intCast(u16, alignment),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, 0),
+        .payload_idx = @intCast(u32, 0),
+    });
+}
+
+pub fn alignUp(v: u32, a: u32) u32 {
+    return (v + a - @intCast(u32, 1)) & ~(a - @intCast(u32, 1));
+}
+
+fn initArray(items: *[*]u8, len: *usize, cap: *usize) void {
+    items.* = undefined;
+    len.* = @intCast(usize, 0);
+    cap.* = @intCast(usize, 0);
+}
+
+pub fn typeRegistryInit(alloc: *Sand, interner: *StringInterner) TypeRegistry {
+    var reg = TypeRegistry{
+        .types_items = undefined, .types_len = @intCast(usize, 0), .types_cap = @intCast(usize, 0), .types_alloc = alloc,
+        .interner = interner,
+        .ptr_items = undefined, .ptr_len = @intCast(usize, 0), .ptr_cap = @intCast(usize, 0),
+        .array_items = undefined, .array_len = @intCast(usize, 0), .array_cap = @intCast(usize, 0),
+        .slice_items = undefined, .slice_len = @intCast(usize, 0), .slice_cap = @intCast(usize, 0),
+        .opt_items = undefined, .opt_len = @intCast(usize, 0), .opt_cap = @intCast(usize, 0),
+        .eu_items = undefined, .eu_len = @intCast(usize, 0), .eu_cap = @intCast(usize, 0),
+        .es_items = undefined, .es_len = @intCast(usize, 0), .es_cap = @intCast(usize, 0),
+        .fn_items = undefined, .fn_len = @intCast(usize, 0), .fn_cap = @intCast(usize, 0),
+        .st_items = undefined, .st_len = @intCast(usize, 0), .st_cap = @intCast(usize, 0),
+        .en_items = undefined, .en_len = @intCast(usize, 0), .en_cap = @intCast(usize, 0),
+        .un_items = undefined, .un_len = @intCast(usize, 0), .un_cap = @intCast(usize, 0),
+        .tu_items = undefined, .tu_len = @intCast(usize, 0), .tu_cap = @intCast(usize, 0),
+        .tup_items = undefined, .tup_len = @intCast(usize, 0), .tup_cap = @intCast(usize, 0),
+        .unr_items = undefined, .unr_len = @intCast(usize, 0), .unr_cap = @intCast(usize, 0),
+        .fe_items = undefined, .fe_len = @intCast(usize, 0), .fe_cap = @intCast(usize, 0),
+        .em_items = undefined, .em_len = @intCast(usize, 0), .em_cap = @intCast(usize, 0),
+        .xt_items = undefined, .xt_len = @intCast(usize, 0), .xt_cap = @intCast(usize, 0),
+        .xn_items = undefined, .xn_len = @intCast(usize, 0), .xn_cap = @intCast(usize, 0),
+        .pk_items = undefined, .pk_len = @intCast(usize, 0), .pk_cap = @intCast(usize, 0),
+        .pk_struct_items = undefined, .pk_struct_len = @intCast(usize, 0), .pk_struct_cap = @intCast(usize, 0),
+        .pk_un_items = undefined, .pk_un_len = @intCast(usize, 0), .pk_un_cap = @intCast(usize, 0),
+        .ptr_cache = hash_mod.u64ToU32MapInit(alloc),
+        .many_ptr_cache = hash_mod.u64ToU32MapInit(alloc),
+        .slice_cache = hash_mod.u64ToU32MapInit(alloc),
+        .optional_cache = hash_mod.u32ToU32MapInit(alloc),
+        .array_cache = hash_mod.u64ToU32MapInit(alloc),
+        .eu_cache = hash_mod.u64ToU32MapInit(alloc),
+        .es_cache = hash_mod.u64ToU32MapInit(alloc),
+        .name_cache = hash_mod.u64ToU32MapInit(alloc),
+        .c_name_map = hash_mod.u32ToU32MapInit(alloc),
+    };
+    return reg;
+}
+
+// Task 4 R1: hint-seeded init. `type_hint` is the expected `Type` count and
+// `name_hint` the expected `name_cache` entry count. Both are SOFT pre-size
+// floors, not hard caps: `typeRegistryInit(alloc, interner)` (hints 0) is the
+// exact legacy zero-cap behaviour; when a hint is present the `Type` array, the
+// 8 id-caches and the payload arrays are allocated once near their self-compile
+// finals instead of growing geometrically — every abandoned generation would
+// otherwise stay resident in the never-reset `type_db` (Task-3 §1.5). If the
+// engine exceeds a seed, normal doubling resumes (correctness preserved; only
+// the saving is lost).
+pub fn typeRegistryInitSized(alloc: *Sand, interner: *StringInterner, type_hint: u32, name_hint: u32) TypeRegistry {
+    var reg = typeRegistryInit(alloc, interner);
+    var th: usize = @intCast(usize, type_hint);
+    if (th == @intCast(usize, 0)) return reg;
+    var nh: usize = @intCast(usize, name_hint);
+    reg.ptr_cache = hash_mod.u64ToU32MapInitCap(alloc, th / @intCast(usize, 16));
+    reg.many_ptr_cache = hash_mod.u64ToU32MapInitCap(alloc, th / @intCast(usize, 64));
+    reg.slice_cache = hash_mod.u64ToU32MapInitCap(alloc, th / @intCast(usize, 128));
+    reg.optional_cache = hash_mod.u32ToU32MapInitCap(alloc, th / @intCast(usize, 128));
+    reg.array_cache = hash_mod.u64ToU32MapInitCap(alloc, th / @intCast(usize, 32));
+    reg.eu_cache = hash_mod.u64ToU32MapInitCap(alloc, @intCast(usize, 8));
+    reg.es_cache = hash_mod.u64ToU32MapInitCap(alloc, @intCast(usize, 4));
+    reg.name_cache = hash_mod.u64ToU32MapInitCap(alloc, nh);
+    typeRegistryEnsureCapacity(&reg, th);
+    arrayReserve(@ptrCast(*[*]u8, &reg.ptr_items), &reg.ptr_cap, alloc, @sizeOf(PtrPayload), th / @intCast(usize, 8));
+    arrayReserve(@ptrCast(*[*]u8, &reg.array_items), &reg.array_cap, alloc, @sizeOf(ArrayPayload), th / @intCast(usize, 16));
+    arrayReserve(@ptrCast(*[*]u8, &reg.slice_items), &reg.slice_cap, alloc, @sizeOf(SlicePayload), th / @intCast(usize, 64));
+    arrayReserve(@ptrCast(*[*]u8, &reg.opt_items), &reg.opt_cap, alloc, @sizeOf(OptionalPayload), th / @intCast(usize, 64));
+    arrayReserve(@ptrCast(*[*]u8, &reg.eu_items), &reg.eu_cap, alloc, @sizeOf(EUPayload), @intCast(usize, 16));
+    arrayReserve(@ptrCast(*[*]u8, &reg.es_items), &reg.es_cap, alloc, @sizeOf(ErrorSetPayload), @intCast(usize, 8));
+    arrayReserve(@ptrCast(*[*]u8, &reg.fn_items), &reg.fn_cap, alloc, @sizeOf(FnPayload), th / @intCast(usize, 2));
+    arrayReserve(@ptrCast(*[*]u8, &reg.st_items), &reg.st_cap, alloc, @sizeOf(StructPayload), th / @intCast(usize, 16));
+    arrayReserve(@ptrCast(*[*]u8, &reg.en_items), &reg.en_cap, alloc, @sizeOf(EnumPayload), @intCast(usize, 32));
+    arrayReserve(@ptrCast(*[*]u8, &reg.un_items), &reg.un_cap, alloc, @sizeOf(UnionPayload), @intCast(usize, 8));
+    arrayReserve(@ptrCast(*[*]u8, &reg.tu_items), &reg.tu_cap, alloc, @sizeOf(TaggedUnionPayload), @intCast(usize, 8));
+    arrayReserve(@ptrCast(*[*]u8, &reg.tup_items), &reg.tup_cap, alloc, @sizeOf(TuplePayload), @intCast(usize, 8));
+    arrayReserve(@ptrCast(*[*]u8, &reg.unr_items), &reg.unr_cap, alloc, @sizeOf(UnresolvedPayload), @intCast(usize, 8));
+    arrayReserve(@ptrCast(*[*]u8, &reg.fe_items), &reg.fe_cap, alloc, @sizeOf(FieldEntry), th / @intCast(usize, 2));
+    arrayReserve(@ptrCast(*[*]u8, &reg.em_items), &reg.em_cap, alloc, @sizeOf(EnumMember), th / @intCast(usize, 16));
+    arrayReserve(@ptrCast(*[*]u8, &reg.xt_items), &reg.xt_cap, alloc, @intCast(usize, 4), th);
+    arrayReserve(@ptrCast(*[*]u8, &reg.xn_items), &reg.xn_cap, alloc, @intCast(usize, 4), th / @intCast(usize, 16));
+    arrayReserve(@ptrCast(*[*]u8, &reg.pk_items), &reg.pk_cap, alloc, @sizeOf(PackedBitField), th / @intCast(usize, 16));
+    arrayReserve(@ptrCast(*[*]u8, &reg.pk_struct_items), &reg.pk_struct_cap, alloc, @sizeOf(PackedStructInfo), th / @intCast(usize, 16));
+    arrayReserve(@ptrCast(*[*]u8, &reg.pk_un_items), &reg.pk_un_cap, alloc, @sizeOf(PackedStructInfo), @intCast(usize, 8));
+    return reg;
+}
+
+pub fn nameCacheGet(self: *TypeRegistry, key: u64) ?u32 {
+    var val = hash_mod.u64ToU32MapGet(&self.name_cache, key);
+    var key_lo: u64 = key & @intCast(u64, 4294967295);
+    if (key_lo == @intCast(u64, 1)) {
+        var ngc_m: []const u8 = "NGC:g1"; pal_mod.markerWriteInt(ngc_m, if (val) |v| v else @intCast(u32, 0));
+    }
+    return val;
+}
+
+pub fn nameCachePut(self: *TypeRegistry, key: u64, value: u32) void {
+    hash_mod.u64ToU32MapPut(&self.name_cache, key, value);
+    var np_k: [20]u8 = undefined;
+    var np_kl = itoa_mod.itoa(@intCast(u32, key & @intCast(u64, 0xFFFF)), np_k[0..]);
+    var np_ks: usize = @intCast(usize, 19) - @intCast(usize, np_kl);
+    var npm: []const u8 = "NP:k"; pal_mod.markerWrite(npm); pal_mod.markerWrite(np_k[np_ks..@intCast(usize, 19)]);
+    var np_v: [20]u8 = undefined;
+    var np_vl = itoa_mod.itoa(value, np_v[0..]);
+    var np_vs: usize = @intCast(usize, 19) - @intCast(usize, np_vl);
+    var npv: []const u8 = "v"; pal_mod.markerWrite(npv); pal_mod.markerWrite(np_v[np_vs..@intCast(usize, 19)]);
+    var npnl: []const u8 = "\n"; pal_mod.markerWrite(npnl);
+}
+
+// Task 4 R2: the sparse `c_name_id` memo accessors (replaces `Type.c_name_id`).
+pub fn typeRegistryCNameIdGet(self: *TypeRegistry, tid: u32) u32 {
+    return hash_mod.u32ToU32MapGet(&self.c_name_map, tid) orelse @intCast(u32, 0);
+}
+
+pub fn typeRegistryCNameIdSet(self: *TypeRegistry, tid: u32, c_name_id: u32) void {
+    hash_mod.u32ToU32MapPut(&self.c_name_map, tid, c_name_id);
+}
+
+// P3 (emitter sanitization): the ONE canonical C-type-name derivation. Formerly
+// the emitter's `getCTypeName` body (c89_emit.zig) re-derived this synthetic
+// type model and duplicated itself in `emitArrayType`/`emitOptionalType`, and
+// `emitErrorUnionType` wrote the `c_name_map` memo back into the registry.
+// Everything below is a verbatim relocation of that body (receiver aliased to
+// `reg` so the moved expressions stay byte-identical); final identifiers are
+// minted through the P1 authority (`name_mangler.zig`). The memo is now owned
+// by this derivation: every post-memo-check kind stores its mangled name id on
+// first derivation, and the emitter is a pure READER (`emitStructType`'s
+// `ES:n` telemetry reads it). Same tid -> same C name every compilation.
+fn typeSliceElementName(self: *TypeRegistry, mangler: *NameMangler, elem_tid: u32) []const u8 {
+    var reg = self;
+    var elem_ty = reg.types_items[@intCast(usize, elem_tid)];
+    if (elem_ty.name_id == @intCast(u32, 0)) {
+        return typeCName(reg, mangler, elem_tid);
+    }
+    var elem_mid = nm_mod.nameManglerMangle(mangler, elem_ty.name_id, @intCast(u8, 2), @intCast(u32, 0));
+    return interner_mod.stringInternerGet(mangler.interner, elem_mid);
+}
+
+pub fn typeCName(self: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 {
+    var reg = self;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (tid >= @intCast(u32, 20)) {
+        var d6m: []const u8 = "D6:"; pal_mod.markerWrite(d6m);
+        var d6tb: [20]u8 = undefined; var d6tl = itoa_mod.itoa(tid, d6tb[0..]); var d6ts: usize = @intCast(usize, 19) - @intCast(usize, d6tl); pal_mod.markerWrite(d6tb[d6ts..@intCast(usize, 19)]);
+        var d6kn: []const u8 = "k"; pal_mod.markerWrite(d6kn);
+        var d6kb: [20]u8 = undefined; var d6kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), d6kb[0..]); var d6ks: usize = @intCast(usize, 19) - @intCast(usize, d6kl); pal_mod.markerWrite(d6kb[d6ks..@intCast(usize, 19)]);
+        var d6nn: []const u8 = "n"; pal_mod.markerWriteInt(d6nn, ty.name_id);
+    }
+    if (ty.kind == TypeKind.void_type) { var s: []const u8 = "void"; return s; }
+    if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "unsigned char"; return s; }
+    if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "signed char"; return s; }
+    if (ty.kind == TypeKind.i16_type) { var s: []const u8 = "short"; return s; }
+    if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "int"; return s; }
+    if (ty.kind == TypeKind.i64_type) {
+        var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        return interner_mod.stringInternerGet(mangler.interner, mid);
+    }
+    if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char"; return s; }
+    if (ty.kind == TypeKind.u16_type) { var s: []const u8 = "unsigned short"; return s; }
+    if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int"; return s; }
+    if (ty.kind == TypeKind.u64_type) {
+        var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        return interner_mod.stringInternerGet(mangler.interner, mid);
+    }
+    if (ty.kind == TypeKind.arb_uint_type) {
+        if (ty.size == @intCast(u32, 2)) { var s: []const u8 = "unsigned short"; return s; }
+        if (ty.size == @intCast(u32, 4)) { var s: []const u8 = "unsigned int"; return s; }
+        if (ty.size == @intCast(u32, 8)) { return typeCName(reg, mangler, TYPE_U64); }
+        var s: []const u8 = "unsigned char"; return s;
+    }
+    if (ty.kind == TypeKind.arb_int_type) {
+        if (ty.size == @intCast(u32, 2)) { var s: []const u8 = "short"; return s; }
+        if (ty.size == @intCast(u32, 4)) { var s: []const u8 = "int"; return s; }
+        if (ty.size == @intCast(u32, 8)) { return typeCName(reg, mangler, TYPE_I64); }
+        var s: []const u8 = "signed char"; return s;
+    }
+    if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "float"; return s; }
+    if (ty.kind == TypeKind.f64_type) {
+        var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        return interner_mod.stringInternerGet(mangler.interner, mid);
+    }
+    if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int"; return s; }
+    if (ty.kind == TypeKind.isize_type) { var s: []const u8 = "int"; return s; }
+    if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "char"; return s; }
+    if (ty.kind == TypeKind.va_list_type) { var s: []const u8 = "va_list"; return s; }
+    if (ty.kind == TypeKind.enum_type) {
+        var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        return interner_mod.stringInternerGet(mangler.interner, mid);
+    }
+    if (ty.kind == TypeKind.array_type) {
+        var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
+        var e_cname = typeCName(reg, mangler, ap.elem);
+        var a_dig: [16]u8 = undefined;
+        var a_dl = itoa_mod.itoa(ap.length, a_dig[0..]);
+        var a_ds: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, a_dl);
+        var a_pref: []const u8 = "Arr_";
+        return nm_mod.nameManglerMintSyntheticType(mangler, a_pref, e_cname, a_dig[a_ds..@intCast(usize, 16) - @intCast(usize, 1)], @intCast(usize, 127));
+    }
+    // Task 4 (z98-print-formatting): tuple types are synthetic (name_id 0), so
+    // the generic name_id fallback would collapse every tuple onto the empty-name
+    // mangle. Derive a stable per-type name from the type id (types are global
+    // and dense, so every module agrees) and mangle it like the other synthetics.
+    if (ty.kind == TypeKind.tuple_type) {
+        var t_dig: [16]u8 = undefined;
+        var t_dl = itoa_mod.itoa(tid, t_dig[0..]);
+        var t_ds: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, t_dl);
+        var t_empty: []const u8 = "";
+        var t_pref: []const u8 = "Tup_";
+        return nm_mod.nameManglerMintSyntheticType(mangler, t_pref, t_empty, t_dig[t_ds..@intCast(usize, 16) - @intCast(usize, 1)], @intCast(usize, 31));
+    }
+    if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
+        var pp = reg.ptr_items[@intCast(usize, ty.payload_idx)];
+        var et = reg.types_items[@intCast(usize, pp.base)];
+        var is_vol: bool = (ty.flags & @intCast(u8, 2)) != @intCast(u8, 0);
+        if (et.kind == TypeKind.fn_type) { return typeCName(reg, mangler, pp.base); }
+        // Track4 S25 (Task 0p F): the A1 string-literal type is `*const [N]u8`.
+        // Its C model must be the plain element pointer: a C string literal
+        // decays to `char*`, never to a pointer-to-array. Decay the emitted C
+        // type here (const pointer to a u8 array) so the `string_const` temp,
+        // and any global const bound to a literal, emit as `unsigned char*`.
+        // The LIR/sema type is unchanged (`materializeInto` classifies on it;
+        // the length is a separate temp). Genuine `*[N]T` pointers are not
+        // const and are unaffected.
+        if (!is_vol and (ty.flags & @intCast(u8, 1)) != @intCast(u8, 0) and et.kind == TypeKind.array_type) {
+            var sc_ap = reg.array_items[@intCast(usize, et.payload_idx)];
+            if (sc_ap.elem == TYPE_U8) { var s: []const u8 = "unsigned char*"; return s; }
+        }
+        if (!is_vol) {
+            if (et.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char*"; return s; }
+            if (et.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int*"; return s; }
+            if (et.kind == TypeKind.i32_type) { var s: []const u8 = "int*"; return s; }
+            if (et.kind == TypeKind.c_char_type) { var s: []const u8 = "char*"; return s; }
+            if (et.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int*"; return s; }
+        }
+        var base_cname = typeCName(reg, mangler, pp.base);
+        var pbuf: [128]u8 = undefined;
+        var bi: usize = 0;
+        var et_is_ptr: bool = et.kind == TypeKind.ptr_type or et.kind == TypeKind.many_ptr_type;
+        if (is_vol and !et_is_ptr) {
+            var vpx: []const u8 = "volatile ";
+            var vpi: usize = 0;
+            while (vpi < vpx.len and bi < 126) : (vpi += 1) { pbuf[bi] = vpx[vpi]; bi += 1; }
+        }
+        var bcj: usize = 0;
+        while (bcj < base_cname.len and bi < 126) : (bcj += 1) { pbuf[bi] = base_cname[bcj]; bi += 1; }
+        if (is_vol and et_is_ptr) {
+            var vpx2: []const u8 = " volatile";
+            var vpi2: usize = 0;
+            while (vpi2 < vpx2.len and bi < 126) : (vpi2 += 1) { pbuf[bi] = vpx2[vpi2]; bi += 1; }
+        }
+        pbuf[bi] = '*'; bi += 1;
+        pbuf[bi] = 0; bi += 1;
+        var ptr_mid = interner_mod.stringInternerIntern(mangler.interner, pbuf[0..bi - @intCast(usize, 1)]);
+        return interner_mod.stringInternerGet(mangler.interner, ptr_mid);
+    }
+    if (ty.kind == TypeKind.undefined_type) { var s: []const u8 = "int"; return s; }
+    if (ty.kind == TypeKind.integer_literal_type) { var s: []const u8 = "int"; return s; }
+    if (ty.kind == TypeKind.null_type) { var nul_m: []const u8 = "NUL:TYnul "; pal_mod.markerWrite(nul_m); var s: []const u8 = "int"; return s; }
+    if (ty.kind == TypeKind.slice_type) {
+        var sp = reg.slice_items[@intCast(usize, ty.payload_idx)];
+        var elem_mangled2 = typeSliceElementName(reg, mangler, sp.elem);
+        var s_empty: []const u8 = "";
+        var s_pref: []const u8 = "Slice_";
+        return nm_mod.nameManglerMintSyntheticType(mangler, s_pref, elem_mangled2, s_empty, @intCast(usize, 63));
+    }
+    if (ty.kind == TypeKind.optional_type) {
+        var op = reg.opt_items[@intCast(usize, ty.payload_idx)];
+        var o_dig: [10]u8 = undefined;
+        var o_dl = itoa_mod.itoa(op.payload, o_dig[0..]);
+        var o_ds: usize = @intCast(usize, 9) - @intCast(usize, o_dl);
+        var o_empty: []const u8 = "";
+        var o_pref: []const u8 = "Opt_";
+        return nm_mod.nameManglerMintSyntheticType(mangler, o_pref, o_empty, o_dig[o_ds..@intCast(usize, 9)], @intCast(usize, 63));
+    }
+    var c_nid = typeRegistryCNameIdGet(reg, tid);
+    if (c_nid != 0) {
+        return interner_mod.stringInternerGet(mangler.interner, c_nid);
+    }
+    if (ty.kind == TypeKind.error_union_type) {
+        var ep = reg.eu_items[@intCast(usize, ty.payload_idx)];
+        var buf: [64]u8 = undefined;
+        var p: usize = @intCast(usize, 0);
+        var pref: []const u8 = "EU_";
+        var pi: usize = @intCast(usize, 0);
+        while (pi < pref.len and p < @intCast(usize, 63)) : (pi += @intCast(usize, 1)) { buf[p] = pref[pi]; p += @intCast(usize, 1); }
+        var pl = ep.payload;
+        var di: usize = p;
+        while (pl > @intCast(u32, 0) or di == p) : (di += @intCast(usize, 1)) {
+            buf[di] = @intCast(u8, @intCast(u32, '0') + (pl % @intCast(u32, 10)));
+            pl = pl / @intCast(u32, 10);
+            if (di >= @intCast(usize, 63)) break;
+        }
+        p = di;
+        var eu_nid = nm_mod.nameManglerMangle(mangler, interner_mod.stringInternerIntern(mangler.interner, buf[0..p]), @intCast(u8, 2), @intCast(u32, 0));
+        typeRegistryCNameIdSet(reg, tid, eu_nid);
+        return interner_mod.stringInternerGet(mangler.interner, eu_nid);
+    }
+    if (ty.kind == TypeKind.fn_type) {
+        var fpp = reg.fn_items[@intCast(usize, ty.payload_idx)];
+        var fbuf: [96]u8 = undefined;
+        var fpos: usize = @intCast(usize, 0);
+        fbuf[0] = @intCast(u8, 70);
+        fbuf[2] = @intCast(u8, 95);
+        if ((fpp.flags_packed & FN_FLAG_STDCALL) != @intCast(u8, 0)) {
+            fbuf[1] = @intCast(u8, 83);
+        } else if ((ty.flags & @as(u32, 1)) != @as(u32, 0)) {
+            fbuf[1] = @intCast(u8, 80);
+        } else {
+            fbuf[1] = @intCast(u8, 78);
+        }
+        fpos = @intCast(usize, 3);
+        var fret_c = typeCName(reg, mangler, fpp.return_type);
+        var fri: usize = @intCast(usize, 0);
+        while (fri < fret_c.len and fpos < @intCast(usize, 95)) : (fri += @intCast(usize, 1)) {
+            var fc = fret_c[fri];
+            if (fc == @intCast(u8, 32) or fc == @intCast(u8, 42)) {
+                fc = @intCast(u8, 95);
+            }
+            fbuf[fpos] = fc;
+            fpos += @intCast(usize, 1);
+        }
+        var fpcnt: u16 = fpp.params_count;
+        var fpend: usize = @intCast(usize, fpp.params_start) + @intCast(usize, fpcnt);
+        if (fpend <= reg.xt_len) {
+            var fpcur: usize = @intCast(usize, fpp.params_start);
+            while (fpcur < fpend and fpos < @intCast(usize, 95)) : (fpcur += @intCast(usize, 1)) {
+                if (fpos < @intCast(usize, 95)) {
+                    fbuf[fpos] = @intCast(u8, 95);
+                    fpos += @intCast(usize, 1);
+                }
+                var fptid = reg.xt_items[fpcur];
+                var fp_c = typeCName(reg, mangler, fptid);
+                var fpj: usize = @intCast(usize, 0);
+                while (fpj < fp_c.len and fpos < @intCast(usize, 95)) : (fpj += @intCast(usize, 1)) {
+                    var fc2 = fp_c[fpj];
+                    if (fc2 == @intCast(u8, 32) or fc2 == @intCast(u8, 42)) {
+                        fc2 = @intCast(u8, 95);
+                    }
+                    fbuf[fpos] = fc2;
+                    fpos += @intCast(usize, 1);
+                }
+            }
+        }
+        var fp_nid = interner_mod.stringInternerIntern(mangler.interner, fbuf[0..fpos]);
+        var fp_mid = nm_mod.nameManglerMangle(mangler, fp_nid, @intCast(u8, 2), @intCast(u32, 0));
+        typeRegistryCNameIdSet(reg, tid, fp_mid);
+        return interner_mod.stringInternerGet(mangler.interner, fp_mid);
+    }
+    if (ty.kind == TypeKind.error_set_type) {
+        if (ty.name_id == @intCast(u32, 0)) {
+            var buf: [64]u8 = undefined;
+            var p: usize = @intCast(usize, 0);
+            var pref: []const u8 = "ES_";
+            var pi: usize = @intCast(usize, 0);
+            while (pi < pref.len and p < @intCast(usize, 63)) : (pi += @intCast(usize, 1)) { buf[p] = pref[pi]; p += @intCast(usize, 1); }
+            var pl: u32 = @intCast(u32, ty.payload_idx);
+            var di: usize = p;
+            while (pl > @intCast(u32, 0) or di == p) : (di += @intCast(usize, 1)) {
+                buf[di] = @intCast(u8, @intCast(u32, '0') + (pl % @intCast(u32, 10)));
+                pl = pl / @intCast(u32, 10);
+                if (di >= @intCast(usize, 63)) break;
+            }
+            p = di;
+            var es_nid = nm_mod.nameManglerMangle(mangler, interner_mod.stringInternerIntern(mangler.interner, buf[0..p]), @intCast(u8, 2), @intCast(u32, 0));
+            typeRegistryCNameIdSet(reg, tid, es_nid);
+            return interner_mod.stringInternerGet(mangler.interner, es_nid);
+        }
+        var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        typeRegistryCNameIdSet(reg, tid, mid);
+        return interner_mod.stringInternerGet(mangler.interner, mid);
+    }
+    var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    typeRegistryCNameIdSet(reg, tid, mid);
+    return interner_mod.stringInternerGet(mangler.interner, mid);
+}
+
+pub fn typeRegistryGetOrCreatePtr(self: *TypeRegistry, base: TypeId, is_const: bool) u32 {
+    return typeRegistryGetOrCreatePtrQ(self, base, is_const, false);
+}
+
+pub fn typeRegistryGetOrCreatePtrQ(self: *TypeRegistry, base: TypeId, is_const: bool, is_volatile: bool) u32 {
+    var q: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
+    if (is_volatile) q |= @intCast(u64, 2);
+    var key: u64 = (@intCast(u64, base) << @intCast(u64, 2)) | q;
+    if (hash_mod.u64ToU32MapGet(&self.ptr_cache, key)) |existing| return existing;
+    ptrAppend(self, PtrPayload{ .base = base });
+    var tid = typeRegistryAppend(self, Type{
+        .kind = TypeKind.ptr_type, .state = @intCast(u8, 2),
+        .flags = @intCast(u8, q),
+        .iw = @intCast(u8, 0),
+        .size = @intCast(u32, 4), .alignment = @intCast(u16, 4),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, 0), .payload_idx = @intCast(u32, self.ptr_len - @intCast(usize, 1)),
+    });
+    hash_mod.u64ToU32MapPut(&self.ptr_cache, key, tid);
+    return tid;
+}
+
+pub fn typeRegistryGetOrCreateManyPtr(self: *TypeRegistry, base: TypeId, is_const: bool) u32 {
+    return typeRegistryGetOrCreateManyPtrQ(self, base, is_const, false);
+}
+
+pub fn typeRegistryGetOrCreateManyPtrQ(self: *TypeRegistry, base: TypeId, is_const: bool, is_volatile: bool) u32 {
+    var q: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
+    if (is_volatile) q |= @intCast(u64, 2);
+    var key: u64 = (@intCast(u64, base) << @intCast(u64, 2)) | q;
+    if (hash_mod.u64ToU32MapGet(&self.many_ptr_cache, key)) |existing| return existing;
+    ptrAppend(self, PtrPayload{ .base = base });
+    var tid = typeRegistryAppend(self, Type{
+        .kind = TypeKind.many_ptr_type, .state = @intCast(u8, 2),
+        .flags = @intCast(u8, q),
+        .iw = @intCast(u8, 0),
+        .size = @intCast(u32, 4), .alignment = @intCast(u16, 4),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, 0), .payload_idx = @intCast(u32, self.ptr_len - @intCast(usize, 1)),
+    });
+    hash_mod.u64ToU32MapPut(&self.many_ptr_cache, key, tid);
+    return tid;
+}
+
+pub fn typeRegistryGetOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const: bool) u32 {
+    var ic: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
+    var key: u64 = (@intCast(u64, elem) << @intCast(u64, 1)) | ic;
+    if (hash_mod.u64ToU32MapGet(&self.slice_cache, key)) |existing| {
+        var u2h_m: []const u8 = "U2H:e"; pal_mod.markerWrite(u2h_m);
+        var u2h_eb: [20]u8 = undefined; var u2h_el = itoa_mod.itoa(elem, u2h_eb[0..]); var u2h_es: usize = @intCast(usize, 19) - @intCast(usize, u2h_el); pal_mod.markerWrite(u2h_eb[u2h_es..@intCast(usize, 19)]);
+        var u2h_rm: []const u8 = "r"; pal_mod.markerWrite(u2h_rm);
+        var u2h_rb: [20]u8 = undefined; var u2h_rl = itoa_mod.itoa(existing, u2h_rb[0..]); var u2h_rs: usize = @intCast(usize, 19) - @intCast(usize, u2h_rl); pal_mod.markerWrite(u2h_rb[u2h_rs..@intCast(usize, 19)]);
+        var u2h_cm: []const u8 = "c"; pal_mod.markerWrite(u2h_cm);
+        var u2h_cb: [20]u8 = undefined; var u2h_cl = itoa_mod.itoa(@intCast(u32, ic), u2h_cb[0..]); var u2h_cs: usize = @intCast(usize, 19) - @intCast(usize, u2h_cl); pal_mod.markerWrite(u2h_cb[u2h_cs..@intCast(usize, 19)]);
+        return existing;
+    }
+    sliceAppend(self, SlicePayload{ .elem = elem });
+    var tid = typeRegistryAppend(self, Type{
+        .kind = TypeKind.slice_type, .state = @intCast(u8, 2),
+        .flags = @intCast(u8, if (is_const) 1 else 0),
+        .iw = @intCast(u8, 0),
+        .size = @intCast(u32, 8), .alignment = @intCast(u16, 4),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, 0), .payload_idx = @intCast(u32, self.slice_len - @intCast(usize, 1)),
+    });
+    hash_mod.u64ToU32MapPut(&self.slice_cache, key, tid);
+    var u2n_m: []const u8 = "U2N:e"; pal_mod.markerWrite(u2n_m);
+    var u2n_eb: [20]u8 = undefined; var u2n_el = itoa_mod.itoa(elem, u2n_eb[0..]); var u2n_es: usize = @intCast(usize, 19) - @intCast(usize, u2n_el); pal_mod.markerWrite(u2n_eb[u2n_es..@intCast(usize, 19)]);
+    var u2n_rm: []const u8 = "r"; pal_mod.markerWrite(u2n_rm);
+    var u2n_rb: [20]u8 = undefined; var u2n_rl = itoa_mod.itoa(tid, u2n_rb[0..]); var u2n_rs: usize = @intCast(usize, 19) - @intCast(usize, u2n_rl); pal_mod.markerWrite(u2n_rb[u2n_rs..@intCast(usize, 19)]);
+    var u2n_cm: []const u8 = "c"; pal_mod.markerWrite(u2n_cm);
+    var u2n_cb: [20]u8 = undefined; var u2n_cl = itoa_mod.itoa(@intCast(u32, ic), u2n_cb[0..]); var u2n_cs: usize = @intCast(usize, 19) - @intCast(usize, u2n_cl); pal_mod.markerWrite(u2n_cb[u2n_cs..@intCast(usize, 19)]);
+    return tid;
+}
+
+// D1 identity: in-place completion of a cached optional created while its
+// payload was still pending. The topological pass (`typeResolverResolve`)
+// completes every pre-pass composite; this covers late requests — a later
+// GetOrCreate finding the payload now laid out completes the shared id in
+// place instead of (pre-fix) minting a second laid-out id. Guarded by
+// `payload.state == 2`, so a pending payload is never read and no layout is
+// frozen prematurely. Math is the creation-time math verbatim (mirrors
+// `layoutCompute`'s optional branch).
+fn optionalCompleteIfReady(self: *TypeRegistry, tid: u32) void {
+    if (@intCast(usize, tid) >= self.types_len) return;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.state == @intCast(u8, 2)) return;
+    if (ty.payload_idx >= @intCast(u32, self.opt_len)) return;
+    var op: OptionalPayload = self.opt_items[@intCast(usize, ty.payload_idx)];
+    if (@intCast(usize, op.payload) >= self.types_len) return;
+    var pay_type = self.types_items[op.payload];
+    if (pay_type.state != @intCast(u8, 2)) return;
+    var pay_align: u32 = if (@intCast(u32, pay_type.alignment) > @intCast(u32, 4)) @intCast(u32, pay_type.alignment) else @intCast(u32, 4);
+    var opt_size: u32 = alignUp(pay_type.size, @intCast(u32, 4)) + @intCast(u32, 4);
+    opt_size = alignUp(opt_size, pay_align);
+    ty.size = opt_size;
+    ty.alignment = @intCast(u16, pay_align);
+    ty.state = @intCast(u8, 2);
+    self.types_items[@intCast(usize, tid)] = ty;
+}
+
+// D1 identity: same in-place completion for error unions (cache is already
+// unconditional). Runs on cache-hit only — a re-request that finds the payload
+// now laid out completes the shared id in place. A cached EU created while its
+// payload was pending and NEVER re-requested stays pending until the
+// topological pass / a `layoutEnsure` (residual case C5 — unchanged).
+fn errorUnionCompleteIfReady(self: *TypeRegistry, tid: u32) void {
+    if (@intCast(usize, tid) >= self.types_len) return;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.state == @intCast(u8, 2)) return;
+    if (ty.payload_idx >= @intCast(u32, self.eu_len)) return;
+    var eup: EUPayload = self.eu_items[@intCast(usize, ty.payload_idx)];
+    if (@intCast(usize, eup.payload) >= self.types_len) return;
+    var pay_type = self.types_items[eup.payload];
+    if (pay_type.state != @intCast(u8, 2)) return;
+    var union_size = if (pay_type.size > @intCast(u32, 4)) pay_type.size else @intCast(u32, 4);
+    var union_align: u32 = if (@intCast(u32, pay_type.alignment) > @intCast(u32, 4)) @intCast(u32, pay_type.alignment) else @intCast(u32, 4);
+    var total = alignUp(union_size, union_align);
+    total = alignUp(total, @intCast(u32, 4)) + @intCast(u32, 4);
+    ty.size = alignUp(total, union_align);
+    ty.alignment = @intCast(u16, union_align);
+    ty.state = @intCast(u8, 2);
+    self.types_items[@intCast(usize, tid)] = ty;
+}
+
+// D1 identity: same in-place completion for arrays.
+fn arrayCompleteIfReady(self: *TypeRegistry, tid: u32) void {
+    if (@intCast(usize, tid) >= self.types_len) return;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.state == @intCast(u8, 2)) return;
+    if (ty.payload_idx >= @intCast(u32, self.array_len)) return;
+    var ap: ArrayPayload = self.array_items[@intCast(usize, ty.payload_idx)];
+    if (@intCast(usize, ap.elem) >= self.types_len) return;
+    var elem_ty = self.types_items[ap.elem];
+    if (elem_ty.state != @intCast(u8, 2)) return;
+    ty.size = elem_ty.size * ap.length;
+    ty.alignment = elem_ty.alignment;
+    ty.state = @intCast(u8, 2);
+    self.types_items[@intCast(usize, tid)] = ty;
+}
+
+pub fn typeRegistryGetOrCreateOptional(self: *TypeRegistry, payload: TypeId) u32 {
+    if (hash_mod.u32ToU32MapGet(&self.optional_cache, payload)) |existing| {
+        optionalCompleteIfReady(self, existing);
+        return existing;
+    }
+    var pay_type = self.types_items[payload];
+    var opt_size: u32 = 0;
+    var opt_align: u32 = 0;
+    var opt_state: u8 = 0;
+    if (pay_type.state == @intCast(u8, 2)) {
+        var pay_align: u32 = if (@intCast(u32, pay_type.alignment) > @intCast(u32, 4)) @intCast(u32, pay_type.alignment) else @intCast(u32, 4);
+        opt_size = alignUp(pay_type.size, @intCast(u32, 4)) + @intCast(u32, 4);
+        opt_size = alignUp(opt_size, pay_align);
+        opt_align = pay_align;
+        opt_state = @intCast(u8, 2);
+    }
+    optAppend(self, OptionalPayload{ .payload = payload });
+    var tid = typeRegistryAppend(self, Type{
+        .kind = TypeKind.optional_type, .state = opt_state, .flags = @intCast(u8, 0),
+        .iw = @intCast(u8, 0),
+        .size = opt_size, .alignment = @intCast(u16, opt_align),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, 0), .payload_idx = @intCast(u32, self.opt_len - @intCast(usize, 1)),
+    });
+    // D1 identity: cache unconditionally (model: `typeRegistryGetOrCreatePtr`).
+    // The pre-fix `if (opt_state == 2)` guard left the pending twin uncached, so
+    // the next request minted a second id for the same composite.
+    hash_mod.u32ToU32MapPut(&self.optional_cache, payload, tid);
+    return tid;
+}
+
+pub fn typeRegistryGetOrCreateErrorUnion(self: *TypeRegistry, payload: TypeId, error_set: TypeId) u32 {
+    var eu_key: u64 = (@intCast(u64, payload) << @intCast(u64, 32)) | @intCast(u64, error_set);
+    if (hash_mod.u64ToU32MapGet(&self.eu_cache, eu_key)) |existing| {
+        errorUnionCompleteIfReady(self, existing);
+        return existing;
+    }
+    var pay_type = self.types_items[payload];
+    var eu_size: u32 = 0;
+    var eu_align: u32 = 0;
+    var eu_state: u8 = 0;
+    if (pay_type.state == @intCast(u8, 2)) {
+        var union_size = if (pay_type.size > @intCast(u32, 4)) pay_type.size else @intCast(u32, 4);
+        var union_align: u32 = if (@intCast(u32, pay_type.alignment) > @intCast(u32, 4)) @intCast(u32, pay_type.alignment) else @intCast(u32, 4);
+        var total = alignUp(union_size, union_align);
+        total = alignUp(total, @intCast(u32, 4)) + @intCast(u32, 4);
+        eu_size = alignUp(total, union_align);
+        eu_align = union_align;
+        eu_state = @intCast(u8, 2);
+    }
+    euAppend(self, EUPayload{ .payload = payload, .error_set = error_set });
+    var tid = typeRegistryAppend(self, Type{
+        .kind = TypeKind.error_union_type, .state = eu_state, .flags = @intCast(u8, 0),
+        .iw = @intCast(u8, 0),
+        .size = eu_size, .alignment = @intCast(u16, eu_align),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, 0), .payload_idx = @intCast(u32, self.eu_len - @intCast(usize, 1)),
+    });
+    hash_mod.u64ToU32MapPut(&self.eu_cache, eu_key, tid);
+    return tid;
+}
+
+pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u32) u32 {
+    var o0m: []const u8 = "O0e"; pal_mod.markerWrite(o0m);
+    var o0b: [20]u8 = undefined;
+    var o0l = itoa_mod.itoa(elem, o0b[0..]);
+    var o0s: usize = @intCast(usize, 19) - @intCast(usize, o0l);
+    pal_mod.markerWrite(o0b[o0s..@intCast(usize, 19)]);
+    var o0m2: []const u8 = "L"; pal_mod.markerWrite(o0m2);
+    var o0b2: [20]u8 = undefined;
+    var o0l2 = itoa_mod.itoa(length, o0b2[0..]);
+    var o0s2: usize = @intCast(usize, 19) - @intCast(usize, o0l2);
+    pal_mod.markerWrite(o0b2[o0s2..@intCast(usize, 19)]);
+    var key: u64 = (@intCast(u64, elem) << @intCast(u64, 32)) | @intCast(u64, length);
+    if (hash_mod.u64ToU32MapGet(&self.array_cache, key)) |existing| {
+        var o1m: []const u8 = "O1H"; pal_mod.markerWrite(o1m);
+        var o1b: [20]u8 = undefined;
+        var o1l = itoa_mod.itoa(existing, o1b[0..]);
+        var o1s: usize = @intCast(usize, 19) - @intCast(usize, o1l);
+        pal_mod.markerWrite(o1b[o1s..@intCast(usize, 19)]);
+        arrayCompleteIfReady(self, existing);
+        return existing;
+    }
+    arrayAppend(self, ArrayPayload{ .elem = elem, .length = length });
+    var elem_ty = self.types_items[elem];
+    var arr_size: u32 = 0;
+    var arr_align: u32 = 0;
+    var arr_state: u8 = 0;
+    if (elem_ty.state == @intCast(u8, 2)) {
+        arr_size = elem_ty.size * length;
+        arr_align = elem_ty.alignment;
+        arr_state = @intCast(u8, 2);
+    }
+    var tid = typeRegistryAppend(self, Type{
+        .kind = TypeKind.array_type, .state = arr_state, .flags = @intCast(u8, 0),
+        .iw = @intCast(u8, 0),
+        .size = arr_size, .alignment = @intCast(u16, arr_align),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, 0), .payload_idx = @intCast(u32, self.array_len - @intCast(usize, 1)),
+    });
+    var o2m: []const u8 = "O2N"; pal_mod.markerWrite(o2m);
+    var o2b: [20]u8 = undefined;
+    var o2l = itoa_mod.itoa(tid, o2b[0..]);
+    var o2s: usize = @intCast(usize, 19) - @intCast(usize, o2l);
+    pal_mod.markerWrite(o2b[o2s..@intCast(usize, 19)]);
+    // D1 identity: cache unconditionally (model: `typeRegistryGetOrCreatePtr`);
+    // the pre-fix `if (elem_ty.state == 2)` guard left pending twins uncached.
+    hash_mod.u64ToU32MapPut(&self.array_cache, key, tid);
+    return tid;
+}
+
+pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems_count: u16) u32 {
+    tupAppend(self, TuplePayload{ .elems_start = elems_start, .elems_count = elems_count });
+    var tid = typeRegistryAppend(self, Type{
+        .kind = TypeKind.tuple_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0),
+        .iw = @intCast(u8, 0),
+        .size = @intCast(u32, 0), .alignment = @intCast(u16, 1),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, 0), .payload_idx = @intCast(u32, self.tup_len - @intCast(usize, 1)),
+    });
+    return tid;
+}
+
+// FB (D4): tuple element lookup by ordinal. A tuple field has no source name;
+// every access spelling (`.N`, `._N`, `t[N]`) resolves to the positional
+// ordinal `_N` (the C field emitted by `emitTupleType`).
+pub fn typeRegistryTupleElem(self: *TypeRegistry, tid: u32, ordinal: u32) ?TypeId {
+    if (@intCast(usize, tid) >= self.types_len) return null;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.tuple_type) return null;
+    if (ty.payload_idx >= @intCast(u32, self.tup_len)) return null;
+    var tup: TuplePayload = self.tup_items[@intCast(usize, ty.payload_idx)];
+    if (ordinal >= @intCast(u32, tup.elems_count)) return null;
+    return self.xt_items[@intCast(usize, tup.elems_start + ordinal)];
+}
+
+// FB (D4): decode a `.N`/`._N` field name into the tuple ordinal, textually.
+// The parser canonicalizes `.N` by interning the decimal text of N (never the
+// `int_val`/name-id space), so `^[0-9]+$` and `^_[0-9]+$` are the only forms
+// accepted on a tuple base. A non-decimal name returns null (the member then
+// rejects via the normal unknown-member path).
+pub fn typeRegistryTupleOrdinalFromNameId(self: *TypeRegistry, name_id: u32) ?u32 {
+    var text = interner_mod.stringInternerGet(self.interner, name_id);
+    var nlen: usize = text.len;
+    if (nlen == @intCast(usize, 0)) return null;
+    var start: usize = @intCast(usize, 0);
+    if (text[0] == @intCast(u8, '_')) {
+        start = @intCast(usize, 1);
+        if (nlen == @intCast(usize, 1)) return null;
+    }
+    var v: u32 = @intCast(u32, 0);
+    var i: usize = start;
+    while (i < nlen) : (i += 1) {
+        var c: u8 = text[i];
+        if (c < @intCast(u8, '0') or c > @intCast(u8, '9')) return null;
+        if (v > @intCast(u32, 99999999)) return @intCast(u32, 1000000000);
+        var d: u32 = @intCast(u32, c - @intCast(u8, '0'));
+        v = v * @intCast(u32, 10) + d;
+    }
+    return v;
+}
+
+ pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, module_id: u32, is_extern: u8, is_variadic: u8, params_start: u32, params_count: u16, return_type: TypeId, call_conv: u8) u32 {
+     var p2m: []const u8 = "P2:n"; pal_mod.markerWrite(p2m);
+     var p2nb: [20]u8 = undefined; var p2nl = itoa_mod.itoa(name_id, p2nb[0..]); var p2ns: usize = @intCast(usize, 19) - @intCast(usize, p2nl); pal_mod.markerWrite(p2nb[p2ns..@intCast(usize, 19)]);
+     var conv_bit: u8 = @intCast(u8, 0);
+     if (call_conv == @intCast(u8, 1)) conv_bit = FN_FLAG_STDCALL;
+     var i: usize = 0;
+     while (i < self.types_len) : (i += 1) {
+         var it = self.types_items[i];
+         if (it.kind == TypeKind.fn_type and it.name_id == name_id
+             and self.fn_items[self.types_items[i].payload_idx].module_id == module_id
+             and (self.fn_items[self.types_items[i].payload_idx].flags_packed & FN_FLAG_STDCALL) == conv_bit) {
+             var p2hm: []const u8 = "H"; pal_mod.markerWrite(p2hm);
+             if (conv_bit != @intCast(u8, 0)) { self.types_items[i].flags = self.types_items[i].flags | @intCast(u8, 1); }
+             return @intCast(u32, i);
+         }
+     }
+     fnAppend(self, FnPayload{ .name_id = name_id, .module_id = module_id, .is_extern = is_extern, .params_start = params_start, .params_count = params_count, .return_type = return_type, .flags_packed = is_variadic | conv_bit });
+    var tid = typeRegistryAppend(self, Type{
+        .kind = TypeKind.fn_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0),
+        .iw = @intCast(u8, 0),
+        .size = @intCast(u32, 4), .alignment = @intCast(u16, 4),
+        .name_id = name_id,
+        .module_id = @intCast(u16, 0), .payload_idx = @intCast(u32, self.fn_len - @intCast(usize, 1)),
+    });
+    if (conv_bit != @intCast(u8, 0)) { self.types_items[@intCast(usize, tid)].flags = self.types_items[@intCast(usize, tid)].flags | @intCast(u8, 1); }
+    var p2sb: [20]u8 = undefined; var p2sl = itoa_mod.itoa(tid, p2sb[0..]); var p2ss: usize = @intCast(usize, 19) - @intCast(usize, p2sl); pal_mod.markerWrite(p2sb[p2ss..@intCast(usize, 19)]);
+    var p2nl2: []const u8 = "\n"; pal_mod.markerWrite(p2nl2);
+    return tid;
+}
+
+pub fn typeRegistryMarkFnPtrUsed(self: *TypeRegistry, tid: u32) void {
+    self.types_items[@intCast(usize, tid)].flags = self.types_items[@intCast(usize, tid)].flags | @intCast(u8, 1);
+}
+
+pub fn typeRegistryGetOrCreateErrorSet(self: *TypeRegistry, tags_start: u32, tags_count: u16) u32 {
+    var key: u64 = @intCast(u64, tags_count);
+    var ki: u16 = 0;
+    while (ki < tags_count) : (ki += 1) {
+        var tag = self.xn_items[@intCast(usize, tags_start + @intCast(u32, ki))];
+        key = (key ^ @intCast(u64, tag)) *% @intCast(u64, 1099511628211);
+    }
+    if (hash_mod.u64ToU32MapGet(&self.es_cache, key)) |existing| return existing;
+    esAppend(self, ErrorSetPayload{ .tags_start = tags_start, .tags_count = tags_count });
+    var tid = typeRegistryAppend(self, Type{
+        .kind = TypeKind.error_set_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0),
+        .iw = @intCast(u8, 0),
+        .size = @intCast(u32, 4), .alignment = @intCast(u16, 4),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, 0), .payload_idx = @intCast(u32, self.es_len - @intCast(usize, 1)),
+    });
+    hash_mod.u64ToU32MapPut(&self.es_cache, key, tid);
+    return tid;
+}
+
+pub fn typeRegistryErrorSetMemberIndex(reg: *TypeRegistry, es_type_id: u32, name_id: u32) u32 {
+    if (es_type_id >= @intCast(u32, reg.types_len)) return @intCast(u32, 0xFFFFFFFF);
+    var ty = reg.types_items[@intCast(usize, es_type_id)];
+    if (ty.kind != TypeKind.error_set_type) return @intCast(u32, 0xFFFFFFFF);
+    if (ty.payload_idx >= @intCast(u32, reg.es_len)) return @intCast(u32, 0xFFFFFFFF);
+    var es_payload = reg.es_items[@intCast(usize, ty.payload_idx)];
+    var tags_start: usize = @intCast(usize, es_payload.tags_start);
+    var tags_count: usize = @intCast(usize, es_payload.tags_count);
+    if (tags_start + tags_count > reg.xn_len) return @intCast(u32, 0xFFFFFFFF);
+    var i: usize = 0;
+    while (i < tags_count) : (i += 1) {
+        if (reg.xn_items[tags_start + i] == name_id) return @intCast(u32, i);
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
+pub fn typeRegistryGetOrCreateModule(self: *TypeRegistry, module_id: u32) u32 {
+    var i: usize = 0;
+    while (i < self.types_len) : (i += 1) {
+        var it = self.types_items[i];
+        if (it.kind == TypeKind.module_type and it.module_id == module_id) {
+            return @intCast(u32, i);
+        }
+    }
+    var t = Type{
+        .kind = TypeKind.module_type,
+        .state = @intCast(u8, 0), .flags = @intCast(u8, 0),
+        .iw = @intCast(u8, 0),
+        .size = @intCast(u32, 0), .alignment = @intCast(u16, 0),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, module_id), .payload_idx = @intCast(u32, 0),
+    };
+    var mc: []const u8 = "MC"; pal_mod.markerWrite(mc);
+    var mcid = typeRegistryAppend(self, t);
+    return mcid;
+}
+
+pub fn typeRegistryRegisterPrimitives(self: *TypeRegistry) void {
+    registerPrimitive(self, TypeKind.none_sentinel, @intCast(u32, 0), @intCast(u32, 0));
+    registerPrimitive(self, TypeKind.void_type, @intCast(u32, 0), @intCast(u32, 0));
+    registerPrimitive(self, TypeKind.bool_type, @intCast(u32, 1), @intCast(u32, 1));
+    registerPrimitive(self, TypeKind.noreturn_type, @intCast(u32, 0), @intCast(u32, 0));
+    registerPrimitive(self, TypeKind.i8_type, @intCast(u32, 1), @intCast(u32, 1));
+    registerPrimitive(self, TypeKind.i16_type, @intCast(u32, 2), @intCast(u32, 2));
+    registerPrimitive(self, TypeKind.i32_type, @intCast(u32, 4), @intCast(u32, 4));
+    registerPrimitive(self, TypeKind.i64_type, @intCast(u32, 8), @intCast(u32, 8));
+    registerPrimitive(self, TypeKind.u8_type, @intCast(u32, 1), @intCast(u32, 1));
+    registerPrimitive(self, TypeKind.u16_type, @intCast(u32, 2), @intCast(u32, 2));
+    registerPrimitive(self, TypeKind.u32_type, @intCast(u32, 4), @intCast(u32, 4));
+    registerPrimitive(self, TypeKind.u64_type, @intCast(u32, 8), @intCast(u32, 8));
+    registerPrimitive(self, TypeKind.isize_type, @intCast(u32, 4), @intCast(u32, 4));
+    registerPrimitive(self, TypeKind.usize_type, @intCast(u32, 4), @intCast(u32, 4));
+    registerPrimitive(self, TypeKind.c_char_type, @intCast(u32, 1), @intCast(u32, 1));
+    registerPrimitive(self, TypeKind.f32_type, @intCast(u32, 4), @intCast(u32, 4));
+    registerPrimitive(self, TypeKind.f64_type, @intCast(u32, 8), @intCast(u32, 8));
+    registerPrimitive(self, TypeKind.null_type, @intCast(u32, 0), @intCast(u32, 0));
+    registerPrimitive(self, TypeKind.undefined_type, @intCast(u32, 0), @intCast(u32, 0));
+    registerPrimitive(self, TypeKind.integer_literal_type, @intCast(u32, 0), @intCast(u32, 0));
+    registerPrimitive(self, TypeKind.type_type, @intCast(u32, 0), @intCast(u32, 0));
+    registerPrimitive(self, TypeKind.va_list_type, @intCast(u32, 4), @intCast(u32, 4));
+    var pn: []const u8 = "void"; registerPrimitiveName(self, @intCast(u32, 1), pn);
+    var pn_bool: []const u8 = "bool"; registerPrimitiveName(self, @intCast(u32, 2), pn_bool);
+    var pn_i8: []const u8 = "i8"; registerPrimitiveName(self, @intCast(u32, 4), pn_i8);
+    var pn_i16: []const u8 = "i16"; registerPrimitiveName(self, @intCast(u32, 5), pn_i16);
+    var pn_i32: []const u8 = "i32"; registerPrimitiveName(self, @intCast(u32, 6), pn_i32);
+    var pn_i64: []const u8 = "i64"; registerPrimitiveName(self, @intCast(u32, 7), pn_i64);
+    var pn_u8: []const u8 = "u8"; registerPrimitiveName(self, @intCast(u32, 8), pn_u8);
+    var pn_u16: []const u8 = "u16"; registerPrimitiveName(self, @intCast(u32, 9), pn_u16);
+    var pn_u32: []const u8 = "u32"; registerPrimitiveName(self, @intCast(u32, 10), pn_u32);
+    var pn_u64: []const u8 = "u64"; registerPrimitiveName(self, @intCast(u32, 11), pn_u64);
+    var pn_isize: []const u8 = "isize"; registerPrimitiveName(self, @intCast(u32, 12), pn_isize);
+    var pn_usize: []const u8 = "usize"; registerPrimitiveName(self, @intCast(u32, 13), pn_usize);
+    var pn_c_char: []const u8 = "c_char"; registerPrimitiveName(self, @intCast(u32, 14), pn_c_char);
+    var pn_f32: []const u8 = "f32"; registerPrimitiveName(self, @intCast(u32, 15), pn_f32);
+    var pn_f64: []const u8 = "f64"; registerPrimitiveName(self, @intCast(u32, 16), pn_f64);
+    var pn_null: []const u8 = "null"; registerPrimitiveName(self, @intCast(u32, 17), pn_null);
+    var pn_undefined: []const u8 = "undefined"; registerPrimitiveName(self, @intCast(u32, 18), pn_undefined);
+    var pn_type: []const u8 = "type"; registerPrimitiveName(self, @intCast(u32, 20), pn_type);
+    var pn_va_list: []const u8 = "va_list"; registerPrimitiveName(self, @intCast(u32, 21), pn_va_list);
+}
+
+fn registerPrimitiveName(self: *TypeRegistry, tid: u32, name: []const u8) void {
+    var nid = interner_mod.stringInternerIntern(self.interner, name);
+    var ty = self.types_items[@intCast(usize, tid)];
+    ty.name_id = nid;
+    self.types_items[@intCast(usize, tid)] = ty;
+    nameCachePut(self, @intCast(u64, nid), tid);
+}
+
+pub fn parseArbIntWidth(name: []const u8, is_unsigned: *bool) u32 {
+    var nlen: usize = name.len;
+    if (nlen < @intCast(usize, 2)) return @intCast(u32, 0);
+    var prefix: u8 = name[0];
+    var is_u: bool = prefix == @intCast(u8, 'u');
+    var is_i: bool = prefix == @intCast(u8, 'i');
+    if (!is_u and !is_i) return @intCast(u32, 0);
+    if (is_u) { is_unsigned.* = true; } else { is_unsigned.* = false; }
+    var w: u32 = @intCast(u32, 0);
+    var i: usize = @intCast(usize, 1);
+    while (i < nlen) : (i += 1) {
+        var c: u8 = name[i];
+        if (c < @intCast(u8, '0') or c > @intCast(u8, '9')) return @intCast(u32, 0);
+        var d: u32 = @intCast(u32, c - @intCast(u8, '0'));
+        w = w * @intCast(u32, 10) + d;
+        if (w > @intCast(u32, 64)) return @intCast(u32, 0);
+    }
+    if (is_u) {
+        if (w < @intCast(u32, 1) or w > @intCast(u32, 64)) return @intCast(u32, 0);
+    } else {
+        if (w < @intCast(u32, 1) or w > @intCast(u32, 63)) return @intCast(u32, 0);
+    }
+    return w;
+}
+
+pub fn typeRegistryGetOrCreateArbInt(self: *TypeRegistry, name: []const u8) u32 {
+    var arb_u: bool = false;
+    var arb_w = parseArbIntWidth(name, &arb_u);
+    if (arb_w == @intCast(u32, 0)) return TYPE_UNDEFINED;
+    var nid = interner_mod.stringInternerIntern(self.interner, name);
+    var ck_existing = nameCacheGet(self, @intCast(u64, nid));
+    if (ck_existing) |ce| return ce;
+    var kind: TypeKind = if (arb_u) TypeKind.arb_uint_type else TypeKind.arb_int_type;
+    var carrier: u32 = @intCast(u32, 1);
+    if (arb_w > @intCast(u32, 8)) carrier = @intCast(u32, 2);
+    if (arb_w > @intCast(u32, 16)) carrier = @intCast(u32, 4);
+    if (arb_w > @intCast(u32, 32)) carrier = @intCast(u32, 8);
+    var tid = typeRegistryAppend(self, Type{
+        .kind = kind,
+        .state = @intCast(u8, 2),
+        .flags = @intCast(u8, 0),
+        .iw = @intCast(u8, arb_w),
+        .size = carrier,
+        .alignment = @intCast(u16, carrier),
+        .name_id = @intCast(u32, 0),
+        .module_id = @intCast(u16, 0),
+        .payload_idx = @intCast(u32, 0),
+    });
+    registerPrimitiveName(self, tid, name);
+    return tid;
+}
+
+pub fn typeRegistryEnumBackingType(self: *TypeRegistry, tid: u32) u32 {
+    if (@intCast(usize, tid) >= self.types_len) return TYPE_U32;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.enum_type) return TYPE_U32;
+    if (@intCast(usize, ty.payload_idx) >= self.en_len) return TYPE_U32;
+    var ep = self.en_items[@intCast(usize, ty.payload_idx)];
+    return ep.backing_type;
+}
+
+pub fn typeRegistryEnumHasExplicitBacking(self: *TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.enum_type) return false;
+    if (@intCast(usize, ty.payload_idx) >= self.en_len) return false;
+    var ep = self.en_items[@intCast(usize, ty.payload_idx)];
+    return ep.explicit_backing != @intCast(u8, 0);
+}
+
+pub fn typeRegistryIntWidthBits(self: *TypeRegistry, tid: u32) u8 {
+    if (@intCast(usize, tid) >= self.types_len) return @intCast(u8, 0);
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.enum_type) {
+        return typeRegistryIntWidthBits(self, typeRegistryEnumBackingType(self, tid));
+    }
+    if (ty.kind == TypeKind.arb_uint_type or ty.kind == TypeKind.arb_int_type) {
+        return ty.iw;
+    }
+    return typeWidthBitsForKind(ty.kind);
+}
+
+pub fn typeRegistryIntIsSigned(self: *TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.enum_type) {
+        return typeRegistryIntIsSigned(self, typeRegistryEnumBackingType(self, tid));
+    }
+    if (ty.kind == TypeKind.arb_int_type) return true;
+    if (ty.kind == TypeKind.arb_uint_type) return false;
+    if (ty.kind == TypeKind.u8_type or ty.kind == TypeKind.u16_type or ty.kind == TypeKind.u32_type or ty.kind == TypeKind.u64_type or ty.kind == TypeKind.usize_type) return false;
+    if (ty.kind == TypeKind.i8_type or ty.kind == TypeKind.i16_type or ty.kind == TypeKind.i32_type or ty.kind == TypeKind.i64_type or ty.kind == TypeKind.isize_type or ty.kind == TypeKind.c_char_type) return true;
+    return false;
+}
+
+
+pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_id: u32, kind: TypeKind) u32 {
+    var key: u64 = @intCast(u64, module_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
+    if (nameCacheGet(self, key)) |existing| return existing;
+    var tid = typeRegistryAppend(self, Type{
+        .kind = kind,
+        .state = @intCast(u8, 0),
+        .flags = @intCast(u8, 0),
+        .iw = @intCast(u8, 0),
+        .size = @intCast(u32, 0),
+        .alignment = @intCast(u16, 0),
+        .name_id = name_id,
+        .module_id = @intCast(u16, module_id),
+        .payload_idx = @intCast(u32, 0),
+    });
+    nameCachePut(self, key, tid);
+    var rn_m: [20]u8 = undefined;
+    var rn_ml = itoa_mod.itoa(module_id, rn_m[0..]);
+    var rn_ms: usize = @intCast(usize, 19) - @intCast(usize, rn_ml);
+    var rnm: []const u8 = "RN:m"; pal_mod.markerWrite(rnm); pal_mod.markerWrite(rn_m[rn_ms..@intCast(usize, 19)]);
+    var rn_n: [20]u8 = undefined;
+    var rn_nl = itoa_mod.itoa(name_id, rn_n[0..]);
+    var rn_ns: usize = @intCast(usize, 19) - @intCast(usize, rn_nl);
+    var rnn: []const u8 = "n"; pal_mod.markerWrite(rnn); pal_mod.markerWrite(rn_n[rn_ns..@intCast(usize, 19)]);
+    var rn_k: [20]u8 = undefined;
+    var rn_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(kind)), rn_k[0..]);
+    var rn_ks: usize = @intCast(usize, 19) - @intCast(usize, rn_kl);
+    var rnk: []const u8 = "k"; pal_mod.markerWrite(rnk); pal_mod.markerWrite(rn_k[rn_ks..@intCast(usize, 19)]);
+    var rn_t: [20]u8 = undefined;
+    var rn_tl = itoa_mod.itoa(tid, rn_t[0..]);
+    var rn_ts: usize = @intCast(usize, 19) - @intCast(usize, rn_tl);
+    var rnt: []const u8 = "t"; pal_mod.markerWrite(rnt); pal_mod.markerWrite(rn_t[rn_ts..@intCast(usize, 19)]);
+    var rnnl: []const u8 = "\n"; pal_mod.markerWrite(rnnl);
+    return tid;
+}
+
+// P2 (emitter sanitization, D8): the SINGLE type-reference relation, consumed
+// by BOTH graphs — the resolver dependency graph
+// (`typeResolverBuildDependencyGraph`) and the planner's typedef ordering
+// (`c89_plan.zig` `spellPlanPlanTypeOrder`/`tstTopologicalSort` — P12 moved
+// the sort into the planner; the emitter walks the carried order), plus the
+// P4 classification's shared-set closure
+// `classificationSharedClosure` in `type_resolver.zig`). It
+// replaces the three divergent
+// memberships: the dead `isValueDependency` (was here), the emitter's
+// `c89NeedsEmitEdge`, and the resolver's `layoutFieldNeedsEdge`.
+//
+// `typeNeedsFullDef(tid)`: a typedef-ordering reference to this type requires
+// this type's definition (its typedef) before the referrer — a forward
+// declaration does not suffice. Membership = the historical `c89NeedsEmitEdge`
+// set PLUS `packed_union_type` (the kind that predicate missed).
+//
+// `typeHasForwardDecl(tid)`: the type's C name is already declared by the
+// emitter's Pass-1 forward typedefs (`typedef struct|union C C;`) — exactly
+// named (`name_id != 0`) non-packed `struct` / `tagged_union` / `union`
+// (mirrors `emitTypePasses` Pass 1 in c89_emit.zig).
+//
+// `typeRefs(tid)`: the edge targets typedef-ordering requires before `tid`
+// (distinct, first-occurrence, self-references excluded — one Kahn decrement
+// per entry). By-value positions (aggregate fields incl. packed_union,
+// tagged-union tag, array elem, tuple elems, optional / error-union payload)
+// contribute every `typeNeedsFullDef(R)` ref. Name-spelling positions (fn
+// return, fn params, slice elem — the C declarator spells the ref's typedef
+// NAME) additionally require NOT `typeHasForwardDecl(R)`: a name with no
+// forward typedef needs its definition first. D8 is exactly a missed
+// name-position ref (a fn-ptr typedef spells its error-union return name). A
+// pointer / many-pointer reference contributes a name-visibility edge to its
+// chain-leaf (see `typeRefPtrLeaf` — the pointer's C name spells the leaf's
+// name; `struct { next: *Node }` is safe because `Node` HAS a forward
+// typedef). An error union's `error_set` member is spelled `int` and needs no
+// edge.
+fn typeHasForwardDecl(self: *TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.name_id == @intCast(u32, 0)) return false;
+    if (ty.kind == TypeKind.tagged_union_type) return true;
+    if (ty.kind == TypeKind.union_type) return true;
+    if (ty.kind == TypeKind.struct_type) {
+        if (typeRegistryIsPacked(self, tid)) return false;
+        return true;
+    }
+    return false;
+}
+
+pub fn typeNeedsFullDef(self: *TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var kind = self.types_items[@intCast(usize, tid)].kind;
+    if (kind == TypeKind.slice_type) return true;
+    if (kind == TypeKind.struct_type) return true;
+    if (kind == TypeKind.union_type) return true;
+    if (kind == TypeKind.tagged_union_type) return true;
+    if (kind == TypeKind.array_type) return true;
+    if (kind == TypeKind.optional_type) return true;
+    if (kind == TypeKind.error_union_type) return true;
+    if (kind == TypeKind.enum_type) return true;
+    if (kind == TypeKind.error_set_type) return true;
+    if (kind == TypeKind.fn_type) return true;
+    if (kind == TypeKind.tuple_type) return true;
+    if (kind == TypeKind.unresolved_name) return true;
+    // P2: packed_union was the missing kind in the old emitter predicate.
+    if (kind == TypeKind.packed_union_type) return true;
+    return false;
+}
+
+// P2 (design amendment, D8 evidence): the chain-leaf of a pointer reference —
+// `getCTypeName` renders `*fn` as the fn typedef NAME itself and `*T` as
+// `<T-cname>*` (plus one star per extra pointer), so a pointer reference
+// spells the C name of the first NON-pointer type at the base of its chain
+// (the Task-6 site-patch walk `emitPointeeDep` mirrors this chain). Ptr chains
+// are acyclic by construction (a pointer's base is fixed at creation).
+fn typeRefPtrLeaf(self: *TypeRegistry, tid: u32) u32 {
+    var cur = tid;
+    var steps: u32 = @intCast(u32, 0);
+    while (steps < @intCast(u32, 64)) : (steps += 1) {
+        if (@intCast(usize, cur) >= self.types_len) return cur;
+        var ty = self.types_items[@intCast(usize, cur)];
+        if (ty.kind != TypeKind.ptr_type and ty.kind != TypeKind.many_ptr_type) return cur;
+        cur = self.ptr_items[@intCast(usize, ty.payload_idx)].base;
+    }
+    return cur;
+}
+
+// P2: the typedef-ordering EDGE TARGET of one `tid` -> `ref` reference, or
+// 0xFFFFFFFF when the reference needs no edge. `name_pos` = 1 in name-spelling
+// positions (fn return, fn params, slice elem), 0 in by-value positions
+// (aggregate fields incl. packed_union, tagged-union tag, array elem, tuple
+// elems, optional / error-union payload). A pointer reference is ALWAYS a
+// name-visibility edge to its chain-leaf (the pointer itself is complete; its
+// C name spells the leaf's name — the D8 shape: a ptr-to-fn struct field makes
+// the container's typedef spell the fn typedef name, and the fn typedef in
+// turn spells its return/param names). A non-pointer by-value reference needs
+// the ref's FULL definition; a non-pointer name-spelling reference needs only
+// its name, and only when no Pass-1 forward typedef declares that name.
+fn typeRefEdgeTarget(self: *TypeRegistry, tid: u32, ref: u32, name_pos: u8) u32 {
+    if (ref == tid) return @intCast(u32, 0xFFFFFFFF);
+    if (@intCast(usize, ref) >= self.types_len) return @intCast(u32, 0xFFFFFFFF);
+    var ref_ty = self.types_items[@intCast(usize, ref)];
+    var tgt: u32 = ref;
+    var tgt_name_pos: u8 = name_pos;
+    if (ref_ty.kind == TypeKind.ptr_type or ref_ty.kind == TypeKind.many_ptr_type) {
+        tgt = typeRefPtrLeaf(self, ref);
+        tgt_name_pos = @intCast(u8, 1);
+    }
+    if (tgt == tid) return @intCast(u32, 0xFFFFFFFF);
+    if (!typeNeedsFullDef(self, tgt)) return @intCast(u32, 0xFFFFFFFF);
+    if (tgt_name_pos != @intCast(u8, 0)) {
+        if (typeHasForwardDecl(self, tgt)) return @intCast(u32, 0xFFFFFFFF);
+    }
+    return tgt;
+}
+
+fn typeRefsSeenOut(out: [*]u32, start: u32, off: u32, tgt: u32) bool {
+    var j: u32 = start;
+    while (j < off) : (j += 1) {
+        if (out[@intCast(usize, j)] == tgt) return true;
+    }
+    return false;
+}
+
+// Note one reference: probe mode returns 1 at the first hit on `probe_target`
+// (dedup-invariant); fill mode appends the edge target to the first-occurrence
+// list at `out[start..off)` (dedup by TARGET, so the list holds distinct edge
+// targets — exactly one Kahn decrement per entry).
+fn typeRefsNote(self: *TypeRegistry, tid: u32, ref: u32, name_pos: u8, out: [*]u32, off: *u32, start: u32, probe: u32, probe_target: u32) u32 {
+    var etgt = typeRefEdgeTarget(self, tid, ref, name_pos);
+    if (etgt == @intCast(u32, 0xFFFFFFFF)) return @intCast(u32, 0);
+    if (probe != @intCast(u32, 0)) {
+        if (etgt == probe_target) return @intCast(u32, 1);
+        return @intCast(u32, 0);
+    }
+    if (!typeRefsSeenOut(out, start, off.*, etgt)) {
+        out[@intCast(usize, off.*)] = etgt;
+        off.* += @intCast(u32, 1);
+    }
+    return @intCast(u32, 0);
+}
+
+// ONE walk over the ordering refs of `tid` (see the relation comments above).
+// `probe` non-zero: return 1 at the first reference whose edge target is
+// `probe_target`, else 0. Otherwise write the target-deduped first-occurrence
+// list at `out[start..]` and return the count. The fill and the probe agree:
+// the list holds DISTINCT edge targets and each target pops exactly once in
+// the Kahn sort (exactly one decrement per entry).
+fn typeRefsWalk(self: *TypeRegistry, tid: u32, out: [*]u32, start: u32, probe: u32, probe_target: u32) u32 {
+    var off: u32 = start;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.union_type or ty.kind == TypeKind.packed_union_type) {
+        var fstart: u32 = @intCast(u32, 0);
+        var fcount: u16 = @intCast(u16, 0);
+        if (ty.kind == TypeKind.struct_type) {
+            var sp = self.st_items[@intCast(usize, ty.payload_idx)];
+            fstart = sp.fields_start; fcount = sp.fields_count;
+        } else {
+            var up = self.un_items[@intCast(usize, ty.payload_idx)];
+            fstart = up.fields_start; fcount = up.fields_count;
+        }
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, fcount)) : (i += 1) {
+            var ft = self.fe_items[@intCast(usize, fstart) + i].type_id;
+            if (typeRefsNote(self, tid, ft, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+        }
+    } else if (ty.kind == TypeKind.tagged_union_type) {
+        var tp = self.tu_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
+            var ft = self.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
+            if (typeRefsNote(self, tid, ft, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+        }
+        if (typeRefsNote(self, tid, tp.tag_type, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+    } else if (ty.kind == TypeKind.array_type) {
+        var et = self.array_items[@intCast(usize, ty.payload_idx)].elem;
+        if (typeRefsNote(self, tid, et, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+    } else if (ty.kind == TypeKind.error_union_type) {
+        var eup = self.eu_items[@intCast(usize, ty.payload_idx)].payload;
+        if (typeRefsNote(self, tid, eup, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+    } else if (ty.kind == TypeKind.optional_type) {
+        var op = self.opt_items[@intCast(usize, ty.payload_idx)].payload;
+        if (typeRefsNote(self, tid, op, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+    } else if (ty.kind == TypeKind.slice_type) {
+        var se = self.slice_items[@intCast(usize, ty.payload_idx)].elem;
+        if (typeRefsNote(self, tid, se, @intCast(u8, 1), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+    } else if (ty.kind == TypeKind.tuple_type) {
+        var tp = self.tup_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tp.elems_count)) : (i += 1) {
+            var et = self.xt_items[@intCast(usize, tp.elems_start) + i];
+            if (typeRefsNote(self, tid, et, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+        }
+    } else if (ty.kind == TypeKind.fn_type) {
+        var fp = self.fn_items[@intCast(usize, ty.payload_idx)];
+        // D8: the return-type ref comes first (the fn-ptr typedef spells
+        // `typedef RET (*NAME)(PARAMS);`), then the params; each is a
+        // name-spelling position (name_pos = 1).
+        if (typeRefsNote(self, tid, fp.return_type, @intCast(u8, 1), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+        var fpend: usize = @intCast(usize, fp.params_start) + @intCast(usize, fp.params_count);
+        if (fpend <= self.xt_len) {
+            var pi: usize = @intCast(usize, fp.params_start);
+            while (pi < fpend) : (pi += @intCast(usize, 1)) {
+                if (typeRefsNote(self, tid, self.xt_items[pi], @intCast(u8, 1), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+            }
+        }
+    }
+    if (probe != @intCast(u32, 0)) return @intCast(u32, 0);
+    return off - start;
+}
+
+pub fn typeRefs(self: *TypeRegistry, tid: u32, out: [*]u32) u32 {
+    return typeRefsWalk(self, tid, out, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+}
+
+pub fn typeRefsContains(self: *TypeRegistry, tid: u32, target: u32) bool {
+    if (target == tid) return false;
+    if (!typeNeedsFullDef(self, target)) return false;
+    var dummy: [1]u32 = undefined;
+    if (typeRefsWalk(self, tid, @ptrCast([*]u32, &dummy[0]), @intCast(u32, 0), @intCast(u32, 1), target) != @intCast(u32, 0)) return true;
+    return false;
+}
+
+pub fn typeRegistryGetTypeState(self: *TypeRegistry, tid: u32) u8 {
+    return self.types_items[tid].state;
+}
+
+pub fn typeRegistryIsNumeric(self: *TypeRegistry, tid: u32) bool {
+    var kind = self.types_items[tid].kind;
+    if (kind == TypeKind.i8_type) return true;
+    if (kind == TypeKind.i16_type) return true;
+    if (kind == TypeKind.i32_type) return true;
+    if (kind == TypeKind.i64_type) return true;
+    if (kind == TypeKind.u8_type) return true;
+    if (kind == TypeKind.u16_type) return true;
+    if (kind == TypeKind.u32_type) return true;
+    if (kind == TypeKind.u64_type) return true;
+    if (kind == TypeKind.isize_type) return true;
+    if (kind == TypeKind.usize_type) return true;
+    if (kind == TypeKind.arb_uint_type) return true;
+    if (kind == TypeKind.arb_int_type) return true;
+    if (kind == TypeKind.f32_type) return true;
+    if (kind == TypeKind.f64_type) return true;
+    if (kind == TypeKind.integer_literal_type) return true;
+    return false;
+}
+
+pub fn typeRegistryIsInteger(self: *TypeRegistry, tid: u32) bool {
+    var kind = self.types_items[tid].kind;
+    if (kind == TypeKind.i8_type) return true;
+    if (kind == TypeKind.i16_type) return true;
+    if (kind == TypeKind.i32_type) return true;
+    if (kind == TypeKind.i64_type) return true;
+    if (kind == TypeKind.u8_type) return true;
+    if (kind == TypeKind.u16_type) return true;
+    if (kind == TypeKind.u32_type) return true;
+    if (kind == TypeKind.u64_type) return true;
+    if (kind == TypeKind.isize_type) return true;
+    if (kind == TypeKind.usize_type) return true;
+    if (kind == TypeKind.arb_uint_type) return true;
+    if (kind == TypeKind.arb_int_type) return true;
+    if (kind == TypeKind.integer_literal_type) return true;
+    return false;
+}
+
+pub fn typeRegistryIsUnsigned(self: *TypeRegistry, tid: u32) bool {
+    var kind = self.types_items[tid].kind;
+    if (kind == TypeKind.u8_type) return true;
+    if (kind == TypeKind.u16_type) return true;
+    if (kind == TypeKind.u32_type) return true;
+    if (kind == TypeKind.u64_type) return true;
+    if (kind == TypeKind.usize_type) return true;
+    if (kind == TypeKind.arb_uint_type) return true;
+    return false;
+}
+
+pub fn typeRegistryIsPointer(self: *TypeRegistry, tid: u32) bool {
+    var kind = self.types_items[tid].kind;
+    return kind == TypeKind.ptr_type or kind == TypeKind.many_ptr_type;
+}
+
+pub fn typeRegistryIsSlice(self: *TypeRegistry, tid: u32) bool {
+    return self.types_items[tid].kind == TypeKind.slice_type;
+}
+
+pub fn typeRegistryGetPointeeType(self: *TypeRegistry, tid: u32) ?u32 {
+    var ty = self.types_items[tid];
+    if (ty.kind != TypeKind.ptr_type and ty.kind != TypeKind.many_ptr_type) return null;
+    return self.ptr_items[ty.payload_idx].base;
+}
+
+// P5 (emitter sanitization): canonical int-kind/signedness/width/scalar
+// predicates, relocated verbatim from c89_emit.zig's truth tables. Per-caller
+// membership is preserved exactly (the "Task 2b3 D1-2" composition rule: these
+// bases + each caller's own explicit extras); no caller set is widened or
+// narrowed. `typeRegistryIntSignednessClass` is the C-codegen signedness class
+// (tri-state; c_char/integer_literal/undefined/null count signed, bool
+// unsigned) and intentionally differs from `typeRegistryIntIsSigned` (semantic
+// signedness, enum-backing aware).
+
+pub fn typeKindIsSignedIntBase(k: TypeKind) u8 {
+    if (k == TypeKind.i8_type or k == TypeKind.i16_type or k == TypeKind.i32_type or
+        k == TypeKind.i64_type or k == TypeKind.isize_type or k == TypeKind.arb_int_type) return @intCast(u8, 1);
+    return @intCast(u8, 0);
+}
+
+pub fn typeKindIsUnsignedIntBase(k: TypeKind) u8 {
+    if (k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or
+        k == TypeKind.u64_type or k == TypeKind.usize_type or k == TypeKind.arb_uint_type) return @intCast(u8, 1);
+    return @intCast(u8, 0);
+}
+
+// Byte width used by typeRegistryIntByteWidth / emitter C-name width routes;
+// 0 = not an integer kind handled by those tables (caller keeps its fallback).
+pub fn typeKindIntWidthBytes(k: TypeKind) u32 {
+    if (k == TypeKind.i8_type or k == TypeKind.u8_type or k == TypeKind.c_char_type) return @intCast(u32, 1);
+    if (k == TypeKind.i16_type or k == TypeKind.u16_type) return @intCast(u32, 2);
+    if (k == TypeKind.bool_type) return @intCast(u32, 1);
+    if (k == TypeKind.i32_type or k == TypeKind.u32_type or k == TypeKind.isize_type or
+        k == TypeKind.usize_type or k == TypeKind.integer_literal_type or k == TypeKind.null_type or
+        k == TypeKind.undefined_type) return @intCast(u32, 4);
+    if (k == TypeKind.i64_type or k == TypeKind.u64_type) return @intCast(u32, 8);
+    return @intCast(u32, 0);
+}
+
+pub fn typeRegistryIntSignednessClass(self: *TypeRegistry, tyid: u32) i8 {
+    if (tyid == TYPE_VOID) { return @intCast(i8, -1); }
+    var k = self.types_items[@intCast(usize, tyid)].kind;
+    if (typeKindIsSignedIntBase(k) != @intCast(u8, 0) or k == TypeKind.c_char_type or
+        k == TypeKind.integer_literal_type or k == TypeKind.undefined_type or
+        k == TypeKind.null_type) { return @intCast(i8, 1); }
+    if (typeKindIsUnsignedIntBase(k) != @intCast(u8, 0) or k == TypeKind.bool_type) { return @intCast(i8, 0); }
+    return @intCast(i8, -1);
+}
+
+pub fn typeRegistryIntNeedsWidthWrap(self: *TypeRegistry, tyid: u32) u8 {
+    if (tyid == TYPE_VOID) { return @intCast(u8, 0); }
+    var ty = self.types_items[@intCast(usize, tyid)];
+    if (ty.kind != TypeKind.arb_uint_type and ty.kind != TypeKind.arb_int_type) { return @intCast(u8, 0); }
+    var w = typeRegistryIntWidthBits(self, tyid);
+    var cb: u32 = @intCast(u32, ty.size * @intCast(u32, 8));
+    if (@intCast(u32, w) < @intCast(u32, 1) or @intCast(u32, w) >= cb) { return @intCast(u8, 0); }
+    return @intCast(u8, 1);
+}
+
+pub fn typeRegistryIntByteWidth(self: *TypeRegistry, tyid: u32) u32 {
+    if (tyid == TYPE_VOID) { return @intCast(u32, 0); }
+    var k = self.types_items[@intCast(usize, tyid)].kind;
+    var w = typeKindIntWidthBytes(k);
+    if (w != @intCast(u32, 0)) { return w; }
+    return self.types_items[@intCast(usize, tyid)].size;
+}
+
+// Carrier width: the width of the C type that carries this Z98 integer value
+// (C switch legality, literal suffixes, casts). This is NOT the declared Z98
+// width used for masks/sign bits: u40/i40 declare 40 bits but carry in u64/i64.
+// Enums follow their backing type; arb kinds carry Type.size (1/2/4/8).
+pub fn typeRegistryIntCarrierBytes(self: *TypeRegistry, tid: u32) u32 {
+    if (@intCast(usize, tid) >= self.types_len) return @intCast(u32, 0);
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.enum_type) {
+        return typeRegistryIntCarrierBytes(self, typeRegistryEnumBackingType(self, tid));
+    }
+    var w = typeKindIntWidthBytes(ty.kind);
+    if (w != @intCast(u32, 0)) return w;   // fixed-width kinds
+    return ty.size;                        // arb_uint_type / arb_int_type carrier
+}
+
+pub fn typeRegistryIntCarrierIs64(self: *TypeRegistry, tid: u32) bool {
+    return typeRegistryIntCarrierBytes(self, tid) == @intCast(u32, 8);
+}
+
+pub fn typeRegistryIsIntKind(self: *TypeRegistry, tid: u32) u8 {
+    if (tid == TYPE_VOID) { return @intCast(u8, 0); }
+    var k = self.types_items[@intCast(usize, tid)].kind;
+    if (typeKindIsSignedIntBase(k) != @intCast(u8, 0) or typeKindIsUnsignedIntBase(k) != @intCast(u8, 0) or
+        k == TypeKind.c_char_type or k == TypeKind.bool_type or k == TypeKind.integer_literal_type or
+        k == TypeKind.undefined_type or k == TypeKind.null_type) { return @intCast(u8, 1); }
+    return @intCast(u8, 0);
+}
+
+pub fn typeRegistryIsScalarC(self: *TypeRegistry, tid: u32) u8 {
+    if (tid == TYPE_VOID or tid == TYPE_UNDEFINED or tid == @intCast(u32, 0)) { return @intCast(u8, 0); }
+    var rv_k = self.types_items[@intCast(usize, tid)].kind;
+    if (typeKindIsSignedIntBase(rv_k) != @intCast(u8, 0) or typeKindIsUnsignedIntBase(rv_k) != @intCast(u8, 0) or
+        rv_k == TypeKind.c_char_type or rv_k == TypeKind.integer_literal_type or rv_k == TypeKind.bool_type or
+        rv_k == TypeKind.null_type or rv_k == TypeKind.f32_type or rv_k == TypeKind.f64_type or
+        rv_k == TypeKind.enum_type or rv_k == TypeKind.error_set_type or rv_k == TypeKind.ptr_type or
+        rv_k == TypeKind.many_ptr_type or rv_k == TypeKind.fn_type) { return @intCast(u8, 1); }
+    return @intCast(u8, 0);
+}
+
+/// If `tid` is a concrete array type, returns its total size in bytes
+/// (`elem_size * length`); otherwise null. Used by the `-fsafe` `@asyncInit`
+/// buffer-length check to recover a compile-time byte length from `&arr`.
+pub fn typeRegistryArrayByteSize(self: *TypeRegistry, tid: u32) ?u32 {
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.array_type) return null;
+    if (ty.state != @intCast(u8, 2)) return null;
+    return ty.size;
+}
+
+pub fn typeRegistryGetSliceElem(self: *TypeRegistry, tid: u32) ?u32 {
+    var ty = self.types_items[tid];
+    if (ty.kind != TypeKind.slice_type) return null;
+    return self.slice_items[ty.payload_idx].elem;
+}
+
+/// Returns the element type of indexing base_tid[i]:
+///   array_type -> .elem; slice_type -> .elem;
+///   ptr/many_ptr -> pointee, OR if pointee is array_type -> that array's .elem;
+///   none of the above -> TYPE_UNDEFINED (sentinel; caller applies its own fallback).
+pub fn typeRegistryIndexedElemType(self: *TypeRegistry, base_tid: u32) u32 {
+    var ty = self.types_items[@intCast(usize, base_tid)];
+    if (ty.kind == TypeKind.array_type) {
+        return self.array_items[@intCast(usize, ty.payload_idx)].elem;
+    }
+    if (ty.kind == TypeKind.slice_type) {
+        return self.slice_items[@intCast(usize, ty.payload_idx)].elem;
+    }
+    if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
+        var pointee = self.ptr_items[@intCast(usize, ty.payload_idx)].base;
+        var pointee_ty = self.types_items[@intCast(usize, pointee)];
+        if (pointee_ty.kind == TypeKind.array_type) {
+            return self.array_items[@intCast(usize, pointee_ty.payload_idx)].elem;
+        }
+        return pointee;
+    }
+    return TYPE_UNDEFINED;
+}
+
+pub fn typeRegistryIsOptional(self: *TypeRegistry, tid: u32) bool {
+    return self.types_items[tid].kind == TypeKind.optional_type;
+}
+
+pub fn typeRegistryIsErrorSet(self: *TypeRegistry, tid: u32) bool {
+    return self.types_items[tid].kind == TypeKind.error_set_type;
+}
+
+pub fn typeRegistryGetStructFields(self: *TypeRegistry, tid: u32, out: *[]FieldEntry) void {
+    var ty = self.types_items[tid];
+    var sp = self.st_items[ty.payload_idx];
+    var fstart: usize = @intCast(usize, sp.fields_start);
+    var fcount: usize = @intCast(usize, sp.fields_count);
+    out.* = self.fe_items[fstart .. fstart + fcount];
+}
+
+pub fn typeRegistryIsPacked(self: *TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.struct_type) return false;
+    return (ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0);
+}
+
+pub fn typeRegistryComputePackedLayout(self: *TypeRegistry, tid: u32) void {
+    var idx = @intCast(usize, tid);
+    var ty = self.types_items[idx];
+    if (ty.kind != TypeKind.struct_type) return;
+    if ((ty.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return;
+    if (ty.payload_idx >= @intCast(u32, self.st_len)) return;
+    if (@intCast(usize, ty.payload_idx) >= self.pk_struct_len) return;
+    var sp = self.st_items[@intCast(usize, ty.payload_idx)];
+    var fstart: usize = @intCast(usize, sp.fields_start);
+    var fcount: usize = @intCast(usize, sp.fields_count);
+    var pk_start: u32 = @intCast(u32, self.pk_len);
+    var total_bits: u32 = @intCast(u32, 0);
+    var fi: usize = 0;
+    while (fi < fcount) : (fi += 1) {
+        var fe = self.fe_items[fstart + fi];
+        var w: u32 = @intCast(u32, 1);
+        if (fe.type_id < @intCast(u32, self.types_len)) {
+            var ft = self.types_items[@intCast(usize, fe.type_id)];
+            if (ft.kind != TypeKind.bool_type) {
+                if (ft.kind == TypeKind.struct_type and (ft.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                    w = typeRegistryGetPackedTotalBits(self, fe.type_id);
+                } else {
+                    w = @intCast(u32, typeRegistryIntWidthBits(self, fe.type_id));
+                }
+            }
+        }
+        pkFieldAppend(self, PackedBitField{ .bit_offset = total_bits, .bit_width = @intCast(u16, w) });
+        total_bits += w;
+    }
+    pkSetFields(self, ty.payload_idx, PackedStructInfo{ .pk_start = pk_start, .pk_count = @intCast(u16, fcount), .total_bits = total_bits });
+    var sz: u32 = (total_bits + @intCast(u32, 7)) / @intCast(u32, 8);
+    if (sz == @intCast(u32, 0)) sz = @intCast(u32, 1);
+    ty.size = sz;
+    ty.alignment = @intCast(u16, 1);
+    self.types_items[idx] = ty;
+}
+
+pub fn typeRegistryGetPackedBitFields(self: *TypeRegistry, tid: u32, out: *[]PackedBitField) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.struct_type) return false;
+    if ((ty.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return false;
+    if (ty.payload_idx >= @intCast(u32, self.st_len)) return false;
+    if (@intCast(usize, ty.payload_idx) >= self.pk_struct_len) return false;
+    var psi = self.pk_struct_items[@intCast(usize, ty.payload_idx)];
+    var pstart: usize = @intCast(usize, psi.pk_start);
+    var pcount: usize = @intCast(usize, psi.pk_count);
+    if (pstart + pcount > self.pk_len) return false;
+    out.* = self.pk_items[pstart .. pstart + pcount];
+    return true;
+}
+
+pub fn typeRegistryGetPackedTotalBits(self: *TypeRegistry, tid: u32) u32 {
+    if (@intCast(usize, tid) >= self.types_len) return @intCast(u32, 0);
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.struct_type) return @intCast(u32, 0);
+    if ((ty.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return @intCast(u32, 0);
+    if (ty.payload_idx >= @intCast(u32, self.st_len)) return @intCast(u32, 0);
+    if (@intCast(usize, ty.payload_idx) >= self.pk_struct_len) return @intCast(u32, 0);
+    return self.pk_struct_items[@intCast(usize, ty.payload_idx)].total_bits;
+}
+
+pub fn typeRegistrySetPacked(self: *TypeRegistry, tid: u32) void {
+    var ty = self.types_items[@intCast(usize, tid)];
+    ty.flags = ty.flags | @intCast(u8, 0x10);
+    self.types_items[@intCast(usize, tid)] = ty;
+}
+
+pub fn typeRegistryComputePackedUnionLayout(self: *TypeRegistry, tid: u32) void {
+    var idx = @intCast(usize, tid);
+    var ty = self.types_items[idx];
+    if (ty.kind != TypeKind.packed_union_type) return;
+    if (ty.payload_idx >= @intCast(u32, self.un_len)) return;
+    if (@intCast(usize, ty.payload_idx) >= self.pk_un_len) return;
+    var up = self.un_items[@intCast(usize, ty.payload_idx)];
+    var fstart: usize = @intCast(usize, up.fields_start);
+    var fcount: usize = @intCast(usize, up.fields_count);
+    var pk_start: u32 = @intCast(u32, self.pk_len);
+    var max_bits: u32 = @intCast(u32, 0);
+    var fi: usize = 0;
+    while (fi < fcount) : (fi += 1) {
+        var fe = self.fe_items[fstart + fi];
+        var w: u32 = @intCast(u32, 1);
+        if (fe.type_id < @intCast(u32, self.types_len)) {
+            var ft = self.types_items[@intCast(usize, fe.type_id)];
+            if (ft.kind != TypeKind.bool_type) {
+                if (ft.kind == TypeKind.struct_type and (ft.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                    w = typeRegistryGetPackedTotalBits(self, fe.type_id);
+                } else {
+                    w = @intCast(u32, typeRegistryIntWidthBits(self, fe.type_id));
+                }
+            }
+        }
+        pkFieldAppend(self, PackedBitField{ .bit_offset = @intCast(u32, 0), .bit_width = @intCast(u16, w) });
+        if (w > max_bits) max_bits = w;
+    }
+    pkUnSetFields(self, ty.payload_idx, PackedStructInfo{ .pk_start = pk_start, .pk_count = @intCast(u16, fcount), .total_bits = max_bits });
+    var sz: u32 = (max_bits + @intCast(u32, 7)) / @intCast(u32, 8);
+    if (sz == @intCast(u32, 0)) sz = @intCast(u32, 1);
+    ty.size = sz;
+    ty.alignment = @intCast(u16, 1);
+    self.types_items[idx] = ty;
+}
+
+pub fn typeRegistryGetPackedUnionBitFields(self: *TypeRegistry, tid: u32, out: *[]PackedBitField) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.packed_union_type) return false;
+    if (ty.payload_idx >= @intCast(u32, self.un_len)) return false;
+    if (@intCast(usize, ty.payload_idx) >= self.pk_un_len) return false;
+    var psi = self.pk_un_items[@intCast(usize, ty.payload_idx)];
+    var pstart: usize = @intCast(usize, psi.pk_start);
+    var pcount: usize = @intCast(usize, psi.pk_count);
+    if (pstart + pcount > self.pk_len) return false;
+    out.* = self.pk_items[pstart .. pstart + pcount];
+    return true;
+}
+
+pub fn typeRegistryGetPackedUnionTotalBits(self: *TypeRegistry, tid: u32) u32 {
+    if (@intCast(usize, tid) >= self.types_len) return @intCast(u32, 0);
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.packed_union_type) return @intCast(u32, 0);
+    if (ty.payload_idx >= @intCast(u32, self.un_len)) return @intCast(u32, 0);
+    if (@intCast(usize, ty.payload_idx) >= self.pk_un_len) return @intCast(u32, 0);
+    return self.pk_un_items[@intCast(usize, ty.payload_idx)].total_bits;
+}
+
+pub fn typeRegistryGetUnionFields(self: *TypeRegistry, tid: u32, out: *[]FieldEntry) void {
+    var ty = self.types_items[tid];
+    var up = self.un_items[ty.payload_idx];
+    var fstart: usize = @intCast(usize, up.fields_start);
+    var fcount: usize = @intCast(usize, up.fields_count);
+    out.* = self.fe_items[fstart .. fstart + fcount];
+}
+
+pub fn pointerQualifiersMonotone(src_flags: u8, tgt_flags: u8, mask: u8) bool {
+    return ((src_flags & mask) & ~(tgt_flags & mask)) == @intCast(u8, 0);
+}
+
+// D1 belt-and-braces: structural equivalence over the synthetic-composite
+// family (optional / error_union / array / slice / tuple / fn shape trees).
+// Everything else — primitives, named aggregates, pointers, error sets —
+// compares by id: named types stay distinct per Zig semantics, and ptr /
+// many-ptr / slice / error-set / fn constructors are already canonical.
+// Used by `typeRegistryIsAssignable`'s fn_type arm (return + params) so a
+// residual duplicate composite id cannot reject an otherwise-identical fn
+// signature. Depth-capped (synthetic payload trees are finite; the cap is
+// insurance).
+pub fn typeRegistryTypesEquiv(self: *TypeRegistry, a: TypeId, b: TypeId) bool {
+    return typesEquivRec(self, a, b, @intCast(u32, 0));
+}
+
+fn typesEquivRec(self: *TypeRegistry, a: TypeId, b: TypeId, depth: u32) bool {
+    if (a == b) return true;
+    if (depth > @intCast(u32, 16)) return false;
+    if (@intCast(usize, a) >= self.types_len) return false;
+    if (@intCast(usize, b) >= self.types_len) return false;
+    var ta = self.types_items[@intCast(usize, a)];
+    var tb = self.types_items[@intCast(usize, b)];
+    if (ta.kind != tb.kind) return false;
+    if (ta.kind == TypeKind.optional_type) {
+        if (ta.payload_idx >= @intCast(u32, self.opt_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.opt_len)) return false;
+        var oa: OptionalPayload = self.opt_items[@intCast(usize, ta.payload_idx)];
+        var ob: OptionalPayload = self.opt_items[@intCast(usize, tb.payload_idx)];
+        return typesEquivRec(self, oa.payload, ob.payload, depth + @intCast(u32, 1));
+    }
+    if (ta.kind == TypeKind.error_union_type) {
+        if (ta.payload_idx >= @intCast(u32, self.eu_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.eu_len)) return false;
+        var ea: EUPayload = self.eu_items[@intCast(usize, ta.payload_idx)];
+        var eb: EUPayload = self.eu_items[@intCast(usize, tb.payload_idx)];
+        // error sets are content-keyed canonical (`GetOrCreateErrorSet`) — id equality
+        if (ea.error_set != eb.error_set) return false;
+        return typesEquivRec(self, ea.payload, eb.payload, depth + @intCast(u32, 1));
+    }
+    if (ta.kind == TypeKind.array_type) {
+        if (ta.payload_idx >= @intCast(u32, self.array_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.array_len)) return false;
+        var aa: ArrayPayload = self.array_items[@intCast(usize, ta.payload_idx)];
+        var ab: ArrayPayload = self.array_items[@intCast(usize, tb.payload_idx)];
+        if (aa.length != ab.length) return false;
+        return typesEquivRec(self, aa.elem, ab.elem, depth + @intCast(u32, 1));
+    }
+    if (ta.kind == TypeKind.slice_type) {
+        if (ta.payload_idx >= @intCast(u32, self.slice_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.slice_len)) return false;
+        if (ta.flags != tb.flags) return false;
+        var sa: SlicePayload = self.slice_items[@intCast(usize, ta.payload_idx)];
+        var sb: SlicePayload = self.slice_items[@intCast(usize, tb.payload_idx)];
+        return typesEquivRec(self, sa.elem, sb.elem, depth + @intCast(u32, 1));
+    }
+    if (ta.kind == TypeKind.tuple_type) {
+        if (ta.payload_idx >= @intCast(u32, self.tup_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.tup_len)) return false;
+        var pa: TuplePayload = self.tup_items[@intCast(usize, ta.payload_idx)];
+        var pb: TuplePayload = self.tup_items[@intCast(usize, tb.payload_idx)];
+        if (pa.elems_count != pb.elems_count) return false;
+        var ei: u16 = 0;
+        while (ei < pa.elems_count) : (ei += 1) {
+            var xa = self.xt_items[@intCast(usize, pa.elems_start) + @intCast(usize, ei)];
+            var xb = self.xt_items[@intCast(usize, pb.elems_start) + @intCast(usize, ei)];
+            if (!typesEquivRec(self, xa, xb, depth + @intCast(u32, 1))) return false;
+        }
+        return true;
+    }
+    if (ta.kind == TypeKind.fn_type) {
+        if (ta.payload_idx >= @intCast(u32, self.fn_len)) return false;
+        if (tb.payload_idx >= @intCast(u32, self.fn_len)) return false;
+        var fa: FnPayload = self.fn_items[@intCast(usize, ta.payload_idx)];
+        var fb: FnPayload = self.fn_items[@intCast(usize, tb.payload_idx)];
+        if (fa.params_count != fb.params_count) return false;
+        if (fa.flags_packed != fb.flags_packed) return false;
+        if (!typesEquivRec(self, fa.return_type, fb.return_type, depth + @intCast(u32, 1))) return false;
+        var fi: u16 = 0;
+        while (fi < fa.params_count) : (fi += 1) {
+            var xa2 = self.xt_items[@intCast(usize, fa.params_start) + @intCast(usize, fi)];
+            var xb2 = self.xt_items[@intCast(usize, fb.params_start) + @intCast(usize, fi)];
+            if (!typesEquivRec(self, xa2, xb2, depth + @intCast(u32, 1))) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: TypeId) bool {
+    if (source == target) return true;
+    var src = self.types_items[@intCast(usize, source)];
+    var tgt = self.types_items[@intCast(usize, target)];
+    if (src.kind == TypeKind.undefined_type) return true;
+    if (src.kind == TypeKind.noreturn_type) return true;
+    if (src.kind == TypeKind.integer_literal_type and typeRegistryIsNumeric(self, target)) return true;
+    if (src.kind == TypeKind.integer_literal_type and target == TYPE_C_CHAR) return true;
+    if (typeRegistryIsInteger(self, source) and typeRegistryIsInteger(self, target) and source != TYPE_INT_LIT) {
+        if (typeRegistryIsUnsigned(self, source) == typeRegistryIsUnsigned(self, target) and typeRegistryIntWidthBits(self, source) < typeRegistryIntWidthBits(self, target)) return true;
+    }
+    if (source == TYPE_F32 and target == TYPE_F64) return true;
+    if (src.kind == TypeKind.null_type) {
+        if (typeRegistryIsPointer(self, target)) return true;
+        if (tgt.kind == TypeKind.optional_type) return true;
+        if (tgt.kind == TypeKind.fn_type) return true;
+    }
+    if (src.kind == TypeKind.fn_type and tgt.kind == TypeKind.ptr_type) {
+        var tpp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+        var bt = self.types_items[@intCast(usize, tpp.base)];
+        if (bt.kind == TypeKind.fn_type) {
+            // D1 belt-and-braces: structural (return + params) over the
+            // synthetic-composite family instead of raw id equality — a
+            // residual duplicate `?Key`/`E!Key`/`[N]Key` id must not reject an
+            // otherwise-identical fn signature.
+            if (typeRegistryTypesEquiv(self, source, tpp.base)) return true;
+        }
+    }
+    if (tgt.kind == TypeKind.optional_type) {
+        var opt: OptionalPayload = self.opt_items[@intCast(usize, tgt.payload_idx)];
+        if (typeRegistryIsAssignable(self, source, opt.payload)) return true;
+        if (src.kind == TypeKind.null_type) return true;
+    }
+    if (src.kind == TypeKind.error_union_type and tgt.kind == TypeKind.error_union_type) {
+        var eu_src: EUPayload = self.eu_items[@intCast(usize, src.payload_idx)];
+        var eu_tgt: EUPayload = self.eu_items[@intCast(usize, tgt.payload_idx)];
+        var es_ok: bool = eu_src.error_set == eu_tgt.error_set;
+        if (!es_ok) es_ok = errorSetIsSubset(self, eu_src.error_set, eu_tgt.error_set);
+        if (es_ok) {
+            return eu_src.payload == eu_tgt.payload;
+        }
+    }
+    if (tgt.kind == TypeKind.error_union_type) {
+        var eu: EUPayload = self.eu_items[@intCast(usize, tgt.payload_idx)];
+        if (typeRegistryIsAssignable(self, source, eu.payload)) return true;
+    }
+    if (src.kind == TypeKind.error_set_type and tgt.kind == TypeKind.error_union_type) return true;
+    if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.ptr_type) {
+        var tgt_pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+        var src_pp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
+        if (tgt_pp.base == TYPE_VOID) return qok;
+        if (src_pp.base == TYPE_VOID) return qok;
+        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
+            if (src_pp.base == tgt_pp.base and qok) return true;
+        }
+        if ((tgt.flags & VOLATILE_FLAG) != @intCast(u8, 0) and (src.flags & VOLATILE_FLAG) == @intCast(u8, 0)) {
+            if (src_pp.base == tgt_pp.base and ((src.flags & @intCast(u8, 1)) == @intCast(u8, 0) or (tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0))) return true;
+        }
+    }
+    if (tgt.kind == TypeKind.slice_type and src.kind == TypeKind.slice_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
+        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
+            var s_sl: SlicePayload = self.slice_items[@intCast(usize, src.payload_idx)];
+            var t_sl: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
+            if (s_sl.elem == t_sl.elem and qok) return true;
+        }
+        if ((tgt.flags & VOLATILE_FLAG) != @intCast(u8, 0) and (src.flags & VOLATILE_FLAG) == @intCast(u8, 0)) {
+            var s_sl2: SlicePayload = self.slice_items[@intCast(usize, src.payload_idx)];
+            var t_sl2: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
+            if (s_sl2.elem == t_sl2.elem and ((src.flags & @intCast(u8, 1)) == @intCast(u8, 0) or (tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0))) return true;
+        }
+    }
+    if (tgt.kind == TypeKind.slice_type and src.kind == TypeKind.ptr_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
+        var src_pp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
+        var sl: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
+        var src_pointee = self.types_items[@intCast(usize, src_pp.base)];
+        if (src_pointee.kind == TypeKind.array_type) {
+            var arr: ArrayPayload = self.array_items[@intCast(usize, src_pointee.payload_idx)];
+            if (arr.elem == sl.elem and qok) return true;
+        }
+        // Track4 S22 F-M4 (A1): only a pointer to a KNOWN-length array is
+        // assignable to a slice; a bare `*const u8`/`*const c_char` is not
+        // (it has no length and must not become a length-1 slice).
+    }
+    if (tgt.kind == TypeKind.many_ptr_type and src.kind == TypeKind.many_ptr_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
+        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
+            var s_pp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
+            var t_pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+            if (s_pp.base == t_pp.base and qok) return true;
+        }
+        if ((tgt.flags & VOLATILE_FLAG) != @intCast(u8, 0) and (src.flags & VOLATILE_FLAG) == @intCast(u8, 0)) {
+            var s_pp2: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
+            var t_pp2: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+            if (s_pp2.base == t_pp2.base and ((src.flags & @intCast(u8, 1)) == @intCast(u8, 0) or (tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0))) return true;
+        }
+    }
+    if (src.kind == TypeKind.array_type and tgt.kind == TypeKind.slice_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
+        var arr: ArrayPayload = self.array_items[@intCast(usize, src.payload_idx)];
+        var sl: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
+        if (arr.elem == sl.elem and qok) return true;
+        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and arr.elem == sl.elem and qok) return true;
+    }
+    if (src.kind == TypeKind.array_type and tgt.kind == TypeKind.many_ptr_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
+        var arr: ArrayPayload = self.array_items[@intCast(usize, src.payload_idx)];
+        var pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+        if (arr.elem == pp.base and qok) return true;
+    }
+    if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.many_ptr_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
+        var sp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
+        var tp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+        var spo = self.types_items[@intCast(usize, sp.base)];
+        if (spo.kind == TypeKind.array_type) {
+            var arr: ArrayPayload = self.array_items[@intCast(usize, spo.payload_idx)];
+            if (arr.elem == tp.base and qok) return true;
+        }
+    }
+    if (src.kind == TypeKind.array_type and tgt.kind == TypeKind.array_type) {
+        var s_arr: ArrayPayload = self.array_items[@intCast(usize, src.payload_idx)];
+        var t_arr: ArrayPayload = self.array_items[@intCast(usize, tgt.payload_idx)];
+        if (s_arr.elem == t_arr.elem and s_arr.length == t_arr.length) return true;
+    }
+    if (src.kind == TypeKind.slice_type and tgt.kind == TypeKind.many_ptr_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
+        var sl: SlicePayload = self.slice_items[@intCast(usize, src.payload_idx)];
+        var pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+        if (sl.elem == pp.base and qok) return true;
+    }
+    if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.optional_type) {
+        var opt = self.opt_items[@intCast(usize, tgt.payload_idx)];
+        var opt_ty = self.types_items[@intCast(usize, opt.payload)];
+        if (opt_ty.kind == TypeKind.ptr_type) return typeRegistryIsAssignable(self, source, opt.payload);
+    }
+    if ((source == TYPE_U8 and target == TYPE_C_CHAR) or (source == TYPE_C_CHAR and target == TYPE_U8)) return true;
+    if (src.kind == TypeKind.tuple_type and tgt.kind == TypeKind.tuple_type) {
+        var s_tup: TuplePayload = self.tup_items[@intCast(usize, src.payload_idx)];
+        var t_tup: TuplePayload = self.tup_items[@intCast(usize, tgt.payload_idx)];
+        if (s_tup.elems_count == t_tup.elems_count) {
+            var ok: bool = true;
+            var k: u16 = 0;
+            while (k < s_tup.elems_count) : (k += 1) {
+                var se = self.xt_items[@intCast(usize, s_tup.elems_start + @as(u32, k))];
+                var te = self.xt_items[@intCast(usize, t_tup.elems_start + @as(u32, k))];
+                // FB (D4): an array element has no field-wise C copy (the
+                // operator-ruled clean reject: a distinct spelled tuple type
+                // with array elements is not assignable). Source == target
+                // stays assignable (C struct assignment copies array members).
+                if (@intCast(usize, se) < self.types_len and self.types_items[@intCast(usize, se)].kind == TypeKind.array_type) { ok = false; break; }
+                if (@intCast(usize, te) < self.types_len and self.types_items[@intCast(usize, te)].kind == TypeKind.array_type) { ok = false; break; }
+                if (!typeRegistryIsAssignable(self, se, te)) { ok = false; break; }
+            }
+            if (ok) return true;
+        }
+    }
+    if (src.kind == TypeKind.tuple_type and tgt.kind == TypeKind.array_type) {
+        var tup: TuplePayload = self.tup_items[@intCast(usize, src.payload_idx)];
+        var arr: ArrayPayload = self.array_items[@intCast(usize, tgt.payload_idx)];
+        if (@intCast(u32, tup.elems_count) == arr.length) {
+            var ok: bool = true;
+            var k: u16 = 0;
+            while (k < tup.elems_count) : (k += 1) {
+                if (!typeRegistryIsAssignable(self, self.xt_items[@intCast(usize, tup.elems_start + @as(u32, k))], arr.elem)) { ok = false; break; }
+            }
+            if (ok) return true;
+        }
+    }
+    return false;
+}
+
+pub fn errorSetIsSubset(self: *TypeRegistry, src: TypeId, tgt: TypeId) bool {
+    if (src == tgt) return true;
+    if (src == @intCast(u32, 0)) return true;
+    if (tgt == @intCast(u32, 0)) return true;
+    if (@intCast(usize, src) >= self.types_len) return false;
+    if (@intCast(usize, tgt) >= self.types_len) return false;
+    var sty = self.types_items[@intCast(usize, src)];
+    var tty = self.types_items[@intCast(usize, tgt)];
+    if (sty.kind != TypeKind.error_set_type) return false;
+    if (tty.kind != TypeKind.error_set_type) return false;
+    if (@intCast(usize, sty.payload_idx) >= self.es_len) return false;
+    var sp = self.es_items[@intCast(usize, sty.payload_idx)];
+    var sstart: usize = @intCast(usize, sp.tags_start);
+    var scount: usize = @intCast(usize, sp.tags_count);
+    if (sstart + scount > self.xn_len) return false;
+    var i: usize = 0;
+    while (i < scount) : (i += 1) {
+        if (typeRegistryErrorSetMemberIndex(self, tgt, self.xn_items[sstart + i]) == @intCast(u32, 0xFFFFFFFF)) return false;
+    }
+    return true;
+}
+
+pub fn canLiteralFitInType(value: i64, target: u32) bool {
+    if (target == TYPE_I8) return value >= @intCast(i64, -128) and value <= @intCast(i64, 127);
+    if (target == TYPE_I16) return value >= @intCast(i64, -32768) and value <= @intCast(i64, 32767);
+    if (target == TYPE_I32) return value >= @intCast(i64, -2147483647) - @intCast(i64, 1) and value <= @intCast(i64, 2147483647);
+    if (target == TYPE_I64) return true;
+    if (target == TYPE_U8) return value >= @intCast(i64, 0) and value <= @intCast(i64, 255);
+    if (target == TYPE_U16) return value >= @intCast(i64, 0) and value <= @intCast(i64, 65535);
+    if (target == TYPE_U32) return value >= @intCast(i64, 0) and value <= @intCast(i64, 4294967295);
+    if (target == TYPE_U64) return value >= @intCast(i64, 0);
+    if (target == TYPE_ISIZE) return value >= @intCast(i64, -2147483647) - @intCast(i64, 1) and value <= @intCast(i64, 2147483647);
+    if (target == TYPE_USIZE) return value >= @intCast(i64, 0) and value <= @intCast(i64, 4294967295);
+    if (target == TYPE_F32 or target == TYPE_F64) return true;
+    return false;
+}

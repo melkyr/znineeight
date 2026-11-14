@@ -1,0 +1,31 @@
+const std = @import("std");
+
+const Point = struct { x: i32, y: i32 };
+const Color = enum { Red, Green, Blue };
+const MathError = error{ DivideByZero, Overflow };
+
+pub fn main() void {
+    const greeting: []const u8 = "hi";
+    var small: i32 = -10;
+    var large: u32 = 65535;
+    var letter: u8 = 'A';
+    var ratio: f64 = 1.0 / 3.0;
+    var ok: bool = true;
+    var c: Color = Color.Red;
+    var bad: MathError = error.Overflow;
+    const p = Point{ .x = 1, .y = 2 };
+    const t = .{ 7, 8 };
+
+    std.io.print("default {} d {} x {x} c {c} s {s}\n", .{ 42, 42, 42, letter, greeting });
+    std.io.print("negative {} {x}\n", .{ small, small });
+    std.io.print("unsigned {} {x}\n", .{ large, large });
+    std.io.print("bool {} {}\n", .{ ok, false });
+    std.io.print("float {} {x}\n", .{ 7.0, 7.0 });
+    std.io.print("ratio {}\n", .{ratio});
+    std.io.print("enum {} {d}\n", .{ c, Color.Green });
+    std.io.print("error {}\n", .{bad});
+    std.io.print("struct {}\n", .{p});
+    std.io.print("tuple {}\n", .{ .{ 1, 2, 3 } });
+    std.io.print("tuplevar {} {}\n", t);
+    std.io.print("braces {{ }}\n", .{});
+}

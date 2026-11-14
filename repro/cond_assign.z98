@@ -1,0 +1,41 @@
+// repro/cond_assign.z98 — standalone Task 9B (a) reproduction.
+//
+// `if (a = 3)`, `if (a += 1)`, `while (a = 0)`, and `switch (a = 3)` used an
+// assignment as a condition. Assignment is a statement, not an expression, so
+// official Zig 0.15.2 rejects each with a PARSE error ("expected ')', found
+// '='"). zig1 silently accepted them and used the assignment's value as the
+// condition (the emitted C performed the assignment and branched on it).
+//
+// FIX (Task 9B, parser-level): the condition `min_prec` at the four
+// `parserParseExprPrec` call sites (`parserParseIfExpr`, `parserParseSwitchExpr`,
+// `parserParseIfStmt`, `parserParseWhileStmt`) is `Prec.prec_orelse`, which
+// excludes `Prec.assignment`; the `)` expect then fails with error[2000]. The
+// same class covers a parenthesized assignment expression (`var b = (a = 3);`)
+// via `parserParseGroupedExpr`.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/cond_assign_out
+//   <zig1> -o /tmp/cond_assign_out repro/cond_assign.z98
+//
+// EXPECTED (after the fix): rc=2, 0 emitted `.c`, `error[2000]` parse errors.
+// DEFECT (before the fix): rc=0, 6 `.c`, runs (`taken a=3`).
+const std = @import("std");
+
+pub fn main() void {
+    var a: i32 = 1;
+    if (a = 3) {
+        std.io.print("taken a={}\n", .{a});
+    }
+    if (a += 1) {
+        std.io.print("compound a={}\n", .{a});
+    }
+    while (a = 0) {
+        std.io.print("loop\n");
+    }
+    switch (a = 3) {
+        3 => { std.io.print("three\n"); },
+        else => { std.io.print("other\n"); },
+    }
+    var b: i32 = (a = 3);
+    _ = b;
+}

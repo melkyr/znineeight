@@ -1,0 +1,30 @@
+Zig 0.17.1 oracle
+  binary: /tmp/phase35-d15-i/zig-0.17.1/zig
+  sha256(binary): 58959f01285c05a74276f09327b551d42ed6006bf325a78dc661a024e314987b
+  archive: /tmp/phase35-d15-i/zig-0.17.1.tar.xz
+  sha256(archive): 3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a
+  zig version: 0.17.1
+
+Clean HEAD baseline
+  worktree: /tmp/phase35-9l-clean (git worktree add --detach /tmp/phase35-9l-clean 93068f57)
+  HEAD: 93068f57e1f44cbfe43503c9c11368634dc96dc8
+  HEAD:sf/src/semantic_analyzer.zig: 1fb55af6117dfe8372cf87cc587e5a8053b80977
+  HEAD:sf/src/lower.zig: 5b4e395c07b9d1d32b24ac6660a78f4aada88821
+  seed: /workspace/znineeight/zig1/zig1_5_clean md5 cd8d283b917749009961f4445043666b
+  build: bash scripts/self_compile/build_next_gen.sh /workspace/znineeight/zig1/zig1_5_clean /tmp/phase35-9l-work/build
+  binary: /tmp/phase35-9l-work/build/zig1_5_clean
+  md5: 5011d08cd6419d2f8b2cab2af0977055
+  sha256: 23befcded9c2adbf02741cdd22d9126e5603a219994fc3a49d7a8db2af8d6467
+  note: matches the Task 9j current rebuild exactly.
+
+Throwaway diagnostic variants (built in /tmp from the clean HEAD archive; NOT committed,
+NOT the uncommitted Task 9k candidate, and NOT applied to the repo)
+  A assign_void only:                    md5 c966bee844638afb8a156432305e89b7
+  B assign_void + remove stmt exemption: md5 2f378544c6f1c504962a5553d9a60f6c
+  C remove stmt exemption only:          md5 289cd16904bd006feb8ec1fbab3e750f
+  D assign_void + compound-op type fix:  md5 160ebd3463c67f2ba06b7f871a52dab2
+  E D + async scanFrameLocals fix:       md5 941c790bfe5537ad45c55b101790434c
+  G remove stmt exemption + switch-prong valueless normalization:
+                                         md5 9d04a659ecc51e4c87ad4dd2e9597b0d
+  H G + expected-type-first (full proposed 9k target shape):
+                                         md5 843b4022b4d67c089a3e1e3b8090df86

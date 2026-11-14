@@ -1,0 +1,36 @@
+entry	HEAD_rc	C_stmt_peer_rc	G_switch_normalize_rc	H_normalize_expected_rc	status
+examples/z98/game_of_life	0	2	0	0	fixed by switch-only normalization
+examples/z98/rogue_mud	0	2	0	0	fixed by switch-only normalization
+examples/z98/rogue_mud_upgraded	0	2	0	0	fixed by switch-only normalization
+examples/z98/z9dbg	0	2	0	0	fixed by switch-only normalization
+examples/z98/z9git	0	2	0	0	fixed by switch-only normalization
+examples/z98/z9play	0	2	0	0	fixed by switch-only normalization
+examples/z98/z9torr	0	2	0	0	fixed by switch-only normalization
+repro/anon_init_if_arm	0	2	0	0	fixed by switch-only normalization
+repro/anon_init_var_decl	0	2	0	0	fixed by switch-only normalization
+repro/comptime_fold_typed_payload	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/anon_init_orelse_rhs	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/array_tagged_union_read	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/ast_walk_capture_prong_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/emission_enum_ext_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/emission_enum_switch_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/emission_labeled_ctrl_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/emission_sibling_payload_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/emission_tu_switch_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/emission_zT_undeclared_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/stdlib_analyzer_switch_merge_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/stdlib_tcpip_tcp_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/stdlib_tls12_handshake_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/stdlib_tls13_auth_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/stdlib_tls13_fallback_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/stdlib_tls13_handshake_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/stdlib_tls_alpn_xmod	0	2	2	2	still rejects (non-assignment heterogeneous prongs; migrate fixture)
+repro/mi_matrix/switch_char_labeled	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/switch_char_while	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/switch_char_xmod_while	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/switch_expr_payload_capture_xmod	0	2	0	0	fixed by switch-only normalization
+repro/mi_matrix/switch_mixed_case_argtype	0	2	0	0	fixed by switch-only normalization
+repro/switch_capture_name_reuse	0	2	0	0	fixed by switch-only normalization
+repro/tagged_union_anon_return	0	2	0	0	fixed by switch-only normalization
+repro/tagged_union_payload	0	2	0	0	fixed by switch-only normalization
+repro/tagged_union_same_type	0	2	0	0	fixed by switch-only normalization

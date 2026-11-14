@@ -1,0 +1,18 @@
+// void_temp_discard.z98 — Task 8 standalone repro (i): discarding a void call.
+//
+// `_ = foo();` as the first lowered statement of the function ICEd with
+// `error[3043]: internal: invalid temp index 0 (len 0)`: a known-direct void
+// call lowers to temp 0 (its "no result" marker, not the TEMP_NONE void-`if`
+// sentinel) and the plain-assign path ran `getTempType(self, 0)` on it while
+// the temp table was still empty. With a non-empty table it compiled but
+// emitted a spurious `(void)zT_0;` naming an unrelated temp.
+//
+// Expected stdout (Zig 0.15.2 and the fixed compiler): `discard-ok`, rc 0.
+const std = @import("std");
+
+fn foo() void {}
+
+pub fn main() void {
+    _ = foo();
+    std.io.print("discard-ok\n", .{});
+}

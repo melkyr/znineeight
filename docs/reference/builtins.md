@@ -13,9 +13,9 @@ Returns the size of type `T` in bytes as a `usize` constant.
 - **Syntax:** `@sizeOf(TypeName)`
 - **Constraints:** `T` must be a complete type. Incomplete types trigger `ERR_SIZE_OF_INCOMPLETE_TYPE`.
 - **Target (32-bit little-endian):**
-  - `i8`, `u8`: 1 byte
+  - `i8`, `u8`, `bool`: 1 byte
   - `i16`, `u16`: 2 bytes
-  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`, `bool`: 4 bytes
+  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`: 4 bytes
   - `i64`, `u64`, `f64`: 8 bytes
   - `struct`: Sum of field sizes plus padding for alignment.
 
@@ -24,24 +24,46 @@ Returns the alignment requirement of type `T` in bytes as a `usize` constant.
 - **Syntax:** `@alignOf(TypeName)`
 - **Constraints:** `T` must be a complete type. Incomplete types trigger `ERR_SIZE_OF_INCOMPLETE_TYPE`.
 - **Target (32-bit little-endian):**
-  - `i8`, `u8`: 1 byte
+  - `i8`, `u8`, `bool`: 1 byte
   - `i16`, `u16`: 2 bytes
-  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`, `bool`: 4 bytes
+  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`: 4 bytes
   - `i64`, `u64`, `f64`: 8 bytes
 
+**Model pinned in the emitted C (FX14, 2026-09-29).** `@sizeOf`/`@alignOf`/`@offsetOf`/`@bitSizeOf` report the frozen 32-bit Z98 layout model, and the emitted C now produces exactly that layout on every supported host compiler. The per-program carrier typedefs (`typedef long long <carrier> Z98_ALIGN8;`, `typedef unsigned long long <carrier> Z98_ALIGN8;`, `typedef double <carrier> Z98_ALIGN8;`) and the shared `zig_compat.h` `z64`/`zu64`/`f64` typedefs carry `Z98_ALIGN8` — `__attribute__((aligned(8)))` on gcc/clang/mingw, empty on MSVC/Watcom (whose 32-bit defaults already align 64-bit scalars to 8). On `gcc -m32`, where the host ABI would otherwise align `long long`/`double` to 4, a `struct { a: u8, b: i64, c: u8 }` now measures `24/8/8/16` in the built binary — exactly what the compiler reports. Packed aggregates are exempt (bit-packed byte arrays). Overriding packing (`/Zp4`, `-zp4`) breaks the pin and is not supported. See Language Spec §1.1.
+
 ### `@offsetOf(T, field_name)`
-Returns the byte offset of a field within a struct or union as a `usize` constant.
-- **Syntax:** `@offsetOf(AggregateType, "field")`
+Returns the byte offset of a field within a **struct** as a `usize` constant.
+- **Syntax:** `@offsetOf(StructType, "field")`
 - **Constraints:**
-  - `AggregateType` must be a struct or union.
-  - `field_name` must be a string literal.
-  - The type must be fully defined (not incomplete).
+  - `StructType` must be a **struct** (packed structs included). Every union kind
+    (bare, packed, tagged) and every non-aggregate target (scalar, pointer,
+    enum, array, slice, optional, …) is a Zig-0.15.2-parity clean reject:
+    level-0 `error[3072]` `expected struct type, found 'X'` (FF, Volume II D9).
+    The former "for unions, always returns 0" fold is **removed**.
+  - `field_name` must be a string literal naming an existing field; otherwise
+    level-0 `error[3073]` (Zig wording for the unknown case: `no field named 'x'
+    in struct 'S'`; a non-literal / resolvable string `const` name is a
+    documented Z98 clean-reject divergence — Zig folds the const).
+  - The type must resolve and be complete; an unresolved or incomplete type
+    argument, or a wrong argument count (exactly 2 args), is a level-0
+    `error[3074]`. The former `error[3043]` internal error is gone: every shape
+    rejects rc 2 with 0 emitted `.c`.
 - **Compile-time evaluation:**
   - Always constant-folded to a `usize` integer literal.
-  - For unions, always returns `0`.
-  - For structs, returns the pre-calculated byte offset from the beginning of the struct.
+  - For structs, returns the pre-calculated byte offset from the beginning of the
+    struct (packed structs: `bit_offset / 8`).
 - **C89 Emission:** Emitted directly as the integer literal (e.g., `4`).
 - **Known Limitation:** `@offsetOf` on incomplete types (e.g., forward declarations) is not currently testable in the bootstrap compiler as it does not support forward-declared structs. The error handling logic is implemented for robustness.
+
+### `@bitOffsetOf(T, field_name)`
+Returns the bit offset of a field within a **struct** as a `usize` constant.
+- **Syntax:** `@bitOffsetOf(StructType, "field")`
+- **Constraints:** identical to `@offsetOf` (struct-only; union and non-struct
+  targets reject `error[3072]`, unknown / non-literal field names reject
+  `error[3073]`, unresolved types and wrong arity reject `error[3074]`).
+- **Compile-time evaluation:** packed structs return the packed `bit_offset`;
+  a plain struct returns `byte_offset * 8`.
+- **C89 Emission:** Emitted directly as the integer literal.
 
 ## Code Generation Built-ins
 
@@ -50,7 +72,7 @@ These built-ins are validated during type checking but are emitted as specific C
 ### `@ptrCast(T, expr)`
 Performs an explicit pointer cast.
 - **Syntax:** `@ptrCast(*TargetType, pointer_expression)`
-- **Constraints:** Both the target type and the expression must be pointer types.
+- **Constraints:** The compiler does **not** require both sides to be pointer types: `@ptrCast(*u8, x)` with an integer `x`, and `@ptrCast(u8, p)` with a pointer `p`, both compile. The only rejected shape is dropping a `volatile` qualifier (`@ptrCast cannot discard the 'volatile' qualifier; use @volatileCast to remove it`); use `@volatileCast` for that.
 - **C89 Emission:** `(TargetType*)pointer_expression`
 
 ### `@intCast(T, expr)`
@@ -65,22 +87,20 @@ Performs an explicit integer cast with range checking.
   - **Constant cases**: Emitted as raw literals.
   - **Safe widenings** (e.g., `u8` to `i32`): Emitted as a direct C-style cast: `(int)expr`.
   - **Potentially unsafe narrowing/conversion**: Emitted as a call to a runtime helper function: `__bootstrap_<target>_from_<source>(expr)`.
-  - **Runtime Helpers**: These functions (e.g., `__bootstrap_i32_from_i64`) are implemented as `static` functions in `zig_runtime.h`. They perform bounds checks at runtime and call `__bootstrap_panic` if the value is out of range.
+  - **Runtime Helpers**: These functions (e.g., `__bootstrap_i32_from_i64`) are implemented as `static` functions in `zig_runtime.h`. They perform bounds checks at runtime and call `std_panic` (which traps) if the value is out of range. Under `-fsafe` (default) `@intCast` instead lowers to the checked `zig_cast_checked_s` / `zig_cast_checked_u` helpers; `-ffast` omits the check. The `__bootstrap_panic` wrapper has been removed.
 
 ### `@floatCast(T, expr)`
-Performs an explicit floating-point cast with range checking.
+Performs an explicit floating-point cast (not runtime-checked).
 - **Syntax:** `@floatCast(FloatType, float_expression)`
 - **Constraints:** Both must be floating-point types (`f32`, `f64`).
-- **Compile-time Evaluation:** Constant folding for constant float literals.
-- **C89 Emission Strategy:**
-  - **Safe widenings** (e.g., `f32` to `f64`): Emitted as a direct C-style cast: `(double)expr`.
-  - **Potentially unsafe narrowing** (`f64` to `f32`): Emitted as a call to a runtime helper: `__bootstrap_f32_from_f64(expr)`.
+- **Compile-time Evaluation:** A comptime-known argument is **constant-folded** (Task 11D): `comptime_eval.zig` interns `@floatCast`, evaluates the operand with its float sub-evaluator (float literals, `negate`, nested conversions, const chains), and the lowerer's `comptime_values` HIT path emits a `float_const` at the resolved `f32`/`f64` target. A runtime operand is lowered to a runtime `float_cast` as before.
+- **C89 Emission Strategy:** Emitted as a direct C-style cast in **both** directions (spec §4: no runtime check): widening `@floatCast(f64, f32_expr)` → `(double)expr`; narrowing `@floatCast(f32, f64_expr)` → `(float)expr`, which may lose precision. (The bootstrap-era `__bootstrap_f32_from_f64` helper — itself a no-op `return (f32)x;` — is not emitted by the current lowering; `@floatCast` lowers to the `float_cast` LIR op.)
 
 ### `@intToFloat(T, expr)`
 Performs an explicit conversion from an integer to a floating-point type.
 - **Syntax:** `@intToFloat(FloatType, integer_expression)`
 - **Constraints:** `T` must be a floating-point type (`f32`, `f64`), and `expr` must be an integer type.
-- **Compile-time Evaluation:** Constant folding for constant integer literals.
+- **Compile-time Evaluation:** A comptime-known argument is **constant-folded** (Task 11D): `comptime_eval.zig` interns `@intToFloat`, evaluates the integer operand with the integer evaluator (honoring signedness) and rounds an `f32` target through `f32`, and the lowerer's `comptime_values` HIT path emits a `float_const` at the resolved `f32`/`f64` target. A runtime operand is lowered to a runtime `int_to_float` as before.
 - **C89 Emission Strategy:** Emitted as a direct C-style cast: `(double)expr`.
 
 ### `@import(path)`
@@ -91,7 +111,7 @@ Loads and parses an external Zig module.
     - Resolves the path relative to the current module's directory.
     - Recursively loads and parses the target file if not already loaded.
     - Detects circular dependencies and reports them as fatal errors.
-    - Symbols from the imported module are accessed using dot notation: `const std = @import("std"); std.debug.print(...);`.
+    - Symbols from the imported module are accessed using dot notation: `const std = @import("std"); std.io.print(...);`.
 - **C89 Emission:** This built-in is handled entirely by the compiler's front-end and import resolution phase. It does not generate any code at the call site. Instead, it influences header generation and symbol resolution.
 
 ### Cast Built-ins (Internal/Runtime)
@@ -103,5 +123,36 @@ The following built-ins are supported for low-level type conversions:
 
 ---
 
+## Async / Coroutine Built-ins
+
+These built-ins implement cooperative, stackless coroutines. A function is *suspending* when it contains `@asyncSuspend` or calls a suspending function; every suspending function is compiled to a step machine (`__Z98Step_<f>`) instead of its original body. The scheduler and per-task child-frame pool are provided by the `std.async` library. See `Language_Spec_Z98.md` §4.1 and `sf/docs/tech_docs/12_async_coroutines.md`.
+
+### `@asyncFrameSize(fn)`
+Compile-time-evaluated: returns the byte size of the root frame `fn` needs.
+- **Syntax:** `@asyncFrameSize(suspending_fn)`
+- **Constraints:** `fn` must resolve to a known suspending function, else `error[3046]`.
+- **C89 Emission:** Emitted directly as the integer literal.
+
+### `@asyncInit(ctx, buf, fn, args)`
+Initializes a coroutine root frame in `buf` for the suspending function `fn` and returns it as `*void`.
+- **Syntax:** `@asyncInit(ctx, buf, fn, @ptrCast(*const void, &args_record))`
+- **Behavior:** zero-fills the frame, writes the `__Z98Step_<fn>` step word at frame offset 0, stores `ctx` and `state = 0`, resets the context header (`used = 0`, sticky `oom = 0`), and copies the `args` record **positionally** into `fn`'s parameters (the record's fields are the coroutine's parameters).
+- **Constraints:** `args` must be a plain `*const void` (a `?*const void` is a non-scalar optional and emits invalid C89).
+- **C89 Emission:** `-fsafe` traps when the frame size is compile-time known and `buf` is a concrete `[N]u8` array with `N < @asyncFrameSize(fn)`; `-ffast` omits the check.
+
+### `@asyncSuspend(data)`
+An explicit suspension point inside a suspending function.
+- **Syntax:** `@asyncSuspend(data)`
+- **Constraints:** Only valid inside a suspending function (`error[3018]` otherwise); rejected inside `defer`/`errdefer` (`error[3019]`).
+- **C89 Emission:** The step saves its live frame fields, records the next state, and returns a non-`null` `?*void` sentinel. The `data` operand is type-checked but not propagated.
+
+### `@asyncResume(frame, arg)`
+Resumes the coroutine rooted at `frame`.
+- **Syntax:** `@asyncResume(frame, arg)`
+- **Result Type:** `?*void` — `null` when the coroutine has finished, non-`null` while it is still suspended.
+- **C89 Emission:** Loads the step word at `frame + 0`, calls `__Z98Step_<f>(frame, arg)`, and returns its result. `-fsafe` traps if the step word is zero; `-ffast` is undefined behavior.
+
+---
+
 ## Unsupported Built-ins
-Most other Zig built-ins (e.g., `@typeInfo`, `@as`, `@typeName`) are currently **REJECTED** by the bootstrap compiler to maintain simplicity and C89 compatibility.
+Most other Zig built-ins (e.g., `@typeInfo`, `@typeName`) are currently **REJECTED** by the bootstrap compiler to maintain simplicity and C89 compatibility.

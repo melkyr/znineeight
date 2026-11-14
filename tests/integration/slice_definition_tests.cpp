@@ -29,14 +29,9 @@ TEST_FUNC(SliceDefinition_PrivateFunction) {
     u32 file_id = unit.addSource("test.zig", source);
     unit.setCurrentModule("test");
 
-    if (!unit.performFullPipeline(file_id)) {
-        unit.getErrorHandler().printErrors();
-        return false;
-    }
-
-    // Generate code
     system("mkdir -p slice_test_output");
-    if (!unit.generateCode("slice_test_output/output.c")) {
+    if (!unit.performFullPipeline(file_id, "slice_test_output")) {
+        unit.getErrorHandler().printErrors();
         return false;
     }
 
@@ -78,14 +73,9 @@ TEST_FUNC(SliceDefinition_RecursiveType) {
     u32 file_id = unit.addSource("test.zig", source);
     unit.setCurrentModule("test");
 
-    if (!unit.performFullPipeline(file_id)) {
-        unit.getErrorHandler().printErrors();
-        return false;
-    }
-
-    // Generate code
     system("mkdir -p slice_test_output_rec");
-    if (!unit.generateCode("slice_test_output_rec/output.c")) {
+    if (!unit.performFullPipeline(file_id, "slice_test_output_rec")) {
+        unit.getErrorHandler().printErrors();
         return false;
     }
 
@@ -101,7 +91,6 @@ TEST_FUNC(SliceDefinition_RecursiveType) {
     bool found_slice = (strstr(content, "Slice_u8") != NULL);
     
     // Check test.h for struct definition
-    plat_close_file(f);
     f = plat_open_file("slice_test_output_rec/test.h", false);
     bytes = plat_read_file_raw(f, content, 99999);
     content[bytes] = '\0';
@@ -137,14 +126,9 @@ TEST_FUNC(SliceDefinition_NestedType) {
     u32 file_id = unit.addSource("test.zig", source);
     unit.setCurrentModule("test");
 
-    if (!unit.performFullPipeline(file_id)) {
-        unit.getErrorHandler().printErrors();
-        return false;
-    }
-
-    // Generate code
     system("mkdir -p slice_test_output_nested");
-    if (!unit.generateCode("slice_test_output_nested/output.c")) {
+    if (!unit.performFullPipeline(file_id, "slice_test_output_nested")) {
+        unit.getErrorHandler().printErrors();
         return false;
     }
 
@@ -186,14 +170,9 @@ TEST_FUNC(SliceDefinition_PublicSignatureNested) {
     u32 file_id = unit.addSource("test.zig", source);
     unit.setCurrentModule("test");
 
-    if (!unit.performFullPipeline(file_id)) {
-        unit.getErrorHandler().printErrors();
-        return false;
-    }
-
-    // Generate code
     system("mkdir -p slice_test_output_pub");
-    if (!unit.generateCode("slice_test_output_pub/output.c")) {
+    if (!unit.performFullPipeline(file_id, "slice_test_output_pub")) {
+        unit.getErrorHandler().printErrors();
         return false;
     }
 

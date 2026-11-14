@@ -1,0 +1,709 @@
+// std_net.zig — Z98 networking library as target-selected extern "c" OS
+// bindings (S2 std_net extern rewrite). Windows path = wsock32 (Winsock 1.1,
+// WSAStartup(1,1) init); linux path = libc. The C89 emitter emits no
+// prototypes for non-variadic externs, so net_prelude.h (found on the
+// compiler include path) supplies the per-OS declarations.
+
+@cInclude("<net_prelude.h>");
+
+pub const fd_set = struct {
+    // Opaque fd_set blob (Windows 260B / Linux 128B layouts covered by 512B).
+    // [128]u32 forces 4-byte alignment, required by WinSock's select.
+    data: [128]u32,
+};
+
+// UDP surface (blueprint §3 L3, operator ruling m1432). Socket is a pure alias
+// for the existing fd convention (the TCP surface returns a raw i32); NetError
+// is the module's one error set (R2) and deliberately excludes OutOfMemory —
+// no UDP path allocates. When a future std_net function allocates it unions
+// OutOfMemory into its own return type, not this set.
+pub const Socket = i32;
+
+pub const NetError = error {
+    WouldBlock,
+    Timeout,
+    ConnRefused,
+    ConnReset,
+    NotConnected,
+    AddrInUse,
+    InvalidAddr,
+    ResolveFailed,
+    Io,
+};
+
+// Dotted-quad IPv4 address (blueprint §3 L3). `pub` since Task 15 (S3):
+// callers in other modules name it for out-params, and cross-module
+// references now require `pub`.
+pub const IpAddr = struct { a: u8, b: u8, c: u8, d: u8 };
+
+// Public byte-order helpers + extern wrappers. The externs are the real OS
+// htons/htonl (wsock32 on win32, libc elsewhere); the Manual variants are
+// portable byte-swaps for debugging.
+pub extern "stdcall" fn htons(x: u16) u16;
+pub extern "stdcall" fn htonl(x: u32) u32;
+
+pub fn htonsManual(x: u16) u16 {
+    return @intCast(u16, ((x & @intCast(u16, 0xFF)) << 8) | (x >> 8));
+}
+
+pub fn htonlManual(x: u32) u32 {
+    return @intCast(u32, ((x & @intCast(u32, 0xFF)) << 24) | ((x & @intCast(u32, 0xFF00)) << 8) | ((x & @intCast(u32, 0xFF0000)) >> 8) | (x >> 24));
+}
+
+// Target extern sets. accept/connect/send/recv/close/select are declared with
+// an _os suffix because std_net's public API owns those names; net_prelude.h
+// maps the _os identifiers to the real OS symbols (single declaration source
+// remains the OS header). Select's fd_set/timeval params are *void (the caller
+// blob is byte-layout-identical to the native fd_set at offset 0, so a pointer
+// cast lowers cleanly — S2-I layout probes).
+extern "stdcall" fn socket(af: i32, typ: i32, proto: i32) i32;
+extern "stdcall" fn bind(s: i32, name: *const void, namelen: i32) i32;
+extern "stdcall" fn listen(s: i32, backlog: i32) i32;
+extern "stdcall" fn setsockopt(s: i32, level: i32, optname: i32, optval: *const void, optlen: i32) i32;
+extern "stdcall" fn accept_os(s: i32, addr: *void, addrlen: *void) i32;
+extern "stdcall" fn connect_os(s: i32, name: *const void, namelen: i32) i32;
+extern "stdcall" fn send_os(s: i32, buf: [*]const u8, len: i32, flags: i32) i32;
+extern "stdcall" fn recv_os(s: i32, buf: [*]u8, len: i32, flags: i32) i32;
+extern "stdcall" fn select_os(nfds: i32, readfds: *void, writefds: *void, exceptfds: *void, timeout: *const void) i32;
+extern "stdcall" fn close_os(fd: i32) i32;
+extern "stdcall" fn closesocket(s: i32) i32;
+extern "stdcall" fn WSAStartup(wVersion: u16, lpWSAData: *void) i32;
+extern "stdcall" fn WSACleanup() i32;
+
+// UDP externs. sendto/recvfrom are not owned by std_net's public API (the
+// public names are udpSendTo/udpRecvFrom), so they are declared directly — no
+// _os alias needed. The sockaddr*/socklen* params are *void so the call sites
+// convert implicitly to whatever the per-OS prototype in net_prelude.h wants
+// (POSIX socklen_t* vs WinSock int*).
+extern "stdcall" fn sendto(s: i32, buf: [*]const u8, len: i32, flags: i32, name: *const void, namelen: i32) i32;
+extern "stdcall" fn recvfrom(s: i32, buf: [*]u8, len: i32, flags: i32, name: *void, namelen: *void) i32;
+
+// Per-OS last-error source. WSAGetLastError is pruned on POSIX and
+// __errno_location (glibc) is pruned on win32 by the @isWindows() guards in
+// lastErr; the C89 emitter emits no prototype for non-variadic externs, so the
+// declarations here are the resolution source for the call sites.
+extern "stdcall" fn WSAGetLastError() i32;
+extern "c" fn __errno_location() *i32;
+// Non-blocking-mode setters (Plan D Task 1). ioctlsocket is a Winsock 1.1
+// extern from <winsock.h> (stdcall); fcntl is the POSIX extern from
+// <fcntl.h> (added to net_prelude.h's POSIX branch). Both are declared
+// unconditionally and pruned by the @isWindows() guards in setNonBlocking, so
+// the emitter never emits a call to the other target's symbol. `fcntl` is
+// declared with a fixed 3rd arg (the C header's variadic prototype is the
+// actual call-site prototype).
+extern "stdcall" fn ioctlsocket(s: i32, cmd: i32, argp: *u32) i32;
+extern "c" fn fcntl(fd: i32, cmd: i32, arg: i32) i32;
+
+pub fn init() i32 {
+    if (@isWindows()) {
+        var wsa: WSAData = undefined;
+        const rc = WSAStartup(@intCast(u16, 0x0101), @ptrCast(*void, &wsa));
+        return rc;
+    } else {
+        return 0;
+    }
+}
+
+pub fn cleanup() void {
+    if (@isWindows()) {
+        _ = WSACleanup();
+    } else {
+        return;
+    }
+}
+
+pub fn createTcpServer(port: u16) i32 {
+    if (@isWindows()) {
+        const s = socket(@intCast(i32, 2), @intCast(i32, 1), @intCast(i32, 0));
+        if (s == -1) return -1;
+        var addr = SockAddrIn{
+            .sin_family = @intCast(u16, 2),
+            .sin_port = htons(port),
+            .sin_addr = htonl(@intCast(u32, 0)),
+            .sin_zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+        if (bind(s, @ptrCast(*const void, &addr), @intCast(i32, 16)) == -1) {
+            _ = closesocket(s);
+            return -1;
+        }
+        return s;
+    } else {
+        const s = socket(@intCast(i32, 2), @intCast(i32, 1), @intCast(i32, 0));
+        if (s < 0) return -1;
+        var opt: i32 = @intCast(i32, 1);
+        _ = setsockopt(s, @intCast(i32, 1), @intCast(i32, 2), @ptrCast(*const void, &opt), @intCast(i32, 4));
+        var addr = SockAddrIn{
+            .sin_family = @intCast(u16, 2),
+            .sin_port = htons(port),
+            .sin_addr = htonl(@intCast(u32, 0)),
+            .sin_zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+        if (bind(s, @ptrCast(*const void, &addr), @intCast(i32, 16)) < 0) {
+            _ = close_os(s);
+            return -1;
+        }
+        return s;
+    }
+}
+
+pub fn createTcpClient(port: u16) i32 {
+    if (@isWindows()) {
+        const s = socket(@intCast(i32, 2), @intCast(i32, 1), @intCast(i32, 0));
+        if (s == -1) return -1;
+        var addr = SockAddrIn{
+            .sin_family = @intCast(u16, 2),
+            .sin_port = htons(port),
+            .sin_addr = htonl(@intCast(u32, 0x7F000001)),
+            .sin_zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+        if (connect_os(s, @ptrCast(*const void, &addr), @intCast(i32, 16)) == -1) {
+            _ = closesocket(s);
+            return -1;
+        }
+        return s;
+    } else {
+        const s = socket(@intCast(i32, 2), @intCast(i32, 1), @intCast(i32, 0));
+        if (s < 0) return -1;
+        var addr = SockAddrIn{
+            .sin_family = @intCast(u16, 2),
+            .sin_port = htons(port),
+            .sin_addr = htonl(@intCast(u32, 0x7F000001)),
+            .sin_zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+        if (connect_os(s, @ptrCast(*const void, &addr), @intCast(i32, 16)) < 0) {
+            _ = close_os(s);
+            return -1;
+        }
+        return s;
+    }
+}
+
+pub fn bindListen(fd: i32, backlog: i32) i32 {
+    if (@isWindows()) {
+        const rc = listen(fd, backlog);
+        if (rc == -1) return -1;
+        return 0;
+    } else {
+        const rc = listen(fd, backlog);
+        if (rc < 0) return -1;
+        return 0;
+    }
+}
+
+pub fn accept(fd: i32) i32 {
+    if (@isWindows()) {
+        const c = accept_os(fd, @ptrCast(*void, @intToPtr(*void, 0)), @ptrCast(*void, @intToPtr(*void, 0)));
+        if (c == -1) return -1;
+        return c;
+    } else {
+        return accept_os(fd, @ptrCast(*void, @intToPtr(*void, 0)), @ptrCast(*void, @intToPtr(*void, 0)));
+    }
+}
+
+pub fn connect(fd: i32, port: u16) i32 {
+    var addr = SockAddrIn{
+        .sin_family = @intCast(u16, 2),
+        .sin_port = htons(port),
+        .sin_addr = htonl(@intCast(u32, 0x7F000001)),
+        .sin_zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+    };
+    if (@isWindows()) {
+        const rc = connect_os(fd, @ptrCast(*const void, &addr), @intCast(i32, 16));
+        if (rc == -1) return -1;
+        return 0;
+    } else {
+        const rc = connect_os(fd, @ptrCast(*const void, &addr), @intCast(i32, 16));
+        if (rc < 0) return -1;
+        return 0;
+    }
+}
+
+pub fn send(fd: i32, buf: [*]const u8, len: i32) i32 {
+    return send_os(fd, buf, len, @intCast(i32, 0));
+}
+
+pub fn recv(fd: i32, buf: [*]u8, len: i32) i32 {
+    return recv_os(fd, buf, len, @intCast(i32, 0));
+}
+
+pub fn close(fd: i32) void {
+    if (@isWindows()) {
+        _ = closesocket(fd);
+    } else {
+        _ = close_os(fd);
+    }
+}
+
+// --- UDP surface (blueprint §3 L3, operator m1432) --------------------------
+
+// Per-OS last socket error. Must be read immediately after the failing OS call
+// (any intervening libc call, including close, may clobber errno).
+fn lastErr() i32 {
+    if (@isWindows()) {
+        return WSAGetLastError();
+    } else {
+        return __errno_location().*;
+    }
+}
+
+// Map the per-OS socket error codes to NetError. POSIX values are the pinned
+// i386-linux numbers; win32 values are the Winsock 1.1 WSAE* numbers. Anything
+// not a known transient/address condition collapses to Io.
+fn mapErr(code: i32) NetError {
+    if (@isWindows()) {
+        if (code == 10035) return error.WouldBlock;   // WSAEWOULDBLOCK
+        if (code == 10060) return error.Timeout;      // WSAETIMEDOUT
+        if (code == 10061) return error.ConnRefused;  // WSAECONNREFUSED
+        if (code == 10054) return error.ConnReset;    // WSAECONNRESET
+        if (code == 10057) return error.NotConnected; // WSAENOTCONN
+        if (code == 10048) return error.AddrInUse;    // WSAEADDRINUSE
+        if (code == 10022) return error.InvalidAddr;  // WSAEINVAL
+        if (code == 10047) return error.InvalidAddr;  // WSAEAFNOSUPPORT
+        return error.Io;
+    } else {
+        if (code == 11) return error.WouldBlock;    // EAGAIN / EWOULDBLOCK
+        if (code == 110) return error.Timeout;      // ETIMEDOUT
+        if (code == 111) return error.ConnRefused;  // ECONNREFUSED
+        if (code == 104) return error.ConnReset;    // ECONNRESET
+        if (code == 107) return error.NotConnected; // ENOTCONN
+        if (code == 98) return error.AddrInUse;     // EADDRINUSE
+        if (code == 22) return error.InvalidAddr;   // EINVAL
+        if (code == 97) return error.InvalidAddr;   // EAFNOSUPPORT
+        return error.Io;
+    }
+}
+
+// Receive-path normalization. The UDP socket is never set non-blocking, so its
+// only EAGAIN/EWOULDBLOCK source is the SO_RCVTIMEO expiry; WinSock reports the
+// same expiry as WSAETIMEDOUT. Both collapse to Timeout so the contract is
+// uniform across targets.
+fn mapRecvErr(code: i32) NetError {
+    const e = mapErr(code);
+    if (e == error.WouldBlock) return error.Timeout;
+    return e;
+}
+
+// Pack a.b.c.d into the network-order 32-bit address (a is the high byte);
+// htonl then places the bytes in memory order on either endianness.
+fn ipToU32(addr: IpAddr) u32 {
+    return (@intCast(u32, addr.a) << 24) | (@intCast(u32, addr.b) << 16) | (@intCast(u32, addr.c) << 8) | @intCast(u32, addr.d);
+}
+
+fn emptySockAddr() SockAddrIn {
+    return SockAddrIn{
+        .sin_family = @intCast(u16, 2),
+        .sin_port = @intCast(u16, 0),
+        .sin_addr = @intCast(u32, 0),
+        .sin_zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+    };
+}
+
+// AF_INET=2, SOCK_DGRAM=2, IPPROTO_UDP=0 on both targets.
+pub fn udpBind(port: u16) NetError!Socket {
+    const s = socket(@intCast(i32, 2), @intCast(i32, 2), @intCast(i32, 0));
+    if (s < 0) return mapErr(lastErr());
+    var addr = emptySockAddr();
+    addr.sin_port = htons(port);
+    addr.sin_addr = htonl(@intCast(u32, 0));
+    const rc = bind(s, @ptrCast(*const void, &addr), @intCast(i32, 16));
+    if (rc < 0) {
+        const e = lastErr();
+        close(s);
+        return mapErr(e);
+    }
+    return s;
+}
+
+pub fn udpSendTo(s: *Socket, addr: IpAddr, port: u16, data: []const u8) NetError!void {
+    var sa = emptySockAddr();
+    sa.sin_port = htons(port);
+    sa.sin_addr = htonl(ipToU32(addr));
+    const rc = sendto(s.*, data.ptr, @intCast(i32, data.len), @intCast(i32, 0), @ptrCast(*const void, &sa), @intCast(i32, 16));
+    if (rc < 0) return mapErr(lastErr());
+    return;
+}
+
+// Write the source address/port out-params from a recvfrom sockaddr. Reading
+// the network-order sin_addr bytes directly keeps host endianness irrelevant.
+fn fillOut(from: *SockAddrIn, out_addr: *IpAddr, out_port: *u16) void {
+    var p: [*]u8 = @ptrCast([*]u8, &from.sin_addr);
+    out_addr.* = IpAddr{ .a = p[0], .b = p[1], .c = p[2], .d = p[3] };
+    out_port.* = htonsManual(from.sin_port);
+}
+
+pub fn udpRecvFrom(s: *Socket, buf: []u8, out_addr: *IpAddr, out_port: *u16) NetError!usize {
+    var from = emptySockAddr();
+    var fromlen: i32 = @intCast(i32, 16);
+    const rc = recvfrom(s.*, buf.ptr, @intCast(i32, buf.len), @intCast(i32, 0), @ptrCast(*void, &from), @ptrCast(*void, &fromlen));
+    if (rc < 0) {
+        const e = lastErr();
+        // WinSock reports a datagram larger than the buffer as WSAEMSGSIZE
+        // after copying the truncated prefix; POSIX recvfrom silently returns
+        // buf.len instead. Normalize so truncation is uniformly
+        // non-detectable (the documented contract). WinSock still fills the
+        // source sockaddr, so the out-params are populated exactly as on the
+        // POSIX success path.
+        if (@isWindows()) {
+            if (e == 10040) {
+                fillOut(&from, out_addr, out_port);
+                return buf.len;
+            }
+        }
+        return mapRecvErr(e);
+    }
+    // Truncation (rc == buf.len while the datagram was longer) is not
+    // detectable here; see the module contract.
+    fillOut(&from, out_addr, out_port);
+    return @intCast(usize, rc);
+}
+
+pub fn udpSetTimeout(s: *Socket, ms: u32) NetError!void {
+    if (@isWindows()) {
+        // WinSock SO_RCVTIMEO (SOL_SOCKET=0xFFFF, opt=0x1006) takes a DWORD of
+        // milliseconds, not a timeval.
+        var v: u32 = ms;
+        const rc = setsockopt(s.*, @intCast(i32, 65535), @intCast(i32, 4102), @ptrCast(*const void, &v), @intCast(i32, 4));
+        if (rc != 0) return mapErr(lastErr());
+        return;
+    } else {
+        // POSIX SO_RCVTIMEO (SOL_SOCKET=1, opt=20) takes a struct timeval
+        // (i386: two i32 fields).
+        var tv = TimeVal{ .tv_sec = @intCast(i32, ms / 1000), .tv_usec = @intCast(i32, (ms % 1000) * 1000) };
+        const rc = setsockopt(s.*, @intCast(i32, 1), @intCast(i32, 20), @ptrCast(*const void, &tv), @intCast(i32, 8));
+        if (rc != 0) return mapErr(lastErr());
+        return;
+    }
+}
+
+pub fn select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32 {
+    var tv = TimeVal{ .tv_sec = @intCast(i32, 0), .tv_usec = @intCast(i32, 0) };
+    var ptv: *const void = @ptrCast(*const void, @intToPtr(*void, 0));
+    if (timeout_ms >= 0) {
+        tv.tv_sec = timeout_ms / @intCast(i32, 1000);
+        tv.tv_usec = (timeout_ms % @intCast(i32, 1000)) * @intCast(i32, 1000);
+        ptv = @ptrCast(*const void, &tv);
+    }
+    var rf: *void = undefined;
+    if (readfds) |p| {
+        rf = @ptrCast(*void, p);
+    } else {
+        rf = @ptrCast(*void, @intToPtr(*void, 0));
+    }
+    var wf: *void = undefined;
+    if (writefds) |p2| {
+        wf = @ptrCast(*void, p2);
+    } else {
+        wf = @ptrCast(*void, @intToPtr(*void, 0));
+    }
+    var xf: *void = undefined;
+    if (exceptfds) |p3| {
+        xf = @ptrCast(*void, p3);
+    } else {
+        xf = @ptrCast(*void, @intToPtr(*void, 0));
+    }
+    if (@isWindows()) {
+        return select_os(nfds, rf, wf, xf, ptv);
+    } else {
+        return select_os(nfds, rf, wf, xf, ptv);
+    }
+}
+
+// --- Non-blocking surface (Plan D Task 1, Model C cooperative-yield) ---------
+//
+// setNonBlocking flips a connected socket to non-blocking; recvNonBlocking /
+// sendNonBlocking are the non-blocking transfer wrappers. There is no executor
+// and no poll loop (Model C): the caller drives readiness and treats
+// error.WouldBlock as "yield and retry next tick". The transfer wrappers are
+// plain recv/send on a socket the caller already set non-blocking, so they
+// reuse the module mapErr (EAGAIN/EWOULDBLOCK=11, WSAEWOULDBLOCK=10035 ->
+// WouldBlock); recvNonBlocking returns 0 at peer close (raw recv EOF).
+
+// POSIX fcntl(2) commands + O_NONBLOCK (i386-linux numeric values). win32
+// FIONBIO (0x8004667E) as the signed i32 with the same bit pattern.
+const F_GETFL_I32: i32 = 3;
+const F_SETFL_I32: i32 = 4;
+const O_NONBLOCK_I32: i32 = 2048;
+const FIONBIO_I32: i32 = -2147195266;
+
+pub fn setNonBlocking(s: *Socket) NetError!void {
+    if (@isWindows()) {
+        // ioctlsocket(FIONBIO, &1) turns non-blocking on; &0 turns it off.
+        var mode: u32 = @intCast(u32, 1);
+        const rc = ioctlsocket(s.*, FIONBIO_I32, &mode);
+        if (rc != 0) return mapErr(lastErr());
+        return;
+    } else {
+        // Preserve the existing status flags and add O_NONBLOCK.
+        const flags = fcntl(s.*, F_GETFL_I32, @intCast(i32, 0));
+        if (flags < 0) return mapErr(lastErr());
+        const rc = fcntl(s.*, F_SETFL_I32, flags | O_NONBLOCK_I32);
+        if (rc < 0) return mapErr(lastErr());
+        return;
+    }
+}
+
+pub fn recvNonBlocking(s: *Socket, buf: []u8) NetError!usize {
+    const rc = recv_os(s.*, buf.ptr, @intCast(i32, buf.len), @intCast(i32, 0));
+    if (rc < 0) return mapErr(lastErr());
+    return @intCast(usize, rc);
+}
+
+pub fn sendNonBlocking(s: *Socket, buf: []const u8) NetError!usize {
+    const rc = send_os(s.*, buf.ptr, @intCast(i32, buf.len), @intCast(i32, 0));
+    if (rc < 0) return mapErr(lastErr());
+    return @intCast(usize, rc);
+}
+
+// --- Coroutine transfer helpers (Phase 3.3 Task 2) --------------------------
+//
+// Same Model C contract as the non-blocking wrappers, but the caller is a
+// suspending function run under std.async: on WouldBlock this yields via
+// `@asyncSuspend(null)` and retries on the next scheduler tick instead of
+// returning the error. `sendAllAsync` advances its offset only after a
+// positive send count (a 0 count is a hard Io failure); `recvSomeAsync`
+// returns a single successful chunk and propagates 0 (peer EOF) verbatim.
+
+pub fn sendAllAsync(s: *Socket, data: []const u8) NetError!void {
+    var sent: usize = 0;
+    while (sent < data.len) {
+        const r = sendNonBlocking(s, data[sent..]) catch |e| {
+            if (e == error.WouldBlock) {
+                _ = @asyncSuspend(null);
+                continue;
+            }
+            return e;
+        };
+        if (r == 0) return error.Io;
+        sent += r;
+    }
+    return;
+}
+
+pub fn recvSomeAsync(s: *Socket, buf: []u8) NetError!usize {
+    while (true) {
+        const r = recvNonBlocking(s, buf) catch |e| {
+            if (e == error.WouldBlock) {
+                _ = @asyncSuspend(null);
+                continue;
+            }
+            return e;
+        };
+        return r;
+    }
+    return 0;
+}
+
+pub fn fdZero(s: *u8) void {
+    if (@isWindows()) {
+        var fs = @ptrCast(*fd_set, s);
+        fs.data[0] = @intCast(u32, 0);
+    } else {
+        var fs = @ptrCast(*fd_set, s);
+        var i: usize = 0;
+        while (i < @intCast(usize, 32)) : (i += 1) {
+            fs.data[i] = @intCast(u32, 0);
+        }
+    }
+}
+
+pub fn fdSet(fd: i32, s: *u8) void {
+    if (@isWindows()) {
+        var fs = @ptrCast(*fd_set, s);
+        var n = fs.data[0];
+        n += @intCast(u32, 1);
+        fs.data[0] = n;
+        fs.data[n] = @intCast(u32, fd);
+    } else {
+        var fs = @ptrCast(*fd_set, s);
+        const word = @intCast(usize, @intCast(u32, fd) / @intCast(u32, 32));
+        var bit = @intCast(u32, fd) % @intCast(u32, 32);
+        var mask: u32 = @intCast(u32, 1);
+        var k: u32 = 0;
+        while (k < bit) : (k += 1) {
+            mask = mask + mask;
+        }
+        fs.data[word] = fs.data[word] | mask;
+    }
+}
+
+pub fn fdIsset(fd: i32, s: *u8) bool {
+    if (@isWindows()) {
+        var fs = @ptrCast(*fd_set, s);
+        var i: usize = 1;
+        while (i <= @intCast(usize, fs.data[0])) : (i += 1) {
+            if (fs.data[i] == @intCast(u32, fd)) return true;
+        }
+        return false;
+    } else {
+        var fs = @ptrCast(*fd_set, s);
+        const word = @intCast(usize, @intCast(u32, fd) / @intCast(u32, 32));
+        var bit = @intCast(u32, fd) % @intCast(u32, 32);
+        var mask: u32 = @intCast(u32, 1);
+        var k: u32 = 0;
+        while (k < bit) : (k += 1) {
+            mask = mask + mask;
+        }
+        if ((fs.data[word] & mask) != @intCast(u32, 0)) return true;
+        return false;
+    }
+}
+
+// Internal per-target layout structs (byte-exact vs the OS headers — S2-I
+// verdict: WSAData 400B with lpVendorInfo@396; sockaddr_in 16B both targets;
+// timeval { i32 sec, i32 usec } 8B both targets).
+const WSAData = struct {
+    wVersion: u16,
+    wHighVersion: u16,
+    szDescription: [257]u8,
+    szSystemStatus: [129]u8,
+    iMaxSockets: u16,
+    iMaxUdpDg: u16,
+    lpVendorInfo: *u8,
+};
+
+const SockAddrIn = struct {
+    sin_family: u16,
+    sin_port: u16,
+    sin_addr: u32,
+    sin_zero: [8]u8,
+};
+
+const TimeVal = struct {
+    tv_sec: i32,
+    tv_usec: i32,
+};
+
+// --- z9torr M0 primitives (design spec §4.1) ---------------------------------
+//
+// resolve/tcpSocket/connectToIp/checkSoError/shutdown: the last OS socket
+// calls the BitTorrent client needs. gethostbyname/getsockopt are declared
+// under their own names; netdb.h/sys/socket.h (via net_prelude.h) already
+// declare them, so the emitted call sites resolve.
+//
+// shutdown is the OS symbol itself, declared `pub extern` with the §4.1
+// signature (how: 0=recv, 1=send, 2=both). A Z98 wrapper body + a same-named
+// extern cannot coexist: whichever top-level decl is first wins the module
+// namespace, so the importer either saw the non-pub extern (extern first) or
+// the wrapper recursed into itself (wrapper first). The _os alias route would
+// need a new `#define shutdown_os shutdown` in net_prelude.h, which is part of
+// the compiler's emitted support (emit_support.zig) and is frozen for this
+// task (operator: the compiler is NOT modified). Declaring the extern pub is
+// compiler-neutral: the call lowers to the libc/winsock `shutdown` symbol and
+// the importer's call site sees the exact §4.1 signature.
+
+// hostent layout is target-specific: glibc uses int h_addrtype/h_length
+// (h_addr_list @16); Winsock 1.1 uses short (h_addr_list @12). Both layouts are
+// declared and gethostbyname's pointer is round-tripped as usize; the
+// @isWindows() branch in resolve selects the matching cast.
+const HostEnt = struct {
+    h_name: [*]u8,
+    h_aliases: [*][*]u8,
+    h_addrtype: i32,
+    h_length: i32,
+    h_addr_list: [*][*]u8,
+};
+
+const HostEntWin = struct {
+    h_name: [*]u8,
+    h_aliases: [*][*]u8,
+    h_addrtype: i16,
+    h_length: i16,
+    h_addr_list: [*][*]u8,
+};
+
+// gethostbyname returns `struct hostent*`; declared as usize (0 = not found)
+// because the emitter does not lower an optional-pointer extern return: a
+// `?*void` return compiled the optional-struct result into an invalid `(void*)`
+// cast. The call site round-trips through @intToPtr, which is how the module
+// already models raw addresses.
+extern "stdcall" fn gethostbyname(name: [*]const u8) usize;
+extern "stdcall" fn getsockopt(s: i32, level: i32, optname: i32, optval: *void, optlen: *void) i32;
+
+// A non-blocking connect reports "still in progress" as EINPROGRESS (POSIX) or
+// WSAEWOULDBLOCK/WSAEINPROGRESS (Winsock). These are the only codes for which
+// connectToIp waits on select; every other failure is real and maps via mapErr.
+fn isInProgress(code: i32) bool {
+    if (@isWindows()) {
+        return code == 10035 or code == 10036;
+    } else {
+        return code == 11 or code == 115;
+    }
+}
+
+pub fn resolve(host: []const u8) NetError!u32 {
+    // gethostbyname needs a NUL-terminated name; `host` is an arbitrary slice
+    // (e.g. a sub-slice of a URL), so copy it into a bounded stack buffer
+    // exactly as std_file's cstr does. The hostent is static, so the address
+    // is copied below before any further libc call.
+    var nbuf: [256]u8 = undefined;
+    if (host.len >= @intCast(usize, 256)) return error.ResolveFailed;
+    var i: usize = 0;
+    while (i < host.len) : (i += 1) {
+        nbuf[i] = host[i];
+    }
+    nbuf[host.len] = 0;
+    const hv = gethostbyname(@ptrCast([*]const u8, &nbuf[0]));
+    if (hv == @intCast(usize, 0)) return error.ResolveFailed;
+    if (@isWindows()) {
+        var h: *HostEntWin = @intToPtr(*HostEntWin, hv);
+        if (h.h_addrtype != @intCast(i16, 2)) return error.ResolveFailed;
+        var p: [*]u8 = h.h_addr_list[0];
+        return @intCast(u32, p[0]) | (@intCast(u32, p[1]) << 8) | (@intCast(u32, p[2]) << 16) | (@intCast(u32, p[3]) << 24);
+    } else {
+        var h: *HostEnt = @intToPtr(*HostEnt, hv);
+        if (h.h_addrtype != @intCast(i32, 2)) return error.ResolveFailed;
+        var p: [*]u8 = h.h_addr_list[0];
+        return @intCast(u32, p[0]) | (@intCast(u32, p[1]) << 8) | (@intCast(u32, p[2]) << 16) | (@intCast(u32, p[3]) << 24);
+    }
+}
+
+pub fn tcpSocket() NetError!Socket {
+    const s = socket(@intCast(i32, 2), @intCast(i32, 1), @intCast(i32, 6));
+    if (s < 0) return mapErr(lastErr());
+    return s;
+}
+
+pub fn checkSoError(s: Socket) NetError!void {
+    var err: i32 = @intCast(i32, 0);
+    var len: i32 = @intCast(i32, 4);
+    var level: i32 = @intCast(i32, 1);
+    var optname: i32 = @intCast(i32, 4);
+    if (@isWindows()) {
+        level = @intCast(i32, 65535);
+        optname = @intCast(i32, 4103);
+    }
+    const rc = getsockopt(s, level, optname, @ptrCast(*void, &err), @ptrCast(*void, &len));
+    if (rc < 0) return mapErr(lastErr());
+    if (err != @intCast(i32, 0)) return mapErr(err);
+    return;
+}
+
+pub fn connectToIp(s: Socket, ip_be: u32, port: u16, timeout_ms: u32) NetError!void {
+    var sock: Socket = s;
+    try setNonBlocking(&sock);
+    var addr = emptySockAddr();
+    addr.sin_port = htons(port);
+    addr.sin_addr = ip_be;
+    const rc = connect_os(sock, @ptrCast(*const void, &addr), @intCast(i32, 16));
+    if (rc != 0) {
+        const e = lastErr();
+        if (!isInProgress(e)) return mapErr(e);
+        var fds: fd_set = undefined;
+        fdZero(@ptrCast(*u8, &fds));
+        fdSet(sock, @ptrCast(*u8, &fds));
+        const sr = select(sock + 1, null, @ptrCast(*u8, &fds), null, @intCast(i32, timeout_ms));
+        if (sr == 0) {
+            close(sock);
+            return error.Timeout;
+        }
+        if (sr < 0) {
+            const se = lastErr();
+            close(sock);
+            return mapErr(se);
+        }
+    }
+    return checkSoError(sock);
+}
+
+pub extern "stdcall" fn shutdown(s: Socket, how: i32) void;
+

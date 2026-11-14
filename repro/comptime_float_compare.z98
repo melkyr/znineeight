@@ -1,0 +1,43 @@
+// comptime_float_compare.z98 — standalone reproduction for Task 9 (Part II):
+// comptime float comparison folding.
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/fc repro/comptime_float_compare.z98
+//   sh /tmp/fc/build_target.sh linux /tmp/fc/prog
+//   timeout 120 /tmp/fc/prog
+//
+// DEFECT (pre-Task-9). `comptimeEvalCompare` returned null whenever an operand
+// was float-valued, so a comptime-true float condition never folded and a
+// no-`else` value `if` was rejected with
+// `error[3059] if expression without 'else' cannot be used as a value`
+// although official Zig 0.15.2 folds the condition true and accepts it.
+//
+// FIX (Task 9). `comptimeEvalCompare` keeps the exact integer path and adds
+// `comptimeEvalCompareFloat`: the float sub-evaluator supplies float operands
+// at the established f64 precision (a typed `f32` rounds through f32 first)
+// and an integer operand participates only when exactly representable in the
+// peer significand (<= 53 bits for f64/comptime_float, <= 24 for f32), so the
+// folded verdict is the mathematical comparison Zig folds. The phase pass
+// stores the folded bool condition of a capture-free no-`else` value `if`, so
+// lowering elides the untaken branch.
+//
+// Oracle: official Zig 0.15.2 twin (the same computations with
+// `@floatFromInt`/`@floatCast`) accepts every shape and prints the same
+// values. Expected stdout below, byte-exact 3x, rc 0.
+//
+//   1 2 3 4 5 6
+const std = @import("std");
+
+const MSIX: f64 = 1.5;
+const HF: f32 = 0.5;
+
+pub fn main() void {
+    const lq: f64 = 0.25;
+    var x1: i32 = if (0.5 < 1.0) 1;
+    var x2: i32 = if (2.0 == 2) 2;
+    var x3: i32 = if (MSIX > 1.0) 3;
+    var x4: i32 = if (lq != 0.5) 4;
+    var x5: i32 = if (HF > 0) 5;
+    var x6: i32 = if (@intToFloat(f64, 4) == 4.0) 6;
+    std.io.print("{} {} {} {} {} {}\n", .{ x1, x2, x3, x4, x5, x6 });
+}

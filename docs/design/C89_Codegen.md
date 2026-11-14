@@ -226,6 +226,18 @@ This bypass is implemented in `C89Emitter::getC89GlobalName` and `CVariableAlloc
 
 ## 4. Emission Strategies
 
+### 4.0 Main Function with Arguments
+The Z98 compiler supports the standard Zig idiom for a `main` function that receives command-line arguments:
+```zig
+pub fn main(argc: i32, argv: [*]*const u8) void { ... }
+```
+(Note: `!void` return type is also supported).
+
+When the `C89Emitter` encounters a function named `main` with this specific signature, it overrides the standard `int main(void)` or `int main(int argc, char* argv[])` emission to ensure C89 compatibility:
+- **Signature Detection**: Handled by `TypeChecker::isMainWithArgs`.
+- **C Prototype**: Emitted as `int main(int argc, char* argv[])`.
+- **Variable Allocation**: The `C89Emitter` uses `CVariableAllocator::force_allocate` to ensure the internal Zig parameters are mapped to the C names `argc` and `argv`.
+
 ### 4.1 Multi-Module Generation
 The compiler generates a pair of files for each Zig module (e.g., `foo.zig`):
 1. **`foo.c`**: Contains the full implementation. Includes `zig_runtime.h`. Private symbols are `static`.
@@ -429,7 +441,7 @@ Standard C89 does not allow array or struct assignment after declaration (e.g., 
 
 ### 4.5 Built-in Intrinsics
 - **@ptrCast(T, expr)**: Emitted as a standard C-style cast: `(T)expr`.
-- **@intCast / @floatCast**: Handled by the TypeChecker for constants (constant folding). For runtime values, they emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
+- **@intCast / @floatCast**: Comptime-known constants are constant-folded (a comptime out-of-range `@intCast` is range-checked and rejected, not masked). For runtime values, they emit calls to checked conversion helpers (e.g., `__bootstrap_i32_from_u32(x)`).
 - **std.debug.print**: Lowered to a sequence of `__bootstrap_print(const char*)` and `__bootstrap_print_int(i32)` calls. The compiler parses the format string at compile-time and decomposes it into multiple calls, mapping `{}` placeholders to the positional arguments provided in the tuple literal.
 
 ### 4.6 Tuple Literals

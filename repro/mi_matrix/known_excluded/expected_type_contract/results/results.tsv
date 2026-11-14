@@ -1,0 +1,33 @@
+probe	zig_rc	zig_codes	zig_diag	v145_check_rc	v145_codes	v145_c	v146_check_rc	v146_codes	v146_c	v146_diag
+probes/local_array_elem_switch.zig	0			0		5	0		5	
+probes/local_callarg_switch.zig	0			0		5	0		5	
+probes/local_const_if_annotated.zig	0			0		5	0		5	
+probes/local_const_if_unannotated.zig	0			0		5	0		5	
+probes/local_const_switch_annotated.zig	0			0		5	0		5	
+probes/local_const_switch_unannotated.zig	0			0		5	0		5	
+probes/local_return_switch.zig	0			0		5	0		5	
+probes/local_struct_field_switch.zig	0			0		5	0		5	
+probes/local_switch_strings_unannotated.zig	0			0		5	0		5	
+probes/local_var_if_annotated.zig	0			0		5	0		5	
+probes/local_var_if_unannotated.zig	0			0		5	0		5	
+probes/local_var_switch_annotated.zig	0			0		5	0		5	
+probes/local_var_switch_unannotated.zig	0			0		5	0		5	
+probes/module_array_elem_switch.zig	0			0		5	0		5	
+probes/module_callarg_switch.zig	0			0		5	0		5	
+probes/module_const_if_annotated.zig	0			0		5	0		5	
+probes/module_const_if_unannotated.zig	0			0		5	0		5	
+probes/module_const_switch_annotated.zig	0			0		5	0		5	
+probes/module_const_switch_typed_prongs_unannotated.zig	0			0		5	2	error[3000]	0	/workspace/znineeight/repro/mi_matrix/known_excluded/expected_type_contract/probes/module_const_switch_typed_prongs_unannotated.zig:1:28: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+probes/module_const_switch_unannotated.zig	0			0		5	2	error[3000]	0	/workspace/znineeight/repro/mi_matrix/known_excluded/expected_type_contract/probes/module_const_switch_unannotated.zig:1:28: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+probes/module_if_strings_unannotated.zig	0			0		5	0		5	
+probes/module_if_switch_arm_unannotated.zig	0			0		5	2	error[3000]	0	/workspace/znineeight/repro/mi_matrix/known_excluded/expected_type_contract/probes/module_if_switch_arm_unannotated.zig:1:38: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+probes/module_nested_switch_unannotated.zig	0			0		5	2	error[3000]	0	/workspace/znineeight/repro/mi_matrix/known_excluded/expected_type_contract/probes/module_nested_switch_unannotated.zig:1:46: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+probes/module_ptr_from_int_annotated.zig	0			0		5	0		5	
+probes/module_ptr_from_int_unannotated.zig	1		probes/module_ptr_from_int_unannotated.zig:1:11: error: @ptrFromInt must have a known result type	2	error[19]	0	2	error[19]	0	/workspace/znineeight/repro/mi_matrix/known_excluded/expected_type_contract/probes/module_ptr_from_int_unannotated.zig:1:10: error[19]: cannot infer pointer type for @ptrFromInt; annotate the target variable type
+probes/module_struct_field_switch.zig	0			0		5	0		5	
+probes/module_switch_strings_unannotated.zig	0			0		5	2	error[3000]	0	/workspace/znineeight/repro/mi_matrix/known_excluded/expected_type_contract/probes/module_switch_strings_unannotated.zig:1:28: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+probes/module_tuple_switch_unannotated.zig	0			0		5	2	error[3000]	0	/workspace/znineeight/repro/mi_matrix/known_excluded/expected_type_contract/probes/module_tuple_switch_unannotated.zig:1:31: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type
+probes/module_var_if_annotated.zig	0			0		5	0		5	
+probes/module_var_if_unannotated.zig	0			0		5	0		5	
+probes/module_var_switch_annotated.zig	0			0		5	0		5	
+probes/module_var_switch_unannotated.zig	0			0		5	2	error[3000]	0	/workspace/znineeight/repro/mi_matrix/known_excluded/expected_type_contract/probes/module_var_switch_unannotated.zig:1:26: error[3000]: type mismatch in switch expression -- prong type may not be compatible with the switch expression type

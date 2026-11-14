@@ -1,0 +1,6 @@
+break main.zig:12
+continue
+backtrace
+break main.zig:15
+break main.zig:16
+quit

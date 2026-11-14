@@ -1,0 +1,46 @@
+// repro/fn_ptr_signature_ok.z98 — FX17-F standalone positive control
+// (compile-only).
+//
+// Every legal function-pointer coercion must stay accepted. This standalone
+// deliberately includes the `extern "stdcall"` function-value match, which has
+// no emitted C definition, so it is verified with `--dump-c89` (rc 0, emitted
+// `.c` present, only the `*const fn` double-pointer `warning[3000]` residual).
+// The runtime positive control is
+// `repro/mi_matrix/fn_ptr_signature_ok_xmod`.
+//
+// Contract: dump rc 0, 0 `error[`, exactly 1 `warning[3000]` (the `*const fn`
+// D4 residual).
+const Shape = struct { draw_fn: fn (*void) void, data: *void };
+const DrawFn = fn (*void) void;
+
+fn right(data: *void) void { _ = data; }
+fn add(a: i32, b: i32) i32 { return a + b; }
+
+extern "stdcall" fn convCb(data: *void) void;
+
+fn getOp() fn (i32, i32) i32 { return add; }
+
+pub fn main() void {
+    var n: i32 = 7;
+    // exact matches.
+    const f: fn (*void) void = right;
+    var s = Shape{ .draw_fn = right, .data = @ptrCast(*void, &n) };
+    s.draw_fn = right;
+    const fa: DrawFn = right;
+    const o: ?fn (*void) void = right;
+    const on: ?fn (*void) void = null;
+    // matching callconv-qualified function value.
+    const okc: extern "stdcall" fn (*void) void = convCb;
+    // explicit `@ptrCast` to a mismatched signature stays legal.
+    const pc: fn (*void) void = @ptrCast(fn (*void) void, right);
+    // `@ptrToInt` / `@intToPtr` round trip.
+    const iv = @ptrToInt(right);
+    const ip = @intToPtr(fn (*void) void, iv);
+    // `undefined` and function-pointer return.
+    const un: fn (*void) void = undefined;
+    const g = getOp();
+    // `*const fn` double-pointer spelling keeps its pre-existing warning (D4).
+    const cf: *const fn (*void) void = right;
+    _ = f; _ = s; _ = fa; _ = o; _ = on; _ = okc; _ = pc; _ = ip; _ = un;
+    _ = g; _ = cf;
+}

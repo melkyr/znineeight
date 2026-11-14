@@ -1,0 +1,74 @@
+// repro/const_field_decay.z98 — standalone FX11 (Volume II) positive control.
+//
+// The aggregate-field-bound const-array guarantee closed by FX11 must not
+// over-reject: every legal const-ADDING direction and every mutable aggregate
+// field decay stays accepted and runtime-correct.
+//
+//   * `var ms: S` mutable field: `ms.a[0..]` -> `[]i32`/`[*]i32`, `&ms.a` ->
+//     `*[3]i32`, writes through all three read back;
+//   * `const gs: S`: `gs.a[0..]` -> `[]const i32`/`[*]const i32`, `&gs.a` ->
+//     `*const [3]i32`/`[]const i32`/`[*]const i32`, `gs.a` -> `*const i32`;
+//   * const array-field returns and mutable-parameter const additions;
+//   * const-bound aggregate with a mutable `[]i32` slice field keeps element
+//     mutability (`hbm.m[0..]` stays `[]i32`);
+//   * const-adding array-literal elements.
+//
+// Contract: the `ok=...` stdout line below, rc 0; every observation
+// `@panic`-guarded. Initializers use a named `garr` binding (the inline
+// nested-array-literal field initializer is a separate pre-existing lowering
+// gap, deliberately not exercised).
+const std = @import("std");
+
+const S = struct { a: [3]i32 };
+const garr = [3]i32{ 1, 2, 3 };
+const gs: S = .{ .a = garr };
+
+const HolderC = struct { m: []const i32 };
+const HolderM = struct { m: []i32 };
+
+fn retConstField(p: *const [3]i32) []const i32 {
+    return p[0..];
+}
+
+fn bumpMut(s: []i32) void {
+    s[0] = s[0] + 1;
+}
+
+pub fn main() void {
+    var ms: S = .{ .a = garr };
+    var s3: []i32 = ms.a[0..];
+    var m3: [*]i32 = ms.a[0..];
+    var p3: *[3]i32 = &ms.a;
+    s3[0] = 7;
+    m3[1] = 8;
+    p3[2] = 9;
+    bumpMut(ms.a[0..]);
+    if (ms.a[0] != 8 or ms.a[1] != 8 or ms.a[2] != 9) {
+        @panic("mutable aggregate field writes failed");
+    }
+
+    const s1: []const i32 = gs.a[0..];
+    const m1: [*]const i32 = gs.a[0..];
+    const p1: *const [3]i32 = &gs.a;
+    const sa: []const i32 = &gs.a;
+    const ma: [*]const i32 = &gs.a;
+    const q1: *const i32 = gs.a;
+    const fromRet: []const i32 = retConstField(&gs.a);
+
+    const hc: HolderC = .{ .m = garr };
+    const hcs: []const i32 = hc.m[0..];
+    const hcm: [*]const i32 = hc.m[0..];
+    const hbm: HolderM = .{ .m = ms.a[0..] };
+    var hres: []i32 = hbm.m[0..];
+    hres[1] = 44;
+    if (ms.a[1] != 44) {
+        @panic("const-bound mutable slice field reslice failed");
+    }
+
+    const els = [1][]const i32{ gs.a[0..] };
+
+    if (s1[0] + s1[2] + m1[1] + p1[2] + sa[1] + ma[2] + q1.* + fromRet[0] + hcs[2] + hcm[0] + els[0][1] != 22) {
+        @panic("const aggregate field reads failed");
+    }
+    std.io.print("ok={} {} {} {} {} {} {} {} {} {} {}\n", .{ s1[0], s1[2], m1[1], p1[2], sa[1], ma[2], q1.*, fromRet[0], hcs[2], hcm[0], els[0][1] });
+}

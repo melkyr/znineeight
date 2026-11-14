@@ -1,0 +1,62 @@
+// print_tuple_fwd.z98 — standalone reproduction for the Task 9 B5 fix,
+// resolved by fix round 3 (operator ruling Q7: dependency-ordered
+// `__module_init`).
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/print_tuple_fwd_out
+//   <zig1> -o /tmp/print_tuple_fwd_out repro/print_tuple_fwd.z98
+//
+// EXPECTED (after Q7): rc 0; the program prints, in order:
+//   lit=.{ 5, 7 }
+//   nonlit=.{ 12, 7 }
+//   comp=.{ .{ .a = 1, .b = 2 }, 7 }
+//   stf=.{ .{ .a = 12, .b = 2 }, 7 }
+//   call=.{ 12, 7 }
+//   back=.{ 12, 7 }
+// byte-identical to the Zig 0.15.2 `std.debug.print` twin. Cross-module rows
+// (`colors.C`, `colors.C2`, direct `@import`, chain) live in
+// `repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod`.
+//
+// DEFECT (before Q7): a module-level tuple literal whose element referenced a
+// global declared later froze the pass-1 `TYPE_VOID -> TYPE_I32` fallback and
+// the Task-4 idempotent tuple kept it: `lit`/`nonlit` printed `0` (the global
+// store ran after the tuple owner), `comp` emitted gcc-invalid C (`int = Pair`)
+// and `stf`/`call` read the pre-init value. Q7 emits globals in a stable
+// dependency order (same module and across modules) and lets the module-var
+// fixpoint settle the element's true type, so all rows now match Zig.
+const std = @import("std");
+
+const Pair = struct { a: i32, b: i32 };
+const Inner = struct { a: i32, b: i32 };
+
+fn id(x: i32) i32 {
+    return x;
+}
+
+var g_lit = .{ fwd_lit, 7 };
+const fwd_lit = 5;
+
+var g_nonlit = .{ fwd_nonlit, 7 };
+const fwd_nonlit: i32 = 5 + 7;
+
+var g_comp = .{ fwd_comp, 7 };
+const fwd_comp = Pair{ .a = 1, .b = 2 };
+
+var g_stf = .{ Inner{ .a = fwd_stf, .b = 2 }, 7 };
+const fwd_stf: i32 = 5 + 7;
+
+var g_call = .{ id(fwd_call), 7 };
+const fwd_call: i32 = 5 + 7;
+
+// Control: a global declared BEFORE the tuple was already ordered.
+const back: i32 = 5 + 7;
+var g_back = .{ back, 7 };
+
+pub fn main() void {
+    std.io.print("lit={}\n", .{g_lit});
+    std.io.print("nonlit={}\n", .{g_nonlit});
+    std.io.print("comp={}\n", .{g_comp});
+    std.io.print("stf={}\n", .{g_stf});
+    std.io.print("call={}\n", .{g_call});
+    std.io.print("back={}\n", .{g_back});
+}

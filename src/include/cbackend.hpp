@@ -29,7 +29,6 @@ public:
      */
     bool generate(const char* output_dir);
 
-private:
     /**
      * @brief Generates the C89 source (.c) file for a specific module.
      * @param module The module to generate.
@@ -89,6 +88,8 @@ private:
      * @return True if successful.
      */
     bool copyRuntimeFiles(const char* output_dir);
+
+private:
 
     /**
      * @brief Scans an AST node for special types (slices, error unions) and ensures they are buffered in the emitter.

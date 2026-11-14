@@ -1,0 +1,4 @@
+# TCP port this fixture transiently binds (probe) to prove it is closed before
+# connecting; the runtime gate FAILs (PORT-IN-USE:<port>) if a LISTEN socket
+# already exists on the declared port before the run.
+4164

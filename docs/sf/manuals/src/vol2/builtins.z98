@@ -1,0 +1,100 @@
+const std = @import("std");
+
+const Vec = struct {
+    x: i32,
+    y: i32,
+};
+
+const Flags = packed struct {
+    a: u4,
+    b: u4,
+};
+
+const Color = enum(u8) {
+    red = 0,
+    green = 1,
+    blue = 2,
+};
+
+fn castRoundTrip() i32 {
+    var v: i32 = 42;
+    const raw: [*]u8 = @ptrCast([*]u8, &v);
+    const p: *i32 = @ptrCast(*i32, raw);
+    return p.*;
+}
+
+fn ptrIntEq() bool {
+    var v: i32 = 7;
+    const p: *i32 = &v;
+    return @ptrToInt(p) == @intFromPtr(p);
+}
+
+fn ptrRoundTrip() i32 {
+    var v: i32 = 42;
+    const addr: usize = @intFromPtr(&v);
+    const p1: *i32 = @intToPtr(*i32, addr);
+    const p2: *i32 = @ptrFromInt(addr);
+    if (p1.* != p2.*) return -1;
+    return p2.*;
+}
+
+fn parentX() i32 {
+    var v = Vec{ .x = 11, .y = 22 };
+    const py: *i32 = &v.y;
+    const pv: *Vec = @fieldParentPtr(Vec, "y", py);
+    return pv.x;
+}
+
+fn bitPattern() u32 {
+    const x: i32 = -1;
+    return @bitCast(u32, x);
+}
+
+fn volatileRead() i32 {
+    var reg: i32 = 9;
+    const vp: *volatile i32 = &reg;
+    const plain: *i32 = @volatileCast(*i32, vp);
+    return plain.*;
+}
+
+fn narrow() u8 {
+    const wide: i32 = 200;
+    return @intCast(u8, wide);
+}
+
+fn half() f32 {
+    const d: f64 = 1.5;
+    return @floatCast(f32, d);
+}
+
+fn toFloat() f64 {
+    return @intToFloat(f64, 3);
+}
+
+fn pick() Color {
+    return @intToEnum(Color, 1);
+}
+
+fn number(c: Color) i32 {
+    return @enumToInt(c);
+}
+
+fn five() i64 {
+    return @as(i64, 5);
+}
+
+pub fn main() void {
+    std.io.print("ptrCast {}\n", .{castRoundTrip()});
+    std.io.print("ptrToInt eq {}\n", .{ptrIntEq()});
+    std.io.print("intToPtr/ptrFromInt {}\n", .{ptrRoundTrip()});
+    std.io.print("fieldParentPtr {}\n", .{parentX()});
+    std.io.print("bitCast {x}\n", .{bitPattern()});
+    std.io.print("volatileCast {}\n", .{volatileRead()});
+    std.io.print("intCast {}\n", .{narrow()});
+    std.io.print("floatCast {}\n", .{half()});
+    std.io.print("intToFloat {}\n", .{toFloat()});
+    std.io.print("intToEnum {} enumToInt {d}\n", .{ pick(), number(pick()) });
+    std.io.print("as {}\n", .{five()});
+    std.io.print("size align bits {d} {d} {d}\n", .{ @sizeOf(Vec), @alignOf(Vec), @bitSizeOf(Flags) });
+    std.io.print("offset y bitOffset b {d} {d}\n", .{ @offsetOf(Vec, "y"), @bitOffsetOf(Flags, "b") });
+}

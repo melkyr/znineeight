@@ -1,0 +1,81 @@
+// switch_enum_range.z98 — FA-a (D2) standalone repro.
+//
+// Pins the D2 fix: enum-typed `switch` range prong endpoints
+// (`Color.Red...Color.Green` qualified and `.Red... .Blue` shorthand) emit
+// real C `case` labels, resolved by member name against the condition enum via
+// `member.value` (so `enum(u8)` gaps are exact). Pre-fix every value fell to
+// `else` (`incl 20 20 20 / excl 40 40 40 / mixed 70 70 50 / gaps 110 110 110`).
+//
+// Expected stdout (exact), rc 0:
+//   incl 10 10 20
+//   excl 30 30 40
+//   mixed 60 60 50
+//   bare 80 80 80
+//   gaps 100 100 100
+//   ints 200 210 220
+//   chars 230 240
+const std = @import("std");
+
+const Color = enum { Red, Green, Blue };
+const Code = enum(u8) { A = 1, B = 5, C = 9 };
+
+fn incl(c: Color) i32 {
+    return switch (c) {
+        Color.Red...Color.Green => 10,
+        else => 20,
+    };
+}
+
+fn excl(c: Color) i32 {
+    return switch (c) {
+        Color.Red..Color.Blue => 30,
+        else => 40,
+    };
+}
+
+fn mixed(c: Color) i32 {
+    return switch (c) {
+        Color.Blue => 50,
+        Color.Red...Color.Green => 60,
+        else => 70,
+    };
+}
+
+fn bare(c: Color) i32 {
+    return switch (c) {
+        .Red... .Blue => 80,
+        else => 90,
+    };
+}
+
+fn gaps(c: Code) i32 {
+    return switch (c) {
+        Code.A...Code.C => 100,
+        else => 110,
+    };
+}
+
+fn ints(x: i32) i32 {
+    return switch (x) {
+        1...5 => 200,
+        7..9 => 210,
+        else => 220,
+    };
+}
+
+fn chars(c: u8) i32 {
+    return switch (c) {
+        'a'...'c' => 230,
+        else => 240,
+    };
+}
+
+pub fn main() void {
+    std.io.print("incl {} {} {}\n", .{ incl(Color.Red), incl(Color.Green), incl(Color.Blue) });
+    std.io.print("excl {} {} {}\n", .{ excl(Color.Red), excl(Color.Green), excl(Color.Blue) });
+    std.io.print("mixed {} {} {}\n", .{ mixed(Color.Red), mixed(Color.Green), mixed(Color.Blue) });
+    std.io.print("bare {} {} {}\n", .{ bare(Color.Red), bare(Color.Green), bare(Color.Blue) });
+    std.io.print("gaps {} {} {}\n", .{ gaps(Code.A), gaps(Code.B), gaps(Code.C) });
+    std.io.print("ints {} {} {}\n", .{ ints(3), ints(8), ints(6) });
+    std.io.print("chars {} {}\n", .{ chars('a'), chars('z') });
+}

@@ -1,0 +1,56 @@
+// repro/ptrarray_for.z98 — standalone FI (operator ruling A) positive.
+//
+// Compile + run (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/ptrarray_for
+//   <zig1> -o /tmp/ptrarray_for repro/ptrarray_for.z98
+//   cd /tmp/ptrarray_for && sh build_target.sh linux ptrarray_for
+//   ./ptrarray_for
+//
+// EXPECTED (after the fix): stdout
+//   sum=42 z=0 s0=60 s1=63 s2=66 s3=60 s4=31 s5=14 si=63
+// rc=0, matching Zig 0.15.2 for every oracle-expressible row (`si` is the
+// Z98-retained plain index capture `for (pa) |v, i|`).
+// DEFECT (before the fix): every pointer-to-array iterable rejected
+// `error[20]` (the item capture was never registered) — including
+// `for (p[0..1]) |v|`, which ran sum=42 before the FH result-type adoption.
+const std = @import("std");
+
+pub fn main() void {
+    var x: i32 = 42;
+    const p: *i32 = &x;
+    var sum: i32 = 0;
+    for (p[0..1]) |v| { sum += v; }
+    var z: i32 = 0;
+    for (p[0..0]) |v| { z += v; }
+    for (p[1..1]) |v| { z += v; }
+
+    var arr = [3]i32{ 10, 20, 30 };
+    const pa: *[3]i32 = &arr;
+    var s0: i32 = 0;
+    for (pa) |v| { s0 += v; }
+    var s1: i32 = 0;
+    for (pa, 0..3) |v, i| { s1 += v + @intCast(i32, i); }
+    var s2: i32 = 0;
+    for (pa, 1..) |v, i| { s2 += v + @intCast(i32, i); }
+    const cpa: *const [3]i32 = &arr;
+    var s3: i32 = 0;
+    for (cpa) |v| { s3 += v; }
+    var s4: i32 = 0;
+    for (pa[0..2], 0..2) |v, i| { s4 += v + @intCast(i32, i); }
+
+    var marr: [2][3]i32 = undefined;
+    marr[0][0] = 1;
+    marr[0][2] = 3;
+    marr[1][0] = 4;
+    marr[1][2] = 6;
+    const pma: *[2][3]i32 = &marr;
+    var s5: i32 = 0;
+    for (pma) |row| { s5 += row[0] + row[2]; }
+
+    // Z98-retained plain index capture over the pointer-to-array (Zig 0.15.2
+    // itself requires the explicit `0..` range for an index capture).
+    var si: i32 = 0;
+    for (pa) |v, i| { si += v + @intCast(i32, i); }
+
+    std.io.print("sum={} z={} s0={} s1={} s2={} s3={} s4={} s5={} si={}\n", .{ sum, z, s0, s1, s2, s3, s4, s5, si });
+}

@@ -1,0 +1,8 @@
+map_sort_heap_usage
+map-len: 9
+sorted: 0 0 1 1 2 2 3 4 9
+search-9: 8
+search-5: missing
+heap: 0 0 1 1 2 2 3 4 9
+stable: 1
+map_sort_heap ok

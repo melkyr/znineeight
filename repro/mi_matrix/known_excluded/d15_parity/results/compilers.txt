@@ -1,0 +1,43 @@
+D15 parity — compiler/oracle artifacts (observed 2026-11-09)
+
+Oracle (Zig 0.17.1):
+  existing binary search: no `zig` on PATH; /home/node/.cache/zig contains cache/probe artifacts only.
+  url:     https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz
+  sha256:  3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a
+  archive: /tmp/phase35-d15-i/zig-0.17.1.tar.xz
+  binary:  /tmp/phase35-d15-i/zig-0.17.1/zig
+  version: 0.17.1 (verified by `zig version`)
+
+Z98 pre-D15 base:
+  commit:  32473a034317c626e38608599eb74a35e314fb7a (= 280a3b12^)
+  source:  /tmp/phase35-d15-i/pre-d15-src (git archive 32473a03)
+  build:   cd /tmp/phase35-d15-i/pre-d15-src &&
+           bash scripts/self_compile/build_next_gen.sh \
+             /workspace/znineeight/zig1/zig1_5_clean \
+             /tmp/phase35-d15-i/pre-d15-build
+  md5:     1bdedb7419952ed10be80f1cca7b5476
+  sha256:  bb4ce380c84d2cc0495ba072ed31e07091aa08ad17b0485642ba70549fedfd02
+
+Z98 current:
+  HEAD:                cf4cc032d9bdcb2d54e58a232a388f126e52abb6
+  semantic_analyzer:   HEAD:sf/src/semantic_analyzer.zig = 1fb55af6117dfe8372cf87cc587e5a8053b80977
+                       (source last changed by 280a3b12; e178063d only restores test binaries)
+  type_registry:       HEAD:sf/src/type_registry.zig = 72fa25dd0b2ea676f603369e78e16da616ab2474
+  git status sf/src:   clean (empty `git status --porcelain -- sf/src`)
+  in-tree seed:        zig1/zig1_5_clean md5 cd8d283b917749009961f4445043666b
+  note:                the in-tree seed md5 does NOT match a rebuild of current source,
+                       so the harness uses the rebuilt current binary below.
+  build:   cd /workspace/znineeight &&
+           bash scripts/self_compile/build_next_gen.sh \
+             /workspace/znineeight/zig1/zig1_5_clean \
+             /tmp/phase35-d15-i/current-build
+  binary:  /tmp/phase35-d15-i/current-build/zig1_5_clean
+  md5:     5011d08cd6419d2f8b2cab2af0977055
+  sha256:  23befcded9c2adbf02741cdd22d9126e5603a219994fc3a49d7a8db2af8d6467
+
+Harness:
+  cd repro/mi_matrix/known_excluded/d15_parity
+  ZIG=/tmp/phase35-d15-i/zig-0.17.1/zig \
+  PRE=/tmp/phase35-d15-i/pre-d15-build/zig1_5_clean \
+  CUR=/tmp/phase35-d15-i/current-build/zig1_5_clean \
+  ./run_d15_parity.sh

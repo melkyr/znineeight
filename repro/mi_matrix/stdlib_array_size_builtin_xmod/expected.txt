@@ -1,0 +1,13 @@
+sizeof-prim-ok
+intcast-prim-ok
+intcast-arith-ok
+alignof-prim-ok
+bitsizeof-prim-ok
+const-chain-ok
+alignof-u64-ok
+bitsizeof-u16-ok
+field-position-ok
+field-size-ok
+local-position-ok
+local-const-operand-ok
+done

@@ -13,7 +13,10 @@ public:
      */
     TypeChecker(CompilationUnit& unit);
 
+    void setPostCheckPhase(bool value) { is_post_check_phase_ = value; }
+
     void registerPlaceholders(ASTNode* root);
+    void resolveGlobalDeclarations(ASTNode* root);
     void check(ASTNode* root);
     Type* visit(ASTNode* node);
     Type* visitUnaryOp(ASTNode* parent, ASTUnaryOpNode* node);
@@ -40,7 +43,7 @@ public:
     Type* visitBlockStmt(ASTBlockStmtNode* node);
     Type* visitEmptyStmt(ASTEmptyStmtNode* node);
     Type* visitIfStmt(ASTIfStmtNode* node);
-    Type* visitIfExpr(ASTIfExprNode* node);
+    Type* visitIfExpr(ASTNode* parent, ASTIfExprNode* node);
     Type* visitWhileStmt(ASTWhileStmtNode* node);
     Type* visitBreakStmt(ASTNode* node);
     Type* visitContinueStmt(ASTNode* node);
@@ -69,6 +72,8 @@ public:
     Type* visitOptionalType(ASTOptionalTypeNode* node);
     Type* visitFunctionType(ASTFunctionTypeNode* node);
     Type* visitPtrCast(ASTPtrCastNode* node);
+    Type* visitAsExpr(ASTNode** node_slot, ASTAsExprNode* node);
+    Type* visitPanic(ASTNode* node, ASTPanicNode* panic);
     Type* visitIntCast(ASTNode* parent, ASTNumericCastNode* node);
     Type* visitFloatCast(ASTNode* parent, ASTNumericCastNode* node);
     Type* visitIntToFloat(ASTNode* parent, ASTNumericCastNode* node);
@@ -97,11 +102,14 @@ public:
     void logFeatureLocation(const char* feature, SourceLocation loc);
     void injectPtrAccessIfNeeded(ASTNode*& expr, Type* target_type);
 private:
+    void registerAliasPlaceholderIfNeeded(ASTNode* node);
     bool isLValueConst(ASTNode* node);
     void fatalError(SourceLocation loc, const char* message);
     void validateStructOrUnionFields(ASTNode* decl_node);
     bool isNumericType(Type* type);
     bool isIntegerType(Type* type);
+    bool isFloatType(Type* type);
+    bool isPointerType(Type* type);
     bool isUnsignedIntegerType(Type* type);
     bool isCompletePointerType(Type* type);
     bool areSamePointerTypeIgnoringConst(Type* a, Type* b);
@@ -125,22 +133,27 @@ private:
 
     Type* resolveNamedType(struct Module* defining_mod, const char* name, Symbol* sym);
     void verifyTypeIdentity(Type* type, const char* expected_name, struct Module* expected_module, SourceLocation loc);
-    Type* resolveTypeConstant(Symbol* sym);
     Type* resolveTypeAlias(Symbol* sym, int depth = 0);
     Type* handleModuleMemberFound(ASTNode* parent, ASTMemberAccessNode* node, struct Module* target_mod, Symbol* sym, bool* out_is_type_access, Type** out_base_type);
+    bool isLocalContext() const;
+    bool isTopLevelDeclaration(ASTVarDeclNode* node) const;
     Type* unwrapType(ASTNode* node);
+    Type* resolveOrVisit(ASTNode* node);
     i64 findEnumMemberValue(Type* enum_type, const char* name);
     i64 findErrorTagValue(Type* error_set, const char* name);
     Type* createErrorUnionDataType(ArenaAllocator& arena, Type* error_union, SourceLocation loc);
     Type* getOrCreateErrorUnionDataType(Type* error_union, SourceLocation loc);
 public:
+    Type* resolveTypeConstant(Symbol* sym);
     Type* resolvePlaceholder(Type* placeholder);
     Type* resolveAllPlaceholders(Type* type);
     void finalizePlaceholder(Type* placeholder, Type* resolved);
     Type* resolveNamedPlaceholder(Type* placeholder);
+    void forceResolveModule(Type* module_placeholder);
 private:
     bool resolveLabel(const char* label, int& out_target_id);
     bool checkDuplicateLabel(const char* label, SourceLocation loc);
+    bool isMainWithArgs(const ASTFnDeclNode* node);
 
     ASTNode* createIntegerLiteral(u64 value, Type* type, SourceLocation loc);
     ASTNode* createBinaryOp(ASTNode* left, ASTNode* right, Zig0TokenType op, Type* type, SourceLocation loc);
@@ -152,6 +165,8 @@ private:
     static const int MAX_TYPE_RESOLUTION_DEPTH = 100;
 
     CompilationUnit& unit_;
+    bool is_post_check_phase_;
+    ASTNode* module_root_block_;
     Type* current_fn_return_type_;
     const char* current_fn_name_;
     const char* current_struct_name_;
@@ -160,6 +175,7 @@ private:
     int visit_depth_;
     int in_ptr_indirection_depth_;
     bool in_defer_; ///< True if currently checking a deferred statement.
+    bool is_resolving_signature_;
 
     struct LoopLabel {
         const char* name;
@@ -176,6 +192,8 @@ private:
     struct ExpectedTypeGuard;
     struct IndirectionGuard;
     struct ResolvingTypeGuard;
+    struct ResolvingSignatureGuard;
+    struct ScratchResetGuard;
 
     friend struct FunctionContextGuard;
     friend struct LoopContextGuard;
@@ -187,6 +205,7 @@ private:
     friend struct ExpectedTypeGuard;
     friend struct ResolvingTypeGuard;
     friend struct IndirectionGuard;
+    friend struct ResolvingSignatureGuard;
 
     DynamicArray<Type*> expected_type_stack_;
     DynamicArray<Type*> resolving_types_stack_;

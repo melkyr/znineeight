@@ -1,0 +1,36 @@
+const std = @import("std");
+
+fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+fn max(a: i32, b: i32) i32 {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+fn show(n: i32) void {
+    std.io.print("show({}) prints this\n", .{n});
+}
+
+pub fn square(n: i32) i32 {
+    return n * n;
+}
+
+pub fn main() void {
+    const sum = add(2, 3);
+    std.io.print("add(2, 3) is {}\n", .{sum});
+
+    std.io.print("max(4, 9) is {}\n", .{max(4, 9)});
+    std.io.print("max(12, 3) is {}\n", .{max(12, 3)});
+
+    const nine_squared = square(9);
+    std.io.print("square(9) is {}\n", .{nine_squared});
+
+    std.io.print("square(10) is {}\n", .{square(10)});
+
+    show(7);
+    std.io.print("add(20, 22) is {}\n", .{add(20, 22)});
+}

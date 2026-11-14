@@ -1,0 +1,13 @@
+// repro/assignment_expr_reject.z98 — A6-F standalone reject control.
+// Baseline (fp 821481e6): `a = b = 2;` compiles rc 0 and lowers the inner
+// assignment as a value. Fixed: rc 2, 0 .c, parser error[2000] (expected ';').
+// The count includes parserSynchronize recovery diagnostics.
+// census: 2000 4
+var a: i32 = 0;
+var b: i32 = 0;
+
+pub fn main() void {
+    a = b = 2;
+    _ = a;
+    _ = b;
+}

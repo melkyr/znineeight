@@ -1,0 +1,7 @@
+const std = @import("std");
+
+pub fn main() void {
+    var msg: []const u8 = "before exit\n";
+    @stdoutWrite(msg.ptr, msg.len);
+    @exit(3);
+}

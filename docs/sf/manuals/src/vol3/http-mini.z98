@@ -1,0 +1,143 @@
+const std = @import("std");
+
+// http-mini: the smallest complete socket program. It binds a listener, opens
+// a loopback client, accepts the connection, reads one fixed HTTP/1.0 request,
+// and writes one fixed response. Keeping both ends in one process needs no
+// external client and makes the transcript the same on every run.
+const PORT: u16 = 18088;
+const BUF_SIZE: usize = 256;
+
+// The request the loopback client sends. It is fixed so the transcript is
+// reproducible.
+const REQUEST: []const u8 = "GET /hello HTTP/1.0\r\nHost: localhost\r\n\r\n";
+
+// The document and the response that carries it.
+const RESPONSE: []const u8 = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 15\r\nConnection: close\r\n\r\nhello from Z98\r\n";
+
+// send() may transfer fewer bytes than asked; sendAll loops until the buffer
+// is gone. A zero or negative return is the error channel at the C boundary.
+fn sendAll(fd: i32, buf: []const u8) bool {
+    var sent: usize = 0;
+    while (sent < buf.len) {
+        const chunk = buf[sent..];
+        const n = std.net.send(fd, chunk.ptr, @intCast(i32, chunk.len));
+        if (n <= 0) return false;
+        sent += @intCast(usize, n);
+    }
+    return true;
+}
+
+// The first line of an HTTP request, up to CR or LF.
+fn firstLine(buf: []const u8) []const u8 {
+    var i: usize = 0;
+    while (i < buf.len) : (i += 1) {
+        if (buf[i] == '\r' or buf[i] == '\n') return buf[0..i];
+    }
+    return buf;
+}
+
+pub fn main() void {
+    if (std.net.init() != 0) {
+        std.io.print("http-mini: socket init failed\n", .{});
+        return;
+    }
+
+    const server = std.net.createTcpServer(PORT);
+    if (server < 0) {
+        std.io.print("http-mini: bind failed on port {}\n", .{PORT});
+        std.net.cleanup();
+        return;
+    }
+    if (std.net.bindListen(server, 1) < 0) {
+        std.io.print("http-mini: listen failed\n", .{});
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+    std.io.print("http-mini: listening on port {}\n", .{PORT});
+
+    // The client end, in the same process. connect() completes because the
+    // listener is already in listen() and the kernel finishes the handshake
+    // into the backlog.
+    const client = std.net.createTcpClient(PORT);
+    if (client < 0) {
+        std.io.print("http-mini: connect failed\n", .{});
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+
+    // Wait for the pending connection with select(). The fd_set is an opaque
+    // blob that the std.net helpers fill and test.
+    var read_fds: std.net.fd_set = undefined;
+    std.net.fdZero(@ptrCast(*u8, &read_fds));
+    std.net.fdSet(server, @ptrCast(*u8, &read_fds));
+    const ready = std.net.select(server + 1, @ptrCast(*u8, &read_fds), null, null, 1000);
+    if (ready <= 0 or !std.net.fdIsset(server, @ptrCast(*u8, &read_fds))) {
+        std.io.print("http-mini: no connection ready\n", .{});
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+
+    const conn = std.net.accept(server);
+    if (conn < 0) {
+        std.io.print("http-mini: accept failed\n", .{});
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+    std.io.print("http-mini: accepted a connection\n", .{});
+
+    if (!sendAll(client, REQUEST)) {
+        std.io.print("http-mini: client send failed\n", .{});
+        std.net.close(conn);
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+
+    var req: [BUF_SIZE]u8 = undefined;
+    const got = std.net.recv(conn, &req, @intCast(i32, BUF_SIZE));
+    if (got <= 0) {
+        std.io.print("http-mini: recv failed\n", .{});
+        std.net.close(conn);
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+    const request: []const u8 = req[0..@intCast(usize, got)];
+    std.io.print("http-mini: request {s}\n", .{firstLine(request)});
+
+    if (!sendAll(conn, RESPONSE)) {
+        std.io.print("http-mini: response send failed\n", .{});
+        std.net.close(conn);
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+    std.io.print("http-mini: served {} bytes\n", .{@intCast(i32, RESPONSE.len)});
+
+    var resp: [BUF_SIZE]u8 = undefined;
+    const rgot = std.net.recv(client, &resp, @intCast(i32, BUF_SIZE));
+    if (rgot <= 0) {
+        std.io.print("http-mini: client recv failed\n", .{});
+        std.net.close(conn);
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+    std.io.print("http-mini: client received {} bytes\n", .{rgot});
+
+    std.net.close(conn);
+    std.net.close(client);
+    std.net.close(server);
+    std.net.cleanup();
+    std.io.print("http-mini: done\n", .{});
+}

@@ -46,10 +46,26 @@ C89Emitter::C89Emitter(CompilationUnit& unit, bool is_header)
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
       global_names_(unit.getArena()),
       used_names_(unit.getTransientArena()),
+      read_names_(unit.getTransientArena()),
+      appear_names_(unit.getTransientArena()),
+      fn_read_syms_(unit.getTransientArena()),
+      fn_read_nonames_(unit.getTransientArena()),
+      fn_appear_syms_(unit.getTransientArena()),
+      fn_declared_syms_(unit.getTransientArena()),
+      dead_syms_(unit.getTransientArena()),
+      fn_live_syms_(unit.getTransientArena()),
+      fn_live_counts_(unit.getTransientArena()),
+      fn_guarded_reads_(unit.getTransientArena()),
+      cur_guard_sym_(NULL),
+      cur_guard_name_(NULL),
+      cur_guard_active_(false),
+      unused_param_names_(unit.getTransientArena()),
+      referenced_globals_(unit.getTransientArena()),
+      referenced_functions_(unit.getTransientArena()),
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), argv_symbol_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
       loop_has_continue_(unit.getTransientArena()),
@@ -65,10 +81,26 @@ C89Emitter::C89Emitter(CompilationUnit& unit, const char* path, bool is_header)
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
       global_names_(unit.getArena()),
       used_names_(unit.getTransientArena()),
+      read_names_(unit.getTransientArena()),
+      appear_names_(unit.getTransientArena()),
+      fn_read_syms_(unit.getTransientArena()),
+      fn_read_nonames_(unit.getTransientArena()),
+      fn_appear_syms_(unit.getTransientArena()),
+      fn_declared_syms_(unit.getTransientArena()),
+      dead_syms_(unit.getTransientArena()),
+      fn_live_syms_(unit.getTransientArena()),
+      fn_live_counts_(unit.getTransientArena()),
+      fn_guarded_reads_(unit.getTransientArena()),
+      cur_guard_sym_(NULL),
+      cur_guard_name_(NULL),
+      cur_guard_active_(false),
+      unused_param_names_(unit.getTransientArena()),
+      referenced_globals_(unit.getTransientArena()),
+      referenced_functions_(unit.getTransientArena()),
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), argv_symbol_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
       loop_has_continue_(unit.getTransientArena()),
@@ -86,10 +118,26 @@ C89Emitter::C89Emitter(CompilationUnit& unit, PlatFile file, bool is_header)
       unit_(unit), var_alloc_(unit.getTransientArena()), error_handler_(unit.getErrorHandler()), arena_(unit.getArena()), transient_arena_(unit.getTransientArena()),
       global_names_(unit.getArena()),
       used_names_(unit.getTransientArena()),
+      read_names_(unit.getTransientArena()),
+      appear_names_(unit.getTransientArena()),
+      fn_read_syms_(unit.getTransientArena()),
+      fn_read_nonames_(unit.getTransientArena()),
+      fn_appear_syms_(unit.getTransientArena()),
+      fn_declared_syms_(unit.getTransientArena()),
+      dead_syms_(unit.getTransientArena()),
+      fn_live_syms_(unit.getTransientArena()),
+      fn_live_counts_(unit.getTransientArena()),
+      fn_guarded_reads_(unit.getTransientArena()),
+      cur_guard_sym_(NULL),
+      cur_guard_name_(NULL),
+      cur_guard_active_(false),
+      unused_param_names_(unit.getTransientArena()),
+      referenced_globals_(unit.getTransientArena()),
+      referenced_functions_(unit.getTransientArena()),
       emitted_slices_(unit.getTransientArena()), emitted_error_unions_(unit.getTransientArena()), emitted_optionals_(unit.getTransientArena()), emitted_tuples_(unit.getTransientArena()), emitted_enums_(unit.getTransientArena()), emitted_forward_decls_(unit.getTransientArena()), external_cache_(is_header ? NULL : &unit.getEmittedTypesCache()),
       defer_stack_(unit.getTransientArena()), current_fn_ret_type_(NULL), current_err_flag_(NULL), is_header_(is_header),
       type_def_buffer_(NULL), type_def_pos_(0), type_def_cap_(TYPE_DEF_BUFFER_SIZE), in_type_def_mode_(false),
-      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), last_char_('\0'), for_loop_counter_(0), current_loc_(),
+      module_name_(NULL), current_fn_name_(NULL), is_main_function_(false), argv_symbol_(NULL), last_char_('\0'), for_loop_counter_(0), current_loc_(),
       max_string_literal_chunk_(1024),
       loop_id_stack_(unit.getTransientArena()),
       loop_has_continue_(unit.getTransientArena()),
@@ -111,7 +159,6 @@ void C89Emitter::dedent() {
         indent_level_--;
     }
 }
-
 void C89Emitter::writeIndent() {
     for (int i = 0; i < indent_level_; ++i) {
         write("    ", 4);
@@ -150,7 +197,20 @@ void C89Emitter::beginFunction() {
     var_alloc_.reset();
     for_loop_counter_ = 0;
     plat_memset(loop_uses_labels_, 0, sizeof(loop_uses_labels_));
+    plat_memset(loop_end_label_used_, 0, sizeof(loop_end_label_used_));
     loop_id_stack_.clear();
+    read_names_.clear();
+    appear_names_.clear();
+    unused_param_names_.clear();
+    fn_read_syms_.clear();
+    fn_read_nonames_.clear();
+    fn_appear_syms_.clear();
+    fn_declared_syms_.clear();
+    fn_guarded_reads_.clear();
+    dead_syms_.clear();
+    cur_guard_sym_ = NULL;
+    cur_guard_name_ = NULL;
+    cur_guard_active_ = false;
 }
 
 void C89Emitter::emitType(Type* type, const char* name) {
@@ -158,8 +218,11 @@ void C89Emitter::emitType(Type* type, const char* name) {
 }
 
 void C89Emitter::emitDeclarator(Type* type, const char* name, const ASTFnDeclNode* params_node) {
+    if (!type) {
+        plat_printf_debug("[CODEGEN] emitDeclarator: NULL type for name=%s\n", name ? name : "NULL");
+    }
     emitTypePrefix(type);
-    if (name && type->kind != TYPE_ANYTYPE) {
+    if (name && type && type->kind != TYPE_ANYTYPE) {
         if (last_char_ != '(' && last_char_ != ' ') {
             writeString(" ");
         }
@@ -264,7 +327,7 @@ void C89Emitter::emitTypeSuffix(Type* type) {
         case TYPE_ARRAY: {
             char buf[32];
             writeString("[");
-            plat_u64_to_string(type->as.array.size, buf, sizeof(buf));
+            plat_u64_to_string(type->as.array.size == 0 ? 1 : type->as.array.size, buf, sizeof(buf));
             writeString(buf);
             writeString("]");
             emitTypeSuffix(type->as.array.element_type);
@@ -404,21 +467,664 @@ void C89Emitter::emitBaseType(Type* type) {
             }
             break;
         case TYPE_ENUM:
-            writeKeyword(KW_ENUM);
-            if (!type->c_name && type->as.enum_details.name) {
-                type->c_name = unit_.getNameMangler().mangleType(type);
-            }
-            if (type->c_name) {
-                writeString(type->c_name);
+        {
+            Type* bt = type->as.enum_details.backing_type;
+            if (bt && bt->kind != TYPE_I32) {
+                emitBaseType(bt);
             } else {
-                writeString("/* anonymous */");
+                writeKeyword(KW_ENUM);
+                if (!type->c_name && type->as.enum_details.name) {
+                    type->c_name = unit_.getNameMangler().mangleType(type);
+                }
+                if (type->c_name) {
+                    writeString(type->c_name);
+                } else {
+                    writeString("/* anonymous */");
+                }
             }
             break;
+        }
         case TYPE_ANYTYPE:
             writeString("...");
             break;
         default:
             writeString("/* unsupported type */");
+            break;
+    }
+}
+
+bool C89Emitter::typePrefixEmitsConst(Type* type) {
+    while (type) {
+        switch (type->kind) {
+            case TYPE_POINTER:
+                if (type->as.pointer.is_const) return true;
+                type = type->as.pointer.base;
+                continue;
+            case TYPE_ARRAY:
+                type = type->as.array.element_type;
+                continue;
+            default:
+                return false;
+        }
+    }
+    return false;
+}
+
+bool C89Emitter::isPtrArrayStringInit(Type* type, const ASTNode* init) {
+    if (!type || !init || init->type != NODE_STRING_LITERAL) return false;
+    if (type->kind == TYPE_POINTER) {
+        if (type->as.pointer.base && type->as.pointer.base->kind == TYPE_ARRAY) return true;
+    }
+    return false;
+}
+
+bool C89Emitter::isNameRead(const char* name) const {
+    if (!name) return false;
+    for (size_t i = 0; i < read_names_.length(); ++i) {
+        if (plat_strcmp(read_names_[i], name) == 0) return true;
+    }
+    return false;
+}
+
+bool C89Emitter::isNameAppearing(const char* name) const {
+    if (!name) return false;
+    for (size_t i = 0; i < appear_names_.length(); ++i) {
+        if (plat_strcmp(appear_names_[i], name) == 0) return true;
+    }
+    return false;
+}
+
+bool C89Emitter::exprHasSideEffects(const ASTNode* node) const {
+    if (!node) return false;
+    switch (node->type) {
+        case NODE_FUNCTION_CALL: {
+            const ASTNode* callee = node->as.function_call->callee;
+            const char* fname = NULL;
+            if (callee && callee->type == NODE_IDENTIFIER) {
+                fname = callee->as.identifier.name;
+            }
+            if (fname && plat_strncmp(fname, "__make_slice_", 13) == 0) {
+                /* Slice construction intrinsics are pure. */
+                bool side = false;
+                if (node->as.function_call->args) {
+                    for (size_t i = 0; i < node->as.function_call->args->length(); ++i) {
+                        if (exprHasSideEffects((*node->as.function_call->args)[i])) { side = true; break; }
+                    }
+                }
+                return side;
+            }
+            return true;
+        }
+        case NODE_ASSIGNMENT:
+        case NODE_COMPOUND_ASSIGNMENT:
+        case NODE_ASYNC_EXPR:
+        case NODE_AWAIT_EXPR:
+        case NODE_PANIC:
+        case NODE_UNREACHABLE:
+            return true;
+        case NODE_BINARY_OP:
+            return exprHasSideEffects(node->as.binary_op->left) || exprHasSideEffects(node->as.binary_op->right);
+        case NODE_UNARY_OP:
+            return exprHasSideEffects(node->as.unary_op.operand);
+        case NODE_PAREN_EXPR:
+            return exprHasSideEffects(node->as.paren_expr.expr);
+        case NODE_PTR_CAST:
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
+        case NODE_AS_EXPR:
+            return exprHasSideEffects(node->as.ptr_cast->expr);
+        case NODE_ARRAY_ACCESS:
+            return exprHasSideEffects(node->as.array_access->array) || exprHasSideEffects(node->as.array_access->index);
+        case NODE_MEMBER_ACCESS:
+            return exprHasSideEffects(node->as.member_access->base);
+        case NODE_ARRAY_SLICE:
+            return exprHasSideEffects(node->as.array_slice->array) ||
+                   exprHasSideEffects(node->as.array_slice->start) ||
+                   exprHasSideEffects(node->as.array_slice->end);
+        case NODE_IF_EXPR:
+        case NODE_ORELSE_EXPR:
+        case NODE_TRY_EXPR:
+        case NODE_CATCH_EXPR:
+        case NODE_SWITCH_EXPR:
+        case NODE_STRUCT_INITIALIZER:
+        case NODE_TUPLE_LITERAL:
+        case NODE_RANGE:
+            return true; /* conservative: may contain calls */
+        default:
+            return false;
+    }
+}
+
+bool C89Emitter::symListContains(const DynamicArray<Symbol*>& list, Symbol* sym) {
+    for (size_t i = 0; i < list.length(); ++i) {
+        if (list[i] == sym) return true;
+    }
+    return false;
+}
+
+bool C89Emitter::isSymRead(Symbol* sym) const {
+    if (!sym) return false;
+    return symListContains(fn_read_syms_, sym);
+}
+
+bool C89Emitter::isSymAppearing(Symbol* sym) const {
+    if (!sym) return false;
+    return symListContains(fn_appear_syms_, sym);
+}
+
+bool C89Emitter::isSymDead(Symbol* sym) const {
+    if (!sym) return false;
+    return symListContains(dead_syms_, sym);
+}
+
+int C89Emitter::symLiveCount(Symbol* sym) const {
+    if (!sym) return 0;
+    for (size_t i = 0; i < fn_live_syms_.length(); ++i) {
+        if (fn_live_syms_[i] == sym) return fn_live_counts_[i];
+    }
+    return 0;
+}
+
+bool C89Emitter::isVarDeclDead(const ASTVarDeclNode* decl) const {
+    if (!decl || !decl->name) return false;
+    if (decl->symbol) return isSymDead(decl->symbol);
+    return !isNameRead(decl->name);
+}
+
+Symbol* C89Emitter::getLValueRootSym(const ASTNode* lvalue) {
+    while (lvalue) {
+        switch (lvalue->type) {
+            case NODE_ARRAY_ACCESS:
+                lvalue = lvalue->as.array_access->array;
+                break;
+            case NODE_MEMBER_ACCESS:
+                lvalue = lvalue->as.member_access->base;
+                break;
+            case NODE_PAREN_EXPR:
+                lvalue = lvalue->as.paren_expr.expr;
+                break;
+            case NODE_UNARY_OP:
+                if (lvalue->as.unary_op.op == TOKEN_STAR || lvalue->as.unary_op.op == TOKEN_DOT_ASTERISK) {
+                    lvalue = lvalue->as.unary_op.operand;
+                    break;
+                }
+                return NULL;
+            case NODE_IDENTIFIER:
+                return lvalue->as.identifier.symbol;
+            default:
+                return NULL;
+        }
+    }
+    return NULL;
+}
+
+void C89Emitter::computeDeadSyms() {
+    dead_syms_.clear();
+    fn_live_syms_.clear();
+    fn_live_counts_.clear();
+
+    /* Effective live count per distinct read symbol. */
+    DynamicArray<Symbol*> live_syms(transient_arena_);
+    DynamicArray<int> live_counts(transient_arena_);
+    DynamicArray<const char*> live_nonames(transient_arena_);
+    DynamicArray<int> live_nocounts(transient_arena_);
+
+    /* Symbol-keyed free reads. */
+    for (size_t i = 0; i < fn_read_syms_.length(); ++i) {
+        Symbol* s = fn_read_syms_[i];
+        int idx = -1;
+        for (size_t j = 0; j < live_syms.length(); ++j) {
+            if (live_syms[j] == s) { idx = (int)j; break; }
+        }
+        if (idx < 0) { live_syms.append(s); live_counts.append(1); }
+        else { live_counts[idx]++; }
+    }
+    /* Name-keyed free reads (NULL-symbol identifiers). */
+    for (size_t i = 0; i < fn_read_nonames_.length(); ++i) {
+        const char* n = fn_read_nonames_[i];
+        int idx = -1;
+        for (size_t j = 0; j < live_nonames.length(); ++j) {
+            if (plat_strcmp(live_nonames[j], n) == 0) { idx = (int)j; break; }
+        }
+        if (idx < 0) { live_nonames.append(n); live_nocounts.append(1); }
+        else { live_nocounts[idx]++; }
+    }
+    /* Guarded reads start as live (assume no guard is dead yet). */
+    for (size_t e = 0; e < fn_guarded_reads_.length(); ++e) {
+        const SymEdge& edge = fn_guarded_reads_[e];
+        if (edge.rhs) {
+            int idx = -1;
+            for (size_t j = 0; j < live_syms.length(); ++j) {
+                if (live_syms[j] == edge.rhs) { idx = (int)j; break; }
+            }
+            if (idx < 0) { live_syms.append(edge.rhs); live_counts.append(1); }
+            else { live_counts[idx]++; }
+        } else if (edge.rhs_name) {
+            int idx = -1;
+            for (size_t j = 0; j < live_nonames.length(); ++j) {
+                if (plat_strcmp(live_nonames[j], edge.rhs_name) == 0) { idx = (int)j; break; }
+            }
+            if (idx < 0) { live_nonames.append(edge.rhs_name); live_nocounts.append(1); }
+            else { live_nocounts[idx]++; }
+        }
+    }
+
+    bool changed = true;
+    int guard_loop = 0;
+    while (changed && guard_loop < 200) {
+        changed = false;
+        guard_loop++;
+
+        /* Consume reads guarded by a dead local's pure store/initializer. */
+        for (size_t e = 0; e < fn_guarded_reads_.length(); ++e) {
+            const SymEdge& edge = fn_guarded_reads_[e];
+            bool guard_dead = false;
+            if (edge.lvalue) {
+                guard_dead = isSymDead(edge.lvalue);
+            } else if (edge.lvalue_name) {
+                guard_dead = !isNameRead(edge.lvalue_name);
+            }
+            if (!guard_dead) continue;
+            if (edge.rhs) {
+                for (size_t j = 0; j < live_syms.length(); ++j) {
+                    if (live_syms[j] == edge.rhs && live_counts[j] > 0) {
+                        live_counts[j]--;
+                        changed = true;
+                        break;
+                    }
+                }
+            } else if (edge.rhs_name) {
+                for (size_t j = 0; j < live_nonames.length(); ++j) {
+                    if (plat_strcmp(live_nonames[j], edge.rhs_name) == 0 && live_nocounts[j] > 0) {
+                        live_nocounts[j]--;
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        /* Newly-dead declared locals: zero effective reads. */
+        for (size_t i = 0; i < fn_declared_syms_.length(); ++i) {
+            Symbol* s = fn_declared_syms_[i];
+            if (isSymDead(s)) continue;
+            int count = 0;
+            for (size_t j = 0; j < live_syms.length(); ++j) {
+                if (live_syms[j] == s) { count = live_counts[j]; break; }
+            }
+            if (count <= 0) {
+                dead_syms_.append(s);
+                changed = true;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < live_syms.length(); ++i) {
+        fn_live_syms_.append(live_syms[i]);
+        fn_live_counts_.append(live_counts[i]);
+    }
+}
+
+bool C89Emitter::isFunctionReferenced(const char* zig_name) const {
+    if (!zig_name) return false;
+    for (size_t i = 0; i < referenced_functions_.length(); ++i) {
+        if (plat_strcmp(referenced_functions_[i], zig_name) == 0) return true;
+    }
+    return false;
+}
+
+bool C89Emitter::isGlobalReferenced(const char* zig_name) const {
+    if (!zig_name) return false;
+    for (size_t i = 0; i < referenced_globals_.length(); ++i) {
+        if (plat_strcmp(referenced_globals_[i], zig_name) == 0) return true;
+    }
+    return false;
+}
+
+void C89Emitter::markReadNames(const ASTNode* node, bool write_pos) {
+    if (!node) return;
+
+    switch (node->type) {
+        case NODE_IDENTIFIER: {
+            const char* nm = node->as.identifier.name;
+            Symbol* sym = node->as.identifier.symbol;
+            if (nm && !isNameAppearing(nm)) {
+                appear_names_.append(nm);
+            }
+            if (sym && !symListContains(fn_appear_syms_, sym)) {
+                fn_appear_syms_.append(sym);
+            }
+            if (!write_pos) {
+                if (nm && !isNameRead(nm)) {
+                    read_names_.append(nm);
+                }
+                if (cur_guard_active_) {
+                    SymEdge e;
+                    e.lvalue = cur_guard_sym_;
+                    e.lvalue_name = cur_guard_name_;
+                    e.rhs = sym;
+                    e.rhs_name = nm;
+                    fn_guarded_reads_.append(e);
+                } else {
+                    if (sym) {
+                        fn_read_syms_.append(sym);
+                    } else if (nm) {
+                        fn_read_nonames_.append(nm);
+                    }
+                }
+            }
+            if (sym && node->as.identifier.name) {
+                if (sym->kind == SYMBOL_FUNCTION) {
+                    bool seen = false;
+                    for (size_t i = 0; i < referenced_functions_.length(); ++i) {
+                        if (plat_strcmp(referenced_functions_[i], node->as.identifier.name) == 0) { seen = true; break; }
+                    }
+                    if (!seen) referenced_functions_.append(node->as.identifier.name);
+                } else if (sym->kind == SYMBOL_VARIABLE && !(sym->flags & SYMBOL_FLAG_LOCAL)) {
+                    bool seen = false;
+                    for (size_t i = 0; i < referenced_globals_.length(); ++i) {
+                        if (plat_strcmp(referenced_globals_[i], node->as.identifier.name) == 0) { seen = true; break; }
+                    }
+                    if (!seen) referenced_globals_.append(node->as.identifier.name);
+                }
+            }
+            break;
+        }
+        case NODE_FUNCTION_CALL:
+            markReadNames(node->as.function_call->callee, false);
+            if (node->as.function_call->args) {
+                for (size_t i = 0; i < node->as.function_call->args->length(); ++i) {
+                    markReadNames((*node->as.function_call->args)[i], false);
+                }
+            }
+            break;
+        case NODE_ASSIGNMENT:
+            markReadNames(node->as.assignment->lvalue, true);
+            {
+                ASTNode* lv = node->as.assignment->lvalue;
+                ASTNode* rv = node->as.assignment->rvalue;
+                bool lv_is_underscore = (lv && lv->type == NODE_IDENTIFIER && lv->as.identifier.name &&
+                                         plat_strcmp(lv->as.identifier.name, "_") == 0);
+                if (!lv_is_underscore && rv && !exprHasSideEffects(rv)) {
+                    Symbol* guard_sym = NULL;
+                    const char* guard_name = NULL;
+                    if (lv) {
+                        if (lv->type == NODE_IDENTIFIER) {
+                            guard_sym = lv->as.identifier.symbol;
+                            guard_name = lv->as.identifier.name;
+                        } else {
+                            Symbol* rs = getLValueRootSym(lv);
+                            if (rs) {
+                                guard_sym = rs;
+                                guard_name = rs->name;
+                            }
+                        }
+                    }
+                    if (guard_sym || guard_name) {
+                        Symbol* saved_sym = cur_guard_sym_;
+                        const char* saved_name = cur_guard_name_;
+                        bool saved_active = cur_guard_active_;
+                        cur_guard_sym_ = guard_sym;
+                        cur_guard_name_ = guard_name;
+                        cur_guard_active_ = true;
+                        markReadNames(rv, false);
+                        cur_guard_sym_ = saved_sym;
+                        cur_guard_name_ = saved_name;
+                        cur_guard_active_ = saved_active;
+                    } else {
+                        markReadNames(rv, false);
+                    }
+                } else {
+                    markReadNames(rv, false);
+                }
+            }
+            break;
+        case NODE_COMPOUND_ASSIGNMENT:
+            markReadNames(node->as.compound_assignment->lvalue, false);
+            markReadNames(node->as.compound_assignment->rvalue, false);
+            break;
+        case NODE_VAR_DECL:
+            markReadNames(node->as.var_decl->type, false);
+            {
+                ASTNode* init = node->as.var_decl->initializer;
+                if (node->as.var_decl->symbol) {
+                    if (!symListContains(fn_declared_syms_, node->as.var_decl->symbol)) {
+                        fn_declared_syms_.append(node->as.var_decl->symbol);
+                    }
+                }
+                if (init && !exprHasSideEffects(init)) {
+                    Symbol* saved_sym = cur_guard_sym_;
+                    const char* saved_name = cur_guard_name_;
+                    bool saved_active = cur_guard_active_;
+                    cur_guard_sym_ = node->as.var_decl->symbol;
+                    cur_guard_name_ = node->as.var_decl->name;
+                    cur_guard_active_ = true;
+                    markReadNames(init, false);
+                    cur_guard_sym_ = saved_sym;
+                    cur_guard_name_ = saved_name;
+                    cur_guard_active_ = saved_active;
+                } else {
+                    markReadNames(init, false);
+                }
+            }
+            break;
+        case NODE_PARAM_DECL:
+            markReadNames(node->as.param_decl.type, false);
+            break;
+        case NODE_FN_DECL:
+            if (node->as.fn_decl->params) {
+                for (size_t i = 0; i < node->as.fn_decl->params->length(); ++i) {
+                    markReadNames((*node->as.fn_decl->params)[i], false);
+                }
+            }
+            markReadNames(node->as.fn_decl->return_type, false);
+            markReadNames(node->as.fn_decl->body, false);
+            break;
+        case NODE_BLOCK_STMT:
+            if (node->as.block_stmt.statements) {
+                for (size_t i = 0; i < node->as.block_stmt.statements->length(); ++i) {
+                    markReadNames((*node->as.block_stmt.statements)[i], false);
+                }
+            }
+            break;
+        case NODE_EXPRESSION_STMT:
+            markReadNames(node->as.expression_stmt.expression, false);
+            break;
+        case NODE_IF_STMT:
+            markReadNames(node->as.if_stmt->condition, false);
+            markReadNames(node->as.if_stmt->then_block, false);
+            if (node->as.if_stmt->else_block) markReadNames(node->as.if_stmt->else_block, false);
+            break;
+        case NODE_IF_EXPR:
+            markReadNames(node->as.if_expr->condition, false);
+            markReadNames(node->as.if_expr->then_expr, false);
+            markReadNames(node->as.if_expr->else_expr, false);
+            break;
+        case NODE_WHILE_STMT:
+            markReadNames(node->as.while_stmt->condition, false);
+            markReadNames(node->as.while_stmt->body, false);
+            markReadNames(node->as.while_stmt->iter_expr, false);
+            break;
+        case NODE_FOR_STMT:
+            markReadNames(node->as.for_stmt->iterable_expr, false);
+            markReadNames(node->as.for_stmt->body, false);
+            break;
+        case NODE_RETURN_STMT:
+            markReadNames(node->as.return_stmt.expression, false);
+            break;
+        case NODE_BINARY_OP:
+            markReadNames(node->as.binary_op->left, false);
+            markReadNames(node->as.binary_op->right, false);
+            break;
+        case NODE_UNARY_OP:
+            if (node->as.unary_op.op == TOKEN_STAR || node->as.unary_op.op == TOKEN_DOT_ASTERISK) {
+                markReadNames(node->as.unary_op.operand, write_pos);
+            } else {
+                markReadNames(node->as.unary_op.operand, false);
+            }
+            break;
+        case NODE_ARRAY_ACCESS:
+            markReadNames(node->as.array_access->array, write_pos);
+            markReadNames(node->as.array_access->index, false);
+            break;
+        case NODE_ARRAY_SLICE:
+            markReadNames(node->as.array_slice->array, write_pos);
+            markReadNames(node->as.array_slice->start, false);
+            markReadNames(node->as.array_slice->end, false);
+            markReadNames(node->as.array_slice->base_ptr, false);
+            markReadNames(node->as.array_slice->len, false);
+            break;
+        case NODE_MEMBER_ACCESS:
+            markReadNames(node->as.member_access->base, write_pos);
+            break;
+        case NODE_STRUCT_INITIALIZER:
+            markReadNames(node->as.struct_initializer->type_expr, false);
+            if (node->as.struct_initializer->fields) {
+                for (size_t i = 0; i < node->as.struct_initializer->fields->length(); ++i) {
+                    markReadNames((*node->as.struct_initializer->fields)[i]->value, false);
+                }
+            }
+            break;
+        case NODE_TUPLE_LITERAL:
+            if (node->as.tuple_literal->elements) {
+                for (size_t i = 0; i < node->as.tuple_literal->elements->length(); ++i) {
+                    markReadNames((*node->as.tuple_literal->elements)[i], false);
+                }
+            }
+            break;
+        case NODE_PAREN_EXPR:
+            markReadNames(node->as.paren_expr.expr, write_pos);
+            break;
+        case NODE_RANGE:
+            if (node->as.range) {
+                markReadNames(node->as.range->start, false);
+                markReadNames(node->as.range->end, false);
+            }
+            break;
+        case NODE_TRY_EXPR:
+            markReadNames(node->as.try_expr.expression, false);
+            break;
+        case NODE_CATCH_EXPR:
+            markReadNames(node->as.catch_expr->payload, false);
+            markReadNames(node->as.catch_expr->else_expr, false);
+            break;
+        case NODE_ORELSE_EXPR:
+            markReadNames(node->as.orelse_expr->payload, false);
+            markReadNames(node->as.orelse_expr->else_expr, false);
+            break;
+        case NODE_SWITCH_EXPR:
+            markReadNames(node->as.switch_expr->expression, false);
+            if (node->as.switch_expr->prongs) {
+                for (size_t i = 0; i < node->as.switch_expr->prongs->length(); ++i) {
+                    ASTSwitchProngNode* prong = (*node->as.switch_expr->prongs)[i];
+                    if (prong->items) {
+                        for (size_t j = 0; j < prong->items->length(); ++j) {
+                            markReadNames((*prong->items)[j], false);
+                        }
+                    }
+                    markReadNames(prong->body, false);
+                }
+            }
+            break;
+        case NODE_SWITCH_STMT:
+            markReadNames(node->as.switch_stmt->expression, false);
+            if (node->as.switch_stmt->prongs) {
+                for (size_t i = 0; i < node->as.switch_stmt->prongs->length(); ++i) {
+                    ASTSwitchStmtProngNode* prong = (*node->as.switch_stmt->prongs)[i];
+                    if (prong->items) {
+                        for (size_t j = 0; j < prong->items->length(); ++j) {
+                            markReadNames((*prong->items)[j], false);
+                        }
+                    }
+                    markReadNames(prong->body, false);
+                }
+            }
+            break;
+        case NODE_PTR_CAST:
+            markReadNames(node->as.ptr_cast->target_type, false);
+            markReadNames(node->as.ptr_cast->expr, false);
+            break;
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
+            markReadNames(node->as.numeric_cast->target_type, false);
+            markReadNames(node->as.numeric_cast->expr, false);
+            break;
+        case NODE_AS_EXPR:
+            markReadNames(node->as.as_expr->target_type, false);
+            markReadNames(node->as.as_expr->expr, false);
+            break;
+        case NODE_OFFSET_OF:
+            markReadNames(node->as.offset_of->type_expr, false);
+            break;
+        case NODE_DEFER_STMT:
+            markReadNames(node->as.defer_stmt.statement, false);
+            break;
+        case NODE_ERRDEFER_STMT:
+            markReadNames(node->as.errdefer_stmt.statement, false);
+            break;
+        case NODE_COMPTIME_BLOCK:
+            markReadNames(node->as.comptime_block.expression, false);
+            break;
+        case NODE_PANIC:
+            markReadNames(node->as.panic->expr, false);
+            break;
+        case NODE_ASYNC_EXPR:
+            markReadNames(node->as.async_expr.expression, false);
+            break;
+        case NODE_AWAIT_EXPR:
+            markReadNames(node->as.await_expr.expression, false);
+            break;
+        case NODE_STRUCT_DECL:
+            if (node->as.struct_decl->fields) {
+                for (size_t i = 0; i < node->as.struct_decl->fields->length(); ++i) {
+                    markReadNames((*node->as.struct_decl->fields)[i], false);
+                }
+            }
+            break;
+        case NODE_UNION_DECL:
+            if (node->as.union_decl->fields) {
+                for (size_t i = 0; i < node->as.union_decl->fields->length(); ++i) {
+                    markReadNames((*node->as.union_decl->fields)[i], false);
+                }
+            }
+            markReadNames(node->as.union_decl->tag_type_expr, false);
+            break;
+        case NODE_STRUCT_FIELD:
+            markReadNames(node->as.struct_field->type, false);
+            break;
+        case NODE_ENUM_DECL:
+            markReadNames(node->as.enum_decl->backing_type, false);
+            if (node->as.enum_decl->fields) {
+                for (size_t i = 0; i < node->as.enum_decl->fields->length(); ++i) {
+                    markReadNames((*node->as.enum_decl->fields)[i], false);
+                }
+            }
+            break;
+        case NODE_BREAK_STMT:
+        case NODE_CONTINUE_STMT:
+        case NODE_UNREACHABLE:
+        case NODE_EMPTY_STMT:
+        case NODE_IMPORT_STMT:
+        case NODE_TYPE_NAME:
+        case NODE_POINTER_TYPE:
+        case NODE_ARRAY_TYPE:
+        case NODE_ERROR_UNION_TYPE:
+        case NODE_OPTIONAL_TYPE:
+        case NODE_ERROR_SET_DEFINITION:
+        case NODE_ERROR_SET_MERGE:
+        case NODE_FUNCTION_TYPE:
+        case NODE_BOOL_LITERAL:
+        case NODE_NULL_LITERAL:
+        case NODE_UNDEFINED_LITERAL:
+        case NODE_INTEGER_LITERAL:
+        case NODE_FLOAT_LITERAL:
+        case NODE_CHAR_LITERAL:
+        case NODE_STRING_LITERAL:
+        case NODE_ERROR_LITERAL:
+            break;
+        default:
             break;
     }
 }
@@ -431,13 +1137,37 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     bool external = is_public || decl->is_pub || decl->is_extern || decl->is_export;
 
     /* Skip type and module declarations (e.g. const T = struct { ... } or const std = @import("std")) */
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    if (node->resolved_type) {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s kind=%d\n", decl->name, (int)node->resolved_type->kind);
+    } else {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s (no type)\n", decl->name);
+    }
+    #endif
+    if (node->resolved_type && (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE)) {
+        return;
+    }
     if (decl->initializer) {
         if (decl->initializer->type == NODE_IMPORT_STMT ||
             (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
             return;
         }
-        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable())) {
+        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable(module_name_))) {
             return;
+        }
+        if (decl->initializer->type == NODE_MEMBER_ACCESS) {
+            ASTMemberAccessNode* ma = decl->initializer->as.member_access;
+            if (ma && ma->base) {
+                if (ma->base->type == NODE_IMPORT_STMT) {
+                    return;
+                }
+                if (ma->base->type == NODE_IDENTIFIER) {
+                    Symbol* sym = ma->base->as.identifier.symbol;
+                    if (!sym) return;
+                    if (sym->kind == SYMBOL_MODULE) return;
+                    if (sym->symbol_type && sym->symbol_type->kind == TYPE_MODULE) return;
+                }
+            }
         }
     }
 
@@ -449,7 +1179,7 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
     writeIndent();
     if (decl->is_extern) {
         writeKeyword(KW_EXTERN);
-    } else if (!external) {
+    } else if (!external && isGlobalReferenced(decl->name)) {
         writeKeyword(KW_STATIC);
     }
 
@@ -460,7 +1190,7 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
         }
     }
 
-    if (is_const_in_c) {
+    if (is_const_in_c && !typePrefixEmitsConst(node->resolved_type)) {
         writeKeyword(KW_CONST);
     }
 
@@ -483,6 +1213,9 @@ void C89Emitter::emitGlobalVarDecl(const ASTNode* node, bool is_public) {
             writeString("{0}");
         } else {
             allow_aggregate_literal_ = true;
+            if (isPtrArrayStringInit(type, decl->initializer)) {
+                writeString("(const void*)");
+            }
             emitExpression(decl->initializer);
             allow_aggregate_literal_ = false;
         }
@@ -899,18 +1632,81 @@ void C89Emitter::emitAssignmentWithLifting(const char* target_var, const ASTNode
     }
 }
 
+/* Returns true if emitLocalVarDecl() would actually emit a C declaration for this
+ * var decl node. Mirrors the skip paths at the top of emitLocalVarDecl()
+ * (TYPE_TYPE/TYPE_MODULE locals, @import / module-typed initializers, type-expression
+ * consts, and the `const X = mod.Y` / `@import("m").Y` module-const pattern), so the
+ * dead-local void-cast pass never emits `(void)X;` for a name that got no declaration. */
+static bool varDeclEmitsCDeclaration(const ASTNode* node, SymbolTable& symbols) {
+    if (!node || node->type != NODE_VAR_DECL) return true;
+    const ASTVarDeclNode* decl = node->as.var_decl;
+    if (node->resolved_type &&
+        (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE)) {
+        return false;
+    }
+    if (decl->initializer) {
+        if (decl->initializer->type == NODE_IMPORT_STMT ||
+            (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
+            return false;
+        }
+        if (decl->is_const && isTypeExpression(decl->initializer, symbols)) {
+            return false;
+        }
+        if (decl->initializer->type == NODE_MEMBER_ACCESS) {
+            ASTMemberAccessNode* ma = decl->initializer->as.member_access;
+            if (ma && ma->base) {
+                if (ma->base->type == NODE_IMPORT_STMT) {
+                    return false;
+                }
+                if (ma->base->type == NODE_IDENTIFIER) {
+                    Symbol* sym = ma->base->as.identifier.symbol;
+                    if (!sym) return false;
+                    if (sym->kind == SYMBOL_MODULE) return false;
+                    if (sym->symbol_type && sym->symbol_type->kind == TYPE_MODULE) return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
 void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     if (!node || node->type != NODE_VAR_DECL) return;
     const ASTVarDeclNode* decl = node->as.var_decl;
 
     /* Skip type and module declarations in local scope */
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    if (node->resolved_type) {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s kind=%d\n", decl->name, (int)node->resolved_type->kind);
+    } else {
+        plat_printf_debug("[CODEGEN] emitGlobalVarDecl: name=%s (no type)\n", decl->name);
+    }
+    #endif
+    if (node->resolved_type && (node->resolved_type->kind == TYPE_TYPE || node->resolved_type->kind == TYPE_MODULE)) {
+        return;
+    }
     if (decl->initializer) {
         if (decl->initializer->type == NODE_IMPORT_STMT ||
             (decl->initializer->resolved_type && decl->initializer->resolved_type->kind == TYPE_MODULE)) {
             return;
         }
-        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable())) {
+        if (decl->is_const && isTypeExpression(decl->initializer, unit_.getSymbolTable(module_name_))) {
             return;
+        }
+        // Skip const X = mod.Y or const X = @import("m").Y pattern
+        if (decl->initializer->type == NODE_MEMBER_ACCESS) {
+            ASTMemberAccessNode* ma = decl->initializer->as.member_access;
+            if (ma && ma->base) {
+                if (ma->base->type == NODE_IMPORT_STMT) {
+                    return;
+                }
+                if (ma->base->type == NODE_IDENTIFIER) {
+                    Symbol* sym = ma->base->as.identifier.symbol;
+                    if (!sym) return;
+                    if (sym->kind == SYMBOL_MODULE) return;
+                    if (sym->symbol_type && sym->symbol_type->kind == TYPE_MODULE) return;
+                }
+            }
         }
     }
 
@@ -933,11 +1729,12 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
     plat_printf_debug("[CODEGEN] WARNING: Temp var %s has no symbol!\n", c_name);
 #endif
         }
+    } else if (decl->name) {
+        c_name = decl->name;
     } else {
         if (debug_trace_) {
             #ifdef Z98_ENABLE_DEBUG_LOGS
-    plat_printf_debug("[CODEGEN] ERROR: Skipping var decl with no symbol and non-temp name: %s\n",
-                             decl->name ? decl->name : "NULL");
+    plat_printf_debug("[CODEGEN] ERROR: Skipping var decl with no name\n");
 #endif
         }
         return;
@@ -1023,6 +1820,9 @@ void C89Emitter::emitLocalVarDecl(const ASTNode* node, bool emit_assignment) {
                     /* Support constant initializers in C89 for globals/statics, or simple locals if optimized */
                     writeString(" = ");
             allow_aggregate_literal_ = true;
+                    if (isPtrArrayStringInit(node->resolved_type, decl->initializer)) {
+                        writeString("(const void*)");
+                    }
                     emitExpression(decl->initializer);
             allow_aggregate_literal_ = false;
                 }
@@ -1095,19 +1895,24 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
 
     /* Special handling for the main entry point */
     if (plat_strcmp(node->name, "main") == 0 && (node->is_pub || is_public)) {
-        writeString("int main(");
-        if (!node->params || node->params->length() == 0) {
-            writeString(KW_VOID);
+        Symbol* sym = unit_.getSymbolTable(module_name_).lookup(node->name);
+        if (sym && (sym->flags & SYMBOL_FLAG_MAIN_C89_ARGS)) {
+            writeString("int main(int argc, char* argv[]);");
         } else {
-            for (size_t i = 0; i < node->params->length(); ++i) {
-                ASTNode* param_node = (*node->params)[i];
-                emitDeclarator(param_node->as.param_decl.type->resolved_type, NULL);
-                if (i < node->params->length() - 1) {
-                    writeString(", ");
+            writeString("int main(");
+            if (!node->params || node->params->length() == 0) {
+                writeString(KW_VOID);
+            } else {
+                for (size_t i = 0; i < node->params->length(); ++i) {
+                    ASTNode* param_node = (*node->params)[i];
+                    emitDeclarator(param_node->as.param_decl.type->resolved_type, NULL);
+                    if (i < node->params->length() - 1) {
+                        writeString(", ");
+                    }
                 }
             }
+            writeString(");");
         }
-        writeString(");");
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_char") == 0 ||
@@ -1117,7 +1922,7 @@ void C89Emitter::emitFnProto(const ASTFnDeclNode* node, bool is_public) {
     } else {
         if (node->is_extern) {
             writeKeyword(KW_EXTERN);
-        } else if (!is_public && !node->is_pub && !node->is_export) {
+        } else if (!is_public && !node->is_pub && !node->is_export && isFunctionReferenced(node->name)) {
             writeKeyword(KW_STATIC);
         }
 
@@ -1183,7 +1988,7 @@ void C89Emitter::emitFunctionPrototype(Symbol* sym) {
     const char* mangled_name = sym->mangled_name;
 
     writeIndent();
-    if (!fn->is_pub && !fn->is_extern && !fn->is_export) {
+    if (!fn->is_pub && !fn->is_extern && !fn->is_export && isFunctionReferenced(fn->name)) {
         writeKeyword(KW_STATIC);
     }
 
@@ -1270,6 +2075,14 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     emitted_decls_.clear();
     current_fn_name_ = node->name;
     is_main_function_ = false;
+    argv_symbol_ = NULL;
+
+    /* Pre-mark read/appear names from the whole body so dead locals / unused captures
+       can be elided while still preserving initializer side effects. */
+    if (node->body) {
+        markReadNames(node->body, false);
+        computeDeadSyms();
+    }
 
     writeIndent();
 
@@ -1284,21 +2097,35 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
 
     /* Special handling for the main entry point */
     if (plat_strcmp(node->name, "main") == 0 && node->is_pub) {
-        writeString("int main(");
-        if (!node->params || node->params->length() == 0) {
-            writeString(KW_VOID);
-        } else {
-            for (size_t i = 0; i < node->params->length(); ++i) {
-                ASTNode* param_node = (*node->params)[i];
-                ASTParamDeclNode& param = param_node->as.param_decl;
-                const char* param_name = param.symbol ? var_alloc_.allocate(param.symbol) : param.name;
-                emitDeclarator(param.type->resolved_type, param_name);
-                if (i < node->params->length() - 1) {
-                    writeString(", ");
+        if (sym && (sym->flags & SYMBOL_FLAG_MAIN_C89_ARGS)) {
+            writeString("int main(int argc, char* argv[])");
+            /* Force name allocation for argc and argv in the scope */
+            if (node->params && node->params->length() == 2) {
+                ASTNode* p0 = (*node->params)[0];
+                ASTNode* p1 = (*node->params)[1];
+                if (p0->as.param_decl.symbol) var_alloc_.force_allocate(p0->as.param_decl.symbol, "argc");
+                if (p1->as.param_decl.symbol) {
+                    var_alloc_.force_allocate(p1->as.param_decl.symbol, "argv");
+                    argv_symbol_ = p1->as.param_decl.symbol;
                 }
             }
+        } else {
+            writeString("int main(");
+            if (!node->params || node->params->length() == 0) {
+                writeString(KW_VOID);
+            } else {
+                for (size_t i = 0; i < node->params->length(); ++i) {
+                    ASTNode* param_node = (*node->params)[i];
+                    ASTParamDeclNode& param = param_node->as.param_decl;
+                    const char* param_name = param.symbol ? var_alloc_.allocate(param.symbol) : param.name;
+                    emitDeclarator(param.type->resolved_type, param_name);
+                    if (i < node->params->length() - 1) {
+                        writeString(", ");
+                    }
+                }
+            }
+            writeString(")");
         }
-        writeString(")");
         is_main_function_ = true;
     } else if (plat_strcmp(node->name, "__bootstrap_print") == 0 ||
                plat_strcmp(node->name, "__bootstrap_print_int") == 0 ||
@@ -1310,7 +2137,7 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
     } else {
         if (node->is_extern) {
             writeKeyword(KW_EXTERN);
-        } else if (!node->is_pub && !node->is_export) {
+        } else if (!node->is_pub && !node->is_export && isFunctionReferenced(node->name)) {
             writeKeyword(KW_STATIC);
         }
 
@@ -1360,6 +2187,21 @@ void C89Emitter::emitFnDecl(const ASTFnDeclNode* node) {
             current_err_flag_ = NULL;
         }
 
+        /* Collect unused parameter names so the body can silence -Wunused-parameter. */
+        unused_param_names_.clear();
+        if (node->params) {
+            for (size_t i = 0; i < node->params->length(); ++i) {
+                ASTNode* param_node = (*node->params)[i];
+                if (param_node->type != NODE_PARAM_DECL) continue;
+                ASTParamDeclNode& param = param_node->as.param_decl;
+                if (!param.name) continue;
+                if (param.symbol && symLiveCount(param.symbol) > 0) continue;
+                if (!param.symbol && isNameRead(param.name)) continue;
+                const char* p_cname = param.symbol ? var_alloc_.allocate(param.symbol) : param.name;
+                unused_param_names_.append(p_cname);
+            }
+        }
+
         writeString(" ");
         emitBlock(&node->body->as.block_stmt);
         writeString("\n\n");
@@ -1396,6 +2238,16 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
             }
         }
 
+        /* (void)param; casts must follow every C declaration in this block (strict C90). */
+        if (label_id == -1 && defer_stack_.length() == 1) {
+            for (size_t ui = 0; ui < unused_param_names_.length(); ++ui) {
+                writeIndent();
+                writeString("(void)");
+                writeString(unused_param_names_[ui]);
+                endStmt();
+            }
+        }
+
         /* Pass 2: Statements */
         bool exits = false;
         for (size_t i = 0; i < node->statements->length(); ++i) {
@@ -1422,6 +2274,28 @@ void C89Emitter::emitBlock(const ASTBlockStmtNode* node, int label_id) {
                     exits = true;
                     /* Once we hit a path that always exits, any subsequent statements in this block are unreachable. */
                     break;
+                }
+            }
+        }
+
+        /* Suppress -Wunused-but-set-variable / -Wunused-variable for dead locals. */
+        { /* always emit void casts; unreachable after returns is harmless */ 
+            for (size_t i = 0; i < node->statements->length(); ++i) {
+                ASTNode* stmt = (*node->statements)[i];
+                if (stmt->type == NODE_VAR_DECL && stmt->as.var_decl->name && isVarDeclDead(stmt->as.var_decl) &&
+                    varDeclEmitsCDeclaration(stmt, unit_.getSymbolTable(module_name_))) {
+                    const char* vn = NULL;
+                    if (stmt->as.var_decl->symbol) {
+                        vn = var_alloc_.allocate(stmt->as.var_decl->symbol);
+                    } else {
+                        vn = stmt->as.var_decl->name;
+                    }
+                    if (vn) {
+                        writeIndent();
+                        writeString("(void)");
+                        writeString(vn);
+                        endStmt();
+                    }
                 }
             }
         }
@@ -1535,6 +2409,28 @@ void C89Emitter::emitBlockWithAssignment(const ASTBlockStmtNode* node, const cha
             }
         }
 
+        /* Suppress -Wunused-but-set-variable / -Wunused-variable for dead locals. */
+        { /* always emit void casts; unreachable after returns is harmless */ 
+            for (size_t i = 0; i < node->statements->length(); ++i) {
+                ASTNode* stmt = (*node->statements)[i];
+                if (stmt->type == NODE_VAR_DECL && stmt->as.var_decl->name && isVarDeclDead(stmt->as.var_decl) &&
+                    varDeclEmitsCDeclaration(stmt, unit_.getSymbolTable(module_name_))) {
+                    const char* vn = NULL;
+                    if (stmt->as.var_decl->symbol) {
+                        vn = var_alloc_.allocate(stmt->as.var_decl->symbol);
+                    } else {
+                        vn = stmt->as.var_decl->name;
+                    }
+                    if (vn) {
+                        writeIndent();
+                        writeString("(void)");
+                        writeString(vn);
+                        endStmt();
+                    }
+                }
+            }
+        }
+
         /* Emit defers for this block in reverse order, only if not already handled by a terminator */
         if (!exits) {
             for (int i = (int)scope->defers.length() - 1; i >= 0; --i) {
@@ -1578,6 +2474,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
             emitReturn(&node->as.return_stmt);
             break;
         case NODE_UNREACHABLE:
+        case NODE_PANIC:
             writeIndent();
             emitExpression(node);
             endStmt();
@@ -1641,6 +2538,7 @@ void C89Emitter::emitStatement(const ASTNode* node) {
         case NODE_INT_CAST:
         case NODE_FLOAT_CAST:
         case NODE_INT_TO_FLOAT:
+        case NODE_AS_EXPR:
         case NODE_RANGE:
         case NODE_PAREN_EXPR:
         case NODE_ASYNC_EXPR:
@@ -1687,7 +2585,8 @@ void C89Emitter::emitIf(const ASTIfStmtNode* node) {
         writeString(".has_value) ");
         writeBlockOpen();
 
-        if (node->capture_name && node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
+        if (node->capture_name && node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID &&
+            plat_strcmp(node->capture_name, "_") != 0 && isSymAppearing(node->capture_sym)) {
             const char* c_name = var_alloc_.allocate(node->capture_sym);
             writeIndent();
             writeDecl(node->capture_sym->symbol_type, c_name);
@@ -2000,7 +2899,9 @@ void C89Emitter::emitSwitch(const ASTSwitchStmtNode* node) {
                 IndentScope prong_indent(*this);
 
                 bool has_non_void_capture = (is_tagged_union && prong->capture_name && prong->capture_sym &&
-                                            prong->capture_sym->symbol_type->kind != TYPE_VOID);
+                                            prong->capture_sym->symbol_type->kind != TYPE_VOID &&
+                                            plat_strcmp(prong->capture_name, "_") != 0 &&
+                                            isSymAppearing(prong->capture_sym));
 
                 if (has_non_void_capture) {
                     ASTNode* item_expr = (*prong->items)[0];
@@ -2256,10 +3157,12 @@ void C89Emitter::emitFor(const ASTForStmtNode* node) {
 
     writeBlockClose();
 
-    writeIndent();
-    writeString(end_label);
-    writeString(": ;");
-    writeLine();
+    if (loop_end_label_used_[node->label_id]) {
+        writeIndent();
+        writeString(end_label);
+        writeString(": ;");
+        writeLine();
+    }
 
     writeBlockClose();
 
@@ -2299,7 +3202,9 @@ void C89Emitter::emitWhile(const ASTWhileStmtNode* node) {
         /* Declarations FIRST for C89 compliance */
         const char* tmp = makeTempVarForType(node->condition->resolved_type, "opt_tmp", true);
         const char* c_name = NULL;
-        if (node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID) {
+        if (node->capture_sym && node->capture_sym->symbol_type->kind != TYPE_VOID &&
+            node->capture_name && plat_strcmp(node->capture_name, "_") != 0 &&
+            isSymAppearing(node->capture_sym)) {
             c_name = var_alloc_.allocate(node->capture_sym);
             writeIndent();
             writeDecl(node->capture_sym->symbol_type, c_name);
@@ -2698,6 +3603,11 @@ void C89Emitter::emitExpression(const ASTNode* node) {
         case NODE_UNREACHABLE:
             writeString("__bootstrap_panic((const char*)(\"reached unreachable\"), (const char*)(__FILE__), __LINE__)");
             break;
+        case NODE_PANIC:
+            writeString("__bootstrap_panic((const char*)(");
+            emitExpression(node->as.panic->expr);
+            writeString("), (const char*)(__FILE__), __LINE__)");
+            break;
         case NODE_IDENTIFIER:
             if (node->resolved_type && node->resolved_type->kind == TYPE_VOID) {
                 writeString("0");
@@ -2721,6 +3631,9 @@ void C89Emitter::emitExpression(const ASTNode* node) {
 #endif
                     }
 
+                    if (sym == argv_symbol_) {
+                        writeString("(unsigned char const**)");
+                    }
                     writeString(c_name);
                 } else if (sym->mangled_name) {
                     writeString(sym->mangled_name);
@@ -2788,8 +3701,10 @@ void C89Emitter::emitExpression(const ASTNode* node) {
                 writeString("(");
                 if (call->args && call->args->length() > 0) {
                     bool is_panic = (plat_strcmp(target_name, "__bootstrap_panic") == 0);
+                    bool is_write = (plat_strcmp(target_name, "__bootstrap_write") == 0);
 
-                    /* First argument for print/write/panic is always the string to be cast */
+                    /* First argument for print/write/panic is always the string to be cast.
+                       Zig u8 pointers map to unsigned char*, so we cast to const char* to avoid warnings. */
                     writeString("(const char*)(");
                     emitExpression((*call->args)[0]);
                     writeString(")");
@@ -3067,11 +3982,36 @@ void C89Emitter::emitBinaryOp(const ASTBinaryOpNode& node) {
         return;
     }
 
+    bool is_shift = (node.op == TOKEN_LARROW2 || node.op == TOKEN_RARROW2);
+    bool left_paren = is_shift && isCompoundShiftOperand(node.left);
+    bool right_paren = is_shift && isCompoundShiftOperand(node.right);
+    if (left_paren) writeString("(");
     emitExpression(node.left);
+    if (left_paren) writeString(")");
     writeString(" ");
     writeString(getTokenSpelling(node.op));
     writeString(" ");
+    if (right_paren) writeString("(");
     emitExpression(node.right);
+    if (right_paren) writeString(")");
+}
+
+bool C89Emitter::isCompoundShiftOperand(const ASTNode* node) const {
+    if (!node) return false;
+    switch (node->type) {
+        case NODE_BINARY_OP:
+        case NODE_IF_EXPR:
+        case NODE_SWITCH_EXPR:
+            return true;
+        case NODE_INT_CAST:
+        case NODE_FLOAT_CAST:
+        case NODE_INT_TO_FLOAT:
+            return isCompoundShiftOperand(node->as.numeric_cast->expr);
+        case NODE_PTR_CAST:
+            return isCompoundShiftOperand(node->as.ptr_cast->expr);
+        default:
+            return false;
+    }
 }
 
 void C89Emitter::emitCast(const ASTNode* node) {
@@ -3504,6 +4444,12 @@ void C89Emitter::ensureSliceType(Type* type) {
     }
 
     /* Not emitted in this context, register it globally for central header emission */
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] registerSliceType: %s\n", mangled_name);
+    #endif
+    #ifdef Z98_ENABLE_DEBUG_LOGS
+    plat_printf_debug("[CODEGEN] registerSliceType: %s for module %s\n", mangled_name, module_name_ ? module_name_ : "NULL");
+    #endif
     unit_.registerSliceType(type);
     emitted_slices_.append(mangled_name);
 
@@ -3829,6 +4775,44 @@ void C89Emitter::emitTypeDefinition(Type* type) {
     }
 
     if (type->kind == TYPE_ENUM) {
+        Type* bt = type->as.enum_details.backing_type;
+        if (bt && bt->kind != TYPE_I32) {
+            const char* enum_name = mangled;
+            emitted_enums_.append(enum_name);
+
+            writeIndent();
+            writeString("typedef ");
+            emitBaseType(bt);
+            writeString(" ");
+            writeString(enum_name);
+            writeString(";\n\n");
+
+            DynamicArray<EnumMember>* members = type->as.enum_details.members;
+            if (members) {
+                for (size_t i = 0; i < members->length(); ++i) {
+                    writeString("#define ");
+                    writeString(enum_name);
+                    writeString("_");
+                    writeString((*members)[i].name);
+                    writeString(" ");
+                    char buf[32];
+                    plat_i64_to_string((*members)[i].value, buf, sizeof(buf));
+                    writeString(buf);
+                    writeLine();
+                }
+                writeLine();
+            }
+
+            if (prefix) {
+                writeString("#endif /* ");
+                writeString(prefix);
+                writeString(mangled);
+                writeString(" */\n\n");
+            }
+            depth--;
+            return;
+        }
+
         const char* enum_name = mangled;
         emitted_enums_.append(enum_name);
 
@@ -3999,10 +4983,12 @@ void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
     plat_u64_to_string(node->value, buf, sizeof(buf));
     writeString(buf);
 
+    bool suffix_written = false;
     if (node->resolved_type) {
         switch (node->resolved_type->kind) {
             case TYPE_U32:
                 writeString("U");
+                suffix_written = true;
                 break;
             case TYPE_I64:
 #ifdef ZIG_COMPILER_OPENWATCOM
@@ -4010,6 +4996,7 @@ void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
 #else
                 writeString(ZIG_I64_SUFFIX);
 #endif
+                suffix_written = true;
                 break;
             case TYPE_U64:
 #ifdef ZIG_COMPILER_OPENWATCOM
@@ -4017,10 +5004,18 @@ void C89Emitter::emitIntegerLiteral(const ASTIntegerLiteralNode* node) {
 #else
                 writeString(ZIG_UI64_SUFFIX);
 #endif
+                suffix_written = true;
                 break;
             default:
                 /* i32, u8, i8, u16, i16, usize, isize get no suffix */
                 break;
+        }
+    }
+    if (!suffix_written && node->value > 2147483647ULL) {
+        if (node->value <= 4294967295ULL) {
+            writeString("U");
+        } else {
+            writeString("ULL");
         }
     }
 }
@@ -4080,7 +5075,7 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
         /* Truncate if needed, then return directly (no prefix, no uniquification) */
         char buf[256];
         plat_strcpy(buf, zig_name);
-        if (plat_strlen(buf) > 31) buf[31] = '\0';
+        if (plat_strlen(buf) > 63) buf[63] = '\0';
         return unit_.getStringInterner().intern(buf);
     }
 
@@ -4153,8 +5148,8 @@ const char* C89Emitter::getC89GlobalName(const char* zig_name) {
             }
         }
         
-        Module* mod = unit_.getModule(location);
-        const char* mangled = unit_.getNameMangler().mangle(k_char, mod, zig_name);
+        Module* mod = location ? unit_.getModule(location) : unit_.getModule(module_name_);
+        const char* mangled = unit_.getNameMangler().mangle(k_char, mod ? mod : unit_.getModule(module_name_), zig_name);
         plat_strcpy(final_buf, mangled);
     }
 
@@ -4980,6 +5975,9 @@ void C89Emitter::emitBreak(const ASTBreakStmtNode* node) {
     }
 
     if (node->label || uses_labels) {
+        if (target_id >= 0 && target_id < 1024) {
+            loop_end_label_used_[target_id] = true;
+        }
         writeKeyword(KW_GOTO);
         writeString(getLoopEndLabel(target_id));
         endStmt();

@@ -1,0 +1,44 @@
+// print_fmt_valid.z98 — Task 3 (z98-print-formatting) standalone positive
+// repro for the print-format validator. The validator rejects only the
+// frozen-table spec/type mismatches and no-printer kinds; every final-route
+// pair below must keep compiling and print exactly as before.
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast --output-dir <tmp> repro/print_fmt_valid.z98
+//   (then gcc the emitted .c via <tmp>/build_target.sh linux <tmp>/prog)
+//
+// Expected stdout (exact), rc 0 (byte-identical to official Zig 0.15.2):
+//   i32d=42
+//   i32x=2a
+//   uszd=3000000000
+//   uszx=b2d05e00
+//   u8d=65
+//   u8x=41
+//   u8c=A
+//   boold=true
+//   strs=hi
+//   f64d=7
+//   enumx=1
+const std = @import("std");
+const C = enum { red, green };
+
+pub fn main() void {
+    var i32v: i32 = 42;
+    var uszv: usize = @intCast(usize, 3000000000);
+    var u8v: u8 = 65;
+    var bv = true;
+    var sv: []const u8 = "hi";
+    var f64v: f64 = 7.0;
+    var cv: C = .green;
+    std.io.print("i32d={}\n", .{i32v});
+    std.io.print("i32x={x}\n", .{i32v});
+    std.io.print("uszd={}\n", .{uszv});
+    std.io.print("uszx={x}\n", .{uszv});
+    std.io.print("u8d={}\n", .{u8v});
+    std.io.print("u8x={x}\n", .{u8v});
+    std.io.print("u8c={c}\n", .{u8v});
+    std.io.print("boold={}\n", .{bv});
+    std.io.print("strs={s}\n", .{sv});
+    std.io.print("f64d={}\n", .{f64v});
+    std.io.print("enumx={x}\n", .{cv});
+}

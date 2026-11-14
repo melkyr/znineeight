@@ -1,0 +1,57 @@
+const std = @import("std");
+
+// A plain enum. The compiler chooses the backing integer; on this
+// compiler it is a 32-bit unsigned type, which @sizeOf reports as 4.
+const Color = enum { Red, Green, Blue };
+
+// An enum with an explicit backing. enum(u8) stores every value in
+// one byte, the shape a wire field or a table of bytes wants.
+const Code = enum(u8) { Ok = 0, Warning = 4, Error = 9 };
+
+// Inclusive range: Red and Green match, Blue falls to else.
+fn inclusiveBand(c: Color) []const u8 {
+    return switch (c) {
+        Color.Red...Color.Green => "warm",
+        Color.Blue => "cool",
+        else => "unknown",
+    };
+}
+
+// Exclusive range: Green only. The exact prongs cover the other two,
+// and the else prong is still mandatory.
+fn exclusiveBand(c: Color) []const u8 {
+    return switch (c) {
+        .Green.. .Blue => "acid",
+        .Red, .Blue => "primary",
+        else => "unknown",
+    };
+}
+
+// Ranges on an enum(u8) use the underlying values, gaps included:
+// Ok is 0 and Warning is 4, so they share a band; Error is 9.
+fn codeBand(c: Code) []const u8 {
+    return switch (c) {
+        Code.Ok...Code.Warning => "quiet",
+        Code.Error => "loud",
+        else => "unknown",
+    };
+}
+
+pub fn main() void {
+    var c: Color = .Green;
+    std.io.print("Color size={} bits={}\n", .{ @sizeOf(Color), @bitSizeOf(Color) });
+    std.io.print("c={} int={d}\n", .{ c, @enumToInt(c) });
+
+    var back: Color = @intToEnum(Color, 1);
+    var same: bool = back == c;
+    std.io.print("back={} same={}\n", .{ back, same });
+
+    std.io.print("Code size={} bits={}\n", .{ @sizeOf(Code), @bitSizeOf(Code) });
+    std.io.print("Code ints {d} {d} {d}\n", .{ @enumToInt(Code.Ok), @enumToInt(Code.Warning), @enumToInt(Code.Error) });
+    var loud: Code = @intToEnum(Code, 9);
+    std.io.print("loud={} int={d}\n", .{ loud, @enumToInt(loud) });
+
+    std.io.print("inclusive Green={s} Blue={s}\n", .{ inclusiveBand(.Green), inclusiveBand(.Blue) });
+    std.io.print("exclusive Green={s} Red={s}\n", .{ exclusiveBand(.Green), exclusiveBand(.Red) });
+    std.io.print("code Warning={s} Error={s}\n", .{ codeBand(.Warning), codeBand(.Error) });
+}

@@ -1,0 +1,17 @@
+pub const io = @import("std_io.zig");
+pub const fmt = @import("std_fmt.zig");
+pub const arena = @import("std_arena.zig");
+pub const str = @import("std_str.zig");
+pub const mem = @import("std_mem.zig");
+pub const math = @import("std_math.zig");
+pub const debug = @import("std_debug.zig");
+pub const net = @import("std_net.zig");
+pub const async = @import("std_async.zig");
+pub const bits = @import("std_bits.zig");
+pub const os = @import("std_os.zig");
+pub const time = @import("std_time.zig");
+pub const page = @import("std_page.zig");
+pub const gpa = @import("std_gpa.zig");
+pub const pool = @import("std_pool.zig");
+pub const buf = @import("std_buf.zig");
+pub const fold = @import("std_fold.zig");
