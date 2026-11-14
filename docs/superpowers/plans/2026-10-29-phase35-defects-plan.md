@@ -4,7 +4,7 @@
 
 > **Milestone order (2026-11-07):** milestones **3.1 — general-purpose allocator** and **3.3 — HTTP/2 client** (separate plans/specs) precede this plan. 3.5 remains the compiler-improvement milestone and now includes D13/D14; nothing else in this plan changes.
 
-**Goal:** Close all nine open defects (D3, D4, D5, D7.3, D8, D10, D12, D13, D14) and restore documentation truth (one self-host doc home, a spec that describes the real compiler), then rotate seed v146.
+**Goal:** Close all nine open defects (D3, D4, D5, D7.3, D8, D10, D12, D13, D14) and restore documentation truth (one self-host doc home, a spec that describes the real compiler), then rotate final seed v147 (v146 was an interim closeout invalidated by the expected-type sentinel regression).
 
 **Architecture:** Risk-ordered single pass — safe emitter fixes first (D12, D7.3), then the emission-wide shifts (D8 PAL routing, D3 lazy import, D14 async result ABI), then the language/type features (D5/D10 calling conventions, D13 full `enum(u64)`), then the analyzer audit→upgrade pair, then docs, then one closeout re-baseline. Emission shifts accumulate; the 8 pins move once, at closeout.
 
@@ -579,23 +579,125 @@
 - [ ] **Step 5: §5/§7 re-verification** — every limitation and "Not Yet Supported" item re-checked against the current compiler and mi/corpus; correct stale claims; verify every fixture path named in the spec exists.
 - [ ] **Step 6: Commit** `docs(spec): language spec truth-up — real lowering, current features (Phase3.5)` + report.
 
-### Task 12: Closeout — battery, re-baseline, seed v146
+### Task 11.5: Manual truth-up — captures, switch, examples, std
+
+**Files:**
+- Modify: `docs/sf/manuals/en/vol1-09-repetition.html`, `vol1-12-arrays.html`
+- Modify: `docs/sf/manuals/en/vol2-06-enums.html` (signed enum backings), `vol2-07-unions.html`, `vol2-09-arrays-slices.html`, `vol2-10-control-flow.html`, `vol2-17-stdlib.html`
+- Modify: `docs/sf/manuals/en/vol4-01-grammar.html`, `vol4-05-enums.html`, `vol4-08-arrays-slices.html`, `vol4-13-control-flow.html`, `vol4-18-stdlib.html`, `vol4-18-stdlib-io.html`, `vol4-18-stdlib-data.html`, `vol4-18-stdlib-codecs.html`, `vol4-18-stdlib-algorithms.html` (17-name re-export claim), `vol4-21-diagnostics.html`, `vol5-15-diagnostics.html`
+- Modify example-listing pages found by the static audit: `docs/sf/manuals/en/vol5-00-index.html`, `vol5-22-contribute.html`, `vol1-15-whats-next.html`/`vol3-18-whats-next.html`
+- Generated: `docs/sf/manuals/en/search-data.js` via `build.sh`; refresh tracked `docs/sf/manuals/dist/en/vol4-21-diagnostics.html` only if its source changes (the rest of `dist/` is gitignored)
+- No `sf/src`, compiler, seed, or manual `src/` example changes unless a referenced example command is broken or missing
+
+**Interfaces:**
+- Consumes: Task 11's final `Language_Spec_Z98.md`, current compiler behavior, current `sf/src/std.zig` and `sf/src/std_*.zig`, and the current examples matrix (28/28; 32 dirs with 4 excluded).
+- Produces: manuals that match the current spec and compiler; D16 remains open and is described as a parity boundary, not full Zig parity.
+
+- [ ] **Step 1: Static claim audit — no test reruns.** Cross-reference each manual claim to existing corpus/fixture/golden evidence. Do **not** re-run unrelated examples or re-prove unchanged behavior. Verify only (a) claims changed by Task 11's spec truth-up, and (b) claims that say something is **unsupported** where an existing corpus test contradicts the claim. Record contradictions; leave unchanged, test-covered claims alone. Two contradictions found in the initial audit are in scope and must be corrected: `vol2-06-enums.html` (signed backings do exist) and `vol4-18-stdlib-algorithms.html` (17-name re-export list, not thirteen).
+- [ ] **Step 2: For-captures.** Verify/document `|item|`, `|item,index|`, `|*item|`, `|*item,index|`, `|*_|`, explicit index ranges, addressability/const rules, and `error[3078]` against existing for-capture corpus tests. Make the named pages consistent; do not add syntax beyond the spec.
+- [ ] **Step 3: Switch behavior.** Document value-result expected-type/prong coercion (D15 option d) and unchanged statement switches. Record mixed statement switches, assignment-void, comptime-selector pruning, and `anyerror` as **D16 open**, not full Zig parity. Update the diagnostics references.
+- [ ] **Step 4: Std library.** Derive counts statically from `sf/src/std.zig` and `sf/src/std_*.zig`; current `vol2-17` says 14 re-exports / 32 by-path / 5 pal, while `std.zig` has 17 re-exports and the seed has 59 std files. Add `std_page`, `std_page_pal`, `std_gpa`, `std_pool`, `std_tls_io`, `std_hpack`, `std_http2`; update the tour/table/IO/data/codecs pages, and correct the `vol4-18-stdlib-algorithms.html` “thirteen-name” re-export claim to 17.
+- [ ] **Step 5: Examples.** Update lists/names to the current examples — `z9git`, `z9torr`, `tls_demo`, `z9zstddecomp` — and note excluded dirs only where the page lists the matrix. If behavior is already covered by existing tests, do **not** re-scrutinize the example command claims; fix only broken or missing references found statically.
+- [ ] **Step 6: Build and validate.** Run `bash docs/sf/manuals/check.sh` and `bash docs/sf/manuals/build.sh` (static HTML/link/asset checks); fix links, counts, search data, and the 1:1 figure list. Do not add example execution to this task.
+- [ ] **Step 7: Commit** `docs(manual): refresh captures, switch, examples and std additions (Phase3.5)` + report.
+
+### Task 12.1: Analyzer statement traversal — explicit work stack
+
+**Files:**
+- Modify: `sf/src/analyzer.zig` (replace recursive statement traversal with an explicit work stack; keep `analyzeExpr` recursive)
+- Test: existing `scripts/compiler/gate_lower_depth.sh` cases 2/10/11/12; `test_analyzer_bin`, `test_semantic_bin`, `test_analyzer_integration_bin`; D4 probe; Task 9h/9h1/9h2 fixtures; corpus emission compare
+
+**Interfaces:**
+- Consumes: `visitStatement`/`walkBlock` (`sf/src/analyzer.zig:2272`, `:1904`), `executeDeferQueue` (`:1888`), `ctx.current_depth`, defer queue, `np_current_label`/`np_ctrl_*`, and the mode-specific `on_stmt` callbacks.
+- Produces: one iterative `runStmtWalk` machine with explicit frames for block, if, while, for, switch, labeled block/loop, defer exit, and leaf callbacks. No C-stack growth per statement nesting; expression traversal remains recursive and depth-bounded. All diagnostics, state forks/merges, defer order, capture bindings, break/continue targeting, and leak checks stay byte-identical.
+
+- [ ] **Step 0: Root-cause gate.** Reproduce `gate_lower_depth` cases 2/10/11/12 at `ulimit -s 1024`; confirm v145 passes and current hop1/hop2/hop3 fail with `rc=139`. Measure/record the recursive analyzer frames (e.g. emitted-C `-fstack-usage`) and identify the exact `visitStatement`/`walkBlock` recursion. If the failure is not in the analyzer statement walk, STOP and present.
+- [ ] **Step 1: Pin the behavior baseline.** Record analyzer/semantic/integration suites, D4 probe, D15/D16 fixtures, self-source WARN counts, and a corpus emission compare on the current tree. Do not change Task 12 files or seed.
+- [ ] **Step 2: Implement the explicit work stack.** Replace the recursive statement traversal with a `StmtWork`/frame loop. Preserve:
+  - block child order, `current_depth`, defer-queue execution and `in_defer_exec`, leak checks;
+  - `if` then/else fork, capture binding, `npMergeNullExits`/`stateMapMergeStates`, alias merge;
+  - `while`/`for` body, zero-iteration exit, control frames, `np_current_label` save/restore;
+  - `switch` decisive selector/prong states/merge;
+  - labeled block/loop frames and `break`/`continue` targeting;
+  - leaf `analyzeExpr` and `on_stmt` callbacks in the same order.
+  Keep expression recursion intact; do not change lowering/emitter/sema or diagnostic text.
+- [ ] **Step 3: Verify GREEN.** Cases 2/10/11/12 pass at 1 MB; cases 1/3/13 and all existing gate cases unchanged; analyzer/semantic/integration suites green; D4 probe and D15/D16 fixtures unchanged; self-source/example/stdlib WARN counts unchanged; 1278-entry corpus emission/rc compare unchanged; `git diff --check` clean. If any semantic difference appears, STOP — do not weaken a fixture.
+- [ ] **Step 4: Commit** `refactor(analyzer): traverse statements with an explicit work stack (Phase3.5 D4 stack fix)` + report. No seed rotation, no Task 12 files.
+
+### Task 12: Interim closeout — v146 (superseded by Task 12.3)
+
+**Status:** executed as an interim closeout (`36e39cf3`); v146 is not the final seed because the final review found the module-scope unannotated-switch regression. Task 12.2-I/12.2-F repair it; Task 12.3 performs the final v147 closeout. The steps below remain the record of the interim run.
 
 **Files:**
 - Modify: `scripts/compiler/gate_lower_depth.sh` (the 8 pins), `docs/sf/QUICK_REF.md` (pin table + counts), `README.md` (seed/fixed-point facts), `release/seed/CHANGELOG.md`, `release/seed/zig1-seed.tgz`, `release/seed/zig1_seed_w9.zip`, `examples/torrent_example_defects.md` (final open-only state)
 - Test: the full battery (below)
 
 **Interfaces:**
-- Consumes: every prior task's landed state.
+- Consumes: every prior task's landed state, including Task 12.1's explicit analyzer work stack.
 - Produces: seed v145 → **v146** with a new fixed point (F_new moved by Tasks 3–7), re-anchored corpus counts/class md5, re-recorded markers, all gates green.
 
-- [ ] **Step 1: Full battery on the current tree** (report-only at first): corpus live (record new count/class md5; expect growth from new fixtures; frozen-1124 md5 MUST still be `518eca1a...` with 0 movers), goldens, markers (record new value), examples 28/28, stdlib 376 + any new fixtures (record actual), crosscheck 10/10, all compiler gates (`gate_lower_depth`, `gate_builtin_names`, `gate_mutable_for`, `gate_debug_map`, `gate_crlf`, `gate_warn_clean`, `gate_reserved_names`, `check_emit_support` 9/9), tiers (`tier_dbg`, `tier_dbg_core`, `tier_gfx`, `tier_edit`, `tier_edit_gui`) — GUI tiers only if std_gfx touched (it is not expected to be).
+- [ ] **Step 1: Full battery on the current tree** (report-only at first): corpus live (record new count/class md5; expect growth from new fixtures; frozen-1124 md5 MUST still be `518eca1a...` with 0 movers), goldens, markers (record new value), examples 28/28, stdlib 376 + any new fixtures (record actual), crosscheck 10/10, all compiler gates (`gate_lower_depth`, `gate_builtin_names`, `gate_mutable_for`, `gate_debug_map`, `gate_crlf`, `gate_warn_clean`, `gate_reserved_names`, `check_emit_support` 9/9), manual `check.sh`/`build.sh`, tiers (`tier_dbg`, `tier_dbg_core`, `tier_gfx`, `tier_edit`, `tier_edit_gui`) — GUI tiers only if std_gfx touched (it is not expected to be).
 - [ ] **Step 2: STOP-check** — if anything unexpected moved beyond the known emission shifts (D8/D3/D14, and D13 if its representation changes existing enum emission), STOP and present. Expected movers: 8 pins (all), corpus additions, marker counts, any goldens touching stdout ordering or async.
 - [ ] **Step 3: Single re-baseline** — re-record the 8 pins in `gate_lower_depth.sh` + `QUICK_REF.md` (the authorized once-only move); re-anchor corpus counts/class md5 and markers in the docs.
 - [ ] **Step 4: Seed rotation** — `scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/phase35_close` → closure (two-hop: hop1 == hop2 == the new fixed point); full battery values recorded; `scripts/seed/archive_seed.sh <bin> <gen> release/seed/zig1-seed.tgz --update-changelog --win9x-zip release/seed/zig1_seed_w9.zip`; verify every CHANGELOG claim (the v121 false-status class must not repeat); lib/ counts (59 baseline; expected unchanged — no new std file); rebuild from the NEW archive reproduces the fixed point.
-- [ ] **Step 5: Defects doc final state** — open-only; the fixed entries (D3, D4, D5, D7.3, D8, D10, D12, D13, D14) are gone; any new findings land at the next free slot (D15+).
+- [ ] **Step 5: Defects doc final state** — open-only; the fixed entries (D3, D4, D5, D7.3, D8, D10, D12, D13, D14) are gone; D15 is closed, D16 remains open by design, and any new findings land at the next free slot (D17+).
 - [ ] **Step 6: Commit** `chore(seed): rotate v146 (Phase3.5 defect closure + docs)` + `docs(sdd)` final report. No push, no tag.
+
+### Task 12.2-I: Expected-type sentinel investigation (no code)
+
+**Files:**
+- Create: `docs/superpowers/specs/2026-10-29-phase35-expected-type-investigation.md`
+- Test: `repro/mi_matrix/known_excluded/expected_type_*` probes
+- No `sf/src` changes
+
+**Interfaces:**
+- Consumes: the expected-type stack (`pushExpectedType`/`popExpectedType`/`topExpectedType`), all producer sites (module/local var decl, return, call args, struct/array init), all consumers (`if_expr`, `switch`, `@ptrFromInt`, struct init), the D15 matrix/corpus, and the final-review module-scope switch repro.
+- Produces: a written contract for “no expected type” vs “unknown/undetermined type”, a complete producer/consumer audit, a probe matrix at v145 and v146, and a recommended fix with blast radius. No implementation.
+
+- [ ] **Step 0: Reproduce.** `const X = switch (1) { 0 => 1, else => 7 };` at module scope: v145 rc0/builds; v146 rc2/`target: type`. Also probe the equivalent module-scope unannotated `if` and annotated forms.
+- [ ] **Step 1: Inventory.** List every `pushExpectedType` call and every `topExpectedType` consumer. Classify each pushed value as a known type, no-expected (`0`/`TYPE_VOID`), or unknown/undetermined (`TYPE_UNDEFINED`), and record whether it is intentional.
+- [ ] **Step 2: Probe matrix.** Module/local unannotated vs annotated `const`/`var` switch and `if`; call arguments; struct/array initializers; return; nested cases. Record v145/v146 behavior and the Zig 0.17.1 oracle where the D15 parity matrix already covers it.
+- [ ] **Step 3: Evaluate sound options.** Compare (a) normalize the module var-decl producer to `0` (mirror the local rule), (b) enforce a `pushExpectedType`/`topExpectedType` invariant or helper with no-expected normalization, (c) replace the sentinel mix with an explicit expected-type enum/optional contract, and (d) a switch-only normalization (rejected as a patch). State which sites/consumers each touches and what behavior could change.
+- [ ] **Step 4: Recommend and STOP.** Give the recommended design with exact files/lines, the test matrix, and the risks. Do not implement. Commit the report/probes with `test(repro): investigate expected-type sentinel contract (Phase3.5)`.
+
+**Status:** completed `70dd67ee`; review rejected option (a) as unsound (conflates no-annotation with annotation-unresolved). Operator m1864 selected the explicit `ExpectedType` contract; Task 12.2-F implements it.
+
+### Task 12.2-F: Explicit expected-type contract (operator-approved)
+
+**Operator ruling (m1864):** implement an explicit expected-type contract. Reject option (a) (normalizing `TYPE_UNDEFINED` to `0`); it conflates “no annotation” with “annotation-unresolved” and false-accepts `const X: Nope = switch (...)`.
+
+**Files:**
+- Modify: `sf/src/semantic_analyzer.zig`
+- Test: module/local unannotated and annotated `switch`/`if`; annotated-unresolved module types; call-arg-undetermined; struct/array/return; D15 matrix; analyzer/semantic suites; corpus
+
+**Interfaces:**
+- Consumes: the Task 12.2-I audit and the operator’s explicit-contract ruling.
+- Produces: `ExpectedType` with kind `none` / `known(type_id)` / `undetermined`. `undetermined` means “annotation present but unresolved” and value consumers must reject it cleanly; it is never used as a `TypeId`. An unresolved call-argument parameter type is **none** (peer/no expectation), not `undetermined`. Module-scope unannotated switch/if accept like v145; annotated-unresolved types remain rejected; D15 known-type behavior unchanged.
+
+- [ ] **Step 0: Confirm the approved design.** If the implementation would deviate from the explicit contract, STOP.
+- [ ] **Step 1: Add fixtures.** Module-scope `const`/`var` unannotated switch and if; annotated controls; `const X: Nope = switch (...)` must reject; call-arg-unresolved (must be peer, not a false expected type); struct/array/return. Verify v146 RED and v145/GREEN expectations.
+- [ ] **Step 2: Implement the explicit contract.** Replace the `u32` expected-type stack with `ExpectedType` (`kind`, `type_id`) or an equivalent parallel-kind representation. Add explicit push helpers for none/known/undetermined; replace all 15 producers. Module var: `child_0 == 0` -> none; annotation present + unresolved -> undetermined; resolved -> known. Local mirrors. Call args: unresolved/unknown param -> none; known -> known; no expectation -> none. Consumers (`if_expr`, `switch`, `@ptrFromInt`, struct init, raw reads) use kind: known only for coercion; none falls to peer/no expectation; undetermined rejects cleanly (never a sentinel type). Do not add switch-only normalization or change D15 semantics.
+- [ ] **Step 3: Verify.** Module/local unannotated + annotated switch/if; `Nope` rejects; call-arg-unresolved peer behavior; struct/array/return; D15 12/12 + 35/35 + negatives; analyzer/semantic/integration suites; self-source/example/stdlib counts; 1278 corpus emission/rc; emitted C/H unchanged for existing valid code except the restored module forms. Any semantic difference: STOP.
+- [ ] **Step 4: Commit** `fix(sema): unify expected-type contract (Phase3.5 expected-type fix)` + report. No seed rotation.
+
+**Operator acceptance (m1886):** the module-scope unannotated `if` with string literals changing from pointer to slice is accepted as the intended contract correction. Record it in the Task 12.2-F report and the v147 CHANGELOG; do not special-case the old pointer behavior.
+
+### Task 12.3: Final closeout — v147
+
+**Files:**
+- Same Task 12 file set, with final seed **v147** replacing v146 in `release/seed/`, `CHANGELOG.md`, `QUICK_REF.md`, and `README.md`
+- Test: full battery (Task 12 Step 1), plus the Task 12.2-F module-scope fixtures
+
+**Interfaces:**
+- Consumes: Task 12.2-F and all prior tasks.
+- Produces: final seed v147, final pins/markers/corpus anchors, defects doc with D16 only, and a clean final review.
+
+- [ ] **Step 1: Full battery on the repaired tree.** Record actual values. Reuse Task 12's accepted waivers only where unchanged: frozen one-row D15 mover, `tier_dbg` crashinit, stale archived SEED_README template. If a new mover/gate failure appears, STOP.
+- [ ] **Step 2: Re-baseline only if values moved.** Update the 8 pins/QUICK_REF, corpus/class md5, markers, and frozen display anchor as needed; do not edit `scripts/corpus/frozen_1124.txt`.
+- [ ] **Step 3: Rotate v147.** Two-hop closure; archive/zip/manifest; lib 59; verify CHANGELOG claims and rebuild-from-archive; `gate_debug_map` against the new seed. CHANGELOG/QUICK_REF must record the accepted explicit expected-type contract and the module unannotated if-string pointer→slice correction.
+- [ ] **Step 4: Defects doc final state.** D15 closed, D16 open, fixed entries gone, next slot D17.
+- [ ] **Step 5: Commit** `chore(seed): rotate v147 (Phase3.5 final closeout)` + report. No push/tag.
 
 ---
 
-**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), 8 (D4-pre audit), 9a–9h2, 9i (interim D15), 9j (D15 parity I), 9k (option (d) value-switch fix), 9g, 9f (final), 9f.1 (31-diff certification), then docs, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Tasks 8 and 9j are investigation-only. Tasks 9l/9m are deferred under D16. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths.
+**Execution note:** tasks run in the listed order (the operator fixed it: 0 (repro inventory + adjacent scan, test-only), 0.1 (D14 exact-shape retry, test-only), 0.2 (D14 frontend-vs-tail-ABI matrix, test-only), 0.5 (upstream root-cause investigation, no fixes), 1, 2, 3, 4, 5, 6 (D13), 7 (D14), 8 (D4-pre audit), 9a–9h2, 9i (interim D15), 9j (D15 parity I), 9k (option (d) value-switch fix), 9g, 9f (final), 9f.1 (31-diff certification), then docs, then 11.5 manuals, then closeout). Task 0 creates the repros and inventory; Tasks 0.1/0.2 resolve the D14 evidence; Task 0.5 maps the upstream causes; later tasks consume their results, verify the root cause, and must not recreate them or patch symptoms. Tasks 3, 4, and 7 are the emission shifts; Task 6 may shift enum emission and must be verified functionally. Their diffs are expected and recorded, not re-baselined. Tasks 8 and 9j are investigation-only. Tasks 9l/9m are deferred under D16. Task 10 must land before Task 11's spec work references `sf/docs/initial_design/` paths; Task 11.5 consumes Task 11 and must land before closeout. Task 12.1 is the authorized analyzer-stack repair inserted after 11.5; Task 12 was the interim v146 closeout. Task 12.2-I investigates the expected-type sentinel contract with no code; Task 12.2-F implements only the operator-approved design; Task 12.3 performs the final v147 closeout. Task 12.2-F must not start before the Task 12.2-I report is reviewed and approved.

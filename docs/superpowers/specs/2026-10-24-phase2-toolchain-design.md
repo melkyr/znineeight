@@ -55,3 +55,14 @@ Phase 5 D3D6 game consumes. The editor is the vehicle that proves the layer.
 
 Each project's plan owns its task granularity. This umbrella owns only the
 tagging, the order, and the seed-rotation schedule above.
+
+---
+
+## 5. Follow-on milestones (2026-11-04)
+
+| Tag | Milestone | Plan/Spec |
+|---|---|---|
+| 3.3 | HTTP/2 client (ALPN / HPACK / frames / flow control) | new plan/spec, written in a planning session after Phase 3 |
+| 3.5 | Compiler improvements (defect closure + docs truth) | `docs/superpowers/plans/2026-10-29-phase35-defects-plan.md` |
+
+Order: Phase 3 (missing libraries — `docs/superpowers/plans/2026-11-04-phase3-missing-libraries-plan.md` and its design) → **3.3 HTTP/2** → **3.5 compiler improvements**. This Phase 2 umbrella is unchanged by those plans.

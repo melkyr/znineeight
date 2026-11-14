@@ -124,8 +124,10 @@ No unmeasured claim was added.
   `httpPostStreamOver`, `get`, `post`.
 - `docs/sf/manuals/en/vol2-17-stdlib.html` — `std_deflate` row; v136
   zstd-dictionary/deflate/http descriptions; counts recounted: 32 public
-  by-path + 5 PAL (37 more `std_*.zig` than the 14 re-exports), eight
-  domain-doc-only modules (adds `std_deflate`).
+  by-path + 5 PAL (37 more `std_*.zig` than the 14 re-exports). The coverage
+  sentence lists `std_deflate` separately (indexed with an in-page section) and
+  enumerates the other eight public by-path modules outside the companion
+  pages, explicitly marking `std_fft` as not yet documented.
 - `docs/sf/manuals/en/vol4-18-stdlib.html` — `std_deflate` by-path row and v136
   description paragraph. Table/HTML nesting checked with a Python tag-balance
   pass (0 errors); `git diff --check` clean.
@@ -149,3 +151,46 @@ No unmeasured claim was added.
 - `archive_seed.sh` records the packaging base HEAD (`315939a2`, pre-rotation)
   in the v136 CHANGELOG/SEED_README provenance, which is accurate for the source
   used to build the binary.
+
+## Fix round 1
+
+Docs-only follow-up at HEAD `7781ced6`; no seed/code changes.
+
+1. **Broken manual link — fixed.** Both `vol2-17-stdlib.html` and
+   `vol4-18-stdlib.html` no longer link outside the manual tree to
+   `../../../sf/docs/std_lib/deflate.md`. Vol2 links to
+   `vol4-18-stdlib.html#deflate`; vol4 links to its own new
+   `<a name="deflate"></a>` section. The section summarizes the two signatures,
+   `used`, `FDICT` rejection, Adler-32, and the two errors.
+2. **Stale current count — fixed.** `QUICK_REF.md:317` now says
+   `verify_stdlib` is **356/0 today**; the v123 `336/0`, M7/v103 `294/0`, and
+   other older figures remain labelled historical.
+3. **Coverage enumeration — fixed.** `vol2-17-stdlib.html` no longer lists
+   redundant `std_deflate` among the eight domain-doc-only modules; it lists
+   `std_ecc`, `std_asn1`, `std_x509`, `std_tls`, `std_wireguard`, `std_tcpip`,
+   `std_cipher`, and `std_fft`, noting the first seven have domain docs and
+   `std_fft` is not yet documented. The matching claim in this report was
+   corrected above.
+4. **Install list — fixed.** The canonical install command now includes
+   `sf/src/std_fft.zig` and `sf/src/std_deflate.zig`; an extraction check counts
+   **52** unique `.zig` paths (the full `std.zig` + 51 `std_*.zig` set).
+5. **Measurement label — fixed.** The spill-ladder paragraph now says it is
+   unchanged from v135 (same fixed point `cf68f192…`) and that the numbers were
+   measured on the v135 seed on 2026-11-05, not re-measured for v136.
+6. **Companion-page wording — fixed.** `vol4-18-stdlib.html` now says the
+   by-path library is detailed on four companion pages **plus a fifth
+   `Deflate / zlib` area row with its own section on this page**.
+
+Verification:
+
+```
+python3 docs/sf/manuals/check.py
+check.py: OK - 116 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+```
+
+- `git diff --check`: clean.
+- Greps: `356/0` current; install command 52 unique files; no
+  `../../../sf/docs/std_lib` links remain in the touched manuals; enumerated
+  coverage list matches the sentence.
+- No seed rotation, no battery re-run (docs-only). Checker did not require any
+  pipeline change.
